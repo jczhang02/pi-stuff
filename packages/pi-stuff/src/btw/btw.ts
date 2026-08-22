@@ -68,9 +68,7 @@ function isPendingAssistant(entry: SessionEntry | undefined): boolean {
 
 /** Pi's effective active context, with compaction/branch summaries applied. */
 export function readEffectiveContext(ctx: Pick<ExtensionContext, "sessionManager">) {
-	const entries = ([...ctx.sessionManager.buildContextEntries()] as SessionEntry[]).filter(
-		(entry) => !isPendingAssistant(entry),
-	);
+	const entries = ctx.sessionManager.buildContextEntries().filter((entry) => !isPendingAssistant(entry));
 	const contextMessages = entries.flatMap((entry) => sessionEntryToContextMessages(entry));
 	const messages = convertToLlm(contextMessages);
 	return { contextMessages, entries, messages };
@@ -86,14 +84,15 @@ function buildBtwMessages(
 ): BtwBuiltContext {
 	const { entries, messages } = effectiveContext;
 	const systemPrompt = contextProjection ? `${BTW_SYSTEM_PROMPT}\n\n${contextProjection}` : BTW_SYSTEM_PROMPT;
-	const fit = fitBranch({
+	const fitOptions = {
 		entries,
 		messages,
 		model,
 		systemPrompt,
 		question: userMessage,
-		...(keepBudget === undefined ? {} : { keepBudget }),
-	});
+	};
+	if (keepBudget !== undefined) Object.assign(fitOptions, { keepBudget });
+	const fit = fitBranch(fitOptions);
 	return {
 		messages: [...fit.messages, userMessage],
 		systemPrompt,
@@ -133,12 +132,13 @@ function callError(message: string): string {
 }
 
 function errorResult(error: string, partial: string, stopReason?: StopReason): BtwExecResult {
-	return {
+	const result: Extract<BtwExecResult, { kind: "error" }> = {
 		kind: "error",
 		error,
 		partial,
-		...(stopReason === undefined ? {} : { stopReason }),
 	};
+	if (stopReason !== undefined) Object.assign(result, { stopReason });
+	return result;
 }
 
 /**
@@ -152,7 +152,7 @@ export async function executeBtw(
 	observer: BtwStreamObserver = {},
 	openStream: OpenBtwStream = openBtwStream,
 ): Promise<BtwExecResult> {
-	const model = ctx.model as Model<Api> | undefined;
+	const model = ctx.model;
 	if (!model) return errorResult(ERR_NO_MODEL, "");
 
 	const userMessage: UserMessage = {

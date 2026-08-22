@@ -84,13 +84,13 @@ async function promoteBtwExchange(
 		timestamp: exchange.timestamp,
 	};
 	const assistantMessage = promotedAssistant(exchange, ctx);
-	const options = {
+	const options: NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]> = {
 		setup: async (sessionManager) => {
 			sessionManager.appendMessage(userMessage);
 			sessionManager.appendMessage(assistantMessage);
 		},
 	};
-	if (parentSession !== undefined) Object.assign(options, { parentSession });
+	if (parentSession !== undefined) options.parentSession = parentSession;
 	const result = await ctx.newSession(options);
 	if (result.cancelled) throw new Error("Could not fork BTW because the session switch was cancelled");
 }
