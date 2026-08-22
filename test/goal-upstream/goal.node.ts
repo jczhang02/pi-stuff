@@ -15,7 +15,6 @@ import { registerSuiteAgentMessagePreparation } from "../../packages/pi-stuff/sr
 import goal, {
 	assistantUsageTokens,
 	buildGoalSystemPrompt,
-	CONTEXT_COMPACTION_BYPASSED_EVENT,
 	completeGoalArguments,
 	cumulativeAssistantTokens,
 	EMERGENCY_AUTOMATIC_TURN_LIMIT,
@@ -32,6 +31,7 @@ import goal, {
 	parseTokenBudget,
 	validateObjective,
 } from "../../packages/pi-stuff/src/goal/src/goal.js";
+import { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { createGoal } from "../../packages/pi-stuff/src/goal/src/runtime.js";
 import {
@@ -4862,6 +4862,13 @@ test("Magic Context compaction bypass sends one fresh continuation without sessi
 	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
 		schemaVersion: 1,
 		sessionManager: {},
+		source: "magic-context",
+	});
+	await new Promise((resolve) => setTimeout(resolve, 5));
+	assert.equal(compacted.mock.sentUserMessages.length, 2);
+	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
+		schemaVersion: 2,
+		sessionManager,
 		source: "magic-context",
 	});
 	await new Promise((resolve) => setTimeout(resolve, 5));

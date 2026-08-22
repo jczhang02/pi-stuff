@@ -2,18 +2,15 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { Guard } from "typebox/guard";
-import { Check } from "typebox/value";
+import {
+	CONTEXT_COMPACTION_BYPASSED_EVENT,
+	isContextCompactionBypassedEvent,
+} from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
-const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
-const CONTEXT_COMPACTION_BYPASSED_SCHEMA = Type.Object(
-	{ schemaVersion: Type.Literal(1), source: Type.Literal("magic-context") },
-	{ additionalProperties: true },
-);
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -193,7 +190,7 @@ function activeGoal(objective: string) {
 
 export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 	pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (event) => {
-		if (Check(CONTEXT_COMPACTION_BYPASSED_SCHEMA, event)) {
+		if (isContextCompactionBypassedEvent(event)) {
 			log({ type: "context_compaction_bypassed" });
 		}
 	});

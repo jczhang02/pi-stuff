@@ -3,6 +3,10 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
+import {
+	CONTEXT_COMPACTION_BYPASSED_EVENT,
+	isContextCompactionBypassedEvent,
+} from "../../shared/context-compaction-bypassed.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { activityKey, singleActivity } from "../../tool-display/activity.js";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "../../tool-display/contract.js";
@@ -148,22 +152,7 @@ const MAX_BLOCKER_REASON_LENGTH = 1_000;
 const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
 const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
 const MAX_COMPLETION_EVIDENCE_TEXT_LENGTH = 4_000;
-export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
-
-interface ContextCompactionBypassedEvent {
-	readonly schemaVersion: 1;
-	readonly sessionManager: object;
-	readonly source: "magic-context";
-}
-
-const CONTEXT_COMPACTION_BYPASSED_SCHEMA = Type.Object(
-	{
-		schemaVersion: Type.Literal(1),
-		sessionManager: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Array(Type.Unknown())]),
-		source: Type.Literal("magic-context"),
-	},
-	{ additionalProperties: true },
-);
+export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../shared/context-compaction-bypassed.js";
 const GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA = Type.Object(
 	{ proof: Type.String(), requirement: Type.String() },
 	{ additionalProperties: true },
@@ -181,10 +170,6 @@ const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
 	{ text: Type.Optional(Type.String()), type: Type.Literal("text") },
 	{ additionalProperties: true },
 );
-
-function isContextCompactionBypassedEvent<Value>(value: Value): value is Value & ContextCompactionBypassedEvent {
-	return Check(CONTEXT_COMPACTION_BYPASSED_SCHEMA, value);
-}
 
 // Cohesion justification: command, tool, continuation, and lifecycle handlers coordinate one
 // guarded Goal state machine whose ordering and stale-turn invariants share the same closures.

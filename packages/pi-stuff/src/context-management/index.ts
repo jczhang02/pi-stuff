@@ -27,6 +27,10 @@ import {
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import {
+	CONTEXT_COMPACTION_BYPASSED_EVENT,
+	type ContextCompactionBypassedEvent,
+} from "../shared/context-compaction-bypassed.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString, isRuntimeSymbol } from "../shared/runtime-type.js";
 import type { ToolArguments } from "../tool-display/activity.js";
@@ -61,7 +65,7 @@ import {
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
-export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
+export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../shared/context-compaction-bypassed.js";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
 const MAGIC_CONTEXT_NATIVE_COMPACTION_MULTIPLIER = 2;
@@ -1776,11 +1780,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	private emitCompactionBypassed(ctx: ExtensionContext): void {
 		try {
-			this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
+			const event: ContextCompactionBypassedEvent = {
 				schemaVersion: 1,
 				sessionManager: ctx.sessionManager,
 				source: "magic-context",
-			});
+			};
+			this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, event);
 		} catch {
 			// Goal handoff is optional; native cancellation remains authoritative.
 		}
