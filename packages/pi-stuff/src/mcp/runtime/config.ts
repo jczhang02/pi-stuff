@@ -1,5 +1,5 @@
 // config.ts - Config loading with import support
-import { isJsonInputObject, isJsonInputValue, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, isJsonInputValue, parseJsonValue, requireJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -755,10 +755,14 @@ function validateConfig(raw: JsonInputValue): McpConfig {
   }
 
   const servers = raw.mcpServers ?? raw["mcp-servers"] ?? {};
-  const imports = raw.imports;
-  if (imports !== undefined && (!Array.isArray(imports) || !imports.every((kind) => isRuntimeString(kind) && isImportKind(kind)))) {
-    throw new TypeError("MCP config imports contains an unsupported config kind");
-  }
+	  const rawImports = raw.imports;
+	  let imports: ImportKind[] | undefined;
+	  if (rawImports !== undefined) {
+	    if (!Array.isArray(rawImports) || !rawImports.every((kind) => isRuntimeString(kind) && isImportKind(kind))) {
+	      throw new TypeError("MCP config imports contains an unsupported config kind");
+	    }
+	    imports = rawImports.filter((kind): kind is ImportKind => isRuntimeString(kind) && isImportKind(kind));
+	  }
   return {
     mcpServers: parseServerMap(servers, "MCP config mcpServers"),
     imports,
@@ -779,7 +783,8 @@ function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): Jso
         isJsonInputObject(baseEntry)
         && isJsonInputObject(nextEntry)
       ) {
-        const safeBase = { ...baseEntry };
+	        const safeBase: JsonInputObject = {};
+	        Object.assign(safeBase, baseEntry);
         const override = nextEntry;
         if (isRuntimeString(override.type) && override.type !== safeBase.type) {
           for (const field of ["command", "environment", "cwd", "url", "headers", "oauth"]) delete safeBase[field];
@@ -799,7 +804,8 @@ function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): Jso
           }
         }
 
-        const mergedEntry = { ...safeBase, ...override };
+	        const mergedEntry: JsonInputObject = {};
+	        Object.assign(mergedEntry, safeBase, override);
         for (const field of ["environment", "headers", "oauth"]) {
           const baseField = safeBase[field];
           const nextField = override[field];
@@ -807,7 +813,9 @@ function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): Jso
             isJsonInputObject(baseField)
             && isJsonInputObject(nextField)
           ) {
-            mergedEntry[field] = { ...baseField, ...nextField };
+	            const mergedField: JsonInputObject = {};
+	            Object.assign(mergedField, baseField, nextField);
+	            mergedEntry[field] = mergedField;
           }
         }
         mergedMcp[name] = mergedEntry;
@@ -892,7 +900,8 @@ function extractServers(config: JsonInputValue, kind: ImportKind): ServerMap {
       continue;
     }
 
-    const mapped = { ...entry };
+	    const mapped: JsonInputObject = {};
+	    Object.assign(mapped, entry);
     const bearerTokenEnv = mapped.bearer_token_env_var;
     const httpHeaders = mapped.http_headers;
     const envHttpHeaders = mapped.env_http_headers;
@@ -1056,7 +1065,7 @@ function getServersObject(raw: JsonInputObject): ServerMap {
 
 function setServersObject(raw: JsonInputObject, servers: Record<string, ServerEntry>): void {
   delete raw["mcp-servers"];
-  raw.mcpServers = servers;
+	  raw.mcpServers = requireJsonInputValue(servers, "MCP server configuration");
 }
 
 export interface ServerDisabledOverrideResult {
@@ -1096,12 +1105,19 @@ function readProjectServerOverride(writePath: string, filePath: string, serverNa
 	  if (rawServers !== undefined && !isJsonInputObject(rawServers)) {
 	    throw new Error(`Failed to update project MCP override at ${filePath}: ${serverKey} must be an object`);
 	  }
-	  const servers: JsonInputObject = rawServers ?? {};
+	  const servers: JsonInputObject = isJsonInputObject(rawServers) ? rawServers : {};
 	  const previous = Object.hasOwn(servers, serverName) ? servers[serverName] : undefined;
 	  if (previous !== undefined && !isJsonInputObject(previous)) {
 	    throw new Error(`Failed to update project MCP override at ${filePath}: server "${serverName}" must be an object`);
 	  }
-	  return { existing: previous, filePath, raw, serverKey, servers, writePath };
+	  return {
+	    existing: isJsonInputObject(previous) ? previous : undefined,
+	    filePath,
+	    raw,
+	    serverKey,
+	    servers,
+	    writePath,
+	  };
 }
 
 function writeProjectServerOverride(
@@ -1290,7 +1306,7 @@ export function buildStarterProjectConfig(): McpConfig {
 
 export function previewStarterProjectConfig(cwd = process.cwd()): ConfigWritePreview {
   const targetPath = getProjectConfigPath(cwd);
-  const nextRaw = { mcpServers: buildStarterProjectConfig().mcpServers };
+	  const nextRaw: JsonInputObject = { mcpServers: {} };
   return buildConfigWritePreview(targetPath, nextRaw);
 }
 
@@ -1298,7 +1314,7 @@ export function writeStarterProjectConfig(cwd = process.cwd()): Promise<string> 
   const targetPath = getProjectConfigPath(cwd);
   return withConfigWriteLock(targetPath, (writePath) => {
     if (existsSync(targetPath)) throw new Error(`Refusing to replace existing MCP config at ${targetPath}`);
-    writeRawConfigObject(writePath, { mcpServers: buildStarterProjectConfig().mcpServers });
+	    writeRawConfigObject(writePath, { mcpServers: {} });
     return targetPath;
   });
 }

@@ -1,7 +1,11 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
+import {
+	isJsonInputObject,
+	requireJsonInputValue,
+	type JsonInputObject,
+} from "../../shared/json-value.js";
 import { isRuntimeFunction } from "../../shared/runtime-type.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import {
@@ -12,8 +16,11 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   ElicitationCompleteNotificationSchema,
-  type GetPromptResult,
-  type ReadResourceResult,
+	type GetPromptResult,
+	type Prompt,
+	type ReadResourceResult,
+	type Resource,
+	type Tool,
   type UrlElicitationRequiredError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { UnixSocketClientTransport } from "./unix-socket-transport.ts";
@@ -69,8 +76,44 @@ type HttpAuthProviderState =
   | { status: "explicit"; provider: McpOAuthProvider }
   | { status: "implicit-challenged"; provider: McpOAuthProvider };
 
-function isUnauthorizedHttpError(error: JsonInputValue): boolean {
+function isUnauthorizedHttpError<ErrorValue>(error: ErrorValue): boolean {
   return error instanceof UnauthorizedError || (error instanceof StreamableHTTPError && error.code === 401);
+}
+
+function optionalJsonObject<Value>(value: Value, description: string): JsonInputObject | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonInputObject(value)) throw new TypeError(`${description} must contain only JSON values`);
+	return value;
+}
+
+function normalizeTool(tool: Tool): McpTool {
+	return {
+		name: tool.name,
+		title: tool.title,
+		description: tool.description,
+		inputSchema: requireJsonInputValue(tool.inputSchema, `MCP tool "${tool.name}" input schema`),
+		_meta: optionalJsonObject(tool._meta, `MCP tool "${tool.name}" metadata`),
+	};
+}
+
+function normalizePrompt(prompt: Prompt): McpPrompt {
+	return {
+		name: prompt.name,
+		title: prompt.title,
+		description: prompt.description,
+		arguments: prompt.arguments,
+		_meta: optionalJsonObject(prompt._meta, `MCP prompt "${prompt.name}" metadata`),
+	};
+}
+
+function normalizeResource(resource: Resource): McpResource {
+	return {
+		uri: resource.uri,
+		name: resource.name,
+		description: resource.description,
+		mimeType: resource.mimeType,
+		_meta: optionalJsonObject(resource._meta, `MCP resource "${resource.name}" metadata`),
+	};
 }
 
 function boundedStderrChunk(chunk: Buffer | string): Buffer {
@@ -447,7 +490,7 @@ export class McpServerManager {
             abortCleanup ?? Promise.resolve().then(() => client.close()),
           ]);
       const cleanupFailures = cleanupResults.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-      let reportedError: JsonInputValue = error;
+		let reportedError = error;
       if (cleanupFailures.length > 0) {
         reportedError = new AggregateError([error, ...cleanupFailures], "MCP connection setup failed");
       }
@@ -481,7 +524,7 @@ export class McpServerManager {
     }
   }
 
-  private async enrichHttpConnectionError(definition: ServerDefinition, error: JsonInputValue): Promise<Error> {
+	private async enrichHttpConnectionError<ErrorValue>(definition: ServerDefinition, error: ErrorValue): Promise<Error> {
     const originalMessage = error instanceof Error ? error.message : String(error);
     try {
       const probe = await probeMcpEndpoint(resolveServerUrl(definition)!);
@@ -535,22 +578,22 @@ export class McpServerManager {
   private createClient(serverName: string): Client {
     const capabilities = this.buildClientCapabilities();
     let client: Client;
-	    const clientOptions = {
+		const clientOptions: ClientOptions = {
 	        jsonSchemaValidator: createJsonSchemaValidator(),
 	        listChanged: {
           tools: {
-            onChanged: (error: Error | null, tools: McpTool[] | null) => {
-              this.handleToolsListChanged(serverName, client, error, tools);
+				onChanged: (error, tools) => {
+					this.handleToolsListChanged(serverName, client, error, tools?.map(normalizeTool) ?? null);
             },
           },
           resources: {
-            onChanged: (error: Error | null, resources: McpResource[] | null) => {
-              this.handleResourcesListChanged(serverName, client, error, resources);
+				onChanged: (error, resources) => {
+					this.handleResourcesListChanged(serverName, client, error, resources?.map(normalizeResource) ?? null);
             },
           },
           prompts: {
-            onChanged: (error: Error | null, prompts: McpPrompt[] | null) => {
-              this.handlePromptsListChanged(serverName, client, error, prompts);
+				onChanged: (error, prompts) => {
+					this.handlePromptsListChanged(serverName, client, error, prompts?.map(normalizePrompt) ?? null);
             },
           },
 	        },
@@ -803,7 +846,7 @@ export class McpServerManager {
 
     do {
       const result = await client.listTools(cursor ? { cursor } : undefined, requestOptions);
-      allTools.push(...(result.tools ?? []));
+		allTools.push(...(result.tools ?? []).map(normalizeTool));
       cursor = result.nextCursor;
     } while (cursor);
 
@@ -822,7 +865,7 @@ export class McpServerManager {
       let cursor: string | undefined;
       do {
         const result = await client.listPrompts(cursor ? { cursor } : undefined, requestOptions);
-        prompts.push(...(result.prompts ?? []));
+			prompts.push(...(result.prompts ?? []).map(normalizePrompt));
         cursor = result.nextCursor;
       } while (cursor);
       return { prompts, failed: false };
@@ -844,7 +887,7 @@ export class McpServerManager {
 
       do {
         const result = await client.listResources(cursor ? { cursor } : undefined, requestOptions);
-        allResources.push(...(result.resources ?? []));
+			allResources.push(...(result.resources ?? []).map(normalizeResource));
         cursor = result.nextCursor;
       } while (cursor);
 
@@ -992,8 +1035,8 @@ export class McpServerManager {
     if (failures.length > 0) throw new AggregateError(failures, "MCP manager cleanup failed");
   }
 
-  private containsCleanupFailure(error: JsonInputValue): boolean {
-    const pending: JsonInputValue[] = [error];
+	private containsCleanupFailure<ErrorValue>(error: ErrorValue): boolean {
+		const pending: unknown[] = [error];
     const seen = new Set<unknown>();
     while (pending.length > 0) {
       const current = pending.pop();

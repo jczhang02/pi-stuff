@@ -67,13 +67,13 @@ export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnap
 	      name,
 	      status,
 	      toolCount,
+	      resourceCount,
+	      failedAgoSeconds: status === "failed" ? failedAgoSeconds : undefined,
+	      failureDetail: status === "failed" && failureDetail ? failureDetail : undefined,
 	      disabled,
 	      oauth: definition ? supportsOAuth(definition) : false,
 	      autoConnect: definition?.lifecycle === "eager" || definition?.lifecycle === "keep-alive",
 	    };
-	    if (resourceCount !== undefined) snapshot.resourceCount = resourceCount;
-	    if (status === "failed" && failedAgoSeconds !== undefined) snapshot.failedAgoSeconds = failedAgoSeconds;
-	    if (status === "failed" && failureDetail) snapshot.failureDetail = failureDetail;
 	    servers.push(snapshot);
   }
 

@@ -32,7 +32,7 @@ interface TextStats {
 	lines: number;
 }
 
-export interface McpOutputGuardDetails {
+export interface McpOutputGuardDetails extends JsonInputObject {
   truncated: true;
   originalBytes: number;
   returnedBytes: number;
@@ -44,7 +44,7 @@ export interface McpOutputGuardDetails {
   writeError?: string;
 }
 
-export interface McpResultSummary {
+export interface McpResultSummary extends JsonInputObject {
   omitted: true;
   reason: string;
   isError: boolean;

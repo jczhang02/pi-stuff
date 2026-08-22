@@ -34,6 +34,8 @@ const TEST_LINUX_KEYRING_RECOVERY_ENV = 'PI_MCP_ADAPTER_TEST_LINUX_KEYRING_RECOV
 const KEYRING_RECOVERY_TIMEOUT_MS = 10_000;
 const AUTH_CHUNK_MANIFEST_KEY = '__piMcpAdapterOAuthChunked';
 
+type OAuthErrorInput = Error | JsonInputValue;
+
 /** OAuth token storage format */
 export interface StoredTokens {
   accessToken: string;
@@ -80,10 +82,10 @@ export interface AuthStorageOptions {
 export class OAuthCredentialStoreError extends Error {
   readonly code = 'OAUTH_CREDENTIAL_STORE_UNAVAILABLE';
 
-  constructor(
-    message: string,
-    readonly operation: 'read' | 'write' | 'remove',
-    cause: JsonInputValue,
+	  constructor(
+	    message: string,
+	    readonly operation: 'read' | 'write' | 'remove',
+	    cause: OAuthErrorInput,
   ) {
     super(message, { cause });
     this.name = 'OAuthCredentialStoreError';
@@ -95,9 +97,9 @@ export type OAuthCredentialStatus =
   | { status: 'absent' }
   | { status: 'unavailable'; message: string };
 
-function causeChainContains(error: JsonInputValue, pattern: RegExp): boolean {
+function causeChainContains(error: OAuthErrorInput, pattern: RegExp): boolean {
 	  const seen = new Set<JsonInputObject>();
-	  let current = error;
+	  let current: OAuthErrorInput = error;
 	  while (isJsonInputObject(current)) {
     if (seen.has(current)) break;
     seen.add(current);
@@ -297,7 +299,7 @@ function getKeyringNativeBindingSuffixes(platform: NodeJS.Platform, arch: NodeJS
   return [];
 }
 
-function formatErrorMessage(error: JsonInputValue): string {
+function formatErrorMessage(error: OAuthErrorInput): string {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -312,7 +314,7 @@ function isLinuxKeyringRecoveryEnabled(): boolean {
   return process.platform === 'linux' || process.env[TEST_LINUX_KEYRING_RECOVERY_ENV] === '1';
 }
 
-function shouldAttemptLinuxKeyringRecovery(error: JsonInputValue): boolean {
+function shouldAttemptLinuxKeyringRecovery(error: OAuthErrorInput): boolean {
   return isLinuxKeyringRecoveryEnabled()
     && causeChainContains(error, /key\s*(?:has been\s*)?revoked|keyrevoked/i);
 }
@@ -347,11 +349,12 @@ function runLinuxKeyringRecoveryOperation(operation: KeyringRecoveryOperation, a
 	  if (!isJsonInputObject(response) || !isRuntimeBoolean(response.ok)) {
 	    throw new Error('Linux keyring recovery helper returned an invalid response');
 	  }
+	  const responseError = isRuntimeString(response.error) ? response.error : undefined;
 	  if (response.ok === false) {
-	    if (response.error !== undefined && !isRuntimeString(response.error)) {
+	    if (response.error !== undefined && responseError === undefined) {
 	      throw new Error('Linux keyring recovery helper returned an invalid error response');
 	    }
-	    throw new Error(response.error || 'Linux keyring recovery helper failed');
+	    throw new Error(responseError || 'Linux keyring recovery helper failed');
 	  }
 	  if (response.found !== undefined && !isRuntimeBoolean(response.found)) {
 	    throw new Error('Linux keyring recovery helper returned an invalid found flag');
@@ -363,8 +366,10 @@ function runLinuxKeyringRecoveryOperation(operation: KeyringRecoveryOperation, a
 	    throw new Error('Linux keyring recovery helper returned an invalid read response');
 	  }
 	  const recovery: KeyringRecoveryResponse = { ok: true };
-	  if (response.found !== undefined) recovery.found = response.found;
-	  if (response.value !== undefined) recovery.value = response.value;
+	  const found = isRuntimeBoolean(response.found) ? response.found : undefined;
+	  const value = isRuntimeString(response.value) ? response.value : undefined;
+	  if (found !== undefined) recovery.found = found;
+	  if (value !== undefined) recovery.value = value;
 	  return recovery;
 }
 
@@ -506,7 +511,7 @@ function assignOptionalNumber<Target extends object, Key extends keyof Target>(
 	Object.assign(target, { [key]: value });
 }
 
-function isAuthEntryChunkManifest(value: JsonInputValue): value is AuthEntryChunkManifest {
+function isAuthEntryChunkManifest<Value>(value: Value): value is Value & AuthEntryChunkManifest {
 	  if (!isJsonInputObject(value)) return false;
 	  return value[AUTH_CHUNK_MANIFEST_KEY] === 1
 	    && isRuntimeNumber(value.chunkCount)

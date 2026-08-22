@@ -39,8 +39,12 @@ export {
 
 type AdapterCommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 type AdapterCommandContext = Parameters<AdapterCommandSpec["handler"]>[1];
-type CapturedAdapterCommandSpec = Omit<AdapterCommandSpec, "handler"> & {
+export type McpAdapterCommandSpec = Omit<AdapterCommandSpec, "handler"> & {
 	handler(args: string, ctx: AdapterCommandContext): boolean | undefined | Promise<boolean | undefined>;
+};
+
+export type McpAdapterExtensionAPI = ExtensionAPI & {
+	registerCommand(name: string, spec: McpAdapterCommandSpec): void;
 };
 
 interface DirectToolSyncResult {
@@ -73,7 +77,7 @@ async function awaitWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Prom
   }
 }
 
-function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
+function installMcpAdapter(pi: McpAdapterExtensionAPI, options: McpAdapterOptions) {
   registerMcpPromptMessageRenderer(pi);
 	const sessionConfig = options.config !== undefined ? cloneMcpConfig(options.config) : undefined;
   const programmaticConfig = sessionConfig !== undefined;
@@ -140,16 +144,8 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
   let proxyToolDescription: string | null = null;
   let directToolsFrozen = false;
 
-  // OMP remaps `typebox` to a host shim that historically lacked Type.Unsafe.
-  // Prefer Unsafe when present (real TypeBox / fixed OMP shim); otherwise pass
-  // the normalized JSON Schema through as a plain object so toolWireSchema and
-  // validateToolArguments still treat it as JSON Schema.
-	const toToolParameters = (schema: JsonInputObject): TUnsafe<JsonInputObject> => {
-		const unsafe = Type.Unsafe;
-		if (isRuntimeFunction(unsafe)) return unsafe<JsonInputObject>(schema);
-		// SAFETY: older Pi TypeBox shims accept this normalized JSON Schema directly; TUnsafe adds only static type evidence.
-		return schema as TUnsafe<JsonInputObject>;
-	};
+	  const toToolParameters = (schema: JsonInputObject): TUnsafe<JsonInputObject> =>
+	    Type.Unsafe<JsonInputObject>(schema);
 
   function directToolFingerprint(spec: DirectToolSpec): string {
     return JSON.stringify({
@@ -185,8 +181,9 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
 
   function deactivateTools(toolNames: string[]): string[] {
     if (toolNames.length === 0) return [];
-	    const unregisterTool = "unregisterTool" in pi && isRuntimeFunction(pi.unregisterTool)
-	      ? (name: string) => pi.unregisterTool(name) === true
+		    const unregisterToolMember = "unregisterTool" in pi ? pi.unregisterTool : undefined;
+		    const unregisterTool = isRuntimeFunction(unregisterToolMember)
+		      ? (name: string) => unregisterToolMember(name) === true
 	      : undefined;
     const unregistered = toolNames.filter((toolName) => unregisterTool?.(toolName) === true);
     const fallbackNames = toolNames.filter((toolName) => !unregistered.includes(toolName));
@@ -457,9 +454,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
   // Re-flag returned MCP tool failures so pi registers them as errors (see toolErrorOverride).
   pi.on("tool_result", (event) => toolErrorOverride(event.details));
 
-	  // SAFETY: the adapter facade captures this private handled boolean before registering its public void-returning command.
-	  const registerCapturedCommand = pi.registerCommand as (name: string, spec: CapturedAdapterCommandSpec) => void;
-	  registerCapturedCommand("mcp", {
+		  pi.registerCommand("mcp", {
     description: "Show MCP server status",
     getArgumentCompletions: (prefix: string) => {
       const normalized = prefix.trimStart();
@@ -878,7 +873,7 @@ export function parseMcpCommand(args: string | undefined): ParsedMcpCommand {
 
 export function createMcpAdapter(options: McpAdapterOptions = {}) {
   const factoryConfig = options.config !== undefined ? cloneMcpConfig(options.config) : undefined;
-  return function mcpAdapter(pi: ExtensionAPI) {
+	  return function mcpAdapter(pi: McpAdapterExtensionAPI) {
     installMcpAdapter(pi, {
       configPath: options.configPath,
       config: factoryConfig !== undefined ? cloneMcpConfig(factoryConfig) : undefined,

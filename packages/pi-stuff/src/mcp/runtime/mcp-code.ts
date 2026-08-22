@@ -34,9 +34,9 @@ interface DescribeInput extends JsonInputObject {
 }
 type WorkerMessage =
   | { type: "emit"; block: JsonInputValue }
-  | { type: "call"; id: number; path: string; args?: JsonInputValue }
-  | { type: "search"; id: number; input?: JsonInputValue }
-  | { type: "describe"; id: number; input?: JsonInputValue }
+	  | { type: "call"; id: number; path: string; args?: JsonInputObject }
+	  | { type: "search"; id: number; input?: SearchInput }
+	  | { type: "describe"; id: number; input?: DescribeInput }
   | { type: "done"; returnBlock?: JsonInputValue }
   | { type: "error"; message: string };
 

@@ -101,6 +101,7 @@ describe("MCP user-driven Agent attribution", () => {
 			sendUserDrivenUiAgentMessage(state, {
 				customType: "mcp-ui-prompt",
 				content: [{ type: "text", text: "Inspect this UI prompt" }],
+				display: true,
 			}),
 		).toBe(true);
 		expect(order).toEqual(["send", "promote"]);
@@ -129,6 +130,7 @@ describe("MCP user-driven Agent attribution", () => {
 			sendUserDrivenUiAgentMessage(state, {
 				customType: "mcp-ui-prompt",
 				content: [{ type: "text", text: "Idle prompt" }],
+				display: true,
 			}),
 		).toBe(true);
 		expect(promotions).toBe(0);
@@ -154,6 +156,7 @@ describe("MCP user-driven Agent attribution", () => {
 			sendUserDrivenUiAgentMessage(state, {
 				customType: "mcp-ui-prompt",
 				content: [{ type: "text", text: "Prepared prompt" }],
+				display: true,
 			}),
 		).toBe(true);
 		expect(order).toEqual(["prepare"]);

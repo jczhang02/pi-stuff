@@ -1,4 +1,10 @@
-import { isJsonInputObject, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import {
+	isJsonInputObject,
+	parseJsonValue,
+	requireJsonInputValue,
+	type JsonInputObject,
+	type JsonInputValue,
+} from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import fs from "node:fs/promises";
@@ -196,13 +202,14 @@ export async function startUiServer(options: UiServerOptions): Promise<UiServerH
     }
   };
 
-  const pushEvent = (name: string, payload: JsonInputValue) => {
-    if (completed) return;
-    const eventId = nextEventId++;
-    eventLog.push({ id: eventId, name, payload });
-    updateStreamSummary(payload);
-    pruneEventLog();
-    const chunk = serializeEvent(eventId, name, payload);
+	const pushEvent = <Value>(name: string, payload: Value) => {
+		if (completed) return;
+		const eventPayload = requireJsonInputValue(payload, `MCP UI event "${name}"`);
+		const eventId = nextEventId++;
+		eventLog.push({ id: eventId, name, payload: eventPayload });
+		updateStreamSummary(eventPayload);
+		pruneEventLog();
+		const chunk = serializeEvent(eventId, name, eventPayload);
     for (const client of sseClients) {
       try {
         client.write(chunk);
@@ -404,7 +411,8 @@ export async function startUiServer(options: UiServerOptions): Promise<UiServerH
           return;
         }
 
-	        const callArgs = { name: callParams.name, arguments: callParams.arguments ?? {} };
+				const callArguments = isJsonInputObject(callParams.arguments) ? callParams.arguments : {};
+				const callArgs = { name: callParams.name, arguments: callArguments };
         const toolMeta = {
           name: callParams.name,
           originalName: callParams.name,
@@ -417,7 +425,7 @@ export async function startUiServer(options: UiServerOptions): Promise<UiServerH
               options.state,
               options.serverName,
               toolMeta,
-              callArgs.arguments,
+					callArguments,
               options.state.owner?.signal,
             )
           : options.config && isToolCallApprovalRequired(options.config, options.serverName, toolMeta)

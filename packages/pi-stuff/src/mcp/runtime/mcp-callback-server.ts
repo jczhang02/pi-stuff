@@ -202,7 +202,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   // Clear timeout and resolve the pending promise
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
-	  const response: OAuthCallbackResponse = { code }
+	  const response: OAuthCallbackResult = { code }
 	  if (iss !== null) response.iss = iss
 	  pending.resolve(response)
 

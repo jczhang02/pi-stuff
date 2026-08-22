@@ -32,7 +32,7 @@ import {
 import { resolveCommandSecret } from "./utils.ts"
 import { isRuntimeString } from "../../shared/runtime-type.js"
 
-type IssuerBoundClientInformation = OAuthClientInformationMixed & { issuer?: string }
+type IssuerBoundClientInformation = OAuthClientInformationMixed & { issuer?: string; redirect_uris?: string[] }
 type IssuerBoundTokens = OAuthTokens & { issuer?: string }
 
 function issuersMatch(first: string, second: string): boolean {

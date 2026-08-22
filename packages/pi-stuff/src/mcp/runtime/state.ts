@@ -1,4 +1,4 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
+import type { SuiteAgentMessage, SuiteAgentMessageOptions } from "../../conversation-ui/suite-agent-message.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ConsentManager } from "./consent-manager.ts";
 import type { McpLifecycleManager } from "./lifecycle.ts";
@@ -21,13 +21,8 @@ export interface CompletedUiSession {
 }
 
 export type SendMessageFn = (
-  message: {
-    customType: string;
-    content: Array<{ type: "text"; text: string }>;
-    display?: string;
-    details?: JsonInputValue;
-  },
-  options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }
+	  message: SuiteAgentMessage,
+	  options?: SuiteAgentMessageOptions,
 ) => void | Promise<boolean>;
 
 export interface McpExtensionState {

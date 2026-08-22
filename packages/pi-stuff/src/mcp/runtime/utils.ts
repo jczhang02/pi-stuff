@@ -241,12 +241,14 @@ export function sanitizeTerminalText(text: string): string {
     .trim();
 }
 
-export function formatTerminalError(error: JsonInputValue): string {
-  const messages: string[] = [];
-	  const seen = new Set<JsonInputValue>();
-  const collect = (value: JsonInputValue) => {
-    if (seen.has(value)) return;
-    if ((isRuntimeObject(value) && value !== null) || isRuntimeFunction(value)) seen.add(value);
+export function formatTerminalError<Value>(error: Value): string {
+	  const messages: string[] = [];
+	  const seen = new Set<object>();
+	  function collect<ErrorValue>(value: ErrorValue): void {
+	    if ((isRuntimeObject(value) && value !== null) || isRuntimeFunction(value)) {
+	      if (seen.has(value)) return;
+	      seen.add(value);
+	    }
 
     if (value instanceof AggregateError) {
       const countBefore = messages.length;
@@ -261,7 +263,7 @@ export function formatTerminalError(error: JsonInputValue): string {
       return;
     }
     messages.push(String(value));
-  };
+	  }
 
   collect(error);
   return sanitizeTerminalText([...new Set(messages)].join(": "));
@@ -281,9 +283,8 @@ export function truncateAtWord(text: string, target: number): string {
 }
 
 export function normalizeDirectToolInputSchema(schema: JsonInputValue): JsonInputObject {
-	  const inputSchema = isJsonInputObject(schema)
-	    ? schema
-	    : { type: "object", properties: {} };
+	  let inputSchema: JsonInputObject = { type: "object", properties: {} };
+	  if (isJsonInputObject(schema)) inputSchema = schema;
 	  const { $schema: _schema, additionalProperties: _additionalProperties, ...normalized } = inputSchema;
   return normalized;
 }

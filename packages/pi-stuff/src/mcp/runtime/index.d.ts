@@ -42,7 +42,18 @@ export interface McpAdapterOptions {
   proxyOnly?: boolean;
 }
 
-export type McpAdapter = (pi: ExtensionAPI) => void;
+type AdapterCommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
+type AdapterCommandContext = Parameters<AdapterCommandSpec["handler"]>[1];
+
+export type McpAdapterCommandSpec = Omit<AdapterCommandSpec, "handler"> & {
+  handler(args: string, ctx: AdapterCommandContext): boolean | undefined | Promise<boolean | undefined>;
+};
+
+export type McpAdapterExtensionAPI = ExtensionAPI & {
+  registerCommand(name: string, spec: McpAdapterCommandSpec): void;
+};
+
+export type McpAdapter = (pi: McpAdapterExtensionAPI) => void;
 
 export function createMcpAdapter(options?: McpAdapterOptions): McpAdapter;
 

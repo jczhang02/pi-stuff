@@ -1,4 +1,3 @@
-import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { isRuntimeObject } from "../../shared/runtime-type.js";
 import {
@@ -12,7 +11,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
-import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
+import type { SuiteAgentMessage, SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
 import { isServerDisabled, type McpConfig, type PromptMetadata } from "./types.ts";
@@ -245,11 +244,11 @@ export function registerMcpPromptMessageRenderer(pi: Pick<ExtensionAPI, "registe
   });
 }
 
-function formatMessageContent(content: JsonInputValue): string {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter(isJsonInputObject)
-    .map(part => {
+type MessageContentBlocks = Exclude<SuiteAgentMessage["content"], string>;
+
+function formatMessageContent(content: MessageContentBlocks): string {
+	  return content
+	    .map(part => {
       if (part.type === "text") return String(part.text ?? "");
       if (part.type === "image") return "[image]";
       return "";

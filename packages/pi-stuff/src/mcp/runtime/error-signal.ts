@@ -1,4 +1,4 @@
-import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
 /**
  * Decide the `isError` override for a finished tool result in the `tool_result` hook.
  *
@@ -11,7 +11,7 @@ import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.
  * Limited to those two codes: the adapter's other `details.error` values (`auth_required`, connection
  * states, search/validation feedback, ...) are not failed tool calls, so they get no override.
  */
-export function toolErrorOverride(details: JsonInputValue): { isError: true } | undefined {
+export function toolErrorOverride<Value>(details: Value): { isError: true } | undefined {
 	  if (isJsonInputObject(details)) {
 	    const code = details.error;
     if (code === "tool_error" || code === "call_failed") {

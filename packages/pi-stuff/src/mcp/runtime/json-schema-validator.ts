@@ -1,7 +1,7 @@
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { Ajv } from "ajv";
-import Ajv2020 from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import formatsModule from "ajv-formats";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type {
   JsonSchemaType,
@@ -11,7 +11,9 @@ import type {
 
 type SchemaDialect =
   | { status: "unstamped" }
-  | { status: "stamped"; uri: string };
+	  | { status: "stamped"; uri: string };
+
+const addFormats = formatsModule.default;
 
 const DRAFT_07_SCHEMA_URIS: ReadonlySet<string> = new Set([
   "http://json-schema.org/draft-07/schema",

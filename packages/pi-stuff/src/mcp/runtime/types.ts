@@ -22,7 +22,7 @@ export type McpServerRuntimeStatus =
   | "not-connected"
   | "disabled";
 
-export interface McpServerStatusSnapshot {
+export interface McpServerStatusSnapshot extends JsonInputObject {
   readonly name: string;
   readonly status: McpServerRuntimeStatus;
   readonly toolCount: number;
@@ -35,7 +35,7 @@ export interface McpServerStatusSnapshot {
   readonly autoConnect?: boolean;
 }
 
-export interface McpStatusSnapshot {
+export interface McpStatusSnapshot extends JsonInputObject {
   readonly version: typeof MCP_STATUS_SNAPSHOT_VERSION;
   readonly servers: ReadonlyArray<McpServerStatusSnapshot>;
   readonly totalTools: number;
@@ -125,28 +125,31 @@ export interface UiResourcePermissions {
   clipboardWrite?: {};
 }
 
-export interface UiToolInfo {
-  id?: string | number;
-  tool: {
-    name: string;
-    description?: string;
-    inputSchema?: JsonInputValue;
-  };
+export interface UiToolDescriptor extends JsonInputObject {
+	name: string;
+	description?: string;
+	inputSchema?: JsonInputValue;
 }
 
-export interface UiHostContext {
+export interface UiToolInfo extends JsonInputObject {
+	  id?: string | number;
+	  tool: UiToolDescriptor;
+}
+
+export interface UiContainerDimensions extends JsonInputObject {
+	width?: number;
+	maxWidth?: number;
+	height?: number;
+	maxHeight?: number;
+}
+
+export interface UiHostContext extends JsonInputObject {
   toolInfo?: UiToolInfo;
   theme?: "light" | "dark";
   styles?: JsonInputObject;
   displayMode?: UiDisplayMode;
   availableDisplayModes?: UiDisplayMode[];
-  containerDimensions?: {
-    width?: number;
-    maxWidth?: number;
-    height?: number;
-    maxHeight?: number;
-  };
-  [key: string]: JsonInputValue;
+	  containerDimensions?: UiContainerDimensions;
 }
 
 export type UiDisplayMode = "inline" | "fullscreen" | "pip";
@@ -264,7 +267,7 @@ export interface UiSessionMessages {
   contexts: UiModelContextUpdate[];
 }
 
-export interface UiModelContextUpdate {
+export interface UiModelContextUpdate extends JsonInputObject {
   summary: string;
   truncated: boolean;
   payload?: JsonInputObject;
@@ -488,7 +491,7 @@ export interface McpAdapterOptions {
 // Alias for clarity
 export type ServerDefinition = ServerEntry;
 
-export interface ToolMetadata {
+export interface ToolMetadata extends JsonInputObject {
   name: string;           // Prefixed tool name (e.g., "xcodebuild_list_sims")
   originalName: string;   // Original MCP tool name (e.g., "list_sims")
   description: string;

@@ -19,7 +19,12 @@ import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../shared/r
 import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { createMcpControlView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
-import { createMcpAdapter, MCP_STATUS_EVENT } from "./runtime/index.js";
+import {
+	createMcpAdapter,
+	MCP_STATUS_EVENT,
+	type McpAdapterCommandSpec,
+	type McpAdapterExtensionAPI,
+} from "./runtime/index.js";
 import { logger } from "./runtime/logger.js";
 import { McpStatusStore } from "./status-store.js";
 
@@ -27,9 +32,7 @@ type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
 export type McpAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "registerCommand">;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 type CommandContext = Parameters<CommandSpec["handler"]>[1];
-type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
-	handler(args: string, ctx: CommandContext): boolean | undefined | Promise<boolean | undefined>;
-};
+type CapturedCommandSpec = McpAdapterCommandSpec;
 type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
@@ -200,18 +203,20 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 }
 
 /** Build the narrow host facade supplied to the pinned fork. */
-export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, commands: CapturedCommands): Host {
+export function createMcpAdapterApi<Host extends McpAdapterHost>(
+	pi: Host,
+	commands: CapturedCommands,
+): Host & McpAdapterExtensionAPI {
 	// SAFETY: the pinned MCP fork calls registerTool with Pi Tool definitions; the adapter intentionally retains only mcp.
 	const registerTool = ((tool: CapturedTool) => {
 		if (tool.name === "mcp") registerGateway(pi, tool);
 	}) as ExtensionAPI["registerTool"];
 	// SAFETY: the pinned fork's mcp handler returns only its documented handled boolean or undefined.
-	const registerCommand = ((name: string, spec: CommandSpec) => {
+	const registerCommand = (name: string, spec: CapturedCommandSpec) => {
 		if (name === "mcp") {
-			// SAFETY: the pinned fork's mcp command uses the CapturedCommandSpec handler result contract.
-			commands.mcp = spec as CapturedCommandSpec;
+			commands.mcp = spec;
 		}
-	}) as ExtensionAPI["registerCommand"];
+	};
 	// SAFETY: the pinned fork registers Pi extension events; this facade changes only session_start's UI context.
 	const on = ((event: string, handler: EventHandler) => {
 		// SAFETY: pi.on accepts the same ExtensionEvent and ExtensionContext pair after event-name dispatch.
@@ -221,6 +226,7 @@ export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, comma
 		}
 		return hostOn(event, handler);
 	}) as ExtensionAPI["on"];
+	// SAFETY: this proxy forwards the Host unchanged and replaces registerCommand with the fork-private handled-result contract.
 	return new Proxy(pi, {
 		get(target, property, receiver) {
 			if (property === "registerTool") return registerTool;
@@ -228,7 +234,7 @@ export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, comma
 			if (property === "on") return on;
 			return readHostProxyProperty(target, property, receiver);
 		},
-	});
+	}) as Host & McpAdapterExtensionAPI;
 }
 
 function firstArgument(args: string): string {

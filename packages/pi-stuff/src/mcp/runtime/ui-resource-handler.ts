@@ -79,7 +79,7 @@ export class UiResourceHandler {
       throw new ResourceParseError(uri, "content is empty", { server: serverName });
     }
 
-    const contentMeta = extractUiMeta(content._meta);
+		const contentMeta = extractUiMeta(isJsonInputObject(content._meta) ? content._meta : undefined);
     const listMeta = extractUiMeta(this.getListResourceMeta(serverName, uri));
 
     log.debug("Resource loaded successfully", { 

@@ -53,9 +53,11 @@ export function renderTsType(inputSchema: JsonInputValue): string | null {
       }
       if (Object.hasOwn(schema, "const")) return renderLiteral(schema.const);
 
-      if (Array.isArray(schema.anyOf) || Array.isArray(schema.oneOf)) {
-	        const variants = schema.anyOf ?? schema.oneOf ?? [];
-        if (variants.length === 0) return null;
+			let variants: readonly JsonInputValue[] | undefined;
+			if (Array.isArray(schema.anyOf)) variants = schema.anyOf;
+			else if (Array.isArray(schema.oneOf)) variants = schema.oneOf;
+			if (variants) {
+				if (variants.length === 0) return null;
         const rendered = variants.map(render);
         return rendered.every((value): value is string => value !== null) ? rendered.join(" | ") : null;
       }

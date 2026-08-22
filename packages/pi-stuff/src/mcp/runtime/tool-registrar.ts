@@ -3,8 +3,16 @@
 // This keeps the LLM context small (1 tool instead of 100s).
 
 import { isJsonInputValue, type JsonInputValue } from "../../shared/json-value.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ContentBlock } from "./types.ts";
+
+export type McpCallToolResponse = Awaited<ReturnType<Client["callTool"]>>;
+export type ImmediateCallToolResult = Exclude<McpCallToolResponse, { toolResult: unknown }>;
+
+export function isImmediateCallToolResult(result: McpCallToolResponse): result is ImmediateCallToolResult {
+	return "content" in result;
+}
 
 /**
  * Transform MCP content types to Pi content blocks.
@@ -21,9 +29,9 @@ export function transformMcpContent(content: CallToolResult["content"]): Content
         mimeType: c.mimeType ?? "image/png",
       };
     }
-    if (c.type === "resource") {
-      const resourceUri = c.resource?.uri ?? "(no URI)";
-      const resourceContent = c.resource?.text ?? (c.resource ? JSON.stringify(c.resource) : "(no content)");
+	    if (c.type === "resource") {
+	      const resourceUri = c.resource?.uri ?? "(no URI)";
+	      const resourceContent = "text" in c.resource ? c.resource.text : JSON.stringify(c.resource);
       return {
         type: "text" as const,
         text: `[Resource: ${resourceUri}]\n${resourceContent}`,

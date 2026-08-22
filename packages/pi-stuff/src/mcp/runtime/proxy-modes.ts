@@ -1,5 +1,6 @@
 import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
+import { requireJsonInputValue, type JsonInputObject } from "../../shared/json-value.js";
 import type { McpExtensionState } from "./state.ts";
 import type { ToolMetadata } from "./types.ts";
 import { getServerPrefix, isServerDisabled, parseUiPromptHandoff } from "./types.ts";
@@ -9,7 +10,7 @@ import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { buildToolMetadata, getToolNames, findToolByName, formatSchema } from "./tool-metadata.ts";
 import { renderTsType } from "./ts-shape.ts";
 import { reconstructPromptMetadata } from "./metadata-cache.ts";
-import { resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
+import { isImmediateCallToolResult, resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
 import { guardMcpOutput, guardedMcpDetails, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
 import { maybeStartUiSession, summarizeUiSessionResult, type UiSessionRuntime } from "./ui-session.ts";
 import { formatAuthRequiredMessage, formatMcpStatus, resolveServerUrl, truncateAtWord } from "./utils.ts";
@@ -1077,16 +1078,20 @@ export async function executeCall(
         arguments: args ?? {},
         _meta: uiSession?.requestMeta,
       }, undefined, requestOptions), ownedSignal),
-    );
+	    );
+	    if (!isImmediateCallToolResult(result)) {
+	      throw new Error("MCP task-based tool results are not supported by the proxy tool");
+	    }
+	    const rawMcpResult = requireJsonInputValue(result, "MCP tool result");
 
-    if (toolMeta.uiResourceUri) {
+	    if (toolMeta.uiResourceUri) {
       uiSession?.sendToolResult(result);
 
       if (result.isError) {
         const content = transformMcpContent(result.content);
         const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
         const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
-        const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult: result });
+	        const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult });
         return {
           content: guarded.content,
           details: { mode: "call", error: "tool_error", ...callIdentity, ...guardedMcpDetails(guarded) },
@@ -1096,7 +1101,7 @@ export async function executeCall(
       const content = resolveMcpResultContent(result);
       const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
       const uiSummary = summarizeUiSessionResult(uiSession);
-      const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, suffix: `\n\n${uiSummary.message}`, rawMcpResult: result });
+	      const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, suffix: `\n\n${uiSummary.message}`, rawMcpResult });
       return {
         content: guarded.content,
         details: {
@@ -1114,7 +1119,7 @@ export async function executeCall(
       const content = transformMcpContent(result.content);
       const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
       const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
-      const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult: result });
+	      const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult });
       return {
         content: guarded.content,
         details: { mode: "call", error: "tool_error", ...callIdentity, ...guardedMcpDetails(guarded) },
@@ -1123,7 +1128,7 @@ export async function executeCall(
 
     const content = resolveMcpResultContent(result);
     const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
-    const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, rawMcpResult: result });
+	    const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, rawMcpResult });
     return {
       content: guarded.content,
       details: { mode: "call", ...guardedMcpDetails(guarded), ...callIdentity },

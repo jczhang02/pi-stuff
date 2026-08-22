@@ -1,5 +1,6 @@
 import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
 import type { McpExtensionState } from "./state.ts";
 import type { DirectToolSpec, McpConfig, ToolPrefix } from "./types.ts";
 import type { MetadataCache } from "./metadata-cache.ts";
@@ -8,7 +9,7 @@ import { abortable, throwIfAborted } from "./abort.ts";
 import { isServerCacheValid, parseDirectToolSelectors } from "./metadata-cache.ts";
 export { getMissingConfiguredDirectToolServers } from "./metadata-cache.ts";
 import { formatSchema } from "./tool-metadata.ts";
-import { resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
+import { isImmediateCallToolResult, resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
 import { guardMcpOutput, guardedMcpDetails, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
 import { maybeStartUiSession, summarizeUiSessionResult, type UiSessionRuntime } from "./ui-session.ts";
 import { formatToolName, isServerDisabled, isToolAllowed, resolveToolPrefix } from "./types.ts";
@@ -418,8 +419,11 @@ export function createDirectToolExecutor(
           arguments: params ?? {},
           _meta: uiSession?.requestMeta,
         }, undefined, requestOptions), ownedSignal),
-      );
-      uiSession?.sendToolResult(result);
+	      );
+	      if (!isImmediateCallToolResult(result)) {
+	        throw new Error("MCP task-based tool results are not supported by direct tools");
+	      }
+	      uiSession?.sendToolResult(result);
 
       if (result.isError) {
 			const content = transformMcpContent(result.content);

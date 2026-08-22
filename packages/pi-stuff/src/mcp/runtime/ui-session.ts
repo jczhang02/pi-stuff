@@ -138,20 +138,16 @@ function withStreamEnvelope(
 	    ? { ...result.structuredContent }
     : {};
 
-  const rawEnvelope = structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY];
-	  const envelope = isJsonInputObject(rawEnvelope)
-	    ? { ...rawEnvelope }
-    : {
-        frameType: "final",
-        phase: "settled",
-        status: result.isError ? "error" : "ok",
-      };
+	const rawEnvelope = structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY];
+	const envelope = isJsonInputObject(rawEnvelope)
+		? Object.assign({}, rawEnvelope)
+		: {
+				frameType: "final",
+				phase: "settled",
+				status: result.isError ? "error" : "ok",
+			};
 
-  structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY] = {
-    ...envelope,
-    streamId,
-    sequence,
-  };
+	structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY] = Object.assign(envelope, { streamId, sequence });
 
   return {
     ...result,
@@ -374,7 +370,7 @@ export async function maybeStartUiSession(
               {
                 customType: "mcp-ui-prompt",
                 content: [{ type: "text", text: `User sent prompt from ${request.serverName} UI: "${prompt}"` }],
-                display: `💬 UI Prompt: ${prompt}`,
+					display: true,
                 details: { server: request.serverName, tool: request.toolName, prompt },
               },
             );
@@ -390,7 +386,7 @@ export async function maybeStartUiSession(
               {
                 customType: "mcp-ui-intent",
                 content: [{ type: "text", text: `User triggered intent from ${request.serverName} UI: ${intent}${paramsStr}` }],
-                display: `🎯 UI Intent: ${intent}`,
+					display: true,
                 details: { server: request.serverName, tool: request.toolName, intent, params: intentParams },
               },
             );
@@ -417,7 +413,7 @@ export async function maybeStartUiSession(
             {
               customType: "mcp-ui-context",
               content: [{ type: "text", text: `User submitted model context from ${request.serverName} UI:\n${update.summary}` }],
-              display: "UI Context submitted",
+			  display: true,
               details: { server: request.serverName, tool: request.toolName, context: update },
             },
           );
