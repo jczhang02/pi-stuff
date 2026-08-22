@@ -2,6 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+	isJsonInputValue,
+	type JsonInputObject,
+	type JsonInputValue,
+	type JsonObject,
+	type JsonValue,
+	parseJsonValue,
+} from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 
 interface SessionIdentityManager {
@@ -45,7 +54,7 @@ function canonicalPath(value: string): string {
 		try {
 			return path.join(fs.realpathSync.native(candidate), ...missingSuffix);
 		} catch (error) {
-			const code = (error as NodeJS.ErrnoException).code;
+			const code = error !== null && isRuntimeObject(error) && "code" in error ? error.code : undefined;
 			if (code !== "ENOENT" && code !== "ENOTDIR") return resolved;
 			const parent = path.dirname(candidate);
 			if (parent === candidate) return resolved;
@@ -79,6 +88,7 @@ function readPersistedHeader(
 ): { readonly id: string; readonly startedAtMs: number } | undefined {
 	let descriptor: number | undefined;
 	try {
+		// SAFETY: Node exposes O_NOFOLLOW on supported platforms; the optional extension models platforms that omit it.
 		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
 		descriptor = fs.openSync(sessionFile, fs.constants.O_RDONLY | noFollow);
 		const stat = fs.fstatSync(descriptor);
@@ -121,19 +131,23 @@ function readPersistedHeader(
 	}
 }
 
-type HeaderCandidate = { type?: unknown; id?: unknown; timestamp?: unknown };
+type HeaderCandidate = JsonObject;
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+	return value !== null && isRuntimeObject(value) && !Array.isArray(value);
+}
 
 /** Match Pi's bounded header discovery: blank and malformed physical lines are skipped. */
 function parseHeaderCandidate(line: string): HeaderCandidate | null | undefined {
 	if (!line.trim()) return undefined;
-	let parsed: unknown;
+	let parsed: JsonValue;
 	try {
-		parsed = JSON.parse(line);
+		parsed = parseJsonValue(line);
 	} catch {
 		return undefined;
 	}
-	if (!parsed || !isRuntimeObject(parsed) || Array.isArray(parsed)) return null;
-	const candidate = parsed as HeaderCandidate;
+	if (!isJsonObject(parsed)) return null;
+	const candidate = parsed;
 	return candidate.type === "session" && isRuntimeString(candidate.id) ? candidate : null;
 }
 
@@ -159,12 +173,14 @@ export function resolveCurrentSessionIdentity(
 		const canonicalSessionFile = canonicalPath(sessionFile);
 		material = `persisted\0path\0${canonicalSessionFile}\0header\0${logicalSessionId}`;
 		const header = readPersistedHeader(canonicalSessionFile, logicalSessionId);
-		return {
-			sessionId: `ps2-${createHash("sha256").update(material).digest("hex")}`,
-			governorSessionId: `ps2-${createHash("sha256").update(material).digest("hex")}`,
+		const persistedSessionId = `ps2-${createHash("sha256").update(material).digest("hex")}`;
+		const identity: ResolvedSessionIdentity = {
+			sessionId: persistedSessionId,
+			governorSessionId: persistedSessionId,
 			legacyGovernorSessionId: logicalSessionId,
-			...(header ? { legacyArtifactSessionId: sessionFile, startedAtMs: header.startedAtMs } : {}),
 		};
+		if (header) Object.assign(identity, { legacyArtifactSessionId: sessionFile, startedAtMs: header.startedAtMs });
+		return identity;
 	} else {
 		if (!logicalSessionId) throw new Error("Current session identity is unavailable.");
 		material = `ephemeral\0${canonicalPath(cwd ?? process.cwd())}\0session\0${logicalSessionId}`;
@@ -179,15 +195,23 @@ export function resolveCurrentSessionIdentity(
 	};
 }
 
-function record(value: unknown): Record<string, unknown> {
-	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+type SessionHistoryValue = JsonInputValue | SessionEntry;
+
+function isSessionHistoryObject(
+	value: SessionHistoryValue | undefined,
+): value is SessionHistoryValue & JsonInputObject {
+	return !!value && isJsonInputValue(value) && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function record(value: SessionHistoryValue | undefined): JsonInputObject {
+	return isSessionHistoryObject(value) ? value : {};
 }
 
 function legacyLaunchRunId(toolCallId: string): string {
 	return createHash("sha256").update("\0").update(toolCallId).digest("hex").slice(0, 12);
 }
 
-function collectLegacyRunIds(entries: Iterable<unknown>): Set<string> {
+function collectLegacyRunIds(entries: Iterable<SessionHistoryValue>): Set<string> {
 	const runIds = new Set<string>();
 	for (const value of entries) {
 		const entry = record(value);
@@ -222,7 +246,7 @@ interface LegacyLaunchDeclaration {
 	readonly logicalAgentIds: readonly string[];
 }
 
-function legacyLaunchDeclarations(entries: Iterable<unknown>) {
+function legacyLaunchDeclarations(entries: Iterable<SessionHistoryValue>) {
 	const values = [...entries];
 	const byToolCallId = new Map<string, LegacyLaunchDeclaration>();
 	const byRunId = new Map<string, LegacyLaunchDeclaration>();
@@ -285,7 +309,7 @@ function legacyLaunchDeclarations(entries: Iterable<unknown>) {
 
 export function buildSessionCompatibilityScope(
 	identity: ResolvedSessionIdentity,
-	entries: Iterable<unknown>,
+	entries: Iterable<SessionHistoryValue>,
 ): SessionCompatibilityScope {
 	return Object.freeze({ ...identity, legacyRunIds: collectLegacyRunIds(entries) });
 }
@@ -293,7 +317,7 @@ export function buildSessionCompatibilityScope(
 /** Whole-session provenance used only for governor upgrade/accounting decisions. */
 export function buildSessionGovernorCompatibilityScope(
 	identity: ResolvedSessionIdentity,
-	entries: Iterable<unknown>,
+	entries: Iterable<SessionHistoryValue>,
 ): SessionGovernorCompatibilityScope {
 	const launches = legacyLaunchDeclarations(entries);
 	return Object.freeze({
@@ -310,8 +334,8 @@ export function buildSessionGovernorCompatibilityScope(
  */
 export function sessionArtifactMatches(
 	identity: SessionCompatibilityScope | null | undefined,
-	artifactSessionId: unknown,
-	artifactRunId: unknown,
+	artifactSessionId: string | null | undefined,
+	artifactRunId: string | null | undefined,
 ): boolean {
 	if (!identity || !isRuntimeString(artifactSessionId)) return false;
 	if (artifactSessionId === identity.sessionId) return true;
