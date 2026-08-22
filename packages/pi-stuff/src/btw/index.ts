@@ -16,7 +16,7 @@ import {
 	readBtwHistory,
 	recordBtwExchange,
 } from "./btw-history.js";
-import { BtwDialogController } from "./btw-ui.js";
+import { BtwDialogController, type BtwDialogOptions } from "./btw-ui.js";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -57,7 +57,7 @@ function promotedAssistant(exchange: BtwExchange, ctx: ExtensionCommandContext):
 	const response = exchange.response;
 	const model = ctx.model;
 	if (!response && !model) throw new Error("Could not fork BTW without model metadata");
-	return {
+	const assistant: AssistantMessage = {
 		role: "assistant",
 		content: [{ type: "text", text: exchange.answer }],
 		api: response?.api ?? model?.api ?? "openai-completions",
@@ -66,8 +66,9 @@ function promotedAssistant(exchange: BtwExchange, ctx: ExtensionCommandContext):
 		usage: response?.usage ?? ZERO_USAGE,
 		stopReason: response?.stopReason ?? "stop",
 		timestamp: response?.timestamp ?? exchange.timestamp,
-		...(response?.errorMessage === undefined ? {} : { errorMessage: response.errorMessage }),
 	};
+	if (response?.errorMessage !== undefined) assistant.errorMessage = response.errorMessage;
+	return assistant;
 }
 
 async function promoteBtwExchange(
@@ -83,13 +84,14 @@ async function promoteBtwExchange(
 		timestamp: exchange.timestamp,
 	};
 	const assistantMessage = promotedAssistant(exchange, ctx);
-	const result = await ctx.newSession({
-		...(parentSession === undefined ? {} : { parentSession }),
+	const options = {
 		setup: async (sessionManager) => {
 			sessionManager.appendMessage(userMessage);
 			sessionManager.appendMessage(assistantMessage);
 		},
-	});
+	};
+	if (parentSession !== undefined) Object.assign(options, { parentSession });
+	const result = await ctx.newSession(options);
 	if (result.cancelled) throw new Error("Could not fork BTW because the session switch was cancelled");
 }
 
@@ -100,7 +102,8 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 	const sessionKey = btwSessionKey(ctx);
 	hydrateBtwHistory(sessionKey, ctx.sessionManager.getEntries());
 	const history = readBtwHistory(sessionKey);
-	const appendHistoryEntry = (customType: string, data: unknown): void => pi.appendEntry(customType, data);
+	const appendHistoryEntry: NonNullable<Parameters<typeof clearBtwHistory>[1]> = (customType, data) =>
+		pi.appendEntry(customType, data);
 	let resolveController: ((value: { controller: BtwDialogController; signal: AbortSignal }) => void) | undefined;
 	const controllerReady = new Promise<{ controller: BtwDialogController; signal: AbortSignal }>((resolve) => {
 		resolveController = resolve;
@@ -109,19 +112,20 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 	const view: CommandDialogView = {
 		priority: "normal",
 		create: ({ signal, tui, theme, keybindings, close }) => {
-			const controller = new BtwDialogController(theme, tui, keybindings, {
+			const options: BtwDialogOptions = {
 				history,
-				...(question === undefined ? {} : { question }),
-				...(question === undefined && history.length === 0
-					? { error: "No previous /btw exchange in this session." }
-					: {}),
 				onClose: () => close(),
 				onClearEarlier: (currentId) => {
 					if (currentId === undefined) clearBtwHistory(sessionKey, appendHistoryEntry);
 					else clearEarlierBtwHistory(sessionKey, currentId, appendHistoryEntry);
 				},
 				onFork: (exchange, promotionSignal) => promoteBtwExchange(exchange, ctx, promotionSignal),
-			});
+			};
+			if (question !== undefined) Object.assign(options, { question });
+			if (question === undefined && history.length === 0) {
+				Object.assign(options, { error: "No previous /btw exchange in this session." });
+			}
+			const controller = new BtwDialogController(theme, tui, keybindings, options);
 			resolveController?.({ controller, signal });
 			resolveController = undefined;
 			return controller;
@@ -137,6 +141,16 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 			});
 			if (result.kind === "success") {
 				const response = result.assistantMessage;
+				const responseMetadata = {
+					api: response.api,
+					provider: response.provider,
+					model: response.model,
+					usage: response.usage,
+					stopReason: response.stopReason,
+					timestamp: response.timestamp,
+				};
+				if (response.errorMessage !== undefined)
+					Object.assign(responseMetadata, { errorMessage: response.errorMessage });
 				const exchange = recordBtwExchange(
 					sessionKey,
 					{
@@ -144,15 +158,7 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 						answer: result.answer,
 						timestamp: result.userMessage.timestamp,
 						contextTrimmed: result.contextTrimmed,
-						response: {
-							api: response.api,
-							provider: response.provider,
-							model: response.model,
-							usage: response.usage,
-							stopReason: response.stopReason,
-							timestamp: response.timestamp,
-							...(response.errorMessage === undefined ? {} : { errorMessage: response.errorMessage }),
-						},
+						response: responseMetadata,
 					},
 					appendHistoryEntry,
 				);
