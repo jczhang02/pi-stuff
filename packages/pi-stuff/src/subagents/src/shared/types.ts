@@ -1296,7 +1296,6 @@ export interface SubagentState {
 	parentSessionFile?: string | null;
 	/** Last valid parent session model observed for this session; used when continuation contexts omit ctx.model. */
 	lastParentModel?: { provider: string; id: string };
-	subagentInProgress?: boolean;
 	subagentSpawns?: {
 		sessionId: string | null;
 		count: number;

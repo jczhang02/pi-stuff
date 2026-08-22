@@ -2162,13 +2162,6 @@ async function steerRun(
 	return result;
 }
 
-function duplicateForegroundResult(params: SubagentParamsLike): AgentToolResult<Details> {
-	return errorResult(
-		requestedMode(params),
-		"A foreground Agent call is already active. Start another only after it finishes.",
-	);
-}
-
 export function createSubagentExecutor(deps: ExecutorDeps) {
 	const engines: ExecutorEngines = { ...DEFAULT_ENGINES, ...deps.engines };
 	const execute = async (
@@ -2189,8 +2182,6 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 		if (params.action) return controlAction(params, ctx, deps, engines, signal, hooks);
 
 		const foreground = (params.async ?? deps.asyncByDefault) !== true;
-		if (foreground && deps.state.subagentInProgress) return duplicateForegroundResult(params);
-		if (foreground) deps.state.subagentInProgress = true;
 		let ownedNestedRoute: PreparedLaunch["nestedRoute"] | undefined;
 		let backgroundOwnsRoute = false;
 		let foregroundLifecycleOwnsRoute = false;
@@ -2223,7 +2214,6 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 					// A committed runner retires its route after durable terminalization.
 				}
 			}
-			if (foreground) deps.state.subagentInProgress = false;
 		}
 	};
 	return { execute };

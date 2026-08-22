@@ -17,8 +17,10 @@ user definitions, and user definitions override Package definitions.
 
 ## Everyday behavior
 
-- The public tool has three mutually exclusive call shapes: `agent` plus `task` for one launch, `tasks` for parallel
-  work, or `action` for current-session control. It rejects mixed shapes instead of guessing which request to run.
+- Each public Tool call has one of three mutually exclusive shapes: `agent` plus `task` for one launch, `tasks` for a
+  grouped parallel launch, or `action` for current-session control. It rejects mixed shapes instead of guessing which
+  request to run. Pi's native parallel Tool calls are also supported: independent foreground calls emitted in one
+  assistant response run concurrently as separate governed launches.
 - Launches are background by default. Omit `foreground` to continue immediately; set `foreground: true` when the
   findings must inform the current answer. The retired `background` field is not accepted.
 - Before each main Agent run, local discovery refreshes the public Tool contract with every selectable Agent's name,

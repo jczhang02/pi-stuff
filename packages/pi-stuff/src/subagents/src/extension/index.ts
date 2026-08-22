@@ -320,7 +320,6 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 		currentSessionId: null,
 		currentSessionScope: null,
 		parentSessionFile: null,
-		subagentInProgress: false,
 		subagentSpawns: {
 			sessionId: null,
 			count: 0,

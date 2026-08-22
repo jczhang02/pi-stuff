@@ -280,7 +280,6 @@ function stateForSession(sessionId: string): SubagentState {
 	return {
 		baseCwd: "",
 		currentSessionId: sessionId,
-		subagentInProgress: false,
 		subagentSpawns: { sessionId, count: 0 },
 		asyncJobs: new Map(),
 		recentAgentJobs: new Map(),

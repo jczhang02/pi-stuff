@@ -658,7 +658,8 @@ describe("Agents extension composition root", () => {
 		const tool = root.api.tools.get("subagent");
 		if (!tool) throw new Error("Expected public Agent tool");
 
-		expect(tool.description).toContain("Choose exactly one call shape");
+		expect(tool.description).toContain("Choose exactly one shape per call");
+		expect(tool.description).toContain("independent single calls in one assistant response");
 		expect(tool.description).toContain("Do not invent or pass a background field");
 		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');

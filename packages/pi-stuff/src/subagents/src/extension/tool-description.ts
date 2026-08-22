@@ -22,8 +22,9 @@ function formatAgentRoster(entries: readonly AgentToolRosterEntry[]): string | u
 export function buildSubagentToolDescription(roster: readonly AgentToolRosterEntry[] = []): string {
 	return [
 		"Delegate one or several concrete tasks to isolated current-session Agents.",
-		'Choose exactly one call shape: single uses agent + task; parallel uses tasks; control uses action="status", "steer", "stop", or "resume".',
+		'Choose exactly one shape per call: single uses agent + task; grouped parallel uses tasks; control uses action="status", "steer", "stop", or "resume".',
 		"Do not combine single, parallel, or control fields.",
+		"Pi may also issue several independent single calls in one assistant response; those foreground calls run concurrently under the same session limits.",
 		"A short 3–5 word description improves the UI; put the complete execution instruction in task.",
 		"Pi Stuff does not provide built-in Agent definitions; select an available Package, user, or project Agent.",
 		"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops; set them only when the task needs a tighter bound.",
@@ -38,8 +39,9 @@ export function buildSubagentToolDescription(roster: readonly AgentToolRosterEnt
 export function buildFanoutChildSubagentToolDescription(): string {
 	return [
 		"Delegate one or several concrete tasks to isolated nested Agents.",
-		"Choose exactly one launch shape: single uses agent + task; parallel uses tasks.",
+		"Choose exactly one launch shape per call: single uses agent + task; grouped parallel uses tasks.",
 		"Do not combine single and parallel fields.",
+		"Several independent single calls in one assistant response run concurrently under the same session limits.",
 		"A short 3–5 word description improves the UI; put the complete execution instruction in task.",
 		"Pi Stuff does not provide built-in Agent definitions; select an available Package, user, or project Agent.",
 		"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops; set them only when the task needs a tighter bound.",

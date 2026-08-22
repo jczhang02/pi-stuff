@@ -550,6 +550,34 @@ describe("reduced foreground Agent engine", () => {
 		expect(runState.foregroundRuns?.size).toBe(1);
 	});
 
+	test("runs Host-native concurrent foreground Agent calls without dropping siblings", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-concurrent-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const runState = state();
+		const delegate = executor(cwd, runState, undefined, { foregroundDelayMs: 25 });
+
+		const results = await Promise.all(
+			["trace architecture", "review changes", "run checks"].map((task, index) =>
+				delegate.execute(
+					`concurrent-${index}`,
+					{ agent: "general-purpose", task, async: false, context: "fresh" },
+					new AbortController().signal,
+					undefined,
+					context(cwd),
+				),
+			),
+		);
+
+		expect(results.every((result) => result.isError !== true)).toBeTrue();
+		expect(results.map((result) => result.details.results[0]?.finalOutput)).toEqual([
+			"result-1",
+			"result-1",
+			"result-1",
+		]);
+		expect(runState.foregroundRuns?.size).toBe(3);
+	});
+
 	test("resolves the advertised Agent from the parent project while executing in the requested cwd", async () => {
 		const parentCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-parent-roster-"));
 		const childCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-child-cwd-"));
