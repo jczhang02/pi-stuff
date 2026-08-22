@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isJsonInputObject, type JsonInputValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const REQUIRED_CHILD_TOOLS_ENV = "PI_SUBAGENT_REQUIRED_TOOLS";
@@ -37,8 +38,8 @@ export function writeChildToolDiagnostic(
 		required,
 		available,
 		missing,
-		...(missingMcpDirectTools.length > 0 ? { missingMcpDirectTools } : {}),
 	};
+	if (missingMcpDirectTools.length > 0) diagnostic.missingMcpDirectTools = missingMcpDirectTools;
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	fs.writeFileSync(filePath, JSON.stringify(diagnostic), { mode: 0o600 });
 	return diagnostic;
@@ -58,27 +59,30 @@ export function writeChildLaunchDiagnostic(filePath: string, launchError: string
 
 export function readChildToolDiagnostic(filePath: string | undefined): ChildToolDiagnostic | undefined {
 	if (!filePath || !fs.existsSync(filePath)) return undefined;
-	const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Partial<ChildToolDiagnostic>;
-	const stringArray = (value: unknown): value is string[] =>
+	const parsed = parseJsonValue(fs.readFileSync(filePath, "utf-8"));
+	if (!isJsonInputObject(parsed)) throw new Error(`Malformed child tool diagnostic at '${filePath}'.`);
+	const stringArray = (value: JsonInputValue): value is string[] =>
 		Array.isArray(value) && value.every((entry) => isRuntimeString(entry) && entry.length > 0);
 	if (
-		!stringArray(parsed.required) ||
-		!stringArray(parsed.available) ||
-		!stringArray(parsed.missing) ||
-		(parsed.agent !== undefined && !isRuntimeString(parsed.agent)) ||
-		(parsed.missingMcpDirectTools !== undefined && !stringArray(parsed.missingMcpDirectTools)) ||
-		(parsed.launchError !== undefined && (!isRuntimeString(parsed.launchError) || parsed.launchError.length > 8_192))
+		!stringArray(parsed["required"]) ||
+		!stringArray(parsed["available"]) ||
+		!stringArray(parsed["missing"]) ||
+		(parsed["agent"] !== undefined && !isRuntimeString(parsed["agent"])) ||
+		(parsed["missingMcpDirectTools"] !== undefined && !stringArray(parsed["missingMcpDirectTools"])) ||
+		(parsed["launchError"] !== undefined &&
+			(!isRuntimeString(parsed["launchError"]) || parsed["launchError"].length > 8_192))
 	) {
 		throw new Error(`Malformed child tool diagnostic at '${filePath}'.`);
 	}
-	return {
-		...(parsed.agent ? { agent: parsed.agent } : {}),
-		required: parsed.required,
-		available: parsed.available,
-		missing: parsed.missing,
-		...(parsed.missingMcpDirectTools ? { missingMcpDirectTools: parsed.missingMcpDirectTools } : {}),
-		...(parsed.launchError ? { launchError: parsed.launchError } : {}),
+	const diagnostic: ChildToolDiagnostic = {
+		required: parsed["required"],
+		available: parsed["available"],
+		missing: parsed["missing"],
 	};
+	if (parsed["agent"]) diagnostic.agent = parsed["agent"];
+	if (parsed["missingMcpDirectTools"]) diagnostic.missingMcpDirectTools = parsed["missingMcpDirectTools"];
+	if (parsed["launchError"]) diagnostic.launchError = parsed["launchError"];
+	return diagnostic;
 }
 
 export function formatChildToolDiagnostic(diagnostic: ChildToolDiagnostic): string {
