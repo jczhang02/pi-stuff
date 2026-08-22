@@ -10,7 +10,6 @@ import { boundedTerminalLine, resolveDisplayDescription } from "../shared/displa
 import type { Details } from "../shared/types.ts";
 import type { PublicAgentParams } from "./product-executor.ts";
 
-type PresentationParams = Record<string, unknown>;
 const PRESENTATION_PREVIEW_WIDTH = 160;
 const AGENT_ACTION_PRESENTATION = {
 	resume: { category: "resume-agent", summary: "resumed" },
@@ -34,7 +33,7 @@ function action(params: PublicAgentParams): keyof typeof AGENT_ACTION_PRESENTATI
 		: undefined;
 }
 
-function launchTarget(agent: unknown, description: unknown, task: unknown): string {
+function launchTarget(agent: string | undefined, description: string | undefined, task: string | undefined): string {
 	const safeAgent = boundedTerminalLine(agent);
 	const safeTask = boundedTerminalLine(description) || boundedTerminalLine(task);
 	return [safeAgent, safeTask ? resolveDisplayDescription(description, task) : ""].filter(Boolean).join(" · ");
@@ -79,39 +78,37 @@ function successSummary(params: PublicAgentParams, result: AgentToolResult<Detai
 }
 
 /** One shared row grammar for root and nested public Agent tools. */
-export function createAgentToolPresentation(): SuiteToolPresentation<PresentationParams, Details> {
+export function createAgentToolPresentation(): SuiteToolPresentation<PublicAgentParams, Details> {
 	return {
 		activity: {
 			categories: ["check-agent", "launch-agent", "resume-agent", "run-agent", "steer-agent", "stop-agent"],
 			classify: ({ args, result }) => {
-				const params = args as PublicAgentParams;
-				const operation = action(params);
+				const operation = action(args);
 				if (operation) {
 					return singleActivity(AGENT_ACTION_PRESENTATION[operation].category, {
-						key: activityKey(params.id, operation),
-						target: target(params),
+						key: activityKey(args.id, operation),
+						target: target(args),
 					});
 				}
-				const count = launchedCount(params, result);
+				const count = launchedCount(args, result);
 				if (count === 0) return [];
-				const category = params.foreground === true ? "run-agent" : "launch-agent";
-				return singleActivity(category, { count, target: target(params) });
+				const category = args.foreground === true ? "run-agent" : "launch-agent";
+				return singleActivity(category, { count, target: target(args) });
 			},
 			summarizeIssue: (_args, result, state) => firstText(result) || state,
 		},
-		label: (params) => label(params as PublicAgentParams),
+		label,
 		resultIsError: (params, result) => {
-			const publicParams = params as PublicAgentParams;
 			if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) return true;
-			return action(publicParams) ? false : launchedCount(publicParams, result) === 0;
+			return action(params) ? false : launchedCount(params, result) === 0;
 		},
 		runningSummary: "working",
 		summarize: (params, result, state) => {
-			if (state === "success") return successSummary(params as PublicAgentParams, result);
+			if (state === "success") return successSummary(params, result);
 			if (state === "cancelled") return "cancelled";
 			if (state === "rejected") return "rejected";
 			return firstText(result) || "failed";
 		},
-		target: (params) => target(params as PublicAgentParams),
+		target,
 	};
 }
