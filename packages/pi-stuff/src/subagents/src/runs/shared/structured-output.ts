@@ -3,7 +3,12 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeFunction,
@@ -40,17 +45,13 @@ const SCHEMA_SINGLE_KEYWORDS = [
 ] as const;
 const SCHEMA_ARRAY_KEYWORDS = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
 
-function isJsonInputObject(value: JsonInputValue): value is JsonInputObject {
-	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
-}
-
 function rewriteLocalJsonPointerRefs(
 	schema: JsonInputValue,
 	pointerPrefix: string,
 	inheritsWrapperResource = true,
 ): JsonInputValue {
 	if (isRuntimeBoolean(schema) || !isJsonInputObject(schema)) return schema;
-	const source = schema;
+	const source: JsonInputObject = schema;
 	const rewritten: JsonInputObject = { ...source };
 	const sharesWrapperResource = inheritsWrapperResource && !isRuntimeString(source.$id);
 	if (sharesWrapperResource) {
@@ -109,26 +110,33 @@ export function createStructuredOutputToolParameters(schema: JsonSchemaObject): 
 }
 
 interface CompiledJsonSchema {
-	Check(value: unknown): boolean;
-	Errors(value: unknown): Iterable<{ instancePath?: string; message?: string }>;
+	Check(value: JsonInputValue): boolean;
+	Errors(value: JsonInputValue): Iterable<{ instancePath?: string; message?: string }>;
 }
 
-type CompileJsonSchema = (schema: unknown) => CompiledJsonSchema;
+type CompileJsonSchema = (schema: JsonSchemaObject) => CompiledJsonSchema;
 
 let cachedCompile: Promise<CompileJsonSchema> | undefined;
 
 export async function resolveCompileFromPackageRoot(packageRoot: string): Promise<CompileJsonSchema | undefined> {
 	const requireFromRoot = createRequire(path.join(packageRoot, "package.json"));
 	const resolved = requireFromRoot.resolve("typebox/compile");
+	// SAFETY: an ECMAScript module namespace is object-shaped; the export is checked before use.
 	const mod = (await import(pathToFileURL(resolved).href)) as { Compile?: unknown };
-	return isRuntimeFunction(mod.Compile) ? (mod.Compile as CompileJsonSchema) : undefined;
+	if (!isRuntimeFunction(mod.Compile)) return undefined;
+	// SAFETY: the resolved TypeBox entry point defines Compile with this schema-to-validator contract.
+	return mod.Compile as CompileJsonSchema;
 }
 
 async function importCompile(): Promise<CompileJsonSchema> {
 	const failures: string[] = [];
 	try {
+		// SAFETY: an ECMAScript module namespace is object-shaped; the export is checked before use.
 		const mod = (await import("typebox/compile")) as { Compile?: unknown };
-		if (isRuntimeFunction(mod.Compile)) return mod.Compile as CompileJsonSchema;
+		if (isRuntimeFunction(mod.Compile)) {
+			// SAFETY: the installed TypeBox entry point defines Compile with this schema-to-validator contract.
+			return mod.Compile as CompileJsonSchema;
+		}
 		failures.push("typebox/compile did not export a Compile function");
 	} catch (error) {
 		failures.push(`direct import failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -158,8 +166,11 @@ function loadCompile(): Promise<CompileJsonSchema> {
 	return cachedCompile;
 }
 
-export function assertJsonSchemaObject(schema: unknown, label = "outputSchema"): asserts schema is JsonSchemaObject {
-	if (!schema || !isRuntimeObject(schema) || Array.isArray(schema)) {
+export function assertJsonSchemaObject(
+	schema: JsonInputValue,
+	label = "outputSchema",
+): asserts schema is JsonSchemaObject {
+	if (!isJsonInputObject(schema)) {
 		throw new Error(`${label} must be a JSON Schema object.`);
 	}
 }
@@ -177,7 +188,7 @@ export function createStructuredOutputRuntime(schema: JsonSchemaObject, baseDir?
 
 export async function validateStructuredOutputValue(
 	schema: JsonSchemaObject,
-	value: unknown,
+	value: JsonInputValue,
 ): Promise<{ status: "valid" } | { status: "invalid"; message: string }> {
 	const compile = await loadCompile();
 	let validator: CompiledJsonSchema;
@@ -199,13 +210,13 @@ export async function validateStructuredOutputValue(
 
 export async function readStructuredOutput(
 	runtime: StructuredOutputRuntime,
-): Promise<{ value?: unknown; error?: string }> {
+): Promise<{ value?: JsonInputValue; error?: string }> {
 	if (!fs.existsSync(runtime.outputPath)) {
 		return { error: MISSING_STRUCTURED_OUTPUT_CALL_ERROR };
 	}
-	let value: unknown;
+	let value: JsonInputValue;
 	try {
-		value = JSON.parse(fs.readFileSync(runtime.outputPath, "utf-8"));
+		value = parseJsonValue(fs.readFileSync(runtime.outputPath, "utf-8"));
 	} catch (error) {
 		return { error: `Failed to read structured output: ${error instanceof Error ? error.message : String(error)}` };
 	}
