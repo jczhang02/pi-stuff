@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
@@ -64,20 +65,19 @@ export function initializeWriterProcessRegistry(
 	const writers = Object.fromEntries(
 		Array.from({ length: childCount }, (_, index) => [String(index), { state: "none" as const }]),
 	);
-	writePrivateAtomicJson(writerProcessRegistryPath(asyncDir), {
+	const registry: WriterProcessRegistry = {
 		version: 1,
 		runId,
 		runnerPid,
-		...(runnerProcessStartIdentity ? { runnerProcessStartIdentity } : {}),
-		...(process.platform !== "win32"
-			? {
-					writerStartupGate: "parent-pipe-v1" as const,
-					writerProcessGroup: "writer-pid-v1" as const,
-				}
-			: {}),
 		updatedAt: Date.now(),
 		writers,
-	} satisfies WriterProcessRegistry);
+	};
+	if (runnerProcessStartIdentity) registry.runnerProcessStartIdentity = runnerProcessStartIdentity;
+	if (process.platform !== "win32") {
+		registry.writerStartupGate = "parent-pipe-v1";
+		registry.writerProcessGroup = "writer-pid-v1";
+	}
+	writePrivateAtomicJson(writerProcessRegistryPath(asyncDir), registry);
 }
 
 export function updateWriterProcessRegistry(asyncDir: string, index: number, state: WriterRuntimeState): void {
@@ -89,17 +89,15 @@ export function updateWriterProcessRegistry(asyncDir: string, index: number, sta
 	if (state.state === "running" && supportsProcessStartIdentity() && !startIdentity) {
 		throw new Error(`Cannot bind writer PID ${state.pid} without a stable process-start identity.`);
 	}
-	registry.writers[String(index)] =
-		state.state === "running"
-			? {
-					state: "running",
-					pid: state.pid,
-					...(startIdentity ? { processStartIdentity: startIdentity } : {}),
-					...(state.groupMemberProofFile
-						? { groupMemberProofFile: safeProofFileName(state.groupMemberProofFile) }
-						: {}),
-				}
-			: { state: state.state };
+	if (state.state === "running") {
+		const writer: PersistedWriterState = { state: "running", pid: state.pid };
+		if (startIdentity) writer.processStartIdentity = startIdentity;
+		if (state.groupMemberProofFile) {
+			const proofFile = safeProofFileName(state.groupMemberProofFile);
+			if (proofFile) writer.groupMemberProofFile = proofFile;
+		}
+		registry.writers[String(index)] = writer;
+	} else registry.writers[String(index)] = { state: state.state };
 	registry.updatedAt = Date.now();
 	writePrivateAtomicJson(writerProcessRegistryPath(asyncDir), registry);
 }
@@ -277,11 +275,10 @@ export function terminateOrphanWriterProcesses(asyncDir: string, kill: KillFn = 
 				registry.writers[index] = { state: "none" };
 				changed = true;
 			} else {
-				registry.writers[index] = {
-					...writer,
-					...(shouldRequestTermination ? { terminationRequestedAt: now } : {}),
-					...(shouldKill ? { killRequestedAt: now } : {}),
-				};
+				const updated: PersistedWriterState = { ...writer };
+				if (shouldRequestTermination) updated.terminationRequestedAt = now;
+				if (shouldKill) updated.killRequestedAt = now;
+				registry.writers[index] = updated;
 				changed ||= shouldRequestTermination || shouldKill;
 				// Signal delivery alone is not proof of exit. A later poll revalidates
 				// ownership and escalates globally without blocking the Host event loop.
@@ -340,7 +337,7 @@ function readWriterProcessRegistry(asyncDir: string): WriterProcessRegistry | un
 		if (fs.realpathSync(resolvedDir) !== resolvedDir) return undefined;
 		const registryPath = writerProcessRegistryPath(resolvedDir);
 		return parseWriterProcessRegistry(
-			JSON.parse(readBoundedOwnedFile(registryPath, MAX_WRITER_PROCESS_REGISTRY_BYTES)),
+			parseJsonValue(readBoundedOwnedFile(registryPath, MAX_WRITER_PROCESS_REGISTRY_BYTES)),
 		);
 	} catch {
 		return undefined;
@@ -363,72 +360,86 @@ async function readWriterProcessRegistryAsync(asyncDir: string): Promise<WriterP
 			writerProcessRegistryPath(resolvedDir),
 			MAX_WRITER_PROCESS_REGISTRY_BYTES,
 		);
-		return parseWriterProcessRegistry(JSON.parse(snapshot.text));
+		return parseWriterProcessRegistry(parseJsonValue(snapshot.text));
 	} catch {
 		return undefined;
 	}
 }
 
-function parseWriterProcessRegistry(value: unknown): WriterProcessRegistry | undefined {
+function parseWriterProcessRegistry(value: JsonValue): WriterProcessRegistry | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const candidate = value as Partial<WriterProcessRegistry>;
 	if (
-		candidate.version !== 1 ||
-		!isRuntimeString(candidate.runId) ||
-		!positiveInteger(candidate.runnerPid) ||
-		(candidate.runnerProcessStartIdentity !== undefined && !isRuntimeString(candidate.runnerProcessStartIdentity)) ||
-		(candidate.writerStartupGate !== undefined && candidate.writerStartupGate !== "parent-pipe-v1") ||
-		(candidate.writerProcessGroup !== undefined && candidate.writerProcessGroup !== "writer-pid-v1") ||
-		!isRuntimeNumber(candidate.updatedAt) ||
-		!candidate.writers ||
-		!isRuntimeObject(candidate.writers) ||
-		Array.isArray(candidate.writers)
+		value.version !== 1 ||
+		!isRuntimeString(value.runId) ||
+		!positiveInteger(value.runnerPid) ||
+		(value.runnerProcessStartIdentity !== undefined && !isRuntimeString(value.runnerProcessStartIdentity)) ||
+		(value.writerStartupGate !== undefined && value.writerStartupGate !== "parent-pipe-v1") ||
+		(value.writerProcessGroup !== undefined && value.writerProcessGroup !== "writer-pid-v1") ||
+		!isRuntimeNumber(value.updatedAt) ||
+		!value.writers ||
+		!isRuntimeObject(value.writers) ||
+		Array.isArray(value.writers)
 	)
 		return undefined;
 	const writers: Record<string, PersistedWriterState> = {};
-	for (const [index, writer] of Object.entries(candidate.writers)) {
-		if (!/^\d+$/.test(index) || !validWriterState(writer)) return undefined;
-		writers[index] = { ...writer };
+	for (const [index, rawWriter] of Object.entries(value.writers)) {
+		const writer = parseWriterState(rawWriter);
+		if (!/^\d+$/.test(index) || !writer) return undefined;
+		writers[index] = writer;
 	}
-	return {
+	const registry: WriterProcessRegistry = {
 		version: 1,
-		runId: candidate.runId,
-		runnerPid: candidate.runnerPid,
-		...(candidate.runnerProcessStartIdentity
-			? { runnerProcessStartIdentity: candidate.runnerProcessStartIdentity }
-			: {}),
-		...(candidate.writerStartupGate ? { writerStartupGate: candidate.writerStartupGate } : {}),
-		...(candidate.writerProcessGroup ? { writerProcessGroup: candidate.writerProcessGroup } : {}),
-		updatedAt: candidate.updatedAt,
+		runId: value.runId,
+		runnerPid: value.runnerPid,
+		updatedAt: value.updatedAt,
 		writers,
 	};
-}
-
-function validWriterState(value: unknown): value is PersistedWriterState {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return false;
-	const writer = value as PersistedWriterState;
-	if (writer.state !== "none" && writer.state !== "spawning" && writer.state !== "running") return false;
-	if (writer.state === "running") {
-		return (
-			positiveInteger(writer.pid) &&
-			(writer.processStartIdentity === undefined || isRuntimeString(writer.processStartIdentity)) &&
-			(writer.groupMemberProofFile === undefined || safeProofFileName(writer.groupMemberProofFile) !== undefined) &&
-			(writer.terminationRequestedAt === undefined ||
-				(isRuntimeNumber(writer.terminationRequestedAt) && Number.isFinite(writer.terminationRequestedAt))) &&
-			(writer.killRequestedAt === undefined ||
-				(isRuntimeNumber(writer.killRequestedAt) && Number.isFinite(writer.killRequestedAt)))
-		);
+	if (isRuntimeString(value.runnerProcessStartIdentity)) {
+		registry.runnerProcessStartIdentity = value.runnerProcessStartIdentity;
 	}
-	return (
-		writer.pid === undefined &&
-		writer.processStartIdentity === undefined &&
-		writer.groupMemberProofFile === undefined &&
-		writer.terminationRequestedAt === undefined &&
-		writer.killRequestedAt === undefined
-	);
+	if (value.writerStartupGate === "parent-pipe-v1") registry.writerStartupGate = value.writerStartupGate;
+	if (value.writerProcessGroup === "writer-pid-v1") registry.writerProcessGroup = value.writerProcessGroup;
+	return registry;
 }
 
-function positiveInteger(value: unknown): value is number {
+function parseWriterState(value: JsonValue): PersistedWriterState | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	if (value.state !== "none" && value.state !== "spawning" && value.state !== "running") return undefined;
+	if (value.state === "running") {
+		if (
+			!positiveInteger(value.pid) ||
+			(value.processStartIdentity !== undefined && !isRuntimeString(value.processStartIdentity)) ||
+			(value.groupMemberProofFile !== undefined &&
+				(!isRuntimeString(value.groupMemberProofFile) || !safeProofFileName(value.groupMemberProofFile))) ||
+			(value.terminationRequestedAt !== undefined &&
+				(!isRuntimeNumber(value.terminationRequestedAt) || !Number.isFinite(value.terminationRequestedAt))) ||
+			(value.killRequestedAt !== undefined &&
+				(!isRuntimeNumber(value.killRequestedAt) || !Number.isFinite(value.killRequestedAt)))
+		) {
+			return undefined;
+		}
+		const writer: PersistedWriterState = { state: "running", pid: value.pid };
+		if (isRuntimeString(value.processStartIdentity)) writer.processStartIdentity = value.processStartIdentity;
+		if (isRuntimeString(value.groupMemberProofFile)) writer.groupMemberProofFile = value.groupMemberProofFile;
+		if (isRuntimeNumber(value.terminationRequestedAt)) {
+			writer.terminationRequestedAt = value.terminationRequestedAt;
+		}
+		if (isRuntimeNumber(value.killRequestedAt)) writer.killRequestedAt = value.killRequestedAt;
+		return writer;
+	}
+	if (
+		value.pid !== undefined ||
+		value.processStartIdentity !== undefined ||
+		value.groupMemberProofFile !== undefined ||
+		value.terminationRequestedAt !== undefined ||
+		value.killRequestedAt !== undefined
+	) {
+		return undefined;
+	}
+	return { state: value.state };
+}
+
+function positiveInteger(value: JsonValue | undefined): value is number {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
@@ -499,10 +510,11 @@ export function readAuthenticatedGroupMember(
 	try {
 		const fileName = safeProofFileName(writer.groupMemberProofFile);
 		if (!fileName) return undefined;
-		const parsed = JSON.parse(
-			readBoundedOwnedFile(path.join(path.resolve(asyncDir), fileName), 16 * 1024),
-		) as Partial<WriterGroupMemberProof>;
+		const parsed = parseJsonValue(readBoundedOwnedFile(path.join(path.resolve(asyncDir), fileName), 16 * 1024));
 		if (
+			!parsed ||
+			!isRuntimeObject(parsed) ||
+			Array.isArray(parsed) ||
 			parsed.version !== 1 ||
 			parsed.groupLeaderPid !== writer.pid ||
 			parsed.groupLeaderProcessStartIdentity !== writer.processStartIdentity ||
@@ -529,8 +541,6 @@ function safeProofFileName(value: string): string | undefined {
 	return /^[A-Za-z0-9._-]{1,256}$/u.test(value) && value !== "." && value !== ".." ? value : undefined;
 }
 
-function errorCode(cause: unknown): string | undefined {
-	return cause && isRuntimeObject(cause) && "code" in cause
-		? String((cause as NodeJS.ErrnoException).code)
-		: undefined;
+function errorCode<Cause>(cause: Cause): string | undefined {
+	return cause && isRuntimeObject(cause) && "code" in cause ? String(cause.code) : undefined;
 }
