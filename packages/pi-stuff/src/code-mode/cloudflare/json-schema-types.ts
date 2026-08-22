@@ -1,4 +1,5 @@
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema";
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { escapeJsDoc, escapeStringLiteral, quoteProp, sanitizeToolName, toPascalCase } from "./utils.js";
 
@@ -7,6 +8,14 @@ export interface ConversionContext {
 	depth: number;
 	seen: Set<unknown>;
 	maxDepth: number;
+}
+
+function isJsonSchemaObject<Value>(value: Value): value is Value & JSONSchema7 & JsonInputObject {
+	return isJsonInputObject(value);
+}
+
+function isJsonSchemaDefinition<Value>(value: Value): value is Value & JSONSchema7Definition {
+	return isRuntimeBoolean(value) || isJsonSchemaObject(value);
 }
 
 /**
@@ -24,24 +33,23 @@ function resolveRef(ref: string, root: JSONSchema7): JSONSchema7Definition | nul
 		.split("/")
 		.map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
 
-	let current: unknown = root;
+	if (!isJsonSchemaObject(root)) return null;
+	let current: JsonInputValue = root;
 	for (const seg of segments) {
-		if (current === null || !isRuntimeObject(current)) return null;
-		current = (current as Record<string, unknown>)[seg];
+		if (!isJsonInputObject(current)) return null;
+		current = current[seg];
 		if (current === undefined) return null;
 	}
 
 	// Allow both object schemas and boolean schemas (true = any, false = never)
-	if (isRuntimeBoolean(current)) return current;
-	if (current === null || !isRuntimeObject(current)) return null;
-	return current as JSONSchema7;
+	return isJsonSchemaDefinition(current) ? current : null;
 }
 
 /**
  * Apply OpenAPI 3.0 `nullable: true` to a type result.
  */
-function applyNullable(result: string, schema: unknown): string {
-	if (result !== "unknown" && result !== "never" && (schema as Record<string, unknown>)?.["nullable"] === true) {
+function applyNullable(result: string, schema: JSONSchema7): string {
+	if (result !== "unknown" && result !== "never" && isJsonInputObject(schema) && schema["nullable"] === true) {
 		return `${result} | null`;
 	}
 	return result;
@@ -130,8 +138,8 @@ export function jsonSchemaToTypeString(schema: JSONSchema7Definition, indent: st
 
 		if (type === "array") {
 			// Tuple support: prefixItems (JSON Schema 2020-12)
-			const prefixItems = (schema as Record<string, unknown>)["prefixItems"] as JSONSchema7Definition[];
-			if (Array.isArray(prefixItems)) {
+			const prefixItems = isJsonInputObject(schema) ? schema["prefixItems"] : undefined;
+			if (Array.isArray(prefixItems) && prefixItems.every(isJsonSchemaDefinition)) {
 				const types = prefixItems.map((s) => jsonSchemaToTypeString(s, indent, nextCtx));
 				return applyNullable(`[${types.join(", ")}]`, schema);
 			}
