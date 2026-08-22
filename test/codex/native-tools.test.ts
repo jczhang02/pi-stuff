@@ -8,6 +8,7 @@ import {
 	runNativeTool,
 } from "../../packages/pi-stuff/src/codex/native-runner.js";
 import { IMAGE_GENERATION_MODEL } from "../../packages/pi-stuff/src/codex/tools.js";
+import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const temporaryRoots: string[] = [];
 const nativeTest = process.platform === "linux" && process.arch === "x64" ? test : test.skip;
@@ -40,7 +41,7 @@ nativeTest("apply_patch executes directly and accepts shell case/esac text", asy
 		tool: "apply_patch",
 	});
 	expect(result.status).toBe(0);
-	expect(parseNativeJson<{ status: string }>(result.stdout, "apply_patch").status).toBe("success");
+	expect(parseNativeJson(result.stdout, "apply_patch")).toMatchObject({ status: "success" });
 	expect(await readFile(join(root, "sample.sh"), "utf8")).toBe(
 		'case "$1" in\n  start) echo started ;;\n  *) echo unknown ;;\nesac\n',
 	);
@@ -58,8 +59,16 @@ nativeTest("view_image returns an inline image payload", async () => {
 	);
 	const result = await runNativeTool({ arguments: [JSON.stringify({ path })], cwd: root, tool: "view_image" });
 	expect(result.status).toBe(0);
-	const parsed = parseNativeJson<{ image_url?: string }>(result.stdout, "view_image");
-	expect(parsed.image_url).toStartWith("data:image/png;base64,");
+	const parsed = parseNativeJson(result.stdout, "view_image");
+	if (
+		!isRuntimeObject(parsed) ||
+		parsed === null ||
+		!("image_url" in parsed) ||
+		!isRuntimeString(parsed["image_url"])
+	) {
+		throw new Error("Expected view_image to return an image_url");
+	}
+	expect(parsed["image_url"]).toStartWith("data:image/png;base64,");
 });
 
 test("only gpt-image-2 is exposed for image generation", () => {

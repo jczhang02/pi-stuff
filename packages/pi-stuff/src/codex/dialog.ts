@@ -44,8 +44,8 @@ export interface CodexControls {
 	setFast(enabled: boolean): Promise<void>;
 }
 
-function oneLine(value: unknown): string {
-	return String(value)
+function oneLine(value: string): string {
+	return value
 		.split("")
 		.map((character) => {
 			const codePoint = character.codePointAt(0) ?? 0;
@@ -163,7 +163,7 @@ class CodexDialog implements CommandDialogComponent {
 		try {
 			this.usage = await this.controls.refreshUsage(this.context.signal);
 		} catch (error) {
-			this.error = oneLine(error) || "Unable to load Codex usage.";
+			this.error = oneLine(String(error)) || "Unable to load Codex usage.";
 		} finally {
 			this.loading = false;
 			if (!this.disposed) this.context.requestRender();
@@ -175,7 +175,7 @@ class CodexDialog implements CommandDialogComponent {
 		try {
 			await this.controls.setFast(enabled);
 		} catch (error) {
-			this.error = oneLine(error) || "Unable to save Fast mode.";
+			this.error = oneLine(String(error)) || "Unable to save Fast mode.";
 		} finally {
 			this.settingsList.updateValue("fast", this.controls.getFast() ? "on" : "off");
 			if (!this.disposed) this.context.requestRender();

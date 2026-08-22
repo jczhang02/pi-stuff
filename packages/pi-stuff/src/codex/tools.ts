@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	activityKey,
 	registerSuiteOwnedTool,
@@ -96,6 +96,95 @@ interface ImageGenerationDetails extends ImageGenerationNativeResult {
 	readonly model: typeof IMAGE_GENERATION_MODEL;
 }
 
+function stringArray<Value>(value: Value): string[] | undefined {
+	return Array.isArray(value) && value.every(isRuntimeString) ? [...value] : undefined;
+}
+
+function parseApplyPatchResult<Value>(value: Value): ApplyPatchResult | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("changedFiles" in value) ||
+		!("createdFiles" in value) ||
+		!("deletedFiles" in value) ||
+		!("movedFiles" in value) ||
+		!("fuzz" in value) ||
+		!isRuntimeNumber(value.fuzz)
+	) {
+		return undefined;
+	}
+	const changedFiles = stringArray(value.changedFiles);
+	const createdFiles = stringArray(value.createdFiles);
+	const deletedFiles = stringArray(value.deletedFiles);
+	const movedFiles = stringArray(value.movedFiles);
+	if (!changedFiles || !createdFiles || !deletedFiles || !movedFiles) return undefined;
+	return { changedFiles, createdFiles, deletedFiles, fuzz: value.fuzz, movedFiles };
+}
+
+function parseApplyPatchNativeResult<Value>(value: Value): ApplyPatchNativeResult | undefined {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return undefined;
+	const parsed: ApplyPatchNativeResult = {};
+	if ("error" in value && value.error !== undefined) {
+		if (value.error !== null && !isRuntimeString(value.error)) return undefined;
+		Object.assign(parsed, { error: value.error });
+	}
+	if ("status" in value && value.status !== undefined) {
+		if (value.status !== "failure" && value.status !== "success") return undefined;
+		Object.assign(parsed, { status: value.status });
+	}
+	if ("result" in value && value.result !== undefined) {
+		const result = parseApplyPatchResult(value.result);
+		if (!result) return undefined;
+		Object.assign(parsed, { result });
+	}
+	return parsed;
+}
+
+function parseGeneratedImage<Value>(value: Value): GeneratedImage | undefined {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return undefined;
+	const image: GeneratedImage = {};
+	if ("absolute_path" in value && value["absolute_path"] !== undefined) {
+		if (!isRuntimeString(value["absolute_path"])) return undefined;
+		Object.assign(image, { absolute_path: value["absolute_path"] });
+	}
+	if ("latest_path" in value && value["latest_path"] !== undefined) {
+		if (!isRuntimeString(value["latest_path"])) return undefined;
+		Object.assign(image, { latest_path: value["latest_path"] });
+	}
+	if ("path" in value && value["path"] !== undefined) {
+		if (!isRuntimeString(value["path"])) return undefined;
+		Object.assign(image, { path: value["path"] });
+	}
+	return image;
+}
+
+function parseImageGenerationNativeResult<Value>(value: Value): ImageGenerationNativeResult | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		Array.isArray(value) ||
+		!("path" in value) ||
+		!isRuntimeString(value.path)
+	) {
+		return undefined;
+	}
+	const parsed: ImageGenerationNativeResult = { path: value.path };
+	if ("latest_path" in value && value.latest_path !== undefined) {
+		if (!isRuntimeString(value.latest_path)) return undefined;
+		Object.assign(parsed, { latest_path: value.latest_path });
+	}
+	if ("images" in value && value.images !== undefined) {
+		if (!Array.isArray(value.images)) return undefined;
+		const images = value.images.flatMap((image) => {
+			const parsedImage = parseGeneratedImage(image);
+			return parsedImage ? [parsedImage] : [];
+		});
+		if (images.length !== value.images.length) return undefined;
+		Object.assign(parsed, { images });
+	}
+	return parsed;
+}
+
 function oneLine(value: string): string {
 	return value
 		.split("")
@@ -166,18 +255,18 @@ function createApplyPatchTool() {
 					tool: "apply_patch",
 				}),
 			);
-			let parsed: ApplyPatchNativeResult;
+			let parsed: ApplyPatchNativeResult | undefined;
 			try {
-				parsed = parseNativeJson<ApplyPatchNativeResult>(native.stdout, "apply_patch");
+				parsed = parseApplyPatchNativeResult(parseNativeJson(native.stdout, "apply_patch"));
 			} catch (error) {
 				if (native.status !== 0) throw nativeError("apply_patch", native);
 				throw error;
 			}
-			if (native.status !== 0 || parsed.status !== "success" || !parsed.result) {
-				const partial = parsed.result?.changedFiles.length
+			if (!parsed || native.status !== 0 || parsed.status !== "success" || !parsed.result) {
+				const partial = parsed?.result?.changedFiles.length
 					? ` Earlier actions changed ${String(parsed.result.changedFiles.length)} file(s); inspect them before retrying.`
 					: "";
-				throw new Error(`${oneLine(parsed.error ?? "") || nativeError("apply_patch", native).message}${partial}`);
+				throw new Error(`${oneLine(parsed?.error ?? "") || nativeError("apply_patch", native).message}${partial}`);
 			}
 			return {
 				content: [{ type: "text" as const, text: `Applied patch successfully. ${patchSummary(parsed.result)}.` }],
@@ -188,9 +277,11 @@ function createApplyPatchTool() {
 }
 
 function parseImageDataUrl(stdout: string): ImageContent {
-	const value = parseNativeJson<{ detail?: unknown; image_url?: unknown }>(stdout, "view_image");
-	if (!isRuntimeString(value.image_url)) throw new Error("view_image returned no image.");
-	const match = value.image_url.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/u);
+	const value = parseNativeJson(stdout, "view_image");
+	if (!isRuntimeObject(value) || value === null || !("image_url" in value) || !isRuntimeString(value["image_url"])) {
+		throw new Error("view_image returned no image.");
+	}
+	const match = value["image_url"].match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/u);
 	if (!match?.[1] || !match[2]) throw new Error("view_image returned an unsupported image payload.");
 	return { data: match[2], mimeType: match[1], type: "image" };
 }
@@ -296,8 +387,8 @@ function createImageGenerationTool() {
 				tool: "imagegen",
 			});
 			if (native.status !== 0) throw nativeError("imagegen", native);
-			const parsed = parseNativeJson<ImageGenerationNativeResult>(native.stdout, "imagegen");
-			if (!isRuntimeString(parsed.path)) throw new Error("imagegen returned no image path.");
+			const parsed = parseImageGenerationNativeResult(parseNativeJson(native.stdout, "imagegen"));
+			if (!parsed) throw new Error("imagegen returned an invalid structured result.");
 			const images = await inlineGeneratedImages(parsed.images ?? []);
 			return {
 				content: [{ type: "text" as const, text: `Generated image: ${parsed.path}` }, ...images],

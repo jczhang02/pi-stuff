@@ -26,10 +26,9 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 	const publishStatus = (): void => {
 		if (!active) return;
 		const weekly = weeklyRemainingPercent(usage);
-		status.publish({
-			fastEnabled: settings.get().fast,
-			...(weekly === undefined ? {} : { weeklyRemainingPercent: weekly }),
-		});
+		const snapshot: Parameters<typeof status.publish>[0] = { fastEnabled: settings.get().fast };
+		if (weekly !== undefined) Object.assign(snapshot, { weeklyRemainingPercent: weekly });
+		status.publish(snapshot);
 	};
 	const controls = (ctx: ExtensionContext): CodexControls => ({
 		getFast: () => settings.get().fast,

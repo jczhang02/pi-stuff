@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type JsonValue, parseJsonValue } from "../shared/json-value.js";
 
 export type NativeToolName = "apply_patch" | "imagegen" | "view_image";
 
@@ -47,7 +48,7 @@ export function resolveNativeBinary(
 	return existsSync(path) ? path : undefined;
 }
 
-export function parseNativeJson<T>(stdout: string, label: string): T {
+export function parseNativeJson(stdout: string, label: string): JsonValue {
 	const lines = stdout.trimEnd().split("\n");
 	let line: string | undefined;
 	for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -58,7 +59,7 @@ export function parseNativeJson<T>(stdout: string, label: string): T {
 	}
 	if (!line) throw new Error(`${label} returned no structured result.`);
 	try {
-		return JSON.parse(line) as T;
+		return parseJsonValue(line);
 	} catch {
 		throw new Error(`${label} returned invalid structured JSON.`);
 	}
