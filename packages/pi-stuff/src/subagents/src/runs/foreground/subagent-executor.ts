@@ -258,6 +258,7 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 };
 
 const CHILD_RUNTIME_RESERVE_RATIO = 0.25;
+export const DEFAULT_AGENT_TIMEOUT_MS = 30 * 60 * 1_000;
 const CHILD_TOOL_REQUEST_FRAMING_TOKENS = 512;
 const CHILD_UNKNOWN_TOOL_SURFACE_TOKENS = 32 * 1024;
 const CHILD_EXPLICIT_EXTENSION_SURFACE_TOKENS = 16 * 1024;
@@ -711,7 +712,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 }
 
 function resolveTimeout(value: SubagentParamsLike["timeoutMs"]) {
-	if (value === undefined) return {};
+	if (value === undefined) return { timeoutMs: DEFAULT_AGENT_TIMEOUT_MS };
 	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
 	}

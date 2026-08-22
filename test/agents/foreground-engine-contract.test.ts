@@ -237,6 +237,7 @@ function executor(
 		parentRunOrigin?: "automatic" | "user";
 		sessionFile?: string;
 		task: string;
+		timeoutMs?: number;
 	}) => void,
 	options: {
 		agent?: AgentConfig;
@@ -544,6 +545,49 @@ describe("reduced foreground Agent engine", () => {
 		expect(result.details.results.map((child) => child.finalOutput)).toEqual(["result-1"]);
 		expect(runState.foregroundControls.size).toBe(0);
 		expect(runState.foregroundRuns?.size).toBe(1);
+	});
+
+	test("applies finite product backstops to ordinary foreground and background launches", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-backstops-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let backgroundTimeoutMs: number | undefined;
+		let foregroundConfig: BackgroundRunnerConfig | undefined;
+		const delegate = executor(
+			cwd,
+			state(),
+			(launch) => {
+				backgroundTimeoutMs = launch.timeoutMs;
+			},
+			{ onForegroundConfig: (config) => (foregroundConfig = config) },
+		);
+
+		await delegate.execute(
+			"bounded-background",
+			{ agent: "general-purpose", task: "Inspect", context: "fresh" },
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+		await delegate.execute(
+			"bounded-foreground",
+			{ agent: "general-purpose", task: "Inspect", async: false, context: "fresh" },
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+
+		expect(backgroundTimeoutMs).toBe(30 * 60 * 1_000);
+		expect(foregroundConfig).toMatchObject({
+			timeoutMs: 30 * 60 * 1_000,
+			work: {
+				mode: "single",
+				task: {
+					turnBudget: { maxTurns: 64, graceTurns: 2 },
+					toolBudget: { soft: 96, hard: 128, block: "*" },
+				},
+			},
+		});
 	});
 
 	test("does not let a failing completion observer replace a valid Agent result", async () => {

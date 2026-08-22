@@ -75,8 +75,8 @@ import {
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
-import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
+import { DEFAULT_AGENT_TOOL_BUDGET, validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { DEFAULT_AGENT_TURN_BUDGET, initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { createInitialStatus } from "./initial-status.ts";
 import { finalizeProcessTerminal, readProcessTerminal } from "./process-terminal.ts";
 import {
@@ -436,7 +436,8 @@ function resolveTaskTurnBudget(
 ) {
 	if (explicit !== undefined) return resolveTurnBudgetConfig(explicit, "turnBudget");
 	if (runBudget !== undefined) return { turnBudget: runBudget };
-	return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
+	if (agentBudget !== undefined) return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
+	return { turnBudget: DEFAULT_AGENT_TURN_BUDGET };
 }
 
 function resolveTaskToolBudget(
@@ -454,7 +455,7 @@ function resolveTaskToolBudget(
 		const resolved = validateToolBudgetConfig(agentBudget, "agent.toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
 	}
-	return { toolBudget: configBudget };
+	return { toolBudget: configBudget ?? DEFAULT_AGENT_TOOL_BUDGET };
 }
 
 export function buildResolvedTask(input: {

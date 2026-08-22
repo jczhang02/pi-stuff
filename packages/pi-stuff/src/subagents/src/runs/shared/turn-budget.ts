@@ -2,6 +2,7 @@ import { isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-typ
 import type { ResolvedTurnBudget, TurnBudgetState } from "../../shared/types.ts";
 
 export const DEFAULT_TURN_BUDGET_GRACE_TURNS = 1;
+export const DEFAULT_AGENT_TURN_BUDGET: ResolvedTurnBudget = Object.freeze({ maxTurns: 64, graceTurns: 2 });
 
 export function resolveTurnBudgetConfig<Value>(raw: Value, label = "turnBudget") {
 	if (raw === undefined) return {};

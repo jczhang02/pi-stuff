@@ -29,9 +29,11 @@ user definitions, and user definitions override Package definitions.
   made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
-- `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent limits. When neither the launch nor its Agent
-  definition supplies a limit, that dimension remains unbounded. Agents owns enforcement, stop, resume, and terminal
-  state; Context Management does not impose a second aggregate limit.
+- `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent overrides. Ordinary launches use product backstops
+  of 64 assistant turns plus two wrap-up turns, 96/128 soft/hard Tool calls with every Tool blocked after the hard
+  limit, and 30 minutes. Task overrides win over launch overrides, which win over Agent definitions and the product
+  defaults. Agents owns enforcement, stop, resume, and terminal state; Context Management does not impose a second
+  aggregate limit.
 - Each Agent has a stable identity, its own transcript, durable acknowledged steering, independent stop, and safe
   resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request
