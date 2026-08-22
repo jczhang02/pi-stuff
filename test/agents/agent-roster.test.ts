@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type {
 	AgentRow,
@@ -22,10 +22,6 @@ type InputHandler = (data: string) => InputResult;
 interface RosterComponent {
 	invalidate(): void;
 	render(width: number): string[];
-}
-
-interface FocusedComponent {
-	render(): string[];
 }
 
 type RosterFactory = (tui: TUI, theme: Theme) => RosterComponent;
@@ -81,7 +77,7 @@ class CurrentAgentsHarness {
 
 class UiHarness {
 	editorText = "";
-	focusedComponent: FocusedComponent = editor;
+	focusedComponent: Component = editor;
 	readonly notifications: Array<{ message: string; level: string }> = [];
 	readonly placements: Array<string | undefined> = [];
 	readonly renderRequests: number[] = [];
@@ -92,10 +88,7 @@ class UiHarness {
 	readonly tui = new TestTui();
 
 	constructor() {
-		Object.defineProperty(this.tui, "focusedComponent", {
-			configurable: true,
-			get: () => this.focusedComponent,
-		});
+		this.tui.getFocusedComponent = () => this.focusedComponent;
 	}
 
 	context(): AgentRosterContext {
@@ -542,7 +535,7 @@ describe("AgentRoster", () => {
 		expect(result.ui.render(80).join("\n")).not.toContain("↑/↓");
 
 		result.ui.editorText = "";
-		result.ui.focusedComponent = { render: () => [] };
+		result.ui.focusedComponent = { invalidate: () => {}, render: () => [] };
 		expect(result.ui.emit("\u001b[B")).toBeUndefined();
 		expect(result.ui.render(80).join("\n")).not.toContain("↑/↓");
 

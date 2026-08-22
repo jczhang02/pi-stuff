@@ -369,9 +369,8 @@ export class AgentRoster {
 
 	private editorHasFocus(): boolean {
 		const tui = this.activeTui();
-		const descriptor = tui ? Object.getOwnPropertyDescriptor(tui, "focusedComponent") : undefined;
-		const focused = descriptor?.get && tui ? descriptor.get.call(tui) : descriptor?.value;
-		return isEditorComponent(focused);
+		if (!tui || !("getFocusedComponent" in tui) || !isRuntimeFunction(tui.getFocusedComponent)) return false;
+		return isEditorComponent(tui.getFocusedComponent());
 	}
 
 	private render(theme: Theme, width: number): string[] {
