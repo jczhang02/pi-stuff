@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ActiveGoal, GoalBlockerAudit } from "./persistence.js";
 
+interface GoalTranscriptRecord {
+	readonly content?: unknown;
+	readonly role?: unknown;
+	readonly text?: unknown;
+	readonly type?: unknown;
+}
+
 export interface GoalCompletionEvidence {
 	requirement: string;
 	proof: string;
@@ -213,6 +220,6 @@ export function normalizeVisibleAssistantOutput(messages: readonly unknown[]) {
 	return normalized === "" || /^[\p{P}\s]+$/u.test(normalized) ? "" : normalized;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & GoalTranscriptRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }

@@ -1,7 +1,7 @@
 import { checkpointGoalActiveTime, currentTokenTotal } from "./accounting.js";
 import { validateObjective } from "./command.js";
 import { safeGoalMenuText } from "./menu.js";
-import type { ActiveGoal } from "./persistence.js";
+import type { ActiveGoal, PendingQueueAction } from "./persistence.js";
 import { buildGoalPrompt, buildObjectiveUpdatedPrompt, buildResumePrompt } from "./prompts.js";
 import {
 	activateQueuedGoal,
@@ -590,12 +590,13 @@ export class GoalCommandController {
 			if (currentGoal.status === "complete") {
 				// Completion already committed, so retain the priority intent for a
 				// later /reload after the tool policy is restored.
-				this.runtime.pendingQueueAction = {
+				const pendingAction: PendingQueueAction = {
 					kind: "prioritize",
 					objective,
 					tokenBudget,
-					...(displacedUsageFinalized ? { displacedUsageFinalized: true } : {}),
 				};
+				if (displacedUsageFinalized) pendingAction.displacedUsageFinalized = true;
+				this.runtime.pendingQueueAction = pendingAction;
 				this.runtime.persistGoal(currentGoal);
 			} else {
 				// Roll back an activation that never started. An active displaced goal

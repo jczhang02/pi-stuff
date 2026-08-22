@@ -25,11 +25,15 @@ interface SuiteAgentMessageBroker {
 }
 
 function brokerRegistry(): WeakMap<object, SuiteAgentMessageBroker> {
-	const root = globalThis as {
-		[key: symbol]: WeakMap<object, SuiteAgentMessageBroker> | undefined;
-	};
-	root[SUITE_AGENT_MESSAGE_BROKERS] ??= new WeakMap();
-	return root[SUITE_AGENT_MESSAGE_BROKERS];
+	const existing = Object.getOwnPropertyDescriptor(globalThis, SUITE_AGENT_MESSAGE_BROKERS)?.value;
+	if (existing instanceof WeakMap) return existing;
+	const created = new WeakMap<object, SuiteAgentMessageBroker>();
+	Object.defineProperty(globalThis, SUITE_AGENT_MESSAGE_BROKERS, {
+		configurable: true,
+		value: created,
+		writable: true,
+	});
+	return created;
 }
 
 function brokerFor(pi: { readonly events?: ExtensionAPI["events"] }): SuiteAgentMessageBroker {
@@ -98,11 +102,15 @@ export async function sendSuiteAgentMessage(
 }
 
 function nativeCompactionPreflights(): WeakMap<object, number> {
-	const root = globalThis as {
-		[key: symbol]: WeakMap<object, number> | undefined;
-	};
-	root[NATIVE_COMPACTION_PREFLIGHTS] ??= new WeakMap();
-	return root[NATIVE_COMPACTION_PREFLIGHTS];
+	const existing = Object.getOwnPropertyDescriptor(globalThis, NATIVE_COMPACTION_PREFLIGHTS)?.value;
+	if (existing instanceof WeakMap) return existing;
+	const created = new WeakMap<object, number>();
+	Object.defineProperty(globalThis, NATIVE_COMPACTION_PREFLIGHTS, {
+		configurable: true,
+		value: created,
+		writable: true,
+	});
+	return created;
 }
 
 /** Mark a public Pi compaction as the Suite's custom-turn safety preflight. */

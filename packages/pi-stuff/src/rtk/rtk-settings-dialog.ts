@@ -138,7 +138,7 @@ class RtkSettingsDialog implements CommandDialogComponent {
 					? this.settings.setOutputProjection(enabled)
 					: undefined;
 		if (!update) return;
-		void update.catch((error: unknown) => {
+		void update.catch((error) => {
 			if (this.generations.get(id) !== generation) return;
 			const message = oneLine(String(error)) || "Unable to save RTK setting.";
 			if (this.disposed) {

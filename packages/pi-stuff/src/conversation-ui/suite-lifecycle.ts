@@ -47,28 +47,28 @@ function createGate(sessionManager: SessionManager): ReadinessGate {
 }
 
 function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
-	type ReadinessHandler = (
-		event: SessionStartEvent,
-		ctx: ExtensionContext,
-	) => object | undefined | Promise<object | undefined>;
+	type ReadinessHandler = (event: SessionStartEvent, ctx: ExtensionContext) => void | Promise<void>;
+	// SAFETY: Pi's `on` overloads erase to one `(event, handler)` runtime method; this adapter forwards
+	// non-session handlers unchanged and invokes only `session_start` through ReadinessHandler.
 	const register = pi.on.bind(pi) as (event: string, handler: ReadinessHandler) => void;
-	const on = ((event: string, handler: ReadinessHandler) => {
-		if (event !== "session_start") {
-			register(event, handler);
-			return;
-		}
-		register(event, async (sessionEvent, ctx) => {
-			try {
-				return await handler(sessionEvent, ctx);
-			} catch (error) {
-				rejectSuiteSessionReadiness(pi, ctx);
-				throw error;
-			}
-		});
-	}) as ExtensionAPI["on"];
 	return new Proxy(pi, {
 		get(target, property) {
-			if (property === "on") return on;
+			if (property === "on") {
+				return (event: string, handler: ReadinessHandler): void => {
+					if (event !== "session_start") {
+						register(event, handler);
+						return;
+					}
+					register(event, async (sessionEvent, ctx) => {
+						try {
+							await handler(sessionEvent, ctx);
+						} catch (error) {
+							rejectSuiteSessionReadiness(pi, ctx);
+							throw error;
+						}
+					});
+				};
+			}
 			const value = readHostProxyProperty(target, property, target);
 			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},

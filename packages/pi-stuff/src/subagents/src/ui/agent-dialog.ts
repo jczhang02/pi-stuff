@@ -1303,6 +1303,6 @@ function decodePrintable(data: string): string | undefined {
 	return codePoint !== undefined && codePoint >= 32 && codePoint !== 127 ? data : undefined;
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage<Failure>(error: Failure): string {
 	return error instanceof Error ? error.message : String(error);
 }

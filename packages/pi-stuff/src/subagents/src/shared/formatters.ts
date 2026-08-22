@@ -2,6 +2,7 @@
  * Formatting utilities for display output
  */
 
+import type { JsonInputObject } from "../../../shared/json-value.js";
 import { isRuntimeString } from "../../../shared/runtime-type.js";
 import { splitKnownThinkingSuffix, THINKING_LEVELS } from "./model-info.ts";
 import type { Usage } from "./types.ts";
@@ -52,7 +53,7 @@ export function formatDuration(ms: number): string {
 /**
  * Format a tool call for display
  */
-export function formatToolCall(name: string, args: Record<string, unknown>, expanded = false): string {
+export function formatToolCall(name: string, args: JsonInputObject, expanded = false): string {
 	switch (name) {
 		case "bash": {
 			const command = isRuntimeString(args.command) ? args.command : "";

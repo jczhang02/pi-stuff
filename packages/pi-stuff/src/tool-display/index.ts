@@ -24,12 +24,16 @@ interface ToolLifecycleState {
 	activation?: symbol;
 }
 
-function toolLifecycleStates(): WeakMap<ExtensionAPI["events"], ToolLifecycleState> {
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], ToolLifecycleState> | undefined;
-	};
-	root[TOOL_LIFECYCLE_STATES] ??= new WeakMap();
-	return root[TOOL_LIFECYCLE_STATES];
+function toolLifecycleStates(): WeakMap<object, ToolLifecycleState> {
+	const existing = Object.getOwnPropertyDescriptor(globalThis, TOOL_LIFECYCLE_STATES)?.value;
+	if (existing instanceof WeakMap) return existing;
+	const created = new WeakMap<object, ToolLifecycleState>();
+	Object.defineProperty(globalThis, TOOL_LIFECYCLE_STATES, {
+		configurable: true,
+		value: created,
+		writable: true,
+	});
+	return created;
 }
 
 function releaseToolLifecycle(state: ToolLifecycleState, activation: symbol): void {
@@ -117,7 +121,7 @@ export {
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<ToolLifecycleState>(
 		pi.events,
-		toolLifecycleStates() as WeakMap<object, ToolLifecycleState>,
+		toolLifecycleStates(),
 		TOOL_LIFECYCLE_DISCOVERY_EVENT,
 		() => ({ active: false }),
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },

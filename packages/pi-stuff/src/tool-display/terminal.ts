@@ -114,7 +114,7 @@ export function sanitizeTerminalText(value: string): string {
 }
 
 /** Sanitize, flatten, and fit one display line by terminal cells without splitting a grapheme. */
-export function boundTerminalLine(value: unknown, maximumWidth: number, ellipsis = "…"): string {
+export function boundTerminalLine<Value>(value: Value, maximumWidth: number, ellipsis = "…"): string {
 	if (!isRuntimeString(value)) return "";
 	const width = Math.max(0, Math.floor(maximumWidth));
 	const line = sanitizeTerminalText(value).replace(/\s+/gu, " ").trim();

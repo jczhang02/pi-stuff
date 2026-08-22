@@ -13,7 +13,6 @@ import {
 } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogKeybindings,
-	type CommandDialogViewContext,
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
@@ -385,9 +384,7 @@ export class BtwDialogController implements Component {
 		const historyLines = this.renderHistory(width);
 		const answerWidth = Math.max(1, width - GUTTER.length);
 		const answerLines = this.renderAnswer(selected, answerWidth);
-		const maximumRows = commandDialogRows({
-			tui: this.tui,
-		} as Pick<CommandDialogViewContext<unknown>, "tui">);
+		const maximumRows = commandDialogRows({ tui: this.tui });
 		if (maximumRows === 0) return [];
 		let viewportHeight = Math.max(0, maximumRows - historyLines.length - 3);
 		let maxScroll = Math.max(0, answerLines.length - viewportHeight);
@@ -494,15 +491,15 @@ export class BtwDialogController implements Component {
 		this.feedback = { kind: "dim", text: "Waiting for the main Agent to finish…" };
 		this.requestRender();
 		try {
+			const exchange = {
+				id: selected.id,
+				question: selected.question,
+				answer: selected.answer,
+				timestamp: selected.timestamp,
+				contextTrimmed: selected.contextTrimmed,
+			};
 			await this.forkExchange(
-				{
-					id: selected.id,
-					question: selected.question,
-					answer: selected.answer,
-					timestamp: selected.timestamp,
-					contextTrimmed: selected.contextTrimmed,
-					...(selected.response === undefined ? {} : { response: selected.response }),
-				},
+				selected.response === undefined ? exchange : { ...exchange, response: selected.response },
 				this.promotionController.signal,
 			);
 		} catch (error) {

@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
+	type CommandDialogRowSections,
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	commandDialogListIndex,
@@ -401,10 +402,9 @@ class ToolDialogComponent implements CommandDialogComponent {
 		}
 		body.push("");
 		const priority = body.find((line) => line.includes("›")) ?? body.find((line) => line.trim().length > 0);
-		return fitFixedCommandDialogRows(
-			{ header, body, footer, ...(priority ? { priority: [priority] } : {}) },
-			maximumRows,
-		);
+		let sections: CommandDialogRowSections = { header, body, footer };
+		if (priority) sections = { ...sections, priority: [priority] };
+		return fitFixedCommandDialogRows(sections, maximumRows);
 	}
 
 	private renderDetail(width: number, focused = false): string[] {
@@ -457,10 +457,9 @@ class ToolDialogComponent implements CommandDialogComponent {
 			"",
 		];
 		const priority = body.find((line) => line.includes("›")) ?? header[2];
-		return fitFixedCommandDialogRows(
-			{ header, body, footer: layout.footer, ...(priority ? { priority: [priority] } : {}) },
-			Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context)),
-		);
+		let sections: CommandDialogRowSections = { header, body, footer: layout.footer };
+		if (priority) sections = { ...sections, priority: [priority] };
+		return fitFixedCommandDialogRows(sections, Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context)));
 	}
 
 	private detailLayout(group: ToolActivityGroupView, width: number) {

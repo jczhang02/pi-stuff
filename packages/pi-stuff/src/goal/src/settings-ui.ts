@@ -560,7 +560,7 @@ function retainedGoalCount(runtime: GoalRuntime) {
 	);
 }
 
-function notifySettingsFailure(ctx: ExtensionCommandContext, settingsPath: string, error: unknown) {
+function notifySettingsFailure<Failure>(ctx: ExtensionCommandContext, settingsPath: string, error: Failure) {
 	const path = safeTerminalText(settingsPath);
 	const detail = safeTerminalText(formatError(error));
 	ctx.ui.notify(
@@ -581,6 +581,6 @@ function safeTerminalText(value: string) {
 		.trim();
 }
 
-function formatError(error: unknown) {
+function formatError<Failure>(error: Failure) {
 	return error instanceof Error ? error.message : String(error);
 }

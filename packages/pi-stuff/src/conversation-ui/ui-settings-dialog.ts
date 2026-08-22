@@ -148,7 +148,7 @@ class UiSettingsDialog implements CommandDialogComponent {
 		const generation = (this.generations.get(id) ?? 0) + 1;
 		this.generations.set(id, generation);
 		this.error = "";
-		void setting.set(value).catch((error: unknown) => {
+		void setting.set(value).catch((error) => {
 			if (this.generations.get(id) !== generation) return;
 			const message = oneLine(String(error)) || "Unable to save UI setting.";
 			if (this.disposed) {

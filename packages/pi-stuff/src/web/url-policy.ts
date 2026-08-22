@@ -9,9 +9,15 @@ export interface WebFetchInput {
 	readonly urls?: readonly string[];
 }
 
+interface ValidatedWebFetchInput {
+	mode?: "raw" | "readable";
+	url?: string;
+	urls?: string[];
+}
+
 export type WebFetchValidation =
 	| {
-			readonly input: { readonly mode?: "raw" | "readable"; readonly url?: string; readonly urls?: string[] };
+			readonly input: ValidatedWebFetchInput;
 			readonly ok: true;
 	  }
 	| { readonly error: string; readonly ok: false };
@@ -84,11 +90,7 @@ export function validateWebFetchInput(input: WebFetchInput): WebFetchValidation 
 		const error = validateUrl(url);
 		if (error) return { error, ok: false };
 	}
-	return {
-		input: {
-			...(input.mode ? { mode: input.mode } : {}),
-			...(hasSingle ? { url: urls[0] ?? "" } : { urls }),
-		},
-		ok: true,
-	};
+	const validatedInput: ValidatedWebFetchInput = hasSingle ? { url: urls[0] ?? "" } : { urls };
+	if (input.mode) validatedInput.mode = input.mode;
+	return { input: validatedInput, ok: true };
 }

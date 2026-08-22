@@ -388,6 +388,6 @@ function oneLine(value: string): string {
 		.trim();
 }
 
-function formatError(error: unknown): string {
+function formatError<Failure>(error: Failure): string {
 	return error instanceof Error ? error.message : String(error);
 }

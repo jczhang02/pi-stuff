@@ -2,20 +2,15 @@ import { access, mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 
 const DEFAULT_HISTORIAN_MODEL = "openai-codex/gpt-5.6-terra";
-const environment = process.env as NodeJS.ProcessEnv & {
-	HOME?: string;
-	XDG_CONFIG_HOME?: string;
-};
-
 function homeDirectory(): string {
-	return environment.HOME?.trim() || homedir();
+	return process.env["HOME"]?.trim() || homedir();
 }
 
 function configHome(): string {
-	const configured = environment.XDG_CONFIG_HOME?.trim();
+	const configured = process.env["XDG_CONFIG_HOME"]?.trim();
 	return configured && isAbsolute(configured) ? configured : join(homeDirectory(), ".config");
 }
 
@@ -145,7 +140,7 @@ export async function prepareMagicContext(
 		file = await open(path, "wx", 0o600);
 		await file.writeFile(defaultConfig(ctx), "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "EEXIST") throw error;
 	} finally {
 		await file?.close();
 	}

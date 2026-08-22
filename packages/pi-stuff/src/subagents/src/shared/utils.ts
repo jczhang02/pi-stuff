@@ -423,7 +423,10 @@ function extractToolCallSummaries(messages: Message[] | undefined): ToolCallSumm
 		for (const part of msg.content) {
 			if (part.type !== "toolCall") continue;
 			const args =
-				isRuntimeObject(part.arguments) && part.arguments !== null && !Array.isArray(part.arguments)
+				isJsonInputValue(part.arguments) &&
+				isRuntimeObject(part.arguments) &&
+				part.arguments !== null &&
+				!Array.isArray(part.arguments)
 					? part.arguments
 					: {};
 			summaries.push({

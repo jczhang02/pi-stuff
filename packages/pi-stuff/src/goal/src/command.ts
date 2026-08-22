@@ -1,5 +1,3 @@
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-
 const MAX_OBJECTIVE_LENGTH = 4_000;
 
 export interface GoalCommandFeatures {
@@ -167,6 +165,6 @@ export function validateObjective(objective: string): string | undefined {
 	return undefined;
 }
 
-function normalizeTokenBudget(value: unknown) {
-	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+function normalizeTokenBudget(value: number) {
+	return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
