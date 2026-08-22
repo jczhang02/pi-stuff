@@ -26,16 +26,16 @@ import type { BackgroundWorkOutcome, BackgroundWorkSnapshot } from "./runtime.js
 type TaskDialogMode = "detail" | "list";
 
 interface TaskRow {
-	readonly command?: string;
-	readonly description?: string;
+	command?: string;
+	description?: string;
 	readonly id: string;
 	readonly kind: BackgroundWorkSnapshot["kind"];
-	readonly monitorFailureText?: string;
-	readonly monitorSource?: "command" | "file" | "http" | "log";
-	readonly monitorSuccessText?: string;
-	readonly monitorTarget?: string;
-	readonly monitorTimeoutSeconds?: number;
-	readonly output?: string;
+	monitorFailureText?: string;
+	monitorSource?: "command" | "file" | "http" | "log";
+	monitorSuccessText?: string;
+	monitorTarget?: string;
+	monitorTimeoutSeconds?: number;
+	output?: string;
 	readonly startedAt?: number;
 	readonly status: string;
 	readonly title: string;
@@ -105,23 +105,22 @@ function sectionHeading(theme: Theme, label: string): string {
 }
 
 function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
-	return {
-		...(snapshot.command ? { command: snapshot.command } : {}),
-		...(snapshot.description ? { description: snapshot.description } : {}),
+	const row: TaskRow = {
 		id: snapshot.id,
 		kind: snapshot.kind,
-		...(snapshot.monitorFailureText ? { monitorFailureText: snapshot.monitorFailureText } : {}),
-		...(snapshot.monitorSource ? { monitorSource: snapshot.monitorSource } : {}),
-		...(snapshot.monitorSuccessText ? { monitorSuccessText: snapshot.monitorSuccessText } : {}),
-		...(snapshot.monitorTarget ? { monitorTarget: snapshot.monitorTarget } : {}),
-		...(snapshot.monitorTimeoutSeconds !== undefined
-			? { monitorTimeoutSeconds: snapshot.monitorTimeoutSeconds }
-			: {}),
-		...(snapshot.recentOutput ? { output: snapshot.recentOutput } : {}),
 		startedAt: snapshot.startedAt,
 		status: snapshot.status,
 		title: snapshot.title,
 	};
+	if (snapshot.command) row.command = snapshot.command;
+	if (snapshot.description) row.description = snapshot.description;
+	if (snapshot.monitorFailureText) row.monitorFailureText = snapshot.monitorFailureText;
+	if (snapshot.monitorSource) row.monitorSource = snapshot.monitorSource;
+	if (snapshot.monitorSuccessText) row.monitorSuccessText = snapshot.monitorSuccessText;
+	if (snapshot.monitorTarget) row.monitorTarget = snapshot.monitorTarget;
+	if (snapshot.monitorTimeoutSeconds !== undefined) row.monitorTimeoutSeconds = snapshot.monitorTimeoutSeconds;
+	if (snapshot.recentOutput) row.output = snapshot.recentOutput;
+	return row;
 }
 
 function fitRow(theme: Theme, row: TaskRow, selected: boolean, width: number): string {
