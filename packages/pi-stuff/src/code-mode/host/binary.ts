@@ -35,12 +35,13 @@ export async function ensureCodeModeHostBinary(signal?: AbortSignal): Promise<st
 	} catch (error) {
 		if (process.env["PI_STUFF_CODE_MODE_HOST"]) throw error;
 		const destination = getCodeModeHostCachePath(process.platform, process.arch);
-		await installCodeModeHost({
+		const options: Parameters<typeof installCodeModeHost>[0] = {
 			arch: process.arch,
 			destination,
 			platform: process.platform,
-			...(signal ? { signal } : {}),
-		});
+		};
+		if (signal) Object.assign(options, { signal });
+		await installCodeModeHost(options);
 		return codeModeHostBinaryPath();
 	}
 }

@@ -13,13 +13,14 @@ function cloneTrace(trace: RuntimeToolTrace): RuntimeToolTrace {
 	try {
 		return structuredClone(trace);
 	} catch {
-		return {
+		const clone: RuntimeToolTrace = {
 			...trace,
 			input: "[unserializable input]",
-			...(trace.result
-				? { result: { content: [{ type: "text", text: "[unserializable Tool result]" }], details: {} } }
-				: {}),
 		};
+		if (trace.result) {
+			clone.result = { content: [{ type: "text", text: "[unserializable Tool result]" }], details: {} };
+		}
+		return clone;
 	}
 }
 
@@ -43,19 +44,19 @@ export class CodeModeTraceStore {
 			throw new Error(`Duplicate Code Mode nested Tool call ID: ${id}`);
 		}
 		const trace: RuntimeToolTrace = {
-			...(plan
-				? {
-						attempt: plan.attempt,
-						executionId: plan.executionId,
-						replayed: plan.replay !== undefined,
-						sequence: plan.sequence,
-					}
-				: {}),
 			id,
 			input,
 			name,
 			status: "running",
 		};
+		if (plan) {
+			Object.assign(trace, {
+				attempt: plan.attempt,
+				executionId: plan.executionId,
+				replayed: plan.replay !== undefined,
+				sequence: plan.sequence,
+			});
+		}
 		traces.push(trace);
 		this.traces.set(cellId, traces);
 		return trace;

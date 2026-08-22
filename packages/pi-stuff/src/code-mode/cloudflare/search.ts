@@ -122,15 +122,16 @@ function scoreMatch(item: SearchableItem, query: string): SearchResult | null {
 	if (normalizeSearchText(item.path) === normalizedQuery || normalizeSearchText(item.method) === normalizedQuery)
 		score += 20;
 
-	return {
+	const result: SearchResult = {
 		path: item.path,
 		connector: item.connector,
 		method: item.method,
 		description: item.description,
-		...(item.requiresApproval ? { requiresApproval: true } : {}),
 		kind: item.kind,
 		score,
 	};
+	if (item.requiresApproval) Object.assign(result, { requiresApproval: true });
+	return result;
 }
 
 export function searchConnectors(
@@ -142,14 +143,15 @@ export function searchConnectors(
 
 	for (const desc of descriptions) {
 		for (const [methodName, descriptor] of Object.entries(desc.descriptors)) {
-			items.push({
+			const item: SearchableItem = {
 				path: `${desc.name}.${methodName}`,
 				connector: desc.name,
 				method: methodName,
 				description: descriptor?.description,
-				...(desc.annotations?.[methodName]?.requiresApproval ? { requiresApproval: true } : {}),
 				kind: "method",
-			});
+			};
+			if (desc.annotations?.[methodName]?.requiresApproval) Object.assign(item, { requiresApproval: true });
+			items.push(item);
 		}
 	}
 

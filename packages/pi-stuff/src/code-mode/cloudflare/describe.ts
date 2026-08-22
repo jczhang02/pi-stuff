@@ -67,13 +67,16 @@ export function describeTarget(
 
 	for (const candidate of candidates) {
 		if (candidate.descriptors[methodName]) {
-			return {
+			const result: DescribeOutput = {
 				path: `${candidate.name}.${methodName}`,
 				description: candidate.descriptors[methodName]?.description,
-				...(candidate.annotations?.[methodName]?.requiresApproval ? { requiresApproval: true } : {}),
 				types: renderMethodTypes(methodName, candidate.descriptors),
 				kind: "method",
 			};
+			if (candidate.annotations?.[methodName]?.requiresApproval) {
+				Object.assign(result, { requiresApproval: true });
+			}
+			return result;
 		}
 	}
 
