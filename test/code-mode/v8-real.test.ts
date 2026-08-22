@@ -31,7 +31,7 @@ realTest("the certified V8 host executes a real Connector call and returns its t
 			context: { cwd: process.cwd() },
 			source: buildSuiteSandboxSource(
 				'const result = await suite.fixture({ value: "REAL_V8_OK" }); text(result.content[0].text);',
-				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name }],
+				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" }],
 			),
 			tools: [tool],
 		});
@@ -71,7 +71,7 @@ realTest("the certified V8 host exposes a delegated Tool literally named bash", 
 		let response: RuntimeResponse = await executor.execute({
 			context: { cwd: process.cwd() },
 			source: buildSuiteSandboxSource("text(await tools.bash({ command: 'BASH_TOOL_OK' }))", [
-				{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name },
+				{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" },
 			]),
 			tools: [tool],
 		});
@@ -109,7 +109,7 @@ realTest("the Cloudflare async-arrow form returns once and never duplicates expl
 			context: { cwd: process.cwd() },
 			source: buildSuiteSandboxSource(
 				'async () => { const result = await tools.fixture_text_blocks({}); text(result); return "must not duplicate"; }',
-				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name }],
+				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" }],
 			),
 			tools: [tool],
 		});
@@ -151,7 +151,7 @@ realTest("the certified V8 host settles a Tool result whose text looks like canc
 			context: { cwd: process.cwd() },
 			source: buildSuiteSandboxSource(
 				"const result = await suite.fixture_cancel({}); text(result.content[0].text);",
-				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name }],
+				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" }],
 			),
 			tools: [tool],
 		});
@@ -186,7 +186,7 @@ realTest("the certified V8 host settles a rejected delegated Tool call", async (
 		let response: RuntimeResponse = await executor.execute({
 			context: { cwd: process.cwd() },
 			source: buildSuiteSandboxSource("await suite.fixture_reject({});", [
-				{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name },
+				{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" },
 			]),
 			tools: [tool],
 		});

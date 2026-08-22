@@ -1090,11 +1090,11 @@ test("a settled envelope restores nested Tools to the outer call's source order"
 
 test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 	const configure = (runtime: ToolUiRuntime) => {
-		runtime.registerActivity("read", {
+		runtime.registerActivity<Params, unknown>("read", {
 			categories: ["read-file"],
 			classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
 		});
-		runtime.registerActivity("edit", {
+		runtime.registerActivity<Params, unknown>("edit", {
 			categories: ["change-file"],
 			classify: ({ args }) => [{ category: "change-file", countKeys: [String(args["value"])] }],
 		});
@@ -2473,7 +2473,7 @@ test("failed infrastructure-only groups use the protocol fallback label", () => 
 
 test("group details rebuild every member from the current branch beyond the live cache limit", () => {
 	const runtime = new ToolUiRuntime();
-	runtime.registerActivity("read", {
+	runtime.registerActivity<Params, unknown>("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
 	});

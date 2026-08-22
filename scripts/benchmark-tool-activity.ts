@@ -12,6 +12,10 @@ const STREAMING_UPDATES = 200;
 const FORMATTED_RESULTS = 1_000;
 const classify = (name: string) => (name === "read" ? ("retrieval" as const) : ("boundary" as const));
 
+interface ReadActivityArguments {
+	readonly path?: unknown;
+}
+
 const messages: unknown[] = [{ role: "user", content: [{ type: "text", text: "benchmark" }] }];
 for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
 	const content: unknown[] = [{ type: "thinking", thinking: "inspect" }];
@@ -92,7 +96,7 @@ const activityMs = benchmark(() => planToolActivityGroups(messages, classify, tr
 const streamingSamples: number[] = [];
 for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 	const runtime = new ToolUiRuntime();
-	runtime.registerActivity("read", {
+	runtime.registerActivity<ReadActivityArguments, unknown>("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [
 			{

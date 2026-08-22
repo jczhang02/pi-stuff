@@ -9,6 +9,7 @@ import {
 	BTW_HISTORY_BYTES_LIMIT,
 	BTW_HISTORY_ENTRY_TYPE,
 	BTW_HISTORY_LIMIT,
+	type BtwExchange,
 	clearBtwHistory,
 	clearEarlierBtwHistory,
 	hydrateBtwHistory,
@@ -135,7 +136,7 @@ describe("BTW display history", () => {
 			},
 			stopReason: "stop",
 			timestamp: 123,
-		};
+		} satisfies NonNullable<BtwExchange["response"]>;
 		const entry = persistedEntry(0, {
 			version: 1,
 			ownerSessionId: "session",

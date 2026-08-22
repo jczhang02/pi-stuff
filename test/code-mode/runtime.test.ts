@@ -237,6 +237,7 @@ test("the local prelude provides canonical tools plus compatible suite/search/de
 			description: "Read a file",
 			inputSchema: Type.Object({ path: Type.String() }),
 			name: "read",
+			replay: "record",
 		},
 	]);
 	expect(source).toContain("globalThis.suite=globalThis.tools");
@@ -253,6 +254,7 @@ test("the local catalog emits executable paths for non-identifier Tool names", (
 			description: "Create a task",
 			inputSchema: Type.Object({ description: Type.String() }),
 			name: "task-create",
+			replay: "record",
 		},
 	]);
 	expect(source).toContain('"path":"tools[\\"task-create\\"]"');

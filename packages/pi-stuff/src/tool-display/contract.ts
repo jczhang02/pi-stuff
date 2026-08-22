@@ -3416,7 +3416,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		enumerable: true,
 		value: marker,
 	});
-	pi.registerTool(decorated);
+	pi.registerTool<TParams, TDetails>(decorated);
 	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
 		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
 	}
@@ -3432,12 +3432,12 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(tool, presentation, runtime);
+	const decorated = attachRenderer<TParams, TDetails>(tool, presentation, runtime);
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE_COMPANION, {
 		enumerable: true,
 		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
 	});
-	pi.registerTool(decorated);
+	pi.registerTool<TParams, TDetails>(decorated);
 	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
 		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
 	}
@@ -3454,7 +3454,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(tool, presentation, runtime);
+	const decorated = attachRenderer<TParams, TDetails>(tool, presentation, runtime);
 	if (codeMode)
 		Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, {
 			enumerable: true,
@@ -3471,7 +3471,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 			codeMode ? { codeMode } : undefined,
 		) satisfies SuiteToolReplayDefinition,
 	});
-	pi.registerTool(decorated);
+	pi.registerTool<TParams, TDetails>(decorated);
 	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
 		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
 	}

@@ -1140,7 +1140,7 @@ function createDialogRequest<Result>(view: CommandDialogView<Result>) {
 		reject: completion.reject,
 		resolve: <Value>(value: Value) => {
 			// SAFETY: this request is created from CommandDialogView<Result>, so its close value has that same Result contract.
-			completion.resolve(value as Result | undefined);
+			completion.resolve(value as Value & (Result | undefined));
 		},
 	};
 	return { promise: completion.promise, request };

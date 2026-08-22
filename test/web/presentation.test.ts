@@ -32,20 +32,20 @@ describe("Web Tool presentation", () => {
 	test("marks an all-query search failure as failed without requiring a top-level error", () => {
 		const failed = result({ queryCount: 2, successfulQueries: 0, totalResults: 0 });
 		expect(WEB_SEARCH_PRESENTATION.resultIsError?.({}, failed)).toBe(true);
-		expect(WEB_SEARCH_PRESENTATION.summarize?.({}, failed, "error", undefined)).toBe("failed");
+		expect(WEB_SEARCH_PRESENTATION.summarize?.({}, failed)).toBe("failed");
 
 		const partial = result({ queryCount: 2, successfulQueries: 1, totalResults: 3 });
 		expect(WEB_SEARCH_PRESENTATION.resultIsError?.({}, partial)).toBe(false);
-		expect(WEB_SEARCH_PRESENTATION.summarize?.({}, partial, "success", undefined)).toBe("1/2 queries · 3 sources");
+		expect(WEB_SEARCH_PRESENTATION.summarize?.({}, partial)).toBe("1/2 queries · 3 sources");
 	});
 
 	test("marks an all-URL fetch failure while preserving empty continuation results", () => {
 		const failed = result({ successful: 0, urlCount: 2 });
 		expect(WEB_FETCH_PRESENTATION.resultIsError?.({}, failed)).toBe(true);
-		expect(WEB_FETCH_PRESENTATION.summarize?.({}, failed, "error", undefined)).toBe("failed");
+		expect(WEB_FETCH_PRESENTATION.summarize?.({}, failed)).toBe("failed");
 
 		const empty = result({ resultCount: 0 });
 		expect(WEB_CONTENT_PRESENTATION.resultIsError?.({}, empty)).toBe(false);
-		expect(WEB_CONTENT_PRESENTATION.summarize?.({}, empty, "success", undefined)).toBe("0 sources");
+		expect(WEB_CONTENT_PRESENTATION.summarize?.({}, empty)).toBe("0 sources");
 	});
 });

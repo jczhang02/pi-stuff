@@ -10,6 +10,10 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as Theme;
 
+interface ReadActivityArguments {
+	readonly path?: unknown;
+}
+
 function contextHarness(rows = 28, activeTheme = theme, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closed = 0;
 	let renders = 0;
@@ -45,7 +49,7 @@ function toolResult(id: string, isError = false) {
 
 function groupedRuntime(paths: readonly string[], errorIndex = -1, separate = false): ToolUiRuntime {
 	const runtime = new ToolUiRuntime();
-	runtime.registerActivity("read", {
+	runtime.registerActivity<ReadActivityArguments, unknown>("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
 	});
@@ -254,7 +258,7 @@ test("/tools wraps and paginates long member details without exceeding terminal 
 
 test("/tools caps formatted and Raw protocol content per selected call", () => {
 	const runtime = new ToolUiRuntime();
-	runtime.registerActivity("read", {
+	runtime.registerActivity<ReadActivityArguments, unknown>("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
 	});
