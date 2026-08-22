@@ -31,6 +31,28 @@ const RESPONSE = [
 	"UI_PTY_DONE 中文结果🧪",
 	...Array.from({ length: 20 }, (_, index) => `真实输出 ${String(index + 1).padStart(2, "0")} · 对话保持优先`),
 ].join("\n");
+export const VISUALIZATION_PTY_PROMPT = "FENCED_VISUALIZATION_PTY";
+export const VISUALIZATION_PTY_RESPONSE = [
+	"FENCED_VISUALIZATION_START",
+	"",
+	"```chart",
+	"type: sparkline",
+	"title: FENCED_CHART_TITLE",
+	"data:",
+	"1 3 2 5 4 8",
+	"```",
+	"",
+	"```tree",
+	"FENCED_TREE_ROOT",
+	"  conversation-ui-with-a-long-label",
+	"    chart",
+	"    tree",
+	"  tools",
+	"```",
+	"",
+	"VISUAL-DONE",
+].join("\n");
+export const USER_VISUALIZATION_SOURCE = ["```tree", "USER_TREE_ROOT", "  user-child", "```"].join("\n");
 export const TODO_PTY_PROMPT = "请建立四项执行清单";
 export const TODO_PTY_READY = "任务清单已建立。";
 export const TODO_PTY_SUBJECTS = ["梳理需求", "设计实现方案", "完成核心实现", "测试与验收"] as const;
@@ -127,6 +149,14 @@ function preservesFixtureThinking(context: Context): boolean {
 	);
 }
 
+function preservesVisualizationSource(context: Context): boolean {
+	return context.messages.some(
+		(message) =>
+			message.role === "assistant" &&
+			message.content.some((content) => content.type === "text" && content.text === VISUALIZATION_PTY_RESPONSE),
+	);
+}
+
 function textOnlyStream(model: Model<Api>, text: string) {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
@@ -142,6 +172,47 @@ function textOnlyStream(model: Model<Api>, text: string) {
 	return stream;
 }
 
+function visualizationStream(model: Model<Api>, options?: SimpleStreamOptions) {
+	const stream = createAssistantMessageEventStream();
+	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
+	const closeIndex = VISUALIZATION_PTY_RESPONSE.indexOf("\n```\n");
+	if (closeIndex < 0) throw new Error("visualization fixture has no chart closing fence");
+	const firstChunk = VISUALIZATION_PTY_RESPONSE.slice(0, closeIndex);
+	const secondChunk = VISUALIZATION_PTY_RESPONSE.slice(closeIndex);
+	let text = firstChunk;
+	let settled = false;
+
+	stream.push({ type: "start", partial: pending });
+	pending.content = [{ type: "text", text }];
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "text_delta", contentIndex: 0, delta: firstChunk, partial: pending });
+
+	const finish = (): void => {
+		if (settled) return;
+		settled = true;
+		text += secondChunk;
+		pending.content = [{ type: "text", text }];
+		stream.push({ type: "text_delta", contentIndex: 0, delta: secondChunk, partial: pending });
+		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
+		stream.push({
+			type: "done",
+			reason: "stop",
+			message: assistantMessage([{ type: "text", text }], "stop", ZERO_USAGE, model.provider, model.id),
+		});
+	};
+	const abort = (): void => {
+		if (settled) return;
+		settled = true;
+		stream.push({
+			type: "error",
+			reason: "aborted",
+			error: assistantMessage([], "aborted", ZERO_USAGE, model.provider, model.id),
+		});
+	};
+	setTimeout(finish, 1_500);
+	options?.signal?.addEventListener("abort", abort, { once: true });
+	return stream;
+}
 function taskCreateStream(model: Model<Api>, index: number) {
 	const subject = TODO_PTY_SUBJECTS[index];
 	if (!subject) return textOnlyStream(model, TODO_PTY_READY);
@@ -220,11 +291,13 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 			? lastUser
 			: undefined);
 	const priorThinkingPreserved = preservesFixtureThinking(context);
+	const visualizationSourcePreserved = preservesVisualizationSource(context);
 	appendRecord({
 		type: "request",
 		lastUser,
 		ownedGoalPrompt,
 		priorThinkingPreserved,
+		visualizationSourcePreserved,
 		tools: (context.tools ?? []).map((tool) => tool.name),
 	});
 	if (ownedGoalPrompt) {
@@ -244,6 +317,14 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	if (lastUser === "VERIFY_CONTEXT_REUSE") {
 		return textOnlyStream(model, priorThinkingPreserved ? "CONTEXT_PRESERVED" : "CONTEXT_LOST");
 	}
+	if (lastUser === "VERIFY_VISUALIZATION_CONTEXT") {
+		return textOnlyStream(
+			model,
+			visualizationSourcePreserved ? "VISUALIZATION_CONTEXT_PRESERVED" : "VISUALIZATION_CONTEXT_LOST",
+		);
+	}
+	if (lastUser === VISUALIZATION_PTY_PROMPT) return visualizationStream(model, options);
+	if (lastUser === USER_VISUALIZATION_SOURCE) return textOnlyStream(model, "USER-VISUALIZATION-ACK");
 	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
 	const isThoughtProbe = lastUser.startsWith("THOUGHT_PROBE_");
 	const response = isThoughtProbe ? `THOUGHT_DONE_${lastUser.slice("THOUGHT_PROBE_".length)}` : RESPONSE;
@@ -348,6 +429,13 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 		],
 		streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
 			fixtureStream(model, context, options),
+	});
+
+	pi.registerShortcut(Key.f8, {
+		description: "Submit the UI PTY User visualization fixture",
+		handler: async () => {
+			await pi.sendUserMessage(USER_VISUALIZATION_SOURCE);
+		},
 	});
 
 	pi.registerShortcut(Key.f11, {

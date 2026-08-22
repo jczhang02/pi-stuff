@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
@@ -15,6 +16,39 @@ interface MarkdownTransformerExtensionAPI {
 	registerMarkdownTransformer(transformer: ThoughtMarkdownTransformer): void;
 }
 
+interface ProjectedVisualizationBlock {
+	readonly firstLine: string;
+	readonly language: string;
+}
+
+interface FencedVisualizationProjection {
+	readonly markdown: string;
+	readonly projectedBlocks: readonly ProjectedVisualizationBlock[];
+}
+
+type PrepareFencedVisualizations = (
+	markdown: string,
+	availableWidth: number,
+	measureWidth: (value: string) => number,
+) => FencedVisualizationProjection;
+
+const requireConversationModule = createRequire(import.meta.url);
+let prepareFencedVisualizations: PrepareFencedVisualizations | undefined;
+
+function loadFencedVisualizationProjector(): PrepareFencedVisualizations {
+	if (prepareFencedVisualizations) return prepareFencedVisualizations;
+	// SAFETY: the fixed repository-owned module is loaded synchronously only after a target fence is detected.
+	const loaded = requireConversationModule("./fenced-visualization.ts") as {
+		prepareFencedVisualizations?: unknown;
+	};
+	if (!isRuntimeFunction(loaded.prepareFencedVisualizations)) {
+		throw new Error("Pi Stuff fenced visualization projector is unavailable");
+	}
+	// SAFETY: the runtime check above establishes the fixed owned export is callable.
+	prepareFencedVisualizations = loaded.prepareFencedVisualizations as PrepareFencedVisualizations;
+	return prepareFencedVisualizations;
+}
+
 // U+2217 keeps the asterisk's light visual weight while centering it on the
 // text axis; unlike ASCII `*`, it is not Markdown list punctuation.
 const THOUGHT_MARKER = "∗";
@@ -25,6 +59,8 @@ const COMPACT_PREFIX = `${THOUGHT_MARKER} `;
 const ASSISTANT_LIST_PREFIX = "- ";
 const ASSISTANT_LIST_CONTINUATION = "  ";
 const ASSISTANT_MARKER_ANCHOR = "\u2060";
+const MARKDOWN_CODE_BLOCK_INDENT = "  ";
+const MARKDOWN_CODE_BLOCK_INDENT_WIDTH = 2;
 const LABEL = `${THOUGHT_MARKER} thoughts:`;
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
@@ -38,6 +74,7 @@ const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
 const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
 const THEMATIC_BREAK = /^(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
 const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
+const VISUALIZATION_FENCE_CANDIDATE = /(?:^|\r?\n)[ ]{0,3}(?:`{3,}|~{3,})[ \t]*(?:chart|tree)(?=[ \t]*(?:\r?$))/imu;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
 export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
@@ -48,54 +85,92 @@ export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
 }
 
 const HOST_THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
-const PENDING_ASSISTANT_MARKER = Symbol.for("@jczhang02/pi-stuff:pending-assistant-marker");
+const PENDING_MARKDOWN_PROJECTION = Symbol.for("@jczhang02/pi-stuff:pending-markdown-projection");
 
-interface PendingAssistantMarkerTheme {
+interface PendingMarkdownTheme {
 	fg: Theme["fg"];
-	[PENDING_ASSISTANT_MARKER]?: { restore(): void };
+	[PENDING_MARKDOWN_PROJECTION]?: { restore(): void };
 }
 
-function isPendingAssistantMarkerTheme<Value>(value: Value): value is Value & PendingAssistantMarkerTheme {
+function isPendingMarkdownTheme<Value>(value: Value): value is Value & PendingMarkdownTheme {
 	return value !== null && isRuntimeObject(value) && "fg" in value && isRuntimeFunction(value.fg);
 }
 
-/**
- * Host Markdown normalizes every unordered-list source marker to `-`. Arm only
- * the next list-marker paint, which is the synthetic outer item returned by
- * renderAssistantTranscript(). The wrapper restores itself before nested
- * Markdown markers render; the microtask is a safety fallback for malformed or
- * extremely narrow projections that never reach a list marker.
- */
-function armAssistantTranscriptMarker(): void {
+function restorePendingMarkdownThemeProjection(): void {
 	const themed: unknown = Object.getOwnPropertyDescriptor(globalThis, HOST_THEME_KEY)?.value;
-	if (!isPendingAssistantMarkerTheme(themed) || themed[PENDING_ASSISTANT_MARKER]) return;
+	if (isPendingMarkdownTheme(themed)) themed[PENDING_MARKDOWN_PROJECTION]?.restore();
+}
+
+/**
+ * Map the synthetic Assistant marker and visualization code-block borders in one scoped Theme wrapper. Ordinary
+ * Markdown paint passes through unchanged. Completion restores synchronously; the microtask covers malformed renders
+ * that never consume every armed paint.
+ */
+function armMarkdownThemeProjection(assistantMarker: boolean, blocks: readonly ProjectedVisualizationBlock[]): void {
+	if (!assistantMarker && blocks.length === 0) return;
+	const themed: unknown = Object.getOwnPropertyDescriptor(globalThis, HOST_THEME_KEY)?.value;
+	if (!isPendingMarkdownTheme(themed) || themed[PENDING_MARKDOWN_PROJECTION]) return;
 	const originalFg = themed.fg;
+	const border = String.fromCharCode(0x60).repeat(3);
+	let markerPending = assistantMarker;
+	let activeBlock = false;
+	let currentBlock = 0;
 	let restored = false;
 	const restore = () => {
 		if (restored) return;
 		restored = true;
 		themed.fg = originalFg;
-		delete themed[PENDING_ASSISTANT_MARKER];
+		delete themed[PENDING_MARKDOWN_PROJECTION];
 	};
-	Object.defineProperty(themed, PENDING_ASSISTANT_MARKER, {
+	const restoreIfComplete = () => {
+		if (!markerPending && !activeBlock && currentBlock === blocks.length) restore();
+	};
+	Object.defineProperty(themed, PENDING_MARKDOWN_PROJECTION, {
 		configurable: true,
 		value: { restore },
 	});
 	const wrappedFg: Theme["fg"] = (color, text) => {
-		if (color !== "mdListBullet" || text !== ASSISTANT_LIST_PREFIX) {
-			return originalFg.call(themed, color, text);
+		if (markerPending && color === "mdListBullet" && text === ASSISTANT_LIST_PREFIX) {
+			markerPending = false;
+			const rendered = originalFg.call(themed, color, `${TRANSCRIPT_MARKER} `);
+			restoreIfComplete();
+			return rendered;
 		}
-		restore();
-		return originalFg.call(themed, color, `${TRANSCRIPT_MARKER} `);
+		if (color !== "mdCodeBlockBorder") return originalFg.call(themed, color, text);
+		const block = blocks[currentBlock];
+		if (!activeBlock && block && text === `${border}${block.language}`) {
+			activeBlock = true;
+			return originalFg.call(themed, "mdCodeBlock", `${MARKDOWN_CODE_BLOCK_INDENT}${block.firstLine}`);
+		}
+		if (!activeBlock || text !== border) return originalFg.call(themed, color, text);
+		activeBlock = false;
+		currentBlock += 1;
+		restoreIfComplete();
+		return "";
 	};
 	themed.fg = wrappedFg;
 	queueMicrotask(restore);
 }
 
+function prepareVisualizationMarkdown(markdown: string, availableWidth: number): FencedVisualizationProjection {
+	return loadFencedVisualizationProjector()(
+		markdown,
+		Math.max(0, availableWidth - MARKDOWN_CODE_BLOCK_INDENT_WIDTH),
+		visibleWidth,
+	);
+}
+
 /** Build the pure projection separately so width and safety behavior can be certified. */
 export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 	return (markdown, context) => {
+		restorePendingMarkdownThemeProjection();
 		if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
+		if (context.messageType === "user") {
+			if (!VISUALIZATION_FENCE_CANDIDATE.test(markdown)) return markdown;
+			const projection = prepareVisualizationMarkdown(markdown, context.availableWidth);
+			armMarkdownThemeProjection(false, projection.projectedBlocks);
+			return projection.markdown;
+		}
 		if (context.messageType !== "assistant-thinking") return markdown;
 
 		const fragment = latestMeaningfulMarkdownFragment(markdown);
@@ -105,12 +180,20 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
-	const sanitized = sanitizeMarkdown(markdown);
-	const text = sanitized.trim();
 	const width = normalizeWidth(availableWidth);
+	const visualizationWidth = Math.max(0, width - visibleWidth(ASSISTANT_LIST_PREFIX));
+	const fenceDetection = { found: false };
+	let sanitized = sanitizeMarkdown(markdown, fenceDetection);
+	let projectedBlocks: readonly ProjectedVisualizationBlock[] = [];
+	if (fenceDetection.found) {
+		const projection = prepareVisualizationMarkdown(markdown, visualizationWidth);
+		projectedBlocks = projection.projectedBlocks;
+		if (projection.markdown !== markdown) sanitized = sanitizeMarkdown(projection.markdown);
+	}
+	const text = sanitized.trim();
 	if (!text || width === 0) return "";
 	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
-	armAssistantTranscriptMarker();
+	armMarkdownThemeProjection(true, projectedBlocks);
 	const firstLine = (sanitized.split("\n").find((line) => line.trim()) ?? "").trimEnd();
 	if (LIST_ITEM.test(firstLine) && !THEMATIC_BREAK.test(firstLine)) {
 		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
@@ -357,15 +440,24 @@ function skipControlString(value: string, start: number): number {
 	return index;
 }
 
-function sanitizeMarkdown(value: string): string {
-	let text = "";
+interface VisualizationFenceDetection {
+	found: boolean;
+}
+
+function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDetection): string {
+	const segments: string[] = [];
+	let segmentStart = 0;
 	let index = 0;
+	if (fenceDetection && startsVisualizationFence(value, 0)) fenceDetection.found = true;
 	while (index < value.length) {
 		const code = value.charCodeAt(index);
 		if (code === 0x1b) {
+			const controlStart = index;
 			const introducer = value.charCodeAt(index + 1);
 			if (introducer === 0x5b) {
 				index = skipControlSequence(value, index + 2);
+				segments.push(value.slice(segmentStart, controlStart));
+				segmentStart = index;
 				continue;
 			}
 			if (
@@ -376,6 +468,8 @@ function sanitizeMarkdown(value: string): string {
 				introducer === 0x5f
 			) {
 				index = skipControlString(value, index + 2);
+				segments.push(value.slice(segmentStart, controlStart));
+				segmentStart = index;
 				continue;
 			}
 			index += 1;
@@ -385,35 +479,84 @@ function sanitizeMarkdown(value: string): string {
 				index += 1;
 			}
 			if (index < value.length) index += 1;
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x9b) {
+			const controlStart = index;
 			index = skipControlSequence(value, index + 1);
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x90 || code === 0x98 || code === 0x9d || code === 0x9e || code === 0x9f) {
+			const controlStart = index;
 			index = skipControlString(value, index + 1);
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x0d) {
-			text += "\n";
+			const carriageReturn = index;
 			index += value.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+			segments.push(value.slice(segmentStart, carriageReturn), "\n");
+			segmentStart = index;
+			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
+				fenceDetection.found = true;
+			}
 			continue;
 		}
 		if (code === 0x0a) {
-			text += "\n";
 			index += 1;
+			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
+				fenceDetection.found = true;
+			}
 			continue;
 		}
 		if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || isBidiControl(code)) {
-			text += " ";
+			segments.push(value.slice(segmentStart, index), " ");
 			index += 1;
+			segmentStart = index;
 			continue;
 		}
-		text += value[index];
 		index += 1;
 	}
-	return text;
+	if (segments.length === 0) return value;
+	segments.push(value.slice(segmentStart));
+	return segments.join("");
+}
+
+function startsVisualizationFence(value: string, start: number): boolean {
+	let index = start;
+	let indentation = 0;
+	while (value.charCodeAt(index) === 0x20 && indentation < 4) {
+		indentation += 1;
+		index += 1;
+	}
+	if (indentation > 3) return false;
+	const marker = value.charCodeAt(index);
+	if (marker !== 0x60 && marker !== 0x7e) return false;
+	let markerLength = 0;
+	while (value.charCodeAt(index) === marker) {
+		markerLength += 1;
+		index += 1;
+	}
+	if (markerLength < 3) return false;
+	while (value.charCodeAt(index) === 0x20 || value.charCodeAt(index) === 0x09) index += 1;
+	const languageLength = asciiEqualAt(value, index, "chart") ? 5 : asciiEqualAt(value, index, "tree") ? 4 : 0;
+	if (languageLength === 0) return false;
+	const boundary = value.charCodeAt(index + languageLength);
+	return Number.isNaN(boundary) || boundary === 0x09 || boundary === 0x0a || boundary === 0x0d || boundary === 0x20;
+}
+
+function asciiEqualAt(value: string, start: number, expected: string): boolean {
+	for (let offset = 0; offset < expected.length; offset += 1) {
+		const code = value.charCodeAt(start + offset);
+		const lower = code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+		if (lower !== expected.charCodeAt(offset)) return false;
+	}
+	return true;
 }
 
 /** Collapse sanitized model text to one printable row. */

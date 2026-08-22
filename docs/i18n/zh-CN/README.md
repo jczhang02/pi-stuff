@@ -36,8 +36,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
 
 它让日常编码流程更紧凑，也更安静：
 
-- **对话优先界面**——响应式 Welcome 卡片、单行有界 Statusline、实时 Thought 投影、输入高亮，以及使用 Pi
-  原生交互方式的全宽 Command Dialog。
+- **对话优先界面**——响应式 Welcome 卡片、单行有界 Statusline、实时 Thought 投影、终端 `chart`/`tree`
+  fence、输入高亮，以及使用 Pi 原生交互方式的全宽 Command Dialog。
 - **紧凑的 Tool 活动**——连续 Tool 工作会汇总为一个语义化 Activity Group；随时通过 `Ctrl+O` 或
   `/tools` 查看原始细节。
 - **持久的目标与计划**——Goal 能自动推进一个需要证据才能结束的目标；Todo 则用有界清单维护可恢复的
@@ -117,7 +117,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 
 | Capability Module | 提供的能力 |
 | --- | --- |
-| `conversation-ui` | Welcome、Statusline、实时 Thought、输入呈现、`/ui`、诊断与共享 Command Dialog 生命周期 |
+| `conversation-ui` | Welcome、Statusline、实时 Thought、`chart`/`tree` fence 投影、输入呈现、`/ui`、诊断与共享 Command Dialog 生命周期 |
 | `tool-display` | 紧凑 Tool Activity Group、原生展开、`/tools` 与确定性的会话恢复重建 |
 | `rtk` | 可选且 fail-open 的 Bash 命令改写，以及仅面向模型的 Bash/Grep 输出投影 |
 | `codex` | `/codex`、Fast mode、订阅用量、`apply_patch`、`view_image` 与 `imagegen` |

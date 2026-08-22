@@ -15,6 +15,9 @@ import {
 	TODO_PTY_PROMPT,
 	TODO_PTY_READY,
 	TODO_PTY_SUBJECTS,
+	USER_VISUALIZATION_SOURCE,
+	VISUALIZATION_PTY_PROMPT,
+	VISUALIZATION_PTY_RESPONSE,
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
@@ -103,6 +106,7 @@ const FIXTURE_RECORD_SCHEMA = Type.Object(
 		themes: Type.Optional(Type.Array(Type.String())),
 		type: Type.Optional(Type.String()),
 		usingOAuth: Type.Optional(Type.Boolean()),
+		visualizationSourcePreserved: Type.Optional(Type.Boolean()),
 	},
 	{ additionalProperties: true },
 );
@@ -142,6 +146,16 @@ function verifyHostVersion(piBinary: string): void {
 
 function delay(milliseconds: number): Promise<void> {
 	return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+async function pageToTranscriptText(session: TmuxPiSession, text: string): Promise<string> {
+	for (let page = 0; page < 40; page += 1) {
+		const screen = session.capture();
+		if (screen.includes(text)) return screen;
+		session.sendKey("PageUp");
+		await delay(POLL_INTERVAL_MS);
+	}
+	fail(`could not page to resumed transcript text ${JSON.stringify(text)}`);
 }
 
 class TmuxPiSession {
@@ -484,9 +498,9 @@ async function writePtyEvidence(directory: string | undefined, name: string, ses
 	]);
 }
 
-function sanitizePtyEvidence(value: string): string {
+export function sanitizePtyEvidence(value: string): string {
 	return value
-		.replace(/\/tmp\/pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
+		.replace(/\/(?:var\/)?tmp\/(?:agent\/)?pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
 		.split("\n")
 		.map((line) => line.trimEnd())
 		.join("\n")
@@ -629,6 +643,30 @@ function containsFixtureThinking(value: JsonInputValue): boolean {
 	return Object.values(value).some(containsFixtureThinking);
 }
 
+function containsVisualizationSource(value: JsonInputValue): boolean {
+	if (value === VISUALIZATION_PTY_RESPONSE) return true;
+	if (Array.isArray(value)) return value.some(containsVisualizationSource);
+	if (!isJsonInputObject(value)) return false;
+	return Object.values(value).some(containsVisualizationSource);
+}
+
+async function waitForPersistedVisualization(sessionDirectory: string): Promise<void> {
+	const deadline = Date.now() + WAIT_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		const sessionFiles = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
+		for (const sessionFile of sessionFiles) {
+			const records = (await readFile(join(sessionDirectory, sessionFile), "utf8"))
+				.trim()
+				.split("\n")
+				.filter(Boolean)
+				.map(parseJsonValue);
+			if (records.some(containsVisualizationSource)) return;
+		}
+		await delay(POLL_INTERVAL_MS);
+	}
+	fail("settled session JSONL did not retain the canonical fenced visualization source");
+}
+
 async function waitForPersistedThinking(sessionDirectory: string): Promise<void> {
 	const deadline = Date.now() + WAIT_TIMEOUT_MS;
 	while (Date.now() < deadline) {
@@ -733,6 +771,82 @@ async function verifyThoughtContextPreservation(session: TmuxPiSession, paths: C
 	}
 }
 
+async function verifyFencedVisualization(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+): Promise<void> {
+	session.sendLiteral(VISUALIZATION_PTY_PROMPT);
+	session.sendKey("Enter");
+
+	let screen = await session.waitForText("type: sparkline");
+	if (screen.includes("VISUAL-DONE")) {
+		fail("streaming chart was not observed in its incomplete source-fence state");
+	}
+	if (/[▁▂▃▄▅▆▇█]/u.test(screen)) fail("an incomplete chart fence rendered visualization glyphs");
+
+	await session.waitForText("VISUAL-DONE");
+	screen = await session.waitForText("├── conversation-ui-with-a-long-label");
+	if (!screen.includes("• FENCED_VISUALIZATION_START")) {
+		fail("fenced visualization response lost its one outer Assistant marker");
+	}
+	if (!screen.includes("FENCED_CHART_TITLE") || !/[▁▂▃▄▅▆▇█]/u.test(screen)) {
+		fail("settled chart did not render its title and sparkline glyphs");
+	}
+	if (screen.includes("type: sparkline")) fail("settled wide chart retained raw source rows");
+	verifyTerminalWidth(screen, 100, "wide fenced visualization");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-fenced-visualization-wide-100x32`,
+		session,
+	);
+
+	session.resize(24, 16);
+	await session.waitForText("VISUAL-DONE");
+	screen = await session.waitForText("conversation-ui");
+	if (screen.includes("├── conversation-ui-with-a-long-label")) {
+		fail("too-narrow tree truncated or projected instead of retaining its source fence");
+	}
+	verifyTerminalWidth(screen, 24, "narrow fenced visualization fallback");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-fenced-visualization-narrow-24x16`,
+		session,
+	);
+
+	session.resize(100, 32);
+	screen = await session.waitForText("├── conversation-ui-with-a-long-label");
+	if (!screen.includes("FENCED_CHART_TITLE") || !/[▁▂▃▄▅▆▇█]/u.test(screen)) {
+		fail("wide resize did not restore the chart projection");
+	}
+
+	session.sendLiteral("VERIFY_VISUALIZATION_CONTEXT");
+	session.sendKey("Enter");
+	await session.waitForText("VISUALIZATION_CONTEXT_PRESERVED");
+	const records = await waitForFixtureRecords(paths.log, "request", 4);
+	const probe = [...records]
+		.reverse()
+		.find((record) => record.type === "request" && record.lastUser === "VERIFY_VISUALIZATION_CONTEXT");
+	if (probe?.visualizationSourcePreserved !== true) {
+		fail("the next real Provider request did not retain canonical chart/tree fence source");
+	}
+
+	session.sendKey("F8");
+	screen = await session.waitForText("└── user-child");
+	if (!screen.includes("USER_TREE_ROOT")) fail("real Pi User Markdown lost its projected tree root");
+	await session.waitForText("USER-VISUALIZATION-ACK");
+	const userRecords = await waitForFixtureRecords(paths.log, "request", 5);
+	const userRequest = [...userRecords]
+		.reverse()
+		.find((record) => record.type === "request" && record.lastUser === USER_VISUALIZATION_SOURCE);
+	if (!userRequest) fail("real Pi Provider did not receive canonical User tree fence source");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-fenced-visualization-user-100x32`,
+		session,
+	);
+	await waitForPersistedVisualization(paths.sessions);
+}
 async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 	for (const { columns, rows } of [
 		{ columns: 64, rows: 28 },
@@ -949,7 +1063,6 @@ async function verifyWideInteractions(
 	verifySettingValue(screen, "Welcome header", false);
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing the Welcome /ui dialog");
-	await session.waitForText("Welcome back!");
 
 	session.sendLiteral("DRAFT_草稿");
 	await session.waitForText("DRAFT_草稿");
@@ -1133,6 +1246,13 @@ async function verifyWideInteractions(
 		await restarted.start();
 		await waitForFixtureRecords(paths.log, "inventory", 2);
 		await delay(150);
+		const resumedHistory = await pageToTranscriptText(restarted, "FENCED_TREE_ROOT");
+		if (!resumedHistory.includes("├── conversation-ui-with-a-long-label") || !/[▁▂▃▄▅▆▇█]/u.test(resumedHistory)) {
+			fail("resumed Session did not re-project canonical chart/tree fence source");
+		}
+		if (resumedHistory.includes("type: sparkline")) {
+			fail("resumed wide Session exposed raw chart source instead of its projection");
+		}
 		screen = restarted.capture();
 		if (screen.includes("Welcome back!")) fail("persisted Welcome=false was ignored on the next launch");
 		if (hasStatusline(screen)) fail("persisted Statusline=false was ignored after restart");
@@ -1243,13 +1363,17 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 		verifyHostVersion(options.piBinary);
 		commandOutput("tmux", ["-V"]);
 		for (const { columns, rows } of TARGET_SIZES) {
+			const caseOptions: UiPtyVerificationOptions = {
+				...options,
+				sessionId: options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}`,
+			};
 			const paths = await createCase(
 				temporaryDirectory,
 				`${String(columns)}x${String(rows)}`,
 				options.theme ?? "dark",
 				options.packagePath,
 			);
-			const session = new TmuxPiSession(paths, options, columns, rows);
+			const session = new TmuxPiSession(paths, caseOptions, columns, rows);
 			try {
 				await session.start();
 				await session.waitForText("Welcome back!");
@@ -1272,12 +1396,14 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					await verifyLiveResize(session);
 					await verifyThoughtLifecycle(session, paths, columns, rows);
 					await verifyThoughtContextPreservation(session, paths);
-					const result = await verifyWideInteractions(session, paths, options);
+					await verifyFencedVisualization(session, paths, caseOptions);
+					const result = await verifyWideInteractions(session, paths, caseOptions);
 					liveThought = result.liveThought;
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
 						"first, replacing, settled, session-preserved, and context-preserved Thought",
+						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",
 						"metered and API-key subscription Statusline cost behavior",

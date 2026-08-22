@@ -35,8 +35,8 @@ through Pi's native Extension interface.
 
 The result is a denser, quieter coding workflow:
 
-- **Conversation-first UI** — a responsive Welcome card, one bounded Statusline, live Thought projection, input
-  highlighting, and full-width Pi-native Command Dialogs.
+- **Conversation-first UI** — a responsive Welcome card, one bounded Statusline, live Thought projection, terminal
+  `chart`/`tree` fences, input highlighting, and full-width Pi-native Command Dialogs.
 - **Compact Tool activity** — continuous Tool work becomes one semantic Activity Group; `Ctrl+O` and `/tools` restore
   the underlying detail.
 - **Durable objectives and plans** — Goal can continue one evidence-gated objective, while Todo keeps recoverable
@@ -119,7 +119,7 @@ The ordered Suite currently contains:
 
 | Capability Module | What it contributes |
 | --- | --- |
-| `conversation-ui` | Welcome, Statusline, live Thoughts, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
+| `conversation-ui` | Welcome, Statusline, live Thoughts, `chart`/`tree` fence projection, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
 | `tool-display` | Compact Tool Activity Groups, native expansion, `/tools`, and deterministic resume reconstruction |
 | `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
 | `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
