@@ -1,5 +1,6 @@
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { sanitizeCodeModeContent } from "./image-content.js";
 
 type ToolContent = AgentToolResult<unknown>["content"];
 type ToolContentItem = ToolContent[number];
@@ -182,24 +183,19 @@ export function decodeCodeModeMediaSegments<Value>(detailsValue: Value): readonl
 	);
 }
 
-/** Restore the exact normalized Tool result only in the provider context. */
+/** Restore normalized Tool results and quarantine invalid historical images only in provider context. */
 export function rehydrateCodeModeMessages(messages: readonly AgentMessage[]): AgentMessage[] | undefined {
 	let changed = false;
 	const hydrated = messages.map((message) => {
 		if (message.role !== "toolResult" || message.toolName !== "codemode") return message;
 		const details = message.details;
-		if (
-			!isRuntimeObject(details) ||
-			details === null ||
-			!("kind" in details) ||
-			details.kind !== "pi-stuff-code-mode" ||
-			!("modelContent" in details) ||
-			!isCodeModeToolContent(details.modelContent)
-		) {
-			return message;
-		}
+		if (!isCodeModeModelContentOwner(details)) return message;
+		const hasModelContent = "modelContent" in details && isCodeModeToolContent(details.modelContent);
+		const content = hasModelContent ? details.modelContent : message.content;
+		const sanitized = sanitizeCodeModeContent(content);
+		if (!hasModelContent && sanitized.rejected === 0) return message;
 		changed = true;
-		return { ...message, content: [...details.modelContent] };
+		return { ...message, content: sanitized.content };
 	});
 	return changed ? hydrated : undefined;
 }

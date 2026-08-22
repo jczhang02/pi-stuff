@@ -9,6 +9,7 @@ import type {
 	ExtensionEvent,
 } from "@earendil-works/pi-coding-agent";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
+import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import {
 	readCodeModeProjectEnabled,
 	writeCodeModeProjectEnabled,
@@ -106,6 +107,35 @@ test("bare /codemode owns the interactive dialog path and status is no longer a 
 	await command.handler("status", context);
 	expect(notifications.at(-1)).toStartWith("Usage: /codemode [on|off|global on|global off|history|");
 	expect(notifications.at(-1)).not.toContain("status");
+});
+
+test("the outer Tool result boundary replaces malformed images before Session persistence", () => {
+	const surface: SuiteToolSurfaceController = {
+		disableEnvelope: () => {},
+		enableEnvelope: () => {},
+		isEnvelopeEnabled: () => false,
+	};
+	const { events } = loadExtension(surface);
+	const handler = events.get("tool_result")?.[0];
+	if (!handler) throw new Error("missing tool_result handler");
+	const patch = handler(
+		{
+			content: [{ type: "image", data: Buffer.alloc(96, 1).toString("base64"), mimeType: "image/jpeg" }],
+			details: { kind: "pi-stuff-code-mode", operations: [], status: "success" },
+			input: { code: "image(value)" },
+			isError: false,
+			toolCallId: "outer-bad-image",
+			toolName: "codemode",
+			type: "tool_result",
+		} as ExtensionEvent,
+		context("/project"),
+	);
+
+	expect(patch).toMatchObject({
+		content: [{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+		details: { error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" },
+		isError: true,
+	});
 });
 
 test("Code Mode follows trusted project settings, persists explicit toggles, and rolls back failed writes", async () => {

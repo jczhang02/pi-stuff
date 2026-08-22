@@ -25,6 +25,7 @@ import { describeTarget } from "./cloudflare/describe.js";
 import { normalizeCode } from "./cloudflare/normalize.js";
 import { searchConnectors } from "./cloudflare/search.js";
 import type { Snippet } from "./cloudflare/snippet.js";
+import { assertValidSupportedCodeModeImages, INVALID_CODE_MODE_IMAGE_MESSAGE } from "./image-content.js";
 import type { SandboxToolExecutionContext, SuiteSandboxTool } from "./protocol.js";
 
 const INTERNAL_DESCRIBE_TOOL = "__pi_stuff_codemode_describe_v1";
@@ -306,6 +307,16 @@ export class SuiteCodeModeConnector {
 		const outcome = await this.registry.invoke(
 			context.onUpdate ? { ...invocation, onUpdate: context.onUpdate } : invocation,
 		);
+		try {
+			assertValidSupportedCodeModeImages(outcome.result.content);
+		} catch {
+			const result = {
+				...outcome.result,
+				content: [{ type: "text" as const, text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+			};
+			context.captureResult?.(result);
+			throw new SuiteToolInvocationError(INVALID_CODE_MODE_IMAGE_MESSAGE, result);
+		}
 		context.captureResult?.(outcome.result);
 		if (outcome.isError)
 			throw new SuiteToolInvocationError(toolErrorMessage(outcome.result, `${name} failed`), outcome.result);

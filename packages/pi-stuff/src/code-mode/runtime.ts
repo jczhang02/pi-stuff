@@ -10,6 +10,7 @@ import {
 	type SuiteCodeModeConnector,
 } from "./connector.js";
 import { CodeModeHostLostError } from "./host/host-client.js";
+import { codeModeImageFromDataUrl } from "./image-content.js";
 import type { CodeModeExecutionController, CodeModePendingAction, CodeModeSessionLedger } from "./ledger.js";
 import { captureCodeModeModelContent } from "./presentation.js";
 import type {
@@ -196,8 +197,7 @@ function wasCancelled(cause: unknown, signal?: AbortSignal): boolean {
 function contentItem(item: RuntimeContentItem): AgentToolResult<unknown>["content"][number] | undefined {
 	if (item.type === "input_text" && isRuntimeString(item.text)) return { type: "text", text: item.text };
 	if (item.type !== "input_image" || !isRuntimeString(item.image_url)) return undefined;
-	const match = item.image_url.match(/^data:([^;,]+);base64,(.+)$/su);
-	return match ? { type: "image", data: match[2] ?? "", mimeType: match[1] ?? "application/octet-stream" } : undefined;
+	return codeModeImageFromDataUrl(item.image_url);
 }
 
 function boundedContent(items: readonly RuntimeContentItem[], fallback: string): AgentToolResult<unknown>["content"] {
@@ -536,22 +536,21 @@ export class CodeModeRuntime {
 				);
 			}
 			let finalError = status === "paused" ? undefined : (controller?.incompleteError?.message ?? error);
-			const settled = settleController(controller, status, finalError);
-			status = settled.status;
-			finalError = settled.error;
 			const pending = controller && this.ledger ? this.ledger.pending(context, controller.executionId) : [];
-			const media = projectFinalMedia(
-				traces,
+			const finalContent =
 				status === "paused" && controller
-					? [{ type: "text", text: approvalMessage(controller.executionId, pending) }]
+					? [{ type: "text" as const, text: approvalMessage(controller.executionId, pending) }]
 					: boundedContent(
 							response.contentItems,
 							finalError ??
 								(status === "cancelled"
 									? "Code Mode execution was cancelled"
 									: "Code completed with no output; use text(...) to return a value"),
-						),
-			);
+						);
+			const settled = settleController(controller, status, finalError);
+			status = settled.status;
+			finalError = settled.error;
+			const media = projectFinalMedia(traces, finalContent);
 			const finalDetails = details(status, finalError, media.operations);
 			captureCodeModeModelContent(finalDetails, media.content);
 			await settleConnectorLifecycle(this.connector, controller, status);

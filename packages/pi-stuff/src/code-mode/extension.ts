@@ -18,6 +18,7 @@ import {
 import { stringifyForStorage } from "./cloudflare/codec.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { createCodeModeDialogView } from "./dialog.js";
+import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";
 import { CodeModeSessionLedger } from "./ledger.js";
 import {
 	captureCodeModeModelContent,
@@ -60,6 +61,7 @@ Rules:
 - Call only methods listed for this Agent or returned by codemode.search(query); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
 - Emit only the evidence needed with text(...), image(...), or another supported output helper.
+- Do not pass image Base64 through a text-producing Tool such as Bash; return the structured result of an image-producing Tool such as read.
 Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
 
 export interface PiStuffCodeModeOptions {
@@ -745,6 +747,16 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 		if (event.toolName !== CODE_MODE_TOOL_NAME) return undefined;
 		const details = event.details;
 		if (!isCodeModeModelContentOwner(details)) return undefined;
+		const sanitized = sanitizeCodeModeContent(event.content);
+		if (sanitized.rejected > 0) {
+			const failedDetails = {
+				...details,
+				error: INVALID_CODE_MODE_IMAGE_MESSAGE,
+				status: "error" as const,
+			};
+			captureCodeModeModelContent(failedDetails, sanitized.content);
+			return { content: sanitized.content, details: failedDetails, isError: true };
+		}
 		captureCodeModeModelContent(details, event.content);
 		if (
 			"status" in details &&
