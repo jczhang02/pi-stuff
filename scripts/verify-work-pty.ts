@@ -1,11 +1,22 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { processExists } from "../packages/pi-stuff/src/background-work/src/process.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-pty-provider.ts");
 const runner = join(root, "test/fixtures/work-pty-runner.sh");
+const REQUEST_RECORD_SCHEMA = Type.Object(
+	{
+		monitorCompletedNotification: Type.Boolean(),
+		monitorTimedOutNotification: Type.Boolean(),
+		request: Type.Number(),
+		tools: Type.Array(Type.String()),
+	},
+	{ additionalProperties: true },
+);
 
 function expectProgram(): string {
 	return `
@@ -186,15 +197,11 @@ export async function verifyWorkPty(options: {
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map(
-				(line) =>
-					JSON.parse(line) as {
-						monitorCompletedNotification: boolean;
-						monitorTimedOutNotification: boolean;
-						request: number;
-						tools: string[];
-					},
-			);
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(REQUEST_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+				return record;
+			});
 		if (records.length < 6) fail(`expected at least 6 model requests, received ${String(records.length)}`);
 		for (const [index, record] of records.entries()) {
 			if (record.request !== index) fail(`request sequence diverged at ${String(index)}`);

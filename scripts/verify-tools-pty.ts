@@ -1,6 +1,8 @@
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
@@ -9,6 +11,7 @@ const providerExtension = join(root, "test/fixtures/tools-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-pty-runner.sh");
 const activeParityRunner = join(root, "test/fixtures/tools-active-parity-runner.sh");
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
+const BUILTIN_SET = new Set<string>(BUILTINS);
 const LONG_READ_DIRECTORY = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep";
 
 export interface ToolsPtyVerificationOptions {
@@ -18,9 +21,25 @@ export interface ToolsPtyVerificationOptions {
 	readonly rows: number;
 }
 
-interface RequestRecord {
-	readonly completed?: unknown;
-	readonly tools?: unknown;
+const REQUEST_RECORD_SCHEMA = Type.Object(
+	{
+		completed: Type.Optional(Type.Number()),
+		tools: Type.Optional(Type.Array(Type.String())),
+	},
+	{ additionalProperties: true },
+);
+type RequestRecord = Static<typeof REQUEST_RECORD_SCHEMA>;
+
+function parseRequestRecords(contents: string): RequestRecord[] {
+	return contents
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(REQUEST_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+			return record;
+		});
 }
 
 function expectProgram(): string {
@@ -353,7 +372,7 @@ export async function verifyActiveToolParity(options: {
 	verifyHostVersion(options.piBinary);
 	for (const fixture of [
 		{
-			args: [] as string[],
+			args: [],
 			expected: ["bash", "edit", "read", "write"],
 			name: "Host defaults",
 		},
@@ -409,18 +428,14 @@ export async function verifyActiveToolParity(options: {
 					`${fixture.name} reload parity probe failed: ${result.stderr.toString().trim()}\nPTY tail:\n${result.stdout.toString().slice(-8_000)}`,
 				);
 			}
-			const records = (await readFile(requestLog, "utf8"))
-				.trim()
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => JSON.parse(line) as RequestRecord);
+			const records = parseRequestRecords(await readFile(requestLog, "utf8"));
 			if (records.length !== 2) {
 				fail(`${fixture.name} reload parity probe expected two model requests; received ${String(records.length)}`);
 			}
 			for (const [index, record] of records.entries()) {
 				if (!Array.isArray(record.tools)) fail(`${fixture.name} request ${String(index + 1)} did not expose tools`);
 				const builtins = record.tools.filter(
-					(name): name is string => isRuntimeString(name) && (BUILTINS as readonly string[]).includes(name),
+					(name): name is string => isRuntimeString(name) && BUILTIN_SET.has(name),
 				);
 				expectEqualStrings(builtins, fixture.expected, `${fixture.name} request ${String(index + 1)}`);
 			}
@@ -512,11 +527,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 				cause: error,
 			});
 		}
-		const records = (await readFile(requestLog, "utf8"))
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => JSON.parse(line) as RequestRecord);
+		const records = parseRequestRecords(await readFile(requestLog, "utf8"));
 		verifyRequests(records);
 		if ((await readFile(join(temporaryDirectory, "written.txt"), "utf8")) !== "新内容\nsecond line\n") {
 			fail("the original Host edit execution contract changed");

@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
@@ -10,14 +12,17 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-resume-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-resume-pty-runner.sh");
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
+const BUILTIN_SET = new Set<string>(BUILTINS);
 const COLD_FIRST_FRAME_BOUNDARY = "COLD_FIRST_FRAME_BOUNDARY";
 const FIRST_FRAME_BOUNDARY = "RESUME_FIRST_FRAME_BOUNDARY";
 
 type ResumeMode = "allowlist" | "default" | "disabled" | "supervisor";
 
-interface RequestRecord {
-	readonly tools?: unknown;
-}
+const REQUEST_RECORD_SCHEMA = Type.Object(
+	{ tools: Type.Optional(Type.Array(Type.String())) },
+	{ additionalProperties: true },
+);
+type RequestRecord = Static<typeof REQUEST_RECORD_SCHEMA>;
 
 interface ResumeFixture {
 	readonly compactRow?: string;
@@ -226,9 +231,7 @@ function seedTargetSession(sessionDirectory: string, cwd: string, fixture: Resum
 function verifyRequest(record: RequestRecord | undefined, fixture: ResumeFixture): void {
 	if (!record || !Array.isArray(record.tools)) fail(`${fixture.mode} did not record active tools after resume`);
 	const providerTools = record.tools.filter((name): name is string => isRuntimeString(name));
-	const actual = record.tools.filter(
-		(name): name is string => isRuntimeString(name) && (BUILTINS as readonly string[]).includes(name),
-	);
+	const actual = record.tools.filter((name): name is string => isRuntimeString(name) && BUILTIN_SET.has(name));
 	const normalizedActual = [...actual].sort();
 	const normalizedExpected = [...fixture.expectedBuiltins].sort();
 	if (JSON.stringify(normalizedActual) !== JSON.stringify(normalizedExpected)) {
@@ -260,7 +263,11 @@ function readRequestRecords(content: string): RequestRecord[] {
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as RequestRecord);
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(REQUEST_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+			return record;
+		});
 }
 
 export async function verifyToolsResumePty(options: {

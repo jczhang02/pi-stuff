@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeObject } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -22,6 +24,22 @@ const RESUME_FIRST_FRAME_BOUNDARY = "MCP_RESUME_FIRST_FRAME_BOUNDARY";
 const RESUME_RAW_MARKER = "RAW_MCP_RESUME_RESULT_MARKER";
 const SETUP_FRAME_START = "MCP_SETUP_FRAME_START";
 const SETUP_FRAME_END = "MCP_SETUP_FRAME_END";
+const ERRNO_SCHEMA = Type.Object({ code: Type.Optional(Type.String()) }, { additionalProperties: true });
+const MCP_CONFIG_SCHEMA = Type.Object(
+	{
+		mcpServers: Type.Optional(
+			Type.Record(
+				Type.String(),
+				Type.Object(
+					{ lifecycle: Type.Optional(Type.String()), url: Type.Optional(Type.String()) },
+					{ additionalProperties: true },
+				),
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const HTTP_LOG_SCHEMA = Type.Object({ method: Type.Optional(Type.String()) }, { additionalProperties: true });
 
 const ZERO_USAGE = {
 	input: 0,
@@ -465,7 +483,7 @@ async function processExists(pid: number): Promise<boolean> {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return Check(ERRNO_SCHEMA, error) && error.code === "EPERM";
 	}
 }
 
@@ -591,10 +609,9 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 					fail(`MCP setup did not render a ${String(width)}-column divider`);
 				}
 			}
-			const freshDocument = JSON.parse(await readFile(freshConfig, "utf8")) as {
-				mcpServers?: Record<string, { url?: unknown }>;
-			};
+			const freshDocument = JSON.parse(await readFile(freshConfig, "utf8"));
 			if (
+				!Check(MCP_CONFIG_SCHEMA, freshDocument) ||
 				!freshDocument.mcpServers ||
 				!isRuntimeObject(freshDocument.mcpServers) ||
 				Array.isArray(freshDocument.mcpServers)
@@ -676,9 +693,8 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		}
 		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
 		if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
-		const overrideDocument = JSON.parse(await readFile(override, "utf8")) as {
-			mcpServers?: Record<string, { lifecycle?: unknown }>;
-		};
+		const overrideDocument = JSON.parse(await readFile(override, "utf8"));
+		if (!Check(MCP_CONFIG_SCHEMA, overrideDocument)) fail("project MCP override is malformed");
 		if (overrideDocument.mcpServers && Object.hasOwn(overrideDocument.mcpServers, "broken")) {
 			fail("re-enabling the server left a stale disabled override");
 		}
@@ -700,7 +716,11 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => (JSON.parse(line) as { method?: unknown }).method);
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(HTTP_LOG_SCHEMA, record)) fail("HTTP fixture log contains a malformed record");
+				return record.method;
+			});
 		if (!httpMethods.includes("initialize") || !httpMethods.includes("tools/list")) {
 			fail("Streamable HTTP fixture did not complete initialize and Tool discovery");
 		}

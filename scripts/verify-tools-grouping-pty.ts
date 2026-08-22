@@ -1,11 +1,19 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-grouping-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-grouping-pty-runner.sh");
+const SESSION_RECORD_SCHEMA = Type.Object(
+	{
+		message: Type.Optional(Type.Object({ role: Type.Optional(Type.String()) }, { additionalProperties: true })),
+	},
+	{ additionalProperties: true },
+);
 
 function fail(message: string): never {
 	throw new Error(`Tool grouping PTY verification failed: ${message}`);
@@ -18,12 +26,10 @@ function command(
 		readonly cwd?: string;
 	} = {},
 ) {
-	const result = Bun.spawnSync([...args], {
-		...(options.cwd ? { cwd: options.cwd } : {}),
-		...(options.env ? { env: { ...process.env, ...options.env } } : {}),
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const spawnOptions = { stderr: "pipe" as const, stdout: "pipe" as const };
+	if (options.cwd) Object.assign(spawnOptions, { cwd: options.cwd });
+	if (options.env) Object.assign(spawnOptions, { env: { ...process.env, ...options.env } });
+	const result = Bun.spawnSync([...args], spawnOptions);
 	if (result.exitCode !== 0) {
 		fail(`${args.join(" ")} exited ${String(result.exitCode)}: ${result.stderr.toString().trim()}`);
 	}
@@ -512,12 +518,11 @@ export async function verifyToolsGroupingPty(options: {
 		const toolResults = transcript
 			.trim()
 			.split("\n")
-			.map(
-				(line) =>
-					JSON.parse(line) as {
-						readonly message?: { readonly role?: string };
-					},
-			)
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(SESSION_RECORD_SCHEMA, record)) fail("session contains a malformed record");
+				return record;
+			})
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
 			scenario === "lifecycle" ? 22 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;

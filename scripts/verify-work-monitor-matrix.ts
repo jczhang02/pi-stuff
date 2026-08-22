@@ -1,13 +1,16 @@
 import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-monitor-matrix-provider.ts");
 const TIMEOUT_MS = 20_000;
 
-type Scenario = "cancel" | "command_failure" | "file_error" | "http_success" | "log_success" | "timeout";
+const SCENARIOS = ["cancel", "command_failure", "file_error", "http_success", "log_success", "timeout"] as const;
+type Scenario = (typeof SCENARIOS)[number];
 
 const EXPECTED = {
 	cancel: "stopped",
@@ -18,17 +21,24 @@ const EXPECTED = {
 	timeout: "timed_out",
 } satisfies Readonly<Record<Scenario, string>>;
 
-interface MatrixRecord {
-	readonly phase?: unknown;
-	readonly scenario?: unknown;
-	readonly status?: unknown;
-}
-
-interface RpcRecord {
-	readonly id?: unknown;
-	readonly success?: unknown;
-	readonly type?: unknown;
-}
+const MATRIX_RECORD_SCHEMA = Type.Object(
+	{
+		phase: Type.Optional(Type.String()),
+		scenario: Type.Optional(Type.String()),
+		status: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const RPC_RECORD_SCHEMA = Type.Object(
+	{
+		id: Type.Optional(Type.String()),
+		success: Type.Optional(Type.Boolean()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+type MatrixRecord = Static<typeof MATRIX_RECORD_SCHEMA>;
+type RpcRecord = Static<typeof RPC_RECORD_SCHEMA>;
 
 function fail(message: string): never {
 	throw new Error(`Background Monitor matrix failed: ${message}`);
@@ -39,7 +49,8 @@ async function records(path: string): Promise<MatrixRecord[]> {
 	for (const line of (await readFile(path, "utf8").catch(() => "")).split("\n")) {
 		if (!line) continue;
 		try {
-			parsed.push(JSON.parse(line) as MatrixRecord);
+			const record = JSON.parse(line);
+			if (Check(MATRIX_RECORD_SCHEMA, record)) parsed.push(record);
 		} catch {
 			// The writer may still be appending the final JSONL record while this poll runs.
 		}
@@ -131,13 +142,17 @@ export async function verifyWorkMonitorMatrix(options: {
 					const newline = buffer.indexOf("\n");
 					const line = buffer.slice(0, newline).trim();
 					buffer = buffer.slice(newline + 1);
-					if (line) responses.push(JSON.parse(line) as RpcRecord);
+					if (line) {
+						const response = JSON.parse(line);
+						if (!Check(RPC_RECORD_SCHEMA, response)) fail("Pi emitted a malformed RPC record");
+						responses.push(response);
+					}
 				}
 				if (item.done) break;
 			}
 		})();
 
-		for (const scenario of Object.keys(EXPECTED) as Scenario[]) {
+		for (const scenario of SCENARIOS) {
 			const requestId = `matrix-${scenario}`;
 			spawned.stdin.write(
 				`${JSON.stringify({ id: requestId, message: `WORK_MONITOR_SCENARIO:${scenario}`, type: "prompt" })}\n`,
@@ -176,7 +191,7 @@ export async function verifyWorkMonitorMatrix(options: {
 		const extensionError = responses.find((record) => record.type === "extension_error");
 		if (extensionError) fail(`Pi reported an Extension error: ${JSON.stringify(extensionError)}`);
 		const taskRoot = join(temporaryDirectory, ".pi", "tasks");
-		const runtimeDirectories = (await readdir(taskRoot).catch(() => [] as string[])).filter((name) =>
+		const runtimeDirectories = (await readdir(taskRoot).catch((): string[] => [])).filter((name) =>
 			name.startsWith("pi-stuff-"),
 		);
 		if (runtimeDirectories.length > 0) fail(`Pi exit left runtime directories: ${runtimeDirectories.join(", ")}`);

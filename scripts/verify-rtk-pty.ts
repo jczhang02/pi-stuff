@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
@@ -30,17 +30,22 @@ const SESSION_TOOL_RESULT_SCHEMA = Type.Object(
 	},
 	{ additionalProperties: true },
 );
-
-interface ContextRecord {
-	readonly bashCommands?: unknown;
-	readonly phase?: unknown;
-	readonly toolResults?: unknown;
-}
-
-interface ProjectedToolResult {
-	readonly id?: unknown;
-	readonly text?: unknown;
-}
+const CONTEXT_RECORD_SCHEMA = Type.Object(
+	{
+		bashCommands: Type.Optional(Type.Array(Type.String())),
+		phase: Type.Optional(Type.String()),
+		toolResults: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{ id: Type.Optional(Type.String()), text: Type.Optional(Type.String()) },
+					{ additionalProperties: true },
+				),
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+type ContextRecord = Static<typeof CONTEXT_RECORD_SCHEMA>;
 
 function fail(message: string): never {
 	throw new Error(`RTK PTY verification failed: ${message}`);
@@ -157,7 +162,7 @@ async function resolveCertifiedRtk(): Promise<string> {
 	const digest = createHash("sha256")
 		.update(await readFile(path))
 		.digest("hex");
-	if (!(CERTIFIED_RTK_LINUX_X64_SHA256S as readonly string[]).includes(digest)) {
+	if (!new Set<string>(CERTIFIED_RTK_LINUX_X64_SHA256S).has(digest)) {
 		fail("local RTK executable does not match a certified SHA-256");
 	}
 	return path;
@@ -246,7 +251,11 @@ function parseContextRecords(contents: string): ContextRecord[] {
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as ContextRecord);
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(CONTEXT_RECORD_SCHEMA, record)) fail("provider log contains a malformed context record");
+			return record;
+		});
 }
 
 function recordForPhase(records: readonly ContextRecord[], phase: string): ContextRecord {
@@ -259,7 +268,7 @@ function recordForPhase(records: readonly ContextRecord[], phase: string): Conte
 
 function projectedResult(record: ContextRecord): string {
 	if (!Array.isArray(record.toolResults)) fail("provider record has no projected Tool results");
-	const result = (record.toolResults as ProjectedToolResult[]).find((candidate) => candidate.id === LONG_RESULT_ID);
+	const result = record.toolResults.find((candidate) => candidate.id === LONG_RESULT_ID);
 	if (!result || !isRuntimeString(result.text)) fail("provider record has no projected long Bash result");
 	return result.text;
 }

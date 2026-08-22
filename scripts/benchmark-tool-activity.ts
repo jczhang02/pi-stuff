@@ -47,23 +47,38 @@ for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
 function shippedExplorationProjection(input: readonly unknown[]): number {
 	let groups = 0;
 	for (const candidate of input) {
-		if (!isRuntimeObject(candidate) || candidate === null) continue;
-		const message = candidate as Record<string, unknown>;
-		if (message["role"] !== "assistant" || !Array.isArray(message["content"])) continue;
+		if (
+			!isRuntimeObject(candidate) ||
+			candidate === null ||
+			!("role" in candidate) ||
+			!("content" in candidate) ||
+			candidate.role !== "assistant" ||
+			!Array.isArray(candidate.content)
+		) {
+			continue;
+		}
 		let adjacent = 0;
 		const flush = () => {
 			if (adjacent >= 2) groups += 1;
 			adjacent = 0;
 		};
-		for (const block of message["content"]) {
-			if (!isRuntimeObject(block) || block === null) continue;
-			const value = block as Record<string, unknown>;
-			const args = value["arguments"];
+		for (const block of candidate.content) {
+			if (
+				!isRuntimeObject(block) ||
+				block === null ||
+				!("arguments" in block) ||
+				!("type" in block) ||
+				!("id" in block) ||
+				!("name" in block)
+			) {
+				continue;
+			}
+			const args = block.arguments;
 			const explorationCall =
-				value["type"] === "toolCall" &&
-				isRuntimeString(value["id"]) &&
-				Boolean(value["id"]) &&
-				value["name"] === "read" &&
+				block.type === "toolCall" &&
+				isRuntimeString(block.id) &&
+				block.id.length > 0 &&
+				block.name === "read" &&
 				isRuntimeObject(args) &&
 				args !== null &&
 				!Array.isArray(args);

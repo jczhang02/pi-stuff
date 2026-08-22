@@ -1,12 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { readProcessStartIdentity } from "../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 
 const POLL_INTERVAL_MS = 50;
 const CLEANUP_TIMEOUT_MS = 2_000;
 const OWNER_GONE_CONFIRMATIONS = 5;
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const ERRNO_SCHEMA = Type.Object({ code: Type.Optional(Type.String()) }, { additionalProperties: true });
 
 export interface UiPtyOwnerWatchdog {
 	readonly leasePath: string;
@@ -31,7 +34,7 @@ function processExists(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return Check(ERRNO_SCHEMA, error) && error.code === "EPERM";
 	}
 }
 
@@ -85,7 +88,7 @@ function signalProvenProcess(proof: ProcessProof, signal: NodeJS.Signals): boole
 		process.kill(proof.pid, signal);
 		return true;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+		if (Check(ERRNO_SCHEMA, error) && error.code === "ESRCH") return false;
 		throw error;
 	}
 }
