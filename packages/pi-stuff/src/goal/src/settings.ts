@@ -4,7 +4,12 @@ import { basename, dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import { isRuntimeObject } from "../../shared/runtime-type.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../../shared/json-value.js";
 import { mergeNamespaceRecordSync, readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
 
@@ -98,8 +103,8 @@ export function saveGoalSettings(
 	const normalized = normalizeGoalSettings(settings);
 	if (!normalized) throw new Error("Refusing to save invalid pi-goal settings.");
 
-	let existingNamespace: Record<string, unknown> = {};
-	let existingDocument: Record<string, unknown> = {};
+	let existingNamespace: JsonInputObject = {};
+	let existingDocument: JsonInputObject = {};
 	try {
 		existingDocument = readSettingsFileSync(settingsPath);
 		const file = ownRecord(existingDocument[GOAL_NAMESPACE]);
@@ -114,9 +119,9 @@ export function saveGoalSettings(
 		}
 	}
 
-	const experimental = ownRecord(existingNamespace.experimental) ?? {};
-	const rpc = ownRecord(existingNamespace.rpc) ?? {};
-	const continuationLimits = ownRecord(existingNamespace.continuationLimits) ?? {};
+	const experimental = ownRecord(existingNamespace["experimental"]) ?? {};
+	const rpc = ownRecord(existingNamespace["rpc"]) ?? {};
+	const continuationLimits = ownRecord(existingNamespace["continuationLimits"]) ?? {};
 	const document = {
 		...existingNamespace,
 		toolVisibility: normalized.toolVisibility,
@@ -169,7 +174,7 @@ export function readGoalSettingsLocked(
 }
 
 export function readGoalSettings(settingsPath = mergedSettingsPath(getAgentDir())): GoalSettingsLoadResult {
-	let namespace: unknown;
+	let namespace: JsonInputValue;
 	try {
 		const file = readNamespaceSync(settingsPath, GOAL_NAMESPACE);
 		if (file === undefined) return { kind: "missing" };
@@ -194,7 +199,7 @@ function migrateLegacyGoalSettings(settingsPath: string): void {
 	const legacyPath = join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE);
 	if (!existsSync(legacyPath)) return;
 	const contents = readFileSync(legacyPath, "utf8");
-	const parsed = JSON.parse(contents) as unknown;
+	const parsed = parseJsonValue(contents);
 	const normalized = normalizeGoalSettings(parsed);
 	if (normalized) {
 		mergeNamespaceRecordSync(settingsPath, GOAL_NAMESPACE, { ...normalized });
@@ -208,8 +213,8 @@ function migrateLegacyGoalSettings(settingsPath: string): void {
 	}
 }
 
-function ownRecord(value: unknown): Record<string, unknown> | undefined {
-	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+function ownRecord(value: JsonInputValue): JsonInputObject | undefined {
+	return isJsonInputObject(value) ? value : undefined;
 }
 
 function isNodeError(cause: unknown): cause is NodeJS.ErrnoException {
