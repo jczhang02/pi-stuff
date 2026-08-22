@@ -51,6 +51,10 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 - Keep current source, ADRs, maintainer instructions, and executable documentation in English. Update the owning
   current documentation in the same change whenever behavior, contracts, terminology, compatibility, or workflow
   changes; do not defer documentation until the end.
+- When creating a Bead, record enough conversation provenance to retrieve its source Session: the originating Host or
+  Agent surface (`Pi`, `Codex`, or another named surface), the Session name when available, and a stable Session ID or
+  equivalent lookup key. Record metadata only and follow the public-data policy; never paste transcript content or
+  sensitive Session data into Beads.
 - Never commit credentials, auth, model stores, Sessions, caches, `.env`, machine state, or private absolute paths.
   Installing the Suite remains an explicit maintainer action through `pi install`; Suite code must not install itself.
 
