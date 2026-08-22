@@ -15,12 +15,15 @@ import {
 	type CodexStatusSource,
 	type GitChangeCounts,
 	GitStatusSource,
+	getCodexStatusChannel,
+	getGoalStatusChannel,
 	parseGitStatusPorcelain,
 	type StatuslineContext,
 	StatuslineController,
 	type StatuslineHost,
 	type StatuslinePreferences,
 } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
 
 class ValueSource<Value> {
 	private readonly listeners = new Set<() => void>();
@@ -67,6 +70,15 @@ class CodexStatusValueSource implements CodexStatusSource {
 		return () => this.listeners.delete(listener);
 	}
 }
+
+test("status channels support events-only Host adapters", () => {
+	const { events } = createExtensionApi();
+	const host = { events };
+	getCodexStatusChannel(host).publish({ fastEnabled: true });
+	getGoalStatusChannel(host).publish({ status: "active", tokensUsed: 1 });
+	expect(getCodexStatusChannel(host).source.getSnapshot()).toEqual({ fastEnabled: true });
+	expect(getGoalStatusChannel(host).source.getSnapshot()).toEqual({ status: "active", tokensUsed: 1 });
+});
 
 function usage(cacheRead: number, cost: number, input = 10, cacheWrite = 0) {
 	return {

@@ -106,8 +106,10 @@ const GOAL_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/goal-status-chan
 const CODEX_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/codex-status-discovery/v1";
 const GOAL_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/goal-status-discovery/v1";
 
-function registerStatusChannelCleanup(pi: Pick<ExtensionAPI, "events" | "on">, cleanup: () => void): void {
-	pi.on("session_shutdown", cleanup);
+type StatusChannelHost = Pick<ExtensionAPI, "events"> & Partial<Pick<ExtensionAPI, "on">>;
+
+function registerStatusChannelCleanup(pi: StatusChannelHost, cleanup: () => void): void {
+	pi.on?.("session_shutdown", cleanup);
 }
 
 class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource {
@@ -160,7 +162,7 @@ function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChann
 }
 
 /** Share one late-bindable Codex presentation channel across Capability copies. */
-export function getCodexStatusChannel(pi: Pick<ExtensionAPI, "events" | "on">): CodexStatusChannel {
+export function getCodexStatusChannel(pi: StatusChannelHost): CodexStatusChannel {
 	const channels = codexStatusChannels();
 	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
 	const sharedChannels = channels as WeakMap<object, CodexStatusChannel>;
@@ -226,7 +228,7 @@ function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel
 }
 
 /** Share one observation-only Goal presentation channel across Capability copies. */
-export function getGoalStatusChannel(pi: Pick<ExtensionAPI, "events" | "on">): GoalStatusChannel {
+export function getGoalStatusChannel(pi: StatusChannelHost): GoalStatusChannel {
 	const channels = goalStatusChannels();
 	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
 	const sharedChannels = channels as WeakMap<object, GoalStatusChannel>;
