@@ -29,6 +29,7 @@ import {
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString, isRuntimeSymbol } from "../shared/runtime-type.js";
+import type { ToolArguments } from "../tool-display/activity.js";
 import {
 	activityKey,
 	activityTarget,
@@ -36,9 +37,11 @@ import {
 	registerSuiteToolActivityMetadata,
 	type SuiteToolPresentation,
 	singleActivity,
+	type ToolActivityMetadata,
 } from "../tool-display/index.js";
 import {
 	CONTEXT_ACTIVITY_ENTRY_TYPE,
+	type ContextActivityData,
 	ContextActivityRegistry,
 	type ContextOperation,
 	contextActivityUpdateFromMagic,
@@ -206,7 +209,6 @@ type MagicFactory = (pi: ExtensionAPI) => Promise<void> | void;
 type MagicModule = { default: MagicFactory };
 interface MagicCommandDefinition {
 	readonly handler?: (args: string, ctx: ExtensionContext) => Promise<void> | void;
-	readonly [key: string]: unknown;
 }
 
 interface ContextActivityTarget {
@@ -312,6 +314,7 @@ function ownerKey(pi: ExtensionAPI): object {
 }
 
 function capabilityRegistry(): ContextCapabilityRegistry {
+	// SAFETY: this package-owned symbol slot is initialized only with ContextCapabilityRegistry.
 	const root = globalThis as {
 		[key: symbol]: ContextCapabilityRegistry | undefined;
 	};
@@ -371,6 +374,7 @@ function isPendingAssistant(entry: SessionEntry): boolean {
 }
 
 function currentAgentMessages(ctx: ExtensionContext): AgentMessage[] {
+	// SAFETY: Pi's SessionManager returns the SessionEntry sequence consumed by sessionEntryToContextMessages.
 	const entries = [...ctx.sessionManager.buildContextEntries()] as SessionEntry[];
 	return entries
 		.filter((entry) => !isPendingAssistant(entry))
@@ -398,13 +402,13 @@ function textOfMessage(message: AgentMessage): string {
 }
 
 function messageTextParts(message: AgentMessage): string[] {
-	const content = (message as { content?: unknown }).content;
+	const content = "content" in message ? message.content : undefined;
 	if (isRuntimeString(content)) return [content];
 	if (!Array.isArray(content)) return [];
 	const parts: string[] = [];
 	for (const part of content) {
 		if (part && isRuntimeObject(part)) {
-			const text = (part as { text?: unknown }).text;
+			const text = "text" in part ? part.text : undefined;
 			if (isRuntimeString(text)) parts.push(text);
 		}
 	}
@@ -564,8 +568,11 @@ function boundedNativeHistory(messages: readonly AgentMessage[], limit: number):
 function extractMagicProjection(messages: readonly AgentMessage[]): string {
 	const historyIndex = messages.findIndex((message) => textOfMessage(message).includes("<session-history>"));
 	if (historyIndex < 0) return "";
-	const history = textOfMessage(messages[historyIndex] as AgentMessage);
-	const since = messages[historyIndex + 1] ? textOfMessage(messages[historyIndex + 1] as AgentMessage) : "";
+	const historyMessage = messages[historyIndex];
+	if (!historyMessage) return "";
+	const history = textOfMessage(historyMessage);
+	const sinceMessage = messages[historyIndex + 1];
+	const since = sinceMessage ? textOfMessage(sinceMessage) : "";
 	return [history, since.includes("<session-history-since>") ? since : ""].filter(Boolean).join("\n");
 }
 
@@ -679,6 +686,7 @@ function formatProjection(full: string, audience: ContextProjectionAudience, opt
 }
 
 function defaultLoadMagicContext(): Promise<MagicModule> {
+	// SAFETY: the configured Magic Context package exposes the Extension factory as its default export.
 	return import(MAGIC_CONTEXT_MODULE) as Promise<MagicModule>;
 }
 
@@ -737,7 +745,7 @@ function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionCont
 	return quietMagicContext(ctx, false, name === "ctx-status" ? false : undefined);
 }
 
-function firstPresentationTarget(args: Readonly<Record<string, unknown>>): string {
+function firstPresentationTarget(args: ToolArguments): string {
 	for (const key of ["query", "message", "note_id", "memory_id", "id", "range", "content", "note", "reason"]) {
 		const value = args[key];
 		if (isRuntimeString(value) && value.trim()) return value.trim();
@@ -786,7 +794,7 @@ function objectActivity(
 	] as const;
 }
 
-function magicToolPresentation(name: string): SuiteToolPresentation<Record<string, unknown>, unknown> {
+function magicToolPresentation(name: string): SuiteToolPresentation<ToolArguments, unknown> {
 	const categories =
 		name === "ctx_expand"
 			? (["review-history-range"] as const)
@@ -797,56 +805,46 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 					: name === "ctx_note"
 						? (["read-note", "save-note", "update-note"] as const)
 						: [];
-	return {
-		activity: {
-			categories,
-			classify: ({ args, result }) => {
-				const target = firstPresentationTarget(args);
-				const text = toolResultText(result);
-				if (name === "ctx_reduce") return [];
-				if (name === "ctx_expand") {
-					const key = activityKey(args["message"], args["start"], args["end"], args["verbose"]);
-					return singleActivity("review-history-range", { key, target: target || String(args["message"] ?? "") });
-				}
-				if (name === "ctx_search") {
-					return singleActivity("search-history", {
-						key: activityKey(args["query"], args["sources"]),
-						target,
-					});
-				}
-				if (name === "ctx_memory") {
-					const action = String(args["action"] ?? "read");
-					const category =
-						action === "get" || action === "list"
-							? "read-memory"
-							: action === "write"
-								? "save-memory"
-								: "update-memory";
-					const argumentIds = Array.isArray(args["ids"])
-						? args["ids"].filter((item): item is number => isRuntimeNumber(item)).map(String)
-						: [];
-					const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "memory")])];
-					return objectActivity(
-						category,
-						ids,
-						activityKey(action, args["ids"], args["content"]),
-						target || action,
-					);
-				}
-				const action = String(args["action"] ?? (isRuntimeString(args["content"]) ? "write" : "read"));
-				const category = action === "read" ? "read-note" : action === "write" ? "save-note" : "update-note";
-				const argumentIds = isRuntimeNumber(args["note_id"]) ? [String(args["note_id"])] : [];
-				const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "note")])];
-				return objectActivity(
-					category,
-					ids,
-					activityKey(action, args["note_id"], args["content"]),
-					target || action,
-				);
-			},
-			summarizeIssue: (_args, result, state) => toolResultText(result).trim().split(/\r?\n/u)[0] || state,
-			...(name === "ctx_reduce" ? { silentSuccess: true } : {}),
+	const activity: ToolActivityMetadata<ToolArguments, unknown> = {
+		categories,
+		classify: ({ args, result }) => {
+			const target = firstPresentationTarget(args);
+			const text = toolResultText(result);
+			if (name === "ctx_reduce") return [];
+			if (name === "ctx_expand") {
+				const key = activityKey(args["message"], args["start"], args["end"], args["verbose"]);
+				return singleActivity("review-history-range", { key, target: target || String(args["message"] ?? "") });
+			}
+			if (name === "ctx_search") {
+				return singleActivity("search-history", {
+					key: activityKey(args["query"], args["sources"]),
+					target,
+				});
+			}
+			if (name === "ctx_memory") {
+				const action = String(args["action"] ?? "read");
+				const category =
+					action === "get" || action === "list"
+						? "read-memory"
+						: action === "write"
+							? "save-memory"
+							: "update-memory";
+				const argumentIds = Array.isArray(args["ids"])
+					? args["ids"].filter((item): item is number => isRuntimeNumber(item)).map(String)
+					: [];
+				const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "memory")])];
+				return objectActivity(category, ids, activityKey(action, args["ids"], args["content"]), target || action);
+			}
+			const action = String(args["action"] ?? (isRuntimeString(args["content"]) ? "write" : "read"));
+			const category = action === "read" ? "read-note" : action === "write" ? "save-note" : "update-note";
+			const argumentIds = isRuntimeNumber(args["note_id"]) ? [String(args["note_id"])] : [];
+			const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "note")])];
+			return objectActivity(category, ids, activityKey(action, args["note_id"], args["content"]), target || action);
 		},
+		summarizeIssue: (_args, result, state) => toolResultText(result).trim().split(/\r?\n/u)[0] || state,
+	};
+	return {
+		activity: name === "ctx_reduce" ? { ...activity, silentSuccess: true } : activity,
 		label: MAGIC_TOOL_LABELS[name] ?? name,
 		runningSummary: name === "ctx_search" ? "searching" : "working",
 		target: firstPresentationTarget,
@@ -939,6 +937,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			return;
 		}
 		await this.activate(ctx, "input");
+		// SAFETY: Object.hasOwn above proves requested is a Context command key.
 		const operation = requested as keyof typeof CONTEXT_COMMAND_NAMES;
 		if (operation === "status") {
 			await this.showStatusDialog(ctx);
@@ -1027,7 +1026,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 	}
 
-	private appendContextActivity(target: ContextActivityTarget, data: unknown): void {
+	private appendContextActivity(target: ContextActivityTarget, data: ContextActivityData): void {
 		let currentSessionId: string | undefined;
 		try {
 			currentSessionId = this.sessionContext?.sessionManager.getSessionId();
@@ -1215,12 +1214,19 @@ class ContextCapabilityRuntime implements ContextCapability {
 			return false;
 		this.resetProjectionState(true);
 		const trigger = this.state.trigger;
-		this.state = {
-			state: "degraded",
-			engine: "native",
-			...(trigger === undefined ? {} : { trigger }),
-			error: "Magic Context yielded an extreme-overflow turn to Pi native compaction.",
-		};
+		this.state =
+			trigger === undefined
+				? {
+						state: "degraded",
+						engine: "native",
+						error: "Magic Context yielded an extreme-overflow turn to Pi native compaction.",
+					}
+				: {
+						state: "degraded",
+						engine: "native",
+						trigger,
+						error: "Magic Context yielded an extreme-overflow turn to Pi native compaction.",
+					};
 		return true;
 	}
 
@@ -1233,7 +1239,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (this.disposed) return;
 		this.disposed = true;
 		const trigger = this.state.trigger;
-		this.state = { state: "native", engine: "native", ...(trigger === undefined ? {} : { trigger }) };
+		this.state =
+			trigger === undefined ? { state: "native", engine: "native" } : { state: "native", engine: "native", trigger };
 		this.suiteCustomContextGuidance.clear();
 		this.sessionContext = undefined;
 		this.generation++;
@@ -1697,6 +1704,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {
+		// SAFETY: Magic registers only Pi event names through this adapter; each handler is normalized below.
 		const register = this.pi.on.bind(this.pi) as (name: string, value: LooseEventHandler) => void;
 		if (event === "session_before_compact") {
 			register(event, async (rawEvent, ctx) => {
@@ -1708,12 +1716,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 				} catch (error) {
 					if (!this.isCurrentGeneration(generation)) return;
 					const trigger = this.state.trigger;
-					this.state = {
-						state: "degraded",
-						engine: "native",
-						...(trigger === undefined ? {} : { trigger }),
-						error: error instanceof Error ? error.message : String(error),
-					};
+					const message = error instanceof Error ? error.message : String(error);
+					this.state =
+						trigger === undefined
+							? { state: "degraded", engine: "native", error: message }
+							: { state: "degraded", engine: "native", trigger, error: message };
 					try {
 						ctx.ui.notify(
 							"Magic Context could not finish this compaction. Pi did not add a second native summary; the full Session remains intact.",
@@ -1813,7 +1820,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		return new Proxy(this.pi, {
 			get: (target, property, receiver) => {
 				if (property === "appendEntry") {
-					return (customType: string, data: unknown): void => {
+					return <Data>(customType: string, data?: Data): void => {
 						if (customType === "ctx-status") this.captureMagicCommandStatus(data);
 						else target.appendEntry(customType, data);
 					};
@@ -1832,7 +1839,10 @@ class ContextCapabilityRuntime implements ContextCapability {
 				if (property === "on") {
 					return (event: string, handler: LooseEventHandler): void => {
 						plan.handlers.push({ event, handler });
-						if (event === "context") plan.contextHandler = handler as MagicContextHandler;
+						if (event === "context") {
+							// SAFETY: the context event branch establishes Magic's narrower ContextEvent handler contract.
+							plan.contextHandler = handler as MagicContextHandler;
+						}
 					};
 				}
 				if (suppressedMethods.has(property)) return () => undefined;
@@ -1971,6 +1981,7 @@ export const __test = {
 	clear(): void {
 		const registry = capabilityRegistry();
 		for (const runtime of registry.runtimes) void runtime.dispose();
+		// SAFETY: this package-owned symbol slot contains only ContextCapabilityRegistry.
 		const root = globalThis as { [key: symbol]: ContextCapabilityRegistry | undefined };
 		delete root[CONTEXT_CAPABILITY_REGISTRY];
 	},
