@@ -137,7 +137,7 @@ async function readTail(
 		const { bytesRead } = await file.read(buffer, 0, bytes, start);
 		return { text: buffer.subarray(0, bytesRead).toString("utf8"), truncated: start > 0 };
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+		if (error && isRuntimeObject(error) && "code" in error && error.code === "ENOENT") return null;
 		throw error;
 	} finally {
 		await file?.close();
@@ -363,10 +363,7 @@ function jsonlTranscript(
 			const name = stringField(entry, undefined, "toolName");
 			const tool =
 				resolveTool(items, toolsById, toolCallId, name) ??
-				createToolProjection(items, toolsById, {
-					...(name ? { name } : {}),
-					...(toolCallId ? { toolCallId } : {}),
-				});
+				createToolProjection(items, toolsById, { name, toolCallId });
 			tool.ended = true;
 			tool.isError = booleanField(entry, undefined, "isError") ?? tool.isError;
 			continue;
@@ -379,10 +376,7 @@ function jsonlTranscript(
 			const name = stringField(entry, message, "toolName");
 			const tool =
 				resolveTool(items, toolsById, toolCallId, name) ??
-				createToolProjection(items, toolsById, {
-					...(name ? { name } : {}),
-					...(toolCallId ? { toolCallId } : {}),
-				});
+				createToolProjection(items, toolsById, { name, toolCallId });
 			if (name) tool.name = name;
 			tool.result = toolResultText(entry);
 			tool.resultSeen = true;
