@@ -17,6 +17,13 @@ const ZERO_USAGE = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+interface ProviderLogRecord {
+	readonly childIndex?: string;
+	readonly kind: "aborted" | "finished" | "request";
+	readonly text?: string;
+	readonly userText?: string;
+}
+
 function assistant(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
 		role: "assistant",
@@ -43,7 +50,7 @@ function lastUserText(context: Context): string {
 	return "";
 }
 
-function record(value: Record<string, unknown>): void {
+function record(value: ProviderLogRecord): void {
 	const logPath = process.env.PI_STUFF_PROCESS_CONTROLS_LOG;
 	if (!logPath) return;
 	appendFileSync(logPath, `${JSON.stringify({ at: Date.now(), ...value })}\n`);

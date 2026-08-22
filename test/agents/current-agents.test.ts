@@ -26,6 +26,8 @@ type StateInput = Pick<
 	SubagentState,
 	"currentSessionId" | "asyncJobs" | "recentAgentJobs" | "foregroundControls" | "foregroundRuns"
 >;
+type EventPayload = Parameters<ExtensionAPI["events"]["emit"]>[1];
+type EventObserver = (event: string, payload: EventPayload) => void;
 
 interface SignalChannel {
 	emit(): void;
@@ -49,7 +51,7 @@ function signalChannel(): SignalChannel {
 	};
 }
 
-function eventHost(emit: (event: string, payload: unknown) => void = () => {}): Pick<ExtensionAPI, "events"> {
+function eventHost(emit: EventObserver = () => {}): Pick<ExtensionAPI, "events"> {
 	const events = createEventBus();
 	return {
 		events: {
@@ -1088,7 +1090,7 @@ describe("CurrentAgents snapshot", () => {
 		const addLegacy = (
 			id: string,
 			transcriptPath: string,
-			overrides: Record<string, unknown> = {},
+			overrides: Partial<NonNullable<AsyncJobState["steps"]>[number]> = {},
 			exitCode: number | null = null,
 		) => {
 			state.recentAgentJobs?.set(

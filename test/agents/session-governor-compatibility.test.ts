@@ -12,6 +12,12 @@ import { TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/
 const limits = { maxDepth: 3, maxRunning: 20, maxTotal: 200 };
 const roots = new Set<string>();
 
+interface LegacyLockOwnerFixture {
+	readonly pid: number;
+	readonly processStartIdentity?: string;
+	readonly token: string;
+}
+
 afterEach(() => {
 	for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
 	roots.clear();
@@ -52,7 +58,7 @@ function legacyLockPath(rootDir: string): string {
 	return path.join(rootDir, createHash("sha256").update("logical-session").digest("hex"), "ledger.lock");
 }
 
-function writeStaleLegacyLock(rootDir: string, owner: Record<string, unknown>): string {
+function writeStaleLegacyLock(rootDir: string, owner: LegacyLockOwnerFixture): string {
 	const lockDir = legacyLockPath(rootDir);
 	fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(lockDir, "owner.json"), JSON.stringify(owner), { mode: 0o600 });

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createEventBus, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type, type TSchema } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeFunction } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerFanoutChild, {
@@ -24,7 +26,15 @@ import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../packages/pi-stuff/src/subag
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
+interface FanoutLifecycleEvent {
+	readonly reason: string;
+}
+type Handler = (event: FanoutLifecycleEvent, ctx: ExtensionContext) => object | undefined;
+type EventListener = Parameters<ReturnType<typeof createEventBus>["on"]>[1];
+const TOOL_PARAMETERS_SCHEMA = Type.Object(
+	{ properties: Type.Object({ foreground: Type.Optional(Type.Unknown()) }, { additionalProperties: true }) },
+	{ additionalProperties: true },
+);
 
 class ApiHarness {
 	readonly events = createEventBus();
@@ -33,10 +43,13 @@ class ApiHarness {
 		| {
 				label: string;
 				description: string;
-				parameters?: unknown;
+				parameters?: TSchema;
+				renderCall?: ToolDefinition["renderCall"];
+				renderResult?: ToolDefinition["renderResult"];
+				renderShell?: ToolDefinition["renderShell"];
 				execute(
 					id: string,
-					params: Record<string, unknown>,
+					params: SubagentParamsLike,
 					signal: AbortSignal,
 					onUpdate: undefined,
 					ctx: ExtensionContext,
@@ -60,7 +73,7 @@ class ApiHarness {
 		},
 	});
 
-	async fire(event: string, value: unknown): Promise<void> {
+	async fire(event: string, value: FanoutLifecycleEvent): Promise<void> {
 		for (const handler of this.handlers.get(event) ?? []) await handler(value, context());
 	}
 }
@@ -114,7 +127,7 @@ describe("fanout child Agent composition", () => {
 		let unsubscribeCalls = 0;
 		let subscriptionIndex = 0;
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		api.events.on = ((event: string, listener: (data: unknown) => void) => {
+		api.events.on = ((event: string, listener: EventListener) => {
 			const unsubscribe = subscribe(event, listener);
 			const index = subscriptionIndex++;
 			return () => {
@@ -233,16 +246,11 @@ describe("fanout child Agent composition", () => {
 		expect(api.tool?.description).toContain("Package, user, or project Agent");
 		expect(api.tool?.description).toContain("always owner-blocking");
 		if (!api.tool) throw new Error("Expected nested Agent tool");
-		expect((api.tool.parameters as { properties?: Record<string, unknown> }).properties?.foreground).toBeUndefined();
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const presentation = api.tool as {
-			renderCall?: unknown;
-			renderResult?: unknown;
-			renderShell?: unknown;
-		};
-		expect(presentation.renderShell).toBe("self");
-		expect(presentation.renderCall).toBeFunction();
-		expect(presentation.renderResult).toBeFunction();
+		if (!Check(TOOL_PARAMETERS_SCHEMA, api.tool.parameters)) throw new Error("Expected Agent Tool parameters");
+		expect(api.tool.parameters.properties.foreground).toBeUndefined();
+		expect(api.tool.renderShell).toBe("self");
+		expect(api.tool.renderCall).toBeFunction();
+		expect(api.tool.renderResult).toBeFunction();
 
 		const result = await api.tool?.execute(
 			"fanout-call",

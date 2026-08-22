@@ -1,12 +1,29 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { buildPiArgs, PI_STUFF_AGENT_PATH_ENV } from "../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.ts";
 import { CERTIFIED_PI_VERSION } from "../scripts/pi-host-contract.ts";
 import { runPiRpcSmoke } from "../scripts/smoke-pi.ts";
 
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 const PI_STUFF_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff");
+const PACKAGE_MANIFEST_SCHEMA = Type.Object(
+	{
+		dependencies: Type.Optional(Type.Record(Type.String(), Type.String())),
+		peerDependencies: Type.Optional(Type.Record(Type.String(), Type.String())),
+		private: Type.Optional(Type.Boolean()),
+	},
+	{ additionalProperties: true },
+);
+const DEVELOPMENT_MANIFEST_SCHEMA = Type.Object(
+	{
+		devDependencies: Type.Optional(Type.Record(Type.String(), Type.String())),
+		workspaces: Type.Optional(Type.Array(Type.String())),
+	},
+	{ additionalProperties: true },
+);
 
 test("Agents gives same-name sibling processes stable unique path components", () => {
 	const previousAgentPath = process.env[PI_STUFF_AGENT_PATH_ENV];
@@ -36,15 +53,10 @@ test("Agents gives same-name sibling processes stable unique path components", (
 });
 
 test("Subagents shares one local Package and the certified Pi peer contract", async () => {
-	const packageManifest = JSON.parse(await readFile(resolve(PI_STUFF_PACKAGE, "package.json"), "utf8")) as {
-		dependencies?: Record<string, string>;
-		peerDependencies?: Record<string, string>;
-		private?: boolean;
-	};
-	const developmentManifest = JSON.parse(await readFile(resolve(PI_STUFF_PACKAGE, "../../package.json"), "utf8")) as {
-		devDependencies?: Record<string, string>;
-		workspaces?: string[];
-	};
+	const packageManifest = JSON.parse(await readFile(resolve(PI_STUFF_PACKAGE, "package.json"), "utf8"));
+	if (!Check(PACKAGE_MANIFEST_SCHEMA, packageManifest)) throw new Error("Expected the Pi Stuff package manifest");
+	const developmentManifest = JSON.parse(await readFile(resolve(PI_STUFF_PACKAGE, "../../package.json"), "utf8"));
+	if (!Check(DEVELOPMENT_MANIFEST_SCHEMA, developmentManifest)) throw new Error("Expected the workspace manifest");
 
 	expect(packageManifest.private).toBe(true);
 	expect(Object.keys(packageManifest.dependencies ?? {}).filter((name) => name.startsWith("@jczhang02/pi-"))).toEqual(

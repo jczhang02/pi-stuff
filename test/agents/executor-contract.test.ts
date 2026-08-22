@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Check } from "typebox/value";
+import { type JsonValue, parseJsonValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import {
 	normalizePublicAgentParams,
@@ -50,16 +51,15 @@ describe("Agent product contract", () => {
 	});
 
 	test("keeps the provider schema branch-free and enforces exclusive shapes at runtime", () => {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const nodes = [SubagentParams as unknown];
+		const nodes: JsonValue[] = [parseJsonValue(JSON.stringify(SubagentParams))];
 		while (nodes.length > 0) {
 			const node = nodes.pop();
 			if (Array.isArray(node)) {
 				nodes.push(...node);
 				continue;
 			}
-			if (!node || !isRuntimeObject(node)) continue;
-			const schema = node as Record<string, unknown>;
+			if (!node || Array.isArray(node) || !isRuntimeObject(node)) continue;
+			const schema = node;
 			expect(Object.hasOwn(schema, "oneOf")).toBeFalse();
 			if (schema.properties && isRuntimeObject(schema.properties)) {
 				for (const property of Object.values(schema.properties)) expect(property).not.toBe(false);

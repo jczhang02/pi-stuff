@@ -16,6 +16,21 @@ import { createExtensionContext } from "../fixtures/extension-context.js";
 
 const directories: string[] = [];
 
+interface SupervisorRequestFixture {
+	readonly agent: string;
+	readonly childIndex: number;
+	readonly createdAt: number;
+	readonly expectsReply: boolean;
+	readonly expiresAt?: number;
+	readonly id: string;
+	readonly interview?: object;
+	readonly message: string;
+	readonly orchestratorSessionId?: string;
+	readonly reason: "interview_request" | "need_decision" | "progress_update";
+	readonly runId: string;
+	readonly type: "subagent.supervisor.request";
+}
+
 afterEach(() => {
 	for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
@@ -24,7 +39,7 @@ function legacyChannel(runId: string, agent = "worker", childIndex = 0): string 
 	return path.join(TEMP_ROOT_DIR, "supervisor-channels", `${runId}-${agent}-${childIndex}`);
 }
 
-function writeRequest(channelDir: string, request: Record<string, unknown>): string {
+function writeRequest(channelDir: string, request: SupervisorRequestFixture): string {
 	const requests = path.join(channelDir, "requests");
 	const replies = path.join(channelDir, "replies");
 	fs.mkdirSync(requests, { recursive: true, mode: 0o700 });
@@ -122,7 +137,7 @@ function harness(input: {
 	};
 }
 
-function baseRequest(id: string, runId: string, createdAt: number) {
+function baseRequest(id: string, runId: string, createdAt: number): SupervisorRequestFixture {
 	return {
 		type: "subagent.supervisor.request",
 		id,

@@ -42,10 +42,16 @@ import {
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import type { AgentGovernorLease } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
+interface HarnessEvent {
+	readonly reason?: string;
+	readonly toolName?: string;
+	readonly type: string;
+}
+type Handler = (event: HarnessEvent, ctx: ExtensionContext) => object | undefined;
 type EntryRenderer = (...args: unknown[]) => object | undefined;
 
 type TestMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
@@ -56,12 +62,16 @@ interface TestToolResult {
 }
 
 type RegisteredCommand = Parameters<ExtensionAPI["registerCommand"]>[1];
+type EventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
+type EventPayload = Parameters<EventListener>[0];
+type AppendEntryData = Parameters<ExtensionAPI["appendEntry"]>[1];
+type MessageOptions = Parameters<ExtensionAPI["sendMessage"]>[1];
 
 interface TestTool extends Tool {
 	readonly label: string;
 	execute(
 		id: string,
-		params: Record<string, unknown>,
+		params: SubagentParamsLike,
 		signal: AbortSignal,
 		onUpdate: undefined,
 		ctx: ExtensionContext,
@@ -87,11 +97,11 @@ class EventBusHarness {
 		},
 	};
 
-	emit(event: string, data: unknown): void {
+	emit(event: string, data: EventPayload): void {
 		this.host.emit(event, data);
 	}
 
-	on(event: string, listener: (data: unknown) => void): () => void {
+	on(event: string, listener: EventListener): () => void {
 		return this.host.on(event, listener);
 	}
 
@@ -102,11 +112,11 @@ class EventBusHarness {
 
 class ApiHarness {
 	readonly commands = new Map<string, RegisteredCommand>();
-	readonly entries: Array<{ customType: string; data: unknown }> = [];
+	readonly entries: Array<{ customType: string; data: AppendEntryData }> = [];
 	readonly entryRenderers = new Map<string, EntryRenderer>();
 	readonly events = new EventBusHarness();
 	readonly handlers = new Map<string, Handler[]>();
-	readonly messages: Array<{ message: TestMessage; options: unknown }> = [];
+	readonly messages: Array<{ message: TestMessage; options: MessageOptions }> = [];
 	readonly renderers: string[] = [];
 	readonly tools = new Map<string, TestTool>();
 
@@ -125,13 +135,13 @@ class ApiHarness {
 			this.entryRenderers.set(name, renderer as EntryRenderer);
 		},
 		registerMessageRenderer: (name: string) => this.renderers.push(name),
-		appendEntry: (customType: string, data: unknown) => this.entries.push({ customType, data }),
+		appendEntry: (customType: string, data: AppendEntryData) => this.entries.push({ customType, data }),
 		sendMessage: (message, options) => {
 			this.messages.push({ message, options });
 		},
 	});
 
-	async fire(event: string, data: unknown, ctx = context()): Promise<void> {
+	async fire(event: string, data: HarnessEvent, ctx = context()): Promise<void> {
 		for (const handler of this.handlers.get(event) ?? []) await handler(data, ctx);
 	}
 }
@@ -285,46 +295,59 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				throw Object.assign(new Error("injected runtime directory EIO"), { code: "EIO" });
 		},
 		randomId: () => "control-id",
-		createGovernorCoordinator: () => ({
-			bindSession: (identity) => governor.binds.push(identity),
-			inspectExistingRuntimeLeases: async () =>
-				options.restoreActive || options.restoreFailure || options.restoreGate
-					? // SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-						([{ asyncDir: path.join(ASYNC_DIR, "restored") }] as never)
-					: [],
-			prepare: async (input) => {
-				governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
-				await options.prepareGate;
-				if (options.governorReject) return { ok: false, message: "Agent limit reached; wait for one to finish." };
-				if (input.params.action && input.params.action !== "resume") return { ok: true };
-				// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
-				return { ok: true, invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation };
-			},
-			observeAsyncStarted: async (event) => {
-				governor.starts.push(event);
-			},
-			settle: async () => {
-				governor.settlements += 1;
-				if (options.settleFailure) throw Object.assign(new Error("injected settle EIO"), { code: "EIO" });
-			},
-			fail: async () => {
-				governor.failures += 1;
-			},
-			complete: async (event) => {
-				governor.completions.push(event);
-			},
-			reconcileDead: async () => {
-				governor.reconciles += 1;
-			},
-			reconcileExisting: async () => {
-				governor.reconcileChecks += 1;
-				await options.reconcileGate;
-				if (options.restoreActive || options.governorLedgerExists) governor.reconciles += 1;
-			},
-			dispose: () => {
-				governor.disposed += 1;
-			},
-		}),
+		createGovernorCoordinator: () => {
+			const restoredLease: AgentGovernorLease = {
+				acquiredAtMs: 1,
+				agentPath: ["restored"],
+				asyncDir: path.join(ASYNC_DIR, "restored"),
+				childIndex: 0,
+				leaseId: "restored-lease",
+				logicalAgentId: "restored",
+				mode: "spawn",
+				ownerAgentPath: [],
+				pid: 1,
+				runtimeRunId: "restored",
+				sessionId: "root-session",
+			};
+			return {
+				bindSession: (identity) => governor.binds.push(identity),
+				inspectExistingRuntimeLeases: async () =>
+					options.restoreActive || options.restoreFailure || options.restoreGate ? [restoredLease] : [],
+				prepare: async (input) => {
+					governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
+					await options.prepareGate;
+					if (options.governorReject)
+						return { ok: false, message: "Agent limit reached; wait for one to finish." };
+					if (input.params.action && input.params.action !== "resume") return { ok: true };
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
+					return { ok: true, invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation };
+				},
+				observeAsyncStarted: async (event) => {
+					governor.starts.push(event);
+				},
+				settle: async () => {
+					governor.settlements += 1;
+					if (options.settleFailure) throw Object.assign(new Error("injected settle EIO"), { code: "EIO" });
+				},
+				fail: async () => {
+					governor.failures += 1;
+				},
+				complete: async (event) => {
+					governor.completions.push(event);
+				},
+				reconcileDead: async () => {
+					governor.reconciles += 1;
+				},
+				reconcileExisting: async () => {
+					governor.reconcileChecks += 1;
+					await options.reconcileGate;
+					if (options.restoreActive || options.governorLedgerExists) governor.reconciles += 1;
+				},
+				dispose: () => {
+					governor.disposed += 1;
+				},
+			};
+		},
 		prepareGovernorCompatibility:
 			options.compatibility ??
 			(async () => ({

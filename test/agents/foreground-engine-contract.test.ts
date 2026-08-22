@@ -2241,7 +2241,16 @@ describe("reduced foreground Agent engine", () => {
 
 	test("foreground replay fails closed on malformed ceilings and bounds retained session strings", () => {
 		const cwd = "/project";
-		const entry = (child: Record<string, unknown>) => ({
+		interface ReplayChildFixture {
+			readonly agent: string;
+			readonly capabilityCeiling?: object;
+			readonly exitCode: number;
+			readonly finalOutput?: string;
+			readonly model?: string;
+			readonly sessionFile?: string;
+			readonly task: string;
+		}
+		const entry = (child: ReplayChildFixture) => ({
 			type: "message",
 			timestamp: "2026-08-06T10:00:00.000Z",
 			message: {
