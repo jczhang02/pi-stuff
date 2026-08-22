@@ -498,9 +498,9 @@ async function writePtyEvidence(directory: string | undefined, name: string, ses
 	]);
 }
 
-function sanitizePtyEvidence(value: string): string {
+export function sanitizePtyEvidence(value: string): string {
 	return value
-		.replace(/\/tmp\/pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
+		.replace(/\/(?:var\/)?tmp\/(?:agent\/)?pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
 		.split("\n")
 		.map((line) => line.trimEnd())
 		.join("\n")
