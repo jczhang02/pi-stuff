@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -111,14 +112,14 @@ type ResultWatcherDeps = {
 
 type ResultFileChild = Partial<BackgroundTaskResult> & {
 	state?: string;
-	children?: unknown;
+	children?: JsonValue;
 };
 
 type ResultFileData = CompletionNotification & {
 	runId?: string;
 	mode?: string;
 	results?: ResultFileChild[];
-	nestedChildren?: unknown;
+	nestedChildren?: JsonValue;
 	asyncDir?: string;
 	intercomTarget?: string;
 };
@@ -197,7 +198,7 @@ function resultFileFromWatchEntry(fileName: string): string | undefined {
 }
 
 function sanitizeNestedResultChildren(
-	value: unknown,
+	value: JsonValue | undefined,
 	resultPath: string,
 	label: string,
 ): NestedRunSummary[] | undefined {
@@ -219,9 +220,9 @@ function sanitizeNestedResultChildren(
 	return children.length ? children : undefined;
 }
 
-function errorCode(cause: unknown): string | undefined {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause
-		? (cause as NodeJS.ErrnoException).code
+function errorCode<Cause>(cause: Cause): string | undefined {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && isRuntimeString(cause.code)
+		? cause.code
 		: undefined;
 }
 
@@ -250,6 +251,23 @@ function resultDigest(raw: string): string {
 	return createHash("sha256").update(raw).digest("hex");
 }
 
+function isResultDeliveryState(value: JsonValue): value is JsonObject & ResultDeliveryState {
+	return (
+		isRuntimeObject(value) &&
+		value !== null &&
+		!Array.isArray(value) &&
+		value.version === 1 &&
+		isRuntimeString(value.completionKey) &&
+		isRuntimeString(value.resultDigest) &&
+		isRuntimeBoolean(value.intercomComplete) &&
+		isRuntimeBoolean(value.intercomDelivered) &&
+		isRuntimeBoolean(value.notificationAccepted) &&
+		isRuntimeBoolean(value.completionEmitted) &&
+		isRuntimeNumber(value.updatedAt) &&
+		Number.isFinite(value.updatedAt)
+	);
+}
+
 async function readDeliveryState(
 	resultsDir: string,
 	file: string,
@@ -257,22 +275,12 @@ async function readDeliveryState(
 	digest: string,
 ): Promise<ResultDeliveryState | undefined> {
 	try {
-		const value = JSON.parse(
+		const value = parseJsonValue(
 			(await readBoundedOwnedFileSnapshotAsync(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES)).text,
-		) as Partial<ResultDeliveryState> | undefined;
-		if (
-			value?.version !== 1 ||
-			value.completionKey !== completionKey ||
-			value.resultDigest !== digest ||
-			!isRuntimeBoolean(value.intercomComplete) ||
-			!isRuntimeBoolean(value.intercomDelivered) ||
-			!isRuntimeBoolean(value.notificationAccepted) ||
-			!isRuntimeBoolean(value.completionEmitted) ||
-			!isRuntimeNumber(value.updatedAt) ||
-			!Number.isFinite(value.updatedAt)
-		)
+		);
+		if (!isResultDeliveryState(value) || value.completionKey !== completionKey || value.resultDigest !== digest)
 			return undefined;
-		return value as ResultDeliveryState;
+		return value;
 	} catch (error) {
 		if (isNotFound(error)) return undefined;
 		return undefined;
@@ -374,9 +382,9 @@ export function createResultWatcher(
 		ignoredResultFingerprints.delete(file);
 		ignoredResultFingerprints.set(file, snapshot);
 		while (ignoredResultFingerprints.size > MAX_IGNORED_RESULT_FINGERPRINTS) {
-			const oldest = ignoredResultFingerprints.keys().next().value as string | undefined;
-			if (oldest === undefined) break;
-			ignoredResultFingerprints.delete(oldest);
+			const oldest = ignoredResultFingerprints.keys().next();
+			if (oldest.done) break;
+			ignoredResultFingerprints.delete(oldest.value);
 		}
 	};
 
@@ -505,7 +513,12 @@ export function createResultWatcher(
 			}
 			const resultSnapshot = await readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES);
 			const rawResult = resultSnapshot.text;
-			const data = JSON.parse(rawResult) as ResultFileData;
+			const parsed = parseJsonValue(rawResult);
+			if (!isRuntimeObject(parsed) || parsed === null || Array.isArray(parsed)) {
+				throw new Error(`Invalid subagent result file '${resultPath}': expected an object.`);
+			}
+			// SAFETY: Suite result writers own this JSON shape; the JSON grammar and object boundary are checked above.
+			const data = parsed as JsonObject & ResultFileData;
 			processRetryDelay.delete(file);
 			processRetryLastLog.delete(file);
 			if (!isRuntimeString(data.sessionId) || !data.sessionId) {
@@ -673,16 +686,17 @@ export function createResultWatcher(
 												!isRuntimeBoolean(result.success))
 										? data.state
 										: undefined;
-					return {
+					const child: SubagentResultIntercomChild = {
 						agent: result.agent ?? data.agent ?? `step-${index + 1}`,
 						status: resolveSubagentResultStatus({ success: result.success, state: childState }),
 						summary,
 						index,
 						artifactPath: result.artifactPaths?.outputPath,
-						...(sessionPath ? { sessionPath } : {}),
-						...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
-						...(childNestedChildren ? { children: childNestedChildren } : {}),
 					};
+					if (sessionPath) child.sessionPath = sessionPath;
+					if (result.intercomTarget) child.intercomTarget = result.intercomTarget;
+					if (childNestedChildren) child.children = childNestedChildren;
+					return child;
 				}),
 				nestedChildren,
 			);
@@ -704,20 +718,22 @@ export function createResultWatcher(
 				: undefined;
 			const completion: CompletionNotification = {
 				...pickFields(data, COMPLETION_FIELDS),
-				...(persistedStatus?.parentRunOrigin === "user" ||
-				nestedWorkIncludesUser(statusChildren) ||
-				nestedWorkIncludesUser(nestedChildren)
-					? { parentRunOrigin: "user" as const }
-					: {}),
 				id: data.id ?? runId,
 				runId,
-				...(activeSessionId ? { sessionId: activeSessionId } : {}),
 				deliveryId: stableDeliveryId(completionKey),
 				mode,
 				triggerTurn,
-				...(nestedChildren?.length ? { nestedChildren } : {}),
-				...(projectedResults ? { results: projectedResults } : {}),
 			};
+			if (
+				persistedStatus?.parentRunOrigin === "user" ||
+				nestedWorkIncludesUser(statusChildren) ||
+				nestedWorkIncludesUser(nestedChildren)
+			) {
+				completion.parentRunOrigin = "user";
+			}
+			if (activeSessionId) completion.sessionId = activeSessionId;
+			if (nestedChildren?.length) completion.nestedChildren = nestedChildren;
+			if (projectedResults) completion.results = projectedResults;
 
 			const intercomTarget = data.intercomTarget?.trim();
 			let intercomDelivered = deliveryState.intercomDelivered;
