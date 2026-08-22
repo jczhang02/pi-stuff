@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
 import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
 import { mergeNamespaceRecordLocked, withSettingsLock } from "../shared/settings-io/lock.js";
@@ -10,11 +11,11 @@ const PROJECT_SETTINGS_DIRECTORY = ".pi";
 const PROJECT_SETTINGS_FILE = "code-mode.json";
 const CODE_MODE_NAMESPACE = "codeMode";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function isMissingFile(cause: unknown): boolean {
+function isMissingFile<Cause>(cause: Cause): boolean {
 	return isRecord(cause) && cause["code"] === "ENOENT";
 }
 
@@ -22,10 +23,10 @@ export function codeModeProjectSettingsPath(cwd: string): string {
 	return join(cwd, PROJECT_SETTINGS_DIRECTORY, PROJECT_SETTINGS_FILE);
 }
 
-async function readRawSettings(path: string): Promise<Record<string, unknown> | undefined> {
-	let value: unknown;
+async function readRawSettings(path: string): Promise<JsonInputObject | undefined> {
+	let value: JsonInputValue;
 	try {
-		value = JSON.parse(await readFile(path, "utf8")) as unknown;
+		value = parseJsonValue(await readFile(path, "utf8"));
 	} catch (error) {
 		if (isMissingFile(error)) return undefined;
 		throw new Error(

@@ -2,7 +2,7 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } 
 import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
-import { isRuntimeObject } from "../shared/runtime-type.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	registerSuiteToolEnvelope,
 	registerSuiteToolEnvelopeCompanion,
@@ -22,6 +22,8 @@ import { CodeModeSessionLedger } from "./ledger.js";
 import {
 	captureCodeModeModelContent,
 	decodeCodeModeMediaSegments,
+	isCodeModeModelContentOwner,
+	isCodeModeToolContent,
 	rehydrateCodeModeMessages,
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
@@ -103,7 +105,178 @@ export const CODE_MODE_SEARCH_PRESENTATION: SuiteToolPresentation<{ readonly que
 	target: (args) => args.query,
 };
 
-export function decodeCodeModeOperations(details: unknown): readonly SuiteToolEnvelopeOperation[] {
+type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
+
+function decodeToolUsage<Value>(value: Value): ToolUsage | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("input" in value) ||
+		!isRuntimeNumber(value.input) ||
+		!("output" in value) ||
+		!isRuntimeNumber(value.output) ||
+		!("cacheRead" in value) ||
+		!isRuntimeNumber(value.cacheRead) ||
+		!("cacheWrite" in value) ||
+		!isRuntimeNumber(value.cacheWrite) ||
+		!("totalTokens" in value) ||
+		!isRuntimeNumber(value.totalTokens) ||
+		!("cost" in value) ||
+		!isRuntimeObject(value.cost) ||
+		value.cost === null ||
+		!("input" in value.cost) ||
+		!isRuntimeNumber(value.cost.input) ||
+		!("output" in value.cost) ||
+		!isRuntimeNumber(value.cost.output) ||
+		!("cacheRead" in value.cost) ||
+		!isRuntimeNumber(value.cost.cacheRead) ||
+		!("cacheWrite" in value.cost) ||
+		!isRuntimeNumber(value.cost.cacheWrite) ||
+		!("total" in value.cost) ||
+		!isRuntimeNumber(value.cost.total)
+	) {
+		return undefined;
+	}
+	const usage: ToolUsage = {
+		cacheRead: value.cacheRead,
+		cacheWrite: value.cacheWrite,
+		cost: {
+			cacheRead: value.cost.cacheRead,
+			cacheWrite: value.cost.cacheWrite,
+			input: value.cost.input,
+			output: value.cost.output,
+			total: value.cost.total,
+		},
+		input: value.input,
+		output: value.output,
+		totalTokens: value.totalTokens,
+	};
+	if ("cacheWrite1h" in value && value.cacheWrite1h !== undefined) {
+		if (!isRuntimeNumber(value.cacheWrite1h)) return undefined;
+		Object.assign(usage, { cacheWrite1h: value.cacheWrite1h });
+	}
+	if ("reasoning" in value && value.reasoning !== undefined) {
+		if (!isRuntimeNumber(value.reasoning)) return undefined;
+		Object.assign(usage, { reasoning: value.reasoning });
+	}
+	return usage;
+}
+
+function decodeToolResult<Value>(value: Value): AgentToolResult<unknown> | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("content" in value) ||
+		!isCodeModeToolContent(value.content) ||
+		!("details" in value)
+	) {
+		return undefined;
+	}
+	const result: AgentToolResult<unknown> = { content: [...value.content], details: value.details };
+	if ("usage" in value && value.usage !== undefined) {
+		const usage = decodeToolUsage(value.usage);
+		if (!usage) return undefined;
+		Object.assign(result, { usage });
+	}
+	if ("addedToolNames" in value && value.addedToolNames !== undefined) {
+		if (!Array.isArray(value.addedToolNames) || !value.addedToolNames.every(isRuntimeString)) return undefined;
+		Object.assign(result, { addedToolNames: [...value.addedToolNames] });
+	}
+	if ("terminate" in value && value.terminate !== undefined) {
+		if (!isRuntimeBoolean(value.terminate)) return undefined;
+		Object.assign(result, { terminate: value.terminate });
+	}
+	return result;
+}
+
+function decodeOperationState<Value>(value: Value): SuiteToolEnvelopeOperation["state"] | undefined {
+	if (!isRuntimeString(value)) return undefined;
+	switch (value) {
+		case "cancelled":
+			return "cancelled";
+		case "error":
+			return "error";
+		case "rejected":
+			return "rejected";
+		case "running":
+			return "running";
+		case "success":
+			return "success";
+		default:
+			return undefined;
+	}
+}
+
+function decodeOperation<Value>(value: Value): SuiteToolEnvelopeOperation | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("args" in value) ||
+		!isRuntimeObject(value.args) ||
+		value.args === null ||
+		Array.isArray(value.args) ||
+		!("id" in value) ||
+		!isRuntimeString(value.id) ||
+		!("name" in value) ||
+		!isRuntimeString(value.name) ||
+		!("state" in value)
+	) {
+		return undefined;
+	}
+	const state = decodeOperationState(value.state);
+	if (!state) return undefined;
+	const operation: SuiteToolEnvelopeOperation = {
+		args: Object.fromEntries(Object.entries(value.args)),
+		id: value.id,
+		name: value.name,
+		state,
+	};
+	if ("attempt" in value && value.attempt !== undefined) {
+		if (!isRuntimeNumber(value.attempt)) return undefined;
+		Object.assign(operation, { attempt: value.attempt });
+	}
+	if ("executionId" in value && value.executionId !== undefined) {
+		if (!isRuntimeString(value.executionId)) return undefined;
+		Object.assign(operation, { executionId: value.executionId });
+	}
+	if ("mediaPlacements" in value && value.mediaPlacements !== undefined) {
+		if (!Array.isArray(value.mediaPlacements)) return undefined;
+		const mediaPlacements: Array<{ readonly afterContentIndex: number; readonly mediaIndex: number }> = [];
+		for (const placement of value.mediaPlacements) {
+			if (
+				!isRuntimeObject(placement) ||
+				placement === null ||
+				!("afterContentIndex" in placement) ||
+				!isRuntimeNumber(placement.afterContentIndex) ||
+				!("mediaIndex" in placement) ||
+				!isRuntimeNumber(placement.mediaIndex)
+			) {
+				return undefined;
+			}
+			mediaPlacements.push({
+				afterContentIndex: placement.afterContentIndex,
+				mediaIndex: placement.mediaIndex,
+			});
+		}
+		Object.assign(operation, { mediaPlacements });
+	}
+	if ("replayed" in value && value.replayed !== undefined) {
+		if (!isRuntimeBoolean(value.replayed)) return undefined;
+		Object.assign(operation, { replayed: value.replayed });
+	}
+	if ("result" in value && value.result !== undefined) {
+		const result = decodeToolResult(value.result);
+		if (!result) return undefined;
+		Object.assign(operation, { result });
+	}
+	if ("sequence" in value && value.sequence !== undefined) {
+		if (!isRuntimeNumber(value.sequence)) return undefined;
+		Object.assign(operation, { sequence: value.sequence });
+	}
+	return operation;
+}
+
+export function decodeCodeModeOperations<Value>(details: Value): readonly SuiteToolEnvelopeOperation[] {
 	if (
 		!isRuntimeObject(details) ||
 		details === null ||
@@ -114,7 +287,10 @@ export function decodeCodeModeOperations(details: unknown): readonly SuiteToolEn
 	) {
 		return [];
 	}
-	return details.operations as readonly SuiteToolEnvelopeOperation[];
+	return details.operations.flatMap((value) => {
+		const operation = decodeOperation(value);
+		return operation ? [operation] : [];
+	});
 }
 
 export function createCodeModeDefinition(
@@ -181,15 +357,16 @@ export async function compensateCodeModeExecution(
 	const failures: string[] = [];
 	for (const target of ledger.compensationTargets(context, executionId)) {
 		try {
-			const didCompensate = await registry.compensate({
+			const invocation: Parameters<SuiteToolDefinitionRegistry["compensate"]>[0] = {
 				context,
 				executionId,
 				input: target.input,
 				name: target.name,
 				result: target.value,
 				sequence: target.sequence,
-				...(signal ? { signal } : {}),
-			});
+			};
+			if (signal) Object.assign(invocation, { signal });
+			const didCompensate = await registry.compensate(invocation);
 			if (!didCompensate) continue;
 			ledger.markCompensated(context, executionId, target.callId);
 			compensated += 1;
@@ -566,10 +743,11 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 	});
 	pi.on("tool_result", (event) => {
 		if (event.toolName !== CODE_MODE_TOOL_NAME) return undefined;
-		const details = event.details as PiStuffCodeModeDetails | undefined;
-		if (details?.kind === "pi-stuff-code-mode") captureCodeModeModelContent(details, event.content);
+		const details = event.details;
+		if (!isCodeModeModelContentOwner(details)) return undefined;
+		captureCodeModeModelContent(details, event.content);
 		if (
-			details?.kind === "pi-stuff-code-mode" &&
+			"status" in details &&
 			(details.status === "error" || details.status === "cancelled" || details.status === "incomplete")
 		) {
 			return { isError: true };

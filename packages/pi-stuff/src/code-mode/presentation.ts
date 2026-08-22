@@ -1,5 +1,5 @@
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
-import { isRuntimeObject } from "../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { PiStuffCodeModeDetails } from "./runtime.js";
 
 type ToolContent = AgentToolResult<unknown>["content"];
@@ -8,15 +8,39 @@ type AgentMessage = ContextEvent["messages"][number];
 
 const RAW_MODEL_CONTENT = Symbol("pi-stuff-code-mode-raw-model-content");
 
-type DetailsWithRawContent = PiStuffCodeModeDetails & {
-	[RAW_MODEL_CONTENT]?: ToolContent;
-};
+export interface CodeModeModelContentOwner {
+	readonly kind: "pi-stuff-code-mode";
+}
 
-function codeModeDetails(value: unknown): PiStuffCodeModeDetails | undefined {
-	if (!isRuntimeObject(value) || value === null) return undefined;
-	if (!("kind" in value) || value.kind !== "pi-stuff-code-mode") return undefined;
-	if (!("operations" in value) || !Array.isArray(value.operations)) return undefined;
-	return value as PiStuffCodeModeDetails;
+export function isCodeModeModelContentOwner<Value>(value: Value): value is Value & CodeModeModelContentOwner {
+	return isRuntimeObject(value) && value !== null && "kind" in value && value.kind === "pi-stuff-code-mode";
+}
+
+function isToolContentItem<Value>(value: Value): value is Value & ToolContentItem {
+	if (!isRuntimeObject(value) || value === null || !("type" in value)) return false;
+	if (value.type === "text") return "text" in value && isRuntimeString(value.text);
+	return (
+		value.type === "image" &&
+		"data" in value &&
+		isRuntimeString(value.data) &&
+		"mimeType" in value &&
+		isRuntimeString(value.mimeType)
+	);
+}
+
+export function isCodeModeToolContent<Value>(value: Value): value is Value & ToolContent {
+	return Array.isArray(value) && value.every(isToolContentItem);
+}
+
+function isMediaContentIndexes<Value>(value: Value): value is Value & readonly (readonly number[])[] {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(indexes) =>
+				Array.isArray(indexes) &&
+				indexes.every((index) => isRuntimeNumber(index) && Number.isSafeInteger(index) && index >= 0),
+		)
+	);
 }
 
 /**
@@ -24,7 +48,7 @@ function codeModeDetails(value: unknown): PiStuffCodeModeDetails | undefined {
  * tool_execution_end event. The symbol is deliberately non-enumerable, so it
  * can never leak into session JSON.
  */
-export function captureCodeModeModelContent(details: PiStuffCodeModeDetails, content: ToolContent): void {
+export function captureCodeModeModelContent(details: CodeModeModelContentOwner, content: ToolContent): void {
 	Object.defineProperty(details, RAW_MODEL_CONTENT, {
 		configurable: true,
 		enumerable: false,
@@ -85,16 +109,15 @@ function normalizedMediaContentIndexes(
 export function separateCodeModeMediaForUi(
 	result: AgentToolResult<PiStuffCodeModeDetails>,
 ): AgentToolResult<PiStuffCodeModeDetails> | undefined {
-	const details = codeModeDetails(result.details);
-	if (!details) return undefined;
+	const details = result.details;
 	const referencedMedia = new Set(
 		details.operations.flatMap((operation) =>
 			(operation.mediaPlacements ?? []).map((placement) => placement.mediaIndex),
 		),
 	);
 	if (referencedMedia.size === 0) return undefined;
-	const raw = (details as DetailsWithRawContent)[RAW_MODEL_CONTENT];
-	if (!raw) return undefined;
+	const raw = Object.getOwnPropertyDescriptor(details, RAW_MODEL_CONTENT)?.value;
+	if (!isCodeModeToolContent(raw)) return undefined;
 	const mediaContentIndexes = normalizedMediaContentIndexes(raw, result.content);
 	if (!mediaContentIndexes) return undefined;
 	if ([...referencedMedia].some((index) => !mediaContentIndexes[index])) return undefined;
@@ -114,12 +137,21 @@ export function separateCodeModeMediaForUi(
 }
 
 /** Resolve normalized media plus Pi-generated image hints for nested renderers. */
-export function decodeCodeModeMediaSegments(detailsValue: unknown): readonly (readonly ToolContentItem[])[] {
-	const details = codeModeDetails(detailsValue);
-	if (!details?.modelContent || !details.mediaContentIndexes) return [];
-	return details.mediaContentIndexes.map((indexes) =>
+export function decodeCodeModeMediaSegments<Value>(detailsValue: Value): readonly (readonly ToolContentItem[])[] {
+	if (
+		!isRuntimeObject(detailsValue) ||
+		detailsValue === null ||
+		!("modelContent" in detailsValue) ||
+		!("mediaContentIndexes" in detailsValue)
+	) {
+		return [];
+	}
+	const modelContent = detailsValue.modelContent;
+	const mediaContentIndexes = detailsValue.mediaContentIndexes;
+	if (!isCodeModeToolContent(modelContent) || !isMediaContentIndexes(mediaContentIndexes)) return [];
+	return mediaContentIndexes.map((indexes) =>
 		indexes.flatMap((index) => {
-			const item = details.modelContent?.[index];
+			const item = modelContent[index];
 			return item ? [item] : [];
 		}),
 	);
@@ -130,8 +162,17 @@ export function rehydrateCodeModeMessages(messages: readonly AgentMessage[]): Ag
 	let changed = false;
 	const hydrated = messages.map((message) => {
 		if (message.role !== "toolResult" || message.toolName !== "codemode") return message;
-		const details = codeModeDetails(message.details);
-		if (!details?.modelContent) return message;
+		const details = message.details;
+		if (
+			!isRuntimeObject(details) ||
+			details === null ||
+			!("kind" in details) ||
+			details.kind !== "pi-stuff-code-mode" ||
+			!("modelContent" in details) ||
+			!isCodeModeToolContent(details.modelContent)
+		) {
+			return message;
+		}
 		changed = true;
 		return { ...message, content: [...details.modelContent] };
 	});
