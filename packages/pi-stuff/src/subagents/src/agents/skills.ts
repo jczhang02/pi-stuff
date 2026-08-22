@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { isJsonInputObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 
@@ -86,8 +86,7 @@ function readOptionalJsonFile(filePath: string, label: string): JsonValue | null
 	try {
 		return parseJsonValue(fs.readFileSync(filePath, "utf-8"));
 	} catch (error) {
-		const code =
-			isRuntimeObject(error) && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
+		const code = isRuntimeObject(error) && error !== null && "code" in error ? error.code : undefined;
 		if (code === "ENOENT") return null;
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Failed to read ${label} '${filePath}': ${message}`, {
@@ -114,10 +113,10 @@ function extractSkillPathsFromPackageRoot(
 	const pkg = bestEffort
 		? readJsonFileBestEffort(packageJsonPath)
 		: readOptionalJsonFile(packageJsonPath, "package manifest");
-	if (!pkg || !isRuntimeObject(pkg) || Array.isArray(pkg)) return [];
-	const pi = (pkg as { pi?: unknown }).pi;
-	if (!pi || !isRuntimeObject(pi) || Array.isArray(pi)) return [];
-	const skills = (pi as { skills?: unknown }).skills;
+	if (!pkg || !isJsonInputObject(pkg)) return [];
+	const pi = pkg["pi"];
+	if (!isJsonInputObject(pi)) return [];
+	const skills = pi["skills"];
 	if (!Array.isArray(skills)) return [];
 	return skills
 		.filter((entry): entry is string => isRuntimeString(entry))
@@ -206,8 +205,8 @@ function collectSettingsSkillPaths(cwd: string, agentDir: string): SkillSearchPa
 
 	for (const { file, base, source } of settingsFiles) {
 		const settings = readOptionalJsonFile(file, "skills settings file");
-		if (!settings || !isRuntimeObject(settings) || Array.isArray(settings)) continue;
-		const skills = (settings as { skills?: unknown }).skills;
+		if (!settings || !isJsonInputObject(settings)) continue;
+		const skills = settings["skills"];
 		if (!Array.isArray(skills)) continue;
 		for (const entry of skills) {
 			if (!isRuntimeString(entry)) continue;
@@ -321,15 +320,15 @@ function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillS
 
 	for (const { file, base, source } of settingsFiles) {
 		const settings = readOptionalJsonFile(file, "skills settings file");
-		if (!settings || !isRuntimeObject(settings) || Array.isArray(settings)) continue;
-		const packages = (settings as { packages?: unknown }).packages;
+		if (!settings || !isJsonInputObject(settings)) continue;
+		const packages = settings["packages"];
 		if (!Array.isArray(packages)) continue;
 
 		for (const entry of packages) {
 			const packageSource = isRuntimeString(entry)
 				? entry
-				: isRuntimeObject(entry) && entry !== null && isRuntimeString((entry as { source?: unknown }).source)
-					? (entry as { source: string }).source
+				: isJsonInputObject(entry) && isRuntimeString(entry["source"])
+					? entry["source"]
 					: undefined;
 			if (!packageSource) continue;
 
