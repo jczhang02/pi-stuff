@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isJsonInputObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export interface WorktreeSetup {
@@ -289,17 +290,25 @@ function parseWorktreeSetupHookOutput(rawStdout: string): WorktreeSetupHookOutpu
 	if (!trimmed) {
 		throw new Error("worktree setup hook returned empty stdout; expected JSON object");
 	}
-	let parsed: unknown;
+	let parsed: JsonValue;
 	try {
-		parsed = JSON.parse(trimmed);
+		parsed = parseJsonValue(trimmed);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`worktree setup hook returned invalid JSON: ${message}`);
 	}
-	if (!parsed || !isRuntimeObject(parsed) || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error("worktree setup hook stdout must be a JSON object");
 	}
-	return parsed as WorktreeSetupHookOutput;
+	const syntheticPaths = parsed["syntheticPaths"];
+	if (syntheticPaths === undefined) return {};
+	if (!Array.isArray(syntheticPaths)) {
+		throw new Error("worktree setup hook output field 'syntheticPaths' must be an array of relative paths");
+	}
+	if (!syntheticPaths.every(isRuntimeString)) {
+		throw new Error("worktree setup hook output field 'syntheticPaths' must contain only strings");
+	}
+	return { syntheticPaths };
 }
 
 function runWorktreeSetupHook(hook: ResolvedWorktreeSetupHook, input: WorktreeSetupHookInput): string[] {
@@ -326,15 +335,9 @@ function runWorktreeSetupHook(hook: ResolvedWorktreeSetupHook, input: WorktreeSe
 
 	const output = parseWorktreeSetupHookOutput(result.stdout);
 	if (output.syntheticPaths === undefined) return [];
-	if (!Array.isArray(output.syntheticPaths)) {
-		throw new Error("worktree setup hook output field 'syntheticPaths' must be an array of relative paths");
-	}
 
 	const uniquePaths = new Set<string>();
 	for (const candidate of output.syntheticPaths) {
-		if (!isRuntimeString(candidate)) {
-			throw new Error("worktree setup hook output field 'syntheticPaths' must contain only strings");
-		}
 		const normalizedPath = normalizeSyntheticPath(input.worktreePath, candidate);
 		if (hasTrackedEntries(input.worktreePath, normalizedPath)) {
 			throw new Error(`worktree setup hook cannot mark tracked paths as synthetic: ${normalizedPath}`);
@@ -434,8 +437,7 @@ function removeSyntheticPath(worktree: WorktreeInfo, syntheticPath: string): voi
 		try {
 			ancestorStat = fs.lstatSync(ancestor);
 		} catch (error) {
-			const code =
-				error && isRuntimeObject(error) && "code" in error ? (error as { code?: unknown }).code : undefined;
+			const code = error && isRuntimeObject(error) && "code" in error ? error.code : undefined;
 			if (code === "ENOENT") return;
 			throw error;
 		}
@@ -451,7 +453,7 @@ function removeSyntheticPath(worktree: WorktreeInfo, syntheticPath: string): voi
 	try {
 		stat = fs.lstatSync(resolved);
 	} catch (error) {
-		const code = error && isRuntimeObject(error) && "code" in error ? (error as { code?: unknown }).code : undefined;
+		const code = error && isRuntimeObject(error) && "code" in error ? error.code : undefined;
 		if (code === "ENOENT") return;
 		throw error;
 	}
@@ -478,7 +480,7 @@ function removeSyntheticPathsBeforeDiff(worktree: WorktreeInfo): void {
 }
 
 function emptyDiff(index: number, agent: string, branch: string, patchPath: string, error?: string): WorktreeDiff {
-	return {
+	const diff: WorktreeDiff = {
 		index,
 		agent,
 		branch,
@@ -487,8 +489,9 @@ function emptyDiff(index: number, agent: string, branch: string, patchPath: stri
 		insertions: 0,
 		deletions: 0,
 		patchPath,
-		...(error ? { error } : {}),
 	};
+	if (error) diff.error = error;
+	return diff;
 }
 
 function parseNumstat(numstat: string) {
@@ -559,7 +562,7 @@ function retainedWorktree(
 	message: string,
 	error?: string,
 ): WorktreeCleanupTask {
-	return {
+	const task: WorktreeCleanupTask = {
 		index: worktree.index,
 		path: worktree.path,
 		branch: worktree.branch,
@@ -568,8 +571,9 @@ function retainedWorktree(
 		message,
 		worktreeRemoved: false,
 		branchRemoved: false,
-		...(error ? { errors: [error] } : {}),
 	};
+	if (error) task.errors = [error];
+	return task;
 }
 
 function cleanupSingleWorktree(repoCwd: string, worktree: WorktreeInfo, baseCommit: string): WorktreeCleanupTask {
@@ -736,12 +740,13 @@ export function cleanupWorktrees(setup: WorktreeSetup): WorktreeCleanupReport {
 		}
 	}
 	const state = allRemoved && pruned ? "complete" : "partial";
-	return {
+	const report: WorktreeCleanupReport = {
 		state,
 		tasks,
 		pruned,
-		...(errors.length ? { errors } : {}),
 	};
+	if (errors.length) report.errors = errors;
+	return report;
 }
 
 export function formatWorktreeDiffSummary(diffs: WorktreeDiff[]): string {
