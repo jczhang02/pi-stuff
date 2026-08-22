@@ -118,6 +118,7 @@ class ApiHarness {
 	readonly events = new EventBusHarness();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ message: TestMessage; options: MessageOptions }> = [];
+	readonly providerToolDescriptions = new Map<string, string>();
 	readonly renderers: string[] = [];
 	readonly tools = new Map<string, TestTool>();
 
@@ -125,6 +126,8 @@ class ApiHarness {
 		events: this.events.host,
 		on: captureExtensionHandlers(this.handlers),
 		registerTool: (tool) => {
+			// Pi snapshots ToolDefinition fields while rebuilding its provider-facing AgentTool registry.
+			this.providerToolDescriptions.set(tool.name, tool.description);
 			// SAFETY: this test registry erases only generic renderer state and invokes the original Tool unchanged.
 			this.tools.set(tool.name, tool as TestTool);
 		},
@@ -746,6 +749,9 @@ describe("Agents extension composition root", () => {
 		await root.api.fire("before_agent_start", { type: "before_agent_start" }, projectContext);
 
 		expect(tool.description).toContain("explore — Fast read-only code search Agent (tools: read, find, ls, bash)");
+		expect(root.api.providerToolDescriptions.get("subagent")).toContain(
+			"explore — Fast read-only code search Agent (tools: read, find, ls, bash)",
+		);
 	});
 
 	test("keeps session and Agent submission free of full artifact discovery", async () => {

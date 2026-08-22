@@ -3450,13 +3450,16 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	runtime.markRendererAttached(tool.name);
 }
 
-/** Register a Suite-owned Tool without changing its execute protocol or result. */
+/**
+ * Register a Suite-owned Tool without changing its execute protocol or result.
+ * Returns the exact registered definition so an owner can refresh dynamic model-facing fields through Pi's public API.
+ */
 export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
 	pi: SuiteToolRegistrationHost,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolPresentation<Static<TParams> & ToolArguments, TDetails>,
 	codeMode?: SuiteToolCodeModeContract,
-): void {
+): ToolDefinition<TParams, TDetails> {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
@@ -3482,6 +3485,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
 	}
 	runtime.markRendererAttached(tool.name);
+	return decorated;
 }
 
 function replayFallbackLabel(name: string): string {

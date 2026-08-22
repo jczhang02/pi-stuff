@@ -21,6 +21,9 @@ user definitions, and user definitions override Package definitions.
   work, or `action` for current-session control. It rejects mixed shapes instead of guessing which request to run.
 - Launches are background by default. Omit `foreground` to continue immediately; set `foreground: true` when the
   findings must inform the current answer. The retired `background` field is not accepted.
+- Before each main Agent run, local discovery refreshes the public Tool contract with every selectable Agent's name,
+  purpose, and effective Tool allowlist. Direct provider schemas and Code Mode therefore expose the same current roster;
+  the model does not need to guess definition names or inspect Agent files.
 - The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
   executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
   background work is never mislabeled as completed.

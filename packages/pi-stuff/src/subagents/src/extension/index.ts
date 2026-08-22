@@ -1078,13 +1078,15 @@ export default function registerSubagentExtension(
 		},
 	};
 
-	registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
+	const registeredTool = registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
 	pi.on("before_agent_start", async (_event, ctx) => {
 		if (!active) return;
 		const epoch = sessionEpoch;
 		const discovered = await deps.discoverAgents(ctx.cwd, "both");
 		if (!active || epoch !== sessionEpoch) return;
 		agentRoster = projectAgentRoster(discovered.agents, ctx.cwd);
+		// Pi snapshots Tool fields into its provider registry, so refresh after discovery.
+		pi.registerTool(registeredTool);
 	});
 	pi.registerCommand("agents", {
 		description: "Inspect and control Agents in the current session",
