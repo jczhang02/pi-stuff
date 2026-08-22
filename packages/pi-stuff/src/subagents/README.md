@@ -24,7 +24,9 @@ user definitions, and user definitions override Package definitions.
 - Before each main Agent run, local discovery refreshes the public Tool contract with every selectable Agent's name,
   purpose, and effective Tool allowlist. Direct provider schemas and Code Mode therefore expose the same current roster;
   the model does not need to guess definition names or inspect Agent files. A launch's optional `cwd` changes where the
-  child executes; Agent identity still resolves from this advertised parent-project roster.
+  child executes; Agent identity still resolves from this advertised parent-project roster. Agents with direct MCP
+  Tools also fail launch preflight if their selectors are unresolved or the target `cwd` would change the advertised
+  Tool names, so delegation never silently starts with a different external capability contract.
 - The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
   executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
   background work is never mislabeled as completed.

@@ -51,6 +51,10 @@ import {
 } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import {
+	resolveMcpDirectToolSelections,
+	unresolvedMcpDirectToolSelectors,
+} from "../shared/mcp-direct-tool-allowlist.ts";
+import {
 	type AvailableModelInfo,
 	assertModelCandidateLimit,
 	buildModelCandidates,
@@ -537,6 +541,36 @@ export function buildResolvedTask(input: {
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
+	if (agent.mcpDirectTools?.length) {
+		const advertisedSelections = resolveMcpDirectToolSelections(agent.mcpDirectTools, params.ctx.cwd);
+		const advertisedMissing = unresolvedMcpDirectToolSelectors(agent.mcpDirectTools, advertisedSelections);
+		if (advertisedMissing.length) {
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool selectors do not resolve in the parent project: ${advertisedMissing.join(", ")}.`,
+			};
+		}
+		const executionMissing = unresolvedMcpDirectToolSelectors(agent.mcpDirectTools, toolPlan.resolvedMcpSelections);
+		if (executionMissing.length) {
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool selectors do not resolve in the execution cwd: ${executionMissing.join(", ")}.`,
+			};
+		}
+		const signature = (selections: typeof advertisedSelections) =>
+			selections
+				.map((selection) => `${selection.selector}:${selection.name}`)
+				.sort()
+				.join(",");
+		if (signature(advertisedSelections) !== signature(toolPlan.resolvedMcpSelections)) {
+			const names = (selections: typeof advertisedSelections) =>
+				selections
+					.map((selection) => selection.name)
+					.sort()
+					.join(", ");
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool contract changes with cwd (parent: ${names(advertisedSelections)}; execution: ${names(toolPlan.resolvedMcpSelections)}).`,
+			};
+		}
+	}
 	const launchBinding: Partial<LaunchBindingInput> = {
 		definitionDigest,
 		task: taskInput.task,
