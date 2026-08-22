@@ -16,7 +16,10 @@ export interface McpStatusEventBus {
   emit(channel: string, data: JsonInputValue): void;
 }
 
-function getActiveFailureAgeSeconds(state: McpExtensionState, serverName: string): number | undefined {
+function getActiveFailureAgeSeconds(
+  state: Pick<McpExtensionState, "failureTracker">,
+  serverName: string,
+): number | undefined {
   const failedAt = state.failureTracker.get(serverName);
   if (!failedAt) return undefined;
   const ageMs = Date.now() - failedAt;
@@ -25,7 +28,12 @@ function getActiveFailureAgeSeconds(state: McpExtensionState, serverName: string
 }
 
 /** Build a sanitized snapshot without connecting or querying any MCP server. */
-export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnapshot {
+export function createMcpStatusSnapshot(
+  state: Pick<
+    McpExtensionState,
+    "config" | "failureMessages" | "failureTracker" | "manager" | "resourceCounts" | "toolMetadata"
+  >,
+): McpStatusSnapshot {
   const servers: McpServerStatusSnapshot[] = [];
   let totalTools = 0;
   let totalResources = 0;
@@ -67,13 +75,15 @@ export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnap
 	      name,
 	      status,
 	      toolCount,
-	      resourceCount,
-	      failedAgoSeconds: status === "failed" ? failedAgoSeconds : undefined,
-	      failureDetail: status === "failed" && failureDetail ? failureDetail : undefined,
 	      disabled,
 	      oauth: definition ? supportsOAuth(definition) : false,
 	      autoConnect: definition?.lifecycle === "eager" || definition?.lifecycle === "keep-alive",
 	    };
+	    if (resourceCount !== undefined) Object.assign(snapshot, { resourceCount });
+	    if (status === "failed" && failedAgoSeconds !== undefined) {
+	      Object.assign(snapshot, { failedAgoSeconds });
+	    }
+	    if (status === "failed" && failureDetail) Object.assign(snapshot, { failureDetail });
 	    servers.push(snapshot);
   }
 

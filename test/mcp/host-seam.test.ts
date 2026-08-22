@@ -21,15 +21,18 @@ import { Guard } from "typebox/guard";
 import { Check } from "typebox/value";
 import piStuffContext, { getContextCapability } from "../../packages/pi-stuff/src/context-management/index.js";
 import { readAgentWorkOrigin } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
+import { createMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/runtime/mcp-status.js";
 import {
 	dispatchMcpPromptToAgent,
 	MCP_USER_PROMPT_MESSAGE_TYPE,
 	registerMcpPromptMessageRenderer,
 } from "../../packages/pi-stuff/src/mcp/runtime/prompts.js";
+import { McpServerManager } from "../../packages/pi-stuff/src/mcp/runtime/server-manager.js";
 import {
 	formatMcpDirectToolCallLines,
 	formatMcpToolResultLines,
 } from "../../packages/pi-stuff/src/mcp/runtime/tool-result-renderer.js";
+import { isJsonSourceValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 const sessions: AgentSession[] = [];
 const temporaryRoots: string[] = [];
@@ -83,6 +86,19 @@ test("MCP call and result previews are terminal-cell-safe", () => {
 		expect(line).not.toContain("\u001b");
 	}
 	expect(result.truncated).toBeTrue();
+});
+
+test("MCP status events omit absent optional server fields", () => {
+	const snapshot = createMcpStatusSnapshot({
+		config: { mcpServers: { context7: { url: "https://mcp.context7.com/mcp" } } },
+		failureMessages: new Map(),
+		failureTracker: new Map(),
+		manager: new McpServerManager(),
+		resourceCounts: new Map(),
+		toolMetadata: new Map(),
+	});
+	expect(isJsonSourceValue(snapshot)).toBeTrue();
+	expect(snapshot.servers[0]).not.toHaveProperty("resourceCount");
 });
 
 test("real Pi 0.84.2 preserves MCP prompt provenance, Context, persistence, and reload rendering", async () => {
