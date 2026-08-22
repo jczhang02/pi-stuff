@@ -29,6 +29,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
 import type { BackgroundRunnerConfig } from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
 import {
+	SUBAGENT_CHILD_ENV,
 	SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV,
 	SUBAGENT_PARENT_CHILD_INDEX_ENV,
 	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
@@ -64,7 +65,10 @@ function setEnvironment(name: string, value: string): void {
 	process.env[name] = value;
 }
 
-const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
+const MOCK_SESSION_ENVIRONMENT_KEYS = [
+	SUBAGENT_CHILD_ENV,
+	"PI_SUBAGENT_DEPTH",
+	"PI_SUBAGENT_MAX_DEPTH",
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
 	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
 	SUBAGENT_PARENT_ROOT_RUN_ID_ENV,
@@ -76,13 +80,11 @@ const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
 	SUBAGENT_PARENT_SESSION_ENV,
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 ] as const;
-let parentSessionEnvironment: Map<(typeof MOCK_PARENT_SESSION_ENVIRONMENT_KEYS)[number], string | undefined>;
+let sessionEnvironment: Map<(typeof MOCK_SESSION_ENVIRONMENT_KEYS)[number], string | undefined>;
 
 beforeEach(() => {
-	parentSessionEnvironment = new Map(
-		MOCK_PARENT_SESSION_ENVIRONMENT_KEYS.map((key) => [key, process.env[key]] as const),
-	);
-	for (const key of MOCK_PARENT_SESSION_ENVIRONMENT_KEYS) delete process.env[key];
+	sessionEnvironment = new Map(MOCK_SESSION_ENVIRONMENT_KEYS.map((key) => [key, process.env[key]] as const));
+	for (const key of MOCK_SESSION_ENVIRONMENT_KEYS) delete process.env[key];
 });
 
 afterEach(() => {
@@ -92,7 +94,7 @@ afterEach(() => {
 	}
 	environment.clear();
 	for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
-	for (const [key, value] of parentSessionEnvironment) {
+	for (const [key, value] of sessionEnvironment) {
 		if (value === undefined) delete process.env[key];
 		else process.env[key] = value;
 	}
