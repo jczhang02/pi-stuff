@@ -90,26 +90,27 @@ export function reduceWorkCycle(state: WorkCycleState, event: WorkCycleEvent): W
 			};
 		}
 		if (state.status === "pending") {
-			return {
+			const running = {
 				generation: state.generation + 1,
 				includesUserWork: state.includesUserWork,
-				...(state.latestAssistant ? { latestAssistant: state.latestAssistant } : {}),
 				startedAt: state.startedAt,
-				status: "running",
+				status: "running" as const,
 			};
+			if (state.latestAssistant) Object.assign(running, { latestAssistant: state.latestAssistant });
+			return running;
 		}
 		return state;
 	}
 	if (state.status === "idle" || event.type === "agent_end") return state;
 	if (event.type === "user_work") return { ...state, includesUserWork: true };
 	if (event.type === "assistant_finalized") {
+		const latestAssistant = {};
+		if (event.errorMessage !== undefined) Object.assign(latestAssistant, { errorMessage: event.errorMessage });
+		if (event.preview !== undefined) Object.assign(latestAssistant, { preview: event.preview });
+		if (event.stopReason !== undefined) Object.assign(latestAssistant, { stopReason: event.stopReason });
 		return {
 			...state,
-			latestAssistant: {
-				...(event.errorMessage !== undefined ? { errorMessage: event.errorMessage } : {}),
-				...(event.preview !== undefined ? { preview: event.preview } : {}),
-				...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
-			},
+			latestAssistant,
 		};
 	}
 	if (event.type === "agent_settled") {
@@ -204,11 +205,12 @@ export class NotificationRuntime {
 				return;
 			}
 			try {
-				this.notify({
+				const alert = {
 					elapsedMs,
 					outcome,
-					...(settled.latestAssistant?.preview ? { preview: settled.latestAssistant.preview } : {}),
-				});
+				};
+				if (settled.latestAssistant?.preview) Object.assign(alert, { preview: settled.latestAssistant.preview });
+				this.notify(alert);
 			} catch {
 				// Notification delivery is observational and cannot fail Agent work.
 			}
