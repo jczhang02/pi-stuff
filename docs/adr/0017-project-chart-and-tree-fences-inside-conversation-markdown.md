@@ -11,7 +11,7 @@ remains under Live Thoughts and never enters this visualization path.
 
 The dispatcher is static and internal to Conversation UI. It runs inside the Module’s one registered Host Markdown
 transformer; there is no second transformer, plugin registry, setting, Capability, Package, or runtime dependency.
-Assistant candidate recognition is fused into the existing sanitizer traversal; User Markdown uses an exact opening-fence
+Assistant candidate recognition is fused into the existing chunk-preserving sanitizer traversal; User Markdown uses an exact opening-fence
 prefilter. Ordinary messages never enter visualization parsing. A matched block is projected only when its
 closing fence, grammar, safety checks, limits, and available terminal width all succeed. At most 16 valid blocks are
 projected per Markdown message. Otherwise the original fence is returned byte-for-byte.

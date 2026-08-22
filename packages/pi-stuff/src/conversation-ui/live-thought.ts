@@ -410,15 +410,19 @@ interface VisualizationFenceDetection {
 }
 
 function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDetection): string {
-	let text = "";
+	const segments: string[] = [];
+	let segmentStart = 0;
 	let index = 0;
 	if (fenceDetection && startsVisualizationFence(value, 0)) fenceDetection.found = true;
 	while (index < value.length) {
 		const code = value.charCodeAt(index);
 		if (code === 0x1b) {
+			const controlStart = index;
 			const introducer = value.charCodeAt(index + 1);
 			if (introducer === 0x5b) {
 				index = skipControlSequence(value, index + 2);
+				segments.push(value.slice(segmentStart, controlStart));
+				segmentStart = index;
 				continue;
 			}
 			if (
@@ -429,6 +433,8 @@ function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDete
 				introducer === 0x5f
 			) {
 				index = skipControlString(value, index + 2);
+				segments.push(value.slice(segmentStart, controlStart));
+				segmentStart = index;
 				continue;
 			}
 			index += 1;
@@ -438,26 +444,35 @@ function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDete
 				index += 1;
 			}
 			if (index < value.length) index += 1;
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x9b) {
+			const controlStart = index;
 			index = skipControlSequence(value, index + 1);
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x90 || code === 0x98 || code === 0x9d || code === 0x9e || code === 0x9f) {
+			const controlStart = index;
 			index = skipControlString(value, index + 1);
+			segments.push(value.slice(segmentStart, controlStart));
+			segmentStart = index;
 			continue;
 		}
 		if (code === 0x0d) {
-			text += "\n";
+			const carriageReturn = index;
 			index += value.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+			segments.push(value.slice(segmentStart, carriageReturn), "\n");
+			segmentStart = index;
 			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
 				fenceDetection.found = true;
 			}
 			continue;
 		}
 		if (code === 0x0a) {
-			text += "\n";
 			index += 1;
 			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
 				fenceDetection.found = true;
@@ -465,14 +480,16 @@ function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDete
 			continue;
 		}
 		if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || isBidiControl(code)) {
-			text += " ";
+			segments.push(value.slice(segmentStart, index), " ");
 			index += 1;
+			segmentStart = index;
 			continue;
 		}
-		text += value[index];
 		index += 1;
 	}
-	return text;
+	if (segments.length === 0) return value;
+	segments.push(value.slice(segmentStart));
+	return segments.join("");
 }
 
 function startsVisualizationFence(value: string, start: number): boolean {
