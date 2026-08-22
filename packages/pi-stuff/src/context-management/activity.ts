@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { CustomEntry, EntryRenderer, Theme } from "@earendil-works/pi-coding-agent";
+import type { EntryRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isJsonInputObject, isJsonInputValue, type JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../tool-display/terminal.js";
 
@@ -28,27 +29,18 @@ interface MagicStatusMessage {
 const DETAIL_MAX_CELLS = 12 * 1024;
 const DETAIL_MAX_LINES = 80;
 const SUMMARY_MAX_CELLS = 240;
-const CONTEXT_OPERATIONS = new Set<ContextOperation>(["flush", "recomp", "upgrade", "wrapup"]);
-const CONTEXT_STATES = new Set<ContextActivityState>(["error", "info", "running", "success", "warning"]);
 
-function isActivityData(value: unknown): value is ContextActivityData {
-	if (!value || !isRuntimeObject(value)) return false;
-	const data = value as Partial<ContextActivityData>;
-	return (
-		data.version === 1 &&
-		isRuntimeString(data.id) &&
-		/^context-[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/iu.test(data.id) &&
-		(data.kind === "anchor" || data.kind === "update") &&
-		CONTEXT_OPERATIONS.has(data.operation as ContextOperation) &&
-		CONTEXT_STATES.has(data.state as ContextActivityState) &&
-		isRuntimeString(data.summary) &&
-		isRuntimeString(data.detail)
-	);
+function isContextOperation(value: JsonInputValue): value is ContextOperation {
+	return value === "flush" || value === "recomp" || value === "upgrade" || value === "wrapup";
 }
 
-function asEntry(value: unknown): CustomEntry | undefined {
-	if (!value || !isRuntimeObject(value)) return undefined;
-	return value as CustomEntry;
+function isContextActivityState(value: JsonInputValue): value is ContextActivityState {
+	return value === "error" || value === "info" || value === "running" || value === "success" || value === "warning";
+}
+
+function activityEntryData<Value>(value: Value): JsonInputValue | undefined {
+	if (!value || !isRuntimeObject(value) || !("data" in value) || !isJsonInputValue(value.data)) return undefined;
+	return value.data;
 }
 
 function replaceLegacyCommands(text: string): string {
@@ -76,12 +68,29 @@ function cleanSummary(text: string): string {
 	return boundTerminalLine(replaceLegacyCommands(text), SUMMARY_MAX_CELLS) || "updated";
 }
 
-function normalizeActivityData(value: unknown): ContextActivityData | undefined {
-	if (!isActivityData(value)) return undefined;
+function normalizeActivityData(value: JsonInputValue): ContextActivityData | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	const { detail, id, kind, operation, state, summary, version } = value;
+	if (
+		version !== 1 ||
+		!isRuntimeString(id) ||
+		!/^context-[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/iu.test(id) ||
+		(kind !== "anchor" && kind !== "update") ||
+		!isContextOperation(operation) ||
+		!isContextActivityState(state) ||
+		!isRuntimeString(summary) ||
+		!isRuntimeString(detail)
+	) {
+		return undefined;
+	}
 	return {
-		...value,
-		detail: cleanDetail(value.detail),
-		summary: cleanSummary(value.summary),
+		detail: cleanDetail(detail),
+		id,
+		kind,
+		operation,
+		state,
+		summary: cleanSummary(summary),
+		version,
 	};
 }
 
@@ -284,8 +293,8 @@ export class ContextActivityRegistry {
 	}
 
 	render: EntryRenderer<unknown> = (entry, options, theme) => {
-		const custom = asEntry(entry);
-		const data = custom ? normalizeActivityData(custom.data) : undefined;
+		const entryData = activityEntryData(entry);
+		const data = entryData === undefined ? undefined : normalizeActivityData(entryData);
 		if (!data) return undefined;
 		if (data.kind === "update") {
 			this.activities.set(data.id, data);
