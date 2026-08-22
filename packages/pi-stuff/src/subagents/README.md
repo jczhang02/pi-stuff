@@ -23,7 +23,8 @@ user definitions, and user definitions override Package definitions.
   findings must inform the current answer. The retired `background` field is not accepted.
 - Before each main Agent run, local discovery refreshes the public Tool contract with every selectable Agent's name,
   purpose, and effective Tool allowlist. Direct provider schemas and Code Mode therefore expose the same current roster;
-  the model does not need to guess definition names or inspect Agent files.
+  the model does not need to guess definition names or inspect Agent files. A launch's optional `cwd` changes where the
+  child executes; Agent identity still resolves from this advertised parent-project roster.
 - The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
   executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
   background work is never mislabeled as completed.
@@ -71,7 +72,9 @@ user definitions, and user definitions override Package definitions.
   direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a
   bounded failure category and path-scrubbed terminal reason before any stale progress text.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
-  them once in the current answer.
+  them once in the current answer. Long reports preserve both their opening evidence and conclusion, identify the
+  omitted middle, and point to the durable output artifact for full model retrieval. Parallel projection divides the
+  same bound across every child instead of dropping later results.
 - The Agent detail transcript associates each child Tool call with its persisted call identity. It renders a compact
   lifecycle icon, operation, and target, keeps successful results collapsed until `t` is pressed, and leaves failure
   reasons visible. Mixed or out-of-order results remain attributable; identity-free legacy records are paired only

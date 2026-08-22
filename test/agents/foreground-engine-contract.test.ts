@@ -242,6 +242,7 @@ function executor(
 	options: {
 		agent?: AgentConfig;
 		agents?: AgentConfig[];
+		discoverAgents?: (cwd: string) => { agents: AgentConfig[] };
 		foregroundCrash?: boolean;
 		foregroundDelayMs?: number;
 		foregroundError?: Error;
@@ -261,7 +262,7 @@ function executor(
 		tempArtifactsDir: cwd,
 		getSubagentSessionRoot: () => path.join(cwd, "sessions"),
 		expandTilde: (value) => value,
-		discoverAgents: () => ({ agents: options.agents ?? [options.agent ?? agent()] }),
+		discoverAgents: options.discoverAgents ?? (() => ({ agents: options.agents ?? [options.agent ?? agent()] })),
 		projectContext: options.projectContext,
 		onForegroundStatus: options.onForegroundStatus,
 		resolveCodeModeEnabled:
@@ -545,6 +546,34 @@ describe("reduced foreground Agent engine", () => {
 		expect(result.details.results.map((child) => child.finalOutput)).toEqual(["result-1"]);
 		expect(runState.foregroundControls.size).toBe(0);
 		expect(runState.foregroundRuns?.size).toBe(1);
+	});
+
+	test("resolves the advertised Agent from the parent project while executing in the requested cwd", async () => {
+		const parentCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-parent-roster-"));
+		const childCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-child-cwd-"));
+		temporaryDirectories.push(parentCwd, childCwd);
+		fs.writeFileSync(path.join(parentCwd, "parent.jsonl"), "");
+		const discoveredFrom: string[] = [];
+		let executedFrom: string | undefined;
+		const result = await executor(parentCwd, state(), undefined, {
+			discoverAgents: (cwd) => {
+				discoveredFrom.push(cwd);
+				return { agents: cwd === parentCwd ? [agent()] : [] };
+			},
+			onForegroundConfig: (config) => {
+				executedFrom = config.cwd;
+			},
+		}).execute(
+			"parent-roster-child-cwd",
+			{ agent: "general-purpose", async: false, cwd: childCwd, task: "Inspect the child package" },
+			new AbortController().signal,
+			undefined,
+			context(parentCwd),
+		);
+
+		expect(result.isError).not.toBeTrue();
+		expect(discoveredFrom).toEqual([parentCwd]);
+		expect(executedFrom).toBe(childCwd);
 	});
 
 	test("applies finite product backstops to ordinary foreground and background launches", async () => {
@@ -1917,6 +1946,60 @@ describe("reduced foreground Agent engine", () => {
 		expect(captured?.task).toContain("source-run");
 		expect(captured?.nestedRoute?.rootRunId).toBe(result.details.asyncId);
 		if (captured?.nestedRoute) temporaryDirectories.push(path.dirname(captured.nestedRoute.eventSink));
+	});
+
+	test("resolves a resumed Agent from the parent project while preserving its execution cwd", async () => {
+		const parentCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-resume-parent-"));
+		const childCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-resume-child-"));
+		temporaryDirectories.push(parentCwd, childCwd);
+		const parentSession = path.join(parentCwd, "parent.jsonl");
+		const childSession = path.join(childCwd, "child.jsonl");
+		fs.writeFileSync(parentSession, "");
+		fs.writeFileSync(childSession, "");
+		const runState = state();
+		runState.currentSessionId = parentSession;
+		runState.foregroundRuns?.set("resume-parent-roster", {
+			children: [
+				{
+					agent: "general-purpose",
+					cwd: childCwd,
+					index: 0,
+					sessionFile: childSession,
+					status: "completed",
+					task: "Inspect the child package",
+				},
+			],
+			cwd: childCwd,
+			mode: "single",
+			runId: "resume-parent-roster",
+			sessionId: parentSession,
+			updatedAt: 1_000,
+		});
+		const discoveredFrom: string[] = [];
+		let resumedFrom: string | undefined;
+		const result = await executor(
+			parentCwd,
+			runState,
+			(launch) => {
+				resumedFrom = launch.cwd;
+			},
+			{
+				discoverAgents: (cwd) => {
+					discoveredFrom.push(cwd);
+					return { agents: cwd === parentCwd ? [agent()] : [] };
+				},
+			},
+		).execute(
+			"resume-parent-roster-call",
+			{ action: "resume", id: "resume-parent-roster", message: "Continue the child package review" },
+			new AbortController().signal,
+			undefined,
+			context(parentCwd),
+		);
+
+		expect(result.isError).not.toBeTrue();
+		expect(discoveredFrom).toEqual([parentCwd]);
+		expect(resumedFrom).toBe(childCwd);
 	});
 
 	test("keeps an inherited nested route when a child Agent is resumed and can fan out again", async () => {

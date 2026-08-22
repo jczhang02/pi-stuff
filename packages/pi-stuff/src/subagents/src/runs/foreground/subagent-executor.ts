@@ -816,7 +816,7 @@ async function prepareLaunch(
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
 	const effectiveCwd = path.resolve(ctx.cwd, params.cwd ?? ".");
-	const discovered = await deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await deps.discoverAgents(ctx.cwd, "both");
 	const validationError = validateLaunchInput(params, discovered.agents);
 	if (validationError) return errorResult(mode, validationError);
 
@@ -1919,7 +1919,7 @@ async function resumeRun(input: {
 	if (depth.blocked)
 		return errorResult("management", `Agent resume blocked at maximum nesting depth ${depth.maxDepth}.`);
 	const effectiveCwd = target.cwd ?? input.ctx.cwd;
-	const discovered = await input.deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await input.deps.discoverAgents(input.ctx.cwd, "both");
 	const descriptor = "recoveryDescriptor" in target ? target.recoveryDescriptor : undefined;
 	const discoveredAgent = discovered.agents.find((agent) => agent.name === target.agent);
 	const baseAgent =
