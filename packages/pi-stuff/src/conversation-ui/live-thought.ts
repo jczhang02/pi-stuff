@@ -111,12 +111,12 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
 	const width = normalizeWidth(availableWidth);
 	const visualizationWidth = Math.max(0, width - visibleWidth(ASSISTANT_LIST_PREFIX));
-	const projected = projectFencedVisualizations(sanitizeMarkdown(markdown), visualizationWidth);
-	const text = projected.trim();
+	const sanitized = sanitizeMarkdown(projectFencedVisualizations(markdown, visualizationWidth));
+	const text = sanitized.trim();
 	if (!text || width === 0) return "";
 	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
 	armAssistantTranscriptMarker();
-	const firstLine = (projected.split("\n").find((line) => line.trim()) ?? "").trimEnd();
+	const firstLine = (sanitized.split("\n").find((line) => line.trim()) ?? "").trimEnd();
 	if (LIST_ITEM.test(firstLine) && !THEMATIC_BREAK.test(firstLine)) {
 		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
 	}

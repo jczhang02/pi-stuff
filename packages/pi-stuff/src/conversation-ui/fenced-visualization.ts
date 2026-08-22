@@ -4,6 +4,7 @@ import { renderChartSource } from "./unicode-chart.js";
 const TARGET_FENCE = /(?:^|\n) {0,3}(?:\x60{3,}|~{3,})[\t ]*(?:chart|tree)(?=[\t \r\n]|$)/iu;
 const OPENING_FENCE = /^( {0,3})(\x60{3,}|~{3,})[^\S\r\n]*(.*)$/u;
 const BACKTICK = String.fromCharCode(0x60);
+const MAX_SOURCE_LENGTH = 12_000;
 
 type FenceCharacter = "backtick" | "tilde";
 type VisualizationLanguage = "chart" | "tree";
@@ -47,6 +48,11 @@ export function projectFencedVisualizations(markdown: string, availableWidth: nu
 			continue;
 		}
 
+		if (sourceLengthExceedsLimit(lines, index + 1, close)) {
+			output.push(...lines.slice(index, close + 1));
+			index = close;
+			continue;
+		}
 		const source = lines.slice(index + 1, close).join("\n");
 		const width = Math.max(0, Math.floor(availableWidth) - opening.indentation);
 		const rendered = sourceIsSafe(source) ? renderVisualization(language, source, width) : [];
@@ -60,6 +66,15 @@ export function projectFencedVisualizations(markdown: string, availableWidth: nu
 		index = close;
 	}
 	return changed ? output.join(newline) : markdown;
+}
+
+function sourceLengthExceedsLimit(lines: readonly string[], start: number, end: number): boolean {
+	let length = Math.max(0, end - start - 1);
+	for (let index = start; index < end; index += 1) {
+		length += lines[index]?.length ?? 0;
+		if (length > MAX_SOURCE_LENGTH) return true;
+	}
+	return false;
 }
 
 function visualizationLanguage(value: string): VisualizationLanguage | undefined {

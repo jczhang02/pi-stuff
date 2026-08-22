@@ -201,6 +201,12 @@ describe("Conversation UI composition", () => {
 		expect(rendered[0]).toStartWith("• ");
 		expect(rendered.filter((line) => line.startsWith("• "))).toHaveLength(1);
 		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
+
+		const unsafe = fenced("chart", ["type: bar", "title: unsafe\u001b[31m", "A 1"]);
+		const unsafeAssistant = transformer(unsafe, ASSISTANT_CONTEXT);
+		expect(unsafeAssistant).toContain(`${FENCE}chart`);
+		expect(unsafeAssistant).toContain("type: bar");
+		expect(unsafeAssistant).not.toContain("████");
 	});
 
 	test("reserves the two-cell Assistant marker budget before chart rendering", () => {
