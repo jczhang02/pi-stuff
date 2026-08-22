@@ -309,27 +309,27 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 		input.tools !== undefined
 			? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]
 			: undefined;
-	const capabilityAudit = capabilityCeiling
-		? ({
-				ceiling: capabilityCeiling,
-				...(requestedToolNames ? { requestedTools: requestedToolNames } : {}),
-				effectiveTools: effectiveToolAllowlist,
-				removedTools: requestedToolNames?.filter((tool) => !effectiveToolAllowlist.includes(tool)) ?? [],
-				internalTools,
-				extensionsDenied: capabilityCeiling.denyExtensions,
-				removedExtensionCount: capabilityCeiling.denyExtensions
-					? (input.extensions?.length ?? 0) +
-						(input.subagentOnlyExtensions?.length ?? 0) +
-						(input.tools ?? []).filter(
-							(tool) => tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"),
-						).length
-					: 0,
-				requestedMcpToolCount: input.mcpDirectTools?.length ?? 0,
-				effectiveMcpTools,
-			} satisfies SubagentCapabilityAudit)
-		: undefined;
-	return {
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
+	let capabilityAudit: SubagentCapabilityAudit | undefined;
+	if (capabilityCeiling) {
+		const audit = {
+			ceiling: capabilityCeiling,
+			effectiveTools: effectiveToolAllowlist,
+			removedTools: requestedToolNames?.filter((tool) => !effectiveToolAllowlist.includes(tool)) ?? [],
+			internalTools,
+			extensionsDenied: capabilityCeiling.denyExtensions,
+			removedExtensionCount: capabilityCeiling.denyExtensions
+				? (input.extensions?.length ?? 0) +
+					(input.subagentOnlyExtensions?.length ?? 0) +
+					(input.tools ?? []).filter((tool) => tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"))
+						.length
+				: 0,
+			requestedMcpToolCount: input.mcpDirectTools?.length ?? 0,
+			effectiveMcpTools,
+		} satisfies SubagentCapabilityAudit;
+		if (requestedToolNames) Object.assign(audit, { requestedTools: requestedToolNames });
+		capabilityAudit = audit;
+	}
+	const plan: PiLaunchToolPlan = {
 		requestedBuiltinTools,
 		declaredBuiltinTools,
 		toolExtensionPaths,
@@ -346,8 +346,10 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 		extensionArgs,
 		disableAmbientExtensions,
 		baseExtensionPath: resolvedBaseExtension,
-		...(capabilityAudit ? { capabilityAudit } : {}),
 	};
+	if (capabilityCeiling) plan.capabilityCeiling = capabilityCeiling;
+	if (capabilityAudit) plan.capabilityAudit = capabilityAudit;
+	return plan;
 }
 
 function appendCodeModeToolGuidance(prompt: string | null | undefined, tools: readonly string[]): string {
@@ -476,19 +478,15 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const inheritedDepth = Number(process.env[SUBAGENT_PARENT_DEPTH_ENV]);
 	const parentDepth =
 		input.parentDepth ?? (inheritedNestedRoute && Number.isFinite(inheritedDepth) ? inheritedDepth + 1 : 1);
+	let parentPathEntry: NestedPathEntry | undefined;
+	if (parentRunId) {
+		parentPathEntry = { runId: parentRunId };
+		if (parentChildIndex && /^\d+$/.test(parentChildIndex)) parentPathEntry.stepIndex = Number(parentChildIndex);
+		if (input.childAgentName) parentPathEntry.agent = input.childAgentName;
+	}
 	const parentPath = input.parentPath ?? [
 		...parseNestedPathEnv(process.env[SUBAGENT_PARENT_PATH_ENV]),
-		...(parentRunId
-			? [
-					{
-						runId: parentRunId,
-						...(parentChildIndex && /^\d+$/.test(parentChildIndex)
-							? { stepIndex: Number(parentChildIndex) }
-							: {}),
-						...(input.childAgentName ? { agent: input.childAgentName } : {}),
-					},
-				]
-			: []),
+		...(parentPathEntry ? [parentPathEntry] : []),
 	];
 	env[SUBAGENT_PARENT_EVENT_SINK_ENV] = toolPlan.fanoutAuthorized
 		? (input.parentEventSink ?? process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] ?? "")
