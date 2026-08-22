@@ -903,7 +903,7 @@ export async function initializeOAuth(
   }
 
 	  await shutdownOAuth(legacyRuntime)
-	  const signal = runtimeOrSignal instanceof AbortSignal ? runtimeOrSignal : undefined
+	  const signal = runtimeOrSignal !== undefined && "aborted" in runtimeOrSignal ? runtimeOrSignal : undefined
 	  legacyRuntime = createOAuthRuntime(signal)
   return legacyRuntime
 }

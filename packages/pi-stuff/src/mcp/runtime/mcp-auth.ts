@@ -254,17 +254,17 @@ function loadKeyringNativeBindingFallback(keyringRequire: KeyringRequire, platfo
     throw new Error(`Unsupported @napi-rs/keyring native binding target: ${platform}-${arch}`);
   }
 
-  let lastError: JsonInputValue;
+  let lastError: Error | undefined;
   for (const target of targets) {
     try {
       const packageJsonPath = keyringRequire.resolve(`${target.packageName}/package.json`);
 	      return parseKeyringModule(keyringRequire(join(dirname(packageJsonPath), target.bindingFile)));
     } catch (error) {
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw lastError ?? new Error("Failed to load the keyring native binding");
 }
 
 function parseKeyringModule(value: KeyringModuleExport): KeyringModule {

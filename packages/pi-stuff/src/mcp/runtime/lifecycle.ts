@@ -1,4 +1,3 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeFunction } from "../../shared/runtime-type.js";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { isServerDisabled, type ServerDefinition } from "./types.ts";
@@ -8,7 +7,7 @@ import { logger } from "./logger.ts";
 import { formatTerminalError, sanitizeTerminalText } from "./utils.ts";
 
 export type ReconnectCallback = (serverName: string) => void;
-export type ReconnectFailureCallback = (serverName: string, error: JsonInputValue) => void;
+export type ReconnectFailureCallback = <ErrorValue>(serverName: string, error: ErrorValue) => void;
 
 export class McpLifecycleManager {
   private keepAliveServers = new Map<string, ServerDefinition>();

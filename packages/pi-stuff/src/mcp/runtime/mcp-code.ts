@@ -88,7 +88,7 @@ function textFromContent(content: ContentBlock[]): string {
     .join("\n");
 }
 
-function abortReasonError(reason: JsonInputValue): Error {
+function abortReasonError<Reason>(reason: Reason): Error {
   return reason instanceof Error ? reason : new Error(String(reason ?? "MCP request aborted"));
 }
 
@@ -96,12 +96,12 @@ function parseWorkerMessage(value: JsonInputValue): WorkerMessage | null {
 	  if (!isJsonInputObject(value)) return null;
 	  if (value.type === "emit" && "block" in value) return { type: "emit", block: value.block };
 	  if (value.type === "call" && isRuntimeNumber(value.id) && isRuntimeString(value.path)) {
-	    if (!("args" in value)) return { type: "call", id: value.id, path: value.path };
+	    if (value.args === undefined) return { type: "call", id: value.id, path: value.path };
 	    if (!isJsonInputObject(value.args)) return null;
 	    return { type: "call", id: value.id, path: value.path, args: value.args };
 	  }
 	  if ((value.type === "search" || value.type === "describe") && isRuntimeNumber(value.id)) {
-	    if (!("input" in value)) return { type: value.type, id: value.id };
+	    if (value.input === undefined) return { type: value.type, id: value.id };
 	    if (!isJsonInputObject(value.input)) return null;
 	    return { type: value.type, id: value.id, input: value.input };
 	  }
@@ -177,14 +177,14 @@ export async function runMcpScript(
   const searchTools = (input?: SearchInput) => {
     const startedAt = Date.now();
     const query = isRuntimeString(input?.query) ? input.query : "";
-    let error: JsonInputValue;
+    let error: Error | undefined;
     try {
       if (query.trim() === "") {
         return { items: [], total: 0, hasMore: false, nextOffset: null };
       }
-      const server = isRuntimeString(input.server) ? input.server : undefined;
-      const limit = isRuntimeNumber(input.limit) ? input.limit : 12;
-      const offset = isRuntimeNumber(input.offset) ? input.offset : 0;
+      const server = isRuntimeString(input?.server) ? input.server : undefined;
+      const limit = isRuntimeNumber(input?.limit) ? input.limit : 12;
+      const offset = isRuntimeNumber(input?.offset) ? input.offset : 0;
       const page = paginate(rankToolMatches(state, query, server), offset, limit);
       return {
         ...page,
@@ -195,7 +195,7 @@ export async function runMcpScript(
 	        }),
       };
     } catch (caught) {
-      error = caught;
+      error = caught instanceof Error ? caught : new Error(String(caught));
       throw caught;
     } finally {
       calls.push(error === undefined
@@ -207,7 +207,7 @@ export async function runMcpScript(
   const describeTool = (input?: DescribeInput) => {
     const startedAt = Date.now();
     const path = isRuntimeString(input?.path) ? input.path : "";
-    let error: JsonInputValue;
+    let error: Error | string | undefined;
     try {
       for (const [server, metadata] of state.toolMetadata) {
         const tool = findToolByName(metadata, path);
@@ -233,7 +233,7 @@ export async function runMcpScript(
         },
       };
     } catch (caught) {
-      error = caught;
+      error = caught instanceof Error ? caught : new Error(String(caught));
       throw caught;
     } finally {
       calls.push(error === undefined

@@ -1,4 +1,4 @@
-import { parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeFunction } from "../../shared/runtime-type.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
@@ -100,11 +100,11 @@ function installMcpAdapter(pi: McpAdapterExtensionAPI, options: McpAdapterOption
       currentState.uiServer = null;
     }
 
-    let flushError: JsonInputValue;
+    let flushError: Error | undefined;
     try {
       flushMetadataCache(currentState);
     } catch (error) {
-      flushError = error;
+      flushError = error instanceof Error ? error : new Error(String(error));
     }
 
     try {
@@ -490,7 +490,7 @@ function installMcpAdapter(pi: McpAdapterExtensionAPI, options: McpAdapterOption
       const commandHasUI = ctx.hasUI;
 	      const commandCtx: McpCommandContext = {
 	        hasUI: commandHasUI,
-	        ui: commandHasUI && commandOwner ? createOwnedUi(ctx.ui, commandOwner) : ctx.ui,
+	        ui: commandHasUI ? (commandOwner ? createOwnedUi(ctx.ui, commandOwner) : ctx.ui) : undefined,
 	        cwd: ctx.cwd,
 	        signal: commandOwner?.signal ?? ctx.signal,
 	      };

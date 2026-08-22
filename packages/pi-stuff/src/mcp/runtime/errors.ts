@@ -192,7 +192,7 @@ export class McpServerError extends McpUiError {
 /**
  * Wrap an unknown error into an McpUiError.
  */
-export function wrapError(error: JsonInputValue, context?: McpUiErrorContext): McpUiError {
+export function wrapError<ErrorValue>(error: ErrorValue, context?: McpUiErrorContext): McpUiError {
   if (error instanceof McpUiError) {
     // Merge contexts
     return new McpUiError(error.message, {
@@ -216,6 +216,6 @@ export function wrapError(error: JsonInputValue, context?: McpUiErrorContext): M
 /**
  * Check if an error is a specific MCP UI error type.
  */
-export function isErrorCode(error: JsonInputValue, code: string): boolean {
+export function isErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
   return error instanceof McpUiError && error.code === code;
 }

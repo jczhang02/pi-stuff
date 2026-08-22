@@ -1,6 +1,5 @@
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readHostProxyProperty } from "../../shared/host-proxy.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { dirname, isAbsolute, resolve } from "node:path";
@@ -239,12 +238,12 @@ export function isMcpTraceEnabled(
  * assigns `onmessage` during connect, so the setter must keep the observer in
  * front of whichever callback the SDK installs.
  */
-export function wrapTransportWithMcpTrace<T extends Transport>(
-  transport: T,
+export function wrapTransportWithMcpTrace(
+  transport: Transport,
   server: string,
   transportKind: McpTraceTransport,
   observer: McpTraceObserver,
-): T {
+): Transport {
   let messageHandler: Transport["onmessage"];
   const record = (event: McpTraceEvent): void => {
     try {
@@ -253,7 +252,9 @@ export function wrapTransportWithMcpTrace<T extends Transport>(
       // An observer failure must never alter SDK transport behavior.
     }
   };
-	  const send = async (message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> => {
+	  const traced: Transport = {
+	    start: () => transport.start(),
+	    send: async (message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> => {
 	      const started = performance.now();
 	      const messages = Array.isArray(message) ? message : [message];
       try {
@@ -271,37 +272,40 @@ export function wrapTransportWithMcpTrace<T extends Transport>(
         }
 	        throw error;
 	      }
+	    },
+	    close: () => transport.close(),
+	    get onclose() {
+	      return transport.onclose;
+	    },
+	    set onclose(handler) {
+	      transport.onclose = handler;
+	    },
+	    get onerror() {
+	      return transport.onerror;
+	    },
+	    set onerror(handler) {
+	      transport.onerror = handler;
+	    },
+	    get onmessage() {
+	      return messageHandler;
+	    },
+	    set onmessage(handler) {
+	      messageHandler = handler;
+	      transport.onmessage = handler
+	        ? (message: JSONRPCMessage, extra?: MessageExtraInfo) => {
+	            record(createMcpTraceEvent("inbound", server, transportKind, message, "received"));
+	            handler(message, extra);
+	          }
+	        : undefined;
+	    },
+	    get sessionId() {
+	      return transport.sessionId;
+	    },
+	    setProtocolVersion: transport.setProtocolVersion
+	      ? (version) => transport.setProtocolVersion?.(version)
+	      : undefined,
 	  };
-	  return new Proxy(transport, {
-	    get(target, property, receiver) {
-	      if (property === "send") return send;
-	      if (property === "onmessage") return messageHandler;
-	      const value = readHostProxyProperty(target, property, receiver);
-	      return isRuntimeFunction(value) ? value.bind(target) : value;
-	    },
-	    set(target, property, value) {
-	      if (property === "onmessage") {
-	        messageHandler = isRuntimeFunction(value) ? value : undefined;
-	        transport.onmessage = messageHandler
-	          ? <Message extends JSONRPCMessage>(message: Message, extra?: MessageExtraInfo) => {
-	              record(createMcpTraceEvent("inbound", server, transportKind, message, "received"));
-	              messageHandler?.(message, extra);
-	            }
-	          : undefined;
-	        return true;
-	      }
-	      if (property === "onclose") {
-	        target.onclose = value;
-	        return true;
-	      }
-	      if (property === "onerror") {
-	        target.onerror = value;
-	        return true;
-	      }
-	      Object.defineProperty(target, property, { configurable: true, value, writable: true });
-	      return true;
-	    },
-	  });
+	  return traced;
 }
 
 export function traceTransportKind(definition: { command?: string; url?: string; socket?: string }, transport: Transport): McpTraceTransport {

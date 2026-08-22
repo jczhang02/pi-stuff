@@ -501,7 +501,7 @@ function parseNpxCache(text: string): NpxCache | null {
 			|| !isRuntimeNumber(rawEntry.resolvedAt)
 			|| !Number.isFinite(rawEntry.resolvedAt)
 			|| !isRuntimeBoolean(rawEntry.isJs)
-			|| (rawEntry.packageVersion !== undefined && !isRuntimeString(rawEntry.packageVersion))) return null;
+			|| (rawEntry.packageVersion !== undefined && !isRuntimeString(rawEntry.packageVersion))) continue;
 		const entry: NpxCacheEntry = {
 			resolvedBin: rawEntry.resolvedBin,
 			resolvedAt: rawEntry.resolvedAt,

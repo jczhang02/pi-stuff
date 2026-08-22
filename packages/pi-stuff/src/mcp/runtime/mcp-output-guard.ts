@@ -143,9 +143,11 @@ export async function guardMcpOutput(
   if (stats.bytes > maxBytes || stats.lines > maxLines) {
     const { path: fullOutputPath, error: writeError } = await saveArtifact("output", composedOutput);
     const notice = formatTruncationNotice(stats, fullOutputPath, writeError);
-    const previewBudget = reserveBudget(maxBytes, maxLines, notice);
+    const boundedNotice = truncateHead(notice, maxBytes, maxLines).content;
+    const previewBudget = reserveBudget(maxBytes, maxLines, boundedNotice);
     const preview = truncateHead(composedOutput, previewBudget.maxBytes, previewBudget.maxLines);
-    const finalText = `${preview.content}\n\n${notice}`;
+    const candidate = preview.content ? `${preview.content}\n\n${boundedNotice}` : boundedNotice;
+    const finalText = truncateHead(candidate, maxBytes, maxLines).content;
     const finalStats = textStats(finalText);
 
     guardedContent = [{ type: "text" as const, text: finalText }, ...imageBlocks];
@@ -364,10 +366,16 @@ function estimateValueBytes(value: JsonInputValue, depth = 0): number {
   if (value === null || value === undefined) return 0;
   if (isRuntimeString(value)) return byteLength(value);
   if (isRuntimeNumber(value) || isRuntimeBoolean(value) || isRuntimeBigInt(value)) return byteLength(String(value));
+  if (Array.isArray(value)) {
+    if (depth >= 2) return 0;
+    return value
+      .slice(0, KEY_PREVIEW_LIMIT)
+      .reduce((total, item) => total + estimateValueBytes(item, depth + 1), 0);
+  }
   const record = asRecord(value);
   if (!record || depth >= 2) return 0;
-  const values = Array.isArray(value) ? value.slice(0, KEY_PREVIEW_LIMIT) : Object.values(record).slice(0, KEY_PREVIEW_LIMIT);
-  return values.reduce((total, item) => total + estimateValueBytes(item, depth + 1), 0);
+	  const values = Object.values(record).slice(0, KEY_PREVIEW_LIMIT);
+  return values.reduce<number>((total, item) => total + estimateValueBytes(item, depth + 1), 0);
 }
 
 function truncateKey(key: string): string {

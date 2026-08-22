@@ -237,17 +237,18 @@ export function buildHostHtmlTemplate(input: HostHtmlTemplateInput): string {
     bridge.onupdatemodelcontext = async (params) => post("/proxy/ui/context", params);
     
     // Also listen for raw postMessage events with custom types (notify, prompt, intent, etc.)
-    // These bypass the AppBridge protocol but are used by some MCP UI implementations
-    window.addEventListener("message", async (event) => {
-      const data = event.data;
-      if (!data || !isRuntimeObject(data)) return;
+	    // These bypass the AppBridge protocol but are used by some MCP UI implementations
+	    window.addEventListener("message", async (event) => {
+	      if (event.source !== iframe.contentWindow) return;
+	      const data = event.data;
+      if (!data || typeof data !== "object") return;
       
       // Skip AppBridge protocol messages (handled by bridge)
-      if (data.jsonrpc || (isRuntimeString(data.method) && (data.method.startsWith("app/") || data.method.startsWith("host/")))) return;
+      if (data.jsonrpc || (typeof data.method === "string" && (data.method.startsWith("app/") || data.method.startsWith("host/")))) return;
       
       // Handle raw UI action messages
       const msgType = data.type;
-      if (!isRuntimeString(msgType)) return;
+      if (typeof msgType !== "string") return;
       
       if (msgType === "notify" || msgType === "prompt" || msgType === "intent" || msgType === "message") {
         // Standard MCP-UI types - preserve their semantics
@@ -289,10 +290,10 @@ export function buildHostHtmlTemplate(input: HostHtmlTemplateInput): string {
     };
 
     bridge.onsizechange = ({ width, height }) => {
-      if (isRuntimeNumber(width) && width > 0) {
+      if (typeof width === "number" && Number.isFinite(width) && width > 0) {
         iframe.style.minWidth = Math.min(width, window.innerWidth - 24) + "px";
       }
-      if (isRuntimeNumber(height) && height > 0) {
+      if (typeof height === "number" && Number.isFinite(height) && height > 0) {
         iframe.style.height = Math.max(height, 320) + "px";
       }
     };
@@ -301,10 +302,12 @@ export function buildHostHtmlTemplate(input: HostHtmlTemplateInput): string {
       iframe.setAttribute("allow", ALLOW_ATTRIBUTE);
     }
 
-    // Connect bridge BEFORE loading iframe to ensure we're listening when the app sends ui/initialize
-    try {
-      const transport = new PostMessageTransport(iframe.contentWindow, null);
-      await bridge.connect(transport);
+	    // Connect bridge BEFORE loading iframe to ensure we're listening when the app sends ui/initialize
+	    try {
+	      const frameWindow = iframe.contentWindow;
+	      if (!frameWindow) throw new Error("MCP UI frame is unavailable");
+	      const transport = new PostMessageTransport(frameWindow, frameWindow);
+	      await bridge.connect(transport);
     } catch (error) {
       console.error("[host] Bridge connection failed:", error);
       showError("Failed to initialize AppBridge: " + String(error));

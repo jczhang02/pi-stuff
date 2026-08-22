@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import {
 	ensureCompatibilityImports,
+	loadMcpConfig,
 	writeProjectServerDisabledOverride,
 	writeProjectServerLifecycleOverride,
 	writeSharedServerEntry,
@@ -108,6 +109,24 @@ test("creates the first project override and preserves special server names", as
 			lifecycle: "keep-alive",
 		});
 		expect(document.mcpServers["toString"]).toEqual({ lifecycle: "lazy" });
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+	}
+});
+
+test("loads special server names as own properties without changing map prototypes", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const path = join(cwd, "custom.json");
+	try {
+		await writeFile(
+			path,
+			'{"mcpServers":{"__proto__":{"command":"proto-mcp"},"toString":{"command":"string-mcp"}}}\n',
+		);
+		const servers = loadMcpConfig(path, cwd).mcpServers;
+		expect(Object.getPrototypeOf(servers)).toBe(Object.prototype);
+		expect(Object.hasOwn(servers, "__proto__")).toBe(true);
+		expect(Object.hasOwn(servers, "toString")).toBe(true);
+		expect(Object.getOwnPropertyDescriptor(servers, "__proto__")?.value).toEqual({ command: "proto-mcp" });
 	} finally {
 		await rm(cwd, { force: true, recursive: true });
 	}

@@ -228,6 +228,18 @@ function setServer(map: ServerMap, name: string, entry: ServerEntry): void {
   Object.defineProperty(map, name, { configurable: true, enumerable: true, value: entry, writable: true });
 }
 
+function setJsonInputProperty(map: JsonInputObject, name: string, value: JsonInputValue): void {
+  Object.defineProperty(map, name, { configurable: true, enumerable: true, value, writable: true });
+}
+
+function copyJsonInputObject(...sources: readonly JsonInputObject[]): JsonInputObject {
+  const result: JsonInputObject = {};
+  for (const source of sources) {
+    for (const [name, value] of Object.entries(source)) setJsonInputProperty(result, name, value);
+  }
+  return result;
+}
+
 interface ConfigSourceSpec {
   id: "shared-global" | "agents-global" | "agents-nested-global" | "pi-global" | "shared-project" | "pi-project";
   label: string;
@@ -586,7 +598,7 @@ function mergeServerMaps(
 ): ServerMap {
   const merged = { ...base };
   for (const [name, definition] of Object.entries(next)) {
-    const existing = merged[name];
+    const existing = Object.hasOwn(merged, name) ? merged[name] : undefined;
     // SECURITY (credential/url binding): the merge is per-field, so a
     // higher-precedence source that supplies only a new `url` for an existing
     // server would otherwise retain the lower-precedence entry's auth material
@@ -619,7 +631,7 @@ function mergeServerMaps(
         delete baseEntry.oauth;
       }
     }
-    merged[name] = { ...baseEntry, ...definition };
+    setServer(merged, name, { ...baseEntry, ...definition });
   }
   return merged;
 }
@@ -640,8 +652,8 @@ function expandImports(config: McpConfig, cwd = process.cwd()): McpConfig {
 
     const servers = extractServers(imported.value, importKind);
     for (const [name, definition] of Object.entries(servers)) {
-      if (!importedServers[name]) {
-        importedServers[name] = definition;
+      if (!Object.hasOwn(importedServers, name)) {
+        setServer(importedServers, name, definition);
       }
     }
   }
@@ -773,18 +785,16 @@ function validateConfig(raw: JsonInputValue): McpConfig {
 function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): JsonInputObject {
   const baseMcp = base.mcp;
   const nextMcp = next.mcp;
-  const mergedMcp: JsonInputObject = {};
-  if (isJsonInputObject(baseMcp)) Object.assign(mergedMcp, baseMcp);
+  const mergedMcp: JsonInputObject = isJsonInputObject(baseMcp) ? copyJsonInputObject(baseMcp) : {};
 
   if (isJsonInputObject(nextMcp)) {
     for (const [name, nextEntry] of Object.entries(nextMcp)) {
-      const baseEntry = mergedMcp[name];
+      const baseEntry = Object.hasOwn(mergedMcp, name) ? mergedMcp[name] : undefined;
       if (
         isJsonInputObject(baseEntry)
         && isJsonInputObject(nextEntry)
       ) {
-	        const safeBase: JsonInputObject = {};
-	        Object.assign(safeBase, baseEntry);
+	        const safeBase = copyJsonInputObject(baseEntry);
         const override = nextEntry;
         if (isRuntimeString(override.type) && override.type !== safeBase.type) {
           for (const field of ["command", "environment", "cwd", "url", "headers", "oauth"]) delete safeBase[field];
@@ -804,8 +814,7 @@ function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): Jso
           }
         }
 
-	        const mergedEntry: JsonInputObject = {};
-	        Object.assign(mergedEntry, safeBase, override);
+	        const mergedEntry = copyJsonInputObject(safeBase, override);
         for (const field of ["environment", "headers", "oauth"]) {
           const baseField = safeBase[field];
           const nextField = override[field];
@@ -813,14 +822,12 @@ function mergeOpenCodeConfigs(base: JsonInputObject, next: JsonInputObject): Jso
             isJsonInputObject(baseField)
             && isJsonInputObject(nextField)
           ) {
-	            const mergedField: JsonInputObject = {};
-	            Object.assign(mergedField, baseField, nextField);
-	            mergedEntry[field] = mergedField;
+	            mergedEntry[field] = copyJsonInputObject(baseField, nextField);
           }
         }
-        mergedMcp[name] = mergedEntry;
+        setJsonInputProperty(mergedMcp, name, mergedEntry);
       } else {
-        mergedMcp[name] = nextEntry;
+        setJsonInputProperty(mergedMcp, name, nextEntry);
       }
     }
   }
@@ -900,8 +907,7 @@ function extractServers(config: JsonInputValue, kind: ImportKind): ServerMap {
       continue;
     }
 
-	    const mapped: JsonInputObject = {};
-	    Object.assign(mapped, entry);
+	    const mapped = copyJsonInputObject(entry);
     const bearerTokenEnv = mapped.bearer_token_env_var;
     const httpHeaders = mapped.http_headers;
     const envHttpHeaders = mapped.env_http_headers;
@@ -917,7 +923,14 @@ function extractServers(config: JsonInputValue, kind: ImportKind): ServerMap {
     if (isJsonInputObject(envHttpHeaders)) {
       const headers = { ...toStringRecord(mapped.headers) };
       for (const [header, envVar] of Object.entries(envHttpHeaders)) {
-        if (isRuntimeString(envVar) && headers[header] === undefined) headers[header] = `$env:${envVar}`;
+        if (isRuntimeString(envVar) && !Object.hasOwn(headers, header)) {
+          Object.defineProperty(headers, header, {
+            configurable: true,
+            enumerable: true,
+            value: `$env:${envVar}`,
+            writable: true,
+          });
+        }
       }
       mapped.headers = headers;
     }
@@ -1323,7 +1336,7 @@ export function previewSharedServerEntry(filePath: string, serverName: string, e
   const raw = readRawConfigObject(filePath);
   const nextRaw = { ...raw };
   const servers = getServersObject(nextRaw);
-  servers[serverName] = entry;
+  setServer(servers, serverName, entry);
   setServersObject(nextRaw, servers);
   return buildConfigWritePreview(filePath, nextRaw);
 }
