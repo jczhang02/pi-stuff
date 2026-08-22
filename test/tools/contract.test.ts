@@ -12,6 +12,7 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
 import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
@@ -578,6 +579,94 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 
 	expect(resultComponent.render(120)).toEqual(direct);
 	expect(nestedRead.name).toBe("read");
+});
+
+test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	registerCodexTools(registrations.api);
+	const patch = [
+		"*** Begin Patch",
+		"*** Update File: .apply-patch-demo.txt",
+		"@@",
+		"-before",
+		"+after",
+		"*** End Patch",
+	].join("\n");
+	const patchOperation: SuiteToolEnvelopeOperation = {
+		args: { patch },
+		id: "nested-patch",
+		name: "apply_patch",
+		result: {
+			content: [{ type: "text", text: "Applied patch successfully. changed 1 file." }],
+			details: {
+				changedFiles: [".apply-patch-demo.txt"],
+				createdFiles: [],
+				deletedFiles: [],
+				fuzz: 0,
+				movedFiles: [],
+			},
+		},
+		state: "success",
+	};
+	const viewOperation: SuiteToolEnvelopeOperation = {
+		args: { file_path: "@preview.png" },
+		id: "nested-view",
+		name: "view_image",
+		result: {
+			content: [],
+			details: { mimeType: "image/png", path: "preview.png" },
+		},
+		state: "success",
+	};
+	const operations = [patchOperation, viewOperation];
+	registerSuiteToolEnvelope(
+		registrations.api,
+		{
+			description: "Code Mode",
+			execute: async () => ({ content: [], details: { operations } }),
+			label: "Code Mode",
+			name: "codemode",
+			parameters: Type.Object({ code: Type.String() }),
+		},
+		{ decode: () => operations, registry: registrations.registry },
+	);
+	const envelope = harness.tools.get("codemode");
+	if (!envelope) throw new Error("missing Code Mode envelope");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant({ type: "toolCall", id: "outer-patch", name: "codemode", arguments: { code: "patch" } }),
+			{
+				content: [],
+				details: { operations },
+				role: "toolResult",
+				toolCallId: "outer-patch",
+			},
+		],
+		true,
+	);
+	const context = renderContext({}, { value: "unused" }, { toolCallId: "outer-patch" });
+	// SAFETY: the test harness intentionally erases the registered envelope Tool's schema.
+	const callComponent = envelope.renderCall?.({ code: "patch" }, theme, context as never);
+	// SAFETY: the same harness context and result satisfy the registered envelope Tool contract.
+	const resultComponent = envelope.renderResult?.(
+		{ content: [], details: { operations } },
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	if (!resultComponent) throw new Error("missing Code Mode patch result");
+
+	const rendered = resultComponent.render(120).join("\n");
+	expect(rendered).toContain("Patch .apply-patch-demo.txt · changed 1 file");
+	expect(rendered).toContain("View preview.png · loaded");
+	expect(rendered).not.toContain("Applied patch successfully");
+	const rawDetail = runtime.toolActivityDetail("nested-patch", "raw");
+	if (!rawDetail) throw new Error("missing nested Patch raw detail");
+	const rawLines = rawDetail.lines.join("\n");
+	expect(rawLines).toContain('"patch":');
+	expect(rawLines).not.toContain('"input":');
 });
 
 test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, and reconstructed", () => {

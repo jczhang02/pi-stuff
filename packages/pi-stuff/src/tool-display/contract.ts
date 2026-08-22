@@ -3290,6 +3290,16 @@ function projectEnvelopeOperationResult(
 	return { ...operation.result, content };
 }
 
+function prepareEnvelopeRenderArguments(tool: ToolDefinition, args: ToolArguments): ToolArguments {
+	if (!tool.prepareArguments) return args;
+	try {
+		const prepared = tool.prepareArguments(args);
+		return isToolArguments(prepared) ? prepared : args;
+	} catch {
+		return args;
+	}
+}
+
 function renderEnvelopeOperations(
 	result: AgentToolResult<unknown>,
 	options: ToolResultRenderOptions,
@@ -3316,13 +3326,14 @@ function renderEnvelopeOperations(
 	for (const operation of operations) {
 		const tool = presentation.registry.get(operation.name);
 		if (!tool?.renderCall) continue;
+		const args = prepareEnvelopeRenderArguments(tool, operation.args);
 		retained.add(operation.id);
 		const child = rendererState.children.get(operation.id) ?? { state: {} };
 		rendererState.children.set(operation.id, child);
 		const childContext = {
 			...context,
 			[EMBEDDED_TOOL_RESULT]: true,
-			args: operation.args,
+			args,
 			argsComplete: true,
 			executionStarted: operation.state === "running" && context.executionStarted !== false,
 			isError: operation.state !== "running" && operation.state !== "success",
@@ -3337,7 +3348,7 @@ function renderEnvelopeOperations(
 			});
 		const container = new Container();
 		// SAFETY: the registry returns the Tool that owns this decoded operation and child renderer context.
-		const call = tool.renderCall(operation.args, theme, childContext as never);
+		const call = tool.renderCall(args, theme, childContext as never);
 		child.component = call;
 		container.addChild(call);
 		renderedOperations.push(container);
