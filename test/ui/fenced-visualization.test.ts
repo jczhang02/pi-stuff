@@ -234,6 +234,15 @@ describe("Conversation UI composition", () => {
 		expect(unsafeAssistant).not.toContain("████");
 	});
 
+	test("detects Assistant target fences during the existing sanitizer pass", async () => {
+		const source = ["prefix", "~~~ TREE", "root", "  child", "~~~"].join("\r\n");
+		const rendered = (await renderProjected(source, 80, "assistant")).join("\n");
+		expect(rendered).toContain("prefix");
+		expect(rendered).toContain("root");
+		expect(rendered).toContain("└── child");
+		expect(rendered).not.toContain("~~~");
+	});
+
 	test("reserves the Host code indent and Assistant marker budgets before chart rendering", () => {
 		const source = chart("bar", ["A 1", "B 2"]);
 		const transformer = createLiveThoughtTransformer();

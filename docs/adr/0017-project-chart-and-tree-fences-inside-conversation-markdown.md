@@ -11,7 +11,8 @@ remains under Live Thoughts and never enters this visualization path.
 
 The dispatcher is static and internal to Conversation UI. It runs inside the Module’s one registered Host Markdown
 transformer; there is no second transformer, plugin registry, setting, Capability, Package, or runtime dependency.
-An exact opening-fence prefilter keeps ordinary messages out of parsing. A matched block is projected only when its
+Assistant candidate recognition is fused into the existing sanitizer traversal; User Markdown uses an exact opening-fence
+prefilter. Ordinary messages never enter visualization parsing. A matched block is projected only when its
 closing fence, grammar, safety checks, limits, and available terminal width all succeed. At most 16 valid blocks are
 projected per Markdown message. Otherwise the original fence is returned byte-for-byte.
 
@@ -50,7 +51,7 @@ indent; Assistant projection additionally reserves the existing outer `• ` mar
 - Models and users opt in only by writing an explicit complete fence; no prompt injection is added.
 - Invalid, unsafe, unsupported, incomplete, over-limit, and too-narrow input remains ordinary fenced code.
 - Ordinary and feature paths are benchmarked separately. The baseline/candidate gate uses interleaved samples, paired
-  bootstrap confidence intervals, and an independent confirmation run for any ordinary-path regression. A repeatable
-  ordinary-path regression blocks delivery.
+  bootstrap confidence intervals, and an independent confirmation run whenever the paired median-ratio 95% interval
+  excludes 1 on the slower side. A repeatable ordinary-path regression blocks delivery.
 - Changes to formats, limits, supported chart types, projection ownership, or performance acceptance must update this
   ADR and the Conversation UI documentation together.

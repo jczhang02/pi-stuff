@@ -147,12 +147,18 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
 	const width = normalizeWidth(availableWidth);
 	const visualizationWidth = Math.max(0, width - visibleWidth(ASSISTANT_LIST_PREFIX));
-	const projection = prepareVisualizationMarkdown(markdown, visualizationWidth);
-	const sanitized = sanitizeMarkdown(projection.markdown);
+	const fenceDetection = { found: false };
+	let sanitized = sanitizeMarkdown(markdown, fenceDetection);
+	let projectedBlocks: readonly ProjectedVisualizationBlock[] = [];
+	if (fenceDetection.found) {
+		const projection = prepareVisualizationMarkdown(markdown, visualizationWidth);
+		projectedBlocks = projection.projectedBlocks;
+		if (projection.markdown !== markdown) sanitized = sanitizeMarkdown(projection.markdown);
+	}
 	const text = sanitized.trim();
 	if (!text || width === 0) return "";
 	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
-	armMarkdownThemeProjection(true, projection.projectedBlocks);
+	armMarkdownThemeProjection(true, projectedBlocks);
 	const firstLine = (sanitized.split("\n").find((line) => line.trim()) ?? "").trimEnd();
 	if (LIST_ITEM.test(firstLine) && !THEMATIC_BREAK.test(firstLine)) {
 		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
@@ -399,9 +405,14 @@ function skipControlString(value: string, start: number): number {
 	return index;
 }
 
-function sanitizeMarkdown(value: string): string {
+interface VisualizationFenceDetection {
+	found: boolean;
+}
+
+function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDetection): string {
 	let text = "";
 	let index = 0;
+	if (fenceDetection && startsVisualizationFence(value, 0)) fenceDetection.found = true;
 	while (index < value.length) {
 		const code = value.charCodeAt(index);
 		if (code === 0x1b) {
@@ -440,11 +451,17 @@ function sanitizeMarkdown(value: string): string {
 		if (code === 0x0d) {
 			text += "\n";
 			index += value.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
+				fenceDetection.found = true;
+			}
 			continue;
 		}
 		if (code === 0x0a) {
 			text += "\n";
 			index += 1;
+			if (fenceDetection && !fenceDetection.found && startsVisualizationFence(value, index)) {
+				fenceDetection.found = true;
+			}
 			continue;
 		}
 		if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || isBidiControl(code)) {
@@ -456,6 +473,38 @@ function sanitizeMarkdown(value: string): string {
 		index += 1;
 	}
 	return text;
+}
+
+function startsVisualizationFence(value: string, start: number): boolean {
+	let index = start;
+	let indentation = 0;
+	while (value.charCodeAt(index) === 0x20 && indentation < 4) {
+		indentation += 1;
+		index += 1;
+	}
+	if (indentation > 3) return false;
+	const marker = value.charCodeAt(index);
+	if (marker !== 0x60 && marker !== 0x7e) return false;
+	let markerLength = 0;
+	while (value.charCodeAt(index) === marker) {
+		markerLength += 1;
+		index += 1;
+	}
+	if (markerLength < 3) return false;
+	while (value.charCodeAt(index) === 0x20 || value.charCodeAt(index) === 0x09) index += 1;
+	const languageLength = asciiEqualAt(value, index, "chart") ? 5 : asciiEqualAt(value, index, "tree") ? 4 : 0;
+	if (languageLength === 0) return false;
+	const boundary = value.charCodeAt(index + languageLength);
+	return Number.isNaN(boundary) || boundary === 0x09 || boundary === 0x0a || boundary === 0x0d || boundary === 0x20;
+}
+
+function asciiEqualAt(value: string, start: number, expected: string): boolean {
+	for (let offset = 0; offset < expected.length; offset += 1) {
+		const code = value.charCodeAt(start + offset);
+		const lower = code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+		if (lower !== expected.charCodeAt(offset)) return false;
+	}
+	return true;
 }
 
 /** Collapse sanitized model text to one printable row. */

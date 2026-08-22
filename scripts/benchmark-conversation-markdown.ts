@@ -346,7 +346,7 @@ function benchmarkScenario(
 	const baselineMs = summary(pairs.map((pair) => pair.baselineMs));
 	const candidateMs = summary(pairs.map((pair) => pair.candidateMs));
 	const confidence = bootstrapMedianRatio(pairs);
-	const slowerThanBaseline = confidence[0] > 1 && candidateMs.p95 > baselineMs.p95;
+	const slowerThanBaseline = confidence[0] > 1;
 	return {
 		baselineMs,
 		candidateMs,
@@ -396,7 +396,7 @@ function benchmarkFreshImport(
 	const baselineMs = summary(pairs.map((pair) => pair.baselineMs));
 	const candidateMs = summary(pairs.map((pair) => pair.candidateMs));
 	const confidence = bootstrapMedianRatio(pairs);
-	const slowerThanBaseline = confidence[0] > 1 && candidateMs.p95 > baselineMs.p95;
+	const slowerThanBaseline = confidence[0] > 1;
 	return {
 		baselineMs,
 		candidateMs,
