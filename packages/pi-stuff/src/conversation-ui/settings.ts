@@ -357,7 +357,7 @@ async function migrateLegacyUiSettings(
 	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);
 }
 
-function isValidSettings(value: unknown): boolean {
+function isValidSettings(value: SettingsRecord): boolean {
 	try {
 		parseSettings(value);
 		return true;
@@ -428,12 +428,16 @@ class UiSettingRegistryGeneration implements UiSettingRegistry {
 const SETTINGS_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/settings-registry/v1");
 const SETTINGS_REGISTRY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settings-registry-discovery/v1";
 
-function settingsRegistries(): WeakMap<ExtensionAPI["events"], UiSettingRegistryImplementation> {
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingRegistryImplementation> | undefined;
-	};
-	root[SETTINGS_REGISTRY] ??= new WeakMap();
-	return root[SETTINGS_REGISTRY];
+function settingsRegistries(): WeakMap<object, UiSettingRegistryImplementation> {
+	const existing = Object.getOwnPropertyDescriptor(globalThis, SETTINGS_REGISTRY)?.value;
+	if (existing instanceof WeakMap) return existing;
+	const created = new WeakMap<object, UiSettingRegistryImplementation>();
+	Object.defineProperty(globalThis, SETTINGS_REGISTRY, {
+		configurable: true,
+		value: created,
+		writable: true,
+	});
+	return created;
 }
 
 export function beginUiSettingsGeneration(pi: UiSettingsHost): UiSettingRegistry {
@@ -448,7 +452,7 @@ function getUiSettingRegistryImplementation(pi: UiSettingsHost): UiSettingRegist
 	const registries = settingsRegistries();
 	return getHostSharedResource(
 		pi.events,
-		registries as WeakMap<object, UiSettingRegistryImplementation>,
+		registries,
 		SETTINGS_REGISTRY_DISCOVERY_EVENT,
 		() => new UiSettingRegistryImplementation(),
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },

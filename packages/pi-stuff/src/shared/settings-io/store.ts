@@ -15,6 +15,7 @@ import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 export type NamespaceRecord = SettingsRecord;
 export type NamespaceWriter = (path: string, namespace: string, record: NamespaceRecord) => Promise<void>;
 export type NamespaceLockAcquirer = (lockPath: string, owner: string) => Promise<() => Promise<void>>;
+export type NamespaceNormalizer<T extends NamespaceRecord> = <Value>(value: Value) => T;
 
 /**
  * Lift a legacy per-Capability settings file into the merged namespace.
@@ -79,6 +80,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	private readonly writer: NamespaceWriter;
 	private readonly acquireLock: NamespaceLockAcquirer | undefined;
 	private readonly reportDiagnostic: NamespaceDiagnosticReporter | undefined;
+	private readonly normalize: NamespaceNormalizer<T> | undefined;
 
 	private constructor(
 		namespace: string,
@@ -90,6 +92,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		migrator: NamespaceMigrator | undefined,
 		acquireLock: NamespaceLockAcquirer | undefined,
 		reportDiagnostic: NamespaceDiagnosticReporter | undefined,
+		normalize: NamespaceNormalizer<T> | undefined,
 	) {
 		this.namespace = namespace;
 		this.path = path;
@@ -101,12 +104,13 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		this.migrator = migrator;
 		this.acquireLock = acquireLock;
 		this.reportDiagnostic = reportDiagnostic;
+		this.normalize = normalize;
 	}
 
 	static async load<T extends NamespaceRecord>(
 		namespace: string,
 		defaults: T,
-		normalize: (value: unknown) => T,
+		normalize: NamespaceNormalizer<T>,
 		options: NamespaceStoreOptions = {},
 	): Promise<NamespacedSettingsStore<T>> {
 		const path = options.path ?? mergedSettingsPath();
@@ -126,8 +130,9 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 			options.migrator,
 			options.acquireLock,
 			options.reportDiagnostic,
+			normalize,
 		);
-		await store.initialize(namespace, defaults, normalize);
+		await store.initialize(namespace, defaults);
 		return store;
 	}
 
@@ -138,6 +143,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 			"",
 			value,
 			async () => undefined,
+			undefined,
 			undefined,
 			undefined,
 			undefined,
@@ -181,8 +187,10 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		return this.value;
 	}
 
-	private async initialize(namespace: string, defaults: T, normalize: (value: unknown) => T): Promise<void> {
+	private async initialize(namespace: string, defaults: T): Promise<void> {
 		if (!this.path) return;
+		const normalize = this.normalize;
+		if (!normalize) return;
 		const existing = await this.readExisting(namespace);
 		if (!this.migrator || !this.legacyPath || !(await fileExists(this.legacyPath))) {
 			const value = existing === undefined ? defaults : normalize(existing);
@@ -272,7 +280,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		const release = this.acquireLock ? await this.acquireLock(this.lockPath, "pi-stuff") : async () => {};
 		try {
 			const record = await readNamespace(this.path, this.namespace);
-			const current = record === undefined ? this.persistedValue : (record as T);
+			const current = record === undefined || !this.normalize ? this.persistedValue : this.normalize(record);
 			const next = apply(current);
 			await this.writer(this.path, this.namespace, next);
 			this.persistedValue = next;
