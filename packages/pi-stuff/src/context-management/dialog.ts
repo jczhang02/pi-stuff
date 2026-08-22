@@ -72,12 +72,46 @@ const GUTTER = "  ";
 const ERROR_MAX_CELLS = 2_000;
 const REFRESH_INTERVAL_MS = 1_000;
 
-function record(value: unknown): Readonly<Record<string, unknown>> {
-	return value && isRuntimeObject(value) ? (value as Readonly<Record<string, unknown>>) : {};
+interface ParsedMagicStatusDetails {
+	activeTags?: number;
+	compartmentCount?: number;
+	droppedTags?: number;
+	historianError?: string;
+	historianRunning: boolean;
+	memoryCount?: number;
+	noteCount?: number;
+	pendingOps?: number;
 }
 
-function finite(value: unknown): number | undefined {
+type ContextDialogSnapshotBuilder = { -readonly [Key in keyof ContextDialogSnapshot]: ContextDialogSnapshot[Key] };
+
+function finite<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
+}
+
+function parseMagicStatusDetails<Value>(value: Value): ParsedMagicStatusDetails {
+	const parsed: ParsedMagicStatusDetails = { historianRunning: false };
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return parsed;
+	const activeTags = "activeTags" in value ? finite(value.activeTags) : undefined;
+	const compartmentCount = "compartmentCount" in value ? finite(value.compartmentCount) : undefined;
+	const droppedTags = "droppedTags" in value ? finite(value.droppedTags) : undefined;
+	const memoryCount = "memoryCount" in value ? finite(value.memoryCount) : undefined;
+	const noteCount = "noteCount" in value ? finite(value.noteCount) : undefined;
+	const pendingOps = "pendingOps" in value ? finite(value.pendingOps) : undefined;
+	if (activeTags !== undefined) parsed.activeTags = activeTags;
+	if (compartmentCount !== undefined) parsed.compartmentCount = compartmentCount;
+	if (droppedTags !== undefined) parsed.droppedTags = droppedTags;
+	if (memoryCount !== undefined) parsed.memoryCount = memoryCount;
+	if (noteCount !== undefined) parsed.noteCount = noteCount;
+	if (pendingOps !== undefined) parsed.pendingOps = pendingOps;
+	const historian = "historian" in value ? value.historian : undefined;
+	if (isRuntimeObject(historian) && historian !== null && !Array.isArray(historian)) {
+		parsed.historianRunning = "inProgress" in historian && historian.inProgress === true;
+		if ("lastError" in historian && isRuntimeString(historian.lastError)) {
+			parsed.historianError = historian.lastError;
+		}
+	}
+	return parsed;
 }
 
 function textNumber(text: string, pattern: RegExp): number | undefined {
@@ -87,8 +121,8 @@ function textNumber(text: string, pattern: RegExp): number | undefined {
 	return Number.isFinite(value) ? value : undefined;
 }
 
-function count(details: Readonly<Record<string, unknown>>, text: string, key: string, pattern: RegExp): number {
-	return finite(details[key]) ?? textNumber(text, pattern) ?? 0;
+function count(detail: number | undefined, text: string, pattern: RegExp): number {
+	return detail ?? textNumber(text, pattern) ?? 0;
 }
 
 function usageValue(value: number | null | undefined): number | undefined {
@@ -114,8 +148,7 @@ export function statusSnapshotFromMagic(
 	fallbackError?: string,
 ): ContextDialogSnapshot {
 	const text = message?.text ?? "";
-	const details = record(message?.details);
-	const historian = record(details["historian"]);
+	const details = parseMagicStatusDetails(message?.details);
 	const tokens = usageValue(usage?.tokens) ?? textNumber(text, /Last input tokens:\s*([\d,]+)/iu);
 	const contextWindow = usageValue(usage?.contextWindow) ?? textNumber(text, /Resolved context limit:\s*([\d,]+)/iu);
 	const percent =
@@ -125,26 +158,27 @@ export function statusSnapshotFromMagic(
 			? (tokens / contextWindow) * 100
 			: undefined);
 	const messageError = message?.level === "error" ? text.replace(/^#{1,6}\s+.*$/mu, "").trim() : undefined;
-	const historianError = isRuntimeString(historian["lastError"]) ? historian["lastError"] : undefined;
-	const error = safeDialogError(fallbackError) ?? safeDialogError(messageError) ?? safeDialogError(historianError);
+	const error =
+		safeDialogError(fallbackError) ?? safeDialogError(messageError) ?? safeDialogError(details.historianError);
 	const historyTokens = textNumber(text, /History block:\s*~?([\d,]+)\s+tokens/iu);
 	const upgradeNeeded = textNumber(text, /([\d,]+)\s+compartments?\s+need upgrade/iu);
-	return {
-		activeTags: count(details, text, "activeTags", /- Active:\s*([\d,]+)/iu),
+	const snapshot: ContextDialogSnapshotBuilder = {
+		activeTags: count(details.activeTags, text, /- Active:\s*([\d,]+)/iu),
 		cache: cacheStatus(text),
-		compartmentCount: count(details, text, "compartmentCount", /- Compartments:\s*([\d,]+)/iu),
-		...(contextWindow === undefined ? {} : { contextWindow }),
-		droppedTags: count(details, text, "droppedTags", /- Dropped:\s*([\d,]+)/iu),
-		...(error === undefined ? {} : { error }),
-		historian: historian["inProgress"] === true ? "running" : "idle",
-		...(historyTokens === undefined ? {} : { historyTokens }),
-		memoryCount: count(details, text, "memoryCount", /Memories:\s*([\d,]+)/iu),
-		noteCount: count(details, text, "noteCount", /Notes:\s*([\d,]+)/iu),
-		pendingOps: count(details, text, "pendingOps", /- Drops:\s*([\d,]+)/iu),
-		...(percent === undefined ? {} : { percent }),
-		...(tokens === undefined ? {} : { tokens }),
-		...(upgradeNeeded === undefined ? {} : { upgradeNeeded }),
+		compartmentCount: count(details.compartmentCount, text, /- Compartments:\s*([\d,]+)/iu),
+		droppedTags: count(details.droppedTags, text, /- Dropped:\s*([\d,]+)/iu),
+		historian: details.historianRunning ? "running" : "idle",
+		memoryCount: count(details.memoryCount, text, /Memories:\s*([\d,]+)/iu),
+		noteCount: count(details.noteCount, text, /Notes:\s*([\d,]+)/iu),
+		pendingOps: count(details.pendingOps, text, /- Drops:\s*([\d,]+)/iu),
 	};
+	if (contextWindow !== undefined) snapshot.contextWindow = contextWindow;
+	if (error !== undefined) snapshot.error = error;
+	if (historyTokens !== undefined) snapshot.historyTokens = historyTokens;
+	if (percent !== undefined) snapshot.percent = percent;
+	if (tokens !== undefined) snapshot.tokens = tokens;
+	if (upgradeNeeded !== undefined) snapshot.upgradeNeeded = upgradeNeeded;
+	return snapshot;
 }
 
 function compactNumber(value: number | undefined): string {
