@@ -44,17 +44,24 @@ function setup(
 	};
 	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const controller = new BtwDialogController(theme, tui as never, keybindings, {
-		history: options.history ?? [],
-		...(options.question === undefined ? {} : { question: options.question }),
-		...(options.error === undefined ? {} : { error: options.error }),
-		onClose: () => {
-			closeCount++;
-		},
-		onClearEarlier: (id) => clearCalls.push(id),
-		onFork: options.onFork ?? (async () => {}),
-		...(options.copyText === undefined ? {} : { copyText: options.copyText }),
-	});
+	const controller = new BtwDialogController(
+		theme,
+		tui as never,
+		keybindings,
+		Object.assign(
+			{
+				history: options.history ?? [],
+				onClose: () => {
+					closeCount++;
+				},
+				onClearEarlier: (id: string | undefined) => clearCalls.push(id),
+				onFork: options.onFork ?? (async () => {}),
+			},
+			options.question === undefined ? undefined : { question: options.question },
+			options.error === undefined ? undefined : { error: options.error },
+			options.copyText === undefined ? undefined : { copyText: options.copyText },
+		),
+	);
 	return {
 		controller,
 		clearCalls,

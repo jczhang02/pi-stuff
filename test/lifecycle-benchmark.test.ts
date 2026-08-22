@@ -43,21 +43,9 @@ function selection(overrides: Partial<LifecycleAcceptanceSelection> = {}): Lifec
 }
 
 function cell(variant: Variant, scenario: Scenario, action: Action, size: TerminalSize): CellSummary {
-	return {
+	const result: CellSummary = {
 		action,
-		...(action === "prompt"
-			? {
-					acknowledgement: metric(),
-					providerStart: metric(),
-					response: metric(),
-					steadyAcknowledgement: metric(),
-					steadyProviderStart: metric(),
-					steadyResponse: metric(),
-				}
-			: {}),
 		columns: size.columns,
-		...(action === "agent-exit" ? { interrupt: metric() } : {}),
-		...(action === "reload" || action === "reload-change" ? { reload: metric() } : {}),
 		rows: size.rows,
 		scenario,
 		shutdown: metric(),
@@ -65,6 +53,19 @@ function cell(variant: Variant, scenario: Scenario, action: Action, size: Termin
 		variant,
 		warmups: 1,
 	};
+	if (action === "prompt") {
+		Object.assign(result, {
+			acknowledgement: metric(),
+			providerStart: metric(),
+			response: metric(),
+			steadyAcknowledgement: metric(),
+			steadyProviderStart: metric(),
+			steadyResponse: metric(),
+		});
+	}
+	if (action === "agent-exit") Object.assign(result, { interrupt: metric() });
+	if (action === "reload" || action === "reload-change") Object.assign(result, { reload: metric() });
+	return result;
 }
 
 function acceptanceCells(): CellSummary[] {

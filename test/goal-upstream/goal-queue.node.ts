@@ -9,7 +9,7 @@ import {
 	type GoalStateEntryData,
 	serializeGoalState,
 } from "../../packages/pi-stuff/src/goal/src/persistence.js";
-import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
+import { createMockContext, createMockPi, goalStatusSnapshot, type MockContextOverrides } from "./support.js";
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "pi-goal-queue-settings-"));
 const enabledSettingsPath = join(settingsDirectory, "enabled.json");
@@ -257,7 +257,7 @@ test("pending completion advance survives reload before settlement", async () =>
 });
 
 test("busy prioritize preserves intent and excludes old-run tokens from the urgent goal", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	let idle = false;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -284,7 +284,7 @@ test("busy prioritize preserves intent and excludes old-run tokens from the urge
 });
 
 test("pending prioritize does not inject or account the old goal on unrelated turns", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	let aborts = 0;
 	let idle = false;
 	const harness = await createHarness({
@@ -334,7 +334,7 @@ test("pending prioritize does not inject or account the old goal on unrelated tu
 });
 
 test("pending prioritize excludes unrelated usage during shutdown", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	const harness = await createHarness({
 		isIdle: () => false,
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
@@ -388,7 +388,7 @@ test("pending prioritize excludes unrelated usage during shutdown", async () => 
 });
 
 test("pending prioritize preserves budget wrap-up completion ownership", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(0)];
+	const branch: unknown[] = [assistantUsageEntry(0)];
 	let idle = false;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -429,7 +429,7 @@ test("pending prioritize preserves budget wrap-up completion ownership", async (
 });
 
 test("pending priority lets an unfinished budget wrap-up close at agent_end", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(0)];
+	const branch: unknown[] = [assistantUsageEntry(0)];
 	let idle = false;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -613,7 +613,7 @@ test("pending prioritize rejects terminal reports from unrelated turns", async (
 });
 
 test("failed finalized priority activation pauses without absorbing unrelated usage", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	let idle = false;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -814,7 +814,7 @@ test("restored priority dispatches before the displaced head is budget-limited",
 });
 
 test("pending prioritize survives shutdown with independent accounting", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	const interrupted = await createHarness({
 		isIdle: () => false,
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
@@ -870,7 +870,7 @@ test("stopped displaced goals remain stopped after the priority goal completes",
 });
 
 test("resumed displaced goals exclude tokens spent on the priority goal", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	const harness = await createHarness({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
@@ -1109,7 +1109,7 @@ test("pending skip terminates blocked reports before missing or mismatched id re
 });
 
 test("finalized priority dispatches from idle manual compaction", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(100)];
+	const branch: unknown[] = [assistantUsageEntry(100)];
 	let idle = false;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -1140,7 +1140,7 @@ test("finalized priority dispatches from idle manual compaction", async () => {
 });
 
 test("manual compaction dispatches pending priority before old-head budget limiting", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	let idle = true;
 	const harness = await createHarness({
 		isIdle: () => idle,
@@ -1171,7 +1171,7 @@ test("manual compaction dispatches pending priority before old-head budget limit
 });
 
 test("retry and compaction lifecycle snapshots preserve the queued tail", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(0)];
+	const branch: unknown[] = [assistantUsageEntry(0)];
 	const harness = await createHarness({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
@@ -1201,7 +1201,7 @@ test("retry and compaction lifecycle snapshots preserve the queued tail", async 
 });
 
 test("budget limiting the head preserves the queued tail", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry(0)];
+	const branch: unknown[] = [assistantUsageEntry(0)];
 	const harness = await createHarness({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
@@ -1376,7 +1376,7 @@ test("disabled settings freeze retained queues without losing state", async () =
 	assert.deepEqual(lastState(harness.mock), { goal: null });
 });
 
-async function createHarness(overrides: Record<string, unknown> = {}, enabled = true) {
+async function createHarness(overrides: MockContextOverrides = {}, enabled = true) {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const runtime = goal(mock.pi, { settingsPath: enabled ? enabledSettingsPath : disabledSettingsPath });
 	runtimeByPi.set(mock.pi, runtime);
@@ -1433,7 +1433,7 @@ function assistantUsageEntry(totalTokens: number) {
 }
 
 function storedGoal(text: string, status: ActiveGoal["status"]): ActiveGoal {
-	return {
+	const goal: ActiveGoal = {
 		id: `${text}-id`,
 		text,
 		status,
@@ -1445,6 +1445,7 @@ function storedGoal(text: string, status: ActiveGoal["status"]): ActiveGoal {
 		baselineTokens: 0,
 		automaticModelTurns: 0,
 		toolFreeRepeatCount: 0,
-		...(status === "active" ? { activeStartedAt: 1 } : {}),
 	};
+	if (status === "active") goal.activeStartedAt = 1;
+	return goal;
 }

@@ -77,10 +77,13 @@ const server = createServer((request, response) => {
 					? { error: { code: -32601, message: "Method not found" }, id: message.id, jsonrpc: "2.0" }
 					: { id: message.id, jsonrpc: "2.0", result: payload };
 			response
-				.writeHead(200, {
-					"Content-Type": "application/json",
-					...(message.method === "initialize" ? { "Mcp-Session-Id": "pi-stuff-http-fixture" } : {}),
-				})
+				.writeHead(
+					200,
+					Object.assign(
+						{ "Content-Type": "application/json" },
+						message.method === "initialize" ? { "Mcp-Session-Id": "pi-stuff-http-fixture" } : undefined,
+					),
+				)
 				.end(JSON.stringify(body));
 		} catch (error) {
 			response.writeHead(400, { "Content-Type": "text/plain" }).end(String(error));

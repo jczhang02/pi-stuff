@@ -129,13 +129,17 @@ function runtime(cwd: string, messages: unknown[] = [], backgroundAfterMs?: numb
 			messages.push({ message, options });
 		},
 	};
-	return new BackgroundWorkRuntime({
-		...(backgroundAfterMs !== undefined ? { backgroundAfterMs } : {}),
-		cwd,
-		pi,
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
-	});
+	return new BackgroundWorkRuntime(
+		Object.assign(
+			{
+				cwd,
+				pi,
+				sessionId: "work-test-session",
+				storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+			},
+			backgroundAfterMs === undefined ? undefined : { backgroundAfterMs },
+		),
+	);
 }
 
 function attributedRuntime(
@@ -807,31 +811,38 @@ describe("BackgroundWorkRuntime", () => {
 			for (const trigger of ["timeout", "abort", "output-limit"] as const) {
 				const root = temporaryRoot();
 				let terminationAttempts = 0;
-				const active = new BackgroundWorkRuntime({
+				const runtimeOptions: ConstructorParameters<typeof BackgroundWorkRuntime>[0] = {
 					cwd: root,
-					...(trigger === "output-limit"
-						? { outputFactory: (filePath) => new BoundedOutputFile(filePath, 64) }
-						: {}),
 					pi: { sendMessage: () => {} },
 					sessionId: "work-test-session",
-					storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+					storage: new WorkRunStorage(root, "work-test-session", {
+						authorityKey: TEST_WORK_AUTHORITY_KEY,
+					}),
 					signalSupervisor: (supervisor, _identity, signal) => {
 						terminationAttempts += 1;
 						supervisor.kill(signal);
 						throw new Error(`injected ${trigger} stop failure`);
 					},
-				});
+				};
+				if (trigger === "output-limit") {
+					Object.assign(runtimeOptions, {
+						outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
+					});
+				}
+				const active = new BackgroundWorkRuntime(runtimeOptions);
 				const controller = new AbortController();
 				const execution = active.executeBash(
-					{
-						command:
-							trigger === "output-limit"
-								? `printf '${"x".repeat(512)}'; sleep 30`
-								: "sleep 30; printf 'TERMINAL\\n'",
-						...(trigger === "abort" ? { signal: controller.signal } : {}),
-						...(trigger === "timeout" ? { timeoutSeconds: 0.01 } : {}),
-						toolCallId: `tool-${trigger}-stop-rejection`,
-					},
+					Object.assign(
+						{
+							command:
+								trigger === "output-limit"
+									? `printf '${"x".repeat(512)}'; sleep 30`
+									: "sleep 30; printf 'TERMINAL\\n'",
+							toolCallId: `tool-${trigger}-stop-rejection`,
+						},
+						trigger === "abort" ? { signal: controller.signal } : undefined,
+						trigger === "timeout" ? { timeoutSeconds: 0.01 } : undefined,
+					),
 					context(root),
 				);
 				if (trigger === "abort") setTimeout(() => controller.abort(), 20);

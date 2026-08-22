@@ -34,6 +34,7 @@ import type {
 import { CurrentAgents } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	ASYNC_DIR,
+	type AsyncJobState,
 	type Details,
 	RESULTS_DIR,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
@@ -363,27 +364,28 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 						} as never;
 					}
 					await options.backgroundGate;
+					// SAFETY: this test controls the value and supplies every Details member exercised by this case.
+					const details = {
+						mode: "single",
+						results: [],
+						asyncId: "run-1",
+					} as Details;
+					if (backgroundLifecycleAbort !== undefined) {
+						Object.assign(details, {
+							lifecycleBinding: {
+								abortStart: () => {
+									if (backgroundLifecycleAbort === "throw") {
+										throw Object.assign(new Error("injected abort EIO"), { code: "EIO" });
+									}
+									return backgroundLifecycleAbort;
+								},
+							},
+						});
+					}
 					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "Async dir: /private/run" }],
-						// SAFETY: this test controls the value and supplies every Details member exercised by this case.
-						details: {
-							mode: "single",
-							results: [],
-							asyncId: "run-1",
-							...(backgroundLifecycleAbort === undefined
-								? {}
-								: {
-										lifecycleBinding: {
-											abortStart: () => {
-												if (backgroundLifecycleAbort === "throw") {
-													throw Object.assign(new Error("injected abort EIO"), { code: "EIO" });
-												}
-												return backgroundLifecycleAbort;
-											},
-										},
-									}),
-						} as Details,
+						details,
 					} as never;
 				},
 			};
@@ -399,15 +401,16 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				const event = data as { id?: string; sessionId?: string };
 				if (!event.id) return;
-				rootState.asyncJobs.set(event.id, {
+				const job: AsyncJobState = {
 					asyncId: event.id,
 					asyncDir: `/tmp/${event.id}`,
 					status: "running",
-					...(event.sessionId ? { sessionId: event.sessionId } : {}),
 					agents: ["worker"],
 					startedAt: 1,
 					updatedAt: 1,
-				});
+				};
+				if (event.sessionId) job.sessionId = event.sessionId;
+				rootState.asyncJobs.set(event.id, job);
 			},
 			handleComplete: () => {
 				tracker.completed += 1;
@@ -423,15 +426,16 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				await options.restoreGate;
 				if (options.restoreFailure) throw Object.assign(new Error("injected restore EIO"), { code: "EIO" });
 				if (!options.restoreActive) return;
-				rootState.asyncJobs.set("restored", {
+				const job: AsyncJobState = {
 					asyncId: "restored",
 					asyncDir: "/tmp/restored",
 					status: "running",
-					...(rootState.currentSessionId ? { sessionId: rootState.currentSessionId } : {}),
 					agents: ["worker"],
 					startedAt: 1,
 					updatedAt: 1,
-				});
+				};
+				if (rootState.currentSessionId) job.sessionId = rootState.currentSessionId;
+				rootState.asyncJobs.set("restored", job);
 			},
 		}),
 		createWatcher: ({ notifier: completionNotifier }) => {
@@ -489,10 +493,11 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			};
 		},
 		openDialog: async (_ctx, _coordinator, _current, dialogOptions) => {
-			dialogs.push({
-				...(dialogOptions.initialKey ? { initialKey: dialogOptions.initialKey } : {}),
+			const dialog: RootHarness["dialogs"][number] = {
 				hasReader: isRuntimeFunction(dialogOptions.readTranscript),
-			});
+			};
+			if (dialogOptions.initialKey) dialog.initialKey = dialogOptions.initialKey;
+			dialogs.push(dialog);
 		},
 		projectContext: async (audience) => {
 			projections.push(audience);

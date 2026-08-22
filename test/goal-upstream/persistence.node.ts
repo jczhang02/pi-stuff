@@ -299,7 +299,7 @@ test("malformed canonical or plural queue state fails closed", () => {
 });
 
 function storedGoal(text: string, status: ActiveGoal["status"]): ActiveGoal {
-	return {
+	const goal: ActiveGoal = {
 		id: `${text}-id`,
 		text,
 		status,
@@ -311,6 +311,7 @@ function storedGoal(text: string, status: ActiveGoal["status"]): ActiveGoal {
 		baselineTokens: 0,
 		automaticModelTurns: 0,
 		toolFreeRepeatCount: 0,
-		...(status === "active" ? { activeStartedAt: 1 } : {}),
 	};
+	if (status === "active") goal.activeStartedAt = 1;
+	return goal;
 }

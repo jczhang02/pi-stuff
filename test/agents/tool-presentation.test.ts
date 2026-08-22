@@ -163,13 +163,15 @@ function renderedSummary(
 	getToolUiRuntime(api).indexMessages(
 		[
 			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
-			{
-				role: "toolResult",
-				toolCallId,
-				content: result.content,
-				details: result.details,
-				...(isError ? { isError: true } : {}),
-			},
+			Object.assign(
+				{
+					role: "toolResult",
+					toolCallId,
+					content: result.content,
+					details: result.details,
+				},
+				isError ? { isError: true } : undefined,
+			),
 		],
 		true,
 	);
@@ -710,20 +712,21 @@ test("keeps Code Mode carrier Tools available under a strict Agent allowlist and
 
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {
 	for (const tools of [[], ["/tmp/child-tool.ts"], ["edit"]]) {
-		const plan = resolvePiLaunchToolPlan({
-			tools,
-			requireReadTool: true,
-			...(tools.includes("edit")
-				? {
-						capabilityCeiling: {
-							version: 1 as const,
-							allowedTools: ["edit", "read"],
-							denyExtensions: false,
-							sources: ["test"],
-						},
-					}
-				: {}),
-		});
+		const plan = resolvePiLaunchToolPlan(
+			Object.assign(
+				{ tools, requireReadTool: true },
+				tools.includes("edit")
+					? {
+							capabilityCeiling: {
+								version: 1 as const,
+								allowedTools: ["edit", "read"],
+								denyExtensions: false,
+								sources: ["test"],
+							},
+						}
+					: undefined,
+			),
+		);
 		expect(plan.effectiveToolAllowlist).toContain("read");
 		expect(plan.requiredChildTools).toContain("read");
 	}

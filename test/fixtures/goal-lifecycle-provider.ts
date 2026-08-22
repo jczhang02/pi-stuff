@@ -44,7 +44,7 @@ function message(
 	stopReason: AssistantMessage["stopReason"],
 	errorMessage?: string,
 ): AssistantMessage {
-	return {
+	const result: AssistantMessage = {
 		role: "assistant",
 		content,
 		api: "openai-completions",
@@ -52,9 +52,10 @@ function message(
 		model: MODEL,
 		usage: ZERO_USAGE,
 		stopReason,
-		...(errorMessage ? { errorMessage } : {}),
 		timestamp: Date.now(),
 	};
+	if (errorMessage !== undefined) result.errorMessage = errorMessage;
+	return result;
 }
 
 function stream(content: AssistantMessage["content"], stopReason: "length" | "stop" | "toolUse") {

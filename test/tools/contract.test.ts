@@ -5,6 +5,7 @@ import {
 	type ExtensionAPI,
 	type Theme,
 	type ToolDefinition,
+	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -106,13 +107,16 @@ function apiHarness(events: EventBus = createEventBus()) {
 		events,
 		getActiveTools: () => [...activeTools],
 		getAllTools: () =>
-			[...tools.values()].map((tool) => ({
-				description: tool.description,
-				name: tool.name,
-				parameters: tool.parameters,
-				...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
-				sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
-			})),
+			[...tools.values()].map((tool): ToolInfo => {
+				const info: ToolInfo = {
+					description: tool.description,
+					name: tool.name,
+					parameters: tool.parameters,
+					sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
+				};
+				if (tool.promptGuidelines !== undefined) info.promptGuidelines = tool.promptGuidelines;
+				return info;
+			}),
 		on,
 		registerTool: (tool) => {
 			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
@@ -157,13 +161,15 @@ function call(id: string, name: string, value: string) {
 }
 
 function result(id: string, text = "ok", isError = false) {
-	return {
-		role: "toolResult",
-		toolCallId: id,
-		content: [{ type: "text", text }],
-		details: {},
-		...(isError ? { isError: true } : {}),
-	};
+	return Object.assign(
+		{
+			role: "toolResult",
+			toolCallId: id,
+			content: [{ type: "text", text }],
+			details: {},
+		},
+		isError ? { isError: true } : undefined,
+	);
 }
 
 function bashCall(id: string, command: string) {
@@ -657,13 +663,15 @@ test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, an
 		getToolUiRuntime(envelopeHarness.api).indexMessages(
 			[
 				assistant({ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "read" } }),
-				{
-					role: "toolResult",
-					toolCallId: "outer",
-					content: [],
-					details: { operations: [operation] },
-					...(scenario.isError ? { isError: true } : {}),
-				},
+				Object.assign(
+					{
+						role: "toolResult",
+						toolCallId: "outer",
+						content: [],
+						details: { operations: [operation] },
+					},
+					scenario.isError ? { isError: true } : undefined,
+				),
 			],
 			true,
 		);

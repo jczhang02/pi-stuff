@@ -42,8 +42,12 @@ import {
 	normalizeVisibleAssistantOutput,
 	recordGoalBlockerAttempt,
 } from "../../packages/pi-stuff/src/goal/src/safety.js";
-import { isRuntimeFunction, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
-import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
+import {
+	isRuntimeFunction,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createMockContext, createMockPi, goalStatusSnapshot, type MockContextOverrides } from "./support.js";
 
 // This suite stays in one file because it exercises one module-scoped extension
 // state machine across commands, lifecycle hooks, tools, persistence, prompts,
@@ -59,6 +63,38 @@ const MISSING_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "missing.json");
 const LOW_LIMITS_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "low-limits.json");
 const ONE_TURN_LIMIT_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "one-turn-limit.json");
 const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
+
+interface CompletionToolParameters {
+	readonly properties?: { readonly evidence?: unknown; readonly goal_id?: unknown };
+	readonly required?: string[];
+}
+
+interface GoalToolPropertyLimits {
+	readonly maxLength?: number;
+	readonly minimum?: number;
+	readonly minLength?: number;
+}
+
+interface BlockedToolParameters {
+	readonly properties?: {
+		readonly evidence?: GoalToolPropertyLimits;
+		readonly reason?: GoalToolPropertyLimits;
+		readonly repeated_turns?: GoalToolPropertyLimits;
+	};
+	readonly required?: string[];
+}
+
+interface AssistantUsageFixture {
+	readonly cacheRead?: number;
+	readonly cacheWrite?: number;
+	readonly input?: number;
+	readonly output?: number;
+	readonly totalTokens?: number;
+}
+
+interface GoalStateFixture {
+	readonly goal?: StoredGoal | null;
+}
 writeFileSync(ALWAYS_SETTINGS_PATH, '{"goal":{"toolVisibility":"always"}}\n');
 writeFileSync(LAZY_SETTINGS_PATH, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
 writeFileSync(INVALID_SETTINGS_PATH, '{"goal":{"toolVisibility":"sometimes"}}\n');
@@ -113,19 +149,16 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	// Default settings keep goal tools active for a stable schema.
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
+	// SAFETY: Goal owns this registered schema, and the test reads only the completion fields declared by that Tool.
 	const completionParameters = mock.tools.find((tool) => tool.name === "goal_complete")?.parameters as
-		| { required?: string[]; properties?: Record<string, unknown> }
+		| CompletionToolParameters
 		| undefined;
 	assert.deepEqual(completionParameters?.required, ["goal_id", "summary", "evidence"]);
 	assert.ok(completionParameters?.properties?.goal_id);
 	assert.ok(completionParameters?.properties?.evidence);
 	const blockerDefinition = mock.tools.find((tool) => tool.name === "goal_blocked");
-	const blockedParameters = blockerDefinition?.parameters as
-		| {
-				required?: string[];
-				properties?: Record<string, { minimum?: number; minLength?: number; maxLength?: number }>;
-		  }
-		| undefined;
+	// SAFETY: Goal owns this registered schema, and the test reads only the blocker limits declared by that Tool.
+	const blockedParameters = blockerDefinition?.parameters as BlockedToolParameters | undefined;
 	assert.deepEqual(blockedParameters?.required, ["goal_id", "reason", "attempt", "evidence", "repeated_turns"]);
 	assert.equal(blockedParameters?.properties?.reason?.minLength, 1);
 	assert.equal(blockedParameters?.properties?.reason?.maxLength, 1_000);
@@ -277,7 +310,7 @@ test("session restore stays read-only until the next agent turn begins", async (
 	assert.equal(mock.entries.length, 1, "the first real turn must flush the restored Goal snapshot");
 	assert.equal(mock.entries[0]?.customType, "goal-state");
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	assert.equal((mock.entries[0]?.data as { goal?: StoredGoal } | undefined)?.goal?.id, restoredGoal.id);
+	assert.equal(goalStateData(mock.entries[0]?.data).goal?.id, restoredGoal.id);
 });
 
 test("missing and invalid settings fall back to always-visible tools", () => {
@@ -882,7 +915,7 @@ test("parent and child goal tool unlock policies stay isolated", async () => {
 });
 
 test("child session initialization does not erase or reroute the parent goal", async () => {
-	const rootBranch: Array<Record<string, unknown>> = [];
+	const rootBranch: unknown[] = [];
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext({
@@ -930,7 +963,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 		.slice(rootEntriesBeforeChild)
 		.filter((entry) => entry.customType === "goal-state")
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		.map((entry) => entry.data as { goal?: StoredGoal | null });
+		.map((entry) => goalStateData(entry.data));
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
 	assert.equal(rootGoalStates[0]?.goal?.id, rootGoal.id);
@@ -943,7 +976,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 	assert.equal(
 		childGoalStates.some(
 			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			(entry) => (entry.data as { goal?: StoredGoal | null } | undefined)?.goal?.id === rootGoal.id,
+			(entry) => goalStateData(entry.data).goal?.id === rootGoal.id,
 		),
 		false,
 	);
@@ -1017,7 +1050,7 @@ test("independent goal instances keep completion local", async () => {
 		.slice(rootEntriesBefore)
 		.filter((entry) => entry.customType === "goal-state")
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		.map((entry) => entry.data as { goal?: StoredGoal | null });
+		.map((entry) => goalStateData(entry.data));
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
 	assert.deepEqual(rootGoalStates[1], { goal: null });
@@ -1031,7 +1064,7 @@ test("independent goal instances keep completion local", async () => {
 });
 
 test("tool lifecycle persistence stays on the owning goal instance", async () => {
-	const rootBranch: Array<Record<string, unknown>> = [assistantUsageEntry({ totalTokens: 1 })];
+	const rootBranch: unknown[] = [assistantUsageEntry({ totalTokens: 1 })];
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext({
@@ -1040,7 +1073,7 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 
-	const childBranch: Array<Record<string, unknown>> = [assistantUsageEntry({ totalTokens: 2 })];
+	const childBranch: unknown[] = [assistantUsageEntry({ totalTokens: 2 })];
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext({
@@ -1126,7 +1159,7 @@ test("goal_blocked ownership stays on the root instance after child start", asyn
 });
 
 test("pending continuation and budget state survive later child startup", async () => {
-	const rootBranch: Array<Record<string, unknown>> = [assistantUsageEntry({ totalTokens: 0 })];
+	const rootBranch: unknown[] = [assistantUsageEntry({ totalTokens: 0 })];
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext({
@@ -1336,7 +1369,7 @@ test("child shutdown does not clear the parent goal", async () => {
 		.slice(rootEntriesBeforeChild)
 		.filter((entry) => entry.customType === "goal-state")
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		.map((entry) => entry.data as { goal?: StoredGoal | null });
+		.map((entry) => goalStateData(entry.data));
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
 	assert.equal(rootGoalStates[0]?.goal?.id, rootGoal.id);
@@ -1463,7 +1496,7 @@ test("assistant token accounting prefers totalTokens and uses a cache-inclusive 
 });
 
 test("goal token usage subtracts its baseline and clamps branch rewinds", async () => {
-	const branch: Array<Record<string, unknown>> = [assistantUsageEntry({ totalTokens: 100 })];
+	const branch: unknown[] = [assistantUsageEntry({ totalTokens: 100 })];
 	const tracked = await startGoalForTest({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
@@ -2698,7 +2731,7 @@ test("failed start delivery clears a new goal and restores a replaced stopped go
 	assert.match(freshContext.notifications.at(-1)?.message ?? "", /start delivery failed/i);
 
 	let activeReplacementAborts = 0;
-	const activeReplacementBranch: Array<Record<string, unknown>> = [];
+	const activeReplacementBranch: unknown[] = [];
 	const activeReplacement = await startGoalForTest({
 		abort: () => activeReplacementAborts++,
 		sessionManager: {
@@ -3881,7 +3914,7 @@ test("tool_execution_end pauses a goal before another turn when terminal tools d
 });
 
 test("tool_execution_end enforces budget once and injects one bounded wrap-up", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	let aborts = 0;
 	const budgeted = await startGoalForTest(
 		{
@@ -3954,7 +3987,7 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 });
 
 test("rejected completion closes a budget wrap-up without another model call", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -3988,7 +4021,7 @@ test("rejected completion closes a budget wrap-up without another model call", a
 });
 
 test("stale completion also closes a budget wrap-up after recording final usage", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4023,7 +4056,7 @@ test("stale completion also closes a budget wrap-up after recording final usage"
 });
 
 test("failed budget wrap-up delivery retries once without duplicate accepted messages", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4051,7 +4084,7 @@ test("failed budget wrap-up delivery retries once without duplicate accepted mes
 });
 
 test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite preparation", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4078,7 +4111,7 @@ test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite prepar
 });
 
 test("budget wrap-up permission closes at agent_end and stale context is filtered", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4104,6 +4137,7 @@ test("budget wrap-up permission closes at agent_end and stale context is filtere
 	assert.match(rejected.content?.[0]?.text ?? "", /budget_limited, not active/i);
 	assert.equal(rejected.terminate, undefined);
 
+	// SAFETY: the Goal context hook owns this result and returns only its optional filtered messages projection.
 	const contextResult = budgeted.mock.events.get("context")?.[0]?.(
 		{
 			messages: [
@@ -4117,7 +4151,7 @@ test("budget wrap-up permission closes at agent_end and stale context is filtere
 });
 
 test("budget wrap-up does not consume a pending transformed follow-up", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4166,7 +4200,7 @@ test("budget wrap-up does not consume a pending transformed follow-up", async ()
 });
 
 test("budget wrap-up custom message retains goal ownership through agent_end", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4177,8 +4211,8 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 		budgeted.ctx,
 	);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const queuedWrapUp = budgeted.mock.sentMessages[0]?.message as Record<string, unknown> | undefined;
-	assert.ok(queuedWrapUp);
+	const queuedWrapUp = budgeted.mock.sentMessages[0]?.message;
+	assert.ok(isRuntimeObject(queuedWrapUp) && queuedWrapUp !== null && !Array.isArray(queuedWrapUp));
 	const wrapUpMessage = { role: "custom", ...queuedWrapUp };
 
 	budgeted.mock.events.get("before_agent_start")?.[0]?.(
@@ -4201,7 +4235,7 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 });
 
 test("compaction cancels before retry when persisted usage has exhausted the budget", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4223,7 +4257,7 @@ test("compaction cancels before retry when persisted usage has exhausted the bud
 });
 
 test("budget edits require an actual increase before reactivating and rotate stale ids", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -4261,7 +4295,7 @@ test("budget edits require an actual increase before reactivating and rotate sta
 });
 
 test("failed budget-increase edit delivery restores the limited goal and stale id", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 original objective",
@@ -4648,7 +4682,7 @@ test("stale exhausted recovery cannot block a replacement goal", async () => {
 });
 
 test("an exhausted goal does not remain active for a retryable provider error", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: unknown[] = [];
 	const budgeted = await startGoalForTest(
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
@@ -5053,7 +5087,7 @@ function assertHardenedGoalPrompt(prompt: string) {
 	assert.match(prompt, /hard, slow, uncertain.*recoverable/is);
 }
 
-function assistantUsageEntry(usage: Record<string, unknown>) {
+function assistantUsageEntry(usage: AssistantUsageFixture) {
 	return { type: "message", message: { role: "assistant", usage } };
 }
 
@@ -5086,7 +5120,7 @@ function restoreGoalForTest(
 		safetyPauseCause?: "continuation_limit" | "no_progress" | "runaway_backstop";
 	} = {},
 	toolVisibility: "always" | "after-first-goal" = "always",
-	contextOverrides: Record<string, unknown> = {},
+	contextOverrides: MockContextOverrides = {},
 ) {
 	const sessionGoal = {
 		id: `restored-${status}`,
@@ -5109,9 +5143,9 @@ function restoreGoalForTest(
 
 function restoreStoredGoalForTest(
 	sessionGoal: StoredGoal,
-	extraEntries: Array<Record<string, unknown>> = [],
+	extraEntries: unknown[] = [],
 	toolVisibility: "always" | "after-first-goal" = "always",
-	contextOverrides: Record<string, unknown> = {},
+	contextOverrides: MockContextOverrides = {},
 	settingsPath?: string,
 ) {
 	const branch = [
@@ -5134,7 +5168,7 @@ function restoreStoredGoalForTest(
 }
 
 async function startGoalForTest(
-	overrides: Record<string, unknown> = {},
+	overrides: MockContextOverrides = {},
 	command = "finish",
 	settingsPath = ALWAYS_SETTINGS_PATH,
 ) {
@@ -5154,23 +5188,27 @@ function requireLastGoal(mock: ReturnType<typeof createMockPi>) {
 
 function lastGoal(mock: ReturnType<typeof createMockPi>) {
 	const entry = mock.entries.filter((entry) => entry.customType === "goal-state").at(-1);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const persisted = (entry?.data as { goal?: StoredGoal | null } | undefined)?.goal;
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	if (persisted !== undefined) return persisted as StoredGoal | null;
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	return (runtimeByPi.get(mock.pi)?.activeGoal ?? null) as StoredGoal | null;
+	const persisted = goalStateData(entry?.data).goal;
+	if (persisted !== undefined) return persisted;
+	return runtimeByPi.get(mock.pi)?.activeGoal ?? null;
 }
 
 function findPersistedGoal(mock: ReturnType<typeof createMockPi>, status: string) {
 	for (let index = mock.entries.length - 1; index >= 0; index--) {
 		const entry = mock.entries[index];
 		if (entry?.customType !== "goal-state") continue;
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const stored = (entry.data as { goal?: StoredGoal | null } | undefined)?.goal;
+		const stored = goalStateData(entry.data).goal;
 		if (stored?.status === status) return stored;
 	}
 	return undefined;
+}
+
+function goalStateData<Value>(data: Value): GoalStateFixture {
+	if (!isRuntimeObject(data) || data === null || Array.isArray(data) || !("goal" in data)) return {};
+	if (data.goal === null) return { goal: null };
+	if (!isRuntimeObject(data.goal) || Array.isArray(data.goal)) return {};
+	// SAFETY: these entries are emitted by Goal persistence in this test process; the test reads its StoredGoal contract.
+	return { goal: data.goal as Value & StoredGoal };
 }
 
 function pickSafetyState(goal: StoredGoal) {

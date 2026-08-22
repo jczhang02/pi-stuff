@@ -499,32 +499,31 @@ describe("background runner configuration", () => {
 					}),
 				);
 			}
-			fs.writeFileSync(
-				path.join(resultsDir, `${fixture.runId}.json`),
-				JSON.stringify({
-					runId: fixture.runId,
-					state: fixture.state,
-					success: false,
-					...("startedAt" in fixture ? { startedAt: fixture.startedAt, endedAt: fixture.endedAt } : {}),
-					...("timedOut" in fixture && fixture.timedOut ? { timedOut: true } : {}),
-					results: [{ agent: "writer", output: fixture.child.error, ...fixture.child }],
-				}),
-			);
+			const storedResult = {
+				runId: fixture.runId,
+				state: fixture.state,
+				success: false,
+				results: [{ agent: "writer", output: fixture.child.error, ...fixture.child }],
+			};
+			if ("startedAt" in fixture) {
+				Object.assign(storedResult, { startedAt: fixture.startedAt, endedAt: fixture.endedAt });
+			}
+			if ("timedOut" in fixture && fixture.timedOut) Object.assign(storedResult, { timedOut: true });
+			fs.writeFileSync(path.join(resultsDir, `${fixture.runId}.json`), JSON.stringify(storedResult));
 
-			const repaired = reconcileAsyncRun(asyncDir, {
+			const reconcileOptions: Parameters<typeof reconcileAsyncRun>[1] = {
 				resultsDir,
 				now: () => fixture.now,
-				...(fixture.missingStatus
-					? {
-							startedRun: {
-								runId: fixture.runId,
-								mode: "single" as const,
-								agents: ["writer"],
-								startedAt: 1_000,
-							},
-						}
-					: {}),
-			});
+			};
+			if (fixture.missingStatus) {
+				reconcileOptions.startedRun = {
+					runId: fixture.runId,
+					mode: "single",
+					agents: ["writer"],
+					startedAt: 1_000,
+				};
+			}
+			const repaired = reconcileAsyncRun(asyncDir, reconcileOptions);
 
 			expect(repaired.repaired).toBe(true);
 			expect(repaired.status?.state).toBe(fixture.state);
@@ -836,7 +835,7 @@ describe("background runner configuration", () => {
 				}),
 			);
 			if (kind !== "missing") {
-				writeProcessTerminalCandidate(asyncDir, {
+				const candidate: Parameters<typeof writeProcessTerminalCandidate>[1] = {
 					version: 1,
 					runId: kind === "foreign" ? "another-run" : runId,
 					runnerProcessInstanceId: kind === "foreign" ? "another-runner" : "runner-1",
@@ -855,8 +854,9 @@ describe("background runner configuration", () => {
 									]
 								: [],
 					},
-					...(kind === "legacy-empty" ? {} : { expectedWriters: { "0": 0 } }),
-				});
+				};
+				if (kind !== "legacy-empty") candidate.expectedWriters = { "0": 0 };
+				writeProcessTerminalCandidate(asyncDir, candidate);
 			}
 
 			finalizeProcessTerminal(asyncDir, runId, {

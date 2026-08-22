@@ -14,6 +14,7 @@ import {
 import { CodeModeHostLostError } from "../../packages/pi-stuff/src/code-mode/host/host-client.js";
 import { CodeModeSessionLedger } from "../../packages/pi-stuff/src/code-mode/ledger.js";
 import { type CodeModeExecutor, CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
+import type { RuntimeResponse } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import type {
 	SuiteToolCodeModeLifecycle,
 	SuiteToolDefinitionRegistry,
@@ -69,11 +70,13 @@ function registryFixture(
 						}
 					: definition.name === "write"
 						? {
-								codeMode: {
-									...(lifecycle ? { lifecycle } : {}),
-									replay: "never" as const,
-									requiresApproval: true,
-								},
+								codeMode: Object.assign(
+									{
+										replay: "never" as const,
+										requiresApproval: true,
+									},
+									lifecycle ? { lifecycle } : undefined,
+								),
 								definition,
 							}
 						: { definition },
@@ -421,12 +424,12 @@ test("runtime rejection terminates a pending approval without running its Tool",
 			const plan = options.context.beginToolCall?.("write", { path: "a.txt", content: "no" });
 			if (!plan) throw new Error("missing rejection plan");
 			if (!plan.pause) effects += 1;
-			return {
+			const result: RuntimeResponse = {
 				cellId: "cell-rejected",
 				contentItems: [],
-				...(plan.pause ? { errorText: plan.pause.message } : {}),
 				kind: "result",
 			};
+			return plan.pause ? { ...result, errorText: plan.pause.message } : result;
 		},
 		async shutdown() {},
 		async wait() {

@@ -34,31 +34,28 @@ function terminalRun(
 	const directory = path.join(parent, runId);
 	fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
 	const endedAt = options.endedAt ?? Date.now();
-	fs.writeFileSync(
-		path.join(directory, "status.json"),
-		JSON.stringify({
-			lifecycleArtifactVersion: 3,
-			runId,
-			mode: "single",
-			state: "complete",
-			startedAt: endedAt - 1_000,
-			endedAt,
-			lastUpdate: endedAt,
-			...(options.processObserved
-				? {
-						processTerminal: {
-							version: 1,
-							state: "observed",
-							runId,
-							runnerProcessInstanceId: `${runId}-runner`,
-							observedAt: endedAt,
-							instances: [],
-						},
-					}
-				: {}),
-		}),
-		{ mode: 0o600 },
-	);
+	const status = {
+		lifecycleArtifactVersion: 3,
+		runId,
+		mode: "single",
+		state: "complete",
+		startedAt: endedAt - 1_000,
+		endedAt,
+		lastUpdate: endedAt,
+	};
+	if (options.processObserved) {
+		Object.assign(status, {
+			processTerminal: {
+				version: 1,
+				state: "observed",
+				runId,
+				runnerProcessInstanceId: `${runId}-runner`,
+				observedAt: endedAt,
+				instances: [],
+			},
+		});
+	}
+	fs.writeFileSync(path.join(directory, "status.json"), JSON.stringify(status), { mode: 0o600 });
 	initializeWriterProcessRegistry(directory, runId, process.pid, 1);
 	if (options.eventBytes) fs.writeFileSync(path.join(directory, "events.jsonl"), "x".repeat(options.eventBytes));
 	const timestamp = new Date(endedAt);

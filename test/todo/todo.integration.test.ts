@@ -73,13 +73,15 @@ function renderedLines(
 	getToolUiRuntime(api).indexMessages(
 		[
 			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool.name, arguments: args }] },
-			{
-				role: "toolResult",
-				toolCallId,
-				content: result.content,
-				details: result.details,
-				...(isError ? { isError: true } : {}),
-			},
+			Object.assign(
+				{
+					role: "toolResult",
+					toolCallId,
+					content: result.content,
+					details: result.details,
+				},
+				isError ? { isError: true } : undefined,
+			),
 		],
 		true,
 	);

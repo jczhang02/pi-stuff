@@ -293,29 +293,32 @@ function executor(
 					state: options.foregroundCrash ? "failed" : "complete",
 					success: !options.foregroundCrash,
 					results: (config.work.mode === "single" ? [config.work.task] : config.work.group.tasks).map(
-						(task, index) => ({
-							agent: task.agent,
-							context: task.context,
-							output: `result-${index + 1}`,
-							success: !options.foregroundCrash,
-							exitCode: options.foregroundCrash ? 1 : 0,
-							...(options.foregroundCrash
-								? {
-										writerProcesses: [
-											{
-												attempt: 0,
-												closeObservedAt: Date.now(),
-												exitCode: null,
-												kind: "pi-writer" as const,
-												processInstanceId: "external-crash",
-												signal: "SIGSEGV" as const,
-												terminationOrigin: "external" as const,
-											},
-										],
-									}
-								: {}),
-							sessionFile: path.join(cwd, `child-${index}.jsonl`),
-						}),
+						(task, index) =>
+							Object.assign(
+								{
+									agent: task.agent,
+									context: task.context,
+									output: `result-${index + 1}`,
+									success: !options.foregroundCrash,
+									exitCode: options.foregroundCrash ? 1 : 0,
+									sessionFile: path.join(cwd, `child-${index}.jsonl`),
+								},
+								options.foregroundCrash
+									? {
+											writerProcesses: [
+												{
+													attempt: 0,
+													closeObservedAt: Date.now(),
+													exitCode: null,
+													kind: "pi-writer" as const,
+													processInstanceId: "external-crash",
+													signal: "SIGSEGV" as const,
+													terminationOrigin: "external" as const,
+												},
+											],
+										}
+									: undefined,
+							),
 					),
 				});
 			},

@@ -360,7 +360,7 @@ function createContext(
 	options: ContextOptions = {},
 ): ExtensionContext {
 	const cwd = options.cwd ?? "/workspace";
-	return createExtensionContext({
+	const contextOptions: Parameters<typeof createExtensionContext>[0] = {
 		cwd,
 		getContextUsage: () => options.contextUsage,
 		hasUI: mode !== "rpc",
@@ -368,9 +368,6 @@ function createContext(
 		isIdle: options.isIdle ?? (() => true),
 		mode,
 		model: options.model ?? (options.modelId ? createTestModel(options.modelId, options.provider) : undefined),
-		...(options.modelRegistry
-			? { modelRegistry: Object.assign(Object.create(ModelRegistry.prototype), options.modelRegistry) }
-			: {}),
 		sessionManager: { getBranch: () => [], getCwd: () => cwd },
 		signal: options.signal,
 		ui: {
@@ -386,7 +383,11 @@ function createContext(
 			setWorkingVisible: (visible) => ui.setWorkingVisible(visible),
 			theme: ui.theme,
 		},
-	});
+	};
+	if (options.modelRegistry) {
+		contextOptions.modelRegistry = Object.assign(Object.create(ModelRegistry.prototype), options.modelRegistry);
+	}
+	return createExtensionContext(contextOptions);
 }
 
 function createFooterData(branch: string | null = null) {

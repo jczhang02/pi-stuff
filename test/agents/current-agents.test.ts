@@ -109,6 +109,15 @@ function signalledProcessTerminal(
 	terminationOrigin?: "external" | "manager-final-drain" | "manager-request",
 	exitCode: number | null = null,
 ): ProcessTerminalV1 {
+	const instance: ProcessTerminalV1["instances"][number] = {
+		kind: "pi-writer",
+		processInstanceId: `${runId}-writer`,
+		attempt: 0,
+		closeObservedAt: 2_000,
+		exitCode,
+		signal,
+	};
+	if (terminationOrigin) Object.assign(instance, { terminationOrigin });
 	return {
 		version: 1,
 		state: "observed",
@@ -116,17 +125,7 @@ function signalledProcessTerminal(
 		childIndex: 0,
 		runnerProcessInstanceId: `${runId}-runner`,
 		observedAt: 2_000,
-		instances: [
-			{
-				kind: "pi-writer",
-				processInstanceId: `${runId}-writer`,
-				attempt: 0,
-				closeObservedAt: 2_000,
-				exitCode,
-				signal,
-				...(terminationOrigin ? { terminationOrigin } : {}),
-			},
-		],
+		instances: [instance],
 	};
 }
 

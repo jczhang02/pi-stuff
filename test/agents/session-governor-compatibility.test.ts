@@ -26,16 +26,17 @@ function temporaryRoot(prefix: string): string {
 function scope(
 	input: { declared?: readonly string[]; started?: readonly string[]; legacyArtifactSessionId?: string } = {},
 ): SessionGovernorCompatibilityScope {
-	return {
+	const result: SessionGovernorCompatibilityScope = {
 		sessionId: "ps2-current",
 		governorSessionId: "ps2-current",
 		legacyGovernorSessionId: "logical-session",
-		...(input.legacyArtifactSessionId
-			? { legacyArtifactSessionId: input.legacyArtifactSessionId, startedAtMs: 1 }
-			: {}),
 		declaredLogicalAgentIds: new Set(input.declared ?? []),
 		startedLogicalAgentIds: new Set(input.started ?? []),
 	};
+	if (input.legacyArtifactSessionId) {
+		Object.assign(result, { legacyArtifactSessionId: input.legacyArtifactSessionId, startedAtMs: 1 });
+	}
+	return result;
 }
 
 function governor(rootDir: string, sessionId: string, ownerAgentPath: readonly string[] = []): SessionAgentGovernor {

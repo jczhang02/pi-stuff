@@ -39,13 +39,15 @@ function toolCall(id: string, path: string) {
 }
 
 function toolResult(id: string, isError = false) {
-	return {
-		role: "toolResult",
-		toolCallId: id,
-		content: [{ type: "text", text: isError ? "missing" : "safe" }],
-		details: {},
-		...(isError ? { isError: true } : {}),
-	};
+	return Object.assign(
+		{
+			role: "toolResult",
+			toolCallId: id,
+			content: [{ type: "text", text: isError ? "missing" : "safe" }],
+			details: {},
+		},
+		isError ? { isError: true } : undefined,
+	);
 }
 
 function groupedRuntime(paths: readonly string[], errorIndex = -1, separate = false): ToolUiRuntime {

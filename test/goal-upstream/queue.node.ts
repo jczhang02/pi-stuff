@@ -90,7 +90,7 @@ test("stopped queued heads keep their status until explicit resume", () => {
 });
 
 function goal(text: string, status: ActiveGoal["status"]): ActiveGoal {
-	return {
+	const value: ActiveGoal = {
 		id: `${text}-id`,
 		text,
 		status,
@@ -102,6 +102,7 @@ function goal(text: string, status: ActiveGoal["status"]): ActiveGoal {
 		baselineTokens: 0,
 		automaticModelTurns: 0,
 		toolFreeRepeatCount: 0,
-		...(status === "active" ? { activeStartedAt: 1_000 } : {}),
 	};
+	if (status === "active") value.activeStartedAt = 1_000;
+	return value;
 }

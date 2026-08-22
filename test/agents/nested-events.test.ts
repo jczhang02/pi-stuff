@@ -257,12 +257,14 @@ describe("nested event projection ownership", () => {
 				ts: startedAt + index,
 				parentRunId: routeInfo.rootRunId,
 				parentStepIndex: 0,
-				child: {
-					...runningChild(routeInfo.rootRunId, childId),
-					state: terminal ? "complete" : "running",
-					lastUpdate: startedAt + index,
-					...(terminal ? { endedAt: startedAt + index } : {}),
-				},
+				child: Object.assign(
+					{
+						...runningChild(routeInfo.rootRunId, childId),
+						state: terminal ? ("complete" as const) : ("running" as const),
+						lastUpdate: startedAt + index,
+					},
+					terminal ? { endedAt: startedAt + index } : undefined,
+				),
 			});
 		}
 

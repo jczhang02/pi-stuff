@@ -52,10 +52,10 @@ function tuiHarness(rows?: number) {
 	const requests: Array<boolean | undefined> = [];
 	return {
 		requests,
-		tui: {
-			requestRender: (force?: boolean) => requests.push(force),
-			...(rows === undefined ? {} : { terminal: { rows } }),
-		},
+		tui: Object.assign(
+			{ requestRender: (force?: boolean) => requests.push(force) },
+			rows === undefined ? undefined : { terminal: { rows } },
+		),
 	};
 }
 

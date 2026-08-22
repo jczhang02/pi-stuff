@@ -3,13 +3,10 @@ import { deriveBlocks, detectCycle, hasCycle } from "../../packages/pi-stuff/src
 import type { Task } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function task(id: string, blockedBy?: string[]): Task {
-	return {
-		id,
-		subject: `Task ${id}`,
-		description: `Description ${id}`,
-		status: "pending",
-		...(blockedBy ? { blockedBy } : {}),
-	};
+	return Object.assign(
+		{ id, subject: `Task ${id}`, description: `Description ${id}`, status: "pending" as const },
+		blockedBy ? { blockedBy } : undefined,
+	);
 }
 
 describe("task dependency graph", () => {

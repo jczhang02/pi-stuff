@@ -9,6 +9,7 @@ import type {
 	ExtensionEvent,
 	SessionEntry,
 	ToolDefinition,
+	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import piStuffTools, {
@@ -62,13 +63,16 @@ function apiHarness(initialActiveTools: readonly string[], eventBus = new EventB
 		events: eventBus.view(),
 		getActiveTools: () => [...activeTools],
 		getAllTools: () =>
-			[...tools.values()].map((tool) => ({
-				description: tool.description,
-				name: tool.name,
-				parameters: tool.parameters,
-				...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
-				sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
-			})),
+			[...tools.values()].map((tool): ToolInfo => {
+				const info: ToolInfo = {
+					description: tool.description,
+					name: tool.name,
+					parameters: tool.parameters,
+					sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
+				};
+				if (tool.promptGuidelines !== undefined) info.promptGuidelines = tool.promptGuidelines;
+				return info;
+			}),
 		on,
 		registerCommand: () => {},
 		registerTool: (tool) => {

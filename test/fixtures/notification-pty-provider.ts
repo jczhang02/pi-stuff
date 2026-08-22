@@ -15,10 +15,9 @@ const ZERO_USAGE = {
 };
 
 function message(stopReason: AssistantMessage["stopReason"], text = "", errorMessage?: string): AssistantMessage {
-	return {
+	const result: AssistantMessage = {
 		api: "openai-completions",
 		content: text ? [{ text, type: "text" }] : [],
-		...(errorMessage ? { errorMessage } : {}),
 		model: MODEL,
 		provider: PROVIDER,
 		role: "assistant",
@@ -26,6 +25,8 @@ function message(stopReason: AssistantMessage["stopReason"], text = "", errorMes
 		timestamp: Date.now(),
 		usage: ZERO_USAGE,
 	};
+	if (errorMessage !== undefined) result.errorMessage = errorMessage;
+	return result;
 }
 
 function lastUserText(context: Context): string {

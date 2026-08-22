@@ -11,17 +11,19 @@ const PI_STUFF_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff");
 test("Agents gives same-name sibling processes stable unique path components", () => {
 	const previousAgentPath = process.env[PI_STUFF_AGENT_PATH_ENV];
 	process.env[PI_STUFF_AGENT_PATH_ENV] = "root-run:0";
-	const buildChildPath = (runId?: string, childIndex?: number): string | undefined =>
-		buildPiArgs({
+	const buildChildPath = (runId?: string, childIndex?: number): string | undefined => {
+		const options: Parameters<typeof buildPiArgs>[0] = {
 			baseArgs: [],
 			task: "path identity test",
 			sessionEnabled: false,
 			inheritProjectContext: true,
 			inheritSkills: true,
 			childAgentName: "general",
-			...(runId ? { runId } : {}),
-			...(childIndex !== undefined ? { childIndex } : {}),
-		}).env[PI_STUFF_AGENT_PATH_ENV];
+		};
+		if (runId) options.runId = runId;
+		if (childIndex !== undefined) options.childIndex = childIndex;
+		return buildPiArgs(options).env[PI_STUFF_AGENT_PATH_ENV];
+	};
 
 	try {
 		expect(buildChildPath("parallel-run", 1)).toBe("root-run:0 › parallel-run:1");

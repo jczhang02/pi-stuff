@@ -34,7 +34,7 @@ function assistant(
 	stopReason: AssistantMessage["stopReason"] = "stop",
 	errorMessage?: string,
 ): AssistantMessage {
-	return {
+	const result: AssistantMessage = {
 		role: "assistant",
 		content: text.length === 0 ? [] : [{ type: "text", text }],
 		api: MODEL.api,
@@ -42,9 +42,9 @@ function assistant(
 		model: MODEL.id,
 		usage: ZERO_USAGE,
 		stopReason,
-		...(errorMessage === undefined ? {} : { errorMessage }),
 		timestamp: Date.now(),
 	};
+	return errorMessage === undefined ? result : { ...result, errorMessage };
 }
 
 function user(text: string): UserMessage {

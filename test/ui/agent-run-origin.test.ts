@@ -10,12 +10,10 @@ function input(
 	source: InputEvent["source"],
 	streamingBehavior?: InputEvent["streamingBehavior"],
 ): InputEvent {
-	return {
-		type: "input",
-		text,
-		source,
-		...(streamingBehavior ? { streamingBehavior } : {}),
-	};
+	return Object.assign(
+		{ type: "input" as const, text, source },
+		streamingBehavior ? { streamingBehavior } : undefined,
+	);
 }
 
 function userMessage(text: string) {

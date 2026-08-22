@@ -37,7 +37,9 @@ function writeArtifactGroup(
 	writeFileSync(paths.inputPath, runId);
 	writeFileSync(
 		paths.metadataPath,
-		JSON.stringify({ state, runId, agent: "general-purpose", ...(state === "running" ? {} : { exitCode: 0 }) }),
+		JSON.stringify(
+			Object.assign({ state, runId, agent: "general-purpose" }, state === "running" ? undefined : { exitCode: 0 }),
+		),
 	);
 	const oldDate = new Date(now - 8 * 24 * 60 * 60 * 1_000);
 	utimesSync(paths.inputPath, oldDate, oldDate);
