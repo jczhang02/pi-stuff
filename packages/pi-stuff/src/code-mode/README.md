@@ -35,7 +35,8 @@ text(pkg.packageManager);
 - JavaScript has no direct Node, Bun, filesystem, process, network, module, or credential access. I/O is available
   only through Package-owned Tools.
 - `text(...)`, `image(...)`, `generatedImage(...)`, `store(...)`, `load(...)`, `notify(...)`, and the other Host
-  helpers remain available. `console` is unavailable.
+  helpers remain available. `console` is unavailable. Images must come from a complete data URL or the structured
+  result of an image-producing Tool; Base64 from text-producing Tools such as Bash can be truncated and is rejected.
 - Cloudflare's `async () => { return value; }` form is accepted. A returned value is emitted only when the program did
   not already call an output helper, so explicit output is never duplicated. The older `suite.*` namespace remains a
   compatibility alias, not prompt vocabulary.
@@ -60,7 +61,9 @@ normalization once. Before TUI rendering, normalized nested media moves into per
 removed from the outer image list, so Pi cannot append it below the whole envelope. The original renderer receives it
 again at its exact text/media boundary; a public context hook restores the same normalized content for every provider
 request. Session JSONL therefore stores each nested image payload once, reloads the same UI, and never trades visual
-equivalence for model visibility.
+equivalence for model visibility. Invalid or incomplete image output becomes an error before it can be persisted. A
+provider-context projection also replaces malformed images from older Code Mode results with an actionable text error
+without rewriting Session history.
 
 The real Pi 0.84.2 acceptance gate compares the full ANSI screen and exact Tool Activity block with Code Mode on and
 off at 100×32 and 64×28, both before and after session resume. Only the truthful context-usage number is normalized:

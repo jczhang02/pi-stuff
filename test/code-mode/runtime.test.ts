@@ -12,6 +12,7 @@ import {
 	createCodeModeSearchDefinition,
 } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { CodeModeHostLostError } from "../../packages/pi-stuff/src/code-mode/host/host-client.js";
+import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import { CodeModeSessionLedger } from "../../packages/pi-stuff/src/code-mode/ledger.js";
 import type { RuntimeResponse } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import { type CodeModeExecutor, CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
@@ -131,6 +132,7 @@ test("the compact Tool contract describes canonical unwrapped Read results", () 
 	expect(definition.description).toContain("do not pass them to JSON.parse");
 	expect(definition.description).not.toContain("tools.bash");
 	expect(definition.description).toContain("console is unavailable");
+	expect(definition.description).toContain("Do not pass image Base64");
 	expect(definition.description).toContain("async arrow functions with return");
 	expect(definition.description).not.toContain("codemode.resultText");
 	expect(definition.description).not.toContain("codemode.emitText");
@@ -167,6 +169,39 @@ test("the Connector exposes every active Suite Tool without a per-Tool caller co
 		name: "read",
 		toolCallId: "nested-read",
 	});
+});
+
+test("the Connector rejects malformed supported images returned by nested Tools", async () => {
+	const base = registryFixture();
+	const registry: SuiteToolDefinitionRegistry = {
+		...base,
+		invoke: async () => ({
+			isError: false,
+			result: {
+				content: [{ type: "image", data: Buffer.alloc(96, 1).toString("base64"), mimeType: "image/jpeg" }],
+				details: {},
+			},
+		}),
+	};
+	const tool = new SuiteCodeModeConnector(registry).tools().find(({ name }) => name === "read");
+	if (!tool) throw new Error("missing read Tool");
+	let captured: AgentToolResult<unknown> | undefined;
+	await expect(
+		tool.invoke(
+			{ path: "bad.jpg" },
+			{
+				captureResult: (result) => {
+					captured = result;
+				},
+				cwd: "/project",
+				// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+				extensionContext: { cwd: "/project" } as ExtensionContext,
+				toolCallId: "nested-bad-image",
+			},
+			new AbortController().signal,
+		),
+	).rejects.toThrow(INVALID_CODE_MODE_IMAGE_MESSAGE);
+	expect(captured?.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
 });
 
 test("top-level and in-program discovery share Cloudflare-ranked catalog data and typed describe output", async () => {
@@ -602,9 +637,133 @@ test("runtime preserves nested termination, deferred Tools, and Tool usage", asy
 	expect(result.usage).toEqual(usage);
 });
 
+test("runtime rejects malformed image output before settling the execution as successful", async () => {
+	const { context, ledger } = sessionLedgerFixture();
+	const truncatedTail = Buffer.alloc(38_400, 1).toString("base64");
+	const executor: CodeModeExecutor = {
+		async execute() {
+			return {
+				cellId: "cell-invalid-image",
+				contentItems: [{ type: "input_image", image_url: `data:image/jpeg;base64,${truncatedTail}` }],
+				kind: "result",
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor, ledger).execute(
+		"outer-invalid-image",
+		"image(value)",
+		context,
+	);
+
+	expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+	expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
+	expect(result.content.some((item) => item.type === "image")).toBe(false);
+	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
+});
+
+test("runtime removes undecodable nested media from the failed result and its operation details", async () => {
+	const valid = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		"base64",
+	);
+	valid[45] = (valid[45] ?? 0) ^ 0xff;
+	const corrupt = { type: "image" as const, data: valid.toString("base64"), mimeType: "image/png" };
+	const { context, ledger } = sessionLedgerFixture();
+	const executor: CodeModeExecutor = {
+		async execute() {
+			return {
+				cellId: "cell-undecodable-trace",
+				contentItems: [],
+				kind: "result",
+				traces: [
+					{
+						id: "nested-undecodable-image",
+						input: { path: "corrupt.png" },
+						name: "view_image",
+						result: { content: [{ type: "text", text: "before" }, corrupt], details: {} },
+						status: "done",
+					},
+				],
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor, ledger).execute(
+		"outer-undecodable-trace",
+		"await tools.read({ path: 'corrupt.png' })",
+		context,
+	);
+
+	expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+	expect(result.details.operations).toMatchObject([
+		{ result: { content: [{ type: "text", text: "before" }] }, state: "success" },
+	]);
+	expect(result.details.operations[0]).not.toHaveProperty("mediaPlacements");
+	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
+});
+
+test("invalid media fails a paused execution before its approved effect can run", async () => {
+	const valid = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		"base64",
+	);
+	valid[45] = (valid[45] ?? 0) ^ 0xff;
+	const { context, ledger } = sessionLedgerFixture();
+	let effects = 0;
+	const executor: CodeModeExecutor = {
+		async execute(options) {
+			const plan = options.context.beginToolCall?.("write", { path: "approved.txt", content: "no" });
+			if (!plan) throw new Error("missing approval plan");
+			if (!plan.pause) {
+				effects += 1;
+				throw new Error("invalid image approval unexpectedly resumed");
+			}
+			return {
+				cellId: "cell-invalid-image-pause",
+				contentItems: [],
+				errorText: plan.pause.message,
+				kind: "result",
+				traces: [
+					{
+						id: "nested-invalid-image-before-approval",
+						input: { path: "corrupt.png" },
+						name: "view_image",
+						result: {
+							content: [{ type: "image", data: valid.toString("base64"), mimeType: "image/png" }],
+							details: {},
+						},
+						status: "done",
+					},
+				],
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor, ledger).execute(
+		"outer-invalid-image-pause",
+		"await tools.write({ path: 'approved.txt', content: 'no' })",
+		context,
+	);
+
+	expect(effects).toBe(0);
+	expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+	expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
+	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
+});
+
 test("runtime hoists nested media while preserving each image's position inside its Tool result", async () => {
 	const image = {
-		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
 		mimeType: "image/png",
 		type: "image" as const,
 	};

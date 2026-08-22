@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
+import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import {
 	captureCodeModeModelContent,
 	decodeCodeModeMediaSegments,
@@ -16,7 +17,7 @@ const originalImage = {
 	type: "image" as const,
 };
 const normalizedImage = {
-	data: "normalized",
+	data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
 	mimeType: "image/png",
 	type: "image" as const,
 };
@@ -65,6 +66,55 @@ test("normalized nested media moves into persistent presentation details without
 	const messages = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
 	expect(messages?.[0]).toMatchObject({ content: normalized.content });
 	expect(persisted.content).toEqual([before, after]);
+});
+
+test("historical malformed Code Mode images are replaced only in provider context", () => {
+	const badImage = {
+		data: `${Buffer.alloc(384, 1).toString("base64")}\n[Output truncated]\n<system-reminder>retry</system-reminder>`,
+		mimeType: "image/jpeg",
+		type: "image" as const,
+	};
+	const direct = {
+		content: [badImage],
+		details: { kind: "pi-stuff-code-mode", operations: [], status: "success" },
+		isError: false,
+		role: "toolResult" as const,
+		timestamp: 1,
+		toolCallId: "direct-bad-image",
+		toolName: "codemode",
+	};
+	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
+	const projected = rehydrateCodeModeMessages([direct] as AgentMessage[]);
+
+	expect(projected?.[0]).toMatchObject({
+		content: [{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+	});
+	expect(direct.content).toEqual([badImage]);
+});
+
+test("historical malformed normalized media is quarantined during rehydration", () => {
+	const badImage = { type: "image" as const, data: Buffer.alloc(96, 1).toString("base64"), mimeType: "image/jpeg" };
+	const persisted = {
+		content: [],
+		details: {
+			kind: "pi-stuff-code-mode",
+			modelContent: [badImage],
+			operations: [],
+			status: "success",
+		},
+		isError: false,
+		role: "toolResult" as const,
+		timestamp: 1,
+		toolCallId: "normalized-bad-image",
+		toolName: "codemode",
+	};
+	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
+	const projected = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
+
+	expect(projected?.[0]).toMatchObject({
+		content: [{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+	});
+	expect(persisted.details.modelContent).toEqual([badImage]);
 });
 
 test("standalone Code Mode images remain Host-rendered while nested images stay in their original Tool rows", () => {
