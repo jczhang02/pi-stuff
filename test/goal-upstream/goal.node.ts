@@ -4905,6 +4905,52 @@ test("findFinalAssistantMessage returns the last assistant with a known stop rea
 			timestamp: 123,
 		},
 	);
+	assert.deepEqual(
+		findFinalAssistantMessage([
+			{
+				role: "assistant",
+				stopReason: "error",
+				content: [
+					{ type: "text", text: "retry", textSignature: "text-signature" },
+					{ type: "thinking", thinking: "checking", redacted: false },
+					{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "README.md" } },
+				],
+			},
+		]),
+		{
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: undefined,
+			content: [
+				{ type: "text", text: "retry", textSignature: "text-signature" },
+				{ type: "thinking", thinking: "checking", redacted: false },
+				{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "README.md" } },
+			],
+		},
+	);
+	assert.deepEqual(
+		findFinalAssistantMessage([
+			{
+				role: "assistant",
+				stopReason: "error",
+				content: [{ type: "text", text: 42 }],
+				usage: { input: 1, output: 2, cost: { input: "invalid", output: -1, total: 4 } },
+			},
+		]),
+		{
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: undefined,
+			usage: {
+				input: 1,
+				output: 2,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 3,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 4 },
+			},
+		},
+	);
 	assert.equal(validateObjective(""), "Usage: /goal <goal_to_complete>");
 });
 

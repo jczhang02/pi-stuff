@@ -4,7 +4,8 @@ import {
 	type AssistantMessage as PiAssistantMessage,
 	type Usage,
 } from "@earendil-works/pi-ai";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { isJsonInputObject, isJsonInputValue, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { assistantUsageTokens, nonNegativeFiniteNumber } from "./accounting.js";
 
 type AgentStopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
@@ -82,22 +83,27 @@ export function isGoalContextOverflow(assistant: AssistantMessageLike) {
 export function findFinalAssistantMessage(messages: unknown[]): AssistantMessageLike | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
-		if (!message || !isRuntimeObject(message)) continue;
-		const candidate = message as Record<string, unknown>;
-		if (candidate.role !== "assistant") continue;
+		if (!message || !isRuntimeObject(message) || Array.isArray(message) || !("role" in message)) continue;
+		if (message.role !== "assistant") continue;
+		const stopReason = "stopReason" in message ? message.stopReason : undefined;
+		const errorMessage = "errorMessage" in message ? message.errorMessage : undefined;
 		const assistant: AssistantMessageLike = {
 			role: "assistant",
-			stopReason: isAgentStopReason(candidate.stopReason) ? candidate.stopReason : undefined,
-			errorMessage: isRuntimeString(candidate.errorMessage) ? candidate.errorMessage : undefined,
+			stopReason: isAgentStopReason(stopReason) ? stopReason : undefined,
+			errorMessage: isRuntimeString(errorMessage) ? errorMessage : undefined,
 		};
-		if (Array.isArray(candidate.content)) {
-			assistant.content = candidate.content as PiAssistantMessage["content"];
-		}
-		if (isRuntimeString(candidate.api)) assistant.api = candidate.api;
-		if (isRuntimeString(candidate.provider)) assistant.provider = candidate.provider;
-		if (isRuntimeString(candidate.model)) assistant.model = candidate.model;
-		if (isRuntimeNumber(candidate.timestamp)) assistant.timestamp = candidate.timestamp;
-		const usage = normalizeUsage(candidate.usage);
+		const contentValue = "content" in message && isJsonInputValue(message.content) ? message.content : undefined;
+		const content = contentValue === undefined ? undefined : normalizeAssistantContent(contentValue);
+		if (content) assistant.content = content;
+		const api = "api" in message ? message.api : undefined;
+		const provider = "provider" in message ? message.provider : undefined;
+		const model = "model" in message ? message.model : undefined;
+		const timestamp = "timestamp" in message ? message.timestamp : undefined;
+		if (isRuntimeString(api)) assistant.api = api;
+		if (isRuntimeString(provider)) assistant.provider = provider;
+		if (isRuntimeString(model)) assistant.model = model;
+		if (isRuntimeNumber(timestamp)) assistant.timestamp = timestamp;
+		const usage = normalizeUsage("usage" in message ? message.usage : undefined);
 		if (usage) assistant.usage = usage;
 		return assistant;
 	}
@@ -129,26 +135,77 @@ function zeroUsage(): Usage {
 	};
 }
 
-function isAgentStopReason(value: unknown): value is AgentStopReason {
-	return ["stop", "length", "toolUse", "error", "aborted"].includes(String(value));
+function isAgentStopReason<Value>(value: Value): value is Value & AgentStopReason {
+	return value === "stop" || value === "length" || value === "toolUse" || value === "error" || value === "aborted";
 }
 
-function normalizeUsage(value: unknown): Usage | undefined {
-	if (!value || !isRuntimeObject(value)) return undefined;
-	const usage = value as Partial<Usage>;
-	if (!isRuntimeNumber(usage.input) || !isRuntimeNumber(usage.output)) return undefined;
+function normalizeAssistantContent(value: JsonInputValue): PiAssistantMessage["content"] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const content: PiAssistantMessage["content"] = [];
+	for (const item of value) {
+		if (!isJsonInputObject(item)) return undefined;
+		if (item["type"] === "text" && isRuntimeString(item["text"])) {
+			const block: Extract<PiAssistantMessage["content"][number], { type: "text" }> = {
+				type: "text",
+				text: item["text"],
+			};
+			if (isRuntimeString(item["textSignature"])) block.textSignature = item["textSignature"];
+			content.push(block);
+			continue;
+		}
+		if (item["type"] === "thinking" && isRuntimeString(item["thinking"])) {
+			const block: Extract<PiAssistantMessage["content"][number], { type: "thinking" }> = {
+				type: "thinking",
+				thinking: item["thinking"],
+			};
+			if (isRuntimeString(item["thinkingSignature"])) block.thinkingSignature = item["thinkingSignature"];
+			if (isRuntimeBoolean(item["redacted"])) block.redacted = item["redacted"];
+			content.push(block);
+			continue;
+		}
+		if (
+			item["type"] === "toolCall" &&
+			isRuntimeString(item["id"]) &&
+			isRuntimeString(item["name"]) &&
+			isJsonInputObject(item["arguments"])
+		) {
+			const block: Extract<PiAssistantMessage["content"][number], { type: "toolCall" }> = {
+				type: "toolCall",
+				id: item["id"],
+				name: item["name"],
+				arguments: item["arguments"],
+			};
+			if (isRuntimeString(item["thoughtSignature"])) block.thoughtSignature = item["thoughtSignature"];
+			if (isRuntimeString(item["namespace"])) block.namespace = item["namespace"];
+			content.push(block);
+			continue;
+		}
+		return undefined;
+	}
+	return content;
+}
+
+function normalizeUsage<Value>(value: Value): Usage | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const input = "input" in value ? value.input : undefined;
+	const output = "output" in value ? value.output : undefined;
+	if (!isRuntimeNumber(input) || !isRuntimeNumber(output)) return undefined;
+	const cacheRead = "cacheRead" in value ? value.cacheRead : undefined;
+	const cacheWrite = "cacheWrite" in value ? value.cacheWrite : undefined;
+	const costValue = "cost" in value ? value.cost : undefined;
+	const cost = costValue && isRuntimeObject(costValue) && !Array.isArray(costValue) ? costValue : undefined;
 	return {
-		input: nonNegativeFiniteNumber(usage.input),
-		output: nonNegativeFiniteNumber(usage.output),
-		cacheRead: nonNegativeFiniteNumber(usage.cacheRead),
-		cacheWrite: nonNegativeFiniteNumber(usage.cacheWrite),
-		totalTokens: assistantUsageTokens(usage),
+		input: nonNegativeFiniteNumber(input),
+		output: nonNegativeFiniteNumber(output),
+		cacheRead: nonNegativeFiniteNumber(cacheRead),
+		cacheWrite: nonNegativeFiniteNumber(cacheWrite),
+		totalTokens: assistantUsageTokens(value),
 		cost: {
-			input: usage.cost?.input ?? 0,
-			output: usage.cost?.output ?? 0,
-			cacheRead: usage.cost?.cacheRead ?? 0,
-			cacheWrite: usage.cost?.cacheWrite ?? 0,
-			total: usage.cost?.total ?? 0,
+			input: nonNegativeFiniteNumber(cost && "input" in cost ? cost.input : undefined),
+			output: nonNegativeFiniteNumber(cost && "output" in cost ? cost.output : undefined),
+			cacheRead: nonNegativeFiniteNumber(cost && "cacheRead" in cost ? cost.cacheRead : undefined),
+			cacheWrite: nonNegativeFiniteNumber(cost && "cacheWrite" in cost ? cost.cacheWrite : undefined),
+			total: nonNegativeFiniteNumber(cost && "total" in cost ? cost.total : undefined),
 		},
 	};
 }
