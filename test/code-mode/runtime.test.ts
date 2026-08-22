@@ -705,6 +705,58 @@ test("runtime removes undecodable nested media from the failed result and its op
 	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
 });
 
+test("invalid media fails a paused execution before its approved effect can run", async () => {
+	const valid = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		"base64",
+	);
+	valid[45] = (valid[45] ?? 0) ^ 0xff;
+	const { context, ledger } = sessionLedgerFixture();
+	let effects = 0;
+	const executor: CodeModeExecutor = {
+		async execute(options) {
+			const plan = options.context.beginToolCall?.("write", { path: "approved.txt", content: "no" });
+			if (!plan) throw new Error("missing approval plan");
+			if (!plan.pause) {
+				effects += 1;
+				throw new Error("invalid image approval unexpectedly resumed");
+			}
+			return {
+				cellId: "cell-invalid-image-pause",
+				contentItems: [],
+				errorText: plan.pause.message,
+				kind: "result",
+				traces: [
+					{
+						id: "nested-invalid-image-before-approval",
+						input: { path: "corrupt.png" },
+						name: "view_image",
+						result: {
+							content: [{ type: "image", data: valid.toString("base64"), mimeType: "image/png" }],
+							details: {},
+						},
+						status: "done",
+					},
+				],
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor, ledger).execute(
+		"outer-invalid-image-pause",
+		"await tools.write({ path: 'approved.txt', content: 'no' })",
+		context,
+	);
+
+	expect(effects).toBe(0);
+	expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+	expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
+	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
+});
+
 test("runtime hoists nested media while preserving each image's position inside its Tool result", async () => {
 	const image = {
 		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",

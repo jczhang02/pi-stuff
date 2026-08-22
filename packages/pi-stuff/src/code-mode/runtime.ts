@@ -573,13 +573,16 @@ export class CodeModeRuntime {
 			};
 		} catch (error) {
 			let message = controller?.incompleteError?.message ?? (error instanceof Error ? error.message : String(error));
-			let status: PiStuffCodeModeDetails["status"] = controller?.isPaused
-				? "paused"
-				: controller?.incompleteError
-					? "incomplete"
-					: wasCancelled(error, signal)
-						? "cancelled"
-						: "error";
+			let status: PiStuffCodeModeDetails["status"] =
+				error instanceof InvalidCodeModeImageError
+					? "error"
+					: controller?.isPaused
+						? "paused"
+						: controller?.incompleteError
+							? "incomplete"
+							: wasCancelled(error, signal)
+								? "cancelled"
+								: "error";
 			if (status !== "paused") {
 				settleRunningTraces(
 					traces,
