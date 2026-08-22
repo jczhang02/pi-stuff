@@ -1,4 +1,4 @@
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ContextEvent, defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
@@ -24,6 +24,7 @@ import {
 	GOAL_COMPLETE_TOOL,
 	GOAL_CONTEXT_MESSAGE_TYPE,
 	GOAL_PROMPT_MESSAGE_TYPE,
+	type GoalCompactionEvent,
 	type GoalRunOrigin,
 	GoalRuntime,
 	goalIdRejectionReason,
@@ -67,6 +68,16 @@ interface GoalBlockedDetails {
 	repeated_turns: number;
 }
 
+interface GoalCompletePresentationArguments {
+	goal_id?: string;
+	summary?: string;
+}
+
+interface GoalBlockedPresentationArguments {
+	goal_id?: string;
+	reason?: string;
+}
+
 interface GoalOptions {
 	settingsPath?: string;
 }
@@ -80,7 +91,7 @@ function goalToolText(result: {
 	return isRuntimeString(text) ? text : "";
 }
 
-function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknown>, GoalCompleteDetails> {
+function goalCompletePresentation(): SuiteToolPresentation<GoalCompletePresentationArguments, GoalCompleteDetails> {
 	return {
 		activity: {
 			categories: ["complete-goal"],
@@ -112,7 +123,7 @@ function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknow
 	};
 }
 
-function goalBlockedPresentation(): SuiteToolPresentation<Record<string, unknown>, GoalBlockedDetails> {
+function goalBlockedPresentation(): SuiteToolPresentation<GoalBlockedPresentationArguments, GoalBlockedDetails> {
 	return {
 		activity: {
 			categories: ["block-goal"],
@@ -231,7 +242,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const dispatchPendingQueueActionIfSettled = commands.dispatchPendingQueueActionIfSettled.bind(commands);
 	type PendingOwnedCompaction = {
 		readonly ctx: StatusContext;
-		readonly event: unknown;
+		readonly event: GoalCompactionEvent;
 		readonly generation: number;
 		readonly goalId: string;
 		readonly sessionManager: object;
@@ -246,7 +257,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		if (ownedCompactionTimer !== undefined) clearTimeout(ownedCompactionTimer);
 		ownedCompactionTimer = undefined;
 	};
-	const armOwnedCompaction = (event: unknown, ctx: StatusContext, goalId: string): void => {
+	const armOwnedCompaction = (event: GoalCompactionEvent, ctx: StatusContext, goalId: string): void => {
 		if (!isRuntimeObject(ctx.sessionManager) || ctx.sessionManager === null) return;
 		pendingOwnedCompaction = {
 			ctx,
@@ -548,7 +559,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			const reject = (rejectionReason: string, terminate = false) => {
 				const rejection = `goal_blocked rejected: ${rejectionReason}.`;
 				ctx.ui.notify(rejection, "warning");
-				return {
+				const result = {
 					content: [{ type: "text" as const, text: rejection }],
 					details: {
 						goal,
@@ -558,8 +569,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 						evidence: evidence.slice(0, MAX_BLOCKER_EVIDENCE_LENGTH),
 						repeated_turns: Number.isFinite(repeatedTurns) ? repeatedTurns : 0,
 					} satisfies GoalBlockedDetails,
-					...(terminate ? { terminate: true as const } : {}),
 				};
+				return terminate ? { ...result, terminate: true as const } : result;
 			};
 
 			if (!blockedGoal) return reject("no active goal");
@@ -894,7 +905,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
 		if (runtime.queueFrozen) return;
 		if (runtime.activeGoal?.status === "budget_limited") {
-			if ((event as { willRetry?: boolean }).willRetry === true) return { cancel: true as const };
+			if (event.willRetry) return { cancel: true as const };
 			return;
 		}
 		if (runtime.activeGoal?.status !== "active") return;
@@ -1441,18 +1452,19 @@ export {
 	isUsageLimitedGoalInterruption,
 } from "./runtime.js";
 
-function isGoalContextMessage(message: unknown) {
-	if (!message || !isRuntimeObject(message)) return false;
-	const customType = (message as { role?: unknown; customType?: unknown }).customType;
+type GoalContextMessage = ContextEvent["messages"][number];
+
+function isGoalContextMessage(message: GoalContextMessage) {
 	return (
-		(message as { role?: unknown }).role === "custom" &&
-		(customType === GOAL_PROMPT_MESSAGE_TYPE || customType === GOAL_CONTEXT_MESSAGE_TYPE)
+		message.role === "custom" &&
+		(message.customType === GOAL_PROMPT_MESSAGE_TYPE || message.customType === GOAL_CONTEXT_MESSAGE_TYPE)
 	);
 }
 
-function findLatestGoalContextIndex(messages: readonly unknown[]) {
+function findLatestGoalContextIndex(messages: readonly GoalContextMessage[]) {
 	for (let index = messages.length - 1; index >= 0; index--) {
-		if (isGoalContextMessage(messages[index])) return index;
+		const message = messages[index];
+		if (message && isGoalContextMessage(message)) return index;
 	}
 	return -1;
 }

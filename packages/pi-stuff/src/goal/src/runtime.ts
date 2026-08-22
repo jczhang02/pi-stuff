@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
-import { getGoalStatusChannel } from "../../conversation-ui/statusline.js";
+import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { checkpointGoalActiveTime, formatDuration, formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
@@ -75,6 +76,18 @@ export interface GoalPromptDeliveryOptions {
 	readonly isCurrent?: () => boolean;
 	readonly resetSafetyEpoch?: boolean;
 	readonly userDriven?: boolean;
+}
+
+export interface GoalCompactionEvent {
+	readonly reason?: "manual" | "overflow" | "threshold";
+	readonly willRetry?: boolean;
+}
+
+interface GoalMessageCandidate {
+	readonly customType?: unknown;
+	readonly details?: unknown;
+	readonly role?: unknown;
+	readonly stopReason?: unknown;
 }
 
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
@@ -377,11 +390,12 @@ export class GoalRuntime {
 			this.clearPresentationStatus();
 			return;
 		}
-		getGoalStatusChannel(this.pi).publish({
+		const snapshot: GoalStatusSnapshot = {
 			status: goal.status,
 			tokensUsed: goal.tokensUsed,
-			...(goal.tokenBudget === undefined ? {} : { tokenBudget: goal.tokenBudget }),
-		});
+		};
+		if (goal.tokenBudget !== undefined) Object.assign(snapshot, { tokenBudget: goal.tokenBudget });
+		getGoalStatusChannel(this.pi).publish(snapshot);
 	}
 
 	clearPresentationStatus() {
@@ -416,26 +430,21 @@ export class GoalRuntime {
 		this.terminalDetails = undefined;
 	}
 
-	isActiveBudgetWrapUpMessage(message: unknown) {
+	isActiveBudgetWrapUpMessage(message: GoalMessageCandidate | null | undefined) {
 		if (!message || !isRuntimeObject(message)) return false;
-		const candidate = message as {
-			role?: unknown;
-			customType?: unknown;
-			details?: { goalId?: unknown };
-		};
+		const details = isJsonInputObject(message.details) ? message.details : undefined;
 		return (
-			candidate.role === "custom" &&
-			candidate.customType === BUDGET_WRAP_UP_MESSAGE_TYPE &&
-			isRuntimeString(candidate.details?.goalId) &&
-			candidate.details.goalId === this.budgetWrapUp?.goalId &&
-			candidate.details.goalId === this.activeGoal?.id
+			message.role === "custom" &&
+			message.customType === BUDGET_WRAP_UP_MESSAGE_TYPE &&
+			isRuntimeString(details?.["goalId"]) &&
+			details["goalId"] === this.budgetWrapUp?.goalId &&
+			details["goalId"] === this.activeGoal?.id
 		);
 	}
 
-	keepBudgetWrapUpMessage(message: unknown) {
+	keepBudgetWrapUpMessage(message: GoalMessageCandidate | null | undefined) {
 		if (!message || !isRuntimeObject(message)) return true;
-		const candidate = message as { role?: unknown; customType?: unknown };
-		if (candidate.role !== "custom" || candidate.customType !== BUDGET_WRAP_UP_MESSAGE_TYPE) {
+		if (message.role !== "custom" || message.customType !== BUDGET_WRAP_UP_MESSAGE_TYPE) {
 			return true;
 		}
 		return this.isActiveBudgetWrapUpMessage(message);
@@ -496,18 +505,17 @@ export class GoalRuntime {
 		return true;
 	}
 
-	recordAutomaticTurn(ctx: StatusContext, message: unknown) {
+	recordAutomaticTurn(ctx: StatusContext, message: GoalMessageCandidate | null | undefined) {
 		const goal = this.activeGoal;
 		if (goal?.status !== "active" || !this.isAutomaticRunForGoal(goal.id)) return false;
-		const candidate = message as { role?: unknown; stopReason?: unknown } | undefined;
-		if (candidate?.role === "assistant" && candidate.stopReason === "aborted") return false;
+		if (message?.role === "assistant" && message.stopReason === "aborted") return false;
 		goal.automaticModelTurns = Math.min(Number.MAX_SAFE_INTEGER, goal.automaticModelTurns + 1);
 		this.recordGoalUsage(goal, ctx);
 		this.persistGoal(goal);
 		this.updateStatus(ctx, goal);
 		// Terminal errors need agent_end classification before a safety pause can
 		// choose between usage_limited, blocked, or retryable cleanup.
-		if (candidate?.role === "assistant" && candidate.stopReason === "error") return false;
+		if (message?.role === "assistant" && message.stopReason === "error") return false;
 		return this.enforceAutomaticTurnLimit(ctx, true);
 	}
 
@@ -625,13 +633,12 @@ export class GoalRuntime {
 		if (this.goalRecovery?.goalId === goalId) this.goalRecovery = undefined;
 	}
 
-	isPiOwnedCompactionRetry(event: unknown, goalId: string) {
-		const compaction = event as { reason?: unknown; willRetry?: unknown };
-		if (compaction.willRetry === true) return true;
+	isPiOwnedCompactionRetry(event: GoalCompactionEvent, goalId: string) {
+		if (event.willRetry === true) return true;
 		return (
 			this.goalRecovery?.goalId === goalId &&
 			this.goalRecovery.kind === "compaction_retry" &&
-			(compaction.reason === undefined || compaction.reason === "overflow")
+			(event.reason === undefined || event.reason === "overflow")
 		);
 	}
 
@@ -861,7 +868,7 @@ export class GoalRuntime {
 	}
 
 	isGoalToolName(name: string) {
-		return (GOAL_TOOL_NAMES as readonly string[]).includes(name);
+		return GOAL_TOOL_NAMES.some((toolName) => toolName === name);
 	}
 
 	goalToolsAvailable() {
