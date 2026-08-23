@@ -323,8 +323,6 @@ function mapExtractResult(result: V1ExtractResult | undefined | null): Extracted
 
 function buildExtractRequestBody(url: string, options: ExtractOptions = {}, fullContent = false): JsonInputObject {
 	const body: JsonInputObject = { urls: [url] };
-	const prompt = options.prompt?.trim();
-	if (prompt) body.objective = prompt;
 	if (fullContent) body.advanced_settings = { full_content: true };
 	return body;
 }

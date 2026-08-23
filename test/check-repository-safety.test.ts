@@ -297,7 +297,6 @@ describe("auditRepositoryFiles", () => {
 	test("rejects literal Host colors but permits browser-owned palettes", async () => {
 		const root = await createRepository();
 		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
-		await mkdir(join(root, "packages", "pi-stuff", "src", "web", "runtime"), { recursive: true });
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
 			'export const color = "38;2;203;166;247";\n',
@@ -310,11 +309,6 @@ describe("auditRepositoryFiles", () => {
 			join(root, "packages", "pi-stuff", "src", "goal", "style.ts"),
 			`export const style = (code: "1" | "3" | "7", text: string) => \`\\x1b[\${code}m\${text}\\x1b[0m\`;\n`,
 		);
-		await writeFile(
-			join(root, "packages", "pi-stuff", "src", "web", "runtime", "curator-page.ts"),
-			'export const page = "body { color: #cba6f7; }";\n',
-		);
-
 		expect(await auditRepositoryFiles(root)).toEqual([
 			{ path: "packages/pi-stuff/src/goal/ansi.ts", rule: "hard-coded-host-color" },
 			{ path: "packages/pi-stuff/src/goal/index.ts", rule: "hard-coded-host-color" },

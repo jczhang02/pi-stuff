@@ -28,7 +28,6 @@ const MODEL_HEADERS = new Map([
 const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
 
 export interface GeminiWebOptions {
-	youtubeUrl?: string;
 	model?: string;
 	files?: string[];
 	signal?: AbortSignal;
@@ -91,9 +90,6 @@ export async function queryWithCookies(
 	const timeoutMs = options.timeoutMs ?? 120000;
 
 	let fullPrompt = prompt;
-	if (options.youtubeUrl) {
-		fullPrompt = `${fullPrompt}\n\nYouTube video: ${options.youtubeUrl}`;
-	}
 
 	const result = await runGeminiWebOnce(fullPrompt, cookieMap, model, options.files, timeoutMs, options.signal);
 

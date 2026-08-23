@@ -1,4 +1,4 @@
-import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ExtractedContent } from "./extract.ts";
@@ -16,11 +16,10 @@ export interface QueryResultData {
 
 export interface StoredSearchData {
 	id: string;
-	type: "search" | "fetch" | "research";
+	type: "search" | "fetch";
 	timestamp: number;
 	queries?: QueryResultData[];
 	urls?: ExtractedContent[];
-	artifact?: JsonInputValue;
 }
 
 const storedResults = new Map<string, StoredSearchData>();
@@ -52,11 +51,10 @@ export function clearResults(): void {
 function isValidStoredData<Value>(data: Value): data is Value & StoredSearchData {
 	if (!isJsonInputObject(data)) return false;
 	if (!isRuntimeString(data.id) || !data.id) return false;
-	if (data.type !== "search" && data.type !== "fetch" && data.type !== "research") return false;
+	if (data.type !== "search" && data.type !== "fetch") return false;
 	if (!isRuntimeNumber(data.timestamp)) return false;
 	if (data.type === "search" && !Array.isArray(data.queries)) return false;
 	if (data.type === "fetch" && !Array.isArray(data.urls)) return false;
-	if (data.type === "research" && !isJsonInputObject(data.artifact)) return false;
 	return true;
 }
 

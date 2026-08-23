@@ -28,10 +28,10 @@ test("explicit update lifts legacy Web configuration and preserves sibling names
 	await writeFile(legacyPath, JSON.stringify({ parallelApiKey: "op://Private/Parallel/key", provider: "parallel" }));
 	expect(readWebConfig(agentDir)?.["parallelApiKey"]).toBe("op://Private/Parallel/key");
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ ui: { statusline: true } }));
-	await updateWebConfig({ workflow: "none" }, agentDir);
+	await updateWebConfig({ searchModel: "model-a" }, agentDir);
 	expect(JSON.parse(await readFile(join(agentDir, "pi-stuff.json"), "utf8"))).toEqual({
 		ui: { statusline: true },
-		web: { parallelApiKey: "op://Private/Parallel/key", provider: "parallel", workflow: "none" },
+		web: { parallelApiKey: "op://Private/Parallel/key", provider: "parallel", searchModel: "model-a" },
 	});
 	expect(await Bun.file(legacyPath).exists()).toBe(false);
 });
@@ -42,12 +42,12 @@ test("canonical Web configuration wins and concurrent updates retain both fields
 	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ provider: "parallel" }));
 	expect(readWebConfig(agentDir)?.["provider"]).toBe("brave");
 	await Promise.all([
-		updateWebConfig({ workflow: "summary-review" }, agentDir),
+		updateWebConfig({ recencyFilter: "month" }, agentDir),
 		updateWebConfig({ searchModel: "model-a" }, agentDir),
 	]);
 	expect(readWebConfig(agentDir)).toEqual({
 		provider: "brave",
-		workflow: "summary-review",
+		recencyFilter: "month",
 		searchModel: "model-a",
 	});
 	expect(await Bun.file(join(agentDir, "web-search.json")).exists()).toBe(false);

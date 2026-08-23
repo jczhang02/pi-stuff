@@ -218,8 +218,6 @@ function fetchBody(urls: string[], options: ExtractOptions = {}): JsonInputObjec
 		format: "markdown",
 		per_url_timeout_ms: fetchPerUrlTimeout(options.timeoutMs),
 	};
-	const purpose = options.prompt?.trim();
-	if (purpose) body.purpose = purpose.slice(0, 2_000);
 	return body;
 }
 

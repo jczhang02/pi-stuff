@@ -15,6 +15,7 @@ This directory contains the adapted `pi-web-access` `0.18.0` source snapshot abs
 - License: MIT
 
 The fork identifiers prove which locally adapted snapshot was absorbed; they do not define a maintained secondary
-repository or Package. This implementation adds narrow embedding controls for API/HTTP-only GitHub reads, ordinary
-HTTP extraction for YouTube URLs, validated process-local SSRF defaults, disabled browser curation, and shared Tool
-presentation. Explicit user SSRF configuration remains authoritative.
+repository or Package. This implementation keeps provider search, ordinary HTTP/image/PDF extraction, bounded GitHub
+API reads, validated process-local SSRF defaults, storage, and continuation. Curator, source-check, page-answer,
+repository-clone, YouTube/local-video, command, shortcut, and private Tool-rendering code has been removed. Explicit
+user SSRF configuration remains authoritative.

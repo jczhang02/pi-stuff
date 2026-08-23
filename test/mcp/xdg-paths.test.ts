@@ -10,7 +10,7 @@ import {
 	loadOnboardingState,
 	saveOnboardingState,
 } from "../../packages/pi-stuff/src/mcp/runtime/onboarding-state.js";
-import { getWebSearchConfigDir } from "../../packages/pi-stuff/src/web/runtime/utils.js";
+import { getWebSearchConfigPath } from "../../packages/pi-stuff/src/web/runtime/utils.js";
 
 const ORIGINAL_ENVIRONMENT = {
 	PI_CODING_AGENT_DIR: process.env["PI_CODING_AGENT_DIR"],
@@ -34,7 +34,7 @@ describe.serial("MCP XDG paths", () => {
 		process.env["XDG_CONFIG_HOME"] = "/srv/config";
 
 		expect(getPiGlobalConfigPath()).toBe("/srv/config/pi/mcp.json");
-		expect(getWebSearchConfigDir()).toBe("/srv/config/pi");
+		expect(getWebSearchConfigPath()).toBe("/srv/config/pi/pi-stuff.json");
 		expect(getGenericGlobalConfigPath()).toBe("/srv/config/mcp/mcp.json");
 	});
 

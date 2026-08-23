@@ -10,17 +10,14 @@ import { validateWebFetchInput } from "./url-policy.js";
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
 type SharedToolFields = Pick<CapturedTool, "label" | "name"> &
 	Partial<Pick<CapturedTool, "constrainedSampling" | "executionMode">>;
-export type WebAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "registerCommand" | "registerShortcut">;
+export type WebAdapterHost = SuiteToolRegistrationHost;
 export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost;
 
 export interface WebAdapterOptions {
 	readonly fakeIpCompatibility?: Pick<FakeIpCompatibility, "prepare">;
 }
 
-const piWebAccess = createPiWebAccess({
-	githubClone: false,
-	youtubeSpecialization: false,
-});
+const piWebAccess = createPiWebAccess();
 
 const WEB_SEARCH_PARAMETERS = Type.Object({
 	query: Type.Optional(Type.String({ maxLength: 1_000, minLength: 1 })),
@@ -86,7 +83,7 @@ function registerSearch(pi: SuiteToolRegistrationHost, upstream: CapturedTool): 
 		description:
 			"Search the web with one to four focused queries. Returns synthesized answers and source URLs. Provider may be selected explicitly; omit it to use configured routing.",
 		execute: (toolCallId, params, signal, onUpdate, ctx) =>
-			upstream.execute(toolCallId, { ...params, includeContent: false, workflow: "none" }, signal, onUpdate, ctx),
+			upstream.execute(toolCallId, params, signal, onUpdate, ctx),
 		parameters: WEB_SEARCH_PARAMETERS,
 		promptSnippet: "Search current public web sources; use 2-4 distinct queries when multiple angles matter.",
 	};
@@ -154,15 +151,9 @@ export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, optio
 	// SAFETY: the fork calls registerTool with ToolDefinition values; this facade only narrows which labels are installed.
 	const registerTool = ((tool: CapturedTool) =>
 		registerSelectedTool(pi, tool, fakeIpCompatibility)) as ExtensionAPI["registerTool"];
-	// SAFETY: registerCommand returns void, and a zero-argument callback may safely ignore its declaration argument.
-	const ignoreCommand = (() => undefined) as ExtensionAPI["registerCommand"];
-	// SAFETY: registerShortcut returns void, and a zero-argument callback may safely ignore its declaration argument.
-	const ignoreShortcut = (() => undefined) as ExtensionAPI["registerShortcut"];
 	return new Proxy(pi, {
 		get(target, property) {
 			if (property === "registerTool") return registerTool;
-			if (property === "registerCommand") return ignoreCommand;
-			if (property === "registerShortcut") return ignoreShortcut;
 			return readHostProxyProperty(target, property);
 		},
 	});

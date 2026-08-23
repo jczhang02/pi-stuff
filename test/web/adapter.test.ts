@@ -35,18 +35,10 @@ type Tool = ToolDefinition<typeof Parameters, unknown>;
 
 function harness() {
 	const tools = new Map<string, ToolDefinition>();
-	let commandCount = 0;
-	let shortcutCount = 0;
 	const pi: WebAdapterHost = {
 		events: createEventBus(),
 		getActiveTools: () => [],
 		on: () => undefined,
-		registerCommand: () => {
-			commandCount += 1;
-		},
-		registerShortcut: () => {
-			shortcutCount += 1;
-		},
 		registerTool: (tool) => {
 			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
 			tools.set(tool.name, tool as ToolDefinition);
@@ -54,13 +46,7 @@ function harness() {
 		setActiveTools: () => undefined,
 	};
 	return {
-		get commandCount() {
-			return commandCount;
-		},
 		pi,
-		get shortcutCount() {
-			return shortcutCount;
-		},
 		tools,
 	};
 }
@@ -81,16 +67,12 @@ describe("Pi Stuff Web fork boundary", () => {
 		adapter.registerTool(upstreamTool("source_check", "Source Check"));
 		adapter.registerTool(upstreamTool("fetch_content", "Fetch Content"));
 		adapter.registerTool(upstreamTool("get_search_content", "Get Search Content"));
-		adapter.registerCommand("websearch", { description: "floating", handler: async () => undefined });
-		adapter.registerShortcut("ctrl+shift+w", { description: "widget", handler: async () => undefined });
 
 		expect([...fixture.tools.keys()]).toEqual(["web_search", "fetch_content", "get_search_content"]);
-		expect(fixture.commandCount).toBe(0);
-		expect(fixture.shortcutCount).toBe(0);
 		for (const tool of fixture.tools.values()) expect(tool.renderShell).toBe("self");
 	});
 
-	test("forces non-browser search without background page fan-out", async () => {
+	test("keeps the narrow non-browser search schema", async () => {
 		const fixture = harness();
 		let received: unknown;
 		const execute: Tool["execute"] = async (_id, params): Promise<AgentToolResult<unknown>> => {
@@ -103,7 +85,7 @@ describe("Pi Stuff Web fork boundary", () => {
 		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		await tool.execute("search-1", { query: "Pi 0.83" }, undefined, undefined, {} as never);
 
-		expect(received).toEqual({ includeContent: false, query: "Pi 0.83", workflow: "none" });
+		expect(received).toEqual({ query: "Pi 0.83" });
 		if (!Check(SearchParameters, tool.parameters)) throw new Error("web search parameters were malformed");
 		const properties = tool.parameters.properties;
 		expect(properties).not.toHaveProperty("workflow");

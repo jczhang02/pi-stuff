@@ -102,16 +102,12 @@ function harness() {
 	const pi: WebCapabilityHost = {
 		appendEntry: () => undefined,
 		events: createEventBus(),
-		exec: async () => ({ code: 1, killed: false, stderr: "disabled", stdout: "" }),
 		getActiveTools: () => [...activeTools],
 		on,
-		registerCommand: () => undefined,
-		registerShortcut: () => undefined,
 		registerTool: (tool) => {
 			// SAFETY: this verification registry erases only generic renderer state and retains the original Tool object.
 			tools.set(tool.name, tool as ToolDefinition);
 		},
-		sendMessage: () => undefined,
 		setActiveTools: (names) => {
 			activeTools = [...names];
 		},

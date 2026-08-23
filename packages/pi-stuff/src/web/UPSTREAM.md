@@ -21,8 +21,9 @@ or release lifecycle to maintain.
 
 - Exposes only search, HTTP(S)/PDF reading, and bounded continuation retrieval.
 - Forces non-browser search and disables background full-page fan-out.
-- Prevents repository cloning and YouTube-specific browser, Gemini, and video extraction.
+- Uses bounded GitHub API reads instead of repository cloning and removes YouTube/local-video specialization.
 - Rejects non-HTTP(S), credential-bearing, and malformed URLs before extraction; the absorbed DNS/IP SSRF guard remains
   authoritative afterward.
 - Detects system TUN fake-IP DNS only when a fetch begins and supplies a process-local default without writing settings.
-- Replaces upstream Tool renderers with the shared Suite renderer and drops upstream commands and shortcuts.
+- Removes the upstream curator, source-check, page-answer, command, shortcut, and private Tool-rendering surfaces; the
+  parent module owns the three retained Tools and their shared Suite presentation.

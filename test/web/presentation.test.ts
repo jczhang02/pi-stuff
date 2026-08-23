@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	WEB_CONTENT_PRESENTATION,
 	WEB_FETCH_PRESENTATION,
 	WEB_SEARCH_PRESENTATION,
 } from "../../packages/pi-stuff/src/web/presentation.js";
-import { generateCuratorPage } from "../../packages/pi-stuff/src/web/runtime/curator-page.js";
-import { buildSearchErrorPlan } from "../../packages/pi-stuff/src/web/runtime/render-search-error.js";
 
 interface WebFixtureDetails {
 	readonly queryCount?: number;
@@ -23,63 +20,6 @@ function result(details: WebFixtureDetails): AgentToolResult<WebFixtureDetails> 
 }
 
 describe("Web Tool presentation", () => {
-	test("emits a self-contained syntactically valid curator script", () => {
-		const availableProviders = {
-			all: true,
-			anysearch: false,
-			brave: false,
-			brightdata: false,
-			exa: true,
-			gemini: false,
-			kagi: false,
-			ollama: false,
-			openai: false,
-			parallel: false,
-			perplexity: false,
-			querit: false,
-			search1api: false,
-			searchinfinity: false,
-			searxng: false,
-			serpbase: false,
-			serpdive: false,
-			tavily: false,
-			tinyfish: false,
-			xai: false,
-		};
-		const page = generateCuratorPage(
-			["strict boundary validation"],
-			"fixture-token",
-			60,
-			availableProviders,
-			"exa",
-			"exa",
-			[],
-			null,
-		);
-		const scriptStart = page.lastIndexOf("<script>") + "<script>".length;
-		const script = page.slice(scriptStart, page.lastIndexOf("</script>"));
-
-		expect(scriptStart).toBeGreaterThanOrEqual("<script>".length);
-		expect(script).toContain("function isRuntimeString(value)");
-		expect(() => new Function(script)).not.toThrow();
-	});
-
-	test("bounds error detail previews by terminal cells", () => {
-		const plan = buildSearchErrorPlan({
-			cancelled: true,
-			error: `\u001b[31m${"失败".repeat(200)}\u001b[0m`,
-			queryCount: 1,
-			cancelledQueries: [{ error: "网络".repeat(100), provider: "fixture", query: "😀".repeat(31), resultCount: 0 }],
-			extraLines: ["界".repeat(200)],
-		});
-		expect(plan).not.toBeNull();
-		for (const line of plan?.expanded ?? []) {
-			expect(visibleWidth(line)).toBeLessThanOrEqual(302);
-			expect(line).not.toContain("\u001b");
-		}
-		expect(plan?.expanded.some((line) => line.includes("…"))).toBeTrue();
-	});
-
 	test("marks an all-query search failure as failed without requiring a top-level error", () => {
 		const failed = result({ queryCount: 2, successfulQueries: 0, totalResults: 0 });
 		expect(WEB_SEARCH_PRESENTATION.resultIsError?.({}, failed)).toBe(true);

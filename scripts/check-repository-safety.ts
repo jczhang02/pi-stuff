@@ -39,7 +39,6 @@ const HOST_CONSOLE_ALLOWLIST = new Set([
 	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
 	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
 	"packages/pi-stuff/src/mcp/runtime/mcp-script-worker.mjs",
-	"packages/pi-stuff/src/web/runtime/curator-page.ts",
 ]);
 const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	// Explicit subprocess protocols and detached-runner logs; none execute in Pi's Host TUI path.
@@ -55,7 +54,6 @@ const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
 	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
 	"packages/pi-stuff/src/mcp/runtime/implementation.ts",
 	"packages/pi-stuff/src/mcp/runtime/mcp-callback-server.ts",
-	"packages/pi-stuff/src/web/runtime/curator-page.ts",
 	"packages/pi-stuff/src/web/runtime/implementation.ts",
 ]);
 const INTERNAL_MODULES = [
