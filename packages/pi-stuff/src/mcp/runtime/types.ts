@@ -1,11 +1,8 @@
 // types.ts - Core type definitions
-import { isJsonInputObject, parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import type { TextContent, ImageContent } from "@earendil-works/pi-ai";
-import type { UiStreamMode } from "./ui-stream-types.ts";
-import type { UiToolVisibility } from "./ui-tool-visibility.ts";
 
 export type Transport = McpTransport;
 
@@ -72,243 +69,6 @@ export interface McpResource {
   _meta?: JsonInputObject;
 }
 
-export interface McpPromptArgument {
-  name: string;
-  description?: string;
-  required?: boolean;
-}
-
-export interface McpPrompt {
-  name: string;
-  title?: string;
-  description?: string;
-  arguments?: McpPromptArgument[];
-  _meta?: JsonInputObject;
-}
-
-export interface UiResourceMeta {
-  csp?: UiResourceCsp;
-  permissions?: UiResourcePermissions;
-  domain?: string;
-  prefersBorder?: boolean;
-}
-
-export interface UiResourceContent {
-  uri: string;
-  html: string;
-  mimeType?: string;
-  meta: UiResourceMeta;
-}
-
-export interface UiProxyRequestBody<TParams> {
-  token: string;
-  params: TParams;
-}
-
-export interface UiProxyResult<T = JsonInputObject> {
-  ok: boolean;
-  result?: T;
-  error?: string;
-}
-
-export interface UiResourceCsp {
-  resourceDomains?: string[];
-  connectDomains?: string[];
-  frameDomains?: string[];
-  baseUriDomains?: string[];
-}
-
-export interface UiResourcePermissions {
-  camera?: {};
-  microphone?: {};
-  geolocation?: {};
-  clipboardWrite?: {};
-}
-
-export interface UiToolDescriptor extends JsonInputObject {
-	name: string;
-	description?: string;
-	inputSchema?: JsonInputValue;
-}
-
-export interface UiToolInfo extends JsonInputObject {
-	  id?: string | number;
-	  tool: UiToolDescriptor;
-}
-
-export interface UiContainerDimensions extends JsonInputObject {
-	width?: number;
-	maxWidth?: number;
-	height?: number;
-	maxHeight?: number;
-}
-
-export interface UiHostContext extends JsonInputObject {
-  toolInfo?: UiToolInfo;
-  theme?: "light" | "dark";
-  styles?: JsonInputObject;
-  displayMode?: UiDisplayMode;
-  availableDisplayModes?: UiDisplayMode[];
-	  containerDimensions?: UiContainerDimensions;
-}
-
-export type UiDisplayMode = "inline" | "fullscreen" | "pip";
-
-// Re-export stream types from the shared lightweight module.
-// This allows the example package to import stream schemas without pulling the full types.ts dependency graph.
-export {
-  UI_STREAM_HOST_CONTEXT_KEY,
-  UI_STREAM_REQUEST_META_KEY,
-  UI_STREAM_RESULT_PATCH_METHOD,
-  SERVER_STREAM_RESULT_PATCH_METHOD,
-  UI_STREAM_STRUCTURED_CONTENT_KEY,
-  uiStreamModeSchema,
-  visualizationStreamPhaseSchema,
-  visualizationStreamFrameTypeSchema,
-  visualizationStreamStatusSchema,
-  uiStreamHostContextSchema,
-  visualizationStreamEnvelopeSchema,
-  uiStreamCallToolResultSchema,
-  uiStreamResultPatchNotificationSchema,
-  serverStreamResultPatchNotificationSchema,
-  getUiStreamHostContext,
-  getVisualizationStreamEnvelope,
-  type UiStreamMode,
-  type VisualizationStreamPhase,
-  type VisualizationStreamFrameType,
-  type VisualizationStreamStatus,
-  type UiStreamHostContext,
-  type VisualizationStreamEnvelope,
-  type UiStreamCallToolResult,
-  type UiStreamResultPatchNotification,
-  type ServerStreamResultPatchNotification,
-  type UiStreamSummary,
-} from "./ui-stream-types.ts";
-
-export interface UiMessageParams {
-  role?: string;
-  content?: JsonInputValue[];
-  type?: "prompt" | "notify" | "intent" | "message";
-  message?: string;
-  prompt?: string;
-  intent?: string;
-  params?: JsonInputObject;
-  [key: string]: JsonInputValue;
-}
-
-/**
- * Extract prompt text from either legacy MCP UI message shapes or native AppBridge user messages.
- */
-export function extractUiPromptText(params: UiMessageParams): string | undefined {
-  if (params.type === "prompt" || params.prompt) {
-    const prompt = params.prompt ?? String(params.message ?? "");
-    return prompt || undefined;
-  }
-
-  if (params.role === "user" && Array.isArray(params.content)) {
-    const text = params.content
-	      .map((block) => isJsonInputObject(block) ? String(block.text ?? "") : "")
-      .filter(Boolean)
-      .join("\n\n");
-    return text || undefined;
-  }
-
-  return undefined;
-}
-
-/**
- * Structured UI handoff recovered from a canonical prompt envelope.
- */
-export interface UiPromptHandoff {
-  intent: string;
-  params: JsonInputObject;
-  raw: string;
-}
-
-/**
- * Parse a canonical named UI handoff encoded as `intent\n{json}`.
- */
-export function parseUiPromptHandoff(prompt: string): UiPromptHandoff | undefined {
-  const newlineIndex = prompt.indexOf("\n");
-  if (newlineIndex <= 0) {
-    return undefined;
-  }
-
-  const intent = prompt.slice(0, newlineIndex).trim();
-  const payloadText = prompt.slice(newlineIndex + 1).trim();
-  if (!intent || !payloadText) {
-    return undefined;
-  }
-
-  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(intent)) {
-    return undefined;
-  }
-
-  try {
-	    const parsed = parseJsonObject(payloadText);
-    return {
-      intent,
-	      params: parsed,
-      raw: prompt,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Accumulated messages from a UI session.
- * Collected during the session and available when it ends.
- */
-export interface UiSessionMessages {
-  prompts: string[];
-  notifications: string[];
-  intents: Array<{ intent: string; params?: JsonInputObject }>;
-  contexts: UiModelContextUpdate[];
-}
-
-export interface UiModelContextUpdate extends JsonInputObject {
-  summary: string;
-  truncated: boolean;
-  payload?: JsonInputObject;
-}
-
-export interface UiModelContextParams {
-  content?: McpContentBlock[];
-  structuredContent?: JsonInputObject;
-}
-
-export function createUiModelContextUpdate(params: UiModelContextParams, maxChars = 12_000): UiModelContextUpdate | undefined {
-  const payload = Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== undefined),
-  );
-  if (Object.keys(payload).length === 0) return undefined;
-
-  const serialized = JSON.stringify(payload);
-  if (serialized.length <= maxChars) {
-    return { payload, summary: serialized, truncated: false };
-  }
-
-  return {
-    summary: `${serialized.slice(0, Math.max(0, maxChars - 1))}…`,
-    truncated: true,
-  };
-}
-
-export interface UiOpenLinkResult {
-  isError?: boolean;
-  [key: string]: JsonInputValue;
-}
-
-export interface UiDisplayModeRequest {
-  mode?: UiDisplayMode;
-}
-
-export interface UiDisplayModeResult {
-  mode: UiDisplayMode;
-  [key: string]: JsonInputValue;
-}
-
 // Pi content block type
 export type ContentBlock = TextContent | ImageContent;
 
@@ -364,8 +124,6 @@ export interface ServerEntry {
   requestTimeoutMs?: number; // milliseconds, overrides global request timeout when > 0
   // Resource handling
   exposeResources?: boolean;
-  // Direct tool registration
-  directTools?: boolean | string[];
   // Override settings.toolPrefix for this server.
   toolPrefix?: ToolPrefix;
   // Include/exclude specific MCP tools/resources by original or prefixed name
@@ -422,21 +180,9 @@ export interface McpSettings {
   hostConfigDiscovery?: HostConfigDiscovery;
   idleTimeout?: number; // minutes, default 10, 0 to disable
   requestTimeoutMs?: number; // milliseconds, overrides the SDK request timeout when > 0
-  directTools?: boolean;
-  /** Register the trusted MCP-only JavaScript scripting tool. Defaults to true; set false to hide it. */
-  scriptMode?: boolean;
   /** Default approval gate for matching tools/resources; per-server settings override it. */
   approveTools?: boolean | string[];
-  disableProxyTool?: boolean;
-  /** Freeze direct-tool registration after the initial sync. Automatic metadata updates
-   * (reconnects, lazy-connect, tool-list-changed) won't rebuild the system prompt,
-   * preserving the prompt-cache prefix. The agent rediscovers explicitly via
-   * mcp({ connect: "server" }). Default: false. */
-  freezeDirectTools?: boolean;
   autoAuth?: boolean;
-  sampling?: boolean;
-  samplingAutoApprove?: boolean;
-  elicitation?: boolean;
   /**
    * Guard oversized MCP tool/resource output before it is returned to the model.
    * Defaults to true (50 KiB / 2,000 lines inline text, 16 KiB details.mcpResult).
@@ -480,12 +226,6 @@ export interface McpAdapterOptions {
   configPath?: string;
   /** Keep every configured server disconnected until an explicit MCP tool or command uses it. */
   deferStartupConnections?: boolean;
-  /** Enable MCP Apps browser/native windows. Pi Stuff leaves this disabled. */
-  interactiveUi?: boolean;
-  /** Advertise MCP sampling and elicitation requests that may prompt the user. Defaults to true. */
-  interactiveProtocolRequests?: boolean;
-  /** Expose only the bounded `mcp` gateway, never direct or script tools. */
-  proxyOnly?: boolean;
 }
 
 // Alias for clarity
@@ -496,30 +236,7 @@ export interface ToolMetadata extends JsonInputObject {
   originalName: string;   // Original MCP tool name (e.g., "list_sims")
   description: string;
   resourceUri?: string;   // For resource tools: the URI to read
-  uiResourceUri?: string; // For app-enabled tools: the UI resource URI
-  uiVisibility?: UiToolVisibility[];
   inputSchema?: JsonInputValue;  // JSON Schema for parameters (stored for describe/errors)
-  uiStreamMode?: UiStreamMode;
-}
-
-export interface PromptMetadata {
-  serverName: string;
-  originalName: string;
-  commandName: string;
-  title?: string;
-  description: string;
-  arguments: McpPromptArgument[];
-}
-
-export interface DirectToolSpec {
-  serverName: string;
-  originalName: string;
-  prefixedName: string;
-  description: string;
-  inputSchema?: JsonInputValue;
-  resourceUri?: string;
-  uiResourceUri?: string;
-  uiStreamMode?: UiStreamMode;
 }
 
 export interface McpAuthResult {
@@ -531,9 +248,6 @@ export interface CachedTool {
   name: string;
   description?: string;
   inputSchema?: JsonInputValue;
-  uiResourceUri?: string;
-  uiVisibility?: UiToolVisibility[];
-  uiStreamMode?: "eager" | "stream-first";
 }
 
 export interface CachedResource {
@@ -542,18 +256,10 @@ export interface CachedResource {
   description?: string;
 }
 
-export interface CachedPrompt {
-  name: string;
-  title?: string;
-  description?: string;
-  arguments?: { name: string; description?: string; required?: boolean }[];
-}
-
 export interface ServerCacheEntry {
   configHash: string;
   tools: CachedTool[];
   resources: CachedResource[];
-  prompts?: CachedPrompt[];
   instructions?: string;
   cachedAt: number;
 }
@@ -598,21 +304,6 @@ export function resolveToolPrefix(
   globalPrefix?: ToolPrefix,
 ): ToolPrefix {
   return definition?.toolPrefix ?? globalPrefix ?? "server";
-}
-
-export function sanitizePromptName(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^[_-]+|[_-]+$/g, "");
-  if (!cleaned) return "prompt";
-  return /^[0-9]/.test(cleaned) ? `_${cleaned}` : cleaned;
-}
-
-export function formatPromptCommandName(
-  promptName: string,
-  serverName: string,
-  prefix: ToolPrefix,
-): string {
-  const serverPart = getServerPrefix(serverName, prefix) || serverName.replace(/-/g, "_") || "server";
-  return `mcp__${serverPart}__${sanitizePromptName(promptName)}`;
 }
 
 function normalizeToolName(value: string): string {

@@ -150,7 +150,7 @@ function parseServerEntry(value: JsonInputValue, label: string): ServerEntry {
   if (value.toolPrefix !== undefined && (!isRuntimeString(value.toolPrefix) || !["server", "none", "short", "mcp"].includes(value.toolPrefix))) {
     throw new TypeError(`${label}.toolPrefix is unsupported`);
   }
-  for (const key of ["directTools", "approveTools"]) {
+  for (const key of ["approveTools"]) {
     const setting = value[key];
     if (setting !== undefined && !isRuntimeBoolean(setting) && (!Array.isArray(setting) || !setting.every(isRuntimeString))) {
       throw new TypeError(`${label}.${key} must be a boolean or an array of strings`);
@@ -174,10 +174,7 @@ function parseServerEntry(value: JsonInputValue, label: string): ServerEntry {
 function parseMcpSettings(value: JsonInputValue): McpSettings | undefined {
   if (value === undefined) return undefined;
   if (!isJsonInputObject(value)) throw new TypeError("MCP config settings must be an object");
-  for (const key of [
-    "showStatusIcon", "directTools", "scriptMode", "disableProxyTool", "freezeDirectTools", "autoAuth",
-    "sampling", "samplingAutoApprove", "elicitation",
-  ]) validateOptionalBoolean(value, key, "settings");
+  for (const key of ["showStatusIcon", "autoAuth"]) validateOptionalBoolean(value, key, "settings");
   for (const key of ["idleTimeout", "requestTimeoutMs"]) validateOptionalNumber(value, key, "settings");
   for (const key of ["authRequiredMessage", "oauthDir"]) validateOptionalString(value, key, "settings");
   if (value.toolPrefix !== undefined && (!isRuntimeString(value.toolPrefix) || !["server", "none", "short", "mcp"].includes(value.toolPrefix))) {

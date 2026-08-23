@@ -6,10 +6,8 @@ import {
 	commitState,
 	evictSession,
 	getActiveRenderSession,
-	getNextId,
 	getRenderState,
 	getState,
-	getTodos,
 	replaceState,
 	setActiveRenderSession,
 	sid,
@@ -36,13 +34,13 @@ describe("session task store", () => {
 		const next: TaskState = { tasks: [task("1")], nextId: 2 };
 		commitState("s1", next);
 		expect(getState("s1")).toBe(next);
-		expect(getTodos("s1")).toBe(next.tasks);
-		expect(getNextId("s1")).toBe(2);
+		expect(getState("s1").tasks).toBe(next.tasks);
+		expect(getState("s1").nextId).toBe(2);
 	});
 
 	it("raises nextId above numeric task ids", () => {
 		commitState("s1", { tasks: [task("9")], nextId: 2 });
-		expect(getNextId("s1")).toBe(10);
+		expect(getState("s1").nextId).toBe(10);
 	});
 
 	it("never lowers a session high-water mark on commit or replay replacement", () => {
@@ -57,8 +55,8 @@ describe("session task store", () => {
 	it("isolates slots by session id", () => {
 		commitState("s1", { tasks: [task("1", "First")], nextId: 2 });
 		commitState("s2", { tasks: [task("1", "Second")], nextId: 2 });
-		expect(getTodos("s1").map(({ subject }) => subject)).toEqual(["First"]);
-		expect(getTodos("s2").map(({ subject }) => subject)).toEqual(["Second"]);
+		expect(getState("s1").tasks.map(({ subject }) => subject)).toEqual(["First"]);
+		expect(getState("s2").tasks.map(({ subject }) => subject)).toEqual(["Second"]);
 	});
 
 	it("evicts only the selected session", () => {
@@ -66,7 +64,7 @@ describe("session task store", () => {
 		commitState("s2", { tasks: [task("1")], nextId: 2 });
 		evictSession("s1");
 		expect(getState("s1")).toEqual(EMPTY_STATE);
-		expect(getTodos("s2")).toHaveLength(1);
+		expect(getState("s2").tasks).toHaveLength(1);
 	});
 });
 

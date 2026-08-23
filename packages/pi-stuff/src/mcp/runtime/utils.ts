@@ -1,4 +1,4 @@
-import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -282,13 +282,6 @@ export function truncateAtWord(text: string, target: number): string {
   return truncated + "...";
 }
 
-export function normalizeDirectToolInputSchema(schema: JsonInputValue): JsonInputObject {
-	  let inputSchema: JsonInputObject = { type: "object", properties: {} };
-	  if (isJsonInputObject(schema)) inputSchema = schema;
-	  const { $schema: _schema, additionalProperties: _additionalProperties, ...normalized } = inputSchema;
-  return normalized;
-}
-
 export function formatAuthRequiredMessage(
   config: Pick<McpConfig, "settings">,
   serverName: string,
@@ -301,17 +294,4 @@ export function formatAuthRequiredMessage(
 export function formatMcpStatus(config: Pick<McpConfig, "settings">, message: string): string | undefined {
   if (config.settings?.mcpFooterStatus === "off") return undefined;
   return `${config.settings?.showStatusIcon === false ? "MCP: " : "🔌 MCP: "}${message}`;
-}
-
-/**
- * Extract the adapter-owned UI stream mode from tool metadata.
- */
-export function extractToolUiStreamMode(toolMeta: JsonInputObject | undefined): "eager" | "stream-first" | undefined {
-	  const uiMeta = toolMeta?.ui;
-	  if (!isJsonInputObject(uiMeta)) return undefined;
-	  const streamMode = uiMeta["pi-mcp-adapter.streamMode"];
-  if (streamMode === "eager" || streamMode === "stream-first") {
-    return streamMode;
-  }
-  return undefined;
 }

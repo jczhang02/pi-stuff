@@ -15,13 +15,9 @@ import {
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
-  ElicitationCompleteNotificationSchema,
-	type GetPromptResult,
-	type Prompt,
 	type ReadResourceResult,
 	type Resource,
 	type Tool,
-  type UrlElicitationRequiredError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { UnixSocketClientTransport } from "./unix-socket-transport.ts";
 import { probeMcpEndpoint } from "./mcp-probe.ts";
@@ -29,12 +25,9 @@ import {
   isServerDisabled,
   type McpTool,
   type McpResource,
-  type McpPrompt,
   type ServerDefinition,
-  type ServerStreamResultPatchNotification,
   type Transport,
   type McpTraceSettings,
-  serverStreamResultPatchNotificationSchema,
 } from "./types.ts";
 import { resolveNpxBinary } from "./npx-resolver.ts";
 import { createJsonSchemaValidator } from "./json-schema-validator.ts";
@@ -42,12 +35,6 @@ import { logger } from "./logger.ts";
 import { McpOAuthProvider } from "./mcp-oauth-provider.ts";
 import { extractOAuthConfig, supportsOAuth, type McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import type { AuthStorageOptions } from "./mcp-auth.ts";
-import { registerSamplingHandler, type ServerSamplingConfig } from "./sampling-handler.ts";
-import {
-  handleUrlElicitation,
-  registerElicitationHandler,
-  type ServerElicitationConfig,
-} from "./elicitation-handler.ts";
 import {
   resolveBearerToken,
   resolveCommandSecret,
@@ -96,16 +83,6 @@ function normalizeTool(tool: Tool): McpTool {
 	};
 }
 
-function normalizePrompt(prompt: Prompt): McpPrompt {
-	return {
-		name: prompt.name,
-		title: prompt.title,
-		description: prompt.description,
-		arguments: prompt.arguments,
-		_meta: optionalJsonObject(prompt._meta, `MCP prompt "${prompt.name}" metadata`),
-	};
-}
-
 function normalizeResource(resource: Resource): McpResource {
 	return {
 		uri: resource.uri,
@@ -150,16 +127,12 @@ export interface ServerConnection {
   definition: ServerDefinition;
   tools: McpTool[];
   resources: McpResource[];
-  prompts: McpPrompt[];
-  /** True when prompts were advertised but prompts/list failed. */
-  promptDiscoveryFailed?: boolean;
   instructions?: string;
   lastUsedAt: number;
   inFlight: number;
   status: "connected" | "closed" | "needs-auth";
 }
 
-type UiStreamListener = (serverName: string, notification: ServerStreamResultPatchNotification["params"]) => void;
 type MetadataListChangedListener = (serverName: string, reason: string) => void;
 
 function createSessionTerminator(transport: Transport, serverName: string): (() => Promise<void>) | undefined {
@@ -179,13 +152,9 @@ export class McpServerManager {
   private connections = new Map<string, ServerConnection>();
   private connectPromises = new Map<string, Promise<ServerConnection>>();
   private reconnectPromises = new Map<string, Promise<ServerConnection>>();
-  private uiStreamListeners = new Map<string, UiStreamListener>();
-  private samplingConfig: ServerSamplingConfig | undefined;
   private metadataListChangedListener: MetadataListChangedListener | undefined;
-  private elicitationConfig: ServerElicitationConfig | undefined;
   private authStorageOptions: AuthStorageOptions = {};
   private oauthRuntime: McpOAuthRuntime | undefined;
-  private acceptedUrlElicitations = new Map<string, Set<string>>();
   private defaultRequestTimeoutMs: number | undefined;
   private runtimeSignal: AbortSignal | undefined;
   private closePromises = new Map<string, Promise<void>>();
@@ -198,16 +167,8 @@ export class McpServerManager {
   /** Default cwd for stdio servers without an explicit config `cwd`. */
   constructor(private readonly defaultCwd?: string) {}
 
-  setSamplingConfig(config: ServerSamplingConfig | undefined): void {
-    this.samplingConfig = config;
-  }
-
   setMetadataListChangedListener(listener: MetadataListChangedListener | undefined): void {
     this.metadataListChangedListener = listener;
-  }
-
-  setElicitationConfig(config: ServerElicitationConfig | undefined): void {
-    this.elicitationConfig = config;
   }
 
   setRuntimeSignal(signal: AbortSignal | undefined): void {
@@ -433,7 +394,6 @@ export class McpServerManager {
 
     try {
       await this.connectClientWithAbort(client, transport, requestOptions, signal);
-      this.attachAdapterNotificationHandlers(name, client);
 
       const connection: ServerConnection = {
         client,
@@ -442,7 +402,6 @@ export class McpServerManager {
         definition,
         tools: [],
         resources: [],
-        prompts: [],
         instructions: client.getInstructions?.(),
         lastUsedAt: Date.now(),
         inFlight: 0,
@@ -465,17 +424,12 @@ export class McpServerManager {
         }
       };
 
-      // Discover tools, resources, and prompts. Resource and prompt listing is
-      // optional: only servers advertising the capability are queried.
-      const [tools, resources, promptResult] = await Promise.all([
+      const [tools, resources] = await Promise.all([
         this.fetchAllTools(client, requestOptions),
         this.fetchAllResources(client, requestOptions),
-        this.fetchAllPrompts(client, requestOptions),
       ]);
       connection.tools = tools;
       connection.resources = resources;
-      connection.prompts = promptResult.prompts;
-      connection.promptDiscoveryFailed = promptResult.failed;
 
       return connection;
     } catch (error) {
@@ -504,7 +458,6 @@ export class McpServerManager {
           definition,
           tools: [],
           resources: [],
-          prompts: [],
           lastUsedAt: Date.now(),
           inFlight: 0,
           status: "needs-auth",
@@ -564,19 +517,7 @@ export class McpServerManager {
     }
   }
 
-	  private buildClientCapabilities() {
-	    const capabilities = {};
-	    if (this.samplingConfig) Object.assign(capabilities, { sampling: {} });
-	    if (this.elicitationConfig) {
-	      const elicitation = { form: {} };
-	      if (this.elicitationConfig.allowUrl) Object.assign(elicitation, { url: {} });
-	      Object.assign(capabilities, { elicitation });
-	    }
-	    return capabilities;
-  }
-
   private createClient(serverName: string): Client {
-    const capabilities = this.buildClientCapabilities();
     let client: Client;
 		const clientOptions: ClientOptions = {
 	        jsonSchemaValidator: createJsonSchemaValidator(),
@@ -591,39 +532,12 @@ export class McpServerManager {
 					this.handleResourcesListChanged(serverName, client, error, resources?.map(normalizeResource) ?? null);
             },
           },
-          prompts: {
-				onChanged: (error, prompts) => {
-					this.handlePromptsListChanged(serverName, client, error, prompts?.map(normalizePrompt) ?? null);
-            },
-          },
 	        },
 	      };
-	    if (Object.keys(capabilities).length > 0) Object.assign(clientOptions, { capabilities });
 	    client = new Client(
 	      { name: `pi-mcp-${serverName}`, version: "1.0.0" },
 	      clientOptions,
 	    );
-    if (this.samplingConfig) {
-      registerSamplingHandler(client, { ...this.samplingConfig, serverName });
-    }
-    if (this.elicitationConfig) {
-      registerElicitationHandler(client, {
-        ...this.elicitationConfig,
-        serverName,
-        onUrlAccepted: elicitationId => this.rememberUrlElicitation(serverName, elicitationId),
-      });
-      if (this.elicitationConfig.allowUrl) {
-        client.setNotificationHandler(ElicitationCompleteNotificationSchema, notification => {
-          if (this.runtimeSignal?.aborted) return;
-          const accepted = this.acceptedUrlElicitations.get(serverName);
-          if (!accepted?.delete(notification.params.elicitationId)) return;
-          this.elicitationConfig?.ui.notify(
-            `MCP browser interaction for ${serverName} completed. You can retry the tool now.`,
-            "info",
-          );
-        });
-      }
-    }
     return client;
   }
 
@@ -644,24 +558,6 @@ export class McpServerManager {
     this.metadataListChangedListener?.(serverName, "tools-list-changed");
   }
 
-  private handlePromptsListChanged(
-    serverName: string,
-    client: Client,
-    error: Error | null,
-    prompts: McpPrompt[] | null,
-  ): void {
-    if (error) {
-      logger.debug(`MCP: prompts/list_changed refresh failed for ${serverName}: ${error.message}`);
-      return;
-    }
-    if (!prompts) return;
-    const connection = this.connections.get(serverName);
-    if (!connection || connection.client !== client || connection.status !== "connected") return;
-    connection.prompts = prompts;
-    connection.promptDiscoveryFailed = false;
-    this.metadataListChangedListener?.(serverName, "prompts-list-changed");
-  }
-
   private handleResourcesListChanged(
     serverName: string,
     client: Client,
@@ -677,32 +573,6 @@ export class McpServerManager {
     if (!connection || connection.client !== client || connection.status !== "connected") return;
     connection.resources = resources;
     this.metadataListChangedListener?.(serverName, "resources-list-changed");
-  }
-
-  async handleUrlElicitationRequired(
-    serverName: string,
-    error: UrlElicitationRequiredError,
-  ): Promise<"accept" | "decline" | "cancel"> {
-    if (this.runtimeSignal?.aborted || !this.elicitationConfig?.allowUrl) return "cancel";
-    for (const params of error.elicitations) {
-      const result = await handleUrlElicitation({
-        ...this.elicitationConfig,
-        serverName,
-        onUrlAccepted: elicitationId => this.rememberUrlElicitation(serverName, elicitationId),
-      }, params);
-      if (result.action !== "accept") return result.action;
-    }
-    return "accept";
-  }
-
-  private rememberUrlElicitation(serverName: string, elicitationId: string): void {
-    if (this.runtimeSignal?.aborted) return;
-    let accepted = this.acceptedUrlElicitations.get(serverName);
-    if (!accepted) {
-      accepted = new Set();
-      this.acceptedUrlElicitations.set(serverName, accepted);
-    }
-    accepted.add(elicitationId);
   }
 
   private async createHttpTransport(
@@ -853,30 +723,6 @@ export class McpServerManager {
     return allTools;
   }
 
-  private async fetchAllPrompts(
-    client: Client,
-    requestOptions?: RequestOptions,
-  ): Promise<{ prompts: McpPrompt[]; failed: boolean }> {
-    const capabilities = client.getServerCapabilities?.();
-    if (!capabilities?.prompts) return { prompts: [], failed: false };
-
-    try {
-      const prompts: McpPrompt[] = [];
-      let cursor: string | undefined;
-      do {
-        const result = await client.listPrompts(cursor ? { cursor } : undefined, requestOptions);
-			prompts.push(...(result.prompts ?? []).map(normalizePrompt));
-        cursor = result.nextCursor;
-      } while (cursor);
-      return { prompts, failed: false };
-    } catch (error) {
-      if (requestOptions?.signal?.aborted) throwIfAborted(requestOptions.signal);
-      const message = error instanceof Error ? error.message : String(error);
-      logger.debug(`MCP: prompts/list failed: ${message}`);
-      return { prompts: [], failed: true };
-    }
-  }
-
   private async fetchAllResources(client: Client, requestOptions?: RequestOptions): Promise<McpResource[]> {
     const capabilities = client.getServerCapabilities?.();
     if (!capabilities?.resources) return [];
@@ -898,47 +744,6 @@ export class McpServerManager {
       }
       // The server advertises resources but the listing failed
       return [];
-    }
-  }
-
-  private attachAdapterNotificationHandlers(serverName: string, client: Client): void {
-    client.setNotificationHandler(serverStreamResultPatchNotificationSchema, notification => {
-      const listener = this.uiStreamListeners.get(notification.params.streamToken);
-      if (!listener) return;
-      listener(serverName, notification.params);
-    });
-  }
-
-  registerUiStreamListener(streamToken: string, listener: UiStreamListener): void {
-    this.uiStreamListeners.set(streamToken, listener);
-  }
-
-  removeUiStreamListener(streamToken: string): void {
-    this.uiStreamListeners.delete(streamToken);
-  }
-
-  async getPrompt(
-    name: string,
-    promptName: string,
-    args?: Record<string, string>,
-    signal?: AbortSignal,
-  ): Promise<GetPromptResult> {
-    const connection = this.connections.get(name);
-    if (!connection || connection.status !== "connected") {
-      throw new Error(`Server "${name}" is not connected`);
-    }
-    try {
-      this.touch(name);
-      this.incrementInFlight(name);
-	      const params = { name: promptName };
-	      if (args) Object.assign(params, { arguments: args });
-	      return await connection.client.getPrompt(
-	        params,
-        this.getRequestOptions(name, signal),
-      );
-    } finally {
-      this.decrementInFlight(name);
-      this.touch(name);
     }
   }
 
@@ -987,7 +792,6 @@ export class McpServerManager {
     // an old close operation finishing later.
     connection.status = "closed";
     this.connections.delete(name);
-    this.acceptedUrlElicitations.delete(name);
     const closing = this.disposeConnection(connection).finally(() => {
       if (this.closePromises.get(name) === closing) this.closePromises.delete(name);
     });
@@ -1027,10 +831,6 @@ export class McpServerManager {
     const failures = [...pendingResults, ...results, ...lateResults]
       .flatMap(result => result.status === "rejected" ? [result.reason] : [])
       .filter(error => this.containsCleanupFailure(error));
-    this.uiStreamListeners.clear();
-    this.acceptedUrlElicitations.clear();
-    this.samplingConfig = undefined;
-    this.elicitationConfig = undefined;
     await this.traceWriter?.flush();
     if (failures.length > 0) throw new AggregateError(failures, "MCP manager cleanup failed");
   }

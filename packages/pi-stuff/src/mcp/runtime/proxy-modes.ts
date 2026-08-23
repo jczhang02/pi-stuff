@@ -1,18 +1,15 @@
 import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
-import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
 import { requireJsonInputValue, type JsonInputObject } from "../../shared/json-value.js";
 import type { McpExtensionState } from "./state.ts";
 import type { ToolMetadata } from "./types.ts";
-import { getServerPrefix, isServerDisabled, parseUiPromptHandoff } from "./types.ts";
+import { getServerPrefix, isServerDisabled } from "./types.ts";
 import { lazyConnect, markKeepAliveAfterConnect, notifyToolMetadataUpdated, updateServerMetadata, updateMetadataCache, getFailureAgeSeconds, updateStatusBar, clearFailure, recordFailure } from "./init.ts";
 import { abortable, throwIfAborted } from "./abort.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { buildToolMetadata, getToolNames, findToolByName, formatSchema } from "./tool-metadata.ts";
 import { renderTsType } from "./ts-shape.ts";
-import { reconstructPromptMetadata } from "./metadata-cache.ts";
 import { isImmediateCallToolResult, resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
 import { guardMcpOutput, guardedMcpDetails, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
-import { maybeStartUiSession, summarizeUiSessionResult, type UiSessionRuntime } from "./ui-session.ts";
 import { formatAuthRequiredMessage, formatMcpStatus, resolveServerUrl, truncateAtWord } from "./utils.ts";
 import { authenticate, completeAuthFromInput, startAuth, supportsOAuth } from "./mcp-auth-flow.ts";
 import { SessionRecoveryAuthRequiredError, withSessionRecovery } from "./session-recovery.ts";
@@ -147,94 +144,6 @@ async function attemptAutoAuth(
       message: getAuthFailedMessage(state, serverName, message),
     };
   }
-}
-
-export function executeUiMessages(state: McpExtensionState): ProxyToolResult {
-  const sessions = state.completedUiSessions;
-
-  if (sessions.length === 0) {
-    return {
-      content: [{ type: "text" as const, text: "No UI session messages available." }],
-      details: { sessions: 0 },
-    };
-  }
-
-  const output: string[] = [];
-  output.push(`UI Session Messages (${sessions.length} session${sessions.length > 1 ? "s" : ""}):\n`);
-
-  const allPrompts: string[] = [];
-  const allIntents = sessions.flatMap((session) => session.messages.intents);
-  const allContexts = sessions.flatMap((session) => session.messages.contexts);
-  const parsedHandoffs: Array<{ intent: string; params: JsonInputObject; raw: string }> = [];
-
-  for (const session of sessions) {
-    const timestamp = session.completedAt.toLocaleTimeString();
-    output.push(`\n## ${session.serverName} / ${session.toolName} (${timestamp}, ${session.reason})`);
-
-    const plainPrompts: string[] = [];
-    for (const prompt of session.messages.prompts) {
-      allPrompts.push(prompt);
-      const handoff = parseUiPromptHandoff(prompt);
-      if (handoff) {
-        parsedHandoffs.push(handoff);
-      } else {
-        plainPrompts.push(prompt);
-      }
-    }
-
-    if (plainPrompts.length > 0) {
-      output.push("\n### Prompts:");
-      for (const prompt of plainPrompts) {
-        output.push(`- ${prompt}`);
-      }
-    }
-
-    const intentsForSession = [
-      ...session.messages.intents,
-      ...session.messages.prompts
-        .map((prompt) => parseUiPromptHandoff(prompt))
-        .filter((handoff): handoff is NonNullable<typeof handoff> => !!handoff)
-        .map((handoff) => ({ intent: handoff.intent, params: handoff.params })),
-    ];
-
-    if (intentsForSession.length > 0) {
-      output.push("\n### Intents:");
-      for (const intent of intentsForSession) {
-        const params = intent.params ? ` (${JSON.stringify(intent.params)})` : "";
-        output.push(`- ${intent.intent}${params}`);
-      }
-    }
-
-    const contexts = session.messages.contexts;
-    if (contexts.length > 0) {
-      output.push("\n### Context updates:");
-      for (const context of contexts) {
-        output.push(`- ${context.summary}${context.truncated ? " (truncated)" : ""}`);
-      }
-    }
-
-    if (session.messages.notifications.length > 0) {
-      output.push("\n### Notifications:");
-      for (const notification of session.messages.notifications) {
-        output.push(`- ${notification}`);
-      }
-    }
-  }
-
-  const count = sessions.length;
-  state.completedUiSessions = [];
-
-  return {
-    content: [{ type: "text" as const, text: output.join("\n") }],
-    details: {
-      sessions: count,
-      prompts: allPrompts,
-      intents: [...allIntents, ...parsedHandoffs.map(({ intent, params }) => ({ intent, params }))],
-      contexts: allContexts,
-      handoffs: parsedHandoffs,
-      cleared: true,
-    },
-  };
 }
 
 export function executeStatus(state: McpExtensionState): ProxyToolResult {
@@ -672,10 +581,6 @@ export async function executeConnect(state: McpExtensionState, serverName: strin
     const prefix = state.config.settings?.toolPrefix ?? "server";
     const { metadata } = buildToolMetadata(connection.tools, connection.resources, definition, serverName, prefix);
     state.toolMetadata.set(serverName, metadata);
-    if (!connection.promptDiscoveryFailed) {
-      state.promptMetadata?.set(serverName, reconstructPromptMetadata(serverName, connection.prompts ?? [], prefix, definition));
-      state.promptMetadataLive?.add(serverName);
-    }
     if (connection.instructions) {
       state.serverInstructions.set(serverName, connection.instructions);
     } else {
@@ -1007,7 +912,6 @@ export async function executeCall(
     };
   }
 
-  let uiSession: UiSessionRuntime | null = null;
   const requestOptions = state.manager.getRequestOptions?.(serverName, ownedSignal) ?? (ownedSignal ? { signal: ownedSignal } : undefined);
 
   const outputGuardOptions = resolveMcpOutputGuardOptions(state.config.settings);
@@ -1058,62 +962,18 @@ export async function executeCall(
       };
     }
 
-    uiSession = toolMeta.uiResourceUri
-      ? await maybeStartUiSession(state, {
-          serverName,
-          toolName: toolMeta.originalName,
-          toolArgs: args ?? {},
-          uiResourceUri: toolMeta.uiResourceUri,
-          streamMode: toolMeta.uiStreamMode,
-          signal,
-          onNeedsAuth: recoverAuthConnection,
-        })
-      : null;
-
     const result = await withSessionRecovery(
       { manager: state.manager, config: state.config, signal: ownedSignal, onNeedsAuth: recoverAuthConnection },
       serverName,
       (conn) => abortable(conn.client.callTool({
         name: toolMeta.originalName,
         arguments: args ?? {},
-        _meta: uiSession?.requestMeta,
       }, undefined, requestOptions), ownedSignal),
 	    );
 	    if (!isImmediateCallToolResult(result)) {
 	      throw new Error("MCP task-based tool results are not supported by the proxy tool");
 	    }
 	    const rawMcpResult = requireJsonInputValue(result, "MCP tool result");
-
-	    if (toolMeta.uiResourceUri) {
-      uiSession?.sendToolResult(result);
-
-      if (result.isError) {
-        const content = transformMcpContent(result.content);
-        const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
-        const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
-	        const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult });
-        return {
-          content: guarded.content,
-          details: { mode: "call", error: "tool_error", ...callIdentity, ...guardedMcpDetails(guarded) },
-        };
-      }
-
-      const content = resolveMcpResultContent(result);
-      const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
-      const uiSummary = summarizeUiSessionResult(uiSession);
-	      const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, suffix: `\n\n${uiSummary.message}`, rawMcpResult });
-      return {
-        content: guarded.content,
-        details: {
-          mode: "call",
-          ...guardedMcpDetails(guarded),
-          ...callIdentity,
-          uiOpen: uiSummary.uiOpen,
-          uiViewer: uiSummary.uiViewer,
-          uiUrl: uiSummary.uiUrl,
-        },
-      };
-    }
 
     if (result.isError) {
       const content = transformMcpContent(result.content);
@@ -1136,25 +996,12 @@ export async function executeCall(
   } catch (error) {
     if (error instanceof SessionRecoveryAuthRequiredError) {
       const message = error.authMessage ?? getAuthRequiredMessage(state, serverName);
-      uiSession?.sendToolCancelled(message);
       return {
         content: [{ type: "text" as const, text: message }],
         details: { mode: "call", error: "auth_required", ...callIdentity, message, autoAuthAttempted },
       };
     }
-    if (error instanceof UrlElicitationRequiredError) {
-      const action = await state.manager.handleUrlElicitationRequired(serverName, error);
-      const message = action === "accept"
-        ? "The original MCP tool did not run. Complete the opened browser interaction, then retry the tool."
-        : `The URL interaction was ${action === "decline" ? "declined" : "cancelled"}.`;
-      uiSession?.sendToolCancelled(message);
-      return {
-        content: [{ type: "text" as const, text: message }],
-        details: { mode: "call", error: "url_elicitation_required", ...callIdentity, action },
-      };
-    }
     const message = error instanceof Error ? error.message : String(error);
-    uiSession?.sendToolCancelled(message);
 
     const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
     const guarded = await guardMcpOutput([{ type: "text" as const, text: message }], { ...outputGuardOptions, prefix: "Failed to call tool: ", suffix: schemaText });
@@ -1164,9 +1011,6 @@ export async function executeCall(
       details: { mode: "call", error: isAbortError(error, ownedSignal) ? "aborted" : "call_failed", ...callIdentity, message: guarded.outputGuard ? "output truncated; see outputGuard.fullOutputPath" : message, ...guardedMcpDetails(guarded) },
     };
   } finally {
-    if (uiSession?.reused) {
-      uiSession.close();
-    }
     state.manager.decrementInFlight(serverName);
     state.manager.touch(serverName);
   }

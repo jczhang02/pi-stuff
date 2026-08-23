@@ -37,9 +37,6 @@ export interface McpAdapterOptions {
   config?: JsonInputValue;
   configPath?: string;
   deferStartupConnections?: boolean;
-  interactiveUi?: boolean;
-  interactiveProtocolRequests?: boolean;
-  proxyOnly?: boolean;
 }
 
 type AdapterCommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];

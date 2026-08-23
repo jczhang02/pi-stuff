@@ -1,31 +1,24 @@
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { promoteActiveAgentWorkToUser } from "../../conversation-ui/agent-run-origin.js";
-import { sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import type { McpExtensionState } from "./state.ts";
-import { isServerDisabled, type McpAdapterOptions, type PromptMetadata, type ToolMetadata } from "./types.ts";
+import { isServerDisabled, type McpAdapterOptions, type ToolMetadata } from "./types.ts";
 import { existsSync } from "node:fs";
 import { cloneMcpConfig, loadMcpConfig } from "./config.ts";
-import { ConsentManager } from "./consent-manager.ts";
 import { McpLifecycleManager } from "./lifecycle.ts";
 import {
   computeServerHash,
   getMetadataCachePath,
-  getMissingConfiguredDirectToolServers,
   isServerCacheValid,
   loadMetadataCache,
-  reconstructPromptMetadata,
   reconstructToolMetadata,
   saveMetadataCache,
-  serializePrompts,
   serializeResources,
   serializeTools,
   type ServerCacheEntry,
 } from "./metadata-cache.ts";
 import { McpServerManager } from "./server-manager.ts";
 import { buildToolMetadata, totalToolCount } from "./tool-metadata.ts";
-import { UiResourceHandler } from "./ui-resource-handler.ts";
-import { formatMcpStatus, openUrl, parallelLimit, sanitizeTerminalText } from "./utils.ts";
+import { formatMcpStatus, parallelLimit, sanitizeTerminalText } from "./utils.ts";
 import { logger } from "./logger.ts";
 import { throwIfAborted } from "./abort.ts";
 import { getAuthStorageOptions } from "./mcp-auth.ts";
@@ -82,17 +75,9 @@ export function recordFailure(state: McpExtensionState, serverName: string, mess
   getFailureExpiryTimers(state).set(serverName, timer);
 }
 
-export function isTuiMode(ctx: Pick<ExtensionContext, "hasUI" | "mode">): boolean {
-  return ctx.hasUI && ctx.mode === "tui";
-}
-
 export interface McpInitializationContext {
 	cwd: string;
 	hasUI: boolean;
-	isIdle(): boolean;
-	mode: ExtensionContext["mode"];
-	model: ExtensionContext["model"];
-	modelRegistry: ExtensionContext["modelRegistry"] | undefined;
 	signal: AbortSignal | undefined;
 	ui: ExtensionContext["ui"] | undefined;
 }
@@ -116,9 +101,7 @@ export async function initializeMcp(
 	    : options.configPath ?? (isRuntimeString(configFlag) ? configFlag : undefined);
   const cwd = ctx.cwd;
   const hasUI = ctx.hasUI;
-  const mode = ctx.mode;
   const rawUi = hasUI ? ctx.ui : undefined;
-  const modelRegistry = ctx.modelRegistry;
   const initialSignal = ctx.signal;
   const ui = rawUi ? createOwnedUi(rawUi, owner) : undefined;
   const runtimeSignal = combineAbortSignals(owner.signal, initialSignal);
@@ -135,50 +118,19 @@ export async function initializeMcp(
   manager.setDefaultRequestTimeoutMs(config.settings?.requestTimeoutMs);
   manager.setTraceConfig?.(config.settings?.trace);
   manager.setAuthStorageOptions(authStorageOptions);
-  const samplingAutoApprove = config.settings?.samplingAutoApprove === true;
-  if (
-    options.interactiveProtocolRequests !== false &&
-	    config.settings?.sampling !== false &&
-	    (hasUI || samplingAutoApprove) &&
-	    modelRegistry
-  ) {
-    manager.setSamplingConfig({
-      autoApprove: samplingAutoApprove,
-      ui,
-      modelRegistry,
-      getCurrentModel: () => owner.isActive() ? ctx.model : undefined,
-      getSignal: () => owner.isActive()
-        ? combineAbortSignals(owner.signal, ctx.signal)
-        : owner.signal,
-    });
-  }
-  const elicitationEnabled =
-    options.interactiveProtocolRequests !== false && config.settings?.elicitation !== false && hasUI;
-  if (elicitationEnabled && ui) {
-    manager.setElicitationConfig({
-      ui,
-      allowUrl: mode === "tui",
-    });
-  }
   const lifecycle = new McpLifecycleManager(manager, (serverName) => hasPendingAuth(serverName, undefined, oauthRuntime));
   const toolMetadata = new Map<string, ToolMetadata[]>();
   const resourceCounts = new Map<string, number>();
-  const promptMetadata = new Map<string, PromptMetadata[]>();
-  const promptMetadataLive = new Set<string>();
   const serverInstructions = new Map<string, string>();
   const failureTracker = new Map<string, number>();
   const failureMessages = new Map<string, string>();
   const approvedToolCalls = new Map<string, true>();
-  const uiResourceHandler = new UiResourceHandler(manager, config);
-  const consentManager = new ConsentManager("once-per-server");
   const state: McpExtensionState = {
     owner,
     manager,
     lifecycle,
     toolMetadata,
     resourceCounts,
-    promptMetadata,
-    promptMetadataLive,
     serverInstructions,
     config,
     programmaticConfig: options.config !== undefined,
@@ -187,28 +139,7 @@ export async function initializeMcp(
     failureTracker,
     failureMessages,
     approvedToolCalls,
-    uiResourceHandler,
-    consentManager,
-    uiServer: null,
-    completedUiSessions: [],
-    interactiveUiEnabled: options.interactiveUi === true,
-    openBrowser: async (url: string) => {
-      owner.throwIfInactive();
-      await openUrl(pi, url, process.env.BROWSER, owner.signal);
-      owner.throwIfInactive();
-    },
     ui,
-    sendMessage: (message, options) => {
-      if (!owner.isActive()) return;
-      return sendSuiteAgentMessage(
-        pi,
-		message,
-        options,
-        () => owner.isActive(),
-      );
-    },
-    isAgentIdle: () => ctx.isIdle(),
-    promoteActiveAgentWorkToUser: () => promoteActiveAgentWorkToUser(pi),
     statusEvents: options.statusEvents,
   };
   if (ownsOAuthRuntime) owner.addCleanup(() => shutdownOAuth(oauthRuntime));
@@ -220,12 +151,6 @@ export async function initializeMcp(
     updateStatusBar(state);
   });
   owner.addCleanup(() => lifecycle.gracefulShutdown());
-  owner.addCleanup(() => {
-    if (state.uiServer) {
-      state.uiServer.close("runtime_owner_stopped");
-      state.uiServer = null;
-    }
-  });
 
   const allServerEntries = Object.entries(config.mcpServers);
   const serverEntries = allServerEntries.filter(([, definition]) => !isServerDisabled(definition));
@@ -274,9 +199,6 @@ export async function initializeMcp(
       toolMetadata.set(name, metadata);
       if (Array.isArray(cachedEntry.resources)) {
         resourceCounts.set(name, cachedEntry.resources.length);
-      }
-      if (cachedEntry.prompts?.length) {
-        promptMetadata.set(name, reconstructPromptMetadata(name, cachedEntry.prompts ?? [], prefix, definition));
       }
       if (cachedEntry.instructions) {
         serverInstructions.set(name, cachedEntry.instructions);
@@ -338,10 +260,6 @@ export async function initializeMcp(
     const { metadata, failedTools } = buildToolMetadata(connection.tools, connection.resources, definition, name, prefix);
     toolMetadata.set(name, metadata);
     resourceCounts.set(name, connection.resources.length);
-    if (!connection.promptDiscoveryFailed) {
-      promptMetadata.set(name, reconstructPromptMetadata(name, connection.prompts ?? [], prefix, definition));
-      promptMetadataLive.add(name);
-    }
     if (connection.instructions) {
       serverInstructions.set(name, connection.instructions);
     } else {
@@ -367,49 +285,6 @@ export async function initializeMcp(
       ? `MCP: ${connectedCount}/${startupServers.length} servers connected (${totalTools} tools)`
       : `MCP: ${connectedCount} servers connected (${totalTools} tools)`;
     ui.notify(msg, "info");
-  }
-
-  const envDirect = process.env.MCP_DIRECT_TOOLS;
-  if (envDirect !== "__none__") {
-    const currentCache = loadMetadataCache();
-    const envDirectToolOverride = envDirect?.split(",").map(selector => selector.trim()).filter(Boolean);
-    const missingCacheServers = getMissingConfiguredDirectToolServers(config, currentCache, envDirectToolOverride);
-
-    if (missingCacheServers.length > 0) {
-      const bootstrapResults = await parallelLimit(
-        missingCacheServers.filter(name => !results.some(r => r.name === name && r.connection)),
-        10,
-        async (name) => {
-          const definition = config.mcpServers[name];
-          try {
-            const connection = await manager.connect(name, definition, runtimeSignal);
-            if (connection.status === "needs-auth") {
-              return { name, ok: false };
-            }
-            updateServerMetadata(state, name);
-            updateMetadataCache(state, name);
-            notifyToolMetadataUpdated(state, name, "direct-tools-bootstrap");
-            markKeepAliveAfterConnect(state, name);
-            clearFailure(state, name);
-            return { name, ok: true };
-          } catch (error) {
-            if (isAbortError(error, runtimeSignal)) {
-              if (owner.signal.aborted) throw error;
-              return { name, ok: false };
-            }
-            const message = error instanceof Error ? error.message : String(error);
-            recordFailure(state, name, message);
-            logger.debug(`MCP: direct-tools bootstrap failed for ${name}: ${sanitizeTerminalText(message)}`);
-            return { name, ok: false };
-          }
-        },
-      );
-      const bootstrapped = bootstrapResults.filter(r => r.ok).map(r => r.name);
-      owner.throwIfInactive();
-      if (bootstrapped.length > 0 && ui) {
-        ui.notify(`MCP: direct tools for ${bootstrapped.join(", ")} will be available after restart`, "info");
-      }
-    }
   }
 
   lifecycle.setReconnectCallback((serverName) => {
@@ -459,24 +334,18 @@ export function updateServerMetadata(state: McpExtensionState, serverName: strin
 
   const definition = state.config.mcpServers[serverName];
   if (!definition) return;
-  if (isServerDisabled(definition)) {
-    state.toolMetadata.delete(serverName);
-    state.resourceCounts?.delete(serverName);
-    state.promptMetadata?.delete(serverName);
-    state.promptMetadataLive?.delete(serverName);
-    state.serverInstructions.delete(serverName);
+	  if (isServerDisabled(definition)) {
+	    state.toolMetadata.delete(serverName);
+	    state.resourceCounts?.delete(serverName);
+	    state.serverInstructions.delete(serverName);
     return;
   }
 
   const prefix = state.config.settings?.toolPrefix ?? "server";
 
   const { metadata } = buildToolMetadata(connection.tools, connection.resources, definition, serverName, prefix);
-  state.toolMetadata.set(serverName, metadata);
-  state.resourceCounts?.set(serverName, connection.resources.length);
-  if (!connection.promptDiscoveryFailed) {
-    state.promptMetadata?.set(serverName, reconstructPromptMetadata(serverName, connection.prompts ?? [], prefix, definition));
-    state.promptMetadataLive?.add(serverName);
-  }
+	  state.toolMetadata.set(serverName, metadata);
+	  state.resourceCounts?.set(serverName, connection.resources.length);
   if (connection.instructions) {
     state.serverInstructions?.set(serverName, connection.instructions);
   } else {
@@ -499,11 +368,8 @@ export function updateMetadataCache(
   const existing = loadMetadataCache();
   const existingEntry = existing?.servers?.[serverName];
 
-  const tools = serializeTools(connection.tools);
-  let resources = definition.exposeResources === false ? [] : serializeResources(connection.resources);
-  const prompts = connection.promptDiscoveryFailed
-    ? existingEntry?.configHash === configHash ? existingEntry.prompts : undefined
-    : serializePrompts(connection.prompts ?? []);
+	  const tools = serializeTools(connection.tools);
+	  let resources = definition.exposeResources === false ? [] : serializeResources(connection.resources);
 
   if (
     definition.exposeResources !== false &&
@@ -519,10 +385,9 @@ export function updateMetadataCache(
     configHash,
     tools,
     resources,
-    instructions: connection.instructions,
-    cachedAt: Date.now(),
-  };
-	if (prompts !== undefined) entry.prompts = prompts;
+	    instructions: connection.instructions,
+	    cachedAt: Date.now(),
+	  };
 
   saveMetadataCache({ version: 1, servers: { [serverName]: entry } });
 }

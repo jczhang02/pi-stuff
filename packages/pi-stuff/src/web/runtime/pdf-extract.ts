@@ -1,5 +1,4 @@
 import { isJsonInputObject, parseJsonValue, type JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeFunction } from "../../shared/runtime-type.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 /**
@@ -73,11 +72,6 @@ export function loadPDFConfig(): PDFConfig {
 }
 
 async function getUnpdf() {
-  if (!("try" in Promise) || !isRuntimeFunction(Promise.try)) {
-    const { default: promiseTry } = await import("promise.try");
-    promiseTry.shim();
-  }
-
   const [unpdf, pdfjs] = await Promise.all([
     import("unpdf"),
     import("unpdf/pdfjs"),

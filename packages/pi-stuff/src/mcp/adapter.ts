@@ -264,8 +264,6 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 				"enable",
 				"auto-connect",
 				"on-demand",
-				"tools",
-				"prompts",
 				"setup",
 			];
 			const normalized = prefix.trimStart();
@@ -303,14 +301,6 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 				await invoke(commands.mcp, args, routeMcpCustomUiThroughCommandDialog<CommandContext>(ctx, coordinator));
 				return;
 			}
-			if (subcommand === "tools") {
-				ctx.ui.notify("Use the mcp Tool search action for bounded Tool discovery.", "info");
-				return;
-			}
-			if (subcommand === "prompts") {
-				ctx.ui.notify("Pi Stuff does not expose MCP prompt slash commands.", "info");
-				return;
-			}
 			if (
 				["auth", "reconnect", "logout", "disable", "enable", "auto-connect", "on-demand"].includes(subcommand) &&
 				commands.mcp
@@ -344,9 +334,6 @@ export function installMcpCapability(pi: ExtensionAPI): void {
 	});
 	const adapter = createMcpAdapter({
 		deferStartupConnections: true,
-		interactiveProtocolRequests: false,
-		interactiveUi: false,
-		proxyOnly: true,
 	});
 	adapter(createMcpAdapterApi(pi, commands));
 	installCommands(pi, commands, store);

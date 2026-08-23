@@ -3,12 +3,13 @@ import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { existsSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync, renameSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 import { piStuffCachePath } from "../../xdg/index.ts";
 import { throwIfAborted } from "./abort.ts";
-import crossSpawn from "cross-spawn";
 
 const CACHE_VERSION = 1;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm";
 const EXACT_PACKAGE_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 
 interface NpxCacheEntry {
@@ -254,8 +255,8 @@ async function forceNpxCache(packageSpec: string, signal?: AbortSignal): Promise
   throwIfAborted(signal);
   try {
     await new Promise<void>((resolve, reject) => {
-      const proc = crossSpawn(
-        "npm",
+      const proc = spawn(
+        NPM_COMMAND,
         ["exec", "--yes", "--package", packageSpec, "--", "node", "-e", "1"],
         { stdio: "ignore" }
       );
@@ -418,7 +419,7 @@ function getNpmCacheDir(): string | null {
     return npmCacheDirCached;
   }
   try {
-    const result = crossSpawn.sync("npm", ["config", "get", "cache"], { encoding: "utf-8" });
+    const result = spawnSync(NPM_COMMAND, ["config", "get", "cache"], { encoding: "utf-8" });
     if (result.status === 0) {
       const path = String(result.stdout).trim();
       npmCacheDirCached = path || null;

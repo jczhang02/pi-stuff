@@ -260,10 +260,9 @@ describe("auditRepositoryFiles", () => {
 		]);
 	});
 
-	test("rejects raw console output from Host source but permits browser-owned output", async () => {
+	test("rejects raw console output from Host source", async () => {
 		const root = await createRepository();
 		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
-		await mkdir(join(root, "packages", "pi-stuff", "src", "mcp", "runtime"), { recursive: true });
 		await mkdir(join(root, "packages", "pi-stuff", "src", "notification"), { recursive: true });
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
@@ -272,10 +271,6 @@ describe("auditRepositoryFiles", () => {
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "goal", "stream.ts"),
 			'process.stderr.write("this would also corrupt the Host TUI\\n");\n',
-		);
-		await writeFile(
-			join(root, "packages", "pi-stuff", "src", "mcp", "runtime", "host-html-template.ts"),
-			'export const html = `<script>console.error("browser-only")</script>`;\n',
 		);
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "notification", "transport.ts"),

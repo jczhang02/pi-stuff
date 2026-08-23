@@ -13,7 +13,6 @@ import {
   writeStarterProjectConfig,
 } from "./config.ts";
 import { markKeepAliveAfterConnect, notifyToolMetadataUpdated, updateMetadataCache, updateStatusBar, getFailureAgeSeconds, getFailureMessage, clearFailure, recordFailure } from "./init.ts";
-import { reconstructPromptMetadata } from "./metadata-cache.ts";
 import { buildToolMetadata } from "./tool-metadata.ts";
 import { supportsOAuth, authenticate, removeAuth, type McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { getAuthStorageOptions } from "./mcp-auth.ts";
@@ -69,66 +68,6 @@ export async function showStatus(state: McpExtensionState, ctx: McpCommandContex
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-export async function showPrompts(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
-  if (!ctx.hasUI) return;
-  const allPrompts = [...(state.promptMetadata?.values() ?? [])].flat();
-  const failedPromptServers = [...(state.manager.getAllConnections?.() ?? [])]
-    .filter(([, connection]) => connection.status === "connected" && connection.promptDiscoveryFailed)
-    .map(([serverName]) => serverName)
-    .sort();
-  if (allPrompts.length === 0) {
-    const failureNote = failedPromptServers.length > 0
-      ? ` Prompt discovery failed for: ${failedPromptServers.join(", ")}.`
-      : "";
-    ctx.ui.notify(`No MCP prompts available. Prompts are discovered when servers with the \`prompts\` capability connect.${failureNote}`, "info");
-    return;
-  }
-  const lines = ["MCP Prompts:", ""];
-  const grouped = new Map<string, typeof allPrompts>();
-  for (const prompt of allPrompts) {
-    const list = grouped.get(prompt.serverName) ?? [];
-    list.push(prompt);
-    grouped.set(prompt.serverName, list);
-  }
-  for (const [serverName, prompts] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`${serverName}:`);
-    for (const prompt of prompts.sort((a, b) => a.commandName.localeCompare(b.commandName))) {
-      const args = prompt.arguments.map(argument => argument.required ? `<${argument.name}>` : `[${argument.name}]`).join(" ");
-      lines.push(`  /${prompt.commandName}${args ? ` ${args}` : ""}`);
-      if (prompt.description) lines.push(`      ${prompt.description}`);
-    }
-    lines.push("");
-  }
-  lines.push(`Total: ${allPrompts.length} prompt${allPrompts.length === 1 ? "" : "s"}`);
-  if (failedPromptServers.length > 0) {
-    lines.push(`Prompt discovery failed for: ${failedPromptServers.join(", ")}. Cached prompt metadata may be stale.`);
-  }
-  ctx.ui.notify(lines.join("\n"), "info");
-}
-
-export async function showTools(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
-  if (!ctx.hasUI) return;
-
-  const allTools = [...state.toolMetadata.entries()]
-    .filter(([serverName]) => !isServerDisabled(state.config.mcpServers[serverName]))
-    .flatMap(([, metadata]) => metadata.map(m => m.name));
-
-  if (allTools.length === 0) {
-    ctx.ui.notify("No MCP tools available", "info");
-    return;
-  }
-
-  const lines = [
-    "MCP Tools:",
-    "",
-    ...allTools.map(t => `  ${t}`),
-    "",
-    `Total: ${allTools.length} tools`,
-  ];
-
-  ctx.ui.notify(lines.join("\n"), "info");
-}
-
 export async function reconnectServer(
   state: McpExtensionState,
 	  ctx: McpCommandContext,
@@ -166,10 +105,6 @@ export async function reconnectServer(
     const prefix = state.config.settings?.toolPrefix ?? "server";
     const { metadata, failedTools } = buildToolMetadata(connection.tools, connection.resources, definition, name, prefix);
     state.toolMetadata.set(name, metadata);
-    if (!connection.promptDiscoveryFailed) {
-      state.promptMetadata?.set(name, reconstructPromptMetadata(name, connection.prompts ?? [], prefix, definition));
-      state.promptMetadataLive?.add(name);
-    }
     if (connection.instructions) {
       state.serverInstructions.set(name, connection.instructions);
     } else {

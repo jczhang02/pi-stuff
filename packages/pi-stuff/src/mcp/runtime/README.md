@@ -7,4 +7,5 @@ Pi Stuff owns the user-visible proxy Tool and Command Dialog in the parent direc
 configuration, transports, discovery, OAuth, lifecycle, output guarding, and protocol handling. See
 [`UPSTREAM.md`](./UPSTREAM.md) for exact provenance, integrity records, license, and the maintained delta.
 [`UPSTREAM_README.md`](./UPSTREAM_README.md) preserves the source project's documentation for maintenance reference;
-its installation instructions do not apply to Pi Stuff.
+its installation instructions do not apply to Pi Stuff. Direct Tools, JavaScript batching, prompts, Apps, sampling,
+and elicitation are intentionally absent rather than retained behind flags.

@@ -1,12 +1,9 @@
 import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpExtensionState } from "./state.ts";
 import type { ToolMetadata, McpTool, McpResource, ServerEntry, ToolPrefix } from "./types.ts";
 import { formatToolName, isToolAllowed, resolveToolPrefix } from "./types.ts";
 import { resourceNameToToolName } from "./resource-tools.ts";
-import { extractToolUiStreamMode } from "./utils.ts";
-import { extractUiToolVisibility, isUiToolVisibleToModel } from "./ui-tool-visibility.ts";
 
 export interface ToolMetadataBuildResult {
 	failedTools: string[];
@@ -39,26 +36,12 @@ export function buildToolMetadata(
       continue;
     }
 
-    const uiVisibility = extractUiToolVisibility(tool._meta);
-    if (!isUiToolVisibleToModel(uiVisibility)) {
-      continue;
-    }
     seenNames.add(name);
-
-    let uiResourceUri: string | undefined;
-    try {
-      uiResourceUri = getToolUiResourceUri({ _meta: tool._meta });
-    } catch {
-      failedTools.push(tool.name);
-    }
     metadata.push({
       name,
       originalName: tool.name,
       description: tool.description ?? "",
       inputSchema: tool.inputSchema,
-      uiResourceUri,
-      uiVisibility,
-      uiStreamMode: extractToolUiStreamMode(tool._meta),
     });
   }
 

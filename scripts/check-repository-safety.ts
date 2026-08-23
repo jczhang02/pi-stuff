@@ -34,12 +34,7 @@ const HOST_STREAM_WRITE_PATTERN = /\bprocess\s*\.\s*(?:stderr|stdout)\s*\.\s*wri
 const HOST_LITERAL_COLOR_PATTERN = /(?:#[0-9a-f]{6}\b|(?:38|48);(?:2|5);|\\x1b\[(?:3[0-7]|4[0-7]|9[0-7]|10[0-7])m)/iu;
 const HOST_DYNAMIC_SGR_PATTERN = /\\x1b\[\$\{[^}\r\n]+\}m/u;
 const HOST_SHORT_COLOR_LITERAL_PATTERN = /["'`](?:3[0-7]|4[0-7]|9[0-7]|10[0-7])["'`]/u;
-const HOST_CONSOLE_ALLOWLIST = new Set([
-	// These run inside browser/sandbox surfaces rather than Pi's Host TUI.
-	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
-	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
-	"packages/pi-stuff/src/mcp/runtime/mcp-script-worker.mjs",
-]);
+const HOST_CONSOLE_ALLOWLIST = new Set<string>();
 const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	// Explicit subprocess protocols and detached-runner logs; none execute in Pi's Host TUI path.
 	"packages/pi-stuff/src/mcp/runtime/mcp-keyring-helper.cjs",
@@ -50,8 +45,6 @@ const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 ]);
 const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
 	// Browser documents cannot consume Pi's terminal Theme API.
-	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
-	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
 	"packages/pi-stuff/src/mcp/runtime/implementation.ts",
 	"packages/pi-stuff/src/mcp/runtime/mcp-callback-server.ts",
 	"packages/pi-stuff/src/web/runtime/implementation.ts",

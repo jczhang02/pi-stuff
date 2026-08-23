@@ -11,12 +11,12 @@ arrow keys and press Enter to see its available actions. Operational
 subcommands such as `/mcp reconnect <server>` remain available for experienced
 users.
 
-The package never exposes direct per-server Tools, JavaScript batching, MCP
-Apps browser/native windows, floating panels, or bundled Skills. The shared
+The absorbed runtime omits direct per-server Tools, JavaScript batching, MCP
+prompt discovery, MCP Apps browser/native windows, floating panels, and bundled Skills. The shared
 Tool renderer keeps the transcript compact; the fork guards large MCP output
 before it reaches model context. Discovery uses ranked literal terms; regex
 search and its heavyweight execution backends are intentionally omitted.
-Server-initiated sampling and elicitation are not advertised, so MCP callbacks
+Server-initiated sampling and elicitation are omitted, so MCP callbacks
 cannot open native prompts behind the shared Command Dialog contract.
 
 ## Accepted `/mcp` control target

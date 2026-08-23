@@ -19,11 +19,10 @@ or release lifecycle to maintain.
 
 ## Pi Stuff delta
 
-- Uses pure-lazy, non-interactive, proxy-only embedding controls with MCP sampling and elicitation disabled.
-- Exposes one bounded Tool with literal ranked discovery and omits regex, direct, script, prompt-command, and MCP Apps
-  surfaces.
+- Exposes one bounded Tool with literal ranked discovery and physically omits regex, direct, script, prompt,
+  sampling, elicitation, and MCP Apps surfaces.
 - Replaces floating status/setup/auth panels with the shared Command Dialog and explicit `.mcp.json` guidance.
 - Makes `/mcp` the sole persistent MCP status authority and suppresses the absorbed footer.
 - Persists confirmed per-server automatic/on-demand connection policy as a narrow project-local MCP override.
 - Closes Streamable HTTP probes and live sessions before their SDK clients.
-- Declares Zod once in the single Package dependency set.
+- Retains only the SDK, transport, OAuth, lifecycle, metadata cache, resource, approval, tracing, and output-guard lanes.

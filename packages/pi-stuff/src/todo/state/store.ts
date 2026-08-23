@@ -56,18 +56,6 @@ function slotFor(sessionId: string): TaskState {
 	return sessions.get(sessionId) ?? freshState();
 }
 
-/**
- * Live tasks accessor for a session. Returned `readonly Task[]` so callers
- * cannot mutate the live slot. Consumers must not cast back.
- */
-export function getTodos(sessionId: string): readonly Task[] {
-	return slotFor(sessionId).tasks;
-}
-
-export function getNextId(sessionId: string): number {
-	return slotFor(sessionId).nextId;
-}
-
 /** Snapshot accessor used by reducer callers to pass canonical state in. */
 export function getState(sessionId: string): TaskState {
 	return slotFor(sessionId);

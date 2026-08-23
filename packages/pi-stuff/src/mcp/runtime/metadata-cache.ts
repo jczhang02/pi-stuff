@@ -6,43 +6,29 @@ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "
 import { dirname } from "node:path";
 import { piStuffCachePath } from "../../xdg/index.ts";
 import { createHash } from "node:crypto";
-import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type {
-  CachedPrompt,
   CachedResource,
   CachedTool,
-  McpConfig,
   McpTool,
   McpResource,
-  McpPrompt,
-  McpPromptArgument,
   MetadataCache,
   ServerCacheEntry,
   ServerEntry,
   ToolMetadata,
-  PromptMetadata,
 } from "./types.ts";
-import { formatPromptCommandName, formatToolName, isServerDisabled, isToolAllowed, resolveToolPrefix, type ToolPrefix } from "./types.ts";
+import { formatToolName, isToolAllowed, resolveToolPrefix, type ToolPrefix } from "./types.ts";
 import { resourceNameToToolName } from "./resource-tools.ts";
 import {
-  extractToolUiStreamMode,
   interpolateEnvRecord,
   resolveBearerToken,
   resolveConfigPath,
   resolveServerUrl,
 } from "./utils.ts";
-import { extractUiToolVisibility, isUiToolVisibleToModel } from "./ui-tool-visibility.ts";
-import type { UiToolVisibility } from "./ui-tool-visibility.ts";
 
 const CACHE_VERSION = 1;
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface DirectToolSelectors {
-	servers: Set<string>;
-	tools: Map<string, Set<string>>;
-}
-
-export type { CachedPrompt, CachedResource, CachedTool, MetadataCache, ServerCacheEntry } from "./types.ts";
+export type { CachedResource, CachedTool, MetadataCache, ServerCacheEntry } from "./types.ts";
 
 export function getMetadataCachePath(): string {
 	return piStuffCachePath("mcp", "mcp-cache.json");
@@ -123,57 +109,6 @@ export function isServerCacheValid(
   return true;
 }
 
-export function parseDirectToolSelectors(selectors: string[]): DirectToolSelectors {
-  const servers = new Set<string>();
-  const tools = new Map<string, Set<string>>();
-
-  for (let selector of selectors) {
-    selector = selector.replace(/\/+$/, "");
-    if (selector.includes("/")) {
-      const [server, tool] = selector.split("/", 2);
-      if (server && tool) {
-        const serverTools = tools.get(server) ?? new Set<string>();
-        serverTools.add(tool);
-        tools.set(server, serverTools);
-      } else if (server) {
-        servers.add(server);
-      }
-    } else if (selector) {
-      servers.add(selector);
-    }
-  }
-
-  return { servers, tools };
-}
-
-export function getMissingConfiguredDirectToolServers(
-  config: McpConfig,
-  cache: MetadataCache | null,
-  envOverride?: string[],
-): string[] {
-  const missing: string[] = [];
-  const globalDirect = config.settings?.directTools;
-  const envSelection = envOverride ? parseDirectToolSelectors(envOverride) : null;
-
-  for (const [serverName, definition] of Object.entries(config.mcpServers)) {
-    if (isServerDisabled(definition)) continue;
-    const hasDirectTools = envSelection
-      ? envSelection.servers.has(serverName) || envSelection.tools.has(serverName)
-      : definition.directTools !== undefined
-        ? !!definition.directTools
-        : !!globalDirect;
-
-    if (!hasDirectTools) continue;
-
-    const serverCache = cache?.servers?.[serverName];
-    if (!serverCache || !isServerCacheValid(serverCache, definition)) {
-      missing.push(serverName);
-    }
-  }
-
-  return missing;
-}
-
 export function reconstructToolMetadata(
   serverName: string,
   entry: ServerCacheEntry,
@@ -186,9 +121,6 @@ export function reconstructToolMetadata(
 
   for (const tool of entry.tools ?? []) {
     if (!tool?.name) continue;
-    if (!isUiToolVisibleToModel(tool.uiVisibility)) {
-      continue;
-    }
     if (!isToolAllowed(tool.name, serverName, effectivePrefix, definition.includeTools, definition.excludeTools)) {
       continue;
     }
@@ -204,9 +136,6 @@ export function reconstructToolMetadata(
       originalName: tool.name,
       description: tool.description ?? "",
       inputSchema: tool.inputSchema,
-      uiResourceUri: tool.uiResourceUri,
-      uiVisibility: tool.uiVisibility,
-      uiStreamMode: tool.uiStreamMode,
     });
   }
 
@@ -243,9 +172,6 @@ export function serializeTools(tools: McpTool[]): CachedTool[] {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
-      uiResourceUri: tryGetToolUiResourceUri(t),
-      uiVisibility: extractUiToolVisibility(t._meta),
-      uiStreamMode: extractToolUiStreamMode(t._meta),
     }));
 }
 
@@ -257,49 +183,6 @@ export function serializeResources(resources: McpResource[]): CachedResource[] {
       name: r.name,
       description: r.description,
     }));
-}
-
-export function serializePrompts(prompts: McpPrompt[]): CachedPrompt[] {
-  return (prompts ?? [])
-    .filter(prompt => prompt?.name)
-    .map(prompt => ({
-      name: prompt.name,
-      title: prompt.title,
-      description: prompt.description,
-      arguments: Array.isArray(prompt.arguments)
-        ? prompt.arguments.filter(argument => argument?.name).map(argument => ({
-            name: argument.name,
-            description: argument.description,
-            required: argument.required,
-          }))
-        : undefined,
-    }));
-}
-
-export function reconstructPromptMetadata(
-  serverName: string,
-  prompts: ReadonlyArray<McpPrompt | CachedPrompt>,
-  prefix: ToolPrefix,
-  definition?: Pick<ServerEntry, "toolPrefix">,
-): PromptMetadata[] {
-  const effectivePrefix = resolveToolPrefix(definition, prefix);
-  return (prompts ?? []).filter(prompt => prompt?.name).map(prompt => {
-    const args: McpPromptArgument[] = Array.isArray(prompt.arguments)
-      ? prompt.arguments.filter(argument => argument?.name).map(argument => ({
-          name: argument.name,
-          description: argument.description,
-          required: argument.required,
-        }))
-      : [];
-    return {
-      serverName,
-      originalName: prompt.name,
-      commandName: formatPromptCommandName(prompt.name, serverName, effectivePrefix),
-      title: prompt.title,
-      description: prompt.description ?? "",
-      arguments: args,
-    };
-  });
 }
 
 function stableStringify(value: JsonInputValue): string {
@@ -333,11 +216,6 @@ function parseServerCacheEntry(value: JsonInputValue): ServerCacheEntry | null {
 	const resources = parseCacheList(value.resources, parseCachedResource);
 	if (!tools || !resources) return null;
 	const entry: ServerCacheEntry = { configHash: value.configHash, tools, resources, cachedAt: value.cachedAt };
-	if (value.prompts !== undefined) {
-		const prompts = parseCacheList(value.prompts, parseCachedPrompt);
-		if (!prompts) return null;
-		entry.prompts = prompts;
-	}
 	if (value.instructions !== undefined) {
 		if (!isRuntimeString(value.instructions)) return null;
 		entry.instructions = value.instructions;
@@ -349,16 +227,7 @@ function parseCachedTool(value: JsonInputValue): CachedTool | null {
 	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
 	const tool: CachedTool = { name: value.name };
 	if (!assignCacheString(tool, "description", value.description)) return null;
-	if (!assignCacheString(tool, "uiResourceUri", value.uiResourceUri)) return null;
 	if (value.inputSchema !== undefined) tool.inputSchema = value.inputSchema;
-	if (value.uiVisibility !== undefined) {
-		if (!Array.isArray(value.uiVisibility) || !value.uiVisibility.every(isUiToolVisibility)) return null;
-		tool.uiVisibility = value.uiVisibility;
-	}
-	if (value.uiStreamMode !== undefined) {
-		if (value.uiStreamMode !== "eager" && value.uiStreamMode !== "stream-first") return null;
-		tool.uiStreamMode = value.uiStreamMode;
-	}
 	return tool;
 }
 
@@ -366,29 +235,6 @@ function parseCachedResource(value: JsonInputValue): CachedResource | null {
 	if (!isJsonInputObject(value) || !isRuntimeString(value.uri) || !isRuntimeString(value.name)) return null;
 	const resource: CachedResource = { uri: value.uri, name: value.name };
 	return assignCacheString(resource, "description", value.description) ? resource : null;
-}
-
-function parseCachedPrompt(value: JsonInputValue): CachedPrompt | null {
-	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
-	const prompt: CachedPrompt = { name: value.name };
-	if (!assignCacheString(prompt, "title", value.title) || !assignCacheString(prompt, "description", value.description)) return null;
-	if (value.arguments !== undefined) {
-		const args = parseCacheList(value.arguments, parseCachedPromptArgument);
-		if (!args) return null;
-		prompt.arguments = args;
-	}
-	return prompt;
-}
-
-function parseCachedPromptArgument(value: JsonInputValue): NonNullable<CachedPrompt["arguments"]>[number] | null {
-	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
-	const argument: NonNullable<CachedPrompt["arguments"]>[number] = { name: value.name };
-	if (!assignCacheString(argument, "description", value.description)) return null;
-	if (value.required !== undefined) {
-		if (value.required !== true && value.required !== false) return null;
-		argument.required = value.required;
-	}
-	return argument;
 }
 
 function parseCacheList<Value>(value: JsonInputValue, parse: (entry: JsonInputValue) => Value | null): Value[] | null {
@@ -407,16 +253,4 @@ function assignCacheString<Target extends object, Key extends keyof Target>(targ
 	if (!isRuntimeString(value)) return false;
 	Object.assign(target, { [key]: value });
 	return true;
-}
-
-function isUiToolVisibility(value: JsonInputValue): value is UiToolVisibility {
-	return value === "model" || value === "app";
-}
-
-function tryGetToolUiResourceUri(tool: McpTool): string | undefined {
-  try {
-    return getToolUiResourceUri({ _meta: tool._meta });
-  } catch {
-    return undefined;
-  }
 }

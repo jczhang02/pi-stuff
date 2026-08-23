@@ -15,7 +15,6 @@ This directory contains the adapted `pi-mcp-adapter` `2.19.0` source snapshot ab
 - License: MIT
 
 The fork identifiers prove which locally adapted snapshot was absorbed; they do not define a maintained secondary
-repository or Package. The retained runtime contains dormant MCP Apps support behind an explicit opt-in, but Pi Stuff
-does not expose or enable it. This implementation also adds optional startup deferral, a proxy-only Tool surface, and
-reduced discovery while retaining transport, cancellation, reconnection, OAuth, output guarding, and lifecycle
-behavior.
+repository or Package. Pi Stuff removed the snapshot's direct-Tool, JavaScript batching, prompt, MCP Apps, sampling,
+and elicitation implementations. The retained runtime provides one fixed gateway plus configuration, transport,
+cancellation, reconnection, OAuth, resources, approval, tracing, output guarding, and lifecycle behavior.
