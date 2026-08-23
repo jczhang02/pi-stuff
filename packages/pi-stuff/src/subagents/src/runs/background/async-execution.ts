@@ -541,7 +541,7 @@ export function buildResolvedTask(input: {
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
-	if (agent.mcpDirectTools?.length) {
+	if (agent.mcpDirectTools?.length && !toolPlan.capabilityCeiling?.denyExtensions) {
 		const advertisedSelections = resolveMcpDirectToolSelections(agent.mcpDirectTools, params.ctx.cwd);
 		const advertisedMissing = unresolvedMcpDirectToolSelectors(agent.mcpDirectTools, advertisedSelections);
 		if (advertisedMissing.length) {

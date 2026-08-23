@@ -136,4 +136,15 @@ test("Agent launch fails closed when direct MCP Tools change with the execution 
 	expect(unresolved).toEqual({
 		error: "Agent 'mcp-reviewer' direct MCP Tool selectors do not resolve in the parent project: example/missing.",
 	});
+
+	const deniedByCeiling = buildAsyncSingleRunnerWork("mcp-ceiling-denied", {
+		agent: agent.name,
+		task: "Review without external Tools",
+		agentConfig: agent,
+		ctx: buildContext(parentCwd),
+		cwd: parentCwd,
+		maxSubagentDepth: 1,
+		capabilityCeiling: { version: 1, denyExtensions: true, sources: ["test"] },
+	});
+	expect("error" in deniedByCeiling).toBeFalse();
 });
