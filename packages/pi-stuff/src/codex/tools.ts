@@ -411,7 +411,7 @@ export function registerCodexTools(pi: SuiteToolRegistrationHost): CodexToolCont
 		activity: {
 			categories: ["change-file"],
 			classify: ({ args, result }) => {
-				const paths = result?.details.changedFiles ?? patchTargets(args.input);
+				const paths = parseApplyPatchResult(result?.details)?.changedFiles ?? patchTargets(args.input);
 				return [
 					{
 						category: "change-file",
@@ -421,10 +421,15 @@ export function registerCodexTools(pi: SuiteToolRegistrationHost): CodexToolCont
 				];
 			},
 		},
-		detailLines: (_args, result) => result.details.changedFiles,
+		detailLines: (_args, result) => parseApplyPatchResult(result.details)?.changedFiles ?? [],
 		label: "Patch",
 		runningSummary: "applying",
-		summarize: (_args, result) => patchSummary(result.details),
+		summarize: (_args, result, state) => {
+			const details = parseApplyPatchResult(result.details);
+			if (details) return patchSummary(details);
+			const text = result.content.find((item) => item.type === "text")?.text ?? state;
+			return oneLine(text.split(/\r?\n/u)[0] ?? state) || state;
+		},
 		target: (args) => patchTarget(args.input),
 	});
 	registerSuiteOwnedTool(pi, viewImage, {

@@ -40,12 +40,22 @@ Tools keep their native renderer and form a display boundary.
   [group-or-member-id]` selects a Group or independent Tool; its five-member detail window builds only the selected
   call. Up/Down selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles formatted and Raw protocol views,
   and Escape unwinds Raw, detail, list, then the dialog.
+- Tool rendering is total: every visible Suite-owned call, result, and error has either its owning renderer or a generic
+  Tool row. A missing historical Tool definition, malformed optional result metadata, or throwing presentation hook
+  cannot remove the record or expose Pi's raw Tool-result fallback. A Tool envelope stays visually absent only while
+  its nested rows completely represent the outcome; an empty envelope or an outer error not owned by a nested issue
+  receives one envelope fallback row.
+- Envelope replay keeps raw arguments for Raw detail and applies the Tool's current `prepareArguments` compatibility
+  shim before Activity classification, semantic detail, and rendering. Historical results may omit `details`; optional
+  malformed metadata is ignored without discarding the operation. Control-only `<system-reminder>` blocks added by a
+  nested result hook do not become Code Mode business output; the owning outer Host result remains the control-message
+  delivery boundary.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
   Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,
   arguments, result content, and details. The default `Result` section shows an unlabeled target followed by
   Tool-owned detail instead of injecting repeated Tool, `Target:`, or `Summary:` fields; Raw is explicitly titled
-  `Raw`. Compact mode neither precomputes nor caches a global Raw transcript. The model-visible Tool result is never
+  `Raw`. Compact mode neither precomputes nor caches a global Raw transcript. Tool-owned business results are never
   truncated or rewritten by this Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and

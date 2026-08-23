@@ -166,28 +166,24 @@ function decodeToolUsage<Value>(value: Value): ToolUsage | undefined {
 }
 
 function decodeToolResult<Value>(value: Value): AgentToolResult<unknown> | undefined {
-	if (
-		!isRuntimeObject(value) ||
-		value === null ||
-		!("content" in value) ||
-		!isCodeModeToolContent(value.content) ||
-		!("details" in value)
-	) {
+	if (!isRuntimeObject(value) || value === null || !("content" in value) || !isCodeModeToolContent(value.content)) {
 		return undefined;
 	}
-	const result: AgentToolResult<unknown> = { content: [...value.content], details: value.details };
+	const result: AgentToolResult<unknown> = {
+		content: [...value.content],
+		details: "details" in value ? value.details : undefined,
+	};
 	if ("usage" in value && value.usage !== undefined) {
 		const usage = decodeToolUsage(value.usage);
-		if (!usage) return undefined;
-		Object.assign(result, { usage });
+		if (usage) Object.assign(result, { usage });
 	}
 	if ("addedToolNames" in value && value.addedToolNames !== undefined) {
-		if (!Array.isArray(value.addedToolNames) || !value.addedToolNames.every(isRuntimeString)) return undefined;
-		Object.assign(result, { addedToolNames: [...value.addedToolNames] });
+		if (Array.isArray(value.addedToolNames) && value.addedToolNames.every(isRuntimeString)) {
+			Object.assign(result, { addedToolNames: [...value.addedToolNames] });
+		}
 	}
 	if ("terminate" in value && value.terminate !== undefined) {
-		if (!isRuntimeBoolean(value.terminate)) return undefined;
-		Object.assign(result, { terminate: value.terminate });
+		if (isRuntimeBoolean(value.terminate)) Object.assign(result, { terminate: value.terminate });
 	}
 	return result;
 }
@@ -235,46 +231,42 @@ function decodeOperation<Value>(value: Value): SuiteToolEnvelopeOperation | unde
 		state,
 	};
 	if ("attempt" in value && value.attempt !== undefined) {
-		if (!isRuntimeNumber(value.attempt)) return undefined;
-		Object.assign(operation, { attempt: value.attempt });
+		if (isRuntimeNumber(value.attempt)) Object.assign(operation, { attempt: value.attempt });
 	}
 	if ("executionId" in value && value.executionId !== undefined) {
-		if (!isRuntimeString(value.executionId)) return undefined;
-		Object.assign(operation, { executionId: value.executionId });
+		if (isRuntimeString(value.executionId)) Object.assign(operation, { executionId: value.executionId });
 	}
 	if ("mediaPlacements" in value && value.mediaPlacements !== undefined) {
-		if (!Array.isArray(value.mediaPlacements)) return undefined;
-		const mediaPlacements: Array<{ readonly afterContentIndex: number; readonly mediaIndex: number }> = [];
-		for (const placement of value.mediaPlacements) {
-			if (
-				!isRuntimeObject(placement) ||
-				placement === null ||
-				!("afterContentIndex" in placement) ||
-				!isRuntimeNumber(placement.afterContentIndex) ||
-				!("mediaIndex" in placement) ||
-				!isRuntimeNumber(placement.mediaIndex)
-			) {
-				return undefined;
+		if (Array.isArray(value.mediaPlacements)) {
+			const mediaPlacements: Array<{ readonly afterContentIndex: number; readonly mediaIndex: number }> = [];
+			for (const placement of value.mediaPlacements) {
+				if (
+					!isRuntimeObject(placement) ||
+					placement === null ||
+					!("afterContentIndex" in placement) ||
+					!isRuntimeNumber(placement.afterContentIndex) ||
+					!("mediaIndex" in placement) ||
+					!isRuntimeNumber(placement.mediaIndex)
+				) {
+					continue;
+				}
+				mediaPlacements.push({
+					afterContentIndex: placement.afterContentIndex,
+					mediaIndex: placement.mediaIndex,
+				});
 			}
-			mediaPlacements.push({
-				afterContentIndex: placement.afterContentIndex,
-				mediaIndex: placement.mediaIndex,
-			});
+			if (mediaPlacements.length > 0) Object.assign(operation, { mediaPlacements });
 		}
-		Object.assign(operation, { mediaPlacements });
 	}
 	if ("replayed" in value && value.replayed !== undefined) {
-		if (!isRuntimeBoolean(value.replayed)) return undefined;
-		Object.assign(operation, { replayed: value.replayed });
+		if (isRuntimeBoolean(value.replayed)) Object.assign(operation, { replayed: value.replayed });
 	}
 	if ("result" in value && value.result !== undefined) {
 		const result = decodeToolResult(value.result);
-		if (!result) return undefined;
-		Object.assign(operation, { result });
+		if (result) Object.assign(operation, { result });
 	}
 	if ("sequence" in value && value.sequence !== undefined) {
-		if (!isRuntimeNumber(value.sequence)) return undefined;
-		Object.assign(operation, { sequence: value.sequence });
+		if (isRuntimeNumber(value.sequence)) Object.assign(operation, { sequence: value.sequence });
 	}
 	return operation;
 }

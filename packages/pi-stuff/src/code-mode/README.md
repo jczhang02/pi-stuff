@@ -52,9 +52,14 @@ callbacks.
 
 ## UI and session contract
 
-Code Mode has no visible Tool row of its own. Each nested call uses the exact renderer, Activity Group metadata,
-streaming state, failure state, expansion behavior, and media behavior of the original Tool. The outer result stores
-the nested calls in normal Pi session JSONL details, so reload and resume rebuild the same projection. Final
+Code Mode has no visible Tool row of its own while nested rows completely represent its outcome. An execution with no
+nested operation, or an outer error not represented by a nested issue, receives one standard Code Mode fallback row;
+the transcript therefore never hides a Tool outcome or falls back to raw result text. Each nested call uses the exact
+renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the
+original Tool. A missing historical Tool definition or a failing renderer receives a generic Tool row at the same
+source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume
+rebuild the same projection even when a legal historical result has no `details`. Raw arguments remain available for
+audit, while the Tool's argument compatibility shim supplies Activity semantics and rendering. Final
 settlement reprojects nested and direct calls in the model's source order, including standalone Bash rows. Nested
 images are carried through the outer Host result so Pi performs its normal image
 normalization once. Before TUI rendering, normalized nested media moves into persistent presentation details and is
@@ -82,7 +87,9 @@ input to remain lower.
 
 Nested execution preserves Pi's argument preparation, validation, call/result hooks, lifecycle events, cancellation,
 streaming updates, Tool usage, newly activated Tool names, and termination hints. A serialization failure becomes a
-normal failed Tool result instead of leaving a V8 cell hung.
+normal failed Tool result instead of leaving a V8 cell hung. Control-only `<system-reminder>` blocks appended by a
+nested result hook stay outside the JavaScript business result; the outer Host Tool result remains their delivery
+boundary.
 
 One Code Mode execution may issue at most 768 nested Tool calls. Crossing the safety bound fails explicitly; calls
 are never silently dropped, and separate Code Mode calls can still contribute to the same unbounded Activity Group.
