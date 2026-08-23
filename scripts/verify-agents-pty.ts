@@ -411,6 +411,7 @@ class TmuxAgentsSession {
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 			TMPDIR: paths.runtime,
+			XDG_RUNTIME_DIR: paths.runtime,
 			XDG_STATE_HOME: join(paths.runtime, "state"),
 		};
 		this.workspace = paths.workspace;
@@ -839,6 +840,7 @@ Return the deterministic fixture result.
 				SHELL: "/bin/sh",
 				TERM: "xterm-256color",
 				TMPDIR: runtimeDirectory,
+				XDG_RUNTIME_DIR: runtimeDirectory,
 				XDG_STATE_HOME: join(runtimeDirectory, "state"),
 			},
 			stdout: "pipe",
