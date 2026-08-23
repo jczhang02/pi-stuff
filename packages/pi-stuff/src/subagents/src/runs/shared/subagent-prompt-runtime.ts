@@ -256,8 +256,13 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 
 export function registerSteeringInbox(
 	pi: ExtensionAPI,
-	deps: { watch?: typeof fs.watch; nativeRealpath?: (filePath: string) => string } = {},
+	deps: {
+		watch?: typeof fs.watch;
+		nativeRealpath?: (filePath: string) => string;
+		timers?: { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
+	} = {},
 ): void {
+	const timers = deps.timers ?? { setInterval, clearInterval };
 	const steerInbox = process.env[SUBAGENT_STEER_INBOX_ENV]?.trim();
 	if (!steerInbox) return;
 	const capabilityPath = process.env[SUBAGENT_STEER_CAPABILITY_ENV]?.trim();
@@ -423,7 +428,7 @@ export function registerSteeringInbox(
 		} catch {
 			watcher = undefined;
 		}
-		interval = setInterval(safeFlush, 250);
+		interval = timers.setInterval(safeFlush, 250);
 		interval.unref?.();
 	};
 	const activate = (): undefined => {
@@ -466,7 +471,7 @@ export function registerSteeringInbox(
 		try {
 			watcher?.close();
 		} catch {}
-		if (interval) clearInterval(interval);
+		if (interval) timers.clearInterval(interval);
 	});
 }
 

@@ -82,4 +82,41 @@ describe("Agent stop control channel", () => {
 			fs.readdirSync(path.dirname(requestPath)).some((entry) => entry.includes(".pi-stuff-inflight.")),
 		).toBeFalse();
 	});
+
+	test("polling delivers a durable stop exactly once when fs.watch stays silent", () => {
+		const asyncDir = fixture();
+		const silentDirectory = fixture();
+		let poll = (): void => {};
+		const intervalToken = setInterval(() => {}, 60_000);
+		clearInterval(intervalToken);
+		const silentWatch = new Proxy(fs.watch, {
+			apply: () => fs.watch(silentDirectory, () => {}),
+		});
+		const setPollInterval = new Proxy(setInterval, {
+			apply: (_target, _thisArg, argumentsList) => {
+				// SAFETY: watchAsyncControlInbox always schedules its local zero-argument check callback.
+				poll = argumentsList[0] as () => void;
+				return intervalToken;
+			},
+		});
+		const received: number[] = [];
+		const dispose = watchAsyncControlInbox(asyncDir, {
+			onInterrupt: () => {},
+			onStop: (request) => received.push(request.targetIndex ?? -1),
+			fs: { ...fs, watch: silentWatch },
+			timers: {
+				setInterval: setPollInterval,
+				clearInterval,
+			},
+		});
+		const requestPath = requestAsyncStop(asyncDir, { targetIndex: 4 }, { now: () => 1_000, randomId: () => "poll" });
+
+		expect(received).toEqual([]);
+		poll();
+		expect(received).toEqual([4]);
+		expect(fs.existsSync(requestPath)).toBeFalse();
+		poll();
+		expect(received).toEqual([4]);
+		dispose();
+	});
 });

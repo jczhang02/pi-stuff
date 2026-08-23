@@ -1,6 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	watch as fsWatch,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1537,4 +1546,64 @@ test("uses an existing steering acknowledgement to retire a crash-left request w
 		readdirSync(inbox).filter((entry) => entry.endsWith(".json") || entry.includes(".pi-stuff-inflight.")),
 	).toEqual([]);
 	handlers.get("session_shutdown")?.({});
+});
+
+test("polling delivers and acknowledges steering exactly once when fs.watch stays silent", () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-steering-poll-"));
+	temporaryDirectories.push(directory);
+	const inbox = join(directory, "inbox");
+	const ackDir = join(directory, "ack");
+	const silentDirectory = join(directory, "silent-watch");
+	mkdirSync(silentDirectory, { recursive: true });
+	setEnvironment(SUBAGENT_STEER_INBOX_ENV, inbox);
+	setEnvironment(SUBAGENT_STEER_ACK_DIR_ENV, ackDir);
+	setEnvironment(SUBAGENT_CHILD_INDEX_ENV, "0");
+
+	let poll = (): void => {};
+	const intervalToken = setInterval(() => {}, 60_000);
+	clearInterval(intervalToken);
+	const setPollInterval = new Proxy(setInterval, {
+		apply: (_target, _thisArg, argumentsList) => {
+			// SAFETY: registerSteeringInbox always schedules its local zero-argument flush callback.
+			poll = argumentsList[0] as () => void;
+			return intervalToken;
+		},
+	});
+	const handlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
+	const delivered: string[] = [];
+	registerSteeringInbox(
+		createExtensionApi({
+			on: lifecycleHandler(handlers),
+			sendUserMessage: (content: string) => delivered.push(content),
+		}),
+		{
+			watch: new Proxy(fsWatch, {
+				apply: () => fsWatch(silentDirectory, () => {}),
+			}),
+			timers: {
+				setInterval: setPollInterval,
+				clearInterval,
+			},
+		},
+	);
+	try {
+		handlers.get("session_start")?.({});
+		handlers.get("agent_start")?.({});
+		writeSteerRequestToDir(inbox, {
+			type: "steer",
+			id: "poll-fallback",
+			ts: Date.now(),
+			message: "Continue through the polling fallback.",
+		});
+
+		expect(delivered).toEqual([]);
+		poll();
+		expect(delivered).toHaveLength(1);
+		handlers.get("input")?.({ content: delivered[0], source: "extension", streamingBehavior: "steer" });
+		expect(readFileSync(steerAckPathFromDir(ackDir, "poll-fallback"), "utf-8")).toContain('"state": "delivered"');
+		poll();
+		expect(delivered).toHaveLength(1);
+	} finally {
+		handlers.get("session_shutdown")?.({});
+	}
 });
