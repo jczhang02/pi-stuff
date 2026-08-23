@@ -12,8 +12,9 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
-import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
 	assertSuiteToolActivityCoverage,
@@ -434,6 +435,58 @@ test("settled Host redraws build detail only while globally expanded", () => {
 	expect(detailBuilds).toBe(2);
 });
 
+test("throwing presentation hooks retain a standard direct Tool row", () => {
+	const harness = apiHarness();
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "fragile presentation fixture",
+			execute: async () => ({ content: [{ type: "text", text: "direct failure" }], details: {} }),
+			label: "Fragile",
+			name: "fragile_direct",
+			parameters: Params,
+		},
+		{
+			activity: presentation("change-file").activity,
+			detailLines: () => {
+				throw new Error("detail failed");
+			},
+			label: () => {
+				throw new Error("label failed");
+			},
+			runningSummary: () => {
+				throw new Error("running summary failed");
+			},
+			summarize: () => {
+				throw new Error("summary failed");
+			},
+			target: () => {
+				throw new Error("target failed");
+			},
+		},
+	);
+	const decorated = harness.tools.get("fragile_direct");
+	if (!decorated) throw new Error("missing direct fragile Tool");
+	getToolUiRuntime(harness.api).indexMessages(
+		[
+			assistant(call("direct-fragile", "fragile_direct", "fixture")),
+			result("direct-fragile", "direct failure", true),
+		],
+		true,
+	);
+	// SAFETY: the fixture's schema is Params and the assertion exercises only the registered renderer.
+	const rendered = settle(
+		decorated as ToolDefinition<typeof Params, { source: string }>,
+		"direct-fragile",
+		"fixture",
+		true,
+		true,
+		"direct failure",
+	);
+	expect(rendered.callLines.join("\n")).toContain("Fragile · direct failure");
+	expect(rendered.resultLines.join("\n")).toContain("  direct failure");
+});
+
 test("collapsed and expanded historical replay skip the synthetic running pass", () => {
 	const harness = apiHarness();
 	let runningSummaries = 0;
@@ -620,16 +673,17 @@ test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => 
 		state: "success",
 	};
 	const operations = [patchOperation, viewOperation];
+	const details = { kind: "pi-stuff-code-mode", operations };
 	registerSuiteToolEnvelope(
 		registrations.api,
 		{
 			description: "Code Mode",
-			execute: async () => ({ content: [], details: { operations } }),
+			execute: async () => ({ content: [], details }),
 			label: "Code Mode",
 			name: "codemode",
 			parameters: Type.Object({ code: Type.String() }),
 		},
-		{ decode: () => operations, registry: registrations.registry },
+		{ decode: decodeCodeModeOperations, registry: registrations.registry },
 	);
 	const envelope = harness.tools.get("codemode");
 	if (!envelope) throw new Error("missing Code Mode envelope");
@@ -639,7 +693,7 @@ test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => 
 			assistant({ type: "toolCall", id: "outer-patch", name: "codemode", arguments: { code: "patch" } }),
 			{
 				content: [],
-				details: { operations },
+				details,
 				role: "toolResult",
 				toolCallId: "outer-patch",
 			},
@@ -651,7 +705,7 @@ test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => 
 	const callComponent = envelope.renderCall?.({ code: "patch" }, theme, context as never);
 	// SAFETY: the same harness context and result satisfy the registered envelope Tool contract.
 	const resultComponent = envelope.renderResult?.(
-		{ content: [], details: { operations } },
+		{ content: [], details },
 		{ expanded: false, isPartial: false },
 		theme,
 		{ ...context, lastComponent: callComponent } as never,
@@ -662,11 +716,176 @@ test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => 
 	expect(rendered).toContain("Patch .apply-patch-demo.txt · changed 1 file");
 	expect(rendered).toContain("View preview.png · loaded");
 	expect(rendered).not.toContain("Applied patch successfully");
+	const projected = runtime.projectMessages([
+		assistant({ type: "toolCall", id: "outer-patch", name: "codemode", arguments: { code: "patch" } }),
+		{ content: [], details, role: "toolResult", toolCallId: "outer-patch" },
+	]);
+	expect(JSON.stringify(projected)).toContain(`"arguments":{"input":${JSON.stringify(patch)}}`);
 	const rawDetail = runtime.toolActivityDetail("nested-patch", "raw");
 	if (!rawDetail) throw new Error("missing nested Patch raw detail");
 	const rawLines = rawDetail.lines.join("\n");
 	expect(rawLines).toContain('"patch":');
 	expect(rawLines).not.toContain('"input":');
+});
+
+test("Code Mode cold resume keeps every nested operation behind Tool UI fallbacks", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	toolFromHarness({ ...harness, api: registrations.api }, "bash", "run-command");
+	registerCodexTools(registrations.api);
+	toolFromHarness({ ...harness, api: registrations.api }, "fragile", "run-command");
+	const fragile = registrations.registry.get("fragile");
+	if (!fragile) throw new Error("missing fragile Tool");
+	Object.assign(fragile, {
+		renderCall: () => {
+			throw new Error("renderer failed");
+		},
+	});
+	const patch = [
+		"*** Begin Patch",
+		"*** Update File: .apply-patch-demo.txt",
+		"@@",
+		"-missing",
+		"+replacement",
+		"*** End Patch",
+	].join("\n");
+	const details = {
+		kind: "pi-stuff-code-mode",
+		operations: [
+			{
+				args: { command: "printf ok", value: "printf ok" },
+				id: "nested-bash",
+				name: "bash",
+				result: { content: [{ type: "text", text: "ok" }] },
+				state: "success",
+			},
+			{
+				args: { patch },
+				id: "nested-patch-error",
+				name: "apply_patch",
+				result: { content: [{ type: "text", text: "Failed to find expected lines" }], details: {} },
+				state: "error",
+			},
+			{
+				args: { value: "legacy" },
+				id: "nested-legacy",
+				name: "legacy_tool",
+				result: { content: [{ type: "text", text: "legacy failure" }] },
+				state: "error",
+			},
+			{
+				args: { value: "fragile" },
+				id: "nested-fragile",
+				name: "fragile",
+				result: { content: [{ type: "text", text: "renderer failure result" }] },
+				state: "error",
+			},
+		],
+	};
+	expect(decodeCodeModeOperations(details)[0]?.result?.details).toBeUndefined();
+	registerSuiteToolEnvelope(
+		registrations.api,
+		{
+			description: "Code Mode",
+			execute: async () => ({ content: [], details }),
+			label: "Code Mode",
+			name: "codemode",
+			parameters: Type.Object({ code: Type.String() }),
+		},
+		{ decode: decodeCodeModeOperations, registry: registrations.registry },
+	);
+	const envelope = harness.tools.get("codemode");
+	if (!envelope) throw new Error("missing Code Mode envelope");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant({ type: "toolCall", id: "outer-cold", name: "codemode", arguments: { code: "fixture" } }),
+			{ content: [], details, isError: true, role: "toolResult", toolCallId: "outer-cold" },
+		],
+		true,
+	);
+	const context = renderContext({}, { value: "unused" }, { isError: true, toolCallId: "outer-cold" });
+	// SAFETY: this test controls the envelope arguments and supplies the exact Pi renderer context used below.
+	const callComponent = envelope.renderCall?.({ code: "fixture" }, theme, context as never);
+	const resultComponent = envelope.renderResult?.(
+		{ content: [], details },
+		{ expanded: false, isPartial: false },
+		theme,
+		// SAFETY: this is the same controlled renderer context with only the prior component attached.
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	if (!resultComponent) throw new Error("missing cold-resume result");
+	const rendered = resultComponent.render(120).join("\n");
+	expect(rendered).toContain("Bash(printf ok)");
+	expect(rendered).toContain("Patch .apply-patch-demo.txt · Failed to find expected lines");
+	expect(rendered).toContain("legacy_tool · legacy failure");
+	expect(rendered).toContain("fragile · renderer failure result");
+	expect(rendered).not.toContain("Code Mode");
+});
+
+test("Code Mode owns a fallback Tool row when no nested issue represents its result", () => {
+	for (const operations of [
+		[],
+		[
+			{
+				args: { value: "a.ts" },
+				id: "nested-success",
+				name: "read",
+				result: { content: [{ type: "text", text: "ok" }] },
+				state: "success",
+			},
+		],
+	] as const) {
+		const harness = apiHarness();
+		const registrations = createSuiteToolRegistrationTracker(harness.api);
+		toolFromHarness({ ...harness, api: registrations.api }, "read", "read-file");
+		const details = { kind: "pi-stuff-code-mode", operations };
+		registerSuiteToolEnvelope(
+			registrations.api,
+			{
+				description: "Code Mode",
+				execute: async () => ({ content: [], details }),
+				label: "Code Mode",
+				name: "codemode",
+				parameters: Type.Object({ code: Type.String() }),
+			},
+			{ decode: decodeCodeModeOperations, registry: registrations.registry },
+		);
+		const envelope = harness.tools.get("codemode");
+		if (!envelope) throw new Error("missing Code Mode envelope");
+		const outerResult = {
+			content: [{ type: "text" as const, text: "Validation failed: invalid arguments" }],
+			details,
+		};
+		const runtime = getToolUiRuntime(harness.api);
+		const sessionMessages = [
+			assistant({ type: "toolCall", id: "outer-error", name: "codemode", arguments: { code: "fixture" } }),
+			{ ...outerResult, isError: true, role: "toolResult", toolCallId: "outer-error" },
+		];
+		runtime.indexMessages(sessionMessages, true);
+		const projected = runtime.projectMessages(sessionMessages);
+		const projectedCalls = projected.flatMap((message) =>
+			isRuntimeObject(message) && message !== null && "content" in message && Array.isArray(message.content)
+				? message.content.filter(
+						(block): block is { name: string } =>
+							isRuntimeObject(block) && block !== null && "name" in block && isRuntimeString(block.name),
+					)
+				: [],
+		);
+		expect(projectedCalls.at(-1)?.name).toBe("codemode");
+		const context = renderContext({}, { value: "unused" }, { isError: true, toolCallId: "outer-error" });
+		// SAFETY: this test controls the envelope arguments and supplies the exact Pi renderer context used below.
+		const callComponent = envelope.renderCall?.({ code: "fixture" }, theme, context as never);
+		// SAFETY: the controlled result and context satisfy the registered envelope renderer contract.
+		const resultComponent = envelope.renderResult?.(outerResult, { expanded: false, isPartial: false }, theme, {
+			...context,
+			lastComponent: callComponent,
+		} as never);
+		if (!resultComponent) throw new Error("missing outer error result");
+		const rendered = resultComponent.render(120).join("\n");
+		expect(rendered).toContain("Code Mode · Validation failed: invalid arguments");
+		if (operations.length > 0) expect(rendered).toContain("Read 1 file");
+	}
 });
 
 test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, and reconstructed", () => {
@@ -1488,6 +1707,40 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 	expect(invocation.result.content).toEqual([{ type: "text", text: "value-hook-hooked" }]);
 	expect(updates).toEqual(["partial"]);
 	expect(order).toEqual(["start", "call", "execute:value-hook", "update", "result", "end"]);
+});
+
+test("nested invocation keeps Tool control reminders out of Code Mode business results", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	registrations.api.on("tool_result", (event) => ({
+		content: [
+			...event.content,
+			{
+				type: "text",
+				text: "<system-reminder>reduce old Tool output</system-reminder>",
+			},
+		],
+	}));
+	registerSuiteOwnedTool(
+		registrations.api,
+		{
+			description: "control metadata fixture",
+			execute: async () => ({ content: [{ type: "text", text: "business result" }], details: {} }),
+			label: "Control fixture",
+			name: "control_fixture",
+			parameters: Params,
+		},
+		presentation("run-command"),
+	);
+	const invocation = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+		context: { cwd: "/project" } as never,
+		input: { value: "fixture" },
+		name: "control_fixture",
+		toolCallId: "nested-control",
+	});
+
+	expect(invocation.result.content).toEqual([{ type: "text", text: "business result" }]);
 });
 
 test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", async () => {

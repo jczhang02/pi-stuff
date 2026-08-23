@@ -56,6 +56,12 @@ the call's native position when Bash is independent and is restored there when a
 composition inside the call remains one operation, and the underlying Tool result and Session records are unchanged.
 _Avoid_: Command group, parsed subcommand, Tool Activity Group
 
+**Envelope Fallback Row**:
+The single ordinary Tool row that represents a Tool envelope only when no nested operation owns its outcome, or when
+the envelope itself fails after every nested operation succeeds. Valid nested rows remain the sole visible authority;
+missing historical definitions and presentation failures instead use generic rows at their original source positions.
+_Avoid_: Envelope chrome, raw Tool result, duplicate error row
+
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
