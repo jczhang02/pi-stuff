@@ -4,6 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import { maintainAgentRuntime } from "../../packages/pi-stuff/src/subagents/src/runtime/runtime-maintenance.js";
+import {
+	shardedDurableClaimName,
+	tryAcquireKernelClaim,
+} from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import { readProcessStartIdentity } from "../../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 
 const roots = new Set<string>();
@@ -23,7 +27,14 @@ function terminalRun(
 	root: string,
 	kind: "foreground" | "async" | "nested",
 	runId: string,
-	options: { endedAt?: number; processObserved?: boolean; eventBytes?: number; rootRunId?: string } = {},
+	options: {
+		endedAt?: number;
+		processObserved?: boolean;
+		eventBytes?: number;
+		rootRunId?: string;
+		sessionId?: string;
+		completeSessionHistory?: boolean;
+	} = {},
 ): string {
 	const parent =
 		kind === "foreground"
@@ -34,14 +45,18 @@ function terminalRun(
 	const directory = path.join(parent, runId);
 	fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
 	const endedAt = options.endedAt ?? Date.now();
+	const sessionFile = options.completeSessionHistory ? path.join(directory, "child-session.jsonl") : undefined;
+	if (sessionFile) fs.writeFileSync(sessionFile, '{"type":"message"}\n', { mode: 0o600 });
 	const status = {
 		lifecycleArtifactVersion: 3,
 		runId,
+		sessionId: options.sessionId,
 		mode: "single",
 		state: "complete",
 		startedAt: endedAt - 1_000,
 		endedAt,
 		lastUpdate: endedAt,
+		steps: sessionFile ? [{ agent: "scout", status: "complete", sessionFile }] : [],
 	};
 	if (options.processObserved) {
 		Object.assign(status, {
@@ -61,6 +76,29 @@ function terminalRun(
 	const timestamp = new Date(endedAt);
 	fs.utimesSync(directory, timestamp, timestamp);
 	return directory;
+}
+
+function staleResult(root: string, runId: string, asyncDir: string, sessionId: string, endedAt: number): string {
+	const resultsDir = path.join(root, "async-subagent-results");
+	fs.mkdirSync(resultsDir, { recursive: true, mode: 0o700 });
+	const resultPath = path.join(resultsDir, `${runId}.json`);
+	fs.writeFileSync(
+		resultPath,
+		JSON.stringify({
+			id: runId,
+			runId,
+			sessionId,
+			asyncDir,
+			state: "complete",
+			success: true,
+			endedAt,
+			results: [{ agent: "scout", success: true, output: "done" }],
+		}),
+		{ mode: 0o600 },
+	);
+	const timestamp = new Date(endedAt);
+	fs.utimesSync(resultPath, timestamp, timestamp);
+	return resultPath;
 }
 
 describe("Agent runtime maintenance", () => {
@@ -157,6 +195,70 @@ describe("Agent runtime maintenance", () => {
 		await maintainAgentRuntime(root);
 
 		expect(fs.existsSync(run)).toBeTrue();
+	});
+
+	test("retires a stale result inbox entry only after complete run history is durable", async () => {
+		const root = fixture();
+		const now = Date.now();
+		const endedAt = now - 31 * 24 * 60 * 60 * 1_000;
+		const run = terminalRun(root, "async", "retired-result", {
+			endedAt,
+			processObserved: true,
+			sessionId: "parent-session",
+			completeSessionHistory: true,
+		});
+		const resultPath = staleResult(root, "retired-result", run, "parent-session", endedAt);
+
+		const report = await maintainAgentRuntime(root, { now });
+
+		expect(report.staleResultsRetired).toBe(1);
+		expect(fs.existsSync(resultPath)).toBeFalse();
+		expect(fs.existsSync(path.join(run, "child-session.jsonl"))).toBeTrue();
+	});
+
+	test("retains recent, unproven, incomplete, foreign, and claimed result entries", async () => {
+		const root = fixture();
+		const now = Date.now();
+		const staleAt = now - 31 * 24 * 60 * 60 * 1_000;
+		const recentAt = now - 29 * 24 * 60 * 60 * 1_000;
+		const cases = [
+			{ runId: "recent-result", endedAt: recentAt, processObserved: true, history: true, resultSession: "s" },
+			{ runId: "missing-proof", endedAt: staleAt, processObserved: false, history: true, resultSession: "s" },
+			{ runId: "missing-history", endedAt: staleAt, processObserved: true, history: false, resultSession: "s" },
+			{ runId: "foreign-result", endedAt: staleAt, processObserved: true, history: true, resultSession: "other" },
+		] as const;
+		const retained: string[] = [];
+		for (const candidate of cases) {
+			const run = terminalRun(root, "async", candidate.runId, {
+				endedAt: candidate.endedAt,
+				processObserved: candidate.processObserved,
+				sessionId: "s",
+				completeSessionHistory: candidate.history,
+			});
+			retained.push(staleResult(root, candidate.runId, run, candidate.resultSession, candidate.endedAt));
+		}
+		const claimedRun = terminalRun(root, "async", "claimed-result", {
+			endedAt: staleAt,
+			processObserved: true,
+			sessionId: "s",
+			completeSessionHistory: true,
+		});
+		const claimedResult = staleResult(root, "claimed-result", claimedRun, "s", staleAt);
+		retained.push(claimedResult);
+		const claim = tryAcquireKernelClaim(
+			path.dirname(claimedResult),
+			shardedDurableClaimName("result-delivery", path.basename(claimedResult)),
+		);
+		if (!claim) throw new Error("Test could not acquire the result delivery claim.");
+
+		try {
+			const report = await maintainAgentRuntime(root, { now });
+
+			expect(report.staleResultsRetired).toBe(0);
+			for (const resultPath of retained) expect(fs.existsSync(resultPath)).toBeTrue();
+		} finally {
+			claim.release();
+		}
 	});
 
 	test("does not rewrite a recently terminal event stream while tracker cursors may still reference it", async () => {

@@ -4,7 +4,8 @@ import * as path from "node:path";
 import { isJsonInputObject, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
-import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
+import { shardedDurableClaimName, tryAcquireKernelClaim } from "../shared/durable-claim.ts";
+import { readBoundedOwnedFileSnapshotAsync, removeOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type AsyncStatus, TEMP_ROOT_DIR } from "../shared/types.ts";
 import { readStatusAsync } from "../shared/utils.ts";
@@ -12,6 +13,8 @@ import { readStatusAsync } from "../shared/utils.ts";
 const DIAGNOSTIC_TAIL_BYTES = 256 * 1024;
 const MAX_RUN_DIRECTORIES_PER_PASS = 5_000;
 const DIAGNOSTIC_TRIM_GRACE_MS = 60 * 60 * 1_000;
+const RESULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const MAX_RESULT_FILE_BYTES = 32 * 1024 * 1024;
 const SCAN_YIELD_INTERVAL = 32;
 
 type RuntimeRunKind = "foreground" | "async" | "nested";
@@ -28,6 +31,11 @@ export interface RuntimeMaintenanceReport {
 	readonly trimmed: number;
 	readonly bytesReclaimed: number;
 	readonly abandonedPreparationsReclaimed: number;
+	readonly staleResultsRetired: number;
+}
+
+interface RuntimeMaintenanceOptions {
+	readonly now?: number;
 }
 
 interface PreparationMarker {
@@ -134,6 +142,99 @@ async function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeR
 		return false;
 	}
 	return (await inspectWriterProcessLivenessAsync(directory)) === false;
+}
+
+function ownedRegularFile(filePath: string): boolean {
+	if (!path.isAbsolute(filePath)) return false;
+	try {
+		const stat = fs.lstatSync(filePath);
+		const currentUid = process.getuid?.();
+		return stat.isFile() && !stat.isSymbolicLink() && (currentUid === undefined || stat.uid === currentUid);
+	} catch {
+		return false;
+	}
+}
+
+function hasCompleteSessionHistory(status: AsyncStatus): boolean {
+	return Boolean(
+		status.steps?.length &&
+			status.steps.every(
+				(step) =>
+					step.status !== "pending" &&
+					step.status !== "running" &&
+					isRuntimeString(step.sessionFile) &&
+					ownedRegularFile(step.sessionFile),
+			),
+	);
+}
+
+async function retireStaleResult(
+	rootDirectory: string,
+	directory: string,
+	status: AsyncStatus,
+	now: number,
+): Promise<boolean> {
+	if (
+		status.lifecycleArtifactVersion !== 3 ||
+		status.processTerminal?.state !== "observed" ||
+		!isRuntimeString(status.sessionId) ||
+		!status.sessionId ||
+		!hasCompleteSessionHistory(status)
+	) {
+		return false;
+	}
+	const resultsDir = path.join(rootDirectory, "async-subagent-results");
+	const file = `${status.runId}.json`;
+	let claim: ReturnType<typeof tryAcquireKernelClaim>;
+	try {
+		claim = tryAcquireKernelClaim(resultsDir, shardedDurableClaimName("result-delivery", file));
+	} catch {
+		return false;
+	}
+	if (!claim) return false;
+	try {
+		const resultPath = path.join(resultsDir, file);
+		const snapshot = await readBoundedOwnedFileSnapshotAsync(resultPath, MAX_RESULT_FILE_BYTES);
+		if (now - snapshot.mtimeMs < RESULT_RETENTION_MS) return false;
+		const result = parseJsonValue(snapshot.text);
+		if (
+			!isJsonInputObject(result) ||
+			result.id !== status.runId ||
+			result.runId !== status.runId ||
+			result.sessionId !== status.sessionId ||
+			!isRuntimeString(result.asyncDir) ||
+			path.resolve(result.asyncDir) !== path.resolve(directory) ||
+			(result.state !== "complete" &&
+				result.state !== "failed" &&
+				result.state !== "paused" &&
+				result.state !== "stopped")
+		) {
+			return false;
+		}
+		const currentStatus = await readStatusAsync(directory);
+		if (
+			!currentStatus ||
+			currentStatus.runId !== status.runId ||
+			!terminal(currentStatus) ||
+			currentStatus.processTerminal?.state !== "observed" ||
+			!hasCompleteSessionHistory(currentStatus) ||
+			(await inspectWriterProcessLivenessAsync(directory)) !== false
+		) {
+			return false;
+		}
+		const removed = await removeOwnedFileSnapshotAsync(resultPath, snapshot);
+		if (removed !== "removed") return false;
+		try {
+			await fs.promises.unlink(path.join(resultsDir, `.${file}.delivery-state`));
+		} catch {
+			// The delivery state is optional and cannot make the result unsafe to retire.
+		}
+		return true;
+	} catch {
+		return false;
+	} finally {
+		claim.release();
+	}
 }
 
 function interleave(groups: readonly RuntimeRunDirectory[][], maximum: number): RuntimeRunDirectory[] {
@@ -299,7 +400,11 @@ async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKi
 }
 
 /** Compact optional diagnostics only after durable lifecycle and writer proof say the run is over. */
-export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promise<RuntimeMaintenanceReport> {
+export async function maintainAgentRuntime(
+	rootDirectory = TEMP_ROOT_DIR,
+	options: RuntimeMaintenanceOptions = {},
+): Promise<RuntimeMaintenanceReport> {
+	const now = options.now ?? Date.now();
 	const groups = await Promise.all([
 		runDirectories(path.join(rootDirectory, "foreground-runs"), 1, "foreground"),
 		runDirectories(path.join(rootDirectory, "async-subagent-runs"), 1, "async"),
@@ -310,12 +415,13 @@ export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promi
 	let trimmed = 0;
 	let bytesReclaimed = 0;
 	let abandonedPreparationsReclaimed = 0;
+	let staleResultsRetired = 0;
 	for (const candidate of directories) {
 		if (await reclaimAbandonedPreparation(candidate.directory, candidate.kind)) {
 			abandonedPreparationsReclaimed += 1;
 			continue;
 		}
-		if (Date.now() - candidate.mtimeMs < DIAGNOSTIC_TRIM_GRACE_MS) continue;
+		if (now - candidate.mtimeMs < DIAGNOSTIC_TRIM_GRACE_MS) continue;
 		const { directory } = candidate;
 		let status: AsyncStatus | null;
 		try {
@@ -325,6 +431,9 @@ export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promi
 		}
 		if (!status || status.runId !== path.basename(directory)) continue;
 		inspected += 1;
+		if (candidate.kind === "async" && (await retireStaleResult(rootDirectory, directory, status, now))) {
+			staleResultsRetired += 1;
+		}
 		if (await safeToTrim(directory, status, candidate.kind)) {
 			const reclaimed = await trimDiagnosticTail(path.join(directory, "events.jsonl"));
 			if (reclaimed > 0) {
@@ -334,7 +443,7 @@ export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promi
 		}
 		if (inspected % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
 	}
-	return { inspected, trimmed, bytesReclaimed, abandonedPreparationsReclaimed };
+	return { inspected, trimmed, bytesReclaimed, abandonedPreparationsReclaimed, staleResultsRetired };
 }
 
 function safeSegment(value: string): boolean {

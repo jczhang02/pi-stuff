@@ -99,7 +99,11 @@ user definitions, and user definitions override Package definitions.
   not select it by default. Cleanup removes only old, terminal-proven owned groups; active evidence is retained.
   Durable kernel claims, incrementally persisted directory snapshots, identity-bound cursors, and orphan sweeping make
   interrupted or concurrent maintenance safe. Scan and snapshot-processing budgets are independently bounded, fair
-  per-directory quotas advance later sessions, and temp artifacts receive an independent pass.
+  per-directory quotas advance later sessions, and temp artifacts receive an independent pass. Undelivered background
+  result notifications remain eligible for automatic Session delivery for 30 days. Existing Agent maintenance may
+  retire an older inbox file only after its exact run and parent Session binding, terminal process proof, dead writer,
+  and complete child Session history are all present; `/agents` history remains inspectable after the notification is
+  retired.
 
 Fleetview renders no rows without a child Agent and reserves no blank help row while idle. With an empty editor, press
 Down to enter management: the contextual controls replace Footer row 2 when present, then restore the exact latest
