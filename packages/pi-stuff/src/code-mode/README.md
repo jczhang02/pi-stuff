@@ -64,11 +64,12 @@ settlement reprojects nested and direct calls in the model's source order, inclu
 images are carried through the outer Host result so Pi performs its normal image
 normalization once. Before TUI rendering, normalized nested media moves into persistent presentation details and is
 removed from the outer image list, so Pi cannot append it below the whole envelope. The original renderer receives it
-again at its exact text/media boundary; a public context hook restores the same normalized content for every provider
-request. Session JSONL therefore stores each nested image payload once, reloads the same UI, and never trades visual
-equivalence for model visibility. Invalid or incomplete image output becomes an error before it can be persisted. A
-provider-context projection also replaces malformed images from older Code Mode results with an actionable text error
-without rewriting Session history.
+again at its exact text/media boundary; a public context hook restores the same already-normalized content for every
+provider request without decoding unchanged image payloads again. Session JSONL therefore stores each nested image
+payload once, reloads the same UI, and never trades visual equivalence for model visibility. Invalid or incomplete
+image output becomes an error before it can be persisted. A provider-context projection also replaces malformed
+images from older Code Mode results that predate normalized presentation details with an actionable text error without
+rewriting Session history.
 
 The real Pi 0.84.2 acceptance gate compares the full ANSI screen and exact Tool Activity block with Code Mode on and
 off at 100×32 and 64×28, both before and after session resume. Only the truthful context-usage number is normalized:

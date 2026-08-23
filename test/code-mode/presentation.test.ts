@@ -92,29 +92,38 @@ test("historical malformed Code Mode images are replaced only in provider contex
 	expect(direct.content).toEqual([badImage]);
 });
 
-test("historical malformed normalized media is quarantined during rehydration", () => {
-	const badImage = { type: "image" as const, data: Buffer.alloc(96, 1).toString("base64"), mimeType: "image/jpeg" };
+test("normalized model content is restored without revalidating image payloads", () => {
+	let dataReads = 0;
+	const normalizedModelImage = {
+		type: "image" as const,
+		get data() {
+			dataReads += 1;
+			return normalizedImage.data;
+		},
+		mimeType: normalizedImage.mimeType,
+	};
 	const persisted = {
 		content: [],
 		details: {
 			kind: "pi-stuff-code-mode",
-			modelContent: [badImage],
+			modelContent: [normalizedModelImage],
 			operations: [],
 			status: "success",
 		},
 		isError: false,
 		role: "toolResult" as const,
 		timestamp: 1,
-		toolCallId: "normalized-bad-image",
+		toolCallId: "normalized-image",
 		toolName: "codemode",
 	};
 	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
 	const projected = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
 
-	expect(projected?.[0]).toMatchObject({
-		content: [{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
-	});
-	expect(persisted.details.modelContent).toEqual([badImage]);
+	expect(dataReads).toBe(1);
+	const projectedResult = projected?.[0];
+	expect(projectedResult?.role).toBe("toolResult");
+	if (projectedResult?.role !== "toolResult") throw new Error("Expected a projected Tool result.");
+	expect(projectedResult.content).toBe(persisted.details.modelContent);
 });
 
 test("standalone Code Mode images remain Host-rendered while nested images stay in their original Tool rows", () => {

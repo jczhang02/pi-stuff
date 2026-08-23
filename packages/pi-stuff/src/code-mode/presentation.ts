@@ -191,9 +191,12 @@ export function rehydrateCodeModeMessages(messages: readonly AgentMessage[]): Ag
 		const details = message.details;
 		if (!isCodeModeModelContentOwner(details)) return message;
 		const hasModelContent = "modelContent" in details && isCodeModeToolContent(details.modelContent);
-		const content = hasModelContent ? details.modelContent : message.content;
-		const sanitized = sanitizeCodeModeContent(content);
-		if (!hasModelContent && sanitized.rejected === 0) return message;
+		if (hasModelContent) {
+			changed = true;
+			return { ...message, content: details.modelContent };
+		}
+		const sanitized = sanitizeCodeModeContent(message.content);
+		if (sanitized.rejected === 0) return message;
 		changed = true;
 		return { ...message, content: sanitized.content };
 	});
