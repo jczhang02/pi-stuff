@@ -1,7 +1,3 @@
-<p>
-  <img src="banner.png" alt="pi-mcp-adapter" width="1100">
-</p>
-
 # Pi MCP Adapter
 
 Use MCP servers with [Pi](https://github.com/badlogic/pi-mono/) without burning your context window.

@@ -278,7 +278,6 @@ async function verifyProvenanceAndLicenses(baseDirectory: string): Promise<void>
 		await access(join(baseDirectory, "src", adapted, "UPSTREAM_README.md"));
 	}
 	await access(join(baseDirectory, "src", "web", "runtime", "SECURITY.md"));
-	await access(join(baseDirectory, "src", "mcp", "runtime", "banner.png"));
 	await access(join(baseDirectory, "src", "codex", "LICENSES", "Apache-2.0.txt"));
 	await access(join(baseDirectory, "src", "codex", "THIRD_PARTY_NOTICES.md"));
 	await access(join(baseDirectory, "src", "code-mode", "LICENSES", "Apache-2.0.txt"));

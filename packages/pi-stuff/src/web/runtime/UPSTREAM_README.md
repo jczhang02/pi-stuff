@@ -1,7 +1,3 @@
-<p>
-  <img src="banner.png" alt="pi-web-access" width="1100">
-</p>
-
 # Pi Web Access
 
 **Web search, content extraction, and video understanding for Pi agent. OpenAI/Codex search, zero-config Exa search, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, SERPdive, Kagi, Ollama, AnySearch, xAI/Grok, Bright Data SERP, SerpBase, self-hosted SearXNG, optional browser-cookie Gemini Web, or bring your own API keys.**
