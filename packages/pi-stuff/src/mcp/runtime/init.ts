@@ -10,6 +10,7 @@ import {
   getMetadataCachePath,
   isServerCacheValid,
   loadMetadataCache,
+  METADATA_CACHE_VERSION,
   reconstructToolMetadata,
   saveMetadataCache,
   serializeResources,
@@ -172,9 +173,9 @@ export async function initializeMcp(
 
   if (!cacheFileExists) {
     bootstrapAll = true;
-    saveMetadataCache({ version: 1, servers: {} });
+    saveMetadataCache({ version: METADATA_CACHE_VERSION, servers: {} });
   } else if (!cache) {
-    cache = { version: 1, servers: {} };
+    cache = { version: METADATA_CACHE_VERSION, servers: {} };
     saveMetadataCache(cache);
   }
 
@@ -389,7 +390,7 @@ export function updateMetadataCache(
 	    cachedAt: Date.now(),
 	  };
 
-  saveMetadataCache({ version: 1, servers: { [serverName]: entry } });
+  saveMetadataCache({ version: METADATA_CACHE_VERSION, servers: { [serverName]: entry } });
 }
 
 export function notifyToolMetadataUpdated(state: McpExtensionState, serverName: string, reason: string): void {

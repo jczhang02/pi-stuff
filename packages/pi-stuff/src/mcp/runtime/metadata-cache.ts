@@ -25,7 +25,7 @@ import {
   resolveServerUrl,
 } from "./utils.ts";
 
-const CACHE_VERSION = 1;
+export const METADATA_CACHE_VERSION = 2;
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type { CachedResource, CachedTool, MetadataCache, ServerCacheEntry } from "./types.ts";
@@ -49,7 +49,7 @@ export function saveMetadataCache(cache: MetadataCache): void {
   const dir = dirname(cachePath);
   mkdirSync(dir, { recursive: true });
 
-  let merged: MetadataCache = { version: CACHE_VERSION, servers: {} };
+  let merged: MetadataCache = { version: METADATA_CACHE_VERSION, servers: {} };
 	  try {
 	    if (existsSync(cachePath)) {
 	      const existing = parseMetadataCache(readFileSync(cachePath, "utf-8"));
@@ -61,7 +61,7 @@ export function saveMetadataCache(cache: MetadataCache): void {
     // Ignore parse errors and proceed with empty cache
   }
 
-  merged.version = CACHE_VERSION;
+  merged.version = METADATA_CACHE_VERSION;
   merged.servers = { ...merged.servers, ...cache.servers };
 
   const tmpPath = `${cachePath}.${process.pid}.tmp`;
@@ -200,14 +200,14 @@ function stableStringify(value: JsonInputValue): string {
 
 function parseMetadataCache(text: string): MetadataCache | null {
 	const value = parseJsonObject(text);
-	if (value.version !== CACHE_VERSION || !isJsonInputObject(value.servers)) return null;
+	if (value.version !== METADATA_CACHE_VERSION || !isJsonInputObject(value.servers)) return null;
 	const servers: Record<string, ServerCacheEntry> = {};
 	for (const [name, entry] of Object.entries(value.servers)) {
 		const parsed = parseServerCacheEntry(entry);
 		if (!parsed) return null;
 		Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: parsed, writable: true });
 	}
-	return { version: CACHE_VERSION, servers };
+	return { version: METADATA_CACHE_VERSION, servers };
 }
 
 function parseServerCacheEntry(value: JsonInputValue): ServerCacheEntry | null {

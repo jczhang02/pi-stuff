@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getGenericGlobalConfigPath, getPiGlobalConfigPath } from "../../packages/pi-stuff/src/mcp/runtime/config.js";
-import { getMetadataCachePath } from "../../packages/pi-stuff/src/mcp/runtime/metadata-cache.js";
+import { getMetadataCachePath, loadMetadataCache } from "../../packages/pi-stuff/src/mcp/runtime/metadata-cache.js";
 import { getNpxCachePath } from "../../packages/pi-stuff/src/mcp/runtime/npx-resolver.js";
 import {
 	getOnboardingStatePath,
@@ -45,6 +45,33 @@ describe.serial("MCP XDG paths", () => {
 		expect(getMetadataCachePath()).toBe("/srv/cache/pi-stuff/mcp/mcp-cache.json");
 		expect(getNpxCachePath()).toBe("/srv/cache/pi-stuff/mcp/mcp-npx-cache.json");
 		expect(getOnboardingStatePath()).toBe("/srv/state/pi-stuff/mcp/mcp-onboarding.json");
+	});
+
+	test("invalidates pre-removal metadata that could contain app-only tools", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-cache-"));
+		try {
+			process.env["XDG_CACHE_HOME"] = root;
+			const cachePath = getMetadataCachePath();
+			await mkdir(join(root, "pi-stuff", "mcp"), { recursive: true });
+			await Bun.write(
+				cachePath,
+				JSON.stringify({
+					version: 1,
+					servers: {
+						legacy: {
+							cachedAt: Date.now(),
+							configHash: "legacy",
+							resources: [],
+							tools: [{ name: "app_only", uiVisibility: ["app"] }],
+						},
+					},
+				}),
+			);
+
+			expect(loadMetadataCache()).toBeNull();
+		} finally {
+			await rm(root, { force: true, recursive: true });
+		}
 	});
 
 	test("legacy onboarding state is read but new writes use XDG state", async () => {
