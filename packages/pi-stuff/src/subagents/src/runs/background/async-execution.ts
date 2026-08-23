@@ -51,6 +51,10 @@ import {
 } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import {
+	resolveMcpDirectToolSelections,
+	unresolvedMcpDirectToolSelectors,
+} from "../shared/mcp-direct-tool-allowlist.ts";
+import {
 	type AvailableModelInfo,
 	assertModelCandidateLimit,
 	buildModelCandidates,
@@ -75,8 +79,8 @@ import {
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
-import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
+import { DEFAULT_AGENT_TOOL_BUDGET, validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { DEFAULT_AGENT_TURN_BUDGET, initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { createInitialStatus } from "./initial-status.ts";
 import { finalizeProcessTerminal, readProcessTerminal } from "./process-terminal.ts";
 import {
@@ -436,7 +440,8 @@ function resolveTaskTurnBudget(
 ) {
 	if (explicit !== undefined) return resolveTurnBudgetConfig(explicit, "turnBudget");
 	if (runBudget !== undefined) return { turnBudget: runBudget };
-	return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
+	if (agentBudget !== undefined) return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
+	return { turnBudget: DEFAULT_AGENT_TURN_BUDGET };
 }
 
 function resolveTaskToolBudget(
@@ -454,7 +459,7 @@ function resolveTaskToolBudget(
 		const resolved = validateToolBudgetConfig(agentBudget, "agent.toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
 	}
-	return { toolBudget: configBudget };
+	return { toolBudget: configBudget ?? DEFAULT_AGENT_TOOL_BUDGET };
 }
 
 export function buildResolvedTask(input: {
@@ -536,6 +541,36 @@ export function buildResolvedTask(input: {
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
+	if (agent.mcpDirectTools?.length && !toolPlan.capabilityCeiling?.denyExtensions) {
+		const advertisedSelections = resolveMcpDirectToolSelections(agent.mcpDirectTools, params.ctx.cwd);
+		const advertisedMissing = unresolvedMcpDirectToolSelectors(agent.mcpDirectTools, advertisedSelections);
+		if (advertisedMissing.length) {
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool selectors do not resolve in the parent project: ${advertisedMissing.join(", ")}.`,
+			};
+		}
+		const executionMissing = unresolvedMcpDirectToolSelectors(agent.mcpDirectTools, toolPlan.resolvedMcpSelections);
+		if (executionMissing.length) {
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool selectors do not resolve in the execution cwd: ${executionMissing.join(", ")}.`,
+			};
+		}
+		const signature = (selections: typeof advertisedSelections) =>
+			selections
+				.map((selection) => `${selection.selector}:${selection.name}`)
+				.sort()
+				.join(",");
+		if (signature(advertisedSelections) !== signature(toolPlan.resolvedMcpSelections)) {
+			const names = (selections: typeof advertisedSelections) =>
+				selections
+					.map((selection) => selection.name)
+					.sort()
+					.join(", ");
+			return {
+				error: `Agent '${agent.name}' direct MCP Tool contract changes with cwd (parent: ${names(advertisedSelections)}; execution: ${names(toolPlan.resolvedMcpSelections)}).`,
+			};
+		}
+	}
 	const launchBinding: Partial<LaunchBindingInput> = {
 		definitionDigest,
 		task: taskInput.task,

@@ -3155,6 +3155,12 @@ function attachRenderer<TParams extends TSchema, TDetails>(
 			);
 		},
 	};
+	if (Object.getOwnPropertyDescriptor(tool, "description")?.get) {
+		Object.defineProperty(decorated, "description", {
+			enumerable: true,
+			get: () => tool.description,
+		});
+	}
 	// SAFETY: marker consumers recover this metadata only from the Tool definition that owns the same argument schema.
 	const marker: SuiteActivityRendererMarker = {
 		activity: presentation.activity as ToolActivityMetadata<ToolArguments, unknown>,
@@ -3444,13 +3450,16 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	runtime.markRendererAttached(tool.name);
 }
 
-/** Register a Suite-owned Tool without changing its execute protocol or result. */
+/**
+ * Register a Suite-owned Tool without changing its execute protocol or result.
+ * Returns the exact registered definition so an owner can refresh dynamic model-facing fields through Pi's public API.
+ */
 export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
 	pi: SuiteToolRegistrationHost,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolPresentation<Static<TParams> & ToolArguments, TDetails>,
 	codeMode?: SuiteToolCodeModeContract,
-): void {
+): ToolDefinition<TParams, TDetails> {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
@@ -3476,6 +3485,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
 	}
 	runtime.markRendererAttached(tool.name);
+	return decorated;
 }
 
 function replayFallbackLabel(name: string): string {

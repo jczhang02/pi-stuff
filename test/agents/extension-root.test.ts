@@ -118,6 +118,7 @@ class ApiHarness {
 	readonly events = new EventBusHarness();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ message: TestMessage; options: MessageOptions }> = [];
+	readonly providerToolDescriptions = new Map<string, string>();
 	readonly renderers: string[] = [];
 	readonly tools = new Map<string, TestTool>();
 
@@ -125,6 +126,8 @@ class ApiHarness {
 		events: this.events.host,
 		on: captureExtensionHandlers(this.handlers),
 		registerTool: (tool) => {
+			// Pi snapshots ToolDefinition fields while rebuilding its provider-facing AgentTool registry.
+			this.providerToolDescriptions.set(tool.name, tool.description);
 			// SAFETY: this test registry erases only generic renderer state and invokes the original Tool unchanged.
 			this.tools.set(tool.name, tool as TestTool);
 		},
@@ -655,11 +658,14 @@ describe("Agents extension composition root", () => {
 		const tool = root.api.tools.get("subagent");
 		if (!tool) throw new Error("Expected public Agent tool");
 
-		expect(tool.description).toContain("Choose exactly one call shape");
+		expect(tool.description).toContain("Choose exactly one shape per call");
+		expect(tool.description).toContain("independent single calls in one assistant response");
 		expect(tool.description).toContain("Do not invent or pass a background field");
 		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
-		expect(tool.description).toContain("Omit turnBudget and toolBudget for ordinary tasks");
+		expect(tool.description).toContain(
+			"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops",
+		);
 		expect(tool.description).toContain("Pi Stuff does not provide built-in Agent definitions");
 		expect(tool.description).toContain("Package, user, or project Agent");
 
@@ -718,6 +724,35 @@ describe("Agents extension composition root", () => {
 		).not.toThrow();
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(Object.hasOwn(tool.parameters as object, "oneOf")).toBeFalse();
+	});
+
+	test("projects the current effective Agent roster into the public Tool contract", async () => {
+		const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-roster-"));
+		temporaryDirectories.add(projectRoot);
+		const agentsDir = path.join(projectRoot, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(agentsDir, "explore.md"),
+			[
+				"---",
+				"name: explore",
+				"description: Fast read-only code search Agent",
+				"tools: read, grep, find, ls, bash",
+				"---",
+				"Inspect local code and return concise evidence.",
+			].join("\n"),
+		);
+		const root = createHarness();
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const projectContext = { ...context(), cwd: projectRoot };
+
+		await root.api.fire("before_agent_start", { type: "before_agent_start" }, projectContext);
+
+		expect(tool.description).toContain("explore — Fast read-only code search Agent (tools: read, find, ls, bash)");
+		expect(root.api.providerToolDescriptions.get("subagent")).toContain(
+			"explore — Fast read-only code search Agent (tools: read, find, ls, bash)",
+		);
 	});
 
 	test("keeps session and Agent submission free of full artifact discovery", async () => {
@@ -1136,61 +1171,6 @@ describe("Agents extension composition root", () => {
 		const staleResult = await staleLaunch;
 		expect(staleResult.content[0]?.text).toContain("session ended or changed");
 		expect(root.engineParams).toHaveLength(1);
-	});
-
-	test("releases a legacy governor barrier on A to B to A session transitions", async () => {
-		let barrierHeld = false;
-		let releases = 0;
-		const root = createHarness({
-			compatibility: async () => {
-				if (barrierHeld) return { ok: false, message: "self-held legacy barrier" };
-				barrierHeld = true;
-				let released = false;
-				return {
-					ok: true,
-					importedLogicalAgentIds: [],
-					legacyLedgerObserved: false,
-					releaseLegacyBarrier: async () => {
-						if (released) return;
-						released = true;
-						barrierHeld = false;
-						releases += 1;
-					},
-				};
-			},
-		});
-		const headerA = context([], { sessionFile: "/sessions/barrier-a.jsonl", sessionId: "barrier-a" });
-		const headerB = context([], { sessionFile: "/sessions/barrier-b.jsonl", sessionId: "barrier-b" });
-		const tool = root.api.tools.get("subagent");
-		if (!tool) throw new Error("Expected public Agent tool");
-
-		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
-		const first = await tool.execute(
-			"barrier-a-first",
-			{ agent: "researcher", task: "First A launch" },
-			new AbortController().signal,
-			undefined,
-			headerA,
-		);
-		expect(first.content[0]?.text).toContain("started in the background");
-		expect(barrierHeld).toBeTrue();
-
-		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
-		expect(barrierHeld).toBeFalse();
-		expect(releases).toBe(1);
-		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerA);
-		const second = await tool.execute(
-			"barrier-a-second",
-			{ agent: "researcher", task: "Second A launch" },
-			new AbortController().signal,
-			undefined,
-			headerA,
-		);
-		expect(second.content[0]?.text).toContain("started in the background");
-		expect(barrierHeld).toBeTrue();
-		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" }, headerA);
-		expect(barrierHeld).toBeFalse();
-		expect(releases).toBe(2);
 	});
 
 	test("normalizes one branch-proven v1 lifecycle event before tracker projection", async () => {

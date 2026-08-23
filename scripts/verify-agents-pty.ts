@@ -206,8 +206,10 @@ async function pathExists(path: string): Promise<boolean> {
 async function readFailureDiagnostics(directory: string): Promise<string> {
 	const entries = await readdir(directory, { recursive: true }).catch((): string[] => []);
 	const candidates = entries
-		.filter((entry) =>
-			/(?:status|result|events|output|stderr|transcript|work).*\.(?:json|jsonl|log|txt)$/i.test(entry),
+		.filter(
+			(entry) =>
+				/(?:status|result|events|output|stderr|transcript|work).*\.(?:json|jsonl|log|txt)$/i.test(entry) ||
+				/(?:^|[\\/])sessions[\\/].*\.jsonl$/i.test(entry),
 		)
 		.sort()
 		.slice(0, 24);
@@ -409,6 +411,7 @@ class TmuxAgentsSession {
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 			TMPDIR: paths.runtime,
+			XDG_RUNTIME_DIR: paths.runtime,
 			XDG_STATE_HOME: join(paths.runtime, "state"),
 		};
 		this.workspace = paths.workspace;
@@ -536,7 +539,7 @@ class TmuxAgentsSession {
 	}
 
 	private async waitFor(predicate: (screen: string) => boolean, description: string): Promise<string> {
-		const deadline = Date.now() + 20_000;
+		const deadline = Date.now() + 30_000;
 		let screen = "";
 		while (Date.now() < deadline) {
 			screen = this.capture();
@@ -709,6 +712,7 @@ async function verifyFleetviewFooterLayout(
 		await session.waitForAbsence("Agents ·");
 		screen = await session.waitForFleetviewFrame("idle");
 		verifyFleetviewFrame(screen, options.columns, "idle");
+		await session.waitForText("done ·");
 		await session.waitForText("inspect with /agents");
 		session.sendLiteral("/agents");
 		session.sendKey("Enter");
@@ -766,6 +770,14 @@ async function verifyFleetviewFooterLayout(
 		verifyFleetviewFrame(screen, options.columns, "idle");
 		session.sendKey("C-d");
 		await Bun.sleep(250);
+	} catch (error) {
+		const providerLog = await readFile(log, "utf8").catch(() => "(provider log unavailable)");
+		const diagnostics = await readFailureDiagnostics(rootDirectory);
+		const reason = (error instanceof Error ? error.message : String(error)).replace(
+			/^Agents PTY verification failed: /u,
+			"",
+		);
+		fail(`${reason}\nProvider log:\n${providerLog.trim()}\nRuntime diagnostics:\n${diagnostics || "(none)"}`);
 	} finally {
 		session.stop();
 	}
@@ -828,6 +840,7 @@ Return the deterministic fixture result.
 				SHELL: "/bin/sh",
 				TERM: "xterm-256color",
 				TMPDIR: runtimeDirectory,
+				XDG_RUNTIME_DIR: runtimeDirectory,
 				XDG_STATE_HOME: join(runtimeDirectory, "state"),
 			},
 			stdout: "pipe",

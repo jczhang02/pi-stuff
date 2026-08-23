@@ -1,9 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeObject } from "../../../shared/runtime-type.js";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
+import { tryAcquireKernelClaimAsync } from "../shared/durable-claim.ts";
+import { assertPrivateDirectory, readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import type { SessionGovernorCompatibilityScope } from "../shared/session-identity.ts";
 import { LEGACY_SESSION_GOVERNOR_ROOT, SESSION_GOVERNOR_ROOT, TEMP_ROOT_DIR } from "../shared/types.ts";
@@ -24,8 +26,6 @@ export type SessionGovernorCompatibilityResult =
 			readonly ok: true;
 			readonly importedLogicalAgentIds: readonly string[];
 			readonly legacyLedgerObserved: boolean;
-			/** Held for the root Pi session lifetime so v1 writers cannot reopen the migrated ledger. */
-			readonly releaseLegacyBarrier?: () => Promise<void>;
 	  }
 	| {
 			readonly ok: false;
@@ -41,8 +41,8 @@ export interface PrepareSessionGovernorCompatibilityInput {
 	readonly isPidAlive?: (pid: number) => Promise<boolean | undefined> | boolean | undefined;
 	readonly inspectWriterLiveness?: (asyncDir: string) => Promise<boolean | undefined> | boolean | undefined;
 	readonly readStatus?: (asyncDir: string) => Promise<ReturnType<typeof readStatus>> | ReturnType<typeof readStatus>;
-	/** Deterministic seams for stale v1-lock recovery tests. */
-	readonly legacyBarrierOptions?: {
+	/** Deterministic seams for pre-v2 lock detection tests. */
+	readonly legacyLockOptions?: {
 		readonly timeoutMs?: number;
 		readonly retryMs?: number;
 	};
@@ -50,9 +50,9 @@ export interface PrepareSessionGovernorCompatibilityInput {
 
 /**
  * Migrate only historical records into the v2 ledger. The v1 ledger is never
- * written. Its exact directory-lock protocol is held for the lifetime of this
- * root session so a pre-upgrade process cannot perform a first write after an
- * initially empty compatibility scan.
+ * written or locked by this release. A pre-v2 process already holding its
+ * directory lock blocks migration; simultaneous old/new writers are not a
+ * supported cross-version protocol.
  */
 export async function prepareSessionGovernorCompatibility(
 	input: PrepareSessionGovernorCompatibilityInput,
@@ -73,30 +73,25 @@ export async function prepareSessionGovernorCompatibility(
 		: undefined;
 
 	let legacySnapshot: SessionGovernorSnapshot | undefined;
-	let legacyBarrier: LegacyGovernorBarrier | undefined;
 	try {
 		if (legacy && legacySessionId) {
-			await ensureLegacyGovernorBarrierDirectories(legacyRootDir, legacySessionId);
-			legacyBarrier = await acquireLegacyGovernorBarrier(legacyRootDir, legacySessionId, input.legacyBarrierOptions);
-			if (!legacyBarrier) {
-				const lockDir = path.join(
-					legacyRootDir,
-					createHash("sha256").update(legacySessionId).digest("hex"),
-					"ledger.lock",
-				);
+			if (await legacyGovernorLocked(legacyRootDir, legacySessionId, input.legacyLockOptions)) {
 				return {
 					ok: false,
 					message:
 						"Agent launches are paused by a pre-upgrade governor lock that may still be live or may be stale after a crash. " +
-						`Close every older Pi process using this session; if the lock remains, remove only '${lockDir}', then retry.`,
+						`Close every older Pi process using this session; if the lock remains, remove only '${legacyGovernorLockPath(legacyRootDir, legacySessionId)}', then retry.`,
 				};
 			}
-			// This is the only compatibility read. It happens after the exact v1
-			// barrier is held, including when ledger.json did not exist beforehand.
 			legacySnapshot = await legacy.inspectExistingSnapshot();
+			if (await legacyGovernorLocked(legacyRootDir, legacySessionId, input.legacyLockOptions)) {
+				return {
+					ok: false,
+					message: "Agent launches are paused because a pre-upgrade governor changed during migration.",
+				};
+			}
 		}
 	} catch (error) {
-		await legacyBarrier?.release();
 		return {
 			ok: false,
 			message: `Agent launches are paused because the pre-upgrade governor ledger cannot be safely inspected: ${messageOf(error)}`,
@@ -107,7 +102,6 @@ export async function prepareSessionGovernorCompatibility(
 	if (legacySnapshot) {
 		const classification = await classifyLegacyLeases(legacySnapshot, input);
 		if (classification.kind === "quarantine") {
-			await legacyBarrier?.release();
 			return {
 				ok: false,
 				message:
@@ -118,7 +112,6 @@ export async function prepareSessionGovernorCompatibility(
 		if (classification.kind === "current-dead") {
 			const connected = connectedLegacyAgents(legacySnapshot.agents, input.scope.declaredLogicalAgentIds);
 			if (!legacySnapshot.leases.every((lease) => connected.has(lease.logicalAgentId))) {
-				await legacyBarrier?.release();
 				return {
 					ok: false,
 					message:
@@ -140,10 +133,6 @@ export async function prepareSessionGovernorCompatibility(
 				}
 			}
 		}
-		if (classification.kind === "foreign") {
-			await legacyBarrier?.release();
-			legacyBarrier = undefined;
-		}
 		// `foreign` means a copied same-header session saw another physical
 		// session's live v1 ledger. Import only paired branch history in that case.
 	}
@@ -160,10 +149,8 @@ export async function prepareSessionGovernorCompatibility(
 			),
 			legacyLedgerObserved: legacySnapshot !== undefined,
 		};
-		if (legacyBarrier) Object.assign(result, { releaseLegacyBarrier: legacyBarrier.release });
 		return result;
 	} catch (error) {
-		await legacyBarrier?.release();
 		return {
 			ok: false,
 			message: `Agent launches are paused because governor history could not be migrated safely: ${messageOf(error)}`,
@@ -171,92 +158,113 @@ export async function prepareSessionGovernorCompatibility(
 	}
 }
 
-interface LegacyGovernorBarrier {
-	readonly release: () => Promise<void>;
+function legacyGovernorLockPath(rootDir: string, sessionId: string): string {
+	return path.join(rootDir, createHash("sha256").update(sessionId).digest("hex"), "ledger.lock");
 }
 
-async function ensureLegacyGovernorBarrierDirectories(rootDir: string, sessionId: string): Promise<void> {
-	try {
-		await fs.promises.mkdir(rootDir, { recursive: true, mode: 0o700 });
-	} catch (error) {
-		if (messageCode(error) !== "EEXIST") throw error;
-	}
-	await assertOwnedRealDirectory(rootDir);
-	await fs.promises.chmod(rootDir, 0o700);
-	const sessionDir = path.join(rootDir, createHash("sha256").update(sessionId).digest("hex"));
-	try {
-		await fs.promises.mkdir(sessionDir, { mode: 0o700 });
-	} catch (error) {
-		if (messageCode(error) !== "EEXIST") throw error;
-	}
-	await assertOwnedRealDirectory(sessionDir);
-	await fs.promises.chmod(sessionDir, 0o700);
-}
-
-async function acquireLegacyGovernorBarrier(
+async function legacyGovernorLocked(
 	rootDir: string,
 	sessionId: string,
-	options: NonNullable<PrepareSessionGovernorCompatibilityInput["legacyBarrierOptions"]> = {},
-): Promise<LegacyGovernorBarrier | undefined> {
-	const sessionDir = path.join(rootDir, createHash("sha256").update(sessionId).digest("hex"));
-	const lockDir = path.join(sessionDir, "ledger.lock");
-	await assertOwnedRealDirectory(rootDir);
-	await assertOwnedRealDirectory(sessionDir);
-	const token = randomUUID();
+	options: NonNullable<PrepareSessionGovernorCompatibilityInput["legacyLockOptions"]> = {},
+): Promise<boolean> {
+	const lockDir = legacyGovernorLockPath(rootDir, sessionId);
 	const deadline = Date.now() + (options.timeoutMs ?? 1_000);
+	let recoveryAttempted = false;
 	while (Date.now() <= deadline) {
 		try {
-			await fs.promises.mkdir(lockDir, { mode: 0o700 });
-			await fs.promises.chmod(lockDir, 0o700);
-			try {
-				await fs.promises.writeFile(
-					path.join(lockDir, "owner.json"),
-					JSON.stringify({
-						token,
-						pid: process.pid,
-						processStartIdentity: (await readProcessStartIdentityAsync(process.pid)) ?? null,
-						acquiredAtMs: Date.now(),
-					}),
-					{ encoding: "utf8", flag: "wx", mode: 0o600 },
-				);
-			} catch (error) {
-				await fs.promises.rm(lockDir, { recursive: true, force: true });
-				throw error;
+			await fs.promises.lstat(lockDir);
+			if (!recoveryAttempted) {
+				recoveryAttempted = true;
+				if (await reclaimStaleCurrentBarrier(lockDir)) continue;
 			}
-			let released = false;
-			return {
-				release: async () => {
-					if (released) return;
-					released = true;
-					try {
-						const owner = parseJsonValue(await fs.promises.readFile(path.join(lockDir, "owner.json"), "utf8"));
-						if (isRuntimeObject(owner) && owner !== null && "token" in owner && owner.token === token) {
-							await fs.promises.rm(lockDir, { recursive: true, force: true });
-						}
-					} catch {
-						// A missing/replaced owner is no longer ours to remove.
-					}
-				},
-			};
-		} catch (error) {
-			if (messageCode(error) !== "EEXIST") throw error;
 			await new Promise<void>((resolve) => setTimeout(resolve, options.retryMs ?? 10));
+		} catch (error) {
+			if (messageCode(error) === "ENOENT") return false;
+			throw error;
 		}
 	}
-	return undefined;
+	return true;
 }
 
-async function assertOwnedRealDirectory(directory: string): Promise<void> {
-	const stat = await fs.promises.lstat(directory);
-	const currentUid = process.getuid?.();
-	if (
-		stat.isSymbolicLink() ||
-		!stat.isDirectory() ||
-		(currentUid !== undefined && stat.uid !== currentUid) ||
-		(await fs.promises.realpath(directory)) !== path.resolve(directory)
-	) {
-		throw new Error(`Legacy governor directory '${directory}' is not a safe owned real directory.`);
+interface CurrentBarrierOwner {
+	readonly token: string;
+	readonly pid: number;
+	readonly processStartIdentity: string;
+	readonly acquiredAtMs: number;
+}
+
+async function reclaimStaleCurrentBarrier(lockDir: string): Promise<boolean> {
+	try {
+		assertPrivateDirectory(lockDir, await fs.promises.lstat(lockDir));
+	} catch (error) {
+		if (messageCode(error) === "ENOENT") return true;
+		throw error;
 	}
+	const claim = await tryAcquireKernelClaimAsync(path.dirname(lockDir), "ledger-v1-recovery");
+	if (!claim) return false;
+	try {
+		const owner = await readCurrentBarrierOwner(path.join(lockDir, "owner.json"));
+		if (!owner) return false;
+		const currentIdentity = await readProcessStartIdentityAsync(owner.pid);
+		if (
+			currentIdentity === owner.processStartIdentity ||
+			(currentIdentity === undefined && explicitPidState(owner.pid) !== false)
+		) {
+			return false;
+		}
+		const staleDir = `${lockDir}.stale-${claim.token}`;
+		try {
+			await fs.promises.rename(lockDir, staleDir);
+		} catch (error) {
+			if (messageCode(error) === "ENOENT") return true;
+			throw error;
+		}
+		const movedOwner = await readCurrentBarrierOwner(path.join(staleDir, "owner.json"));
+		if (!movedOwner || movedOwner.token !== owner.token) {
+			await fs.promises.rename(staleDir, lockDir).catch(() => undefined);
+			throw new Error("Pre-upgrade governor ownership changed during stale-lock recovery.");
+		}
+		await fs.promises.rm(staleDir, { recursive: true, force: true });
+		return true;
+	} finally {
+		await claim.release();
+	}
+}
+
+async function readCurrentBarrierOwner(ownerPath: string): Promise<CurrentBarrierOwner | undefined> {
+	let value: JsonValue;
+	try {
+		value = parseJsonValue((await readBoundedOwnedFileSnapshotAsync(ownerPath, 4_096)).text);
+	} catch {
+		return undefined;
+	}
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("token" in value) ||
+		!isRuntimeString(value.token) ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.token) ||
+		!("pid" in value) ||
+		!isRuntimeNumber(value.pid) ||
+		!Number.isSafeInteger(value.pid) ||
+		value.pid <= 0 ||
+		!("processStartIdentity" in value) ||
+		!isRuntimeString(value.processStartIdentity) ||
+		value.processStartIdentity.length === 0 ||
+		value.processStartIdentity.length > 512 ||
+		!("acquiredAtMs" in value) ||
+		!isRuntimeNumber(value.acquiredAtMs) ||
+		!Number.isSafeInteger(value.acquiredAtMs) ||
+		value.acquiredAtMs <= 0
+	) {
+		return undefined;
+	}
+	return {
+		token: value.token,
+		pid: value.pid,
+		processStartIdentity: value.processStartIdentity,
+		acquiredAtMs: value.acquiredAtMs,
+	};
 }
 
 type LegacyClassification =

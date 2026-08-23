@@ -17,10 +17,19 @@ user definitions, and user definitions override Package definitions.
 
 ## Everyday behavior
 
-- The public tool has three mutually exclusive call shapes: `agent` plus `task` for one launch, `tasks` for parallel
-  work, or `action` for current-session control. It rejects mixed shapes instead of guessing which request to run.
+- Each public Tool call has one of three mutually exclusive shapes: `agent` plus `task` for one launch, `tasks` for a
+  grouped parallel launch, or `action` for current-session control. It rejects mixed shapes instead of guessing which
+  request to run. Pi's native parallel Tool calls are also supported: independent foreground calls emitted in one
+  assistant response run concurrently as separate governed launches.
 - Launches are background by default. Omit `foreground` to continue immediately; set `foreground: true` when the
   findings must inform the current answer. The retired `background` field is not accepted.
+- Before each main Agent run, local discovery refreshes the public Tool contract with every selectable Agent's name,
+  purpose, and effective Tool allowlist. Direct provider schemas and Code Mode therefore expose the same current roster;
+  the model does not need to guess definition names or inspect Agent files. A launch's optional `cwd` changes where the
+  child executes; Agent identity still resolves from this advertised parent-project roster. Agents with direct MCP
+  Tools also fail launch preflight if their selectors are unresolved or the target `cwd` would change the advertised
+  Tool names, so delegation never silently starts with a different external capability contract. An inherited
+  capability ceiling may still explicitly deny every extension, including otherwise valid MCP Tools.
 - The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
   executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
   background work is never mislabeled as completed.
@@ -29,9 +38,15 @@ user definitions, and user definitions override Package definitions.
   made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
-- `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent limits. When neither the launch nor its Agent
-  definition supplies a limit, that dimension remains unbounded. Agents owns enforcement, stop, resume, and terminal
-  state; Context Management does not impose a second aggregate limit.
+- Current releases import proven history from an unlocked pre-v2 governor ledger but do not hold its crash-prone
+  directory lock. Running pre-v2 and current Pi Stuff processes against the same Pi Session is unsupported; a present
+  pre-v2 lock pauses new launches until the older process exits. A dead barrier written by the immediately preceding
+  current release is reclaimed only from process-generation proof.
+- `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent overrides. Ordinary launches use product backstops
+  of 64 assistant turns plus two wrap-up turns, 96/128 soft/hard Tool calls with every Tool blocked after the hard
+  limit, and 30 minutes. Task overrides win over launch overrides, which win over Agent definitions and the product
+  defaults. Agents owns enforcement, stop, resume, and terminal state; Context Management does not impose a second
+  aggregate limit.
 - Queued work that never launches records an explicit `pause`, `timeout`, or `stop` pre-start cause. Terminal
   projection uses that cause rather than matching error prose, so a real Agent failure keeps its original state and
   message even when the text happens to contain `before it started`.
@@ -65,7 +80,9 @@ user definitions, and user definitions override Package definitions.
   direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a
   bounded failure category and path-scrubbed terminal reason before any stale progress text.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
-  them once in the current answer.
+  them once in the current answer. Long reports preserve both their opening evidence and conclusion, identify the
+  omitted middle, and point to the durable output artifact for full model retrieval. Parallel projection divides the
+  same bound across every child instead of dropping later results.
 - The Agent detail transcript associates each child Tool call with its persisted call identity. It renders a compact
   lifecycle icon, operation, and target, keeps successful results collapsed until `t` is pressed, and leaves failure
   reasons visible. Mixed or out-of-order results remain attributable; identity-free legacy records are paired only

@@ -126,6 +126,20 @@ export function resolveMcpDirectToolSelections(
 	}
 }
 
+export function unresolvedMcpDirectToolSelectors(
+	requested: readonly string[],
+	resolved: readonly ResolvedMcpDirectToolSelection[],
+): string[] {
+	return requested
+		.map((selector) => selector.replace(/\/+$/u, ""))
+		.filter(
+			(selector) =>
+				!resolved.some((selection) =>
+					selector.includes("/") ? selection.selector === selector : selection.selector.startsWith(`${selector}/`),
+				),
+		);
+}
+
 function loadMetadataCache(): MetadataCache | null {
 	const cachePath = piStuffCachePath("mcp", "mcp-cache.json");
 	let parsed: JsonValue;

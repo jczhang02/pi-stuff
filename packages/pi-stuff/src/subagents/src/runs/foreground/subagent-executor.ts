@@ -258,6 +258,7 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 };
 
 const CHILD_RUNTIME_RESERVE_RATIO = 0.25;
+export const DEFAULT_AGENT_TIMEOUT_MS = 30 * 60 * 1_000;
 const CHILD_TOOL_REQUEST_FRAMING_TOKENS = 512;
 const CHILD_UNKNOWN_TOOL_SURFACE_TOKENS = 32 * 1024;
 const CHILD_EXPLICIT_EXTENSION_SURFACE_TOKENS = 16 * 1024;
@@ -711,7 +712,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 }
 
 function resolveTimeout(value: SubagentParamsLike["timeoutMs"]) {
-	if (value === undefined) return {};
+	if (value === undefined) return { timeoutMs: DEFAULT_AGENT_TIMEOUT_MS };
 	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
 	}
@@ -815,7 +816,7 @@ async function prepareLaunch(
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
 	const effectiveCwd = path.resolve(ctx.cwd, params.cwd ?? ".");
-	const discovered = await deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await deps.discoverAgents(ctx.cwd, "both");
 	const validationError = validateLaunchInput(params, discovered.agents);
 	if (validationError) return errorResult(mode, validationError);
 
@@ -1918,7 +1919,7 @@ async function resumeRun(input: {
 	if (depth.blocked)
 		return errorResult("management", `Agent resume blocked at maximum nesting depth ${depth.maxDepth}.`);
 	const effectiveCwd = target.cwd ?? input.ctx.cwd;
-	const discovered = await input.deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await input.deps.discoverAgents(input.ctx.cwd, "both");
 	const descriptor = "recoveryDescriptor" in target ? target.recoveryDescriptor : undefined;
 	const discoveredAgent = discovered.agents.find((agent) => agent.name === target.agent);
 	const baseAgent =
@@ -2161,13 +2162,6 @@ async function steerRun(
 	return result;
 }
 
-function duplicateForegroundResult(params: SubagentParamsLike): AgentToolResult<Details> {
-	return errorResult(
-		requestedMode(params),
-		"A foreground Agent call is already active. Start another only after it finishes.",
-	);
-}
-
 export function createSubagentExecutor(deps: ExecutorDeps) {
 	const engines: ExecutorEngines = { ...DEFAULT_ENGINES, ...deps.engines };
 	const execute = async (
@@ -2188,8 +2182,6 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 		if (params.action) return controlAction(params, ctx, deps, engines, signal, hooks);
 
 		const foreground = (params.async ?? deps.asyncByDefault) !== true;
-		if (foreground && deps.state.subagentInProgress) return duplicateForegroundResult(params);
-		if (foreground) deps.state.subagentInProgress = true;
 		let ownedNestedRoute: PreparedLaunch["nestedRoute"] | undefined;
 		let backgroundOwnsRoute = false;
 		let foregroundLifecycleOwnsRoute = false;
@@ -2222,7 +2214,6 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 					// A committed runner retires its route after durable terminalization.
 				}
 			}
-			if (foreground) deps.state.subagentInProgress = false;
 		}
 	};
 	return { execute };

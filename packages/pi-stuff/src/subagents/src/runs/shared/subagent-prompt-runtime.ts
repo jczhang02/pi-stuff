@@ -503,6 +503,10 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		completedTurns += 1;
 	});
 	pi.on("before_provider_request", (event, ctx) => {
+		if (refreshChildToolDiagnostic(pi)) {
+			ctx.abort();
+			return;
+		}
 		const result = validateChildProviderPayload(
 			event.payload,
 			ctx.model,

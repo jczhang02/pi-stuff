@@ -869,6 +869,38 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	});
 });
 
+test("aborts before the first provider request when a required child Tool is unavailable", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-stuff-child-tool-preflight-"));
+	temporaryDirectories.push(root);
+	const diagnosticPath = join(root, "child-diagnostic.json");
+	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
+	setEnvironment(REQUIRED_CHILD_TOOLS_ENV, JSON.stringify(["project_search"]));
+	const handlers = new Map<string, LifecycleHandler[]>();
+	const pi = createExtensionApi({
+		events: { emit: () => {}, on: () => () => {} },
+		getAllTools: () => [],
+		on: lifecycleHandlers(handlers),
+		registerTool: () => {},
+		sendMessage: () => {},
+	});
+	registerSubagentPromptRuntime(pi);
+	let aborts = 0;
+	for (const handler of handlers.get("before_provider_request") ?? []) {
+		await handler(
+			{ payload: { input: "Inspect the project." } },
+			{
+				model: { contextWindow: 8_000, maxTokens: 2_000 },
+				abort: () => {
+					aborts += 1;
+				},
+			},
+		);
+	}
+
+	expect(aborts).toBe(1);
+	expect(readChildToolDiagnosticError(diagnosticPath)).toContain("project_search");
+});
+
 test("projects long child Tool history before a continuation request while preserving task and steering authority", async () => {
 	const handlers = new Map<string, LifecycleHandler[]>();
 	const activeTool = {

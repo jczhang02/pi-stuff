@@ -206,6 +206,17 @@ function bounded(value: string, limit: number): string {
 	return `${value.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+function boundedReport(value: string, limit: number, fullReportPath?: string): string {
+	if (value.length <= limit) return value;
+	const location = fullReportPath ? `Full report: ${fullReportPath}` : "Inspect the complete report with /agents.";
+	const marker = `\n\n[Middle omitted from ${value.length}-character report. ${location}]\n\n`;
+	if (marker.length >= limit) return bounded("[Report truncated. Inspect the complete report with /agents.]", limit);
+	const remaining = limit - marker.length;
+	const headLength = Math.ceil(remaining / 2);
+	const tailLength = Math.floor(remaining / 2);
+	return `${value.slice(0, headLength).trimEnd()}${marker}${value.slice(-tailLength).trimStart()}`;
+}
+
 function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" | "status unknown" {
 	if (result.interrupted || result.stopped || result.detached) return "stopped";
 	if (result.crashed || result.error || (isRuntimeNumber(result.exitCode) && result.exitCode !== 0)) return "failed";
@@ -213,17 +224,18 @@ function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" 
 	return "status unknown";
 }
 
-function childSummary(result: SingleResult): string {
+function childSummary(result: SingleResult, limit: number): string {
 	const output = getSingleResultOutput(result).trim();
 	const error = result.error?.trim();
 	const raw = error
 		? `Runtime error: ${error}${output ? `\nPartial child report:\n${output}` : ""}`
 		: output || "(no report)";
-	return bounded(scanAgentReport(raw).text, MAX_CHILD_SUMMARY_CHARS);
+	const fullReportPath = result.outputReference?.path ?? result.savedOutputPath ?? result.artifactPaths?.outputPath;
+	return boundedReport(scanAgentReport(raw).text, limit, fullReportPath);
 }
 
 function foregroundContent(results: readonly SingleResult[]): string {
-	const blocks = results.map((result, index) => {
+	const entries = results.map((result, index) => {
 		const heading =
 			results.length === 1
 				? `Agent ${result.agent} ${resultStatus(result)}.`
@@ -231,9 +243,17 @@ function foregroundContent(results: readonly SingleResult[]): string {
 		const contextNudge = result.contextNudgeObserved
 			? "\nContext housekeeping observed: magic-context:ceiling-nudge."
 			: "";
-		return `${heading}${contextNudge}\n${childSummary(result)}`;
+		return { heading: `${heading}${contextNudge}`, result };
 	});
-	return bounded(blocks.join("\n\n"), MAX_PARENT_RESULT_CHARS);
+	const fixedChars =
+		entries.reduce((total, entry) => total + entry.heading.length + 1, 0) + Math.max(0, entries.length - 1) * 2;
+	const summaryLimit = Math.min(
+		MAX_CHILD_SUMMARY_CHARS,
+		Math.max(0, Math.floor((MAX_PARENT_RESULT_CHARS - fixedChars) / entries.length)),
+	);
+	return entries
+		.map(({ heading, result }) => `${heading}\n${childSummary(result, summaryLimit)}`.trimEnd())
+		.join("\n\n");
 }
 
 function firstText(result: AgentToolResult<Details>): string {

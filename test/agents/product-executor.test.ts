@@ -147,6 +147,75 @@ describe("projectEngineResult", () => {
 		});
 	});
 
+	test("keeps a long foreground report's conclusion and durable retrieval path", () => {
+		const result = projectEngineResult(
+			{ agent: "architecture-tracer", foreground: true, task: "Trace the lifecycle" },
+			{
+				content: [{ type: "text", text: "engine internals" }],
+				details: details({
+					results: [
+						{
+							agent: "architecture-tracer",
+							artifactPaths: {
+								inputPath: "/tmp/input.md",
+								jsonlPath: "/tmp/result.jsonl",
+								metadataPath: "/tmp/meta.json",
+								outputPath: "/tmp/full-report.md",
+								transcriptPath: "/tmp/transcript.jsonl",
+							},
+							exitCode: 0,
+							finalOutput: `PHASE_1_START\n${"evidence\n".repeat(1_000)}REQUIREMENTS_CHECKLIST: all met`,
+							task: "Trace the lifecycle",
+							usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 1, output: 1, turns: 40 },
+						},
+					],
+				}),
+			},
+		);
+		const content = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+		expect(content).toContain("PHASE_1_START");
+		expect(content).toContain("REQUIREMENTS_CHECKLIST: all met");
+		expect(content).toContain("Middle omitted");
+		expect(content).toContain("/tmp/full-report.md");
+		expect(content.length).toBeLessThanOrEqual(12_000);
+	});
+
+	test("keeps every child represented in a bounded parallel foreground result", () => {
+		const results = Array.from({ length: 5 }, (_, index) => ({
+			agent: `reviewer-${index + 1}`,
+			artifactPaths: {
+				inputPath: `/tmp/input-${index + 1}.md`,
+				jsonlPath: `/tmp/result-${index + 1}.jsonl`,
+				metadataPath: `/tmp/meta-${index + 1}.json`,
+				outputPath: `/tmp/report-${index + 1}.md`,
+				transcriptPath: `/tmp/transcript-${index + 1}.jsonl`,
+			},
+			exitCode: 0,
+			finalOutput: `CHILD_${index + 1}_START\n${"finding\n".repeat(800)}CHILD_${index + 1}_CONCLUSION`,
+			task: `Review subsystem ${index + 1}`,
+			usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 1, output: 1, turns: 20 },
+		}));
+		const result = projectEngineResult(
+			{
+				foreground: true,
+				tasks: results.map(({ agent, task }) => ({ agent, task })),
+			},
+			{
+				content: [{ type: "text", text: "engine internals" }],
+				details: details({ mode: "parallel", results }),
+			},
+		);
+		const content = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+		for (const [index, child] of results.entries()) {
+			expect(content).toContain(child.agent);
+			expect(content).toContain(`CHILD_${index + 1}_CONCLUSION`);
+			expect(content).toContain(child.artifactPaths.outputPath);
+		}
+		expect(content.length).toBeLessThanOrEqual(12_000);
+	});
+
 	test("preserves explicit management failures while scanning their text", () => {
 		const result = projectEngineResult(
 			{ action: "stop", id: "missing" },
