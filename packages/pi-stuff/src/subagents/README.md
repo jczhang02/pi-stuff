@@ -103,8 +103,9 @@ user definitions, and user definitions override Package definitions.
   result notifications remain eligible for automatic Session delivery for 30 days. Existing Agent maintenance may
   retire an older inbox file only after its exact run and parent Session binding, terminal process proof, dead writer,
   and complete child Session history are all present; `/agents` history remains inspectable after the notification is
-  retired. Candidate selection advances durably across bounded passes, so an uncertain retained result cannot starve
-  later notifications.
+  retired. The same pass removes an old optional delivery-state remnant only when its result is already absent and the
+  shared delivery claim is free. Candidate selection advances durably across bounded passes, so an uncertain retained
+  result cannot starve later notifications.
 
 Fleetview renders no rows without a child Agent and reserves no blank help row while idle. With an empty editor, press
 Down to enter management: the contextual controls replace Footer row 2 when present, then restore the exact latest

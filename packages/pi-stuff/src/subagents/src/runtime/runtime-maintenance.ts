@@ -15,6 +15,7 @@ const MAX_RUN_DIRECTORIES_PER_PASS = 5_000;
 const DIAGNOSTIC_TRIM_GRACE_MS = 60 * 60 * 1_000;
 const RESULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 const MAX_RESULT_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_DELIVERY_STATE_BYTES = 16 * 1024;
 const MAX_STALE_RESULTS_PER_PASS = 256;
 const STALE_RESULT_CURSOR_FILE = ".stale-result-cursor";
 const SCAN_YIELD_INTERVAL = 32;
@@ -294,6 +295,33 @@ async function retireStaleResult(
 	}
 }
 
+async function retireOrphanedDeliveryState(resultsDir: string, runId: string, now: number): Promise<void> {
+	const resultFile = `${runId}.json`;
+	let claim: ReturnType<typeof tryAcquireKernelClaim>;
+	try {
+		claim = tryAcquireKernelClaim(resultsDir, shardedDurableClaimName("result-delivery", resultFile));
+	} catch {
+		return;
+	}
+	if (!claim) return;
+	try {
+		try {
+			await fs.promises.lstat(path.join(resultsDir, resultFile));
+			return;
+		} catch (error) {
+			if (errnoCode(error) !== "ENOENT") return;
+		}
+		const statePath = path.join(resultsDir, `.${resultFile}.delivery-state`);
+		const snapshot = await readBoundedOwnedFileSnapshotAsync(statePath, MAX_DELIVERY_STATE_BYTES);
+		if (now - snapshot.mtimeMs < RESULT_RETENTION_MS) return;
+		await removeOwnedFileSnapshotAsync(statePath, snapshot);
+	} catch {
+		// ponytail: orphan cleanup rides bounded run selection; add a cursor only if leftovers become measurable.
+	} finally {
+		claim.release();
+	}
+}
+
 function interleave(groups: readonly RuntimeRunDirectory[][], maximum: number): RuntimeRunDirectory[] {
 	const result: RuntimeRunDirectory[] = [];
 	let index = 0;
@@ -527,7 +555,15 @@ export async function maintainAgentRuntime(
 		}
 		if (!status || status.runId !== path.basename(directory)) continue;
 		inspected += 1;
-		if (candidate.kind === "async" && (await retireStaleResult(rootDirectory, directory, status, now))) {
+		if (candidate.kind === "async" && candidate.resultMtimeMs === undefined) {
+			await retireOrphanedDeliveryState(resultsDir, status.runId, now);
+		}
+		if (
+			candidate.kind === "async" &&
+			candidate.resultMtimeMs !== undefined &&
+			now - candidate.resultMtimeMs >= RESULT_RETENTION_MS &&
+			(await retireStaleResult(rootDirectory, directory, status, now))
+		) {
 			staleResultsRetired += 1;
 		}
 		if (await safeToTrim(directory, status, candidate.kind)) {

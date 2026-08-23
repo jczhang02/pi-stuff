@@ -216,6 +216,39 @@ describe("Agent runtime maintenance", () => {
 		expect(fs.existsSync(path.join(run, "child-session.jsonl"))).toBeTrue();
 	});
 
+	test("retires only old unclaimed delivery state left after its result disappeared", async () => {
+		const root = fixture();
+		const now = Date.now();
+		const staleAt = now - 31 * 24 * 60 * 60 * 1_000;
+		const resultsDir = path.join(root, "async-subagent-results");
+		fs.mkdirSync(resultsDir, { recursive: true, mode: 0o700 });
+		for (const runId of ["orphan", "recent", "paired"]) {
+			terminalRun(root, "async", runId, { endedAt: staleAt, processObserved: true });
+		}
+		const oldState = path.join(resultsDir, ".orphan.json.delivery-state");
+		const recentState = path.join(resultsDir, ".recent.json.delivery-state");
+		const pairedState = path.join(resultsDir, ".paired.json.delivery-state");
+		for (const state of [oldState, recentState, pairedState]) fs.writeFileSync(state, "{}", { mode: 0o600 });
+		fs.writeFileSync(path.join(resultsDir, "paired.json"), "{}", { mode: 0o600 });
+		const staleTimestamp = new Date(staleAt);
+		for (const state of [oldState, pairedState]) fs.utimesSync(state, staleTimestamp, staleTimestamp);
+		const claim = tryAcquireKernelClaim(resultsDir, shardedDurableClaimName("result-delivery", "orphan.json"));
+		if (!claim) throw new Error("Test could not acquire the result delivery claim.");
+
+		try {
+			await maintainAgentRuntime(root, { now });
+			expect(fs.existsSync(oldState)).toBeTrue();
+		} finally {
+			claim.release();
+		}
+
+		await maintainAgentRuntime(root, { now });
+
+		expect(fs.existsSync(oldState)).toBeFalse();
+		expect(fs.existsSync(recentState)).toBeTrue();
+		expect(fs.existsSync(pairedState)).toBeTrue();
+	});
+
 	test("retains recent, unproven, incomplete, foreign, and claimed result entries", async () => {
 		const root = fixture();
 		const now = Date.now();
