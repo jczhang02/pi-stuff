@@ -4,6 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	consumeStopRequests,
+	interruptRequestPath,
+	requestAsyncInterrupt,
 	requestAsyncStop,
 	stopRequestPath,
 	watchAsyncControlInbox,
@@ -83,7 +85,7 @@ describe("Agent stop control channel", () => {
 		).toBeFalse();
 	});
 
-	test("polling delivers a durable stop exactly once when fs.watch stays silent", () => {
+	test("polling delivers durable stop and interrupt requests exactly once when fs.watch stays silent", () => {
 		const asyncDir = fixture();
 		const silentDirectory = fixture();
 		let poll = (): void => {};
@@ -100,8 +102,11 @@ describe("Agent stop control channel", () => {
 			},
 		});
 		const received: number[] = [];
+		let interrupts = 0;
 		const dispose = watchAsyncControlInbox(asyncDir, {
-			onInterrupt: () => {},
+			onInterrupt: () => {
+				interrupts += 1;
+			},
 			onStop: (request) => received.push(request.targetIndex ?? -1),
 			fs: { ...fs, watch: silentWatch },
 			timers: {
@@ -110,13 +115,18 @@ describe("Agent stop control channel", () => {
 			},
 		});
 		const requestPath = requestAsyncStop(asyncDir, { targetIndex: 4 }, { now: () => 1_000, randomId: () => "poll" });
+		requestAsyncInterrupt(asyncDir, {}, { now: () => 1_000 });
 
 		expect(received).toEqual([]);
+		expect(interrupts).toBe(0);
 		poll();
 		expect(received).toEqual([4]);
+		expect(interrupts).toBe(1);
 		expect(fs.existsSync(requestPath)).toBeFalse();
+		expect(fs.existsSync(interruptRequestPath(asyncDir))).toBeFalse();
 		poll();
 		expect(received).toEqual([4]);
+		expect(interrupts).toBe(1);
 		dispose();
 	});
 });

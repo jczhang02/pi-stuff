@@ -261,6 +261,37 @@ describe("Agent runtime maintenance", () => {
 		}
 	});
 
+	test("advances past 5,000 older runs and unretirable results on the next bounded pass", async () => {
+		const root = fixture();
+		const now = Date.now();
+		const staleAt = now - 31 * 24 * 60 * 60 * 1_000;
+		const asyncRoot = path.join(root, "async-subagent-runs");
+		fs.mkdirSync(asyncRoot, { recursive: true, mode: 0o700 });
+		const unrelatedTimestamp = new Date(staleAt - 24 * 60 * 60 * 1_000);
+		for (let index = 0; index < 5_000; index += 1) {
+			const directory = path.join(asyncRoot, `blocked-${String(index).padStart(4, "0")}`);
+			fs.mkdirSync(directory, { mode: 0o700 });
+			fs.utimesSync(directory, unrelatedTimestamp, unrelatedTimestamp);
+			if (index < 256) staleResult(root, path.basename(directory), directory, "unbound-session", staleAt);
+		}
+		const run = terminalRun(root, "async", "reachable-result", {
+			endedAt: staleAt,
+			processObserved: true,
+			sessionId: "parent-session",
+			completeSessionHistory: true,
+		});
+		const resultPath = staleResult(root, "reachable-result", run, "parent-session", staleAt);
+
+		const firstReport = await maintainAgentRuntime(root, { now });
+		expect(firstReport.staleResultsRetired).toBe(0);
+		expect(fs.existsSync(resultPath)).toBeTrue();
+
+		const secondReport = await maintainAgentRuntime(root, { now });
+
+		expect(secondReport.staleResultsRetired).toBe(1);
+		expect(fs.existsSync(resultPath)).toBeFalse();
+	}, 20_000);
+
 	test("does not rewrite a recently terminal event stream while tracker cursors may still reference it", async () => {
 		const root = fixture();
 		const run = terminalRun(root, "async", "cursor-grace", {

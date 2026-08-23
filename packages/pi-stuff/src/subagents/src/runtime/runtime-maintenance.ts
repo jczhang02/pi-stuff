@@ -15,6 +15,8 @@ const MAX_RUN_DIRECTORIES_PER_PASS = 5_000;
 const DIAGNOSTIC_TRIM_GRACE_MS = 60 * 60 * 1_000;
 const RESULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 const MAX_RESULT_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_STALE_RESULTS_PER_PASS = 256;
+const STALE_RESULT_CURSOR_FILE = ".stale-result-cursor";
 const SCAN_YIELD_INTERVAL = 32;
 
 type RuntimeRunKind = "foreground" | "async" | "nested";
@@ -24,6 +26,8 @@ interface RuntimeRunDirectory {
 	readonly kind: RuntimeRunKind;
 	readonly mtimeMs: number;
 	readonly diagnosticBytes: number;
+	readonly resultMtimeMs?: number;
+	readonly prioritizedResult?: boolean;
 }
 
 export interface RuntimeMaintenanceReport {
@@ -57,7 +61,11 @@ function terminal(status: AsyncStatus): boolean {
 	);
 }
 
-async function directorySnapshot(directory: string, kind: RuntimeRunKind): Promise<RuntimeRunDirectory | undefined> {
+async function directorySnapshot(
+	directory: string,
+	kind: RuntimeRunKind,
+	resultPath?: string,
+): Promise<RuntimeRunDirectory | undefined> {
 	try {
 		const stat = await fs.promises.lstat(directory);
 		const currentUid = process.getuid?.();
@@ -73,20 +81,56 @@ async function directorySnapshot(directory: string, kind: RuntimeRunKind): Promi
 		} catch {
 			// A run without optional diagnostics can still be considered for old-run GC.
 		}
-		return { directory, kind, mtimeMs: stat.mtimeMs, diagnosticBytes };
+		let resultMtimeMs: number | undefined;
+		if (resultPath) {
+			try {
+				const result = await fs.promises.lstat(resultPath);
+				if (
+					result.isFile() &&
+					!result.isSymbolicLink() &&
+					(currentUid === undefined || result.uid === currentUid)
+				) {
+					resultMtimeMs = result.mtimeMs;
+				}
+			} catch {
+				// Most runs have no pending result notification.
+			}
+		}
+		return { directory, kind, mtimeMs: stat.mtimeMs, diagnosticBytes, resultMtimeMs };
 	} catch {
 		return undefined;
 	}
 }
 
-async function runDirectories(root: string, depth: 1 | 2, kind: RuntimeRunKind): Promise<RuntimeRunDirectory[]> {
+async function runDirectories(
+	root: string,
+	depth: 1 | 2,
+	kind: RuntimeRunKind,
+	resultSelection?: { directory: string; cutoff: number; cursor?: string },
+): Promise<RuntimeRunDirectory[]> {
 	const oversized: RuntimeRunDirectory[] = [];
 	const oldest: RuntimeRunDirectory[] = [];
+	const staleAfterCursor: RuntimeRunDirectory[] = [];
+	const staleBeforeCursor: RuntimeRunDirectory[] = [];
 	let observed = 0;
+	const retainStale = (group: RuntimeRunDirectory[], snapshot: RuntimeRunDirectory): void => {
+		group.push(snapshot);
+		if (group.length > MAX_STALE_RESULTS_PER_PASS * 2) {
+			group.sort((left, right) => path.basename(left.directory).localeCompare(path.basename(right.directory)));
+			group.length = MAX_STALE_RESULTS_PER_PASS;
+		}
+	};
 	const retain = (snapshot: RuntimeRunDirectory | undefined): void => {
 		if (!snapshot) return;
 		oldest.push(snapshot);
 		if (snapshot.diagnosticBytes > DIAGNOSTIC_TAIL_BYTES) oversized.push(snapshot);
+		if (resultSelection && snapshot.resultMtimeMs !== undefined && snapshot.resultMtimeMs <= resultSelection.cutoff) {
+			const runId = path.basename(snapshot.directory);
+			retainStale(
+				resultSelection.cursor && runId <= resultSelection.cursor ? staleBeforeCursor : staleAfterCursor,
+				snapshot,
+			);
+		}
 		if (oldest.length > MAX_RUN_DIRECTORIES_PER_PASS * 2) {
 			oldest.sort((left, right) => left.mtimeMs - right.mtimeMs);
 			oldest.length = MAX_RUN_DIRECTORIES_PER_PASS;
@@ -102,7 +146,13 @@ async function runDirectories(root: string, depth: 1 | 2, kind: RuntimeRunKind):
 			if (!entry.isDirectory() || !safeSegment(entry.name)) continue;
 			const candidate = path.join(root, entry.name);
 			if (depth === 1) {
-				retain(await directorySnapshot(candidate, kind));
+				retain(
+					await directorySnapshot(
+						candidate,
+						kind,
+						resultSelection ? path.join(resultSelection.directory, `${entry.name}.json`) : undefined,
+					),
+				);
 				observed += 1;
 			} else {
 				try {
@@ -128,8 +178,15 @@ async function runDirectories(root: string, depth: 1 | 2, kind: RuntimeRunKind):
 	oversized.length = Math.min(oversized.length, MAX_RUN_DIRECTORIES_PER_PASS);
 	oldest.sort((left, right) => left.mtimeMs - right.mtimeMs);
 	oldest.length = Math.min(oldest.length, MAX_RUN_DIRECTORIES_PER_PASS);
+	staleAfterCursor.sort((left, right) => path.basename(left.directory).localeCompare(path.basename(right.directory)));
+	staleBeforeCursor.sort((left, right) => path.basename(left.directory).localeCompare(path.basename(right.directory)));
+	const prioritizedResults = [...staleAfterCursor, ...staleBeforeCursor]
+		.slice(0, MAX_STALE_RESULTS_PER_PASS)
+		.map((snapshot) => ({ ...snapshot, prioritizedResult: true }));
 	const byPath = new Map<string, RuntimeRunDirectory>();
-	for (const snapshot of [...oversized, ...oldest]) byPath.set(snapshot.directory, snapshot);
+	for (const snapshot of [...prioritizedResults, ...oversized, ...oldest]) {
+		if (!byPath.has(snapshot.directory)) byPath.set(snapshot.directory, snapshot);
+	}
 	return [...byPath.values()];
 }
 
@@ -256,20 +313,51 @@ function interleave(groups: readonly RuntimeRunDirectory[][], maximum: number): 
 }
 
 function candidateDirectories(groups: readonly RuntimeRunDirectory[][]): RuntimeRunDirectory[] {
+	const prioritizedResults = groups.flatMap((group) => group.filter(({ prioritizedResult }) => prioritizedResult));
+	const selected = prioritizedResults.slice(0, MAX_STALE_RESULTS_PER_PASS);
+	const selectedPaths = new Set(selected.map(({ directory }) => directory));
 	const oversized = groups.map((group) =>
 		group
-			.filter(({ diagnosticBytes }) => diagnosticBytes > DIAGNOSTIC_TAIL_BYTES)
+			.filter(
+				({ diagnosticBytes, directory }) =>
+					diagnosticBytes > DIAGNOSTIC_TAIL_BYTES && !selectedPaths.has(directory),
+			)
 			.sort((left, right) => right.diagnosticBytes - left.diagnosticBytes),
 	);
-	const selected = interleave(oversized, MAX_RUN_DIRECTORIES_PER_PASS);
+	selected.push(...interleave(oversized, MAX_RUN_DIRECTORIES_PER_PASS - selected.length));
 	if (selected.length >= MAX_RUN_DIRECTORIES_PER_PASS) return selected;
-	const selectedPaths = new Set(selected.map(({ directory }) => directory));
+	for (const { directory } of selected) selectedPaths.add(directory);
 	const oldest = groups.map((group) =>
 		group
 			.filter(({ directory }) => !selectedPaths.has(directory))
 			.sort((left, right) => left.mtimeMs - right.mtimeMs),
 	);
 	return [...selected, ...interleave(oldest, MAX_RUN_DIRECTORIES_PER_PASS - selected.length)];
+}
+
+async function readStaleResultCursor(resultsDir: string): Promise<string | undefined> {
+	try {
+		const value = parseJsonValue(
+			(await readBoundedOwnedFileSnapshotAsync(path.join(resultsDir, STALE_RESULT_CURSOR_FILE), 1_024)).text,
+		);
+		return isJsonInputObject(value) && isRuntimeString(value.runId) && safeSegment(value.runId)
+			? value.runId
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function writeStaleResultCursor(resultsDir: string, runId: string): Promise<void> {
+	const temporary = path.join(resultsDir, `.${STALE_RESULT_CURSOR_FILE}.${randomUUID()}.tmp`);
+	try {
+		await fs.promises.writeFile(temporary, JSON.stringify({ runId }), { flag: "wx", mode: 0o600 });
+		await fs.promises.rename(temporary, path.join(resultsDir, STALE_RESULT_CURSOR_FILE));
+	} catch {
+		try {
+			await fs.promises.unlink(temporary);
+		} catch {}
+	}
 }
 
 async function trimDiagnosticTail(filePath: string): Promise<number> {
@@ -405,9 +493,15 @@ export async function maintainAgentRuntime(
 	options: RuntimeMaintenanceOptions = {},
 ): Promise<RuntimeMaintenanceReport> {
 	const now = options.now ?? Date.now();
+	const resultsDir = path.join(rootDirectory, "async-subagent-results");
+	const resultCursor = await readStaleResultCursor(resultsDir);
 	const groups = await Promise.all([
 		runDirectories(path.join(rootDirectory, "foreground-runs"), 1, "foreground"),
-		runDirectories(path.join(rootDirectory, "async-subagent-runs"), 1, "async"),
+		runDirectories(path.join(rootDirectory, "async-subagent-runs"), 1, "async", {
+			directory: resultsDir,
+			cutoff: now - RESULT_RETENTION_MS,
+			cursor: resultCursor,
+		}),
 		runDirectories(path.join(rootDirectory, "nested-subagent-runs"), 2, "nested"),
 	]);
 	const directories = candidateDirectories(groups);
@@ -416,7 +510,9 @@ export async function maintainAgentRuntime(
 	let bytesReclaimed = 0;
 	let abandonedPreparationsReclaimed = 0;
 	let staleResultsRetired = 0;
+	let lastPrioritizedResult: string | undefined;
 	for (const candidate of directories) {
+		if (candidate.prioritizedResult) lastPrioritizedResult = path.basename(candidate.directory);
 		if (await reclaimAbandonedPreparation(candidate.directory, candidate.kind)) {
 			abandonedPreparationsReclaimed += 1;
 			continue;
@@ -443,6 +539,7 @@ export async function maintainAgentRuntime(
 		}
 		if (inspected % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
 	}
+	if (lastPrioritizedResult) await writeStaleResultCursor(resultsDir, lastPrioritizedResult);
 	return { inspected, trimmed, bytesReclaimed, abandonedPreparationsReclaimed, staleResultsRetired };
 }
 
