@@ -352,6 +352,7 @@ describe("AgentRoster", () => {
 
 	test("shows current Agent context pressure and drops it before identity on narrow rows", () => {
 		const colors: Array<{ color: string; text: string }> = [];
+		// SAFETY: this render probe exercises only Theme.fg; the test double preserves that exact callable contract.
 		const recordingTheme = {
 			...theme,
 			fg: (color: string, text: string) => {
