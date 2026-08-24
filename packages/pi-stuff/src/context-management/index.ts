@@ -64,11 +64,11 @@ import {
 	applyContextPromptContributionsToProvider,
 	stripContextPromptContributions,
 } from "./prompt-contributions.js";
+import { loadMagicContextWorker } from "./magic-worker-client.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
 
-const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
 const MAGIC_CONTEXT_NATIVE_COMPACTION_MULTIPLIER = 2;
 const SUITE_CUSTOM_CONTEXT_GUIDANCE_TAG = "pi-stuff-context-guidance";
@@ -692,8 +692,7 @@ function formatProjection(full: string, audience: ContextProjectionAudience, opt
 }
 
 function defaultLoadMagicContext(): Promise<MagicModule> {
-	// SAFETY: the configured Magic Context package exposes the Extension factory as its default export.
-	return import(MAGIC_CONTEXT_MODULE) as Promise<MagicModule>;
+	return loadMagicContextWorker();
 }
 
 function createMagicModuleSource(loader: () => Promise<MagicModule>): MagicModuleSource {

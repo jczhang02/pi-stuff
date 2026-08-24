@@ -3,13 +3,16 @@
 The Pi Stuff Magic Context adapter. When a Session already has a recognized
 Magic Context configuration with no pending migration, it finishes the exact
 official module, factory, database, and Session initialization before editor
-readiness. Missing or legacy configuration remains dormant until direct use can
-authorize creation or migration. Input interception only invalidates stale
-projections and can start a fallback retry; it never waits for a synthetic UI
-frame. Provider and compaction boundaries defensively join any pending retry
-before they consume context. Pi's JSONL session remains the raw authority, and
-the Module falls back to Pi's native context path when the derived local store
-is unavailable before Magic takes ownership.
+readiness. The official derived-state engine runs in one internal Context Engine
+Worker so projection can proceed without monopolizing Pi's UI thread; Pi still
+owns input, transcript rendering, Sessions, model requests, and Agent lifecycle.
+The adapter does not render or refresh submitted input itself. Missing or legacy
+configuration remains dormant until direct use can authorize creation or
+migration. Input interception only invalidates stale projections and can start a
+fallback retry. Provider and compaction boundaries defensively join any pending
+retry before they consume context. Pi's JSONL session remains the raw authority,
+and the Module falls back to Pi's native context path when the derived local
+store is unavailable before Magic takes ownership.
 
 Magic Context 0.40 migrates flat user-level Historian and Dreamer execution
 settings into per-harness blocks. Context detects that pending rewrite without
@@ -52,6 +55,16 @@ mutating an unknown request shape. Ponytail registers at the final ordered
 position: its Code Mode Skill catalog, when required, precedes its current-mode
 instructions. Ponytail's standing contribution is measured and bounded
 separately from Context's 8,000-character direct-mode contract.
+
+The adapter bundles the pinned engine into an in-memory Worker artifact during
+activation because the certified standalone Pi binary cannot resolve its external
+Worker module graph. No bundle is written to disk. Host events, Tools, and
+commands remain registered in Pi and cross the boundary as immutable snapshots;
+only Context projection, fork initialization, and explicit history-rebuild
+commands copy the full Session branch. Ordinary persistence sends one new leaf
+entry so Magic's delayed index stays current without retransmitting the Session.
+The narrowly enumerated Host effects and lifecycle contract are recorded in
+[ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md).
 
 The accepted `/ctx` readability target is recorded in
 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md).

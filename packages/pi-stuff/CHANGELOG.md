@@ -16,6 +16,9 @@
   gates; the certified run passed all Sessions and measured 87 versus 141 aggregate LOC (`p = 0.01953125`) at a 31%
   total-token cost. Add an integrity-checked, non-mutating upstream candidate/diff review command and correct the pinned npm integrity to
   the verified registry artifact. See ADR 0021.
+- Run the exact official Magic Context engine in an internal in-memory Worker so long-Session projection and malformed
+  image handling do not monopolize Pi's UI thread. Preserve Pi's native input and transcript authority, keep the Working
+  animation live, and proxy only immutable snapshots plus bounded Host effects. See ADR 0019.
 - Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
   at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while
   preserving the Suite-owned `/ctx` surface and native fail-open behavior.

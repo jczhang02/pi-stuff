@@ -3,6 +3,11 @@
 Pi Stuff integrates the official Magic Context Package through this adapter. It
 does not vendor or patch Magic Context Core.
 
+The exact published package executes inside Pi Stuff's Context Engine Worker.
+The adapter produces one activation-time in-memory bundle solely to make the
+official module graph resolvable from the certified standalone Pi binary; it
+does not alter upstream source or persist a derived artifact.
+
 - Upstream: `https://github.com/cortexkit/magic-context`
 - Upstream release: `v0.40.0`
 - Published source commit (`gitHead`): `002c2c292eef51573ebe950237d586f9310bbece`
@@ -24,6 +29,7 @@ against the pinned Pi 0.84.3 source profile.
 - native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
 - exact official Package behind a replaceable Capability seam;
+- the exact official engine isolated from Pi's UI thread behind immutable Host snapshots and bounded effects;
 - no competing Todo, statusline, announcement, Dreamer, or Sidekick UI;
 - only the five Context tools plus focused status, flush, recomposition,
   wrap-up, and session-upgrade commands are exposed;

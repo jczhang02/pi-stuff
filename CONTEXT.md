@@ -92,6 +92,12 @@ boundary: Ponytail contributes neither standing instructions nor a model-visible
 commands remain available.
 _Avoid_: Review mode, Agent mode, global mode
 
+**Context Engine Worker**:
+The internal Bun Worker in Context Management that runs the exact Magic Context derived-state engine away from Pi's UI
+thread. It receives immutable Host snapshots and returns Context results through a narrow adapter; Pi still owns the
+CLI, TUI, Session, model request, and Agent lifecycle.
+_Avoid_: Context Host, Context runtime, transcript worker
+
 **Fenced Visualization Projection**:
 A display-only conversion of a complete, valid `chart` or `tree` fenced code block into width-bounded terminal text at
 the Conversation Markdown seam. Canonical message text, Session records, copy/export source, and Provider context remain

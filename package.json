@@ -81,7 +81,6 @@
 					"src/mcp/runtime/**"
 				],
 				"ignoreDependencies": [
-					"@cortexkit/pi-magic-context",
 					"@napi-rs/keyring",
 					"@napi-rs/keyring-linux-x64-gnu"
 				]
