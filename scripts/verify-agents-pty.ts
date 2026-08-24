@@ -608,6 +608,16 @@ function verifyFleetviewFrame(screen: string, columns: number, selection: Fleetv
 	}
 }
 
+function verifyFleetviewContextPercent(screen: string, columns: number, expected: number): void {
+	const line = screen
+		.split("\n")
+		.map((entry) => entry.trimEnd())
+		.find((entry) => /^[●○] general-purpose(?:\s|$)/u.test(entry));
+	if (!line?.includes(`${String(expected)}% ·`)) {
+		fail(`${String(columns)}-column Fleetview did not show Agent context at ${String(expected)}%\n${screen}`);
+	}
+}
+
 function sanitizeFleetviewEvidence(value: string): string {
 	return value.replace(/\/tmp\/pi-(?:stuff-agents-pty|subagent-session)-[^/\s]+/gu, "[fixture]").trimEnd();
 }
@@ -677,15 +687,19 @@ async function verifyFleetviewFooterLayout(
 		}
 
 		session.sendKey("Down");
+		await session.waitForText("37%");
 		screen = await session.waitForFleetviewFrame("live");
 		verifyFleetviewFrame(screen, options.columns, "live");
+		verifyFleetviewContextPercent(screen, options.columns, 37);
 		if (options.columns > 64) {
 			session.resize(64, 28);
 			screen = await session.waitForFleetviewFrame("live", 64);
 			verifyFleetviewFrame(screen, 64, "live");
+			verifyFleetviewContextPercent(screen, 64, 37);
 			session.resize(options.columns, options.rows);
 			screen = await session.waitForFleetviewFrame("live");
 			verifyFleetviewFrame(screen, options.columns, "live");
+			verifyFleetviewContextPercent(screen, options.columns, 37);
 		}
 
 		session.sendKey("Escape");
@@ -765,6 +779,7 @@ async function verifyFleetviewFooterLayout(
 		session.sendKey("Down");
 		screen = await session.waitForFleetviewFrame("terminal");
 		verifyFleetviewFrame(screen, options.columns, "terminal");
+		verifyFleetviewContextPercent(screen, options.columns, 40);
 		session.sendKey("Escape");
 		screen = await session.waitForFleetviewFrame("idle");
 		verifyFleetviewFrame(screen, options.columns, "idle");

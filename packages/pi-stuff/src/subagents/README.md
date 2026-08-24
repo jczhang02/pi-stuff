@@ -118,8 +118,12 @@ view. The Capability creates no statusline, divider, permanent management hint, 
 The below-editor roster keeps terminal rows for 30 seconds, then hides them automatically. Live rows never expire and
 `x` may dismiss a terminal row early. Hiding a row from the roster does not remove its bounded Task preview, result, or
 transcript from `/agents`. Only the selected marker uses accent; routine states and completion are muted, while waiting
-and errors color only their explicit right-state text. At narrow widths, an unreadable description is omitted as a unit
-instead of being joined to the state as an ellipsis fragment.
+and errors color only their explicit right-state text. The right side shows the child Agent's current Context percentage
+before its lifecycle state when the selected model has known capacity and the Provider has reported usage. This is the
+current Provider payload plus bounded trailing-message estimates, not cumulative run tokens. The percentage is withheld
+during compaction, model fallback, and unknown-capacity runs until a new authoritative usage record arrives. At narrow
+widths it is dropped before Agent identity; an unreadable description is then omitted as a unit instead of being joined
+to the state as an ellipsis fragment.
 
 The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row. It
 remains single-column at every width: list and detail are sequential modes, and additional width belongs to the selected
