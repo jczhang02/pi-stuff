@@ -1384,6 +1384,7 @@ function updateForegroundControl(control: ForegroundRunControl, status: AsyncSta
 		child.currentToolStartedAt = step.currentToolStartedAt;
 		child.currentPath = step.currentPath;
 		child.turnCount = step.turnCount;
+		child.contextUsage = step.contextUsage;
 		child.toolCount = step.toolCount;
 	}
 }
@@ -1557,6 +1558,7 @@ function rememberForegroundResult(
 			};
 			if (child.cwd) rememberedChild.cwd = child.cwd;
 			if (child.context) rememberedChild.context = child.context;
+			if (child.contextUsage) rememberedChild.contextUsage = child.contextUsage;
 			if (child.crashed) rememberedChild.crashed = true;
 			if (child.sessionFile) rememberedChild.sessionFile = child.sessionFile;
 			if (child.model) rememberedChild.model = child.model;

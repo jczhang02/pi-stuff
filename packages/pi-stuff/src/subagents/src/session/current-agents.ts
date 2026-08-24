@@ -3,7 +3,7 @@ import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } f
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
 import { resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
-import type { SubagentState } from "../shared/types.ts";
+import type { AgentContextUsage, SubagentState } from "../shared/types.ts";
 
 export type AgentStatus =
 	| "queued"
@@ -54,6 +54,7 @@ export interface AgentRow extends AgentTranscriptTarget {
 	readonly startedAt: number | null;
 	readonly endedAt: number | null;
 	readonly elapsedMs: number | null;
+	readonly contextUsage: Readonly<AgentContextUsage> | null;
 	readonly partialResult: string | null;
 	readonly nestedCount: number;
 	readonly nestedAgents: readonly AgentNestedDetail[];
@@ -128,6 +129,8 @@ interface AgentProjectionRecord {
 	readonly cancelledBy?: AgentProjectionValue;
 	readonly children?: AgentProjectionValue;
 	readonly crashed?: AgentProjectionValue;
+	readonly contextUsage?: AgentProjectionValue;
+	readonly contextWindow?: AgentProjectionValue;
 	readonly currentActivityState?: AgentProjectionValue;
 	readonly currentTool?: AgentProjectionValue;
 	readonly delegatedTask?: AgentProjectionValue;
@@ -167,6 +170,7 @@ interface AgentProjectionRecord {
 	readonly timedOut?: AgentProjectionValue;
 	readonly toolBudgetBlocked?: AgentProjectionValue;
 	readonly transcriptPath?: AgentProjectionValue;
+	readonly tokens?: AgentProjectionValue;
 	readonly turnBudgetExceeded?: AgentProjectionValue;
 	readonly uiStatus?: AgentProjectionValue;
 	readonly waitReason?: AgentProjectionValue;
@@ -185,6 +189,7 @@ interface RowDraft {
 	error: string | null;
 	startedAt: number | null;
 	endedAt: number | null;
+	contextUsage: AgentContextUsage | null;
 	partialResult: string | null;
 	nestedCount: number;
 	nestedAgents: AgentNestedDetail[];
@@ -227,6 +232,25 @@ function asRecord<Value>(value: Value): AgentProjectionRecord {
 
 function finiteNumber<Value>(value: Value): number | null {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : null;
+}
+
+function projectedContextUsage(...values: AgentProjectionValue[]): AgentContextUsage | null {
+	for (const value of values) {
+		const usage = asRecord(asRecord(value)["contextUsage"]);
+		const tokens = usage["tokens"];
+		const contextWindow = usage["contextWindow"];
+		if (
+			isRuntimeNumber(tokens) &&
+			Number.isSafeInteger(tokens) &&
+			tokens >= 0 &&
+			isRuntimeNumber(contextWindow) &&
+			Number.isSafeInteger(contextWindow) &&
+			contextWindow > 0
+		) {
+			return { tokens, contextWindow };
+		}
+	}
+	return null;
 }
 
 function optionalString<Value>(value: Value): string | null {
@@ -594,6 +618,7 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			endedAt: finiteNumber(
 				stepRecord["endedAt"] ?? (TERMINAL_SOURCE_STATUSES.has(jobStatus) ? job.updatedAt : null),
 			),
+			contextUsage: projectedContextUsage(stepRecord, job),
 			partialResult: partialResult(status, stepRecord, job),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
@@ -674,6 +699,7 @@ function projectForegroundControl(
 			error: terminalError(status, rememberedChild, childRecord, control),
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
+			contextUsage: projectedContextUsage(childRecord, control),
 			partialResult: partialResult(status, rememberedChild, childRecord),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
@@ -712,6 +738,7 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				error: terminalError(status, childRecord),
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
+				contextUsage: projectedContextUsage(childRecord),
 				partialResult: partialResult(status, childRecord),
 				nestedCount: countNestedRuns(nested),
 				nestedAgents: projectNestedAgents(nested),
@@ -746,6 +773,7 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 		startedAt: draft.startedAt,
 		endedAt: draft.endedAt,
 		elapsedMs,
+		contextUsage: draft.contextUsage ? Object.freeze({ ...draft.contextUsage }) : null,
 		partialResult,
 		nestedCount: draft.nestedCount,
 		nestedAgents: Object.freeze([...draft.nestedAgents]),

@@ -1,5 +1,6 @@
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type {
+	AgentContextUsage,
 	ArtifactConfig,
 	CostSummary,
 	ModelAttempt,
@@ -41,6 +42,8 @@ export interface RunnerAgentTask {
 	model?: string;
 	thinking?: string;
 	modelCandidates?: string[];
+	/** Context windows frozen from the launcher's model registry for the selected candidates. */
+	modelContextWindows?: Array<{ model: string; contextWindow: number }>;
 	tools?: string[];
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
@@ -140,6 +143,7 @@ export interface BackgroundTaskResult {
 	sessionFile?: string;
 	intercomTarget?: string;
 	model?: string;
+	contextUsage?: AgentContextUsage;
 	thinking?: string;
 	attemptedModels?: string[];
 	modelAttempts?: ModelAttempt[];

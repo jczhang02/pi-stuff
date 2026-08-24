@@ -1145,6 +1145,7 @@ describe("background runner configuration", () => {
 		const agents = [
 			agent(root, "writer", {
 				model: "provider/writer-default",
+				fallbackModels: ["provider/writer-default"],
 				defaultTurnBudget: { maxTurns: 20, graceTurns: 3 },
 				toolBudget: { hard: 30, soft: 20 },
 			}),
@@ -1170,6 +1171,21 @@ describe("background runner configuration", () => {
 				{ agent: "reviewer", description: "Review core change", task: "Review", skill: ["review"] },
 			],
 			agents,
+			availableModels: [
+				{ provider: "provider", id: "fast", fullId: "provider/fast", contextWindow: 120_000 },
+				{
+					provider: "provider",
+					id: "writer-default",
+					fullId: "provider/writer-default",
+					contextWindow: 100_000,
+				},
+				{
+					provider: "provider",
+					id: "reviewer-default",
+					fullId: "provider/reviewer-default",
+					contextWindow: 80_000,
+				},
+			],
 			ctx: buildContext(root),
 			cwd: root,
 			contextForAgent: () => "fork",
@@ -1195,6 +1211,11 @@ describe("background runner configuration", () => {
 			cwd: path.join(root, "packages", "core"),
 			context: "fork",
 			model: "provider/fast",
+			modelCandidates: ["provider/fast", "provider/writer-default"],
+			modelContextWindows: [
+				{ model: "provider/fast", contextWindow: 120_000 },
+				{ model: "provider/writer-default", contextWindow: 100_000 },
+			],
 			thinking: "high",
 			skills: ["review"],
 			turnBudget: { maxTurns: 7, graceTurns: 1 },
@@ -1207,6 +1228,7 @@ describe("background runner configuration", () => {
 			cwd: root,
 			context: "fork",
 			model: "provider/reviewer-default",
+			modelContextWindows: [{ model: "provider/reviewer-default", contextWindow: 80_000 }],
 			thinking: "high",
 			skills: ["review"],
 			turnBudget: { maxTurns: 12, graceTurns: 2 },
@@ -1416,6 +1438,71 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		});
 		expect(fs.existsSync(routeRoot)).toBe(false);
 	});
+
+	test("tracks the active Provider context instead of cumulative child usage", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "context-usage-writer.ts");
+		fs.writeFileSync(
+			writer,
+			[
+				"#!/usr/bin/env bun",
+				'const emit = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\\n");',
+				'emit({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "sample" } }], stopReason: "toolUse", usage: { input: 19000, output: 1000, cacheRead: 0, cacheWrite: 0, totalTokens: 20000 } } });',
+				"await Bun.sleep(300);",
+				'emit({ type: "tool_result_end", message: { role: "toolResult", toolCallId: "call-1", toolName: "read", isError: false, content: [{ type: "text", text: "observed output" }] } });',
+				"await Bun.sleep(300);",
+				'emit({ type: "compaction_start" });',
+				"await Bun.sleep(300);",
+				'emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "CONTEXT_OK" }], stopReason: "stop", usage: { input: 24500, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 25000 } } });',
+			].join("\n"),
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-context-usage");
+		const resultPath = path.join(asyncDir, "result.json");
+		const statusPath = path.join(asyncDir, "status.json");
+		const readContextUsage = (): { tokens: number; contextWindow: number } | undefined => {
+			if (!fs.existsSync(statusPath)) return undefined;
+			return JSON.parse(fs.readFileSync(statusPath, "utf8")).steps?.[0]?.contextUsage;
+		};
+
+		const config: BackgroundRunnerConfig = {
+			version: 2,
+			id: "context-usage",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					model: "provider/context-model",
+					modelContextWindows: [{ model: "provider/context-model", contextWindow: 50_000 }],
+				},
+			},
+		};
+		const running = runConfiguredBackground(config);
+
+		await waitForCondition(() => readContextUsage()?.tokens === 20_000, "first Provider usage");
+		await waitForCondition(() => {
+			const tokens = readContextUsage()?.tokens;
+			return tokens !== undefined && tokens > 20_000 && tokens < 25_000;
+		}, "estimated trailing Tool result usage");
+		await waitForCondition(() => readContextUsage() === undefined, "compaction context reset");
+		await running;
+
+		const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
+		const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+		expect(status.steps[0].contextUsage).toEqual({ tokens: 25_000, contextWindow: 50_000 });
+		expect(result.results[0]).toMatchObject({
+			output: "CONTEXT_OK",
+			contextUsage: { tokens: 25_000, contextWindow: 50_000 },
+		});
+		expect(projectForegroundCompletion(config, result).details.results[0]).toMatchObject({
+			contextUsage: { tokens: 25_000, contextWindow: 50_000 },
+		});
+	}, 10_000);
 
 	test("resolves the writer supervisor through Bun without requiring node on PATH", async () => {
 		const root = fixtureRoot();

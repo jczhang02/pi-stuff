@@ -198,6 +198,7 @@ describe("CurrentAgents snapshot", () => {
 							index: 0,
 							agent: "worker",
 							description: "Implement",
+							contextUsage: { tokens: 37_500, contextWindow: 100_000 },
 							startedAt: 1_000,
 							updatedAt: 4_000,
 						},
@@ -262,6 +263,7 @@ describe("CurrentAgents snapshot", () => {
 						agent: "planner",
 						index: 0,
 						status: "completed",
+						contextUsage: { tokens: 50_000, contextWindow: 100_000 },
 						finalOutput: "plan complete",
 						sessionFile: "/sessions/planner.jsonl",
 						transcriptPath: "/transcripts/planner.md",
@@ -279,6 +281,7 @@ describe("CurrentAgents snapshot", () => {
 					{
 						agent: "scout",
 						status: "completed",
+						contextUsage: { tokens: 75_000, contextWindow: 100_000 },
 						startedAt: 1_000,
 						endedAt: 3_000,
 						transcriptPath: "/transcripts/scout.md",
@@ -306,15 +309,21 @@ describe("CurrentAgents snapshot", () => {
 			startedAt: 1_000,
 			elapsedMs: 4_000,
 			partialResult: "partial implementation",
+			contextUsage: { tokens: 37_500, contextWindow: 100_000 },
 			nestedCount: 2,
 			sessionFile: "/sessions/worker.jsonl",
 			transcriptPath: "/transcripts/worker.md",
 		});
 		expect(row(snapshot, "foreground:1").status).toBe("waiting_supervisor");
-		expect(row(snapshot, "done:0")).toMatchObject({ status: "completed", elapsedMs: 2_000 });
+		expect(row(snapshot, "done:0")).toMatchObject({
+			status: "completed",
+			elapsedMs: 2_000,
+			contextUsage: { tokens: 75_000, contextWindow: 100_000 },
+		});
 		expect(row(snapshot, "finished-foreground:0")).toMatchObject({
 			status: "completed",
 			partialResult: "plan complete",
+			contextUsage: { tokens: 50_000, contextWindow: 100_000 },
 			startedAt: null,
 			elapsedMs: null,
 		});
@@ -332,6 +341,7 @@ describe("CurrentAgents snapshot", () => {
 						agent: "background-reviewer",
 						endedAt: 3_000,
 						label: legacyTask,
+						contextUsage: { tokens: 42_000, contextWindow: 100_000 },
 						startedAt: 1_000,
 						status: "completed",
 					},
@@ -345,6 +355,7 @@ describe("CurrentAgents snapshot", () => {
 					{
 						agent: "foreground-reviewer",
 						description: legacyTask,
+						contextUsage: { tokens: 42_000, contextWindow: 100_000 },
 						index: 0,
 						status: "completed",
 						updatedAt: 3_000,
@@ -359,6 +370,7 @@ describe("CurrentAgents snapshot", () => {
 			const restored = row(snapshot, key);
 			expect(restored.description).toBe("独立只读复核 sample.txt 并检查状态");
 			expect(restored.task).toBe(legacyTask);
+			expect(restored.contextUsage).toEqual({ tokens: 42_000, contextWindow: 100_000 });
 		}
 	});
 
@@ -458,6 +470,7 @@ describe("CurrentAgents snapshot", () => {
 						agent: "reviewer",
 						endedAt: 3_000,
 						label: legacyTask,
+						contextUsage: { tokens: 42_000, contextWindow: 100_000 },
 						startedAt: 1_000,
 						status: "completed",
 					},
@@ -472,6 +485,7 @@ describe("CurrentAgents snapshot", () => {
 			const restored = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "legacy-run:0");
 			expect(restored.description).toBe("独立只读复核 sample.txt 并检查状态");
 			expect(restored.task).toBe(legacyTask);
+			expect(restored.contextUsage).toEqual({ tokens: 42_000, contextWindow: 100_000 });
 		} finally {
 			tracker.resetJobs();
 			fs.rmSync(root, { force: true, recursive: true });

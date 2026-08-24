@@ -29,6 +29,7 @@ export type ChildProtocolMessage = (Message | PiCustomMessage) & {
 		outputTokens?: number;
 		cacheRead?: number;
 		cacheWrite?: number;
+		totalTokens?: number;
 		cost?: { total?: number };
 	};
 };

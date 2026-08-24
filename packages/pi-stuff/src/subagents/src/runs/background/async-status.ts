@@ -7,6 +7,7 @@ import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../sh
 import { formatActivityLabel, formatParallelOutcome } from "../../shared/status-format.ts";
 import type {
 	ActivityState,
+	AgentContextUsage,
 	AsyncJobStep,
 	AsyncParallelGroupStatus,
 	AsyncStatus,
@@ -64,6 +65,7 @@ interface AsyncRunStepSummary {
 	steering?: SteeringStatus;
 	durationMs?: number;
 	tokens?: TokenUsage;
+	contextUsage?: AgentContextUsage;
 	totalCost?: CostSummary;
 	skills?: string[];
 	model?: string;
@@ -297,6 +299,7 @@ function statusToSummary(
 		if (step.steering) summary.steering = step.steering;
 		if (step.durationMs !== undefined) summary.durationMs = step.durationMs;
 		if (step.tokens) summary.tokens = step.tokens;
+		if (step.contextUsage) summary.contextUsage = step.contextUsage;
 		if (step.totalCost) summary.totalCost = step.totalCost;
 		if (step.skills) summary.skills = step.skills;
 		if (step.model) summary.model = step.model;

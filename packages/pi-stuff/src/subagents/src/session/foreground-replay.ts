@@ -13,7 +13,7 @@ import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../shar
 import { readProcessStartIdentity, readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../shared/session-identity.ts";
 import { tryAcquireStatusMutationClaim, tryAcquireStatusMutationClaimAsync } from "../shared/status-mutation.ts";
-import type { AsyncStatus, ForegroundResumeChild, ForegroundResumeRun } from "../shared/types.ts";
+import type { AgentContextUsage, AsyncStatus, ForegroundResumeChild, ForegroundResumeRun } from "../shared/types.ts";
 import { readStatus, readStatusAsync } from "../shared/utils.ts";
 
 const MAX_REPLAYED_FOREGROUND_RUNS = 200;
@@ -28,6 +28,8 @@ interface ForegroundReplayRecord {
 	readonly capabilityCeiling?: unknown;
 	readonly children?: unknown;
 	readonly context?: unknown;
+	readonly contextUsage?: unknown;
+	readonly contextWindow?: unknown;
 	readonly crashed?: unknown;
 	readonly currentPath?: unknown;
 	readonly currentTool?: unknown;
@@ -63,6 +65,7 @@ interface ForegroundReplayRecord {
 	readonly toolName?: unknown;
 	readonly transcriptError?: unknown;
 	readonly transcriptPath?: unknown;
+	readonly tokens?: unknown;
 	readonly turnCount?: unknown;
 	readonly type?: unknown;
 }
@@ -97,6 +100,15 @@ function finiteInteger<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) && Number.isInteger(value) ? value : undefined;
 }
 
+function agentContextUsage<Value>(value: Value): AgentContextUsage | undefined {
+	const usage = record(value);
+	const tokens = finiteInteger(usage.tokens);
+	const contextWindow = finiteInteger(usage.contextWindow);
+	return tokens !== undefined && tokens >= 0 && contextWindow !== undefined && contextWindow > 0
+		? { tokens, contextWindow }
+		: undefined;
+}
+
 function entryTime<Value>(value: Value): number {
 	if (!isRuntimeString(value)) return 0;
 	const parsed = Date.parse(value);
@@ -117,6 +129,7 @@ function replayChild<Value>(value: Value, index: number, updatedAt: number): For
 	const exitCode = finiteInteger(child.exitCode);
 	if (!agent || !task || exitCode === undefined) return undefined;
 	const context = child.context === "fresh" || child.context === "fork" ? child.context : undefined;
+	const contextUsage = agentContextUsage(child.contextUsage);
 	const sessionFile = exactString(child.sessionFile, 4_096);
 	if (child.sessionFile !== undefined && !sessionFile) return undefined;
 	if (sessionFile && !path.isAbsolute(sessionFile)) return undefined;
@@ -160,6 +173,7 @@ function replayChild<Value>(value: Value, index: number, updatedAt: number): For
 		updatedAt,
 	};
 	if (context) replayed.context = context;
+	if (contextUsage) replayed.contextUsage = contextUsage;
 	if (child.crashed === true) replayed.crashed = true;
 	if (sessionFile) replayed.sessionFile = sessionFile;
 	if (childCwd) replayed.cwd = childCwd;
@@ -267,6 +281,7 @@ function runtimeChild(step: RuntimeReplayStep, index: number, updatedAt: number)
 	const description = displayString(step.label, 4_096);
 	const task = displayString(step.task, 16 * 1024) ?? description;
 	const context = step.context === "fresh" || step.context === "fork" ? step.context : undefined;
+	const contextUsage = agentContextUsage(step.contextUsage);
 	const childCwd = exactString(step.cwd, 4_096);
 	if (step.cwd !== undefined && (!childCwd || !path.isAbsolute(childCwd))) return undefined;
 	const sessionFile = exactString(step.sessionFile, 4_096);
@@ -326,6 +341,7 @@ function runtimeChild(step: RuntimeReplayStep, index: number, updatedAt: number)
 	if (description) child.description = description;
 	if (task) child.task = task;
 	if (context) child.context = context;
+	if (contextUsage) child.contextUsage = contextUsage;
 	if (step.agentStatus === "crashed") child.crashed = true;
 	if (sessionFile) child.sessionFile = sessionFile;
 	if (childCwd) child.cwd = childCwd;

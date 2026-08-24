@@ -394,6 +394,12 @@ export type CostSummary = {
 	costUsd: number;
 };
 
+/** Latest child Provider context occupancy, not cumulative run usage. */
+export interface AgentContextUsage {
+	tokens: number;
+	contextWindow: number;
+}
+
 export type PublicNestedRunSummary = Pick<
 	NestedRunSummary,
 	| "id"
@@ -709,6 +715,7 @@ export interface SingleResult {
 	toolBudgetBlocked?: boolean;
 	messages?: Message[];
 	usage: Usage;
+	contextUsage?: AgentContextUsage;
 	model?: string;
 	/** Effective thinking level used by this foreground child, when known. */
 	thinking?: string;
@@ -1079,6 +1086,7 @@ export interface AsyncStatus {
 		toolBudget?: ToolBudgetState;
 		toolBudgetBlocked?: boolean;
 		tokens?: TokenUsage;
+		contextUsage?: AgentContextUsage;
 		skills?: string[];
 		model?: string;
 		thinking?: string;
@@ -1191,6 +1199,7 @@ export interface ForegroundResumeChild {
 	currentPath?: string;
 	turnCount?: number;
 	tokens?: number;
+	contextUsage?: AgentContextUsage;
 	toolCount?: number;
 	exitCode?: number;
 	error?: string;
@@ -1242,6 +1251,7 @@ export interface ForegroundChildControl {
 	currentPath?: string;
 	turnCount?: number;
 	tokens?: number;
+	contextUsage?: AgentContextUsage;
 	inputTokens?: number;
 	outputTokens?: number;
 	model?: string;
@@ -1272,6 +1282,7 @@ export interface ForegroundRunControl {
 	currentPath?: string;
 	turnCount?: number;
 	tokens?: number;
+	contextUsage?: AgentContextUsage;
 	inputTokens?: number;
 	outputTokens?: number;
 	model?: string;

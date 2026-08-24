@@ -196,6 +196,7 @@ function toSingleResult(
 	};
 	if (task.cwd) projected.cwd = task.cwd;
 	if (result.context) projected.context = result.context;
+	if (result.contextUsage) projected.contextUsage = result.contextUsage;
 	if (result.interrupted) projected.interrupted = true;
 	if (result.timedOut) projected.timedOut = true;
 	if (result.stopped) projected.stopped = true;
@@ -324,6 +325,7 @@ function projectForegroundStatus(
 			finalOutput: output,
 		};
 		if (step.context) projected.context = step.context;
+		if (step.contextUsage) projected.contextUsage = step.contextUsage;
 		if (detached) {
 			projected.detached = true;
 			projected.detachedReason = detachedReason ?? "Foreground owner recovery pending.";

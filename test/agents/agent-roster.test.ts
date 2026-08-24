@@ -134,6 +134,7 @@ function row(
 	key: string,
 	status: AgentStatus,
 	overrides: {
+		contextUsage?: AgentRow["contextUsage"];
 		description?: string;
 		elapsedMs?: number;
 		endedAt?: number;
@@ -145,6 +146,7 @@ function row(
 	const task = overrides.task ?? `work assigned to ${key}`;
 	return {
 		childIndex: 0,
+		contextUsage: overrides.contextUsage ?? null,
 		description: overrides.description ?? task,
 		endedAt: overrides.endedAt ?? null,
 		error: null,
@@ -346,6 +348,54 @@ describe("AgentRoster", () => {
 			if (agentLine.includes("sample")) expect(agentLine).toContain("复核 sample.txt 🧪");
 		}
 		result.roster.dispose();
+	});
+
+	test("shows current Agent context pressure and drops it before identity on narrow rows", () => {
+		const colors: Array<{ color: string; text: string }> = [];
+		const recordingTheme = {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as Theme;
+		const current = new CurrentAgentsHarness([
+			row("routine", "running", {
+				contextUsage: { tokens: 37_500, contextWindow: 100_000 },
+				elapsedMs: 5_000,
+			}),
+			row("pressure", "waiting_supervisor", {
+				contextUsage: { tokens: 75_000, contextWindow: 100_000 },
+			}),
+			row("critical", "failed", {
+				contextUsage: { tokens: 95_000, contextWindow: 100_000 },
+			}),
+		]);
+		const ui = new UiHarness();
+		const roster = new AgentRoster(current.asCurrentAgents(), { onOpen: () => {} });
+		roster.setContext(ui.context());
+		roster.setFooterHosted(true);
+		const tail = roster.createFooterTail(ui.tui, recordingTheme);
+
+		const wide = tail.render(100);
+		expect(lineFor(wide, "routine")).toEndWith("38% · 5s");
+		expect(lineFor(wide, "pressure")).toEndWith("75% · waiting");
+		expect(lineFor(wide, "critical")).toEndWith("95% · failed");
+		expect(colors).toContainEqual({ color: "muted", text: "38%" });
+		expect(colors).toContainEqual({ color: "warning", text: "75%" });
+		expect(colors).toContainEqual({ color: "error", text: "95%" });
+
+		current.update([
+			row("queued-child", "queued", {
+				contextUsage: { tokens: 50_000, contextWindow: 100_000 },
+				name: "researcher",
+			}),
+		]);
+		expect(lineFor(tail.render(32), "researcher")).toEndWith("50% · queued");
+		expect(lineFor(tail.render(24), "researcher")).toEndWith("queued");
+		expect(lineFor(tail.render(24), "researcher")).not.toContain("50%");
+		tail.dispose();
+		roster.dispose();
 	});
 
 	test("removes terminal controls while preserving CJK names, tasks, and the right state", () => {
