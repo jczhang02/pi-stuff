@@ -78,7 +78,7 @@ describe("auditRepositoryFiles", () => {
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE"],
 			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
-			dependencies: { "@cortexkit/pi-magic-context": "0.33.1", typebox: "1.3.10" },
+			dependencies: { "@cortexkit/pi-magic-context": "0.40.0", typebox: "1.3.10" },
 		});
 
 		expect(await auditRepositoryFiles(root)).toEqual([]);

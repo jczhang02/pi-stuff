@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
+  at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while
+  preserving the Suite-owned `/ctx` surface and native fail-open behavior.
 - Add display-only terminal projections for complete `chart` and strict two-space `tree` fences in User and Assistant
   Conversation Markdown. Invalid, incomplete, unsafe, over-limit, or too-narrow input stays as source; Thinking, Session
   records, and Provider context remain unchanged. See ADR 0017.

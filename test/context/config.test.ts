@@ -21,7 +21,10 @@ const ORIGINAL_CWD = process.cwd();
 
 interface BootstrapConfig {
 	embedding?: { provider?: unknown };
-	historian?: { model?: unknown };
+	historian?: {
+		opencode?: { model?: unknown };
+		pi?: { model?: unknown; thinking_level?: unknown };
+	};
 	todowrite?: unknown;
 	toast_duration_ms?: unknown;
 }
@@ -90,7 +93,11 @@ describe.serial("Magic Context first-use configuration", () => {
 
 		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const config = JSON.parse(await readFile(paths.canonical, "utf8")) as BootstrapConfig;
-		expect(config.historian?.model).toBe("fixture-provider/fixture-model");
+		expect(config.historian?.opencode?.model).toBe("fixture-provider/fixture-model");
+		expect(config.historian?.pi).toEqual({
+			model: "fixture-provider/fixture-model",
+			thinking_level: "medium",
+		});
 		expect(config.embedding?.provider).toBe("off");
 		expect(config.todowrite).toEqual({ enabled: false, overlay: false });
 		expect(config.toast_duration_ms).toBe(0);
@@ -103,6 +110,29 @@ describe.serial("Magic Context first-use configuration", () => {
 		);
 		expect(await readFile(paths.canonical, "utf8")).toBe('{"enabled":false}\n');
 		expect((await stat(paths.canonical)).mode & 0o777).toBe(0o640);
+	});
+
+	test("defers startup while a canonical user config needs per-harness migration", async () => {
+		const paths = await isolatedEnvironment();
+		await mkdir(join(paths.root, "config", "cortexkit"), { recursive: true });
+		const legacyConfig = `{
+			// Magic Context 0.33 flat execution settings.
+			"historian": { "model": "legacy/historian" },
+			"dreamer": {
+				"fallback_models": ["legacy/dreamer"],
+				"tasks": { "maintain-docs": { "timeout_minutes": 5 } },
+			},
+		}\n`;
+		await writeFile(paths.canonical, legacyConfig, "utf8");
+
+		expect(await prepareMagicContext(extensionContext(paths.root), { allowConfigurationMutation: false })).toBe(
+			"deferred",
+		);
+		expect(await readFile(paths.canonical, "utf8")).toBe(legacyConfig);
+		expect(await prepareMagicContext(extensionContext(paths.root), { allowConfigurationMutation: true })).toBe(
+			"ready",
+		);
+		expect(await readFile(paths.canonical, "utf8")).toBe(legacyConfig);
 	});
 
 	test("preserves a legacy Pi config instead of creating a competing canonical file", async () => {

@@ -590,7 +590,10 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		dreamer: { disable: true },
 		embedding: { provider: "off" },
 		fail_closed_blocking: false,
-		historian: { model: "pi-stuff-context-pty/fixture-model", thinking_level: "off" },
+		historian: {
+			opencode: { model: "pi-stuff-context-pty/fixture-model" },
+			pi: { model: "pi-stuff-context-pty/fixture-model", thinking_level: "off" },
+		},
 		pi: { subagent_extensions: [providerExtension] },
 		sidekick: { disable: true },
 		toast_duration_ms: 0,
@@ -617,8 +620,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				embedding: { provider: "off" },
 				fail_closed_blocking: false,
 				historian: {
-					model: "pi-stuff-context-pty/fixture-model",
-					thinking_level: "off",
+					opencode: { model: "pi-stuff-context-pty/fixture-model" },
+					pi: { model: "pi-stuff-context-pty/fixture-model", thinking_level: "off" },
 				},
 				historian_timeout_ms: 30_000,
 				pi: { subagent_extensions: [providerExtension] },
@@ -636,6 +639,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			HF_HOME: cacheDirectory,
 			HF_HUB_OFFLINE: "1",
 			MAGIC_CONTEXT_LOG_PATH: magicLog,
+			MAGIC_CONTEXT_TEST_DATA_DIR: dataDirectory,
 			PI_STUFF_CONTEXT_PTY_HISTORIAN_MARKER: historianMarker,
 			PI_CODING_AGENT_DIR: configDirectory,
 			PI_OFFLINE: "1",
@@ -654,12 +658,13 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			TRANSFORMERS_OFFLINE: "1",
 			XDG_CACHE_HOME: cacheDirectory,
 			XDG_CONFIG_HOME: xdgConfigDirectory,
-			XDG_DATA_HOME: dataDirectory,
+			XDG_DATA_HOME: undefined,
 		};
 		const activationEnvironment = {
 			...baseEnvironment,
 			HOME: activationHome,
 			MAGIC_CONTEXT_LOG_PATH: activationMagicLog,
+			MAGIC_CONTEXT_TEST_DATA_DIR: activationDataDirectory,
 			PI_CODING_AGENT_DIR: activationAgentDirectory,
 			PI_STUFF_CONTEXT_PTY_AUTOMATIC_ONLY: "1",
 			PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: undefined,
@@ -669,7 +674,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
 			XDG_CACHE_HOME: activationCacheDirectory,
 			XDG_CONFIG_HOME: activationConfigDirectory,
-			XDG_DATA_HOME: activationDataDirectory,
+			XDG_DATA_HOME: undefined,
 		};
 		const legacyEntriesBefore = await readdir(activationLegacyDirectory);
 		const legacyContentBefore = await readFile(activationLegacyConfig, "utf8");
@@ -756,7 +761,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				PI_STUFF_CONTEXT_PTY_SESSIONS: startupSessionDirectory,
 				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-startup-only",
 				PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
-				XDG_DATA_HOME: startupDataDirectory,
+				MAGIC_CONTEXT_TEST_DATA_DIR: startupDataDirectory,
+				XDG_DATA_HOME: undefined,
 			},
 			"startup readiness",
 			projectDirectory,

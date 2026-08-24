@@ -288,9 +288,9 @@ async function verifyLocalPackage(packagePath: string): Promise<string> {
 	if (
 		!Check(PACKAGE_MANIFEST_SCHEMA, officialManifest) ||
 		officialManifest.name !== "@cortexkit/pi-magic-context" ||
-		officialManifest.version !== "0.33.1"
+		officialManifest.version !== "0.40.0"
 	) {
-		fail(`Pi Stuff does not resolve the audited official Magic Context 0.33.1: ${JSON.stringify(officialManifest)}`);
+		fail(`Pi Stuff does not resolve the audited official Magic Context 0.40.0: ${JSON.stringify(officialManifest)}`);
 	}
 	return packagePath;
 }
@@ -928,7 +928,10 @@ async function main(): Promise<void> {
 				embedding: { provider: "off" },
 				execute_threshold_percentage: EXECUTE_THRESHOLD_PERCENTAGE,
 				fail_closed_blocking: false,
-				historian: { model: HISTORIAN_MODEL, thinking_level: "medium" },
+				historian: {
+					opencode: { model: HISTORIAN_MODEL },
+					pi: { model: HISTORIAN_MODEL, thinking_level: "medium" },
+				},
 				historian_timeout_ms: HISTORIAN_TIMEOUT_MS,
 				memory: {
 					auto_promote: false,
@@ -1323,7 +1326,7 @@ async function main(): Promise<void> {
 			magicContext: {
 				executeThresholdPercentage: EXECUTE_THRESHOLD_PERCENTAGE,
 				historianModel: HISTORIAN_MODEL,
-				package: "@cortexkit/pi-magic-context@0.33.1",
+				package: "@cortexkit/pi-magic-context@0.40.0",
 			},
 			model: {
 				contextWindow: EXPECTED_CONTEXT_WINDOW,

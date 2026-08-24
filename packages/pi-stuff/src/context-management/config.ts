@@ -1,10 +1,14 @@
-import { access, mkdir, open } from "node:fs/promises";
+import { access, mkdir, open, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import stripJsonComments from "strip-json-comments";
+import { type JsonObject, type JsonValue, parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 
 const DEFAULT_HISTORIAN_MODEL = "openai-codex/gpt-5.6-terra";
+const FLAT_AGENT_EXECUTION_FIELDS = ["model", "fallback_models", "variant", "thinking_level"] as const;
+const FLAT_TASK_EXECUTION_FIELDS = [...FLAT_AGENT_EXECUTION_FIELDS, "timeout_minutes"] as const;
 function homeDirectory(): string {
 	return process.env["HOME"]?.trim() || homedir();
 }
@@ -67,6 +71,41 @@ async function anyExists(paths: readonly string[]): Promise<boolean> {
 	return false;
 }
 
+function configRecord(value: JsonValue | undefined): JsonObject | undefined {
+	return value !== null && value !== undefined && isRuntimeObject(value) && !Array.isArray(value) ? value : undefined;
+}
+
+function hasAnyOwnField(value: JsonValue | undefined, fields: readonly string[]): boolean {
+	const record = configRecord(value);
+	return record !== undefined && fields.some((field) => Object.hasOwn(record, field));
+}
+
+function needsPerHarnessMigration(contents: string): boolean {
+	let root: JsonObject;
+	try {
+		root = parseJsonObject(stripJsonComments(contents, { trailingCommas: true }));
+	} catch {
+		return true;
+	}
+	if (["historian", "dreamer"].some((name) => hasAnyOwnField(root[name], FLAT_AGENT_EXECUTION_FIELDS))) {
+		return true;
+	}
+	const tasks = configRecord(configRecord(root["dreamer"])?.["tasks"]);
+	return tasks !== undefined && Object.values(tasks).some((task) => hasAnyOwnField(task, FLAT_TASK_EXECUTION_FIELDS));
+}
+
+async function canonicalUserConfigNeedsMigration(paths: readonly string[]): Promise<boolean> {
+	for (const path of paths) {
+		if (!(await exists(path))) continue;
+		try {
+			return needsPerHarnessMigration(await readFile(path, "utf8"));
+		} catch {
+			return true;
+		}
+	}
+	return false;
+}
+
 function historianModel(ctx: ExtensionContext): string {
 	const provider = ctx.model?.provider?.trim();
 	const id = ctx.model?.id?.trim();
@@ -74,6 +113,7 @@ function historianModel(ctx: ExtensionContext): string {
 }
 
 function defaultConfig(ctx: ExtensionContext): string {
+	const model = historianModel(ctx);
 	return `${JSON.stringify(
 		{
 			$schema: "https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json",
@@ -81,8 +121,8 @@ function defaultConfig(ctx: ExtensionContext): string {
 			fail_closed_blocking: false,
 			toast_duration_ms: 0,
 			historian: {
-				model: historianModel(ctx),
-				thinking_level: "medium",
+				opencode: { model },
+				pi: { model, thinking_level: "medium" },
 			},
 			embedding: {
 				provider: "off",
@@ -121,7 +161,10 @@ export async function prepareMagicContext(
 	const migratableUser = migratableUserConfigPaths();
 	const migratableProject = migratableProjectConfigPaths(ctx);
 	if (!options.allowConfigurationMutation) {
-		const migrationsPending = (await anyExists(migratableUser)) || (await anyExists(migratableProject));
+		const migrationsPending =
+			(await anyExists(migratableUser)) ||
+			(await anyExists(migratableProject)) ||
+			(await canonicalUserConfigNeedsMigration(canonicalUser));
 		if (migrationsPending) return "deferred";
 		const recognizedConfig = (await anyExists(canonicalUser)) || (await anyExists(canonicalProject));
 		return recognizedConfig ? "ready" : "deferred";

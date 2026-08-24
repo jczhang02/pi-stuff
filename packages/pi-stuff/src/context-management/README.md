@@ -11,6 +11,11 @@ before they consume context. Pi's JSONL session remains the raw authority, and
 the Module falls back to Pi's native context path when the derived local store
 is unavailable before Magic takes ownership.
 
+Magic Context 0.40 migrates flat user-level Historian and Dreamer execution
+settings into per-harness blocks. Context detects that pending rewrite without
+changing the file, defers mutation-free startup, and leaves the official
+factory to perform the migration after direct use.
+
 The Capability exposes no upstream floating UI, statusline entry, migration
 prompt, or second Todo authority. Magic Context's history, memory, search,
 notes, and Historian remain available behind this boundary. Pi Stuff owns one
@@ -27,7 +32,7 @@ Tools, or Agent delegations, block Tools or Suite-authored messages, or decide
 whether Pi, Goal, or Agents should pause, stop, complete, or fail. Each owning
 Capability retains its own lifecycle policy.
 
-The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.33.1`. The
+The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The
 adapter suppresses the upstream Todo, statusline, announcement, command, and
 auxiliary UI surfaces while retaining the five maintenance handlers behind the
 Suite-owned `/ctx` dispatcher. It also supplies a compact provider-facing behavior contract before the
@@ -64,10 +69,9 @@ or migrate configuration. Only the current interactive/RPC prompt, Suite command
 or explicit Suite UI/RPC action carries the one-delivery direct-use marker.
 
 The first-use profile selects Magic Context's official lexical search path and
-does not load its local embedding runtime. This avoids a published 0.33.1
-dynamic-import incompatibility in the certified single-file Pi Host while
-keeping history and memory recall available. An existing user or project
-embedding configuration remains authoritative and is never rewritten.
+does not load its optional local embedding runtime, keeping initial activation
+small while history and memory recall remain available. An existing user or
+project embedding configuration remains authoritative and is never rewritten.
 
 ## Pi Host constraints
 
