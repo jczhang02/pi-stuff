@@ -482,11 +482,12 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 					terminate: true,
 				};
 			}
+			const completedTimeUsedSeconds = runtime.activeGoal.timeUsedSeconds;
 			persistGoal(runtime.activeGoal);
 
 			runtime.publishPresentationStatus(runtime.activeGoal);
 			clearActiveGoal(ctx);
-			showCompletionStatus(ctx);
+			showCompletionStatus(ctx, completedTimeUsedSeconds);
 
 			return {
 				content: [{ type: "text", text: `Goal complete: ${summary}` }],

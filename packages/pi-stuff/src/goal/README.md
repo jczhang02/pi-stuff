@@ -17,9 +17,14 @@ external blocker passes the strict three-turn `goal_blocked` audit.
 /goal clear
 ```
 
-Bare `/goal` opens the Suite's full-width Command Dialog. It uses Pi's native SettingsList interaction, never a floating
-window or a package-owned Statusline. Goal work continues only from Pi's fully settled idle boundary, so retries,
-compaction, steering, and queued user work settle before the next automatic turn.
+Bare `/goal` opens the Suite's full-width Command Dialog. It uses Pi's native SettingsList interaction and never creates
+a floating window or package-owned Statusline. The current Goal contributes one conditional segment to the shared
+Conversation UI Statusline; with no Goal it is absent. Active state renders `● goal used/budget elapsed` and refreshes
+elapsed active time while visible. Paused, blocked or limit-stopped, and complete states retain their distinct `■`, `!`,
+and `✓` semantics. Started, replaced, resumed, and updated TUI notices use the ordinary Conversation Transcript `•`
+record marker with an emphasized action label; RPC and headless notices remain plain text. Goal work continues only from
+Pi's fully settled idle boundary, so retries, compaction, steering, and queued user work settle before the next automatic
+turn.
 
 Automatic continuation is unlimited for ordinary use by default. A non-disableable emergency backstop pauses only
 after 10,000 automatic model responses, preventing catastrophic runaway even when the user-facing limit is Unlimited.

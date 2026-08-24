@@ -15,6 +15,7 @@ import { getHostSharedResource } from "./host-resource.js";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
 const GIT_STATUS_TIMEOUT_MS = 2_000;
+const GOAL_CLOCK_REFRESH_MS = 1_000;
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
 const MIN_TRUNCATED_PROMPT_WIDTH = 6;
 const STATUSLINE_SEPARATOR = " · ";
@@ -27,6 +28,7 @@ interface StatuslineIcons {
 	readonly diff: string;
 	readonly fast: string;
 	readonly folder: string;
+	readonly goal: string;
 	readonly model: string;
 	readonly prompt: string;
 	readonly thinking: string;
@@ -41,6 +43,7 @@ const ASCII_STATUSLINE_ICONS: StatuslineIcons = {
 	diff: "Δ",
 	fast: "⚡",
 	folder: "▣",
+	goal: "●",
 	model: "◆",
 	prompt: "›",
 	thinking: "◉",
@@ -55,6 +58,7 @@ const NERD_STATUSLINE_ICONS: StatuslineIcons = {
 	diff: "\uF459",
 	fast: "\uF0E7",
 	folder: "\u{F024B}",
+	goal: "●",
 	model: "\u{F06A9}",
 	prompt: "›",
 	thinking: "\uF441",
@@ -85,7 +89,9 @@ export interface CodexStatusChannel {
 export type GoalStatus = "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete";
 
 export interface GoalStatusSnapshot {
+	readonly activeStartedAt?: number;
 	readonly status: GoalStatus;
+	readonly timeUsedSeconds: number;
 	readonly tokenBudget?: number;
 	readonly tokensUsed: number;
 }
@@ -191,11 +197,15 @@ class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
 	publish(snapshot: GoalStatusSnapshot): void {
 		if (!isGoalStatus(snapshot.status)) return;
 		const tokensUsed = finiteNonNegative(snapshot.tokensUsed);
+		const timeUsedSeconds = finiteNonNegative(snapshot.timeUsedSeconds);
 		const tokenBudget = finitePositive(snapshot.tokenBudget);
 		const next: GoalStatusSnapshot = {
 			status: snapshot.status,
+			timeUsedSeconds,
 			tokensUsed,
 		};
+		const activeStartedAt = snapshot.status === "active" ? finitePositive(snapshot.activeStartedAt) : undefined;
+		if (activeStartedAt !== undefined) Object.assign(next, { activeStartedAt });
 		if (tokenBudget !== undefined) Object.assign(next, { tokenBudget });
 		this.setSnapshot(next);
 	}
@@ -207,7 +217,9 @@ class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
 
 	private setSnapshot(next: GoalStatusSnapshot | undefined): void {
 		if (
+			this.snapshot?.activeStartedAt === next?.activeStartedAt &&
 			this.snapshot?.status === next?.status &&
+			this.snapshot?.timeUsedSeconds === next?.timeUsedSeconds &&
 			this.snapshot?.tokensUsed === next?.tokensUsed &&
 			this.snapshot?.tokenBudget === next?.tokenBudget
 		) {
@@ -275,6 +287,7 @@ interface SharedStatuslineControllerOptions {
 	readonly codexStatus?: CodexStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
+	readonly goalStatus?: GoalStatusSource;
 }
 
 export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
@@ -481,6 +494,7 @@ function parseGitBranchPorcelain(output: string): string | undefined {
  */
 export class StatuslineController {
 	private disposed = false;
+	private goalClockTimer: ReturnType<typeof setInterval> | undefined;
 	private readonly options: StatuslineControllerOptions;
 	private readonly pi: StatuslineHost;
 	private readonly renderers = new Set<RenderRegistration>();
@@ -506,6 +520,7 @@ export class StatuslineController {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.clearGoalClockTimer();
 		this.requestRender();
 		this.renderers.clear();
 	}
@@ -526,18 +541,26 @@ export class StatuslineController {
 	registerRenderer(renderer: RenderRegistration): () => void {
 		if (this.disposed) return () => {};
 		this.renderers.add(renderer);
-		return () => this.renderers.delete(renderer);
+		this.syncGoalClockTimer();
+		return () => {
+			this.renderers.delete(renderer);
+			this.syncGoalClockTimer();
+		};
 	}
 
 	subscribe(listener: () => void): () => void {
 		if (this.disposed) return () => {};
-		const notify = () => callObserver(listener);
+		const notify = () => {
+			this.syncGoalClockTimer();
+			callObserver(listener);
+		};
 		const unsubscribe: Array<() => void> = [];
 		const preferencesSource = this.options.preferences ?? this.options.enabled;
 		subscribeObserver(preferencesSource, notify, unsubscribe);
 		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
 		if (this.options.codexStatus) subscribeObserver(this.options.codexStatus, notify, unsubscribe);
 		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
+		if (this.options.goalStatus) subscribeObserver(this.options.goalStatus, notify, unsubscribe);
 		return () => {
 			for (const remove of unsubscribe.splice(0)) callObserver(remove);
 		};
@@ -560,6 +583,7 @@ export class StatuslineController {
 			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
 			sessionStatus,
 			readCodexStatus(ctx, this.options.codexStatus),
+			readGoalStatus(this.options.goalStatus),
 			renderWidth,
 			preferences,
 		);
@@ -571,6 +595,7 @@ export class StatuslineController {
 	setSuppressed(suppressed: boolean): void {
 		if (this.disposed || this.suppressed === suppressed) return;
 		this.suppressed = suppressed;
+		this.syncGoalClockTimer();
 		this.requestRender();
 	}
 
@@ -581,6 +606,27 @@ export class StatuslineController {
 
 	private requestRender(): void {
 		for (const renderer of this.renderers) callObserver(() => renderer.requestRender());
+	}
+
+	private syncGoalClockTimer(): void {
+		const snapshot = readGoalStatus(this.options.goalStatus);
+		const shouldRun =
+			this.renderers.size > 0 &&
+			this.isVisible() &&
+			snapshot?.status === "active" &&
+			snapshot.activeStartedAt !== undefined;
+		if (shouldRun && !this.goalClockTimer) {
+			this.goalClockTimer = setInterval(() => this.requestRender(), GOAL_CLOCK_REFRESH_MS);
+			this.goalClockTimer.unref?.();
+		} else if (!shouldRun) {
+			this.clearGoalClockTimer();
+		}
+	}
+
+	private clearGoalClockTimer(): void {
+		if (!this.goalClockTimer) return;
+		clearInterval(this.goalClockTimer);
+		this.goalClockTimer = undefined;
 	}
 
 	private getPreferences(): StatuslinePreferences {
@@ -749,6 +795,7 @@ type StatusSegmentId =
 	| "cache"
 	| "cost"
 	| "codex"
+	| "goal"
 	| "extension";
 
 interface StatusSegment {
@@ -762,6 +809,12 @@ interface StatusSegment {
 interface SegmentText {
 	readonly compact: string;
 	readonly full: string;
+}
+
+interface GoalStatusAppearance {
+	readonly color: ThemeColor;
+	readonly icon?: string;
+	readonly label: string;
 }
 
 interface GitSegments {
@@ -779,6 +832,7 @@ function renderStatusline(
 	extensionStatusKeys: readonly string[],
 	sessionStatus: SessionStatusSnapshot,
 	codexStatus: CodexStatusSnapshot | undefined,
+	goalStatus: GoalStatusSnapshot | undefined,
 	width: number,
 	preferences: StatuslinePreferences,
 ): string[] {
@@ -830,6 +884,8 @@ function renderStatusline(
 		const cost = `${theme.fg("warning", icons.cost)} ${theme.fg("text", `$${usage.cost.toFixed(2)}`)}`;
 		segments.push(statusSegment("cost", 80, cost));
 	}
+	const goal = renderGoalSegment(theme, icons, goalStatus);
+	if (goal) segments.push(statusSegment("goal", 99, goal.full, goal.compact));
 
 	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
 	if (extensionStatusSegment) segments.push(statusSegment("extension", 35, extensionStatusSegment));
@@ -944,6 +1000,54 @@ function renderExtensionStatusSegment(
 	return selected.length > 0 ? theme.fg("muted", selected.join(" · ")) : undefined;
 }
 
+function renderGoalSegment(
+	theme: Theme,
+	icons: StatuslineIcons,
+	snapshot: GoalStatusSnapshot | undefined,
+): SegmentText | undefined {
+	if (!snapshot) return undefined;
+	const appearance = goalStatusAppearance(snapshot.status);
+	const icon = theme.fg(appearance.color, appearance.icon ?? icons.goal);
+	const identity = `${icon} ${theme.fg("text", "goal")}`;
+	const budget =
+		snapshot.tokenBudget === undefined
+			? ""
+			: theme.fg("text", `${formatCompactTokens(snapshot.tokensUsed)}/${formatCompactTokens(snapshot.tokenBudget)}`);
+	const elapsed = theme.fg("muted", formatGoalElapsed(snapshot));
+	const full = [identity, appearance.label && theme.fg(appearance.color, appearance.label), budget, elapsed]
+		.filter(Boolean)
+		.join(" ");
+	return { compact: full, full };
+}
+
+function goalStatusAppearance(status: GoalStatus): GoalStatusAppearance {
+	if (status === "paused") return { color: "muted", icon: "■", label: "paused" };
+	if (status === "blocked") return { color: "warning", icon: "!", label: "blocked" };
+	if (status === "usage_limited") return { color: "warning", icon: "!", label: "usage" };
+	if (status === "budget_limited") return { color: "warning", icon: "!", label: "budget" };
+	if (status === "complete") return { color: "success", icon: "✓", label: "complete" };
+	return { color: "accent", label: "" };
+}
+
+function formatCompactTokens(value: number): string {
+	if (value < 1_000) return String(value);
+	if (value < 1_000_000) return `${Number((value / 1_000).toFixed(1))}k`;
+	return `${Number((value / 1_000_000).toFixed(1))}m`;
+}
+
+function formatGoalElapsed(snapshot: GoalStatusSnapshot): string {
+	const liveSeconds =
+		snapshot.status === "active" && snapshot.activeStartedAt !== undefined
+			? Math.max(0, Date.now() - snapshot.activeStartedAt) / 1_000
+			: 0;
+	const seconds = Math.floor(snapshot.timeUsedSeconds + liveSeconds);
+	if (seconds < 60) return `${String(seconds)}s`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${String(minutes)}m`;
+	const hours = Math.floor(minutes / 60);
+	return `${String(hours)}h${String(minutes % 60)}m`;
+}
+
 function finiteNonNegative(value: number): number {
 	return Number.isFinite(value) && value >= 0 ? value : 0;
 }
@@ -962,7 +1066,7 @@ function renderStatusRow(
 	theme: Theme,
 	density: StatuslineDensity,
 ): string {
-	const compactIds = new Set<StatusSegmentId>(["model", "thinking", "cwd", "branch", "context"]);
+	const compactIds = new Set<StatusSegmentId>(["model", "thinking", "cwd", "branch", "context", "goal"]);
 	const eligible = density === "compact" ? segments.filter((segment) => compactIds.has(segment.id)) : segments;
 	if (eligible.length === 0 || width < 1) return "";
 	const full = eligible.map((segment) => segment.full).join(theme.fg("dim", STATUSLINE_SEPARATOR));
@@ -1162,6 +1266,15 @@ function readCodexStatus(
 	source: CodexStatusSource | undefined,
 ): CodexStatusSnapshot | undefined {
 	if (ctx.model?.provider !== "openai-codex" || !source) return undefined;
+	try {
+		return source.getSnapshot();
+	} catch {
+		return undefined;
+	}
+}
+
+function readGoalStatus(source: GoalStatusSource | undefined): GoalStatusSnapshot | undefined {
+	if (!source) return undefined;
 	try {
 		return source.getSnapshot();
 	} catch {

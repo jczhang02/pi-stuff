@@ -654,7 +654,7 @@ describe("normal UI presentation integration", () => {
 		}
 	});
 
-	test("keeps Goal state out of the ordinary Statusline", async () => {
+	test("shows live Goal state conditionally in the shared Statusline", async () => {
 		const events = new EventBusHarness();
 		const uiApi = createApiHarness(eventBusView(events));
 		await piStuffUi(uiApi.api);
@@ -677,25 +677,49 @@ describe("normal UI presentation integration", () => {
 		expect(goalChannel).toBe(uiChannel);
 
 		const rendersBeforeActive = ui.renderRequests.length;
-		goalChannel.publish({ status: "active", tokenBudget: 12_000, tokensUsed: 1_250 });
-		expect(goalChannel.source.getSnapshot()).toEqual({ status: "active", tokenBudget: 12_000, tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).not.toContain("goal");
-		expect(ui.renderRequests).toHaveLength(rendersBeforeActive);
+		const activeStartedAt = Date.now();
+		goalChannel.publish({
+			activeStartedAt,
+			status: "active",
+			timeUsedSeconds: 13 * 60,
+			tokenBudget: 12_000,
+			tokensUsed: 1_250,
+		});
+		expect(goalChannel.source.getSnapshot()).toEqual({
+			activeStartedAt,
+			status: "active",
+			timeUsedSeconds: 13 * 60,
+			tokenBudget: 12_000,
+			tokensUsed: 1_250,
+		});
+		expect(footer.render(120).join("\n")).toContain("● goal 1.3k/12k 13m");
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeActive);
 
-		goalChannel.publish({ status: "paused", tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).not.toContain("goal");
-		goalChannel.publish({ status: "budget_limited", tokenBudget: 12_000, tokensUsed: 12_000 });
-		expect(footer.render(120).join("\n")).not.toContain("goal");
+		goalChannel.publish({ status: "paused", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).toContain("■ goal paused 13m");
+		goalChannel.publish({
+			status: "budget_limited",
+			timeUsedSeconds: 13 * 60,
+			tokenBudget: 12_000,
+			tokensUsed: 12_000,
+		});
+		expect(footer.render(120).join("\n")).toContain("! goal budget 12k/12k 13m");
+		goalChannel.publish({ status: "usage_limited", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).toContain("! goal usage 13m");
+		goalChannel.publish({ status: "blocked", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).toContain("! goal blocked 13m");
+		goalChannel.publish({ status: "complete", timeUsedSeconds: 13 * 60, tokensUsed: 0 });
+		expect(footer.render(120).join("\n")).toContain("✓ goal complete 13m");
 
 		const rendersBeforeClear = ui.renderRequests.length;
 		goalChannel.clear();
 		expect(goalChannel.source.getSnapshot()).toBeUndefined();
 		expect(footer.render(120).join("\n")).not.toContain("goal");
-		expect(ui.renderRequests).toHaveLength(rendersBeforeClear);
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeClear);
 
 		footer.dispose?.();
 		const rendersAfterDispose = ui.renderRequests.length;
-		goalChannel.publish({ status: "blocked", tokensUsed: 1_250 });
+		goalChannel.publish({ status: "blocked", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
 		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
 	});
 

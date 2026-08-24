@@ -1,3 +1,4 @@
+import { TRANSCRIPT_MARKER } from "../../conversation-ui/transcript.js";
 import { checkpointGoalActiveTime, currentTokenTotal } from "./accounting.js";
 import { validateObjective } from "./command.js";
 import { safeGoalMenuText } from "./menu.js";
@@ -29,6 +30,26 @@ import {
 	stoppedStatusLabel,
 	transitionGoal,
 } from "./runtime.js";
+
+type GoalLifecycleAction = "replaced" | "resumed" | "started" | "updated";
+
+function notifyGoalLifecycle(ctx: StatusContext, action: GoalLifecycleAction, objective: string, detail = ""): void {
+	if (ctx.mode !== "tui") {
+		ctx.ui.notify(`Goal ${action}${detail}: ${objective}`, "info");
+		return;
+	}
+	const theme = ctx.ui.theme;
+	if (!theme) {
+		ctx.ui.notify(`Goal ${action}${detail}: ${objective}`, "info");
+		return;
+	}
+	ctx.ui.notify(
+		`${theme.fg("accent", TRANSCRIPT_MARKER)} ${theme.bold(theme.fg("accent", `Goal ${action}`))}${
+			detail ? theme.fg("muted", detail) : ""
+		}${theme.fg("dim", " · ")}${theme.fg("text", objective)}`,
+		"info",
+	);
+}
 
 // User-command mutations are kept separate from Pi event wiring. Every controller
 // receives exactly one per-factory GoalRuntime, preserving session isolation.
@@ -146,7 +167,7 @@ export class GoalCommandController {
 		if (this.runtime.activeGoal?.id !== startedGoal.id || this.runtime.activeGoal.status !== "active") {
 			return;
 		}
-		ctx.ui.notify(existingGoal ? `Goal replaced: ${objective}` : `Goal started: ${objective}`, "info");
+		notifyGoalLifecycle(ctx, existingGoal ? "replaced" : "started", objective);
 	}
 
 	async addGoal(objective: string, tokenBudget: number | undefined, ctx: StatusContext) {
@@ -430,7 +451,7 @@ export class GoalCommandController {
 			}
 			return;
 		}
-		ctx.ui.notify(`Goal resumed from ${stoppedStatusLabel(stoppedStatus)}: ${resumedGoal.text}`, "info");
+		notifyGoalLifecycle(ctx, "resumed", resumedGoal.text, ` from ${stoppedStatusLabel(stoppedStatus)}`);
 	}
 
 	clearGoal(ctx: StatusContext) {
@@ -530,7 +551,7 @@ export class GoalCommandController {
 		} else {
 			this.runtime.clearStaleGoalToolCallBlock();
 		}
-		ctx.ui.notify(`Goal updated: ${objective}`, "info");
+		notifyGoalLifecycle(ctx, "updated", objective);
 	}
 
 	showGoal(ctx: StatusContext) {

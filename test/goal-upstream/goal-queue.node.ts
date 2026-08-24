@@ -704,6 +704,7 @@ test("restored exhausted queued heads remain budget-limited without a kickoff pr
 	assert.equal(stateGoals(restored.mock)[0]?.status, "budget_limited");
 	assert.deepEqual(goalStatusSnapshot(restored.mock.pi), {
 		status: "budget_limited",
+		timeUsedSeconds: 0,
 		tokenBudget: 10,
 		tokensUsed: 10,
 	});

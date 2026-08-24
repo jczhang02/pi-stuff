@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
@@ -64,6 +64,7 @@ export interface StatusContext extends UsageContext {
 	ui: {
 		confirm: (title: string, message: string) => Promise<boolean>;
 		notify: (message: string, level?: "info" | "warning" | "error") => void;
+		theme?: Pick<Theme, "bold" | "fg">;
 	};
 	isIdle?: () => boolean;
 	hasPendingMessages?: () => boolean;
@@ -397,8 +398,10 @@ export class GoalRuntime {
 		}
 		const snapshot: GoalStatusSnapshot = {
 			status: goal.status,
+			timeUsedSeconds: goal.timeUsedSeconds,
 			tokensUsed: goal.tokensUsed,
 		};
+		if (goal.activeStartedAt !== undefined) Object.assign(snapshot, { activeStartedAt: goal.activeStartedAt });
 		if (goal.tokenBudget !== undefined) Object.assign(snapshot, { tokenBudget: goal.tokenBudget });
 		getGoalStatusChannel(this.pi).publish(snapshot);
 	}
@@ -1028,9 +1031,9 @@ export class GoalRuntime {
 		return true;
 	}
 
-	showCompletionStatus(_ctx: StatusContext) {
+	showCompletionStatus(_ctx: StatusContext, timeUsedSeconds = 0) {
 		this.clearCompletionStatusTimer();
-		getGoalStatusChannel(this.pi).publish({ status: "complete", tokensUsed: 0 });
+		getGoalStatusChannel(this.pi).publish({ status: "complete", timeUsedSeconds, tokensUsed: 0 });
 		this.completionStatusTimer = setTimeout(() => {
 			this.completionStatusTimer = undefined;
 			this.clearPresentationStatus();

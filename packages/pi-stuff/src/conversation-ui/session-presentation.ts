@@ -8,6 +8,7 @@ import {
 	type BooleanValueSource,
 	GitStatusSource,
 	getCodexStatusChannel,
+	getGoalStatusChannel,
 	StatuslineController,
 	type StatuslinePreferences,
 	type StatuslinePreferencesSource,
@@ -115,6 +116,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		this.statusline = new StatuslineController(pi, {
 			autocompleteVisible: new EditorAutocompleteSource(this.editor),
 			codexStatus: getCodexStatusChannel(pi).source,
+			goalStatus: getGoalStatusChannel(pi).source,
 			gitChanges: this.git,
 			preferences: new StoreStatuslinePreferencesSource(store),
 		});

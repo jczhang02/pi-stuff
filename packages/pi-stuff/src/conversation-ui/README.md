@@ -10,9 +10,16 @@ the shared non-floating Command Dialog used by focused Suite commands.
 
 The Statusline is exactly one icon-led status row followed by one optional previous-prompt row. The status row uses dim
 middle-dot separators and this stable order: model, Thinking, conditional `fast`, working directory, Git branch, Git file
-state, Context percentage, cache hit rate, and metered cost or Codex weekly allowance. It deliberately omits token-window
-counts and worktime. Capability state such as Goal, MCP, Agents, Todo, BTW, and Tool activity stays on its own focused
-surface instead of adding Statusline segments.
+state, Context percentage, cache hit rate, metered cost or Codex weekly allowance, and the conditional current Goal. It
+deliberately omits token-window counts and ordinary Agent worktime. Capability state such as MCP, Agents, Todo, BTW, and
+Tool activity stays on its own focused surface instead of adding Statusline segments.
+
+With no current Goal, the Goal segment is absent. An active Goal renders `● goal used/budget elapsed`, such as
+`● goal 0/40k 13m`, and refreshes elapsed active time once per second while visible. Paused uses `■`, blocked and
+usage- or budget-limited states use `!`, and the bounded completion projection uses `✓`; their complete state word and
+semantic color remain visible. Paused or hidden time is not counted, and inactive, suppressed, cleared, and disposed
+surfaces do not retain the refresh timer. Goal publishes only a presentation snapshot through the shared Host channel;
+the Statusline remains the sole persistent Goal presentation authority.
 
 Automatic density first changes long fields to their compact form, then removes complete low-priority segments. It
 never wraps the status row or leaves clipped field fragments. Model and Context survive first, followed by cwd, branch,
@@ -75,7 +82,7 @@ module-local readiness gate: all Capability `session_start` handlers are observe
 and restored Goal work is released only after the complete Suite has settled successfully.
 
 It reduces lower-priority information at narrow widths and disappears while autocomplete or a Command Dialog owns the
-input area. It does not duplicate Agent, Todo, BTW, Goal, MCP, or Tool activity.
+input area. It does not duplicate Agent, Todo, BTW, MCP, or Tool activity.
 
 ### Welcome header
 
@@ -106,11 +113,13 @@ Pi's native **Hide thinking blocks** setting disabled so the transformed live ro
 ### Transcript markers
 
 Ordinary Suite-owned Conversation Transcript records use one small U+2022 `•` marker. This includes Assistant prose,
-Tool Activity, Agent outcomes, and Background Work outcomes; larger state dots remain reserved for interactive controls
-such as Fleetview, dialogs, Todo, MCP, diagnostics, and selection state. Every Assistant text message receives exactly
-one outer marker, including structured Markdown. Continuation paragraphs, headings, lists, quotes, tables, and fenced
-code stay inside that message-level body and retain their Markdown hierarchy. This projection is display-only and does
-not rewrite Assistant text, Session records, copy/export source, or provider context.
+Tool Activity, Goal started/replaced/resumed/updated info notices, Agent outcomes, and Background Work outcomes; larger
+state dots remain reserved for interactive controls such as Fleetview, dialogs, Todo, MCP, diagnostics, and selection
+state. The marker identifies a Transcript record rather than Goal lifecycle state; the complete Goal action label and
+semantic color carry that meaning. Every Assistant text message receives exactly one outer marker, including structured
+Markdown. Continuation paragraphs, headings, lists, quotes, tables, and fenced code stay inside that message-level body
+and retain their Markdown hierarchy. This projection is display-only and does not rewrite Assistant text, Session
+records, copy/export source, or provider context.
 
 ### Fenced visualizations
 

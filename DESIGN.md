@@ -99,8 +99,9 @@ without becoming a rail beside the section content. It appears only on the headi
 state, focus, or a Transcript event.
 
 `›` means the currently focused selectable row and nothing else. Lifecycle and severity use separate one-cell-safe
-icons. The Conversation Transcript's small `•` marker remains unchanged. Dialogs inherit the Transcript's restrained,
-semantic status language, but never reuse its generic message marker as a lifecycle icon.
+icons. The Conversation Transcript's small `•` marker remains unchanged. Ordinary Goal lifecycle info notices reuse it
+as a Transcript-record marker; their complete action word and semantic color convey lifecycle. Dialogs inherit the
+Transcript's restrained, semantic status language, but never reuse its generic message marker as a lifecycle icon.
 
 Use icon families consistently: `●` for active work, `○` for queued or inactive work, `◐` for a transition such as
 stopping, `↻` for resuming, `✓` for success, `!` for attention, `×` for failure, and `■` for a stopped or deliberately
@@ -150,9 +151,10 @@ Tab and Shift+Tab switch the focused pane; Enter moves from the list to detail, 
 ### Persistent and transcript surfaces
 
 Todo, Agent roster, Statusline, Conversation Transcript, and Command Dialogs have different jobs. A state has one
-visible authority; do not repeat it in a permanent dashboard. Transcript projection remains compact and chronological,
-while Command Dialogs provide inspection and control. A Dialog redesign does not silently change transcript markers
-or Tool rendering.
+visible authority; do not repeat it in a permanent dashboard. The shared Statusline's conditional Goal segment is the
+current Goal's sole compact persistent authority, while Goal lifecycle notices remain chronological Transcript events
+and Command Dialogs provide inspection and control. A Dialog redesign does not silently change transcript markers or
+Tool rendering.
 
 A valid `chart` or `tree` fence may become a Fenced Visualization Projection inside the same Transcript message. Keep
 the result flat, monochrome, and terminal-native: inert borderless code-block text and Unicode plot or tree glyphs,
@@ -180,6 +182,7 @@ remains the only message authority, and Thinking never becomes a visualization.
 - **Don't** hard-code colors, fonts, or a personal terminal theme.
 - **Don't** make two columns look like two separate Dialogs; keep one continuous structural surface.
 - **Don't** frame individual sections or add nested indentation to simulate hierarchy.
-- **Don't** reuse `›` or the Transcript's `•` as lifecycle state, and don't use one universal circle for every state.
+- **Don't** reuse `›` or the Transcript's `•` as lifecycle state. A Transcript notice may use `•` only as its record
+  marker; don't use one universal circle for every state.
 - **Don't** duplicate Todo, Agent, BTW, Permission, Tool, or diagnostic state outside its owning surface.
 - **Don't** copy Claude-specific presentation when it conflicts with Pi's native behavior or Pi Stuff's domain terms.

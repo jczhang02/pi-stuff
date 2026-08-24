@@ -75,9 +75,13 @@ test("status channels support events-only Host adapters", () => {
 	const { events } = createExtensionApi();
 	const host = { events };
 	getCodexStatusChannel(host).publish({ fastEnabled: true });
-	getGoalStatusChannel(host).publish({ status: "active", tokensUsed: 1 });
+	getGoalStatusChannel(host).publish({ status: "active", timeUsedSeconds: 2, tokensUsed: 1 });
 	expect(getCodexStatusChannel(host).source.getSnapshot()).toEqual({ fastEnabled: true });
-	expect(getGoalStatusChannel(host).source.getSnapshot()).toEqual({ status: "active", tokensUsed: 1 });
+	expect(getGoalStatusChannel(host).source.getSnapshot()).toEqual({
+		status: "active",
+		timeUsedSeconds: 2,
+		tokensUsed: 1,
+	});
 });
 
 function usage(cacheRead: number, cost: number, input = 10, cacheWrite = 0) {

@@ -205,6 +205,29 @@ test("goal command attributes its hidden Agent prompt to the user", async () => 
 	assert.equal(mock.sentHiddenGoalMessages.length, 1);
 });
 
+test("TUI Goal lifecycle info uses the shared transcript row while RPC stays plain", async () => {
+	const tui = await startGoalForTest({ hasUI: true, mode: "tui" }, "first objective");
+	await tui.mock.commands.get("goal")?.handler("second objective", tui.ctx);
+	await tui.mock.commands.get("goal")?.handler("pause", tui.ctx);
+	await tui.mock.commands.get("goal")?.handler("resume", tui.ctx);
+	await tui.mock.commands.get("goal")?.handler("edit final objective", tui.ctx);
+
+	assert.deepEqual(
+		tui.notifications
+			.map(({ message }) => message)
+			.filter((message) => /^• Goal (?:started|replaced|resumed|updated)/u.test(message)),
+		[
+			"• Goal started · first objective",
+			"• Goal replaced · second objective",
+			"• Goal resumed from paused · second objective",
+			"• Goal updated · final objective",
+		],
+	);
+
+	const rpc = await startGoalForTest({ hasUI: true, mode: "rpc" }, "RPC objective");
+	assert.equal(rpc.notifications.at(-1)?.message, "Goal started: RPC objective");
+});
+
 test("bare goal is menu-first in TUI, observable in RPC, and rejects headless modes", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	registerGoal(mock.pi);
@@ -1563,6 +1586,11 @@ test("goal completion settles the active clock before clearing state", async (t)
 	assert.equal(completedGoal.timeUsedSeconds, 3.5);
 	assert.equal(completedGoal.activeStartedAt, undefined);
 	assert.equal(lastGoalStatus(completed.mock), null);
+	assert.deepEqual(goalStatusSnapshot(completed.mock.pi), {
+		status: "complete",
+		timeUsedSeconds: 3.5,
+		tokensUsed: 0,
+	});
 });
 
 test("session reload immediately limits an active goal whose persisted usage is exhausted", () => {
@@ -2404,7 +2432,9 @@ test("resume safely reactivates every resumable stopped status and rotates goal_
 		assert.equal(resumed.status, "active", `${status} should resume`);
 		assert.notEqual(resumed.id, beforeResume.id);
 		assert.deepEqual(goalStatusSnapshot(restored.mock.pi), {
+			activeStartedAt: resumed.activeStartedAt,
 			status: "active",
+			timeUsedSeconds: resumed.timeUsedSeconds,
 			tokenBudget: 10,
 			tokensUsed: 5,
 		});
@@ -3934,6 +3964,7 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 	assert.equal(requireLastGoal(budgeted.mock).tokensUsed, 12);
 	assert.deepEqual(goalStatusSnapshot(budgeted.mock.pi), {
 		status: "budget_limited",
+		timeUsedSeconds: requireLastGoal(budgeted.mock).timeUsedSeconds,
 		tokenBudget: 10,
 		tokensUsed: 12,
 	});
