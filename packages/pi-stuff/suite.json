@@ -3,6 +3,7 @@
 	"schemaVersion": 2,
 	"capabilities": [
 		"conversation-ui",
+		"session-naming",
 		"tool-display",
 		"rtk",
 		"codex",

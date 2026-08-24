@@ -17,6 +17,7 @@ import { markLifecyclePhase } from "./lifecycle-performance.js";
 import mcp from "./mcp/index.js";
 import notification from "./notification/index.js";
 import rtk from "./rtk/index.js";
+import sessionNaming from "./session-naming/index.js";
 import subagents from "./subagents/index.js";
 import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";
 import type { SuiteInstallationOptions } from "./suite-loader.js";
@@ -56,6 +57,7 @@ function createCapabilities(
 ): readonly CapabilityInstallation[] {
 	return [
 		{ id: "conversation-ui", install: conversationUi },
+		{ id: "session-naming", install: sessionNaming },
 		{ id: "tool-display", install: toolDisplay },
 		{ id: "rtk", install: rtk },
 		{ id: "codex", install: codex },
