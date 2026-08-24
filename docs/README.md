@@ -20,6 +20,7 @@ Current engineering documentation is English. Use these sources in this order:
 | Code Mode | ADR [0009](adr/0009-align-code-mode-with-openai-and-cloudflare.md), [0011](adr/0011-add-global-code-mode-default.md), and [0014](adr/0014-expose-code-mode-configuration-scope.md); ADR 0005 is superseded |
 | Context Management | ADR [0007](adr/0007-initialize-configured-context-before-editor-readiness.md) and [0008](adr/0008-own-the-context-command-surface.md) |
 | Settings and Web configuration | ADR [0012](adr/0012-merge-pi-stuff-settings-file.md) as amended by [0013](adr/0013-unify-web-configuration.md) |
+| Session Naming | ADR [0020](adr/0020-add-automatic-session-naming.md) and the owning Module README |
 | Agent lifecycle compatibility | ADR [0018](adr/0018-end-live-v1-agent-governor-coexistence.md) |
 | Compatibility and verification | [`compatibility.md`](compatibility.md) and the root [`AGENTS.md`](../AGENTS.md) |
 

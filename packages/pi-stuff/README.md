@@ -14,6 +14,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 ## Included modules
 
 - [`conversation-ui`](src/conversation-ui/README.md): Statusline, Welcome, live Thought, terminal `chart`/`tree` fences, input presentation, `/ui`, and Command Dialog lifecycle.
+- [`session-naming`](src/session-naming/README.md): bounded semantic Session names after settled direct-user work, resumable ownership state, and `/autoname`.
 - [`tool-display`](src/tool-display/README.md): compact presentation for Pi built-ins and participating Suite Tools.
 - [`code-mode`](src/code-mode/README.md): one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
 - [`context-management`](src/context-management/README.md): configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
@@ -47,7 +48,7 @@ derived state, cache, and runtime files:
 | Data | Location |
 | --- | --- |
 | Pi Host settings | `<agentDir>/settings.json` |
-| Pi Stuff settings (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `codeMode`, and `web`) | `<agentDir>/pi-stuff.json` |
+| Pi Stuff settings (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `sessionNaming`, `codeMode`, and `web`) | `<agentDir>/pi-stuff.json` |
 | Shared standard MCP configuration | `$XDG_CONFIG_HOME/mcp/mcp.json` |
 | Pi-specific MCP overrides | `<agentDir>/mcp.json` and `<project>/.pi/mcp.json` |
 | Project Code Mode choice | `<project>/.pi/code-mode.json` |
@@ -63,6 +64,7 @@ writes use XDG state without deleting the legacy file.
 
 Legacy per-Capability settings files, including `web-search.json`, are migration inputs rather than current
 configuration locations. Direct user configuration changes migrate their owned namespace into `pi-stuff.json`.
+The upstream `pi-autoname.json` file is not read or migrated; Session Naming starts read-only from its merged namespace.
 
 ## Themes
 

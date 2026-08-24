@@ -40,6 +40,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
   fence、输入高亮，以及使用 Pi 原生交互方式的全宽 Command Dialog。
 - **紧凑的 Tool 活动**——连续 Tool 工作会汇总为一个语义化 Activity Group；随时通过 `Ctrl+O` 或
   `/tools` 查看原始细节。
+- **语义化 Session 名称**——首次由用户直接发起的工作 settled 后，会获得一个有界的模型生成名称；
+  `/autoname` 可显式刷新，而自动命名不会接管 Child Agent Session。
 - **持久的目标与计划**——Goal 能自动推进一个需要证据才能结束的目标；Todo 则用有界清单维护可恢复的
   会话任务。
 - **当前会话内的并行工作**——Background Shell、一次性 Monitor，以及前台或后台 Agent 都可检查、可控制，
@@ -73,6 +75,7 @@ Pi 启动后，可以从这些命令开始：
 | `/ui` | 配置 Statusline、Welcome 卡片、输入呈现和 Tool 计时器 |
 | `/ctx` | 查看 Context 状态并通过引导执行历史维护 |
 | `/notifications` | 配置并测试完成与失败通知 |
+| `/autoname` | 根据有界的近期对话上下文重新生成当前 Session 名称 |
 | `/goal <目标>` | 开始持续推进一个需要证据才能结束的会话目标 |
 | `/btw <问题>` | 提出一个不改变主对话记录、且不调用 Tool 的临时问题 |
 | `/tasks` | 检查和控制 Background Shell 与 Monitor |
@@ -118,6 +121,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 | Capability Module | 提供的能力 |
 | --- | --- |
 | `conversation-ui` | Welcome、Statusline、实时 Thought、`chart`/`tree` fence 投影、输入呈现、`/ui`、诊断与共享 Command Dialog 生命周期 |
+| `session-naming` | 用户直接发起的工作 settled 后生成有界语义 Session 名称，维护分支内所有权状态，并提供 `/autoname` |
 | `tool-display` | 紧凑 Tool Activity Group、原生展开、`/tools` 与确定性的会话恢复重建 |
 | `rtk` | 可选且 fail-open 的 Bash 命令改写，以及仅面向模型的 Bash/Grep 输出投影 |
 | `codex` | `/codex`、Fast mode、订阅用量、`apply_patch`、`view_image` 与 `imagegen` |
