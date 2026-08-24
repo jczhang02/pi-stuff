@@ -121,18 +121,22 @@ function assistantMessage(
 	};
 }
 
-function textStream(text: string, usage = ZERO_USAGE) {
+function textStream(text: string, usage = ZERO_USAGE, delayMs = 0) {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistantMessage([], "pending", usage);
 	stream.push({ type: "start", partial: pending });
 	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({
-		type: "done",
-		reason: "stop",
-		message: assistantMessage([{ type: "text", text }], "stop", usage),
-	});
+	const finish = (): void => {
+		stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
+		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
+		stream.push({
+			type: "done",
+			reason: "stop",
+			message: assistantMessage([{ type: "text", text }], "stop", usage),
+		});
+	};
+	if (delayMs > 0) setTimeout(finish, delayMs);
+	else finish();
 	return stream;
 }
 
@@ -179,6 +183,7 @@ function fixtureStream(context: Context) {
 	record({
 		type: "request",
 		lastUser,
+		historyMarkers: ["CONTEXT_INPUT_HISTORY_499", "CONTEXT_SEARCH_AGAIN"].filter((marker) => text.includes(marker)),
 		hasContextActivityText: text.includes("Context flush") || text.includes("nothing queued"),
 		hasHistory: text.includes("<session-history>"),
 		hasSince: text.includes("<session-history-since>"),
@@ -220,6 +225,9 @@ function fixtureStream(context: Context) {
 	if (lastUser.includes("CONTEXT_BULK")) return textStream("CONTEXT_BULK_DONE");
 	if (lastUser.includes("CONTEXT_AFTER_COMPACT")) return textStream("CONTEXT_AFTER_COMPACT_DONE", HIGH_USAGE);
 	if (lastUser.includes("CONTEXT_SETTLE")) return textStream("CONTEXT_SETTLE_DONE", LOW_USAGE);
+	if (lastUser.includes("CONTEXT_RESUME_REQUEST")) {
+		return textStream("CONTEXT_RESUME_DONE", ZERO_USAGE, 2_500);
+	}
 	if (lastUser.includes("CONTEXT_RESUME")) return textStream("CONTEXT_RESUME_DONE");
 	if (lastUser.includes("CONTEXT_DRAIN")) return textStream("CONTEXT_DRAIN_DONE");
 	if (lastUser.includes("CONTEXT_NATIVE_RESUME")) return textStream("CONTEXT_NATIVE_RESUME_DONE");

@@ -27,6 +27,7 @@ const RECORD_LINE_SCHEMA = Type.Object(
 		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
 		hasContextActivityText: Type.Optional(Type.Boolean()),
 		hasHistory: Type.Optional(Type.Boolean()),
+		historyMarkers: Type.Optional(Type.Array(Type.String())),
 		hasNativeSummary: Type.Optional(Type.Boolean()),
 		hasPonytailPrompt: Type.Optional(Type.Boolean()),
 		hasSince: Type.Optional(Type.Boolean()),
@@ -62,6 +63,7 @@ export interface ContextPtyVerificationOptions {
 	readonly piBinary: string;
 	readonly packagePath: string;
 	readonly columns?: number;
+	readonly inputFrameOnly?: boolean;
 	readonly rows?: number;
 }
 
@@ -303,6 +305,10 @@ function runCommand(args: readonly string[], environment?: Record<string, string
 	return result.stdout.toString();
 }
 
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
 function editorContains(frame: string, text: string): boolean {
 	const lines = frame.split("\n");
 	for (let index = 0; index + 2 < lines.length; index += 1) {
@@ -317,12 +323,29 @@ function editorContains(frame: string, text: string): boolean {
 	return false;
 }
 
-async function runResumePaintVerification(
+function transcriptContainsUserMessage(frame: string, text: string): boolean {
+	const lines = frame.split("\n");
+	for (let index = 1; index + 1 < lines.length; index += 1) {
+		if (
+			(lines[index] ?? "").trim() === text &&
+			(lines[index - 1] ?? "").trim() === "" &&
+			(lines[index + 1] ?? "").trim() === ""
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function runResumeInputFrameVerification(
 	environment: Record<string, string | undefined>,
 	cwd: string,
-	magicLog: string,
+	requestLog: string,
+	expectedHistoryMarker: string,
 ): Promise<string> {
 	const socket = join(environment["HOME"] ?? cwd, "context-resume-tmux.sock");
+	const terminalOutputPath = join(environment["HOME"] ?? cwd, "context-resume-terminal.log");
+	const terminalOutputDonePath = `${terminalOutputPath}.done`;
 	const session = `context-resume-${String(process.pid)}`;
 	const tmux = (args: readonly string[]): string => runCommand(["tmux", "-S", socket, ...args]);
 	const sessionExists = (): boolean =>
@@ -336,11 +359,12 @@ async function runResumePaintVerification(
 		predicate: (frame: string) => boolean,
 		label: string,
 		timeoutMs = 20_000,
+		history = true,
 	): Promise<string> => {
 		const deadline = Date.now() + timeoutMs;
 		let frame = "";
 		while (Date.now() < deadline) {
-			frame = capture(true);
+			frame = capture(history);
 			if (predicate(frame)) return frame;
 			await Bun.sleep(10);
 		}
@@ -350,8 +374,6 @@ async function runResumePaintVerification(
 		tmux(["send-keys", "-t", session, "-l", "--", text]);
 		tmux(["send-keys", "-t", session, "Enter"]);
 	};
-	let panePid: number | undefined;
-	let transformStopped = false;
 
 	runCommand(["tmux", "-V"]);
 	try {
@@ -373,40 +395,99 @@ async function runResumePaintVerification(
 				"-c",
 				cwd,
 				environment["PI_STUFF_CONTEXT_PTY_RUNNER"] ?? runner,
+				";",
+				"set-option",
+				"-t",
+				session,
+				"remain-on-exit",
+				"on",
 			],
 			environment,
 		);
-		panePid = Number(tmux(["display-message", "-p", "-t", session, "#{pane_pid}"]).trim());
-		if (!Number.isSafeInteger(panePid) || panePid <= 0) fail(`invalid resumed Pi pane pid ${String(panePid)}`);
 		await waitFor((frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE"), "resumed editor readiness", 40_000);
+		await writeFile(terminalOutputPath, "");
+		tmux([
+			"pipe-pane",
+			"-t",
+			session,
+			`cat >> ${shellQuote(terminalOutputPath)}; touch ${shellQuote(terminalOutputDonePath)}`,
+		]);
 
-		const prompt = "CONTEXT_RESUME";
+		const prompt = "CONTEXT_RESUME_REQUEST";
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
-		const logOffset = (await readFile(magicLog, "utf8")).length;
+		const submittedAt = performance.now();
 		tmux(["send-keys", "-t", session, "Enter"]);
-
-		const transformDeadline = Date.now() + 10_000;
-		while (Date.now() < transformDeadline) {
-			const addedLog = (await readFile(magicLog, "utf8")).slice(logOffset);
-			if (addedLog.includes("findSessionId")) break;
-			await Bun.sleep(5);
+		const workingFrames = new Set<string>();
+		const workingDeadline = Date.now() + 2_000;
+		let transcriptVisibleMs: number | undefined;
+		while (Date.now() < workingDeadline) {
+			const frame = capture(false);
+			if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
+				transcriptVisibleMs = performance.now() - submittedAt;
+			}
+			const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
+			if (indicator) workingFrames.add(indicator);
+			await Bun.sleep(100);
 		}
-		if (!(await readFile(magicLog, "utf8")).slice(logOffset).includes("findSessionId")) {
-			fail("resumed prompt never reached the Magic Context transform");
+		if (transcriptVisibleMs === undefined) {
+			await waitFor(
+				(frame) => transcriptContainsUserMessage(frame, prompt),
+				"the submitted prompt in the Conversation Transcript",
+				20_000,
+				false,
+			);
+			transcriptVisibleMs = performance.now() - submittedAt;
 		}
-		process.kill(panePid, "SIGSTOP");
-		transformStopped = true;
-		const transformFrame = capture();
-		if (editorContains(transformFrame, prompt)) {
-			fail(`interactive prompt remained in the editor after Context transformation began\n${transformFrame}`);
+		if (transcriptVisibleMs > 150) {
+			fail(`resumed prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
 		}
-		process.kill(panePid, "SIGCONT");
-		transformStopped = false;
+		if (workingFrames.size < 2) {
+			fail(`Vibe Line Working animation did not advance: ${JSON.stringify([...workingFrames])}`);
+		}
 
 		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
+		const modelRequest = (await readRecords(requestLog))
+			.reverse()
+			.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
+		if (
+			modelRequest?.hasHistory !== true ||
+			modelRequest.hasSince !== true ||
+			modelRequest.hasCompactMagicContextPrompt !== true ||
+			modelRequest.historyMarkers?.includes(expectedHistoryMarker) !== true
+		) {
+			send("/ctx status");
+			await Bun.sleep(100);
+			tmux(["send-keys", "-t", session, "Enter"]);
+			await Bun.sleep(500);
+			fail(`resumed model request did not contain the Magic Context projection\n${capture(true)}`);
+		}
 		send("CONTEXT_DRAIN");
 		const output = await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
+		tmux(["pipe-pane", "-t", session]);
+		const pipeDeadline = Date.now() + 5_000;
+		while (
+			!(await access(terminalOutputDonePath).then(
+				() => true,
+				() => false,
+			)) &&
+			Date.now() < pipeDeadline
+		) {
+			await Bun.sleep(5);
+		}
+		if (
+			!(await access(terminalOutputDonePath).then(
+				() => true,
+				() => false,
+			))
+		) {
+			fail("timed out waiting for the raw terminal capture to close");
+		}
+		const terminalOutput = await readFile(terminalOutputPath, "utf8");
+		if (terminalOutput.includes("\u001b[2J") || terminalOutput.includes("\u001b[3J")) {
+			fail("ordinary input submission cleared the terminal instead of committing a differential frame");
+		}
+		tmux(["set-option", "-t", session, "remain-on-exit", "off"]);
 		tmux(["send-keys", "-t", session, "C-c"]);
 		await Bun.sleep(150);
 		tmux(["send-keys", "-t", session, "C-d"]);
@@ -415,13 +496,6 @@ async function runResumePaintVerification(
 		if (sessionExists()) fail("resumed Pi did not exit");
 		return output;
 	} finally {
-		if (transformStopped && panePid !== undefined) {
-			try {
-				process.kill(panePid, "SIGCONT");
-			} catch {
-				// The pane may already have exited while the verifier was handling a failure.
-			}
-		}
 		Bun.spawnSync(["tmux", "-S", socket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
 	}
 }
@@ -495,6 +569,43 @@ function seedNativeCompactedSession(sessionDirectory: string, cwd: string): stri
 	});
 	const sessionFile = manager.getSessionFile();
 	if (!sessionFile) fail("native-compacted target session was not persisted");
+	return sessionFile;
+}
+
+function seedInputFrameSession(sessionDirectory: string, cwd: string): string {
+	const manager = SessionManager.create(cwd, sessionDirectory, { id: "context-input-frame" });
+	manager.appendModelChange("pi-stuff-context-pty", "fixture-model");
+	const timestamp = Date.now();
+	for (let index = 0; index < 500; index += 1) {
+		manager.appendMessage({
+			role: "user",
+			content:
+				index === 0
+					? [
+							{ type: "text", text: `CONTEXT_INPUT_HISTORY_${String(index)}` },
+							{ type: "image", data: "%".repeat(4 * 1024 * 1024), mimeType: "image/png" },
+						]
+					: `CONTEXT_INPUT_HISTORY_${String(index)}`,
+			timestamp: timestamp + index * 2,
+		} satisfies UserMessage);
+		manager.appendMessage({
+			role: "assistant",
+			content: [
+				{
+					type: "text",
+					text: index === 499 ? "CONTEXT_SEARCH_AGAIN_DONE" : `CONTEXT_INPUT_HISTORY_DONE_${String(index)}`,
+				},
+			],
+			api: "openai-completions",
+			provider: "pi-stuff-context-pty",
+			model: "fixture-model",
+			usage: ZERO_USAGE,
+			stopReason: "stop",
+			timestamp: timestamp + index * 2 + 1,
+		} satisfies AssistantMessage);
+	}
+	const sessionFile = manager.getSessionFile();
+	if (!sessionFile) fail("input-frame target session was not persisted");
 	return sessionFile;
 }
 
@@ -669,6 +780,16 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_CONFIG_HOME: xdgConfigDirectory,
 			XDG_DATA_HOME: undefined,
 		};
+		if (options.inputFrameOnly) {
+			const sessionFile = seedInputFrameSession(sessionDirectory, projectDirectory);
+			await runResumeInputFrameVerification(
+				{ ...baseEnvironment, PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile },
+				projectDirectory,
+				requestLog,
+				"CONTEXT_INPUT_HISTORY_499",
+			);
+			return;
+		}
 		const activationEnvironment = {
 			...baseEnvironment,
 			HOME: activationHome,
@@ -789,7 +910,14 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		}
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
 		for (const forbidden of ["Magic Context", "Magic Status", "ctx-aug", "ctx-doctor", "mc:"]) {
-			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);
+			if (freshOutput.includes(forbidden)) {
+				const evidence = (await readFile(magicLog, "utf8").catch(() => ""))
+					.split("\n")
+					.filter((line) => /compact|error|fail/i.test(line))
+					.slice(-80)
+					.join("\n");
+				fail(`fresh TUI exposed forbidden UI text ${forbidden}\nMagic Context log:\n${evidence}`);
+			}
 		}
 
 		const sessionFiles = (await readdir(sessionDirectory))
@@ -855,10 +983,11 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 
 		let resumeOutput: string;
 		try {
-			resumeOutput = await runResumePaintVerification(
+			resumeOutput = await runResumeInputFrameVerification(
 				{ ...baseEnvironment, PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile },
 				projectDirectory,
-				magicLog,
+				requestLog,
+				"CONTEXT_SEARCH_AGAIN",
 			);
 		} catch (error) {
 			const diagnosticRecords = (await readFile(requestLog, "utf8").catch(() => "<request log unavailable>"))
@@ -877,7 +1006,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			);
 		}
 		if (!resumeOutput.includes("Context search 中文检索标记 · done")) {
-			fail("resumed ctx_search history did not retain the standalone Tool row");
+			fail(`resumed ctx_search history did not retain the standalone Tool row\n${resumeOutput}`);
 		}
 		if (resumeOutput.includes("category=PROJECT_RULES")) {
 			fail("resumed ctx_search history exposed the raw Magic Context result block");
