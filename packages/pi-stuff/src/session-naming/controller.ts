@@ -2,7 +2,13 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { GeneratedSessionName } from "./model.js";
 import type { NamingMessage } from "./prompt.js";
 import type { SessionNamingSettings } from "./settings.js";
-import { getLastRenameMarker, namingMessages, type RenameMarker, type RenameMode } from "./state.js";
+import {
+	getLastRenameMarker,
+	getSessionNameTimestamp,
+	namingMessages,
+	type RenameMarker,
+	type RenameMode,
+} from "./state.js";
 
 export type SessionNamingState = "disabled" | "failed" | "fallback" | "named" | "running" | "unnamed";
 
@@ -33,13 +39,19 @@ export class SessionNamingController {
 
 	restore(): void {
 		const existingName = this.host.getSessionName()?.trim();
-		const marker = getLastRenameMarker(this.host.getBranch());
+		const branch = this.host.getBranch();
+		const marker = getLastRenameMarker(branch);
 		this.lastGeneratedName = undefined;
 		this.manualName = undefined;
 		this.lastRenameTime = 0;
-		if (!marker || !existingName || marker.name !== existingName) {
-			this.lastRenameTime = this.host.now();
+		if (!existingName) {
 			this.state = this.settings.enabled ? "unnamed" : "disabled";
+			return;
+		}
+		if (!marker || marker.name !== existingName) {
+			this.manualName = existingName;
+			this.lastRenameTime = getSessionNameTimestamp(branch, existingName) ?? this.host.now();
+			this.state = this.settings.enabled ? "named" : "disabled";
 			return;
 		}
 		this.lastRenameTime = marker.timestamp || this.host.now();
@@ -78,7 +90,8 @@ export class SessionNamingController {
 
 	observeSessionNameChange(name: string | undefined): void {
 		const normalized = name?.trim();
-		if (normalized === this.lastGeneratedName) return;
+		if (normalized && normalized === this.lastGeneratedName) return;
+		this.lastGeneratedName = undefined;
 		if (this.activeAbort) {
 			this.generation += 1;
 			this.activeAbort.abort(new Error("Session name changed by the user"));

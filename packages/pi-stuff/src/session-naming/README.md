@@ -7,9 +7,9 @@ Capability only chooses a label and calls Pi's public `setSessionName()` API.
 Automatic naming listens to the Conversation UI's shared direct-user settled boundary. Goal continuation, background
 results, and other Extension-authored work do not trigger it. Child Agent Sessions retain the names assigned by Agents,
 although an explicit `/autoname` remains available inside a child. Generated and observed manual names are recorded as
-branch-local custom entries so cooldown and `respectManualName` behavior survive resume and branching.
-Existing upstream `pi-autoname-state` entries are read for resume compatibility; Pi's `session_info` entry remains the
-authority for the actual name.
+branch-local custom entries so cooldown and `respectManualName` behavior survive resume and branching. An existing
+authoritative name without a matching marker is treated as manual; its native `session_info` timestamp anchors the
+cooldown without a startup write. Existing upstream `pi-autoname-state` entries are read for resume compatibility.
 
 The naming request includes only bounded user and Assistant text, removes leading Magic Context control blocks, redacts
 common credential forms, and frames all conversation text as untrusted data. Thinking, Tool records, images, and full

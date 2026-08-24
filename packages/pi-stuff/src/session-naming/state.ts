@@ -57,6 +57,16 @@ export function getLastRenameMarker(entries: readonly SessionEntry[]): RenameMar
 	return undefined;
 }
 
+export function getSessionNameTimestamp(entries: readonly SessionEntry[], name: string): number | undefined {
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (entry?.type !== "session_info" || entry.name?.trim() !== name) continue;
+		const timestamp = Date.parse(entry.timestamp);
+		return Number.isFinite(timestamp) ? timestamp : undefined;
+	}
+	return undefined;
+}
+
 function messageFromEntry(entry: SessionEntry): NamingMessage | undefined {
 	if (entry.type !== "message") return undefined;
 	const message = entry.message;

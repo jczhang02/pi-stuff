@@ -71,8 +71,8 @@ automatic naming request.
 - Parent Sessions receive semantic names without another Package or settings file.
 - Goal continuation, background resumption, and Child Agent Sessions do not cause automatic renames.
 - One direct user turn can cause one additional bounded Provider request after the main run settles.
-- Setting `respectManualName` to `true` makes a user-issued name sticky; the default `false` preserves periodic
-  automatic ownership.
+- Setting `respectManualName` to `true` makes a user-issued or otherwise unmarked authoritative name sticky; the
+  default `false` preserves periodic automatic ownership after the native rename timestamp's cooldown.
 - Existing upstream state is readable, but upstream standalone settings are intentionally not imported.
 - Representative acceptance must use the certified real Pi Host and verify Provider traffic plus persisted JSONL
   entries across resume; mocks alone cannot certify the public seam.

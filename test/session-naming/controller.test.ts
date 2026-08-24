@@ -134,6 +134,76 @@ describe("SessionNamingController", () => {
 		expect(second.name()).toBe("Manual Session Name");
 	});
 
+	for (const respectManualName of [false, true]) {
+		for (const markerKind of ["missing", "mismatched"] as const) {
+			test(`treats an existing ${markerKind} name as manual ownership when respectManualName=${String(respectManualName)}`, async () => {
+				const state = harness({ respectManualName });
+				if (markerKind === "mismatched") {
+					entrySequence += 1;
+					state.branch.push({
+						type: "custom",
+						id: `entry-${String(entrySequence)}`,
+						parentId: null,
+						timestamp: "1970-01-01T00:00:00.500Z",
+						customType: SESSION_NAMING_STATE_ENTRY_TYPE,
+						data: { name: "Old generated name", source: "ai", timestamp: 500 },
+					});
+				}
+				entrySequence += 1;
+				state.branch.push({
+					type: "session_info",
+					id: `entry-${String(entrySequence)}`,
+					parentId: null,
+					timestamp: "1970-01-01T00:00:01.000Z",
+					name: "Existing manual name",
+				});
+				state.setName("Existing manual name");
+				state.generated.push({ name: "Periodic replacement", source: "ai" });
+
+				state.controller.restore();
+				expect(state.controller.getState()).toBe("named");
+				state.setNow(601_000);
+
+				if (respectManualName) {
+					expect(await state.controller.handleSettled()).toBeUndefined();
+					expect(state.name()).toBe("Existing manual name");
+				} else {
+					expect(await state.controller.handleSettled()).toBe("Periodic replacement");
+					expect(state.markers.at(-1)?.mode).toBe("periodic");
+				}
+			});
+		}
+	}
+
+	test("records a manual return to a previously generated name", async () => {
+		const state = harness({ respectManualName: true });
+		state.generated.push({ name: "Generated name", source: "ai" });
+		state.controller.restore();
+		await state.controller.handleSettled();
+
+		state.setName("Different manual name");
+		state.controller.observeSessionNameChange("Different manual name");
+		state.setName("Generated name");
+		state.controller.observeSessionNameChange("Generated name");
+
+		expect(state.markers.map((marker) => marker.source)).toEqual(["ai", "user", "user"]);
+		expect(state.markers.at(-1)?.name).toBe("Generated name");
+		expect(await state.controller.handleSettled()).toBeUndefined();
+	});
+
+	test("returns to unnamed state when the native Session name is cleared", async () => {
+		const state = harness();
+		state.generated.push({ name: "Generated name", source: "ai" }, { name: "Replacement name", source: "ai" });
+		state.controller.restore();
+		await state.controller.handleSettled();
+
+		state.setName(undefined);
+		state.controller.observeSessionNameChange(undefined);
+
+		expect(state.controller.getState()).toBe("unnamed");
+		expect(await state.controller.handleSettled()).toBe("Replacement name");
+	});
+
 	test("marks /autoname as forced generation rather than an observed manual name", async () => {
 		const state = harness({ respectManualName: true });
 		state.generated.push({ name: "Forced Session Name", source: "ai" });

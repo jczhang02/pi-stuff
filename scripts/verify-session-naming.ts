@@ -277,8 +277,13 @@ export async function verifySessionNaming(options: VerifySessionNamingOptions): 
 		);
 		await withRpcTransport(resumed, "Resumed", async () => {
 			const restoredEntries = entries(await resumed.send({ type: "get_entries" }));
-			if (getLastRenameMarker(restoredEntries)?.name !== "Semantic Session Naming") {
-				throw new Error("Session Naming did not restore its branch-local marker");
+			const restoredMarker = getLastRenameMarker(restoredEntries);
+			if (
+				restoredMarker?.mode !== "initial" ||
+				restoredMarker.source !== "ai" ||
+				restoredMarker.name !== "Semantic Session Naming"
+			) {
+				throw new Error(`Session Naming did not restore generated ownership: ${JSON.stringify(restoredMarker)}`);
 			}
 			const beforeForce = parseLog(await readFile(logPath, "utf8"));
 			if (beforeForce.filter((record) => record["kind"] === "naming").length !== 1) {

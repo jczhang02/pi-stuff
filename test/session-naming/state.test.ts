@@ -4,6 +4,7 @@ import type { CustomEntry, SessionEntry } from "@earendil-works/pi-coding-agent"
 import type { NamingMessage } from "../../packages/pi-stuff/src/session-naming/prompt.js";
 import {
 	getLastRenameMarker,
+	getSessionNameTimestamp,
 	LEGACY_AUTONAME_STATE_ENTRY_TYPE,
 	namingMessages,
 	SESSION_NAMING_STATE_ENTRY_TYPE,
@@ -79,6 +80,18 @@ describe("Session Naming state projection", () => {
 		expect(
 			getLastRenameMarker([custom(LEGACY_AUTONAME_STATE_ENTRY_TYPE, { source: "ai", name: "Upstream AI name" })]),
 		).toEqual({ source: "ai", timestamp: 0, name: "Upstream AI name" });
+	});
+
+	test("reads the latest matching native Session name timestamp", () => {
+		const older = { ...entryBase(), type: "session_info" as const, name: "Manual name" };
+		const newer = {
+			...entryBase(),
+			type: "session_info" as const,
+			name: "Manual name",
+			timestamp: "2026-08-24T12:34:56.000Z",
+		};
+		expect(getSessionNameTimestamp([older, newer], "Manual name")).toBe(1_787_574_896_000);
+		expect(getSessionNameTimestamp([older, newer], "Other name")).toBeUndefined();
 	});
 
 	test("initial naming uses the first user-to-Assistant exchange", () => {
