@@ -158,7 +158,8 @@ path performance is certified with:
 bun run benchmark:conversation-markdown -- --baseline-root <baseline> --candidate-root <candidate>
 ```
 
-The command reports feature rendering separately and fails only on a repeatable ordinary-path regression.
+The command loads both the transformer and pinned Host Markdown runtime from each repository root. It reports feature
+rendering separately and fails only on a repeatable ordinary-path regression.
 
 ### Diagnostics
 

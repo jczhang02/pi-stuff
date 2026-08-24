@@ -15,7 +15,7 @@ import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActive
 import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
 
-const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 const TOOL_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-tools/lifecycle-states/v1");
 const TOOL_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/lifecycle-discovery/v1";
 

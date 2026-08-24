@@ -1,6 +1,6 @@
 import type { SuiteToolReplayDefinition } from "./contract.js";
 
-const BUILTIN_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+const BUILTIN_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 
 export interface ResumeToolHandoff {
 	readonly activeNames: readonly string[];

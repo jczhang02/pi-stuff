@@ -48,7 +48,7 @@ Its 2026-08-17 update was implemented on 2026-08-18. The shipped single-column D
 and text fields keep Pi's native SelectList and Input keyboard behavior rather than intercepting the read-only Dialog
 aliases.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits
-for Context activation before the Host freezes the first request. Pi 0.84.2
+for Context activation before the Host freezes the first request. Pi 0.84.3
 does not emit `before_agent_start` for an idle `sendMessage` turn, so when such a
 custom message is the first Agent turn, the normal Magic `context` transform
 adds the same compact guidance to that provider request only. It is not written
@@ -97,7 +97,7 @@ This boundary deliberately works within Pi's extension interface:
   UTF-8 byte length as a tokenizer-independent upper bound, together with the
   resolved child and fallback model windows and conservative launch reserves;
   exact provider tokenization remains the provider's responsibility.
-- Pi 0.84.2 also skips its pre-turn native compaction threshold check for an
+- Pi 0.84.3 also skips its pre-turn native compaction threshold check for an
   idle custom `sendMessage` turn. If Magic remains dormant or unavailable,
   Context reads Pi's exact current compaction settings and runs the public
   `ctx.compact` callback boundary before delivery only when the same threshold
@@ -107,13 +107,15 @@ This boundary deliberately works within Pi's extension interface:
   not schedule a duplicate continuation.
 - A manual `/compact` while Magic is healthy records one extension-owned Pi
   compaction boundary with a positive managed-history result. Automatic
-  threshold or overflow compaction remains owned by Magic and publishes one
-  session-identity-bound in-process bypass event; Goal uses that event only to
-  replace a continuation it suspended at `session_before_compact`. If Context
-  is already degraded before a compaction attempt, Pi's native path remains
-  available. If an active Magic compaction hook itself fails, the adapter
-  cancels that attempt, reports the failure, and leaves the full JSONL intact
-  rather than stacking a native summary after a partial Magic attempt.
+  threshold or overflow compaction remains owned by Magic and cancels Pi's
+  native summary. Pi 0.84.3 reports that cancellation through its native
+  `session_compact_failed` event; Goal uses a matching pending Session event
+  only to replace the continuation it suspended at `session_before_compact`.
+  `session_compact` remains the sole success path. If Context is already
+  degraded before an attempt, Pi's native path remains available. If an active
+  Magic compaction hook itself fails, the adapter cancels that attempt, reports
+  the failure, and leaves the full JSONL intact rather than stacking a native
+  summary after a partial Magic attempt.
 - The official engine owns its durable message index. Context activation replays
   the captured `session_start` exactly once so fresh and resumed sessions enter
   that indexing lifecycle. Recognized migration-free configurations do that

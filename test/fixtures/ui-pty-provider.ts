@@ -228,6 +228,7 @@ function taskCreateStream(model: Model<Api>, index: number) {
 		},
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({
@@ -269,6 +270,7 @@ function goalCompletionStream(model: Model<Api>, prompt: string) {
 		},
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({

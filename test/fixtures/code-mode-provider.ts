@@ -80,6 +80,7 @@ text(JSON.stringify({
 	const toolCalls = [codeModeCall];
 	stream.push({ partial: pending, type: "start" });
 	for (const [contentIndex, toolCall] of toolCalls.entries()) {
+		pending.content.push(toolCall);
 		stream.push({ contentIndex, partial: pending, type: "toolcall_start" });
 		stream.push({ contentIndex, partial: pending, toolCall, type: "toolcall_end" });
 	}
@@ -161,6 +162,7 @@ function directToolStream() {
 						];
 	stream.push({ partial: pending, type: "start" });
 	for (const [contentIndex, toolCall] of toolCalls.entries()) {
+		pending.content.push(toolCall);
 		stream.push({ contentIndex, partial: pending, type: "toolcall_start" });
 		stream.push({ contentIndex, partial: pending, toolCall, type: "toolcall_end" });
 	}

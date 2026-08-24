@@ -14,7 +14,7 @@ import { getAgentDir, getProjectConfigDir } from "../../shared/utils.ts";
 
 const CACHE_VERSION = 2;
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "mcp"]);
+const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "powershell", "mcp"]);
 const IMPORT_PATHS = {
 	cursor: [path.join(os.homedir(), ".cursor", "mcp.json")],
 	"claude-code": [

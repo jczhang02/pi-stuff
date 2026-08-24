@@ -3,11 +3,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
-import {
-	CONTEXT_COMPACTION_BYPASSED_EVENT,
-	isContextCompactionBypassedEvent,
-} from "../../shared/context-compaction-bypassed.js";
-import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { activityKey, singleActivity } from "../../tool-display/activity.js";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "../../tool-display/contract.js";
 import { currentTokenTotal } from "./accounting.js";
@@ -153,8 +149,6 @@ const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
 const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
 const MAX_COMPLETION_EVIDENCE_TEXT_LENGTH = 4_000;
 
-export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../shared/context-compaction-bypassed.js";
-
 const GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA = Type.Object(
 	{ proof: Type.String(), requirement: Type.String() },
 	{ additionalProperties: true },
@@ -227,62 +221,51 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		resetSafetyEpoch = true,
 	) => runtime.sendOwnedGoalPrompt(ctx, goalId, prompt, { resetSafetyEpoch });
 	const dispatchPendingQueueActionIfSettled = commands.dispatchPendingQueueActionIfSettled.bind(commands);
-	type PendingOwnedCompaction = {
+	type PendingCompaction = {
 		readonly ctx: StatusContext;
-		readonly event: GoalCompactionEvent;
 		readonly generation: number;
 		readonly goalId: string;
-		readonly sessionManager: object;
+		readonly sessionManager: StatusContext["sessionManager"];
 	};
-	let ownedCompactionGeneration = 0;
-	let ownedCompactionTimer: ReturnType<typeof setTimeout> | undefined;
-	let pendingOwnedCompaction: PendingOwnedCompaction | undefined;
+	let compactionGeneration = 0;
+	let compactionFailureTimer: ReturnType<typeof setTimeout> | undefined;
+	let pendingCompaction: PendingCompaction | undefined;
 
-	const clearPendingOwnedCompaction = (): void => {
-		ownedCompactionGeneration++;
-		pendingOwnedCompaction = undefined;
-		if (ownedCompactionTimer !== undefined) clearTimeout(ownedCompactionTimer);
-		ownedCompactionTimer = undefined;
+	const clearPendingCompaction = (): void => {
+		compactionGeneration++;
+		pendingCompaction = undefined;
+		if (compactionFailureTimer !== undefined) clearTimeout(compactionFailureTimer);
+		compactionFailureTimer = undefined;
 	};
-	const armOwnedCompaction = (event: GoalCompactionEvent, ctx: StatusContext, goalId: string): void => {
-		if (!isRuntimeObject(ctx.sessionManager) || ctx.sessionManager === null) return;
-		pendingOwnedCompaction = {
+	const armCompaction = (ctx: StatusContext, goalId: string): void => {
+		pendingCompaction = {
 			ctx,
-			event,
-			generation: ownedCompactionGeneration,
+			generation: compactionGeneration,
 			goalId,
 			sessionManager: ctx.sessionManager,
 		};
 	};
-	const resumeAfterOwnedCompaction = async (pending: PendingOwnedCompaction): Promise<void> => {
+	const resumeAfterFailedCompaction = async (
+		pending: PendingCompaction,
+		event: GoalCompactionEvent,
+	): Promise<void> => {
 		try {
 			await pending.ctx.waitForIdle?.();
 		} catch {
 			// Fall through to the generation and live-idle checks below.
 		}
-		if (pending.generation !== ownedCompactionGeneration) return;
+		if (pending.generation !== compactionGeneration) return;
 		const activeGoal = runtime.activeGoal;
 		if (!activeGoal || activeGoal.id !== pending.goalId || activeGoal.status !== "active") return;
 		if (runtime.pendingQueueAction) {
 			await dispatchPendingQueueActionIfSettled(pending.ctx);
 			return;
 		}
-		if (isPiOwnedCompactionRetry(pending.event, activeGoal.id)) return;
+		if (isPiOwnedCompactionRetry(event, activeGoal.id)) return;
 		clearGoalRecoveryForGoal(activeGoal.id);
 		requestContinuation(activeGoal);
 		await dispatchContinuationIfSettled(pending.ctx);
 	};
-	const unsubscribeOwnedCompaction = pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => {
-		if (!isContextCompactionBypassedEvent(value)) return;
-		const pending = pendingOwnedCompaction;
-		if (!pending || value.sessionManager !== pending.sessionManager) return;
-		pendingOwnedCompaction = undefined;
-		if (ownedCompactionTimer !== undefined) clearTimeout(ownedCompactionTimer);
-		ownedCompactionTimer = setTimeout(() => {
-			ownedCompactionTimer = undefined;
-			void resumeAfterOwnedCompaction(pending);
-		}, 0);
-	});
 
 	const goalCompleteTool = defineTool({
 		name: GOAL_COMPLETE_TOOL,
@@ -860,8 +843,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		goalProjectionNeeded = false;
 		turnActive = false;
-		clearPendingOwnedCompaction();
-		if (isRuntimeFunction(unsubscribeOwnedCompaction)) unsubscribeOwnedCompaction();
+		clearPendingCompaction();
 		runController.unbindSession();
 		runtime.closeMenuSession();
 		if (runtime.activeGoal) {
@@ -888,7 +870,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_before_compact", (event, ctx) => {
-		clearPendingOwnedCompaction();
+		clearPendingCompaction();
 		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
 		if (runtime.queueFrozen) return;
 		if (runtime.activeGoal?.status === "budget_limited") {
@@ -898,15 +880,26 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		if (runtime.activeGoal?.status !== "active") return;
 		if (!updateGoalUsage(runtime.activeGoal, ctx)) return;
 		cancelContinuationWork();
-		if (!suiteNativePreflight) armOwnedCompaction(event, ctx, runtime.activeGoal.id);
+		if (!suiteNativePreflight) armCompaction(ctx, runtime.activeGoal.id);
 		persistGoal(runtime.activeGoal);
 		updateStatus(ctx, runtime.activeGoal);
 		if (runtime.pendingQueueAction) return;
 		if (limitActiveGoalForBudget(ctx, false)) return { cancel: true as const };
 	});
 
+	pi.on("session_compact_failed", (event, ctx) => {
+		const pending = pendingCompaction;
+		if (!pending || ctx.sessionManager !== pending.sessionManager) return;
+		pendingCompaction = undefined;
+		if (compactionFailureTimer !== undefined) clearTimeout(compactionFailureTimer);
+		compactionFailureTimer = setTimeout(() => {
+			compactionFailureTimer = undefined;
+			void resumeAfterFailedCompaction(pending, event);
+		}, 0);
+	});
+
 	pi.on("session_compact", async (event, ctx) => {
-		clearPendingOwnedCompaction();
+		clearPendingCompaction();
 		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
 		if (runtime.queueFrozen) return;
 		if (runtime.activeGoal?.status !== "active") {

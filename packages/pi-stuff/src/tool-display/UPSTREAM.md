@@ -15,8 +15,9 @@ This module contains source derived from the pinned `@mobrienv/pi-tidy-tools` 0.
 ## Pi Stuff delta
 
 - Keeps the upstream result-first, same-name built-in override and semantic summary ideas.
-- Uses Pi 0.84.2 tool definitions directly so all seven built-in parameter schemas, prompt metadata, execution, result
-  shapes, events, and permission interception remain Host-owned and unchanged.
+- Uses seven Pi 0.84.3 Tool definitions directly so their parameter schemas, prompt metadata, execution, result shapes,
+  events, and permission interception remain Host-owned and unchanged. Pi's additional PowerShell Tool remains
+  Host-rendered and is recognized only for lifecycle membership.
 - Removes the injected `reasoning` argument and every non-result presentation mode.
 - Removes fixed ANSI colors, emoji, full-row success backgrounds, `/diff`, global expansion as the detail path,
   `pi-fff`, command-driven configuration, and upstream file-writing startup/configuration behavior.

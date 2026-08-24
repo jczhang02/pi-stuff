@@ -16,7 +16,6 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import piStuffContext, {
 	__test,
-	CONTEXT_COMPACTION_BYPASSED_EVENT,
 	getContextCapability,
 	projectCurrentContext,
 } from "../../packages/pi-stuff/src/context-management/index.js";
@@ -1675,8 +1674,6 @@ describe("Context capability lifecycle", () => {
 	test("restores native compaction while a live Magic transform is unhealthy", async () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
-		const bypasses: unknown[] = [];
-		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
 		let shouldFail = false;
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
@@ -1699,21 +1696,18 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
-		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 
 		shouldFail = true;
 		const original = { type: "context", messages: [taggedMessage("native")] };
 		expect(await emitResults(handlers, "context", original, ctx)).toEqual([{ messages: original.messages }]);
 		expect(getContextCapability(ctx).status().state).toBe("degraded");
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined]);
-		expect(bypasses).toHaveLength(1);
 
 		shouldFail = false;
 		const recovered = await emitResults(handlers, "context", original, ctx);
 		expect(JSON.stringify(recovered)).toContain("healthy");
 		expect(getContextCapability(ctx).status().state).toBe("active");
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
-		expect(bypasses).toHaveLength(2);
 	});
 
 	test("yields extreme overflow to native compaction before Magic scans the Session", async () => {
@@ -1832,8 +1826,6 @@ describe("Context capability lifecycle", () => {
 	test("presents manual Magic compaction as one extension-owned managed-history boundary", async () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
-		const bypasses: unknown[] = [];
-		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
@@ -1870,14 +1862,11 @@ describe("Context capability lifecycle", () => {
 				},
 			},
 		]);
-		expect(bypasses).toEqual([]);
 	});
 
 	test("does not stack native compaction after the Magic compaction hook throws", async () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
-		const bypasses: unknown[] = [];
-		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
@@ -1916,7 +1905,6 @@ describe("Context capability lifecycle", () => {
 		});
 		expect(notifications).toHaveLength(1);
 		expect(notifications[0]).toContain("full Session remains intact");
-		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 	});
 });
 

@@ -53,7 +53,7 @@ Pi Stuff 是一个私有、本地使用的 Package，不发布到 npm；其中�
 
 ## 快速开始
 
-要走已认证路径，请使用基于上游提交 `914cf1472e715297caa30db4b9535d534a9eb718` 构建的 Pi `0.84.2` Linux x64
+要走已认证路径，请使用基于上游提交 `4e58f324fae8ebfa98a3d45181fb248072a2afac` 构建的 Pi `0.84.3` Linux x64
 Host。只有相同版本号并不足以证明已经认证。
 
 ```bash
@@ -161,7 +161,7 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 
 | 契约 | 已认证配置 |
 | --- | --- |
-| Pi Host | `0.84.2`，上游提交 `914cf1472e715297caa30db4b9535d534a9eb718` |
+| Pi Host | `0.84.3`，上游提交 `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
 | Pi Host 二进制 | 已审核的上游 Linux x64 Release SHA-256 |
 | 平台 | Linux x64；CI 系统工具基线为 Ubuntu 24.04 |
 | Bun | `1.3.14` |

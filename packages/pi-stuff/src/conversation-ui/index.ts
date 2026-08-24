@@ -9,7 +9,6 @@ import {
 	listenForActiveAgentWorkUserPromotions,
 	listenForAgentWorkOriginQueries,
 } from "./agent-run-origin.js";
-import { suppressDuplicatedLiveCompactionReplay } from "./compaction-presentation.js";
 import { activateDiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -973,7 +972,6 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 	let sessionGeneration = 0;
 	let agentSettledObserverRegistered = false;
 	let inputObserverRegistered = false;
-	let compactionReplayDeduperRegistered = false;
 	const scheduleGitRefreshAtQuietBoundary = (): void => {
 		userWorkGitRefreshPending = true;
 		if (!sessionContext || agentSettlementPending || gitRefreshDrainToken) return;
@@ -1040,16 +1038,6 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 				// while the status probe is still running.
 				if (shouldRefreshGit) await presentation?.refreshGit();
 				if (completedUserAgentRun) publishUserAgentRunSettled(pi, sessionContext);
-			});
-		}
-		// Register after all Capability factories have initialized so this runs
-		// after their session_compact bookkeeping and immediately before Pi's
-		// live chat rebuild.
-		if (!compactionReplayDeduperRegistered) {
-			compactionReplayDeduperRegistered = true;
-			pi.on("session_compact", (event, compactCtx) => {
-				if (!compactCtx.hasUI) return;
-				suppressDuplicatedLiveCompactionReplay(compactCtx.sessionManager, event.compactionEntry.id);
 			});
 		}
 		presentation?.dispose();

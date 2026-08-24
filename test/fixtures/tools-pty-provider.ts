@@ -69,6 +69,7 @@ function toolCallStream(index: number) {
 		arguments: fixture.arguments,
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
