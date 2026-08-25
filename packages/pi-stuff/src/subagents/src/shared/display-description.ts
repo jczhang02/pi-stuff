@@ -9,7 +9,7 @@ function basename(token: string): string {
 	return normalized.split("/").filter(Boolean).at(-1) ?? token;
 }
 
-function compactPaths(value: string): string {
+export function compactAbsolutePaths(value: string): string {
 	return value.replace(PATH_TOKEN, basename);
 }
 
@@ -35,7 +35,7 @@ export function resolveDisplayDescription(
 ): string {
 	const explicit = boundedTerminalLine(description);
 	if (explicit) return boundTerminalLine(explicit, MAX_DISPLAY_DESCRIPTION_WIDTH);
-	const legacyTask = compactPaths(boundedTerminalLine(task));
+	const legacyTask = compactAbsolutePaths(boundedTerminalLine(task));
 	const source = legacyTask || "Agent task";
 	return boundTerminalLine(source, MAX_DISPLAY_DESCRIPTION_WIDTH);
 }

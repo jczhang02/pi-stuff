@@ -1,12 +1,12 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { type AgentRow, CurrentAgents } from "../../session/current-agents.ts";
+import { compactAbsolutePaths } from "../../shared/display-description.ts";
 import type { Details, SubagentState } from "../../shared/types.ts";
 
 const MAX_LIST_TASK_CHARS = 160;
 const MAX_DETAIL_TASK_CHARS = 300;
 const MAX_FAILURE_CHARS = 800;
 const MAX_PROGRESS_CHARS = 800;
-const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\/)(?:[^\s:;,]+[\\/])*[^\s:;,]*/gu;
 
 export interface RunStatusParams {
 	readonly action?: "status";
@@ -57,8 +57,7 @@ function failureCategory(error: string): FailureCategory {
 }
 
 function compactChildText(value: string, limit: number): string {
-	const withoutPaths = value.replace(ABSOLUTE_PATH, (path) => path.split(/[\\/]/u).filter(Boolean).at(-1) ?? "path");
-	return compactText(withoutPaths, limit);
+	return compactText(compactAbsolutePaths(value), limit);
 }
 
 function formatElapsed(elapsedMs: number | null): string | undefined {
