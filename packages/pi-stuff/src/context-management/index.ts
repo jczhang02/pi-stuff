@@ -59,12 +59,12 @@ import {
 	type MagicStatusMessage,
 	statusSnapshotFromMagic,
 } from "./dialog.js";
+import { loadMagicContextWorker } from "./magic-worker-client.js";
 import {
 	applyContextPromptContributions,
 	applyContextPromptContributionsToProvider,
 	stripContextPromptContributions,
 } from "./prompt-contributions.js";
-import { loadMagicContextWorker } from "./magic-worker-client.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
