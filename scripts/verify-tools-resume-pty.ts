@@ -7,6 +7,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-resume-pty-provider.ts");
@@ -313,6 +314,7 @@ export async function verifyToolsResumePty(options: {
 			mkdir(sourceDirectory),
 			mkdir(join(targetDirectory, ".pi"), { recursive: true }),
 		]);
+		await disableSessionNamingForTest(configDirectory);
 		await Promise.all([
 			writeFile(
 				join(configDirectory, "settings.json"),

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-24
-- Bead: ps-2pq
+- Bead: ps-35b
 
 ## Context
 
@@ -23,7 +23,8 @@ while Session Naming owns model selection, semantic naming policy, Session metad
 
 Automatic naming listens to Conversation UI's certified user-Agent-run-settled event. The first settled direct-user
 exchange is named from its first user/Assistant dialogue. A model-generated name may be reconsidered after the default
-ten-minute cooldown using the six newest user and Assistant messages. A local fallback is retried on the next settled
+ten-minute cooldown using the six newest user and Assistant messages. The current authoritative name is included as
+redacted untrusted data and retained exactly when it still fits. A local fallback is retried on the next settled
 direct-user run. `/autoname` explicitly forces regeneration. Automatic naming is disabled in Child Agent Sessions;
 Agents remains the authority for their assigned Session names.
 

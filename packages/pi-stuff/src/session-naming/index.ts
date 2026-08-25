@@ -25,7 +25,7 @@ function createController(
 		appendMarker(marker: RenameMarker) {
 			pi.appendEntry(SESSION_NAMING_STATE_ENTRY_TYPE, marker);
 		},
-		generate: (messages, signal) => generateSessionName(ctx, settings, messages, signal),
+		generate: (messages, currentName, signal) => generateSessionName(ctx, settings, messages, currentName, signal),
 		getBranch: () => ctx.sessionManager.getBranch(),
 		getSessionName: () => pi.getSessionName(),
 		now: Date.now,

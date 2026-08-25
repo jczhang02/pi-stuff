@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { processExists } from "../packages/pi-stuff/src/background-work/src/process.js";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-pty-provider.ts");
@@ -146,6 +147,7 @@ export async function verifyWorkPty(options: {
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory), chmod(runner, 0o755)]);
+	await disableSessionNamingForTest(configDirectory);
 	await writeFile(
 		join(configDirectory, "settings.json"),
 		`${JSON.stringify({ defaultProjectTrust: "always" }, null, "\t")}\n`,

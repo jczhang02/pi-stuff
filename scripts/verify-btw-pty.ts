@@ -10,6 +10,7 @@ import {
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/btw-pty-provider.ts");
@@ -269,6 +270,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	await Promise.all([mkdir(configDirectory), mkdir(largeSessionDirectory), mkdir(sessionDirectory)]);
+	await disableSessionNamingForTest(configDirectory);
 
 	try {
 		const baseEnvironment = {

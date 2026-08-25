@@ -8,6 +8,7 @@ import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-execution-matrix-provider.ts");
@@ -378,6 +379,7 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 	const sessionsDirectory = join(temporaryDirectory, "sessions");
 	const logPath = join(temporaryDirectory, "provider.jsonl");
 	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(projectDirectory), mkdir(sessionsDirectory)]);
+	await disableSessionNamingForTest(configDirectory);
 	await Promise.all([
 		writeFile(join(projectDirectory, "matrix.txt"), "MATRIX_CHILD_FILE_OK\n", { mode: 0o600 }),
 		writeFile(

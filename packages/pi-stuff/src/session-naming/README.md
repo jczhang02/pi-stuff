@@ -2,7 +2,8 @@
 
 Session Naming gives a settled direct-user Session a concise semantic name and refreshes that name after the configured
 cooldown. `/autoname` forces regeneration. Pi remains the owner of Session metadata and its native presentation; this
-Capability only chooses a label and calls Pi's public `setSessionName()` API.
+Capability only chooses a label and calls Pi's public `setSessionName()` API. Periodic requests include the current
+authoritative name and retain it exactly when it still fits, avoiding needless Session metadata writes.
 
 Automatic naming listens to the Conversation UI's shared direct-user settled boundary. Goal continuation, background
 results, and other Extension-authored work do not trigger it. Child Agent Sessions retain the names assigned by Agents,

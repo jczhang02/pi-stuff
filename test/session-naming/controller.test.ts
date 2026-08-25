@@ -51,6 +51,7 @@ function harness(overrides: Partial<SessionNamingSettings> = {}) {
 	const branch: SessionEntry[] = [message("user", "Implement automatic Session naming"), message("assistant", "Done")];
 	const generated: (GeneratedSessionName | undefined)[] = [];
 	const markers: RenameMarker[] = [];
+	const requestedCurrentNames: (string | undefined)[] = [];
 	const controller = new SessionNamingController(
 		{ ...SETTINGS, ...overrides },
 		{
@@ -66,7 +67,8 @@ function harness(overrides: Partial<SessionNamingSettings> = {}) {
 					data: marker,
 				});
 			},
-			async generate() {
+			async generate(_messages, currentName) {
+				requestedCurrentNames.push(currentName);
 				return generated.shift();
 			},
 			getBranch: () => branch,
@@ -82,6 +84,7 @@ function harness(overrides: Partial<SessionNamingSettings> = {}) {
 		controller,
 		generated,
 		markers,
+		requestedCurrentNames,
 		name: () => name,
 		setName: (next: string | undefined) => {
 			name = next;
@@ -115,6 +118,7 @@ describe("SessionNamingController", () => {
 		expect(await state.controller.handleSettled()).toBeUndefined();
 		state.setNow(601_000);
 		expect(await state.controller.handleSettled()).toBe("Refreshed Name");
+		expect(state.requestedCurrentNames).toEqual([undefined, "Initial Name"]);
 		expect(state.markers.at(-1)?.mode).toBe("periodic");
 	});
 
@@ -243,7 +247,7 @@ describe("SessionNamingController", () => {
 		}[] = [];
 		const controller = new SessionNamingController(SETTINGS, {
 			appendMarker: (marker) => markers.push(marker),
-			generate: (_messages, signal) =>
+			generate: (_messages, _currentName, signal) =>
 				new Promise((resolve) => {
 					pending.push({ resolve, signal });
 				}),
@@ -280,7 +284,7 @@ describe("SessionNamingController", () => {
 		}[] = [];
 		const controller = new SessionNamingController(SETTINGS, {
 			appendMarker: (marker) => markers.push(marker),
-			generate: (_messages, signal) =>
+			generate: (_messages, _currentName, signal) =>
 				new Promise((resolve) => {
 					pending.push({ resolve, signal });
 				}),

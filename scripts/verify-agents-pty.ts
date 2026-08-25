@@ -6,6 +6,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-pty-provider.ts");
@@ -629,6 +630,7 @@ async function verifyFleetviewFooterLayout(
 		mkdir(runtime, { recursive: true }),
 		mkdir(sessions, { recursive: true }),
 	]);
+	await disableSessionNamingForTest(config);
 	await Promise.all([
 		writeFile(join(agents, "general-purpose.md"), agentDefinition, { mode: 0o600 }),
 		writeFile(log, "", { mode: 0o600 }),
@@ -798,6 +800,7 @@ export async function verifyAgentsPty(options: AgentsPtyVerificationOptions): Pr
 		mkdir(sessionDirectory, { recursive: true }),
 		mkdir(workspaceDirectory),
 	]);
+	await disableSessionNamingForTest(configDirectory);
 	await writeFile(join(workspaceDirectory, "agent-tool-target.txt"), "AGENT_TOOL_RESULT\n", { mode: 0o600 });
 	const agentDefinition = `---
 name: general-purpose

@@ -91,11 +91,12 @@ export async function generateSessionName(
 	ctx: SessionNamingModelContext,
 	settings: SessionNamingSettings,
 	messages: readonly NamingMessage[],
+	currentName: string | undefined,
 	signal: AbortSignal,
 	clock: () => number = Date.now,
 ): Promise<GeneratedSessionName | undefined> {
 	if (messages.length === 0 || signal.aborted) return undefined;
-	const prompt = buildNamingPrompt(messages);
+	const prompt = buildNamingPrompt(messages, currentName);
 	const startedAt = clock();
 	for (const model of buildModelChain(ctx, settings)) {
 		if (signal.aborted) return undefined;

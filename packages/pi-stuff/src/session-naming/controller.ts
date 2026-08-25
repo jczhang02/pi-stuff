@@ -14,7 +14,11 @@ export type SessionNamingState = "disabled" | "failed" | "fallback" | "named" | 
 
 export interface SessionNamingControllerHost {
 	appendMarker(marker: RenameMarker): void;
-	generate(messages: readonly NamingMessage[], signal: AbortSignal): Promise<GeneratedSessionName | undefined>;
+	generate(
+		messages: readonly NamingMessage[],
+		currentName: string | undefined,
+		signal: AbortSignal,
+	): Promise<GeneratedSessionName | undefined>;
 	getBranch(): readonly SessionEntry[];
 	getSessionName(): string | undefined;
 	now(): number;
@@ -123,7 +127,12 @@ export class SessionNamingController {
 		this.state = "running";
 		try {
 			const entries = this.host.getBranch();
-			const result = await this.host.generate(namingMessages(entries, mode === "initial"), abort.signal);
+			const currentName = this.host.getSessionName()?.trim();
+			const result = await this.host.generate(
+				namingMessages(entries, mode === "initial"),
+				currentName,
+				abort.signal,
+			);
 			if (abort.signal.aborted || generation !== this.generation) return undefined;
 			if (!result) {
 				this.state = "failed";

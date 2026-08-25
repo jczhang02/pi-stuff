@@ -100,11 +100,14 @@ describe("Session Naming model selection", () => {
 				ctx,
 				settings(),
 				[{ role: "user", content: "Fix api_key=do-not-send-this naming" }],
+				"Existing Session Name",
 				new AbortController().signal,
 			),
 		).toEqual({ name: "Session Naming Safety", source: "ai" });
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.context.messages[0]?.content).not.toContain("do-not-send-this");
+		expect(calls[0]?.context.messages[0]?.content).toContain("Existing Session Name");
+		expect(calls[0]?.context.messages[0]?.content).toContain("Return it exactly when it still fits");
 		expect(calls[0]?.options).toMatchObject({ cacheRetention: "none", maxTokens: 64 });
 		expect(calls[0]?.options?.signal).toBeInstanceOf(AbortSignal);
 	});
@@ -125,6 +128,7 @@ describe("Session Naming model selection", () => {
 				ctx,
 				settings(),
 				[{ role: "user", content: "Please repair automatic Session naming" }],
+				undefined,
 				new AbortController().signal,
 			),
 		).toEqual({ name: "repair automatic Session", source: "fallback" });
@@ -145,6 +149,7 @@ describe("Session Naming model selection", () => {
 			ctx,
 			settings(),
 			[{ role: "user", content: "Repair a hanging naming provider" }],
+			undefined,
 			abort.signal,
 		);
 
