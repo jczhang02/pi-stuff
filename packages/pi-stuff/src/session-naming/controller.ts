@@ -88,7 +88,6 @@ export class SessionNamingController {
 	}
 
 	async renameManually(): Promise<string | undefined> {
-		if (!this.settings.enabled) return undefined;
 		return this.rename("forced");
 	}
 
@@ -135,7 +134,7 @@ export class SessionNamingController {
 			);
 			if (abort.signal.aborted || generation !== this.generation) return undefined;
 			if (!result) {
-				this.state = "failed";
+				this.state = this.settings.enabled ? "failed" : "disabled";
 				return undefined;
 			}
 			const { name, source } = result;
@@ -144,10 +143,10 @@ export class SessionNamingController {
 			if (this.host.getSessionName()?.trim() !== name) this.host.setSessionName(name);
 			this.lastRenameTime = this.host.now();
 			this.host.appendMarker({ mode, name, source, timestamp: this.lastRenameTime });
-			this.state = source === "fallback" ? "fallback" : "named";
+			this.state = this.settings.enabled ? (source === "fallback" ? "fallback" : "named") : "disabled";
 			return name;
 		} catch {
-			if (generation === this.generation) this.state = "failed";
+			if (generation === this.generation) this.state = this.settings.enabled ? "failed" : "disabled";
 			return undefined;
 		} finally {
 			if (generation === this.generation) this.activeAbort = undefined;

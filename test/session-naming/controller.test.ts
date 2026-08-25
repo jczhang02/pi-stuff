@@ -217,6 +217,18 @@ describe("SessionNamingController", () => {
 		expect(state.markers.at(-1)?.mode).toBe("forced");
 	});
 
+	test("keeps explicit /autoname available when automatic naming is off", async () => {
+		const state = harness({ enabled: false });
+		state.generated.push({ name: "Explicit Session Name", source: "ai" });
+		state.controller.restore();
+
+		expect(await state.controller.handleSettled()).toBeUndefined();
+		expect(await state.controller.renameManually()).toBe("Explicit Session Name");
+		expect(state.name()).toBe("Explicit Session Name");
+		expect(state.controller.getState()).toBe("disabled");
+		expect(state.markers.at(-1)?.mode).toBe("forced");
+	});
+
 	test("retries a failed automatic name on the next settled user run", async () => {
 		const state = harness();
 		state.generated.push(undefined, { name: "Recovered Session Name", source: "ai" });

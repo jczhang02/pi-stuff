@@ -1,16 +1,20 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { listenForUserAgentRunSettled } from "../conversation-ui/index.js";
+import {
+	type CommandDialogCoordinatorHost,
+	getCommandDialogCoordinator,
+	listenForUserAgentRunSettled,
+} from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { SessionNamingController } from "./controller.js";
 import { generateSessionName } from "./model.js";
-import { loadSessionNamingSettings, type SessionNamingSettings } from "./settings.js";
+import { SessionNamingSettingsStore } from "./settings.js";
+import { createSessionNamingSettingsView } from "./settings-dialog.js";
 import { type RenameMarker, SESSION_NAMING_STATE_ENTRY_TYPE } from "./state.js";
 
 const CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD";
 
-export type SessionNamingHost = Pick<
-	ExtensionAPI,
-	"appendEntry" | "events" | "getSessionName" | "on" | "registerCommand" | "setSessionName"
->;
+export type SessionNamingHost = CommandDialogCoordinatorHost &
+	Pick<ExtensionAPI, "appendEntry" | "getSessionName" | "registerCommand" | "setSessionName">;
 
 function isChildAgentSession(environment: NodeJS.ProcessEnv): boolean {
 	return environment[CHILD_AGENT_ENV] === "1";
@@ -19,13 +23,14 @@ function isChildAgentSession(environment: NodeJS.ProcessEnv): boolean {
 function createController(
 	pi: SessionNamingHost,
 	ctx: ExtensionContext,
-	settings: SessionNamingSettings,
+	settings: SessionNamingSettingsStore,
 ): SessionNamingController {
-	return new SessionNamingController(settings, {
+	const current = settings.get();
+	return new SessionNamingController(current, {
 		appendMarker(marker: RenameMarker) {
 			pi.appendEntry(SESSION_NAMING_STATE_ENTRY_TYPE, marker);
 		},
-		generate: (messages, currentName, signal) => generateSessionName(ctx, settings, messages, currentName, signal),
+		generate: (messages, currentName, signal) => generateSessionName(ctx, current, messages, currentName, signal),
 		getBranch: () => ctx.sessionManager.getBranch(),
 		getSessionName: () => pi.getSessionName(),
 		now: Date.now,
@@ -35,23 +40,40 @@ function createController(
 
 export function installSessionNamingCapability(
 	pi: SessionNamingHost,
-	settings: SessionNamingSettings,
+	settings: SessionNamingSettingsStore,
 	environment: NodeJS.ProcessEnv = process.env,
 ): void {
+	const dialogs = getCommandDialogCoordinator(pi);
 	let controller: SessionNamingController | undefined;
 	let sessionContext: ExtensionContext | undefined;
 	let active = true;
 	const childSession = isChildAgentSession(environment);
+	const rebuildController = () => {
+		if (!active || !sessionContext) return;
+		controller?.shutdown();
+		controller = createController(pi, sessionContext, settings);
+		controller.restore();
+	};
+	const stopListeningForSettings = settings.subscribe(rebuildController);
 	const stopListeningForUserAgentRunSettled = listenForUserAgentRunSettled(pi, (ctx) => {
 		if (!active || childSession || ctx !== sessionContext) return;
 		void controller?.handleSettled();
 	});
 
 	pi.registerCommand("autoname", {
-		description: "Regenerate the current Session name",
-		handler: async (_args, ctx) => {
-			if (!settings.enabled) {
-				ctx.ui.notify("Session Naming is disabled in pi-stuff.json.", "warning");
+		description: "Regenerate or configure the current Session name",
+		handler: async (args, ctx) => {
+			if (args.trim().toLowerCase() === "settings") {
+				if (ctx.mode !== "tui" || !ctx.hasUI) {
+					ctx.ui.notify("/autoname settings requires interactive TUI mode.", "warning");
+					return;
+				}
+				await dialogs.show(
+					ctx,
+					createSessionNamingSettingsView(settings, {
+						onPersistenceError: (message) => ctx.ui.notify(message, "error"),
+					}),
+				);
 				return;
 			}
 			if (!controller) {
@@ -73,15 +95,17 @@ export function installSessionNamingCapability(
 		controller.restore();
 	});
 	pi.on("session_info_changed", (event) => controller?.observeSessionNameChange(event.name));
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
 		active = false;
+		stopListeningForSettings();
 		stopListeningForUserAgentRunSettled();
 		controller?.shutdown();
 		controller = undefined;
 		sessionContext = undefined;
+		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 	});
 }
 
 export default async function piStuffSessionNaming(pi: ExtensionAPI): Promise<void> {
-	installSessionNamingCapability(pi, await loadSessionNamingSettings());
+	installSessionNamingCapability(pi, await SessionNamingSettingsStore.load());
 }

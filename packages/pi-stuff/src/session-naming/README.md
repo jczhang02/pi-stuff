@@ -1,9 +1,10 @@
 # Session Naming Capability
 
 Session Naming gives a settled direct-user Session a concise semantic name and refreshes that name after the configured
-cooldown. `/autoname` forces regeneration. Pi remains the owner of Session metadata and its native presentation; this
-Capability only chooses a label and calls Pi's public `setSessionName()` API. Periodic requests include the current
-authoritative name and retain it exactly when it still fits, avoiding needless Session metadata writes.
+cooldown. `/autoname` forces regeneration, while `/autoname settings` opens the routine controls. Pi remains the owner
+of Session metadata and its native presentation; this Capability only chooses a label and calls Pi's public
+`setSessionName()` API. Periodic requests include the current authoritative name and retain it exactly when it still
+fits, avoiding needless Session metadata writes.
 
 Automatic naming listens to the Conversation UI's shared direct-user settled boundary. Goal continuation, background
 results, and other Extension-authored work do not trigger it. Child Agent Sessions retain the names assigned by Agents,
@@ -18,7 +19,8 @@ Session files are not sent. Requests use Pi's public model registry with a 64-to
 timeout, and 30-second total budget. Failure falls back to a bounded local label and never blocks Agent settlement.
 The local fallback is retried on the next settled direct-user run so an authenticated model can replace it later.
 
-Settings live under `sessionNaming` in `<agentDir>/pi-stuff.json` and are read only during Capability initialization:
+Settings live under `sessionNaming` in `<agentDir>/pi-stuff.json`. Startup reads this namespace without writing; only a
+direct change in `/autoname settings` persists it:
 
 ```json
 {
@@ -33,11 +35,15 @@ Settings live under `sessionNaming` in `<agentDir>/pi-stuff.json` and are read o
 }
 ```
 
-`model` is optional. With no configured model or fallbacks, Session Naming uses the active Session model and then the
-local fallback. Cross-provider fallbacks are opt-in so conversation text is not sent to another provider by default.
-An invalid namespace fails closed to the complete built-in defaults and raises one bounded Diagnostic Record; startup
-does not create the merged file or migrate the upstream `pi-autoname.json`.
-The standalone `pi-autoname` Extension must not be loaded at the same time because both would own `/autoname` and the
-same Host Session name.
+The native Settings List exposes **Automatic naming**, **Rename cooldown** (`10 min`, `30 min`, `1 hour`, `6 hours`, or
+`24 hours`), and **Keep manually assigned names**. Changes apply to the active Session after persistence. Turning off
+automatic naming does not disable an explicit `/autoname`.
+
+`model` and `fallbackModels` remain advanced JSON settings. With neither configured, Session Naming uses the active
+Session model and then the local fallback. Cross-provider fallbacks are opt-in so conversation text is not sent to
+another provider by default. An invalid namespace fails closed to the complete built-in defaults and raises one bounded
+Diagnostic Record; startup does not create the merged file or migrate the upstream `pi-autoname.json`, and the Dialog
+will not overwrite invalid existing settings. The standalone `pi-autoname` Extension must not be loaded at the same
+time because both would own `/autoname` and the same Host Session name.
 
 See [`UPSTREAM.md`](UPSTREAM.md) and [`LICENSE`](LICENSE) for the absorbed fork's provenance and license.

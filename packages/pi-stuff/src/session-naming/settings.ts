@@ -1,8 +1,9 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
-import type { JsonInputObject, JsonInputValue } from "../shared/json-value.js";
+import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
+import { mergedSettingsPath, NamespacedSettingsStore } from "../shared/settings-io/index.js";
+import { acquireSettingsLock } from "../shared/settings-io/lock.js";
 
 export const SESSION_NAMING_NAMESPACE = "sessionNaming";
 const MAX_COOLDOWN_MINUTES = 24 * 60;
@@ -14,6 +15,21 @@ export interface SessionNamingSettings {
 	readonly model?: string;
 	readonly respectManualName: boolean;
 	readonly schemaVersion: 1;
+}
+
+export interface SessionNamingSettingsPatch {
+	readonly cooldownMinutes?: number;
+	readonly enabled?: boolean;
+	readonly respectManualName?: boolean;
+}
+
+interface SessionNamingRecord extends JsonInputObject {
+	cooldownMinutes: number;
+	enabled: boolean;
+	fallbackModels: string[];
+	model?: string;
+	respectManualName: boolean;
+	schemaVersion: 1;
 }
 
 export const DEFAULT_SESSION_NAMING_SETTINGS: SessionNamingSettings = {
@@ -65,22 +81,81 @@ export function parseSessionNamingSettings(value: JsonInputValue): SessionNaming
 	return settings;
 }
 
+function toRecord(settings: SessionNamingSettings): SessionNamingRecord {
+	const record: SessionNamingRecord = {
+		cooldownMinutes: settings.cooldownMinutes,
+		enabled: settings.enabled,
+		fallbackModels: [...settings.fallbackModels],
+		respectManualName: settings.respectManualName,
+		schemaVersion: 1,
+	};
+	if (settings.model !== undefined) record.model = settings.model;
+	return record;
+}
+
+function normalizeRecord<Value>(value: Value): SessionNamingRecord {
+	if (!isJsonInputValue(value)) throw new Error("expected JSON-compatible Session Naming settings");
+	return toRecord(parseSessionNamingSettings(value));
+}
+
+function reportSettingsDiagnostic(diagnostic: Parameters<typeof reportDiagnostic>[0]): void {
+	reportDiagnostic({
+		...diagnostic,
+		action: "/autoname settings",
+		capability: "Session Naming",
+		summary: "Session Naming settings were invalid and built-in defaults are active",
+	});
+}
+
+/** Startup is read-only; only a direct update from the settings Dialog persists this namespace. */
+export class SessionNamingSettingsStore {
+	private readonly store: NamespacedSettingsStore<SessionNamingRecord>;
+
+	private constructor(store: NamespacedSettingsStore<SessionNamingRecord>) {
+		this.store = store;
+	}
+
+	static async load(path = mergedSettingsPath(getAgentDir())): Promise<SessionNamingSettingsStore> {
+		const store = await NamespacedSettingsStore.load<SessionNamingRecord>(
+			SESSION_NAMING_NAMESPACE,
+			toRecord(DEFAULT_SESSION_NAMING_SETTINGS),
+			normalizeRecord,
+			{
+				acquireLock: acquireSettingsLock,
+				path,
+				reportDiagnostic: reportSettingsDiagnostic,
+			},
+		);
+		return new SessionNamingSettingsStore(store);
+	}
+
+	static memory(settings: SessionNamingSettings = DEFAULT_SESSION_NAMING_SETTINGS): SessionNamingSettingsStore {
+		return new SessionNamingSettingsStore(NamespacedSettingsStore.memory(toRecord(settings)));
+	}
+
+	get(): SessionNamingSettings {
+		return parseSessionNamingSettings(this.store.get());
+	}
+
+	subscribe(listener: (settings: SessionNamingSettings) => void): () => void {
+		return this.store.subscribe((record) => listener(parseSessionNamingSettings(record)));
+	}
+
+	async update(patch: SessionNamingSettingsPatch): Promise<void> {
+		const record: Partial<SessionNamingRecord> = {};
+		if (patch.cooldownMinutes !== undefined) record.cooldownMinutes = patch.cooldownMinutes;
+		if (patch.enabled !== undefined) record.enabled = patch.enabled;
+		if (patch.respectManualName !== undefined) record.respectManualName = patch.respectManualName;
+		await this.store.update(record);
+	}
+
+	async whenIdle(): Promise<void> {
+		await this.store.whenIdle();
+	}
+}
+
 export async function loadSessionNamingSettings(
 	path = mergedSettingsPath(getAgentDir()),
 ): Promise<SessionNamingSettings> {
-	try {
-		const namespace = await readNamespace(path, SESSION_NAMING_NAMESPACE);
-		return namespace === undefined ? DEFAULT_SESSION_NAMING_SETTINGS : parseSessionNamingSettings(namespace);
-	} catch (error) {
-		reportDiagnostic({
-			capability: "Session Naming",
-			details: path,
-			error,
-			key: "invalid-settings",
-			severity: "warning",
-			summary: "Session Naming settings were invalid and built-in defaults are active",
-			visibility: "notice",
-		});
-		return DEFAULT_SESSION_NAMING_SETTINGS;
-	}
+	return (await SessionNamingSettingsStore.load(path)).get();
 }

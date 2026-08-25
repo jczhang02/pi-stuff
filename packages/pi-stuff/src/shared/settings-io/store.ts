@@ -193,7 +193,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		if (!normalize) return;
 		const existing = await this.readExisting(namespace);
 		if (!this.migrator || !this.legacyPath || !(await fileExists(this.legacyPath))) {
-			const value = existing === undefined ? defaults : normalize(existing);
+			const value = existing === undefined ? defaults : this.normalizeInitial(existing, defaults);
 			this.value = value;
 			this.persistedValue = value;
 			return;
@@ -273,6 +273,24 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 				visibility: "notice",
 			});
 			return undefined;
+		}
+	}
+
+	private normalizeInitial(record: SettingsRecord, defaults: T): T {
+		try {
+			return this.normalize?.(record) ?? defaults;
+		} catch (error) {
+			this.reportDiagnostic?.({
+				action: "settings-load",
+				capability: "pi-stuff",
+				details: this.path,
+				error,
+				key: "invalid-settings",
+				severity: "warning",
+				summary: "Settings were invalid and built-in defaults are active",
+				visibility: "notice",
+			});
+			return defaults;
 		}
 	}
 

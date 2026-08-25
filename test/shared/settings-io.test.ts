@@ -94,6 +94,21 @@ test("NamespacedSettingsStore loads defaults when the namespace is absent", asyn
 	expect(store.get()).toEqual({ enabled: false, count: 0 });
 });
 
+test("NamespacedSettingsStore reports invalid initial values and leaves them untouched", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	await writeSettingsFile(path, { codex: { enabled: "invalid", count: 3 } });
+	const diagnostics: string[] = [];
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+		reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic.key),
+	});
+
+	expect(store.get()).toEqual({ enabled: false, count: 0 });
+	expect(diagnostics).toEqual(["invalid-settings"]);
+	await expect(store.update({ enabled: true })).rejects.toThrow("expected enabled boolean and count number");
+	expect(await readNamespace(path, "codex")).toEqual({ enabled: "invalid", count: 3 });
+});
+
 test("NamespacedSettingsStore update persists under the whole-file lock and preserves siblings", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	await writeSettingsFile(path, { ui: { statusline: true } });

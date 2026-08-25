@@ -11,8 +11,11 @@ import {
 	installSessionNamingCapability,
 	type SessionNamingHost,
 } from "../../packages/pi-stuff/src/session-naming/index.js";
-import type { SessionNamingSettings } from "../../packages/pi-stuff/src/session-naming/settings.js";
-import { createExtensionContext } from "../fixtures/extension-context.js";
+import {
+	type SessionNamingSettings,
+	SessionNamingSettingsStore,
+} from "../../packages/pi-stuff/src/session-naming/settings.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
 const SETTINGS: SessionNamingSettings = {
 	schemaVersion: 1,
@@ -51,6 +54,7 @@ function message(role: "assistant" | "user", content: string, id: string): Sessi
 
 function hostHarness() {
 	const lifecycle = new Map<string, Listener[]>();
+	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
 	const eventBus = createEventBus();
 	const subscribedChannels: string[] = [];
 	const events = {
@@ -65,7 +69,7 @@ function hostHarness() {
 		message("assistant", "Done", "entry-2"),
 	];
 	let name: string | undefined;
-	const extensionContext = createExtensionContext({ sessionManager: { getBranch: () => entries } });
+	const extensionContext = createExtensionCommandContext({ sessionManager: { getBranch: () => entries } });
 	Object.assign(extensionContext.modelRegistry, {
 		complete: async () => {
 			throw new Error("The local fallback does not call the fixture registry");
@@ -92,7 +96,9 @@ function hostHarness() {
 	const pi = {
 		events,
 		on,
-		registerCommand: () => undefined,
+		registerCommand(name: string, options: Parameters<ExtensionAPI["registerCommand"]>[1]) {
+			commands.set(name, options);
+		},
 		appendEntry,
 		getSessionName: () => name,
 		setSessionName(next: string) {
@@ -109,7 +115,12 @@ function hostHarness() {
 		if (!settledEvent) throw new Error("Session Naming did not subscribe to the shared settled event");
 		pi.events.emit(settledEvent, { ctx: extensionContext });
 	};
-	return { emitLifecycle, emitSettled, name: () => name, pi };
+	const runAutoname = async (args = ""): Promise<void> => {
+		const command = commands.get("autoname");
+		if (!command) throw new Error("Session Naming did not register /autoname");
+		await command.handler(args, extensionContext);
+	};
+	return { emitLifecycle, emitSettled, name: () => name, pi, runAutoname };
 }
 
 async function waitForName(read: () => string | undefined): Promise<string | undefined> {
@@ -124,7 +135,7 @@ async function waitForName(read: () => string | undefined): Promise<string | und
 describe("Session Naming Extension lifecycle", () => {
 	test("names a parent Session only at the shared direct-user settled boundary", async () => {
 		const host = hostHarness();
-		installSessionNamingCapability(host.pi, SETTINGS, {});
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
 		host.emitLifecycle("session_start");
 		host.emitLifecycle("agent_settled");
 		await Promise.resolve();
@@ -134,9 +145,24 @@ describe("Session Naming Extension lifecycle", () => {
 		expect(await waitForName(host.name)).toBe("automatic Session naming");
 	});
 
+	test("applies automatic naming changes immediately while keeping explicit /autoname available", async () => {
+		const host = hostHarness();
+		const settings = SessionNamingSettingsStore.memory(SETTINGS);
+		installSessionNamingCapability(host.pi, settings, {});
+		host.emitLifecycle("session_start");
+
+		await settings.update({ enabled: false });
+		host.emitSettled();
+		await Promise.resolve();
+		expect(host.name()).toBeUndefined();
+
+		await host.runAutoname();
+		expect(host.name()).toBe("automatic Session naming");
+	});
+
 	test("does not automatically rename a Child Agent Session", async () => {
 		const host = hostHarness();
-		installSessionNamingCapability(host.pi, SETTINGS, { PI_SUBAGENT_CHILD: "1" });
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), { PI_SUBAGENT_CHILD: "1" });
 		host.emitLifecycle("session_start");
 		host.emitSettled();
 

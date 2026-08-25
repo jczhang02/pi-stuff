@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-24
-- Bead: ps-35b
+- Beads: ps-35b, ps-496
 
 ## Context
 
@@ -39,8 +39,10 @@ trigger mode, and timestamp. Read upstream `pi-autoname-state` entries so resume
 and manual-name policy. Pi's `session_info` entry remains the authority for the actual Session name.
 
 Configuration belongs to the `sessionNaming` namespace of `<agentDir>/pi-stuff.json`. Startup only reads this
-namespace and falls back as a whole to built-in defaults with one shared Diagnostic Record when invalid. The Capability
-does not create or migrate `pi-autoname.json`.
+namespace and falls back as a whole to built-in defaults with one shared Diagnostic Record when invalid. A direct
+`/autoname settings` interaction may update automatic naming, cooldown, and manual-name policy through Pi's native
+Settings List; changes apply immediately. Model routing remains an advanced JSON setting. The Capability does not
+create or migrate `pi-autoname.json`, and invalid existing settings are never overwritten by the Dialog.
 
 The implementation is a fork of upstream commit `73d25caa9ff33dadfaa8187ad3f7d1495a01cec9`; its adjacent `LICENSE`
 and `UPSTREAM.md` remain the source and license authority.
@@ -72,6 +74,7 @@ automatic naming request.
 - Parent Sessions receive semantic names without another Package or settings file.
 - Goal continuation, background resumption, and Child Agent Sessions do not cause automatic renames.
 - One direct user turn can cause one additional bounded Provider request after the main run settles.
+- Setting `enabled` to `false` stops automatic naming while explicit `/autoname` remains available.
 - Setting `respectManualName` to `true` makes a user-issued or otherwise unmarked authoritative name sticky; the
   default `false` preserves periodic automatic ownership after the native rename timestamp's cooldown.
 - Existing upstream state is readable, but upstream standalone settings are intentionally not imported.
