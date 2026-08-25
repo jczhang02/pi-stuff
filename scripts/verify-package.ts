@@ -285,7 +285,7 @@ async function verifyProvenanceAndLicenses(baseDirectory: string): Promise<void>
 	await access(join(baseDirectory, "src", "conversation-ui", "LICENSE"));
 	for (const [module, required] of Object.entries(PROVENANCE_REQUIREMENTS)) {
 		const moduleDirectory = join(baseDirectory, "src", module);
-		await access(join(moduleDirectory, "LICENSE"));
+		await access(join(moduleDirectory, module === "ponytail" ? "LICENSE.upstream" : "LICENSE"));
 		const provenance = await readFile(join(moduleDirectory, "UPSTREAM.md"), "utf8");
 		for (const marker of required) {
 			if (!provenance.includes(marker)) throw new Error(`${module}/UPSTREAM.md is missing ${marker}`);

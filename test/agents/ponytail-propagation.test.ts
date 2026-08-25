@@ -31,6 +31,7 @@ describe("Ponytail child launch snapshot", () => {
 		const previous = process.env[PONYTAIL_CHILD_MODE_ENV];
 		process.env[PONYTAIL_CHILD_MODE_ENV] = "lite";
 		try {
+			// SAFETY: this fixture supplies the only events identity consumed by the snapshot helper.
 			const pi = { events: {} } as Pick<ExtensionAPI, "events">;
 			expect(ponytailLaunchSnapshot(pi)).toEqual({ ponytailMode: "lite" });
 		} finally {
