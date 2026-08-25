@@ -98,6 +98,30 @@ describe("sendTerminalNotification", () => {
 		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]9;Done: repo 10s\x1b\x1b\\\x1b\\"]);
 	});
 
+	test("tmux auto delivery preserves the system notification and adds one attention bell", () => {
+		const writes: string[] = [];
+		const result = sendTerminalNotification(
+			{
+				body: "repo 10s",
+				delivery: "auto",
+				hasUI: true,
+				mode: "tui",
+				terminalBell: false,
+				title: "Done",
+			},
+			{
+				environment: {
+					GHOSTTY_RESOURCES_DIR: "/fixture/ghostty",
+					TMUX: "/tmp/tmux-1000/default,1,0",
+				},
+				write: (bytes) => writes.push(bytes),
+			},
+		);
+
+		expect(result).toBe("sent");
+		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]777;notify;Done;repo 10s\x1b\x1b\\\x1b\\\x07"]);
+	});
+
 	test("OSC 777 delimiters in labels cannot create extra protocol fields", () => {
 		const writes: string[] = [];
 		const result = sendTerminalNotification(

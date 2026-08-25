@@ -7,6 +7,8 @@ cancels a pending alert. Extension-authored automatic work does not create one.
 `/notifications` opens the shared full-width Command Dialog for enabling alerts, choosing `auto`, Kitty OSC 99,
 OSC 9, Ghostty OSC 777, or BEL delivery, controlling response previews and terminal BEL, and sending a test alert.
 Response previews are disabled by default because desktop notification history may be visible outside Pi.
+Inside tmux, `auto` preserves the selected system-notification protocol and adds one raw BEL so tmux can mark the
+window for attention; tmux continues to own the marker's appearance and focus-time clearing.
 
 Settings live under the `notification` namespace in `<agentDir>/pi-stuff.json`. Loading is read-only; the legacy
 `pi-stuff-notification.json` file is lifted only through the documented one-time migration. Delivery is observational:

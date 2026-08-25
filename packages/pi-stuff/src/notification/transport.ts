@@ -22,6 +22,7 @@ export function sendTerminalNotification(
 ): TerminalNotificationResult {
 	if (input.mode !== "tui" || !input.hasUI) return "not-interactive";
 	const environment = options.environment ?? process.env;
+	const tmuxAttention = input.delivery === "auto" && Boolean(environment["TMUX"]);
 	let delivery = input.delivery;
 	if (delivery === "auto") {
 		const program = environment["TERM_PROGRAM"]?.toLowerCase();
@@ -50,7 +51,7 @@ export function sendTerminalNotification(
 	if (environment["TMUX"] && delivery !== "bell") {
 		bytes = `\x1bPtmux;${bytes.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
 	}
-	if (input.terminalBell && delivery !== "bell") bytes += "\x07";
+	if ((input.terminalBell || tmuxAttention) && delivery !== "bell") bytes += "\x07";
 	try {
 		(options.write ?? ((value: string) => process.stdout.write(value)))(bytes);
 		return "sent";
