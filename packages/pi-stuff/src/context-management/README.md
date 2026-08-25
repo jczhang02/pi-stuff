@@ -41,6 +41,15 @@ own prompt-cache processing while skipping its much longer default guidance;
 history semantics, retrieval, reduction, memory, notes, and fail-open behavior
 remain unchanged.
 
+Context also owns the ordered system-prompt contribution seam used by other
+Capabilities. Contributions are marker-delimited and reconciled idempotently:
+the Host/base prompt comes first, Magic Context follows, and registered
+Capability instructions come last. A provider-request fallback covers
+continuations that Pi starts without `before_agent_start` by rewriting the
+known Anthropic, OpenAI, Google, Bedrock, and Mistral system-prompt payload
+shapes. Unsupported payloads fail open with one silent diagnostic rather than
+mutating an unknown request shape.
+
 The accepted `/ctx` readability target is recorded in
 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md).
 Its 2026-08-17 update was implemented on 2026-08-18. The shipped single-column Dialog now leads with usage, uses
