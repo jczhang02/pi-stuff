@@ -40,9 +40,11 @@ and manual-name policy. Pi's `session_info` entry remains the authority for the 
 
 Configuration belongs to the `sessionNaming` namespace of `<agentDir>/pi-stuff.json`. Startup only reads this
 namespace and falls back as a whole to built-in defaults with one shared Diagnostic Record when invalid. A direct
-`/autoname settings` interaction may update automatic naming, cooldown, and manual-name policy through Pi's native
-Settings List; changes apply immediately. Model routing remains an advanced JSON setting. The Capability does not
-create or migrate `pi-autoname.json`, and invalid existing settings are never overwritten by the Dialog.
+`/autoname settings` interaction may update automatic naming, cooldown, manual-name policy, and the optional primary
+model through Pi's native Settings List; changes apply immediately. The model row opens a searchable submenu populated
+from Pi's scoped models, or its available authenticated models when no scope is active. Selecting **Session model**
+removes the fixed primary route, while ordered fallback routing remains advanced JSON configuration. The Capability does
+not create or migrate `pi-autoname.json`, and invalid existing settings are never overwritten by the Dialog.
 
 The implementation is a fork of upstream commit `73d25caa9ff33dadfaa8187ad3f7d1495a01cec9`; its adjacent `LICENSE`
 and `UPSTREAM.md` remain the source and license authority.
@@ -77,6 +79,8 @@ automatic naming request.
 - Setting `enabled` to `false` stops automatic naming while explicit `/autoname` remains available.
 - Setting `respectManualName` to `true` makes a user-issued or otherwise unmarked authoritative name sticky; the
   default `false` preserves periodic automatic ownership after the native rename timestamp's cooldown.
+- Selecting a fixed primary model explicitly sends sanitized naming context to that model's Provider without changing
+  the active Session model; **Session model** restores the active-Session default route.
 - Existing upstream state is readable, but upstream standalone settings are intentionally not imported.
 - Representative acceptance must use the certified real Pi Host and verify Provider traffic plus persisted JSONL
   entries across resume; mocks alone cannot certify the public seam.

@@ -8,7 +8,7 @@ import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { SessionNamingController } from "./controller.js";
 import { generateSessionName } from "./model.js";
 import { SessionNamingSettingsStore } from "./settings.js";
-import { createSessionNamingSettingsView } from "./settings-dialog.js";
+import { createSessionNamingSettingsView, type SessionNamingModelChoice } from "./settings-dialog.js";
 import { type RenameMarker, SESSION_NAMING_STATE_ENTRY_TYPE } from "./state.js";
 
 const CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD";
@@ -35,6 +35,16 @@ function createController(
 		getSessionName: () => pi.getSessionName(),
 		now: Date.now,
 		setSessionName: (name) => pi.setSessionName(name),
+	});
+}
+
+function availableNamingModelChoices(ctx: ExtensionContext): SessionNamingModelChoice[] {
+	const models =
+		ctx.scopedModels.length > 0 ? ctx.scopedModels.map((entry) => entry.model) : ctx.modelRegistry.getAvailable();
+	return models.map((model): SessionNamingModelChoice => {
+		const value = `${model.provider}/${model.id}`;
+		if (model.name === model.id) return { value };
+		return { description: model.name, value };
 	});
 }
 
@@ -79,6 +89,7 @@ export function installSessionNamingCapability(
 				await dialogs.show(
 					ctx,
 					createSessionNamingSettingsView(settings, {
+						modelChoices: availableNamingModelChoices(ctx),
 						onPersistenceError: (message) => ctx.ui.notify(message, "error"),
 					}),
 				);

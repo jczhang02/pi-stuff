@@ -625,6 +625,25 @@ async function waitForPersistedSetting(
 	fail(`${namespace}.${key}=${JSON.stringify(expected)} was not persisted: ${last}`);
 }
 
+async function waitForMissingPersistedSetting(path: string, namespace: string, key: string): Promise<void> {
+	const deadline = Date.now() + WAIT_TIMEOUT_MS;
+	let last = "settings file not created";
+	while (Date.now() < deadline) {
+		try {
+			const text = await readFile(path, "utf8");
+			last = text;
+			const file = parseJsonValue(text);
+			if (!isJsonInputObject(file)) throw new Error("settings file is not a JSON object");
+			const settings = file[namespace];
+			if (isJsonInputObject(settings) && !Object.hasOwn(settings, key)) return;
+		} catch (error) {
+			last = String(error);
+		}
+		await delay(POLL_INTERVAL_MS);
+	}
+	fail(`${namespace}.${key} was not removed: ${last}`);
+}
+
 async function waitForFixtureRecords(path: string, type: string, count: number): Promise<readonly FixtureRecord[]> {
 	const deadline = Date.now() + WAIT_TIMEOUT_MS;
 	let records: readonly FixtureRecord[] = [];
@@ -943,9 +962,8 @@ async function verifySessionNamingDialog(
 	verifySettingValue(screen, "Automatic naming", "on");
 	verifySettingValue(screen, "Rename cooldown", "10 min");
 	verifySettingValue(screen, "Keep manually assigned names", "off");
-	if (screen.includes("fallbackModels") || screen.includes("Naming model")) {
-		fail("/autoname settings exposed advanced model controls");
-	}
+	verifySettingValue(screen, "Naming model", "Session model");
+	if (screen.includes("fallbackModels")) fail("/autoname settings exposed fallback model controls");
 	if (hasStatusline(screen)) fail("Statusline remained visible while /autoname settings owned the input region");
 	verifyNoFloatingFrame(screen, "/autoname settings Command Dialog");
 	verifyFullWidthDivider(screen, 100, "/autoname settings Command Dialog", "─");
@@ -972,6 +990,7 @@ async function verifySessionNamingDialog(
 	verifySettingValue(screen, "Auto naming", "on");
 	verifySettingValue(screen, "Cooldown", "10 min");
 	verifySettingValue(screen, "Keep manual names", "off");
+	verifySettingValue(screen, "Model", "Session");
 	verifyFullWidthDivider(screen, 24, "small /autoname settings Command Dialog", "─");
 	verifyTerminalWidth(screen, 24, "small /autoname settings Command Dialog");
 	await writePtyEvidence(
@@ -999,8 +1018,44 @@ async function verifySessionNamingDialog(
 	await waitForPersistedSetting(settingsPath, "sessionNaming", "respectManualName", true);
 	screen = await session.waitForText("on");
 	verifySettingValue(screen, "Keep manually assigned names", "on");
+
+	session.sendKey("Down");
+	session.sendKey("Enter");
+	screen = await session.waitForText("Search models");
+	if (!screen.includes("Session model") || !screen.includes("kimi-coding/ui-pty-subscription")) {
+		fail(`/autoname model picker did not expose the Session and available fixture models\n${screen}`);
+	}
+	verifyFullWidthDivider(screen, 100, "/autoname model picker", "─");
+	verifyTerminalWidth(screen, 100, "/autoname model picker");
+
+	session.resize(64, 28);
+	screen = await session.waitForDialogFrame("Session model", 64);
+	if (!screen.includes("Session model")) fail("narrow /autoname model picker lost the Session-model option");
+	verifyTerminalWidth(screen, 64, "narrow /autoname model picker");
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-session-naming-models-64x28`, session);
+
+	session.resize(24, 16);
+	screen = await session.waitForDialogFrame("Session model", 24);
+	if (!screen.includes("Session model")) {
+		fail(`small /autoname model picker lost the Session-model option\n${screen}`);
+	}
+	verifyTerminalWidth(screen, 24, "small /autoname model picker");
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-session-naming-models-24x16`, session);
+
+	session.resize(100, 32);
+	await session.waitForDialogFrame("Search models", 100);
+	session.sendLiteral("kimi");
+	screen = await session.waitForAbsence("pi-stuff-ui-pty/ui-pty-model");
+	if (!screen.includes("kimi-coding/ui-pty-subscription")) {
+		fail(`/autoname model search lost its match\n${screen}`);
+	}
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "sessionNaming", "model", "kimi-coding/ui-pty-subscription");
+	screen = await session.waitForText("kimi-coding/ui-pty-subscription");
+	verifySettingValue(screen, "Naming model", "kimi-coding/ui-pty-subscription");
 	session.sendKey("Escape");
-	await session.waitForStatusline("closing /autoname settings");
+	screen = await session.waitForStatusline("closing /autoname settings");
+	if (!screen.includes("ui-pty-model")) fail("selecting a naming model changed the active Session model");
 }
 
 async function verifyTodoOverlay(
@@ -1344,6 +1399,18 @@ async function verifyWideInteractions(
 		verifySettingValue(screen, "Automatic naming", "off");
 		verifySettingValue(screen, "Rename cooldown", "30 min");
 		verifySettingValue(screen, "Keep manually assigned names", "on");
+		verifySettingValue(screen, "Naming model", "kimi-coding/ui-pty-subscription");
+
+		for (let index = 0; index < 3; index += 1) restarted.sendKey("Down");
+		restarted.sendKey("Enter");
+		await restarted.waitForText("Search models");
+		restarted.sendLiteral("session");
+		screen = await restarted.waitForAbsence("kimi-coding/ui-pty-subscription");
+		if (!screen.includes("Session model")) fail("/autoname model search lost the Session-model option");
+		restarted.sendKey("Enter");
+		await waitForMissingPersistedSetting(settingsPath, "sessionNaming", "model");
+		screen = await restarted.waitForText("Session model");
+		verifySettingValue(screen, "Naming model", "Session model");
 		restarted.sendKey("Escape");
 		await restarted.waitForAbsence("Keep manually assigned names");
 
@@ -1502,7 +1569,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
 						"native /ui settings, Notification exclusion, enum changes, and restart persistence",
-						"native /autoname settings completion, responsive controls, immediate writes, and restart persistence",
+						"native /autoname settings completion, responsive searchable model selection, immediate writes, reset, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);
 				} else {

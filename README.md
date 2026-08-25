@@ -40,7 +40,7 @@ The result is a denser, quieter coding workflow:
 - **Compact Tool activity** — continuous Tool work becomes one semantic Activity Group; `Ctrl+O` and `/tools` restore
   the underlying detail.
 - **Semantic Session names** — the first settled direct-user exchange receives a bounded model-generated name;
-  `/autoname` refreshes it explicitly, `/autoname settings` controls routine policy, and automatic naming never takes over Child Agent Sessions.
+  `/autoname` refreshes it explicitly, `/autoname settings` controls routine policy and the primary model, and automatic naming never takes over Child Agent Sessions.
 - **Durable objectives and plans** — Goal can continue one evidence-gated objective, while Todo keeps recoverable
   session tasks in a bounded checklist.
 - **Current-session parallel work** — Background Shells, one-shot Monitors, and foreground or background Agents stay
@@ -77,7 +77,7 @@ Once Pi starts, these are useful entry points:
 | `/ui` | Configure the Statusline, Welcome card, input presentation, and Tool timer |
 | `/ctx` | Inspect Context status and run guided history maintenance |
 | `/notifications` | Configure and test completion and failure notifications |
-| `/autoname` · `/autoname settings` | Regenerate the current Session name or configure automatic naming policy |
+| `/autoname` · `/autoname settings` | Regenerate the current Session name or configure automatic naming policy and its primary model |
 | `/goal <objective>` | Start persistent, evidence-gated work toward one session objective |
 | `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
 | `/tasks` | Inspect and control Background Shells and Monitors |
@@ -123,7 +123,7 @@ The ordered Suite currently contains:
 | Capability Module | What it contributes |
 | --- | --- |
 | `conversation-ui` | Welcome, Statusline, live Thoughts, `chart`/`tree` fence projection, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
-| `session-naming` | Bounded semantic Session names after settled direct-user work, branch-local ownership state, and `/autoname` controls |
+| `session-naming` | Bounded semantic Session names after settled direct-user work, branch-local ownership state, and `/autoname` policy/model controls |
 | `tool-display` | Compact Tool Activity Groups, native expansion, `/tools`, and deterministic resume reconstruction |
 | `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
 | `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |

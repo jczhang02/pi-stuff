@@ -62,10 +62,9 @@ export interface NamespaceStoreOptions {
  * A single-Capability view over the merged settings file.
  *
  * Construction is lazy: `load()` reads the merged file (and migrates a legacy
- * file once if a migrator is supplied). Mutations go through `update()` /
- * `replace()`, which acquire the whole-file lock, re-read the current
- * namespace, apply the patch, and merge it back without touching sibling
- * namespaces.
+ * file once if a migrator is supplied). Mutations go through `update()`,
+ * `updateWith()`, or `replace()`, which acquire the whole-file lock and
+ * merge the result back without touching sibling namespaces.
  */
 export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	private readonly listeners = new Set<(value: T) => void>();
@@ -167,6 +166,11 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	/** Apply a partial patch to the namespace and persist under the whole-file lock. */
 	async update(patch: Partial<T>): Promise<T> {
 		return this.commit((current) => ({ ...current, ...patch }), true);
+	}
+
+	/** Compute an update from the latest persisted namespace under the whole-file lock. */
+	async updateWith(apply: (current: T) => T): Promise<T> {
+		return this.commit(apply, true);
 	}
 
 	/** Replace the namespace wholesale (used by full-state setters). */

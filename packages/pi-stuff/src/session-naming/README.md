@@ -36,12 +36,16 @@ direct change in `/autoname settings` persists it:
 ```
 
 The native Settings List exposes **Automatic naming**, **Rename cooldown** (`10 min`, `30 min`, `1 hour`, `6 hours`, or
-`24 hours`), and **Keep manually assigned names**. Changes apply to the active Session after persistence. Turning off
-automatic naming does not disable an explicit `/autoname`.
+`24 hours`), **Keep manually assigned names**, and **Naming model**. The model row opens a searchable submenu built
+from Pi's scoped model set, or all available authenticated models when no scope is active. **Session model** clears the
+fixed `model` setting and follows the active Session model; choosing a fixed model does not change the active Session
+model. Changes apply to the active Session after persistence. Turning off automatic naming does not disable an explicit
+`/autoname`.
 
-`model` and `fallbackModels` remain advanced JSON settings. With neither configured, Session Naming uses the active
-Session model and then the local fallback. Cross-provider fallbacks are opt-in so conversation text is not sent to
-another provider by default. An invalid namespace fails closed to the complete built-in defaults and raises one bounded
+`fallbackModels` remains an advanced JSON-only setting. Selecting a fixed model or cross-provider fallback explicitly
+allows sanitized naming context to be sent to that model's Provider. With neither configured, Session Naming uses the
+active Session model and then the local fallback. Cross-provider routing is opt-in so conversation text is not sent to
+another Provider by default. An invalid namespace fails closed to the complete built-in defaults and raises one bounded
 Diagnostic Record; startup does not create the merged file or migrate the upstream `pi-autoname.json`, and the Dialog
 will not overwrite invalid existing settings. The standalone `pi-autoname` Extension must not be loaded at the same
 time because both would own `/autoname` and the same Host Session name.

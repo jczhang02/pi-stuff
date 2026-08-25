@@ -20,6 +20,8 @@ export interface SessionNamingSettings {
 export interface SessionNamingSettingsPatch {
 	readonly cooldownMinutes?: number;
 	readonly enabled?: boolean;
+	/** A model reference fixes routing; null restores the active Session model. */
+	readonly model?: string | null;
 	readonly respectManualName?: boolean;
 }
 
@@ -142,11 +144,15 @@ export class SessionNamingSettingsStore {
 	}
 
 	async update(patch: SessionNamingSettingsPatch): Promise<void> {
-		const record: Partial<SessionNamingRecord> = {};
-		if (patch.cooldownMinutes !== undefined) record.cooldownMinutes = patch.cooldownMinutes;
-		if (patch.enabled !== undefined) record.enabled = patch.enabled;
-		if (patch.respectManualName !== undefined) record.respectManualName = patch.respectManualName;
-		await this.store.update(record);
+		await this.store.updateWith((current) => {
+			const record: SessionNamingRecord = { ...current };
+			if (patch.cooldownMinutes !== undefined) record.cooldownMinutes = patch.cooldownMinutes;
+			if (patch.enabled !== undefined) record.enabled = patch.enabled;
+			if (patch.model === null) delete record.model;
+			else if (patch.model !== undefined) record.model = patch.model;
+			if (patch.respectManualName !== undefined) record.respectManualName = patch.respectManualName;
+			return normalizeRecord(record);
+		});
 	}
 
 	async whenIdle(): Promise<void> {

@@ -20,8 +20,13 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as Theme;
 
+const MODEL_CHOICES = [
+	{ description: "Primary fixture", value: "fixture/primary" },
+	{ description: "Backup fixture", value: "fixture/backup" },
+] as const;
+
 function createDialog(settings: SessionNamingSettingsStore): CommandDialogComponent {
-	const view = createSessionNamingSettingsView(settings);
+	const view = createSessionNamingSettingsView(settings, { modelChoices: MODEL_CHOICES });
 	const context = {
 		close: () => {},
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
@@ -34,7 +39,7 @@ function createDialog(settings: SessionNamingSettingsStore): CommandDialogCompon
 }
 
 describe("Session Naming settings Dialog", () => {
-	test("shows only the three routine controls with a bounded responsive surface", () => {
+	test("shows the routine controls and fixed model with a bounded responsive surface", () => {
 		const settings = SessionNamingSettingsStore.memory({
 			...DEFAULT_SESSION_NAMING_SETTINGS,
 			cooldownMinutes: 15,
@@ -50,7 +55,8 @@ describe("Session Naming settings Dialog", () => {
 		expect(text).toContain("Rename cooldown");
 		expect(text).toContain("15 min");
 		expect(text).toContain("Keep manually assigned names");
-		expect(text).not.toContain("fixture/primary");
+		expect(text).toContain("Naming model");
+		expect(text).toContain("fixture/primary");
 		expect(text).not.toContain("fallbackModels");
 		expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
 		expect(lines.length).toBeLessThanOrEqual(24);
@@ -63,6 +69,8 @@ describe("Session Naming settings Dialog", () => {
 		expect(narrowText).toContain("15 min");
 		expect(narrowText).toContain("Keep manual names");
 		expect(narrowText).toContain("off");
+		expect(narrowText).toContain("Model");
+		expect(narrowText).toContain("Fixed");
 		expect(narrowText.match(/Enter/gu)).toHaveLength(1);
 		expect(narrow.every((line) => visibleWidth(line) <= 24)).toBe(true);
 		dialog.dispose?.();
@@ -85,6 +93,27 @@ describe("Session Naming settings Dialog", () => {
 		dialog.handleInput?.("\r");
 		await settings.whenIdle();
 		expect(settings.get().respectManualName).toBe(true);
+
+		dialog.handleInput?.("\x1b[B");
+		dialog.handleInput?.("\r");
+		let text = dialog.render(64).join("\n");
+		expect(text).toContain("Search models");
+		expect(text).toContain("Session model");
+		expect(text).toContain("fixture/primary");
+		expect(text).toContain("fixture/backup");
+		for (const character of "backup") dialog.handleInput?.(character);
+		text = dialog.render(64).join("\n");
+		expect(text).toContain("fixture/backup");
+		expect(text).not.toContain("fixture/primary");
+		dialog.handleInput?.("\r");
+		await settings.whenIdle();
+		expect(settings.get().model).toBe("fixture/backup");
+
+		dialog.handleInput?.("\r");
+		for (const character of "session") dialog.handleInput?.(character);
+		dialog.handleInput?.("\r");
+		await settings.whenIdle();
+		expect(settings.get().model).toBeUndefined();
 		dialog.dispose?.();
 	});
 });

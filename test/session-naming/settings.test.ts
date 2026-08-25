@@ -88,6 +88,44 @@ describe("Session Naming settings", () => {
 		expect(persisted.sessionNaming.fallbackModels).toEqual(["fixture/backup"]);
 	});
 
+	test("sets and clears the fixed model without clobbering newer fallback settings", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-session-naming-settings-"));
+		roots.push(root);
+		const path = join(root, "pi-stuff.json");
+		await writeFile(
+			path,
+			JSON.stringify({
+				ui: { statusline: true },
+				sessionNaming: {
+					...DEFAULT_SESSION_NAMING_SETTINGS,
+					model: "fixture/primary",
+					fallbackModels: ["fixture/backup"],
+				},
+			}),
+		);
+		const store = await SessionNamingSettingsStore.load(path);
+
+		await writeFile(
+			path,
+			JSON.stringify({
+				ui: { statusline: false },
+				sessionNaming: {
+					...DEFAULT_SESSION_NAMING_SETTINGS,
+					model: "fixture/primary",
+					fallbackModels: ["fixture/external"],
+				},
+			}),
+		);
+		await store.update({ model: "fixture/secondary" });
+		await store.update({ model: null });
+
+		const persisted = JSON.parse(await Bun.file(path).text());
+		expect(store.get().model).toBeUndefined();
+		expect(persisted.ui).toEqual({ statusline: false });
+		expect(persisted.sessionNaming).not.toHaveProperty("model");
+		expect(persisted.sessionNaming.fallbackModels).toEqual(["fixture/external"]);
+	});
+
 	test("falls back as one namespace when merged settings are malformed", async () => {
 		const root = await mkdtemp(join(tmpdir(), "pi-stuff-session-naming-settings-"));
 		roots.push(root);

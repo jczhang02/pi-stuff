@@ -122,6 +122,22 @@ test("NamespacedSettingsStore update persists under the whole-file lock and pres
 	expect(await readNamespace(path, "ui")).toEqual({ statusline: true });
 });
 
+test("NamespacedSettingsStore updateWith computes from the latest persisted namespace", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+	});
+	await writeSettingsFile(path, { codex: { enabled: false, count: 6 }, ui: { statusline: true } });
+
+	await store.updateWith((current) => ({ enabled: true, count: current.count + 1 }));
+
+	expect(store.get()).toEqual({ enabled: true, count: 7 });
+	expect(await readSettingsFile(path)).toEqual({
+		codex: { enabled: true, count: 7 },
+		ui: { statusline: true },
+	});
+});
+
 test("NamespacedSettingsStore replace writes the whole namespace wholesale", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
