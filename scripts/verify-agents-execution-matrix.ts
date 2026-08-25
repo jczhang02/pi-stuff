@@ -41,6 +41,7 @@ const LOG_RECORD_SCHEMA = Type.Object(
 		codeModeFrozen: Type.Optional(Type.String()),
 		kind: Type.Optional(Type.String()),
 		payloadBytes: Type.Optional(Type.Number()),
+		ponytailMode: Type.Optional(Type.String()),
 		result: Type.Optional(Type.String()),
 		round: Type.Optional(Type.Number()),
 		sawProjection: Type.Optional(Type.Boolean()),
@@ -211,6 +212,9 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 		if (start.sawSuiteSurface !== true) {
 			fail(`${scenario.id} child did not inherit the Suite UI surface`);
 		}
+		if (start.ponytailMode !== "full") {
+			fail(`${scenario.id} child inherited Ponytail mode ${String(start.ponytailMode)} instead of full`);
+		}
 		if (start.baseExtensionMatches !== true) {
 			fail(
 				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Suite Package entry`,
@@ -359,6 +363,9 @@ async function runScenario(input: {
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_SCENARIO: input.scenario.id,
 				PI_STUFF_CODE_MODE_DEFAULT: input.scenario.codeMode ? "on" : "off",
 				PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
+				PI_STUFF_PONYTAIL_MODE: undefined,
+				PONYTAIL_DEFAULT_MODE: "full",
+				PONYTAIL_QUIET_STARTUP: "1",
 				TERM: "xterm-256color",
 				TMPDIR: input.temporaryDirectory,
 				XDG_STATE_HOME: join(input.temporaryDirectory, "state"),

@@ -27,6 +27,18 @@ describe("Ponytail child launch snapshot", () => {
 		expect(ponytailLaunchSnapshot(pi)).toEqual({ ponytailMode: "ultra" });
 	});
 
+	test("falls back to the inherited launch snapshot when no live runtime reader is available", () => {
+		const previous = process.env[PONYTAIL_CHILD_MODE_ENV];
+		process.env[PONYTAIL_CHILD_MODE_ENV] = "lite";
+		try {
+			const pi = { events: {} } as Pick<ExtensionAPI, "events">;
+			expect(ponytailLaunchSnapshot(pi)).toEqual({ ponytailMode: "lite" });
+		} finally {
+			if (previous === undefined) delete process.env[PONYTAIL_CHILD_MODE_ENV];
+			else process.env[PONYTAIL_CHILD_MODE_ENV] = previous;
+		}
+	});
+
 	test("writes the snapshot into the child environment and clears accidental inheritance", () => {
 		const inherited = { [PONYTAIL_CHILD_MODE_ENV]: "full", KEEP: "yes" };
 		const explicitOff = buildWriterProcessEnv(inherited, ponytailWriterEnvironmentOverrides("off"));

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { PonytailMode } from "./types.js";
+import { inheritedPonytailMode, type PonytailMode } from "./types.js";
 
 const PONYTAIL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff/ponytail-runtime/v1");
 
@@ -24,5 +24,5 @@ export function ponytailRuntimeRegistry(): PonytailRuntimeRegistry {
 export function getPonytailMode(pi: Pick<ExtensionAPI, "events">): PonytailMode | undefined {
 	// SAFETY: Pi's events surface is the stable object identity shared by duplicate ExtensionAPI wrappers.
 	const owner = pi.events as object;
-	return ponytailRuntimeRegistry().owners.get(owner)?.currentMode();
+	return ponytailRuntimeRegistry().owners.get(owner)?.currentMode() ?? inheritedPonytailMode();
 }

@@ -77,7 +77,8 @@ function scenarioId(): ScenarioId {
 
 function record(value: Record<string, JsonInputValue>): void {
 	const path = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_LOG");
-	appendFileSync(path, `${JSON.stringify({ at: Date.now(), pid: process.pid, ...value })}\n`);
+	const ponytailMode = value["kind"] === "child-start" ? process.env["PI_STUFF_PONYTAIL_MODE"] : undefined;
+	appendFileSync(path, `${JSON.stringify({ at: Date.now(), pid: process.pid, ponytailMode, ...value })}\n`);
 }
 
 function lastUserText(context: Context): string {
