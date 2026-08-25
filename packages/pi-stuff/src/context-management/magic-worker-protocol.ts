@@ -182,28 +182,28 @@ export interface MagicWorkerToolUpdateMessage {
 	readonly update: AgentToolResult<unknown>;
 }
 
-interface MagicWorkerEffectBase {
-	readonly sessionId?: string;
-	readonly type: "effect";
-}
-
-export type MagicWorkerEffectMessage =
-	| (MagicWorkerEffectBase & {
+export type MagicWorkerEffect =
+	| {
 			readonly args: Parameters<ExtensionAPI["appendEntry"]>;
 			readonly name: "appendEntry";
-	  })
-	| (MagicWorkerEffectBase & {
+	  }
+	| {
 			readonly args: Parameters<ExtensionAPI["sendMessage"]>;
 			readonly name: "sendMessage";
-	  })
-	| (MagicWorkerEffectBase & {
+	  }
+	| {
 			readonly args: Parameters<ExtensionAPI["sendUserMessage"]>;
 			readonly name: "sendUserMessage";
-	  })
-	| (MagicWorkerEffectBase & {
+	  }
+	| {
 			readonly args: Parameters<ExtensionAPI["setActiveTools"]>;
 			readonly name: "setActiveTools";
-	  });
+	  };
+
+export type MagicWorkerEffectMessage = MagicWorkerEffect & {
+	readonly sessionId: string | undefined;
+	readonly type: "effect";
+};
 
 export interface MagicWorkerSyncEffectMessage {
 	readonly args: Parameters<SessionManager["appendCompaction"]>;

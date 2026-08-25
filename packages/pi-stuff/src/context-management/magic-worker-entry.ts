@@ -17,7 +17,7 @@ import {
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
 	type MagicWorkerCommandRequest,
 	type MagicWorkerContextSnapshot,
-	type MagicWorkerEffectMessage,
+	type MagicWorkerEffect,
 	type MagicWorkerEvent,
 	type MagicWorkerEventName,
 	type MagicWorkerEventRequest,
@@ -61,7 +61,6 @@ const tools = new Map<string, WorkerTool>();
 const commands = new Map<string, LooseCommand>();
 const flags = new Map<string, boolean | string>();
 const controllers = new Map<number, AbortController>();
-const cancelled = new Set<number>();
 const effectSession = new AsyncLocalStorage<string | null>();
 const sessions = new Map<
 	string,
@@ -169,11 +168,10 @@ function updateSession(request: MagicWorkerSessionEntryRequest): void {
 	sessions.set(request.sessionId, state);
 }
 
-function sendEffect(message: MagicWorkerEffectMessage): void {
+function sendEffect(effect: MagicWorkerEffect): void {
 	const sessionId = effectSession.getStore();
 	if (initialized && sessionId === undefined) return;
-	if (sessionId) send({ ...message, sessionId });
-	else send(message);
+	send({ ...effect, sessionId: sessionId ?? undefined, type: "effect" });
 }
 
 function syncHostCall(
@@ -328,7 +326,7 @@ function workerPi(): ExtensionAPI {
 	const on = captureHandler as ExtensionAPI["on"];
 	const pi: ExtensionAPI = {
 		appendEntry: <Data>(customType: string, data?: Data) =>
-			sendEffect({ args: [customType, data], name: "appendEntry", type: "effect" }),
+			sendEffect({ args: [customType, data], name: "appendEntry" }),
 		events: {
 			emit: () => undefined,
 			on: () => () => undefined,
@@ -363,12 +361,11 @@ function workerPi(): ExtensionAPI {
 		registerProvider: () => undefined,
 		registerShortcut: () => undefined,
 		registerTool: registerWorkerTool,
-		sendMessage: (message, options) => sendEffect({ args: [message, options], name: "sendMessage", type: "effect" }),
-		sendUserMessage: (content, options) =>
-			sendEffect({ args: [content, options], name: "sendUserMessage", type: "effect" }),
+		sendMessage: (message, options) => sendEffect({ args: [message, options], name: "sendMessage" }),
+		sendUserMessage: (content, options) => sendEffect({ args: [content, options], name: "sendUserMessage" }),
 		setActiveTools: (names: string[]) => {
 			activeTools = [...names];
-			sendEffect({ args: [names], name: "setActiveTools", type: "effect" });
+			sendEffect({ args: [names], name: "setActiveTools" });
 		},
 		setLabel: () => undefined,
 		setModel: async () => false,
@@ -454,12 +451,10 @@ async function invokeTool(request: MagicWorkerToolRequest, ctx: ExtensionContext
 
 async function invoke(
 	request: MagicWorkerCommandRequest | MagicWorkerEventRequest | MagicWorkerToolRequest,
+	controller: AbortController,
 ): Promise<void> {
-	if (!initialized) throw new Error("Magic Context worker received work before initialization.");
-	const controller = new AbortController();
-	controllers.set(request.id, controller);
-	if (cancelled.delete(request.id)) controller.abort();
 	try {
+		if (!initialized) throw new Error("Magic Context worker received work before initialization.");
 		const result = await effectSession.run(request.context.session.id ?? null, async () => {
 			const ctx = contextFor(request.context, controller);
 			return request.type === "event"
@@ -488,7 +483,6 @@ workerScope.onmessage = (message: MessageEvent<MagicWorkerRequest>): void => {
 	if (request.type === "cancel") {
 		const controller = controllers.get(request.id);
 		if (controller) controller.abort();
-		else cancelled.add(request.id);
 		return;
 	}
 	if (request.type === "session-entry" || request.type === "session-snapshot") {
@@ -498,10 +492,11 @@ workerScope.onmessage = (message: MessageEvent<MagicWorkerRequest>): void => {
 		});
 		return;
 	}
-	queue = queue
-		.then(async () => {
-			if (request.type === "initialize") await initialize(request);
-			else await invoke(request);
-		})
-		.catch((cause: unknown) => sendError(request.id, cause));
+	if (request.type === "initialize") {
+		queue = queue.then(() => initialize(request)).catch((cause: unknown) => sendError(request.id, cause));
+		return;
+	}
+	const controller = new AbortController();
+	controllers.set(request.id, controller);
+	queue = queue.then(() => invoke(request, controller)).catch((cause: unknown) => sendError(request.id, cause));
 };

@@ -78,14 +78,6 @@ function requiredCall<T>(label: string, call: () => T): T {
 	}
 }
 
-function optionalCall<T>(call: () => T): T | undefined {
-	try {
-		return call();
-	} catch {
-		return undefined;
-	}
-}
-
 function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"] {
 	const model = ctx.model;
 	if (!model) return;
@@ -101,20 +93,20 @@ function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"]
 function snapshotContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
 	const manager = ctx.sessionManager;
 	return {
-		contextUsage: optionalCall(() => ctx.getContextUsage()),
+		contextUsage: requiredCall("context usage", () => ctx.getContextUsage()),
 		cwd: ctx.cwd,
 		hasUI: ctx.hasUI,
-		idle: optionalCall(() => ctx.isIdle()) ?? false,
+		idle: requiredCall("idle state", () => ctx.isIdle()),
 		mode: ctx.mode,
 		model: workerModel(ctx),
-		pendingMessages: optionalCall(() => ctx.hasPendingMessages()) ?? false,
-		projectTrusted: optionalCall(() => ctx.isProjectTrusted()) ?? false,
+		pendingMessages: requiredCall("pending-message state", () => ctx.hasPendingMessages()),
+		projectTrusted: requiredCall("project trust", () => ctx.isProjectTrusted()),
 		session: {
-			file: optionalCall(() => manager.getSessionFile()) ?? undefined,
-			id: optionalCall(() => manager.getSessionId()),
-			leafId: optionalCall(() => manager.getLeafId()) ?? undefined,
+			file: requiredCall("Session file", () => manager.getSessionFile()),
+			id: requiredCall("Session id", () => manager.getSessionId()),
+			leafId: requiredCall("Session leaf id", () => manager.getLeafId()) ?? undefined,
 		},
-		systemPrompt: optionalCall(() => ctx.getSystemPrompt()) ?? "",
+		systemPrompt: requiredCall("system prompt", () => ctx.getSystemPrompt()),
 		thinkingLevel: ctx.thinkingLevel,
 	};
 }
