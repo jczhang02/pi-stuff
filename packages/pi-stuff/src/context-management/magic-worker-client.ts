@@ -8,10 +8,12 @@ import type {
 	ExtensionEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import {
 	MAGIC_WORKER_PROTOCOL_VERSION,
 	type MagicWorkerContextSnapshot,
 	type MagicWorkerEffectMessage,
+	type MagicWorkerEvent,
 	type MagicWorkerHostTool,
 	type MagicWorkerMessage,
 	type MagicWorkerReadyMessage,
@@ -29,8 +31,11 @@ interface PendingRequest {
 }
 
 interface MagicModule {
-	readonly default: (pi: ExtensionAPI) => Promise<void> | void;
+	readonly default: (pi: ExtensionAPI, onFatal?: MagicWorkerFatalHandler) => Promise<void> | void;
 }
+
+type MagicWorkerFatalHandler = (cause: unknown) => void;
+type EventByType<Type extends ExtensionEvent["type"]> = Extract<ExtensionEvent, { readonly type: Type }>;
 
 type MagicWorkerInvocationRequest =
 	| Omit<Extract<MagicWorkerRequest, { readonly type: "command" }>, "id">
@@ -71,9 +76,8 @@ function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"]
 	};
 }
 
-function snapshotContext(ctx: ExtensionContext, includeBranch = false): MagicWorkerContextSnapshot {
+function snapshotContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
 	const manager = ctx.sessionManager;
-	const branch = includeBranch ? requiredCall("Session branch", () => manager.getBranch()) : [];
 	return {
 		contextUsage: optionalCall(() => ctx.getContextUsage()),
 		cwd: ctx.cwd,
@@ -84,7 +88,6 @@ function snapshotContext(ctx: ExtensionContext, includeBranch = false): MagicWor
 		pendingMessages: optionalCall(() => ctx.hasPendingMessages()) ?? false,
 		projectTrusted: optionalCall(() => ctx.isProjectTrusted()) ?? false,
 		session: {
-			branch: includeBranch ? [...branch] : undefined,
 			file: optionalCall(() => manager.getSessionFile()) ?? undefined,
 			id: optionalCall(() => manager.getSessionId()),
 			leafId: optionalCall(() => manager.getLeafId()) ?? undefined,
@@ -94,13 +97,94 @@ function snapshotContext(ctx: ExtensionContext, includeBranch = false): MagicWor
 	};
 }
 
-function snapshotEvent(event: ExtensionEvent): { readonly event: ExtensionEvent; readonly signal?: AbortSignal } {
-	if (!("signal" in event)) return { event };
-	const { signal, ...snapshot } = event;
-	return {
-		event: snapshot as ExtensionEvent,
-		...(signal instanceof AbortSignal ? { signal } : {}),
-	};
+function entryParentId(entry: unknown): string | undefined {
+	if (entry === null || typeof entry !== "object" || !("parentId" in entry)) return;
+	const parentId = (entry as { readonly parentId?: unknown }).parentId;
+	return typeof parentId === "string" ? parentId : undefined;
+}
+
+function snapshotEvent(
+	name: string,
+	event: ExtensionEvent,
+): { readonly event: MagicWorkerEvent; readonly signal?: AbortSignal } {
+	const signal = "signal" in event && event.signal instanceof AbortSignal ? event.signal : undefined;
+	let snapshot: MagicWorkerEvent;
+	switch (name) {
+		case "agent_end": {
+			const { messages } = event as EventByType<"agent_end">;
+			snapshot = { messages, type: "agent_end" };
+			break;
+		}
+		case "before_agent_start": {
+			const { systemPrompt } = event as EventByType<"before_agent_start">;
+			snapshot = { systemPrompt, type: "before_agent_start" };
+			break;
+		}
+		case "context": {
+			const { messages } = event as EventByType<"context">;
+			snapshot = { messages, type: "context" };
+			break;
+		}
+		case "message_end": {
+			const { message } = event as EventByType<"message_end">;
+			snapshot = { message, type: "message_end" };
+			break;
+		}
+		case "session_before_compact":
+			snapshot = { type: "session_before_compact" };
+			break;
+		case "session_before_switch":
+			snapshot = { type: "session_before_switch" };
+			break;
+		case "session_compact":
+			snapshot = { type: "session_compact" };
+			break;
+		case "session_shutdown":
+			snapshot = { type: "session_shutdown" };
+			break;
+		case "session_start": {
+			const { previousSessionFile, reason } = event as EventByType<"session_start">;
+			snapshot = {
+				...(typeof previousSessionFile === "string" ? { previousSessionFile } : {}),
+				reason,
+				type: "session_start",
+			};
+			break;
+		}
+		case "tool_execution_end": {
+			const { toolName } = event as EventByType<"tool_execution_end">;
+			snapshot = { toolName, type: "tool_execution_end" };
+			break;
+		}
+		case "tool_execution_start": {
+			const { args, toolCallId, toolName } = event as EventByType<"tool_execution_start">;
+			snapshot = { args, toolCallId, toolName, type: "tool_execution_start" };
+			break;
+		}
+		case "tool_result": {
+			const { content, toolName } = event as EventByType<"tool_result">;
+			snapshot = { content, toolName, type: "tool_result" };
+			break;
+		}
+		default:
+			throw new Error(`Magic Context registered unsupported Pi event '${name}'.`);
+	}
+	return { event: snapshot, ...(signal ? { signal } : {}) };
+}
+
+export async function finishMagicWorkerShutdown<Result>(
+	operation: Promise<Result>,
+	close: () => Promise<void>,
+): Promise<Result | undefined> {
+	if (!(await settleWithin(operation, HOST_SHUTDOWN_GRACE_MS))) {
+		await close();
+		return;
+	}
+	try {
+		return await operation;
+	} finally {
+		await close();
+	}
 }
 
 function wireTools(pi: ExtensionAPI): MagicWorkerHostTool[] {
@@ -140,15 +224,18 @@ function isReadyMessage(value: unknown): value is MagicWorkerReadyMessage {
 class MagicWorkerClient {
 	private readonly contexts = new Map<string, ExtensionContext>();
 	private nextId = 1;
+	private readonly onFatal: MagicWorkerFatalHandler | undefined;
 	private readonly pending = new Map<number, PendingRequest>();
 	private readonly pi: ExtensionAPI;
+	private readonly sessionLeaves = new Map<string, string | undefined>();
 	private worker: Worker | undefined;
 	private workerUrl: string | undefined;
 	private closed = false;
 	private termination: Promise<void> | undefined;
 
-	constructor(pi: ExtensionAPI) {
+	constructor(pi: ExtensionAPI, onFatal?: MagicWorkerFatalHandler) {
 		this.pi = pi;
+		this.onFatal = onFatal;
 	}
 
 	async initialize(): Promise<MagicWorkerReadyMessage> {
@@ -170,7 +257,10 @@ class MagicWorkerClient {
 		this.worker.onmessage = (event: MessageEvent<MagicWorkerMessage>) => this.receive(event.data);
 		this.worker.onerror = (event): void => {
 			event.preventDefault();
-			void this.terminate(new Error(event.message || "Magic Context worker crashed."));
+			if (this.closed) return;
+			const error = new Error(event.message || "Magic Context worker crashed.");
+			void this.terminate(error);
+			this.onFatal?.(error);
 		};
 		const id = this.nextRequestId();
 		const ready = this.waitFor(id);
@@ -195,13 +285,10 @@ class MagicWorkerClient {
 
 	register(ready: MagicWorkerReadyMessage): void {
 		for (const name of ready.events) {
-			const handler: LooseEventHandler = async (event, ctx) => {
-				try {
-					return await this.invokeEvent(name, event, ctx);
-				} finally {
-					if (name === "session_shutdown") await this.close();
-				}
-			};
+			const handler: LooseEventHandler =
+				name === "session_shutdown"
+					? (event, ctx) => finishMagicWorkerShutdown(this.invokeEvent(name, event, ctx), () => this.close())
+					: (event, ctx) => this.invokeEvent(name, event, ctx);
 			const on = this.pi.on.bind(this.pi) as (event: string, value: LooseEventHandler) => void;
 			on(name, handler);
 		}
@@ -243,41 +330,64 @@ class MagicWorkerClient {
 	}
 
 	private async invokeEvent(name: string, event: ExtensionEvent, ctx: ExtensionContext): Promise<unknown> {
-		const snapshot = snapshotEvent(event);
-		const includeBranch =
-			name === "context" || (name === "session_start" && "reason" in event && event.reason === "fork");
-		const result = await this.invoke(
-			{ context: snapshotContext(ctx, includeBranch), event: snapshot.event, name, type: "event" },
-			ctx,
-			snapshot.signal ?? ctx.signal,
-		);
-		if (name === "message_end") this.refreshPersistedEntry(ctx);
-		return result;
+		const snapshot = snapshotEvent(name, event);
+		const context = this.synchronizeSession(ctx, name === "session_start");
+		try {
+			const result = await this.invoke(
+				{ context, event: snapshot.event, name, type: "event" },
+				ctx,
+				snapshot.signal ?? ctx.signal,
+			);
+			if (name === "message_end") this.refreshPersistedEntry(ctx, context.session.id);
+			return result;
+		} finally {
+			if (name === "session_before_switch" && context.session.id) {
+				this.sessionLeaves.delete(context.session.id);
+				if (this.contexts.get(context.session.id) === ctx) this.contexts.delete(context.session.id);
+			}
+		}
 	}
 
 	private invokeCommand(name: string, args: string, ctx: ExtensionContext): Promise<unknown> {
 		return this.invoke(
-			{ args, context: snapshotContext(ctx, BRANCH_COMMANDS.has(name)), name, type: "command" },
+			{ args, context: this.synchronizeSession(ctx, BRANCH_COMMANDS.has(name)), name, type: "command" },
 			ctx,
 			ctx.signal,
 		);
 	}
 
-	private refreshPersistedEntry(ctx: ExtensionContext): void {
+	private refreshPersistedEntry(ctx: ExtensionContext, expectedSessionId: string | undefined): void {
+		if (!expectedSessionId) return;
 		setImmediate(() => {
 			if (this.closed) return;
 			try {
-				const manager = ctx.sessionManager;
-				const sessionId = manager.getSessionId();
-				const leafId = manager.getLeafId();
-				if (!sessionId || !leafId) return;
-				const entry = manager.getEntry(leafId);
-				if (!entry) return;
-				this.post({ entry, leafId, sessionId, type: "session-entry" });
+				if (ctx.sessionManager.getSessionId() !== expectedSessionId) return;
+				this.synchronizeSession(ctx);
 			} catch {
 				// Pi may switch or close the Session before this post-persistence refresh runs.
 			}
 		});
+	}
+
+	private synchronizeSession(ctx: ExtensionContext, forceSnapshot = false): MagicWorkerContextSnapshot {
+		const snapshot = snapshotContext(ctx);
+		const sessionId = snapshot.session.id;
+		if (!sessionId) return snapshot;
+		const leafId = snapshot.session.leafId;
+		const previousLeafId = this.sessionLeaves.get(sessionId);
+		if (!forceSnapshot && this.sessionLeaves.has(sessionId) && leafId === previousLeafId) return snapshot;
+		if (!forceSnapshot && this.sessionLeaves.has(sessionId) && leafId) {
+			const entry = requiredCall("Session leaf entry", () => ctx.sessionManager.getEntry(leafId));
+			if (entry && entryParentId(entry) === previousLeafId) {
+				this.post({ entry, leafId, sessionId, type: "session-entry" });
+				this.sessionLeaves.set(sessionId, leafId);
+				return snapshot;
+			}
+		}
+		const branch = requiredCall("Session branch", () => ctx.sessionManager.getBranch());
+		this.post({ branch: [...branch], leafId, sessionId, type: "session-snapshot" });
+		this.sessionLeaves.set(sessionId, leafId);
+		return snapshot;
 	}
 
 	private invokeTool(
@@ -289,7 +399,7 @@ class MagicWorkerClient {
 		onUpdate: AgentToolUpdateCallback<unknown> | undefined,
 	): Promise<unknown> {
 		return this.invoke(
-			{ args, context: snapshotContext(ctx), name, toolCallId, type: "tool" },
+			{ args, context: this.synchronizeSession(ctx), name, toolCallId, type: "tool" },
 			ctx,
 			signal,
 			onUpdate,
@@ -357,10 +467,14 @@ class MagicWorkerClient {
 
 	private applyEffect(message: MagicWorkerEffectMessage): void {
 		try {
+			if (message.sessionId && !this.contexts.has(message.sessionId)) return;
 			switch (message.name) {
-				case "appendEntry":
+				case "appendEntry": {
 					this.pi.appendEntry(message.args[0] as string, message.args[1]);
+					const ctx = message.sessionId ? this.contexts.get(message.sessionId) : undefined;
+					if (ctx) this.synchronizeSession(ctx);
 					break;
+				}
 				case "sendMessage":
 					this.pi.sendMessage(message.args[0] as never, message.args[1] as never);
 					break;
@@ -389,6 +503,11 @@ class MagicWorkerClient {
 			if (typeof method !== "function") throw new Error(`Pi SessionManager does not expose ${message.name}.`);
 			response = { value: method.apply(manager, [...message.args]) };
 			success = true;
+			try {
+				this.synchronizeSession(ctx);
+			} catch {
+				// The Host mutation already succeeded. A later invocation will repair the mirror from its leaf or branch.
+			}
 		} catch (error) {
 			response = { error: errorMessage(error) };
 		}
@@ -424,6 +543,7 @@ class MagicWorkerClient {
 		if (this.workerUrl) URL.revokeObjectURL(this.workerUrl);
 		this.workerUrl = undefined;
 		this.contexts.clear();
+		this.sessionLeaves.clear();
 		return this.termination;
 	}
 
@@ -432,8 +552,8 @@ class MagicWorkerClient {
 	}
 }
 
-export async function magicContextWorkerFactory(pi: ExtensionAPI): Promise<void> {
-	const client = new MagicWorkerClient(pi);
+export async function magicContextWorkerFactory(pi: ExtensionAPI, onFatal?: MagicWorkerFatalHandler): Promise<void> {
+	const client = new MagicWorkerClient(pi, onFatal);
 	try {
 		const ready = await client.initialize();
 		client.register(ready);

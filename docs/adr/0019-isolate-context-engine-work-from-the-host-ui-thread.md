@@ -14,13 +14,18 @@ The artifact is not written to disk, published, or installed, and the upstream p
 The bundle preserves the upstream package's original `import.meta.url` so package-relative resources and version
 identity keep their official semantics.
 
-Pi event, Tool, and command registrations remain in the Host. Each invocation sends an immutable Context snapshot to
-the worker. The complete Session branch crosses the boundary only for Context projection, fork initialization, and the
-three explicit history-rebuild commands; ordinary lifecycle events, status/flush commands, and Tools do not copy it.
-After Pi persists a message, the adapter sends only the new leaf entry so the engine's delayed index keeps a current
-read-only branch. Worker-to-Host effects are explicitly limited. The one SessionManager operation that the pinned
-upstream API requires synchronously, `appendCompaction`, uses a bounded shared-memory response while blocking only the
-worker. Shutdown terminates the worker and revokes its in-memory URL.
+Pi event, Tool, and command registrations remain in the Host. Each invocation sends an immutable Context snapshot and
+only the event fields read by the pinned engine. The complete Session branch crosses the boundary when a Worker first
+binds a Session, when a changed leaf is not the direct successor of the mirrored leaf, and for the three explicit
+history-rebuild commands. Ordinary Context projection and persistence send at most one new leaf entry. The snapshot
+fallback therefore repairs fork, tree, compaction, and other discontinuities without cloning an unbounded Session on
+every Enter.
+
+Worker-to-Host effects are explicitly limited and bound to the originating Pi Session. The one SessionManager operation that
+the pinned upstream API requires synchronously, `appendCompaction`, uses a bounded shared-memory response while blocking
+only the worker. A fatal Worker error immediately returns Context ownership to Pi native behavior. Shutdown gives the
+official handler one bounded Host grace period, then terminates the Worker independently of its serialized request queue
+and revokes the in-memory URL.
 
 ## Alternatives rejected
 
@@ -34,9 +39,10 @@ worker. Shutdown terminates the worker and revokes its in-memory URL.
 
 ## Consequences
 
-Configured startup pays one worker build/start cost before editor readiness and one worker's memory while Context is
-active. In return, a healthy Magic Context projection can run concurrently with Pi's native input paint and Working
-animation. Acceptance must use a real Pi TUI with a long resumed Session containing malformed image history, require the
-submitted prompt in the Conversation Transcript within 150 ms, observe advancing Working frames, and confirm that the
-Provider request still contains the Magic Context projection. A real supported model smoke test must also exercise a
-Magic Context Tool successfully.
+Configured startup pays one worker build/start cost, one initial Session snapshot before editor readiness, and one
+worker's memory while Context is active. In return, a healthy Magic Context projection can run concurrently with Pi's
+native input paint and Working animation without another full-Session clone per ordinary turn. Acceptance must use a
+real Pi TUI with a long resumed Session containing malformed image history, require the submitted prompt in the
+Conversation Transcript within 150 ms after measured PTY harness overhead, bound the maximum Working-frame stall, and
+confirm that the expected marker occurs inside the Magic Context history projection sent to the Provider. A real
+supported model smoke test must also exercise a Magic Context Tool successfully.

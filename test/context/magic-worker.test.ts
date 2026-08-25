@@ -4,9 +4,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { magicContextWorkerFactory } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
+import {
+	finishMagicWorkerShutdown,
+	magicContextWorkerFactory,
+} from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
 
-test("the isolated engine loads the official Magic Context factory", async () => {
+test("the isolated engine keeps ordinary turns incremental and event payloads clone-safe", async () => {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-magic-worker-"));
 	const configDirectory = join(temporaryDirectory, "config", "cortexkit");
 	const dataDirectory = join(temporaryDirectory, "data");
@@ -109,13 +112,14 @@ test("the isolated engine loads the official Magic Context factory", async () =>
 		expect([...tools.keys()].sort()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
 		expect(commands.has("ctx-status")).toBeTrue();
 		await handlers.get("session_start")?.({ type: "session_start", reason: "resume" } as ExtensionEvent, context);
+		expect(branchReads).toBe(1);
 		const beforeCompact = handlers.get("session_before_compact");
 		expect(beforeCompact).toBeDefined();
 		expect(
 			await beforeCompact?.(
 				{
 					branchEntries: [],
-					preparation: {},
+					preparation: { irrelevant: () => undefined },
 					reason: "manual",
 					signal: new AbortController().signal,
 					type: "session_before_compact",
@@ -124,7 +128,7 @@ test("the isolated engine loads the official Magic Context factory", async () =>
 				context,
 			),
 		).toEqual({ cancel: true });
-		expect(branchReads).toBe(0);
+		expect(branchReads).toBe(1);
 
 		const messageEnd = handlers.get("message_end");
 		expect(messageEnd).toBeDefined();
@@ -154,12 +158,100 @@ test("the isolated engine loads the official Magic Context factory", async () =>
 			},
 		];
 		await Bun.sleep(20);
-		expect(branchReads).toBe(0);
+		expect(branchReads).toBe(1);
 		expect(entryReads).toBe(1);
+
+		const contextHandler = handlers.get("context");
+		expect(contextHandler).toBeDefined();
+		const userMessage = {
+			content: [{ type: "text", text: "WORKER_INCREMENTAL_USER_EVIDENCE" }],
+			role: "user",
+			timestamp: Date.now(),
+		};
+		currentLeafId = "worker-user-entry";
+		currentBranch = [
+			...currentBranch,
+			{
+				id: currentLeafId,
+				message: userMessage,
+				parentId: "worker-entry",
+				timestamp: new Date().toISOString(),
+				type: "message",
+			},
+		];
+		for (let turn = 0; turn < 2; turn += 1) {
+			await contextHandler?.(
+				{
+					messages: [(messageResult as { readonly message: unknown }).message, userMessage],
+					type: "context",
+				} as ExtensionEvent,
+				context,
+			);
+		}
+		expect(branchReads).toBe(1);
+		expect(entryReads).toBe(2);
+
+		const branchMessage = {
+			content: [{ type: "text", text: "WORKER_BRANCH_SWITCH_EVIDENCE" }],
+			role: "user",
+			timestamp: Date.now(),
+		};
+		currentLeafId = "worker-branch-entry";
+		currentBranch = [
+			{
+				id: currentLeafId,
+				message: branchMessage,
+				parentId: null,
+				timestamp: new Date().toISOString(),
+				type: "message",
+			},
+		];
+		for (let turn = 0; turn < 2; turn += 1) {
+			await contextHandler?.({ messages: [branchMessage], type: "context" } as ExtensionEvent, context);
+		}
+		expect(branchReads).toBe(2);
+		expect(entryReads).toBe(3);
+
+		const toolResult = handlers.get("tool_result");
+		expect(toolResult).toBeDefined();
+		const cyclicDetails = {};
+		Reflect.set(cyclicDetails, "self", cyclicDetails);
+		for (const details of [() => undefined, cyclicDetails]) {
+			await toolResult?.(
+				{
+					content: [{ type: "text", text: "clone-safe result" }],
+					details,
+					input: {},
+					isError: false,
+					toolCallId: "clone-safe-tool",
+					toolName: "custom_tool",
+					type: "tool_result",
+				} as ExtensionEvent,
+				context,
+			);
+		}
+
+		const beforeSwitch = handlers.get("session_before_switch");
+		expect(beforeSwitch).toBeDefined();
+		await beforeSwitch?.({ type: "session_before_switch", reason: "resume" } as ExtensionEvent, context);
+		currentLeafId = null;
+		currentBranch = [];
+		const secondContext = {
+			...context,
+			sessionManager: {
+				...context.sessionManager,
+				getSessionId: () => "worker-second-session",
+			},
+		} as ExtensionContext;
+		await handlers.get("session_start")?.(
+			{ type: "session_start", reason: "resume" } as ExtensionEvent,
+			secondContext,
+		);
+		expect(branchReads).toBe(3);
 
 		const shutdown = handlers.get("session_shutdown");
 		expect(shutdown).toBeDefined();
-		await shutdown?.({ type: "session_shutdown", reason: "quit" } as ExtensionEvent, context);
+		await shutdown?.({ type: "session_shutdown", reason: "quit" } as ExtensionEvent, secondContext);
 	} finally {
 		for (const [name, value] of Object.entries(originalEnvironment)) {
 			if (value === undefined) delete process.env[name];
@@ -167,4 +259,15 @@ test("the isolated engine loads the official Magic Context factory", async () =>
 		}
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}
+});
+
+test("a hung upstream shutdown cannot keep the Worker alive", async () => {
+	let closed = false;
+	const startedAt = performance.now();
+	await finishMagicWorkerShutdown(new Promise(() => undefined), async () => {
+		closed = true;
+	});
+
+	expect(closed).toBeTrue();
+	expect(performance.now() - startedAt).toBeLessThan(1_000);
 });

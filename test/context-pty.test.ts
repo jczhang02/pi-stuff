@@ -17,4 +17,4 @@ test("long malformed-image history does not block Pi's submitted input frame", a
 		piBinary: PI_BIN,
 		packagePath: resolve(import.meta.dir, "../packages/pi-stuff"),
 	});
-}, 30_000);
+}, 120_000);

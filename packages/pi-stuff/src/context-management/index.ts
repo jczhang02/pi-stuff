@@ -211,7 +211,8 @@ type MagicContextHandler = (
 	event: ContextEvent,
 	ctx: ExtensionContext,
 ) => ContextEventResult | undefined | Promise<ContextEventResult | undefined>;
-type MagicFactory = (pi: ExtensionAPI) => Promise<void> | void;
+type MagicFatalHandler = (cause: unknown) => void;
+type MagicFactory = (pi: ExtensionAPI, onFatal?: MagicFatalHandler) => Promise<void> | void;
 type MagicModule = { default: MagicFactory };
 interface MagicCommandDefinition {
 	readonly handler?: (args: string, ctx: ExtensionContext) => Promise<void> | void;
@@ -1503,6 +1504,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		sessionStart: SessionStartEvent | undefined,
 	): Promise<ContextStatusSnapshot> {
 		const plan = this.createRegistrationPlan();
+		let committed = false;
 		try {
 			const preparation = await this.dependencies.prepareMagicContext(ctx, {
 				allowConfigurationMutation: trigger !== "automatic-turn" && trigger !== "startup",
@@ -1518,7 +1520,10 @@ class ContextCapabilityRuntime implements ContextCapability {
 				return { state: "native", engine: "native", trigger };
 			}
 			const magicPi = this.magicPiAdapter(plan);
-			await module.default(magicPi);
+			await module.default(magicPi, (cause) => {
+				if (!committed || !this.isCurrentGeneration(generation)) return;
+				void this.degradeCommittedMagic(cause, ctx);
+			});
 			if (!this.isCurrentGeneration(generation)) {
 				await this.rollbackRegistrationPlan(plan, ctx);
 				return { state: "native", engine: "native", trigger };
@@ -1545,6 +1550,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 				return this.status();
 			}
 			this.commitRegistrationPlan(plan, generation);
+			committed = true;
 			this.state = { state: "active", engine: "magic-context", trigger };
 			return this.status();
 		} catch (error) {

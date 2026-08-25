@@ -70,6 +70,14 @@ function allText(context: Context): string {
 		.join("\n");
 }
 
+function projectedHistoryText(text: string) {
+	const contents = (pattern: RegExp): string => [...text.matchAll(pattern)].map((match) => match[1] ?? "").join("\n");
+	return {
+		history: contents(/<session-history(?:\s[^>]*)?>([\s\S]*?)<\/session-history>/gu),
+		since: contents(/<session-history-since(?:\s[^>]*)?>([\s\S]*?)<\/session-history-since>/gu),
+	};
+}
+
 function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index--) {
 		const entry = context.messages[index];
@@ -180,13 +188,24 @@ function fixtureStream(context: Context) {
 	);
 	const systemPrompt = context.systemPrompt ?? "";
 	const contextPrompt = stripPonytailPrompt(systemPrompt);
+	const projectedHistory = projectedHistoryText(text);
+	const projectedText = `${projectedHistory.history}\n${projectedHistory.since}`;
+	const magicProjectionMarkers = ["CONTEXT_INPUT_HISTORY_499", "CONTEXT_SEARCH_AGAIN"].filter(
+		(marker) =>
+			projectedText.includes(marker) ||
+			context.messages.some(
+				(message) =>
+					/^\s*§\d+§\s/u.test(contentText(message.content)) && contentText(message.content).includes(marker),
+			),
+	);
 	record({
 		type: "request",
 		lastUser,
-		historyMarkers: ["CONTEXT_INPUT_HISTORY_499", "CONTEXT_SEARCH_AGAIN"].filter((marker) => text.includes(marker)),
+		projectedHistoryTail: projectedText.slice(-1_000),
+		magicProjectionMarkers,
 		hasContextActivityText: text.includes("Context flush") || text.includes("nothing queued"),
-		hasHistory: text.includes("<session-history>"),
-		hasSince: text.includes("<session-history-since>"),
+		hasHistory: projectedHistory.history.length > 0,
+		hasSince: projectedHistory.since.length > 0,
 		hasNativeSummary: text.includes("NATIVE_COMPACTION_SUMMARY_MARKER"),
 		systemPromptChars: systemPrompt.length,
 		contextPromptChars: contextPrompt.length,

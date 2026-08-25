@@ -1,4 +1,5 @@
 /* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread, anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- This private structured-clone adapter must preserve Pi and Magic Context's open Extension payloads; the matching Host client is its only sender. */
+import { AsyncLocalStorage } from "node:async_hooks";
 // @ts-expect-error -- the pinned Magic Context package ships JavaScript without declarations.
 import magicContextFactory from "@cortexkit/pi-magic-context";
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -14,6 +15,7 @@ import {
 	type MagicWorkerMessage,
 	type MagicWorkerRequest,
 	type MagicWorkerSessionEntryRequest,
+	type MagicWorkerSessionSnapshotRequest,
 	type MagicWorkerSyncEffectMessage,
 	type MagicWorkerSyncEffectName,
 	type MagicWorkerToolRequest,
@@ -31,6 +33,7 @@ const commands = new Map<string, LooseCommand>();
 const flags = new Map<string, boolean | string>();
 const controllers = new Map<number, AbortController>();
 const cancelled = new Set<number>();
+const effectSession = new AsyncLocalStorage<string | null>();
 const sessions = new Map<
 	string,
 	{
@@ -79,8 +82,7 @@ function entryId(entry: unknown): string | undefined {
 	return typeof id === "string" ? id : undefined;
 }
 
-function replaceSession(snapshot: MagicWorkerContextSnapshot["session"]): void {
-	if (!snapshot.id || !snapshot.branch) return;
+function replaceSession(snapshot: MagicWorkerSessionSnapshotRequest): void {
 	const entries = [...snapshot.branch];
 	const entriesById = new Map<string, unknown>();
 	const indexesById = new Map<string, number>();
@@ -90,7 +92,7 @@ function replaceSession(snapshot: MagicWorkerContextSnapshot["session"]): void {
 		entriesById.set(id, entry);
 		indexesById.set(id, index);
 	}
-	sessions.set(snapshot.id, { entries, entriesById, indexesById, leafId: snapshot.leafId });
+	sessions.set(snapshot.sessionId, { entries, entriesById, indexesById, leafId: snapshot.leafId });
 }
 
 function updateSession(request: MagicWorkerSessionEntryRequest): void {
@@ -115,12 +117,10 @@ function updateSession(request: MagicWorkerSessionEntryRequest): void {
 	sessions.set(request.sessionId, state);
 }
 
-function sendEffect(
-	name: MagicWorkerEffectMessage["name"],
-	args: readonly unknown[],
-	snapshot?: MagicWorkerContextSnapshot,
-): void {
-	send({ args, name, sessionId: sessionId(snapshot), type: "effect" });
+function sendEffect(name: MagicWorkerEffectMessage["name"], args: readonly unknown[]): void {
+	const sessionId = effectSession.getStore();
+	if (initialized && sessionId === undefined) return;
+	send({ args, name, sessionId: sessionId ?? undefined, type: "effect" });
 }
 
 function syncHostCall(
@@ -148,14 +148,11 @@ function syncHostCall(
 }
 
 function contextFor(snapshot: MagicWorkerContextSnapshot, controller: AbortController): ExtensionContext {
-	replaceSession(snapshot.session);
-	const localEntries = [...(snapshot.session.branch ?? [])];
 	const currentSession = () => (snapshot.session.id ? sessions.get(snapshot.session.id) : undefined);
 	const sessionManager = {
 		appendCompaction: (...args: readonly unknown[]) => syncHostCall("appendCompaction", args, snapshot),
-		getBranch: () => currentSession()?.entries ?? localEntries,
-		getEntry: (id: string) =>
-			currentSession()?.entriesById.get(id) ?? localEntries.find((entry) => entryId(entry) === id),
+		getBranch: () => currentSession()?.entries ?? [],
+		getEntry: (id: string) => currentSession()?.entriesById.get(id),
 		getLeafId: () => currentSession()?.leafId ?? snapshot.session.leafId,
 		getSessionFile: () => snapshot.session.file,
 		getSessionId: () => snapshot.session.id,
@@ -281,7 +278,7 @@ async function initialize(request: MagicWorkerInitializeRequest): Promise<void> 
 async function invokeEvent(request: MagicWorkerEventRequest, ctx: ExtensionContext): Promise<unknown> {
 	let result: unknown;
 	for (const handler of handlers.get(request.name) ?? []) {
-		const next = await handler(request.event, ctx);
+		const next = await handler(request.event as ExtensionEvent, ctx);
 		if (next !== undefined) result = next;
 	}
 	if (result === undefined && request.name === "message_end" && "message" in request.event) {
@@ -316,13 +313,14 @@ async function invoke(
 	controllers.set(request.id, controller);
 	if (cancelled.delete(request.id)) controller.abort();
 	try {
-		const ctx = contextFor(request.context, controller);
-		const result =
-			request.type === "event"
-				? await invokeEvent(request, ctx)
+		const result = await effectSession.run(request.context.session.id ?? null, async () => {
+			const ctx = contextFor(request.context, controller);
+			return request.type === "event"
+				? invokeEvent(request, ctx)
 				: request.type === "command"
-					? await invokeCommand(request, ctx)
-					: await invokeTool(request, ctx, controller);
+					? invokeCommand(request, ctx)
+					: invokeTool(request, ctx, controller);
+		});
 		send({ id: request.id, result, type: "result" });
 	} finally {
 		controllers.delete(request.id);
@@ -346,8 +344,11 @@ workerScope.onmessage = (message: MessageEvent<MagicWorkerRequest>): void => {
 		else cancelled.add(request.id);
 		return;
 	}
-	if (request.type === "session-entry") {
-		updateSession(request);
+	if (request.type === "session-entry" || request.type === "session-snapshot") {
+		queue = queue.then(() => {
+			if (request.type === "session-entry") updateSession(request);
+			else replaceSession(request);
+		});
 		return;
 	}
 	queue = queue

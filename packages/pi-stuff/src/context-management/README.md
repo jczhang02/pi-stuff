@@ -59,10 +59,13 @@ separately from Context's 8,000-character direct-mode contract.
 The adapter bundles the pinned engine into an in-memory Worker artifact during
 activation because the certified standalone Pi binary cannot resolve its external
 Worker module graph. No bundle is written to disk. Host events, Tools, and
-commands remain registered in Pi and cross the boundary as immutable snapshots;
-only Context projection, fork initialization, and explicit history-rebuild
-commands copy the full Session branch. Ordinary persistence sends one new leaf
-entry so Magic's delayed index stays current without retransmitting the Session.
+commands remain registered in Pi and cross the boundary as immutable, field-scoped
+snapshots. The Worker receives one full Session snapshot when it first binds the
+Session, after a detected branch discontinuity, and for explicit history-rebuild
+commands. Ordinary Context projection and persistence send at most one new leaf,
+so long Sessions are not cloned again on every prompt. Fatal Worker errors return
+the Capability to native Context immediately, and Host-owned shutdown terminates
+the Worker after a bounded grace period even when its request queue is stuck.
 The narrowly enumerated Host effects and lifecycle contract are recorded in
 [ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md).
 

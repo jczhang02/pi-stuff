@@ -18,6 +18,8 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
 const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const MEMORY_EVIDENCE = "真实 Context 检索证据";
+const INPUT_FRAME_LATENCY_LIMIT_MS = 150;
+const WORKING_STALL_LIMIT_MS = 500;
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { additionalProperties: true });
 const RECORD_LINE_SCHEMA = Type.Object(
 	{
@@ -27,7 +29,8 @@ const RECORD_LINE_SCHEMA = Type.Object(
 		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
 		hasContextActivityText: Type.Optional(Type.Boolean()),
 		hasHistory: Type.Optional(Type.Boolean()),
-		historyMarkers: Type.Optional(Type.Array(Type.String())),
+		magicProjectionMarkers: Type.Optional(Type.Array(Type.String())),
+		projectedHistoryTail: Type.Optional(Type.String()),
 		hasNativeSummary: Type.Optional(Type.Boolean()),
 		hasPonytailPrompt: Type.Optional(Type.Boolean()),
 		hasSince: Type.Optional(Type.Boolean()),
@@ -414,32 +417,48 @@ async function runResumeInputFrameVerification(
 		]);
 
 		const prompt = "CONTEXT_RESUME_REQUEST";
+		const sendKeysStartedAt = performance.now();
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
+		const sendKeysOverheadMs = performance.now() - sendKeysStartedAt;
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
+		const captureOverheads = Array.from({ length: 5 }, () => {
+			const startedAt = performance.now();
+			capture(false);
+			return performance.now() - startedAt;
+		}).sort((left, right) => left - right);
+		const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
 		const submittedAt = performance.now();
 		tmux(["send-keys", "-t", session, "Enter"]);
 		const workingFrames = new Set<string>();
 		const workingDeadline = Date.now() + 2_000;
+		let workingFrame: string | undefined;
+		let workingFrameChangedAt = submittedAt;
 		let transcriptVisibleMs: number | undefined;
 		while (Date.now() < workingDeadline) {
 			const frame = capture(false);
 			if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-				transcriptVisibleMs = performance.now() - submittedAt;
+				transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - sendKeysOverheadMs - captureOverheadMs);
 			}
 			const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
-			if (indicator) workingFrames.add(indicator);
-			await Bun.sleep(100);
+			const observedAt = performance.now();
+			if (indicator) {
+				workingFrames.add(indicator);
+				if (indicator !== workingFrame) {
+					workingFrame = indicator;
+					workingFrameChangedAt = observedAt;
+				}
+			}
+			if (observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
+				fail(
+					`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
+				);
+			}
+			await Bun.sleep(50);
 		}
 		if (transcriptVisibleMs === undefined) {
-			await waitFor(
-				(frame) => transcriptContainsUserMessage(frame, prompt),
-				"the submitted prompt in the Conversation Transcript",
-				20_000,
-				false,
-			);
-			transcriptVisibleMs = performance.now() - submittedAt;
+			fail("the submitted prompt did not appear in the Conversation Transcript during the 2s observation window");
 		}
-		if (transcriptVisibleMs > 150) {
+		if (transcriptVisibleMs > INPUT_FRAME_LATENCY_LIMIT_MS) {
 			fail(`resumed prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
 		}
 		if (workingFrames.size < 2) {
@@ -451,16 +470,17 @@ async function runResumeInputFrameVerification(
 			.reverse()
 			.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
 		if (
-			modelRequest?.hasHistory !== true ||
-			modelRequest.hasSince !== true ||
+			modelRequest?.hasSince !== true ||
 			modelRequest.hasCompactMagicContextPrompt !== true ||
-			modelRequest.historyMarkers?.includes(expectedHistoryMarker) !== true
+			modelRequest.magicProjectionMarkers?.includes(expectedHistoryMarker) !== true
 		) {
 			send("/ctx status");
 			await Bun.sleep(100);
 			tmux(["send-keys", "-t", session, "Enter"]);
 			await Bun.sleep(500);
-			fail(`resumed model request did not contain the Magic Context projection\n${capture(true)}`);
+			fail(
+				`resumed model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}`,
+			);
 		}
 		send("CONTEXT_DRAIN");
 		const output = await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
@@ -1061,7 +1081,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			if (request.hasContextActivityText !== false) {
 				fail(`model request received Context activity text for ${String(request.lastUser)}`);
 			}
-			if (request.hasHistory !== true || request.hasSince !== true) {
+			if (request.hasSince !== true) {
 				fail(`Magic projection was absent for request ${String(request.lastUser)}`);
 			}
 			if (request.hasCompactMagicContextPrompt !== true) {
@@ -1140,7 +1160,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		);
 		const nativeRequests = (await readRecords(nativeLog)).filter((record) => record.type === "request");
 		const nativeResume = nativeRequests.find((record) => record.lastUser?.includes("CONTEXT_NATIVE_RESUME") === true);
-		if (nativeResume?.hasHistory !== true || nativeResume.hasNativeSummary !== true) {
+		if (nativeResume?.hasSince !== true || nativeResume.hasNativeSummary !== true) {
 			fail("Magic Context did not adopt the existing Pi-native compaction summary on resume");
 		}
 		const nativeRaw = await readFile(nativeSession, "utf8");

@@ -689,6 +689,44 @@ describe("Context capability lifecycle", () => {
 		});
 	});
 
+	test("degrades immediately when the active Context engine reports a fatal failure", async () => {
+		const handlers: Handlers = new Map();
+		const tools: ToolDefinition[] = [];
+		const api = apiFor(handlers, tools);
+		let reportFatal: ((cause: unknown) => void) | undefined;
+		await piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI, onFatal?: (cause: unknown) => void) => {
+					reportFatal = onFatal;
+					magicApi.on("context", (event) => event);
+					magicApi.registerTool({
+						description: "Search Context",
+						execute: async () => ({ content: [{ type: "text", text: "result" }], details: undefined }),
+						label: "ctx_search",
+						name: "ctx_search",
+						parameters: Type.Object({ query: Type.String() }),
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		expect(getContextCapability(ctx).status().state).toBe("active");
+		expect(api.getActiveTools()).toContain("ctx_search");
+		expect(reportFatal).toBeDefined();
+
+		reportFatal?.(new Error("Context engine worker crashed"));
+		await Bun.sleep(10);
+
+		expect(getContextCapability(ctx).status()).toEqual({
+			state: "degraded",
+			engine: "native",
+			trigger: "startup",
+			error: "Context engine worker crashed",
+		});
+		expect(api.getActiveTools()).not.toContain("ctx_search");
+	});
+
 	test("fails open during startup and retries on the next activation", async () => {
 		const handlers: Handlers = new Map();
 		let loads = 0;

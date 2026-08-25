@@ -1,6 +1,21 @@
-import type { ContextUsage, ExtensionEvent, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type {
+	AgentEndEvent,
+	BeforeAgentStartEvent,
+	ContextEvent,
+	ContextUsage,
+	MessageEndEvent,
+	SessionBeforeCompactEvent,
+	SessionBeforeSwitchEvent,
+	SessionCompactEvent,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	ToolDefinition,
+	ToolExecutionEndEvent,
+	ToolExecutionStartEvent,
+	ToolResultEvent,
+} from "@earendil-works/pi-coding-agent";
 
-export const MAGIC_WORKER_PROTOCOL_VERSION = 1;
+export const MAGIC_WORKER_PROTOCOL_VERSION = 2;
 export const MAGIC_WORKER_SYNC_BUFFER_BYTES = 64 * 1024;
 
 export interface MagicWorkerModel {
@@ -12,11 +27,24 @@ export interface MagicWorkerModel {
 }
 
 export interface MagicWorkerSessionSnapshot {
-	readonly branch: readonly unknown[] | undefined;
 	readonly file: string | undefined;
 	readonly id: string | undefined;
 	readonly leafId: string | undefined;
 }
+
+export type MagicWorkerEvent =
+	| Pick<AgentEndEvent, "messages" | "type">
+	| Pick<BeforeAgentStartEvent, "systemPrompt" | "type">
+	| Pick<ContextEvent, "messages" | "type">
+	| Pick<MessageEndEvent, "message" | "type">
+	| Pick<SessionBeforeCompactEvent, "type">
+	| Pick<SessionBeforeSwitchEvent, "type">
+	| Pick<SessionCompactEvent, "type">
+	| Pick<SessionShutdownEvent, "type">
+	| Pick<SessionStartEvent, "previousSessionFile" | "reason" | "type">
+	| Pick<ToolExecutionEndEvent, "toolName" | "type">
+	| Pick<ToolExecutionStartEvent, "args" | "toolCallId" | "toolName" | "type">
+	| Pick<ToolResultEvent, "content" | "toolName" | "type">;
 
 export interface MagicWorkerContextSnapshot {
 	readonly contextUsage: ContextUsage | undefined;
@@ -71,7 +99,7 @@ interface MagicWorkerInvocationBase {
 }
 
 export interface MagicWorkerEventRequest extends MagicWorkerInvocationBase {
-	readonly event: ExtensionEvent;
+	readonly event: MagicWorkerEvent;
 	readonly name: string;
 	readonly type: "event";
 }
@@ -101,12 +129,20 @@ export interface MagicWorkerSessionEntryRequest {
 	readonly type: "session-entry";
 }
 
+export interface MagicWorkerSessionSnapshotRequest {
+	readonly branch: readonly unknown[];
+	readonly leafId: string | undefined;
+	readonly sessionId: string;
+	readonly type: "session-snapshot";
+}
+
 export type MagicWorkerRequest =
 	| MagicWorkerCancelRequest
 	| MagicWorkerCommandRequest
 	| MagicWorkerEventRequest
 	| MagicWorkerInitializeRequest
 	| MagicWorkerSessionEntryRequest
+	| MagicWorkerSessionSnapshotRequest
 	| MagicWorkerToolRequest;
 
 export interface MagicWorkerReadyMessage {
