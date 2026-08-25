@@ -59,7 +59,9 @@ user definitions, and user definitions override Package definitions.
   Package is loaded explicitly unless an inherited capability ceiling forbids extensions, Agent-specific extensions
   are additive (including an explicit empty list), and the final provider-payload guard always runs last even under
   that ceiling. A non-fanout child omits `subagent` from the Suite-required Tool inventory as well as its active Tool
-  set, so initialization stays warning-free without granting nested-delegation authority.
+  set, so initialization stays warning-free without granting nested-delegation authority. Each launch also snapshots
+  the parent's effective Ponytail Mode, including explicit `off`, into the child process environment; no Session or
+  global setting is shared or mutated.
 - A fork clones the native Pi branch only when the complete child launch fits the selected model. Long, multilingual,
   or high-entropy sessions otherwise receive one bounded snapshot projection; the check includes the child task,
   inherited prompt, replacement-prompt context retained by Pi, selected Tool schemas, and conservative reserves for

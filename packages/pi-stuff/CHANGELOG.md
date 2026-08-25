@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- Add a feature-complete internal fork of `@dietrichgebert/ponytail@4.9.0`: four persistent Session modes, six packaged
+  Skills, natural-language deactivation, child-Agent mode snapshots, Context-managed prompt projection, merged settings,
+  a shared-Statusline `♞` mode segment, and the `/ponytail` control dialog. Preserve the reviewed MIT upstream Skill
+  bodies and provenance with one explicit-invocation frontmatter adaptation while removing separate status/activity
+  and configuration ownership. Make `off` a hard model boundary and replace the repeated full Skill projection with
+  an active-mode compact policy and catalog. Add dedicated real-Pi PTY certification for the Dialog, low viewport,
+  draft and Statusline restoration, configuration, environment overrides, Session ledger, and Provider prompt boundary.
+  Add a preregistered, mode-blind 18-Session ox-alpha behavioral benchmark with hidden correctness and exact sign-test
+  gates; the certified run passed all Sessions and measured 87 versus 141 aggregate LOC (`p = 0.01953125`) at a 31%
+  total-token cost. Add an integrity-checked, non-mutating upstream candidate/diff review command and correct the pinned npm integrity to
+  the verified registry artifact. See ADR 0021.
 - Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
   at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while
   preserving the Suite-owned `/ctx` surface and native fail-open behavior.
@@ -39,7 +50,7 @@
 - Add the Notification Module with settled-work completion/failure alerts, recent-activity suppression, semantic
   title/body copy, opt-in response previews, terminal-native delivery including Ghostty OSC 777 and tmux passthrough,
   owned `/notifications` settings with an in-dialog test action, and an accurately named terminal-BEL control.
-- Consolidate the Suite into one private local Pi Package with fourteen named internal Modules. Remove the former
+- Consolidate the Suite into one private local Pi Package with fifteen named internal Modules. Remove the former
   per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
   workflow while preserving the accepted installation order and the Pi 0.84.1 migration baseline.
 - Add the opt-in Code Mode Module, which replaces the active Suite Tool schemas with one local JavaScript envelope while

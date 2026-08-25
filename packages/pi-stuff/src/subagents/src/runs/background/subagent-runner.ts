@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { normalizePonytailMode, PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
@@ -433,6 +434,10 @@ function errorCode<Value>(cause: Value): string | undefined {
 }
 
 /** Runner identity must never leak into a Pi writer process. */
+export function ponytailWriterEnvironmentOverrides(mode: BackgroundRunnerConfig["ponytailMode"]) {
+	return { [PONYTAIL_CHILD_MODE_ENV]: mode };
+}
+
 export function buildWriterProcessEnv(
 	parentEnv: NodeJS.ProcessEnv,
 	overrides: Record<string, string | undefined>,
@@ -1768,7 +1773,11 @@ function runChildProcess(input: {
 						cwd: input.taskCwd,
 						detached: process.platform !== "win32",
 						stdio: ["pipe", "pipe", "pipe"],
-						env: buildWriterProcessEnv(process.env, built.env, input.task.maxSubagentDepth),
+						env: buildWriterProcessEnv(
+							process.env,
+							{ ...built.env, ...ponytailWriterEnvironmentOverrides(input.config.ponytailMode) },
+							input.task.maxSubagentDepth,
+						),
 						windowsHide: true,
 					});
 					child.on("error", (error) => {
@@ -3381,6 +3390,7 @@ function parseBackgroundRunnerConfig(text: string): BackgroundRunnerConfig {
 		!value.cwd ||
 		!isRuntimeString(value.asyncDir) ||
 		!value.asyncDir ||
+		(value.ponytailMode !== undefined && normalizePonytailMode(value.ponytailMode) === undefined) ||
 		!isBackgroundRunnerWork(value.work)
 	) {
 		throw new Error("Background runner config is invalid.");

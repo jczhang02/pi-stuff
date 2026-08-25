@@ -22,16 +22,20 @@ const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { a
 const RECORD_LINE_SCHEMA = Type.Object(
 	{
 		commands: Type.Optional(Type.Array(Type.String())),
+		contextPromptChars: Type.Optional(Type.Number()),
 		cwd: Type.Optional(Type.String()),
 		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
 		hasContextActivityText: Type.Optional(Type.Boolean()),
 		hasHistory: Type.Optional(Type.Boolean()),
 		hasNativeSummary: Type.Optional(Type.Boolean()),
+		hasPonytailPrompt: Type.Optional(Type.Boolean()),
 		hasSince: Type.Optional(Type.Boolean()),
 		hasVerboseMagicContextPrompt: Type.Optional(Type.Boolean()),
 		lastUser: Type.Optional(Type.String()),
 		searchResult: Type.Optional(Type.String()),
 		sessionId: Type.Optional(Type.String()),
+		ponytailMarkerCount: Type.Optional(Type.Number()),
+		ponytailPromptChars: Type.Optional(Type.Number()),
 		subagent: Type.Optional(Type.Boolean()),
 		systemPromptChars: Type.Optional(Type.Number()),
 		tools: Type.Optional(Type.Array(Type.String())),
@@ -937,10 +941,18 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			if (request.hasVerboseMagicContextPrompt !== false) {
 				fail(`verbose upstream Magic Context instructions leaked into request ${String(request.lastUser)}`);
 			}
-			if (request.systemPromptChars === undefined || request.systemPromptChars > 8_000) {
+			if (request.contextPromptChars === undefined || request.contextPromptChars > 8_000) {
 				fail(
-					`provider-visible system prompt exceeded the 8,000-character budget: ${String(request.systemPromptChars)}`,
+					`Context system prompt exceeded the separate 8,000-character budget: ${String(request.contextPromptChars)}`,
 				);
+			}
+			if (
+				request.hasPonytailPrompt !== true ||
+				request.ponytailMarkerCount !== 1 ||
+				request.ponytailPromptChars === undefined ||
+				request.ponytailPromptChars > 10_000
+			) {
+				fail(`Ponytail prompt was absent, duplicated, or over budget for ${String(request.lastUser)}`);
 			}
 		}
 		const searchRequest = requests.find((record) => record.searchResult !== undefined);

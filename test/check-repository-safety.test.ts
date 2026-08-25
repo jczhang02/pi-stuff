@@ -11,6 +11,7 @@ const SUITE_CAPABILITIES = [
 	"session-naming",
 	"tool-display",
 	"context-management",
+	"ponytail",
 	"rtk",
 	"codex",
 	"goal",
@@ -58,7 +59,11 @@ async function createRepository(): Promise<string> {
 		name: "@jczhang02/pi-stuff",
 		private: true,
 		files: ["index.ts", "src", "README.md", "LICENSE"],
-		pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
+		pi: {
+			extensions: ["./index.ts"],
+			skills: ["./src/ponytail/skills"],
+			themes: ["./themes/*.json"],
+		},
 	});
 	return root;
 }
@@ -78,7 +83,11 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE"],
-			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
+			pi: {
+				extensions: ["./index.ts"],
+				skills: ["./src/ponytail/skills"],
+				themes: ["./themes/*.json"],
+			},
 			dependencies: { "@cortexkit/pi-magic-context": "0.40.0", typebox: "1.3.10" },
 		});
 
@@ -91,7 +100,11 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE"],
-			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
+			pi: {
+				extensions: ["./index.ts"],
+				skills: ["./src/ponytail/skills"],
+				themes: ["./themes/*.json"],
+			},
 			dependencies: {
 				"@cortexkit/pi-magic-context": "https://github.com/cortexkit/magic-context/archive/refs/heads/main.tgz",
 			},
@@ -114,7 +127,11 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE", "AGENTS.md"],
-			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
+			pi: {
+				extensions: ["./index.ts"],
+				skills: ["./src/ponytail/skills"],
+				themes: ["./themes/*.json"],
+			},
 			scripts: { postinstall: "modify-host" },
 		});
 

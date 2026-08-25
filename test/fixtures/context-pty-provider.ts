@@ -43,6 +43,26 @@ function contentText(content: Context["messages"][number]["content"]): string {
 		.join("\n");
 }
 
+function stripPonytailPrompt(systemPrompt: string): string {
+	let stripped = systemPrompt.replace(
+		/\n*<!-- pi-stuff:prompt-contribution:ponytail:start -->[\s\S]*?<!-- pi-stuff:prompt-contribution:ponytail:end -->\n*/gu,
+		"\n",
+	);
+	stripped = stripped.replace(/<available_skills>([\s\S]*?)<\/available_skills>/gu, (catalog, body: string) => {
+		const skills = [...body.matchAll(/\s*<skill>[\s\S]*?<\/skill>/gu)].map((match) => match[0] ?? "");
+		if (skills.length === 0) return catalog;
+		const retained = skills.filter((skill) => !/<name>ponytail(?:-[^<]+)?<\/name>/u.test(skill));
+		return retained.length > 0 ? `<available_skills>${retained.join("")}\n</available_skills>` : "";
+	});
+	if (!stripped.includes("<available_skills>")) {
+		stripped = stripped.replace(
+			/\n*The following skills provide specialized instructions for specific tasks\.[\s\S]*?use that absolute path in tool commands\.\n*/u,
+			"\n",
+		);
+	}
+	return stripped.trimEnd();
+}
+
 function allText(context: Context): string {
 	return context.messages
 		.map((entry) => contentText(entry.content))
@@ -155,6 +175,7 @@ function fixtureStream(context: Context) {
 		(entry) => entry.role === "toolResult" && entry.toolName === "context_bulk",
 	);
 	const systemPrompt = context.systemPrompt ?? "";
+	const contextPrompt = stripPonytailPrompt(systemPrompt);
 	record({
 		type: "request",
 		lastUser,
@@ -163,6 +184,10 @@ function fixtureStream(context: Context) {
 		hasSince: text.includes("<session-history-since>"),
 		hasNativeSummary: text.includes("NATIVE_COMPACTION_SUMMARY_MARKER"),
 		systemPromptChars: systemPrompt.length,
+		contextPromptChars: contextPrompt.length,
+		ponytailPromptChars: systemPrompt.length - contextPrompt.length,
+		ponytailMarkerCount: systemPrompt.match(/pi-stuff:prompt-contribution:ponytail:start/gu)?.length ?? 0,
+		hasPonytailPrompt: systemPrompt.includes("PONYTAIL MODE ACTIVE — level: full"),
 		hasCompactMagicContextPrompt: systemPrompt.includes("## Magic Context"),
 		hasVerboseMagicContextPrompt: systemPrompt.includes("Most AI sessions are disposable"),
 		tools: (context.tools ?? []).map((tool) => tool.name),

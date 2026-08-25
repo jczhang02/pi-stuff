@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type {
+	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ExtensionAPI,
@@ -58,6 +59,11 @@ import {
 	type MagicStatusMessage,
 	statusSnapshotFromMagic,
 } from "./dialog.js";
+import {
+	applyContextPromptContributions,
+	applyContextPromptContributionsToProvider,
+	stripContextPromptContributions,
+} from "./prompt-contributions.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
@@ -1746,8 +1752,24 @@ class ContextCapabilityRuntime implements ContextCapability {
 				this.magicPromptInstalledForSession = true;
 				this.suiteCustomContextGuidance.clear();
 				try {
-					const result = await handler(addCompactMagicContextPrompt(rawEvent), quietMagicContext(ctx));
-					return this.isCurrentGeneration(generation) ? result : undefined;
+					const withoutContributions = Check(COMPACT_PROMPT_EVENT_SCHEMA, rawEvent)
+						? { ...rawEvent, systemPrompt: stripContextPromptContributions(this.pi, rawEvent.systemPrompt) }
+						: rawEvent;
+					const magicEvent = addCompactMagicContextPrompt(withoutContributions);
+					const result = await handler(magicEvent, quietMagicContext(ctx));
+					if (!this.isCurrentGeneration(generation)) return;
+					if (!Check(COMPACT_PROMPT_EVENT_SCHEMA, magicEvent)) return result;
+					// SAFETY: this handler was registered by Magic for before_agent_start.
+					const beforeAgentResult = result as BeforeAgentStartEventResult | undefined;
+					const magicSystemPrompt = beforeAgentResult?.systemPrompt ?? magicEvent.systemPrompt;
+					// SAFETY: this branch handles Pi's before_agent_start event and changes only systemPrompt.
+					const contributed = await applyContextPromptContributions(
+						this.pi,
+						{ ...magicEvent, systemPrompt: magicSystemPrompt } as BeforeAgentStartEvent,
+						ctx,
+					);
+					if (!contributed?.systemPrompt) return result;
+					return { ...beforeAgentResult, systemPrompt: contributed.systemPrompt };
 				} catch (error) {
 					if (this.isCurrentGeneration(generation)) await this.degradeCommittedMagic(error, ctx);
 					return;
@@ -1957,11 +1979,30 @@ export default async function piStuffContext(
 		await runtime.activate(ctx, "input");
 		runtime.yieldExtremeOverflowToNative(ctx);
 	});
-	pi.on("before_agent_start", async (_event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");
 		await runtime.preflightExtremeOverflow(ctx);
+		return applyContextPromptContributions(pi, event, ctx);
+	});
+	let providerPromptDiagnosticReported = false;
+	pi.on("before_provider_request", async (event, ctx) => {
+		const projection = await applyContextPromptContributionsToProvider(pi, event.payload, ctx);
+		if (projection.active && !projection.found && !providerPromptDiagnosticReported) {
+			providerPromptDiagnosticReported = true;
+			reportDiagnostic({
+				capability: "Context",
+				error: new Error("Provider payload has no supported system-prompt field."),
+				key: "provider-prompt-contribution",
+				severity: "warning",
+				summary: "A Context prompt contribution could not be projected into this Provider request",
+				visibility: "silent",
+			});
+		}
+		return projection.payload === event.payload ? undefined : projection.payload;
 	});
 }
+
+export { registerContextPromptContributor } from "./prompt-contributions.js";
 
 export const __test = {
 	clear(): void {

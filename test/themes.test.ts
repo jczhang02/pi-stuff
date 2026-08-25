@@ -118,7 +118,11 @@ test("the Package ships all four complete official Catppuccin themes", async () 
 		pi?: unknown;
 	};
 	expect(manifest.files).toContain("themes");
-	expect(manifest.pi).toEqual({ extensions: ["./index.ts"], themes: ["./themes/*.json"] });
+	expect(manifest.pi).toEqual({
+		extensions: ["./index.ts"],
+		skills: ["./src/ponytail/skills"],
+		themes: ["./themes/*.json"],
+	});
 
 	for (const flavor of flavors) {
 		// SAFETY: this test controls the value and supplies every ThemeJson member exercised by this case.

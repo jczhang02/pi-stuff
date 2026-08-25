@@ -10,9 +10,11 @@ the shared non-floating Command Dialog used by focused Suite commands.
 
 The Statusline is exactly one icon-led status row followed by one optional previous-prompt row. The status row uses dim
 middle-dot separators and this stable order: model, Thinking, conditional `fast`, working directory, Git branch, Git file
-state, Context percentage, cache hit rate, metered cost or Codex weekly allowance, and the conditional current Goal. It
-deliberately omits token-window counts and ordinary Agent worktime. Capability state such as MCP, Agents, Todo, BTW, and
-Tool activity stays on its own focused surface instead of adding Statusline segments.
+state, Context percentage, cache hit rate, metered cost or Codex weekly allowance, the conditional current Goal, and the
+conditional Ponytail Mode. It deliberately omits token-window counts and ordinary Agent worktime. Capability state such
+as MCP, Agents, Todo, BTW, and Tool activity stays on its own focused surface instead of adding Statusline segments.
+Ponytail is the narrow exception: `♞ <mode>` is its sole persistent mode authority, disappears for `off` or an explicit
+hide preference, and never represents Agent activity.
 
 With no current Goal, the Goal segment is absent. An active Goal renders `● goal used/budget elapsed`, such as
 `● goal 0/40k 13m`, and refreshes elapsed active time once per second while visible. Paused uses `■`, blocked and
@@ -213,6 +215,12 @@ another Pi process's lock; a leftover lock file is safe and is reused.
 The module gives independently owned Capabilities one full-width, non-floating focus surface without coupling them to
 each other. A `blocking` view preempts the active `normal` view inside the same Pi component; blocking requests run FIFO,
 then the exact normal component resumes.
+
+Bare `/ponytail` uses this surface as one control plane for Session mode, saved defaults, presentation preferences,
+and specialized Skills. Setting changes update the open Overview without Transcript notifications; launching a Skill
+closes the Dialog and uses Pi's native Skill expansion. Environment overrides remain effective and read-only while the
+Dialog reports and writes the separate saved value. Opening and closing the Dialog suppresses and restores the composed
+Footer and exact editor draft.
 
 All Suite Command Dialogs use one height-fitting rule. At ordinary sizes their layouts stay unchanged. Under severe
 height pressure they first preserve the semantic title or current state, the selected row or attached error, and an

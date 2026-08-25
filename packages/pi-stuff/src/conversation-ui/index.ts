@@ -65,6 +65,12 @@ export {
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "./dialog-layout.js";
 export { createMarkdownRenderer } from "./markdown.js";
+export {
+	createPonytailDialogView,
+	type PonytailDialogAction,
+	type PonytailDialogOptions,
+	type PonytailDialogSnapshot,
+} from "./ponytail-dialog.js";
 
 export {
 	beginUiSettingsGeneration,

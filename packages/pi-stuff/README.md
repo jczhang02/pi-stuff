@@ -19,6 +19,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 - [`code-mode`](src/code-mode/README.md): one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
 - [`context-management`](src/context-management/README.md): configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
   session authority.
+- [`ponytail`](src/ponytail/README.md): feature-complete Ponytail fork with Session modes, six Skills, shared Statusline state, and `/ponytail` controls.
 - [`rtk`](src/rtk/README.md): fail-open Bash rewriting and model-only Bash/Grep output projection.
 - [`codex`](src/codex/README.md): `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
 - [`goal`](src/goal/README.md): persistent objective, continuation, accounting, and evidence-gated completion/blocking.
@@ -40,6 +41,14 @@ Use `/ctx` to open the Pi Stuff Context dialog. Its actions share one dispatcher
 `/ctx recomp [start-end]`, and `/ctx upgrade`. Operation progress is stored as model-invisible Pi Stuff Activity entries;
 Magic Context's own global UI remains suppressed.
 
+## Ponytail controls
+
+Use `/ponytail` to open the mode and configuration Dialog. Direct forms include
+`/ponytail lite|full|ultra|off`, `/ponytail default <mode>`, `/ponytail status show|hide`, and
+`/ponytail startup show|quiet`. The packaged `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`,
+`/ponytail-gain`, and `/ponytail-help` aliases retain upstream Skill behavior. `off` is a hard model boundary: it
+removes both Ponytail instructions and model-visible Ponytail Skills while keeping explicit Skill commands available.
+
 ## Storage
 
 Pi Stuff keeps user configuration beside the Pi Agent directory or owning project and uses XDG directories for its
@@ -48,7 +57,7 @@ derived state, cache, and runtime files:
 | Data | Location |
 | --- | --- |
 | Pi Host settings | `<agentDir>/settings.json` |
-| Pi Stuff settings (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `sessionNaming`, `codeMode`, and `web`) | `<agentDir>/pi-stuff.json` |
+| Pi Stuff settings (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `sessionNaming`, `codeMode`, `ponytail`, and `web`) | `<agentDir>/pi-stuff.json` |
 | Shared standard MCP configuration | `$XDG_CONFIG_HOME/mcp/mcp.json` |
 | Pi-specific MCP overrides | `<agentDir>/mcp.json` and `<project>/.pi/mcp.json` |
 | Project Code Mode choice | `<project>/.pi/code-mode.json` |

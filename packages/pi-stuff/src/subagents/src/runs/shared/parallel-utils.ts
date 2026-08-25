@@ -1,4 +1,5 @@
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import type { PonytailMode } from "../../../../ponytail/types.js";
 import type {
 	AgentContextUsage,
 	ArtifactConfig,
@@ -81,6 +82,8 @@ export interface BackgroundRunnerConfig {
 	parentRunOrigin?: AgentWorkOrigin;
 	/** Effective parent Code Mode state frozen when this Agent run launches. */
 	codeModeEnabled?: boolean;
+	/** Effective parent Ponytail mode frozen when this Agent run launches. */
+	ponytailMode?: PonytailMode;
 	/** Provider carrier Tools required to preserve Code Mode under a strict child allowlist. */
 	codeModeProviderTools?: string[];
 	work: BackgroundRunnerWork;

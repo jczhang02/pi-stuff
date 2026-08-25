@@ -182,6 +182,10 @@ class TmuxPiSession {
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
+			PI_STUFF_PONYTAIL_MODE: undefined,
+			PONYTAIL_DEFAULT_MODE: "full",
+			PONYTAIL_HIDE_STATUS: "0",
+			PONYTAIL_QUIET_STARTUP: "1",
 			POWERLINE_NERD_FONTS: "1",
 			PI_STUFF_UI_PTY_BIN: options.piBinary,
 			PI_STUFF_UI_PTY_COLUMNS: String(columns),
@@ -1164,6 +1168,56 @@ async function verifyDiagnosticsUi(
 	);
 }
 
+async function verifyPonytailDialog(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+): Promise<void> {
+	let screen = await session.waitForStatusline("initial Ponytail mode");
+	if (!screen.includes("♞ full")) fail(`Ponytail full mode was absent from the shared Statusline\n${screen}`);
+
+	session.sendLiteral("/ponytail");
+	session.sendKey("Enter");
+	screen = await session.waitForDialogFrame("♞ Ponytail · full", 100);
+	if (hasStatusline(screen)) fail("Statusline remained visible while /ponytail owned the input region");
+	verifyNoFloatingFrame(screen, "/ponytail Command Dialog");
+	verifyFullWidthDivider(screen, 100, "/ponytail Command Dialog", "━");
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ponytail-open-100x32`, session);
+
+	session.sendKey("Enter");
+	await session.waitForText("Choose the current Session mode.");
+	session.sendKey("Down");
+	session.sendKey("Enter");
+	await session.waitForText("Session mode set to lite.");
+	session.sendKey("Escape");
+	screen = await session.waitForStatusline("closing /ponytail after a mode change");
+	if (!screen.includes("♞ lite")) fail(`Ponytail mode change did not update the shared Statusline\n${screen}`);
+
+	session.sendLiteral("/ponytail");
+	session.sendKey("Enter");
+	await session.waitForDialogFrame("♞ Ponytail · lite", 100);
+	session.sendKey("Enter");
+	await session.waitForText("Choose the current Session mode.");
+	session.sendKey("Escape");
+	await session.waitForText("Review complexity");
+	session.sendKey("Escape");
+	await session.waitForStatusline("closing /ponytail after nested Escape");
+
+	session.sendKey("C-u");
+	session.sendLiteral("/ponytail full");
+	session.sendKey("Escape");
+	await session.waitForStatusline("closing direct-command autocomplete");
+	session.sendKey("Enter");
+	screen = await session.waitForText("♞ full");
+	if (!screen.includes("♞ full")) fail(`direct Ponytail command did not restore full mode\n${screen}`);
+
+	const sessionFiles = (await readdir(paths.sessions)).filter((entry) => entry.endsWith(".jsonl"));
+	const ledgers = await Promise.all(sessionFiles.map((file) => readFile(join(paths.sessions, file), "utf8")));
+	if (!ledgers.some((ledger) => ledger.includes('"customType":"ponytail-mode"'))) {
+		fail("Ponytail mode changes were absent from Pi Session history");
+	}
+}
+
 async function verifyWideInteractions(
 	session: TmuxPiSession,
 	paths: CasePaths,
@@ -1175,6 +1229,7 @@ async function verifyWideInteractions(
 	await verifyDiagnosticsUi(session, paths, options, 100, 32);
 	await verifyCodexDialog(session, paths);
 	await verifySessionNamingDialog(session, paths, options);
+	await verifyPonytailDialog(session, paths, options);
 
 	let screen = await openUi(session);
 	screen = await session.waitForDialogFrame("Tool running timer", 100);
@@ -1212,16 +1267,16 @@ async function verifyWideInteractions(
 
 	session.sendKey("C-u");
 	session.sendLiteral("/u");
-	screen = await session.waitForText("Configure Pi Stuff UI");
-	if (hasStatusline(screen)) fail("Statusline remained visible while native autocomplete was open");
+	await session.waitForText("Configure Pi Stuff UI");
+	screen = await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing native autocomplete");
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
 
 	session.sendKey("C-u");
 	session.sendLiteral("prefix /hzh");
-	screen = await session.waitForText("Humanize Chinese fixture text");
-	if (hasStatusline(screen)) fail("Statusline remained visible while inline slash autocomplete was open");
+	await session.waitForText("Humanize Chinese fixture text");
+	screen = await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForText("prefix /hzh");
 	await session.waitForStatusline("closing inline slash autocomplete");
@@ -1235,8 +1290,9 @@ async function verifyWideInteractions(
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
-	await session.waitForText("~1 ?1");
+	await session.waitForText("Δ2");
 	screen = await session.waitForAbsence("Welcome back!");
+	if (!screen.includes("♞ full")) fail("settled Statusline lost Ponytail's mode authority");
 	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
 		if (screen.includes(capabilityStatus)) {
 			fail(`ordinary Statusline exposed capability-owned status: ${capabilityStatus}`);
