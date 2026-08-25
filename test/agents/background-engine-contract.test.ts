@@ -55,6 +55,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
 import { resolveBunRuntimeCommand } from "../../packages/pi-stuff/src/subagents/src/runs/shared/bun-runtime.js";
+import { CHILD_MODEL_CONTEXT_ENTRY_TYPE } from "../../packages/pi-stuff/src/subagents/src/runs/shared/child-protocol.js";
 import {
 	createNestedRoute,
 	writeNestedEvent,
@@ -1439,7 +1440,7 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		expect(fs.existsSync(routeRoot)).toBe(false);
 	});
 
-	test("tracks the active Provider context instead of cumulative child usage", async () => {
+	test("tracks active Provider context against the actual child Host model window", async () => {
 		const root = fixtureRoot();
 		const writer = path.join(root, "context-usage-writer.ts");
 		fs.writeFileSync(
@@ -1447,6 +1448,7 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 			[
 				"#!/usr/bin/env bun",
 				'const emit = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\\n");',
+				`emit({ type: "entry_appended", entry: { type: "custom", customType: ${JSON.stringify(CHILD_MODEL_CONTEXT_ENTRY_TYPE)}, data: { version: 1, provider: "provider", model: "context-model", contextWindow: 100000 } } });`,
 				'emit({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "sample" } }], stopReason: "toolUse", usage: { input: 19000, output: 1000, cacheRead: 0, cacheWrite: 0, totalTokens: 20000 } } });',
 				"await Bun.sleep(300);",
 				'emit({ type: "tool_result_end", message: { role: "toolResult", toolCallId: "call-1", toolName: "read", isError: false, content: [{ type: "text", text: "observed output" }] } });',
@@ -1494,13 +1496,13 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 
 		const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
 		const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
-		expect(status.steps[0].contextUsage).toEqual({ tokens: 25_000, contextWindow: 50_000 });
+		expect(status.steps[0].contextUsage).toEqual({ tokens: 25_000, contextWindow: 100_000 });
 		expect(result.results[0]).toMatchObject({
 			output: "CONTEXT_OK",
-			contextUsage: { tokens: 25_000, contextWindow: 50_000 },
+			contextUsage: { tokens: 25_000, contextWindow: 100_000 },
 		});
 		expect(projectForegroundCompletion(config, result).details.results[0]).toMatchObject({
-			contextUsage: { tokens: 25_000, contextWindow: 50_000 },
+			contextUsage: { tokens: 25_000, contextWindow: 100_000 },
 		});
 	}, 10_000);
 

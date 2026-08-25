@@ -361,6 +361,12 @@ describe("AgentRoster", () => {
 			},
 		} as Theme;
 		const current = new CurrentAgentsHarness([
+			row("low", "running", {
+				contextUsage: { tokens: 1_052, contextWindow: 272_000 },
+			}),
+			row("zero", "running", {
+				contextUsage: { tokens: 0, contextWindow: 272_000 },
+			}),
 			row("routine", "running", {
 				contextUsage: { tokens: 37_500, contextWindow: 100_000 },
 				elapsedMs: 5_000,
@@ -379,9 +385,13 @@ describe("AgentRoster", () => {
 		const tail = roster.createFooterTail(ui.tui, recordingTheme);
 
 		const wide = tail.render(100);
+		expect(lineFor(wide, "low")).toEndWith("<1% · running");
+		expect(lineFor(wide, "zero")).toEndWith("0% · running");
 		expect(lineFor(wide, "routine")).toEndWith("38% · 5s");
 		expect(lineFor(wide, "pressure")).toEndWith("75% · waiting");
 		expect(lineFor(wide, "critical")).toEndWith("95% · failed");
+		expect(colors).toContainEqual({ color: "muted", text: "<1%" });
+		expect(colors).toContainEqual({ color: "muted", text: "0%" });
 		expect(colors).toContainEqual({ color: "muted", text: "38%" });
 		expect(colors).toContainEqual({ color: "warning", text: "75%" });
 		expect(colors).toContainEqual({ color: "error", text: "95%" });

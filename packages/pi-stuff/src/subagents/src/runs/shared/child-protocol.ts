@@ -34,6 +34,14 @@ export type ChildProtocolMessage = (Message | PiCustomMessage) & {
 	};
 };
 
+export const CHILD_MODEL_CONTEXT_ENTRY_TYPE = "pi-stuff-agent-model-context";
+
+export interface ChildModelContext {
+	readonly provider: string;
+	readonly model: string;
+	readonly contextWindow: number;
+}
+
 const CHILD_PROTOCOL_EVENT_TYPES = new Set([
 	"session",
 	"agent_start",
@@ -74,6 +82,7 @@ export interface ChildProtocolEvent {
 	args?: JsonObject;
 	isError?: boolean;
 	willRetry?: JsonValue;
+	modelContext?: ChildModelContext;
 }
 
 export function childMessageProtocolError(value: JsonValue | undefined): string | undefined {
@@ -169,8 +178,36 @@ export function parseChildProtocolEvent(value: JsonValue): ParsedChildProtocolEv
 		const error = childMessageProtocolError(event.message);
 		if (error) return { error: `${event.type} ${error}` };
 	}
+	let modelContext: ChildModelContext | undefined;
+	if (event.type === "entry_appended" && isJsonObject(event.entry)) {
+		const entry = event.entry;
+		if (entry.customType === CHILD_MODEL_CONTEXT_ENTRY_TYPE) {
+			if (entry.type !== "custom") return { error: "entry_appended model context entry.type must be 'custom'" };
+			if (!isJsonObject(entry.data)) return { error: "entry_appended model context data must be an object" };
+			const data = entry.data;
+			if (data.version !== 1) return { error: "entry_appended model context data.version must be 1" };
+			if (!isRuntimeString(data.provider) || !data.provider.trim()) {
+				return { error: "entry_appended model context data.provider must be a non-empty string" };
+			}
+			if (!isRuntimeString(data.model) || !data.model.trim()) {
+				return { error: "entry_appended model context data.model must be a non-empty string" };
+			}
+			if (
+				!isRuntimeNumber(data.contextWindow) ||
+				!Number.isSafeInteger(data.contextWindow) ||
+				data.contextWindow <= 0
+			) {
+				return { error: "entry_appended model context data.contextWindow must be a positive safe integer" };
+			}
+			modelContext = {
+				provider: data.provider,
+				model: data.model,
+				contextWindow: data.contextWindow,
+			};
+		}
+	}
 	// SAFETY: supported event names are checked above, and final message events pass the complete message validator.
-	return { event: { ...event, type: event.type } as ChildProtocolEvent };
+	return { event: { ...event, type: event.type, modelContext } as ChildProtocolEvent };
 }
 
 export function formatProtocolOutputLimit(limit: ProtocolOutputLimit): string {

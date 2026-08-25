@@ -37,6 +37,7 @@ import {
 	writeSteerAckAt,
 	writeSteerRequestToDir,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
+import { CHILD_MODEL_CONTEXT_ENTRY_TYPE } from "../../packages/pi-stuff/src/subagents/src/runs/shared/child-protocol.js";
 import {
 	buildPiArgs,
 	PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV,
@@ -519,6 +520,61 @@ test("native parent and child communication tools use the shared Tool row", asyn
 	registerNativeSupervisorClient(child.api);
 	expectCompactPresentation(child.tools.get("contact_supervisor"));
 	expectCompactPresentation(child.tools.get("intercom"));
+});
+
+test("reports the actual child Host model context once per selected model", async () => {
+	const handlers = new Map<string, LifecycleHandler[]>();
+	const entries: Array<{ customType: string; data: unknown }> = [];
+	const api = createExtensionApi({
+		appendEntry: (customType, data) => {
+			entries.push({ customType, data });
+		},
+		getAllTools: () => [],
+		on: lifecycleHandlers(handlers),
+		registerTool: () => {},
+		sendMessage: () => {},
+	});
+	registerSubagentPromptRuntime(api);
+	const runBeforeAgentStart = async (contextWindow: number): Promise<void> => {
+		for (const handler of handlers.get("before_agent_start") ?? []) {
+			await handler(
+				{ systemPrompt: "child" },
+				{
+					model: {
+						provider: "child-only-provider",
+						id: "child-model",
+						contextWindow,
+						maxTokens: 4_000,
+					},
+				},
+			);
+		}
+	};
+
+	await runBeforeAgentStart(200_000);
+	await runBeforeAgentStart(200_000);
+	await runBeforeAgentStart(300_000);
+
+	expect(entries).toEqual([
+		{
+			customType: CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+			data: {
+				version: 1,
+				provider: "child-only-provider",
+				model: "child-model",
+				contextWindow: 200_000,
+			},
+		},
+		{
+			customType: CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+			data: {
+				version: 1,
+				provider: "child-only-provider",
+				model: "child-model",
+				contextWindow: 300_000,
+			},
+		},
+	]);
 });
 
 test("waits until before_agent_start before installing intercom fallback so a later extension can register it", async () => {

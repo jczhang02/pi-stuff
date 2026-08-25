@@ -504,7 +504,7 @@ function styledContextUsage(row: AgentRow, theme: Theme): string {
 	const percent = (usage.tokens / usage.contextWindow) * 100;
 	if (!Number.isFinite(percent)) return "";
 	const rounded = Math.round(percent);
-	const label = rounded > 999 ? ">999%" : `${String(Math.max(0, rounded))}%`;
+	const label = percent > 0 && percent < 1 ? "<1%" : rounded > 999 ? ">999%" : `${String(Math.max(0, rounded))}%`;
 	const color = percent > CONTEXT_ERROR_PERCENT ? "error" : percent > CONTEXT_WARNING_PERCENT ? "warning" : "muted";
 	return theme.fg(color, label);
 }

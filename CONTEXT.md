@@ -63,10 +63,11 @@ missing historical definitions and presentation failures instead use generic row
 _Avoid_: Envelope chrome, raw Tool result, duplicate error row
 
 **Agent Context Usage**:
-The current Provider payload token estimate for one child Agent, measured against that Agent's selected model Context
-window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing messages add bounded
-Host-equivalent estimates. It is not cumulative run usage and is unavailable while compaction or model fallback makes
-the current payload uncertain.
+The current Provider payload token estimate for one child Agent, measured against the selected child Host model's
+reported Context window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing
+messages add bounded Host-equivalent estimates. Parent-Host model metadata is only a launch-time fallback until the
+child Host reports its actual selection. It is not cumulative run usage and is unavailable while compaction or model
+fallback makes the current payload uncertain.
 _Avoid_: Agent tokens, total Agent usage, Context budget
 
 **Context Activity**:

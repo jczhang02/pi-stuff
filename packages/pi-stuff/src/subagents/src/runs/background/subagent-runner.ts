@@ -1669,7 +1669,7 @@ function runChildProcess(input: {
 				const spawnSpec = getPiSpawnCommand(built.args, spawnDeps);
 				const usage = emptyUsage();
 				const messages: ChildMessage[] = [];
-				const contextWindow = resolveTaskContextWindow(input.task, input.model);
+				let contextWindow = resolveTaskContextWindow(input.task, input.model);
 				let contextTokens: number | undefined;
 				const updateContextUsage = (message: ChildMessage): void => {
 					if (!contextWindow) return;
@@ -2084,6 +2084,13 @@ function runChildProcess(input: {
 					}
 					appendRawEvent(line, event);
 					input.transcript.writeChildEvent(event);
+					if (event.modelContext) {
+						contextWindow = event.modelContext.contextWindow;
+						input.statusStep.contextUsage =
+							contextTokens === undefined ? undefined : { tokens: contextTokens, contextWindow };
+						persistStreamingStatus();
+						return;
+					}
 					if (event.type === "compaction_start") {
 						contextTokens = undefined;
 						input.statusStep.contextUsage = undefined;
