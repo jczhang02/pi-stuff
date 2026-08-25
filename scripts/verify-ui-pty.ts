@@ -930,9 +930,16 @@ async function verifySessionNamingDialog(
 ): Promise<void> {
 	const settingsPath = join(paths.config, "pi-stuff.json");
 	session.sendKey("C-u");
-	session.sendLiteral("/autoname settings");
+	session.sendLiteral("/autoname s");
+	let screen = await session.waitForText("settings");
+	if (!screen.includes("/autoname s")) fail("/autoname argument completion did not preserve the editor prefix");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /autoname argument completion was open");
 	session.sendKey("Enter");
-	let screen = await session.waitForText("Keep manually assigned names");
+	screen = await session.waitForStatusline("accepting /autoname argument completion");
+	if (!screen.includes("/autoname settings")) fail("/autoname argument completion did not accept settings");
+	session.sendKey("Enter");
+	screen = await session.waitForText("Keep manually assigned names");
+
 	verifySettingValue(screen, "Automatic naming", "on");
 	verifySettingValue(screen, "Rename cooldown", "10 min");
 	verifySettingValue(screen, "Keep manually assigned names", "off");
@@ -1495,7 +1502,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
 						"native /ui settings, Notification exclusion, enum changes, and restart persistence",
-						"responsive /autoname settings, immediate writes, and restart persistence",
+						"native /autoname settings completion, responsive controls, immediate writes, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);
 				} else {

@@ -119,12 +119,17 @@ function hostHarness() {
 		if (!settledEvent) throw new Error("Session Naming did not subscribe to the shared settled event");
 		pi.events.emit(settledEvent, { ctx: extensionContext });
 	};
+	const getAutonameCompletions = (prefix: string) => {
+		const command = commands.get("autoname");
+		if (!command) throw new Error("Session Naming did not register /autoname");
+		return command.getArgumentCompletions?.(prefix) ?? null;
+	};
 	const runAutoname = async (args = ""): Promise<void> => {
 		const command = commands.get("autoname");
 		if (!command) throw new Error("Session Naming did not register /autoname");
 		await command.handler(args, extensionContext);
 	};
-	return { emitLifecycle, emitSettled, name: () => name, notices, pi, runAutoname };
+	return { emitLifecycle, emitSettled, getAutonameCompletions, name: () => name, notices, pi, runAutoname };
 }
 
 async function waitForName(read: () => string | undefined): Promise<string | undefined> {
@@ -147,6 +152,19 @@ describe("Session Naming Extension lifecycle", () => {
 
 		host.emitSettled();
 		expect(await waitForName(host.name)).toBe("automatic Session naming");
+	});
+
+	test("offers only the settings argument completion", () => {
+		const host = hostHarness();
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
+
+		for (const prefix of ["", "s", "SET"]) {
+			expect(host.getAutonameCompletions(prefix)).toEqual([{ label: "settings", value: "settings" }]);
+		}
+		expect(host.getAutonameCompletions("settings")).toBeNull();
+		expect(host.getAutonameCompletions("unknown")).toBeNull();
+		expect(host.getAutonameCompletions("settings ")).toBeNull();
+		expect(host.getAutonameCompletions("settings extra")).toBeNull();
 	});
 
 	test("applies automatic naming changes immediately while keeping explicit /autoname available", async () => {

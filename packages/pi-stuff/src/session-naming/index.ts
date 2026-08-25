@@ -62,6 +62,13 @@ export function installSessionNamingCapability(
 
 	pi.registerCommand("autoname", {
 		description: "Regenerate or configure the current Session name",
+		getArgumentCompletions: (prefix) => {
+			const normalized = prefix.trimStart().toLowerCase();
+			// Pi requeries after applying a completion; returning the exact item would reopen the list and trap submit.
+			if (normalized === "settings") return null;
+			if (/\s/u.test(normalized) || !"settings".startsWith(normalized)) return null;
+			return [{ label: "settings", value: "settings" }];
+		},
 		handler: async (args, ctx) => {
 			const argument = args.trim().toLowerCase();
 			if (argument === "settings") {
