@@ -1910,6 +1910,36 @@ test("an active Suite Tool needs no per-Tool caller policy to run through Code M
 	expect(result.isError).toBe(false);
 });
 
+test("nested invocation preserves an explicit Tool error result", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	registerSuiteOwnedTool(
+		registrations.api,
+		{
+			description: "explicit error fixture",
+			execute: async () => ({
+				content: [{ type: "text", text: "nested failure" }],
+				details: {},
+				isError: true,
+			}),
+			label: "Explicit error",
+			name: "explicit_error",
+			parameters: Params,
+		},
+		presentation("run-command"),
+	);
+	const outcome = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+		context: { cwd: "/project" } as never,
+		input: { value: "value" },
+		name: "explicit_error",
+		toolCallId: "nested-explicit-error",
+	});
+
+	expect(outcome.isError).toBe(true);
+	expect(outcome.result).toMatchObject({ content: [{ text: "nested failure", type: "text" }], isError: true });
+});
+
 test("Code Mode compensation runs only an explicitly declared inverse operation", async () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);

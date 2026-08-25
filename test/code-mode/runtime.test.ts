@@ -175,6 +175,35 @@ test("the Connector exposes every active Suite Tool without a per-Tool caller co
 	});
 });
 
+test("the Connector rejects explicit nested Tool errors", async () => {
+	const base = registryFixture();
+	const registry: SuiteToolDefinitionRegistry = {
+		...base,
+		invoke: async () => ({
+			isError: true,
+			result: {
+				content: [{ type: "text", text: "nested failure" }],
+				details: {},
+				isError: true,
+			},
+		}),
+	};
+	const tool = new SuiteCodeModeConnector(registry).tools().find(({ name }) => name === "read");
+	if (!tool) throw new Error("missing read Tool");
+	await expect(
+		tool.invoke(
+			{ path: "missing.txt" },
+			{
+				cwd: "/project",
+				// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+				extensionContext: { cwd: "/project" } as ExtensionContext,
+				toolCallId: "nested-failure",
+			},
+			new AbortController().signal,
+		),
+	).rejects.toThrow("nested failure");
+});
+
 test("the Connector rejects malformed supported images returned by nested Tools", async () => {
 	const base = registryFixture();
 	const registry: SuiteToolDefinitionRegistry = {

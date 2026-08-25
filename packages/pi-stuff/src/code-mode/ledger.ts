@@ -475,11 +475,11 @@ function effectiveEvents(context: ExtensionContext): LedgerEvent[] {
 
 function snapshot(context: ExtensionContext): LedgerSnapshot {
 	const state: LedgerSnapshot = { executions: new Map(), snippets: new Map() };
-	for (const event of effectiveEvents(context)) applyEvent(state, event);
+	for (const event of effectiveEvents(context)) applyEvent(state, event, true);
 	return state;
 }
 
-function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
+function applyEvent(state: LedgerSnapshot, event: LedgerEvent, historical = false): void {
 	if (event.kind === "execution-started") {
 		const execution: ExecutionState = {
 			attempt: 0,
@@ -558,6 +558,9 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 		if (isRuntimeObject(result) && result !== null && "content" in result && Array.isArray(result["content"])) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
+			if (historical && call.status === "success" && "isError" in call.result && call.result.isError === true) {
+				call.status = "error";
+			}
 		}
 	}
 }

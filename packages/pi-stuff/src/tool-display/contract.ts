@@ -2712,7 +2712,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			content: result.content ?? [],
 			details: result.details,
 			input: prepared,
-			isError,
+			isError: isError || ("isError" in result && result.isError === true),
 			toolCallId: invocation.toolCallId,
 			toolName: invocation.name,
 			type: "tool_result",

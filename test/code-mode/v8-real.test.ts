@@ -232,6 +232,83 @@ realTest("the certified V8 host settles a rejected delegated Tool call", async (
 	}
 });
 
+realTest("explicit nested Tool errors stop uncaught code and remain catchable", async () => {
+	const executor = new V8CodeModeExecutor();
+	let followUps = 0;
+	const definitions = new Map<string, ToolDefinition>([
+		[
+			"fail",
+			{
+				description: "Return one explicit Tool error",
+				execute: async () => ({ content: [], details: {} }),
+				label: "Fail",
+				name: "fail",
+				parameters: Type.Object({}),
+			},
+		],
+		[
+			"follow_up",
+			{
+				description: "Record one follow-up effect",
+				execute: async () => ({ content: [], details: {} }),
+				label: "Follow up",
+				name: "follow_up",
+				parameters: Type.Object({}),
+			},
+		],
+	]);
+	const registry: SuiteToolDefinitionRegistry = {
+		catalog: () => [...definitions.values()].map((definition) => ({ definition })),
+		compensate: async () => false,
+		get: (name) => definitions.get(name),
+		invoke: async ({ name }) => {
+			if (name === "fail") {
+				return {
+					isError: true,
+					result: {
+						content: [{ type: "text", text: "nested failure" }],
+						details: {},
+						isError: true,
+					},
+				};
+			}
+			followUps += 1;
+			return {
+				isError: false,
+				result: { content: [{ type: "text", text: "followed up" }], details: {} },
+			};
+		},
+		isActive: (name) => definitions.has(name),
+		list: () => [...definitions.values()],
+	};
+	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(registry), executor);
+	try {
+		const uncaught = await runtime.execute(
+			"outer-uncaught-error",
+			"await tools.fail({}); await tools.follow_up({});",
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+			{ cwd: process.cwd() } as ExtensionContext,
+		);
+		expect(uncaught.details).toMatchObject({ status: "error" });
+		expect(followUps).toBe(0);
+
+		const caught = await runtime.execute(
+			"outer-caught-error",
+			'try { await tools.fail({}); } catch { text("caught"); } text(await tools.follow_up({}));',
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+			{ cwd: process.cwd() } as ExtensionContext,
+		);
+		expect(caught.details).toMatchObject({ status: "success" });
+		expect(caught.content).toEqual([
+			{ type: "text", text: "caught" },
+			{ type: "text", text: "followed up" },
+		]);
+		expect(followUps).toBe(1);
+	} finally {
+		await runtime.shutdown();
+	}
+});
+
 realTest("the certified V8 host runs durable steps and saved snippets with binary and bigint values", async () => {
 	const executor = new V8CodeModeExecutor();
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
