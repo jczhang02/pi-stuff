@@ -141,7 +141,7 @@ describe("Ponytail instructions", () => {
 	});
 });
 
-test("retains byte-identical upstream Skill and license resources", () => {
+test("retains the reviewed upstream resources with only the explicit-invocation adaptation", () => {
 	const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../packages/pi-stuff/src/ponytail");
 	const expected = {
 		"LICENSE.upstream": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
@@ -153,10 +153,11 @@ test("retains byte-identical upstream Skill and license resources", () => {
 		"skills/ponytail/SKILL.md": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
 	} satisfies Record<string, string>;
 	for (const [relative, hash] of Object.entries(expected)) {
-		expect(
-			createHash("sha256")
-				.update(fs.readFileSync(path.join(root, relative)))
-				.digest("hex"),
-		).toBe(hash);
+		const file = fs.readFileSync(path.join(root, relative), "utf8");
+		const upstream = relative.endsWith("SKILL.md") ? file.replace("disable-model-invocation: true\n", "") : file;
+		if (relative.endsWith("SKILL.md")) {
+			expect(file.match(/^disable-model-invocation: true$/gmu)).toHaveLength(1);
+		}
+		expect(createHash("sha256").update(upstream).digest("hex")).toBe(hash);
 	}
 });

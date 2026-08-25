@@ -77,7 +77,7 @@ class PonytailRuntime {
 		this.pi = pi;
 		this.registry = registry;
 		this.config = new PonytailConfigStore(getAgentDir());
-		this.prompt = new PonytailPromptRenderer(pi);
+		this.prompt = new PonytailPromptRenderer();
 		this.settings = this.config.read();
 		this.releasePrompt = registerContextPromptContributor(pi, {
 			id: "ponytail",

@@ -8,7 +8,9 @@
 - Add a feature-complete internal fork of `@dietrichgebert/ponytail@4.9.0`: four persistent Session modes, six packaged
   Skills, natural-language deactivation, child-Agent mode snapshots, Context-managed prompt projection, merged settings,
   a shared-Statusline `♞` mode segment, and the `/ponytail` control dialog. Preserve byte-identical MIT upstream
-  resources and provenance while removing the separate status/activity and configuration ownership. See ADR 0021.
+  resources and provenance while removing the separate status/activity and configuration ownership. Make `off` a
+  hard model boundary and replace the repeated full Skill projection with an active-mode compact policy and catalog.
+  See ADR 0021.
 - Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
   at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while
   preserving the Suite-owned `/ctx` surface and native fail-open behavior.

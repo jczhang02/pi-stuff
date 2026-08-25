@@ -22,8 +22,10 @@ provenance would also fail its MIT notice obligation.
 
 Pi Stuff carries a manually reviewed feature-complete fork of Ponytail 4.9.0 as
 the internal `ponytail` Capability Module. The upstream package is not a runtime
-dependency. Canonical Skill and license resources remain byte-identical and are
-covered by a committed hash manifest, third-party notice, and baseline record.
+dependency. Canonical Skill bodies, frontmatter, and license resources retain the reviewed upstream bytes except for Pi's
+`disable-model-invocation: true` field on each Skill. The field keeps native discovery explicit-only so Ponytail can
+make model visibility follow the current Session mode. A committed hash manifest covers the unadapted upstream
+baseline, and tests prove the field is the only resource delta.
 Pi Stuff-owned adapters may change implementation defects without changing the
 public behavior: `review` is a Skill rather than a runtime mode, reload and
 resume registration is idempotent, invalid merged configuration is preserved,
@@ -34,11 +36,11 @@ entries. Context Management owns ordered prompt projection and Provider-request
 fallback. Conversation UI owns the Command Dialog and shared Statusline
 rendering. Agents copy the effective parent mode into each child launch.
 
-Prompt order is Host/base context, Magic Context contract, Code Mode's restored
-Ponytail Skill catalog when top-level `read` is absent, then current-mode
-Ponytail instructions. Context wraps the contribution in stable markers and
-reconciles it on both `before_agent_start` and supported Provider payloads, so a
-request receives it at most once.
+Prompt order is Host/base context, Magic Context contract, the active-mode compact Ponytail Skill catalog, then
+compact current-mode instructions. Native Skill discovery keeps all six commands available but model-hidden; Ponytail
+projects concise descriptions for the Host-filtered Skills only in `lite`, `full`, or `ultra`. `off` contributes neither
+catalog nor instructions. Context wraps the contribution in stable markers and reconciles it on both
+`before_agent_start` and supported Provider payloads, so a request receives it at most once.
 
 Mode persistence keeps the upstream-compatible custom entry
 `ponytail-mode` / `{ mode }`. Valid values are `off`, `lite`, `full`, and
@@ -58,8 +60,9 @@ remains the single activity authority.
 
 ## Consequences
 
-- Ponytail retains its standing prompt and model-visible Skill behavior; this is
-  an intentional context cost rather than a reduced derivative.
+- Ponytail retains the complete upstream Skill content for explicit invocation while its standing projection is a
+  compact behavioral policy. Active modes keep all six Skills model-visible through Ponytail's catalog; `off` is a
+  zero-contribution hard boundary.
 - Context Management now exposes a generic ordered prompt-contribution seam and
   supports known Anthropic, OpenAI, Google, Bedrock, and Mistral payload shapes.
   Unknown payload shapes fail open with a Diagnostic Record.

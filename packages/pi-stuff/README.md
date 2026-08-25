@@ -45,7 +45,8 @@ Magic Context's own global UI remains suppressed.
 Use `/ponytail` to open the mode and configuration Dialog. Direct forms include
 `/ponytail lite|full|ultra|off`, `/ponytail default <mode>`, `/ponytail status show|hide`, and
 `/ponytail startup show|quiet`. The packaged `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`,
-`/ponytail-gain`, and `/ponytail-help` aliases retain upstream Skill behavior.
+`/ponytail-gain`, and `/ponytail-help` aliases retain upstream Skill behavior. `off` is a hard model boundary: it
+removes both Ponytail instructions and model-visible Ponytail Skills while keeping explicit Skill commands available.
 
 ## Storage
 

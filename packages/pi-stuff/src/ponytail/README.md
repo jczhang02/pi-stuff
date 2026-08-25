@@ -19,21 +19,19 @@ configured default. `stop ponytail` and `normal mode` deactivate Ponytail only
 when they are standalone direct user inputs.
 
 Context Management projects Ponytail after the Magic Context contract. Stable
-markers make the contribution idempotent on every Provider activation. When
-Code Mode hides top-level `read`, Ponytail restores the Host-visible catalog for
-all six packaged Skills before the active-mode instructions; ordinary Pi uses
-its native Skill catalog. Mode instructions are loaded once from the canonical
-packaged `skills/ponytail/SKILL.md` and filtered with the upstream algorithm.
+markers make the contribution idempotent on every Provider activation. All six packaged Skills stay available as explicit commands but opt out of the Host's standing catalog. In `lite`,
+`full`, and `ultra`, Ponytail projects concise model-visible descriptions before compact mode instructions; in `off`,
+it contributes neither catalog nor instructions. The full reviewed upstream rules remain available through
+`/skill:ponytail`.
 
 Delegated Agents receive the parent's effective mode as a launch-time snapshot,
 including explicit `off`. The snapshot is carried only in the child process
 environment and does not mutate global settings.
 
-Ponytail has its own prompt budget rather than increasing Context Management's
-budget. The pinned `full` instructions measure 5,229 characters / 1,264 o200k
-tokens; Code Mode's restored six-Skill catalog raises the contribution to 9,767
-characters / 2,437 o200k tokens. `test/ponytail/prompt-budget.test.ts` bounds
-both the instructions and catalog delta.
+Ponytail has its own prompt budget rather than increasing Context Management's budget. `off` contributes zero
+characters and tokens. The compact active-mode policy plus six-Skill catalog measures 795 o200k tokens in `full`
+(`lite`: 796; `ultra`: 802), down from the fork baseline's 2,437-token combined contribution.
+`test/ponytail/prompt-budget.test.ts` bounds the policy and catalog independently.
 
 ## Commands and UI
 

@@ -74,7 +74,9 @@ _Avoid_: Prompt injection, appended system prompt, context patch
 
 **Ponytail Mode**:
 The Session-selected `off`, `lite`, `full`, or `ultra` implementation-discipline level. It persists in a model-invisible
-Session entry and is snapshotted into delegated Agents; `review` is a Skill, not a Ponytail Mode.
+Session entry and is snapshotted into delegated Agents; `review` is a Skill, not a Ponytail Mode. `off` is a hard model
+boundary: Ponytail contributes neither standing instructions nor a model-visible Skill catalog, while explicit Skill
+commands remain available.
 _Avoid_: Review mode, Agent mode, global mode
 
 **Fenced Visualization Projection**:
