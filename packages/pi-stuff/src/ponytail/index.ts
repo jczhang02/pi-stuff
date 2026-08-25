@@ -24,6 +24,7 @@ import {
 	isPonytailDeactivationCommand,
 	normalizePonytailMode,
 	PONYTAIL_DEFAULT_MODE,
+	PONYTAIL_ICON,
 	PONYTAIL_MODES,
 	PONYTAIL_SESSION_ENTRY_TYPE,
 	PONYTAIL_SPECIALIZED_SKILLS,
@@ -157,7 +158,7 @@ class PonytailRuntime {
 	private syncStatus(ctx: ExtensionContext): void {
 		ctx.ui.setStatus(
 			PONYTAIL_STATUS_KEY,
-			this.settings.hideStatus || this.mode === "off" ? undefined : `♞ ${this.mode}`,
+			this.settings.hideStatus || this.mode === "off" ? undefined : `${PONYTAIL_ICON} ${this.mode}`,
 		);
 	}
 

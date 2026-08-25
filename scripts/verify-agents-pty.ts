@@ -11,6 +11,7 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-pty-provider.ts");
 const runner = join(root, "test/fixtures/agents-pty-runner.sh");
+const NERD_PROMPT_MARKER = "\uF460";
 
 export interface AgentsPtyVerificationOptions {
 	readonly artifactDirectory?: string;
@@ -408,7 +409,6 @@ class TmuxAgentsSession {
 			PI_STUFF_AGENTS_PTY_ROWS: String(options.rows),
 			PI_STUFF_AGENTS_PTY_SESSIONS: paths.sessions,
 			PI_STUFF_AGENTS_PTY_SESSION_ID: `fleetview-${String(options.columns)}x${String(options.rows)}`,
-			POWERLINE_NERD_FONTS: "1",
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 			TMPDIR: paths.runtime,
@@ -558,7 +558,7 @@ function fleetviewLineIndices(screen: string, help: string | undefined) {
 		agent: lines.findIndex((line) => /^[●○] general-purpose(?:\s|$)/u.test(line)),
 		help: help === undefined ? -1 : lines.indexOf(help),
 		main: lines.findIndex((line) => /^[●○] main$/u.test(line)),
-		prompt: lines.findIndex((line) => line.startsWith("› ")),
+		prompt: lines.findIndex((line) => line.startsWith(`${NERD_PROMPT_MARKER} `)),
 		status,
 	};
 }

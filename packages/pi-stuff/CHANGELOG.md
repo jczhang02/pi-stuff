@@ -5,9 +5,12 @@
 
 ## Unreleased
 
+- Standardize both shared Statusline rows on one Nerd Font-only icon grammar, including Git, Goal, Prompt, and Ponytail
+  state markers. Remove terminal icon detection, Unicode/ASCII fallbacks, and the `/ui` Statusline icon setting while
+  migrating schema-v2 UI settings in memory without startup writes.
 - Add a feature-complete internal fork of `@dietrichgebert/ponytail@4.9.0`: four persistent Session modes, six packaged
   Skills, natural-language deactivation, child-Agent mode snapshots, Context-managed prompt projection, merged settings,
-  a shared-Statusline `♞` mode segment, and the `/ponytail` control dialog. Preserve the reviewed MIT upstream Skill
+  a shared-Statusline `󱖿` mode segment, and the `/ponytail` control dialog. Preserve the reviewed MIT upstream Skill
   bodies and provenance with one explicit-invocation frontmatter adaptation while removing separate status/activity
   and configuration ownership. Make `off` a hard model boundary and replace the repeated full Skill projection with
   an active-mode compact policy and catalog. Add dedicated real-Pi PTY certification for the Dialog, low viewport,

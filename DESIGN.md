@@ -153,10 +153,15 @@ Tab and Shift+Tab switch the focused pane; Enter moves from the list to detail, 
 Todo, Agent roster, Statusline, Conversation Transcript, and Command Dialogs have different jobs. A state has one
 visible authority; do not repeat it in a permanent dashboard. The shared Statusline's conditional Goal segment is the
 current Goal's sole compact persistent authority, while Goal lifecycle notices remain chronological Transcript events
-and Command Dialogs provide inspection and control. Ponytail follows the same boundary: `♞ <mode>` is its only
+and Command Dialogs provide inspection and control. Ponytail follows the same boundary: `󱖿 <mode>` is its only
 persistent mode authority, the Working Row remains the only Agent-activity authority, and `/ponytail` provides control.
 Its Dialog temporarily suppresses the composed Footer, preserves the editor draft, and keeps environment overrides
 visible without presenting them as writable settings.
+
+The Statusline is a Nerd Font-only surface. Every semantic icon and state marker in either Statusline row must use a
+Nerd Font glyph; do not add Unicode/ASCII fallbacks, terminal detection, or an icon-mode setting. Separators and
+truncation marks such as `·` and `…` remain punctuation rather than semantic icons. Reuse a Capability identity icon,
+such as Ponytail's `󱖿`, in its owning Dialog instead of introducing a second visual identity.
 A Dialog redesign does not silently change transcript markers or Tool rendering.
 
 A valid `chart` or `tree` fence may become a Fenced Visualization Projection inside the same Transcript message. Keep

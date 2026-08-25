@@ -37,14 +37,14 @@ const UI_LABELS = [
 	"Statusline",
 	"Statusline density",
 	"Latest prompt",
-	"Statusline icons",
 	"Welcome header",
 	"Input highlighting",
 	"Inline slash autocomplete",
 	"Tool running timer",
 ] as const;
 const NERD_MODEL_MARKER = "\u{F06A9}";
-const ASCII_MODEL_MARKER = "◆";
+const NERD_PONYTAIL_MARKER = "\u{F15BF}";
+const NERD_PROMPT_MARKER = "\uF460";
 const NERD_THINKING_MARKER = "\uF441 med";
 const LONG_PROMPT_PREFIX = "中文_LONG_CJK_PROMPT_开始";
 const LONG_PROMPT_TOKEN = "长提示";
@@ -186,7 +186,6 @@ class TmuxPiSession {
 			PONYTAIL_DEFAULT_MODE: "full",
 			PONYTAIL_HIDE_STATUS: "0",
 			PONYTAIL_QUIET_STARTUP: "1",
-			POWERLINE_NERD_FONTS: "1",
 			PI_STUFF_UI_PTY_BIN: options.piBinary,
 			PI_STUFF_UI_PTY_COLUMNS: String(columns),
 			PI_STUFF_UI_PTY_COLORTERM: options.colorMode === "256" ? "ansi" : "truecolor",
@@ -569,9 +568,7 @@ function rowsBelowEditorDivider(screen: string): readonly string[] {
 }
 
 function statuslineRow(screen: string): string | undefined {
-	return rowsBelowEditorDivider(screen).find(
-		(line) => line.startsWith(`${NERD_MODEL_MARKER} `) || line.startsWith(`${ASCII_MODEL_MARKER} `),
-	);
+	return rowsBelowEditorDivider(screen).find((line) => line.startsWith(`${NERD_MODEL_MARKER} `));
 }
 
 function hasStatusline(screen: string): boolean {
@@ -1174,11 +1171,13 @@ async function verifyPonytailDialog(
 	options: UiPtyVerificationOptions,
 ): Promise<void> {
 	let screen = await session.waitForStatusline("initial Ponytail mode");
-	if (!screen.includes("♞ full")) fail(`Ponytail full mode was absent from the shared Statusline\n${screen}`);
+	if (!screen.includes(`${NERD_PONYTAIL_MARKER} full`)) {
+		fail(`Ponytail full mode was absent from the shared Statusline\n${screen}`);
+	}
 
 	session.sendLiteral("/ponytail");
 	session.sendKey("Enter");
-	screen = await session.waitForDialogFrame("♞ Ponytail · full", 100);
+	screen = await session.waitForDialogFrame(`${NERD_PONYTAIL_MARKER} Ponytail · full`, 100);
 	if (hasStatusline(screen)) fail("Statusline remained visible while /ponytail owned the input region");
 	verifyNoFloatingFrame(screen, "/ponytail Command Dialog");
 	verifyFullWidthDivider(screen, 100, "/ponytail Command Dialog", "━");
@@ -1191,11 +1190,13 @@ async function verifyPonytailDialog(
 	await session.waitForText("Session mode set to lite.");
 	session.sendKey("Escape");
 	screen = await session.waitForStatusline("closing /ponytail after a mode change");
-	if (!screen.includes("♞ lite")) fail(`Ponytail mode change did not update the shared Statusline\n${screen}`);
+	if (!screen.includes(`${NERD_PONYTAIL_MARKER} lite`)) {
+		fail(`Ponytail mode change did not update the shared Statusline\n${screen}`);
+	}
 
 	session.sendLiteral("/ponytail");
 	session.sendKey("Enter");
-	await session.waitForDialogFrame("♞ Ponytail · lite", 100);
+	await session.waitForDialogFrame(`${NERD_PONYTAIL_MARKER} Ponytail · lite`, 100);
 	session.sendKey("Enter");
 	await session.waitForText("Choose the current Session mode.");
 	session.sendKey("Escape");
@@ -1208,8 +1209,10 @@ async function verifyPonytailDialog(
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing direct-command autocomplete");
 	session.sendKey("Enter");
-	screen = await session.waitForText("♞ full");
-	if (!screen.includes("♞ full")) fail(`direct Ponytail command did not restore full mode\n${screen}`);
+	screen = await session.waitForText(`${NERD_PONYTAIL_MARKER} full`);
+	if (!screen.includes(`${NERD_PONYTAIL_MARKER} full`)) {
+		fail(`direct Ponytail command did not restore full mode\n${screen}`);
+	}
 
 	const sessionFiles = (await readdir(paths.sessions)).filter((entry) => entry.endsWith(".jsonl"));
 	const ledgers = await Promise.all(sessionFiles.map((file) => readFile(join(paths.sessions, file), "utf8")));
@@ -1290,9 +1293,10 @@ async function verifyWideInteractions(
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
-	await session.waitForText("Δ2");
+	await session.waitForText("\uF4591");
+	await session.waitForText("\uF4201");
 	screen = await session.waitForAbsence("Welcome back!");
-	if (!screen.includes("♞ full")) fail("settled Statusline lost Ponytail's mode authority");
+	if (!screen.includes(`${NERD_PONYTAIL_MARKER} full`)) fail("settled Statusline lost Ponytail's mode authority");
 	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
 		if (screen.includes(capabilityStatus)) {
 			fail(`ordinary Statusline exposed capability-owned status: ${capabilityStatus}`);
@@ -1302,7 +1306,7 @@ async function verifyWideInteractions(
 	if (promptLines.length !== 1) {
 		fail(`long prompt occupied ${String(promptLines.length)} Statusline rows instead of exactly one\n${screen}`);
 	}
-	if (!promptLines[0]?.startsWith("› 中文")) {
+	if (!promptLines[0]?.startsWith(`${NERD_PROMPT_MARKER} 中文`)) {
 		fail(`wide-character Prompt text did not align with the model text through a stable icon gap\n${screen}`);
 	}
 	if (!promptLines[0].includes(LONG_PROMPT_PREFIX) || promptLines[0].includes(LONG_PROMPT_SUFFIX)) {
@@ -1377,20 +1381,6 @@ async function verifyWideInteractions(
 	verifySettingValue(screen, "Latest prompt", false);
 	session.sendKey("Escape");
 	await session.waitForStatusline();
-
-	screen = await openFilteredUi(session, "icons", "Statusline icons");
-	verifySettingValue(screen, "Statusline icons", "auto");
-	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "ui", "statuslineIcons", "nerd");
-	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "ui", "statuslineIcons", "ascii");
-	screen = await session.waitForText("ascii");
-	verifySettingValue(screen, "Statusline icons", "ascii");
-	session.sendKey("Escape");
-	screen = await session.waitForStatusline();
-	if (!statuslineRow(screen)?.startsWith(`${ASCII_MODEL_MARKER} `)) {
-		fail(`Statusline icon preference did not switch the real Footer to ASCII\n${screen}`);
-	}
 
 	screen = await openFilteredUi(session, "inline slash", "Inline slash autocomplete");
 	verifySettingValue(screen, "Inline slash autocomplete", true);
@@ -1474,7 +1464,6 @@ async function verifyWideInteractions(
 		verifySettingValue(screen, "Statusline", false);
 		verifySettingValue(screen, "Statusline density", "full");
 		verifySettingValue(screen, "Latest prompt", false);
-		verifySettingValue(screen, "Statusline icons", "ascii");
 		verifySettingValue(screen, "Welcome header", false);
 		verifySettingValue(screen, "Input highlighting", true);
 		verifySettingValue(screen, "Inline slash autocomplete", false);

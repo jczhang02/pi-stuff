@@ -167,7 +167,8 @@ Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
 `/ponytail` opens the full-width control dialog for the current Session mode, default mode, Statusline visibility,
 startup notification, and specialized Skills. Direct commands remain available, including `/ponytail full`,
 `/ponytail default lite`, and the upstream-compatible `/ponytail-review` through `/ponytail-help` aliases. The shared
-Statusline shows the selected mode as `♞ <mode>`; Agent activity remains in the Working Row. `off` contributes no
+Statusline shows the selected mode as the Nerd Font `󱖿 <mode>` identity; Agent activity remains in the Working Row.
+`off` contributes no
 Ponytail instructions or model-visible Ponytail Skills, while explicit Skill commands remain available.
 
 ## Themes
