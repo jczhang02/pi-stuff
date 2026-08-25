@@ -1,4 +1,5 @@
 import * as acorn from "acorn";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 
 /**
  * Strip markdown code fences that LLMs commonly wrap code in.
@@ -58,7 +59,7 @@ export function isControlOnlyProgram(code: string): boolean {
 			second.expression.callee.name === "text" &&
 			second.expression.arguments.length === 1 &&
 			second.expression.arguments[0]?.type === "Literal" &&
-			typeof second.expression.arguments[0].value === "string"
+			isRuntimeString(second.expression.arguments[0].value)
 		);
 	} catch {
 		return false;

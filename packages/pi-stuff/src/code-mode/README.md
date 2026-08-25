@@ -62,7 +62,8 @@ and ordinary `/tools`. The strict live/replay classifier accepts only one zero-a
 expression, optionally followed by one literal `text(...)` acknowledgement; ambiguous source stays visible. Raw
 Session JSONL and ledger records remain unchanged. Other executions with no nested operation, or an outer error not
 represented by a nested issue, receive one standard Code Mode fallback row; the transcript therefore never hides a
-Tool outcome or falls back to raw result text. Each nested call uses the exact
+Tool outcome or falls back to raw result text. A successful pure-JavaScript fallback uses its first bounded result line
+as the compact summary instead of `done`; formatted expansion shows only subsequent lines. Each nested call uses the exact
 renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the
 original Tool. A missing historical Tool definition or a failing renderer receives a generic Tool row at the same
 source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume

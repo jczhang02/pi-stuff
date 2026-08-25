@@ -486,7 +486,10 @@ test("throwing presentation hooks retain a standard direct Tool row", () => {
 		"direct failure",
 	);
 	expect(rendered.callLines.join("\n")).toContain("Fragile · direct failure");
-	expect(rendered.resultLines.join("\n")).toContain("  direct failure");
+	expect(rendered.resultLines).toEqual([]);
+	const runtime = getToolUiRuntime(harness.api);
+	expect(runtime.toolActivityDetail("direct-fragile", "formatted")?.lines).toEqual([]);
+	expect(runtime.toolActivityDetail("direct-fragile", "raw")?.lines.join("\n")).toContain("direct failure");
 });
 
 test("collapsed and expanded historical replay skip the synthetic running pass", () => {
@@ -988,6 +991,201 @@ test("Code Mode owns a fallback Tool row when no nested issue represents its res
 		const rendered = resultComponent.render(120).join("\n");
 		expect(rendered).toContain("Code Mode · Validation failed: invalid arguments");
 		if (operations.length > 0) expect(rendered).toContain("Read 1 file");
+	}
+});
+
+test("Code Mode fallback summarizes output once across transcript and formatted Tool detail", () => {
+	for (const scenario of [
+		{
+			additional: [],
+			content: [{ type: "text" as const, text: "computed 42" }],
+			id: "outer-one-line",
+			isError: false,
+			rawExpected: "computed 42",
+			summary: "computed 42",
+		},
+		{
+			additional: ["units: items"],
+			content: [{ type: "text" as const, text: "computed 42\nunits: items" }],
+			id: "outer-multiline",
+			isError: false,
+			rawExpected: "computed 42",
+			summary: "computed 42",
+		},
+		{
+			additional: ["stack"],
+			content: [{ type: "text" as const, text: "validation failed\nstack" }],
+			id: "outer-error",
+			isError: true,
+			rawExpected: "validation failed",
+			summary: "validation failed",
+		},
+		{
+			additional: ["request 7"],
+			content: [{ type: "text" as const, text: "Tool execution was blocked by policy\nrequest 7" }],
+			id: "outer-rejected",
+			isError: true,
+			rawExpected: "Tool execution was blocked",
+			summary: "Tool execution was blocked by policy",
+		},
+		{
+			additional: ["cleanup complete"],
+			content: [{ type: "text" as const, text: "Operation was cancelled\ncleanup complete" }],
+			id: "outer-cancelled",
+			isError: true,
+			rawExpected: "Operation was cancelled",
+			summary: "Operation was cancelled",
+		},
+		{
+			additional: ["stack"],
+			content: [{ type: "text" as const, text: "\u001B[31mcolored failure\u001B[0m\nstack" }],
+			id: "outer-sanitized",
+			isError: true,
+			rawExpected: "stack",
+			summary: "colored failure",
+		},
+		{
+			additional: [],
+			content: [],
+			id: "outer-empty",
+			isError: false,
+			rawExpected: "(no result content)",
+			summary: "(no result content)",
+		},
+		{
+			additional: [],
+			content: [{ data: "AA==", mimeType: "image/png", type: "image" as const }],
+			id: "outer-media",
+			isError: false,
+			rawExpected: "[image image/png]",
+			summary: "[image image/png]",
+		},
+	] as const) {
+		const harness = apiHarness();
+		const registrations = createSuiteToolRegistrationTracker(harness.api);
+		const details = { kind: "pi-stuff-code-mode", operations: [] };
+		registerSuiteToolEnvelope(
+			registrations.api,
+			{
+				description: "Code Mode",
+				execute: async () => ({ content: [], details }),
+				label: "Code Mode",
+				name: "codemode",
+				parameters: Type.Object({ code: Type.String() }),
+			},
+			{ decode: decodeCodeModeOperations, registry: registrations.registry },
+		);
+		const envelope = harness.tools.get("codemode");
+		if (!envelope) throw new Error("missing Code Mode envelope");
+		const outerResult = { content: [...scenario.content], details };
+		const messages = [
+			assistant({
+				type: "toolCall",
+				id: scenario.id,
+				name: "codemode",
+				arguments: { code: 'text("computed")' },
+			}),
+			Object.assign(
+				{ ...outerResult, role: "toolResult", toolCallId: scenario.id },
+				scenario.isError ? { isError: true } : undefined,
+			),
+		];
+		const runtime = getToolUiRuntime(harness.api);
+		runtime.indexMessages(messages, true);
+		const context = renderContext(
+			{},
+			{ value: "unused" },
+			{ expanded: true, isError: scenario.isError, toolCallId: scenario.id },
+		);
+		// SAFETY: this fixture controls the envelope arguments and complete Host renderer context.
+		const callComponent = envelope.renderCall?.({ code: 'text("computed")' }, theme, context as never);
+		// SAFETY: the controlled result and context satisfy the same registered envelope renderer contract.
+		const resultComponent = envelope.renderResult?.(outerResult, { expanded: true, isPartial: false }, theme, {
+			...context,
+			lastComponent: callComponent,
+		} as never);
+		if (!resultComponent) throw new Error("missing Code Mode fallback result");
+		const rendered = resultComponent.render(120).join("\n");
+		expect(rendered, scenario.id).toContain(`Code Mode · ${scenario.summary}`);
+		expect(rendered.split(scenario.summary), scenario.id).toHaveLength(2);
+		expect(runtime.toolActivityDetail(scenario.id, "formatted")?.lines, scenario.id).toEqual([
+			...scenario.additional,
+		]);
+		expect(runtime.toolActivityDetail(scenario.id, "raw")?.lines.join("\n"), scenario.id).toContain(
+			scenario.rawExpected,
+		);
+	}
+});
+
+test("formatted deduplication leaves custom Tool detail and generic success output untouched", () => {
+	for (const scenario of [
+		{
+			detailLines: undefined,
+			expectedDetail: ["same summary"],
+			id: "custom-summary",
+			isError: true,
+			name: "custom_summary",
+			summarize: () => "same summary",
+			text: "same summary",
+		},
+		{
+			detailLines: () => ["owned detail"],
+			expectedDetail: ["owned detail"],
+			id: "custom-detail",
+			isError: true,
+			name: "custom_detail",
+			summarize: undefined,
+			text: "failure line",
+		},
+		{
+			detailLines: undefined,
+			expectedDetail: ["successful output"],
+			id: "generic-success",
+			isError: false,
+			name: "generic_success",
+			summarize: undefined,
+			text: "successful output",
+		},
+	] as const) {
+		const harness = apiHarness();
+		const fixturePresentation = {
+			activity: presentation("change-file").activity,
+			label: scenario.name,
+			target: (args: Readonly<Params>) => args.value,
+		};
+		if (scenario.detailLines) Object.assign(fixturePresentation, { detailLines: scenario.detailLines });
+		if (scenario.summarize) Object.assign(fixturePresentation, { summarize: scenario.summarize });
+		registerSuiteOwnedTool(
+			harness.api,
+			{
+				description: scenario.name,
+				execute: async () => ({ content: [{ type: "text", text: scenario.text }], details: { source: "test" } }),
+				label: scenario.name,
+				name: scenario.name,
+				parameters: Params,
+			},
+			fixturePresentation,
+		);
+		const tool = harness.tools.get(scenario.name);
+		if (!tool) throw new Error(`missing ${scenario.name}`);
+		const runtime = getToolUiRuntime(harness.api);
+		runtime.indexMessages(
+			[assistant(call(scenario.id, scenario.name, "fixture")), result(scenario.id, scenario.text, scenario.isError)],
+			true,
+		);
+		// SAFETY: the test controls this fixture's Params schema and source detail result.
+		const rendered = settle(
+			tool as ToolDefinition<typeof Params, { source: string }>,
+			scenario.id,
+			"fixture",
+			scenario.isError,
+			true,
+			scenario.text,
+		);
+		expect(rendered.resultLines.join("\n"), scenario.id).toContain(scenario.expectedDetail[0] ?? "");
+		expect(runtime.toolActivityDetail(scenario.id, "formatted")?.lines, scenario.id).toEqual([
+			...scenario.expectedDetail,
+		]);
 	}
 });
 

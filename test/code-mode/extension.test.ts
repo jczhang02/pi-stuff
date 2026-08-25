@@ -15,6 +15,7 @@ import {
 	readCodeModeProjectEnabled,
 	writeCodeModeProjectEnabled,
 } from "../../packages/pi-stuff/src/code-mode/settings.js";
+import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type {
 	SuiteToolDefinitionRegistry,
 	SuiteToolSurfaceController,
@@ -291,14 +292,14 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 		const unchanged = structuredClone(messages);
 		const projected = runtime.projectMessages(messages);
 		const names = projected.flatMap((message) =>
-			typeof message === "object" && message !== null && "content" in message && Array.isArray(message.content)
+			isRuntimeObject(message) && message !== null && "content" in message && Array.isArray(message.content)
 				? message.content.flatMap((block) =>
-						typeof block === "object" &&
+						isRuntimeObject(block) &&
 						block !== null &&
 						"type" in block &&
 						block.type === "toolCall" &&
 						"name" in block &&
-						typeof block.name === "string"
+						isRuntimeString(block.name)
 							? [block.name]
 							: [],
 					)
@@ -310,6 +311,7 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 
 	const envelope = loaded.tools.get("codemode");
 	if (!envelope) throw new Error("missing Code Mode Tool");
+	// SAFETY: this test theme implements the exact color and emphasis members exercised by the renderer.
 	const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme;
 	for (const [id, code, text] of [
 		["live-control", 'await yield_control(); text("waiting")', "waiting"],
@@ -330,6 +332,7 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 			state: {},
 			toolCallId: id,
 		};
+		// SAFETY: the controlled arguments and context implement the registered Code Mode renderer contract.
 		const call = envelope.renderCall?.(args, theme, context as never);
 		const result = envelope.renderResult?.(
 			{
@@ -338,6 +341,7 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 			},
 			{ expanded: false, isPartial: false },
 			theme,
+			// SAFETY: this is the same controlled renderer context with the preceding call component attached.
 			{ ...context, lastComponent: call } as never,
 		);
 		expect(result?.render(120), id).toEqual([]);

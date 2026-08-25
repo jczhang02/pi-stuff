@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { CODE_MODE_NO_OUTPUT_MESSAGE } from "../packages/pi-stuff/src/code-mode/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
@@ -103,15 +105,21 @@ proc send_and_expect {keys pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_TOOLS_PTY_RUNNER) /dev/null
 set tool_pty $spawn_out(slave,name)
-set conversation_marker "run the deterministic Tool UI fixture"
+set conversation_marker "run the Code Mode visibility fixture"
+must_expect "TOOLS_DIRECT_DONE"
+wait_for_quiet
+send -- "/codemode on\r"
+must_expect "Code Mode on"
+wait_for_quiet
+send -- "run the Code Mode visibility fixture\r"
 must_expect "TOOLS_DONE"
 wait_for_quiet
 send_and_expect "\\017" "Tool output: expanded"
 send_and_expect "\\017" "Tool output: collapsed"
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "activities"
-must_expect "Searched 2 patterns"
+must_expect "11 activities"
+must_expect "Code Mode · VISIBLE_CODE_MODE"
 must_expect "Esc close"
 wait_for_quiet
 send -- "?"
@@ -145,6 +153,19 @@ send_and_expect "\\033\\[6~" "Result content"
 send_and_expect "\\033" "r raw"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
+send -- "/tools tools-pty-15\\r"
+must_expect "Tools / Code Mode"
+must_expect "VISIBLE_CODE_MODE_SUMMARY"
+must_expect "VISIBLE_CODE_MODE_DETAIL"
+must_expect "Esc back"
+send -- "r"
+must_expect "Raw"
+must_expect "Call ID: tools-pty-15"
+must_expect "VISIBLE_CODE_MODE_SUMMARY"
+must_expect "VISIBLE_CODE_MODE_DETAIL"
+send_and_expect "\\033" "r raw"
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-8\\r"
 must_expect "Tools /"
 must_expect "BUILTIN_FAILURE_工具"
@@ -165,10 +186,16 @@ set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
 must_expect "Searched 2 patterns, listed 1 directory"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
-send -- "/tools\\r"
-must_expect "Tools"
-must_expect "activities"
+send -- "/tools tools-pty-15\\r"
+must_expect "Tools / Code Mode"
+must_expect "VISIBLE_CODE_MODE_SUMMARY"
+must_expect "VISIBLE_CODE_MODE_DETAIL"
 wait_for_quiet
+send -- "r"
+must_expect "Raw"
+must_expect "Call ID: tools-pty-15"
+send_and_expect "\\033" "r raw"
+send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
 send -- "DRAFT_AFTER_TOOLS"
 must_expect "DRAFT_AFTER_TOOLS"
@@ -265,6 +292,10 @@ function verifyOutput(output: string, columns: number): void {
 	}
 	const visible = stripTerminalControls(output);
 	verifyLifecycleFrames(visible);
+	if (visible.includes("CONTROL_ONLY_ACK") || visible.includes(CODE_MODE_NO_OUTPUT_MESSAGE)) {
+		fail("Control-only or no-output Code Mode evidence reached ordinary Tool UI");
+	}
+	if (/• Code Mode[^\n]*· done/u.test(visible)) fail("Control-only Code Mode rendered a misleading done row");
 	for (const required of [
 		"TOOLS_DONE",
 		"• TOOLS_DONE",
@@ -277,6 +308,7 @@ function verifyOutput(output: string, columns: number): void {
 		"• Edit written.txt · +1/-1",
 		"• State error · working",
 		"• State error · error",
+		"• Code Mode · VISIBLE_CODE_MODE_SUMMARY",
 		"• Bash(printf '",
 		"⎿  PREFIX_CJK_工具",
 		"⎿  Error: Exit code 7",
@@ -289,6 +321,7 @@ function verifyOutput(output: string, columns: number): void {
 		"Tools / Keys",
 		"Ctrl+Y",
 		"Call ID: tools-pty-4",
+		"Call ID: tools-pty-15",
 		"Arguments",
 		"Result content",
 		"PREFIX_CJK_工具",
@@ -297,6 +330,7 @@ function verifyOutput(output: string, columns: number): void {
 		"FIXTURE_ERROR",
 		"FIXTURE_REJECTED",
 		"FIXTURE_CANCELLED",
+		"VISIBLE_CODE_MODE_DETAIL",
 		"UI",
 		"Tool running timer",
 		"→ Tool running timer",
@@ -342,15 +376,27 @@ function verifyLifecycleFrames(visible: string): void {
 }
 
 function verifyRequests(records: readonly RequestRecord[]): void {
-	const requestCount = 13;
+	const expectedCompletions = [...Array.from({ length: 13 }, (_, index) => index), 12, 13, 14, 15];
+	const requestCount = expectedCompletions.length;
 	if (records.length !== requestCount) {
 		fail(`expected ${String(requestCount)} model requests, received ${String(records.length)}`);
 	}
 	for (const [index, record] of records.entries()) {
-		if (record.completed !== index) fail(`request ${String(index)} observed the wrong completion count`);
+		if (record.completed !== expectedCompletions[index]) {
+			fail(`request ${String(index)} observed the wrong completion count`);
+		}
 		if (!Array.isArray(record.tools)) fail(`request ${String(index)} did not expose tools`);
+		if (index < 13) {
+			for (const name of BUILTINS) {
+				if (!record.tools.includes(name)) fail(`request ${String(index)} did not preserve the ${name} tool`);
+			}
+			continue;
+		}
+		for (const name of ["codemode", "tool_search"]) {
+			if (!record.tools.includes(name)) fail(`request ${String(index)} did not expose ${name}`);
+		}
 		for (const name of BUILTINS) {
-			if (!record.tools.includes(name)) fail(`request ${String(index)} did not preserve the ${name} tool`);
+			if (record.tools.includes(name)) fail(`request ${String(index)} exposed the nested ${name} tool`);
 		}
 	}
 }
@@ -500,6 +546,9 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 			env: {
 				...process.env,
 				PI_CODING_AGENT_DIR: configDirectory,
+				PI_STUFF_CODE_MODE_DEFAULT: "off",
+				PI_STUFF_CODE_MODE_FROZEN: "",
+				PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 				PI_STUFF_TOOLS_PTY_BIN: options.piBinary,
 				PI_STUFF_TOOLS_PTY_COLUMNS: String(options.columns),
 				PI_STUFF_TOOLS_PTY_LOG: requestLog,
@@ -550,6 +599,11 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 			"FIXTURE_ERROR",
 			"FIXTURE_REJECTED",
 			"FIXTURE_CANCELLED",
+			"CONTROL_ONLY_ACK",
+			CODE_MODE_NO_OUTPUT_MESSAGE,
+			"VISIBLE_CODE_MODE_SUMMARY",
+			"VISIBLE_CODE_MODE_DETAIL",
+			"pi-stuff-code-mode",
 			...BUILTINS,
 		]) {
 			if (!transcript.includes(required)) fail(`model-visible transcript is missing ${required}`);

@@ -57,8 +57,10 @@ unknown third-party Tools keep their native renderer and form a display boundary
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,
   arguments, result content, and details. The default `Result` section shows an unlabeled target followed by
   Tool-owned detail instead of injecting repeated Tool, `Target:`, or `Summary:` fields; Raw is explicitly titled
-  `Raw`. Compact mode neither precomputes nor caches a global Raw transcript. Tool-owned business results are never
-  truncated or rewritten by this Capability.
+  `Raw`. When a generic summary was automatically derived from the first result line, formatted `Ctrl+O` and `/tools`
+  detail omit that same line; a one-line result adds no filler. Custom summaries, non-empty Tool-owned detail, and Raw
+  remain unchanged. Compact mode neither precomputes nor caches a global Raw transcript. Tool-owned business results
+  are never truncated or rewritten by this Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and
   compaction. Control-only projection therefore cleans existing Sessions without rewriting their records.

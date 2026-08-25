@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import type { ToolArguments } from "../tool-display/activity.js";
 import {
 	registerSuiteToolEnvelope,
 	registerSuiteToolEnvelopeCompanion,
@@ -291,7 +292,7 @@ export function decodeCodeModeOperations<Value>(details: Value): readonly SuiteT
 }
 
 function showCodeModeFallback(
-	args: Record<string, unknown>,
+	args: ToolArguments,
 	result: AgentToolResult<unknown>,
 	state: "cancelled" | "error" | "rejected" | "running" | "success",
 ): boolean {

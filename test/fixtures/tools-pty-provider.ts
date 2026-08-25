@@ -31,6 +31,12 @@ const TOOL_SEQUENCE = [
 	{ name: "fixture_state", arguments: { state: "error" } },
 	{ name: "fixture_state", arguments: { state: "rejected" } },
 	{ name: "fixture_state", arguments: { state: "cancelled" } },
+	{ name: "codemode", arguments: { code: 'await yield_control(); text("CONTROL_ONLY_ACK")' } },
+	{ name: "codemode", arguments: { code: "const silent = 1;" } },
+	{
+		name: "codemode",
+		arguments: { code: 'text("VISIBLE_CODE_MODE_SUMMARY\\nVISIBLE_CODE_MODE_DETAIL")' },
+	},
 ] as const;
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
@@ -82,6 +88,7 @@ function fixtureStream(context: Context) {
 	const logPath = process.env["PI_STUFF_TOOLS_PTY_LOG"];
 	if (logPath) appendFileSync(logPath, `${JSON.stringify({ completed, tools })}\n`);
 	if (process.env["PI_STUFF_TOOLS_PTY_PROBE_ONLY"] === "1") return textStream("TOOLS_PROBE_DONE");
+	if (completed === 12 && !tools.includes("codemode")) return textStream("TOOLS_DIRECT_DONE");
 	return completed < TOOL_SEQUENCE.length ? toolCallStream(completed) : textStream("TOOLS_DONE");
 }
 

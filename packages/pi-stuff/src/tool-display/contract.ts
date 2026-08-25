@@ -101,6 +101,11 @@ interface SuiteToolEnvelopeCompanionMarker {
 	readonly owner: string;
 }
 
+interface ToolSummaryProjection {
+	readonly fromResult: boolean;
+	readonly text: string;
+}
+
 interface ToolDetailPresentation {
 	readonly detailLines?: (
 		args: ToolArguments,
@@ -112,7 +117,7 @@ interface ToolDetailPresentation {
 		args: ToolArguments,
 		result: AgentToolResult<unknown> | undefined,
 		state: ToolActivityState,
-	) => string;
+	) => string | ToolSummaryProjection;
 	readonly target: (args: ToolArguments) => string;
 }
 const DETAIL_LINE_LIMIT = 240;
@@ -361,6 +366,7 @@ interface RendererState<TArgs extends ToolArguments, TDetails> {
 	liveEffectsStarted?: boolean;
 	projectedReplay?: boolean;
 	startedAt?: number;
+	summary?: ToolSummaryProjection;
 	terminalModelMaterialized?: boolean;
 	terminalState?: Exclude<ToolActivityState, "running">;
 	wasLiveExecution?: boolean;
@@ -1420,7 +1426,10 @@ export class ToolUiRuntime {
 				lines && lines.length > 0
 					? lines
 					: result
-						? buildToolResultLines(result)
+						? formattedResultLines(result, {
+								fromResult: activity.summaryFromResult === true,
+								text: activity.summary,
+							})
 						: activity.detailLines.length > 0
 							? activity.detailLines
 							: ["Details are available after completion."],
@@ -1490,8 +1499,7 @@ export class ToolUiRuntime {
 			if (!isRuntimeString(id)) continue;
 			const envelope = envelopeCallsById.get(id);
 			if (!envelope) continue;
-			const content = candidate["content"];
-			if (!Array.isArray(content)) continue;
+			const content = Array.isArray(candidate["content"]) ? candidate["content"] : [];
 			const operations = this.decodeEnvelope(envelope.name, candidate["details"]);
 			const result: AgentToolResult<unknown> & { isError?: true } = {
 				// SAFETY: Pi tool-result messages own this content array; visibility never rewrites its blocks.
@@ -2185,11 +2193,15 @@ export class ToolUiRuntime {
 				.filter(Boolean)
 				.at(-1) ?? "";
 		let toolSummary = summary.summary;
+		let summaryFromResult = false;
 		if (presentation) {
 			try {
 				label = presentation.label(member.args);
 				target = presentation.target(member.args);
-				toolSummary = presentation.summary(member.args, member.result, state);
+				const value = presentation.summary(member.args, member.result, state);
+				const projectedSummary = isRuntimeString(value) ? { fromResult: false, text: value } : value;
+				toolSummary = projectedSummary.text;
+				summaryFromResult = projectedSummary.fromResult;
 			} catch {
 				// Historical detail remains available with semantic fallbacks.
 			}
@@ -2204,6 +2216,7 @@ export class ToolUiRuntime {
 			startedAt: undefined,
 			state,
 			summary: toolSummary,
+			summaryFromResult,
 			target,
 		};
 	}
@@ -2907,9 +2920,19 @@ export function installToolUiRuntime(pi: ToolUiRuntimeHost, settings: ToolUiSett
 	return runtime;
 }
 
-function capPresentationDetails(result: AgentToolResult<unknown>, extra: readonly string[] | undefined): string[] {
+function formattedResultLines(result: AgentToolResult<unknown>, summary: ToolSummaryProjection): string[] {
+	const lines = buildToolResultLines(result);
+	if (!summary.fromResult || !lines[0] || oneLine(lines[0]) !== oneLine(summary.text)) return lines;
+	return lines.slice(1);
+}
+
+function capPresentationDetails(
+	result: AgentToolResult<unknown>,
+	extra: readonly string[] | undefined,
+	summary: ToolSummaryProjection,
+): string[] {
 	return capDetailLines(
-		extra && extra.length > 0 ? extra : buildToolResultLines(result),
+		extra && extra.length > 0 ? extra : formattedResultLines(result, summary),
 		DETAIL_LINE_LIMIT,
 		DETAIL_BYTE_LIMIT,
 	);
@@ -2942,13 +2965,14 @@ function presentationTarget<TArgs extends ToolArguments, TDetails>(
 function terminalSummary<TDetails>(
 	result: AgentToolResult<TDetails>,
 	state: Exclude<ToolActivityState, "running">,
-): string {
-	if (state === "success") return "done";
+	successFromResult = false,
+): ToolSummaryProjection {
+	if (state === "success" && !successFromResult) return { fromResult: false, text: "done" };
 	for (const line of buildToolResultLines(result)) {
 		const summary = oneLine(line);
-		if (summary) return summary;
+		if (summary) return { fromResult: true, text: summary };
 	}
-	return state;
+	return { fromResult: false, text: state };
 }
 
 function presentationSummary<TArgs extends ToolArguments, TDetails>(
@@ -2957,10 +2981,12 @@ function presentationSummary<TArgs extends ToolArguments, TDetails>(
 	result: AgentToolResult<TDetails>,
 	state: Exclude<ToolActivityState, "running">,
 	durationMs: number | undefined,
-): string {
+): ToolSummaryProjection {
 	const fallback = terminalSummary(result, state);
 	try {
-		return oneLine(presentation.summarize?.(args, result, state, durationMs) ?? fallback) || fallback;
+		if (!presentation.summarize) return fallback;
+		const summary = oneLine(presentation.summarize(args, result, state, durationMs));
+		return summary ? { fromResult: false, text: summary } : fallback;
 	} catch {
 		return fallback;
 	}
@@ -3063,6 +3089,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 			state.detailLines = capPresentationDetails(
 				state.lastResult,
 				presentationDetails(presentation, args, state.lastResult, state.terminalState),
+				state.summary ?? terminalSummary(state.lastResult, state.terminalState),
 			);
 			state.detailMaterialized = true;
 		}
@@ -3070,13 +3097,15 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 	}
 	let activityState: Exclude<ToolActivityState, "running">;
 	let model: ToolRowModel;
+	let summary: ToolSummaryProjection;
 	if (lightweightHistoricalReplay) {
 		activityState = context.isError ? classifyTerminalState(result, true) : "success";
+		summary = { fromResult: false, text: "" };
 		model = {
 			durationMs: undefined,
 			label: tool.name,
 			state: activityState,
-			summary: "",
+			summary: summary.text,
 			target: "",
 		};
 	} else {
@@ -3091,22 +3120,25 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		activityState = classifyTerminalState(result, domainError);
 		const finishedAt = Date.now();
 		const durationMs = state.startedAt === undefined ? undefined : Math.max(0, finishedAt - state.startedAt);
+		summary = presentationSummary(presentation, args, result, activityState, durationMs);
 		model = {
 			durationMs,
 			label: labelFor(tool, presentation, args),
 			state: activityState,
-			summary: presentationSummary(presentation, args, result, activityState, durationMs),
+			summary: summary.text,
 			target: presentationTarget(presentation, args),
 		};
 	}
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	state.lastResult = result;
+	state.summary = summary;
 	state.terminalState = activityState;
 	state.terminalModelMaterialized = !lightweightHistoricalReplay || tool.name === "bash";
 	if (context.expanded && tool.name !== "bash") {
 		state.detailLines = capPresentationDetails(
 			result,
 			presentationDetails(presentation, args, result, activityState),
+			summary,
 		);
 		state.detailMaterialized = true;
 	} else {
@@ -3157,6 +3189,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 			durationMs: model.durationMs,
 			state: activityState,
 			summary: model.summary,
+			summaryFromResult: summary.fromResult,
 		});
 	}
 	return state.component;
@@ -3253,14 +3286,14 @@ function attachRenderer<TParams extends TSchema, TDetails>(
 			const typedArgs = argsForPresentation(args);
 			if (state === "running") {
 				const source = presentation.runningSummary;
-				return oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working"));
+				return {
+					fromResult: false,
+					text: oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working")),
+				};
 			}
-			return oneLine(
-				result
-					? (presentation.summarize?.(typedArgs, resultForPresentation(result), state, undefined) ??
-							(state === "success" ? "done" : state))
-					: state,
-			);
+			return result
+				? presentationSummary(presentation, typedArgs, resultForPresentation(result), state, undefined)
+				: { fromResult: false, text: state };
 		},
 		target: (args) => oneLine(presentation.target?.(argsForPresentation(args)) ?? ""),
 	};
@@ -3536,28 +3569,29 @@ function fallbackToolComponent(
 	result: AgentToolResult<unknown> | undefined,
 	state: ToolActivityState,
 	expanded: boolean,
+	successFromResult = false,
 ): Component {
 	const visibleResult = result ? stripToolControlMetadata(result) : undefined;
-	const summary =
+	const summary: ToolSummaryProjection =
 		state === "running"
-			? "working"
+			? { fromResult: false, text: "working" }
 			: visibleResult
-				? terminalSummary(visibleResult, state)
+				? terminalSummary(visibleResult, state, successFromResult)
 				: state === "success"
-					? "done"
-					: state;
+					? { fromResult: false, text: "done" }
+					: { fromResult: false, text: state };
 	const container = new Container();
 	container.addChild(
 		new CachedToolRow(theme, {
 			durationMs: undefined,
 			label: sanitizeTerminalText(label) || name,
 			state,
-			summary,
+			summary: summary.text,
 			target: fallbackToolTarget(args),
 		}),
 	);
 	if (expanded && visibleResult) {
-		const lines = capDetailLines(buildToolResultLines(visibleResult), DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
+		const lines = capDetailLines(formattedResultLines(visibleResult, summary), DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
 		if (lines.length > 0) container.addChild(new Text(theme.fg("toolOutput", lines.join("\n")), 2, 0));
 	}
 	return container;
@@ -3587,7 +3621,16 @@ function renderEnvelopeOperations(
 		if (!envelopeFallbackVisible(presentation.showFallback, context.args, visibleResult, state)) {
 			return new EmptyToolComponent();
 		}
-		return fallbackToolComponent(theme, envelope.name, envelope.label, {}, visibleResult, state, options.expanded);
+		return fallbackToolComponent(
+			theme,
+			envelope.name,
+			envelope.label,
+			{},
+			visibleResult,
+			state,
+			options.expanded,
+			true,
+		);
 	}
 	let hostImageKeys: Map<string, Set<string>> | undefined;
 	if (getCapabilities().images && context.showImages) {
@@ -3715,6 +3758,16 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		},
 		presentation.showFallback,
 	);
+	runtime.registerDetailPresentation(tool.name, {
+		label: () => sanitizeTerminalText(tool.label ?? tool.name) || tool.name,
+		summary: (_args, result, state) =>
+			state === "running"
+				? { fromResult: false, text: "working" }
+				: result
+					? terminalSummary(result, state, true)
+					: { fromResult: false, text: state },
+		target: () => "",
+	});
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
 		execute: async (toolCallId, input, signal, onUpdate, context) => {
