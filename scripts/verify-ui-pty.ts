@@ -959,6 +959,20 @@ async function verifySessionNamingDialog(
 		`pi-${CERTIFIED_PI_VERSION}-session-naming-settings-64x28`,
 		session,
 	);
+
+	session.resize(24, 16);
+	screen = await session.waitForDialogFrame("Keep manual names", 24);
+	verifySettingValue(screen, "Auto naming", "on");
+	verifySettingValue(screen, "Cooldown", "10 min");
+	verifySettingValue(screen, "Keep manual names", "off");
+	verifyFullWidthDivider(screen, 24, "small /autoname settings Command Dialog", "─");
+	verifyTerminalWidth(screen, 24, "small /autoname settings Command Dialog");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-session-naming-settings-24x16`,
+		session,
+	);
+
 	session.resize(100, 32);
 	await session.waitForDialogFrame("Keep manually assigned names", 100);
 

@@ -68,8 +68,12 @@ function hostHarness() {
 		message("user", "Implement automatic Session naming", "entry-1"),
 		message("assistant", "Done", "entry-2"),
 	];
+	const notices: string[] = [];
 	let name: string | undefined;
-	const extensionContext = createExtensionCommandContext({ sessionManager: { getBranch: () => entries } });
+	const extensionContext = createExtensionCommandContext({
+		sessionManager: { getBranch: () => entries },
+		ui: { notify: (message) => notices.push(message) },
+	});
 	Object.assign(extensionContext.modelRegistry, {
 		complete: async () => {
 			throw new Error("The local fallback does not call the fixture registry");
@@ -120,7 +124,7 @@ function hostHarness() {
 		if (!command) throw new Error("Session Naming did not register /autoname");
 		await command.handler(args, extensionContext);
 	};
-	return { emitLifecycle, emitSettled, name: () => name, pi, runAutoname };
+	return { emitLifecycle, emitSettled, name: () => name, notices, pi, runAutoname };
 }
 
 async function waitForName(read: () => string | undefined): Promise<string | undefined> {
@@ -155,6 +159,10 @@ describe("Session Naming Extension lifecycle", () => {
 		host.emitSettled();
 		await Promise.resolve();
 		expect(host.name()).toBeUndefined();
+
+		await host.runAutoname("setings");
+		expect(host.name()).toBeUndefined();
+		expect(host.notices.at(-1)).toBe("Usage: /autoname [settings]");
 
 		await host.runAutoname();
 		expect(host.name()).toBe("automatic Session naming");

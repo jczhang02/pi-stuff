@@ -54,6 +54,17 @@ describe("Session Naming settings Dialog", () => {
 		expect(text).not.toContain("fallbackModels");
 		expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
 		expect(lines.length).toBeLessThanOrEqual(24);
+
+		const narrow = dialog.render(24);
+		const narrowText = narrow.join("\n");
+		expect(narrowText).toContain("Auto naming");
+		expect(narrowText).toContain("on");
+		expect(narrowText).toContain("Cooldown");
+		expect(narrowText).toContain("15 min");
+		expect(narrowText).toContain("Keep manual names");
+		expect(narrowText).toContain("off");
+		expect(narrowText.match(/Enter/gu)).toHaveLength(1);
+		expect(narrow.every((line) => visibleWidth(line) <= 24)).toBe(true);
 		dialog.dispose?.();
 	});
 

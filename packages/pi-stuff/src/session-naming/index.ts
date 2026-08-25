@@ -63,7 +63,8 @@ export function installSessionNamingCapability(
 	pi.registerCommand("autoname", {
 		description: "Regenerate or configure the current Session name",
 		handler: async (args, ctx) => {
-			if (args.trim().toLowerCase() === "settings") {
+			const argument = args.trim().toLowerCase();
+			if (argument === "settings") {
 				if (ctx.mode !== "tui" || !ctx.hasUI) {
 					ctx.ui.notify("/autoname settings requires interactive TUI mode.", "warning");
 					return;
@@ -74,6 +75,10 @@ export function installSessionNamingCapability(
 						onPersistenceError: (message) => ctx.ui.notify(message, "error"),
 					}),
 				);
+				return;
+			}
+			if (argument) {
+				ctx.ui.notify("Usage: /autoname [settings]", "warning");
 				return;
 			}
 			if (!controller) {

@@ -10,7 +10,7 @@ import {
 import type { SessionNamingSettings, SessionNamingSettingsPatch, SessionNamingSettingsStore } from "./settings.js";
 
 const GUTTER = "  ";
-const MIN_RENDER_WIDTH = 24;
+const MIN_RENDER_WIDTH = 40;
 const BOOLEAN_VALUES = ["on", "off"] as const;
 const COOLDOWN_PRESETS = [10, 30, 60, 360, 1_440] as const;
 
@@ -46,6 +46,14 @@ function formatCooldown(minutes: number): string {
 
 function cooldownValues(current: number): string[] {
 	return [...new Set<number>([...COOLDOWN_PRESETS, current])].sort((left, right) => left - right).map(formatCooldown);
+}
+
+function compactNativeLine(line: string, width: number): string {
+	if (width >= 40) return line;
+	return line
+		.replace(/Automatic naming +/u, "Auto naming  ")
+		.replace(/Rename cooldown +/u, "Cooldown  ")
+		.replace(/Keep manually assigned names +/u, "Keep manual names  ");
 }
 
 function settingsItems(settings: SessionNamingSettings): SettingItem[] {
@@ -142,8 +150,7 @@ class SessionNamingSettingsDialog implements CommandDialogComponent {
 		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
-		const nativeHintIndex = nativeLines.map((line) => line.includes("Enter/Space to change")).lastIndexOf(true);
-		const nativeBody = nativeLines.filter((_line, index) => index !== nativeHintIndex);
+		const nativeBody = nativeLines.slice(0, -1).map((line) => compactNativeLine(line, renderWidth));
 		const errorLine = this.error ? `${GUTTER}${this.context.theme.fg("error", this.error)}` : undefined;
 		const selected = nativeBody.find((line) => line.includes("→"));
 		const lines = fitCommandDialogRows(
