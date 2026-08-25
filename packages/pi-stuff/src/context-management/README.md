@@ -32,7 +32,9 @@ Tools, or Agent delegations, block Tools or Suite-authored messages, or decide
 whether Pi, Goal, or Agents should pause, stop, complete, or fail. Each owning
 Capability retains its own lifecycle policy.
 
-The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The
+The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one
+temporary audited dependency patch so the engine resolves its installed `ai-tokenizer` from standalone Pi's Bun
+module layout; [UPSTREAM.md](./UPSTREAM.md) records the patch and its removal trigger. The
 adapter suppresses the upstream Todo, statusline, announcement, command, and
 auxiliary UI surfaces while retaining the five maintenance handlers behind the
 Suite-owned `/ctx` dispatcher. It also supplies a compact provider-facing behavior contract before the

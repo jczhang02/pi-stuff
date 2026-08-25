@@ -1,0 +1,28 @@
+diff --git a/dist/index-kamc8t8p.js b/dist/index-kamc8t8p.js
+index be69a26a99d6b67f36f17a82cd203f158cf3c7b6..90afd5294bd99f9c82611c84a80b7e3f99c92a87 100644
+--- a/dist/index-kamc8t8p.js
++++ b/dist/index-kamc8t8p.js
+@@ -9031 +9031 @@
+-import { pathToFileURL } from "node:url";
++import { fileURLToPath, pathToFileURL } from "node:url";
+@@ -9155,8 +9155,13 @@ function tokenizerPackageRoots() {
+-  let ancestor = process.argv[1] ? dirname2(resolve(process.argv[1])) : cwd;
+-  while (true) {
+-    candidates.push(join2(ancestor, "node_modules", "ai-tokenizer"));
+-    const parent = dirname2(ancestor);
+-    if (parent === ancestor)
+-      break;
+-    ancestor = parent;
++  const starts = [fileURLToPath(import.meta.url), process.argv[1] ?? cwd];
++  for (const start of starts) {
++    let ancestor = dirname2(resolve(start));
++    while (true) {
++      candidates.push(join2(ancestor, "node_modules", "ai-tokenizer"));
++      if (basename(ancestor) === "node_modules")
++        candidates.push(join2(ancestor, "ai-tokenizer"));
++      const parent = dirname2(ancestor);
++      if (parent === ancestor)
++        break;
++      ancestor = parent;
++    }
+   }

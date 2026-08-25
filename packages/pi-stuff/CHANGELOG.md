@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Patch Magic Context 0.40.0's packaged tokenizer resolver to search its own Bun module ancestry, restoring exact token
+  counts and preventing raw `[magic-context]` fallback warnings from flashing in the Pi editor. Add real-Host PTY
+  regression coverage and remove the patch once an equivalent official release passes certification.
 - Standardize both shared Statusline rows on one semantically explicit Nerd Font-only icon grammar, including model,
   Thinking, Context, allowance, cost, Git, Goal, Prompt, and Ponytail state markers. Remove terminal icon detection,
   Unicode/ASCII fallbacks, and the `/ui` Statusline icon setting while migrating schema-v2 UI settings in memory without
