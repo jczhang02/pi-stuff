@@ -41,6 +41,7 @@ function notify(
 		mode: ctx.mode,
 		terminalBell: settings.terminalBell,
 		title,
+		tmuxNotification: settings.tmuxNotification,
 	});
 	if (result === "failed") {
 		reportDiagnostic({

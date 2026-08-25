@@ -16,6 +16,7 @@ const BOOLEAN_VALUES = ["true", "false"] as const;
 const MINIMUM_DURATION_VALUES = ["0s", "5s", "10s", "30s", "60s"] as const;
 const GRACE_VALUES = ["0s", "1s", "2s", "5s"] as const;
 const DELIVERY_VALUES = ["auto", "kitty", "osc9", "osc777", "bell"] as const;
+const ON_OFF_VALUES = ["on", "off"] as const;
 
 export interface NotificationSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
@@ -82,6 +83,13 @@ function settingsItems(settings: NotificationSettings): SettingItem[] {
 			values: [...DELIVERY_VALUES],
 		},
 		{
+			currentValue: settings.tmuxNotification ? "on" : "off",
+			description: "Control tmux attention for every delivery mode",
+			id: "tmuxNotification",
+			label: "Tmux notification",
+			values: [...ON_OFF_VALUES],
+		},
+		{
 			currentValue: String(settings.responsePreview),
 			description: "Include bounded final-response prose in desktop history",
 			id: "responsePreview",
@@ -90,7 +98,7 @@ function settingsItems(settings: NotificationSettings): SettingItem[] {
 		},
 		{
 			currentValue: String(settings.terminalBell),
-			description: "Send BEL in addition to visual delivery; terminal behavior varies",
+			description: "Also send BEL with visual delivery outside tmux",
 			id: "terminalBell",
 			label: "Also ring terminal bell",
 			values: [...BOOLEAN_VALUES],
@@ -109,6 +117,9 @@ function settingPatch(id: string, value: string): Partial<Omit<NotificationSetti
 		for (const delivery of DELIVERY_VALUES) {
 			if (delivery === value) return { delivery };
 		}
+	}
+	if (id === "tmuxNotification" && ON_OFF_VALUES.some((candidate) => candidate === value)) {
+		return { tmuxNotification: value === "on" };
 	}
 	if (!BOOLEAN_VALUES.some((candidate) => candidate === value)) return undefined;
 	const enabled = value === "true";

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { sendTerminalNotification } from "../../packages/pi-stuff/src/notification/transport.ts";
 
 describe("sendTerminalNotification", () => {
@@ -12,6 +15,7 @@ describe("sendTerminalNotification", () => {
 				mode: "rpc",
 				terminalBell: false,
 				title: "Pi Stuff complete",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -30,6 +34,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "Done",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -50,6 +55,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "\x1b]9;bad\x07\nDone",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -69,6 +75,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: true,
 				title: "Done",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -77,7 +84,7 @@ describe("sendTerminalNotification", () => {
 		expect(writes).toEqual(["\x1b]9;Done: repo 10s\x1b\\\x07"]);
 	});
 
-	test("tmux receives a passthrough-wrapped OSC notification", () => {
+	test("tmux receives a passthrough-wrapped OSC notification and one attention bell", () => {
 		const writes: string[] = [];
 		const result = sendTerminalNotification(
 			{
@@ -87,6 +94,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "Done",
+				tmuxNotification: true,
 			},
 			{
 				environment: { TMUX: "/tmp/tmux-1000/default,1,0" },
@@ -95,7 +103,138 @@ describe("sendTerminalNotification", () => {
 		);
 
 		expect(result).toBe("sent");
-		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]9;Done: repo 10s\x1b\x1b\\\x1b\\"]);
+		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]9;Done: repo 10s\x1b\x1b\\\x1b\\\x07"]);
+	});
+
+	test("tmux auto delivery preserves the system notification and adds one attention bell", () => {
+		const writes: string[] = [];
+		const result = sendTerminalNotification(
+			{
+				body: "repo 10s",
+				delivery: "auto",
+				hasUI: true,
+				mode: "tui",
+				terminalBell: false,
+				title: "Done",
+				tmuxNotification: true,
+			},
+			{
+				environment: {
+					GHOSTTY_RESOURCES_DIR: "/fixture/ghostty",
+					TMUX: "/tmp/tmux-1000/default,1,0",
+				},
+				write: (bytes) => writes.push(bytes),
+			},
+		);
+
+		expect(result).toBe("sent");
+		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]777;notify;Done;repo 10s\x1b\x1b\\\x1b\\\x07"]);
+	});
+
+	test("tmux notification off preserves visual delivery without an attention bell", () => {
+		const writes: string[] = [];
+		expect(
+			sendTerminalNotification(
+				{
+					body: "repo 10s",
+					delivery: "osc777",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: true,
+					title: "Done",
+					tmuxNotification: false,
+				},
+				{
+					environment: { TMUX: "/tmp/tmux-1000/default,1,0" },
+					write: (bytes) => writes.push(bytes),
+				},
+			),
+		).toBe("sent");
+		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]777;notify;Done;repo 10s\x1b\x1b\\\x1b\\"]);
+	});
+
+	test("tmux auto delivery falls back to an attention bell when the visual protocol is unknown", () => {
+		const writes: string[] = [];
+		expect(
+			sendTerminalNotification(
+				{
+					body: "repo 10s",
+					delivery: "auto",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: false,
+					title: "Done",
+					tmuxNotification: true,
+				},
+				{
+					environment: { TERM: "tmux-256color", TMUX: "/tmp/tmux-1000/default,1,0" },
+					write: (bytes) => writes.push(bytes),
+				},
+			),
+		).toBe("sent");
+		expect(writes).toEqual(["\x07"]);
+	});
+
+	test("tmux notification off suppresses explicit bell delivery", () => {
+		const writes: string[] = [];
+		expect(
+			sendTerminalNotification(
+				{
+					body: "repo 10s",
+					delivery: "bell",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: true,
+					title: "Done",
+					tmuxNotification: false,
+				},
+				{
+					environment: { TMUX: "/tmp/tmux-1000/default,1,0" },
+					write: (bytes) => writes.push(bytes),
+				},
+			),
+		).toBe("unsupported");
+		expect(writes).toEqual([]);
+	});
+
+	test("explicit visual delivery marks an unattended tmux window", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "pi-stuff-notification-tmux-"));
+		const socket = join(directory, "tmux.sock");
+		const tmux = (...args: string[]): string => {
+			const result = Bun.spawnSync(["tmux", "-S", socket, ...args], { stderr: "pipe", stdout: "pipe" });
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+			return result.stdout.toString().trim();
+		};
+		try {
+			tmux("-f", "/dev/null", "new-session", "-d", "-s", "repro", "-n", "target", "sleep 5");
+			tmux("set-option", "-g", "bell-action", "any");
+			tmux("set-window-option", "-g", "monitor-bell", "on");
+			tmux("new-window", "-t", "repro", "-n", "current", "sleep 5");
+			const paneTty = tmux("display-message", "-p", "-t", "repro:target", "#{pane_tty}");
+
+			expect(
+				sendTerminalNotification(
+					{
+						body: "repo 10s",
+						delivery: "osc777",
+						hasUI: true,
+						mode: "tui",
+						terminalBell: false,
+						title: "Done",
+						tmuxNotification: true,
+					},
+					{
+						environment: { TMUX: `${socket},1,0` },
+						write: (bytes) => writeFileSync(paneTty, bytes),
+					},
+				),
+			).toBe("sent");
+			await Bun.sleep(50);
+			expect(tmux("display-message", "-p", "-t", "repro:target", "#{window_bell_flag}")).toBe("1");
+		} finally {
+			Bun.spawnSync(["tmux", "-S", socket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
+			rmSync(directory, { force: true, recursive: true });
+		}
 	});
 
 	test("OSC 777 delimiters in labels cannot create extra protocol fields", () => {
@@ -108,6 +247,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "Done;evil",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -126,6 +266,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: true,
 				title: "Done",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -144,6 +285,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "Done",
+				tmuxNotification: true,
 			},
 			{
 				environment: { KITTY_WINDOW_ID: "42" },
@@ -165,6 +307,7 @@ describe("sendTerminalNotification", () => {
 				mode: "tui",
 				terminalBell: false,
 				title: "",
+				tmuxNotification: true,
 			},
 			{ environment: {}, write: (bytes) => writes.push(bytes) },
 		);
@@ -184,6 +327,7 @@ describe("sendTerminalNotification", () => {
 					mode: "tui",
 					terminalBell: false,
 					title: "Pi · ps-9e7 — Ready",
+					tmuxNotification: true,
 				},
 				{
 					environment: { GHOSTTY_RESOURCES_DIR: "/fixture/ghostty", TERM_PROGRAM: "tmux" },
@@ -204,6 +348,7 @@ describe("sendTerminalNotification", () => {
 						mode: "tui",
 						terminalBell: false,
 						title: "Done",
+						tmuxNotification: true,
 					},
 					{ environment: { TERM_PROGRAM: program }, write: (bytes) => writes.push(bytes) },
 				),
@@ -220,6 +365,7 @@ describe("sendTerminalNotification", () => {
 					mode: "tui",
 					terminalBell: false,
 					title: "Done",
+					tmuxNotification: true,
 				},
 				{ environment: { TERM: "xterm-256color" }, write: (bytes) => writes.push(bytes) },
 			),
@@ -236,7 +382,15 @@ describe("sendTerminalNotification", () => {
 			const writes: string[] = [];
 			expect(
 				sendTerminalNotification(
-					{ body: "repo", delivery: "bell", hasUI, mode, terminalBell: false, title: "Done" },
+					{
+						body: "repo",
+						delivery: "bell",
+						hasUI,
+						mode,
+						terminalBell: false,
+						title: "Done",
+						tmuxNotification: true,
+					},
 					{ write: (bytes) => writes.push(bytes) },
 				),
 			).toBe("not-interactive");
@@ -255,6 +409,7 @@ describe("sendTerminalNotification", () => {
 					mode: "tui",
 					terminalBell: false,
 					title: `完${"成".repeat(100)}\u009c`,
+					tmuxNotification: true,
 				},
 				{ environment: {}, write: (bytes) => writes.push(bytes) },
 			),
@@ -267,7 +422,15 @@ describe("sendTerminalNotification", () => {
 
 		expect(
 			sendTerminalNotification(
-				{ body: "repo", delivery: "bell", hasUI: true, mode: "tui", terminalBell: false, title: "Done" },
+				{
+					body: "repo",
+					delivery: "bell",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: false,
+					title: "Done",
+					tmuxNotification: true,
+				},
 				{
 					write: () => {
 						throw new Error("closed");

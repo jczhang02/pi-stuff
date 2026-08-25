@@ -84,12 +84,14 @@ Pi 启动后，可以从这些命令开始：
 | `/rtk` | 验证或配置可选的 RTK 命令改写 |
 | `/codemode` | 打开可选 Code Mode 控制面板，并把选择持久化到受信任项目 |
 
-在 tmux 中使用终端原生通知时，需要配置 `set -g allow-passthrough on`。Pi Stuff 会为 tmux 封装通知协议，
-但不会修改用户拥有的 tmux 设置。
+在 tmux 中使用终端原生通知时，需要配置 `set -g allow-passthrough on`。`Tmux notification` 独立控制所有 tmux
+attention BEL：开启后会保留受支持的系统通知并额外发送 BEL；若 `auto` 无法识别视觉通知协议，则退化为仅发送
+BEL。关闭后会保留受支持的系统通知并禁止所有 BEL，包括显式 `bell` delivery。Pi Stuff 不会修改用户拥有的 tmux
+设置，标记样式和切回后的清除仍由 tmux 管理。
 
 通知的 `auto` 方式会为 Kitty 选择 OSC 99、为 Ghostty 选择 OSC 777，并为 iTerm2 和 WezTerm 选择 OSC 9。
-响应预览默认关闭，因为桌面通知历史可能在 Pi 之外可见。可选的 terminal bell 设置发送 BEL；BEL 最终发出
-声音还是视觉提示，由终端决定，而不是由 Pi Stuff 决定。
+响应预览默认关闭，因为桌面通知历史可能在 Pi 之外可见。在 tmux 之外，可选的 terminal bell 设置会额外发送
+BEL；BEL 最终发出声音还是视觉提示，由终端决定，而不是由 Pi Stuff 决定。
 
 外部服务、身份认证、MCP 声明、Magic Context 配置和 RTK 可执行文件都保持可选，并由用户管理。缺少它们不会
 阻止普通 Pi 对话。

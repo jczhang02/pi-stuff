@@ -9,6 +9,7 @@ export interface TerminalNotificationInput {
 	readonly mode: "tui" | "rpc" | "json" | "print";
 	readonly terminalBell: boolean;
 	readonly title: string;
+	readonly tmuxNotification: boolean;
 }
 
 export type TerminalNotificationResult = "sent" | "unsupported" | "not-interactive" | "failed";
@@ -22,6 +23,7 @@ export function sendTerminalNotification(
 ): TerminalNotificationResult {
 	if (input.mode !== "tui" || !input.hasUI) return "not-interactive";
 	const environment = options.environment ?? process.env;
+	const insideTmux = Boolean(environment["TMUX"]);
 	let delivery = input.delivery;
 	if (delivery === "auto") {
 		const program = environment["TERM_PROGRAM"]?.toLowerCase();
@@ -29,6 +31,7 @@ export function sendTerminalNotification(
 		if (environment["KITTY_WINDOW_ID"] || term?.includes("kitty")) delivery = "kitty";
 		else if (environment["GHOSTTY_RESOURCES_DIR"] || program === "ghostty") delivery = "osc777";
 		else if (program === "iterm.app" || program === "wezterm") delivery = "osc9";
+		else if (insideTmux && input.tmuxNotification) delivery = "bell";
 		else return "unsupported";
 	}
 	const title = boundTerminalLine(input.title, 64) || "Pi Stuff";
@@ -43,14 +46,15 @@ export function sendTerminalNotification(
 	} else if (delivery === "osc777") {
 		bytes = `\x1b]777;notify;${title.replaceAll(";", " ")};${body.replaceAll(";", " ")}\x1b\\`;
 	} else if (delivery === "bell") {
+		if (insideTmux && !input.tmuxNotification) return "unsupported";
 		bytes = "\x07";
 	} else {
 		return "unsupported";
 	}
-	if (environment["TMUX"] && delivery !== "bell") {
+	if (insideTmux && delivery !== "bell") {
 		bytes = `\x1bPtmux;${bytes.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
 	}
-	if (input.terminalBell && delivery !== "bell") bytes += "\x07";
+	if ((insideTmux ? input.tmuxNotification : input.terminalBell) && delivery !== "bell") bytes += "\x07";
 	try {
 		(options.write ?? ((value: string) => process.stdout.write(value)))(bytes);
 		return "sent";
