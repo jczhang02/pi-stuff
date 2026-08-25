@@ -1131,16 +1131,16 @@ async function verifyWideInteractions(
 
 	session.sendKey("C-u");
 	session.sendLiteral("/u");
-	screen = await session.waitForText("Configure Pi Stuff UI");
-	if (hasStatusline(screen)) fail("Statusline remained visible while native autocomplete was open");
+	await session.waitForText("Configure Pi Stuff UI");
+	screen = await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing native autocomplete");
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
 
 	session.sendKey("C-u");
 	session.sendLiteral("prefix /hzh");
-	screen = await session.waitForText("Humanize Chinese fixture text");
-	if (hasStatusline(screen)) fail("Statusline remained visible while inline slash autocomplete was open");
+	await session.waitForText("Humanize Chinese fixture text");
+	screen = await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForText("prefix /hzh");
 	await session.waitForStatusline("closing inline slash autocomplete");
