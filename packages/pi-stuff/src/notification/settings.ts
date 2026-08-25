@@ -25,8 +25,9 @@ export interface NotificationSettings {
 	readonly gracePeriodMs: number;
 	readonly minimumDurationMs: number;
 	readonly responsePreview: boolean;
-	readonly schemaVersion: 2;
+	readonly schemaVersion: 3;
 	readonly terminalBell: boolean;
+	readonly tmuxNotification: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -37,8 +38,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 	gracePeriodMs: 2_000,
 	minimumDurationMs: 10_000,
 	responsePreview: false,
-	schemaVersion: 2,
+	schemaVersion: 3,
 	terminalBell: false,
+	tmuxNotification: true,
 };
 
 type SettingsWriter = (path: string, settings: NotificationSettings) => Promise<void>;
@@ -63,18 +65,21 @@ function parseSettings(value: JsonInputValue): NotificationSettings {
 	const delivery = deliveryMode(value["delivery"]);
 	const minimumDurationMs = value["minimumDurationMs"];
 	const gracePeriodMs = value["gracePeriodMs"];
-	const legacy = value["schemaVersion"] === 1;
+	const schemaVersion = value["schemaVersion"];
+	const legacy = schemaVersion === 1;
 	const enabled = value["enabled"];
 	const completionAlerts = value["completionAlerts"];
 	const failureAlerts = value["failureAlerts"];
 	const responsePreview = legacy ? false : value["responsePreview"];
 	const terminalBell = legacy ? value["sound"] : value["terminalBell"];
+	const tmuxNotification = schemaVersion === 3 ? value["tmuxNotification"] : true;
 	if (
-		(!legacy && value["schemaVersion"] !== 2) ||
+		(schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3) ||
 		!isRuntimeBoolean(enabled) ||
 		!isRuntimeBoolean(completionAlerts) ||
 		!isRuntimeBoolean(failureAlerts) ||
 		!isRuntimeBoolean(terminalBell) ||
+		!isRuntimeBoolean(tmuxNotification) ||
 		!isRuntimeBoolean(responsePreview) ||
 		!delivery ||
 		!isRuntimeNumber(minimumDurationMs) ||
@@ -84,7 +89,7 @@ function parseSettings(value: JsonInputValue): NotificationSettings {
 		!Number.isFinite(gracePeriodMs) ||
 		gracePeriodMs < 0
 	) {
-		throw new Error("expected schemaVersion 1 or 2 and valid Notification settings");
+		throw new Error("expected schemaVersion 1, 2, or 3 and valid Notification settings");
 	}
 	return {
 		completionAlerts,
@@ -94,8 +99,9 @@ function parseSettings(value: JsonInputValue): NotificationSettings {
 		gracePeriodMs,
 		minimumDurationMs,
 		responsePreview,
-		schemaVersion: 2,
+		schemaVersion: 3,
 		terminalBell,
+		tmuxNotification,
 	};
 }
 

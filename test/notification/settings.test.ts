@@ -28,8 +28,9 @@ describe("NotificationSettingsStore", () => {
 			gracePeriodMs: 2_000,
 			minimumDurationMs: 10_000,
 			responsePreview: false,
-			schemaVersion: 2,
+			schemaVersion: 3,
 			terminalBell: false,
+			tmuxNotification: true,
 		});
 		await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
@@ -37,6 +38,31 @@ describe("NotificationSettingsStore", () => {
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: { ...store.get(), enabled: false } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
 		expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
+	});
+
+	test("schema 2 settings gain tmux notifications without a startup write", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
+		roots.push(root);
+		const path = join(root, "notification.json");
+		const versionTwo = {
+			completionAlerts: true,
+			delivery: "osc777" as const,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+			responsePreview: false,
+			schemaVersion: 2,
+			terminalBell: false,
+		};
+		await writeFile(path, `${JSON.stringify({ notification: versionTwo })}\n`);
+
+		const store = await NotificationSettingsStore.load(path);
+
+		expect(store.get()).toEqual({ ...versionTwo, schemaVersion: 3, tmuxNotification: true });
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: versionTwo });
+		await store.update({ tmuxNotification: false });
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: store.get() });
 	});
 
 	test("two failed queued updates restore the last durable settings", async () => {
@@ -127,8 +153,9 @@ describe("NotificationSettingsStore", () => {
 			gracePeriodMs: 2_000,
 			minimumDurationMs: 10_000,
 			responsePreview: false,
-			schemaVersion: 2,
+			schemaVersion: 3,
 			terminalBell: true,
+			tmuxNotification: true,
 		});
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: legacy });
 

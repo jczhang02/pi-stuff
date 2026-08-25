@@ -9,6 +9,7 @@ export interface TerminalNotificationInput {
 	readonly mode: "tui" | "rpc" | "json" | "print";
 	readonly terminalBell: boolean;
 	readonly title: string;
+	readonly tmuxNotification: boolean;
 }
 
 export type TerminalNotificationResult = "sent" | "unsupported" | "not-interactive" | "failed";
@@ -22,7 +23,7 @@ export function sendTerminalNotification(
 ): TerminalNotificationResult {
 	if (input.mode !== "tui" || !input.hasUI) return "not-interactive";
 	const environment = options.environment ?? process.env;
-	const tmuxAttention = Boolean(environment["TMUX"]);
+	const insideTmux = Boolean(environment["TMUX"]);
 	let delivery = input.delivery;
 	if (delivery === "auto") {
 		const program = environment["TERM_PROGRAM"]?.toLowerCase();
@@ -48,10 +49,10 @@ export function sendTerminalNotification(
 	} else {
 		return "unsupported";
 	}
-	if (environment["TMUX"] && delivery !== "bell") {
+	if (insideTmux && delivery !== "bell") {
 		bytes = `\x1bPtmux;${bytes.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
 	}
-	if ((input.terminalBell || tmuxAttention) && delivery !== "bell") bytes += "\x07";
+	if ((insideTmux ? input.tmuxNotification : input.terminalBell) && delivery !== "bell") bytes += "\x07";
 	try {
 		(options.write ?? ((value: string) => process.stdout.write(value)))(bytes);
 		return "sent";

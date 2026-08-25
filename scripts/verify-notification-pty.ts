@@ -273,7 +273,13 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 		await session.waitForText("notification-pty-model");
 		await session.sendPrompt("/notifications");
 		const settingsScreen = await session.waitForText("Response preview");
-		for (const label of ["Completion alerts", "Failure alerts", "Delivery", "Also ring terminal bell"]) {
+		for (const label of [
+			"Completion alerts",
+			"Failure alerts",
+			"Delivery",
+			"Tmux notification",
+			"Also ring terminal bell",
+		]) {
 			if (!settingsScreen.includes(label)) fail(`Notification settings omitted ${JSON.stringify(label)}`);
 		}
 		if (settingsScreen.includes("Notification sound"))

@@ -32,6 +32,7 @@ test("Notification settings use one owned native Command Dialog", async () => {
 	const initial = component.render(72).join("\n");
 	expect(initial).toContain("Notifications");
 	expect(initial).toContain("Response preview");
+	expect(initial).toContain("Tmux notification");
 	expect(initial).toContain("Also ring terminal bell");
 	expect(initial).not.toContain("Notification sound");
 	expect(initial).not.toMatch(/[╭╮╰╯]/u);
@@ -41,6 +42,10 @@ test("Notification settings use one owned native Command Dialog", async () => {
 	component.handleInput?.("\r");
 	await Promise.resolve();
 	expect(settings.get().enabled).toBe(false);
+	for (let index = 0; index < 6; index += 1) component.handleInput?.("\u001b[B");
+	component.handleInput?.("\r");
+	await Promise.resolve();
+	expect(settings.get().tmuxNotification).toBe(false);
 
 	terminal.rows = 6;
 	const low = component.render(48);
