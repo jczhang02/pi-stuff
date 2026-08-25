@@ -391,17 +391,20 @@ function customModes(entries: JsonSourceValue | undefined): string[] {
 			: [entry["data"]["mode"]],
 	);
 }
-function skillCommands(commands: JsonSourceValue | undefined): string[] {
+export function skillCommands(commands: JsonSourceValue | undefined): string[] {
 	if (!Array.isArray(commands)) return [];
 	return commands
-		.flatMap((command) =>
-			!isSourceObject(command) ||
-			command["source"] !== "skill" ||
-			!isRuntimeString(command["name"]) ||
-			!command["name"].startsWith("ponytail")
-				? []
-				: [command["name"]],
-		)
+		.flatMap((command) => {
+			if (
+				!isSourceObject(command) ||
+				command["source"] !== "skill" ||
+				!isRuntimeString(command["name"]) ||
+				!command["name"].startsWith("skill:")
+			)
+				return [];
+			const name = command["name"].slice("skill:".length);
+			return EXPECTED_SKILLS.some((expected) => expected === name) ? [name] : [];
+		})
 		.sort();
 }
 async function providerObservations(path: string): Promise<ProviderObservation[]> {

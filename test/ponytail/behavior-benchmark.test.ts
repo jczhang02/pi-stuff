@@ -11,6 +11,7 @@ import {
 	oneSidedSignTestPValue,
 	PONYTAIL_BENCHMARK_RUNS,
 	PONYTAIL_BENCHMARK_SCENARIOS,
+	skillCommands,
 	snapshotBenchmarkFiles,
 } from "../../scripts/benchmark-ponytail.js";
 import { providerToolNames } from "../fixtures/ponytail-benchmark-observer.js";
@@ -59,6 +60,17 @@ describe("Ponytail behavioral benchmark rubric", () => {
 				javascript.transformSync(scenario.hiddenCheck.replace("__TARGET__", JSON.stringify("file:///fixture.ts"))),
 			).not.toThrow();
 		}
+	});
+
+	test("normalizes native skill: commands and excludes extension aliases", () => {
+		expect(
+			skillCommands([
+				{ name: "ponytail-review", source: "extension" },
+				{ name: "skill:ponytail-review", source: "skill" },
+				{ name: "skill:ponytail", source: "skill" },
+				{ name: "skill:unrelated", source: "skill" },
+			]),
+		).toEqual(["ponytail", "ponytail-review"]);
 	});
 
 	test("observes every direct or OpenAI-style Provider Tool", () => {
