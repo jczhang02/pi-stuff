@@ -84,7 +84,7 @@ function settingsItems(settings: NotificationSettings): SettingItem[] {
 		},
 		{
 			currentValue: settings.tmuxNotification ? "on" : "off",
-			description: "Mark an unattended tmux window for attention",
+			description: "Control tmux attention for every delivery mode",
 			id: "tmuxNotification",
 			label: "Tmux notification",
 			values: [...ON_OFF_VALUES],

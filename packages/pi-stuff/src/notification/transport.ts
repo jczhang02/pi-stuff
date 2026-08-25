@@ -31,6 +31,7 @@ export function sendTerminalNotification(
 		if (environment["KITTY_WINDOW_ID"] || term?.includes("kitty")) delivery = "kitty";
 		else if (environment["GHOSTTY_RESOURCES_DIR"] || program === "ghostty") delivery = "osc777";
 		else if (program === "iterm.app" || program === "wezterm") delivery = "osc9";
+		else if (insideTmux && input.tmuxNotification) delivery = "bell";
 		else return "unsupported";
 	}
 	const title = boundTerminalLine(input.title, 64) || "Pi Stuff";
@@ -45,6 +46,7 @@ export function sendTerminalNotification(
 	} else if (delivery === "osc777") {
 		bytes = `\x1b]777;notify;${title.replaceAll(";", " ")};${body.replaceAll(";", " ")}\x1b\\`;
 	} else if (delivery === "bell") {
+		if (insideTmux && !input.tmuxNotification) return "unsupported";
 		bytes = "\x07";
 	} else {
 		return "unsupported";

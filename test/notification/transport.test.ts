@@ -153,6 +153,50 @@ describe("sendTerminalNotification", () => {
 		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]777;notify;Done;repo 10s\x1b\x1b\\\x1b\\"]);
 	});
 
+	test("tmux auto delivery falls back to an attention bell when the visual protocol is unknown", () => {
+		const writes: string[] = [];
+		expect(
+			sendTerminalNotification(
+				{
+					body: "repo 10s",
+					delivery: "auto",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: false,
+					title: "Done",
+					tmuxNotification: true,
+				},
+				{
+					environment: { TERM: "tmux-256color", TMUX: "/tmp/tmux-1000/default,1,0" },
+					write: (bytes) => writes.push(bytes),
+				},
+			),
+		).toBe("sent");
+		expect(writes).toEqual(["\x07"]);
+	});
+
+	test("tmux notification off suppresses explicit bell delivery", () => {
+		const writes: string[] = [];
+		expect(
+			sendTerminalNotification(
+				{
+					body: "repo 10s",
+					delivery: "bell",
+					hasUI: true,
+					mode: "tui",
+					terminalBell: true,
+					title: "Done",
+					tmuxNotification: false,
+				},
+				{
+					environment: { TMUX: "/tmp/tmux-1000/default,1,0" },
+					write: (bytes) => writes.push(bytes),
+				},
+			),
+		).toBe("unsupported");
+		expect(writes).toEqual([]);
+	});
+
 	test("explicit visual delivery marks an unattended tmux window", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "pi-stuff-notification-tmux-"));
 		const socket = join(directory, "tmux.sock");
