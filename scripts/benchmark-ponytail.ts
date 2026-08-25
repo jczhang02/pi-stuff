@@ -27,6 +27,7 @@ const ponytailPackage = join(root, "packages/pi-stuff");
 const observerExtension = join(root, "test/fixtures/ponytail-benchmark-observer.ts");
 const PROVIDER = "jcapi";
 const MODEL = "openrouter/stealth/ox-alpha";
+const EXPECTED_TOOLS = ["bash", "edit", "read", "write"] as const;
 const EXPECTED_SKILLS = [
 	"ponytail",
 	"ponytail-audit",
@@ -62,6 +63,7 @@ interface ProviderObservation {
 	readonly hasUpstreamLongForm: boolean;
 	readonly markerCount: number;
 	readonly skillNames: readonly string[];
+	readonly toolNames: readonly string[];
 }
 export interface BenchmarkCaseResult {
 	readonly assistantCharacters?: number;
@@ -420,7 +422,9 @@ async function providerObservations(path: string): Promise<ProviderObservation[]
 				!isSourceObject(value) ||
 				value["type"] !== "provider-request" ||
 				!Array.isArray(value["skillNames"]) ||
-				!value["skillNames"].every(isRuntimeString)
+				!value["skillNames"].every(isRuntimeString) ||
+				!Array.isArray(value["toolNames"]) ||
+				!value["toolNames"].every(isRuntimeString)
 			)
 				fail("observer emitted malformed data");
 			const contributionCharacters = runtimeNumber(value["contributionCharacters"]);
@@ -438,11 +442,14 @@ async function providerObservations(path: string): Promise<ProviderObservation[]
 				hasModePolicy: value["hasModePolicy"],
 				hasUpstreamLongForm: value["hasUpstreamLongForm"],
 				skillNames: value["skillNames"],
+				toolNames: value["toolNames"],
 			};
 		});
 }
 function promptBoundaryValid(mode: BenchmarkMode, observations: readonly ProviderObservation[]): boolean {
 	if (observations.length === 0) return false;
+	if (!observations.every((entry) => JSON.stringify(entry["toolNames"]) === JSON.stringify([...EXPECTED_TOOLS])))
+		return false;
 	if (mode === "off")
 		return observations.every(
 			(entry) =>
@@ -683,6 +690,8 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
 		await writeFile(destination, contents, { mode: 0o600 });
 	}
+	await mkdir(join(project, ".pi"), { recursive: true, mode: 0o700 });
+	await writeFile(join(project, ".pi/code-mode.json"), '{"enabled":false}\n', { mode: 0o600 });
 	initializeBenchmarkInventory(project, inventory);
 	const before = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
 	const rpc = createRpc(project, sessions, runtime, temporary, observerLog);

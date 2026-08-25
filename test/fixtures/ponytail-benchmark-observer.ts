@@ -26,6 +26,13 @@ export default function ponytailBenchmarkObserver(pi: ExtensionAPI): void {
 				hasModePolicy: payload.includes("PONYTAIL MODE ACTIVE — level:"),
 				hasUpstreamLongForm: payload.includes("HARD RULE: branch or loop only when each leaf has a test"),
 				skillNames: [...new Set(payload.match(PONYTAIL_SKILL) ?? [])].sort(),
+				toolNames: [
+					...new Set(
+						[...payload.matchAll(/"name":"(bash|edit|read|write)"/gu)]
+							.map((match) => match[1])
+							.filter((name) => name !== undefined),
+					),
+				].sort(),
 			})}\n`,
 		);
 	});
