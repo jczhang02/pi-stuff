@@ -24,7 +24,7 @@ export default function ponytailBenchmarkObserver(pi: ExtensionAPI): void {
 				markerCount: count(payload, CONTRIBUTION_START),
 				contributionCharacters: contribution.length,
 				hasModePolicy: contribution.includes("PONYTAIL MODE ACTIVE — level:"),
-				skillNames: [...new Set(contribution.match(PONYTAIL_SKILL) ?? [])].sort(),
+				skillNames: [...new Set(payload.match(PONYTAIL_SKILL) ?? [])].sort(),
 			})}\n`,
 		);
 	});
