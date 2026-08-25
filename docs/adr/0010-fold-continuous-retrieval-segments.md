@@ -53,6 +53,27 @@ Raw, detail, list, then the dialog. Formatted detail hides protocol IDs. Raw det
 arguments, result content, and details. Both representations are capped at 240 logical lines and 24 KiB per selected
 invocation.
 
+### Accepted Control-only projection update
+
+**Decision update:** 2026-08-26
+**Status:** Implemented on 2026-08-26.
+
+A Control-only Execution is omitted from the Conversation Transcript and ordinary `/tools` before Activity planning.
+The shared live/replay projection recognizes only one zero-argument awaited `yield_control()` expression, optionally
+followed by one literal `text(...)` acknowledgement. Any argument, additional statement, variable, control flow,
+dynamic output, nested `tools.*` call, or parse failure stays visible. A successful Code Mode execution with no nested
+operation and only its no-output diagnostic is also omitted. Errors and real nested operations retain the existing
+single visible authority.
+
+A visible successful Code Mode fallback uses its first bounded result line as the compact summary instead of `done`.
+When a generic compact summary was automatically derived from that same terminal-safe first result line, formatted
+`Ctrl+O` and `/tools` detail omit the line and show only additional content. A one-line result adds no body or filler.
+Non-empty Tool-owned detail and custom summaries remain authoritative, and Raw detail retains the complete protocol
+result.
+
+This is display projection only. Session JSONL, Code Mode ledger records, provider-visible results, Host continuation,
+media, and lifecycle behavior remain unchanged; existing Sessions need no rewrite or migration.
+
 ### Accepted `/tools` readability update
 
 **Decision update:** 2026-08-17

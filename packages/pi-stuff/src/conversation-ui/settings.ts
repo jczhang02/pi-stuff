@@ -12,7 +12,7 @@ import {
 } from "../shared/settings-io/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { getHostSharedResource } from "./host-resource.js";
-import type { StatuslineDensity, StatuslineIconMode } from "./statusline.js";
+import type { StatuslineDensity } from "./statusline.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-ui.json";
 const UI_NAMESPACE = "ui";
@@ -21,7 +21,6 @@ const UI_SETTING_IDS = [
 	"statusline",
 	"statuslineDensity",
 	"statuslineLatestPrompt",
-	"statuslineIcons",
 	"welcomeHeader",
 	"inputHighlighting",
 	"inlineSlashAutocomplete",
@@ -29,7 +28,7 @@ const UI_SETTING_IDS = [
 
 const BOOLEAN_SETTING_VALUES = [true, false] as const;
 const STATUSLINE_DENSITY_VALUES = ["auto", "full", "compact"] as const satisfies readonly StatuslineDensity[];
-const STATUSLINE_ICON_VALUES = ["auto", "nerd", "ascii"] as const satisfies readonly StatuslineIconMode[];
+const LEGACY_STATUSLINE_ICON_VALUES = ["auto", "nerd", "ascii"] as const;
 const ERRNO_SCHEMA = Type.Object({ code: Type.String() });
 const UI_SETTINGS_VERSION_ONE_SCHEMA = Type.Object(
 	{
@@ -48,7 +47,19 @@ const UI_SETTINGS_VERSION_TWO_SCHEMA = Type.Object(
 		schemaVersion: Type.Literal(2),
 		statusline: Type.Boolean(),
 		statuslineDensity: Type.Union(STATUSLINE_DENSITY_VALUES.map((value) => Type.Literal(value))),
-		statuslineIcons: Type.Union(STATUSLINE_ICON_VALUES.map((value) => Type.Literal(value))),
+		statuslineIcons: Type.Union(LEGACY_STATUSLINE_ICON_VALUES.map((value) => Type.Literal(value))),
+		statuslineLatestPrompt: Type.Boolean(),
+		welcomeHeader: Type.Boolean(),
+	},
+	{ additionalProperties: true },
+);
+const UI_SETTINGS_VERSION_THREE_SCHEMA = Type.Object(
+	{
+		inlineSlashAutocomplete: Type.Boolean(),
+		inputHighlighting: Type.Boolean(),
+		schemaVersion: Type.Literal(3),
+		statusline: Type.Boolean(),
+		statuslineDensity: Type.Union(STATUSLINE_DENSITY_VALUES.map((value) => Type.Literal(value))),
 		statuslineLatestPrompt: Type.Boolean(),
 		welcomeHeader: Type.Boolean(),
 	},
@@ -60,10 +71,9 @@ export type UiSettingId = (typeof UI_SETTING_IDS)[number];
 export interface UiSettings {
 	readonly inlineSlashAutocomplete: boolean;
 	readonly inputHighlighting: boolean;
-	readonly schemaVersion: 2;
+	readonly schemaVersion: 3;
 	readonly statusline: boolean;
 	readonly statuslineDensity: StatuslineDensity;
-	readonly statuslineIcons: StatuslineIconMode;
 	readonly statuslineLatestPrompt: boolean;
 	readonly welcomeHeader: boolean;
 }
@@ -89,10 +99,9 @@ export type UiSettingsHost = Pick<ExtensionAPI, "events" | "on">;
 const DEFAULT_SETTINGS: UiSettings = {
 	inlineSlashAutocomplete: true,
 	inputHighlighting: true,
-	schemaVersion: 2,
+	schemaVersion: 3,
 	statusline: true,
 	statuslineDensity: "auto",
-	statuslineIcons: "auto",
 	statuslineLatestPrompt: true,
 	welcomeHeader: true,
 };
@@ -124,10 +133,9 @@ function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SC
 	return {
 		inlineSlashAutocomplete: value.inlineSlashAutocomplete,
 		inputHighlighting: value.inputHighlighting,
-		schemaVersion: 2,
+		schemaVersion: 3,
 		statusline: value.statusline,
 		statuslineDensity: DEFAULT_SETTINGS.statuslineDensity,
-		statuslineIcons: DEFAULT_SETTINGS.statuslineIcons,
 		statuslineLatestPrompt: DEFAULT_SETTINGS.statuslineLatestPrompt,
 		welcomeHeader: value.welcomeHeader,
 	};
@@ -135,19 +143,18 @@ function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SC
 
 function parseSettings<Value>(value: Value): UiSettings {
 	if (Check(UI_SETTINGS_VERSION_ONE_SCHEMA, value)) return parseVersionOneSettings(value);
-	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value)) {
+	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value) || Check(UI_SETTINGS_VERSION_THREE_SCHEMA, value)) {
 		return {
 			inlineSlashAutocomplete: value.inlineSlashAutocomplete,
 			inputHighlighting: value.inputHighlighting,
-			schemaVersion: 2,
+			schemaVersion: 3,
 			statusline: value.statusline,
 			statuslineDensity: value.statuslineDensity,
-			statuslineIcons: value.statuslineIcons,
 			statuslineLatestPrompt: value.statuslineLatestPrompt,
 			welcomeHeader: value.welcomeHeader,
 		};
 	}
-	throw new Error("expected schemaVersion 1 or 2");
+	throw new Error("expected schemaVersion 1, 2, or 3");
 }
 
 async function readSettings(path: string): Promise<UiSettings> {
@@ -197,10 +204,9 @@ function applySettingsChanges(settings: UiSettings, changes: SettingsChanges | u
 	return {
 		inlineSlashAutocomplete: changes?.inlineSlashAutocomplete ?? settings.inlineSlashAutocomplete,
 		inputHighlighting: changes?.inputHighlighting ?? settings.inputHighlighting,
-		schemaVersion: 2,
+		schemaVersion: 3,
 		statusline: changes?.statusline ?? settings.statusline,
 		statuslineDensity: changes?.statuslineDensity ?? settings.statuslineDensity,
-		statuslineIcons: changes?.statuslineIcons ?? settings.statuslineIcons,
 		statuslineLatestPrompt: changes?.statuslineLatestPrompt ?? settings.statuslineLatestPrompt,
 		welcomeHeader: changes?.welcomeHeader ?? settings.welcomeHeader,
 	};
@@ -534,17 +540,6 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 				order: 12,
 			},
 			BOOLEAN_SETTING_VALUES,
-		),
-		registerStoreSetting(
-			registry,
-			store,
-			{
-				description: "Detect Statusline icons automatically or force Nerd Font or ASCII icons",
-				id: "statuslineIcons",
-				label: "Statusline icons",
-				order: 13,
-			},
-			STATUSLINE_ICON_VALUES,
 		),
 		registerStoreSetting(
 			registry,

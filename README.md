@@ -167,7 +167,8 @@ Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
 `/ponytail` opens the full-width control dialog for the current Session mode, default mode, Statusline visibility,
 startup notification, and specialized Skills. Direct commands remain available, including `/ponytail full`,
 `/ponytail default lite`, and the upstream-compatible `/ponytail-review` through `/ponytail-help` aliases. The shared
-Statusline shows the selected mode as `♞ <mode>`; Agent activity remains in the Working Row. `off` contributes no
+Statusline shows the selected mode as the Nerd Font `󱖿 <mode>` identity; Agent activity remains in the Working Row.
+`off` contributes no
 Ponytail instructions or model-visible Ponytail Skills, while explicit Skill commands remain available.
 
 ## Themes
@@ -183,7 +184,8 @@ the user's theme choice.
 | Pi Host | `0.84.3`, upstream `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
 | Pi Host binary | Audited upstream Linux x64 release SHA-256 |
 | Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
-| Bun | `1.3.14` |
+| Pi Host embedded Bun runtime | `1.3.14` |
+| Repository Bun toolchain | `1.4.0` |
 | TypeScript | `5.9.3` |
 | Optional RTK runtime | `0.42.4`, certified Linux x64 builds only |
 

@@ -13,10 +13,10 @@ import {
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { CERTIFIED_PI_BUN_VERSION } from "./pi-host-contract.js";
 import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
 
 const ROOT = resolve(import.meta.dir, "..");
+const REPOSITORY_BUN_VERSION = "1.4.0";
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
 const DEFAULT_PACKAGE = join(ROOT, "packages/pi-stuff");
 const READY_MARKER = "PS5BW_EDITOR_READY";
@@ -1723,8 +1723,8 @@ async function main(): Promise<void> {
 	) {
 		fail("background-exit, agent-exit, and reload-change require the suite variant");
 	}
-	if (Bun.version !== CERTIFIED_PI_BUN_VERSION) {
-		fail(`Bun ${CERTIFIED_PI_BUN_VERSION} is required; received ${Bun.version}`);
+	if (Bun.version !== REPOSITORY_BUN_VERSION) {
+		fail(`Bun ${REPOSITORY_BUN_VERSION} is required; received ${Bun.version}`);
 	}
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-lifecycle-benchmark-"));
 	const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot).catch(async (cause: unknown) => {

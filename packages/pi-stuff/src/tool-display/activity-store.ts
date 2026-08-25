@@ -11,6 +11,7 @@ export interface ToolActivity {
 	readonly startedAt: number | undefined;
 	readonly state: ToolActivityState;
 	readonly summary: string;
+	readonly summaryFromResult?: boolean;
 	readonly target: string;
 }
 
@@ -27,6 +28,7 @@ export interface SettleToolActivity {
 	readonly durationMs: number | undefined;
 	readonly state: Exclude<ToolActivityState, "running">;
 	readonly summary: string;
+	readonly summaryFromResult?: boolean;
 }
 
 type ActivityListener = (activities: readonly ToolActivity[]) => void;
@@ -120,6 +122,7 @@ export class ToolActivityStore {
 			existing.durationMs === durationMs &&
 			existing.state === input.state &&
 			existing.summary === input.summary &&
+			existing.summaryFromResult === (input.summaryFromResult === true) &&
 			existing.detailLines.length === input.detailLines.length &&
 			existing.detailLines.every((line, index) => line === input.detailLines[index])
 		) {
@@ -131,6 +134,7 @@ export class ToolActivityStore {
 			durationMs,
 			state: input.state,
 			summary: input.summary,
+			summaryFromResult: input.summaryFromResult === true,
 		});
 		this.activities.set(id, activity);
 		this.notify();

@@ -52,7 +52,7 @@ Dialog for ordinary setting changes. Parameterized commands remain direct:
 /ponytail-help
 ```
 
-The shared Statusline shows only `♞ <mode>` and hides it while mode is `off` or
+The shared Statusline shows only the Nerd Font `󱖿 <mode>` identity and hides it while mode is `off` or
 Statusline visibility is disabled. Pi Stuff's Working Row remains the sole
 activity authority. The Dialog suppresses shared persistent chrome while open,
 restores the editor draft on close, returns from secondary lists with Escape,

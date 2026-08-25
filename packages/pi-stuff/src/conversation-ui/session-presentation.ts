@@ -57,7 +57,6 @@ class StoreStatuslinePreferencesSource implements StatuslinePreferencesSource {
 		return {
 			density: settings.statuslineDensity,
 			enabled: settings.statusline,
-			iconMode: settings.statuslineIcons,
 			latestPrompt: settings.statuslineLatestPrompt,
 		};
 	}

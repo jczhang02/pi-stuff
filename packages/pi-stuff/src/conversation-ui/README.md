@@ -13,12 +13,12 @@ middle-dot separators and this stable order: model, Thinking, conditional `fast`
 state, Context percentage, cache hit rate, metered cost or Codex weekly allowance, the conditional current Goal, and the
 conditional Ponytail Mode. It deliberately omits token-window counts and ordinary Agent worktime. Capability state such
 as MCP, Agents, Todo, BTW, and Tool activity stays on its own focused surface instead of adding Statusline segments.
-Ponytail is the narrow exception: `♞ <mode>` is its sole persistent mode authority, disappears for `off` or an explicit
+Ponytail is the narrow exception: `󱖿 <mode>` is its sole persistent mode authority, disappears for `off` or an explicit
 hide preference, and never represents Agent activity.
 
-With no current Goal, the Goal segment is absent. An active Goal renders `● goal used/budget elapsed`, such as
-`● goal 0/40k 13m`, and refreshes elapsed active time once per second while visible. Paused uses `■`, blocked and
-usage- or budget-limited states use `!`, and the bounded completion projection uses `✓`; their complete state word and
+With no current Goal, the Goal segment is absent. An active Goal renders ` goal used/budget elapsed`, such as
+` goal 0/40k 13m`, and refreshes elapsed active time once per second while visible. Paused uses ``, blocked and
+usage- or budget-limited states use ``, and the bounded completion projection uses ``; their complete state word and
 semantic color remain visible. Paused or hidden time is not counted, and inactive, suppressed, cleared, and disposed
 surfaces do not retain the refresh timer. Goal publishes only a presentation snapshot through the shared Host channel;
 the Statusline remains the sole persistent Goal presentation authority.
@@ -26,18 +26,17 @@ the Statusline remains the sole persistent Goal presentation authority.
 Automatic density first changes long fields to their compact form, then removes complete low-priority segments. It
 never wraps the status row or leaves clipped field fragments. Model and Context survive first, followed by cwd, branch,
 Thinking, allowance, file state, `fast`, and cache according to their accepted priorities. A constrained dirty Git state
-aggregates file changes as `ΔN`; branch tracking remains attributable through `⇡` and `⇣` markers.
+aggregates file changes as `N`; branch tracking remains attributable through `` and `` markers.
 
-The previous prompt is always bounded to one row when enabled. Its muted `›` cue occupies the same first visual column
+The previous prompt is always bounded to one row when enabled. Its muted `` cue occupies the same first visual column
 as the model icon. Both rows reserve one marker cell followed by one stable gap, so Latin, CJK, and emoji text begin in
 the same terminal column. The prompt text uses the readable secondary `muted` token rather than the decorative `dim`
 token. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
-Nerd Font terminals receive the compact model, Thinking, `fast`, folder, branch, file-state, Context, cache, allowance,
-and cost icon family; the Prompt uses the same one-cell `›` in every mode. Other terminals receive one-cell width-safe
-fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0`
-to override automatic detection, or choose a fixed mode in `/ui`. Colors come only from Pi semantic theme tokens.
+Every semantic icon and state marker in both Statusline rows uses the fixed Nerd Font grammar defined in
+[`DESIGN.md`](../../../../DESIGN.md). There is no Unicode or ASCII fallback, terminal detection, environment override,
+or `/ui` icon mode. The `·` separator and `…` truncation mark remain punctuation. Colors come only from Pi semantic theme tokens.
 
 The cache value is the active branch's cumulative hit rate across successful assistant messages:
 `cacheRead / (input + cacheRead + cacheWrite)`. Failed or aborted messages and compaction metadata do not affect the
@@ -192,14 +191,13 @@ this inspection history; Capability-owned durable state is unaffected.
 ## `/ui`
 
 `/ui` opens one searchable Pi-native `SettingsList` inside the shared Command Dialog. It owns presentation settings
-only; behavior settings stay with the Capability they affect. In the full Suite it contains eight settings:
+only; behavior settings stay with the Capability they affect. In the full Suite it contains seven settings:
 
 | Setting | Effect | Applies |
 | --- | --- | --- |
 | Statusline | Show session context below the editor | Immediately |
 | Statusline density | Choose automatic, full, or compact responsive detail | Immediately |
 | Latest prompt | Show the latest prompt when Statusline space allows | Immediately |
-| Statusline icons | Detect icons automatically or force Nerd Font or ASCII icons | Immediately |
 | Welcome header | Show startup orientation and inventory | Next launch |
 | Input highlighting | Style recognized commands and skills while typing | Immediately |
 | Inline slash autocomplete | Suggest Host-ranked Skills after slash text | Immediately |

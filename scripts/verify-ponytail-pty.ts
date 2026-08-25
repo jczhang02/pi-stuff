@@ -14,6 +14,7 @@ const FULL_ROWS = 28;
 const NARROW_COLUMNS = 48;
 const NARROW_ROWS = 16;
 const DRAFT = "保留 Ponytail 草稿 · DRAFT_RESTORED";
+const PONYTAIL_ICON = "\u{F15BF}";
 const PONYTAIL_SKILL_COMMANDS = [
 	"skill:ponytail",
 	"skill:ponytail-audit",
@@ -391,22 +392,22 @@ async function verifyPrimarySession(
 	);
 	try {
 		session.start();
-		await session.waitForText("♞ full");
+		await session.waitForText(`${PONYTAIL_ICON} full`);
 		session.sendLiteral(DRAFT);
 		await session.waitFor((screen) => editorContains(screen, DRAFT), "typed draft");
 		session.sendKey("F12");
-		const dialog = await session.waitForText("♞ Ponytail · full");
+		const dialog = await session.waitForText(`${PONYTAIL_ICON} Ponytail · full`);
 		requireText(
 			dialog,
-			["◆ Control", "Session mode", "Review complexity", "Show help", "Enter choose"],
+			[`${PONYTAIL_ICON} Control`, "Session mode", "Review complexity", "Show help", "Enter choose"],
 			"Ponytail dialog",
 		);
-		if (dialog.includes("♞ full")) fail("Ponytail Statusline remained visible under the dialog");
+		if (dialog.includes(`${PONYTAIL_ICON} full`)) fail("Ponytail Statusline remained visible under the dialog");
 		verifyWidth(dialog, FULL_COLUMNS, "full Ponytail dialog");
 
 		session.resize(NARROW_COLUMNS, NARROW_ROWS);
 		const narrow = await session.waitFor(
-			(screen) => screen.includes("♞ Ponytail · full") && screen.includes("Enter choose"),
+			(screen) => screen.includes(`${PONYTAIL_ICON} Ponytail · full`) && screen.includes("Enter choose"),
 			"narrow Ponytail dialog",
 		);
 		requireText(narrow, ["Session mode", "Enter choose"], "narrow Ponytail dialog");
@@ -415,12 +416,12 @@ async function verifyPrimarySession(
 
 		session.sendKey("Escape");
 		await session.waitFor(
-			(screen) => !screen.includes("♞ Ponytail · full") && editorContains(screen, DRAFT),
+			(screen) => !screen.includes(`${PONYTAIL_ICON} Ponytail · full`) && editorContains(screen, DRAFT),
 			"draft restoration",
 		);
 		session.sendKey("C-u");
 		session.sendKey("F12");
-		await session.waitForText("♞ Ponytail · full");
+		await session.waitForText(`${PONYTAIL_ICON} Ponytail · full`);
 		session.sendKey("Enter");
 		await session.waitForText("Choose the current Session mode.");
 		session.sendKey("Down", "Down", "Down", "Enter");
@@ -438,7 +439,7 @@ async function verifyPrimarySession(
 		await waitForDialogMessage(session, "Startup notification quiet.");
 		session.sendKey("Escape");
 		await session.waitFor(
-			(screen) => !screen.includes("♞ Ponytail · ultra") && screen.includes("♞ ultra"),
+			(screen) => !screen.includes(`${PONYTAIL_ICON} Ponytail · ultra`) && screen.includes(`${PONYTAIL_ICON} ultra`),
 			"restored ultra Statusline",
 		);
 
@@ -448,7 +449,7 @@ async function verifyPrimarySession(
 		session.sendLiteral("/ponytail off");
 		session.sendKey("Escape", "Enter");
 		await session.waitForText("Ponytail mode: off");
-		await session.waitFor((screen) => !screen.includes("♞ ultra"), "hidden off Statusline");
+		await session.waitFor((screen) => !screen.includes(`${PONYTAIL_ICON} ultra`), "hidden off Statusline");
 		session.sendLiteral("PONYTAIL_OFF");
 		session.sendKey("Enter");
 		await session.waitForText("PONYTAIL_OFF_DONE");
@@ -514,7 +515,7 @@ async function verifyEnvironmentOverrides(base: string, options: PonytailPtyVeri
 		await session.waitForText("ponytail-pty-model");
 		await waitForRecord(paths.log, (record) => record.type === "inventory", "Ponytail startup inventory");
 		session.sendKey("F12");
-		const overview = await session.waitForText("♞ Ponytail · ultra");
+		const overview = await session.waitForText(`${PONYTAIL_ICON} Ponytail · ultra`);
 		requireText(
 			overview,
 			["Configuration merged · environment override", "ultra effective · lite saved", "hidden · environment"],
@@ -527,8 +528,13 @@ async function verifyEnvironmentOverrides(base: string, options: PonytailPtyVeri
 		session.sendKey("Down", "Enter");
 		await waitForDialogMessage(session, "Saved shown; environment override remains effective.");
 		session.sendKey("Escape");
-		const closed = await session.waitFor((screen) => !screen.includes("♞ Ponytail · ultra"), "override dialog close");
-		if (closed.includes("♞ ultra")) fail("environment-hidden Statusline became visible after dialog close");
+		const closed = await session.waitFor(
+			(screen) => !screen.includes(`${PONYTAIL_ICON} Ponytail · ultra`),
+			"override dialog close",
+		);
+		if (closed.includes(`${PONYTAIL_ICON} ultra`)) {
+			fail("environment-hidden Statusline became visible after dialog close");
+		}
 		const settings = await readPonytailSettings(paths.agent);
 		if (settings.defaultMode !== "full" || settings.hideStatus !== false || settings.quietStartup !== false) {
 			fail(`override dialog changed effective values instead of saved values: ${JSON.stringify(settings)}`);

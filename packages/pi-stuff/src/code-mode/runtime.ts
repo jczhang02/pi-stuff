@@ -32,6 +32,7 @@ const AUTO_WAIT_MS = 60_000;
 const MAX_OUTPUT_CHARS = 400_000;
 const NESTED_CANCELLATION_TEXT = "Operation aborted";
 const HOST_RECOVERY_LIMIT = 1;
+export const CODE_MODE_NO_OUTPUT_MESSAGE = "Code completed with no output; use text(...) to return a value";
 
 function isRuntimeToolCallPlan<Value>(value: Value): value is Value & RuntimeToolCallPlan {
 	return (
@@ -554,9 +555,7 @@ export class CodeModeRuntime {
 					: boundedContent(
 							response.contentItems,
 							finalError ??
-								(status === "cancelled"
-									? "Code Mode execution was cancelled"
-									: "Code completed with no output; use text(...) to return a value"),
+								(status === "cancelled" ? "Code Mode execution was cancelled" : CODE_MODE_NO_OUTPUT_MESSAGE),
 						);
 			const media = projectFinalMedia(traces, finalContent);
 			await assertDecodableSupportedCodeModeImages(media.content);

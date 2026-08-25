@@ -41,8 +41,8 @@ if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
 	echo "Work Agent lifecycle capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
-if [[ $(bun --version) != "1.3.14" ]]; then
-	echo "Work Agent lifecycle capture requires Bun 1.3.14" >&2
+if [[ $(bun --version) != "1.4.0" ]]; then
+	echo "Work Agent lifecycle capture requires Bun 1.4.0" >&2
 	exit 1
 fi
 

@@ -47,6 +47,10 @@ OpenAI's Programmatic Tool Calling form is canonical:
 - explicit output through `text(...)`, `image(...)`, and the other supported output helpers; and
 - no direct Node.js, Bun, filesystem, process, module, network, or credential access.
 
+Ordinary Tool work is awaited normally. A concrete observable command, file, log, or HTTP condition with a deadline
+uses the existing one-shot Monitor and wakes the Agent once; Bash sleeps, status loops, and repeated conversational
+polling are not the waiting contract.
+
 Pi 0.84.2 transports source as `codemode({ code })` because its public Tool API does not expose a free-form source
 Tool. This wrapper does not create a second JavaScript dialect.
 
@@ -72,6 +76,9 @@ The existing Codex V8 Runtime remains the default Executor. Local workerd/Minifl
 missing behavior was the Connector, ledger, and approval contract, not JavaScript syntax. Replacing V8 with a Workers
 runtime would require a separate decision and evidence that the extra process, RPC bridge, persistence, and platform
 certification improve required behavior.
+
+V8 yield and continuation remain an internal Host protocol. Yielded cells are resumed by the Runtime, but
+`yield_control` is not model-facing helper vocabulary and does not represent user-level completion.
 
 ## Durable effects, approval, and recovery
 

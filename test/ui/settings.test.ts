@@ -19,10 +19,9 @@ import {
 const DEFAULTS: UiSettings = {
 	inlineSlashAutocomplete: true,
 	inputHighlighting: true,
-	schemaVersion: 2,
+	schemaVersion: 3,
 	statusline: true,
 	statuslineDensity: "auto",
-	statuslineIcons: "auto",
 	statuslineLatestPrompt: true,
 	welcomeHeader: true,
 };
@@ -69,7 +68,7 @@ test("UI settings default on without writing during startup and persist explicit
 	});
 });
 
-test("complete schema v1 settings migrate in memory and persist as v2 only after an explicit change", async () => {
+test("complete schema v1 settings migrate in memory and persist as v3 only after an explicit change", async () => {
 	await withTemporarySettings(async (path) => {
 		const versionOne = {
 			inlineSlashAutocomplete: false,
@@ -99,6 +98,25 @@ test("complete schema v1 settings migrate in memory and persist as v2 only after
 				welcomeHeader: false,
 			},
 		});
+	});
+});
+
+test("complete schema v2 settings discard the former icon preference when migrated to v3", async () => {
+	await withTemporarySettings(async (path) => {
+		const versionTwo = {
+			...DEFAULTS,
+			schemaVersion: 2,
+			statuslineIcons: "ascii",
+		} as const;
+		await writeFile(path, `${JSON.stringify({ ui: versionTwo })}\n`);
+
+		const store = await UiSettingsStore.load(path);
+		expect(store.get()).toEqual(DEFAULTS);
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ui: versionTwo });
+
+		await store.set("welcomeHeader", false);
+		const persisted: unknown = JSON.parse(await readFile(path, "utf8"));
+		expect(persisted).toEqual({ ui: { ...DEFAULTS, welcomeHeader: false } });
 	});
 });
 
@@ -221,7 +239,6 @@ test("the registry presents owned and Capability settings in one stable order", 
 		"statusline",
 		"statuslineDensity",
 		"statuslineLatestPrompt",
-		"statuslineIcons",
 		"welcomeHeader",
 		"inputHighlighting",
 		"inlineSlashAutocomplete",
@@ -231,7 +248,6 @@ test("the registry presents owned and Capability settings in one stable order", 
 		["statusline", "true", ["true", "false"]],
 		["statuslineDensity", "auto", ["auto", "full", "compact"]],
 		["statuslineLatestPrompt", "true", ["true", "false"]],
-		["statuslineIcons", "auto", ["auto", "nerd", "ascii"]],
 		["welcomeHeader", "true", ["true", "false"]],
 		["inputHighlighting", "true", ["true", "false"]],
 		["inlineSlashAutocomplete", "true", ["true", "false"]],

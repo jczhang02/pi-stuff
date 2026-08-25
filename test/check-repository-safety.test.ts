@@ -25,7 +25,7 @@ const SUITE_CAPABILITIES = [
 	"code-mode",
 ];
 
-async function createRepository(): Promise<string> {
+async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-safety-"));
 	TEMPORARY_ROOTS.push(root);
 	await Bun.$`git init --quiet ${root}`;
@@ -46,7 +46,7 @@ async function createRepository(): Promise<string> {
 			{
 				name: "fixture-root",
 				private: true,
-				packageManager: "bun@1.3.14",
+				packageManager,
 				devDependencies: { typescript: "5.9.3" },
 				trustedDependencies: [],
 				workspaces: ["packages/pi-stuff"],
@@ -92,6 +92,15 @@ describe("auditRepositoryFiles", () => {
 		});
 
 		expect(await auditRepositoryFiles(root)).toEqual([]);
+	});
+
+	test("requires repository Bun 1.4.0", async () => {
+		const root = await createRepository("bun@1.3.14");
+
+		expect(await auditRepositoryFiles(root)).toContainEqual({
+			path: "package.json",
+			rule: "package-manager-must-be-bun-1.4.0",
+		});
 	});
 
 	test("rejects an unpinned source dependency", async () => {
@@ -169,7 +178,7 @@ describe("auditRepositoryFiles", () => {
 				{
 					name: "fixture-root",
 					private: true,
-					packageManager: "bun@1.3.14",
+					packageManager: "bun@1.4.0",
 					devDependencies: { typescript: "^5.9.3" },
 					trustedDependencies: ["typescript"],
 					workspaces: ["packages/*"],

@@ -30,6 +30,9 @@ text(pkg.packageManager);
   enabled.
 - Await every `tools.*` call. Stable structured content is returned directly; textual JSON is parsed; other text is
   returned as a string.
+- Await ordinary Tool work normally. For one concrete observable command, file, log, or HTTP condition with a
+  deadline, call `tools.monitor(...)` once, continue useful work, and do not poll with Bash, sleep, status checks, or
+  repeated Agent turns.
 - `await codemode.search(query)` and `await codemode.describe(path)` inspect the local catalog without adding that catalog to
   model history.
 - JavaScript has no direct Node, Bun, filesystem, process, network, module, or credential access. I/O is available
@@ -42,7 +45,8 @@ text(pkg.packageManager);
   compatibility alias, not prompt vocabulary.
 - The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same Cloudflare-ranked catalog and
   return the same paths and generated TypeScript input types.
-- Yielded cells are waited internally. Continuation does not add another provider Tool schema.
+- Yielded V8 cells are resumed internally. `yield_control` remains a Host protocol capability, not model-facing helper
+  vocabulary or a user-level completion signal.
 
 There is no per-Tool caller-routing policy. Visibility and effect safety are separate: all Package-owned Tools enter
 the V8 catalog, while each Tool may independently declare replay, durable approval, compensation, and lifecycle
@@ -52,9 +56,14 @@ callbacks.
 
 ## UI and session contract
 
-Code Mode has no visible Tool row of its own while nested rows completely represent its outcome. An execution with no
-nested operation, or an outer error not represented by a nested issue, receives one standard Code Mode fallback row;
-the transcript therefore never hides a Tool outcome or falls back to raw result text. Each nested call uses the exact
+Code Mode has no visible Tool row of its own while nested rows completely represent its outcome. A Control-only
+Execution and a successful program with only the no-output diagnostic are also absent from the Conversation Transcript
+and ordinary `/tools`. The strict live/replay classifier accepts only one zero-argument awaited `yield_control()`
+expression, optionally followed by one literal `text(...)` acknowledgement; ambiguous source stays visible. Raw
+Session JSONL and ledger records remain unchanged. Other executions with no nested operation, or an outer error not
+represented by a nested issue, receive one standard Code Mode fallback row; the transcript therefore never hides a
+Tool outcome or falls back to raw result text. A successful pure-JavaScript fallback uses its first bounded result line
+as the compact summary instead of `done`; formatted expansion shows only subsequent lines. Each nested call uses the exact
 renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the
 original Tool. A missing historical Tool definition or a failing renderer receives a generic Tool row at the same
 source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume
@@ -138,7 +147,8 @@ starting Pi does not download, write, or spawn anything for Code Mode.
 ## Compatibility
 
 - Pi Host: `0.84.3`
-- Bun: `1.3.14`
+- Pi Host embedded Bun runtime: `1.3.14`
+- Repository Bun toolchain: `1.4.0`
 - Host assets: Linux/macOS x64 and arm64, Windows x64 and arm64
 - Non-Windows archive installation requires `tar`
 

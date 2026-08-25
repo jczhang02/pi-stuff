@@ -13,6 +13,7 @@ export type PonytailMode = (typeof PONYTAIL_MODES)[number];
 export type PonytailSpecializedSkill = (typeof PONYTAIL_SPECIALIZED_SKILLS)[number];
 
 export const PONYTAIL_DEFAULT_MODE: PonytailMode = "full";
+export const PONYTAIL_ICON = "\u{F15BF}";
 export const PONYTAIL_SESSION_ENTRY_TYPE = "ponytail-mode";
 export const PONYTAIL_CHILD_MODE_ENV = "PI_STUFF_PONYTAIL_MODE";
 

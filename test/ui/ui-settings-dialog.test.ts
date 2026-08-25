@@ -130,13 +130,12 @@ function failingSetting(persistence: Promise<void>): FailingSettingHarness {
 	};
 }
 
-test("/ui uses one native searchable list for all eight presentation settings", async () => {
+test("/ui uses one native searchable list for all seven presentation settings", async () => {
 	initTheme("dark", false);
 	const settings = [
 		setting("statusline", "Statusline", 10),
 		setting("statuslineDensity", "Statusline density", 11, ["auto", "full", "compact"]),
 		setting("statuslineLatestPrompt", "Latest prompt", 12),
-		setting("statuslineIcons", "Statusline icons", 13, ["auto", "nerd", "ascii"]),
 		setting("welcomeHeader", "Welcome header", 20),
 		setting("inputHighlighting", "Input highlighting", 30),
 		setting("inlineSlashAutocomplete", "Inline slash autocomplete", 40),
@@ -160,7 +159,7 @@ test("/ui uses one native searchable list for all eight presentation settings", 
 	expect(component.render(64).join("\n")).toContain("Tool running timer");
 	component.handleInput?.("\r");
 	await Promise.resolve();
-	expect(settings[7]?.value).toBe("false");
+	expect(settings[6]?.value).toBe("false");
 	expect(component.render(64).join("\n")).toContain("false");
 
 	component.handleInput?.("\u001b");

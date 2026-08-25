@@ -134,6 +134,10 @@ test("the compact Tool contract describes canonical unwrapped Read results", () 
 	expect(definition.description).toContain("console is unavailable");
 	expect(definition.description).toContain("Do not pass image Base64");
 	expect(definition.description).toContain("async arrow functions with return");
+	expect(definition.description).toContain("tools.monitor");
+	expect(definition.description).toContain("command, file, log, or HTTP");
+	expect(definition.description).toContain("do not poll");
+	expect(definition.description).not.toContain("yield_control");
 	expect(definition.description).not.toContain("codemode.resultText");
 	expect(definition.description).not.toContain("codemode.emitText");
 });

@@ -94,10 +94,16 @@ interface SuiteToolEnvelopeMarker {
 	readonly decode: SuiteToolEnvelopeDecoder;
 	readonly media?: SuiteToolEnvelopeMediaResolver;
 	readonly registry: SuiteToolDefinitionRegistry;
+	readonly showFallback?: SuiteToolEnvelopeFallbackVisibility;
 }
 
 interface SuiteToolEnvelopeCompanionMarker {
 	readonly owner: string;
+}
+
+interface ToolSummaryProjection {
+	readonly fromResult: boolean;
+	readonly text: string;
 }
 
 interface ToolDetailPresentation {
@@ -111,7 +117,7 @@ interface ToolDetailPresentation {
 		args: ToolArguments,
 		result: AgentToolResult<unknown> | undefined,
 		state: ToolActivityState,
-	) => string;
+	) => string | ToolSummaryProjection;
 	readonly target: (args: ToolArguments) => string;
 }
 const DETAIL_LINE_LIMIT = 240;
@@ -158,6 +164,7 @@ interface ToolRuntimeRecord {
 	readonly result?: unknown;
 	readonly resultIsError?: unknown;
 	readonly role?: unknown;
+	readonly showFallback?: unknown;
 	readonly silentSuccess?: unknown;
 	readonly stopReason?: unknown;
 	readonly summarizeIssue?: unknown;
@@ -273,6 +280,11 @@ export type SuiteToolEnvelopeDetails = AgentToolResult<unknown>["details"];
 
 export type SuiteToolEnvelopeDecoder = (details: SuiteToolEnvelopeDetails) => readonly SuiteToolEnvelopeOperation[];
 type SuiteToolEnvelopeArgumentPreparer = (operation: SuiteToolEnvelopeOperation) => ToolArguments;
+type SuiteToolEnvelopeFallbackVisibility = (
+	args: ToolArguments,
+	result: AgentToolResult<unknown>,
+	state: ToolActivityState,
+) => boolean;
 
 export type SuiteToolEnvelopeMediaResolver = (
 	details: SuiteToolEnvelopeDetails,
@@ -342,6 +354,7 @@ export interface SuiteToolEnvelopePresentation {
 	readonly decode: SuiteToolEnvelopeDecoder;
 	readonly media?: SuiteToolEnvelopeMediaResolver;
 	readonly registry: SuiteToolDefinitionRegistry;
+	readonly showFallback?: SuiteToolEnvelopeFallbackVisibility;
 }
 
 interface RendererState<TArgs extends ToolArguments, TDetails> {
@@ -353,6 +366,7 @@ interface RendererState<TArgs extends ToolArguments, TDetails> {
 	liveEffectsStarted?: boolean;
 	projectedReplay?: boolean;
 	startedAt?: number;
+	summary?: ToolSummaryProjection;
 	terminalModelMaterialized?: boolean;
 	terminalState?: Exclude<ToolActivityState, "running">;
 	wasLiveExecution?: boolean;
@@ -762,6 +776,7 @@ export class ToolUiRuntime {
 	private readonly envelopeCalls = new Map<string, string>();
 	private readonly envelopeArgumentPreparers = new Map<string, SuiteToolEnvelopeArgumentPreparer>();
 	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
+	private readonly envelopeFallbackVisibility = new Map<string, SuiteToolEnvelopeFallbackVisibility>();
 	private readonly envelopeRawArguments = new Map<string, ToolArguments>();
 	private readonly groupHints = new Map<string, HintState>();
 	private readonly groupPulses = new Map<string, GroupPulseState>();
@@ -924,10 +939,13 @@ export class ToolUiRuntime {
 		name: string,
 		decode: SuiteToolEnvelopeDecoder,
 		prepareArguments?: SuiteToolEnvelopeArgumentPreparer,
+		showFallback?: SuiteToolEnvelopeFallbackVisibility,
 	): void {
 		this.envelopeDecoders.set(name, decode);
 		if (prepareArguments) this.envelopeArgumentPreparers.set(name, prepareArguments);
 		else this.envelopeArgumentPreparers.delete(name);
+		if (showFallback) this.envelopeFallbackVisibility.set(name, showFallback);
+		else this.envelopeFallbackVisibility.delete(name);
 		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
@@ -1408,7 +1426,10 @@ export class ToolUiRuntime {
 				lines && lines.length > 0
 					? lines
 					: result
-						? buildToolResultLines(result)
+						? formattedResultLines(result, {
+								fromResult: activity.summaryFromResult === true,
+								text: activity.summary,
+							})
 						: activity.detailLines.length > 0
 							? activity.detailLines
 							: ["Details are available after completion."],
@@ -1434,11 +1455,20 @@ export class ToolUiRuntime {
 		}
 	}
 
+	private showEnvelopeFallback(
+		name: string,
+		args: ToolArguments,
+		result: AgentToolResult<unknown>,
+		state: ToolActivityState,
+	): boolean {
+		return envelopeFallbackVisible(this.envelopeFallbackVisibility.get(name), args, result, state);
+	}
+
 	/** Project registered Tool envelopes into the ordinary calls and results they contain. */
 	projectMessages(messages: readonly unknown[]): readonly unknown[] {
 		if (this.envelopeDecoders.size === 0) return messages;
 		this.envelopeRawArguments.clear();
-		const envelopeNamesById = new Map<string, string>();
+		const envelopeCallsById = new Map<string, { readonly args: ToolArguments; readonly name: string }>();
 		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
 				continue;
@@ -1448,7 +1478,10 @@ export class ToolUiRuntime {
 				const id = block["id"];
 				const name = block["name"];
 				if (isRuntimeString(id) && isRuntimeString(name) && this.envelopeDecoders.has(name)) {
-					envelopeNamesById.set(id, name);
+					envelopeCallsById.set(id, {
+						args: isToolArguments(block["arguments"]) ? block["arguments"] : {},
+						name,
+					});
 				}
 			}
 		}
@@ -1464,15 +1497,24 @@ export class ToolUiRuntime {
 			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
 			const id = candidate["toolCallId"];
 			if (!isRuntimeString(id)) continue;
-			const name = envelopeNamesById.get(id);
-			if (!name) continue;
-			const operations = this.decodeEnvelope(name, candidate["details"]);
+			const envelope = envelopeCallsById.get(id);
+			if (!envelope) continue;
+			const content = Array.isArray(candidate["content"]) ? candidate["content"] : [];
+			const operations = this.decodeEnvelope(envelope.name, candidate["details"]);
+			const result: AgentToolResult<unknown> & { isError?: true } = {
+				// SAFETY: Pi tool-result messages own this content array; visibility never rewrites its blocks.
+				content: content as AgentToolResult<unknown>["content"],
+				details: candidate["details"],
+			};
+			if (candidate["isError"] === true) Object.assign(result, { isError: true as const });
+			const state: Exclude<ToolActivityState, "running"> = candidate["isError"] === true ? "error" : "success";
+			const ownsOuterOutcome =
+				operations.length === 0 ||
+				(candidate["isError"] === true &&
+					!operations.some((operation) => operation.state !== "running" && operation.state !== "success"));
 			projectionsById.set(id, {
-				fallback:
-					operations.length === 0 ||
-					(candidate["isError"] === true &&
-						!operations.some((operation) => operation.state !== "running" && operation.state !== "success")),
-				name,
+				fallback: ownsOuterOutcome && this.showEnvelopeFallback(envelope.name, envelope.args, result, state),
+				name: envelope.name,
 				operations,
 			});
 		}
@@ -2151,11 +2193,15 @@ export class ToolUiRuntime {
 				.filter(Boolean)
 				.at(-1) ?? "";
 		let toolSummary = summary.summary;
+		let summaryFromResult = false;
 		if (presentation) {
 			try {
 				label = presentation.label(member.args);
 				target = presentation.target(member.args);
-				toolSummary = presentation.summary(member.args, member.result, state);
+				const value = presentation.summary(member.args, member.result, state);
+				const projectedSummary = isRuntimeString(value) ? { fromResult: false, text: value } : value;
+				toolSummary = projectedSummary.text;
+				summaryFromResult = projectedSummary.fromResult;
 			} catch {
 				// Historical detail remains available with semantic fallbacks.
 			}
@@ -2170,6 +2216,7 @@ export class ToolUiRuntime {
 			startedAt: undefined,
 			state,
 			summary: toolSummary,
+			summaryFromResult,
 			target,
 		};
 	}
@@ -2282,6 +2329,7 @@ function isSuiteToolEnvelopeMarker<Value>(value: Value): value is Value & SuiteT
 	}
 	const registry = value["registry"];
 	return (
+		(value["showFallback"] === undefined || isRuntimeFunction(value["showFallback"])) &&
 		(value["media"] === undefined || isRuntimeFunction(value["media"])) &&
 		isRuntimeFunction(registry["catalog"]) &&
 		isRuntimeFunction(registry["compensate"]) &&
@@ -2770,10 +2818,15 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		if (replay) runtime.registerReplayToolDefinition(replay);
 		if (envelope) {
 			envelopeTools.add(tool.name);
-			runtime.registerEnvelope(tool.name, envelope.decode, (operation) => {
-				const nested = envelope.registry.get(operation.name);
-				return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
-			});
+			runtime.registerEnvelope(
+				tool.name,
+				envelope.decode,
+				(operation) => {
+					const nested = envelope.registry.get(operation.name);
+					return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
+				},
+				envelope.showFallback,
+			);
 			applyActiveProjection();
 			return;
 		}
@@ -2867,9 +2920,19 @@ export function installToolUiRuntime(pi: ToolUiRuntimeHost, settings: ToolUiSett
 	return runtime;
 }
 
-function capPresentationDetails(result: AgentToolResult<unknown>, extra: readonly string[] | undefined): string[] {
+function formattedResultLines(result: AgentToolResult<unknown>, summary: ToolSummaryProjection): string[] {
+	const lines = buildToolResultLines(result);
+	if (!summary.fromResult || !lines[0] || oneLine(lines[0]) !== oneLine(summary.text)) return lines;
+	return lines.slice(1);
+}
+
+function capPresentationDetails(
+	result: AgentToolResult<unknown>,
+	extra: readonly string[] | undefined,
+	summary: ToolSummaryProjection,
+): string[] {
 	return capDetailLines(
-		extra && extra.length > 0 ? extra : buildToolResultLines(result),
+		extra && extra.length > 0 ? extra : formattedResultLines(result, summary),
 		DETAIL_LINE_LIMIT,
 		DETAIL_BYTE_LIMIT,
 	);
@@ -2902,13 +2965,14 @@ function presentationTarget<TArgs extends ToolArguments, TDetails>(
 function terminalSummary<TDetails>(
 	result: AgentToolResult<TDetails>,
 	state: Exclude<ToolActivityState, "running">,
-): string {
-	if (state === "success") return "done";
+	successFromResult = false,
+): ToolSummaryProjection {
+	if (state === "success" && !successFromResult) return { fromResult: false, text: "done" };
 	for (const line of buildToolResultLines(result)) {
 		const summary = oneLine(line);
-		if (summary) return summary;
+		if (summary) return { fromResult: true, text: summary };
 	}
-	return state;
+	return { fromResult: false, text: state };
 }
 
 function presentationSummary<TArgs extends ToolArguments, TDetails>(
@@ -2917,10 +2981,12 @@ function presentationSummary<TArgs extends ToolArguments, TDetails>(
 	result: AgentToolResult<TDetails>,
 	state: Exclude<ToolActivityState, "running">,
 	durationMs: number | undefined,
-): string {
+): ToolSummaryProjection {
 	const fallback = terminalSummary(result, state);
 	try {
-		return oneLine(presentation.summarize?.(args, result, state, durationMs) ?? fallback) || fallback;
+		if (!presentation.summarize) return fallback;
+		const summary = oneLine(presentation.summarize(args, result, state, durationMs));
+		return summary ? { fromResult: false, text: summary } : fallback;
 	} catch {
 		return fallback;
 	}
@@ -3023,6 +3089,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 			state.detailLines = capPresentationDetails(
 				state.lastResult,
 				presentationDetails(presentation, args, state.lastResult, state.terminalState),
+				state.summary ?? terminalSummary(state.lastResult, state.terminalState),
 			);
 			state.detailMaterialized = true;
 		}
@@ -3030,13 +3097,15 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 	}
 	let activityState: Exclude<ToolActivityState, "running">;
 	let model: ToolRowModel;
+	let summary: ToolSummaryProjection;
 	if (lightweightHistoricalReplay) {
 		activityState = context.isError ? classifyTerminalState(result, true) : "success";
+		summary = { fromResult: false, text: "" };
 		model = {
 			durationMs: undefined,
 			label: tool.name,
 			state: activityState,
-			summary: "",
+			summary: summary.text,
 			target: "",
 		};
 	} else {
@@ -3051,22 +3120,25 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		activityState = classifyTerminalState(result, domainError);
 		const finishedAt = Date.now();
 		const durationMs = state.startedAt === undefined ? undefined : Math.max(0, finishedAt - state.startedAt);
+		summary = presentationSummary(presentation, args, result, activityState, durationMs);
 		model = {
 			durationMs,
 			label: labelFor(tool, presentation, args),
 			state: activityState,
-			summary: presentationSummary(presentation, args, result, activityState, durationMs),
+			summary: summary.text,
 			target: presentationTarget(presentation, args),
 		};
 	}
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	state.lastResult = result;
+	state.summary = summary;
 	state.terminalState = activityState;
 	state.terminalModelMaterialized = !lightweightHistoricalReplay || tool.name === "bash";
 	if (context.expanded && tool.name !== "bash") {
 		state.detailLines = capPresentationDetails(
 			result,
 			presentationDetails(presentation, args, result, activityState),
+			summary,
 		);
 		state.detailMaterialized = true;
 	} else {
@@ -3117,6 +3189,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 			durationMs: model.durationMs,
 			state: activityState,
 			summary: model.summary,
+			summaryFromResult: summary.fromResult,
 		});
 	}
 	return state.component;
@@ -3213,14 +3286,14 @@ function attachRenderer<TParams extends TSchema, TDetails>(
 			const typedArgs = argsForPresentation(args);
 			if (state === "running") {
 				const source = presentation.runningSummary;
-				return oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working"));
+				return {
+					fromResult: false,
+					text: oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working")),
+				};
 			}
-			return oneLine(
-				result
-					? (presentation.summarize?.(typedArgs, resultForPresentation(result), state, undefined) ??
-							(state === "success" ? "done" : state))
-					: state,
-			);
+			return result
+				? presentationSummary(presentation, typedArgs, resultForPresentation(result), state, undefined)
+				: { fromResult: false, text: state };
 		},
 		target: (args) => oneLine(presentation.target?.(argsForPresentation(args)) ?? ""),
 	};
@@ -3391,6 +3464,20 @@ function decodeEnvelopeOperations(
 	}
 }
 
+function envelopeFallbackVisible(
+	showFallback: SuiteToolEnvelopeFallbackVisibility | undefined,
+	args: ToolArguments,
+	result: AgentToolResult<unknown>,
+	state: ToolActivityState,
+): boolean {
+	if (!showFallback) return true;
+	try {
+		return showFallback(args, result, state);
+	} catch {
+		return true;
+	}
+}
+
 function envelopeOperationResult(
 	operation: SuiteToolEnvelopeOperation,
 ): (AgentToolResult<unknown> & { readonly isError?: true }) | undefined {
@@ -3482,28 +3569,29 @@ function fallbackToolComponent(
 	result: AgentToolResult<unknown> | undefined,
 	state: ToolActivityState,
 	expanded: boolean,
+	successFromResult = false,
 ): Component {
 	const visibleResult = result ? stripToolControlMetadata(result) : undefined;
-	const summary =
+	const summary: ToolSummaryProjection =
 		state === "running"
-			? "working"
+			? { fromResult: false, text: "working" }
 			: visibleResult
-				? terminalSummary(visibleResult, state)
+				? terminalSummary(visibleResult, state, successFromResult)
 				: state === "success"
-					? "done"
-					: state;
+					? { fromResult: false, text: "done" }
+					: { fromResult: false, text: state };
 	const container = new Container();
 	container.addChild(
 		new CachedToolRow(theme, {
 			durationMs: undefined,
 			label: sanitizeTerminalText(label) || name,
 			state,
-			summary,
+			summary: summary.text,
 			target: fallbackToolTarget(args),
 		}),
 	);
 	if (expanded && visibleResult) {
-		const lines = capDetailLines(buildToolResultLines(visibleResult), DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
+		const lines = capDetailLines(formattedResultLines(visibleResult, summary), DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
 		if (lines.length > 0) container.addChild(new Text(theme.fg("toolOutput", lines.join("\n")), 2, 0));
 	}
 	return container;
@@ -3529,14 +3617,19 @@ function renderEnvelopeOperations(
 	const operations = decodeEnvelopeOperations(presentation.decode, result.details);
 	const visibleResult = stripToolControlMetadata(result);
 	if (operations.length === 0) {
+		const state = outerEnvelopeState(visibleResult, options, context);
+		if (!envelopeFallbackVisible(presentation.showFallback, context.args, visibleResult, state)) {
+			return new EmptyToolComponent();
+		}
 		return fallbackToolComponent(
 			theme,
 			envelope.name,
 			envelope.label,
 			{},
 			visibleResult,
-			outerEnvelopeState(visibleResult, options, context),
+			state,
 			options.expanded,
+			true,
 		);
 	}
 	let hostImageKeys: Map<string, Set<string>> | undefined;
@@ -3656,9 +3749,24 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
-	runtime.registerEnvelope(tool.name, presentation.decode, (operation) => {
-		const nested = presentation.registry.get(operation.name);
-		return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
+	runtime.registerEnvelope(
+		tool.name,
+		presentation.decode,
+		(operation) => {
+			const nested = presentation.registry.get(operation.name);
+			return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
+		},
+		presentation.showFallback,
+	);
+	runtime.registerDetailPresentation(tool.name, {
+		label: () => sanitizeTerminalText(tool.label ?? tool.name) || tool.name,
+		summary: (_args, result, state) =>
+			state === "running"
+				? { fromResult: false, text: "working" }
+				: result
+					? terminalSummary(result, state, true)
+					: { fromResult: false, text: state },
+		target: () => "",
 	});
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
@@ -3697,6 +3805,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		registry: presentation.registry,
 	};
 	if (presentation.media) Object.assign(marker, { media: presentation.media });
+	if (presentation.showFallback) Object.assign(marker, { showFallback: presentation.showFallback });
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE, {
 		enumerable: true,
 		value: marker,

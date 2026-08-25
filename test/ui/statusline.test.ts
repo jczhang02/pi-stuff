@@ -276,10 +276,10 @@ function tuiHarness() {
 	};
 }
 
-function withNerdFontPreference<Value>(enabled: boolean, run: () => Value): Value {
+function withFormerFallbackOverride<Value>(run: () => Value): Value {
 	const environment = process.env;
 	const { POWERLINE_NERD_FONTS: previous } = environment;
-	Reflect.set(environment, "POWERLINE_NERD_FONTS", enabled ? "1" : "0");
+	Reflect.set(environment, "POWERLINE_NERD_FONTS", "0");
 	try {
 		return run();
 	} finally {
@@ -292,7 +292,6 @@ function preferences(overrides: Partial<StatuslinePreferences> = {}): ValueSourc
 	return new ValueSource({
 		density: "auto",
 		enabled: true,
-		iconMode: "auto",
 		latestPrompt: true,
 		...overrides,
 	});
@@ -313,21 +312,21 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const active = withNerdFontPreference(false, () => component.render(160).join("\n"));
-		expect(active).toContain("↻ 99.9%");
-		expect(active).toContain("◷ 63%");
-		expect(active).toContain("⚡ fast");
-		expect(active.indexOf("◉ med")).toBeLessThan(active.indexOf("⚡ fast"));
-		expect(active.indexOf("⚡ fast")).toBeLessThan(active.indexOf("▣ pi-stuff"));
-		expect(active.indexOf("↻ 99.9%")).toBeLessThan(active.indexOf("◷ 63%"));
+		const active = withFormerFallbackOverride(() => component.render(160).join("\n"));
+		expect(active).toContain("󰆼 99.9%");
+		expect(active).toContain("󰊚 63%");
+		expect(active).toContain(" fast");
+		expect(active.indexOf(" med")).toBeLessThan(active.indexOf(" fast"));
+		expect(active.indexOf(" fast")).toBeLessThan(active.indexOf("󰉋 pi-stuff"));
+		expect(active.indexOf("󰆼 99.9%")).toBeLessThan(active.indexOf("󰊚 63%"));
 		expect(active).not.toContain("18k");
 		expect(active).not.toContain("$0.42");
 
 		const rendersBeforeUpdate = harness.requests.length;
 		codexStatus.set({ fastEnabled: false, weeklyRemainingPercent: 62.6 });
-		const inactive = withNerdFontPreference(false, () => component.render(160).join("\n"));
-		expect(inactive).toContain("◷ 63%");
-		expect(inactive).not.toContain("⚡ fast");
+		const inactive = withFormerFallbackOverride(() => component.render(160).join("\n"));
+		expect(inactive).toContain("󰊚 63%");
+		expect(inactive).not.toContain(" fast");
 		expect(harness.requests.length).toBeGreaterThan(rendersBeforeUpdate);
 	});
 
@@ -340,7 +339,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("↻ 60%");
+		expect(withFormerFallbackOverride(() => component.render(120).join("\n"))).toContain("󰆼 60%");
 	});
 
 	test("hides Codex weekly, Fast, and cost when no observer data exists", () => {
@@ -353,13 +352,13 @@ describe("StatuslineController", () => {
 		);
 
 		const rendered = component.render(160).join("\n");
-		expect(rendered).not.toContain("◷");
+		expect(rendered).not.toContain("󰊚");
 		expect(rendered).not.toContain("fast");
 		expect(rendered).not.toContain("$");
 	});
 
-	test("renders the accepted icon-led one-row status and aligned prompt row", () => {
-		withNerdFontPreference(false, () => {
+	test("renders the accepted Nerd icon-led one-row status despite the former fallback override", () => {
+		withFormerFallbackOverride(() => {
 			const enabled = new ValueSource(true);
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled, gitChanges: git });
@@ -380,41 +379,16 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
-				"› Implement the accepted Pi Stuff statusline.",
-			]);
-		});
-	});
-
-	test("uses the accepted compact Nerd Font icon family", () => {
-		withNerdFontPreference(true, () => {
-			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
-			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
-			const component = controller.createFooter(
-				context({ modelName: "Claude Sonnet 4.5" }),
-				tuiHarness().tui,
-				theme,
-				footerData(
-					"main",
-					new Map([
-						["goal", "goal:UI"],
-						["mcp", "mcp:2"],
-						["loadout", "load:full"],
-					]),
-				),
-			);
-
-			expect(component.render(160)).toEqual([
-				"󰚩 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main ·  +12 ~3 ?1 · 󰍛 42.4% · 󰆼 99.9% ·  $0.42",
-				"› Implement the accepted Pi Stuff statusline.",
+				"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
+				" Implement the accepted Pi Stuff statusline.",
 			]);
 		});
 	});
 
 	test("aligns Nerd prompt text for Latin, CJK, and emoji first characters", () => {
-		withNerdFontPreference(true, () => {
+		withFormerFallbackOverride(() => {
 			const controller = new StatuslineController(api(), {
-				preferences: preferences({ iconMode: "nerd" }),
+				preferences: preferences(),
 			});
 			const latin = controller.createFooter(
 				context({ branch: messageEntries("Implement the footer.") }),
@@ -435,18 +409,18 @@ describe("StatuslineController", () => {
 				footerData("main"),
 			);
 
-			expect(latin.render(120)[0]).toStartWith("󰚩 ");
-			expect(latin.render(120)[1]).toStartWith("› Implement");
-			expect(cjk.render(120)[1]).toStartWith("› 中文");
-			expect(emoji.render(120)[1]).toStartWith("› 🚀 Ship");
-			expect(visibleWidth("› ")).toBe(2);
-			expect(visibleWidth("› 中")).toBe(4);
+			expect(latin.render(120)[0]).toStartWith("󱙺 ");
+			expect(latin.render(120)[1]).toStartWith(" Implement");
+			expect(cjk.render(120)[1]).toStartWith(" 中文");
+			expect(emoji.render(120)[1]).toStartWith(" 🚀 Ship");
+			expect(visibleWidth(" ")).toBe(2);
+			expect(visibleWidth(" 中")).toBe(4);
 		});
 	});
 
-	test("applies density, prompt, and icon preferences immediately", () => {
-		withNerdFontPreference(false, () => {
-			const preferenceSource = preferences({ density: "compact", iconMode: "nerd", latestPrompt: false });
+	test("applies density and prompt preferences immediately", () => {
+		withFormerFallbackOverride(() => {
+			const preferenceSource = preferences({ density: "compact", latestPrompt: false });
 			const controller = new StatuslineController(api(), { preferences: preferenceSource });
 			const harness = tuiHarness();
 			const component = controller.createFooter(
@@ -457,24 +431,24 @@ describe("StatuslineController", () => {
 			);
 
 			const compact = component.render(160).join("\n");
-			expect(compact).toContain("󰚩 sonnet-4.5");
+			expect(compact).toContain("󱙺 sonnet-4.5");
 			expect(compact).not.toContain("Implement the accepted");
 			expect(compact).not.toContain("󰆼");
 			expect(compact).not.toContain("$0.42");
 			expect(compact).not.toContain("goal:UI");
 
-			preferenceSource.set({ density: "full", enabled: true, iconMode: "ascii", latestPrompt: true });
+			preferenceSource.set({ density: "full", enabled: true, latestPrompt: true });
 			const full = component.render(160).join("\n");
-			expect(full).toContain("▣ pi-stuff");
-			expect(full).toContain("› Implement the accepted Pi Stuff statusline.");
-			expect(full).toContain("↻ 99.9%");
+			expect(full).toContain("󰉋 pi-stuff");
+			expect(full).toContain(" Implement the accepted Pi Stuff statusline.");
+			expect(full).toContain("󰆼 99.9%");
 			expect(full).not.toContain("goal:UI");
 			expect(harness.requests.length).toBeGreaterThan(0);
 		});
 	});
 
 	test("shows Git conflicts and upstream divergence without another probe", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const git = new ValueSource<GitChangeCounts | undefined>({
 				ahead: 2,
 				behind: 1,
@@ -487,12 +461,12 @@ describe("StatuslineController", () => {
 			const component = controller.createFooter(context({}), tuiHarness().tui, theme, footerData("main"));
 			const rendered = component.render(160).join("\n");
 
-			expect(rendered).toContain("⎇ main ⇡2 ⇣1 · Δ !2 +1");
+			expect(rendered).toContain(" main 2 1 · 2 1");
 		});
 	});
 
 	test("maps the accepted icon grammar onto Pi semantic theme tokens", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const colored = new Map<string, string[]>();
 			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			const recordingTheme = {
@@ -514,14 +488,14 @@ describe("StatuslineController", () => {
 			);
 
 			component.render(160);
-			expect(colored.get("accent")).toEqual(expect.arrayContaining(["◆ anthropic/sonnet-4.5", "▣"]));
-			expect(colored.get("accent")).not.toContain("›");
-			expect(colored.get("thinkingMedium")).toContain("◉");
-			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇", "~3", "¤"]));
-			expect(colored.get("success")).toContain("+12");
-			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◔", " · "]));
+			expect(colored.get("accent")).toEqual(expect.arrayContaining(["󱙺 anthropic/sonnet-4.5", "󰉋"]));
+			expect(colored.get("accent")).not.toContain("");
+			expect(colored.get("thinkingMedium")).toContain("");
+			expect(colored.get("warning")).toEqual(expect.arrayContaining(["", "3", ""]));
+			expect(colored.get("success")).toContain("12");
+			expect(colored.get("dim")).toEqual(expect.arrayContaining(["󰌨", " · "]));
 			expect(colored.get("muted")).toEqual(
-				expect.arrayContaining(["›", "med", "Δ", "?1", "↻", "Implement the accepted Pi Stuff statusline."]),
+				expect.arrayContaining(["", "med", "1", "󰆼", "Implement the accepted Pi Stuff statusline."]),
 			);
 			expect([...colored.values()].flat()).not.toContain("goal:UI");
 			expect(colored.get("text")).toEqual(expect.arrayContaining(["pi-stuff", "main", "42.4%", "99.9%", "$0.42"]));
@@ -529,7 +503,7 @@ describe("StatuslineController", () => {
 	});
 
 	test("drops complete low-priority segments instead of wrapping or fusing them", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
 			const component = controller.createFooter(
@@ -549,9 +523,9 @@ describe("StatuslineController", () => {
 			const lines = component.render(64);
 			const rendered = lines.join("\n");
 			expect(rendered).toContain("sonnet-4.5");
-			expect(rendered).toMatch(/◔ 42(?:\.4)?%/u);
-			expect(rendered).toContain("⎇ main");
-			expect(rendered).not.toMatch(/Δ\s*(?:\+|~|\?)[^\n]*…/u);
+			expect(rendered).toMatch(/󰌨 42(?:\.4)?%/u);
+			expect(rendered).toContain(" main");
+			expect(rendered).not.toMatch(/[]\d+[^\n]*…/u);
 			expect(rendered).not.toContain("AC");
 			expect(lines).toHaveLength(2);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
@@ -559,7 +533,7 @@ describe("StatuslineController", () => {
 	});
 
 	test("falls back to the complete model marker instead of clipping a field fragment", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const controller = new StatuslineController(api(), {
 				preferences: preferences({ latestPrompt: false }),
 			});
@@ -570,13 +544,13 @@ describe("StatuslineController", () => {
 				footerData(""),
 			);
 
-			expect(component.render(3)).toEqual(["◆"]);
-			expect(component.render(1)).toEqual(["◆"]);
+			expect(component.render(3)).toEqual(["󱙺"]);
+			expect(component.render(1)).toEqual(["󱙺"]);
 		});
 	});
 
 	test("renders an explicit unknown Context while hiding zero-value optional segments", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const controller = new StatuslineController(api("off"), { enabled: new ValueSource(true) });
 			const component = controller.createFooter(
 				context({
@@ -589,15 +563,15 @@ describe("StatuslineController", () => {
 				footerData("main"),
 			);
 			const rendered = component.render(160).join("\n");
-			expect(rendered).not.toContain("◉");
-			expect(rendered).toContain("◔ ?");
-			expect(rendered).not.toContain("↻");
+			expect(rendered).not.toContain("");
+			expect(rendered).toContain("󰌨 ?");
+			expect(rendered).not.toContain("󰆼");
 			expect(rendered).not.toContain("$");
 		});
 	});
 
 	test("retains model and Context before lower-priority fields at narrow widths", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
 			const component = controller.createFooter(
@@ -620,7 +594,7 @@ describe("StatuslineController", () => {
 				expect(rendered).toContain("sonnet");
 				expect(rendered).toMatch(/42(?:\.4)?%/u);
 				expect(lines).toHaveLength(2);
-				expect(lines[1]?.startsWith("›")).toBe(true);
+				expect(lines[1]?.startsWith("")).toBe(true);
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
 			expect(component.render(48).join("\n")).toContain("Implement the accepted");
@@ -629,7 +603,7 @@ describe("StatuslineController", () => {
 	});
 
 	test("keeps full Git detail wide and removes lower-priority Git fields atomically when narrow", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const git = new ValueSource<GitChangeCounts | undefined>({
 				ahead: 2,
 				behind: 1,
@@ -652,7 +626,7 @@ describe("StatuslineController", () => {
 			);
 
 			const wide = component.render(400).join("\n");
-			for (const marker of ["!2", "+12", "~3", "?1", "⇡2", "⇣1"]) expect(wide).toContain(marker);
+			for (const marker of ["2", "12", "3", "1", "2", "1"]) expect(wide).toContain(marker);
 
 			for (const width of [64, 48, 32, 24]) {
 				const lines = component.render(width);
@@ -666,7 +640,7 @@ describe("StatuslineController", () => {
 	});
 
 	test("keeps the semantic Git projection coherent when Context is intentionally hidden", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			const git = new ValueSource<GitChangeCounts | undefined>({
 				ahead: 2,
 				behind: 1,
@@ -692,7 +666,7 @@ describe("StatuslineController", () => {
 			);
 
 			const wide = component.render(600).join("\n");
-			for (const marker of ["!2", "+12", "~3", "?1", "⇡2", "⇣1"]) expect(wide).toContain(marker);
+			for (const marker of ["2", "12", "3", "1", "2", "1"]) expect(wide).toContain(marker);
 			expect(wide).not.toContain("42.4%");
 
 			for (const width of [100, 64, 48, 32, 24]) {
@@ -706,7 +680,7 @@ describe("StatuslineController", () => {
 	});
 
 	test("keeps Context percentage without exposing token-window counts", () => {
-		withNerdFontPreference(false, () => {
+		withFormerFallbackOverride(() => {
 			for (const contextWindow of [0, Number.NaN]) {
 				const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
 				const component = controller.createFooter(
@@ -716,7 +690,7 @@ describe("StatuslineController", () => {
 					footerData("main"),
 				);
 				const rendered = component.render(100).join("\n");
-				expect(rendered).toContain("◔ 42.4%");
+				expect(rendered).toContain("󰌨 42.4%");
 				expect(rendered).not.toContain("200k");
 			}
 		});
@@ -742,10 +716,10 @@ describe("StatuslineController", () => {
 			),
 		);
 
-		const lines = withNerdFontPreference(false, () => component.render(120));
+		const lines = withFormerFallbackOverride(() => component.render(120));
 		expect(lines).toEqual([
-			"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
-			"› Implement the accepted Pi Stuff statusline.",
+			"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
+			" Implement the accepted Pi Stuff statusline.",
 		]);
 		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);
 
@@ -756,7 +730,7 @@ describe("StatuslineController", () => {
 			theme,
 			footerData("main"),
 		);
-		const narrow = withNerdFontPreference(false, () => longComponent.render(64));
+		const narrow = withFormerFallbackOverride(() => longComponent.render(64));
 		expect(narrow).toHaveLength(2);
 		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
 	});
@@ -778,7 +752,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const rendered = withNerdFontPreference(false, () => component.render(96).join("\n"));
+		const rendered = withFormerFallbackOverride(() => component.render(96).join("\n"));
 		expect(rendered).toContain("fix auth test [skill:tdd]");
 		for (const privateExpansion of ["<skill", "location=", skillPath, "References are relative to"]) {
 			expect(rendered).not.toContain(privateExpansion);
@@ -797,12 +771,12 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const wide = withNerdFontPreference(false, () => component.render(120).join("\n"));
+		const wide = withFormerFallbackOverride(() => component.render(120).join("\n"));
 		expect(wide).toContain("please use today /skill:missing [skills:tdd,review,triage,prototype]");
 		for (const recognized of ["tdd", "review", "triage", "prototype"]) {
 			expect(wide).not.toContain(`/skill:${recognized}`);
 		}
-		const narrow = withNerdFontPreference(false, () => component.render(64).join("\n"));
+		const narrow = withFormerFallbackOverride(() => component.render(64).join("\n"));
 		expect(narrow).toContain("[skills:4]");
 		expect(narrow).not.toContain("tdd,review,triage,prototype");
 	});
@@ -817,7 +791,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const rendered = withNerdFontPreference(false, () => component.render(96).join("\n"));
+		const rendered = withFormerFallbackOverride(() => component.render(96).join("\n"));
 		expect(rendered).toContain("DO_THE_USER_TASK [skill:huge]");
 		expect(rendered).not.toContain("/private/");
 	});
@@ -832,7 +806,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const lines = withNerdFontPreference(false, () => component.render(48));
+		const lines = withFormerFallbackOverride(() => component.render(48));
 		expect(lines.filter((line) => line.includes("LONGWORD") || line.includes("[skill:tdd]"))).toHaveLength(1);
 		expect(lines.join("\n")).toContain("[skill:tdd]");
 		for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(48);
@@ -850,12 +824,12 @@ describe("StatuslineController", () => {
 		);
 
 		for (const width of [100, 64, 48, 32, 24]) {
-			const lines = withNerdFontPreference(false, () => component.render(width));
+			const lines = withFormerFallbackOverride(() => component.render(width));
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			expect(lines.join("\n")).not.toMatch(/…\s+\[skill:/u);
 		}
 
-		const narrowPrompt = withNerdFontPreference(false, () => component.render(48).join("\n"));
+		const narrowPrompt = withFormerFallbackOverride(() => component.render(48).join("\n"));
 		expect(narrowPrompt).toContain(`[skill:${skill}]`);
 		expect(narrowPrompt).not.toContain("检查…");
 	});
@@ -885,7 +859,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		const rendered = withNerdFontPreference(false, () => component.render(120).join("\n"));
+		const rendered = withFormerFallbackOverride(() => component.render(120).join("\n"));
 		expect(rendered).not.toContain("cache");
 		expect(rendered).not.toContain("$0.");
 	});
@@ -1236,17 +1210,17 @@ describe("GitStatusSource", () => {
 		});
 		const component = controller.createFooter(context({}), tuiHarness().tui, theme, data);
 
-		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("⎇ old-branch · Δ ~1");
+		expect(withFormerFallbackOverride(() => component.render(120).join("\n"))).toContain(" old-branch · 1");
 		branch = "new-branch";
 		notifyBranchChange?.();
-		const changed = withNerdFontPreference(false, () => component.render(120).join("\n"));
+		const changed = withFormerFallbackOverride(() => component.render(120).join("\n"));
 		expect(changed).toContain("new-branch");
 		expect(changed).not.toContain("new-branch *1");
 
 		porcelain = "## new-branch\0 M first.ts\0 M second.ts\0";
 		await source.refresh(fakeApi, cwd);
 		notifyBranchChange?.();
-		const settled = withNerdFontPreference(false, () => component.render(120).join("\n"));
-		expect(settled).toContain("⎇ new-branch · Δ ~2");
+		const settled = withFormerFallbackOverride(() => component.render(120).join("\n"));
+		expect(settled).toContain(" new-branch · 2");
 	});
 });

@@ -301,8 +301,8 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		findings.push({ path, rule: "direct-dependency-must-be-exact" });
 	}
 	if (path === "package.json") {
-		if (manifest.packageManager !== "bun@1.3.14") {
-			findings.push({ path, rule: "package-manager-must-be-bun-1.3.14" });
+		if (manifest.packageManager !== "bun@1.4.0") {
+			findings.push({ path, rule: "package-manager-must-be-bun-1.4.0" });
 		}
 		if (!Array.isArray(manifest.trustedDependencies) || manifest.trustedDependencies.length !== 0) {
 			findings.push({ path, rule: "trusted-dependencies-must-be-empty" });

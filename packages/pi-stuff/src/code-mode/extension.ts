@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import type { ToolArguments } from "../tool-display/activity.js";
 import {
 	registerSuiteToolEnvelope,
 	registerSuiteToolEnvelopeCompanion,
@@ -16,6 +17,7 @@ import {
 	withDirectUserActivation,
 } from "../tool-display/contract.js";
 import { stringifyForStorage } from "./cloudflare/codec.js";
+import { isControlOnlyProgram } from "./cloudflare/normalize.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { createCodeModeDialogView } from "./dialog.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";
@@ -28,7 +30,7 @@ import {
 	rehydrateCodeModeMessages,
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
-import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
+import { CODE_MODE_NO_OUTPUT_MESSAGE, CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
 import {
 	readCodeModeGlobalEnabled,
 	readCodeModeProjectEnabled,
@@ -61,9 +63,10 @@ Rules:
 - Call only methods listed for this Agent or returned by codemode.search(query); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
 - Structured results are already unwrapped; do not pass them to JSON.parse. Example: const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);
+- Await ordinary Tool work normally. For one concrete observable command, file, log, or HTTP condition with a deadline, call tools.monitor(...) once; continue useful work and do not poll with Bash, sleep, status checks, or repeated turns.
 - Emit only the evidence needed with text(...), image(...), or another supported output helper.
 - Do not pass image Base64 through a text-producing Tool such as Bash; return the structured result of an image-producing Tool such as read.
-Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
+Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, and clearTimeout.`;
 
 export interface PiStuffCodeModeOptions {
 	readonly registry: SuiteToolDefinitionRegistry;
@@ -288,6 +291,22 @@ export function decodeCodeModeOperations<Value>(details: Value): readonly SuiteT
 	});
 }
 
+function showCodeModeFallback(
+	args: ToolArguments,
+	result: AgentToolResult<unknown>,
+	state: "cancelled" | "error" | "rejected" | "running" | "success",
+): boolean {
+	if (state !== "running" && state !== "success") return true;
+	if (isRuntimeString(args["code"]) && isControlOnlyProgram(args["code"])) return false;
+	return !(
+		state === "success" &&
+		(result.content.length === 0 ||
+			(result.content.length === 1 &&
+				result.content[0]?.type === "text" &&
+				result.content[0].text === CODE_MODE_NO_OUTPUT_MESSAGE))
+	);
+}
+
 export function createCodeModeDefinition(
 	runtime: CodeModeRuntime,
 ): ToolDefinition<typeof CODE_MODE_PARAMETERS, PiStuffCodeModeDetails> {
@@ -426,6 +445,7 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 		decode: decodeCodeModeOperations,
 		media: decodeCodeModeMediaSegments,
 		registry: options.registry,
+		showFallback: showCodeModeFallback,
 	});
 	registerSuiteToolEnvelopeCompanion(
 		pi,
