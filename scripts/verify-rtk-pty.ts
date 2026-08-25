@@ -7,6 +7,7 @@ import { Check } from "typebox/value";
 import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/rtk-pty-provider.ts");
@@ -318,6 +319,7 @@ export async function verifyRtkPty(options: {
 	const projectDirectory = join(temporaryDirectory, "project");
 	const logPath = join(temporaryDirectory, "provider.jsonl");
 	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory), mkdir(projectDirectory)]);
+	await disableSessionNamingForTest(configDirectory);
 	await Promise.all([
 		writeFile(
 			join(configDirectory, "settings.json"),

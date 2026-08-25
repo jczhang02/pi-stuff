@@ -5,6 +5,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-pty-provider.ts");
@@ -392,6 +393,7 @@ export async function verifyActiveToolParity(options: {
 		const sessionDirectory = join(temporaryDirectory, "sessions");
 		const requestLog = join(temporaryDirectory, "requests.jsonl");
 		await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory)]);
+		await disableSessionNamingForTest(configDirectory);
 		await writeFile(
 			join(configDirectory, "settings.json"),
 			`${JSON.stringify({ defaultProjectTrust: "always" }, null, "\t")}\n`,
@@ -470,6 +472,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 		mkdir(projectConfigDirectory),
 		mkdir(join(temporaryDirectory, LONG_READ_DIRECTORY), { recursive: true }),
 	]);
+	await disableSessionNamingForTest(configDirectory);
 	await writeFile(join(temporaryDirectory, LONG_READ_DIRECTORY, "sample-工具.txt"), "输入内容\n", { mode: 0o600 });
 	await writeFile(shellWrapper, `#!/bin/sh\nprintf 'SHELL_PATH_USED\\n' >> '${shellEvidence}'\nexec /bin/sh "$@"\n`, {
 		mode: 0o700,

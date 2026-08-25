@@ -12,6 +12,7 @@ import {
 	type JsonInputValue,
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
@@ -586,6 +587,10 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			activationLegacyDirectory,
 		].map((path) => mkdir(path, { recursive: true })),
 	);
+	await Promise.all([
+		disableSessionNamingForTest(configDirectory),
+		disableSessionNamingForTest(activationAgentDirectory),
+	]);
 	const activationConfig = `${JSON.stringify({
 		dreamer: { disable: true },
 		embedding: { provider: "off" },

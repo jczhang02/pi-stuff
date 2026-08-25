@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -222,6 +223,7 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 		chmod(runner, 0o755),
 		writeFile(rawLog, ""),
 	]);
+	await disableSessionNamingForTest(agentDirectory);
 	await Promise.all([
 		writeFile(
 			join(agentDirectory, "settings.json"),

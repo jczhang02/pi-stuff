@@ -35,6 +35,11 @@ _Avoid_: console warning, transcript message, notification log
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file
 
+**Session Name**:
+Pi-owned Session metadata that gives one coding conversation a concise semantic identity. Session Naming may propose
+and persist this value after settled direct-user work, but it does not replace the Session, task, Goal, or Agent name.
+_Avoid_: chat title, task name, autoname state
+
 **Settings Layer**:
 User-owned declarations that select and configure Packages and Runtime Resources for a Host installation.
 _Avoid_: Suite configuration, installer state

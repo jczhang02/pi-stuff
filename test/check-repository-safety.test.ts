@@ -8,6 +8,7 @@ import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
 const TEMPORARY_ROOTS: string[] = [];
 const SUITE_CAPABILITIES = [
 	"conversation-ui",
+	"session-naming",
 	"tool-display",
 	"context-management",
 	"rtk",

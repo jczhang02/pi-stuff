@@ -1,0 +1,198 @@
+import { describe, expect, test } from "bun:test";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import {
+	createEventBus,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ExtensionEvent,
+	type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
+import {
+	installSessionNamingCapability,
+	type SessionNamingHost,
+} from "../../packages/pi-stuff/src/session-naming/index.js";
+import {
+	type SessionNamingSettings,
+	SessionNamingSettingsStore,
+} from "../../packages/pi-stuff/src/session-naming/settings.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
+
+const SETTINGS: SessionNamingSettings = {
+	schemaVersion: 1,
+	enabled: true,
+	cooldownMinutes: 10,
+	respectManualName: false,
+	fallbackModels: [],
+};
+
+type Listener = (event: ExtensionEvent, ctx: ExtensionContext) => void;
+
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+function message(role: "assistant" | "user", content: string, id: string): SessionEntry {
+	const base = { id, parentId: null, timestamp: "2026-08-24T00:00:00.000Z" };
+	if (role === "user") return { ...base, type: "message", message: { role, content, timestamp: 1 } };
+	const assistant: AssistantMessage = {
+		role,
+		content: [{ type: "text", text: content }],
+		api: "openai-completions",
+		provider: "fixture",
+		model: "fixture",
+		usage: ZERO_USAGE,
+		stopReason: "stop",
+		timestamp: 2,
+	};
+	return { ...base, type: "message", message: assistant };
+}
+
+function hostHarness() {
+	const lifecycle = new Map<string, Listener[]>();
+	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
+	const eventBus = createEventBus();
+	const subscribedChannels: string[] = [];
+	const events = {
+		emit: eventBus.emit.bind(eventBus),
+		on(channel: string, handler: Parameters<ExtensionAPI["events"]["on"]>[1]) {
+			subscribedChannels.push(channel);
+			return eventBus.on(channel, handler);
+		},
+	} satisfies ExtensionAPI["events"];
+	const entries: SessionEntry[] = [
+		message("user", "Implement automatic Session naming", "entry-1"),
+		message("assistant", "Done", "entry-2"),
+	];
+	const notices: string[] = [];
+	let name: string | undefined;
+	const extensionContext = createExtensionCommandContext({
+		sessionManager: { getBranch: () => entries },
+		ui: { notify: (message) => notices.push(message) },
+	});
+	Object.assign(extensionContext.modelRegistry, {
+		complete: async () => {
+			throw new Error("The local fallback does not call the fixture registry");
+		},
+		find: () => undefined,
+		hasConfiguredAuth: () => false,
+	});
+	// SAFETY: this event adapter records Host callbacks without changing their arguments or results.
+	const on = ((event: string, listener: Listener) => {
+		const listeners = lifecycle.get(event) ?? [];
+		listeners.push(listener);
+		lifecycle.set(event, listeners);
+	}) as ExtensionAPI["on"];
+	const appendEntry: ExtensionAPI["appendEntry"] = <T = unknown>(customType: string, data?: T) => {
+		entries.push({
+			type: "custom",
+			id: `entry-${String(entries.length + 1)}`,
+			parentId: null,
+			timestamp: "2026-08-24T00:00:00.000Z",
+			customType,
+			data,
+		});
+	};
+	const pi = {
+		events,
+		on,
+		registerCommand(name: string, options: Parameters<ExtensionAPI["registerCommand"]>[1]) {
+			commands.set(name, options);
+		},
+		appendEntry,
+		getSessionName: () => name,
+		setSessionName(next: string) {
+			name = next;
+		},
+	} satisfies SessionNamingHost;
+	const emitLifecycle = (event: string): void => {
+		// SAFETY: these handlers do not inspect the event payload in the exercised lifecycle cases.
+		const fixtureEvent = { type: event } as ExtensionEvent;
+		for (const listener of lifecycle.get(event) ?? []) listener(fixtureEvent, extensionContext);
+	};
+	const emitSettled = (): void => {
+		const settledEvent = subscribedChannels.find((event) => event.includes("user-agent-run-settled"));
+		if (!settledEvent) throw new Error("Session Naming did not subscribe to the shared settled event");
+		pi.events.emit(settledEvent, { ctx: extensionContext });
+	};
+	const getAutonameCompletions = (prefix: string) => {
+		const command = commands.get("autoname");
+		if (!command) throw new Error("Session Naming did not register /autoname");
+		return command.getArgumentCompletions?.(prefix) ?? null;
+	};
+	const runAutoname = async (args = ""): Promise<void> => {
+		const command = commands.get("autoname");
+		if (!command) throw new Error("Session Naming did not register /autoname");
+		await command.handler(args, extensionContext);
+	};
+	return { emitLifecycle, emitSettled, getAutonameCompletions, name: () => name, notices, pi, runAutoname };
+}
+
+async function waitForName(read: () => string | undefined): Promise<string | undefined> {
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		const value = read();
+		if (value) return value;
+		await Promise.resolve();
+	}
+	return read();
+}
+
+describe("Session Naming Extension lifecycle", () => {
+	test("names a parent Session only at the shared direct-user settled boundary", async () => {
+		const host = hostHarness();
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
+		host.emitLifecycle("session_start");
+		host.emitLifecycle("agent_settled");
+		await Promise.resolve();
+		expect(host.name()).toBeUndefined();
+
+		host.emitSettled();
+		expect(await waitForName(host.name)).toBe("automatic Session naming");
+	});
+
+	test("offers only the settings argument completion", () => {
+		const host = hostHarness();
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
+
+		for (const prefix of ["", "s", "SET"]) {
+			expect(host.getAutonameCompletions(prefix)).toEqual([{ label: "settings", value: "settings" }]);
+		}
+		expect(host.getAutonameCompletions("settings")).toBeNull();
+		expect(host.getAutonameCompletions("unknown")).toBeNull();
+		expect(host.getAutonameCompletions("settings ")).toBeNull();
+		expect(host.getAutonameCompletions("settings extra")).toBeNull();
+	});
+
+	test("applies automatic naming changes immediately while keeping explicit /autoname available", async () => {
+		const host = hostHarness();
+		const settings = SessionNamingSettingsStore.memory(SETTINGS);
+		installSessionNamingCapability(host.pi, settings, {});
+		host.emitLifecycle("session_start");
+
+		await settings.update({ enabled: false });
+		host.emitSettled();
+		await Promise.resolve();
+		expect(host.name()).toBeUndefined();
+
+		await host.runAutoname("setings");
+		expect(host.name()).toBeUndefined();
+		expect(host.notices.at(-1)).toBe("Usage: /autoname [settings]");
+
+		await host.runAutoname();
+		expect(host.name()).toBe("automatic Session naming");
+	});
+
+	test("does not automatically rename a Child Agent Session", async () => {
+		const host = hostHarness();
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), { PI_SUBAGENT_CHILD: "1" });
+		host.emitLifecycle("session_start");
+		host.emitSettled();
+
+		await Promise.resolve();
+		expect(host.name()).toBeUndefined();
+	});
+});

@@ -62,10 +62,9 @@ export interface NamespaceStoreOptions {
  * A single-Capability view over the merged settings file.
  *
  * Construction is lazy: `load()` reads the merged file (and migrates a legacy
- * file once if a migrator is supplied). Mutations go through `update()` /
- * `replace()`, which acquire the whole-file lock, re-read the current
- * namespace, apply the patch, and merge it back without touching sibling
- * namespaces.
+ * file once if a migrator is supplied). Mutations go through `update()`,
+ * `updateWith()`, or `replace()`, which acquire the whole-file lock and
+ * merge the result back without touching sibling namespaces.
  */
 export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	private readonly listeners = new Set<(value: T) => void>();
@@ -169,6 +168,11 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		return this.commit((current) => ({ ...current, ...patch }), true);
 	}
 
+	/** Compute an update from the latest persisted namespace under the whole-file lock. */
+	async updateWith(apply: (current: T) => T): Promise<T> {
+		return this.commit(apply, true);
+	}
+
 	/** Replace the namespace wholesale (used by full-state setters). */
 	async replace(next: T): Promise<T> {
 		return this.commit(() => next, false);
@@ -193,7 +197,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		if (!normalize) return;
 		const existing = await this.readExisting(namespace);
 		if (!this.migrator || !this.legacyPath || !(await fileExists(this.legacyPath))) {
-			const value = existing === undefined ? defaults : normalize(existing);
+			const value = existing === undefined ? defaults : this.normalizeInitial(existing, defaults);
 			this.value = value;
 			this.persistedValue = value;
 			return;
@@ -273,6 +277,24 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 				visibility: "notice",
 			});
 			return undefined;
+		}
+	}
+
+	private normalizeInitial(record: SettingsRecord, defaults: T): T {
+		try {
+			return this.normalize?.(record) ?? defaults;
+		} catch (error) {
+			this.reportDiagnostic?.({
+				action: "settings-load",
+				capability: "pi-stuff",
+				details: this.path,
+				error,
+				key: "invalid-settings",
+				severity: "warning",
+				summary: "Settings were invalid and built-in defaults are active",
+				visibility: "notice",
+			});
+			return defaults;
 		}
 	}
 

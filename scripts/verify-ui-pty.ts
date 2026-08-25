@@ -605,7 +605,7 @@ async function waitForPersistedSetting(
 	path: string,
 	namespace: string,
 	key: string,
-	expected: boolean | string,
+	expected: boolean | number | string,
 ): Promise<void> {
 	const deadline = Date.now() + WAIT_TIMEOUT_MS;
 	let last = "settings file not created";
@@ -623,6 +623,25 @@ async function waitForPersistedSetting(
 		await delay(POLL_INTERVAL_MS);
 	}
 	fail(`${namespace}.${key}=${JSON.stringify(expected)} was not persisted: ${last}`);
+}
+
+async function waitForMissingPersistedSetting(path: string, namespace: string, key: string): Promise<void> {
+	const deadline = Date.now() + WAIT_TIMEOUT_MS;
+	let last = "settings file not created";
+	while (Date.now() < deadline) {
+		try {
+			const text = await readFile(path, "utf8");
+			last = text;
+			const file = parseJsonValue(text);
+			if (!isJsonInputObject(file)) throw new Error("settings file is not a JSON object");
+			const settings = file[namespace];
+			if (isJsonInputObject(settings) && !Object.hasOwn(settings, key)) return;
+		} catch (error) {
+			last = String(error);
+		}
+		await delay(POLL_INTERVAL_MS);
+	}
+	fail(`${namespace}.${key} was not removed: ${last}`);
 }
 
 async function waitForFixtureRecords(path: string, type: string, count: number): Promise<readonly FixtureRecord[]> {
@@ -923,6 +942,122 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	await session.waitForStatusline("closing the Fast-mode /codex dialog");
 }
 
+async function verifySessionNamingDialog(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+): Promise<void> {
+	const settingsPath = join(paths.config, "pi-stuff.json");
+	session.sendKey("C-u");
+	session.sendLiteral("/autoname s");
+	let screen = await session.waitForText("settings");
+	if (!screen.includes("/autoname s")) fail("/autoname argument completion did not preserve the editor prefix");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /autoname argument completion was open");
+	session.sendKey("Enter");
+	screen = await session.waitForStatusline("accepting /autoname argument completion");
+	if (!screen.includes("/autoname settings")) fail("/autoname argument completion did not accept settings");
+	session.sendKey("Enter");
+	screen = await session.waitForText("Keep manually assigned names");
+
+	verifySettingValue(screen, "Automatic naming", "on");
+	verifySettingValue(screen, "Rename cooldown", "10 min");
+	verifySettingValue(screen, "Keep manually assigned names", "off");
+	verifySettingValue(screen, "Naming model", "Session model");
+	if (screen.includes("fallbackModels")) fail("/autoname settings exposed fallback model controls");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /autoname settings owned the input region");
+	verifyNoFloatingFrame(screen, "/autoname settings Command Dialog");
+	verifyFullWidthDivider(screen, 100, "/autoname settings Command Dialog", "─");
+	verifyTerminalWidth(screen, 100, "/autoname settings Command Dialog");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-session-naming-settings-100x32`,
+		session,
+	);
+
+	session.resize(64, 28);
+	screen = await session.waitForDialogFrame("Keep manually assigned names", 64);
+	verifyNoFloatingFrame(screen, "narrow /autoname settings Command Dialog");
+	verifyFullWidthDivider(screen, 64, "narrow /autoname settings Command Dialog", "─");
+	verifyTerminalWidth(screen, 64, "narrow /autoname settings Command Dialog");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-session-naming-settings-64x28`,
+		session,
+	);
+
+	session.resize(24, 16);
+	screen = await session.waitForDialogFrame("Keep manual names", 24);
+	verifySettingValue(screen, "Auto naming", "on");
+	verifySettingValue(screen, "Cooldown", "10 min");
+	verifySettingValue(screen, "Keep manual names", "off");
+	verifySettingValue(screen, "Model", "Session");
+	verifyFullWidthDivider(screen, 24, "small /autoname settings Command Dialog", "─");
+	verifyTerminalWidth(screen, 24, "small /autoname settings Command Dialog");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-session-naming-settings-24x16`,
+		session,
+	);
+
+	session.resize(100, 32);
+	await session.waitForDialogFrame("Keep manually assigned names", 100);
+
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "sessionNaming", "enabled", false);
+	screen = await session.waitForText("off");
+	verifySettingValue(screen, "Automatic naming", "off");
+
+	session.sendKey("Down");
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "sessionNaming", "cooldownMinutes", 30);
+	screen = await session.waitForText("30 min");
+	verifySettingValue(screen, "Rename cooldown", "30 min");
+
+	session.sendKey("Down");
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "sessionNaming", "respectManualName", true);
+	screen = await session.waitForText("on");
+	verifySettingValue(screen, "Keep manually assigned names", "on");
+
+	session.sendKey("Down");
+	session.sendKey("Enter");
+	screen = await session.waitForText("Search models");
+	if (!screen.includes("Session model") || !screen.includes("kimi-coding/ui-pty-subscription")) {
+		fail(`/autoname model picker did not expose the Session and available fixture models\n${screen}`);
+	}
+	verifyFullWidthDivider(screen, 100, "/autoname model picker", "─");
+	verifyTerminalWidth(screen, 100, "/autoname model picker");
+
+	session.resize(64, 28);
+	screen = await session.waitForDialogFrame("Session model", 64);
+	if (!screen.includes("Session model")) fail("narrow /autoname model picker lost the Session-model option");
+	verifyTerminalWidth(screen, 64, "narrow /autoname model picker");
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-session-naming-models-64x28`, session);
+
+	session.resize(24, 16);
+	screen = await session.waitForDialogFrame("Session model", 24);
+	if (!screen.includes("Session model")) {
+		fail(`small /autoname model picker lost the Session-model option\n${screen}`);
+	}
+	verifyTerminalWidth(screen, 24, "small /autoname model picker");
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-session-naming-models-24x16`, session);
+
+	session.resize(100, 32);
+	await session.waitForDialogFrame("Search models", 100);
+	session.sendLiteral("kimi");
+	screen = await session.waitForAbsence("pi-stuff-ui-pty/ui-pty-model");
+	if (!screen.includes("kimi-coding/ui-pty-subscription")) {
+		fail(`/autoname model search lost its match\n${screen}`);
+	}
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "sessionNaming", "model", "kimi-coding/ui-pty-subscription");
+	screen = await session.waitForText("kimi-coding/ui-pty-subscription");
+	verifySettingValue(screen, "Naming model", "kimi-coding/ui-pty-subscription");
+	session.sendKey("Escape");
+	screen = await session.waitForStatusline("closing /autoname settings");
+	if (!screen.includes("ui-pty-model")) fail("selecting a naming model changed the active Session model");
+}
+
 async function verifyTodoOverlay(
 	session: TmuxPiSession,
 	options: UiPtyVerificationOptions,
@@ -1039,6 +1174,7 @@ async function verifyWideInteractions(
 
 	await verifyDiagnosticsUi(session, paths, options, 100, 32);
 	await verifyCodexDialog(session, paths);
+	await verifySessionNamingDialog(session, paths, options);
 
 	let screen = await openUi(session);
 	screen = await session.waitForDialogFrame("Tool running timer", 100);
@@ -1256,6 +1392,28 @@ async function verifyWideInteractions(
 		screen = restarted.capture();
 		if (screen.includes("Welcome back!")) fail("persisted Welcome=false was ignored on the next launch");
 		if (hasStatusline(screen)) fail("persisted Statusline=false was ignored after restart");
+		restarted.sendKey("C-u");
+		restarted.sendLiteral("/autoname settings");
+		restarted.sendKey("Enter");
+		screen = await restarted.waitForText("Keep manually assigned names");
+		verifySettingValue(screen, "Automatic naming", "off");
+		verifySettingValue(screen, "Rename cooldown", "30 min");
+		verifySettingValue(screen, "Keep manually assigned names", "on");
+		verifySettingValue(screen, "Naming model", "kimi-coding/ui-pty-subscription");
+
+		for (let index = 0; index < 3; index += 1) restarted.sendKey("Down");
+		restarted.sendKey("Enter");
+		await restarted.waitForText("Search models");
+		restarted.sendLiteral("session");
+		screen = await restarted.waitForAbsence("kimi-coding/ui-pty-subscription");
+		if (!screen.includes("Session model")) fail("/autoname model search lost the Session-model option");
+		restarted.sendKey("Enter");
+		await waitForMissingPersistedSetting(settingsPath, "sessionNaming", "model");
+		screen = await restarted.waitForText("Session model");
+		verifySettingValue(screen, "Naming model", "Session model");
+		restarted.sendKey("Escape");
+		await restarted.waitForAbsence("Keep manually assigned names");
+
 		screen = await openUi(restarted);
 		verifySettingValue(screen, "Statusline", false);
 		verifySettingValue(screen, "Statusline density", "full");
@@ -1338,6 +1496,7 @@ function verifyInventory(
 		if (!record.commands.includes("ui")) fail("Suite did not register /ui");
 		if (!record.commands.includes("diagnostics")) fail("Suite did not register /diagnostics");
 		if (!record.commands.includes("notifications")) fail("Suite did not register /notifications");
+		if (!record.commands.includes("autoname")) fail("Suite did not register /autoname");
 		if (record.commands.includes("notify-test")) fail("Suite still registered removed /notify-test");
 		if (record.commands.includes("tool-settings")) fail("Suite still registered removed /tool-settings");
 	}
@@ -1410,6 +1569,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
 						"native /ui settings, Notification exclusion, enum changes, and restart persistence",
+						"native /autoname settings completion, responsive searchable model selection, immediate writes, reset, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);
 				} else {

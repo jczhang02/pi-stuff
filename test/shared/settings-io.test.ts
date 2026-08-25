@@ -94,6 +94,21 @@ test("NamespacedSettingsStore loads defaults when the namespace is absent", asyn
 	expect(store.get()).toEqual({ enabled: false, count: 0 });
 });
 
+test("NamespacedSettingsStore reports invalid initial values and leaves them untouched", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	await writeSettingsFile(path, { codex: { enabled: "invalid", count: 3 } });
+	const diagnostics: string[] = [];
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+		reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic.key),
+	});
+
+	expect(store.get()).toEqual({ enabled: false, count: 0 });
+	expect(diagnostics).toEqual(["invalid-settings"]);
+	await expect(store.update({ enabled: true })).rejects.toThrow("expected enabled boolean and count number");
+	expect(await readNamespace(path, "codex")).toEqual({ enabled: "invalid", count: 3 });
+});
+
 test("NamespacedSettingsStore update persists under the whole-file lock and preserves siblings", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	await writeSettingsFile(path, { ui: { statusline: true } });
@@ -105,6 +120,22 @@ test("NamespacedSettingsStore update persists under the whole-file lock and pres
 	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 0 });
 	// Sibling namespace survives the locked write.
 	expect(await readNamespace(path, "ui")).toEqual({ statusline: true });
+});
+
+test("NamespacedSettingsStore updateWith computes from the latest persisted namespace", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+	});
+	await writeSettingsFile(path, { codex: { enabled: false, count: 6 }, ui: { statusline: true } });
+
+	await store.updateWith((current) => ({ enabled: true, count: current.count + 1 }));
+
+	expect(store.get()).toEqual({ enabled: true, count: 7 });
+	expect(await readSettingsFile(path)).toEqual({
+		codex: { enabled: true, count: 7 },
+		ui: { statusline: true },
+	});
 });
 
 test("NamespacedSettingsStore replace writes the whole namespace wholesale", async () => {
