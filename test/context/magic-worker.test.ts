@@ -1,13 +1,85 @@
-/* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- This boundary test supplies deliberately loose Pi Extension fixtures to the private Worker adapter. */
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Api, AssistantMessage, Model, UserMessage } from "@earendil-works/pi-ai";
+import type {
+	ContextEvent,
+	ExtensionContext,
+	ExtensionEvent,
+	MessageEndEvent,
+	SessionBeforeCompactEvent,
+	SessionBeforeSwitchEvent,
+	SessionEntry,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	ToolResultEvent,
+} from "@earendil-works/pi-coding-agent";
 import {
 	finishMagicWorkerShutdown,
 	magicContextWorkerFactory,
+	writeMagicWorkerSyncResponse,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
+import {
+	MAGIC_WORKER_SYNC_BUFFER_BYTES,
+	type MagicWorkerInvocationResult,
+} from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
+import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
+
+const MODEL: Model<Api> = {
+	api: "openai-completions",
+	baseUrl: "http://127.0.0.1.invalid",
+	contextWindow: 128_000,
+	cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+	id: "fixture-model",
+	input: ["text"],
+	maxTokens: 4_096,
+	name: "Fixture",
+	provider: "fixture",
+	reasoning: false,
+};
+
+const ZERO_USAGE = {
+	cacheRead: 0,
+	cacheWrite: 0,
+	cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
+	input: 0,
+	output: 0,
+	totalTokens: 0,
+};
+
+type WorkerHandler = (
+	event: ExtensionEvent,
+	ctx: ExtensionContext,
+) => MagicWorkerInvocationResult | Promise<MagicWorkerInvocationResult>;
+
+function requireHandler(handlers: Map<string, WorkerHandler[]>, name: string): WorkerHandler {
+	const handler = handlers.get(name)?.[0];
+	if (!handler) throw new Error(`Magic Context did not register '${name}'.`);
+	return handler;
+}
+
+function assistantMessage(text: string): AssistantMessage {
+	return {
+		api: MODEL.api,
+		content: [{ text, type: "text" }],
+		model: MODEL.id,
+		provider: MODEL.provider,
+		role: "assistant",
+		stopReason: "stop",
+		timestamp: Date.now(),
+		usage: ZERO_USAGE,
+	};
+}
+
+function userMessage(text: string): UserMessage {
+	return { content: [{ text, type: "text" }], role: "user", timestamp: Date.now() };
+}
+
+function messageEntry(id: string, message: AssistantMessage | UserMessage, parentId: string | null): SessionEntry {
+	return { id, message, parentId, timestamp: new Date().toISOString(), type: "message" };
+}
 
 test("the isolated engine keeps ordinary turns incremental and event payloads clone-safe", async () => {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-magic-worker-"));
@@ -44,62 +116,40 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		XDG_CONFIG_HOME: join(temporaryDirectory, "config"),
 	});
 	delete process.env["XDG_DATA_HOME"];
-	const handlers = new Map<string, (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown>();
-	const tools = new Map<string, ToolDefinition>();
+	const handlers = new Map<string, WorkerHandler[]>();
+	const registeredTools = new Set<string>();
 	const commands = new Set<string>();
 	let branchReads = 0;
 	let entryReads = 0;
-	let currentBranch: unknown[] = [];
+	let currentBranch: SessionEntry[] = [];
 	let currentLeafId: string | null = null;
-	const pi = {
-		appendEntry: () => undefined,
-		getActiveTools: () => [],
-		getAllTools: () => [],
-		on: (name: string, handler: (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown) =>
-			handlers.set(name, handler),
-		registerCommand: (name: string) => commands.add(name),
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-		sendMessage: () => undefined,
-		sendUserMessage: () => undefined,
-		setActiveTools: () => undefined,
-	} as unknown as ExtensionAPI;
-	const context = {
-		cwd: temporaryDirectory,
-		getContextUsage: () => ({ contextWindow: 128_000, percent: 0, tokens: 0 }),
-		getSystemPrompt: () => "",
-		hasPendingMessages: () => false,
-		hasUI: false,
-		isIdle: () => true,
-		isProjectTrusted: () => true,
-		mode: "tui",
-		model: {
-			api: "openai-completions",
-			contextWindow: 128_000,
-			cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
-			id: "fixture-model",
-			input: ["text"],
-			maxTokens: 4_096,
-			name: "Fixture",
-			provider: "fixture",
-			reasoning: false,
-		},
-		sessionManager: {
-			getBranch: () => {
-				branchReads += 1;
-				return currentBranch;
+	const pi = createExtensionApi({
+		on: captureExtensionHandlers(handlers),
+		registerCommand: (name) => commands.add(name),
+		registerTool: (tool) => registeredTools.add(tool.name),
+	});
+	const contextForSession = (id: string): ExtensionContext =>
+		createExtensionContext({
+			cwd: temporaryDirectory,
+			getContextUsage: () => ({ contextWindow: 128_000, percent: 0, tokens: 0 }),
+			hasUI: false,
+			model: MODEL,
+			sessionManager: {
+				getBranch: () => {
+					branchReads += 1;
+					return currentBranch;
+				},
+				getEntry: (entryId: string) => {
+					entryReads += 1;
+					return currentBranch.find((entry) => entry.id === entryId);
+				},
+				getLeafId: () => currentLeafId,
+				getSessionFile: () => undefined,
+				getSessionId: () => id,
 			},
-			getEntry: (id: string) => {
-				entryReads += 1;
-				return currentBranch.find(
-					(entry) => entry !== null && typeof entry === "object" && "id" in entry && entry.id === id,
-				);
-			},
-			getLeafId: () => currentLeafId,
-			getSessionFile: () => undefined,
-			getSessionId: () => "worker-test-session",
-		} as unknown as ExtensionContext["sessionManager"],
-		thinkingLevel: "off",
-	} as ExtensionContext;
+			thinkingLevel: "off",
+		});
+	const context = contextForSession("worker-test-session");
 	try {
 		await magicContextWorkerFactory(pi);
 		if (!handlers.has("context")) {
@@ -109,149 +159,96 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		expect(handlers.has("context")).toBeTrue();
 		expect(handlers.has("session_start")).toBeTrue();
 		expect(handlers.has("session_shutdown")).toBeTrue();
-		expect([...tools.keys()].sort()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
+		expect([...registeredTools].sort()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
 		expect(commands.has("ctx-status")).toBeTrue();
-		await handlers.get("session_start")?.({ type: "session_start", reason: "resume" } as ExtensionEvent, context);
-		expect(branchReads).toBe(1);
-		const beforeCompact = handlers.get("session_before_compact");
-		expect(beforeCompact).toBeDefined();
-		expect(
-			await beforeCompact?.(
-				{
-					branchEntries: [],
-					preparation: { irrelevant: () => undefined },
-					reason: "manual",
-					signal: new AbortController().signal,
-					type: "session_before_compact",
-					willRetry: false,
-				} as unknown as ExtensionEvent,
-				context,
-			),
-		).toEqual({ cancel: true });
+
+		const sessionStart: SessionStartEvent = { reason: "resume", type: "session_start" };
+		await requireHandler(handlers, "session_start")(sessionStart, context);
 		expect(branchReads).toBe(1);
 
-		const messageEnd = handlers.get("message_end");
-		expect(messageEnd).toBeDefined();
-		const message = {
-			api: "openai-completions",
-			content: [{ type: "text", text: "§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE" }],
-			id: "worker-message",
-			model: "fixture-model",
-			provider: "fixture",
-			role: "assistant",
-			stopReason: "stop",
-			timestamp: Date.now(),
-			usage: { cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, input: 0, output: 0, totalTokens: 0 },
-		};
-		const messageResult = await messageEnd?.({ message, type: "message_end" } as unknown as ExtensionEvent, context);
-		expect(messageResult).toEqual({
-			message: { ...message, content: [{ type: "text", text: "WORKER_INCREMENTAL_INDEX_EVIDENCE" }] },
-		});
-		currentLeafId = "worker-entry";
-		currentBranch = [
-			{
-				id: currentLeafId,
-				message: (messageResult as { readonly message: unknown }).message,
-				parentId: null,
-				timestamp: new Date().toISOString(),
-				type: "message",
+		const beforeCompact: SessionBeforeCompactEvent = {
+			branchEntries: [],
+			preparation: {
+				fileOps: { edited: new Set(), read: new Set(), written: new Set() },
+				firstKeptEntryId: "worker-entry",
+				isSplitTurn: false,
+				messagesToSummarize: [],
+				settings: { enabled: true, keepRecentTokens: 8_192, reserveTokens: 16_384 },
+				tokensBefore: 0,
+				turnPrefixMessages: [],
 			},
-		];
+			reason: "manual",
+			signal: new AbortController().signal,
+			type: "session_before_compact",
+			willRetry: false,
+		};
+		expect(await requireHandler(handlers, "session_before_compact")(beforeCompact, context)).toEqual({
+			cancel: true,
+		});
+		expect(branchReads).toBe(1);
+
+		const taggedMessage = assistantMessage("§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE");
+		const projectedMessage = assistantMessage("WORKER_INCREMENTAL_INDEX_EVIDENCE");
+		projectedMessage.timestamp = taggedMessage.timestamp;
+		const messageEnd: MessageEndEvent = { message: taggedMessage, type: "message_end" };
+		const messageResult = await requireHandler(handlers, "message_end")(messageEnd, context);
+		expect(messageResult).toEqual({ message: projectedMessage });
+		currentLeafId = "worker-entry";
+		currentBranch = [messageEntry(currentLeafId, projectedMessage, null)];
 		await Bun.sleep(20);
 		expect(branchReads).toBe(1);
 		expect(entryReads).toBe(1);
 
-		const contextHandler = handlers.get("context");
-		expect(contextHandler).toBeDefined();
-		const userMessage = {
-			content: [{ type: "text", text: "WORKER_INCREMENTAL_USER_EVIDENCE" }],
-			role: "user",
-			timestamp: Date.now(),
-		};
+		const user = userMessage("WORKER_INCREMENTAL_USER_EVIDENCE");
 		currentLeafId = "worker-user-entry";
-		currentBranch = [
-			...currentBranch,
-			{
-				id: currentLeafId,
-				message: userMessage,
-				parentId: "worker-entry",
-				timestamp: new Date().toISOString(),
-				type: "message",
-			},
-		];
+		currentBranch = [...currentBranch, messageEntry(currentLeafId, user, "worker-entry")];
+		const contextEvent: ContextEvent = { messages: [projectedMessage, user], type: "context" };
 		for (let turn = 0; turn < 2; turn += 1) {
-			await contextHandler?.(
-				{
-					messages: [(messageResult as { readonly message: unknown }).message, userMessage],
-					type: "context",
-				} as ExtensionEvent,
-				context,
-			);
+			await requireHandler(handlers, "context")(contextEvent, context);
 		}
 		expect(branchReads).toBe(1);
 		expect(entryReads).toBe(2);
 
-		const branchMessage = {
-			content: [{ type: "text", text: "WORKER_BRANCH_SWITCH_EVIDENCE" }],
-			role: "user",
-			timestamp: Date.now(),
-		};
+		const branchMessage = userMessage("WORKER_BRANCH_SWITCH_EVIDENCE");
 		currentLeafId = "worker-branch-entry";
-		currentBranch = [
-			{
-				id: currentLeafId,
-				message: branchMessage,
-				parentId: null,
-				timestamp: new Date().toISOString(),
-				type: "message",
-			},
-		];
+		currentBranch = [messageEntry(currentLeafId, branchMessage, null)];
+		const branchContextEvent: ContextEvent = { messages: [branchMessage], type: "context" };
 		for (let turn = 0; turn < 2; turn += 1) {
-			await contextHandler?.({ messages: [branchMessage], type: "context" } as ExtensionEvent, context);
+			await requireHandler(handlers, "context")(branchContextEvent, context);
 		}
 		expect(branchReads).toBe(2);
 		expect(entryReads).toBe(3);
 
-		const toolResult = handlers.get("tool_result");
-		expect(toolResult).toBeDefined();
-		const cyclicDetails = {};
-		Reflect.set(cyclicDetails, "self", cyclicDetails);
+		interface CyclicDetails {
+			self?: CyclicDetails;
+		}
+		const cyclicDetails: CyclicDetails = {};
+		cyclicDetails.self = cyclicDetails;
 		for (const details of [() => undefined, cyclicDetails]) {
-			await toolResult?.(
-				{
-					content: [{ type: "text", text: "clone-safe result" }],
-					details,
-					input: {},
-					isError: false,
-					toolCallId: "clone-safe-tool",
-					toolName: "custom_tool",
-					type: "tool_result",
-				} as ExtensionEvent,
-				context,
-			);
+			const toolResult: ToolResultEvent = {
+				content: [{ text: "clone-safe result", type: "text" }],
+				details,
+				input: {},
+				isError: false,
+				toolCallId: "clone-safe-tool",
+				toolName: "custom_tool",
+				type: "tool_result",
+			};
+			await requireHandler(handlers, "tool_result")(toolResult, context);
 		}
 
-		const beforeSwitch = handlers.get("session_before_switch");
-		expect(beforeSwitch).toBeDefined();
-		await beforeSwitch?.({ type: "session_before_switch", reason: "resume" } as ExtensionEvent, context);
+		const beforeSwitch: SessionBeforeSwitchEvent = { reason: "resume", type: "session_before_switch" };
+		await requireHandler(handlers, "session_before_switch")(beforeSwitch, context);
 		currentLeafId = null;
 		currentBranch = [];
-		const secondContext = {
-			...context,
-			sessionManager: {
-				...context.sessionManager,
-				getSessionId: () => "worker-second-session",
-			},
-		} as ExtensionContext;
-		await handlers.get("session_start")?.(
-			{ type: "session_start", reason: "resume" } as ExtensionEvent,
-			secondContext,
-		);
+		const secondContext = contextForSession("worker-second-session");
+		await requireHandler(handlers, "session_start")(sessionStart, secondContext);
 		expect(branchReads).toBe(3);
 
-		const shutdown = handlers.get("session_shutdown");
-		expect(shutdown).toBeDefined();
-		await shutdown?.({ type: "session_shutdown", reason: "quit" } as ExtensionEvent, secondContext);
+		const shutdown: SessionShutdownEvent = { reason: "quit", type: "session_shutdown" };
+		const shutdownHandler = requireHandler(handlers, "session_shutdown");
+		await shutdownHandler(shutdown, secondContext);
+		expect(await shutdownHandler(shutdown, secondContext)).toBeUndefined();
 	} finally {
 		for (const [name, value] of Object.entries(originalEnvironment)) {
 			if (value === undefined) delete process.env[name];
@@ -259,6 +256,18 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		}
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}
+});
+
+test("an oversized synchronous Host response still wakes the Worker with a bounded error", () => {
+	const buffer = new SharedArrayBuffer(MAGIC_WORKER_SYNC_BUFFER_BYTES);
+	const control = new Int32Array(buffer, 0, 2);
+	writeMagicWorkerSyncResponse(buffer, 2, "x".repeat(MAGIC_WORKER_SYNC_BUFFER_BYTES * 2));
+
+	expect(Atomics.wait(control, 0, 0, 1)).toBe("not-equal");
+	expect(Atomics.load(control, 0)).toBe(2);
+	const length = Atomics.load(control, 1);
+	const response = new TextDecoder().decode(new Uint8Array(buffer, Int32Array.BYTES_PER_ELEMENT * 2, length));
+	expect(response).toBe("Magic Context Host effect response exceeded its buffer.");
 });
 
 test("a hung upstream shutdown cannot keep the Worker alive", async () => {

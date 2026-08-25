@@ -1,33 +1,40 @@
-/* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread, anti-slop/no-known-value-widening, anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- This private structured-clone adapter preserves Pi and Magic Context's open Extension payloads; all traffic stays inside the Package-owned Worker pair. */
 import { fileURLToPath } from "node:url";
 import type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
+	BeforeAgentStartEventResult,
 	ExtensionAPI,
 	ExtensionContext,
 	ExtensionEvent,
+	SessionEntry,
+	SessionManager,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { type JsonInputValue, type JsonObject, parseJsonObject } from "../shared/json-value.js";
+import { isRuntimeFunction } from "../shared/runtime-type.js";
 import {
 	MAGIC_WORKER_PROTOCOL_VERSION,
 	type MagicWorkerContextSnapshot,
 	type MagicWorkerEffectMessage,
 	type MagicWorkerEvent,
+	type MagicWorkerEventName,
 	type MagicWorkerHostTool,
+	type MagicWorkerInvocationResult,
 	type MagicWorkerMessage,
 	type MagicWorkerReadyMessage,
 	type MagicWorkerRequest,
+	type MagicWorkerResultMessage,
 	type MagicWorkerSyncEffectMessage,
 	type MagicWorkerToolDescriptor,
 } from "./magic-worker-protocol.js";
 
-type LooseEventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => unknown | Promise<unknown>;
-
 interface PendingRequest {
 	readonly onUpdate: AgentToolUpdateCallback<unknown> | undefined;
 	readonly reject: (error: Error) => void;
-	readonly resolve: (value: unknown) => void;
+	readonly resolve: (message: MagicWorkerReadyMessage | MagicWorkerResultMessage) => void;
 }
 
 interface MagicModule {
@@ -35,7 +42,22 @@ interface MagicModule {
 }
 
 type MagicWorkerFatalHandler = (cause: unknown) => void;
-type EventByType<Type extends ExtensionEvent["type"]> = Extract<ExtensionEvent, { readonly type: Type }>;
+
+interface ContextProjectionResult {
+	readonly messages?: Extract<MagicWorkerEvent, { readonly type: "context" }>["messages"];
+}
+
+interface MessageReplacementResult {
+	readonly message?: Extract<MagicWorkerEvent, { readonly type: "message_end" }>["message"];
+}
+
+interface SessionCancellationResult {
+	readonly cancel?: boolean;
+}
+
+interface ToolContentResult {
+	readonly content?: Extract<MagicWorkerEvent, { readonly type: "tool_result" }>["content"];
+}
 
 type MagicWorkerInvocationRequest =
 	| Omit<Extract<MagicWorkerRequest, { readonly type: "command" }>, "id">
@@ -44,8 +66,8 @@ type MagicWorkerInvocationRequest =
 
 const BRANCH_COMMANDS = new Set(["ctx-recomp", "ctx-session-upgrade", "ctx-wrapup"]);
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function errorMessage<Cause>(cause: Cause): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 function requiredCall<T>(label: string, call: () => T): T {
@@ -97,36 +119,31 @@ function snapshotContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
 	};
 }
 
-function entryParentId(entry: unknown): string | undefined {
-	if (entry === null || typeof entry !== "object" || !("parentId" in entry)) return;
-	const parentId = (entry as { readonly parentId?: unknown }).parentId;
-	return typeof parentId === "string" ? parentId : undefined;
+function entryParentId(entry: SessionEntry): string | undefined {
+	return entry.parentId ?? undefined;
 }
 
-function snapshotEvent(
-	name: string,
-	event: ExtensionEvent,
-): { readonly event: MagicWorkerEvent; readonly signal?: AbortSignal } {
+function snapshotEvent(event: ExtensionEvent): { readonly event: MagicWorkerEvent; readonly signal?: AbortSignal } {
 	const signal = "signal" in event && event.signal instanceof AbortSignal ? event.signal : undefined;
 	let snapshot: MagicWorkerEvent;
-	switch (name) {
+	switch (event.type) {
 		case "agent_end": {
-			const { messages } = event as EventByType<"agent_end">;
+			const { messages } = event;
 			snapshot = { messages, type: "agent_end" };
 			break;
 		}
 		case "before_agent_start": {
-			const { systemPrompt } = event as EventByType<"before_agent_start">;
+			const { systemPrompt } = event;
 			snapshot = { systemPrompt, type: "before_agent_start" };
 			break;
 		}
 		case "context": {
-			const { messages } = event as EventByType<"context">;
+			const { messages } = event;
 			snapshot = { messages, type: "context" };
 			break;
 		}
 		case "message_end": {
-			const { message } = event as EventByType<"message_end">;
+			const { message } = event;
 			snapshot = { message, type: "message_end" };
 			break;
 		}
@@ -143,33 +160,31 @@ function snapshotEvent(
 			snapshot = { type: "session_shutdown" };
 			break;
 		case "session_start": {
-			const { previousSessionFile, reason } = event as EventByType<"session_start">;
-			snapshot = {
-				...(typeof previousSessionFile === "string" ? { previousSessionFile } : {}),
-				reason,
-				type: "session_start",
-			};
+			const { previousSessionFile, reason } = event;
+			snapshot = previousSessionFile
+				? { previousSessionFile, reason, type: "session_start" }
+				: { reason, type: "session_start" };
 			break;
 		}
 		case "tool_execution_end": {
-			const { toolName } = event as EventByType<"tool_execution_end">;
+			const { toolName } = event;
 			snapshot = { toolName, type: "tool_execution_end" };
 			break;
 		}
 		case "tool_execution_start": {
-			const { args, toolCallId, toolName } = event as EventByType<"tool_execution_start">;
+			const { args, toolCallId, toolName } = event;
 			snapshot = { args, toolCallId, toolName, type: "tool_execution_start" };
 			break;
 		}
 		case "tool_result": {
-			const { content, toolName } = event as EventByType<"tool_result">;
+			const { content, toolName } = event;
 			snapshot = { content, toolName, type: "tool_result" };
 			break;
 		}
 		default:
-			throw new Error(`Magic Context registered unsupported Pi event '${name}'.`);
+			throw new Error(`Magic Context registered unsupported Pi event '${event.type}'.`);
 	}
-	return { event: snapshot, ...(signal ? { signal } : {}) };
+	return signal ? { event: snapshot, signal } : { event: snapshot };
 }
 
 export async function finishMagicWorkerShutdown<Result>(
@@ -191,9 +206,9 @@ function wireTools(pi: ExtensionAPI): MagicWorkerHostTool[] {
 	return pi.getAllTools().map((tool) => ({
 		description: tool.description,
 		name: tool.name,
-		parameters: JSON.parse(JSON.stringify(tool.parameters)) as unknown,
-		promptGuidelines: tool.promptGuidelines,
-		sourceInfo: JSON.parse(JSON.stringify(tool.sourceInfo)) as unknown,
+		parameters: parseJsonObject(JSON.stringify(tool.parameters)),
+		promptGuidelines: tool.promptGuidelines ? [...tool.promptGuidelines] : undefined,
+		sourceInfo: { ...tool.sourceInfo },
 	}));
 }
 
@@ -204,21 +219,31 @@ function workerError(message: MagicWorkerMessage): Error {
 	return error;
 }
 
-function isReadyMessage(value: unknown): value is MagicWorkerReadyMessage {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		"type" in value &&
-		value.type === "ready" &&
-		"protocolVersion" in value &&
-		typeof value.protocolVersion === "number" &&
-		"commands" in value &&
-		Array.isArray(value.commands) &&
-		"events" in value &&
-		Array.isArray(value.events) &&
-		"tools" in value &&
-		Array.isArray(value.tools)
-	);
+function canAppendCompaction(
+	manager: ExtensionContext["sessionManager"],
+): manager is ExtensionContext["sessionManager"] & Pick<SessionManager, "appendCompaction"> {
+	return isRuntimeFunction(readHostProxyProperty(manager, "appendCompaction"));
+}
+
+const SYNC_RESPONSE_TOO_LARGE = "Magic Context Host effect response exceeded its buffer.";
+
+export function writeMagicWorkerSyncResponse(buffer: SharedArrayBuffer, status: 1 | 2, text: string): void {
+	const control = new Int32Array(buffer, 0, 2);
+	const bytes = new Uint8Array(buffer, Int32Array.BYTES_PER_ELEMENT * 2);
+	try {
+		let encoded = new TextEncoder().encode(text);
+		let finalStatus = status;
+		if (encoded.length > bytes.length) {
+			encoded = new TextEncoder().encode(SYNC_RESPONSE_TOO_LARGE);
+			finalStatus = 2;
+		}
+		const length = Math.min(encoded.length, bytes.length);
+		bytes.set(encoded.subarray(0, length));
+		Atomics.store(control, 1, length);
+		Atomics.store(control, 0, finalStatus);
+	} finally {
+		Atomics.notify(control, 0);
+	}
 }
 
 class MagicWorkerClient {
@@ -272,7 +297,7 @@ class MagicWorkerClient {
 			type: "initialize",
 		});
 		const message = await ready;
-		if (!isReadyMessage(message)) {
+		if (message.type !== "ready") {
 			throw new Error("Magic Context worker returned an invalid initialization response.");
 		}
 		if (message.protocolVersion !== MAGIC_WORKER_PROTOCOL_VERSION) {
@@ -284,71 +309,117 @@ class MagicWorkerClient {
 	}
 
 	register(ready: MagicWorkerReadyMessage): void {
-		for (const name of ready.events) {
-			const handler: LooseEventHandler =
-				name === "session_shutdown"
-					? (event, ctx) => finishMagicWorkerShutdown(this.invokeEvent(name, event, ctx), () => this.close())
-					: (event, ctx) => this.invokeEvent(name, event, ctx);
-			const on = this.pi.on.bind(this.pi) as (event: string, value: LooseEventHandler) => void;
-			on(name, handler);
-		}
+		for (const name of ready.events) this.registerEvent(name);
 		for (const descriptor of ready.tools) this.registerTool(descriptor);
 		for (const command of ready.commands) {
-			this.pi.registerCommand(command.name, {
-				...(command.description ? { description: command.description } : {}),
-				handler: async (args, ctx) => {
-					await this.invokeCommand(command.name, args, ctx);
-				},
-			});
+			const handler = async (args: string, ctx: ExtensionContext): Promise<void> => {
+				await this.invokeCommand(command.name, args, ctx);
+			};
+			this.pi.registerCommand(
+				command.name,
+				command.description ? { description: command.description, handler } : { handler },
+			);
+		}
+	}
+
+	private registerEvent(name: MagicWorkerEventName): void {
+		switch (name) {
+			case "agent_end":
+				this.pi.on("agent_end", (event, ctx) => this.invokeVoidEvent(event, ctx));
+				break;
+			case "before_agent_start":
+				this.pi.on("before_agent_start", (event, ctx) =>
+					this.invokeResultEvent<BeforeAgentStartEventResult>(event, ctx),
+				);
+				break;
+			case "context":
+				this.pi.on("context", (event, ctx) => this.invokeResultEvent<ContextProjectionResult>(event, ctx));
+				break;
+			case "message_end":
+				this.pi.on("message_end", (event, ctx) => this.invokeResultEvent<MessageReplacementResult>(event, ctx));
+				break;
+			case "session_before_compact":
+				this.pi.on("session_before_compact", (event, ctx) =>
+					this.invokeResultEvent<SessionCancellationResult>(event, ctx),
+				);
+				break;
+			case "session_before_switch":
+				this.pi.on("session_before_switch", (event, ctx) =>
+					this.invokeResultEvent<SessionCancellationResult>(event, ctx),
+				);
+				break;
+			case "session_compact":
+				this.pi.on("session_compact", (event, ctx) => this.invokeVoidEvent(event, ctx));
+				break;
+			case "session_shutdown":
+				this.pi.on("session_shutdown", (event, ctx) => {
+					if (this.closed) return;
+					return finishMagicWorkerShutdown(this.invokeVoidEvent(event, ctx), () => this.close());
+				});
+				break;
+			case "session_start":
+				this.pi.on("session_start", (event, ctx) => this.invokeVoidEvent(event, ctx));
+				break;
+			case "tool_execution_end":
+				this.pi.on("tool_execution_end", (event, ctx) => this.invokeVoidEvent(event, ctx));
+				break;
+			case "tool_execution_start":
+				this.pi.on("tool_execution_start", (event, ctx) => this.invokeVoidEvent(event, ctx));
+				break;
+			case "tool_result":
+				this.pi.on("tool_result", (event, ctx) => this.invokeResultEvent<ToolContentResult>(event, ctx));
 		}
 	}
 
 	private registerTool(descriptor: MagicWorkerToolDescriptor): void {
-		const tool: ToolDefinition = {
+		const parameters = Type.Unsafe<JsonObject>(descriptor.parameters);
+		const tool: ToolDefinition<typeof parameters> = {
 			description: descriptor.description,
 			label: descriptor.label,
 			name: descriptor.name,
-			parameters: descriptor.parameters,
-			...(descriptor.constrainedSampling !== undefined
-				? { constrainedSampling: descriptor.constrainedSampling }
-				: {}),
-			...(descriptor.executionMode !== undefined ? { executionMode: descriptor.executionMode } : {}),
-			...(descriptor.promptGuidelines !== undefined ? { promptGuidelines: [...descriptor.promptGuidelines] } : {}),
-			...(descriptor.promptSnippet !== undefined ? { promptSnippet: descriptor.promptSnippet } : {}),
-			...(descriptor.renderShell !== undefined ? { renderShell: descriptor.renderShell } : {}),
+			parameters,
 			execute: async (toolCallId, args, signal, onUpdate, ctx) =>
-				(await this.invokeTool(
-					descriptor.name,
-					toolCallId,
-					args,
-					ctx,
-					signal,
-					onUpdate,
-				)) as AgentToolResult<unknown>,
+				this.invokeTool(descriptor.name, toolCallId, args, ctx, signal, onUpdate),
 		};
+		if (descriptor.constrainedSampling !== undefined) tool.constrainedSampling = descriptor.constrainedSampling;
+		if (descriptor.executionMode !== undefined) tool.executionMode = descriptor.executionMode;
+		if (descriptor.promptGuidelines !== undefined) tool.promptGuidelines = [...descriptor.promptGuidelines];
+		if (descriptor.promptSnippet !== undefined) tool.promptSnippet = descriptor.promptSnippet;
+		if (descriptor.renderShell !== undefined) tool.renderShell = descriptor.renderShell;
 		this.pi.registerTool(tool);
 	}
 
-	private async invokeEvent(name: string, event: ExtensionEvent, ctx: ExtensionContext): Promise<unknown> {
-		const snapshot = snapshotEvent(name, event);
-		const context = this.synchronizeSession(ctx, name === "session_start");
+	private async invokeEvent(event: ExtensionEvent, ctx: ExtensionContext): Promise<MagicWorkerInvocationResult> {
+		const snapshot = snapshotEvent(event);
+		const context = this.synchronizeSession(ctx, event.type === "session_start");
 		try {
 			const result = await this.invoke(
-				{ context, event: snapshot.event, name, type: "event" },
+				{ context, event: snapshot.event, type: "event" },
 				ctx,
 				snapshot.signal ?? ctx.signal,
 			);
-			if (name === "message_end") this.refreshPersistedEntry(ctx, context.session.id);
+			if (event.type === "message_end") this.refreshPersistedEntry(ctx, context.session.id);
 			return result;
 		} finally {
-			if (name === "session_before_switch" && context.session.id) {
+			if (event.type === "session_before_switch" && context.session.id) {
 				this.sessionLeaves.delete(context.session.id);
 				if (this.contexts.get(context.session.id) === ctx) this.contexts.delete(context.session.id);
 			}
 		}
 	}
 
-	private invokeCommand(name: string, args: string, ctx: ExtensionContext): Promise<unknown> {
+	private async invokeResultEvent<Result>(event: ExtensionEvent, ctx: ExtensionContext): Promise<Result | undefined> {
+		const result = await this.invokeEvent(event, ctx);
+		if (result === undefined) return;
+		// SAFETY: The Worker invokes the handler registered by Magic Context for this same Pi event.
+		return result as Result;
+	}
+
+	private async invokeVoidEvent(event: ExtensionEvent, ctx: ExtensionContext): Promise<void> {
+		await this.invokeEvent(event, ctx);
+	}
+
+	private invokeCommand(name: string, args: string, ctx: ExtensionContext): Promise<MagicWorkerInvocationResult> {
 		return this.invoke(
 			{ args, context: this.synchronizeSession(ctx, BRANCH_COMMANDS.has(name)), name, type: "command" },
 			ctx,
@@ -393,12 +464,12 @@ class MagicWorkerClient {
 	private invokeTool(
 		name: string,
 		toolCallId: string,
-		args: unknown,
+		args: JsonInputValue,
 		ctx: ExtensionContext,
 		signal: AbortSignal | undefined,
 		onUpdate: AgentToolUpdateCallback<unknown> | undefined,
-	): Promise<unknown> {
-		return this.invoke(
+	): Promise<AgentToolResult<unknown>> {
+		return this.invoke<AgentToolResult<unknown>>(
 			{ args, context: this.synchronizeSession(ctx), name, toolCallId, type: "tool" },
 			ctx,
 			signal,
@@ -406,35 +477,51 @@ class MagicWorkerClient {
 		);
 	}
 
-	private invoke(
+	private async invoke<Result extends MagicWorkerInvocationResult = MagicWorkerInvocationResult>(
 		request: MagicWorkerInvocationRequest,
 		ctx: ExtensionContext,
 		signal?: AbortSignal,
 		onUpdate?: AgentToolUpdateCallback<unknown>,
-	): Promise<unknown> {
+	): Promise<Result> {
+		if (this.closed) throw new Error("Magic Context worker is closed.");
 		const id = this.nextRequestId();
 		const session = request.context.session.id;
+		const previousContext = session ? this.contexts.get(session) : undefined;
 		if (session) this.contexts.set(session, ctx);
 		const result = this.waitFor(id, onUpdate);
+		let posted = false;
 		const cancel = (): void => {
 			if (!this.closed) this.post({ id, type: "cancel" });
 		};
 		if (!signal?.aborted) signal?.addEventListener("abort", cancel, { once: true });
 		try {
-			this.post({ ...request, id } as MagicWorkerRequest);
+			this.post({ ...request, id });
+			posted = true;
 			if (signal?.aborted) cancel();
-		} catch (error) {
+			const reply = await result;
+			if (reply.type !== "result") throw new Error("Magic Context worker returned an unexpected reply.");
+			// SAFETY: Each request id resolves only from the matching Worker invocation.
+			return reply.result as Result;
+		} catch (cause) {
 			this.pending.delete(id);
-			return Promise.reject(error);
+			if (!posted && session) {
+				if (this.closed || previousContext === undefined) this.contexts.delete(session);
+				else this.contexts.set(session, previousContext);
+			}
+			throw cause;
+		} finally {
+			signal?.removeEventListener("abort", cancel);
 		}
-		return result.finally(() => signal?.removeEventListener("abort", cancel));
 	}
 
 	private nextRequestId(): number {
 		return this.nextId++;
 	}
 
-	private waitFor(id: number, onUpdate?: AgentToolUpdateCallback<unknown>): Promise<unknown> {
+	private waitFor(
+		id: number,
+		onUpdate?: AgentToolUpdateCallback<unknown>,
+	): Promise<MagicWorkerReadyMessage | MagicWorkerResultMessage> {
 		return new Promise((resolve, reject) => this.pending.set(id, { onUpdate, reject, resolve }));
 	}
 
@@ -456,13 +543,12 @@ class MagicWorkerClient {
 		const pending = this.pending.get(message.id);
 		if (!pending) return;
 		if (message.type === "tool-update") {
-			pending.onUpdate?.(message.update as never);
+			pending.onUpdate?.(message.update);
 			return;
 		}
 		this.pending.delete(message.id);
 		if (message.type === "error") pending.reject(workerError(message));
-		else if (message.type === "ready") pending.resolve(message);
-		else pending.resolve(message.result);
+		else pending.resolve(message);
 	}
 
 	private applyEffect(message: MagicWorkerEffectMessage): void {
@@ -470,19 +556,19 @@ class MagicWorkerClient {
 			if (message.sessionId && !this.contexts.has(message.sessionId)) return;
 			switch (message.name) {
 				case "appendEntry": {
-					this.pi.appendEntry(message.args[0] as string, message.args[1]);
+					this.pi.appendEntry(...message.args);
 					const ctx = message.sessionId ? this.contexts.get(message.sessionId) : undefined;
 					if (ctx) this.synchronizeSession(ctx);
 					break;
 				}
 				case "sendMessage":
-					this.pi.sendMessage(message.args[0] as never, message.args[1] as never);
+					this.pi.sendMessage(...message.args);
 					break;
 				case "sendUserMessage":
-					this.pi.sendUserMessage(message.args[0] as never, message.args[1] as never);
+					this.pi.sendUserMessage(...message.args);
 					break;
 				case "setActiveTools":
-					this.pi.setActiveTools(message.args[0] as string[]);
+					this.pi.setActiveTools(...message.args);
 					break;
 			}
 		} catch {
@@ -491,41 +577,26 @@ class MagicWorkerClient {
 	}
 
 	private applySyncEffect(message: MagicWorkerSyncEffectMessage): void {
-		let response: { readonly error?: string; readonly value?: unknown };
-		let success = false;
+		let status: 1 | 2 = 2;
+		let text: string;
 		try {
 			const ctx = message.sessionId ? this.contexts.get(message.sessionId) : undefined;
 			if (!ctx) throw new Error("Pi Host context is no longer available for this Session.");
-			const manager = ctx.sessionManager as unknown as {
-				appendCompaction?: (...args: readonly unknown[]) => unknown;
-			};
-			const method = manager[message.name];
-			if (typeof method !== "function") throw new Error(`Pi SessionManager does not expose ${message.name}.`);
-			response = { value: method.apply(manager, [...message.args]) };
-			success = true;
+			const manager = ctx.sessionManager;
+			if (!canAppendCompaction(manager)) {
+				throw new Error("Pi SessionManager does not expose appendCompaction.");
+			}
+			text = manager.appendCompaction(...message.args);
+			status = 1;
 			try {
 				this.synchronizeSession(ctx);
 			} catch {
 				// The Host mutation already succeeded. A later invocation will repair the mirror from its leaf or branch.
 			}
-		} catch (error) {
-			response = { error: errorMessage(error) };
+		} catch (cause) {
+			text = errorMessage(cause);
 		}
-		const control = new Int32Array(message.buffer, 0, 2);
-		try {
-			const encoded = new TextEncoder().encode(JSON.stringify(response));
-			const bytes = new Uint8Array(message.buffer, Int32Array.BYTES_PER_ELEMENT * 2);
-			if (encoded.length > bytes.length) throw new Error("Magic Context Host effect response exceeded its buffer.");
-			bytes.set(encoded);
-			Atomics.store(control, 1, encoded.length);
-			Atomics.store(control, 0, success ? 1 : 2);
-		} catch (error) {
-			const encoded = new TextEncoder().encode(JSON.stringify({ error: errorMessage(error) }));
-			new Uint8Array(message.buffer, Int32Array.BYTES_PER_ELEMENT * 2).set(encoded);
-			Atomics.store(control, 1, encoded.length);
-			Atomics.store(control, 0, 2);
-		}
-		Atomics.notify(control, 0);
+		writeMagicWorkerSyncResponse(message.buffer, status, text);
 	}
 
 	private fail(error: Error): void {
