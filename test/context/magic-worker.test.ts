@@ -15,15 +15,16 @@ import type {
 	SessionStartEvent,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
+import type {
+	MagicContextEventMap,
+	MagicContextEventName,
+} from "../../packages/pi-stuff/src/context-management/magic-context-types.js";
 import {
 	finishMagicWorkerShutdown,
 	magicContextWorkerFactory,
-	writeMagicWorkerSyncResponse,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
-import {
-	MAGIC_WORKER_SYNC_BUFFER_BYTES,
-	type MagicWorkerInvocationResult,
-} from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
+import { writeMagicWorkerSyncResponse } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
+import { MAGIC_WORKER_SYNC_BUFFER_BYTES } from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
@@ -52,7 +53,9 @@ const ZERO_USAGE = {
 type WorkerHandler = (
 	event: ExtensionEvent,
 	ctx: ExtensionContext,
-) => MagicWorkerInvocationResult | Promise<MagicWorkerInvocationResult>;
+) =>
+	| MagicContextEventMap[MagicContextEventName]["result"]
+	| Promise<MagicContextEventMap[MagicContextEventName]["result"]>;
 
 function requireHandler(handlers: Map<string, WorkerHandler[]>, name: string): WorkerHandler {
 	const handler = handlers.get(name)?.[0];

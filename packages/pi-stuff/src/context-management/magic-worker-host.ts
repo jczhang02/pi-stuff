@@ -1,0 +1,193 @@
+import type { ExtensionAPI, ExtensionContext, ExtensionEvent, SessionManager } from "@earendil-works/pi-coding-agent";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { parseJsonObject } from "../shared/json-value.js";
+import { isRuntimeFunction } from "../shared/runtime-type.js";
+import {
+	MAGIC_WORKER_SYNC_BUFFER_BYTES,
+	type MagicWorkerContextSnapshot,
+	type MagicWorkerErrorMessage,
+	type MagicWorkerEventInput,
+	type MagicWorkerHostTool,
+} from "./magic-worker-protocol.js";
+
+export function magicWorkerErrorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
+}
+
+export function requiredHostCall<Result>(label: string, call: () => Result): Result {
+	try {
+		return call();
+	} catch (error) {
+		throw new Error(`Magic Context could not snapshot Pi ${label}: ${magicWorkerErrorMessage(error)}`, {
+			cause: error,
+		});
+	}
+}
+
+function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"] {
+	const model = ctx.model;
+	if (!model) return;
+	return {
+		api: model.api,
+		contextWindow: model.contextWindow,
+		id: model.id,
+		maxTokens: model.maxTokens,
+		provider: model.provider,
+	};
+}
+
+export function snapshotMagicWorkerContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
+	const manager = ctx.sessionManager;
+	return {
+		contextUsage: requiredHostCall("context usage", () => ctx.getContextUsage()),
+		cwd: ctx.cwd,
+		hasUI: ctx.hasUI,
+		mode: ctx.mode,
+		model: workerModel(ctx),
+		session: {
+			id: requiredHostCall("Session id", () => manager.getSessionId()),
+			leafId: requiredHostCall("Session leaf id", () => manager.getLeafId()) ?? undefined,
+		},
+		systemPrompt: requiredHostCall("system prompt", () => ctx.getSystemPrompt()),
+	};
+}
+
+export interface MagicWorkerEventSnapshot {
+	readonly input: MagicWorkerEventInput;
+	readonly signal?: AbortSignal;
+}
+
+export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEventSnapshot {
+	switch (event.type) {
+		case "agent_end":
+			return { input: { event, name: "agent_end", type: "event" } };
+		case "before_agent_start":
+			return { input: { event, name: "before_agent_start", type: "event" } };
+		case "context":
+			return { input: { event, name: "context", type: "event" } };
+		case "message_end":
+			return { input: { event, name: "message_end", type: "event" } };
+		case "session_before_compact": {
+			const compactEvent = event.customInstructions
+				? {
+						branchEntries: event.branchEntries,
+						customInstructions: event.customInstructions,
+						preparation: event.preparation,
+						reason: event.reason,
+						type: event.type,
+						willRetry: event.willRetry,
+					}
+				: {
+						branchEntries: event.branchEntries,
+						preparation: event.preparation,
+						reason: event.reason,
+						type: event.type,
+						willRetry: event.willRetry,
+					};
+			return {
+				input: { event: compactEvent, name: "session_before_compact", type: "event" },
+				signal: event.signal,
+			};
+		}
+		case "session_before_switch":
+			return { input: { event, name: "session_before_switch", type: "event" } };
+		case "session_compact":
+			return { input: { event, name: "session_compact", type: "event" } };
+		case "session_shutdown":
+			return { input: { event, name: "session_shutdown", type: "event" } };
+		case "session_start":
+			return { input: { event, name: "session_start", type: "event" } };
+		case "tool_execution_end":
+			return {
+				input: {
+					event: {
+						isError: event.isError,
+						result: undefined,
+						toolCallId: event.toolCallId,
+						toolName: event.toolName,
+						type: event.type,
+					},
+					name: "tool_execution_end",
+					type: "event",
+				},
+			};
+		case "tool_execution_start":
+			return {
+				input: {
+					event: {
+						args: parseJsonObject(JSON.stringify(event.args)),
+						toolCallId: event.toolCallId,
+						toolName: event.toolName,
+						type: event.type,
+					},
+					name: "tool_execution_start",
+					type: "event",
+				},
+			};
+		case "tool_result": {
+			const toolResult = {
+				content: event.content,
+				details: undefined,
+				input: parseJsonObject(JSON.stringify(event.input)),
+				isError: event.isError,
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				type: event.type,
+			};
+			return {
+				input: {
+					event: event.usage ? { ...toolResult, usage: event.usage } : toolResult,
+					name: "tool_result",
+					type: "event",
+				},
+			};
+		}
+		default:
+			throw new Error(`Magic Context registered unsupported Pi event '${event.type}'.`);
+	}
+}
+
+export function magicWorkerHostTools(pi: ExtensionAPI): MagicWorkerHostTool[] {
+	return pi.getAllTools().map((tool) => ({
+		description: tool.description,
+		name: tool.name,
+		parameters: parseJsonObject(JSON.stringify(tool.parameters)),
+		promptGuidelines: tool.promptGuidelines ? [...tool.promptGuidelines] : undefined,
+		sourceInfo: { ...tool.sourceInfo },
+	}));
+}
+
+export function magicWorkerError(message: MagicWorkerErrorMessage): Error {
+	const error = new Error(message.error);
+	if (message.stack) error.stack = message.stack;
+	return error;
+}
+
+export function canAppendMagicWorkerCompaction(
+	manager: ExtensionContext["sessionManager"],
+): manager is ExtensionContext["sessionManager"] & Pick<SessionManager, "appendCompaction"> {
+	return isRuntimeFunction(readHostProxyProperty(manager, "appendCompaction"));
+}
+
+const SYNC_RESPONSE_TOO_LARGE = "Magic Context Host effect response exceeded its buffer.";
+
+export function writeMagicWorkerSyncResponse(buffer: SharedArrayBuffer, status: 1 | 2, text: string): void {
+	const control = new Int32Array(buffer, 0, 2);
+	const bytes = new Uint8Array(buffer, Int32Array.BYTES_PER_ELEMENT * 2);
+	try {
+		let encoded = new TextEncoder().encode(text);
+		let finalStatus = status;
+		if (encoded.length > bytes.length) {
+			encoded = new TextEncoder().encode(SYNC_RESPONSE_TOO_LARGE);
+			finalStatus = 2;
+		}
+		const length = Math.min(encoded.length, bytes.length);
+		bytes.set(encoded.subarray(0, length));
+		Atomics.store(control, 1, length);
+		Atomics.store(control, 0, finalStatus);
+	} finally {
+		Atomics.notify(control, 0);
+	}
+}
+
+export { MAGIC_WORKER_SYNC_BUFFER_BYTES };

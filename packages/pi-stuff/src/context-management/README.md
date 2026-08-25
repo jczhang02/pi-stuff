@@ -65,7 +65,9 @@ Session, after a detected branch discontinuity, and for explicit history-rebuild
 commands. Ordinary Context projection and persistence send at most one new leaf,
 so long Sessions are not cloned again on every prompt. Fatal Worker errors return
 the Capability to native Context immediately, and Host-owned shutdown terminates
-the Worker after a bounded grace period even when its request queue is stuck.
+the Worker after a bounded grace period even when its request queue is stuck. The
+Host references the Worker only while a request is pending, so an idle engine
+cannot prevent print or RPC processes from reaching their normal exit path.
 The narrowly enumerated Host effects and lifecycle contract are recorded in
 [ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md).
 

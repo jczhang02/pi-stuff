@@ -1,6 +1,6 @@
 declare module "@cortexkit/pi-magic-context" {
-	import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+	import type { MagicContextExtensionAPI } from "./magic-context-types.js";
 
-	const magicContextFactory: (pi: ExtensionAPI) => Promise<void> | void;
+	const magicContextFactory: (pi: MagicContextExtensionAPI) => Promise<void> | void;
 	export default magicContextFactory;
 }

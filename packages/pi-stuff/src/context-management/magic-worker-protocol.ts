@@ -1,73 +1,111 @@
 import type {
-	AgentEndEvent,
 	AgentToolResult,
-	BeforeAgentStartEvent,
-	BeforeAgentStartEventResult,
-	ContextEvent,
 	ContextUsage,
 	ExtensionAPI,
-	ExtensionContext,
-	MessageEndEvent,
-	SessionBeforeCompactEvent,
-	SessionBeforeSwitchEvent,
-	SessionCompactEvent,
+	ExtensionUIContext,
 	SessionEntry,
 	SessionManager,
-	SessionShutdownEvent,
-	SessionStartEvent,
 	ToolDefinition,
-	ToolExecutionEndEvent,
-	ToolExecutionStartEvent,
 	ToolInfo,
-	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { JsonInputValue, JsonObject } from "../shared/json-value.js";
+import type {
+	MagicContextCommandName,
+	MagicContextEventMap,
+	MagicContextEventName,
+	MagicContextModel,
+	MagicContextToolName,
+} from "./magic-context-types.js";
 
-export const MAGIC_WORKER_PROTOCOL_VERSION = 3;
+export const MAGIC_WORKER_PROTOCOL_VERSION = 4;
 export const MAGIC_WORKER_SYNC_BUFFER_BYTES = 64 * 1024;
 
-export interface MagicWorkerModel {
-	readonly api?: string;
-	readonly contextWindow: number;
-	readonly id: string;
-	readonly maxTokens: number;
-	readonly provider: string;
+export type MagicWorkerCommandName = MagicContextCommandName;
+export type MagicWorkerToolName = MagicContextToolName;
+
+export function magicWorkerCommandName(name: string): MagicWorkerCommandName | undefined {
+	switch (name) {
+		case "ctx-aug":
+		case "ctx-dream":
+		case "ctx-embed":
+		case "ctx-flush":
+		case "ctx-recomp":
+		case "ctx-session-upgrade":
+		case "ctx-status":
+		case "ctx-wrapup":
+		case "todos":
+			return name;
+		default:
+			return;
+	}
+}
+
+export function magicWorkerToolName(name: string): MagicWorkerToolName | undefined {
+	switch (name) {
+		case "ctx_expand":
+		case "ctx_memory":
+		case "ctx_note":
+		case "ctx_reduce":
+		case "ctx_search":
+		case "todowrite":
+			return name;
+		default:
+			return;
+	}
 }
 
 export interface MagicWorkerSessionSnapshot {
-	readonly file: string | undefined;
 	readonly id: string | undefined;
 	readonly leafId: string | undefined;
 }
 
-export type MagicWorkerEvent =
-	| Pick<AgentEndEvent, "messages" | "type">
-	| Pick<BeforeAgentStartEvent, "systemPrompt" | "type">
-	| Pick<ContextEvent, "messages" | "type">
-	| Pick<MessageEndEvent, "message" | "type">
-	| Pick<SessionBeforeCompactEvent, "type">
-	| Pick<SessionBeforeSwitchEvent, "type">
-	| Pick<SessionCompactEvent, "type">
-	| Pick<SessionShutdownEvent, "type">
-	| Pick<SessionStartEvent, "previousSessionFile" | "reason" | "type">
-	| Pick<ToolExecutionEndEvent, "toolName" | "type">
-	| Pick<ToolExecutionStartEvent, "args" | "toolCallId" | "toolName" | "type">
-	| Pick<ToolResultEvent, "content" | "toolName" | "type">;
+export interface MagicWorkerEventMap {
+	readonly agent_end: MagicContextEventMap["agent_end"]["event"];
+	readonly before_agent_start: MagicContextEventMap["before_agent_start"]["event"];
+	readonly context: MagicContextEventMap["context"]["event"];
+	readonly message_end: MagicContextEventMap["message_end"]["event"];
+	readonly session_before_compact: Omit<MagicContextEventMap["session_before_compact"]["event"], "signal">;
+	readonly session_before_switch: MagicContextEventMap["session_before_switch"]["event"];
+	readonly session_compact: MagicContextEventMap["session_compact"]["event"];
+	readonly session_shutdown: MagicContextEventMap["session_shutdown"]["event"];
+	readonly session_start: MagicContextEventMap["session_start"]["event"];
+	readonly tool_execution_end: Omit<MagicContextEventMap["tool_execution_end"]["event"], "result"> & {
+		readonly result: undefined;
+	};
+	readonly tool_execution_start: Omit<MagicContextEventMap["tool_execution_start"]["event"], "args"> & {
+		readonly args: JsonObject;
+	};
+	readonly tool_result: Omit<MagicContextEventMap["tool_result"]["event"], "details" | "input"> & {
+		readonly details: undefined;
+		readonly input: JsonObject;
+	};
+}
 
-export type MagicWorkerEventName = MagicWorkerEvent["type"];
+export type MagicWorkerEventName = MagicContextEventName;
+
+export type MagicWorkerEventInput = {
+	readonly [Name in MagicWorkerEventName]: {
+		readonly event: MagicWorkerEventMap[Name];
+		readonly name: Name;
+		readonly type: "event";
+	};
+}[MagicWorkerEventName];
+
+export type MagicWorkerEventResult<Name extends MagicWorkerEventName = MagicWorkerEventName> = {
+	readonly [Current in Name]: {
+		readonly event: Current;
+		readonly result: MagicContextEventMap[Current]["result"];
+	};
+}[Name];
 
 export interface MagicWorkerContextSnapshot {
 	readonly contextUsage: ContextUsage | undefined;
 	readonly cwd: string;
 	readonly hasUI: boolean;
-	readonly idle: boolean;
 	readonly mode: "json" | "print" | "rpc" | "tui";
-	readonly model: MagicWorkerModel | undefined;
-	readonly pendingMessages: boolean;
-	readonly projectTrusted: boolean;
+	readonly model: MagicContextModel | undefined;
 	readonly session: MagicWorkerSessionSnapshot;
 	readonly systemPrompt: string;
-	readonly thinkingLevel: ExtensionContext["thinkingLevel"];
 }
 
 export interface MagicWorkerToolDescriptor {
@@ -75,7 +113,7 @@ export interface MagicWorkerToolDescriptor {
 	readonly description: string;
 	readonly executionMode: ToolDefinition["executionMode"] | undefined;
 	readonly label: string;
-	readonly name: string;
+	readonly name: MagicWorkerToolName;
 	readonly parameters: JsonObject;
 	readonly promptGuidelines: readonly string[] | undefined;
 	readonly promptSnippet: string | undefined;
@@ -84,7 +122,7 @@ export interface MagicWorkerToolDescriptor {
 
 export interface MagicWorkerCommandDescriptor {
 	readonly description: string | undefined;
-	readonly name: string;
+	readonly name: MagicWorkerCommandName;
 }
 
 export interface MagicWorkerHostTool {
@@ -96,7 +134,6 @@ export interface MagicWorkerHostTool {
 }
 
 export interface MagicWorkerInitializeRequest {
-	readonly activeTools: readonly string[];
 	readonly hostTools: readonly MagicWorkerHostTool[];
 	readonly id: number;
 	readonly protocolVersion: typeof MAGIC_WORKER_PROTOCOL_VERSION;
@@ -108,23 +145,28 @@ interface MagicWorkerInvocationBase {
 	readonly id: number;
 }
 
-export interface MagicWorkerEventRequest extends MagicWorkerInvocationBase {
-	readonly event: MagicWorkerEvent;
-	readonly type: "event";
-}
+export type MagicWorkerEventRequest = {
+	readonly [Name in MagicWorkerEventName]: MagicWorkerInvocationBase & {
+		readonly event: MagicWorkerEventMap[Name];
+		readonly name: Name;
+		readonly type: "event";
+	};
+}[MagicWorkerEventName];
 
 export interface MagicWorkerCommandRequest extends MagicWorkerInvocationBase {
 	readonly args: string;
-	readonly name: string;
+	readonly name: MagicWorkerCommandName;
 	readonly type: "command";
 }
 
 export interface MagicWorkerToolRequest extends MagicWorkerInvocationBase {
-	readonly args: JsonInputValue;
-	readonly name: string;
+	readonly args: JsonObject;
+	readonly name: MagicWorkerToolName;
 	readonly toolCallId: string;
 	readonly type: "tool";
 }
+
+export type MagicWorkerInvocationRequest = MagicWorkerCommandRequest | MagicWorkerEventRequest | MagicWorkerToolRequest;
 
 export interface MagicWorkerCancelRequest {
 	readonly id: number;
@@ -147,12 +189,10 @@ export interface MagicWorkerSessionSnapshotRequest {
 
 export type MagicWorkerRequest =
 	| MagicWorkerCancelRequest
-	| MagicWorkerCommandRequest
-	| MagicWorkerEventRequest
 	| MagicWorkerInitializeRequest
+	| MagicWorkerInvocationRequest
 	| MagicWorkerSessionEntryRequest
-	| MagicWorkerSessionSnapshotRequest
-	| MagicWorkerToolRequest;
+	| MagicWorkerSessionSnapshotRequest;
 
 export interface MagicWorkerReadyMessage {
 	readonly commands: readonly MagicWorkerCommandDescriptor[];
@@ -163,11 +203,27 @@ export interface MagicWorkerReadyMessage {
 	readonly type: "ready";
 }
 
-export interface MagicWorkerResultMessage {
+export interface MagicWorkerCommandResultMessage {
 	readonly id: number;
-	readonly result: MagicWorkerInvocationResult;
-	readonly type: "result";
+	readonly type: "command-result";
 }
+
+export interface MagicWorkerEventResultMessage {
+	readonly id: number;
+	readonly result: MagicWorkerEventResult;
+	readonly type: "event-result";
+}
+
+export interface MagicWorkerToolResultMessage {
+	readonly id: number;
+	readonly result: AgentToolResult<JsonInputValue | undefined>;
+	readonly type: "tool-result";
+}
+
+export type MagicWorkerResultMessage =
+	| MagicWorkerCommandResultMessage
+	| MagicWorkerEventResultMessage
+	| MagicWorkerToolResultMessage;
 
 export interface MagicWorkerErrorMessage {
 	readonly error: string;
@@ -179,12 +235,12 @@ export interface MagicWorkerErrorMessage {
 export interface MagicWorkerToolUpdateMessage {
 	readonly id: number;
 	readonly type: "tool-update";
-	readonly update: AgentToolResult<unknown>;
+	readonly update: AgentToolResult<JsonInputValue | undefined>;
 }
 
 export type MagicWorkerEffect =
 	| {
-			readonly args: Parameters<ExtensionAPI["appendEntry"]>;
+			readonly args: [customType: string, data?: JsonInputValue];
 			readonly name: "appendEntry";
 	  }
 	| {
@@ -196,8 +252,12 @@ export type MagicWorkerEffect =
 			readonly name: "sendUserMessage";
 	  }
 	| {
-			readonly args: Parameters<ExtensionAPI["setActiveTools"]>;
-			readonly name: "setActiveTools";
+			readonly args: Parameters<ExtensionUIContext["notify"]>;
+			readonly name: "notify";
+	  }
+	| {
+			readonly args: Parameters<ExtensionUIContext["setStatus"]>;
+			readonly name: "setStatus";
 	  };
 
 export type MagicWorkerEffectMessage = MagicWorkerEffect & {
@@ -212,15 +272,6 @@ export interface MagicWorkerSyncEffectMessage {
 	readonly sessionId: string | undefined;
 	readonly type: "sync-effect";
 }
-
-export type MagicWorkerInvocationResult =
-	| AgentToolResult<unknown>
-	| BeforeAgentStartEventResult
-	| JsonInputValue
-	| { readonly cancel?: boolean }
-	| { readonly content?: Extract<MagicWorkerEvent, { readonly type: "tool_result" }>["content"] }
-	| { readonly message?: Extract<MagicWorkerEvent, { readonly type: "message_end" }>["message"] }
-	| { readonly messages?: Extract<MagicWorkerEvent, { readonly type: "context" }>["messages"] };
 
 export type MagicWorkerMessage =
 	| MagicWorkerEffectMessage

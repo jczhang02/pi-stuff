@@ -21,9 +21,10 @@ history-rebuild commands. Ordinary Context projection and persistence send at mo
 fallback therefore repairs fork, tree, compaction, and other discontinuities without cloning an unbounded Session on
 every Enter.
 
-Worker-to-Host effects are explicitly limited and bound to the originating Pi Session. The one SessionManager operation that
-the pinned upstream API requires synchronously, `appendCompaction`, uses a bounded shared-memory response while blocking
-only the worker. A fatal Worker error immediately returns Context ownership to Pi native behavior. Shutdown gives the
+Worker-to-Host effects are limited to `appendEntry`, `sendMessage`, `sendUserMessage`, `notify`, and `setStatus`, and are
+bound to the originating Pi Session. The one SessionManager operation that the pinned upstream API requires synchronously,
+`appendCompaction`, uses a bounded shared-memory response while blocking only the worker. A failed Host effect, mirror
+synchronization, or fatal Worker error immediately returns Context ownership to Pi native behavior. Shutdown gives the
 official handler one bounded Host grace period, then terminates the Worker independently of its serialized request queue
 and revokes the in-memory URL.
 
