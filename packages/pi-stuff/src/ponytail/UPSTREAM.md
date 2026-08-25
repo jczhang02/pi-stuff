@@ -6,7 +6,7 @@ Pi Stuff contains a feature-complete, host-adapted fork of Ponytail.
 - Repository: <https://github.com/DietrichGebert/ponytail>
 - Tag: `v4.9.0`
 - Commit: `0a4dd63ad4541f4f655c4108a295916f3c1d8fda`
-- npm integrity: `sha512-ziSmEnhiKGigSzi1v8w9uNt/5oMJWbyQGTgIlYKUkLTZNJY3vkz2V2IBLYMXG7IdAkge/Ocv+eo0vyshgCtF+Q==`
+- npm integrity: `sha512-OSdybtBZ3uDd5m/+zyz4h8/+BVBR9nGFhqTDmQkQb1v7k4Vfc1qql78naY64UjocdBPqR94htZEkKu2wpKTJaw==`
 - License: MIT; the upstream notice is retained in `LICENSE.upstream` and summarized in `THIRD_PARTY_NOTICES.md`.
 - Copied resource manifest: `UPSTREAM.sha256`.
 
@@ -16,4 +16,8 @@ The six Skill resources under `skills/` retain that baseline with one Pi-specifi
 TypeScript so Ponytail uses Pi Stuff's merged settings, shared prompt composition, child-Agent launch path, Command
 Dialog, and Statusline.
 
-Upstream updates are manual: compare the pinned tag with the candidate release, review runtime and Skill changes, update the copied resources and adaptation tests, then change this file in the same commit.
+Upstream updates require manual review. Run `bun run ponytail:upstream:review` for the current npm candidate or
+`bun run ponytail:upstream:review --version <version>` for a named release. The command verifies registry integrity,
+rechecks the local adapted Skills and retained license against the pinned tarball, safely unpacks the candidate, and
+prints a path-sanitized full-package diff. A changed candidate intentionally exits nonzero; review runtime, Skill,
+license, and metadata changes before updating copied resources, adaptation tests, hashes, and this record in one commit.

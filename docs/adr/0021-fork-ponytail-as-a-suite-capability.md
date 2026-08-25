@@ -69,7 +69,8 @@ remains the single activity authority.
 - The Package declares `src/ponytail/skills` as Pi Runtime Resources.
 - A dedicated isolated real-Pi PTY gate covers the Dialog, 64×28 and 48×16 layouts, draft and Statusline restoration,
   saved settings versus environment overrides, Session ledger, active compact prompt, and hard-off Provider boundary.
-- Upstream updates require a manual diff, license review, resource hash refresh,
-  behavior tests, prompt-budget measurement, and real-Host acceptance.
+- Upstream updates remain human-reviewed. The explicit `ponytail:upstream:review` command authenticates the pinned
+  and candidate npm tarballs, rechecks the retained local baseline, and prepares a sanitized package diff; license
+  review, resource/hash updates, behavior tests, prompt-budget measurement, and real-Host acceptance remain manual.
 - The Capability adds no independent package, runtime, status footer, settings
   file, or installation lifecycle.

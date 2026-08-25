@@ -74,3 +74,10 @@ Dialog and command writes update only that namespace under the shared settings
 lock. They never change environment overrides or the legacy file. Invalid
 merged JSON or an invalid `ponytail` namespace fails closed to defaults, emits a
 silent Diagnostic Record, and cannot be overwritten through Ponytail.
+
+## Upstream review
+
+Run `bun run ponytail:upstream:review` from the repository root to compare the pinned baseline with npm's current
+candidate. Pass `--version <version>` to inspect a named release. This verifies both tarballs before extraction,
+rechecks the local one-field Skill adaptation and retained license, and emits a sanitized package diff for human
+review; it never updates the fork.

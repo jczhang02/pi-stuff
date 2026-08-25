@@ -25,6 +25,7 @@
 		"knip": "knip --no-progress --include files,dependencies,unlisted,binaries,unresolved,cycles",
 		"lint": "oxlint .",
 		"pack:verify": "bun scripts/verify-package.ts",
+		"ponytail:upstream:review": "bun scripts/review-ponytail-upstream.ts",
 		"suite:generate": "bun scripts/generate-suite.ts",
 		"test": "bun run test:isolated && bun run test:goal",
 		"test:ci": "bun run test:isolated && bun run test:goal",
