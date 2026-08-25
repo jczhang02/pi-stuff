@@ -21,6 +21,8 @@ const NARROW_CHILD_LIMIT = 4;
 const NARROW_WIDTH = 64;
 const ELAPSED_REFRESH_MS = 1_000;
 const TERMINAL_LINGER_MS = 30_000;
+const CONTEXT_WARNING_PERCENT = 70;
+const CONTEXT_ERROR_PERCENT = 90;
 
 const LIVE_STATUSES = new Set(["queued", "resuming", "running", "stopping", "waiting_supervisor"]);
 const TERMINAL_STATUSES = new Set(["agent_stopped", "completed", "crashed", "failed", "user_cancelled"]);
@@ -471,8 +473,13 @@ function decodePrintable(data: string): string | undefined {
 function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: number, now: number): string {
 	const name = boundedTerminalLine(row.name) || "agent";
 	const description = boundedTerminalLine(row.description ?? row.task);
-	const right = styledState(row, theme, now);
+	const state = styledState(row, theme, now);
+	const context = styledContextUsage(row, theme);
 	const markerPrefix = `${marker} `;
+	let right = context ? context + theme.fg("dim", " · ") + state : state;
+	if (context && visibleWidth(markerPrefix) + visibleWidth(name) + 2 + visibleWidth(right) > width) {
+		right = state;
+	}
 	const rightWidth = visibleWidth(right);
 	const leftWidth = Math.max(1, width - (rightWidth > 0 ? rightWidth + 2 : 0));
 	const plainPrefixWidth = visibleWidth(markerPrefix);
@@ -489,6 +496,17 @@ function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: numb
 	if (rightWidth === 0) return truncateToWidth(left, width, "");
 	const gap = Math.max(2, width - visibleWidth(left) - rightWidth);
 	return truncateToWidth(`${left}${" ".repeat(gap)}${right}`, width, "");
+}
+
+function styledContextUsage(row: AgentRow, theme: Theme): string {
+	const usage = row.contextUsage;
+	if (!usage || usage.contextWindow <= 0 || usage.tokens < 0) return "";
+	const percent = (usage.tokens / usage.contextWindow) * 100;
+	if (!Number.isFinite(percent)) return "";
+	const rounded = Math.round(percent);
+	const label = percent > 0 && percent < 1 ? "<1%" : rounded > 999 ? ">999%" : `${String(Math.max(0, rounded))}%`;
+	const color = percent > CONTEXT_ERROR_PERCENT ? "error" : percent > CONTEXT_WARNING_PERCENT ? "warning" : "muted";
+	return theme.fg(color, label);
 }
 
 function styledState(row: AgentRow, theme: Theme, now: number): string {

@@ -62,6 +62,14 @@ the envelope itself fails after every nested operation succeeds. Valid nested ro
 missing historical definitions and presentation failures instead use generic rows at their original source positions.
 _Avoid_: Envelope chrome, raw Tool result, duplicate error row
 
+**Agent Context Usage**:
+The current Provider payload token estimate for one child Agent, measured against the selected child Host model's
+reported Context window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing
+messages add bounded Host-equivalent estimates. Parent-Host model metadata is only a launch-time fallback until the
+child Host reports its actual selection. It is not cumulative run usage and is unavailable while compaction or model
+fallback makes the current payload uncertain.
+_Avoid_: Agent tokens, total Agent usage, Context budget
+
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.

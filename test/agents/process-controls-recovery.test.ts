@@ -33,6 +33,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { createExtensionApi } from "../fixtures/extension-api.ts";
+import { CONTEXT_USAGE_PROVIDER_EXTENSION_PATH } from "./fixtures/context-usage-provider.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
 const providerExtension = PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH;
@@ -74,7 +75,15 @@ const PROCESS_JSON_SCHEMA = Type.Object(
 			),
 		),
 		steps: Type.Optional(
-			Type.Array(Type.Object({ status: Type.Optional(Type.String()) }, { additionalProperties: true })),
+			Type.Array(
+				Type.Object(
+					{
+						contextUsage: Type.Optional(Type.Object({ contextWindow: Type.Number(), tokens: Type.Number() })),
+						status: Type.Optional(Type.String()),
+					},
+					{ additionalProperties: true },
+				),
+			),
 		),
 		success: Type.Optional(Type.Boolean()),
 		summary: Type.Optional(Type.String()),
@@ -153,6 +162,14 @@ function agent(root: string): AgentConfig {
 		inheritSkills: false,
 		source: "project",
 		filePath: path.join(root, "general-purpose.md"),
+	};
+}
+
+function contextUsageAgent(root: string): AgentConfig {
+	return {
+		...agent(root),
+		model: "pi-stuff-context-usage/fixture-model",
+		extensions: [CONTEXT_USAGE_PROVIDER_EXTENSION_PATH],
 	};
 }
 
@@ -330,6 +347,51 @@ function seedSession(root: string): string {
 }
 
 describe("process-level Agent controls and crash recovery", () => {
+	// biome-ignore format: Keep real-Host acceptance and its independent timeout visibly grouped.
+	test(
+		"reports context capacity from a real child-only Provider",
+		async () => {
+			const root = fixtureRoot("pi-stuff-child-model-context-");
+			const runId = `child-model-context-${process.pid}-${Date.now()}`;
+			const sessionId = `session-${runId}`;
+			const events = new EventLog();
+			const config = contextUsageAgent(root);
+			cleanupRun(runId);
+			try {
+				const launched = await executeAsyncSingle(runId, {
+					agent: config.name,
+					task: "PROCESS_CONTEXT_USAGE",
+					agentConfig: config,
+					ctx: {
+						pi: extensionApi(events),
+						cwd: root,
+						currentSessionId: sessionId,
+						parentSessionId: sessionId,
+					},
+					artifactConfig: artifactConfig(),
+					maxSubagentDepth: 3,
+				});
+				expect(launched.isError).not.toBeTrue();
+				const asyncDir = launched.details.asyncDir;
+				if (!asyncDir) throw new Error("Context usage launch did not return asyncDir.");
+				const pid = runnerPid(events, runId);
+				const statusPath = path.join(asyncDir, "status.json");
+				const status = await waitFor("child-only Provider context usage", () => {
+					if (!fs.existsSync(statusPath)) return undefined;
+					const candidate = readJson(statusPath);
+					const step = candidate.steps?.[0];
+					return step?.status === "complete" && step.contextUsage?.tokens === 50_000 ? candidate : undefined;
+				});
+				expect(status.steps?.[0]?.contextUsage).toEqual({ tokens: 50_000, contextWindow: 200_000 });
+				await waitFor("child-only Provider runner exit", () => (!processAlive(pid) ? true : undefined));
+				processGroups.delete(pid);
+			} finally {
+				cleanupRun(runId);
+			}
+		},
+		20_000,
+	);
+
 	// biome-ignore format: Keep real-process body and its independent timeout visibly grouped.
 	test(
 		"targets steer and stop to one real parallel writer without disturbing its sibling",

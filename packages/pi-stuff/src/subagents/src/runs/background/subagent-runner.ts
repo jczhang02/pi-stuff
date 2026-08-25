@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
@@ -31,6 +32,7 @@ import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
+	type AgentContextUsage,
 	type ArtifactPaths,
 	type CostSummary,
 	getSubagentDepthEnv,
@@ -183,6 +185,7 @@ interface ChildProcessResult {
 	toolCount: number;
 	durationMs: number;
 	model?: string;
+	contextUsage?: AgentContextUsage;
 	interrupted?: boolean;
 	timedOut?: boolean;
 	stopped?: boolean;
@@ -587,6 +590,43 @@ function addUsage(target: Usage, message: ChildMessage): void {
 	target.cost += finiteUsageNumber(usage.cost?.total);
 }
 
+function providerContextTokens(message: ChildMessage): number | undefined {
+	const usage = message.usage;
+	if (!usage || !isRuntimeObject(usage)) return undefined;
+	const nativeTotal = finiteUsageNumber(usage.totalTokens);
+	if (nativeTotal > 0) return nativeTotal;
+	const calculated =
+		finiteUsageNumber(usage.input ?? usage.inputTokens) +
+		finiteUsageNumber(usage.output ?? usage.outputTokens) +
+		finiteUsageNumber(usage.cacheRead) +
+		finiteUsageNumber(usage.cacheWrite);
+	return calculated > 0 ? calculated : undefined;
+}
+
+function estimatedChildMessageTokens(message: ChildMessage): number {
+	try {
+		const estimated = estimateTokens(message);
+		return Number.isFinite(estimated) ? Math.max(0, estimated) : 0;
+	} catch {
+		return 0;
+	}
+}
+
+function resolveTaskContextWindow(task: RunnerAgentTask, model: string | undefined): number | undefined {
+	if (!model || !Array.isArray(task.modelContextWindows)) return undefined;
+	for (const candidate of task.modelContextWindows) {
+		if (!isRuntimeObject(candidate) || candidate === null || candidate.model !== model) continue;
+		if (
+			isRuntimeNumber(candidate.contextWindow) &&
+			Number.isSafeInteger(candidate.contextWindow) &&
+			candidate.contextWindow > 0
+		) {
+			return candidate.contextWindow;
+		}
+	}
+	return undefined;
+}
+
 function tokenUsage(usage: Usage): TokenUsage | undefined {
 	const total = usage.input + usage.output;
 	return total > 0 ? { input: usage.input, output: usage.output, total } : undefined;
@@ -711,6 +751,7 @@ function applyTerminalResultToStep(step: RunnerStatusStep, result: BackgroundTas
 	step.error = result.error;
 	step.sessionFile = result.sessionFile;
 	step.model = result.model;
+	step.contextUsage = result.contextUsage;
 	step.thinking = result.thinking;
 	step.attemptedModels = result.attemptedModels;
 	step.modelAttempts = result.modelAttempts;
@@ -1628,6 +1669,23 @@ function runChildProcess(input: {
 				const spawnSpec = getPiSpawnCommand(built.args, spawnDeps);
 				const usage = emptyUsage();
 				const messages: ChildMessage[] = [];
+				let contextWindow = resolveTaskContextWindow(input.task, input.model);
+				let contextTokens: number | undefined;
+				const updateContextUsage = (message: ChildMessage): void => {
+					if (!contextWindow) return;
+					if (message.role === "assistant") {
+						const providerTokens = providerContextTokens(message);
+						if (message.stopReason !== "aborted" && message.stopReason !== "error" && providerTokens) {
+							contextTokens = providerTokens;
+						} else if (contextTokens !== undefined) {
+							contextTokens += estimatedChildMessageTokens(message);
+						}
+					} else if (contextTokens !== undefined) {
+						contextTokens += estimatedChildMessageTokens(message);
+					}
+					input.statusStep.contextUsage =
+						contextTokens === undefined ? undefined : { tokens: contextTokens, contextWindow };
+				};
 				const stderrTail = createBoundedByteTail();
 				const rawOutputTail = createBoundedByteTail();
 				let toolCount = 0;
@@ -2026,6 +2084,19 @@ function runChildProcess(input: {
 					}
 					appendRawEvent(line, event);
 					input.transcript.writeChildEvent(event);
+					if (event.modelContext) {
+						contextWindow = event.modelContext.contextWindow;
+						input.statusStep.contextUsage =
+							contextTokens === undefined ? undefined : { tokens: contextTokens, contextWindow };
+						persistStreamingStatus();
+						return;
+					}
+					if (event.type === "compaction_start") {
+						contextTokens = undefined;
+						input.statusStep.contextUsage = undefined;
+						persistStreamingStatus();
+						return;
+					}
 					const terminalStop =
 						event.type === "message_end" &&
 						event.message?.role === "assistant" &&
@@ -2055,6 +2126,7 @@ function runChildProcess(input: {
 					}
 					if ((event.type !== "message_end" && event.type !== "tool_result_end") || !event.message) return;
 					messages.push(event.message);
+					updateContextUsage(event.message);
 					const text = extractTextFromContent(event.message.content);
 					if (text) {
 						appendRecentOutput(input.statusStep, text);
@@ -2317,6 +2389,7 @@ function runChildProcess(input: {
 							toolCount,
 							durationMs: Date.now() - startedAt,
 							model: observedModel,
+							contextUsage: input.statusStep.contextUsage,
 							interrupted: interrupted || undefined,
 							timedOut: timedOut || undefined,
 							stopped: stopped || undefined,
@@ -2441,6 +2514,14 @@ async function runResolvedTask(input: {
 	try {
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
 			const candidate = candidates[candidateIndex];
+			if (statusStep.contextUsage !== undefined) {
+				statusStep.contextUsage = undefined;
+				try {
+					writeStatus(statusPath, status);
+				} catch (error) {
+					reportAgentDiagnostic(`Failed to clear stale Agent context usage for child ${String(index)}:`, error);
+				}
+			}
 			let run: ChildProcessResult;
 			try {
 				run = await runChildProcess({
@@ -2602,6 +2683,7 @@ async function runResolvedTask(input: {
 	if (intercomTarget) result.intercomTarget = intercomTarget;
 	const model = final?.model ?? task.model;
 	if (model) result.model = model;
+	if (final?.contextUsage) result.contextUsage = final.contextUsage;
 	if (task.thinking) result.thinking = task.thinking;
 	if (attemptedModels.length > 0) result.attemptedModels = attemptedModels;
 	const totalCost = costSummary(attempts);

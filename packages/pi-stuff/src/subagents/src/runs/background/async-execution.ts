@@ -15,7 +15,7 @@ import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { agentDefinitionDigest, type LaunchBindingInput, launchBindingDigest } from "../../shared/launch-contract.ts";
-import { resolveEffectiveThinking } from "../../shared/model-info.ts";
+import { findModelInfo, resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
@@ -609,6 +609,16 @@ export function buildResolvedTask(input: {
 	if (primaryModel) task.model = primaryModel;
 	if (thinking) task.thinking = thinking;
 	task.modelCandidates = modelCandidates;
+	const modelContextWindows = modelCandidates.flatMap((model) => {
+		const contextWindow = findModelInfo(
+			model,
+			params.availableModels,
+			params.ctx.currentModelProvider,
+		)?.contextWindow;
+		if (contextWindow === undefined || !Number.isSafeInteger(contextWindow) || contextWindow <= 0) return [];
+		return [{ model, contextWindow }];
+	});
+	if (modelContextWindows.length > 0) task.modelContextWindows = modelContextWindows;
 	task.tools = agent.tools;
 	task.extensions = agent.extensions;
 	task.subagentOnlyExtensions = agent.subagentOnlyExtensions;

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseChildProtocolEvent } from "../../packages/pi-stuff/src/subagents/src/runs/shared/child-protocol.js";
+import {
+	CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+	parseChildProtocolEvent,
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/child-protocol.js";
 
 describe("child Agent event protocol", () => {
 	test("rejects empty and unsupported event envelopes", () => {
@@ -22,6 +25,39 @@ describe("child Agent event protocol", () => {
 			}).error,
 		).toBeUndefined();
 		expect(parseChildProtocolEvent({ type: "agent_settled" }).error).toBeUndefined();
+	});
+
+	test("accepts actual child model context entries and rejects malformed reserved entries", () => {
+		const parsed = parseChildProtocolEvent({
+			type: "entry_appended",
+			entry: {
+				type: "custom",
+				customType: CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+				data: {
+					version: 1,
+					provider: "child-only-provider",
+					model: "child-model",
+					contextWindow: 200_000,
+				},
+			},
+		});
+
+		expect(parsed.error).toBeUndefined();
+		expect(parsed.event?.modelContext).toEqual({
+			provider: "child-only-provider",
+			model: "child-model",
+			contextWindow: 200_000,
+		});
+		expect(
+			parseChildProtocolEvent({
+				type: "entry_appended",
+				entry: {
+					type: "custom",
+					customType: CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+					data: { version: 1, provider: "child-only-provider", model: "child-model", contextWindow: 0 },
+				},
+			}),
+		).toEqual({ error: "entry_appended model context data.contextWindow must be a positive safe integer" });
 	});
 
 	test("accepts Pi CustomMessage message_end events", () => {

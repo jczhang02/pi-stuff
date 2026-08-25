@@ -22,15 +22,31 @@ const ZERO_USAGE = {
 	totalTokens: 0,
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
+const CHILD_READ_USAGE = {
+	...ZERO_USAGE,
+	input: 73_000,
+	output: 1_000,
+	totalTokens: 74_000,
+};
+const CHILD_FINAL_USAGE = {
+	...ZERO_USAGE,
+	input: 78_000,
+	output: 2_000,
+	totalTokens: 80_000,
+};
 
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
+function message(
+	content: AssistantMessage["content"],
+	stopReason: AssistantMessage["stopReason"],
+	usage: AssistantMessage["usage"] = ZERO_USAGE,
+): AssistantMessage {
 	return {
 		role: "assistant",
 		content,
 		api: "openai-completions",
 		provider: PROVIDER,
 		model: MODEL,
-		usage: ZERO_USAGE,
+		usage,
 		stopReason,
 		timestamp: Date.now(),
 	};
@@ -55,7 +71,13 @@ function record(value: Record<string, JsonInputValue>): void {
 	appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
 }
 
-function textStream(first: string, second = "", delayMs = 0, onFinish?: () => void) {
+function textStream(
+	first: string,
+	second = "",
+	delayMs = 0,
+	onFinish?: () => void,
+	usage: AssistantMessage["usage"] = ZERO_USAGE,
+) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	let settled = false;
@@ -65,7 +87,7 @@ function textStream(first: string, second = "", delayMs = 0, onFinish?: () => vo
 		if (second) stream.push({ type: "text_delta", contentIndex: 0, delta: second, partial: pending });
 		const text = `${first}${second}`;
 		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-		stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
+		stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop", usage) });
 		onFinish?.();
 	};
 	const abort = (): void => {
@@ -93,10 +115,15 @@ function launchStream() {
 }
 
 function childReadStream() {
-	return toolCallStream("agents-pty-child-read", "read", { path: "agent-tool-target.txt" });
+	return toolCallStream("agents-pty-child-read", "read", { path: "agent-tool-target.txt" }, CHILD_READ_USAGE);
 }
 
-function toolCallStream(id: string, name: string, argumentsValue: Record<string, JsonValue>) {
+function toolCallStream(
+	id: string,
+	name: string,
+	argumentsValue: Record<string, JsonValue>,
+	usage: AssistantMessage["usage"] = ZERO_USAGE,
+) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCall = {
@@ -109,7 +136,7 @@ function toolCallStream(id: string, name: string, argumentsValue: Record<string,
 	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
-	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
+	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse", usage) });
 	return stream;
 }
 
@@ -138,6 +165,7 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 			() => {
 				record({ kind: "child-finished", role: "child" });
 			},
+			CHILD_FINAL_USAGE,
 		);
 		options?.signal?.addEventListener("abort", result.abort, { once: true });
 		return result.stream;

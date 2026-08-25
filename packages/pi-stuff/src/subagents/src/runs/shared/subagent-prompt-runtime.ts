@@ -3,7 +3,12 @@ import * as path from "node:path";
 import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type JsonInputValue, parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import {
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
@@ -17,6 +22,7 @@ import {
 	writeSteerAckAt,
 	writeSteerCapabilityAt,
 } from "../background/control-channel.ts";
+import { CHILD_MODEL_CONTEXT_ENTRY_TYPE, type ChildModelContext } from "./child-protocol.ts";
 import {
 	childContextHasOwnContinuation,
 	type ProviderPayloadModel,
@@ -486,6 +492,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	let completedTurns = 0;
 	let resumedSession = false;
 	let continuationHistoryObserved = false;
+	let reportedModelContextKey: string | undefined;
 	const registerNativeSupervisorClientOnce = (): void => {
 		if (nativeSupervisorClientRegistered) return;
 		nativeSupervisorClientRegistered = true;
@@ -576,7 +583,29 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		return { messages: projected.messages };
 	});
 
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
+		const model = ctx?.model;
+		if (
+			model &&
+			isRuntimeString(model.provider) &&
+			model.provider.trim() &&
+			isRuntimeString(model.id) &&
+			model.id.trim() &&
+			isRuntimeNumber(model.contextWindow) &&
+			Number.isSafeInteger(model.contextWindow) &&
+			model.contextWindow > 0
+		) {
+			const context: ChildModelContext = {
+				provider: model.provider,
+				model: model.id,
+				contextWindow: model.contextWindow,
+			};
+			const key = [context.provider, context.model, String(context.contextWindow)].join("\u0000");
+			if (key !== reportedModelContextKey) {
+				pi.appendEntry(CHILD_MODEL_CONTEXT_ENTRY_TYPE, { version: 1, ...context });
+				reportedModelContextKey = key;
+			}
+		}
 		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
 		if (intercomSessionName && isRuntimeFunction(pi.setSessionName)) {
