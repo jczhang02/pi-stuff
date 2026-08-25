@@ -13,6 +13,7 @@ import {
 	PONYTAIL_BENCHMARK_SCENARIOS,
 	snapshotBenchmarkFiles,
 } from "../../scripts/benchmark-ponytail.js";
+import { providerToolNames } from "../fixtures/ponytail-benchmark-observer.js";
 
 function cases(valid = true): BenchmarkCaseResult[] {
 	return PONYTAIL_BENCHMARK_RUNS.map((run, index) => ({
@@ -58,6 +59,18 @@ describe("Ponytail behavioral benchmark rubric", () => {
 				javascript.transformSync(scenario.hiddenCheck.replace("__TARGET__", JSON.stringify("file:///fixture.ts"))),
 			).not.toThrow();
 		}
+	});
+
+	test("observes every direct or OpenAI-style Provider Tool", () => {
+		expect(
+			providerToolNames({
+				tools: [
+					{ function: { name: "read" }, type: "function" },
+					{ name: "custom-tool" },
+					{ function: { name: "bash" }, type: "function" },
+				],
+			}),
+		).toEqual(["bash", "custom-tool", "read"]);
 	});
 
 	test("clears inherited Ponytail controls before applying benchmark defaults", () => {
