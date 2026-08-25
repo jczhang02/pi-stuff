@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { type Focusable, type SelectItem, SelectList, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
+	PONYTAIL_ICON,
 	PONYTAIL_MODES,
 	PONYTAIL_SPECIALIZED_SKILLS,
 	type PonytailMode,
@@ -172,13 +173,13 @@ class PonytailDialog implements CommandDialogComponent, Focusable {
 		];
 		const title =
 			this.screen === "overview"
-				? `♞ Ponytail · ${this.snapshot.mode}`
+				? `${PONYTAIL_ICON} Ponytail · ${this.snapshot.mode}`
 				: `Ponytail · ${this.screen === "mode" ? "Session mode" : "Default mode"}`;
 		const body =
 			this.screen === "overview"
 				? [
 						"",
-						`${GUTTER}${this.context.theme.fg("accent", "◆")} ${this.context.theme.bold("Control")}`,
+						`${GUTTER}${this.context.theme.fg("accent", PONYTAIL_ICON)} ${this.context.theme.bold("Control")}`,
 						`${GUTTER}${this.context.theme.fg("muted", configurationSummary(this.snapshot))}`,
 						...notices,
 						"",

@@ -55,7 +55,7 @@ never rewritten by Ponytail.
 Bare `/ponytail` opens the shared Command Dialog; parameterized mode and setting
 commands remain direct. The five upstream command aliases launch their packaged
 Skills using Pi's native Skill expansion. The shared Statusline shows the
-Pi Stuff-styled `♞ <mode>` only. It does not own Agent activity; the Working Row
+Pi Stuff-styled Nerd Font `󱖿 <mode>` only. It does not own Agent activity; the Working Row
 remains the single activity authority.
 
 ## Consequences

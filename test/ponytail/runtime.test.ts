@@ -123,7 +123,7 @@ describe("Ponytail Session runtime", () => {
 		});
 		await configured.emit("session_start");
 		expect(getPonytailMode(configured.pi)).toBe("lite");
-		expect(configured.statuses.at(-1)).toBe("♞ lite");
+		expect(configured.statuses.at(-1)).toBe("󱖿 lite");
 	});
 
 	test("persists direct modes while review remains a Skill rather than a mode", async () => {
@@ -133,7 +133,7 @@ describe("Ponytail Session runtime", () => {
 		expect(command).toBeDefined();
 		await command?.handler("ultra", h.ctx);
 		expect(h.appended).toEqual([{ customType: PONYTAIL_SESSION_ENTRY_TYPE, data: { mode: "ultra" } }]);
-		expect(h.statuses.at(-1)).toBe("♞ ultra");
+		expect(h.statuses.at(-1)).toBe("󱖿 ultra");
 		await command?.handler("review", h.ctx);
 		expect(h.appended).toHaveLength(1);
 		expect(h.notifications.at(-1)?.message).toContain("Usage:");

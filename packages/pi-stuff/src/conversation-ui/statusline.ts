@@ -21,48 +21,49 @@ const MIN_TRUNCATED_PROMPT_WIDTH = 6;
 const STATUSLINE_SEPARATOR = " · ";
 
 interface StatuslineIcons {
+	readonly ahead: string;
+	readonly behind: string;
 	readonly branch: string;
 	readonly cache: string;
+	readonly conflict: string;
 	readonly context: string;
 	readonly cost: string;
-	readonly diff: string;
 	readonly fast: string;
 	readonly folder: string;
-	readonly goal: string;
+	readonly goalActive: string;
+	readonly goalAttention: string;
+	readonly goalComplete: string;
+	readonly goalPaused: string;
 	readonly model: string;
 	readonly prompt: string;
+	readonly staged: string;
 	readonly thinking: string;
+	readonly unstaged: string;
+	readonly untracked: string;
 	readonly weekly: string;
 }
 
-const ASCII_STATUSLINE_ICONS: StatuslineIcons = {
-	branch: "⎇",
-	cache: "↻",
-	context: "◔",
-	cost: "¤",
-	diff: "Δ",
-	fast: "⚡",
-	folder: "▣",
-	goal: "●",
-	model: "◆",
-	prompt: "›",
-	thinking: "◉",
-	weekly: "◷",
-};
-
-const NERD_STATUSLINE_ICONS: StatuslineIcons = {
+const STATUSLINE_ICONS: StatuslineIcons = {
+	ahead: "\uF431",
+	behind: "\uF433",
 	branch: "\uF418",
 	cache: "\u{F01BC}",
-	context: "\u{F035B}",
-	cost: "\uF0E7",
-	diff: "\uF459",
+	conflict: "\uF421",
+	context: "\u{F0328}",
+	cost: "\uF155",
 	fast: "\uF0E7",
 	folder: "\u{F024B}",
-	goal: "●",
-	model: "\u{F06A9}",
-	prompt: "›",
-	thinking: "\uF441",
-	weekly: "\u{F00ED}",
+	goalActive: "\uF111",
+	goalAttention: "\uF06A",
+	goalComplete: "\uF49E",
+	goalPaused: "\uF28B",
+	model: "\u{F167A}",
+	prompt: "\uF460",
+	staged: "\uF457",
+	thinking: "\uF0EB",
+	unstaged: "\uF459",
+	untracked: "\uF420",
+	weekly: "\u{F029A}",
 };
 
 export interface BooleanValueSource {
@@ -254,12 +255,10 @@ export function getGoalStatusChannel(pi: StatusChannelHost): GoalStatusChannel {
 }
 
 export type StatuslineDensity = "auto" | "full" | "compact";
-export type StatuslineIconMode = "auto" | "nerd" | "ascii";
 
 export interface StatuslinePreferences {
 	readonly density: StatuslineDensity;
 	readonly enabled: boolean;
-	readonly iconMode: StatuslineIconMode;
 	readonly latestPrompt: boolean;
 }
 
@@ -634,7 +633,6 @@ export class StatuslineController {
 		return {
 			density: "auto",
 			enabled: this.options.enabled.get(),
-			iconMode: "auto",
 			latestPrompt: true,
 		};
 	}
@@ -813,7 +811,7 @@ interface SegmentText {
 
 interface GoalStatusAppearance {
 	readonly color: ThemeColor;
-	readonly icon?: string;
+	readonly icon: string;
 	readonly label: string;
 }
 
@@ -836,7 +834,7 @@ function renderStatusline(
 	width: number,
 	preferences: StatuslinePreferences,
 ): string[] {
-	const icons = statuslineIcons(preferences.iconMode);
+	const icons = STATUSLINE_ICONS;
 	const usage = sessionStatus.usage;
 	const segments: StatusSegment[] = [];
 	const modelName = displayModelIdentity(ctx);
@@ -918,8 +916,8 @@ function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string,
 	let branchSegment: SegmentText | undefined;
 	if (branch) {
 		const tracking = [
-			ahead > 0 ? theme.fg("success", `⇡${String(ahead)}`) : "",
-			behind > 0 ? theme.fg("warning", `⇣${String(behind)}`) : "",
+			ahead > 0 ? theme.fg("success", `${icons.ahead}${String(ahead)}`) : "",
+			behind > 0 ? theme.fg("warning", `${icons.behind}${String(behind)}`) : "",
 		].filter(Boolean);
 		const fullBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", branch)}`;
 		const compactBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", middleTruncate(branch, 14))}`;
@@ -930,19 +928,19 @@ function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string,
 	}
 
 	const fullState: string[] = [];
-	if (conflicted > 0) fullState.push(theme.fg("error", `!${String(conflicted)}`));
-	if (counts?.staged) fullState.push(theme.fg("success", `+${String(counts.staged)}`));
-	if (counts?.unstaged) fullState.push(theme.fg("warning", `~${String(counts.unstaged)}`));
-	if (counts?.untracked) fullState.push(theme.fg("muted", `?${String(counts.untracked)}`));
+	if (conflicted > 0) fullState.push(theme.fg("error", `${icons.conflict}${String(conflicted)}`));
+	if (counts?.staged) fullState.push(theme.fg("success", `${icons.staged}${String(counts.staged)}`));
+	if (counts?.unstaged) fullState.push(theme.fg("warning", `${icons.unstaged}${String(counts.unstaged)}`));
+	if (counts?.untracked) fullState.push(theme.fg("muted", `${icons.untracked}${String(counts.untracked)}`));
 	const compactState: string[] = [];
-	if (conflicted > 0) compactState.push(theme.fg("error", `!${compactCount(conflicted)}`));
+	if (conflicted > 0) compactState.push(theme.fg("error", `${icons.conflict}${compactCount(conflicted)}`));
 	const changed = (counts?.staged ?? 0) + (counts?.unstaged ?? 0) + (counts?.untracked ?? 0);
-	if (changed > 0) compactState.push(theme.fg("warning", `Δ${compactCount(changed)}`));
+	if (changed > 0) compactState.push(theme.fg("warning", `${icons.unstaged}${compactCount(changed)}`));
 	const diffSegment =
 		fullState.length > 0
 			? {
-					compact: `${theme.fg("muted", icons.diff)} ${compactState.join(" ")}`,
-					full: `${theme.fg("muted", icons.diff)} ${fullState.join(" ")}`,
+					compact: compactState.join(" "),
+					full: fullState.join(" "),
 				}
 			: undefined;
 	const segments: GitSegments = {};
@@ -1006,8 +1004,8 @@ function renderGoalSegment(
 	snapshot: GoalStatusSnapshot | undefined,
 ): SegmentText | undefined {
 	if (!snapshot) return undefined;
-	const appearance = goalStatusAppearance(snapshot.status);
-	const icon = theme.fg(appearance.color, appearance.icon ?? icons.goal);
+	const appearance = goalStatusAppearance(snapshot.status, icons);
+	const icon = theme.fg(appearance.color, appearance.icon);
 	const identity = `${icon} ${theme.fg("text", "goal")}`;
 	const budget =
 		snapshot.tokenBudget === undefined
@@ -1020,13 +1018,13 @@ function renderGoalSegment(
 	return { compact: full, full };
 }
 
-function goalStatusAppearance(status: GoalStatus): GoalStatusAppearance {
-	if (status === "paused") return { color: "muted", icon: "■", label: "paused" };
-	if (status === "blocked") return { color: "warning", icon: "!", label: "blocked" };
-	if (status === "usage_limited") return { color: "warning", icon: "!", label: "usage" };
-	if (status === "budget_limited") return { color: "warning", icon: "!", label: "budget" };
-	if (status === "complete") return { color: "success", icon: "✓", label: "complete" };
-	return { color: "accent", label: "" };
+function goalStatusAppearance(status: GoalStatus, icons: StatuslineIcons): GoalStatusAppearance {
+	if (status === "paused") return { color: "muted", icon: icons.goalPaused, label: "paused" };
+	if (status === "blocked") return { color: "warning", icon: icons.goalAttention, label: "blocked" };
+	if (status === "usage_limited") return { color: "warning", icon: icons.goalAttention, label: "usage" };
+	if (status === "budget_limited") return { color: "warning", icon: icons.goalAttention, label: "budget" };
+	if (status === "complete") return { color: "success", icon: icons.goalComplete, label: "complete" };
+	return { color: "accent", icon: icons.goalActive, label: "" };
 }
 
 function formatCompactTokens(value: number): string {
@@ -1380,21 +1378,6 @@ function visibleSuffix(value: string, maximumWidth: number): string {
 
 function withIcon(icon: string, text: string): string {
 	return icon ? `${icon} ${text}` : text;
-}
-
-function statuslineIcons(mode: StatuslineIconMode): StatuslineIcons {
-	if (mode === "nerd") return NERD_STATUSLINE_ICONS;
-	if (mode === "ascii") return ASCII_STATUSLINE_ICONS;
-	return hasNerdFonts() ? NERD_STATUSLINE_ICONS : ASCII_STATUSLINE_ICONS;
-}
-
-function hasNerdFonts(): boolean {
-	const { GHOSTTY_RESOURCES_DIR, POWERLINE_NERD_FONTS, TERM_PROGRAM } = process.env;
-	if (POWERLINE_NERD_FONTS === "1") return true;
-	if (POWERLINE_NERD_FONTS === "0") return false;
-	if (GHOSTTY_RESOURCES_DIR) return true;
-	const terminal = (TERM_PROGRAM ?? "").toLowerCase();
-	return ["iterm", "wezterm", "kitty", "ghostty", "alacritty"].some((name) => terminal.includes(name));
 }
 
 function readCwd(ctx: StatuslineContext): string {

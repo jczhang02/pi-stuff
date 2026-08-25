@@ -67,8 +67,8 @@ describe("Ponytail Command Dialog", () => {
 		const component = createPonytailDialogView(SNAPSHOT, { apply: async () => SNAPSHOT }).create(context);
 		const lines = component.render(68);
 		const text = lines.join("\n");
-		expect(text).toContain("♞ Ponytail · full");
-		expect(text).toContain("◆ Control");
+		expect(text).toContain("󱖿 Ponytail · full");
+		expect(text).toContain("󱖿 Control");
 		expect(text).toContain("Session mode");
 		expect(text).toContain("Statusline");
 		expect(text).toContain("Review complexity");
@@ -95,7 +95,7 @@ describe("Ponytail Command Dialog", () => {
 		await settle();
 		expect(actions).toEqual([{ type: "set-mode", mode: "lite" }]);
 		expect(getCloseCalls()).toBe(0);
-		expect(component.render(60).join("\n")).toContain("♞ Ponytail · lite");
+		expect(component.render(60).join("\n")).toContain("󱖿 Ponytail · lite");
 	});
 
 	test("Escape returns to Overview before closing and Skills close with a result", () => {

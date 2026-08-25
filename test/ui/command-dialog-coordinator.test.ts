@@ -692,24 +692,24 @@ describe("normal UI presentation integration", () => {
 			tokenBudget: 12_000,
 			tokensUsed: 1_250,
 		});
-		expect(footer.render(120).join("\n")).toContain("● goal 1.3k/12k 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal 1.3k/12k 13m");
 		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeActive);
 
 		goalChannel.publish({ status: "paused", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).toContain("■ goal paused 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal paused 13m");
 		goalChannel.publish({
 			status: "budget_limited",
 			timeUsedSeconds: 13 * 60,
 			tokenBudget: 12_000,
 			tokensUsed: 12_000,
 		});
-		expect(footer.render(120).join("\n")).toContain("! goal budget 12k/12k 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal budget 12k/12k 13m");
 		goalChannel.publish({ status: "usage_limited", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).toContain("! goal usage 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal usage 13m");
 		goalChannel.publish({ status: "blocked", timeUsedSeconds: 13 * 60, tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).toContain("! goal blocked 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal blocked 13m");
 		goalChannel.publish({ status: "complete", timeUsedSeconds: 13 * 60, tokensUsed: 0 });
-		expect(footer.render(120).join("\n")).toContain("✓ goal complete 13m");
+		expect(footer.render(120).join("\n")).toContain(" goal complete 13m");
 
 		const rendersBeforeClear = ui.renderRequests.length;
 		goalChannel.clear();
