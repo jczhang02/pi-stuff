@@ -1,21 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import magicContextFactory from "@cortexkit/pi-magic-context";
-import {
-	type AgentToolResult,
-	createEventBus,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type ExtensionContext,
-	type SessionEntry,
-	type SessionManager,
-	type SourceInfo,
-	type ToolDefinition,
-	type ToolInfo,
+import type {
+	AgentToolResult,
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	SessionEntry,
+	SessionManager,
+	SourceInfo,
+	ToolDefinition,
+	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { Value } from "typebox/value";
-import { parseJsonObject } from "../shared/json-value.js";
-import { isRuntimeFunction, isRuntimeString } from "../shared/runtime-type.js";
+import type { JsonObject } from "../shared/json-value.js";
 import {
 	MAGIC_WORKER_PROTOCOL_VERSION,
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
@@ -106,6 +102,11 @@ function sendError(id: number, cause: unknown): void {
 		stack: cause instanceof Error ? cause.stack : undefined,
 		type: "error",
 	});
+}
+
+function cloneJsonObject<Value extends object>(value: Value): JsonObject {
+	// SAFETY: JSON serialization removes non-JSON schema metadata and parsing reconstructs a plain JSON object.
+	return JSON.parse(JSON.stringify(value)) as JsonObject;
 }
 
 function sessionId(snapshot: MagicWorkerContextSnapshot | undefined): string | undefined {
@@ -283,10 +284,7 @@ function registerWorkerTool<TParams extends ToolDefinition["parameters"], TDetai
 	const workerTool: WorkerTool = {
 		description: tool.description,
 		execute: async (request, ctx, controller) => {
-			if (!Value.Check(Type.Unsafe(tool.parameters), request.args)) {
-				throw new TypeError(`Magic Context tool '${tool.name}' received invalid arguments.`);
-			}
-			// SAFETY: TypeBox validated the request against this tool's own parameter schema immediately above.
+			// SAFETY: Pi validates arguments against this Worker's returned schema before invoking the tool.
 			const params = request.args as Parameters<typeof tool.execute>[1];
 			return tool.execute(
 				request.toolCallId,
@@ -320,26 +318,21 @@ function workerToolInfo(tool: WorkerTool): ToolInfo {
 }
 
 function workerPi(): ExtensionAPI {
-	const noopOn: ExtensionAPI["on"] = () => undefined;
-	const on = new Proxy(noopOn, {
-		apply(_target, _thisArgument, args) {
-			const name = args[0];
-			const handler = args[1];
-			if (!isRuntimeString(name) || !isRuntimeFunction(handler)) {
-				throw new TypeError("Magic Context registered an invalid Pi event handler.");
-			}
-			const eventName = workerEventName(name);
-			// SAFETY: ExtensionAPI.on supplied the handler for the validated event name immediately above.
-			const workerHandler = handler as LooseHandler;
-			const current = handlers.get(eventName);
-			if (current) current.push(workerHandler);
-			else handlers.set(eventName, [workerHandler]);
-		},
-	});
+	const captureHandler = (name: string, handler: LooseHandler): void => {
+		const eventName = workerEventName(name);
+		const current = handlers.get(eventName);
+		if (current) current.push(handler);
+		else handlers.set(eventName, [handler]);
+	};
+	// SAFETY: The pinned Magic Context factory calls on only for protocol-listed events; captureHandler rejects others.
+	const on = captureHandler as ExtensionAPI["on"];
 	const pi: ExtensionAPI = {
 		appendEntry: <Data>(customType: string, data?: Data) =>
 			sendEffect({ args: [customType, data], name: "appendEntry", type: "effect" }),
-		events: createEventBus(),
+		events: {
+			emit: () => undefined,
+			on: () => () => undefined,
+		},
 		exec: async () => {
 			throw new Error("Magic Context cannot execute Host shell commands from its isolated engine.");
 		},
@@ -395,10 +388,12 @@ async function initialize(request: MagicWorkerInitializeRequest): Promise<void> 
 	}
 	activeTools = [...request.activeTools];
 	hostTools = request.hostTools.map((tool) => {
+		// SAFETY: The Host serialized this value from ToolInfo.parameters before sending the initialize request.
+		const parameters = tool.parameters as ToolInfo["parameters"];
 		const info: ToolInfo = {
 			description: tool.description,
 			name: tool.name,
-			parameters: Type.Unsafe(tool.parameters),
+			parameters,
 			sourceInfo: tool.sourceInfo,
 		};
 		if (tool.promptGuidelines !== undefined) info.promptGuidelines = [...tool.promptGuidelines];
@@ -417,7 +412,7 @@ async function initialize(request: MagicWorkerInitializeRequest): Promise<void> 
 			executionMode: tool.executionMode,
 			label: tool.label,
 			name: tool.name,
-			parameters: parseJsonObject(JSON.stringify(tool.parameters)),
+			parameters: cloneJsonObject(tool.parameters),
 			promptGuidelines: tool.promptGuidelines,
 			promptSnippet: tool.promptSnippet,
 			renderShell: tool.renderShell,
