@@ -111,10 +111,10 @@ try {
 		mkdir(join(temporary, "sessions"), { recursive: true }),
 	]);
 	await writeFile(join(temporary, "agent", "settings.json"), "{}\n");
-	await writeFile(join(temporary, "project", "package.json"), '{"packageManager":"bun@1.3.14"}\n');
+	await writeFile(join(temporary, "project", "package.json"), '{"packageManager":"bun@1.4.0"}\n');
 	const started = await runPi(root, temporary, sessionId, "start");
 	if (!started.stdout.includes("CODE_MODE_COMPLETE")) throw new Error(`Code Mode did not complete: ${started.stdout}`);
-	if (!started.stdout.includes('"packageManager":"bun@1.3.14"')) {
+	if (!started.stdout.includes('"packageManager":"bun@1.4.0"')) {
 		throw new Error(`Code Mode did not return the canonical packageManager value: ${started.stdout}`);
 	}
 	if (!started.stdout.includes('"typed":true'))

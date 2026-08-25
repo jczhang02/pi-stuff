@@ -89,7 +89,7 @@ const OPERATIONS: ToolOperation[] = [
 		target: "bun test --filter pi-stuff",
 		summary: "128 passed · 0 failed · 1.84s",
 		detailLines: [
-			"bun test v1.3.14",
+			"bun test v1.4.0",
 			"test/suite-generator.test.ts:",
 			"  ✓ emits the ordered default extension",
 			"  ✓ preserves capability package order",
