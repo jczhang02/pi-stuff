@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { chmod, mkdir, mkdtemp, open, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -13,7 +13,12 @@ import {
 	type JsonSourceValue,
 	parseJsonObject,
 } from "../packages/pi-stuff/src/shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
@@ -201,6 +206,11 @@ function isSourceObject(value: JsonSourceValue | undefined): value is JsonSource
 function fail(message: string): never {
 	throw new Error(`Ponytail behavior benchmark failed: ${message}`);
 }
+function errorCode<Value>(value: Value): string | undefined {
+	return isRuntimeObject(value) && value !== null && "code" in value && isRuntimeString(value.code)
+		? value.code
+		: undefined;
+}
 function choose(total: number, selected: number): number {
 	let result = 1;
 	for (let index = 1; index <= selected; index++) result = (result * (total - selected + index)) / index;
@@ -263,34 +273,55 @@ function nonBlankLines(text: string): number {
 function structures(text: string): number {
 	return text.match(/\b(?:abstract\s+class|class|interface|enum|namespace|type)\b/gu)?.length ?? 0;
 }
-async function allFiles(directory: string): Promise<string[]> {
-	const output: string[] = [];
-	async function visit(path: string, relative: string): Promise<void> {
-		for (const entry of await readdir(path, { withFileTypes: true })) {
-			const child = join(path, entry["name"]);
-			const childRelative = relative ? `${relative}/${entry["name"]}` : entry["name"];
-			if (entry.isDirectory()) await visit(child, childRelative);
-			else if (entry.isFile()) output.push(childRelative);
-		}
-	}
-	await visit(directory, "");
-	return output.sort();
+function runInventoryGit(project: string, inventory: string, arguments_: readonly string[]): string {
+	const result = spawnSync("git", [`--git-dir=${inventory}`, `--work-tree=${project}`, ...arguments_], {
+		encoding: "utf8",
+		maxBuffer: 10 * 1_024 * 1_024,
+		timeout: 60_000,
+	});
+	if (result.status !== 0) fail("benchmark Git inventory command failed");
+	return result.stdout;
 }
-export async function snapshotBenchmarkFiles(directory: string): Promise<Readonly<Record<string, string>>> {
+export function initializeBenchmarkInventory(project: string, inventory: string): void {
+	const initialized = spawnSync("git", ["init", "--bare", "--quiet", inventory], {
+		encoding: "utf8",
+		timeout: 60_000,
+	});
+	if (initialized.status !== 0) fail("benchmark Git inventory initialization failed");
+	runInventoryGit(project, inventory, ["add", "--all", "--"]);
+}
+export function benchmarkInventoryFiles(project: string, inventory: string): readonly string[] {
+	return runInventoryGit(project, inventory, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+		.split("\0")
+		.filter(Boolean)
+		.sort();
+}
+export async function snapshotBenchmarkFiles(
+	directory: string,
+	files: readonly string[],
+): Promise<Readonly<Record<string, string>>> {
 	const canonicalRoot = await realpath(directory);
 	const rootPrefix = canonicalRoot.endsWith(sep) ? canonicalRoot : `${canonicalRoot}${sep}`;
 	const result: Record<string, string> = {};
-	for (const file of await allFiles(directory)) {
+	for (const file of files) {
 		let handle: FileHandle;
 		try {
 			handle = await open(join(directory, file), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 		} catch (error) {
-			if (isJsonInputObject(error) && error["code"] === "ELOOP") continue;
+			if (errorCode(error) === "ENOENT") continue;
+			if (errorCode(error) === "ELOOP") {
+				result[file] = "<non-regular-file>";
+				continue;
+			}
 			throw error;
 		}
 		try {
 			const metadata = await handle.stat();
-			if (!metadata.isFile()) continue;
+			if (!metadata.isFile()) {
+				result[file] = "<non-regular-file>";
+				continue;
+			}
+			if (metadata.nlink !== 1) fail("benchmark snapshot refused a multiply linked file");
 			const canonicalFile = await realpath(`/proc/self/fd/${handle.fd}`);
 			if (canonicalFile !== canonicalRoot && !canonicalFile.startsWith(rootPrefix))
 				fail("benchmark snapshot escaped the project root");
@@ -640,6 +671,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 	const runtime = join(caseRoot, "runtime");
 	const temporary = join(caseRoot, "tmp");
 	const observerLog = join(caseRoot, "provider.jsonl");
+	const inventory = join(caseRoot, "inventory.git");
 	await Promise.all(
 		[project, sessions, runtime, temporary].map(async (directory) => {
 			await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -651,7 +683,8 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
 		await writeFile(destination, contents, { mode: 0o600 });
 	}
-	const before = await snapshotBenchmarkFiles(project);
+	initializeBenchmarkInventory(project, inventory);
+	const before = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
 	const rpc = createRpc(project, sessions, runtime, temporary, observerLog);
 	try {
 		const state = responseData(await rpc.command({ type: "get_state" }));
@@ -662,7 +695,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		const entries = responseData(await rpc.command({ type: "get_entries" }));
 		const stats = responseData(await rpc.command({ type: "get_session_stats" }));
 		await rpc.close();
-		const after = await snapshotBenchmarkFiles(project);
+		const after = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
 		const visibleTest = spawnSync("bun", ["test"], { cwd: project, encoding: "utf8", timeout: 60_000 });
 		const target = Object.keys(scenario.files).find((path) => path.startsWith("src/"));
 		if (!target) fail("scenario has no production target");

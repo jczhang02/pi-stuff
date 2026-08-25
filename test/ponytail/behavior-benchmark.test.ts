@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	type BenchmarkCaseResult,
+	benchmarkInventoryFiles,
 	buildPonytailBenchmarkEnvironment,
 	evaluatePonytailBenchmark,
+	initializeBenchmarkInventory,
 	oneSidedSignTestPValue,
 	PONYTAIL_BENCHMARK_RUNS,
 	PONYTAIL_BENCHMARK_SCENARIOS,
@@ -96,8 +98,11 @@ describe("Ponytail behavioral benchmark rubric", () => {
 			await writeFile(join(project, "src/index.ts"), "export const safe = true;\n");
 			await writeFile(join(root, "private.txt"), "must-not-leak\n");
 			await symlink(join(root, "private.txt"), join(project, "src/private.ts"));
-			expect(await snapshotBenchmarkFiles(project)).toEqual({
+			const inventory = join(root, "inventory.git");
+			initializeBenchmarkInventory(project, inventory);
+			expect(await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory))).toEqual({
 				"src/index.ts": "export const safe = true;\n",
+				"src/private.ts": "<non-regular-file>",
 			});
 		} finally {
 			await rm(root, { force: true, recursive: true });
