@@ -53,6 +53,7 @@ const INTERNAL_MODULES = [
 	"conversation-ui",
 	"tool-display",
 	"context-management",
+	"ponytail",
 	"rtk",
 	"codex",
 	"goal",
@@ -79,16 +80,17 @@ interface InternalDependencyTable {
 }
 
 const ALLOWED_INTERNAL_DEPENDENCIES: InternalDependencyTable = {
-	"conversation-ui": new Set(),
+	"conversation-ui": new Set(["ponytail"]),
 	"tool-display": new Set(["conversation-ui"]),
 	"context-management": new Set(SHARED_MODULE_DEPENDENCIES),
+	ponytail: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
 	rtk: new Set(SHARED_MODULE_DEPENDENCIES),
 	codex: new Set(SHARED_MODULE_DEPENDENCIES),
 	goal: new Set(SHARED_MODULE_DEPENDENCIES),
 	web: new Set(SHARED_MODULE_DEPENDENCIES),
 	mcp: new Set(SHARED_MODULE_DEPENDENCIES),
 	"background-work": new Set(SHARED_MODULE_DEPENDENCIES),
-	subagents: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management", "background-work"]),
+	subagents: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management", "ponytail", "background-work"]),
 	todo: new Set(SHARED_MODULE_DEPENDENCIES),
 	btw: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
 	notification: new Set(SHARED_MODULE_DEPENDENCIES),
@@ -320,6 +322,7 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		}
 		const expectedPiManifest = JSON.stringify({
 			extensions: ["./index.ts"],
+			skills: ["./src/ponytail/skills"],
 			themes: ["./themes/*.json"],
 		});
 		if (JSON.stringify(manifest.pi) !== expectedPiManifest) {

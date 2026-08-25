@@ -3,6 +3,7 @@ import type { BeforeAgentStartEvent, ExtensionAPI, Skill } from "@earendil-works
 import { PONYTAIL_SKILL_NAMES, PonytailPromptRenderer } from "../../packages/pi-stuff/src/ponytail/prompt.js";
 
 function skill(name: string): Skill {
+	// SAFETY: this fixture supplies every Skill field read by the catalog renderer.
 	return {
 		baseDir: "/package/skills",
 		description: `${name} description`,
@@ -14,6 +15,7 @@ function skill(name: string): Skill {
 }
 
 function event(systemPrompt = "Host"): BeforeAgentStartEvent {
+	// SAFETY: this fixture supplies every BeforeAgentStartEvent field read by the renderer.
 	return {
 		type: "before_agent_start",
 		prompt: "task",
@@ -23,6 +25,7 @@ function event(systemPrompt = "Host"): BeforeAgentStartEvent {
 }
 
 function pi(tools: string[]): ExtensionAPI {
+	// SAFETY: the renderer reads only getActiveTools from this controlled Host fixture.
 	return { getActiveTools: () => tools } as ExtensionAPI;
 }
 
@@ -50,7 +53,10 @@ describe("Ponytail prompt renderer", () => {
 
 	test("does not recreate Skills removed by Host resource filtering", () => {
 		const renderer = new PonytailPromptRenderer(pi(["codemode"]));
-		const noSkills = { ...event(), systemPromptOptions: { cwd: "/workspace", skills: [] } } as BeforeAgentStartEvent;
+		const noSkills: BeforeAgentStartEvent = {
+			...event(),
+			systemPromptOptions: { cwd: "/workspace", skills: [] },
+		};
 		expect(renderer.renderAgent(noSkills, "off")).toBeUndefined();
 		expect(renderer.renderProvider("off")).toBeUndefined();
 	});

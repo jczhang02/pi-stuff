@@ -1,6 +1,16 @@
+import { isRuntimeString } from "../shared/runtime-type.js";
+
 export const PONYTAIL_MODES = ["off", "lite", "full", "ultra"] as const;
+export const PONYTAIL_SPECIALIZED_SKILLS = [
+	"ponytail-review",
+	"ponytail-audit",
+	"ponytail-debt",
+	"ponytail-gain",
+	"ponytail-help",
+] as const;
 
 export type PonytailMode = (typeof PONYTAIL_MODES)[number];
+export type PonytailSpecializedSkill = (typeof PONYTAIL_SPECIALIZED_SKILLS)[number];
 
 export const PONYTAIL_DEFAULT_MODE: PonytailMode = "full";
 export const PONYTAIL_SESSION_ENTRY_TYPE = "ponytail-mode";
@@ -22,14 +32,21 @@ export interface PonytailEffectiveSettings extends PonytailSavedSettings {
 	readonly error?: string;
 }
 
-export function normalizePonytailMode(value: unknown): PonytailMode | undefined {
-	if (typeof value !== "string") return undefined;
+export function normalizePonytailMode<Value>(value: Value): PonytailMode | undefined {
+	if (!isRuntimeString(value)) return undefined;
 	const normalized = value.trim().toLowerCase();
 	return PONYTAIL_MODES.find((mode) => mode === normalized);
 }
 
-export function isPonytailDeactivationCommand(value: unknown): boolean {
-	const normalized = String(value ?? "")
+export function inheritedPonytailMode(
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): PonytailMode | undefined {
+	return normalizePonytailMode(env[PONYTAIL_CHILD_MODE_ENV]);
+}
+
+export function isPonytailDeactivationCommand<Value>(value: Value): boolean {
+	if (!isRuntimeString(value)) return false;
+	const normalized = value
 		.trim()
 		.toLowerCase()
 		.replace(/[.!?\s]+$/u, "");

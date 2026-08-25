@@ -25,6 +25,9 @@
 		"extensions": [
 			"./index.ts"
 		],
+		"skills": [
+			"./src/ponytail/skills"
+		],
 		"themes": [
 			"./themes/*.json"
 		]

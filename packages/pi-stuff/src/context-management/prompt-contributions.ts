@@ -4,6 +4,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 
 const PROMPT_CONTRIBUTION_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/prompt-contributions/v1");
@@ -28,13 +29,30 @@ interface ContextPromptContributionRegistry {
 	readonly hosts: WeakMap<object, Map<string, RegisteredContributor>>;
 }
 
-export interface ProviderPromptProjection {
+export interface ProviderPromptProjection<Payload> {
 	readonly active: boolean;
 	readonly found: boolean;
-	readonly payload: unknown;
+	readonly payload: Payload | JsonInputValue;
+}
+
+interface PromptMarkers {
+	readonly end: string;
+	readonly start: string;
+}
+
+interface PromptArrayRewrite {
+	readonly changed: boolean;
+	readonly found: boolean;
+	readonly value: readonly JsonInputValue[];
+}
+
+interface ProviderPayloadRewrite<Payload> {
+	readonly found: boolean;
+	readonly payload: Payload | JsonInputValue;
 }
 
 function registry(): ContextPromptContributionRegistry {
+	// SAFETY: this global symbol owns only the Context contribution registry initialized immediately below.
 	const root = globalThis as { [key: symbol]: ContextPromptContributionRegistry | undefined };
 	root[PROMPT_CONTRIBUTION_REGISTRY] ??= { hosts: new WeakMap() };
 	return root[PROMPT_CONTRIBUTION_REGISTRY];
@@ -51,7 +69,7 @@ function contributors(pi: ExtensionAPI): RegisteredContributor[] {
 	});
 }
 
-function markers(id: string): { end: string; start: string } {
+function markers(id: string): PromptMarkers {
 	return {
 		start: `<!-- pi-stuff:prompt-contribution:${id}:start -->`,
 		end: `<!-- pi-stuff:prompt-contribution:${id}:end -->`,
@@ -129,28 +147,26 @@ export async function applyContextPromptContributions(
 	return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
 }
 
-function runtimeRecord(value: unknown): Record<string, unknown> | undefined {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+function runtimeRecord<Value>(value: Value): JsonInputObject | undefined {
+	return isJsonInputObject(value) ? value : undefined;
 }
 
-function textLocation(value: unknown): value is { text: string } {
+function textLocation(value: JsonInputValue): value is JsonInputObject & { text: string } {
 	return isRuntimeString(runtimeRecord(value)?.["text"]);
 }
 
-function contentLocation(value: unknown): value is { content: string; role?: unknown } {
+function contentLocation(value: JsonInputValue): value is JsonInputObject & { content: string; role?: JsonInputValue } {
 	return isRuntimeString(runtimeRecord(value)?.["content"]);
 }
 
-function promptRole(value: unknown): boolean {
+function promptRole(value: JsonInputValue): boolean {
 	return value === "system" || value === "developer";
 }
 
 function rewriteArrayPrompt(
-	blocks: unknown[],
+	blocks: readonly JsonInputValue[],
 	rewrite: (prompt: string) => string,
-): { changed: boolean; found: boolean; value: unknown[] } {
+): PromptArrayRewrite {
 	for (let index = blocks.length - 1; index >= 0; index -= 1) {
 		const block = blocks[index];
 		if (!textLocation(block)) continue;
@@ -164,9 +180,9 @@ function rewriteArrayPrompt(
 }
 
 function rewriteMessagePrompt(
-	messages: unknown[],
+	messages: readonly JsonInputValue[],
 	rewrite: (prompt: string) => string,
-): { changed: boolean; found: boolean; value: unknown[] } {
+): PromptArrayRewrite {
 	for (let index = 0; index < messages.length; index += 1) {
 		const message = messages[index];
 		const record = runtimeRecord(message);
@@ -191,10 +207,10 @@ function rewriteMessagePrompt(
 	return { changed: false, found: false, value: messages };
 }
 
-function rewriteProviderPayload(
-	payload: unknown,
+function rewriteProviderPayload<Payload>(
+	payload: Payload,
 	rewrite: (prompt: string) => string,
-): { found: boolean; payload: unknown } {
+): ProviderPayloadRewrite<Payload> {
 	const record = runtimeRecord(payload);
 	if (!record) return { found: false, payload };
 	for (const field of ["instructions", "systemInstruction", "system"] as const) {
@@ -222,11 +238,11 @@ function rewriteProviderPayload(
 	return { found: false, payload };
 }
 
-export async function applyContextPromptContributionsToProvider(
+export async function applyContextPromptContributionsToProvider<Payload>(
 	pi: ExtensionAPI,
-	payload: unknown,
+	payload: Payload,
 	ctx: ExtensionContext,
-): Promise<ProviderPromptProjection> {
+): Promise<ProviderPromptProjection<Payload>> {
 	const rendered: Array<{ body: string | undefined; id: string }> = [];
 	for (const registered of contributors(pi)) {
 		rendered.push({
@@ -245,6 +261,7 @@ export async function applyContextPromptContributionsToProvider(
 
 export const __test = {
 	clear(): void {
+		// SAFETY: this test-only reset addresses only the Context contribution registry symbol.
 		const root = globalThis as { [key: symbol]: ContextPromptContributionRegistry | undefined };
 		delete root[PROMPT_CONTRIBUTION_REGISTRY];
 	},

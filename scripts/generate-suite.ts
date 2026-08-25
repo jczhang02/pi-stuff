@@ -13,6 +13,7 @@ const CAPABILITY_MODULES = {
 	codex: "codex",
 	goal: "goal",
 	"context-management": "contextManagement",
+	ponytail: "ponytail",
 	web: "web",
 	mcp: "mcp",
 	"background-work": "backgroundWork",

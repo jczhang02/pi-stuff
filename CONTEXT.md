@@ -67,6 +67,16 @@ A model-invisible, persisted Session record for one user-started Context mainten
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
 _Avoid_: Context Tool Activity, Context notification, Context status
 
+**Prompt Contribution**:
+A marker-delimited, Capability-owned system-prompt fragment that Context Management orders and reconciles on every
+Provider activation without changing Session history. It is not an independent lifecycle or a replacement system prompt.
+_Avoid_: Prompt injection, appended system prompt, context patch
+
+**Ponytail Mode**:
+The Session-selected `off`, `lite`, `full`, or `ultra` implementation-discipline level. It persists in a model-invisible
+Session entry and is snapshotted into delegated Agents; `review` is a Skill, not a Ponytail Mode.
+_Avoid_: Review mode, Agent mode, global mode
+
 **Fenced Visualization Projection**:
 A display-only conversion of a complete, valid `chart` or `tree` fenced code block into width-bounded terminal text at
 the Conversation Markdown seam. Canonical message text, Session records, copy/export source, and Provider context remain

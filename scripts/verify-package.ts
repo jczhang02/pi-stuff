@@ -70,6 +70,17 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/code-mode/LICENSES/Cloudflare-MIT.txt",
 	"package/src/code-mode/THIRD_PARTY_NOTICES.md",
 	"package/src/context-management/index.ts",
+	"package/src/ponytail/index.ts",
+	"package/src/ponytail/LICENSE.upstream",
+	"package/src/ponytail/THIRD_PARTY_NOTICES.md",
+	"package/src/ponytail/UPSTREAM.md",
+	"package/src/ponytail/UPSTREAM.sha256",
+	"package/src/ponytail/skills/ponytail/SKILL.md",
+	"package/src/ponytail/skills/ponytail-review/SKILL.md",
+	"package/src/ponytail/skills/ponytail-audit/SKILL.md",
+	"package/src/ponytail/skills/ponytail-debt/SKILL.md",
+	"package/src/ponytail/skills/ponytail-gain/SKILL.md",
+	"package/src/ponytail/skills/ponytail-help/SKILL.md",
 	"package/src/rtk/index.ts",
 	"package/src/codex/index.ts",
 	"package/src/codex/native/apply-patch/linux-x64/apply_patch",
@@ -121,6 +132,7 @@ const PROVENANCE_REQUIREMENTS = {
 	"context-management": ["cortexkit/magic-context", "Pi Stuff adapter policy"],
 	goal: ["@narumitw/pi-goal", "Pi Stuff delta"],
 	mcp: ["nicobailon/pi-mcp-adapter", "Pi Stuff delta"],
+	ponytail: ["@dietrichgebert/ponytail", "Pi Stuff"],
 	rtk: ["pi-rtk-optimizer", "Pi Stuff delta"],
 	subagents: ["pi-subagents", "Pi Stuff delta"],
 	todo: ["@juicesharp/rpiv-todo", "Pi Stuff delta"],
@@ -183,7 +195,14 @@ function normalizedFilesEntry(entry: string): string {
 export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFiles: readonly string[]): void {
 	if (manifest.name !== "@jczhang02/pi-stuff") throw new Error("Archive has the wrong Package identity");
 	if (manifest.private !== true) throw new Error("Pi Stuff must remain a private local Package");
-	if (JSON.stringify(manifest.pi) !== JSON.stringify({ extensions: ["./index.ts"], themes: ["./themes/*.json"] })) {
+	if (
+		JSON.stringify(manifest.pi) !==
+		JSON.stringify({
+			extensions: ["./index.ts"],
+			skills: ["./src/ponytail/skills"],
+			themes: ["./themes/*.json"],
+		})
+	) {
 		throw new Error("Archive has an invalid Pi resource manifest");
 	}
 	if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
@@ -340,6 +359,12 @@ async function verifySuiteSurface(piBinary: string, packagePath: string): Promis
 		"ui",
 		"codemode",
 		"goal",
+		"ponytail",
+		"ponytail-review",
+		"ponytail-audit",
+		"ponytail-debt",
+		"ponytail-gain",
+		"ponytail-help",
 		"goal-tools-certified",
 		"web-tools-certified",
 		"mcp-tools-certified",

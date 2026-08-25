@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import type { PonytailMode } from "../../../../ponytail/types.js";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";
@@ -275,6 +276,8 @@ export interface CommonBuildParams {
 	parentRunOrigin?: AgentWorkOrigin;
 	/** Effective parent Code Mode state captured before child process launch. */
 	codeModeEnabled?: boolean;
+	/** Effective parent Ponytail mode captured before child process launch. */
+	ponytailMode?: PonytailMode;
 	codeModeProviderTools?: readonly string[];
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
@@ -1733,6 +1736,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		deadlineAt,
 	};
 	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
+	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
 	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
 	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
 	if (sessionDir) config.sessionDir = sessionDir;
@@ -1956,6 +1960,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		launchContractDigest: built.work.task.launchContractDigest,
 	};
 	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
+	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
 	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
 	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
 	if (sessionDir) config.sessionDir = sessionDir;

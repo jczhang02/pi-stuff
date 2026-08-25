@@ -16,6 +16,7 @@ import goal from "./goal/index.js";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
 import mcp from "./mcp/index.js";
 import notification from "./notification/index.js";
+import ponytail from "./ponytail/index.js";
 import rtk from "./rtk/index.js";
 import subagents from "./subagents/index.js";
 import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";
@@ -61,6 +62,7 @@ function createCapabilities(
 		{ id: "codex", install: codex },
 		{ id: "goal", install: goal },
 		{ id: "context-management", install: contextManagement },
+		{ id: "ponytail", install: ponytail },
 		{ id: "web", install: web },
 		{ id: "mcp", install: mcp },
 		{ id: "background-work", install: backgroundWork },

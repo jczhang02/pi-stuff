@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isJsonInputObject } from "../shared/json-value.js";
+import { isRuntimeBoolean } from "../shared/runtime-type.js";
 import {
 	MERGED_SETTINGS_FILE,
 	readSettingsFileSync,
@@ -38,17 +40,17 @@ export interface PonytailConfigStoreOptions {
 
 export type PonytailSettingsPatch = Partial<PonytailSavedSettings>;
 
-function isObject(value: unknown): value is SettingsRecord {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+function isObject<Value>(value: Value): value is Value & SettingsRecord {
+	return isJsonInputObject(value);
 }
 
-function strictSavedSettings(value: unknown): PonytailSavedSettings | undefined {
+function strictSavedSettings<Value>(value: Value): PonytailSavedSettings | undefined {
 	if (!isObject(value)) return undefined;
 	const defaultMode =
 		value["defaultMode"] === undefined ? PONYTAIL_DEFAULT_MODE : normalizePonytailMode(value["defaultMode"]);
 	if (!defaultMode) return undefined;
-	if (value["hideStatus"] !== undefined && typeof value["hideStatus"] !== "boolean") return undefined;
-	if (value["quietStartup"] !== undefined && typeof value["quietStartup"] !== "boolean") return undefined;
+	if (value["hideStatus"] !== undefined && !isRuntimeBoolean(value["hideStatus"])) return undefined;
+	if (value["quietStartup"] !== undefined && !isRuntimeBoolean(value["quietStartup"])) return undefined;
 	return {
 		defaultMode,
 		hideStatus: value["hideStatus"] === true,
@@ -56,7 +58,7 @@ function strictSavedSettings(value: unknown): PonytailSavedSettings | undefined 
 	};
 }
 
-function lenientLegacySettings(value: unknown): PonytailSavedSettings | undefined {
+function lenientLegacySettings<Value>(value: Value): PonytailSavedSettings | undefined {
 	if (!isObject(value)) return undefined;
 	return {
 		defaultMode: normalizePonytailMode(value["defaultMode"]) ?? PONYTAIL_DEFAULT_MODE,
@@ -71,14 +73,18 @@ function booleanEnvironmentValue(value: string | undefined): boolean | undefined
 	return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "no";
 }
 
-function errorMessage(prefix: string, error: unknown): string {
+function errorMessage<ErrorValue>(prefix: string, error: ErrorValue): string {
 	return `${prefix}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+function isMissingFileError<ErrorValue>(error: ErrorValue): boolean {
+	return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 export function legacyPonytailConfigPath(env: PonytailConfigEnvironment = process.env, homeDir = os.homedir()): string {
 	if (env["XDG_CONFIG_HOME"]) return path.join(env["XDG_CONFIG_HOME"], "ponytail", "config.json");
 	if (process.platform === "win32") {
-		const appData = process.env["APPDATA"] || path.join(homeDir, "AppData", "Roaming");
+		const appData = env["APPDATA"] || path.join(homeDir, "AppData", "Roaming");
 		return path.join(appData, "ponytail", "config.json");
 	}
 	return path.join(homeDir, ".config", "ponytail", "config.json");
@@ -150,7 +156,7 @@ export class PonytailConfigStore {
 		try {
 			text = fs.readFileSync(this.legacyPath, "utf8").replace(/^\uFEFF/u, "");
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			if (isMissingFileError(error)) {
 				return { settings: DEFAULT_SAVED_SETTINGS, source: "defaults", writable: true };
 			}
 			return {
@@ -178,7 +184,7 @@ export class PonytailConfigStore {
 		const envDefault = normalizePonytailMode(this.env["PONYTAIL_DEFAULT_MODE"]);
 		const envHide = booleanEnvironmentValue(this.env["PONYTAIL_HIDE_STATUS"]);
 		const envQuiet = booleanEnvironmentValue(this.env["PONYTAIL_QUIET_STARTUP"]);
-		return {
+		const settings = {
 			defaultMode: envDefault ?? read.settings.defaultMode,
 			defaultModeOverridden: envDefault !== undefined,
 			hideStatus: envHide ?? read.settings.hideStatus,
@@ -188,7 +194,7 @@ export class PonytailConfigStore {
 			saved: read.settings,
 			source: read.source,
 			writable: read.writable,
-			...(read.error ? { error: read.error } : {}),
 		};
+		return read.error ? { ...settings, error: read.error } : settings;
 	}
 }

@@ -1,0 +1,78 @@
+# Ponytail module
+
+Ponytail is Pi Stuff's feature-complete internal fork of
+`@dietrichgebert/ponytail@4.9.0`. It keeps the upstream implementation-discipline
+rules, Session modes, natural-language deactivation, five command aliases, and
+six Skills while adapting presentation and configuration to the Suite. The
+upstream package is not a runtime dependency. Reviewed source provenance,
+license obligations, and byte-identical resource hashes are recorded in
+[UPSTREAM.md](./UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+## Behavior
+
+The valid runtime modes are `off`, `lite`, `full`, and `ultra`; `full` is the
+upstream default. `review` remains a Skill and is never accepted as a mode. A
+mode change appends the upstream-compatible model-invisible Session entry
+`ponytail-mode` with `{ "mode": "..." }`. Restoration chooses the newest valid
+entry on the current branch, then a delegated Agent's launch snapshot, then the
+configured default. `stop ponytail` and `normal mode` deactivate Ponytail only
+when they are standalone direct user inputs.
+
+Context Management projects Ponytail after the Magic Context contract. Stable
+markers make the contribution idempotent on every Provider activation. When
+Code Mode hides top-level `read`, Ponytail restores the Host-visible catalog for
+all six packaged Skills before the active-mode instructions; ordinary Pi uses
+its native Skill catalog. Mode instructions are loaded once from the canonical
+packaged `skills/ponytail/SKILL.md` and filtered with the upstream algorithm.
+
+Delegated Agents receive the parent's effective mode as a launch-time snapshot,
+including explicit `off`. The snapshot is carried only in the child process
+environment and does not mutate global settings.
+
+Ponytail has its own prompt budget rather than increasing Context Management's
+budget. The pinned `full` instructions measure 5,229 characters / 1,264 o200k
+tokens; Code Mode's restored six-Skill catalog raises the contribution to 9,767
+characters / 2,437 o200k tokens. `test/ponytail/prompt-budget.test.ts` bounds
+both the instructions and catalog delta.
+
+## Commands and UI
+
+Bare `/ponytail` opens the shared Pi Stuff Command Dialog. It controls the
+current Session mode, configured default, Statusline visibility, startup
+notification, and launches the five specialized Skills without leaving the
+Dialog for ordinary setting changes. Parameterized commands remain direct:
+
+```text
+/ponytail on|off|lite|full|ultra
+/ponytail default off|lite|full|ultra
+/ponytail status [show|hide]
+/ponytail startup show|quiet
+/ponytail-review [focus]
+/ponytail-audit [focus]
+/ponytail-debt
+/ponytail-gain
+/ponytail-help
+```
+
+The shared Statusline shows only `♞ <mode>` and hides it while mode is `off` or
+Statusline visibility is disabled. Pi Stuff's Working Row remains the sole
+activity authority. The Dialog suppresses shared persistent chrome while open,
+restores the editor draft on close, returns from secondary lists with Escape,
+and keeps environment overrides visible but read-only.
+
+## Configuration
+
+Ponytail reads configuration in this order:
+
+1. `PONYTAIL_DEFAULT_MODE`, `PONYTAIL_HIDE_STATUS`, and
+   `PONYTAIL_QUIET_STARTUP` environment variables;
+2. the `ponytail` namespace in `<agentDir>/pi-stuff.json`;
+3. read-only legacy `~/.config/ponytail/config.json` (or its XDG/Windows
+   equivalent) only when the merged namespace is absent;
+4. upstream defaults.
+
+The merged namespace accepts `defaultMode`, `hideStatus`, and `quietStartup`.
+Dialog and command writes update only that namespace under the shared settings
+lock. They never change environment overrides or the legacy file. Invalid
+merged JSON or an invalid `ponytail` namespace fails closed to defaults, emits a
+silent Diagnostic Record, and cannot be overwritten through Ponytail.

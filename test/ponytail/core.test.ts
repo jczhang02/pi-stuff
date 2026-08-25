@@ -13,7 +13,7 @@ import { isPonytailDeactivationCommand, normalizePonytailMode } from "../../pack
 
 const roots: string[] = [];
 
-function fixture(): { agentDir: string; legacyPath: string; root: string } {
+function fixture() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-ponytail-test-"));
 	roots.push(root);
 	return {
@@ -23,7 +23,7 @@ function fixture(): { agentDir: string; legacyPath: string; root: string } {
 	};
 }
 
-function writeJson(filePath: string, value: unknown): void {
+function writeJson<Value>(filePath: string, value: Value): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
 }
@@ -143,7 +143,7 @@ describe("Ponytail instructions", () => {
 
 test("retains byte-identical upstream Skill and license resources", () => {
 	const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../packages/pi-stuff/src/ponytail");
-	const expected: Record<string, string> = {
+	const expected = {
 		"LICENSE.upstream": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
 		"skills/ponytail-audit/SKILL.md": "5560b8e383dbe2ddfddc873a1e2bf2e586e23e0cd7d995537482b2315331f6d1",
 		"skills/ponytail-debt/SKILL.md": "c84fba75f0ca12bfe83f9a78ea02fd125c5dd3f1fbb18124105a489937f284e6",
@@ -151,7 +151,7 @@ test("retains byte-identical upstream Skill and license resources", () => {
 		"skills/ponytail-help/SKILL.md": "2264d1615117b02b0fd5a69ec84cd2757006471a78e4d6c22eed6d581c1d37a4",
 		"skills/ponytail-review/SKILL.md": "40df33b58fc6ef889b93585733feb9566b76e9586efa7f376785c1e995197ac0",
 		"skills/ponytail/SKILL.md": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
-	};
+	} satisfies Record<string, string>;
 	for (const [relative, hash] of Object.entries(expected)) {
 		expect(
 			createHash("sha256")

@@ -125,6 +125,7 @@ The ordered Suite currently contains:
 | `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
 | `goal` | One persistent session objective with automatic continuation and evidence-gated completion or blocking |
 | `context-management` | Configured Magic Context integration, the `/ctx` control center, and Pi JSONL as the raw session authority |
+| `ponytail` | Feature-complete Ponytail fork with persistent modes, six Skills, shared Statusline state, and a `/ponytail` control dialog |
 | `web` | Bounded Web search, public HTTP(S) reading, PDF extraction, and continuation retrieval |
 | `mcp` | One lazy MCP gateway with explicit authentication and stdio/HTTP transports |
 | `background-work` | Current-session Background Shells, one-shot Monitors, and `/tasks` management |
@@ -153,6 +154,13 @@ state, pending drops, and available maintenance actions. The same actions are av
 Maintenance progress and results use Pi Stuff Activity rows in the Session transcript. They remain available after
 resume but never enter model context. Magic Context remains the data and execution authority; its Header, Footer,
 Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
+
+### Ponytail controls
+
+`/ponytail` opens the full-width control dialog for the current Session mode, default mode, Statusline visibility,
+startup notification, and specialized Skills. Direct commands remain available, including `/ponytail full`,
+`/ponytail default lite`, and the upstream-compatible `/ponytail-review` through `/ponytail-help` aliases. The shared
+Statusline shows the selected mode as `♞ <mode>`; Agent activity remains in the Working Row.
 
 ## Themes
 

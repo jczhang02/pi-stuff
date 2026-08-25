@@ -9,12 +9,21 @@ import {
 } from "../../packages/pi-stuff/src/context-management/prompt-contributions.js";
 
 function host(): ExtensionAPI {
+	// SAFETY: this fixture supplies the only ExtensionAPI member used by the contribution registry.
 	return { events: {} } as ExtensionAPI;
 }
 
+// SAFETY: contributor renderers in this test do not read ExtensionContext.
 const ctx = {} as ExtensionContext;
-const event = (systemPrompt: string): BeforeAgentStartEvent =>
-	({ type: "before_agent_start", prompt: "task", systemPrompt, systemPromptOptions: {} }) as BeforeAgentStartEvent;
+const event = (systemPrompt: string): BeforeAgentStartEvent => {
+	// SAFETY: this fixture supplies every BeforeAgentStartEvent field read by the projection seam.
+	return {
+		type: "before_agent_start",
+		prompt: "task",
+		systemPrompt,
+		systemPromptOptions: {},
+	} as BeforeAgentStartEvent;
+};
 
 afterEach(() => __test.clear());
 

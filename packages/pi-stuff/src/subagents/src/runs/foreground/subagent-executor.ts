@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { getPonytailMode } from "../../../../ponytail/state.js";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
@@ -993,9 +994,15 @@ function effectiveCodeModeEnabled(deps: ExecutorDeps): boolean {
 	return deps.resolveCodeModeEnabled?.() ?? process.env.PI_STUFF_CODE_MODE_DEFAULT?.trim().toLowerCase() === "on";
 }
 
+export function ponytailLaunchSnapshot(pi: Pick<ExtensionAPI, "events">) {
+	const ponytailMode = getPonytailMode(pi);
+	return ponytailMode === undefined ? {} : { ponytailMode };
+}
+
 function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: ExecutorDeps) {
 	return {
 		ctx: asyncContext(data, ctx, deps.pi),
+		...ponytailLaunchSnapshot(deps.pi),
 		codeModeEnabled: effectiveCodeModeEnabled(deps),
 		codeModeProviderTools: deps.codeModeProviderTools,
 		availableModels: data.availableModels,
@@ -1160,6 +1167,7 @@ function buildForegroundConfig(
 		version: 2,
 		id: data.runId,
 		codeModeEnabled: common.codeModeEnabled,
+		...ponytailLaunchSnapshot(deps.pi),
 		work: built.work,
 		resultPath,
 		cwd: built.runnerCwd,
@@ -1980,6 +1988,7 @@ async function resumeRun(input: {
 			},
 			parentRunOrigin: input.parentRunOrigin,
 			codeModeEnabled: effectiveCodeModeEnabled(input.deps),
+			...ponytailLaunchSnapshot(input.deps.pi),
 			codeModeProviderTools: input.deps.codeModeProviderTools,
 			cwd: effectiveCwd,
 			childBaseExtensionPath: input.deps.childBaseExtensionPath,
