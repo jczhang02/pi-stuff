@@ -75,6 +75,18 @@ lock. They never change environment overrides or the legacy file. Invalid
 merged JSON or an invalid `ponytail` namespace fails closed to defaults, emits a
 silent Diagnostic Record, and cannot be overwritten through Ponytail.
 
+## Behavioral benchmark
+
+`bun run benchmark:ponytail --output <absolute-path>` runs the fixed real-model acceptance study against the certified
+Pi Host and `jcapi/openrouter/stealth/ox-alpha`. It uses three YAGNI-sensitive tasks, three independent paired
+`off`/`ultra` repetitions, neutral case paths, unchanged prompts and fixtures, hidden correctness checks, fixed
+Tools, and no retry or replacement of failed Sessions. The output omits Session paths and transcripts.
+
+The predeclared strong-effect gate requires all 18 Sessions to pass visible and hidden checks without protected-file or
+prompt-boundary violations, all nine pairs to be measurable, at least six non-tied production-LOC pairs, and a one-sided
+exact sign-test result of `p <= 0.05` favoring `ultra`. This is a manual authenticated benchmark, not a CI gate or a
+claim about every model and task.
+
 ## Upstream review
 
 Run `bun run ponytail:upstream:review` from the repository root to compare the pinned baseline with npm's current

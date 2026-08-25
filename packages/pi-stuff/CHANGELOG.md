@@ -12,7 +12,8 @@
   and configuration ownership. Make `off` a hard model boundary and replace the repeated full Skill projection with
   an active-mode compact policy and catalog. Add dedicated real-Pi PTY certification for the Dialog, low viewport,
   draft and Statusline restoration, configuration, environment overrides, Session ledger, and Provider prompt boundary.
-  Add an integrity-checked, non-mutating upstream candidate/diff review command and correct the pinned npm integrity to
+  Add a preregistered, mode-blind 18-Session ox-alpha behavioral benchmark with hidden correctness and exact sign-test
+  gates. Add an integrity-checked, non-mutating upstream candidate/diff review command and correct the pinned npm integrity to
   the verified registry artifact. See ADR 0021.
 - Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
   at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while

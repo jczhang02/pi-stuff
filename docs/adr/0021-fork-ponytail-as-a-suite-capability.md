@@ -69,6 +69,10 @@ remains the single activity authority.
 - The Package declares `src/ponytail/skills` as Pi Runtime Resources.
 - A dedicated isolated real-Pi PTY gate covers the Dialog, 64×28 and 48×16 layouts, draft and Statusline restoration,
   saved settings versus environment overrides, Session ledger, active compact prompt, and hard-off Provider boundary.
+- The manual authenticated ox-alpha benchmark preregisters 18 one-shot Sessions across nine mode-blind task pairs. Its
+  strong-effect gate requires complete visible/hidden correctness, no protected-file or prompt-boundary violations,
+  nine measured pairs, at least six non-ties, and a one-sided exact LOC sign test at `p <= 0.05`; it is not a CI gate
+  or a general claim across models and tasks.
 - Upstream updates remain human-reviewed. The explicit `ponytail:upstream:review` command authenticates the pinned
   and candidate npm tarballs, rechecks the retained local baseline, and prepares a sanitized package diff; license
   review, resource/hash updates, behavior tests, prompt-budget measurement, and real-Host acceptance remain manual.

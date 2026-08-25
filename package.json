@@ -13,6 +13,7 @@
 		"acceptance:magic-context:real": "bun scripts/verify-magic-context-real.ts",
 		"beads:publish": "bun scripts/publish-beads.ts",
 		"benchmark:conversation-markdown": "bun scripts/benchmark-conversation-markdown.ts",
+		"benchmark:ponytail": "bun scripts/benchmark-ponytail.ts",
 		"benchmark:lifecycle": "bun scripts/benchmark-lifecycle.ts --acceptance --trace --long-tools 6500 --long-tool-bytes 8192",
 		"benchmark:tool-activity": "bun scripts/benchmark-tool-activity.ts",
 		"ci:acceptance-scope": "bun scripts/ci-acceptance-scope.ts",
