@@ -18,6 +18,7 @@ import {
 } from "../tool-display/contract.js";
 import { stringifyForStorage } from "./cloudflare/codec.js";
 import { isControlOnlyProgram } from "./cloudflare/normalize.js";
+import { sanitizeToolName, toPascalCase } from "./cloudflare/utils.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { createCodeModeDialogView } from "./dialog.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";
@@ -44,6 +45,8 @@ export const CODE_MODE_SEARCH_TOOL_NAME = "tool_search";
 export const CODE_MODE_PROVIDER_TOOL_NAMES = [CODE_MODE_TOOL_NAME, CODE_MODE_SEARCH_TOOL_NAME] as const;
 const CODE_MODE_DECISION_MESSAGE_TYPE = "pi-stuff-code-mode-decision";
 const CODE_MODE_FROZEN_ENV = "PI_STUFF_CODE_MODE_FROZEN";
+const CODE_MODE_SEARCH_RESULT_LIMIT = 5;
+const CODE_MODE_SEARCH_RESPONSE_CHARS = 4_000;
 
 const CODE_MODE_PARAMETERS = Type.Object(
 	{
@@ -82,6 +85,118 @@ export interface CodeModeSearchDetails {
 	readonly query: string;
 	readonly total: number;
 	readonly truncated: boolean;
+}
+
+type ConnectorSearch = ReturnType<SuiteCodeModeConnector["search"]>;
+type ConnectorSearchResult = ConnectorSearch["results"][number];
+type ConnectorDescription = ReturnType<SuiteCodeModeConnector["describe"]>;
+
+function searchMetadata(search: ConnectorSearch, included: number) {
+	return {
+		total: search.total,
+		truncated: search.truncated || included < search.results.length,
+	};
+}
+
+function searchSignature(result: ConnectorSearchResult): string {
+	if (result.kind === "snippet")
+		return `codemode.run(${JSON.stringify(result.path)}, input?: unknown): Promise<unknown>`;
+	const typeName = toPascalCase(sanitizeToolName(result.method));
+	return `${result.path}(input: ${typeName}Input): Promise<${typeName}Output>`;
+}
+
+function signatureResult(result: ConnectorSearchResult) {
+	const compact = { kind: result.kind, path: result.path, signature: searchSignature(result) };
+	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
+}
+
+function compactDescription(description: ConnectorDescription) {
+	const compact = {
+		kind: description.kind,
+		path: description.path,
+		types: description.types,
+	};
+	return description.requiresApproval ? { ...compact, requiresApproval: true } : compact;
+}
+
+function encodeSearchProjection(
+	search: ConnectorSearch,
+	representation: "definitions" | "typed-top" | "signatures" | "paths",
+	results: readonly unknown[],
+	definitions: readonly unknown[] = [],
+): string | undefined {
+	const text = JSON.stringify({
+		...searchMetadata(search, results.length),
+		definitions,
+		representation,
+		results,
+	});
+	return text.length <= CODE_MODE_SEARCH_RESPONSE_CHARS ? text : undefined;
+}
+
+function projectSearchResponse(search: ConnectorSearch, descriptions: readonly ConnectorDescription[]): string {
+	const results = search.results.slice(0, CODE_MODE_SEARCH_RESULT_LIMIT);
+	if (results.length === 0) {
+		return JSON.stringify({ ...search, definitions: [], representation: "definitions" });
+	}
+
+	let fullResults: ConnectorSearchResult[] = [];
+	let fullDescriptions: ConnectorDescription[] = [];
+	let fullText: string | undefined;
+	for (const [index, result] of results.entries()) {
+		const description = descriptions[index];
+		if (!description) break;
+		const nextResults = [...fullResults, result];
+		const nextDescriptions = [...fullDescriptions, description];
+		const encoded = encodeSearchProjection(search, "definitions", nextResults, nextDescriptions);
+		if (!encoded) break;
+		fullResults = nextResults;
+		fullDescriptions = nextDescriptions;
+		fullText = encoded;
+	}
+	if (fullText) return fullText;
+
+	const signatures = results.map(signatureResult);
+	const topDescription = descriptions[0];
+	const topSignature = signatures[0];
+	if (topDescription && topSignature) {
+		let typedResults = [topSignature];
+		const typedDescription = compactDescription(topDescription);
+		let typedText = encodeSearchProjection(search, "typed-top", typedResults, [typedDescription]);
+		if (typedText) {
+			for (const signature of signatures.slice(1)) {
+				const nextResults = [...typedResults, signature];
+				const encoded = encodeSearchProjection(search, "typed-top", nextResults, [typedDescription]);
+				if (!encoded) break;
+				typedResults = nextResults;
+				typedText = encoded;
+			}
+			return typedText;
+		}
+	}
+
+	let compactResults: typeof signatures = [];
+	let compactText: string | undefined;
+	for (const signature of signatures) {
+		const nextResults = [...compactResults, signature];
+		const encoded = encodeSearchProjection(search, "signatures", nextResults);
+		if (!encoded) break;
+		compactResults = nextResults;
+		compactText = encoded;
+	}
+	if (compactText) return compactText;
+
+	let pathResults: Array<{ readonly path: string }> = [];
+	let pathText = encodeSearchProjection(search, "paths", pathResults);
+	if (!pathText) throw new Error("Tool Discovery metadata exceeds its response budget.");
+	for (const result of results) {
+		const nextResults = [...pathResults, { path: result.path }];
+		const encoded = encodeSearchProjection(search, "paths", nextResults);
+		if (!encoded) break;
+		pathResults = nextResults;
+		pathText = encoded;
+	}
+	return pathText;
 }
 
 function environmentMode(name: string): boolean | undefined {
@@ -324,7 +439,7 @@ export function createCodeModeDefinition(
 }
 
 export function createCodeModeSearchDefinition(
-	connector: SuiteCodeModeConnector,
+	connector: Pick<SuiteCodeModeConnector, "describe" | "search">,
 	ledger?: CodeModeSessionLedger,
 ): ToolDefinition<typeof CODE_MODE_SEARCH_PARAMETERS, CodeModeSearchDetails> {
 	return {
@@ -334,14 +449,12 @@ export function createCodeModeSearchDefinition(
 		async execute(_toolCallId, input, _signal, _onUpdate, context) {
 			const snippets = ledger?.snippets(context) ?? [];
 			const search = connector.search(input.query, snippets);
-			const paths = search.results.slice(0, 5).map((result) => result.path);
+			const paths = search.results.slice(0, CODE_MODE_SEARCH_RESULT_LIMIT).map((result) => result.path);
+			const definitions = paths.map((path) => connector.describe(path, snippets));
 			return {
 				content: [
 					{
-						text: JSON.stringify({
-							...search,
-							definitions: search.results.slice(0, 5).map((result) => connector.describe(result.path, snippets)),
-						}),
+						text: projectSearchResponse(search, definitions),
 						type: "text",
 					},
 				],
@@ -349,7 +462,7 @@ export function createCodeModeSearchDefinition(
 					paths,
 					query: input.query,
 					total: search.total,
-					truncated: search.truncated,
+					truncated: search.truncated || search.results.length > paths.length,
 				},
 			};
 		},

@@ -72,6 +72,11 @@ A Code Mode execution that carries only Host scheduling or continuation signals 
 remains diagnostic evidence rather than a Conversation Transcript event.
 _Avoid_: Internal wait, empty Code Mode call, no-op Tool
 
+**Tool Discovery**:
+The model-facing search over the currently active Package-owned Tool catalog. It returns bounded, ranked matches that
+help invoke a relevant Tool and never substitutes an unrelated Tool when no catalog entry matches.
+_Avoid_: Tool recommendation, Tool activation
+
 **Agent Context Usage**:
 The current Provider payload token estimate for one child Agent, measured against the selected child Host model's
 reported Context window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing

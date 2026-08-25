@@ -44,8 +44,11 @@ text(pkg.packageManager);
 - Cloudflare's `async () => { return value; }` form is accepted. A returned value is emitted only when the program did
   not already call an output helper, so explicit output is never duplicated. The older `suite.*` namespace remains a
   compatibility alias, not prompt vocabulary.
-- The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same Cloudflare-ranked catalog and
-  return the same paths and generated TypeScript input types.
+- The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same deterministically ranked
+  catalog. Search requires one lexical query-token match and returns no fallback when nothing matches. The top-level
+  response projects at most five matches into 4,000 characters: full definitions while they fit, then a typed top
+  match with signatures, signatures alone, and finally paths. `codemode.describe(path)` remains available for the full
+  generated TypeScript input and result types.
 - Yielded V8 cells are resumed internally. `yield_control` remains a Host protocol capability, not model-facing helper
   vocabulary or a user-level completion signal.
 

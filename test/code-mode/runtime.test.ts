@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import type {
+	DescribeOutput,
+	SearchOutput,
+	SearchResult,
+} from "../../packages/pi-stuff/src/code-mode/cloudflare/connector-types.js";
 import {
 	buildSuiteSandboxSource,
 	SuiteCodeModeConnector,
@@ -120,6 +125,66 @@ function sessionLedgerFixture() {
 	};
 }
 
+type DiscoveryConnector = Parameters<typeof createCodeModeSearchDefinition>[0];
+
+function discoveryConnectorFixture(
+	entries: readonly { readonly descriptionSize?: number; readonly name?: string; readonly typesSize: number }[],
+): DiscoveryConnector {
+	const results: SearchResult[] = entries.map((entry, index) => {
+		const method = entry.name ?? `fixture_${String(index)}`;
+		return {
+			connector: "tools",
+			description: "d".repeat(entry.descriptionSize ?? 0),
+			kind: "method",
+			method,
+			path: `tools.${method}`,
+			score: 100 - index,
+		};
+	});
+	const definitions = new Map<string, DescribeOutput>(
+		results.map((result, index) => [
+			result.path,
+			{
+				description: result.description,
+				kind: "method",
+				path: result.path,
+				types: "T".repeat(entries[index]?.typesSize ?? 0),
+			},
+		]),
+	);
+	return {
+		describe(path: string) {
+			const definition = definitions.get(path);
+			if (!definition) throw new Error(`Missing discovery fixture ${path}`);
+			return definition;
+		},
+		search: () => ({ results, total: results.length, truncated: false }) satisfies SearchOutput,
+	};
+}
+
+interface DiscoveryPayload {
+	readonly definitions: readonly { readonly path: string; readonly types?: string }[];
+	readonly representation: "definitions" | "typed-top" | "signatures" | "paths";
+	readonly results: readonly { readonly path: string; readonly signature?: string }[];
+}
+
+async function executeDiscovery(connector: DiscoveryConnector): Promise<{
+	readonly payload: DiscoveryPayload;
+	readonly text: string;
+}> {
+	// SAFETY: this fixture supplies the only ExtensionContext field read by Tool Discovery.
+	const result = await createCodeModeSearchDefinition(connector).execute(
+		"search-fixture",
+		{ query: "fixture" },
+		undefined,
+		undefined,
+		{ cwd: "/project" } as ExtensionContext,
+	);
+	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
+	return { payload: JSON.parse(text) as DiscoveryPayload, text };
+}
+
 test("the compact Tool contract describes canonical unwrapped Read results", () => {
 	// SAFETY: this test controls the value and supplies every CodeModeRuntime member exercised by this case.
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
@@ -204,6 +269,16 @@ test("the Connector rejects explicit nested Tool errors", async () => {
 	).rejects.toThrow("nested failure");
 });
 
+test("Tool Discovery keeps deterministic lexical matches without unrelated fallbacks", () => {
+	const connector = new SuiteCodeModeConnector(registryFixture());
+	const query = "please inspect the repository and read the requested file after checking all relevant context";
+
+	expect(connector.search(query).results[0]?.path).toBe("tools.read");
+	expect(connector.search("reader").results[0]?.path).toBe("tools.read");
+	expect(connector.search("unrelated vocabulary only").results).toEqual([]);
+	expect(connector.search(query)).toEqual(connector.search(query));
+});
+
 test("the Connector rejects malformed supported images returned by nested Tools", async () => {
 	const base = registryFixture();
 	const registry: SuiteToolDefinitionRegistry = {
@@ -262,23 +337,57 @@ test("top-level and in-program discovery share Cloudflare-ranked catalog data an
 		cwd: "/project",
 	} as ExtensionContext);
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-	expect(JSON.parse(text)).toMatchObject({
-		definitions: [{ kind: "method", path: "tools.read" }],
-		results: [{ path: "tools.read" }],
-	});
+	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
+	const payload = JSON.parse(text) as DiscoveryPayload;
+	expect(payload.definitions[0]).toMatchObject({ kind: "method", path: "tools.read" });
+	expect(payload.results[0]).toMatchObject({ path: "tools.read" });
 	expect(result.details).toEqual({
-		paths: ["tools.read"],
+		paths: ["tools.read", "tools.write"],
 		query: "read file",
-		total: 1,
+		total: 2,
 		truncated: false,
 	});
 	expect(CODE_MODE_SEARCH_PRESENTATION.summarize?.({ query: "read file" }, result, "success", undefined)).toBe(
-		"1 match",
+		"2 matches",
 	);
 	expect(CODE_MODE_SEARCH_PRESENTATION.detailLines?.({ query: "read file" }, result, "success")).toEqual([
-		"1 match",
+		"2 matches",
 		"tools.read",
+		"tools.write",
 	]);
+});
+
+test("top-level Tool Discovery deterministically degrades every response within its character budget", async () => {
+	const definitions = await executeDiscovery(
+		discoveryConnectorFixture([{ typesSize: 1_800 }, { typesSize: 1_800 }, { typesSize: 1_800 }]),
+	);
+	expect(definitions.text.length).toBeLessThanOrEqual(4_000);
+	expect(definitions.payload.representation).toBe("definitions");
+	expect(definitions.payload.definitions.length).toBeGreaterThan(0);
+	expect(definitions.payload.definitions.length).toBeLessThan(3);
+
+	const typedTop = await executeDiscovery(
+		discoveryConnectorFixture(Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, typesSize: 500 }))),
+	);
+	expect(typedTop.text.length).toBeLessThanOrEqual(4_000);
+	expect(typedTop.payload.representation).toBe("typed-top");
+	expect(typedTop.payload.definitions[0]?.types).toHaveLength(500);
+	expect(typedTop.payload.results[1]?.signature).toContain("Promise");
+
+	const signatures = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 5_000 }, { typesSize: 5_000 }]));
+	expect(signatures.text.length).toBeLessThanOrEqual(4_000);
+	expect(signatures.payload.representation).toBe("signatures");
+	expect(signatures.payload.definitions).toEqual([]);
+	expect(signatures.payload.results[0]?.signature).toContain("Promise");
+
+	const longNames = Array.from({ length: 5 }, (_, index) => ({
+		name: `${String(index)}_${"n".repeat(1_500)}`,
+		typesSize: 5_000,
+	}));
+	const paths = await executeDiscovery(discoveryConnectorFixture(longNames));
+	expect(paths.text.length).toBeLessThanOrEqual(4_000);
+	expect(paths.payload.representation).toBe("paths");
+	expect(paths.payload.results[0]).toEqual({ path: `tools.${longNames[0]?.name}` });
 });
 
 test("approval-required Tools cannot opt into reexecute replay", () => {
