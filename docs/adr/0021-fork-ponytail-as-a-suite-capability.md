@@ -71,8 +71,10 @@ remains the single activity authority.
   saved settings versus environment overrides, Session ledger, active compact prompt, and hard-off Provider boundary.
 - The manual authenticated ox-alpha benchmark preregisters 18 one-shot Sessions across nine mode-blind task pairs. Its
   strong-effect gate requires complete visible/hidden correctness, no protected-file or prompt-boundary violations,
-  nine measured pairs, at least six non-ties, and a one-sided exact LOC sign test at `p <= 0.05`; it is not a CI gate
-  or a general claim across models and tasks.
+  nine measured pairs, at least six non-ties, and a one-sided exact LOC sign test at `p <= 0.05`. The certified run
+  passed all 18 Sessions: `ultra` won eight pairs, used 87 versus 141 aggregate production LOC (-38%), and reached
+  `p = 0.01953125`, with a measured token tradeoff of 148,513 versus 113,012 (+31%). It is not a CI gate or a general
+  claim across models and tasks.
 - Upstream updates remain human-reviewed. The explicit `ponytail:upstream:review` command authenticates the pinned
   and candidate npm tarballs, rechecks the retained local baseline, and prepares a sanitized package diff; license
   review, resource/hash updates, behavior tests, prompt-budget measurement, and real-Host acceptance remain manual.

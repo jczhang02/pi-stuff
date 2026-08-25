@@ -84,8 +84,11 @@ Tools, and no retry or replacement of failed Sessions. The output omits Session 
 
 The predeclared strong-effect gate requires all 18 Sessions to pass visible and hidden checks without protected-file or
 prompt-boundary violations, all nine pairs to be measurable, at least six non-tied production-LOC pairs, and a one-sided
-exact sign-test result of `p <= 0.05` favoring `ultra`. This is a manual authenticated benchmark, not a CI gate or a
-claim about every model and task.
+exact sign-test result of `p <= 0.05` favoring `ultra`. The certified run passed all 18 Sessions: `ultra` used
+87 aggregate production LOC versus `off`'s 141 (-38%), won eight of nine pairs, and produced `p = 0.01953125`.
+It also reduced structural declarations from six to three and Assistant reply characters from 3,821 to 2,007, while
+increasing total tokens from 113,012 to 148,513 (+31%). This is a manual authenticated benchmark, not a CI gate or
+a claim about every model and task.
 
 ## Upstream review
 
