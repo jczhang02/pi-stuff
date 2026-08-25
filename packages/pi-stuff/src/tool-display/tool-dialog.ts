@@ -369,9 +369,9 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const footer = hintLines(theme, width, [
-			`${up}/${down} select`,
-			...(this.isSplit() ? ["Tab pane"] : []),
-			`${confirm} details`,
+			...(this.groups.length > 0
+				? [`${up}/${down} select`, ...(this.isSplit() ? ["Tab pane"] : []), `${confirm} details`]
+				: []),
 			"? keys",
 			`${cancel} close`,
 		]);

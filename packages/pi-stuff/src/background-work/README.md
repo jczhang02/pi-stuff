@@ -91,7 +91,7 @@ bottom; upward movement freezes reading, reports bounded newer content, and resu
 PageUp/PageDown and `b`/Space scroll by a page; Home/End jump to the top or bottom. Footer scroll hints appear only on overflow; `x stop` appears only
 while the selected owned activity is stoppable; `Esc back` is always present and last.
 
-An empty list says `No background work in this session.` The implementation reads the Background Work runtime snapshot
+An empty list says `No background work in this session.` and keeps only key-help and close hints until work exists. The implementation reads the Background Work runtime snapshot
 directly, preserves launch order and selection across updates, carries real Monitor source and condition metadata, and
 keeps recent output bounded. Focused tests cover the type-specific details, fixed split geometry, empty state, status
 icons, page aliases, and the absence of Agent projections.

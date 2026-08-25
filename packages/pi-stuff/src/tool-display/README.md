@@ -54,6 +54,7 @@ unknown third-party Tools keep their native renderer and form a display boundary
   delivery boundary.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
   Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
+- An empty `/tools` Dialog keeps key-help and close hints, but omits selection and detail hints until a row exists.
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,
   arguments, result content, and details. The default `Result` section shows an unlabeled target followed by
   Tool-owned detail instead of injecting repeated Tool, `Target:`, or `Summary:` fields; Raw is explicitly titled

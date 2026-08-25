@@ -676,7 +676,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			const later = rows.length - window.start - window.rows.length;
 			if (later > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
-		const hints = [`${up}/${down} select`, `${confirm} details`];
+		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
 		const selected = this.listRow();
 		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
 		hints.push("? keys", `${cancel} close`);

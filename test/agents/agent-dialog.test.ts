@@ -173,6 +173,17 @@ async function flush(): Promise<void> {
 }
 
 describe("Agent Command Dialog", () => {
+	test("hides selection hints when there are no Agents", () => {
+		const { component } = setup([]);
+		const output = text(component);
+		expect(output).toContain("No Agents in the current session.");
+		expect(output).not.toContain("select");
+		expect(output).not.toContain("details");
+		expect(output).toContain("? keys");
+		expect(output).toContain("Esc close");
+		component.dispose?.();
+	});
+
 	test("keeps running identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
 		// SAFETY: this test fixture implements the exact Host surface exercised by this case.

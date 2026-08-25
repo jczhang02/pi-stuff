@@ -134,7 +134,7 @@ remains single-column at every width: list and detail are sequential modes, and 
 Agent's Task, outcome, and Activity rather than a persistent roster pane. Action hints wrap instead of dropping the
 close or back key: Escape closes the Agent list and returns one level from details or a steer/resume composer. At low
 terminal heights, the selected Agent or attached error and that Escape path take priority over surrounding transcript
-rows.
+rows. An empty list keeps key-help and close hints but omits selection and detail hints until an Agent exists.
 
 The accepted Agent Command Dialog redesign is recorded in the
 [Agent activity UI reference](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).

@@ -358,9 +358,9 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const baseHints = [
-			`${up}/${down} select`,
-			...(this.isSplit() ? ["Tab pane"] : []),
-			`${confirm} details`,
+			...(this.rows.length > 0
+				? [`${up}/${down} select`, ...(this.isSplit() ? ["Tab pane"] : []), `${confirm} details`]
+				: []),
 			...(selected && selected.status !== "stopping" ? ["x stop"] : []),
 			"? keys",
 			`${cancel} close`,

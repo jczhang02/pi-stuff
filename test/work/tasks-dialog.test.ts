@@ -77,6 +77,19 @@ function harness(rows = 24, activeTheme = theme, keybindings = new KeybindingsMa
 }
 
 describe("/tasks Command Dialog", () => {
+	test("hides selection hints when there is no background work", () => {
+		const runtime = new RuntimeHarness();
+		runtime.rows = [];
+		const component = createTasksDialogView(runtime).create(harness().context);
+		const output = component.render(64).join("\n");
+		expect(output).toContain("No background work in this session.");
+		expect(output).not.toContain("select");
+		expect(output).not.toContain("details");
+		expect(output).toContain("? keys");
+		expect(output).toContain("Esc close");
+		component.dispose?.();
+	});
+
 	test("keeps running task identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
 		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
