@@ -14,6 +14,11 @@ export interface RunStatusParams {
 	readonly index?: number;
 }
 
+export interface AgentTarget {
+	readonly id: string;
+	readonly index?: number;
+}
+
 export type RunStatusState = Pick<
 	SubagentState,
 	"currentSessionId" | "asyncJobs" | "recentAgentJobs" | "foregroundControls" | "foregroundRuns"
@@ -72,7 +77,9 @@ function formatElapsed(elapsedMs: number | null): string | undefined {
 
 function rowSummary(row: AgentRow): string {
 	const elapsed = formatElapsed(row.elapsedMs);
-	const heading = [row.key, row.name, row.status, elapsed].filter(Boolean).join(" · ");
+	const heading = [`id=${row.runId}`, `index=${String(row.childIndex)}`, row.name, row.status, elapsed]
+		.filter(Boolean)
+		.join(" · ");
 	const task = compactChildText(row.task, MAX_LIST_TASK_CHARS);
 	return task ? `- ${heading}\n  ${task}` : `- ${heading}`;
 }
@@ -83,7 +90,9 @@ function rowsSummary(rows: readonly AgentRow[], heading: string): string {
 
 function rowDetail(row: AgentRow): string {
 	const elapsed = formatElapsed(row.elapsedMs);
-	const lines = [[row.key, row.name, row.status, elapsed].filter(Boolean).join(" · ")];
+	const lines = [
+		[`id=${row.runId}`, `index=${String(row.childIndex)}`, row.name, row.status, elapsed].filter(Boolean).join(" · "),
+	];
 	const task = compactChildText(row.task, MAX_DETAIL_TASK_CHARS);
 	if (task) lines.push(`Task: ${task}`);
 	if (row.error)
@@ -110,11 +119,36 @@ function currentRows(deps: RunStatusDeps): readonly AgentRow[] {
 	}
 }
 
-function selectRows(rows: readonly AgentRow[], id: string, index: number | undefined): readonly AgentRow[] {
-	const exact = rows.find((row) => row.key === id);
-	if (exact) {
-		return index === undefined || exact.childIndex === index ? [exact] : [];
+const LEGACY_AGENT_TARGET = /:\d+$/u;
+
+function resolveTargetFromRows(target: AgentTarget, rows: readonly AgentRow[]): AgentTarget {
+	if (!LEGACY_AGENT_TARGET.test(target.id)) return target;
+	const canonical = rows.some((row) => row.runId === target.id);
+	const matches = rows.filter(
+		(row) => row.key === target.id && (target.index === undefined || row.childIndex === target.index),
+	);
+	if (canonical && matches.length > 0) {
+		throw new Error(`Agent Target '${target.id}' is ambiguous in the current session.`);
 	}
+	if (canonical) return target;
+	if (matches.length === 0) {
+		throw new Error(`Agent Target '${target.id}' is not available in the current session.`);
+	}
+	if (matches.length > 1) {
+		throw new Error(`Agent Target '${target.id}' is ambiguous in the current session.`);
+	}
+	const [row] = matches;
+	if (!row) throw new Error(`Agent Target '${target.id}' is not available in the current session.`);
+	return { id: row.runId, index: row.childIndex };
+}
+
+/** Resolve one legacy roster key to the public run-id/child-index pair. */
+export function resolveLegacyAgentTarget(target: AgentTarget, deps: RunStatusDeps = {}): AgentTarget {
+	if (!LEGACY_AGENT_TARGET.test(target.id)) return target;
+	return resolveTargetFromRows(target, currentRows(deps));
+}
+
+function selectRows(rows: readonly AgentRow[], id: string, index: number | undefined): readonly AgentRow[] {
 	const runRows = rows.filter((row) => row.runId === id);
 	if (index === undefined) return runRows;
 	const child = runRows.find((row) => row.childIndex === index);
@@ -135,12 +169,20 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 		return statusResult(rowsSummary(rows, `Current Agents (${rows.length})`));
 	}
 
-	const selected = selectRows(rows, params.id, params.index);
+	const requested: AgentTarget =
+		params.index === undefined ? { id: params.id } : { id: params.id, index: params.index };
+	let target: AgentTarget;
+	try {
+		target = resolveTargetFromRows(requested, rows);
+	} catch (error) {
+		return statusResult(error instanceof Error ? error.message : String(error), true);
+	}
+	const selected = selectRows(rows, target.id, target.index);
 	if (selected.length === 0) {
-		const suffix = params.index === undefined ? "" : ` at index ${params.index}`;
-		return statusResult(`Agent '${params.id}'${suffix} is not available in the current session.`, true);
+		const suffix = target.index === undefined ? "" : ` at index ${target.index}`;
+		return statusResult(`Agent '${target.id}'${suffix} is not available in the current session.`, true);
 	}
 	const [selectedRow] = selected;
 	if (selected.length === 1 && selectedRow) return statusResult(rowDetail(selectedRow));
-	return statusResult(rowsSummary(selected, `Agents in ${params.id} (${selected.length})`));
+	return statusResult(rowsSummary(selected, `Agents in ${target.id} (${selected.length})`));
 }

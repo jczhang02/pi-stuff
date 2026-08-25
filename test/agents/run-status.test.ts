@@ -3,6 +3,7 @@ import {
 	inspectSubagentStatus,
 	type RunStatusResult,
 	type RunStatusState,
+	resolveLegacyAgentTarget,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/run-status.js";
 import type { AsyncJobState } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
@@ -36,6 +37,29 @@ function resultText(result: RunStatusResult): string {
 }
 
 describe("compact Agent status", () => {
+	test("resolves only unique legacy row keys to the public Agent Target pair", () => {
+		const state = createState();
+		state.asyncJobs.set(
+			"parallel",
+			asyncJob("parallel", "running", {
+				steps: [
+					{ index: 0, agent: "scout", status: "running", label: "Research" },
+					{ index: 1, agent: "reviewer", status: "running", label: "Review" },
+				],
+			}),
+		);
+		expect(resolveLegacyAgentTarget({ id: "parallel:1" }, { state })).toEqual({ id: "parallel", index: 1 });
+		expect(resolveLegacyAgentTarget({ id: "parallel", index: 1 }, { state })).toEqual({
+			id: "parallel",
+			index: 1,
+		});
+		expect(() => resolveLegacyAgentTarget({ id: "parallel:9" }, { state })).toThrow("is not available");
+
+		state.asyncJobs.set("canonical", asyncJob("duplicate:0", "running"));
+		state.asyncJobs.set("legacy", asyncJob("duplicate", "running"));
+		expect(() => resolveLegacyAgentTarget({ id: "duplicate:0" }, { state })).toThrow("is ambiguous");
+	});
+
 	test("lists only direct children from the current session", () => {
 		const state = createState();
 		state.asyncJobs.set(
@@ -78,8 +102,9 @@ describe("compact Agent status", () => {
 		expect(result.isError).toBeUndefined();
 		expect(result.details).toEqual({ mode: "management", results: [] });
 		expect(text).toContain("Current Agents (2)");
-		expect(text).toContain("live:0 · scout · running · 4s");
-		expect(text).toContain("done:0 · writer · completed · 3s");
+		expect(text).toContain("id=live · index=0 · scout · running · 4s");
+		expect(text).toContain("id=done · index=0 · writer · completed · 3s");
+		expect(text).not.toContain("live:0");
 		expect(text).not.toContain("nested-child");
 		expect(text).not.toContain("foreign");
 		expect(text).not.toMatch(/fleet|transcript:|session:|model:|budget:|\/secret|\.log/i);
@@ -117,12 +142,12 @@ describe("compact Agent status", () => {
 		);
 		const indexedText = resultText(indexed);
 		expect(indexedText).toBe(
-			"parallel:1 · reviewer · running · 3s\nTask: Review the implementation\nProgress: Found one issue.",
+			"id=parallel · index=1 · reviewer · running · 3s\nTask: Review the implementation\nProgress: Found one issue.",
 		);
 		expect(indexedText).not.toContain("scout");
 
 		const exact = inspectSubagentStatus({ action: "status", id: "parallel:0" }, { state, now: () => 5_000 });
-		expect(resultText(exact)).toContain("parallel:0 · scout · running · 4s");
+		expect(resultText(exact)).toContain("id=parallel · index=0 · scout · running · 4s");
 	});
 
 	test("shows bounded path-safe terminal failure without stale progress", () => {
@@ -196,8 +221,8 @@ describe("compact Agent status", () => {
 		const text = resultText(result);
 
 		expect(text).toContain("Agents in parallel (2)");
-		expect(text).toContain("parallel:0 · scout");
-		expect(text).toContain("parallel:1 · reviewer");
+		expect(text).toContain("id=parallel · index=0 · scout");
+		expect(text).toContain("id=parallel · index=1 · reviewer");
 	});
 
 	test("rejects invalid or unavailable selectors without searching old runs", () => {

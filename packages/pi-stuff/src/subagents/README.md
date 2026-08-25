@@ -54,6 +54,9 @@ user definitions, and user definitions override Package definitions.
   resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request
   instead of silently declaring it delivered.
+- Model-visible status exposes each Agent Target as separate `id=<run id>` and `index=<child index>` fields. Pass that
+  pair to status, steer, stop, or resume; the roster row key remains internal. A legacy combined key is accepted only
+  when it uniquely identifies a current row, while ambiguous or unknown keys act on nothing.
 - Child Agents automatically reuse the exact standalone Pi Host that launched the session; no separate child-binary
   setting is required. Their extension surface is deterministic: ambient discovery is disabled, the owning Pi Stuff
   Package is loaded explicitly unless an inherited capability ceiling forbids extensions, Agent-specific extensions

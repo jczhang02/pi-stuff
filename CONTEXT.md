@@ -80,6 +80,11 @@ child Host reports its actual selection. It is not cumulative run usage and is u
 fallback makes the current payload uncertain.
 _Avoid_: Agent tokens, total Agent usage, Context budget
 
+**Agent Target**:
+The public pair of a stable Agent run ID and child index used by Agent control actions. Model-visible status exposes
+these fields separately; an internal roster row key is display identity rather than an Agent Target.
+_Avoid_: Agent key, child address
+
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
