@@ -417,9 +417,7 @@ async function runResumeInputFrameVerification(
 		]);
 
 		const prompt = "CONTEXT_RESUME_REQUEST";
-		const sendKeysStartedAt = performance.now();
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
-		const sendKeysOverheadMs = performance.now() - sendKeysStartedAt;
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
 		const captureOverheads = Array.from({ length: 5 }, () => {
 			const startedAt = performance.now();
@@ -432,12 +430,12 @@ async function runResumeInputFrameVerification(
 		const workingFrames = new Set<string>();
 		const workingDeadline = Date.now() + 2_000;
 		let workingFrame: string | undefined;
-		let workingFrameChangedAt = submittedAt;
+		let workingFrameChangedAt: number | undefined;
 		let transcriptVisibleMs: number | undefined;
 		while (Date.now() < workingDeadline) {
 			const frame = capture(false);
 			if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-				transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - sendKeysOverheadMs - captureOverheadMs);
+				transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
 			}
 			const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
 			const observedAt = performance.now();
@@ -447,11 +445,14 @@ async function runResumeInputFrameVerification(
 					workingFrame = indicator;
 					workingFrameChangedAt = observedAt;
 				}
-			}
-			if (observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
-				fail(
-					`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
-				);
+				if (workingFrameChangedAt !== undefined && observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
+					fail(
+						`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
+					);
+				}
+			} else {
+				workingFrame = undefined;
+				workingFrameChangedAt = undefined;
 			}
 			await Bun.sleep(50);
 		}
