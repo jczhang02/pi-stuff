@@ -10,7 +10,7 @@ External bug and feature requests may start through GitHub issue forms. A mainta
 
 ## Development
 
-Use Bun 1.3.14:
+Use Bun 1.4.0:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts

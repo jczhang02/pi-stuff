@@ -23,7 +23,7 @@ FREEZE_BIN=/tmp/pi-proto-bin/freeze \
   ./docs/prototypes/tui/final-ui-review/welcome/capture.sh
 ```
 
-The command uses `/opt/bin/pi` by default. Override it with `PI_BIN=/path/to/pi` when needed. The harness validates the Host against the shared repository contract and also requires Bun `1.3.14`, `tmux`, and Charmbracelet Freeze.
+The command uses `/opt/bin/pi` by default. Override it with `PI_BIN=/path/to/pi` when needed. The harness validates the Host against the shared repository contract and also requires Bun `1.4.0`, `tmux`, and Charmbracelet Freeze.
 
 ## Captured contract
 

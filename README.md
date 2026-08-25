@@ -184,7 +184,8 @@ the user's theme choice.
 | Pi Host | `0.84.3`, upstream `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
 | Pi Host binary | Audited upstream Linux x64 release SHA-256 |
 | Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
-| Bun | `1.3.14` |
+| Pi Host embedded Bun runtime | `1.3.14` |
+| Repository Bun toolchain | `1.4.0` |
 | TypeScript | `5.9.3` |
 | Optional RTK runtime | `0.42.4`, certified Linux x64 builds only |
 

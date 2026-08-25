@@ -74,7 +74,7 @@ session.appendMessage({
 			type: "text",
 			text:
 				state === "success"
-					? `Pi standalone host: ${CERTIFIED_PI_VERSION}\nBun toolchain: 1.3.14\nTypeScript: 5.9.3`
+					? `Pi standalone host: ${CERTIFIED_PI_VERSION}\nBun toolchain: 1.4.0\nTypeScript: 5.9.3`
 					: "File not found: packages/missing.json",
 		},
 	],
@@ -82,7 +82,7 @@ session.appendMessage({
 		state === "success"
 			? {
 					summary: "3 项兼容性约束已确认",
-					detailLines: [`Pi host       ${CERTIFIED_PI_VERSION}`, "Bun           1.3.14", "TypeScript    5.9.3"],
+					detailLines: [`Pi host       ${CERTIFIED_PI_VERSION}`, "Bun           1.4.0", "TypeScript    5.9.3"],
 				}
 			: {
 					summary: "File not found",
@@ -100,7 +100,7 @@ session.appendMessage({
 			type: "text",
 			text:
 				state === "success"
-					? `已确认：Pi ${CERTIFIED_PI_VERSION}、Bun 1.3.14、TypeScript 5.9.3。`
+					? `已确认：Pi ${CERTIFIED_PI_VERSION}、Bun 1.4.0、TypeScript 5.9.3。`
 					: "没有继续执行。请确认配置路径。",
 		},
 	],

@@ -170,7 +170,8 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 | Pi Host | `0.84.3`，上游提交 `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
 | Pi Host 二进制 | 已审核的上游 Linux x64 Release SHA-256 |
 | 平台 | Linux x64；CI 系统工具基线为 Ubuntu 24.04 |
-| Bun | `1.3.14` |
+| Pi Host 内嵌 Bun runtime | `1.3.14` |
+| 仓库 Bun 工具链 | `1.4.0` |
 | TypeScript | `5.9.3` |
 | 可选 RTK runtime | `0.42.4`，只认证 Linux x64 构建 |
 

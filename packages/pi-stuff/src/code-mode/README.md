@@ -147,7 +147,8 @@ starting Pi does not download, write, or spawn anything for Code Mode.
 ## Compatibility
 
 - Pi Host: `0.84.3`
-- Bun: `1.3.14`
+- Pi Host embedded Bun runtime: `1.3.14`
+- Repository Bun toolchain: `1.4.0`
 - Host assets: Linux/macOS x64 and arm64, Windows x64 and arm64
 - Non-Windows archive installation requires `tar`
 

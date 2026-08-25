@@ -7,7 +7,8 @@
 | Pi standalone host | `0.84.3`, upstream `4e58f324fae8ebfa98a3d45181fb248072a2afac`, Linux x64 |
 | Pi release archive | SHA-256 `6f8bb67c21bc6b8a8a106d354f56d7fd4a190a3cd8ad3a32db45f6d281a5d008` |
 | Pi release executable | SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08`, 104,487,040 bytes |
-| Bun toolchain | 1.3.14 |
+| Pi Host embedded Bun runtime | 1.3.14 |
+| Repository Bun toolchain | 1.4.0 |
 | System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities; no `pwsh` |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
@@ -28,12 +29,17 @@ network-isolated namespace. Per-file process isolation prevents one process- or 
 native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
 `Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
 `latest` tag moves beyond the certified Host, but never changes certification automatically.
-Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact toolchain, and certified
-Pi profile must move coherently. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull requests
-that omit or bypass the repository-owned Bun lockfile.
+The certified execution profile has two Bun versions with separate scopes. The audited standalone Host embeds Bun 1.3.14 and keeps that
+identity with its exact binary hash. Repository scripts, CI tests, and Suite subprocess helpers that resolve Bun from PATH
+use 1.4.0. A repository toolchain upgrade never relabels the Host artifact's embedded runtime.
+Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact repository toolchain,
+`@types/bun`, CI, and executable documentation must move coherently. The Host Bun version moves only with a new exact
+release artifact and recertification. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull
+requests that omit or bypass the repository-owned Bun lockfile.
 
-The certified profile identifies the released version, reviewed upstream source commit, Linux x64 release-binary hash,
-and Bun version. CI downloads the fixed GitHub Release while network access is available, verifies it, and then runs the
+The certified Host profile identifies the released version, reviewed upstream source commit, Linux x64 release-binary
+hash, and embedded Bun version. The repository toolchain row separately identifies the Bun executable used for repository
+commands and CI. CI downloads the fixed GitHub Release while network access is available, verifies it, and then runs the
 acceptance suite without external network access. The archive hash is checked before extraction; the executable hash is
 checked again before use. Pi upgrades review and update these constants together; the repository does not claim to
 reproduce the upstream compilation process.
@@ -61,7 +67,8 @@ Compatibility with other Pi builds is not claimed until that work is complete.
 Older version strings in changelogs, archived acceptance reports, research notes, and captured prototypes describe the
 Host that produced that historical evidence. They are not executable compatibility declarations and must not be
 rewritten to imply that old evidence was captured on the current Host. Current source, package manifests, CI, fixtures,
-and verification scripts follow the certified profile above.
+and verification scripts follow the applicable Host or repository toolchain row above. `CERTIFIED_PI_BUN_VERSION`
+describes the audited Host artifact, not the repository toolchain.
 
 The Codex Capability bundles its retained native helpers only for the certified Linux x64 profile. On another target,
 the command and ordinary Pi turns remain available while the unavailable Tool returns a bounded recovery error.
