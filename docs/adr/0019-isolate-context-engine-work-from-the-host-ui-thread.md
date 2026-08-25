@@ -10,9 +10,10 @@ second copy of submitted input or call a synthetic refresh API.
 
 The adapter lazily bundles the exact pinned Magic Context package and its worker entry into one in-memory Bun artifact,
 then starts it from a Blob URL. This happens during the configured Context initialization already governed by ADR 0007.
-The artifact is not written to disk, published, or installed, and the upstream package is neither forked nor patched.
-The bundle preserves the upstream package's original `import.meta.url` so package-relative resources and version
-identity keep their official semantics.
+The artifact is not written to disk, published, or installed. The upstream Package is not forked; its exact pinned npm
+artifact carries the temporary audited tokenizer compatibility dependency patch recorded in Context Management's
+`UPSTREAM.md`. The bundle preserves the upstream Package's original `import.meta.url` so package-relative resources
+and version identity keep their official semantics.
 
 Pi event, Tool, and command registrations remain in the Host. Each invocation sends an immutable Context snapshot and
 only the event fields read by the pinned engine. The complete Session branch crosses the boundary when a Worker first
@@ -40,8 +41,8 @@ and revokes the in-memory URL.
 
 ## Consequences
 
-Configured startup pays one worker build/start cost, one initial Session snapshot before editor readiness, and one
-worker's memory while Context is active. In return, a healthy Magic Context projection can run concurrently with Pi's
+Configured startup pays one worker build/start and tokenizer-preload cost, one initial Session snapshot before editor
+readiness, and one worker's memory while Context is active. In return, a healthy Magic Context projection can run concurrently with Pi's
 native input paint and Working animation without another full-Session clone per ordinary turn. Acceptance must use a
 real Pi TUI with a long resumed Session containing malformed image history, require the submitted prompt in the
 Conversation Transcript within 150 ms after measured PTY harness overhead, bound the maximum Working-frame stall, and

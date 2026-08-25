@@ -86,5 +86,8 @@
 				]
 			}
 		}
+	},
+	"patchedDependencies": {
+		"@cortexkit/pi-magic-context@0.40.0": "patches/@cortexkit%2Fpi-magic-context@0.40.0.patch"
 	}
 }

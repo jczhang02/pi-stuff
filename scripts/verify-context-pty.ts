@@ -88,6 +88,11 @@ function fail(message: string): never {
 	throw new Error(`Context PTY verification failed: ${message}`);
 }
 
+function rejectRawMagicContextOutput(output: string, label: string): void {
+	const warning = output.match(/\[magic-context\][^\r\n]*/iu)?.[0];
+	if (warning) fail(`${label} emitted raw Magic Context output: ${warning}`);
+}
+
 function expectProgram(): string {
 	return `
 set timeout 60
@@ -721,7 +726,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			fail("deferred automatic Extension turn did not use the native Context path");
 		}
 
-		runExpect(
+		const directActivationOutput = runExpect(
 			directActivationProgram(),
 			{
 				...activationEnvironment,
@@ -735,6 +740,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			"direct activation migration",
 			activationProjectDirectory,
 		);
+		rejectRawMagicContextOutput(directActivationOutput, "direct activation");
 		if ((await readFile(activationCanonicalConfig, "utf8")) !== legacyContentBefore) {
 			fail("direct activation did not migrate the exact legacy Magic Context config");
 		}
@@ -788,6 +794,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			fail("startup activation unexpectedly reached the model");
 		}
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
+		rejectRawMagicContextOutput(freshOutput, "fresh session");
 		for (const forbidden of ["Magic Context", "Magic Status", "ctx-aug", "ctx-doctor", "mc:"]) {
 			if (freshOutput.includes(forbidden)) {
 				const evidence = (await readFile(magicLog, "utf8").catch(() => ""))

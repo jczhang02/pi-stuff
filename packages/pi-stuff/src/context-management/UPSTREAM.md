@@ -1,7 +1,8 @@
 # Bundled context engine provenance
 
-Pi Stuff integrates the official Magic Context Package through this adapter. It
-does not vendor or patch Magic Context Core.
+Pi Stuff integrates the official Magic Context Package through this adapter and does not vendor Magic Context Core.
+The repository applies one temporary, audited dependency patch to the pinned Package while the upstream tokenizer
+path does not satisfy standalone Pi's module-resolution and first-turn latency contracts.
 
 The exact published package executes inside Pi Stuff's Context Engine Worker.
 The adapter produces one activation-time in-memory bundle solely to make the
@@ -17,6 +18,24 @@ does not alter upstream source or persist a derived artifact.
 - Audited tarball SHA-256: `968c34cc384252302ef77eec1c0235ecf1cd5ca96d6abccdd4ef4630fdf48f1b`
 - License: MIT, as declared by the official Package manifest and upstream repository.
 
+## Temporary tokenizer compatibility patch
+
+- Patch: [`patches/@cortexkit%2Fpi-magic-context@0.40.0.patch`](../../../../patches/@cortexkit%2Fpi-magic-context@0.40.0.patch)
+- Patch SHA-256: `809e9705edad15cc8f5cfc6122b4c50c62ed6c6d49a2fa00f36353b433a88388`
+- Scope:
+  - add the published module's `import.meta.url` ancestry and Bun isolated-linker `node_modules` root to the existing
+    `ai-tokenizer` fallback search;
+  - preload the tokenizer during engine initialization instead of the first submitted turn;
+  - reuse an image draft's existing image-token estimate while hashing it, avoiding exact BPE work over base64 that is
+    not part of the hash result.
+- Behavior retained: a genuinely unavailable tokenizer still uses Magic Context's existing heuristic fallback. The
+  patch does not suppress or intercept diagnostics.
+- Evidence: direct `preloadTokenizer()` under the certified standalone Pi Host changes from `false` to `true` when the
+  Host runs from an unrelated user project; the long malformed-image PTY fixture remains responsive; and the real
+  Context PTY gate rejects raw `[magic-context]` output.
+- Removal trigger: replace the patch only after an exact official Magic Context artifact passes the same clean-install,
+  first-input, malformed-image, and real-Host checks.
+
 The Package declares Pi peers `^0.80.2`, which does not include the Suite's
 certified Pi 0.84.3 Host. Pi Stuff therefore does not infer compatibility from
 the peer range: its real-Host PTY gate separately certifies this exact artifact
@@ -28,7 +47,7 @@ against the pinned Pi 0.84.3 source profile.
   legacy location or flat user execution settings await the official factory's migration;
 - native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
-- exact official Package behind a replaceable Capability seam;
+- exact official base Package plus the temporary audited tokenizer compatibility patch behind a replaceable Capability seam;
 - the exact official engine isolated from Pi's UI thread behind immutable Host snapshots and bounded effects;
 - no competing Todo, statusline, announcement, Dreamer, or Sidekick UI;
 - only the five Context tools plus focused status, flush, recomposition,
