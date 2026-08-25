@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	type BenchmarkCaseResult,
+	buildPonytailBenchmarkEnvironment,
 	evaluatePonytailBenchmark,
 	oneSidedSignTestPValue,
 	PONYTAIL_BENCHMARK_RUNS,
 	PONYTAIL_BENCHMARK_SCENARIOS,
+	snapshotBenchmarkFiles,
 } from "../../scripts/benchmark-ponytail.js";
 
 function cases(valid = true): BenchmarkCaseResult[] {
@@ -50,6 +55,52 @@ describe("Ponytail behavioral benchmark rubric", () => {
 			expect(() =>
 				javascript.transformSync(scenario.hiddenCheck.replace("__TARGET__", JSON.stringify("file:///fixture.ts"))),
 			).not.toThrow();
+		}
+	});
+
+	test("clears inherited Ponytail controls before applying benchmark defaults", () => {
+		const environment = buildPonytailBenchmarkEnvironment(
+			{
+				PONYTAIL_DEFAULT_MODE: "ultra",
+				PONYTAIL_FUTURE_OVERRIDE: "leak",
+				PONYTAIL_HIDE_STATUS: "1",
+				PONYTAIL_QUIET_STARTUP: "0",
+				PI_STUFF_CODE_MODE_FROZEN: "on",
+				PI_STUFF_PONYTAIL_MODE: "ultra",
+				PI_SUBAGENT_PARENT_SESSION: "parent",
+			},
+			"/runtime",
+			"/temporary",
+			"/observer",
+		);
+		expect(environment).toMatchObject({
+			PONYTAIL_DEFAULT_MODE: "off",
+			PONYTAIL_HIDE_STATUS: "0",
+			PONYTAIL_QUIET_STARTUP: "1",
+			PI_STUFF_CODE_MODE_DEFAULT: "off",
+			PI_STUFF_PONYTAIL_BENCHMARK_LOG: "/observer",
+			TMPDIR: "/temporary",
+			XDG_RUNTIME_DIR: "/runtime",
+		});
+		expect(environment["PONYTAIL_FUTURE_OVERRIDE"]).toBeUndefined();
+		expect(environment["PI_STUFF_CODE_MODE_FROZEN"]).toBeUndefined();
+		expect(environment["PI_STUFF_PONYTAIL_MODE"]).toBeUndefined();
+		expect(environment["PI_SUBAGENT_PARENT_SESSION"]).toBeUndefined();
+	});
+
+	test("does not follow symlinks while snapshotting model output", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-ponytail-snapshot-"));
+		try {
+			const project = join(root, "project");
+			await mkdir(join(project, "src"), { recursive: true });
+			await writeFile(join(project, "src/index.ts"), "export const safe = true;\n");
+			await writeFile(join(root, "private.txt"), "must-not-leak\n");
+			await symlink(join(root, "private.txt"), join(project, "src/private.ts"));
+			expect(await snapshotBenchmarkFiles(project)).toEqual({
+				"src/index.ts": "export const safe = true;\n",
+			});
+		} finally {
+			await rm(root, { force: true, recursive: true });
 		}
 	});
 

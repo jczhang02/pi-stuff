@@ -23,7 +23,8 @@ export default function ponytailBenchmarkObserver(pi: ExtensionAPI): void {
 				type: "provider-request",
 				markerCount: count(payload, CONTRIBUTION_START),
 				contributionCharacters: contribution.length,
-				hasModePolicy: contribution.includes("PONYTAIL MODE ACTIVE — level:"),
+				hasModePolicy: payload.includes("PONYTAIL MODE ACTIVE — level:"),
+				hasUpstreamLongForm: payload.includes("HARD RULE: branch or loop only when each leaf has a test"),
 				skillNames: [...new Set(payload.match(PONYTAIL_SKILL) ?? [])].sort(),
 			})}\n`,
 		);

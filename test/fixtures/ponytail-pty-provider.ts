@@ -96,9 +96,9 @@ export default function ponytailPtyProvider(pi: ExtensionAPI): void {
 				lastUser,
 				ponytailChars: ponytail.length,
 				ponytailMarkerCount: systemPrompt.split(CONTRIBUTION_START).length - 1,
-				hasCatalog: ponytail.includes(CATALOG_MARKER),
-				hasCompactPolicy: ponytail.includes("PONYTAIL MODE ACTIVE"),
-				hasUpstreamLongForm: ponytail.includes("HARD RULE: branch or loop only when each leaf has a test"),
+				hasCatalog: systemPrompt.includes(CATALOG_MARKER),
+				hasCompactPolicy: systemPrompt.includes("PONYTAIL MODE ACTIVE"),
+				hasUpstreamLongForm: systemPrompt.includes("HARD RULE: branch or loop only when each leaf has a test"),
 				skillNames: [...systemPrompt.matchAll(/<name>(ponytail[^<]*)<\/name>/gu)].map((match) => match[1]),
 			});
 			return textStream(model, `${lastUser}_DONE`);

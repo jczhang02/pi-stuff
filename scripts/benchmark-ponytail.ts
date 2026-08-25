@@ -52,6 +52,7 @@ interface FileMetrics {
 interface ProviderObservation {
 	readonly contributionCharacters: number;
 	readonly hasModePolicy: boolean;
+	readonly hasUpstreamLongForm: boolean;
 	readonly markerCount: number;
 	readonly skillNames: readonly string[];
 }
@@ -267,13 +268,13 @@ async function allFiles(directory: string): Promise<string[]> {
 			const child = join(path, entry["name"]);
 			const childRelative = relative ? `${relative}/${entry["name"]}` : entry["name"];
 			if (entry.isDirectory()) await visit(child, childRelative);
-			else output.push(childRelative);
+			else if (entry.isFile()) output.push(childRelative);
 		}
 	}
 	await visit(directory, "");
 	return output.sort();
 }
-async function snapshot(directory: string): Promise<Readonly<Record<string, string>>> {
+export async function snapshotBenchmarkFiles(directory: string): Promise<Readonly<Record<string, string>>> {
 	const result: Record<string, string> = {};
 	for (const file of await allFiles(directory)) result[file] = await readFile(join(directory, file), "utf8");
 	return result;
@@ -374,13 +375,15 @@ async function providerObservations(path: string): Promise<ProviderObservation[]
 			if (
 				contributionCharacters === undefined ||
 				markerCount === undefined ||
-				!isRuntimeBoolean(value["hasModePolicy"])
+				!isRuntimeBoolean(value["hasModePolicy"]) ||
+				!isRuntimeBoolean(value["hasUpstreamLongForm"])
 			)
 				fail("observer emitted malformed prompt metrics");
 			return {
 				contributionCharacters,
 				markerCount,
 				hasModePolicy: value["hasModePolicy"],
+				hasUpstreamLongForm: value["hasUpstreamLongForm"],
 				skillNames: value["skillNames"],
 			};
 		});
@@ -393,6 +396,7 @@ function promptBoundaryValid(mode: BenchmarkMode, observations: readonly Provide
 				entry["markerCount"] === 0 &&
 				entry["contributionCharacters"] === 0 &&
 				!entry["hasModePolicy"] &&
+				!entry["hasUpstreamLongForm"] &&
 				entry["skillNames"].length === 0,
 		);
 	const expected = EXPECTED_SKILLS.map((name) => `<name>${name}</name>`).sort();
@@ -402,6 +406,7 @@ function promptBoundaryValid(mode: BenchmarkMode, observations: readonly Provide
 			entry["contributionCharacters"] > 0 &&
 			entry["contributionCharacters"] <= 4_000 &&
 			entry["hasModePolicy"] &&
+			!entry["hasUpstreamLongForm"] &&
 			JSON.stringify(entry["skillNames"]) === JSON.stringify(expected),
 	);
 }
@@ -413,6 +418,33 @@ interface RpcClient {
 	promptAndSettle(message: string): Promise<void>;
 	stderr(): string;
 }
+export function buildPonytailBenchmarkEnvironment(
+	base: NodeJS.ProcessEnv,
+	runtime: string,
+	temporary: string,
+	observerLog: string,
+): NodeJS.ProcessEnv {
+	const environment: NodeJS.ProcessEnv = {
+		...base,
+		XDG_RUNTIME_DIR: runtime,
+		TMPDIR: temporary,
+		PI_STUFF_CODE_MODE_DEFAULT: "off",
+		PI_STUFF_PONYTAIL_BENCHMARK_LOG: observerLog,
+	};
+	for (const key of Object.keys(environment))
+		if (
+			key.startsWith("PONYTAIL_") ||
+			key.startsWith("PI_SUBAGENT_PARENT_") ||
+			key === "PI_STUFF_PONYTAIL_MODE" ||
+			key === "PI_STUFF_CODE_MODE_FROZEN"
+		)
+			delete environment[key];
+	environment["PONYTAIL_DEFAULT_MODE"] = "off";
+	environment["PONYTAIL_HIDE_STATUS"] = "0";
+	environment["PONYTAIL_QUIET_STARTUP"] = "1";
+	return environment;
+}
+
 function createRpc(
 	project: string,
 	sessions: string,
@@ -420,22 +452,7 @@ function createRpc(
 	temporary: string,
 	observerLog: string,
 ): RpcClient {
-	const environment: NodeJS.ProcessEnv = {
-		...process.env,
-		XDG_RUNTIME_DIR: runtime,
-		TMPDIR: temporary,
-		PONYTAIL_DEFAULT_MODE: "off",
-		PONYTAIL_QUIET_STARTUP: "1",
-		PI_STUFF_CODE_MODE_DEFAULT: "off",
-		PI_STUFF_PONYTAIL_BENCHMARK_LOG: observerLog,
-	};
-	for (const key of Object.keys(environment))
-		if (
-			key.startsWith("PI_SUBAGENT_PARENT_") ||
-			key === "PI_STUFF_PONYTAIL_MODE" ||
-			key === "PI_STUFF_CODE_MODE_FROZEN"
-		)
-			delete environment[key];
+	const environment = buildPonytailBenchmarkEnvironment(process.env, runtime, temporary, observerLog);
 	const child = spawn(
 		process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
 		[
@@ -597,7 +614,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
 		await writeFile(destination, contents, { mode: 0o600 });
 	}
-	const before = await snapshot(project);
+	const before = await snapshotBenchmarkFiles(project);
 	const rpc = createRpc(project, sessions, runtime, temporary, observerLog);
 	try {
 		const state = responseData(await rpc.command({ type: "get_state" }));
@@ -607,7 +624,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		const messages = responseData(await rpc.command({ type: "get_messages" }));
 		const entries = responseData(await rpc.command({ type: "get_entries" }));
 		const stats = responseData(await rpc.command({ type: "get_session_stats" }));
-		const after = await snapshot(project);
+		const after = await snapshotBenchmarkFiles(project);
 		const visibleTest = spawnSync("bun", ["test"], { cwd: project, encoding: "utf8", timeout: 60_000 });
 		const target = Object.keys(scenario.files).find((path) => path.startsWith("src/"));
 		if (!target) fail("scenario has no production target");
