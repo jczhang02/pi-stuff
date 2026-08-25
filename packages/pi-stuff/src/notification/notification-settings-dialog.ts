@@ -90,7 +90,7 @@ function settingsItems(settings: NotificationSettings): SettingItem[] {
 		},
 		{
 			currentValue: String(settings.terminalBell),
-			description: "Send BEL in addition to visual delivery; terminal behavior varies",
+			description: "Also send BEL with visual delivery outside tmux",
 			id: "terminalBell",
 			label: "Also ring terminal bell",
 			values: [...BOOLEAN_VALUES],

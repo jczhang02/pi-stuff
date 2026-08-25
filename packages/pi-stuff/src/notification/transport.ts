@@ -22,7 +22,7 @@ export function sendTerminalNotification(
 ): TerminalNotificationResult {
 	if (input.mode !== "tui" || !input.hasUI) return "not-interactive";
 	const environment = options.environment ?? process.env;
-	const tmuxAttention = input.delivery === "auto" && Boolean(environment["TMUX"]);
+	const tmuxAttention = Boolean(environment["TMUX"]);
 	let delivery = input.delivery;
 	if (delivery === "auto") {
 		const program = environment["TERM_PROGRAM"]?.toLowerCase();

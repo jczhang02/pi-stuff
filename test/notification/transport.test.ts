@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { sendTerminalNotification } from "../../packages/pi-stuff/src/notification/transport.ts";
 
 describe("sendTerminalNotification", () => {
@@ -77,7 +80,7 @@ describe("sendTerminalNotification", () => {
 		expect(writes).toEqual(["\x1b]9;Done: repo 10s\x1b\\\x07"]);
 	});
 
-	test("tmux receives a passthrough-wrapped OSC notification", () => {
+	test("tmux receives a passthrough-wrapped OSC notification and one attention bell", () => {
 		const writes: string[] = [];
 		const result = sendTerminalNotification(
 			{
@@ -95,7 +98,7 @@ describe("sendTerminalNotification", () => {
 		);
 
 		expect(result).toBe("sent");
-		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]9;Done: repo 10s\x1b\x1b\\\x1b\\"]);
+		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]9;Done: repo 10s\x1b\x1b\\\x1b\\\x07"]);
 	});
 
 	test("tmux auto delivery preserves the system notification and adds one attention bell", () => {
@@ -120,6 +123,45 @@ describe("sendTerminalNotification", () => {
 
 		expect(result).toBe("sent");
 		expect(writes).toEqual(["\x1bPtmux;\x1b\x1b]777;notify;Done;repo 10s\x1b\x1b\\\x1b\\\x07"]);
+	});
+
+	test("explicit visual delivery marks an unattended tmux window", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "pi-stuff-notification-tmux-"));
+		const socket = join(directory, "tmux.sock");
+		const tmux = (...args: string[]): string => {
+			const result = Bun.spawnSync(["tmux", "-S", socket, ...args], { stderr: "pipe", stdout: "pipe" });
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+			return result.stdout.toString().trim();
+		};
+		try {
+			tmux("-f", "/dev/null", "new-session", "-d", "-s", "repro", "-n", "target", "sleep 5");
+			tmux("set-option", "-g", "bell-action", "any");
+			tmux("set-window-option", "-g", "monitor-bell", "on");
+			tmux("new-window", "-t", "repro", "-n", "current", "sleep 5");
+			const paneTty = tmux("display-message", "-p", "-t", "repro:target", "#{pane_tty}");
+
+			expect(
+				sendTerminalNotification(
+					{
+						body: "repo 10s",
+						delivery: "osc777",
+						hasUI: true,
+						mode: "tui",
+						terminalBell: false,
+						title: "Done",
+					},
+					{
+						environment: { TMUX: `${socket},1,0` },
+						write: (bytes) => writeFileSync(paneTty, bytes),
+					},
+				),
+			).toBe("sent");
+			await Bun.sleep(50);
+			expect(tmux("display-message", "-p", "-t", "repro:target", "#{window_bell_flag}")).toBe("1");
+		} finally {
+			Bun.spawnSync(["tmux", "-S", socket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
+			rmSync(directory, { force: true, recursive: true });
+		}
 	});
 
 	test("OSC 777 delimiters in labels cannot create extra protocol fields", () => {

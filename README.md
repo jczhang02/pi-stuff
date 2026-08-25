@@ -87,11 +87,11 @@ Once Pi starts, these are useful entry points:
 | `/codemode` | Open the optional Code Mode controls and persist the choice in the trusted project |
 
 Inside tmux, terminal-native notifications require `set -g allow-passthrough on`. Pi Stuff wraps notification
-protocols for tmux but does not mutate user-owned tmux settings.
+protocols for tmux and appends one raw BEL to visual deliveries, but does not mutate user-owned tmux settings.
 
 Notification `auto` delivery selects Kitty OSC 99, Ghostty OSC 777, or OSC 9 for iTerm2 and WezTerm. Response previews
-are off by default because desktop notification history may be visible outside Pi. The optional terminal-bell setting
-sends BEL; the terminal, not Pi Stuff, decides how BEL sounds or appears.
+are off by default because desktop notification history may be visible outside Pi. Outside tmux, the optional
+terminal-bell setting adds BEL; the terminal, not Pi Stuff, decides how BEL sounds or appears.
 
 External services, authentication, MCP declarations, Magic Context configuration, and the RTK executable remain
 optional and user-owned. Their absence does not prevent ordinary Pi turns.
