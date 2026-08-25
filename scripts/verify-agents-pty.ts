@@ -553,7 +553,7 @@ class TmuxAgentsSession {
 
 function fleetviewLineIndices(screen: string, help: string | undefined) {
 	const lines = screen.split("\n").map((line) => line.trimEnd());
-	const status = lines.findIndex((line) => line.startsWith("\u{F06A9} "));
+	const status = lines.findIndex((line) => line.startsWith("\u{F167A} "));
 	return {
 		agent: lines.findIndex((line) => /^[●○] general-purpose(?:\s|$)/u.test(line)),
 		help: help === undefined ? -1 : lines.indexOf(help),

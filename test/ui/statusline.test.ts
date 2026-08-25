@@ -314,18 +314,18 @@ describe("StatuslineController", () => {
 
 		const active = withFormerFallbackOverride(() => component.render(160).join("\n"));
 		expect(active).toContain("󰆼 99.9%");
-		expect(active).toContain("󰃭 63%");
+		expect(active).toContain("󰊚 63%");
 		expect(active).toContain(" fast");
-		expect(active.indexOf(" med")).toBeLessThan(active.indexOf(" fast"));
+		expect(active.indexOf(" med")).toBeLessThan(active.indexOf(" fast"));
 		expect(active.indexOf(" fast")).toBeLessThan(active.indexOf("󰉋 pi-stuff"));
-		expect(active.indexOf("󰆼 99.9%")).toBeLessThan(active.indexOf("󰃭 63%"));
+		expect(active.indexOf("󰆼 99.9%")).toBeLessThan(active.indexOf("󰊚 63%"));
 		expect(active).not.toContain("18k");
 		expect(active).not.toContain("$0.42");
 
 		const rendersBeforeUpdate = harness.requests.length;
 		codexStatus.set({ fastEnabled: false, weeklyRemainingPercent: 62.6 });
 		const inactive = withFormerFallbackOverride(() => component.render(160).join("\n"));
-		expect(inactive).toContain("󰃭 63%");
+		expect(inactive).toContain("󰊚 63%");
 		expect(inactive).not.toContain(" fast");
 		expect(harness.requests.length).toBeGreaterThan(rendersBeforeUpdate);
 	});
@@ -352,7 +352,7 @@ describe("StatuslineController", () => {
 		);
 
 		const rendered = component.render(160).join("\n");
-		expect(rendered).not.toContain("󰃭");
+		expect(rendered).not.toContain("󰊚");
 		expect(rendered).not.toContain("fast");
 		expect(rendered).not.toContain("$");
 	});
@@ -379,7 +379,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"󰚩 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰍛 42.4% · 󰆼 99.9% ·  $0.42",
+				"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
 				" Implement the accepted Pi Stuff statusline.",
 			]);
 		});
@@ -409,7 +409,7 @@ describe("StatuslineController", () => {
 				footerData("main"),
 			);
 
-			expect(latin.render(120)[0]).toStartWith("󰚩 ");
+			expect(latin.render(120)[0]).toStartWith("󱙺 ");
 			expect(latin.render(120)[1]).toStartWith(" Implement");
 			expect(cjk.render(120)[1]).toStartWith(" 中文");
 			expect(emoji.render(120)[1]).toStartWith(" 🚀 Ship");
@@ -431,7 +431,7 @@ describe("StatuslineController", () => {
 			);
 
 			const compact = component.render(160).join("\n");
-			expect(compact).toContain("󰚩 sonnet-4.5");
+			expect(compact).toContain("󱙺 sonnet-4.5");
 			expect(compact).not.toContain("Implement the accepted");
 			expect(compact).not.toContain("󰆼");
 			expect(compact).not.toContain("$0.42");
@@ -488,12 +488,12 @@ describe("StatuslineController", () => {
 			);
 
 			component.render(160);
-			expect(colored.get("accent")).toEqual(expect.arrayContaining(["󰚩 anthropic/sonnet-4.5", "󰉋"]));
+			expect(colored.get("accent")).toEqual(expect.arrayContaining(["󱙺 anthropic/sonnet-4.5", "󰉋"]));
 			expect(colored.get("accent")).not.toContain("");
-			expect(colored.get("thinkingMedium")).toContain("");
-			expect(colored.get("warning")).toEqual(expect.arrayContaining(["", "3", ""]));
+			expect(colored.get("thinkingMedium")).toContain("");
+			expect(colored.get("warning")).toEqual(expect.arrayContaining(["", "3", ""]));
 			expect(colored.get("success")).toContain("12");
-			expect(colored.get("dim")).toEqual(expect.arrayContaining(["󰍛", " · "]));
+			expect(colored.get("dim")).toEqual(expect.arrayContaining(["󰌨", " · "]));
 			expect(colored.get("muted")).toEqual(
 				expect.arrayContaining(["", "med", "1", "󰆼", "Implement the accepted Pi Stuff statusline."]),
 			);
@@ -523,7 +523,7 @@ describe("StatuslineController", () => {
 			const lines = component.render(64);
 			const rendered = lines.join("\n");
 			expect(rendered).toContain("sonnet-4.5");
-			expect(rendered).toMatch(/󰍛 42(?:\.4)?%/u);
+			expect(rendered).toMatch(/󰌨 42(?:\.4)?%/u);
 			expect(rendered).toContain(" main");
 			expect(rendered).not.toMatch(/[]\d+[^\n]*…/u);
 			expect(rendered).not.toContain("AC");
@@ -544,8 +544,8 @@ describe("StatuslineController", () => {
 				footerData(""),
 			);
 
-			expect(component.render(3)).toEqual(["󰚩"]);
-			expect(component.render(1)).toEqual(["󰚩"]);
+			expect(component.render(3)).toEqual(["󱙺"]);
+			expect(component.render(1)).toEqual(["󱙺"]);
 		});
 	});
 
@@ -563,8 +563,8 @@ describe("StatuslineController", () => {
 				footerData("main"),
 			);
 			const rendered = component.render(160).join("\n");
-			expect(rendered).not.toContain("");
-			expect(rendered).toContain("󰍛 ?");
+			expect(rendered).not.toContain("");
+			expect(rendered).toContain("󰌨 ?");
 			expect(rendered).not.toContain("󰆼");
 			expect(rendered).not.toContain("$");
 		});
@@ -690,7 +690,7 @@ describe("StatuslineController", () => {
 					footerData("main"),
 				);
 				const rendered = component.render(100).join("\n");
-				expect(rendered).toContain("󰍛 42.4%");
+				expect(rendered).toContain("󰌨 42.4%");
 				expect(rendered).not.toContain("200k");
 			}
 		});
@@ -718,7 +718,7 @@ describe("StatuslineController", () => {
 
 		const lines = withFormerFallbackOverride(() => component.render(120));
 		expect(lines).toEqual([
-			"󰚩 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰍛 42.4% · 󰆼 99.9% ·  $0.42",
+			"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
 			" Implement the accepted Pi Stuff statusline.",
 		]);
 		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);

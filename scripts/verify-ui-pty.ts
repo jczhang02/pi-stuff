@@ -42,10 +42,10 @@ const UI_LABELS = [
 	"Inline slash autocomplete",
 	"Tool running timer",
 ] as const;
-const NERD_MODEL_MARKER = "\u{F06A9}";
+const NERD_MODEL_MARKER = "\u{F167A}";
 const NERD_PONYTAIL_MARKER = "\u{F15BF}";
 const NERD_PROMPT_MARKER = "\uF460";
-const NERD_THINKING_MARKER = "\uF441 med";
+const NERD_THINKING_MARKER = "\uF0EB med";
 const LONG_PROMPT_PREFIX = "中文_LONG_CJK_PROMPT_开始";
 const LONG_PROMPT_TOKEN = "长提示";
 const LONG_PROMPT_SUFFIX = "LONG_CJK_PROMPT_结尾";
@@ -1316,13 +1316,13 @@ async function verifyWideInteractions(
 	if (!status) fail(`settled long-prompt screen lost the shared Statusline\n${screen}`);
 	const orderedMarkers = [
 		NERD_MODEL_MARKER,
-		"\uF441",
+		"\uF0EB",
 		"\u{F024B}",
 		"\uF418",
 		"\uF459",
-		"\u{F035B}",
+		"\u{F0328}",
 		"\u{F01BC}",
-		"\uF0E7",
+		"\uF155",
 	];
 	let priorMarker = -1;
 	for (const marker of orderedMarkers) {

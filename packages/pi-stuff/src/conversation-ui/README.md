@@ -34,9 +34,9 @@ the same terminal column. The prompt text uses the readable secondary `muted` to
 token. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
-Every semantic icon and state marker in both Statusline rows uses the fixed Nerd Font grammar. There is no Unicode or
-ASCII fallback, terminal detection, environment override, or `/ui` icon mode. The `·` separator and `…` truncation mark
-remain punctuation. Colors come only from Pi semantic theme tokens.
+Every semantic icon and state marker in both Statusline rows uses the fixed Nerd Font grammar defined in
+[`DESIGN.md`](../../../../DESIGN.md). There is no Unicode or ASCII fallback, terminal detection, environment override,
+or `/ui` icon mode. The `·` separator and `…` truncation mark remain punctuation. Colors come only from Pi semantic theme tokens.
 
 The cache value is the active branch's cumulative hit rate across successful assistant messages:
 `cacheRead / (input + cacheRead + cacheWrite)`. Failed or aborted messages and compaction metadata do not affect the
