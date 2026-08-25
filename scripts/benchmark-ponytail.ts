@@ -1,7 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 import {
@@ -275,8 +277,28 @@ async function allFiles(directory: string): Promise<string[]> {
 	return output.sort();
 }
 export async function snapshotBenchmarkFiles(directory: string): Promise<Readonly<Record<string, string>>> {
+	const canonicalRoot = await realpath(directory);
+	const rootPrefix = canonicalRoot.endsWith(sep) ? canonicalRoot : `${canonicalRoot}${sep}`;
 	const result: Record<string, string> = {};
-	for (const file of await allFiles(directory)) result[file] = await readFile(join(directory, file), "utf8");
+	for (const file of await allFiles(directory)) {
+		let handle: FileHandle;
+		try {
+			handle = await open(join(directory, file), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+		} catch (error) {
+			if (isJsonInputObject(error) && error["code"] === "ELOOP") continue;
+			throw error;
+		}
+		try {
+			const metadata = await handle.stat();
+			if (!metadata.isFile()) continue;
+			const canonicalFile = await realpath(`/proc/self/fd/${handle.fd}`);
+			if (canonicalFile !== canonicalRoot && !canonicalFile.startsWith(rootPrefix))
+				fail("benchmark snapshot escaped the project root");
+			result[file] = await handle.readFile("utf8");
+		} finally {
+			await handle.close();
+		}
+	}
 	return result;
 }
 function productionMetrics(files: Readonly<Record<string, string>>): FileMetrics {
@@ -577,16 +599,31 @@ function createRpc(
 		await command({ type: "prompt", message });
 		await settled;
 	}
-	async function close(): Promise<void> {
-		child.stdin.end();
-		child.kill("SIGTERM");
-		await new Promise<void>((resolvePromise) => {
-			const timer = setTimeout(resolvePromise, 5_000);
-			child.once("exit", () => {
-				clearTimeout(timer);
-				resolvePromise();
+	let closePromise: Promise<void> | undefined;
+	function close(): Promise<void> {
+		closePromise ??= (async () => {
+			if (child.exitCode !== null) return;
+			child.stdin.end();
+			child.kill("SIGTERM");
+			await new Promise<void>((resolvePromise) => {
+				const timer = setTimeout(resolvePromise, 5_000);
+				child.once("exit", () => {
+					clearTimeout(timer);
+					resolvePromise();
+				});
 			});
-		});
+			if (child.exitCode !== null) return;
+			child.kill("SIGKILL");
+			await new Promise<void>((resolvePromise) => {
+				const timer = setTimeout(resolvePromise, 5_000);
+				child.once("exit", () => {
+					clearTimeout(timer);
+					resolvePromise();
+				});
+			});
+			if (child.exitCode === null) fail("Pi RPC process did not terminate");
+		})();
+		return closePromise;
 	}
 	return { events, command, promptAndSettle, close, stderr: () => errorOutput };
 }
@@ -624,6 +661,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		const messages = responseData(await rpc.command({ type: "get_messages" }));
 		const entries = responseData(await rpc.command({ type: "get_entries" }));
 		const stats = responseData(await rpc.command({ type: "get_session_stats" }));
+		await rpc.close();
 		const after = await snapshotBenchmarkFiles(project);
 		const visibleTest = spawnSync("bun", ["test"], { cwd: project, encoding: "utf8", timeout: 60_000 });
 		const target = Object.keys(scenario.files).find((path) => path.startsWith("src/"));
