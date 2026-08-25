@@ -42,8 +42,9 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 
 - Put every Pi Stuff Git worktree under repository-local `.worktrees/`.
 - Use the versions in `docs/compatibility.md`; keep direct dependencies exact and `trustedDependencies` empty.
-- During development, run focused tests and `bun run check:fast`. Before marking a PR ready or merging, run
-  `bun run check` once against the final changes. Public-seam certification cannot be claimed from mocks.
+- During development, run focused tests and `bun run check:fast` from the root of the worktree containing the changes.
+  Before marking a PR ready or merging, run `bun run check` there against the final changes. Checks from another
+  worktree do not certify those changes. Public-seam certification cannot be claimed from mocks.
 - Do not infer a merge from ancestry alone. Inspect the relevant patch or commits, every associated worktree's tracked
   and untracked state, and the target branch before reporting merge or cleanup status.
 - Commit small, coherent checkpoints frequently after the relevant focused check; do not accumulate unrelated work in
