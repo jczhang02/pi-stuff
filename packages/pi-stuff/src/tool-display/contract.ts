@@ -94,6 +94,7 @@ interface SuiteToolEnvelopeMarker {
 	readonly decode: SuiteToolEnvelopeDecoder;
 	readonly media?: SuiteToolEnvelopeMediaResolver;
 	readonly registry: SuiteToolDefinitionRegistry;
+	readonly showFallback?: SuiteToolEnvelopeFallbackVisibility;
 }
 
 interface SuiteToolEnvelopeCompanionMarker {
@@ -158,6 +159,7 @@ interface ToolRuntimeRecord {
 	readonly result?: unknown;
 	readonly resultIsError?: unknown;
 	readonly role?: unknown;
+	readonly showFallback?: unknown;
 	readonly silentSuccess?: unknown;
 	readonly stopReason?: unknown;
 	readonly summarizeIssue?: unknown;
@@ -273,6 +275,11 @@ export type SuiteToolEnvelopeDetails = AgentToolResult<unknown>["details"];
 
 export type SuiteToolEnvelopeDecoder = (details: SuiteToolEnvelopeDetails) => readonly SuiteToolEnvelopeOperation[];
 type SuiteToolEnvelopeArgumentPreparer = (operation: SuiteToolEnvelopeOperation) => ToolArguments;
+type SuiteToolEnvelopeFallbackVisibility = (
+	args: ToolArguments,
+	result: AgentToolResult<unknown>,
+	state: ToolActivityState,
+) => boolean;
 
 export type SuiteToolEnvelopeMediaResolver = (
 	details: SuiteToolEnvelopeDetails,
@@ -342,6 +349,7 @@ export interface SuiteToolEnvelopePresentation {
 	readonly decode: SuiteToolEnvelopeDecoder;
 	readonly media?: SuiteToolEnvelopeMediaResolver;
 	readonly registry: SuiteToolDefinitionRegistry;
+	readonly showFallback?: SuiteToolEnvelopeFallbackVisibility;
 }
 
 interface RendererState<TArgs extends ToolArguments, TDetails> {
@@ -762,6 +770,7 @@ export class ToolUiRuntime {
 	private readonly envelopeCalls = new Map<string, string>();
 	private readonly envelopeArgumentPreparers = new Map<string, SuiteToolEnvelopeArgumentPreparer>();
 	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
+	private readonly envelopeFallbackVisibility = new Map<string, SuiteToolEnvelopeFallbackVisibility>();
 	private readonly envelopeRawArguments = new Map<string, ToolArguments>();
 	private readonly groupHints = new Map<string, HintState>();
 	private readonly groupPulses = new Map<string, GroupPulseState>();
@@ -924,10 +933,13 @@ export class ToolUiRuntime {
 		name: string,
 		decode: SuiteToolEnvelopeDecoder,
 		prepareArguments?: SuiteToolEnvelopeArgumentPreparer,
+		showFallback?: SuiteToolEnvelopeFallbackVisibility,
 	): void {
 		this.envelopeDecoders.set(name, decode);
 		if (prepareArguments) this.envelopeArgumentPreparers.set(name, prepareArguments);
 		else this.envelopeArgumentPreparers.delete(name);
+		if (showFallback) this.envelopeFallbackVisibility.set(name, showFallback);
+		else this.envelopeFallbackVisibility.delete(name);
 		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
@@ -1434,11 +1446,20 @@ export class ToolUiRuntime {
 		}
 	}
 
+	private showEnvelopeFallback(
+		name: string,
+		args: ToolArguments,
+		result: AgentToolResult<unknown>,
+		state: ToolActivityState,
+	): boolean {
+		return envelopeFallbackVisible(this.envelopeFallbackVisibility.get(name), args, result, state);
+	}
+
 	/** Project registered Tool envelopes into the ordinary calls and results they contain. */
 	projectMessages(messages: readonly unknown[]): readonly unknown[] {
 		if (this.envelopeDecoders.size === 0) return messages;
 		this.envelopeRawArguments.clear();
-		const envelopeNamesById = new Map<string, string>();
+		const envelopeCallsById = new Map<string, { readonly args: ToolArguments; readonly name: string }>();
 		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
 				continue;
@@ -1448,7 +1469,10 @@ export class ToolUiRuntime {
 				const id = block["id"];
 				const name = block["name"];
 				if (isRuntimeString(id) && isRuntimeString(name) && this.envelopeDecoders.has(name)) {
-					envelopeNamesById.set(id, name);
+					envelopeCallsById.set(id, {
+						args: isToolArguments(block["arguments"]) ? block["arguments"] : {},
+						name,
+					});
 				}
 			}
 		}
@@ -1464,15 +1488,25 @@ export class ToolUiRuntime {
 			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
 			const id = candidate["toolCallId"];
 			if (!isRuntimeString(id)) continue;
-			const name = envelopeNamesById.get(id);
-			if (!name) continue;
-			const operations = this.decodeEnvelope(name, candidate["details"]);
+			const envelope = envelopeCallsById.get(id);
+			if (!envelope) continue;
+			const content = candidate["content"];
+			if (!Array.isArray(content)) continue;
+			const operations = this.decodeEnvelope(envelope.name, candidate["details"]);
+			const result: AgentToolResult<unknown> & { isError?: true } = {
+				// SAFETY: Pi tool-result messages own this content array; visibility never rewrites its blocks.
+				content: content as AgentToolResult<unknown>["content"],
+				details: candidate["details"],
+			};
+			if (candidate["isError"] === true) Object.assign(result, { isError: true as const });
+			const state: Exclude<ToolActivityState, "running"> = candidate["isError"] === true ? "error" : "success";
+			const ownsOuterOutcome =
+				operations.length === 0 ||
+				(candidate["isError"] === true &&
+					!operations.some((operation) => operation.state !== "running" && operation.state !== "success"));
 			projectionsById.set(id, {
-				fallback:
-					operations.length === 0 ||
-					(candidate["isError"] === true &&
-						!operations.some((operation) => operation.state !== "running" && operation.state !== "success")),
-				name,
+				fallback: ownsOuterOutcome && this.showEnvelopeFallback(envelope.name, envelope.args, result, state),
+				name: envelope.name,
 				operations,
 			});
 		}
@@ -2282,6 +2316,7 @@ function isSuiteToolEnvelopeMarker<Value>(value: Value): value is Value & SuiteT
 	}
 	const registry = value["registry"];
 	return (
+		(value["showFallback"] === undefined || isRuntimeFunction(value["showFallback"])) &&
 		(value["media"] === undefined || isRuntimeFunction(value["media"])) &&
 		isRuntimeFunction(registry["catalog"]) &&
 		isRuntimeFunction(registry["compensate"]) &&
@@ -2770,10 +2805,15 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		if (replay) runtime.registerReplayToolDefinition(replay);
 		if (envelope) {
 			envelopeTools.add(tool.name);
-			runtime.registerEnvelope(tool.name, envelope.decode, (operation) => {
-				const nested = envelope.registry.get(operation.name);
-				return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
-			});
+			runtime.registerEnvelope(
+				tool.name,
+				envelope.decode,
+				(operation) => {
+					const nested = envelope.registry.get(operation.name);
+					return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
+				},
+				envelope.showFallback,
+			);
 			applyActiveProjection();
 			return;
 		}
@@ -3391,6 +3431,20 @@ function decodeEnvelopeOperations(
 	}
 }
 
+function envelopeFallbackVisible(
+	showFallback: SuiteToolEnvelopeFallbackVisibility | undefined,
+	args: ToolArguments,
+	result: AgentToolResult<unknown>,
+	state: ToolActivityState,
+): boolean {
+	if (!showFallback) return true;
+	try {
+		return showFallback(args, result, state);
+	} catch {
+		return true;
+	}
+}
+
 function envelopeOperationResult(
 	operation: SuiteToolEnvelopeOperation,
 ): (AgentToolResult<unknown> & { readonly isError?: true }) | undefined {
@@ -3529,15 +3583,11 @@ function renderEnvelopeOperations(
 	const operations = decodeEnvelopeOperations(presentation.decode, result.details);
 	const visibleResult = stripToolControlMetadata(result);
 	if (operations.length === 0) {
-		return fallbackToolComponent(
-			theme,
-			envelope.name,
-			envelope.label,
-			{},
-			visibleResult,
-			outerEnvelopeState(visibleResult, options, context),
-			options.expanded,
-		);
+		const state = outerEnvelopeState(visibleResult, options, context);
+		if (!envelopeFallbackVisible(presentation.showFallback, context.args, visibleResult, state)) {
+			return new EmptyToolComponent();
+		}
+		return fallbackToolComponent(theme, envelope.name, envelope.label, {}, visibleResult, state, options.expanded);
 	}
 	let hostImageKeys: Map<string, Set<string>> | undefined;
 	if (getCapabilities().images && context.showImages) {
@@ -3656,10 +3706,15 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
-	runtime.registerEnvelope(tool.name, presentation.decode, (operation) => {
-		const nested = presentation.registry.get(operation.name);
-		return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
-	});
+	runtime.registerEnvelope(
+		tool.name,
+		presentation.decode,
+		(operation) => {
+			const nested = presentation.registry.get(operation.name);
+			return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
+		},
+		presentation.showFallback,
+	);
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
 		execute: async (toolCallId, input, signal, onUpdate, context) => {
@@ -3697,6 +3752,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		registry: presentation.registry,
 	};
 	if (presentation.media) Object.assign(marker, { media: presentation.media });
+	if (presentation.showFallback) Object.assign(marker, { showFallback: presentation.showFallback });
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE, {
 		enumerable: true,
 		value: marker,

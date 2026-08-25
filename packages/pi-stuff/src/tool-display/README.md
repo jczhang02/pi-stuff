@@ -44,8 +44,9 @@ unknown third-party Tools keep their native renderer and form a display boundary
 - Tool rendering is total: every visible Suite-owned call, result, and error has either its owning renderer or a generic
   Tool row. A missing historical Tool definition, malformed optional result metadata, or throwing presentation hook
   cannot remove the record or expose Pi's raw Tool-result fallback. A Tool envelope stays visually absent only while
-  its nested rows completely represent the outcome; an empty envelope or an outer error not owned by a nested issue
-  receives one envelope fallback row.
+  its nested rows completely represent the outcome. Code Mode additionally omits a strictly classified Control-only
+  Execution and a successful no-output diagnostic before Activity planning. Other empty envelopes and outer errors not
+  owned by a nested issue receive one envelope fallback row.
 - Envelope replay keeps raw arguments for Raw detail and applies the Tool's current `prepareArguments` compatibility
   shim before Activity classification, semantic detail, and rendering. Historical results may omit `details`; optional
   malformed metadata is ignored without discarding the operation. Control-only `<system-reminder>` blocks added by a
@@ -60,7 +61,7 @@ unknown third-party Tools keep their native renderer and form a display boundary
   truncated or rewritten by this Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and
-  compaction.
+  compaction. Control-only projection therefore cleans existing Sessions without rewriting their records.
 - In-process `/resume` pre-binds exactly the active Suite-rendered built-ins before Pi reconstructs history and preserves
   Host-native PowerShell membership without adding a renderer. The first resumed frame therefore stays compact without
   reviving disabled tools; the complete active Tool order is preserved, and new calls are rebound to the target session's

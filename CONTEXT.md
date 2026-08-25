@@ -67,6 +67,11 @@ the envelope itself fails after every nested operation succeeds. Valid nested ro
 missing historical definitions and presentation failures instead use generic rows at their original source positions.
 _Avoid_: Envelope chrome, raw Tool result, duplicate error row
 
+**Control-only Execution**:
+A Code Mode execution that carries only Host scheduling or continuation signals and no user-relevant work outcome. It
+remains diagnostic evidence rather than a Conversation Transcript event.
+_Avoid_: Internal wait, empty Code Mode call, no-op Tool
+
 **Agent Context Usage**:
 The current Provider payload token estimate for one child Agent, measured against the selected child Host model's
 reported Context window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing

@@ -7,6 +7,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionEvent,
+	Theme,
 } from "@earendil-works/pi-coding-agent";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
@@ -18,6 +19,7 @@ import type {
 	SuiteToolDefinitionRegistry,
 	SuiteToolSurfaceController,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
@@ -49,7 +51,7 @@ async function project(): Promise<string> {
 function loadExtension(surface: SuiteToolSurfaceController) {
 	const commands = new Map<string, Command>();
 	const events = new Map<string, EventHandler[]>();
-	const { host } = toolRegistrationHarness();
+	const { host, tools } = toolRegistrationHarness();
 	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
 	const on = ((name: string, handler: EventHandler) => {
 		events.set(name, [...(events.get(name) ?? []), handler]);
@@ -65,7 +67,7 @@ function loadExtension(surface: SuiteToolSurfaceController) {
 		sendMessage: () => undefined,
 	};
 	piStuffCodeMode(api, { registry, surface });
-	return { commands, events };
+	return { api, commands, events, tools };
 }
 
 function context(cwd: string, trusted = true): ExtensionCommandContext & { notifications: string[] } {
@@ -137,6 +139,209 @@ test("the outer Tool result boundary replaces malformed images before Session pe
 		details: { error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" },
 		isError: true,
 	});
+});
+
+test("Control-only and no-output Code Mode executions stay out of live and replay Tool UI", () => {
+	const loaded = loadExtension({
+		disableEnvelope: () => {},
+		enableEnvelope: () => {},
+		isEnvelopeEnabled: () => true,
+	});
+	const noOutput = "Code completed with no output; use text(...) to return a value";
+	const operation = {
+		args: { path: "a.ts" },
+		id: "nested-read",
+		name: "read",
+		result: { content: [{ type: "text" as const, text: "file contents" }], details: {} },
+		state: "success" as const,
+	};
+	const nestedError = {
+		...operation,
+		id: "nested-error",
+		result: { content: [{ type: "text" as const, text: "read failed" }], details: {}, isError: true },
+		state: "error" as const,
+	};
+	const cases = [
+		{
+			code: "await yield_control()",
+			content: [{ type: "text" as const, text: "continued" }],
+			expected: [],
+			id: "bare-control",
+			operations: [],
+		},
+		{
+			code: 'await yield_control(); text("继续等待。")',
+			content: [{ type: "text" as const, text: "继续等待。" }],
+			expected: [],
+			id: "literal-control",
+			operations: [],
+		},
+		{
+			code: 'async () => { await yield_control(); text("waiting"); }',
+			content: [{ type: "text" as const, text: "waiting" }],
+			expected: [],
+			id: "wrapped-control",
+			operations: [],
+		},
+		{
+			code: "async () => await yield_control()",
+			content: [{ type: "text" as const, text: "waiting" }],
+			expected: [],
+			id: "expression-control",
+			operations: [],
+		},
+		{
+			code: "const total = 1 + 1",
+			content: [{ type: "text" as const, text: noOutput }],
+			expected: [],
+			id: "no-output",
+			operations: [],
+		},
+		{
+			code: 'await yield_control(); await tools.read({ path: "a.ts" })',
+			content: [{ type: "text" as const, text: noOutput }],
+			expected: ["read"],
+			id: "mixed-work",
+			operations: [operation],
+		},
+		{
+			code: 'text("2")',
+			content: [{ type: "text" as const, text: "2" }],
+			expected: ["codemode"],
+			id: "meaningful-output",
+			operations: [],
+		},
+		{
+			code: 'text("yield_control() is only text")',
+			content: [{ type: "text" as const, text: "yield_control() is only text" }],
+			expected: ["codemode"],
+			id: "yield-literal",
+			operations: [],
+		},
+		{
+			code: "await yield_control(1)",
+			content: [{ type: "text" as const, text: "argument result" }],
+			expected: ["codemode"],
+			id: "control-argument",
+			operations: [],
+		},
+		{
+			code: 'const message = "waiting"; await yield_control(); text(message)',
+			content: [{ type: "text" as const, text: "waiting" }],
+			expected: ["codemode"],
+			id: "dynamic-output",
+			operations: [],
+		},
+		{
+			code: "await yield_control(); await yield_control()",
+			content: [{ type: "text" as const, text: "two yields" }],
+			expected: ["codemode"],
+			id: "repeated-control",
+			operations: [],
+		},
+		{
+			code: "if (",
+			content: [{ type: "text" as const, text: "parse failure evidence" }],
+			expected: ["codemode"],
+			id: "parse-failure",
+			operations: [],
+		},
+		{
+			code: "await yield_control()",
+			content: [{ type: "text" as const, text: "outer failure" }],
+			expected: ["codemode"],
+			id: "outer-error",
+			isError: true,
+			operations: [],
+		},
+		{
+			code: 'await yield_control(); await tools.read({ path: "a.ts" })',
+			content: [{ type: "text" as const, text: "outer failure" }],
+			expected: ["read"],
+			id: "nested-error",
+			isError: true,
+			operations: [nestedError],
+		},
+	] as const;
+	const runtime = getToolUiRuntime(loaded.api);
+	for (const scenario of cases) {
+		const details = { kind: "pi-stuff-code-mode", operations: scenario.operations, status: "success" };
+		const messages = [
+			{
+				content: [
+					{
+						arguments: { code: scenario.code },
+						id: scenario.id,
+						name: "codemode",
+						type: "toolCall",
+					},
+				],
+				role: "assistant",
+			},
+			Object.assign(
+				{
+					content: scenario.content,
+					details,
+					role: "toolResult",
+					toolCallId: scenario.id,
+				},
+				"isError" in scenario && scenario.isError ? { isError: true } : undefined,
+			),
+		];
+		const unchanged = structuredClone(messages);
+		const projected = runtime.projectMessages(messages);
+		const names = projected.flatMap((message) =>
+			typeof message === "object" && message !== null && "content" in message && Array.isArray(message.content)
+				? message.content.flatMap((block) =>
+						typeof block === "object" &&
+						block !== null &&
+						"type" in block &&
+						block.type === "toolCall" &&
+						"name" in block &&
+						typeof block.name === "string"
+							? [block.name]
+							: [],
+					)
+				: [],
+		);
+		expect(names, scenario.id).toEqual([...scenario.expected]);
+		expect(messages, `${scenario.id} source messages`).toEqual(unchanged);
+	}
+
+	const envelope = loaded.tools.get("codemode");
+	if (!envelope) throw new Error("missing Code Mode Tool");
+	const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme;
+	for (const [id, code, text] of [
+		["live-control", 'await yield_control(); text("waiting")', "waiting"],
+		["live-no-output", "const total = 1 + 1", noOutput],
+	] as const) {
+		const args = { code };
+		const context = {
+			args,
+			argsComplete: true,
+			cwd: "/project",
+			executionStarted: true,
+			expanded: false,
+			invalidate: () => {},
+			isError: false,
+			isPartial: false,
+			lastComponent: undefined,
+			showImages: true,
+			state: {},
+			toolCallId: id,
+		};
+		const call = envelope.renderCall?.(args, theme, context as never);
+		const result = envelope.renderResult?.(
+			{
+				content: [{ type: "text", text }],
+				details: { kind: "pi-stuff-code-mode", operations: [], status: "success" },
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ ...context, lastComponent: call } as never,
+		);
+		expect(result?.render(120), id).toEqual([]);
+	}
 });
 
 test("Code Mode follows trusted project settings, persists explicit toggles, and rolls back failed writes", async () => {
