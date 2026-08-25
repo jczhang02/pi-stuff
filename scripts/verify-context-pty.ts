@@ -18,8 +18,6 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
 const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const MEMORY_EVIDENCE = "真实 Context 检索证据";
-const INPUT_FRAME_LATENCY_LIMIT_MS = 150;
-const WORKING_STALL_LIMIT_MS = 500;
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { additionalProperties: true });
 const RECORD_LINE_SCHEMA = Type.Object(
 	{
@@ -29,8 +27,6 @@ const RECORD_LINE_SCHEMA = Type.Object(
 		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
 		hasContextActivityText: Type.Optional(Type.Boolean()),
 		hasHistory: Type.Optional(Type.Boolean()),
-		magicProjectionMarkers: Type.Optional(Type.Array(Type.String())),
-		projectedHistoryTail: Type.Optional(Type.String()),
 		hasNativeSummary: Type.Optional(Type.Boolean()),
 		hasPonytailPrompt: Type.Optional(Type.Boolean()),
 		hasSince: Type.Optional(Type.Boolean()),
@@ -66,7 +62,6 @@ export interface ContextPtyVerificationOptions {
 	readonly piBinary: string;
 	readonly packagePath: string;
 	readonly columns?: number;
-	readonly inputFrameOnly?: boolean;
 	readonly rows?: number;
 }
 
@@ -308,10 +303,6 @@ function runCommand(args: readonly string[], environment?: Record<string, string
 	return result.stdout.toString();
 }
 
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 function editorContains(frame: string, text: string): boolean {
 	const lines = frame.split("\n");
 	for (let index = 0; index + 2 < lines.length; index += 1) {
@@ -326,29 +317,12 @@ function editorContains(frame: string, text: string): boolean {
 	return false;
 }
 
-function transcriptContainsUserMessage(frame: string, text: string): boolean {
-	const lines = frame.split("\n");
-	for (let index = 1; index + 1 < lines.length; index += 1) {
-		if (
-			(lines[index] ?? "").trim() === text &&
-			(lines[index - 1] ?? "").trim() === "" &&
-			(lines[index + 1] ?? "").trim() === ""
-		) {
-			return true;
-		}
-	}
-	return false;
-}
-
-async function runResumeInputFrameVerification(
+async function runResumePaintVerification(
 	environment: Record<string, string | undefined>,
 	cwd: string,
-	requestLog: string,
-	expectedHistoryMarker: string,
+	magicLog: string,
 ): Promise<string> {
 	const socket = join(environment["HOME"] ?? cwd, "context-resume-tmux.sock");
-	const terminalOutputPath = join(environment["HOME"] ?? cwd, "context-resume-terminal.log");
-	const terminalOutputDonePath = `${terminalOutputPath}.done`;
 	const session = `context-resume-${String(process.pid)}`;
 	const tmux = (args: readonly string[]): string => runCommand(["tmux", "-S", socket, ...args]);
 	const sessionExists = (): boolean =>
@@ -362,12 +336,11 @@ async function runResumeInputFrameVerification(
 		predicate: (frame: string) => boolean,
 		label: string,
 		timeoutMs = 20_000,
-		history = true,
 	): Promise<string> => {
 		const deadline = Date.now() + timeoutMs;
 		let frame = "";
 		while (Date.now() < deadline) {
-			frame = capture(history);
+			frame = capture(true);
 			if (predicate(frame)) return frame;
 			await Bun.sleep(10);
 		}
@@ -377,6 +350,8 @@ async function runResumeInputFrameVerification(
 		tmux(["send-keys", "-t", session, "-l", "--", text]);
 		tmux(["send-keys", "-t", session, "Enter"]);
 	};
+	let panePid: number | undefined;
+	let transformStopped = false;
 
 	runCommand(["tmux", "-V"]);
 	try {
@@ -398,117 +373,40 @@ async function runResumeInputFrameVerification(
 				"-c",
 				cwd,
 				environment["PI_STUFF_CONTEXT_PTY_RUNNER"] ?? runner,
-				";",
-				"set-option",
-				"-t",
-				session,
-				"remain-on-exit",
-				"on",
 			],
 			environment,
 		);
+		panePid = Number(tmux(["display-message", "-p", "-t", session, "#{pane_pid}"]).trim());
+		if (!Number.isSafeInteger(panePid) || panePid <= 0) fail(`invalid resumed Pi pane pid ${String(panePid)}`);
 		await waitFor((frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE"), "resumed editor readiness", 40_000);
-		await writeFile(terminalOutputPath, "");
-		tmux([
-			"pipe-pane",
-			"-t",
-			session,
-			`cat >> ${shellQuote(terminalOutputPath)}; touch ${shellQuote(terminalOutputDonePath)}`,
-		]);
 
-		const prompt = "CONTEXT_RESUME_REQUEST";
+		const prompt = "CONTEXT_RESUME";
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
-		const captureOverheads = Array.from({ length: 5 }, () => {
-			const startedAt = performance.now();
-			capture(false);
-			return performance.now() - startedAt;
-		}).sort((left, right) => left - right);
-		const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
-		const submittedAt = performance.now();
+		const logOffset = (await readFile(magicLog, "utf8")).length;
 		tmux(["send-keys", "-t", session, "Enter"]);
-		const workingFrames = new Set<string>();
-		const workingDeadline = Date.now() + 2_000;
-		let workingFrame: string | undefined;
-		let workingFrameChangedAt: number | undefined;
-		let transcriptVisibleMs: number | undefined;
-		while (Date.now() < workingDeadline) {
-			const frame = capture(false);
-			if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-				transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
-			}
-			const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
-			const observedAt = performance.now();
-			if (indicator) {
-				workingFrames.add(indicator);
-				if (indicator !== workingFrame) {
-					workingFrame = indicator;
-					workingFrameChangedAt = observedAt;
-				}
-				if (workingFrameChangedAt !== undefined && observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
-					fail(
-						`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
-					);
-				}
-			} else {
-				workingFrame = undefined;
-				workingFrameChangedAt = undefined;
-			}
-			await Bun.sleep(50);
-		}
-		if (transcriptVisibleMs === undefined) {
-			fail("the submitted prompt did not appear in the Conversation Transcript during the 2s observation window");
-		}
-		if (transcriptVisibleMs > INPUT_FRAME_LATENCY_LIMIT_MS) {
-			fail(`resumed prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
-		}
-		if (workingFrames.size < 2) {
-			fail(`Vibe Line Working animation did not advance: ${JSON.stringify([...workingFrames])}`);
-		}
 
-		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
-		const modelRequest = (await readRecords(requestLog))
-			.reverse()
-			.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
-		if (
-			modelRequest?.hasSince !== true ||
-			modelRequest.hasCompactMagicContextPrompt !== true ||
-			modelRequest.magicProjectionMarkers?.includes(expectedHistoryMarker) !== true
-		) {
-			send("/ctx status");
-			await Bun.sleep(100);
-			tmux(["send-keys", "-t", session, "Enter"]);
-			await Bun.sleep(500);
-			fail(
-				`resumed model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}`,
-			);
-		}
-		send("CONTEXT_DRAIN");
-		const output = await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
-		tmux(["pipe-pane", "-t", session]);
-		const pipeDeadline = Date.now() + 5_000;
-		while (
-			!(await access(terminalOutputDonePath).then(
-				() => true,
-				() => false,
-			)) &&
-			Date.now() < pipeDeadline
-		) {
+		const transformDeadline = Date.now() + 10_000;
+		while (Date.now() < transformDeadline) {
+			const addedLog = (await readFile(magicLog, "utf8")).slice(logOffset);
+			if (addedLog.includes("findSessionId")) break;
 			await Bun.sleep(5);
 		}
-		if (
-			!(await access(terminalOutputDonePath).then(
-				() => true,
-				() => false,
-			))
-		) {
-			fail("timed out waiting for the raw terminal capture to close");
+		if (!(await readFile(magicLog, "utf8")).slice(logOffset).includes("findSessionId")) {
+			fail("resumed prompt never reached the Magic Context transform");
 		}
-		const terminalOutput = await readFile(terminalOutputPath, "utf8");
-		if (terminalOutput.includes("\u001b[2J") || terminalOutput.includes("\u001b[3J")) {
-			fail("ordinary input submission cleared the terminal instead of committing a differential frame");
+		process.kill(panePid, "SIGSTOP");
+		transformStopped = true;
+		const transformFrame = capture();
+		if (editorContains(transformFrame, prompt)) {
+			fail(`interactive prompt remained in the editor after Context transformation began\n${transformFrame}`);
 		}
-		tmux(["set-option", "-t", session, "remain-on-exit", "off"]);
+		process.kill(panePid, "SIGCONT");
+		transformStopped = false;
+
+		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
+		send("CONTEXT_DRAIN");
+		const output = await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
 		tmux(["send-keys", "-t", session, "C-c"]);
 		await Bun.sleep(150);
 		tmux(["send-keys", "-t", session, "C-d"]);
@@ -517,6 +415,13 @@ async function runResumeInputFrameVerification(
 		if (sessionExists()) fail("resumed Pi did not exit");
 		return output;
 	} finally {
+		if (transformStopped && panePid !== undefined) {
+			try {
+				process.kill(panePid, "SIGCONT");
+			} catch {
+				// The pane may already have exited while the verifier was handling a failure.
+			}
+		}
 		Bun.spawnSync(["tmux", "-S", socket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
 	}
 }
@@ -590,43 +495,6 @@ function seedNativeCompactedSession(sessionDirectory: string, cwd: string): stri
 	});
 	const sessionFile = manager.getSessionFile();
 	if (!sessionFile) fail("native-compacted target session was not persisted");
-	return sessionFile;
-}
-
-function seedInputFrameSession(sessionDirectory: string, cwd: string): string {
-	const manager = SessionManager.create(cwd, sessionDirectory, { id: "context-input-frame" });
-	manager.appendModelChange("pi-stuff-context-pty", "fixture-model");
-	const timestamp = Date.now();
-	for (let index = 0; index < 500; index += 1) {
-		manager.appendMessage({
-			role: "user",
-			content:
-				index === 0
-					? [
-							{ type: "text", text: `CONTEXT_INPUT_HISTORY_${String(index)}` },
-							{ type: "image", data: "%".repeat(4 * 1024 * 1024), mimeType: "image/png" },
-						]
-					: `CONTEXT_INPUT_HISTORY_${String(index)}`,
-			timestamp: timestamp + index * 2,
-		} satisfies UserMessage);
-		manager.appendMessage({
-			role: "assistant",
-			content: [
-				{
-					type: "text",
-					text: index === 499 ? "CONTEXT_SEARCH_AGAIN_DONE" : `CONTEXT_INPUT_HISTORY_DONE_${String(index)}`,
-				},
-			],
-			api: "openai-completions",
-			provider: "pi-stuff-context-pty",
-			model: "fixture-model",
-			usage: ZERO_USAGE,
-			stopReason: "stop",
-			timestamp: timestamp + index * 2 + 1,
-		} satisfies AssistantMessage);
-	}
-	const sessionFile = manager.getSessionFile();
-	if (!sessionFile) fail("input-frame target session was not persisted");
 	return sessionFile;
 }
 
@@ -801,16 +669,6 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_CONFIG_HOME: xdgConfigDirectory,
 			XDG_DATA_HOME: undefined,
 		};
-		if (options.inputFrameOnly) {
-			const sessionFile = seedInputFrameSession(sessionDirectory, projectDirectory);
-			await runResumeInputFrameVerification(
-				{ ...baseEnvironment, PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile },
-				projectDirectory,
-				requestLog,
-				"CONTEXT_INPUT_HISTORY_499",
-			);
-			return;
-		}
 		const activationEnvironment = {
 			...baseEnvironment,
 			HOME: activationHome,
@@ -1004,11 +862,10 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 
 		let resumeOutput: string;
 		try {
-			resumeOutput = await runResumeInputFrameVerification(
+			resumeOutput = await runResumePaintVerification(
 				{ ...baseEnvironment, PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile },
 				projectDirectory,
-				requestLog,
-				"CONTEXT_SEARCH_AGAIN",
+				magicLog,
 			);
 		} catch (error) {
 			const diagnosticRecords = (await readFile(requestLog, "utf8").catch(() => "<request log unavailable>"))

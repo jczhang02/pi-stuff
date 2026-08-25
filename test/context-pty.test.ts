@@ -1,5 +1,6 @@
 import { test } from "bun:test";
 import { resolve } from "node:path";
+import { verifyContextInputFramePty } from "../scripts/verify-context-input-frame-pty.ts";
 import { verifyContextPty } from "../scripts/verify-context-pty.ts";
 
 const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
@@ -12,8 +13,7 @@ test("real Pi TUI activates Magic Context, resumes it, owns compaction, and fail
 }, 120_000);
 
 test("long malformed-image history does not block Pi's submitted input frame", async () => {
-	await verifyContextPty({
-		inputFrameOnly: true,
+	await verifyContextInputFramePty({
 		piBinary: PI_BIN,
 		packagePath: resolve(import.meta.dir, "../packages/pi-stuff"),
 	});
