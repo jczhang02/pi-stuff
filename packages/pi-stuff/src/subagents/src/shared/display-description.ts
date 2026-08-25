@@ -2,7 +2,7 @@ import { boundTerminalLine } from "../../../tool-display/index.js";
 
 const MAX_DISPLAY_DESCRIPTION_WIDTH = 60;
 const MAX_DISPLAY_SOURCE_WIDTH = 4_096;
-const PATH_TOKEN = /(?:\.{1,2}\/|\/)[^\s"'`<>|,，;；:：!?！？()[\]{}]+/gu;
+const PATH_TOKEN = /(?<![\p{L}\p{N}_:/\\.-])(?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>|,，;；:：!?！？()[\]{}]+/gu;
 
 function basename(token: string): string {
 	const normalized = token.replaceAll("\\", "/").replace(/[.。]+$/u, "");

@@ -80,7 +80,8 @@ user definitions, and user definitions override Package definitions.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
   direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a
-  bounded failure category and path-scrubbed terminal reason before any stale progress text.
+  bounded failure category and path-scrubbed terminal reason before any stale progress text. Legacy task-derived status
+  labels shorten absolute POSIX and Windows path tokens while preserving URLs, relative paths, and slash-delimited prose.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
   them once in the current answer. Long reports preserve both their opening evidence and conclusion, identify the
   omitted middle, and point to the durable output artifact for full model retrieval. Parallel projection divides the
