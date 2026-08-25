@@ -1,11 +1,12 @@
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
-import { Markdown } from "@earendil-works/pi-tui";
-import {
+import type { Markdown } from "@earendil-works/pi-tui";
+import type {
 	getMarkdownTheme,
 	initTheme,
 } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { isRuntimeFunction } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const DEFAULT_SAMPLES = 30;
 const DEFAULT_WARMUPS = 5;
@@ -22,6 +23,12 @@ type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext)
 
 interface TransformerModule {
 	createLiveThoughtTransformer(): MarkdownTransformer;
+}
+
+interface HostMarkdownRuntime {
+	readonly Markdown: typeof Markdown;
+	readonly getMarkdownTheme: typeof getMarkdownTheme;
+	readonly initTheme: typeof initTheme;
 }
 
 interface Scenario {
@@ -127,6 +134,25 @@ async function loadTransformer(root: string): Promise<MarkdownTransformer> {
 	// SAFETY: the benchmark loads the repository-owned module at the exact public export exercised by its focused tests.
 	const module = (await import(moduleUrl)) as TransformerModule;
 	return module.createLiveThoughtTransformer();
+}
+
+async function loadHostMarkdownRuntime(root: string): Promise<HostMarkdownRuntime> {
+	const tuiUrl = pathToFileURL(resolve(root, "node_modules/@earendil-works/pi-tui/dist/index.js")).href;
+	const themeUrl = pathToFileURL(
+		resolve(root, "node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js"),
+	).href;
+	// SAFETY: the benchmark loads the pinned Host packages from the two explicit repository roots and checks each used export.
+	const tui = (await import(tuiUrl)) as Pick<HostMarkdownRuntime, "Markdown">;
+	// SAFETY: the benchmark loads the pinned Host packages from the two explicit repository roots and checks each used export.
+	const theme = (await import(themeUrl)) as Pick<HostMarkdownRuntime, "getMarkdownTheme" | "initTheme">;
+	if (
+		!isRuntimeFunction(tui.Markdown) ||
+		!isRuntimeFunction(theme.getMarkdownTheme) ||
+		!isRuntimeFunction(theme.initTheme)
+	) {
+		fail(`Host Markdown runtime exports are unavailable under ${root}`);
+	}
+	return { Markdown: tui.Markdown, getMarkdownTheme: theme.getMarkdownTheme, initTheme: theme.initTheme };
 }
 
 function textOfLength(seed: string, length: number): string {
@@ -245,7 +271,7 @@ function scenarios(): readonly Scenario[] {
 	];
 }
 
-function renderScenario(transformer: MarkdownTransformer, scenario: Scenario): number {
+function renderScenario(host: HostMarkdownRuntime, transformer: MarkdownTransformer, scenario: Scenario): number {
 	let checksum = 0;
 	for (let round = 0; round < scenario.rounds; round += 1) {
 		for (const source of scenario.markdown) {
@@ -257,10 +283,10 @@ function renderScenario(transformer: MarkdownTransformer, scenario: Scenario): n
 						messageType: scenario.messageType,
 					});
 					checksum += output.length + (output.codePointAt(0) ?? 0);
-					getMarkdownTheme().listBullet("- ");
+					host.getMarkdownTheme().listBullet("- ");
 					continue;
 				}
-				const markdown = new Markdown(source, 0, 0, getMarkdownTheme(), undefined, {
+				const markdown = new host.Markdown(source, 0, 0, host.getMarkdownTheme(), undefined, {
 					transform: (value, availableWidth) =>
 						transformer(value, {
 							availableWidth,
@@ -276,9 +302,9 @@ function renderScenario(transformer: MarkdownTransformer, scenario: Scenario): n
 	return checksum;
 }
 
-function timedRun(transformer: MarkdownTransformer, scenario: Scenario): number {
+function timedRun(host: HostMarkdownRuntime, transformer: MarkdownTransformer, scenario: Scenario): number {
 	const started = performance.now();
-	const checksum = renderScenario(transformer, scenario);
+	const checksum = renderScenario(host, transformer, scenario);
 	if (!Number.isSafeInteger(checksum) || checksum <= 0) fail(`${scenario.id} produced no visible output`);
 	return performance.now() - started;
 }
@@ -323,24 +349,29 @@ function bootstrapMedianRatio(pairs: readonly SamplePair[]): readonly [number, n
 }
 
 function benchmarkScenario(
+	baselineHost: HostMarkdownRuntime,
 	baseline: MarkdownTransformer,
+	candidateHost: HostMarkdownRuntime,
 	candidate: MarkdownTransformer,
 	scenario: Scenario,
 	warmups: number,
 	samples: number,
 ): ScenarioReport {
 	for (let index = 0; index < warmups; index += 1) {
-		renderScenario(index % 2 === 0 ? baseline : candidate, scenario);
-		renderScenario(index % 2 === 0 ? candidate : baseline, scenario);
+		renderScenario(index % 2 === 0 ? baselineHost : candidateHost, index % 2 === 0 ? baseline : candidate, scenario);
+		renderScenario(index % 2 === 0 ? candidateHost : baselineHost, index % 2 === 0 ? candidate : baseline, scenario);
 	}
 
 	const pairs: SamplePair[] = [];
 	for (let index = 0; index < samples; index += 1) {
 		if (index % 2 === 0) {
-			pairs.push({ baselineMs: timedRun(baseline, scenario), candidateMs: timedRun(candidate, scenario) });
+			pairs.push({
+				baselineMs: timedRun(baselineHost, baseline, scenario),
+				candidateMs: timedRun(candidateHost, candidate, scenario),
+			});
 		} else {
-			const candidateMs = timedRun(candidate, scenario);
-			pairs.push({ baselineMs: timedRun(baseline, scenario), candidateMs });
+			const candidateMs = timedRun(candidateHost, candidate, scenario);
+			pairs.push({ baselineMs: timedRun(baselineHost, baseline, scenario), candidateMs });
 		}
 	}
 	const baselineMs = summary(pairs.map((pair) => pair.baselineMs));
@@ -409,7 +440,10 @@ function benchmarkFreshImport(
 }
 
 const options = parseOptions(process.argv.slice(2));
-initTheme("dark");
+const baselineHost = await loadHostMarkdownRuntime(options.baselineRoot);
+const candidateHost = await loadHostMarkdownRuntime(options.candidateRoot);
+baselineHost.initTheme("dark");
+candidateHost.initTheme("dark");
 process.stderr.write("Benchmarking fresh-live-thought-import...\n");
 const reports: ScenarioReport[] = [
 	benchmarkFreshImport(options.baselineRoot, options.candidateRoot, options.warmups, options.samples),
@@ -419,7 +453,9 @@ const candidate = await loadTransformer(options.candidateRoot);
 const selectedScenarios = scenarios();
 for (const scenario of selectedScenarios) {
 	process.stderr.write(`Benchmarking ${scenario.id}...\n`);
-	reports.push(benchmarkScenario(baseline, candidate, scenario, options.warmups, options.samples));
+	reports.push(
+		benchmarkScenario(baselineHost, baseline, candidateHost, candidate, scenario, options.warmups, options.samples),
+	);
 }
 const confirmations: ScenarioReport[] = [];
 for (const report of reports.filter((candidateReport) => candidateReport.regression)) {
@@ -433,7 +469,9 @@ for (const report of reports.filter((candidateReport) => candidateReport.regress
 	const scenario = selectedScenarios.find((candidateScenario) => candidateScenario.id === report.id);
 	if (!scenario) fail(`missing confirmation scenario ${report.id}`);
 	process.stderr.write(`Confirming ${scenario.id}...\n`);
-	confirmations.push(benchmarkScenario(baseline, candidate, scenario, options.warmups, options.samples));
+	confirmations.push(
+		benchmarkScenario(baselineHost, baseline, candidateHost, candidate, scenario, options.warmups, options.samples),
+	);
 }
 const regressions = confirmations.filter((report) => report.regression);
 process.stdout.write(

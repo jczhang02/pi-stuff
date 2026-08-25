@@ -16,7 +16,7 @@ export interface ChildToolDiagnostic {
 	launchError?: string;
 }
 
-const PI_CORE_CHILD_TOOLS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+const PI_CORE_CHILD_TOOLS = new Set(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 
 export function writeChildToolDiagnostic(
 	filePath: string,

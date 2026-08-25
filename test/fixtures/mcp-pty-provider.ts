@@ -57,6 +57,7 @@ function toolCallStream() {
 		arguments: { args: { text: CALL_MARKER }, server: "local", tool: "local_echo" },
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });

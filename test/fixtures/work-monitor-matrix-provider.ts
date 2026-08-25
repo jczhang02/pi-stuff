@@ -64,6 +64,7 @@ function textStream(text: string) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	stream.push({ type: "start", partial: pending });
+	pending.content.push({ type: "text", text });
 	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
 	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
@@ -76,6 +77,7 @@ function toolStream<Arguments extends object>(name: string, id: string, argument
 	const pending = message([], "pending");
 	const toolCall = { arguments: arguments_, id, name, type: "toolCall" as const };
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });

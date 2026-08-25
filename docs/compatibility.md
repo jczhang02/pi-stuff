@@ -4,14 +4,15 @@
 
 | Contract | Certified version |
 | --- | --- |
-| Pi standalone host | `0.84.2`, upstream `914cf1472e715297caa30db4b9535d534a9eb718`, Linux x64 |
-| Pi release binary | SHA-256 `9a2d20fab3caacbe3517d91e59d495ccc49fd4b51a1a72dcec6e8c1f4b7d6ab2` |
+| Pi standalone host | `0.84.3`, upstream `4e58f324fae8ebfa98a3d45181fb248072a2afac`, Linux x64 |
+| Pi release archive | SHA-256 `6f8bb67c21bc6b8a8a106d354f56d7fd4a190a3cd8ad3a32db45f6d281a5d008` |
+| Pi release executable | SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08`, 104,487,040 bytes |
 | Bun toolchain | 1.3.14 |
-| System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities |
+| System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities; no `pwsh` |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
 
-The certified upstream Host is the `v0.84.2` Linux x64 release built from the commit above and reports `0.84.2`. Every
+The certified upstream Host is the `v0.84.3` Linux x64 release built from the commit above and reports `0.84.3`. Every
 acceptance path hashes the executable and rejects anything outside the audited allowlist before exercising the complete
 Suite contract, including public `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and
 space-preserving native settings search. The exact binary hash, rather than a reusable version string, is the executable
@@ -38,8 +39,14 @@ checked again before use. Pi upgrades review and update these constants together
 reproduce the upstream compilation process.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
-to the released `0.84.2` type surface. Version-sensitive verification scripts read the shared certified Host contract
-instead of maintaining independent Pi version constants.
+to the released `0.84.3` type surface. Version-sensitive verification scripts read the shared certified Host contract
+instead of maintaining independent Pi version constants. PowerShell is recognized as a Pi built-in for Tool lifecycle,
+MCP name-conflict, and child-Agent availability policy, but the certified Linux baseline does not contain `pwsh` and
+does not claim PowerShell execution or Windows behavior.
+Real RPC Provider fixtures populate each Tool call in `toolcall_start.partial`, as required by Pi 0.84.3's RPC
+serialization contract.
+Pi 0.84.3 also owns live compaction replay: it validates the persisted boundary, rebuilds through
+`buildContextEntries()`, and renders the summary once. The Suite does not intercept that SessionManager call.
 
 Pi 0.84 gives independently loaded extensions distinct `ExtensionAPI.events` facade objects over one Host event bus.
 Suite-wide registries therefore use a synchronous event-bus discovery handoff and retain facade-keyed WeakMaps only as

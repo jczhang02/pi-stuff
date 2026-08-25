@@ -23,7 +23,7 @@ import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
 type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
-const HOST_BUILTINS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+const HOST_BUILTINS = new Set(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 
 class EventBusHarness {
 	private readonly listeners = new Map<string, Set<Parameters<ExtensionAPI["events"]["on"]>[1]>>();
@@ -408,15 +408,18 @@ test("resume binds a historical optional renderer before its runtime has ever ac
 	expect(replay?.renderResult).toBeFunction();
 	expect(incoming.getActiveTools()).toEqual(["read", "fixture_state"]);
 	expect(() =>
-		assertSuiteToolActivityCoverage(incoming.api, [...HOST_BUILTINS], registrations.toolNames, [
-			"subagent_supervisor",
-		]),
+		assertSuiteToolActivityCoverage(
+			incoming.api,
+			[...HOST_BUILTINS].filter((name) => name !== "powershell"),
+			registrations.toolNames,
+			["subagent_supervisor"],
+		),
 	).not.toThrow();
 	await incoming.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/target"));
 });
 
 test("reload uses the same missing-only renderer fallback", async () => {
-	const outgoing = apiHarness(["read", "fixture_state"]);
+	const outgoing = apiHarness(["read", "powershell", "fixture_state"]);
 	const outgoingRegistrations = await installTrackedTools(outgoing);
 	await outgoing.emit("session_start", { reason: "startup", type: "session_start" }, context("/project"));
 	registerSuiteOwnedTool(
@@ -435,7 +438,7 @@ test("reload uses the same missing-only renderer fallback", async () => {
 	);
 	await outgoing.emit("session_shutdown", { reason: "reload", type: "session_shutdown" }, context("/project"));
 
-	const incoming = apiHarness(["read", "fixture_state"]);
+	const incoming = apiHarness(["read", "powershell", "fixture_state"]);
 	const incomingRegistrations = await installTrackedTools(incoming);
 	configureSuiteToolReplay(incomingRegistrations.api, incomingRegistrations.toolNames);
 	await incoming.emit(
@@ -444,12 +447,12 @@ test("reload uses the same missing-only renderer fallback", async () => {
 		context("/project", historicalToolBranch("conditional_tool", {}, "done")),
 	);
 	expect(incoming.tools.get("conditional_tool")?.renderShell).toBe("self");
-	expect(incoming.getActiveTools()).toEqual(["fixture_state", "read"]);
+	expect(incoming.getActiveTools()).toEqual(["fixture_state", "read", "powershell"]);
 	await incoming.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/project"));
 });
 
 test("resume preserves default, disabled, and allowlisted built-in membership exactly", async () => {
-	for (const expected of [["bash", "edit", "read", "write"], [], ["find", "grep", "ls"]] as const) {
+	for (const expected of [["bash", "edit", "read", "write"], [], ["find", "grep", "ls"], ["powershell"]] as const) {
 		const outgoing = apiHarness([...expected, "fixture_state"]);
 		await installTrackedTools(outgoing);
 		await outgoing.emit("session_start", { reason: "startup", type: "session_start" }, context("/outgoing"));
@@ -459,7 +462,7 @@ test("resume preserves default, disabled, and allowlisted built-in membership ex
 			context("/outgoing"),
 		);
 
-		const incoming = apiHarness(["read", "bash", "edit", "write", "fixture_state"]);
+		const incoming = apiHarness(["read", "bash", "edit", "write", "powershell", "fixture_state"]);
 		const incomingRegistrations = await installTrackedTools(incoming);
 		configureSuiteToolReplay(incomingRegistrations.api, incomingRegistrations.toolNames);
 

@@ -1,14 +1,14 @@
 /** Released type surface used for development dependencies and version checks. */
-export const CERTIFIED_PI_VERSION = "0.84.2";
+export const CERTIFIED_PI_VERSION = "0.84.3";
 
 /** Reviewed upstream release source that satisfies the complete Suite contract. */
-export const CERTIFIED_PI_SOURCE_COMMIT = "914cf1472e715297caa30db4b9535d534a9eb718";
+export const CERTIFIED_PI_SOURCE_COMMIT = "4e58f324fae8ebfa98a3d45181fb248072a2afac";
 
 export const CERTIFIED_PI_SOURCE_REPOSITORY = "https://github.com/earendil-works/pi";
 
 /** Audited upstream Linux x64 release binary. */
-export const CERTIFIED_PI_RELEASE_BINARY_SHA256 = "9a2d20fab3caacbe3517d91e59d495ccc49fd4b51a1a72dcec6e8c1f4b7d6ab2";
-export const CERTIFIED_PI_RELEASE_BINARY_SIZE = 104_532_096;
+export const CERTIFIED_PI_RELEASE_BINARY_SHA256 = "ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08";
+export const CERTIFIED_PI_RELEASE_BINARY_SIZE = 104_487_040;
 
 export const CERTIFIED_PI_BUN_VERSION = "1.3.14";
 

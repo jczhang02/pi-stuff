@@ -207,6 +207,7 @@ function nestedToolCallStream(scenario: ScenarioId) {
 		},
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
@@ -223,6 +224,7 @@ function toolCallStream(scenario: ScenarioId) {
 		arguments: toolArguments(scenario),
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
@@ -241,6 +243,7 @@ function codeModeMainLaunchStream(scenario: ScenarioId) {
 		},
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
@@ -268,6 +271,7 @@ function codeModeChildToolStream(scenario: ScenarioId) {
 	];
 	stream.push({ type: "start", partial: pending });
 	for (const [contentIndex, toolCall] of toolCalls.entries()) {
+		pending.content.push(toolCall);
 		stream.push({ type: "toolcall_start", contentIndex, partial: pending });
 		stream.push({ type: "toolcall_end", contentIndex, toolCall, partial: pending });
 	}
@@ -285,6 +289,7 @@ function longToolCallStream(round: number) {
 		arguments: { round },
 	};
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });

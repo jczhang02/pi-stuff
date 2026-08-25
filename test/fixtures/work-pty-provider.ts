@@ -45,6 +45,7 @@ function toolStream(name: string, id: string, arguments_: Record<string, JsonVal
 	const pending = message([], "pending");
 	const toolCall = { arguments: arguments_, id, name, type: "toolCall" as const };
 	stream.push({ type: "start", partial: pending });
+	pending.content.push(toolCall);
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
 	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
 	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });

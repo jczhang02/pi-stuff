@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	type AgentToolResult,
+	createEditToolDefinition,
 	createEventBus,
 	type EventBus,
 	type Theme,
@@ -12,6 +13,7 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
@@ -634,6 +636,107 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 	expect(nestedRead.name).toBe("read");
 });
 
+test("Pi 0.84.3 Edit compatibility inputs stay canonical through Code Mode execution and replay", async () => {
+	initTheme("dark");
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	let fileContent = "before\n";
+	const executedArguments: unknown[] = [];
+	const presentedArguments: unknown[] = [];
+	const upstream = createEditToolDefinition("/project", {
+		operations: {
+			access: async () => {},
+			readFile: async () => Buffer.from(fileContent),
+			writeFile: async (_path, content) => {
+				fileContent = content;
+			},
+		},
+	});
+	const execute = upstream.execute.bind(upstream);
+	const edit = {
+		...upstream,
+		execute: async (...args: Parameters<typeof upstream.execute>) => {
+			executedArguments.push(structuredClone(args[1]));
+			return execute(...args);
+		},
+	};
+	registerSuiteOwnedTool(registrations.api, edit, {
+		activity: {
+			categories: ["change-file"],
+			classify: ({ args }) => [
+				{ category: "change-file", countKeys: [String(args.path)], target: String(args.path) },
+			],
+		},
+		label: "Edit",
+		runningSummary: "editing",
+		summarize: () => "edited",
+		target: (args) => {
+			presentedArguments.push(structuredClone(args));
+			return String(args.path);
+		},
+	});
+	const nestedEdit = new SuiteCodeModeConnector(registrations.registry).tools().find((tool) => tool.name === "edit");
+	if (!nestedEdit) throw new Error("missing upstream Edit Tool");
+	let latestResult: AgentToolResult<unknown> | undefined;
+	const compatibilityInputs = [
+		{ newText: "after", oldText: "before", path: "fixture.txt" },
+		{ edits: { newText: "after", oldText: "before" }, path: "fixture.txt" },
+	];
+	for (const [index, input] of compatibilityInputs.entries()) {
+		fileContent = "before\n";
+		await nestedEdit.invoke(
+			input,
+			{
+				captureResult: (result) => {
+					latestResult = result;
+				},
+				cwd: "/project",
+				// SAFETY: this test fixture implements the exact Host context used by nested Tool execution.
+				extensionContext: { cwd: "/project" } as never,
+				toolCallId: `nested-edit-${String(index)}`,
+			},
+			new AbortController().signal,
+		);
+		expect(fileContent).toBe("after\n");
+	}
+	const canonical = { edits: [{ newText: "after", oldText: "before" }], path: "fixture.txt" };
+	expect(executedArguments).toEqual([canonical, canonical]);
+
+	const operation: SuiteToolEnvelopeOperation = {
+		args: compatibilityInputs[1] ?? {},
+		id: "nested-edit-replay",
+		name: "edit",
+		result: latestResult ?? { content: [], details: {} },
+		state: "success",
+	};
+	registerSuiteToolEnvelope(
+		registrations.api,
+		{
+			description: "Code Mode",
+			execute: async () => ({ content: [], details: { operations: [operation] } }),
+			label: "Code Mode",
+			name: "codemode",
+			parameters: Type.Object({ code: Type.String() }),
+		},
+		{ decode: () => [operation], registry: registrations.registry },
+	);
+	const envelope = harness.tools.get("codemode");
+	if (!envelope) throw new Error("missing Code Mode envelope");
+	const context = renderContext({}, { value: "unused" }, { toolCallId: "outer-edit-replay" });
+	// SAFETY: this test controls the envelope arguments and the Host renderer context.
+	const callComponent = envelope.renderCall?.({ code: "edit" }, theme, context as never);
+	const resultComponent = envelope.renderResult?.(
+		{ content: [], details: { operations: [operation] } },
+		{ expanded: false, isPartial: false },
+		theme,
+		// SAFETY: the controlled result and context satisfy the registered envelope renderer contract.
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	if (!resultComponent) throw new Error("missing Code Mode Edit replay result");
+	expect(resultComponent.render(120).join("\n")).toContain("fixture.txt");
+	expect(presentedArguments).toContainEqual(canonical);
+});
+
 test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
@@ -1169,7 +1272,7 @@ test("Code Mode keeps multiple Kitty images inside their original expanded Tool 
 	}
 });
 
-test("Pi 0.84.2 Host renders expanded multi-image Tools identically through Code Mode", () => {
+test("Pi 0.84.3 Host renders expanded multi-image Tools identically through Code Mode", () => {
 	const image = {
 		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
 		mimeType: "image/png",

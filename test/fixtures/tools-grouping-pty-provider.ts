@@ -165,6 +165,7 @@ function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[], think
 		});
 	}
 	for (const [index, toolCall] of toolCalls.entries()) {
+		pending.content.push(toolCall);
 		stream.push({
 			type: "toolcall_start",
 			contentIndex: index + contentOffset,

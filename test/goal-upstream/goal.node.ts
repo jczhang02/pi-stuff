@@ -41,7 +41,6 @@ import {
 	normalizeVisibleAssistantOutput,
 	recordGoalBlockerAttempt,
 } from "../../packages/pi-stuff/src/goal/src/safety.js";
-import { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import {
 	isRuntimeFunction,
 	isRuntimeObject,
@@ -181,6 +180,7 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 		"message_start",
 		"session_before_compact",
 		"session_compact",
+		"session_compact_failed",
 		"session_shutdown",
 		"session_start",
 		"tool_call",
@@ -4862,12 +4862,12 @@ test("manual compaction cancels stale continuation and sends one fresh continuat
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 });
 
-test("the shared Magic Context bypass rejects malformed and mismatched payloads before valid Goal handoff", async () => {
+test("native compaction failure replaces a stale Goal continuation exactly once", async () => {
 	let idleWaits = 0;
 	const sessionManager = {
 		getBranch: () => [],
 		getEntries: () => [],
-		getSessionId: () => "magic-compaction-session",
+		getSessionId: () => "failed-compaction-session",
 		getSessionName: () => undefined,
 	};
 	const compacted = await startGoalForTest({
@@ -4876,6 +4876,18 @@ test("the shared Magic Context bypass rejects malformed and mismatched payloads 
 			idleWaits++;
 		},
 	});
+	const compactFailed = compacted.mock.events.get("session_compact_failed")?.[0];
+	const failure = {
+		aborted: true,
+		fromExtension: false,
+		reason: "threshold",
+		willRetry: false,
+	};
+
+	compactFailed?.(failure, compacted.ctx);
+	await new Promise((resolve) => setTimeout(resolve, 5));
+	assert.equal(compacted.mock.sentUserMessages.length, 1);
+
 	await compacted.mock.events.get("agent_end")?.[0]?.(
 		{ messages: [{ role: "assistant", stopReason: "stop" }] },
 		compacted.ctx,
@@ -4884,39 +4896,18 @@ test("the shared Magic Context bypass rejects malformed and mismatched payloads 
 	const staleContinuation = compacted.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, /pi-goal-continuation/);
 
-	compacted.mock.events.get("session_before_compact")?.[0]?.({ reason: "manual", willRetry: false }, compacted.ctx);
+	compacted.mock.events.get("session_before_compact")?.[0]?.({ reason: "threshold", willRetry: true }, compacted.ctx);
 	assert.deepEqual(
 		compacted.mock.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, compacted.ctx),
 		{ action: "handled" },
 	);
 
-	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
-		schemaVersion: 1,
-		sessionManager: {},
-		source: "magic-context",
-	});
-	await new Promise((resolve) => setTimeout(resolve, 5));
-	assert.equal(compacted.mock.sentUserMessages.length, 2);
-	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
-		schemaVersion: 1,
-		sessionManager,
-	});
-	await new Promise((resolve) => setTimeout(resolve, 5));
-	assert.equal(compacted.mock.sentUserMessages.length, 2);
-	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
-		schemaVersion: 2,
-		sessionManager,
-		source: "magic-context",
-	});
+	// SAFETY: this mismatched Host context fixture exercises only session identity matching.
+	compactFailed?.(failure, { sessionManager: {} } as never);
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	assert.equal(compacted.mock.sentUserMessages.length, 2);
 
-	const bypass = {
-		schemaVersion: 1,
-		sessionManager,
-		source: "magic-context",
-	};
-	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, bypass);
+	compactFailed?.(failure, compacted.ctx);
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	const freshContinuation = compacted.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.equal(idleWaits, 1);
@@ -4924,7 +4915,7 @@ test("the shared Magic Context bypass rejects malformed and mismatched payloads 
 	assert.match(freshContinuation, /pi-goal-continuation/);
 	assert.notEqual(freshContinuation, staleContinuation);
 
-	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, bypass);
+	compactFailed?.(failure, compacted.ctx);
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 });

@@ -239,11 +239,11 @@ function assertScenario(
 	if (scenario === "compaction") {
 		const compactionEnd = records.find((record) => record.type === "compaction_end");
 		const completionBoundaries = logRecords.filter(
-			(record) => record.type === "session_compact" || record.type === "context_compaction_bypassed",
+			(record) => record.type === "session_compact" || record.type === "session_compact_failed",
 		);
 		if (completionBoundaries.length !== 1) {
 			throw new Error(
-				`compaction: expected one native or Magic completion boundary, received ${JSON.stringify(completionBoundaries)}`,
+				`compaction: expected one native compaction completion boundary, received ${JSON.stringify(completionBoundaries)}`,
 			);
 		}
 		if (completionBoundaries[0]?.type === "session_compact") {
@@ -252,9 +252,9 @@ function assertScenario(
 					`compaction: certified host did not complete native compaction successfully: ${JSON.stringify(compactionEnd)}`,
 				);
 			}
-		} else if (compactionEnd?.aborted !== true) {
+		} else if (compactionEnd?.aborted !== true || completionBoundaries[0]?.aborted !== true) {
 			throw new Error(
-				`compaction: Magic Context bypass did not intentionally cancel native compaction: ${JSON.stringify(compactionEnd)}`,
+				`compaction: certified host did not report the aborted compaction through session_compact_failed: ${JSON.stringify({ compactionEnd, completionBoundary: completionBoundaries[0] })}`,
 			);
 		}
 	}

@@ -27,10 +27,6 @@ import {
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
-import {
-	CONTEXT_COMPACTION_BYPASSED_EVENT,
-	type ContextCompactionBypassedEvent,
-} from "../shared/context-compaction-bypassed.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString, isRuntimeSymbol } from "../shared/runtime-type.js";
 import type { ToolArguments } from "../tool-display/activity.js";
@@ -65,8 +61,6 @@ import {
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
-
-export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../shared/context-compaction-bypassed.js";
 
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
@@ -1735,14 +1729,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 					} catch {
 						// Compaction safety must not depend on the optional TUI notification.
 					}
-					this.emitCompactionBypassed(ctx);
 					return { cancel: true };
 				}
 				if (!this.isCurrentGeneration(generation)) return;
 				if (Check(CANCELLED_EVENT_RESULT_SCHEMA, result)) {
 					const manual = magicManualCompaction(rawEvent);
 					if (manual) return manual;
-					this.emitCompactionBypassed(ctx);
 				}
 				return result;
 			});
@@ -1778,19 +1770,6 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 		// Context projection is composed by the owning Context Capability's one
 		// stable handler so generation checks and native fail-open stay authoritative.
-	}
-
-	private emitCompactionBypassed(ctx: ExtensionContext): void {
-		try {
-			const event: ContextCompactionBypassedEvent = {
-				schemaVersion: 1,
-				sessionManager: ctx.sessionManager,
-				source: "magic-context",
-			};
-			this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, event);
-		} catch {
-			// Goal handoff is optional; native cancellation remains authoritative.
-		}
 	}
 
 	private captureMagicCommandStatus<Data>(data: Data): void {

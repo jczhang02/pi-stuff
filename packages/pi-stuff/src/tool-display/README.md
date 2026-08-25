@@ -2,10 +2,11 @@
 
 Compact, presentation-only Tool UI for the Pi Stuff Suite.
 
-The Capability re-registers Pi 0.84.2's seven built-in tools with their original definitions and replaces only their
+The Capability re-registers seven Pi 0.84.3 built-in Tools with their original definitions and replaces only their
 render slots. Tool schemas, prompt metadata, execution, result content, lifecycle events, and permission checks stay
-unchanged. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`; unknown third-party
-Tools keep their native renderer and form a display boundary.
+unchanged. Pi 0.84.3's PowerShell Tool remains entirely Host-rendered; Pi Stuff recognizes its `powershell` name only
+for reload/resume membership. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`;
+unknown third-party Tools keep their native renderer and form a display boundary.
 
 ## Daily use
 
@@ -23,7 +24,7 @@ Tools keep their native renderer and form a display boundary.
   exit status, cancellation, rejection, and failure remain explicit. `Ctrl+O` retains the operation block and expands
   its bounded command and output in place, without Pi's generic `Call` / `Result` chrome. Apart from Pi Stuff's accepted
   small transcript bullet and semantic colors supplied by the active Host theme, the operation wording, row count,
-  spacing, and child hierarchy are matched against real Claude Code 2.1.220 and Pi Host 0.84.2 captures.
+  spacing, and child hierarchy are matched against real Claude Code 2.1.220 and Pi Host 0.84.3 captures.
 - A group appears immediately, even for one retrieval Tool. Running summaries use present-tense semantic language and one short,
   width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
   and redundant `done` labels. Native Read deduplicates canonical paths; Search, List, and Bash-only retrieval count
@@ -60,9 +61,10 @@ Tools keep their native renderer and form a display boundary.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and
   compaction.
-- In-process `/resume` pre-binds exactly the active built-in renderers before Pi reconstructs history. The first resumed
-  frame therefore stays compact without reviving disabled tools; the complete active Tool order is preserved, and new
-  calls are rebound to the target session's working directory, trust, and project settings.
+- In-process `/resume` pre-binds exactly the active Suite-rendered built-ins before Pi reconstructs history and preserves
+  Host-native PowerShell membership without adding a renderer. The first resumed frame therefore stays compact without
+  reviving disabled tools; the complete active Tool order is preserved, and new calls are rebound to the target session's
+  working directory, trust, and project settings.
 
 ## Performance verification
 

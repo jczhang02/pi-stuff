@@ -544,6 +544,7 @@ function toolStream(name, id, arguments_) {
   const pending = message([], "pending");
   const toolCall = { arguments: arguments_, id, name, type: "toolCall" };
   stream.push({ type: "start", partial: pending });
+  pending.content.push(toolCall);
   stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
   stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
   stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });

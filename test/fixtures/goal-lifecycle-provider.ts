@@ -3,10 +3,6 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
-import {
-	CONTEXT_COMPACTION_BYPASSED_EVENT,
-	isContextCompactionBypassedEvent,
-} from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
@@ -61,6 +57,7 @@ function stream(content: AssistantMessage["content"], stopReason: "length" | "st
 	const pending = message([], "pending");
 	result.push({ type: "start", partial: pending });
 	for (const [contentIndex, item] of content.entries()) {
+		pending.content.push(item);
 		if (item.type === "text") {
 			result.push({ type: "text_start", contentIndex, partial: pending });
 			result.push({ type: "text_delta", contentIndex, delta: item.text, partial: pending });
@@ -189,10 +186,14 @@ function activeGoal(objective: string) {
 }
 
 export default function goalLifecycleProvider(pi: ExtensionAPI): void {
-	pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (event) => {
-		if (isContextCompactionBypassedEvent(event)) {
-			log({ type: "context_compaction_bypassed" });
-		}
+	pi.on("session_compact_failed", (event) => {
+		log({
+			type: "session_compact_failed",
+			aborted: event.aborted,
+			fromExtension: event.fromExtension,
+			reason: event.reason,
+			willRetry: event.willRetry,
+		});
 	});
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Goal lifecycle fixture",
