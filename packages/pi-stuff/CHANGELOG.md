@@ -7,9 +7,11 @@
 
 - Add a feature-complete internal fork of `@dietrichgebert/ponytail@4.9.0`: four persistent Session modes, six packaged
   Skills, natural-language deactivation, child-Agent mode snapshots, Context-managed prompt projection, merged settings,
-  a shared-Statusline `♞` mode segment, and the `/ponytail` control dialog. Preserve byte-identical MIT upstream
-  resources and provenance while removing the separate status/activity and configuration ownership. Make `off` a
-  hard model boundary and replace the repeated full Skill projection with an active-mode compact policy and catalog.
+  a shared-Statusline `♞` mode segment, and the `/ponytail` control dialog. Preserve the reviewed MIT upstream Skill
+  bodies and provenance with one explicit-invocation frontmatter adaptation while removing separate status/activity
+  and configuration ownership. Make `off` a hard model boundary and replace the repeated full Skill projection with
+  an active-mode compact policy and catalog. Add dedicated real-Pi PTY certification for the Dialog, low viewport,
+  draft and Statusline restoration, configuration, environment overrides, Session ledger, and Provider prompt boundary.
   See ADR 0021.
 - Upgrade the official Magic Context engine from 0.33.1 to 0.40.0, restoring Context ownership for shared databases
   at schema v81. Emit per-harness first-use configuration and defer flat user-config migration until direct use while

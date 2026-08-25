@@ -218,7 +218,9 @@ then the exact normal component resumes.
 
 Bare `/ponytail` uses this surface as one control plane for Session mode, saved defaults, presentation preferences,
 and specialized Skills. Setting changes update the open Overview without Transcript notifications; launching a Skill
-closes the Dialog and uses Pi's native Skill expansion.
+closes the Dialog and uses Pi's native Skill expansion. Environment overrides remain effective and read-only while the
+Dialog reports and writes the separate saved value. Opening and closing the Dialog suppresses and restores the composed
+Footer and exact editor draft.
 
 All Suite Command Dialogs use one height-fitting rule. At ordinary sizes their layouts stay unchanged. Under severe
 height pressure they first preserve the semantic title or current state, the selected row or attached error, and an

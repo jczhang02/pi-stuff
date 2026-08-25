@@ -155,6 +155,8 @@ visible authority; do not repeat it in a permanent dashboard. The shared Statusl
 current Goal's sole compact persistent authority, while Goal lifecycle notices remain chronological Transcript events
 and Command Dialogs provide inspection and control. Ponytail follows the same boundary: `♞ <mode>` is its only
 persistent mode authority, the Working Row remains the only Agent-activity authority, and `/ponytail` provides control.
+Its Dialog temporarily suppresses the composed Footer, preserves the editor draft, and keeps environment overrides
+visible without presenting them as writable settings.
 A Dialog redesign does not silently change transcript markers or Tool rendering.
 
 A valid `chart` or `tree` fence may become a Fenced Visualization Projection inside the same Transcript message. Keep
