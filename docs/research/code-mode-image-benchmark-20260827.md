@@ -68,8 +68,9 @@ Candidate acceptance requires:
 - candidate total Provider Tool-definition size is no greater than baseline.
 
 The report gives raw fractions and Wilson score 95% binomial intervals for both arms. The baseline is descriptive and is
-not subject to candidate acceptance thresholds. Separate matched real Claude Code and Pi Host screenshot evidence owns
-Viewed-image UI visual acceptance; this behavioral benchmark does not infer pixels from model text or PTY strings.
+not subject to candidate acceptance thresholds. Separate matched real Pi Host screenshots compare Code Mode's nested
+`view_image` row with a direct `view_image` invocation; this behavioral benchmark does not infer pixels from model
+text or PTY strings. A Claude Code comparison is outside this acceptance scope.
 
 Run from the candidate worktree with a baseline repository root that still has the preregistered Package tree:
 
@@ -161,3 +162,23 @@ failed experiment and is not included in these V2 pass counts. Temporary benchma
 were replaced with stable placeholders after execution; no outcome, payload hash, metric, or sample was changed. The
 sanitized V1 and V2 report SHA-256 values are `3d1807dd304e7582535b5d8752b8f94bb42d7f62c93bf1f61d53e1b22a5b248f`
 and `4943cc1296d575f067221333c780bf9e4ca6866d07b1a6fb1a03d9ee1ae93297`, respectively.
+
+## Real Pi View UI acceptance
+
+The visual scope was confirmed after V2: compare Code Mode with Pi's direct `view_image` path; no Claude Code
+comparison is required. Two fresh authenticated Sessions on the exact certified Pi 0.84.3 release artifact use the same
+decoder-readable PNG. One asks Code Mode to return `tools.view_image`; the other invokes `view_image` directly.
+
+The archived [Code Mode capture](../reports/code-mode-image-20260827/ui/pi-code-mode.png),
+[direct capture](../reports/code-mode-image-20260827/ui/pi-direct.png), and
+[pixel difference](../reports/code-mode-image-20260827/ui/diff-pi-code-vs-direct.png) come from independent
+`100 × 32` tmux Sessions with `extended-keys=on` and `extended-keys-format=csi-u`. Freeze renders the real ANSI
+Tool rows rather than redrawing the UI. Both paths show exactly one `View pixel.png · loaded` row, the image fallback,
+and `UI_COMPLETE`; Code Mode shows no outer duplicate row. The ANSI streams, plain text, and rendered PNGs
+match exactly; ImageMagick reports 0 absolute-error pixels across the `1886 × 451` capture (850,586 pixels). The
+archived hashes, Host provenance, and pixel metric are recorded in
+[metadata.json](../reports/code-mode-image-20260827/ui/metadata.json).
+
+The `Image preview unavailable` line is the certified Pi tmux fallback, not a missing Provider image. The benchmark's
+complete payload hashes and decoder checks remain the authority for image transfer and Session safety; this matched
+capture verifies the visible Tool authority and layout.
