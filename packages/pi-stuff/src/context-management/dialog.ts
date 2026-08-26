@@ -233,11 +233,13 @@ function overviewItems(snapshot: ContextDialogSnapshot): SelectItem[] {
 		value: "recomp",
 	});
 	if (snapshot.upgradeNeeded === undefined || snapshot.upgradeNeeded > 0) {
+		let description = "Check and upgrade legacy history and memories";
+		if (snapshot.upgradeNeeded !== undefined) {
+			const verb = snapshot.upgradeNeeded === 1 ? "needs" : "need";
+			description = `${plural(snapshot.upgradeNeeded, "compartment")} ${verb} upgrade`;
+		}
 		items.push({
-			description:
-				snapshot.upgradeNeeded === undefined
-					? "Check and upgrade legacy history and memories"
-					: `${plural(snapshot.upgradeNeeded, "compartment")} ${snapshot.upgradeNeeded === 1 ? "needs" : "need"} upgrade`,
+			description,
 			label: "Upgrade session",
 			value: "upgrade",
 		});
