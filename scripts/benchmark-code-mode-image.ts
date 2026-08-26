@@ -708,8 +708,8 @@ if (import.meta.main) {
 			evaluation,
 		};
 		await mkdir(resolve(options.output, ".."), { recursive: true, mode: 0o700 });
-		await writeFile(options.output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-		console.log(JSON.stringify(report, null, 2));
+		await writeFile(options.output, `${JSON.stringify(report, null, "\t")}\n`, { mode: 0o600 });
+		console.log(JSON.stringify(report, null, "\t"));
 		if (!evaluation.candidatePass) process.exitCode = 1;
 	} finally {
 		await rm(benchmarkRoot, { recursive: true, force: true });
