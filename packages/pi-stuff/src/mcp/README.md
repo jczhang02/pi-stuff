@@ -74,9 +74,10 @@ confirmation performs the write. Press `s` from the server list, or Enter on an
 empty list, to open setup inside the same Command Dialog. OAuth authentication
 and logout are available from each eligible server's detail actions.
 
-Setup previews keep exact line diffs through 250,000 compared line pairs. Larger
-configuration previews retain common prefix/suffix lines and show the changed
-middle as a bounded linear remove/add block.
+Setup rejects source or generated previews above 1,000,000 bytes or 10,000 lines
+before diff construction. Within that bound, previews keep exact line diffs
+through 250,000 compared line pairs; larger comparisons retain common
+prefix/suffix lines and show the changed middle as a linear remove/add block.
 
 Setup uses the same continuous full-width top rule, two-cell content gutter,
 bold Header, `◆` section headings, bounded list windows, and separate Escape

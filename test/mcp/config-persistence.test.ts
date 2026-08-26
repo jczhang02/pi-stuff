@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import { buildUnifiedDiff } from "../../packages/pi-stuff/src/mcp/config-persistence.js";
+import { buildConfigWritePreview, buildUnifiedDiff } from "../../packages/pi-stuff/src/mcp/config-persistence.js";
 import {
 	ensureCompatibilityImports,
 	loadMcpConfig,
@@ -38,6 +38,23 @@ test("bounds oversized MCP configuration previews with a truthful linear diff", 
 	expect(diff.indexOf("- old-500")).toBeLessThan(diff.indexOf("+ new-0"));
 	expect(diff.endsWith("+ new-500\n  tail")).toBe(true);
 	expect(diff.split("\n")).toHaveLength(1_006);
+});
+
+test("rejects MCP configuration previews before source, generated, or line work becomes unbounded", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-preview-"));
+	const path = join(cwd, ".mcp.json");
+	try {
+		await writeFile(path, "x".repeat(1_000_001));
+		expect(() => buildConfigWritePreview(path, {})).toThrow("1000000-byte MCP config preview limit");
+		expect(() => buildConfigWritePreview(join(cwd, "new.json"), { value: "x".repeat(1_000_001) })).toThrow(
+			"1000000-byte MCP config preview limit",
+		);
+		expect(() => buildUnifiedDiff(Array.from({ length: 10_001 }, () => "x").join("\n"), "{}")).toThrow(
+			"10000-line MCP config preview limit",
+		);
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+	}
 });
 
 test("parses the full server name after an MCP subcommand", () => {

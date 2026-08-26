@@ -3,10 +3,11 @@ import {
 	closeSync,
 	constants,
 	existsSync,
+	fstatSync,
 	lstatSync,
 	mkdirSync,
 	openSync,
-	readFileSync,
+	readSync,
 	realpathSync,
 	renameSync,
 	rmSync,
@@ -18,6 +19,8 @@ import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../shar
 import { withSettingsLock } from "../shared/settings-io/lock.ts";
 
 const MAX_EXACT_DIFF_LINE_PAIRS = 250_000;
+const MAX_CONFIG_PREVIEW_BYTES = 1_000_000;
+const MAX_CONFIG_PREVIEW_LINES = 10_000;
 
 export interface ConfigWritePreview {
 	path: string;
@@ -42,11 +45,58 @@ export interface ProjectServerOverride {
 	servers: JsonInputObject;
 }
 
+function assertConfigPreviewBound(text: string, label: string): void {
+	const bytes = Buffer.byteLength(text, "utf8");
+	if (bytes > MAX_CONFIG_PREVIEW_BYTES) {
+		throw new Error(
+			`${label} exceeds the ${String(MAX_CONFIG_PREVIEW_BYTES)}-byte MCP config preview limit; edit the file directly.`,
+		);
+	}
+	let lines = 1;
+	for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) {
+		lines += 1;
+		if (lines > MAX_CONFIG_PREVIEW_LINES) {
+			throw new Error(
+				`${label} exceeds the ${String(MAX_CONFIG_PREVIEW_LINES)}-line MCP config preview limit; edit the file directly.`,
+			);
+		}
+	}
+}
+
 function serializeRawConfig(raw: JsonInputObject): string {
-	return `${JSON.stringify(raw, null, 2)}\n`;
+	const text = `${JSON.stringify(raw, null, 2)}\n`;
+	assertConfigPreviewBound(text, "Proposed MCP configuration");
+	return text;
+}
+
+function readBoundedConfigDescriptor(descriptor: number, label: string): string {
+	const stat = fstatSync(descriptor);
+	if (!stat.isFile()) throw new Error(`${label} is not a regular file`);
+	if (stat.size > MAX_CONFIG_PREVIEW_BYTES) {
+		throw new Error(
+			`${label} exceeds the ${String(MAX_CONFIG_PREVIEW_BYTES)}-byte MCP config preview limit; edit it directly`,
+		);
+	}
+	const buffer = Buffer.allocUnsafe(MAX_CONFIG_PREVIEW_BYTES + 1);
+	let length = 0;
+	for (;;) {
+		const bytesRead = readSync(descriptor, buffer, length, buffer.length - length, null);
+		length += bytesRead;
+		if (bytesRead === 0 || length === buffer.length) break;
+	}
+	if (length > MAX_CONFIG_PREVIEW_BYTES) {
+		throw new Error(
+			`${label} exceeds the ${String(MAX_CONFIG_PREVIEW_BYTES)}-byte MCP config preview limit; edit it directly`,
+		);
+	}
+	const text = buffer.subarray(0, length).toString("utf8");
+	assertConfigPreviewBound(text, label);
+	return text;
 }
 
 export function buildUnifiedDiff(beforeText: string, afterText: string): string {
+	assertConfigPreviewBound(beforeText, "Existing MCP configuration");
+	assertConfigPreviewBound(afterText, "Proposed MCP configuration");
 	if (beforeText === afterText) return "(no changes)";
 
 	const before = beforeText.split("\n");
@@ -129,8 +179,11 @@ export function buildConfigWritePreview(filePath: string, nextRaw: JsonInputObje
 export function readRawConfigObject(filePath: string): JsonInputObject {
 	if (!existsSync(filePath)) return {};
 
+	let descriptor: number | undefined;
 	try {
-		const raw = parseJsonValue(stripJsonComments(readFileSync(filePath, "utf-8"), { trailingCommas: true }));
+		descriptor = openSync(filePath, constants.O_RDONLY);
+		const source = readBoundedConfigDescriptor(descriptor, "Existing MCP configuration");
+		const raw = parseJsonValue(stripJsonComments(source, { trailingCommas: true }));
 		if (!isJsonInputObject(raw)) throw new Error("root value must be an object");
 		return raw;
 	} catch (error) {
@@ -138,6 +191,8 @@ export function readRawConfigObject(filePath: string): JsonInputObject {
 			`Failed to read MCP config at ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
 			{ cause: error },
 		);
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
 	}
 }
 
@@ -201,7 +256,8 @@ export function readProjectServerOverride(
 		let descriptor: number | undefined;
 		try {
 			descriptor = openSync(writePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-			const parsed = parseJsonValue(stripJsonComments(readFileSync(descriptor, "utf-8"), { trailingCommas: true }));
+			const source = readBoundedConfigDescriptor(descriptor, "Project MCP override");
+			const parsed = parseJsonValue(stripJsonComments(source, { trailingCommas: true }));
 			if (!isJsonInputObject(parsed)) throw new Error("root value must be an object");
 			raw = parsed;
 		} catch (error) {
