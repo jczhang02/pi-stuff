@@ -53,7 +53,10 @@ describe("compact Agent status", () => {
 			id: "parallel",
 			index: 1,
 		});
-		expect(() => resolveLegacyAgentTarget({ id: "parallel:9" }, { state })).toThrow("is not available");
+		expect(resolveLegacyAgentTarget({ id: "parallel:9" }, { state })).toEqual({ id: "parallel:9" });
+		const unavailable = inspectSubagentStatus({ id: "parallel:9" }, { state });
+		expect(unavailable.isError).toBe(true);
+		expect(resultText(unavailable)).toBe("Agent 'parallel:9' is not available in the current session.");
 
 		state.asyncJobs.set("canonical", asyncJob("duplicate:0", "running"));
 		state.asyncJobs.set("legacy", asyncJob("duplicate", "running"));

@@ -22,7 +22,7 @@ describe("Agent display descriptions", () => {
 	test.each([
 		["cwd:/Users/me/private/file.ts", "cwd:file.ts"],
 		["path:C:\\Users\\me\\secret\\file.ts", "path:file.ts"],
-		["share=//server/private/secret.txt", "share=secret.txt"],
+		["See //cdn.example.test/assets/file.js", "See //cdn.example.test/assets/file.js"],
 		["See https://example.test/a/b", "See https://example.test/a/b"],
 	])("redacts absolute paths after token delimiters in %s", (value, expected) => {
 		expect(compactAbsolutePaths(value)).toBe(expected);

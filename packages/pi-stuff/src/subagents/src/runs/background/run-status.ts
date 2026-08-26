@@ -132,9 +132,7 @@ function resolveTargetFromRows(target: AgentTarget, rows: readonly AgentRow[]): 
 		throw new Error(`Agent Target '${target.id}' is ambiguous in the current session.`);
 	}
 	if (canonical) return target;
-	if (matches.length === 0) {
-		throw new Error(`Agent Target '${target.id}' is not available in the current session.`);
-	}
+	if (matches.length === 0) return target;
 	if (matches.length > 1) {
 		throw new Error(`Agent Target '${target.id}' is ambiguous in the current session.`);
 	}

@@ -189,6 +189,44 @@ describe("Agent Command Dialog", () => {
 		component.dispose?.();
 	});
 
+	test("hides nested selection hints when the nested roster becomes empty", async () => {
+		const parent = row("parent", "running", {
+			nestedAgents: [
+				{
+					childIndex: 0,
+					depth: 1,
+					description: "Inspect one child",
+					error: null,
+					key: "nested-child",
+					name: "nested-child",
+					nestedCount: 0,
+					parentRunId: "run-parent",
+					partialResult: null,
+					runId: "nested-run",
+					savedOutputPath: null,
+					sessionFile: null,
+					status: "running",
+					task: "Inspect one child",
+					transcriptPath: null,
+				},
+			],
+			nestedCount: 1,
+		});
+		const { component, current } = setup([parent]);
+		input(component, "\r");
+		await flush();
+		input(component, "n");
+		expect(text(component)).toContain("nested-child");
+
+		current.update([row("parent", "running")]);
+		const output = text(component);
+		expect(output).toContain("0 nested Agents");
+		expect(output).not.toContain("select");
+		expect(output).not.toContain("details");
+		expect(output).toContain("? keys");
+		expect(output).toContain("Esc back");
+	});
+
 	test("keeps running identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
 		// SAFETY: this test fixture implements the exact Host surface exercised by this case.

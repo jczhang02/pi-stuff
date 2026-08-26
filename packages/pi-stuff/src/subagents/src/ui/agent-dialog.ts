@@ -740,12 +740,14 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const later = rows.length - window.start - window.rows.length;
 		if (later > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${later} later`)}`);
 		body.push("");
+		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
+		hints.push("? keys", `${cancel} back`);
 		const selectedIndex = window.rows.findIndex((row) => row.key === this.nestedSelectedKey);
 		return fitCommandDialogRows(
 			{
 				header,
 				body,
-				footer: hintLines(theme, width, [`${up}/${down} select`, `${confirm} details`, "? keys", `${cancel} back`]),
+				footer: hintLines(theme, width, hints),
 				priority: [rowLines[selectedIndex] ?? body[1] ?? ""],
 			},
 			commandDialogRows(this.context),
