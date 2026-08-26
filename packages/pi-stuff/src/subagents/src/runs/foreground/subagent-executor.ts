@@ -1889,6 +1889,18 @@ export function resolveResumeTargetRunId(
 	return uniqueIds[0] ?? requested;
 }
 
+/** Convert one current-session legacy row key before public control preflight. */
+export function resolveLegacyAgentParams<Params extends { readonly id?: string; readonly index?: number }>(
+	params: Params,
+	state: SubagentState,
+): Params {
+	if (!params.id) return params;
+	const requested = params.index === undefined ? { id: params.id } : { id: params.id, index: params.index };
+	const target = resolveLegacyAgentTarget(requested, { state });
+	if (target.id === params.id && target.index === params.index) return params;
+	return target.index === undefined ? { ...params, id: target.id } : { ...params, id: target.id, index: target.index };
+}
+
 async function resumeRun(input: {
 	params: SubagentParamsLike;
 	ctx: ExtensionContext;
@@ -2063,20 +2075,11 @@ async function controlAction(
 		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
-	let targetParams = params;
-	if (params.id) {
-		try {
-			const requested = params.index === undefined ? { id: params.id } : { id: params.id, index: params.index };
-			const target = resolveLegacyAgentTarget(requested, { state: deps.state });
-			if (target.id !== params.id || target.index !== params.index) {
-				targetParams =
-					target.index === undefined
-						? { ...params, id: target.id }
-						: { ...params, id: target.id, index: target.index };
-			}
-		} catch (error) {
-			return errorResult("management", error instanceof Error ? error.message : String(error));
-		}
+	let targetParams: SubagentParamsLike;
+	try {
+		targetParams = resolveLegacyAgentParams(params, deps.state);
+	} catch (error) {
+		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
 	if (targetParams.action === "status") {
 		return inspectSubagentStatus(

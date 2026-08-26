@@ -29,6 +29,7 @@ import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
+	resolveLegacyAgentParams,
 	resolveResumeTargetRunId,
 	type SubagentExecutionHooks,
 	type SubagentParamsLike,
@@ -901,9 +902,11 @@ export default function registerSubagentExtension(
 		const invocationSessionId = state.currentSessionId;
 		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, { parentRunOrigin });
 		if (nestedControl) return projectEngineResult(params, nestedControl);
+		let targetParams = params;
 		let resumeTargetRunId: string | undefined;
 		try {
-			resumeTargetRunId = resolveResumeTargetRunId(params, state);
+			if (params.action === "resume") targetParams = resolveLegacyAgentParams(params, state);
+			resumeTargetRunId = resolveResumeTargetRunId(targetParams, state);
 		} catch (error) {
 			return projectEngineResult(
 				params,
@@ -912,7 +915,7 @@ export default function registerSubagentExtension(
 		}
 		let prepareInput: Parameters<typeof executionGovernor.prepare>[0] = {
 			launchRunId,
-			params,
+			params: targetParams,
 		};
 		if (resumeTargetRunId) prepareInput = { ...prepareInput, resumeTargetRunId };
 		const prepared = await executionGovernor.prepare(prepareInput);
@@ -936,7 +939,7 @@ export default function registerSubagentExtension(
 			if (invocation) {
 				startRunRuntime({ createDirectories: true, primeExisting: true });
 			}
-			const engineParams = { ...toEngineParams(params), launchRunId };
+			const engineParams = { ...toEngineParams(targetParams), launchRunId };
 			let hooks: SubagentExecutionHooks = { parentRunOrigin };
 			if (invocation && params.foreground === true) {
 				hooks = {

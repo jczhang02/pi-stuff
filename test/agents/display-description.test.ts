@@ -22,6 +22,13 @@ describe("Agent display descriptions", () => {
 	test.each([
 		["cwd:/Users/me/private/file.ts", "cwd:file.ts"],
 		["path:C:\\Users\\me\\secret\\file.ts", "path:file.ts"],
+		["read /private/a:b/secret.ts", "read secret.ts"],
+		["read /private/a(b)/secret.ts", "read secret.ts"],
+		["read /private/a[b]/secret.ts", "read secret.ts"],
+		["Open file:///workspace/private/report.txt", "Open report.txt"],
+		["Open /workspace/private dir/report.txt", "Open report.txt"],
+		["Open C:\\Users\\Private User\\report.txt", "Open report.txt"],
+		['Open "/workspace/My Private Project/report.txt"', 'Open "report.txt"'],
 		["See //cdn.example.test/assets/file.js", "See //cdn.example.test/assets/file.js"],
 		["See https://example.test/a/b", "See https://example.test/a/b"],
 	])("redacts absolute paths after token delimiters in %s", (value, expected) => {
