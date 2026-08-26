@@ -7,7 +7,7 @@
 	},
 	"files": {
 		"includes": [
-			"**/*.{ts,json,jsonc}",
+			"**/*.{ts,js,mjs,cjs,json,jsonc}",
 			"!**/node_modules",
 			"!**/.artifacts",
 			"!**/.beads",

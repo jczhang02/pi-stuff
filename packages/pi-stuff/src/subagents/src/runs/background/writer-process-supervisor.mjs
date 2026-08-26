@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync, renameSync, watch, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { Guard } from "typebox/guard";
 
@@ -25,7 +25,10 @@ function processStartIdentity(pid) {
 			const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
 			const commandEnd = stat.lastIndexOf(")");
 			if (commandEnd === -1) return undefined;
-			const started = stat.slice(commandEnd + 1).trim().split(/\s+/u)[19];
+			const started = stat
+				.slice(commandEnd + 1)
+				.trim()
+				.split(/\s+/u)[19];
 			return started ? `linux:${started}` : undefined;
 		} catch {
 			return undefined;
@@ -57,7 +60,10 @@ function linuxGroupMembers() {
 			const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
 			const commandEnd = stat.lastIndexOf(")");
 			if (commandEnd === -1) continue;
-			const fields = stat.slice(commandEnd + 1).trim().split(/\s+/u);
+			const fields = stat
+				.slice(commandEnd + 1)
+				.trim()
+				.split(/\s+/u);
 			if (Number(fields[2]) !== process.pid) continue;
 			const started = fields[19];
 			if (started) members.push({ pid, started: `linux:${started}` });
@@ -77,7 +83,9 @@ function bsdGroupMembers() {
 		maxBuffer: 8 * 1024 * 1024,
 	});
 	if (result.error || result.status !== 0) {
-		throw result.error ?? new Error(`Unable to inspect Agent writer process group (ps exited ${String(result.status)}).`);
+		throw (
+			result.error ?? new Error(`Unable to inspect Agent writer process group (ps exited ${String(result.status)}).`)
+		);
 	}
 	const members = [];
 	for (const line of result.stdout.split(/\r?\n/u)) {
@@ -479,9 +487,7 @@ function forgetManagerSignalSource(source) {
 
 function managerSignalSourceForChild(signal) {
 	if (!child?.pid || !childStarted || !Guard.IsString(signal)) return undefined;
-	const sources = managerSignalsByMember
-		.get(memberKey({ pid: child.pid, started: childStarted }))
-		?.get(signal);
+	const sources = managerSignalsByMember.get(memberKey({ pid: child.pid, started: childStarted }))?.get(signal);
 	// Same-signal deliveries cannot be causally disambiguated from the eventual
 	// exit tuple. Fail closed: if an external delivery ever preceded or raced a
 	// manager delivery to this exact process identity, preserve it as a crash.
@@ -756,8 +762,8 @@ try {
 		parentTimer = setInterval(() => {
 			if (processStartIdentity(envelope.parentPid) !== envelope.parentStarted) requestStop("SIGTERM", "external");
 		}, 250);
-			parentTimer.unref?.();
-			const result = await childExit;
+		parentTimer.unref?.();
+		const result = await childExit;
 		if (result.error) process.stderr.write(`Agent writer spawn failed: ${result.error.message}\n`);
 		await settle(result.code, result.signal);
 	}

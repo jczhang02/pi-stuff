@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { lstatSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { Guard } from "typebox/guard";
 
 const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
@@ -54,7 +54,10 @@ function linuxCommandGroupMembers() {
 			const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
 			const commandEnd = stat.lastIndexOf(")");
 			if (commandEnd === -1) continue;
-			const fields = stat.slice(commandEnd + 1).trim().split(/\s+/u);
+			const fields = stat
+				.slice(commandEnd + 1)
+				.trim()
+				.split(/\s+/u);
 			if (Number(fields[2]) !== process.pid) continue;
 			const started = fields[19];
 			if (started) members.push({ pid, started: `linux:${started}` });
@@ -74,7 +77,10 @@ function bsdCommandGroupMembers() {
 		maxBuffer: 8 * 1024 * 1024,
 	});
 	if (result.error || result.status !== 0) {
-		throw result.error ?? new Error(`Unable to inspect Background Work process group (ps exited ${String(result.status)}).`);
+		throw (
+			result.error ??
+			new Error(`Unable to inspect Background Work process group (ps exited ${String(result.status)}).`)
+		);
 	}
 	const members = [];
 	for (const line of result.stdout.split(/\r?\n/u)) {
@@ -195,10 +201,10 @@ async function commandAuthorizationText() {
 				Buffer.byteLength(payload.command, "utf-8") > MAX_COMMAND_AUTHORIZATION_BYTES
 			) {
 				throw new Error("Background Work command authorization is invalid.");
-				}
-				unlinkSync(envelope.commandAuthorizationPath);
-				writeCommandAcknowledgement();
-				return payload.command;
+			}
+			unlinkSync(envelope.commandAuthorizationPath);
+			writeCommandAcknowledgement();
+			return payload.command;
 		} catch (error) {
 			if (error && Guard.IsObject(error) && error.code === "ENOENT") {
 				await delay(20);
@@ -244,8 +250,7 @@ let childStarted;
 // persisted this supervisor's process-start identity. The still-live supervisor
 // is therefore continuous authority for its own group before the short-lived
 // command child's identity becomes observable.
-let spawnedGroupAuthorized = true;
-
+const spawnedGroupAuthorized = true;
 
 function stopChild(reason) {
 	if (stopping) return;
@@ -316,21 +321,21 @@ child.once("spawn", () => {
 			await settle(null, "SIGKILL");
 			return;
 		}
-	if (envelope.commandTransport === "stdin") {
-		child.stdin?.on("error", () => {});
-		child.stdin?.end(command);
-	}
-	report({
-		type: "started",
-		pid: child.pid,
-		started: childStarted,
-		groupPid: process.pid,
-		groupStarted: processStartIdentity(process.pid),
-	});
-	if (stopping) signalCommandGroupMembers("SIGTERM");
-	parentTimer = setInterval(() => {
-		if (!parentStillOwnsUs()) stopChild("parent-exited");
-	}, 250);
+		if (envelope.commandTransport === "stdin") {
+			child.stdin?.on("error", () => {});
+			child.stdin?.end(command);
+		}
+		report({
+			type: "started",
+			pid: child.pid,
+			started: childStarted,
+			groupPid: process.pid,
+			groupStarted: processStartIdentity(process.pid),
+		});
+		if (stopping) signalCommandGroupMembers("SIGTERM");
+		parentTimer = setInterval(() => {
+			if (!parentStillOwnsUs()) stopChild("parent-exited");
+		}, 250);
 	})();
 });
 

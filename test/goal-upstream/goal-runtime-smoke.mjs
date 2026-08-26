@@ -3,11 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import {
-	createFauxCore,
-	fauxAssistantMessage,
-	fauxToolCall,
-} from "@earendil-works/pi-ai/providers/faux";
+import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -26,14 +22,7 @@ const extensionPath = process.env.PI_STUFF_GOAL_RUNTIME_EXTENSION
 	: resolve(import.meta.dirname, "../../packages/pi-stuff/src/goal/src/goal.ts");
 const runtimeMode = process.env.PI_STUFF_GOAL_RUNTIME_MODE ?? "source";
 
-async function createHarness(
-	responses,
-	fauxOptions = {},
-	prepareSession,
-	goalSettings,
-	piSettings = {},
-	managedRun,
-) {
+async function createHarness(responses, fauxOptions = {}, prepareSession, goalSettings, piSettings = {}, managedRun) {
 	const root = await mkdtemp(join(tmpdir(), "pi-goal-runtime-"));
 	const agentDir = join(root, "agent");
 	const cwd = join(root, "workspace");
@@ -141,9 +130,7 @@ async function createHarness(
 						pi.on("tool_execution_end", () => lifecycleEvents.push("tool_execution_end"));
 						pi.on("session_before_compact", () => lifecycleEvents.push("session_before_compact"));
 						pi.on("session_compact", (_event, ctx) =>
-							lifecycleEvents.push(
-								`session_compact:idle=${ctx.isIdle()}:pending=${ctx.hasPendingMessages()}`,
-							),
+							lifecycleEvents.push(`session_compact:idle=${ctx.isIdle()}:pending=${ctx.hasPendingMessages()}`),
 						);
 						pi.on("agent_settled", () => lifecycleEvents.push("agent_settled"));
 					},
@@ -304,11 +291,7 @@ async function normalContinuationScenario() {
 		await harness.session.agent.waitForIdle();
 		assert.equal(events.filter((type) => type === "agent_settled").length, 2);
 		assert.equal(persistedGoalStatus(harness.session), null);
-		assert.ok(
-			harness.session.messages
-				.map(storedPromptText)
-				.some((text) => text.includes("pi-goal-continuation:")),
-		);
+		assert.ok(harness.session.messages.map(storedPromptText).some((text) => text.includes("pi-goal-continuation:")));
 	} finally {
 		unsubscribe();
 		await harness.cleanup();
@@ -330,9 +313,7 @@ async function strictBlockerAuditScenario() {
 		assert.equal(persistedGoalStatus(harness.session), "blocked");
 		assert.equal(persistedGoalState(harness.session)?.goal?.blockerAudit?.consecutiveTurns, 3);
 		assert.equal(
-			harness.session.messages
-				.map(storedPromptText)
-				.filter((text) => text.includes("pi-goal-continuation:")).length,
+			harness.session.messages.map(storedPromptText).filter((text) => text.includes("pi-goal-continuation:")).length,
 			2,
 		);
 	} finally {
@@ -362,9 +343,7 @@ async function runawayNoProgressScenario() {
 		assert.equal(persistedGoalState(harness.session)?.goal?.safetyPauseCause, "no_progress");
 		assert.equal(persistedGoalState(harness.session)?.goal?.toolFreeRepeatCount, 3);
 		assert.equal(
-			harness.session.messages
-				.map(storedPromptText)
-				.filter((text) => text.includes("pi-goal-continuation:")).length,
+			harness.session.messages.map(storedPromptText).filter((text) => text.includes("pi-goal-continuation:")).length,
 			3,
 		);
 	} finally {
@@ -401,10 +380,7 @@ async function automaticToolLoopLimitScenario() {
 		assert.equal(persistedGoalStatus(harness.session), "paused");
 		assert.equal(persistedGoalState(harness.session)?.goal?.safetyPauseCause, "continuation_limit");
 		assert.equal(persistedGoalState(harness.session)?.goal?.automaticModelTurns, 3);
-		assert.equal(
-			harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length,
-			3,
-		);
+		assert.equal(harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length, 3);
 		assert.deepEqual(observedSignals.slice(0, 3), [false, false, false]);
 		assert.ok(observedSignals.length <= 4);
 		if (observedSignals.length === 4) assert.equal(observedSignals[3], true);
@@ -504,12 +480,7 @@ async function exhaustedRetryContinuesScenario() {
 		errorMessage: "HTTP 524: transient upstream timeout",
 	});
 	const harness = await createHarness(
-		[
-			fauxAssistantMessage("Initial unfinished result."),
-			providerError,
-			providerError,
-			completionResponse,
-		],
+		[fauxAssistantMessage("Initial unfinished result."), providerError, providerError, completionResponse],
 		{},
 		undefined,
 		undefined,
@@ -523,11 +494,7 @@ async function exhaustedRetryContinuesScenario() {
 		await waitFor(() => harness.faux.state.callCount === 4, "continuation after exhausted retry");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
-		assert.ok(
-			harness.session.messages
-				.map(storedPromptText)
-				.some((text) => text.includes("pi-goal-continuation:")),
-		);
+		assert.ok(harness.session.messages.map(storedPromptText).some((text) => text.includes("pi-goal-continuation:")));
 	} finally {
 		await harness.cleanup();
 	}
@@ -610,9 +577,7 @@ async function queuedInputScenario() {
 		await waitFor(() => harness.faux.state.callCount === 3, "continuation after queued input");
 		await harness.session.agent.waitForIdle();
 		const queuedIndex = observedPrompts.findIndex((text) => text.includes("queued user work"));
-		const continuationIndex = observedPrompts.findIndex((text) =>
-			text.includes("pi-goal-continuation:"),
-		);
+		const continuationIndex = observedPrompts.findIndex((text) => text.includes("pi-goal-continuation:"));
 		assert.ok(queuedIndex >= 0, "expected queued work to reach the model");
 		assert.ok(continuationIndex > queuedIndex, "continuation must yield to queued work");
 	} finally {
@@ -637,9 +602,7 @@ async function busyEditOwnershipScenario() {
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
-			harness.session.messages
-				.map(storedPromptText)
-				.some((text) => text.includes("updated objective supersedes")),
+			harness.session.messages.map(storedPromptText).some((text) => text.includes("updated objective supersedes")),
 		);
 	} finally {
 		await harness.cleanup();
@@ -660,9 +623,7 @@ async function pauseScenario() {
 		assert.ok(harness.faux.state.callCount <= 1, "pause must prevent any second provider call");
 		assert.equal(persistedGoalStatus(harness.session), "paused");
 		assert.equal(
-			harness.session.messages
-				.map(storedPromptText)
-				.filter((text) => text.includes("pi-goal-continuation:")).length,
+			harness.session.messages.map(storedPromptText).filter((text) => text.includes("pi-goal-continuation:")).length,
 			0,
 		);
 	} finally {
@@ -706,11 +667,7 @@ async function reloadResumeScenario() {
 		}
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
-		assert.ok(
-			harness.session.messages
-				.map(storedPromptText)
-				.some((text) => text.includes("pi-goal-continuation:")),
-		);
+		assert.ok(harness.session.messages.map(storedPromptText).some((text) => text.includes("pi-goal-continuation:")));
 	} finally {
 		await harness.cleanup();
 	}
@@ -772,10 +729,7 @@ async function frozenQueueBlockedToolAbortScenario() {
 	try {
 		await harness.session.prompt("Simulate a stale frozen-queue tool call.");
 		await harness.session.agent.waitForIdle();
-		assert.ok(
-			harness.faux.state.callCount <= 2,
-			"frozen guard must allow at most one cleanup call",
-		);
+		assert.ok(harness.faux.state.callCount <= 2, "frozen guard must allow at most one cleanup call");
 		assert.equal(observedSignals.includes(false), false, "any cleanup call must inherit abort");
 		assert.equal(persistedGoalStatus(harness.session), "active");
 	} finally {
@@ -807,10 +761,7 @@ async function stalePausedToolAbortScenario() {
 		await harness.session.agent.waitForIdle();
 		assert.ok(harness.faux.state.callCount <= 3, "stale guard must allow at most one cleanup call");
 		assert.equal(observedSignals.includes(false), false, "any cleanup call must inherit abort");
-		assert.equal(
-			harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length,
-			0,
-		);
+		assert.equal(harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length, 0);
 	} finally {
 		await harness.cleanup();
 	}
@@ -832,10 +783,7 @@ async function budgetBoundaryScenario() {
 		await waitFor(() => harness.faux.state.callCount === 2, "budget wrap-up response");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), "budget_limited");
-		assert.equal(
-			harness.lifecycleEvents.filter((event) => event === "tool_execution_end").length,
-			1,
-		);
+		assert.equal(harness.lifecycleEvents.filter((event) => event === "tool_execution_end").length, 1);
 		assert.ok(
 			harness.lifecycleEvents.indexOf("assistant_message_end") <
 				harness.lifecycleEvents.indexOf("tool_execution_end"),
@@ -862,10 +810,7 @@ async function budgetViolationScenario() {
 			harness.faux.state.callCount === 2 || harness.faux.state.callCount === 3,
 			"Pi must stop after the rejected wrap-up tool, with at most one aborted cleanup call",
 		);
-		assert.equal(
-			harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length,
-			1,
-		);
+		assert.equal(harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length, 1);
 		assert.equal(persistedGoalStatus(harness.session), "budget_limited");
 	} finally {
 		await harness.cleanup();
@@ -901,15 +846,11 @@ async function managedRunRpcScenario() {
 		);
 		await harness.session.agent.waitForIdle();
 		assert.deepEqual(
-			harness.managedRunEvents
-				.filter((event) => event.type === "state")
-				.map((event) => event.status),
+			harness.managedRunEvents.filter((event) => event.type === "state").map((event) => event.status),
 			["active", "complete"],
 		);
 		assert.equal(
-			harness.managedRunEvents.filter(
-				(event) => event.type === "state" && event.status !== "active",
-			).length,
+			harness.managedRunEvents.filter((event) => event.type === "state" && event.status !== "active").length,
 			1,
 		);
 	} finally {
@@ -919,14 +860,7 @@ async function managedRunRpcScenario() {
 
 async function managedRunDisabledScenario() {
 	const runId = crypto.randomUUID();
-	const harness = await createHarness(
-		[],
-		{},
-		undefined,
-		undefined,
-		{},
-		{ runId, objective: "must stay disabled" },
-	);
+	const harness = await createHarness([], {}, undefined, undefined, {}, { runId, objective: "must stay disabled" });
 	try {
 		await waitFor(() => harness.managedRunEvents.length > 0, "managed run disabled rejection");
 		assert.deepEqual(harness.managedRunEvents, [
@@ -993,11 +927,7 @@ async function manualCompactionScenario() {
 		);
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
-		assert.ok(
-			harness.session.messages
-				.map(storedPromptText)
-				.some((text) => text.includes("pi-goal-continuation:")),
-		);
+		assert.ok(harness.session.messages.map(storedPromptText).some((text) => text.includes("pi-goal-continuation:")));
 	} finally {
 		unsubscribe();
 		await harness.cleanup();

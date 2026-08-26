@@ -5,7 +5,10 @@ function processStartIdentity(pid) {
 	try {
 		const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
 		const end = stat.lastIndexOf(")");
-		const started = stat.slice(end + 1).trim().split(/\s+/u)[19];
+		const started = stat
+			.slice(end + 1)
+			.trim()
+			.split(/\s+/u)[19];
 		return started ? `linux:${started}` : undefined;
 	} catch {
 		return undefined;
