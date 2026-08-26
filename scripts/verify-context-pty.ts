@@ -383,7 +383,11 @@ async function runResumePaintVerification(
 		);
 		panePid = Number(tmux(["display-message", "-p", "-t", session, "#{pane_pid}"]).trim());
 		if (!Number.isSafeInteger(panePid) || panePid <= 0) fail(`invalid resumed Pi pane pid ${String(panePid)}`);
-		await waitFor((frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE"), "resumed editor readiness", 40_000);
+		const historyOutput = await waitFor(
+			(frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE") && frame.includes("Context search 中文检索标记 · done"),
+			"resumed editor readiness with historical ctx_search row",
+			40_000,
+		);
 
 		const prompt = "CONTEXT_RESUME";
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
@@ -411,14 +415,14 @@ async function runResumePaintVerification(
 
 		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
 		send("CONTEXT_DRAIN");
-		const output = await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
+		await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
 		tmux(["send-keys", "-t", session, "C-c"]);
 		await Bun.sleep(150);
 		tmux(["send-keys", "-t", session, "C-d"]);
 		const exitDeadline = Date.now() + 5_000;
 		while (sessionExists() && Date.now() < exitDeadline) await Bun.sleep(10);
 		if (sessionExists()) fail("resumed Pi did not exit");
-		return output;
+		return historyOutput;
 	} finally {
 		if (transformStopped && panePid !== undefined) {
 			try {
