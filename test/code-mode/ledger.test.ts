@@ -96,6 +96,7 @@ test("historical explicit Tool errors override a stale success classification in
 	const replay = resumed.beginToolCall("read", {});
 	expect(replay.replay).toMatchObject({
 		kind: "error",
+		message: "nested failure",
 		result: { content: [{ text: "nested failure", type: "text" }], isError: true },
 	});
 	expect(branch).toContainEqual(persistedSettlement);

@@ -560,6 +560,8 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent, historical = fals
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
 			if (historical && call.status === "success" && "isError" in call.result && call.result.isError === true) {
 				call.status = "error";
+				const text = call.result.content.find((item) => item.type === "text" && item.text.trim());
+				call.error ??= text?.type === "text" ? text.text.trim() : `${call.name} failed`;
 			}
 		}
 	}
