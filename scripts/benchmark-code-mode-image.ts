@@ -20,34 +20,60 @@ const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const PROVIDER = "openai-codex";
 const MODEL = "gpt-5.6-sol";
 const BASELINE_COMMIT = "65b6764";
-const CANDIDATE_COMMIT = "4487a06";
+const CANDIDATE_COMMIT = "7a3e753";
 const CASE_TIMEOUT_MS = 12 * 60_000;
 const REQUIRED_TOOL_SUCCESSES = 18;
 const REQUIRED_HARD_SUCCESSES = 20;
-const CODES = [
-	"731905",
-	"284167",
-	"609352",
-	"418730",
-	"952641",
-	"367824",
-	"805219",
-	"146593",
-	"573086",
-	"920475",
-	"238761",
-	"694028",
-	"351972",
-	"782436",
-	"469105",
-	"817354",
-	"205687",
-	"936412",
-	"542809",
-	"173648",
-] as const;
+const CODES = {
+	baseline: [
+		"731905",
+		"284167",
+		"609352",
+		"418730",
+		"952641",
+		"367824",
+		"805219",
+		"146593",
+		"573086",
+		"920475",
+		"238761",
+		"694028",
+		"351972",
+		"782436",
+		"469105",
+		"817354",
+		"205687",
+		"936412",
+		"542809",
+		"173648",
+	],
+	candidate: [
+		"615204",
+		"807361",
+		"392570",
+		"708143",
+		"154829",
+		"683517",
+		"429630",
+		"571264",
+		"836951",
+		"247583",
+		"918426",
+		"365701",
+		"729815",
+		"481692",
+		"653278",
+		"194537",
+		"826149",
+		"537284",
+		"961750",
+		"348625",
+	],
+} as const;
+export const IMAGE_BENCHMARK_CODES = CODES;
+const SESSIONS_PER_ARM = CODES.baseline.length;
 const DIGITS = [
-	["11111", "10001", "10011", "10101", "11001", "10001", "11111"],
+	["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
 	["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
 	["11111", "00001", "00001", "11111", "10000", "10000", "11111"],
 	["11111", "00001", "00001", "01111", "00001", "00001", "11111"],
@@ -96,6 +122,7 @@ export interface ImageBenchmarkCase {
 	readonly repetition: number;
 	readonly resumeExit: number | null;
 	readonly searchQueries: readonly string[];
+	readonly sessionImageCount: number;
 	readonly sessionSafe: boolean;
 	readonly timedOut: boolean;
 	readonly toolChoice: boolean;
@@ -302,7 +329,7 @@ function jsonObject(value: JsonValue | undefined): JsonObject | undefined {
 	if (value === null || Array.isArray(value) || !isRuntimeObject(value)) return undefined;
 	return value;
 }
-function analyzeSession(entries: readonly JsonValue[]): SessionAnalysis {
+export function analyzeSession(entries: readonly JsonValue[]): SessionAnalysis {
 	const imageBlocks: { data: string; mimeType: string }[] = [];
 	const nestedTools: string[] = [];
 	const searchQueries: string[] = [];
@@ -340,7 +367,10 @@ function analyzeSession(entries: readonly JsonValue[]): SessionAnalysis {
 		}
 		for (const item of Object.values(record)) visit(item);
 	}
-	for (const entry of entries) visit(entry);
+	for (const entry of entries) {
+		const record = jsonObject(entry);
+		if (record?.["type"] === "message" && record["message"] !== undefined) visit(record["message"]);
+	}
 	return {
 		codeModeErrors,
 		explicitImageHelper,
@@ -505,6 +535,7 @@ async function runCase(
 			repetition,
 			resumeExit: resumed.exitCode,
 			searchQueries: analysis.searchQueries,
+			sessionImageCount: analysis.imageBlocks.length,
 			sessionSafe,
 			timedOut: first.timedOut || resumed.timedOut,
 			toolChoice,
@@ -533,6 +564,7 @@ async function runCase(
 			repetition,
 			resumeExit: resumed.exitCode,
 			searchQueries: [],
+			sessionImageCount: 0,
 			sessionSafe: false,
 			timedOut: first.timedOut || resumed.timedOut,
 			toolChoice: false,
@@ -579,15 +611,15 @@ export function evaluateImageBenchmark(cases: readonly ImageBenchmarkCase[]) {
 		.map((item) => item.providerToolDefinitionCharacters)
 		.filter((value) => value > 0);
 	const standingContextNoIncrease =
-		baselineDefinitions.length === CODES.length &&
-		candidateDefinitions.length === CODES.length &&
+		baselineDefinitions.length === SESSIONS_PER_ARM &&
+		candidateDefinitions.length === SESSIONS_PER_ARM &&
 		Math.max(...candidateDefinitions) <= Math.min(...baselineDefinitions);
 	return {
 		baseline,
 		candidate,
 		standingContextNoIncrease,
 		candidatePass:
-			candidateCases.length === CODES.length &&
+			candidateCases.length === SESSIONS_PER_ARM &&
 			candidateCases.every(
 				(item) => item.instrumentationValid && item.imagePersistedOnce && item.codeModeErrors === 0,
 			) &&
@@ -627,15 +659,17 @@ if (import.meta.main) {
 	const cases: ImageBenchmarkCase[] = [];
 	try {
 		let sequence = 0;
-		for (const [index, code] of CODES.entries()) {
+		for (let index = 0; index < SESSIONS_PER_ARM; index += 1) {
 			const arms: readonly Arm[] = index % 2 === 0 ? ["candidate", "baseline"] : ["baseline", "candidate"];
 			for (const arm of arms) {
+				const code = CODES[arm][index];
+				if (!code) fail(`missing ${arm} challenge ${String(index + 1)}`);
 				sequence += 1;
 				process.stderr.write(
 					"Code Mode image benchmark " +
 						String(sequence) +
 						"/" +
-						String(CODES.length * 2) +
+						String(SESSIONS_PER_ARM * 2) +
 						": " +
 						arm +
 						" " +
@@ -668,7 +702,7 @@ if (import.meta.main) {
 				minimumToolChoice: REQUIRED_TOOL_SUCCESSES,
 				noExclusions: true,
 				noRetries: true,
-				sessionsPerArm: CODES.length,
+				sessionsPerArm: SESSIONS_PER_ARM,
 			},
 			cases,
 			evaluation,

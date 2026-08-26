@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { getImageDimensions } from "@earendil-works/pi-tui";
 import {
+	analyzeSession,
 	createChallengePng,
 	evaluateImageBenchmark,
+	IMAGE_BENCHMARK_CODES,
 	type ImageBenchmarkCase,
 } from "../../scripts/benchmark-code-mode-image.js";
 import { inspectProviderPayload } from "../fixtures/code-mode-image-benchmark-observer.js";
@@ -27,6 +29,7 @@ function benchmarkCase(arm: "baseline" | "candidate", repetition: number): Image
 		repetition,
 		resumeExit: 0,
 		searchQueries: [],
+		sessionImageCount: 1,
 		sessionSafe: true,
 		timedOut: false,
 		toolChoice: passed,
@@ -35,12 +38,22 @@ function benchmarkCase(arm: "baseline" | "candidate", repetition: number): Image
 	};
 }
 
-test("benchmark challenge PNGs are distinct and decoder-readable", () => {
-	const first = createChallengePng("731905");
-	const second = createChallengePng("284167");
-	expect(first.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-	expect(second).not.toEqual(first);
-	expect(getImageDimensions(first.toString("base64"), "image/png")).toEqual({ heightPx: 80, widthPx: 304 });
+test("all preregistered challenge PNGs are distinct and decoder-readable", () => {
+	const images = Object.values(IMAGE_BENCHMARK_CODES).flat().map(createChallengePng);
+	expect(new Set(images.map((image) => createHash("sha256").update(image).digest("hex"))).size).toBe(40);
+	for (const image of images) {
+		expect(image.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+		expect(getImageDimensions(image.toString("base64"), "image/png")).toEqual({ heightPx: 80, widthPx: 304 });
+	}
+});
+
+test("Session analysis counts images only in persisted Provider messages", () => {
+	const image = { data: createChallengePng("731905").toString("base64"), mimeType: "image/png", type: "image" };
+	const analysis = analyzeSession([
+		{ data: { result: { json: { content: [image] } }, value: { json: { content: [image] } } }, type: "custom" },
+		{ message: { content: [image], role: "toolResult" }, type: "message" },
+	]);
+	expect(analysis.imageBlocks).toEqual([{ data: image.data, mimeType: "image/png" }]);
 });
 
 test("Provider observer traverses complete payloads while retaining only image and schema evidence", () => {

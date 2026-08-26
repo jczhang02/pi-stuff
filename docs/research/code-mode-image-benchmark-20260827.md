@@ -74,6 +74,7 @@ Viewed-image UI visual acceptance; this behavioral benchmark does not infer pixe
 Run from the candidate worktree with a baseline repository root that still has the preregistered Package tree:
 
 ```sh
+PI_BIN=<absolute-certified-pi-release> \
 bun run benchmark:code-mode-image --baseline-root <absolute-baseline-root> --output <absolute-report-path>
 ```
 
@@ -91,3 +92,44 @@ samples and no model outcome. The certified v0.84.3 Linux x64 release artifact w
 preregistered official release and verified as 104,487,040 bytes with SHA-256
 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08`. Supplying that artifact through `PI_BIN`
 starts the first and only sample set; this preflight correction does not retry or replace a sample.
+
+## V1 outcome and V2 preregistration
+
+V1 completed before 2026-08-26T01:56:02Z and is retained verbatim as
+`docs/reports/code-mode-image-20260827/benchmark-v1.json`. It failed its preregistered verdict. The baseline produced
+20/20 exact transfers, 18/20 correct readings, and 20 Code Mode envelope errors. The candidate produced 19/20 exact
+transfers, 16/20 correct readings, zero Code Mode envelope errors, and a valid, decoder-readable image in every image
+and resume Provider payload for the 19 runs that used an image Tool. Nineteen candidate runs selected `view_image`,
+but 18 of those still called the compatibility form `image(result)`; only one met the preregistered direct-return Tool
+choice. One candidate run made no Tool call. No observed Provider payload contained a malformed, truncated, or
+undecodable image.
+
+V1 cannot certify the change for three independent reasons discovered from its archived evidence:
+
+1. Its two arms reused the same 20 generated PNGs, violating the accepted requirement for 40 distinct challenge
+   images.
+2. Its Session counter traversed custom UI event copies as well as persisted Provider-message entries, so the
+   `imagePersistedOnce` hard gate was invalid even though the resume Provider payload contained one valid image.
+3. Every candidate OCR miss involved the generated zero glyph, which was visibly ambiguous; the behavioral fixture did
+   not isolate image transport from glyph quality.
+
+V2 is a new benchmark, not a retry or replacement of any V1 sample. It retains every V1 run and result, uses no V1
+outcome as a V2 exclusion, and keeps the same Host, model, prompts, 20 Sessions per arm, deterministic interleaving,
+thresholds, no-retry rule, no-exclusion rule, complete Provider-payload observer, and hard image-integrity gates. Before
+any V2 run or outcome:
+
+- candidate Package commit is `7a3e753975cf54bfa6e2f3ee99e5242de5f8a731` with tree
+  `ddc5e95dd6817abac6c131d36a6b5eb7d0497a4a`;
+- baseline remains `65b676474cc73411b62bf2cab1c910e2e359a6b9` with Package tree
+  `24cab67c6893732155ad113747b7f8830335d5c9`;
+- the candidate standing rule now names the exact forbidden compatibility call, `image(result)`, while remaining no
+  larger than the baseline Provider Tool surface;
+- the two arms use separate preregistered code lists whose 40 PNG hashes are all distinct;
+- the zero glyph is hollow and unambiguous, and all 40 PNGs pass the real decoder before execution;
+- Session persistence counts only image blocks under durable `message` entries; custom UI event copies remain
+  observable Session diagnostics but are not Provider conversation history;
+- the V2 report path is `docs/reports/code-mode-image-20260827/benchmark-v2.json`.
+
+V2 remains a failure if any candidate Session is retried or replaced, any candidate Provider image is malformed,
+truncated, undecodable, or hash-mismatched, any candidate durable Provider message persists other than exactly one
+challenge image, any resumed payload fails image validation, or any original acceptance threshold is missed.
