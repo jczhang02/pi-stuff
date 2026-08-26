@@ -1,64 +1,40 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 // API Key authenticated requests time out server-side after 30 seconds.
 const SEARCH_TIMEOUT_MS = 30_000;
 
-interface WebSearchConfig extends JsonInputObject {
-	searchinfinityApiKey?: JsonInputValue;
-}
-
 interface SearchinfinitySearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
 	const key = await resolveCredential({
 		provider: "Searchinfinity",
-		configuredValue: loadConfig().searchinfinityApiKey,
-		environmentValue: process.env.SEARCHINFINITY_API_KEY,
+		configuredValue: loadConfig()["searchinfinityApiKey"],
+		environmentValue: process.env["SEARCHINFINITY_API_KEY"],
 		signal,
 	});
 	if (!key) {
 		throw new Error(
 			"Searchinfinity API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "searchinfinityApiKey": "your-key" }\n` +
-			"  2. Set SEARCHINFINITY_API_KEY environment variable\n" +
-			"Create a key at https://console.byteplus.com/search-infinity/api-key",
+				`  1. Create ${CONFIG_PATH} with { "searchinfinityApiKey": "your-key" }\n` +
+				"  2. Set SEARCHINFINITY_API_KEY environment variable\n" +
+				"Create a key at https://console.byteplus.com/search-infinity/api-key",
 		);
 	}
 	return key;
@@ -67,23 +43,9 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 export function isSearchinfinityAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Searchinfinity",
-		configuredValue: loadConfig().searchinfinityApiKey,
-		environmentValue: process.env.SEARCHINFINITY_API_KEY,
+		configuredValue: loadConfig()["searchinfinityApiKey"],
+		environmentValue: process.env["SEARCHINFINITY_API_KEY"],
 	});
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function normalizeNumResults(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function mapRecencyFilter(recency: SearchOptions["recencyFilter"]): string | undefined {
@@ -104,16 +66,16 @@ function buildSearchBody(query: string, options: SearchinfinitySearchOptions): J
 		if (target.length < 5 && !target.includes(domain)) target.push(domain);
 	}
 	const filter: JsonInputObject = {};
-	if (includeSites.length > 0) filter.Sites = includeSites.join("|");
-	if (blockHosts.length > 0) filter.BlockHosts = blockHosts.join("|");
+	if (includeSites.length > 0) filter["Sites"] = includeSites.join("|");
+	if (blockHosts.length > 0) filter["BlockHosts"] = blockHosts.join("|");
 
 	const timeRange = mapRecencyFilter(options.recencyFilter);
 	const body: JsonInputObject = {
 		Query: query,
-		Count: normalizeNumResults(options.numResults),
+		Count: normalizeCount(options.numResults),
 	};
-	if (Object.keys(filter).length > 0) body.Filter = filter;
-	if (timeRange) body.TimeRange = timeRange;
+	if (Object.keys(filter).length > 0) body["Filter"] = filter;
+	if (timeRange) body["TimeRange"] = timeRange;
 	return body;
 }
 
@@ -157,25 +119,28 @@ async function searchinfinityJsonRequest(
 
 	const raw = await response.text();
 	if (!response.ok) {
-		throw new Error(`Searchinfinity Search API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`);
+		throw new Error(
+			`Searchinfinity Search API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`,
+		);
 	}
-	let data;
+	let data: JsonInputObject;
 	try {
 		data = parseJsonObject(raw);
 	} catch (err) {
 		throw new Error(`Searchinfinity Search API returned invalid JSON: ${errorMessage(err)}`);
 	}
-	const responseMetadata = isJsonInputObject(data.ResponseMetadata) ? data.ResponseMetadata : undefined;
-	const businessError = isJsonInputObject(responseMetadata?.Error) ? responseMetadata.Error : undefined;
-	if (businessError && (businessError.Code || businessError.Message)) {
-		const code = isRuntimeString(businessError.Code) && businessError.Code ? businessError.Code : "unknown";
-		const message = isRuntimeString(businessError.Message) && businessError.Message ? businessError.Message : "unknown error";
-		const codeN = isRuntimeNumber(businessError.CodeN) ? businessError.CodeN : undefined;
+	const responseMetadata = isJsonInputObject(data["ResponseMetadata"]) ? data["ResponseMetadata"] : undefined;
+	const businessError = isJsonInputObject(responseMetadata?.["Error"]) ? responseMetadata["Error"] : undefined;
+	if (businessError && (businessError["Code"] || businessError["Message"])) {
+		const code = isRuntimeString(businessError["Code"]) && businessError["Code"] ? businessError["Code"] : "unknown";
+		const message =
+			isRuntimeString(businessError["Message"]) && businessError["Message"]
+				? businessError["Message"]
+				: "unknown error";
+		const codeN = isRuntimeNumber(businessError["CodeN"]) ? businessError["CodeN"] : undefined;
 		const status = businessErrorStatus(codeN, code, message);
-		const codeLabel = isRuntimeNumber(businessError.CodeN) ? `${businessError.CodeN} ${code}` : code;
-		throw new Error(
-			`Searchinfinity Search API error ${status ?? "unknown"}: ${message} (code ${codeLabel})`,
-		);
+		const codeLabel = isRuntimeNumber(businessError["CodeN"]) ? `${businessError["CodeN"]} ${code}` : code;
+		throw new Error(`Searchinfinity Search API error ${status ?? "unknown"}: ${message} (code ${codeLabel})`);
 	}
 	return data;
 }
@@ -189,19 +154,23 @@ function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 		const url = item.Url.trim();
 		const summary = isRuntimeString(item.Summary) ? item.Summary.replace(/\s+/g, " ").trim() : "";
 		const snippet = isRuntimeString(item.Snippet) ? item.Snippet.replace(/\s+/g, " ").trim() : "";
-		return [{
-			title: isRuntimeString(item.Title) && item.Title.trim() ? item.Title.trim() : url,
-			url,
-			snippet: summary || snippet,
-		}];
+		return [
+			{
+				title: isRuntimeString(item.Title) && item.Title.trim() ? item.Title.trim() : url,
+				url,
+				snippet: summary || snippet,
+			},
+		];
 	});
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
+	return results
+		.map((result) => {
+			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
+			return `Source: ${result.title} (${result.url})`;
+		})
+		.join("\n\n");
 }
 
 export async function searchWithSearchinfinity(
@@ -212,8 +181,8 @@ export async function searchWithSearchinfinity(
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), options.signal);
-		const resultEnvelope = isJsonInputObject(data.Result) ? data.Result : undefined;
-		const results = mapSearchResults(resultEnvelope?.WebResults);
+		const resultEnvelope = isJsonInputObject(data["Result"]) ? data["Result"] : undefined;
+		const results = mapSearchResults(resultEnvelope?.["WebResults"]);
 		const response: SearchResponse = { answer: buildAnswer(results), results };
 		activityMonitor.logComplete(activityId, 200);
 		return response;

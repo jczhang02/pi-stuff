@@ -1,15 +1,14 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
 const QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents";
@@ -18,50 +17,27 @@ const SEARCH_TIMEOUT_MS = 60_000;
 const CONTENTS_TIMEOUT_MS = 60_000;
 const MAX_CONTENT_URLS = 10;
 
-interface WebSearchConfig extends JsonInputObject {
-	queritApiKey?: JsonInputValue;
-}
-
 interface QueritSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
 	const key = await resolveCredential({
 		provider: "Querit",
-		configuredValue: loadConfig().queritApiKey,
-		environmentValue: process.env.QUERIT_API_KEY,
+		configuredValue: loadConfig()["queritApiKey"],
+		environmentValue: process.env["QUERIT_API_KEY"],
 		signal,
 	});
 	if (!key) {
 		throw new Error(
 			"Querit API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "queritApiKey": "your-key" }\n` +
-			"  2. Set QUERIT_API_KEY environment variable\n" +
-			"Create a key at https://www.querit.ai/en/dashboard/api-keys",
+				`  1. Create ${CONFIG_PATH} with { "queritApiKey": "your-key" }\n` +
+				"  2. Set QUERIT_API_KEY environment variable\n" +
+				"Create a key at https://www.querit.ai/en/dashboard/api-keys",
 		);
 	}
 	return key;
@@ -70,23 +46,9 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 export function isQueritAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Querit",
-		configuredValue: loadConfig().queritApiKey,
-		environmentValue: process.env.QUERIT_API_KEY,
+		configuredValue: loadConfig()["queritApiKey"],
+		environmentValue: process.env["QUERIT_API_KEY"],
 	});
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function normalizeNumResults(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined) {
@@ -115,16 +77,16 @@ function buildSearchBody(query: string, options: QueritSearchOptions): JsonInput
 	const filters: JsonInputObject = {};
 	if (include.length > 0 || exclude.length > 0) {
 		const sites: JsonInputObject = {};
-		if (include.length > 0) sites.include = include;
-		if (exclude.length > 0) sites.exclude = exclude;
-		filters.sites = sites;
+		if (include.length > 0) sites["include"] = include;
+		if (exclude.length > 0) sites["exclude"] = exclude;
+		filters["sites"] = sites;
 	}
-	if (date) filters.timeRange = { date };
+	if (date) filters["timeRange"] = { date };
 	const body: JsonInputObject = {
 		query,
-		count: normalizeNumResults(options.numResults),
+		count: normalizeCount(options.numResults),
 	};
-	if (Object.keys(filters).length > 0) body.filters = filters;
+	if (Object.keys(filters).length > 0) body["filters"] = filters;
 	return body;
 }
 
@@ -169,11 +131,14 @@ async function queritJsonRequest(
 		});
 	} catch (err) {
 		const message = errorMessage(err);
-		const isRequestAbort = err instanceof Error
-			? err.name === "AbortError" || err.name === "TimeoutError" || /abort|timeout/i.test(message)
-			: /abort|timeout/i.test(message);
+		const isRequestAbort =
+			err instanceof Error
+				? err.name === "AbortError" || err.name === "TimeoutError" || /abort|timeout/i.test(message)
+				: /abort|timeout/i.test(message);
 		if (!signal?.aborted && isRequestAbort) {
-			const timeoutError = new Error(`Querit ${label} API request timed out after ${Math.ceil(timeoutMs / 1_000)} seconds`);
+			const timeoutError = new Error(
+				`Querit ${label} API request timed out after ${Math.ceil(timeoutMs / 1_000)} seconds`,
+			);
 			timeoutError.name = "TimeoutError";
 			throw timeoutError;
 		}
@@ -196,45 +161,51 @@ async function queritJsonRequest(
 }
 
 function assertApiSuccess(label: "Search" | "Contents", data: JsonInputObject): void {
-	const code = Number(data.error_code);
+	const code = Number(data["error_code"]);
 	if (!Number.isFinite(code) || code !== 200) {
-		const renderedCode = data.error_code === undefined ? "unknown" : String(data.error_code);
-		const message = isRuntimeString(data.error_msg) && data.error_msg.trim() ? `: ${data.error_msg.trim()}` : "";
+		const renderedCode = data["error_code"] === undefined ? "unknown" : String(data["error_code"]);
+		const message =
+			isRuntimeString(data["error_msg"]) && data["error_msg"].trim() ? `: ${data["error_msg"].trim()}` : "";
 		throw new Error(`Querit ${label} API returned error ${renderedCode}${message}`);
 	}
 }
 
 function mapSearchResults(data: JsonInputObject): SearchResponse["results"] {
-	const resultEnvelope = isJsonInputObject(data.results) ? data.results : undefined;
-	const items = resultEnvelope?.result;
+	const resultEnvelope = isJsonInputObject(data["results"]) ? data["results"] : undefined;
+	const items = resultEnvelope?.["result"];
 	if (!Array.isArray(items)) {
 		throw new Error("Querit Search API returned an unexpected response shape");
 	}
 	return items.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || item.url.trim().length === 0) return [];
 		const url = item.url.trim();
-		return [{
-			title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
-			url,
-			snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
-		}];
+		return [
+			{
+				title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
+				url,
+				snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
+			},
+		];
 	});
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
+	return results
+		.map((result) => {
+			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
+			return `Source: ${result.title} (${result.url})`;
+		})
+		.join("\n\n");
 }
 
 function mapContentResult(result: JsonInputValue, requestedUrl: string): ExtractedContent | null {
-	if (!isJsonInputObject(result) || !isRuntimeString(result.content) || result.content.trim().length === 0) return null;
-	const metadata = isJsonInputObject(result.extrasMeta) ? result.extrasMeta : undefined;
+	if (!isJsonInputObject(result) || !isRuntimeString(result["content"]) || result["content"].trim().length === 0)
+		return null;
+	const metadata = isJsonInputObject(result["extrasMeta"]) ? result["extrasMeta"] : undefined;
 	return {
 		url: requestedUrl,
-		title: metadata && isRuntimeString(metadata.title) ? metadata.title.trim() : "",
-		content: result.content.trim(),
+		title: metadata && isRuntimeString(metadata["title"]) ? metadata["title"].trim() : "",
+		content: result["content"].trim(),
 		error: null,
 	};
 }
@@ -245,23 +216,23 @@ function findContentResult(
 	index: number,
 	requestedCount: number,
 ): JsonInputObject | undefined {
-	if (!Array.isArray(data.results)) return undefined;
-	const exact = data.results.find((item): item is JsonInputObject => {
+	if (!Array.isArray(data["results"])) return undefined;
+	const exact = data["results"].find((item): item is JsonInputObject => {
 		if (!isJsonInputObject(item)) return false;
 		const metadata = isJsonInputObject(item.extrasMeta) ? item.extrasMeta : undefined;
 		return item.url === requestedUrl || metadata?.url === requestedUrl;
 	});
 	if (exact) return exact;
-	if (requestedCount === 1) return isJsonInputObject(data.results[0]) ? data.results[0] : undefined;
-	const indexed = data.results.length === requestedCount ? data.results[index] : undefined;
+	if (requestedCount === 1) return isJsonInputObject(data["results"][0]) ? data["results"][0] : undefined;
+	const indexed = data["results"].length === requestedCount ? data["results"][index] : undefined;
 	return isJsonInputObject(indexed) ? indexed : undefined;
 }
 
 function failedContentStatus(data: JsonInputObject, result: JsonInputObject | undefined, index: number): boolean {
-	if (!Array.isArray(data.statuses)) return false;
-	const status = result?.id
-		? data.statuses.find((item): item is JsonInputObject => isJsonInputObject(item) && item.id === result.id)
-		: data.statuses[index];
+	if (!Array.isArray(data["statuses"])) return false;
+	const status = result?.["id"]
+		? data["statuses"].find((item): item is JsonInputObject => isJsonInputObject(item) && item.id === result["id"])
+		: data["statuses"][index];
 	return isJsonInputObject(status) && status.status === "failed";
 }
 
@@ -280,7 +251,7 @@ async function fetchContentsBatch(
 		signal,
 	);
 	assertApiSuccess("Contents", data);
-	if (!Array.isArray(data.results) || !Array.isArray(data.statuses)) {
+	if (!Array.isArray(data["results"]) || !Array.isArray(data["statuses"])) {
 		throw new Error("Querit Contents API returned an unexpected response shape");
 	}
 	return data;
@@ -291,8 +262,7 @@ async function fetchInlineContent(urls: string[], apiKey: string, signal?: Abort
 	for (let offset = 0; offset < urls.length; offset += MAX_CONTENT_URLS) {
 		const batch = urls.slice(offset, offset + MAX_CONTENT_URLS);
 		const data = await fetchContentsBatch(batch, apiKey, signal);
-		for (let index = 0; index < batch.length; index++) {
-			const requestedUrl = batch[index];
+		for (const [index, requestedUrl] of batch.entries()) {
 			const result = findContentResult(data, requestedUrl, index, batch.length);
 			const mapped = mapContentResult(result, requestedUrl);
 			if (mapped) content.push(mapped);
@@ -301,10 +271,7 @@ async function fetchInlineContent(urls: string[], apiKey: string, signal?: Abort
 	return content;
 }
 
-export async function searchWithQuerit(
-	query: string,
-	options: QueritSearchOptions = {},
-): Promise<SearchResponse> {
+export async function searchWithQuerit(query: string, options: QueritSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
@@ -320,7 +287,11 @@ export async function searchWithQuerit(
 		const results = mapSearchResults(data);
 		const response: SearchResponse = { answer: buildAnswer(results), results };
 		if (options.includeContent && results.length > 0) {
-			const inlineContent = await fetchInlineContent(results.map((result) => result.url), apiKey, options.signal);
+			const inlineContent = await fetchInlineContent(
+				results.map((result) => result.url),
+				apiKey,
+				options.signal,
+			);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
 		activityMonitor.logComplete(activityId, 200);

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
+import { reportWebDiagnostic } from "./diagnostics.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { GitHubUrlInfo } from "./github-extract.ts";
-import { reportWebDiagnostic } from "./diagnostics.ts";
 
 const MAX_TREE_ENTRIES = 200;
 const MAX_INLINE_FILE_CHARS = 100_000;
@@ -51,14 +51,19 @@ async function getDefaultBranch(owner: string, repo: string): Promise<string | n
 	if (!(await checkGhAvailable())) return null;
 
 	return new Promise((resolve) => {
-		execFile("gh", ["api", `repos/${owner}/${repo}`, "--jq", ".default_branch"], { timeout: 10000 }, (err, stdout) => {
-			if (err) {
-				resolve(null);
-				return;
-			}
-			const branch = stdout.trim();
-			resolve(branch || null);
-		});
+		execFile(
+			"gh",
+			["api", `repos/${owner}/${repo}`, "--jq", ".default_branch"],
+			{ timeout: 10000 },
+			(err, stdout) => {
+				if (err) {
+					resolve(null);
+					return;
+				}
+				const branch = stdout.trim();
+				resolve(branch || null);
+			},
+		);
 	});
 }
 
@@ -82,7 +87,7 @@ async function fetchTreeViaApi(owner: string, repo: string, ref: string): Promis
 				}
 				const truncated = paths.length > MAX_TREE_ENTRIES;
 				const display = paths.slice(0, MAX_TREE_ENTRIES).join("\n");
-				resolve(truncated ? display + `\n... (${paths.length} total entries)` : display);
+				resolve(truncated ? `${display}\n... (${paths.length} total entries)` : display);
 			},
 		);
 	});
@@ -103,7 +108,7 @@ async function fetchReadmeViaApi(owner: string, repo: string, ref: string): Prom
 				}
 				try {
 					const decoded = Buffer.from(stdout.trim(), "base64").toString("utf-8");
-					resolve(decoded.length > 8192 ? decoded.slice(0, 8192) + "\n\n[README truncated at 8K chars]" : decoded);
+					resolve(decoded.length > 8192 ? `${decoded.slice(0, 8192)}\n\n[README truncated at 8K chars]` : decoded);
 				} catch {
 					resolve(null);
 				}
@@ -171,10 +176,7 @@ export async function fetchViaApi(
 		};
 	}
 
-	const [tree, readme] = await Promise.all([
-		fetchTreeViaApi(owner, repo, ref),
-		fetchReadmeViaApi(owner, repo, ref),
-	]);
+	const [tree, readme] = await Promise.all([fetchTreeViaApi(owner, repo, ref), fetchReadmeViaApi(owner, repo, ref)]);
 
 	if (!tree && !readme) return null;
 

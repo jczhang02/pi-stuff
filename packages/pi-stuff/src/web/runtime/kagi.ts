@@ -1,23 +1,25 @@
-import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import {
+	fetchRemoteUrl,
+	loadFetchContentDomainPolicy,
+	loadSsrfConfig,
+	type SsrfConfig,
+	validateRemoteUrl,
+} from "./ssrf-protection.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const KAGI_SEARCH_URL = "https://kagi.com/api/v0/search";
 const KAGI_EXTRACT_URL = "https://kagi.com/api/v1/extract";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
-
-interface WebSearchConfig extends JsonInputObject {
-	kagiApiKey?: JsonInputValue;
-}
 
 interface KagiSearchOptions extends SearchOptions {
 	includeContent?: boolean;
@@ -27,33 +29,15 @@ export interface KagiExtractOptions extends Pick<ExtractOptions, "timeoutMs" | "
 	ssrf?: SsrfConfig;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Kagi",
-		configuredValue: loadConfig().kagiApiKey,
-		environmentValue: process.env.KAGI_API_KEY,
+		configuredValue: loadConfig()["kagiApiKey"],
+		environmentValue: process.env["KAGI_API_KEY"],
 		signal,
 	});
 }
@@ -63,21 +47,12 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Kagi API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "kagiApiKey": "your-key" }\n` +
-			"  2. Set KAGI_API_KEY environment variable\n" +
-			"Create a key at https://kagi.com/settings?p=api",
+				`  1. Create ${CONFIG_PATH} with { "kagiApiKey": "your-key" }\n` +
+				"  2. Set KAGI_API_KEY environment variable\n" +
+				"Create a key at https://kagi.com/settings?p=api",
 		);
 	}
 	return apiKey;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {
@@ -91,26 +66,38 @@ function firstString<Value>(...values: Value[]): string | null {
 	return null;
 }
 
-function appendSearchItems(value: JsonInputValue, results: SearchResponse["results"], inlineContent: ExtractedContent[]): void {
+function appendSearchItems(
+	value: JsonInputValue,
+	results: SearchResponse["results"],
+	inlineContent: ExtractedContent[],
+): void {
 	if (Array.isArray(value)) {
 		for (const item of value) appendSearchItems(item, results, inlineContent);
 		return;
 	}
 	if (!isJsonInputObject(value)) return;
-	const nested = value.results ?? value.items ?? value.list;
+	const nested = value["results"] ?? value["items"] ?? value["list"];
 	if (Array.isArray(nested)) appendSearchItems(nested, results, inlineContent);
-	const url = firstString(value.url, value.href, value["link"]);
+	const url = firstString(value["url"], value["href"], value["link"]);
 	if (!url) return;
-	const title = firstString(value.title, value.name) ?? url;
-	const snippet = firstString(value.snippet, value.description, value.summary, value.content, value.markdown, value.text) ?? "";
+	const title = firstString(value["title"], value["name"]) ?? url;
+	const snippet =
+		firstString(
+			value["snippet"],
+			value["description"],
+			value["summary"],
+			value["content"],
+			value["markdown"],
+			value["text"],
+		) ?? "";
 	results.push({ title, url, snippet });
-	const content = firstString(value.markdown, value.content, value.text);
+	const content = firstString(value["markdown"], value["content"], value["text"]);
 	if (content) inlineContent.push({ url, title, content, error: null });
 }
 
 function parseErrors(value: JsonInputValue): string | null {
 	if (!isJsonInputObject(value)) return null;
-	const rawErrors = value.errors ?? value.error;
+	const rawErrors = value["errors"] ?? value["error"];
 	if (!Array.isArray(rawErrors)) return null;
 	const messages = rawErrors.map((entry) => {
 		if (!isJsonInputObject(entry)) return String(entry);
@@ -130,8 +117,8 @@ function parseSearchResponse(value: JsonInputValue): ParsedSearchResponse {
 	if (message) throw invalidResponse(message);
 	const results: SearchResponse["results"] = [];
 	const inlineContent: ExtractedContent[] = [];
-	appendSearchItems(value.data, results, inlineContent);
-	if (results.length === 0 && value.data !== null) appendSearchItems(value, results, inlineContent);
+	appendSearchItems(value["data"], results, inlineContent);
+	if (results.length === 0 && value["data"] !== null) appendSearchItems(value, results, inlineContent);
 	return { results, inlineContent };
 }
 
@@ -139,7 +126,7 @@ function parseExtractResponse(value: JsonInputValue, requestedUrl: string): Extr
 	if (!isJsonInputObject(value)) throw invalidResponse("expected extract object envelope");
 	const message = parseErrors(value);
 	if (message) throw invalidResponse(message);
-	const candidates = Array.isArray(value.data) ? value.data : [value.data ?? value];
+	const candidates = Array.isArray(value["data"]) ? value["data"] : [value["data"] ?? value];
 	for (const candidate of candidates) {
 		if (!isJsonInputObject(candidate)) continue;
 		const content = firstString(candidate.markdown, candidate.content, candidate.text);
@@ -155,13 +142,21 @@ function parseExtractResponse(value: JsonInputValue, requestedUrl: string): Extr
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
+	return results
+		.map((result) =>
+			result.snippet
+				? `${result.snippet}\nSource: ${result.title} (${result.url})`
+				: `Source: ${result.title} (${result.url})`,
+		)
+		.join("\n\n");
 }
 
 export function isKagiAvailable(): boolean {
-	return hasCredentialSource({ provider: "Kagi", configuredValue: loadConfig().kagiApiKey, environmentValue: process.env.KAGI_API_KEY });
+	return hasCredentialSource({
+		provider: "Kagi",
+		configuredValue: loadConfig()["kagiApiKey"],
+		environmentValue: process.env["KAGI_API_KEY"],
+	});
 }
 
 export async function searchWithKagi(query: string, options: KagiSearchOptions = {}): Promise<SearchResponse> {
@@ -175,7 +170,9 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	try {
 		response = await fetch(url, {
 			headers: { Authorization: `Bot ${apiKey}`, Accept: "application/json" },
-			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal: options.signal
+				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -194,7 +191,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	}
 	let rawData: JsonInputValue;
 	try {
-		rawData = await response.json();
+		rawData = requireJsonInputValue(await response.json(), "Kagi search response");
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Kagi API returned invalid JSON: ${errorMessage(err)}`);
@@ -204,8 +201,8 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	const results = parsed.results.slice(0, numResults);
 	const mapped: SearchResponse = { answer: buildAnswer(results), results };
 	if (options.includeContent) {
-		const urls = new Set(results.map(result => result.url));
-		const inlineContent = parsed.inlineContent.filter(content => urls.has(content.url));
+		const urls = new Set(results.map((result) => result.url));
+		const inlineContent = parsed.inlineContent.filter((content) => urls.has(content.url));
 		if (inlineContent.length > 0) mapped.inlineContent = inlineContent;
 	}
 	return mapped;
@@ -215,7 +212,11 @@ export function isKagiExtractAvailable(): boolean {
 	return isKagiAvailable();
 }
 
-export async function extractWithKagi(url: string, signal?: AbortSignal, options: KagiExtractOptions = {}): Promise<ExtractedContent | null> {
+export async function extractWithKagi(
+	url: string,
+	signal?: AbortSignal,
+	options: KagiExtractOptions = {},
+): Promise<ExtractedContent | null> {
 	const ssrf = options.ssrf ?? loadSsrfConfig();
 	const domainPolicy = loadFetchContentDomainPolicy();
 	const validationOptions = {
@@ -232,15 +233,24 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 		const remoteOptions = {
 			allowRanges: ssrf.allowRanges,
 			trustEnvProxy: ssrf.trustEnvProxy,
-			onRedirect: ({ from, to, init }: { from: URL; to: URL; init: RequestInit }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json", Accept: "application/json" } },
+			onRedirect: ({ from, to, init }: { from: URL; to: URL; init: RequestInit }) =>
+				to.origin === from.origin
+					? init
+					: { ...init, headers: { "Content-Type": "application/json", Accept: "application/json" } },
 		};
 		if (options.lookup) Object.assign(remoteOptions, { lookup: options.lookup });
-		response = await fetchRemoteUrl(KAGI_EXTRACT_URL, {
-			method: "POST",
-			headers: { Authorization: `Bot ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
-			body: JSON.stringify({ urls: [url] }),
-			signal: signal ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal]) : AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-		}, remoteOptions);
+		response = await fetchRemoteUrl(
+			KAGI_EXTRACT_URL,
+			{
+				method: "POST",
+				headers: { Authorization: `Bot ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
+				body: JSON.stringify({ urls: [url] }),
+				signal: signal
+					? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal])
+					: AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
+			},
+			remoteOptions,
+		);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -258,7 +268,7 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 	}
 	let rawData: JsonInputValue;
 	try {
-		rawData = await response.json();
+		rawData = requireJsonInputValue(await response.json(), "Kagi extract response");
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Kagi Extract API returned invalid JSON: ${errorMessage(err)}`);

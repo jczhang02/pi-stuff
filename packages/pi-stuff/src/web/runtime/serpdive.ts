@@ -1,18 +1,17 @@
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as domainMatches,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
-import { parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -29,38 +28,19 @@ const MODELS = ["krill", "mako", "moby"] as const;
 type SerpdiveModel = (typeof MODELS)[number];
 const DEFAULT_MODEL: SerpdiveModel = "krill";
 
-interface WebSearchConfig {
-	serpdiveApiKey?: JsonInputValue;
-	serpdiveModel?: JsonInputValue;
-}
-
 interface SerpdiveSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "SERPdive",
-		configuredValue: loadConfig().serpdiveApiKey,
-		environmentValue: process.env.SERPDIVE_API_KEY,
+		configuredValue: loadConfig()["serpdiveApiKey"],
+		environmentValue: process.env["SERPDIVE_API_KEY"],
 		signal,
 	});
 }
@@ -70,9 +50,9 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"SERPdive API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "serpdiveApiKey": "your-key" }\n` +
-			"  2. Set SERPDIVE_API_KEY environment variable\n" +
-			"Get a key at https://serpdive.com/dashboard/keys",
+				`  1. Create ${CONFIG_PATH} with { "serpdiveApiKey": "your-key" }\n` +
+				"  2. Set SERPDIVE_API_KEY environment variable\n" +
+				"Get a key at https://serpdive.com/dashboard/keys",
 		);
 	}
 	return apiKey;
@@ -81,15 +61,10 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 // An unknown value falls back to the free default rather than failing: a typo
 // in a config file must not cost the user money, and must not break search.
 function resolveModel(): SerpdiveModel {
-	const raw = process.env.SERPDIVE_MODEL ?? loadConfig().serpdiveModel;
+	const raw = process.env["SERPDIVE_MODEL"] ?? loadConfig()["serpdiveModel"];
 	if (!isRuntimeString(raw)) return DEFAULT_MODEL;
 	const value = raw.trim().toLowerCase();
 	return value === "krill" || value === "mako" || value === "moby" ? value : DEFAULT_MODEL;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 interface DomainFilters {
@@ -141,20 +116,7 @@ function applyRecencyHint(query: string, recencyFilter: SearchOptions["recencyFi
 	return hint ? `${query} ${hint}` : query;
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function mapResults(
-	results: JsonInputValue,
-	numResults: number,
-	filters: DomainFilters,
-): SearchResponse["results"] {
+function mapResults(results: JsonInputValue, numResults: number, filters: DomainFilters): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (const item of results) {
@@ -174,12 +136,14 @@ function mapInlineContent(results: JsonInputValue, filters: DomainFilters): Extr
 	return results.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !passesDomainFilters(item.url, filters)) return [];
 		if (!isRuntimeString(item.content) || item.content.trim().length === 0) return [];
-		return [{
-			url: item.url,
-			title: isRuntimeString(item.title) ? item.title : "",
-			content: item.content,
-			error: null,
-		}];
+		return [
+			{
+				url: item.url,
+				title: isRuntimeString(item.title) ? item.title : "",
+				content: item.content,
+				error: null,
+			},
+		];
 	});
 }
 
@@ -200,8 +164,8 @@ function buildAnswer(apiAnswer: JsonInputValue, results: SearchResponse["results
 export function isSerpdiveAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "SERPdive",
-		configuredValue: loadConfig().serpdiveApiKey,
-		environmentValue: process.env.SERPDIVE_API_KEY,
+		configuredValue: loadConfig()["serpdiveApiKey"],
+		environmentValue: process.env["SERPDIVE_API_KEY"],
 	});
 }
 
@@ -219,7 +183,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	};
 	// krill has no answer synthesis — asking for one there is silently ignored
 	// by the API, so it is not asked for at all.
-	if (model !== "krill") body.answer = true;
+	if (model !== "krill") body["answer"] = true;
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
@@ -227,11 +191,11 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 		response = await fetch(SERPDIVE_API_URL, {
 			method: "POST",
 			headers: {
-				"Authorization": `Bearer ${apiKey}`,
+				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -250,7 +214,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 		throw new Error(`SERPdive API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data;
+	let data: JsonInputObject;
 	try {
 		const responseBody = await response.json();
 		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
@@ -261,13 +225,13 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	}
 
 	activityMonitor.logComplete(activityId, response.status);
-	const results = mapResults(data.results, numResults, filters);
+	const results = mapResults(data["results"], numResults, filters);
 	const result: SearchResponse = {
-		answer: buildAnswer(data.answer, results),
+		answer: buildAnswer(data["answer"], results),
 		results,
 	};
 	if (options.includeContent) {
-		const inlineContent = mapInlineContent(data.results, filters);
+		const inlineContent = mapInlineContent(data["results"], filters);
 		if (inlineContent.length > 0) result.inlineContent = inlineContent;
 	}
 	return result;

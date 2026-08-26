@@ -76,11 +76,14 @@
 				"entry": [
 					"src/subagents/src/runs/background/writer-process-supervisor.mjs"
 				],
+				"ignoreBinaries": [
+					"secret-tool",
+					"sqlite3"
+				],
 				"project": [
 					"src/**/*.{ts,js,mjs,cjs}"
 				],
 				"ignore": [
-					"src/web/runtime/**",
 					"src/mcp/runtime/**"
 				],
 				"ignoreDependencies": [

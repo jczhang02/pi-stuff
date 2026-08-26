@@ -1,8 +1,12 @@
-import { isJsonInputObject, jsonInputKind, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeBoolean } from "../../shared/runtime-type.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import net from "node:net";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	jsonInputKind,
+} from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfig } from "../settings.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -59,19 +63,19 @@ const DEFAULT_DOMAIN_POLICY: DomainPolicy = { allow: [], deny: [] };
 export function loadFetchContentDomainPolicy(): DomainPolicy {
 	const parsed = loadConfigRoot();
 	if (!parsed) return { ...DEFAULT_DOMAIN_POLICY };
-	const fetchContent = parsed.fetchContent;
+	const fetchContent = parsed["fetchContent"];
 	if (fetchContent === undefined || fetchContent === null) return { ...DEFAULT_DOMAIN_POLICY };
 	if (!isJsonInputObject(fetchContent)) {
 		throw new Error(`fetchContent in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	const policy = fetchContent.domainPolicy;
+	const policy = fetchContent["domainPolicy"];
 	if (policy === undefined || policy === null) return { ...DEFAULT_DOMAIN_POLICY };
 	if (!isJsonInputObject(policy)) {
 		throw new Error(`fetchContent.domainPolicy in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
 	return {
-		allow: parseDomainEntries(policy.allow, "allow"),
-		deny: parseDomainEntries(policy.deny, "deny"),
+		allow: parseDomainEntries(policy["allow"], "allow"),
+		deny: parseDomainEntries(policy["deny"], "deny"),
 	};
 }
 
@@ -82,11 +86,15 @@ function parseDomainEntries(value: JsonInputValue, field: "allow" | "deny"): str
 	}
 	return value.map((entry, index) => {
 		if (!isRuntimeString(entry)) {
-			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must contain only hostnames; entry ${index + 1} is ${jsonInputKind(entry)}`);
+			throw new Error(
+				`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must contain only hostnames; entry ${index + 1} is ${jsonInputKind(entry)}`,
+			);
 		}
 		const hostname = normalizeDomainEntry(entry);
 		if (!hostname) {
-			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} contains an invalid hostname: ${JSON.stringify(entry)}`);
+			throw new Error(
+				`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} contains an invalid hostname: ${JSON.stringify(entry)}`,
+			);
 		}
 		return hostname;
 	});
@@ -96,7 +104,11 @@ function normalizeDomainEntry(entry: string): string | null {
 	const hostname = normalizeHostname(entry.trim());
 	if (!hostname || /\s|[\\/?:#@]/.test(hostname)) return null;
 	if (net.isIP(hostname)) return hostname;
-	if (hostname.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(hostname)) return null;
+	if (
+		hostname.length > 253 ||
+		!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(hostname)
+	)
+		return null;
 	return hostname;
 }
 
@@ -108,7 +120,7 @@ export function loadSsrfConfig(): SsrfConfig {
 			trustEnvProxy: runtimeSsrfDefaults.trustEnvProxy,
 		};
 	}
-	const ssrf = parsed.ssrf;
+	const ssrf = parsed["ssrf"];
 	if (ssrf === undefined || ssrf === null) {
 		return {
 			allowRanges: [...runtimeSsrfDefaults.allowRanges],
@@ -118,14 +130,14 @@ export function loadSsrfConfig(): SsrfConfig {
 	if (!isJsonInputObject(ssrf)) {
 		throw new Error(`ssrf in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	if (ssrf.allowRanges !== undefined && ssrf.allowRanges !== null && !Array.isArray(ssrf.allowRanges)) {
+	if (ssrf["allowRanges"] !== undefined && ssrf["allowRanges"] !== null && !Array.isArray(ssrf["allowRanges"])) {
 		throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must be an array of CIDR strings`);
 	}
-	if (ssrf.trustEnvProxy !== undefined && !isRuntimeBoolean(ssrf.trustEnvProxy)) {
+	if (ssrf["trustEnvProxy"] !== undefined && !isRuntimeBoolean(ssrf["trustEnvProxy"])) {
 		throw new Error(`ssrf.trustEnvProxy in ${WEB_SEARCH_CONFIG_PATH} must be a boolean`);
 	}
-	const allowRanges = Array.isArray(ssrf.allowRanges)
-		? ssrf.allowRanges
+	const allowRanges = Array.isArray(ssrf["allowRanges"])
+		? ssrf["allowRanges"]
 				.map((entry, index) => {
 					if (!isRuntimeString(entry)) {
 						throw new Error(
@@ -139,13 +151,14 @@ export function loadSsrfConfig(): SsrfConfig {
 	parseAllowRanges(allowRanges);
 	return {
 		allowRanges,
-		trustEnvProxy:
-			isRuntimeBoolean(ssrf.trustEnvProxy) ? ssrf.trustEnvProxy : runtimeSsrfDefaults.trustEnvProxy,
+		trustEnvProxy: isRuntimeBoolean(ssrf["trustEnvProxy"])
+			? ssrf["trustEnvProxy"]
+			: runtimeSsrfDefaults.trustEnvProxy,
 	};
 }
 
 interface ValidationOptions {
-	lookup?: Lookup;
+	lookup?: Lookup | undefined;
 	/** Optional hostname policy for fetch_content target URLs. */
 	domainPolicy?: DomainPolicy;
 	/**
@@ -169,6 +182,9 @@ interface ParsedCidr {
 	bytes: Uint8Array;
 	prefix: number;
 }
+
+type IPv4Octets = [number, number, number, number];
+type IPv6Groups = [number, number, number, number, number, number, number, number];
 
 interface RedirectRequestInitArgs {
 	from: URL;
@@ -244,7 +260,10 @@ export async function fetchRemoteUrl(
 
 		const from = current;
 		current = await validateRemoteUrl(new URL(location, current), options);
-		if (response.status === 303 || ((response.status === 301 || response.status === 302) && requestInit.method?.toUpperCase() === "POST")) {
+		if (
+			response.status === 303 ||
+			((response.status === 301 || response.status === 302) && requestInit.method?.toUpperCase() === "POST")
+		) {
 			const { body: _body, ...nextInit } = requestInit;
 			requestInit = { ...nextInit, method: "GET" };
 		}
@@ -255,7 +274,10 @@ export async function fetchRemoteUrl(
 }
 
 function normalizeHostname(hostname: string): string {
-	return hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+	return hostname
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/\.$/, "");
 }
 
 function assertDomainPolicy(hostname: string, policy?: DomainPolicy): void {
@@ -273,11 +295,19 @@ function domainMatches(hostname: string, entry: string): boolean {
 }
 
 function getProxyForProtocol(protocol: string): string {
-	const candidates = protocol === "http:"
-		? [process.env.HTTP_PROXY, process.env.http_proxy, process.env.ALL_PROXY, process.env.all_proxy]
-		: protocol === "https:"
-			? [process.env.HTTPS_PROXY, process.env.https_proxy, process.env.HTTP_PROXY, process.env.http_proxy, process.env.ALL_PROXY, process.env.all_proxy]
-			: [];
+	const candidates =
+		protocol === "http:"
+			? [process.env["HTTP_PROXY"], process.env["http_proxy"], process.env["ALL_PROXY"], process.env["all_proxy"]]
+			: protocol === "https:"
+				? [
+						process.env["HTTPS_PROXY"],
+						process.env["https_proxy"],
+						process.env["HTTP_PROXY"],
+						process.env["http_proxy"],
+						process.env["ALL_PROXY"],
+						process.env["all_proxy"],
+					]
+				: [];
 	for (const candidate of candidates) {
 		const value = candidate?.trim();
 		if (!value) continue;
@@ -331,8 +361,8 @@ function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 	if (!enabled || !getProxyForProtocol(url.protocol)) return false;
 	const hostname = normalizeHostname(url.hostname);
 	const port = url.port || (url.protocol === "https:" ? "443" : "80");
-	const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
-	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, port, entry));
+	const noProxy = process.env["NO_PROXY"] || process.env["no_proxy"] || "";
+	return !noProxy.split(",").some((entry) => hostnameMatchesNoProxy(hostname, port, entry));
 }
 
 function assertPublicAddress(address: string, hostname: string, allowRanges: ParsedCidr[] = []): void {
@@ -354,15 +384,16 @@ function assertPublicAddress(address: string, hostname: string, allowRanges: Par
 }
 
 function isFakeIpProxyAddress(address: string): boolean {
-	const [a, b] = address.split(".").map(part => Number(part));
-	return a === 198 && (b === 18 || b === 19);
+	const octets = parseIPv4(address);
+	return octets !== null && octets[0] === 198 && (octets[1] === 18 || octets[1] === 19);
 }
 
 function isBlockedIPv4(address: string): boolean {
-	const parts = address.split(".").map(part => Number(part));
-	if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-	const [a, b] = parts;
-	return a === 0 ||
+	const octets = parseIPv4(address);
+	if (!octets) return true;
+	const [a, b] = octets;
+	return (
+		a === 0 ||
 		a === 10 ||
 		a === 127 ||
 		(a === 100 && b >= 64 && b <= 127) ||
@@ -370,7 +401,8 @@ function isBlockedIPv4(address: string): boolean {
 		(a === 172 && b >= 16 && b <= 31) ||
 		(a === 192 && b === 168) ||
 		isFakeIpProxyAddress(address) ||
-		a >= 224;
+		a >= 224
+	);
 }
 
 function isBlockedIPv6(address: string): boolean {
@@ -378,12 +410,12 @@ function isBlockedIPv6(address: string): boolean {
 	if (!groups) return true;
 
 	const first = groups[0];
-	if (groups.every(group => group === 0)) return true;
-	if (groups.slice(0, 7).every(group => group === 0) && groups[7] === 1) return true;
+	if (groups.every((group) => group === 0)) return true;
+	if (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1) return true;
 	if ((first & 0xfe00) === 0xfc00) return true;
 	if ((first & 0xffc0) === 0xfe80) return true;
 
-	const isMappedIPv4 = groups.slice(0, 5).every(group => group === 0) && groups[5] === 0xffff;
+	const isMappedIPv4 = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
 	if (isMappedIPv4) {
 		const ipv4 = [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join(".");
 		return isBlockedIPv4(ipv4);
@@ -392,12 +424,12 @@ function isBlockedIPv6(address: string): boolean {
 	return false;
 }
 
-function parseIPv6(address: string): number[] | null {
+function parseIPv6(address: string): IPv6Groups | null {
 	if (address.includes(".")) {
 		const lastColon = address.lastIndexOf(":");
 		const ipv4 = address.slice(lastColon + 1);
-		if (net.isIP(ipv4) !== 4) return null;
-		const octets = ipv4.split(".").map(part => Number(part));
+		const octets = parseIPv4(ipv4);
+		if (!octets) return null;
 		address = `${address.slice(0, lastColon)}:${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
 	}
 
@@ -410,11 +442,25 @@ function parseIPv6(address: string): number[] | null {
 	if (pieces.length === 1 && missing !== 0) return null;
 	if (pieces.length === 2 && missing < 0) return null;
 
-	const groups = [...left, ...Array(missing).fill("0"), ...right].map(part => {
+	const groups = [...left, ...Array(missing).fill("0"), ...right].map((part) => {
 		if (!/^[0-9a-f]{1,4}$/i.test(part)) return -1;
 		return parseInt(part, 16);
 	});
-	return groups.length === 8 && groups.every(group => group >= 0 && group <= 0xffff) ? groups : null;
+	const [a, b, c, d, e, f, g, h] = groups;
+	return isIPv6Group(a) &&
+		isIPv6Group(b) &&
+		isIPv6Group(c) &&
+		isIPv6Group(d) &&
+		isIPv6Group(e) &&
+		isIPv6Group(f) &&
+		isIPv6Group(g) &&
+		isIPv6Group(h)
+		? [a, b, c, d, e, f, g, h]
+		: null;
+}
+
+function isIPv6Group(value: number | undefined): value is number {
+	return value !== undefined && value >= 0 && value <= 0xffff;
 }
 
 /** Parse `allowRanges` config value into validated CIDR rules. Throws on malformed entries. */
@@ -466,22 +512,24 @@ function parseCidr(raw: string): ParsedCidr | null {
 }
 
 function ipv4ToBytes(address: string): Uint8Array | null {
-	const parts = address.split(".");
-	if (parts.length !== 4) return null;
-	const bytes = new Uint8Array(4);
-	for (let i = 0; i < 4; i++) {
-		const octet = Number(parts[i]);
-		if (!Number.isInteger(octet) || octet < 0 || octet > 255) return null;
-		bytes[i] = octet;
-	}
-	return bytes;
+	const octets = parseIPv4(address);
+	return octets ? new Uint8Array(octets) : null;
 }
 
-function ipv6GroupsToBytes(groups: number[]): Uint8Array {
+function parseIPv4(address: string): IPv4Octets | null {
+	const [a, b, c, d, ...extra] = address.split(".").map(Number);
+	return extra.length === 0 && isOctet(a) && isOctet(b) && isOctet(c) && isOctet(d) ? [a, b, c, d] : null;
+}
+
+function isOctet(value: number | undefined): value is number {
+	return value !== undefined && Number.isInteger(value) && value >= 0 && value <= 255;
+}
+
+function ipv6GroupsToBytes(groups: IPv6Groups): Uint8Array {
 	const bytes = new Uint8Array(16);
-	for (let i = 0; i < 8; i++) {
-		bytes[i * 2] = groups[i] >> 8;
-		bytes[i * 2 + 1] = groups[i] & 0xff;
+	for (const [i, group] of groups.entries()) {
+		bytes[i * 2] = group >> 8;
+		bytes[i * 2 + 1] = group & 0xff;
 	}
 	return bytes;
 }
@@ -517,7 +565,11 @@ function bytesMatchPrefix(addr: Uint8Array, network: Uint8Array, prefix: number)
 	}
 	if (remBits > 0 && fullBytes < addr.length) {
 		const mask = (0xff << (8 - remBits)) & 0xff;
-		if ((addr[fullBytes] & mask) !== (network[fullBytes] & mask)) return false;
+		const addressByte = addr[fullBytes];
+		const networkByte = network[fullBytes];
+		if (addressByte === undefined || networkByte === undefined || (addressByte & mask) !== (networkByte & mask)) {
+			return false;
+		}
 	}
 	return true;
 }

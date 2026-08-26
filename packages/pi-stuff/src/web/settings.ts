@@ -8,6 +8,7 @@ import {
 	mergeNamespaceRecord,
 	readSettingsFile,
 	readSettingsFileSync,
+	SettingsFormatError,
 	type SettingsRecord,
 } from "../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../shared/settings-io/index.js";
@@ -51,10 +52,16 @@ function getLegacyWebMigrationPath(agentDirectory = getAgentDir()): string {
 }
 
 function readLegacy(path: string): SettingsRecord | undefined {
-	if (!existsSync(path)) return undefined;
+	let text: string;
+	try {
+		text = readFileSync(path, "utf8");
+	} catch (error) {
+		if (isFileError(error, "ENOENT")) return undefined;
+		throw error;
+	}
 	let parsed: JsonInputValue;
 	try {
-		parsed = parseJsonValue(readFileSync(path, "utf8"));
+		parsed = parseJsonValue(text);
 	} catch {
 		throw new WebConfigError(`Unable to read legacy Web configuration at ${path}: invalid JSON`);
 	}
@@ -70,8 +77,11 @@ export function readWebConfig(agentDirectory = getAgentDir()): SettingsRecord | 
 	let document: SettingsRecord;
 	try {
 		document = readSettingsFileSync(path);
-	} catch {
-		throw new WebConfigError(`Unable to read Web configuration at ${path}: invalid JSON`);
+	} catch (error) {
+		if (error instanceof SettingsFormatError) {
+			throw new WebConfigError(`Unable to read Web configuration at ${path}: invalid JSON`);
+		}
+		throw error;
 	}
 	const canonical = document[WEB_NAMESPACE];
 	if (canonical !== undefined) {

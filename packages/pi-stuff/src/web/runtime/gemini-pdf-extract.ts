@@ -13,29 +13,21 @@ export interface GeminiPDFExtractOptions {
 	timeoutMs?: number;
 }
 
-export async function extractPDFViaGemini(
-	buffer: ArrayBuffer,
-	options: GeminiPDFExtractOptions,
-): Promise<string> {
-	const pagesToExtract = options.pages === undefined
-		? options.maxPages
-		: Math.min(options.pages, options.maxPages);
+export async function extractPDFViaGemini(buffer: ArrayBuffer, options: GeminiPDFExtractOptions): Promise<string> {
+	const pagesToExtract = options.pages === undefined ? options.maxPages : Math.min(options.pages, options.maxPages);
 	const prompt = buildPrompt(pagesToExtract, options.pages !== undefined);
-	const result = await queryGeminiApiWithInlineData(
-		prompt,
-		Buffer.from(buffer).toString("base64"),
-		PDF_MIME_TYPE,
-		{
-			signal: options.signal,
-			timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-		},
-	);
+	const result = await queryGeminiApiWithInlineData(prompt, Buffer.from(buffer).toString("base64"), PDF_MIME_TYPE, {
+		signal: options.signal,
+		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+	});
 
 	if (result.blockReason) {
 		throw new Error(`Gemini blocked PDF extraction: ${result.blockReason}`);
 	}
 	if (result.finishReason !== "STOP") {
-		throw new Error(`Gemini PDF extraction did not complete normally: ${result.finishReason ?? "missing finish reason"}`);
+		throw new Error(
+			`Gemini PDF extraction did not complete normally: ${result.finishReason ?? "missing finish reason"}`,
+		);
 	}
 	if (!result.text.trim()) {
 		throw new Error("Gemini API returned empty PDF extraction");
@@ -47,9 +39,7 @@ export async function extractPDFViaGemini(
 }
 
 function buildPrompt(pagesToExtract: number, exactPageCount: boolean): string {
-	const scope = exactPageCount
-		? `pages 1 through ${pagesToExtract}`
-		: `up to the first ${pagesToExtract} pages`;
+	const scope = exactPageCount ? `pages 1 through ${pagesToExtract}` : `up to the first ${pagesToExtract} pages`;
 	const markerRequirement = exactPageCount
 		? `Emit exactly one marker for every page from 1 through ${pagesToExtract}, including blank pages.`
 		: `Emit exactly one marker for every page you transcribe, starting at page 1 with no gaps, including blank pages.`;
@@ -95,7 +85,7 @@ function validatePageMarkers(markdown: string, maxPages: number, exactPageCount:
 
 function removeDuplicateInitialTitle(markdown: string, title: string): string {
 	const match = markdown.match(/^(<!-- Page 1 -->\s*\n+)#\s+(.+?)\s*\n+/);
-	if (!match || normalizeTitle(match[2]) !== normalizeTitle(title)) return markdown;
+	if (!match?.[1] || !match[2] || normalizeTitle(match[2]) !== normalizeTitle(title)) return markdown;
 	return `${match[1]}${markdown.slice(match[0].length)}`.trim();
 }
 

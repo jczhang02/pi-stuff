@@ -1,15 +1,13 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
-
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 import { activityMonitor } from "./activity.ts";
-import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import { getWebSearchConfigPath, normalizeHeaders } from "./utils.ts";
 
 // xAI's Agent Tools API: a hosted `web_search` tool on an OpenAI-compatible
 // Responses endpoint. The search runs inside xAI's own inference, so — unlike
@@ -37,33 +35,14 @@ const SEARCH_TIMEOUT_MS = 60_000;
 // registry actually knows wins, and an unknown id is skipped rather than sent.
 const AUTH_MODEL_CANDIDATES = ["grok-4.5", "grok-4.3", "grok-build-0.1"] as const;
 
-interface WebSearchConfig {
-	xaiApiKey?: JsonInputValue;
-	xaiSearchModel?: JsonInputValue;
-}
-
 interface XaiAuth {
 	apiKey: string;
 	model: string;
 	headers: Record<string, string>;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function resolveConfiguredSearchModel(value: JsonInputValue): string | undefined {
@@ -86,17 +65,20 @@ async function resolvePiAuth(ctx: ExtensionContext, modelOverride?: string): Pro
 			if (!model) continue;
 			const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 			if (resolved.ok && resolved.apiKey) {
-				return { apiKey: resolved.apiKey, model: modelOverride ?? modelId, headers: resolved.headers ?? {} };
+				return {
+					apiKey: resolved.apiKey,
+					model: modelOverride ?? modelId,
+					headers: normalizeHeaders(resolved.headers),
+				};
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return undefined;
 }
 
 export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<XaiAuth | undefined> {
 	const config = loadConfig();
-	const modelOverride = resolveConfiguredSearchModel(config.xaiSearchModel);
+	const modelOverride = resolveConfiguredSearchModel(config["xaiSearchModel"]);
 	if (ctx) {
 		const auth = await resolvePiAuth(ctx, modelOverride);
 		if (auth) return auth;
@@ -104,26 +86,26 @@ export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSigna
 
 	const hasSource = hasCredentialSource({
 		provider: "xAI",
-		configuredValue: config.xaiApiKey,
-		environmentValue: process.env.XAI_API_KEY,
+		configuredValue: config["xaiApiKey"],
+		environmentValue: process.env["XAI_API_KEY"],
 	});
 	if (!hasSource) return undefined;
 	const apiKey = await resolveCredential({
 		provider: "xAI",
-		configuredValue: config.xaiApiKey,
-		environmentValue: process.env.XAI_API_KEY,
+		configuredValue: config["xaiApiKey"],
+		environmentValue: process.env["XAI_API_KEY"],
 		signal,
 	});
 	return apiKey ? { apiKey, model: modelOverride ?? AUTH_MODEL_CANDIDATES[0], headers: {} } : undefined;
 }
 
 export async function isXaiSearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
-	if (ctx && await resolvePiAuth(ctx)) return true;
+	if (ctx && (await resolvePiAuth(ctx))) return true;
 	const config = loadConfig();
 	return hasCredentialSource({
 		provider: "xAI",
-		configuredValue: config.xaiApiKey,
-		environmentValue: process.env.XAI_API_KEY,
+		configuredValue: config["xaiApiKey"],
+		environmentValue: process.env["XAI_API_KEY"],
 	});
 }
 
@@ -134,10 +116,7 @@ export async function isXaiSearchAvailable(ctx?: ExtensionContext): Promise<bool
  * the instruction text degrades to "the model ignored it" instead.
  */
 function buildInput(query: string, options: SearchOptions): string {
-	const lines = [
-		"Search the web and answer using only what the web results say.",
-		"Cite your sources inline.",
-	];
+	const lines = ["Search the web and answer using only what the web results say.", "Cite your sources inline."];
 
 	if (options.recencyFilter) {
 		const labels = {
@@ -167,7 +146,13 @@ function buildInput(query: string, options: SearchOptions): string {
 	return `${lines.join(" ")}\n\n${query}`;
 }
 
-function addResult(results: SearchResult[], seen: Set<string>, url: JsonInputValue, title: JsonInputValue, snippet = ""): void {
+function addResult(
+	results: SearchResult[],
+	seen: Set<string>,
+	url: JsonInputValue,
+	title: JsonInputValue,
+	snippet = "",
+): void {
 	if (!isRuntimeString(url) || url.trim().length === 0) return;
 	if (seen.has(url)) return;
 	seen.add(url);
@@ -182,15 +167,18 @@ function extractSnippetAround(text: string, start: JsonInputValue, end: JsonInpu
 	if (!isRuntimeNumber(start) || !isRuntimeNumber(end) || !text) return "";
 	const before = Math.max(0, start - 100);
 	const after = Math.min(text.length, end + 100);
-	const snippet = text.slice(before, after).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+	const snippet = text
+		.slice(before, after)
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.trim();
 	return snippet.length > 300 ? `${snippet.slice(0, 297)}...` : snippet;
 }
 
 function extractAnswer(output: JsonInputValue[]): string {
 	const parts: string[] = [];
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "message") continue;
-		const content = item.content;
+		if (!isJsonInputObject(item) || item["type"] !== "message") continue;
+		const content = item["content"];
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (!isJsonInputObject(part)) continue;
@@ -213,8 +201,8 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 	const seenUrls = new Set<string>();
 
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "message") continue;
-		const content = item.content;
+		if (!isJsonInputObject(item) || item["type"] !== "message") continue;
+		const content = item["content"];
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (!isJsonInputObject(part)) continue;
@@ -235,11 +223,10 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 	}
 
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "web_search_call") continue;
-		const actionSources = isJsonInputObject(item.action)
-			? item.action.sources
-			: undefined;
-		for (const group of [actionSources, item.sources, item.results]) {
+		if (!isJsonInputObject(item) || item["type"] !== "web_search_call") continue;
+		const action = item["action"];
+		const actionSources = isJsonInputObject(action) ? action["sources"] : undefined;
+		for (const group of [actionSources, item["sources"], item["results"]]) {
 			if (!Array.isArray(group)) continue;
 			for (const source of group) {
 				if (!isJsonInputObject(source)) continue;
@@ -263,9 +250,9 @@ export async function searchWithXai(
 	if (!auth) {
 		throw new Error(
 			"xAI web search unavailable. Either:\n" +
-			"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
-			`  2. Create ${CONFIG_PATH} with { "xaiApiKey": "your-key" }\n` +
-			"  3. Set XAI_API_KEY environment variable",
+				"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
+				`  2. Create ${CONFIG_PATH} with { "xaiApiKey": "your-key" }\n` +
+				"  3. Set XAI_API_KEY environment variable",
 		);
 	}
 
@@ -303,7 +290,7 @@ export async function searchWithXai(
 			const message = err instanceof Error ? err.message : String(err);
 			throw new Error(`xAI API returned invalid JSON: ${message}`);
 		}
-		const output = Array.isArray(parsed.output) ? parsed.output : [];
+		const output = Array.isArray(parsed["output"]) ? parsed["output"] : [];
 		const answer = extractAnswer(output);
 		const results = extractSearchResults(output, options.numResults);
 

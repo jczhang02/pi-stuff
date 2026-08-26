@@ -1,12 +1,6 @@
 const MAX_DECLARED_LINKS = 20;
 const MAX_DECLARED_URL_LENGTH = 4096;
-const DECLARATION_RELATIONS = new Set([
-	"api-catalog",
-	"describedby",
-	"service-desc",
-	"service-doc",
-	"service-meta",
-]);
+const DECLARATION_RELATIONS = new Set(["api-catalog", "describedby", "service-desc", "service-doc", "service-meta"]);
 
 const RELATION_LABELS = new Map([
 	["api-catalog", "API catalog"],
@@ -16,6 +10,15 @@ const RELATION_LABELS = new Map([
 	["service-meta", "Service metadata"],
 ]);
 
+interface DeclaredLinkElement {
+	getAttribute(name: string): string | null;
+}
+
+interface DeclaredLinkDocument {
+	querySelector(selector: string): DeclaredLinkElement | null;
+	querySelectorAll(selector: string): Iterable<DeclaredLinkElement>;
+}
+
 export interface DeclaredWebLink {
 	url: string;
 	relations: string[];
@@ -23,7 +26,7 @@ export interface DeclaredWebLink {
 }
 
 export function discoverDeclaredWebLinks(
-	document: Document,
+	document: DeclaredLinkDocument,
 	linkHeader: string | null,
 	responseUrl: string,
 ): DeclaredWebLink[] {
@@ -36,7 +39,7 @@ export function discoverDeclaredWebLinks(
 		addDeclaredLink(links, {
 			url: resolveHttpUrl(target[1], responseUrl),
 			relations: declaredRelations(parameters.get("rel")),
-			type: parameters.get("type"),
+			type: parameters.get("type") ?? null,
 		});
 		if (links.size >= MAX_DECLARED_LINKS) break;
 	}
@@ -59,11 +62,7 @@ export function discoverDeclaredWebLinks(
 
 export function appendDeclaredWebLinks(content: string, links: DeclaredWebLink[]): string {
 	if (links.length === 0) return content;
-	const section = [
-		"## Declared links",
-		"",
-		...links.map(formatDeclaredLink),
-	].join("\n");
+	const section = ["## Declared links", "", ...links.map(formatDeclaredLink)].join("\n");
 	return content.trim() ? `${content.trim()}\n\n${section}` : section;
 }
 
@@ -77,7 +76,8 @@ function addDeclaredLink(
 		for (const relation of candidate.relations) {
 			if (!existing.relations.includes(relation)) existing.relations.push(relation);
 		}
-		if (!existing.type) existing.type = normalizeMetadata(candidate.type);
+		const type = normalizeMetadata(candidate.type);
+		if (!existing.type && type) existing.type = type;
 		return;
 	}
 	if (links.size >= MAX_DECLARED_LINKS) return;
@@ -92,9 +92,15 @@ function addDeclaredLink(
 
 function declaredRelations(value: string | null | undefined): string[] {
 	if (!value) return [];
-	return [...new Set(
-		value.trim().toLowerCase().split(/\s+/).filter((relation) => DECLARATION_RELATIONS.has(relation)),
-	)];
+	return [
+		...new Set(
+			value
+				.trim()
+				.toLowerCase()
+				.split(/\s+/)
+				.filter((relation) => DECLARATION_RELATIONS.has(relation)),
+		),
+	];
 }
 
 function resolveHttpUrl(value: string | null | undefined, baseUrl: string): string | null {
@@ -136,9 +142,7 @@ function splitOutsideSyntax(input: string, separator: string, protectTargets: bo
 }
 
 function splitLinkHeader(header: string): string[] {
-	return (splitOutsideSyntax(header, ",", true) ?? [])
-		.map((value) => value.trim())
-		.filter(Boolean);
+	return (splitOutsideSyntax(header, ",", true) ?? []).map((value) => value.trim()).filter(Boolean);
 }
 
 function parseLinkParameters(input: string): Map<string, string> | null {
@@ -149,7 +153,8 @@ function parseLinkParameters(input: string): Map<string, string> | null {
 	for (const part of parts) {
 		const match = /^\s*([!#$%&'*+\-.^_`|~A-Za-z0-9]+)(?:\s*=\s*(?:"((?:\\.|[^"])*)"|(\S+)))?\s*$/.exec(part);
 		if (!match) return null;
-		const name = match[1].toLowerCase();
+		const name = match[1]?.toLowerCase();
+		if (!name) return null;
 		const value = match[2] === undefined ? (match[3] ?? "") : match[2].replace(/\\(.)/g, "$1");
 		if (!parameters.has(name)) parameters.set(name, value);
 	}
@@ -165,7 +170,8 @@ function normalizeMetadata(value: string | null | undefined): string | undefined
 function formatDeclaredLink(link: DeclaredWebLink): string {
 	const relation = link.relations.map(inlineCode).join(", ");
 	const type = link.type ? `; ${inlineCode(link.type)}` : "";
-	const label = RELATION_LABELS[link.relations[0]] ?? "Declared link";
+	const firstRelation = link.relations[0];
+	const label = firstRelation ? (RELATION_LABELS.get(firstRelation) ?? "Declared link") : "Declared link";
 	return `- ${label} (${relation}${type}): <${link.url}>`;
 }
 

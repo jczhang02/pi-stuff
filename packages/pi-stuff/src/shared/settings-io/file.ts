@@ -15,6 +15,13 @@ import { isRuntimeObject } from "../runtime-type.js";
 
 export interface SettingsRecord extends JsonInputObject {}
 
+export class SettingsFormatError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SettingsFormatError";
+	}
+}
+
 function isSettingsRecord(value: JsonInputValue): value is SettingsRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
@@ -83,9 +90,9 @@ function parseSettingsContent(content: string, path: string): SettingsRecord {
 	try {
 		parsed = parseJsonValue(trimmed);
 	} catch {
-		throw new Error(`Settings file at ${path} contains invalid JSON`);
+		throw new SettingsFormatError(`Settings file at ${path} contains invalid JSON`);
 	}
-	if (!isSettingsRecord(parsed)) throw new Error(`Settings file at ${path} is not a JSON object`);
+	if (!isSettingsRecord(parsed)) throw new SettingsFormatError(`Settings file at ${path} is not a JSON object`);
 	return parsed;
 }
 

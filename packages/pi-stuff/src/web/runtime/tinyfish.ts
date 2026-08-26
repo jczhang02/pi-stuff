@@ -1,15 +1,14 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai";
 const TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai";
@@ -19,49 +18,27 @@ const FETCH_TIMEOUT_MS = 150_000;
 const MAX_FETCH_URLS = 10;
 const MAX_FETCH_PER_URL_TIMEOUT_MS = 110_000;
 
-interface WebSearchConfig {
-	tinyfishApiKey?: JsonInputValue;
-}
-
 interface TinyFishSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
-
-export function clearTinyFishConfigCache(): void {
-	cachedConfig = null;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
 	const key = await resolveCredential({
 		provider: "TinyFish",
-		configuredValue: loadConfig().tinyfishApiKey,
-		environmentValue: process.env.TINYFISH_API_KEY,
+		configuredValue: loadConfig()["tinyfishApiKey"],
+		environmentValue: process.env["TINYFISH_API_KEY"],
 		signal,
 	});
 	if (!key) {
 		throw new Error(
 			"TinyFish API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "tinyfishApiKey": "your-key" }\n` +
-			"  2. Set TINYFISH_API_KEY environment variable\n" +
-			"Get a key at https://agent.tinyfish.ai/api-keys",
+				`  1. Create ${CONFIG_PATH} with { "tinyfishApiKey": "your-key" }\n` +
+				"  2. Set TINYFISH_API_KEY environment variable\n" +
+				"Get a key at https://agent.tinyfish.ai/api-keys",
 		);
 	}
 	return key;
@@ -70,18 +47,9 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 export function isTinyFishAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "TinyFish",
-		configuredValue: loadConfig().tinyfishApiKey,
-		environmentValue: process.env.TINYFISH_API_KEY,
+		configuredValue: loadConfig()["tinyfishApiKey"],
+		environmentValue: process.env["TINYFISH_API_KEY"],
 	});
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined) {
@@ -105,11 +73,6 @@ function recencyMinutes(filter: SearchOptions["recencyFilter"]): number | undefi
 		year: 525_600,
 	} satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, number>;
 	return minutes[filter];
-}
-
-function normalizeNumResults(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function buildSearchUrl(query: string, options: SearchOptions, page: number): string {
@@ -166,11 +129,13 @@ function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	return results.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || item.url.trim().length === 0) return [];
 		const url = item.url.trim();
-		return [{
-			title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
-			url,
-			snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
-		}];
+		return [
+			{
+				title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
+				url,
+				snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
+			},
+		];
 	});
 }
 
@@ -187,10 +152,12 @@ function deduplicateResults(results: SearchResponse["results"], limit: number): 
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
+	return results
+		.map((result) => {
+			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
+			return `Source: ${result.title} (${result.url})`;
+		})
+		.join("\n\n");
 }
 
 function fetchPerUrlTimeout(value: number | undefined): number {
@@ -214,8 +181,8 @@ function findFetchError(errors: JsonInputValue, url: string): JsonInputObject | 
 }
 
 function fetchResultContent(result: JsonInputObject): string {
-	if (isRuntimeString(result.text)) return result.text.trim();
-	if (isJsonInputObject(result.text)) return JSON.stringify(result.text, null, 2);
+	if (isRuntimeString(result["text"])) return result["text"].trim();
+	if (isJsonInputObject(result["text"])) return JSON.stringify(result["text"], null, 2);
 	return "";
 }
 
@@ -225,7 +192,7 @@ function mapFetchResult(result: JsonInputValue, requestedUrl: string): Extracted
 	if (!content) return null;
 	return {
 		url: requestedUrl,
-		title: isRuntimeString(result.title) ? result.title.trim() : "",
+		title: isRuntimeString(result["title"]) ? result["title"].trim() : "",
 		content,
 		error: null,
 	};
@@ -247,21 +214,17 @@ async function fetchBatch(
 	);
 }
 
-async function fetchInlineContent(
-	urls: string[],
-	apiKey: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent[]> {
+async function fetchInlineContent(urls: string[], apiKey: string, signal?: AbortSignal): Promise<ExtractedContent[]> {
 	const content: ExtractedContent[] = [];
 	for (let offset = 0; offset < urls.length; offset += MAX_FETCH_URLS) {
 		const batch = urls.slice(offset, offset + MAX_FETCH_URLS);
 		const data = await fetchBatch(batch, apiKey, signal);
-		if (!Array.isArray(data.results) || !Array.isArray(data.errors)) {
+		if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
 			throw new Error("TinyFish Fetch API returned an unexpected response shape");
 		}
 		for (const url of batch) {
-			const result = Array.isArray(data.results)
-				? data.results.find(item => isJsonInputObject(item) && (item.url === url || item.final_url === url))
+			const result = Array.isArray(data["results"])
+				? data["results"].find((item) => isJsonInputObject(item) && (item.url === url || item.final_url === url))
 				: undefined;
 			const mapped = mapFetchResult(result, url);
 			if (mapped) content.push(mapped);
@@ -272,7 +235,7 @@ async function fetchInlineContent(
 
 export async function searchWithTinyFish(query: string, options: TinyFishSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeNumResults(options.numResults);
+	const numResults = normalizeCount(options.numResults);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const combined: SearchResponse["results"] = [];
@@ -286,15 +249,20 @@ export async function searchWithTinyFish(query: string, options: TinyFishSearchO
 				SEARCH_TIMEOUT_MS,
 				options.signal,
 			);
-			if (!Array.isArray(data.results)) throw new Error("TinyFish Search API returned an unexpected response shape");
-			combined.push(...mapSearchResults(data.results));
-			if (data.results.length < 10) break;
+			if (!Array.isArray(data["results"]))
+				throw new Error("TinyFish Search API returned an unexpected response shape");
+			combined.push(...mapSearchResults(data["results"]));
+			if (data["results"].length < 10) break;
 		}
 
 		const results = deduplicateResults(combined, numResults);
 		const response: SearchResponse = { answer: buildAnswer(results), results };
 		if (options.includeContent && results.length > 0) {
-			const inlineContent = await fetchInlineContent(results.map(result => result.url), apiKey, options.signal);
+			const inlineContent = await fetchInlineContent(
+				results.map((result) => result.url),
+				apiKey,
+				options.signal,
+			);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
 		activityMonitor.logComplete(activityId, 200);
@@ -320,19 +288,23 @@ export async function extractWithTinyFish(
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const data = await fetchBatch([url], apiKey, signal, options);
-		if (!Array.isArray(data.results) || !Array.isArray(data.errors)) {
+		if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
 			throw new Error("TinyFish Fetch API returned an unexpected response shape");
 		}
-		const result = data.results.find(item => isJsonInputObject(item) && (item.url === url || item.final_url === url)) ?? data.results[0];
+		const result =
+			data["results"].find((item) => isJsonInputObject(item) && (item.url === url || item.final_url === url)) ??
+			data["results"][0];
 		const mapped = mapFetchResult(result, url);
 		if (mapped) {
 			activityMonitor.logComplete(activityId, 200);
 			return mapped;
 		}
-		const fetchError = findFetchError(data.errors, url);
+		const fetchError = findFetchError(data["errors"], url);
 		if (fetchError) {
-			const status = isRuntimeNumber(fetchError.status) ? ` (HTTP ${fetchError.status})` : "";
-			throw new Error(`TinyFish Fetch failed for ${url}: ${isRuntimeString(fetchError.error) ? fetchError.error : "unknown error"}${status}`);
+			const status = isRuntimeNumber(fetchError["status"]) ? ` (HTTP ${fetchError["status"]})` : "";
+			throw new Error(
+				`TinyFish Fetch failed for ${url}: ${isRuntimeString(fetchError["error"]) ? fetchError["error"] : "unknown error"}${status}`,
+			);
 		}
 		activityMonitor.logComplete(activityId, 200);
 		return null;

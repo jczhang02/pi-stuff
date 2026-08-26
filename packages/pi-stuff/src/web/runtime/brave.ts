@@ -1,60 +1,36 @@
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as hostMatchesDomain,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
-import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import { getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
-
-interface WebSearchConfig {
-	braveApiKey?: JsonInputValue;
-}
 
 interface NormalizedDomainFilters {
 	allowed: string[];
 	blocked: string[];
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Brave",
-		configuredValue: loadConfig().braveApiKey,
-		environmentValue: process.env.BRAVE_API_KEY,
+		configuredValue: loadConfig()["braveApiKey"],
+		environmentValue: process.env["BRAVE_API_KEY"],
 		signal,
 	});
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
@@ -78,7 +54,7 @@ function buildBraveQuery(query: string, domainFilter: string[] | undefined): str
 	if (filters.allowed.length === 1) {
 		parts.push(`site:${filters.allowed[0]}`);
 	} else if (filters.allowed.length > 1) {
-		parts.push(filters.allowed.map(domain => `site:${domain}`).join(" OR "));
+		parts.push(filters.allowed.map((domain) => `site:${domain}`).join(" OR "));
 	}
 
 	for (const domain of filters.blocked) {
@@ -98,32 +74,29 @@ function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): bo
 		return false;
 	}
 
-	if (filters.allowed.length > 0 && !filters.allowed.some(domain => hostMatchesDomain(hostname, domain))) {
+	if (filters.allowed.length > 0 && !filters.allowed.some((domain) => hostMatchesDomain(hostname, domain))) {
 		return false;
 	}
 
-	return !filters.blocked.some(domain => hostMatchesDomain(hostname, domain));
+	return !filters.blocked.some((domain) => hostMatchesDomain(hostname, domain));
 }
 
 export function isBraveAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Brave",
-		configuredValue: loadConfig().braveApiKey,
-		environmentValue: process.env.BRAVE_API_KEY,
+		configuredValue: loadConfig()["braveApiKey"],
+		environmentValue: process.env["BRAVE_API_KEY"],
 	});
 }
 
-export async function searchWithBrave(
-	query: string,
-	options: SearchOptions = {},
-): Promise<SearchResponse> {
+export async function searchWithBrave(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
 	if (!apiKey) {
 		throw new Error(
 			"Brave Search API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "braveApiKey": "your-key" }\n` +
-			"  2. Set BRAVE_API_KEY environment variable\n" +
-			"Get a key at https://brave.com/search/api/",
+				`  1. Create ${CONFIG_PATH} with { "braveApiKey": "your-key" }\n` +
+				"  2. Set BRAVE_API_KEY environment variable\n" +
+				"Get a key at https://brave.com/search/api/",
 		);
 	}
 
@@ -152,7 +125,7 @@ export async function searchWithBrave(
 			method: "GET",
 			headers: {
 				"X-Subscription-Token": apiKey,
-				"Accept": "application/json",
+				Accept: "application/json",
 				"Accept-Encoding": "gzip",
 			},
 			signal: options.signal
@@ -171,10 +144,11 @@ export async function searchWithBrave(
 		activityMonitor.logComplete(activityId, response.status);
 
 		const results: SearchResult[] = [];
-		const web = isJsonInputObject(data.web) ? data.web : undefined;
-		const responseResults = Array.isArray(web?.results) ? web.results : [];
+		const web = isJsonInputObject(data["web"]) ? data["web"] : undefined;
+		const responseResults = Array.isArray(web?.["results"]) ? web["results"] : [];
 		for (const item of responseResults) {
-			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, domainFilters)) continue;
+			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, domainFilters))
+				continue;
 			results.push({
 				title: isRuntimeString(item.title) ? item.title : item.url,
 				url: item.url,

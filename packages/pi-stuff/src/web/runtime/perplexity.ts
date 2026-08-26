@@ -1,13 +1,11 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
 import type { JsonInputObject } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
-import type { ExtractedContent } from "./extract.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import type { ExtractedContent } from "./extract.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
@@ -33,47 +31,29 @@ export interface SearchResponse {
 }
 
 export interface SearchOptions {
-	numResults?: number;
-	recencyFilter?: "day" | "week" | "month" | "year";
-	domainFilter?: string[];
-	signal?: AbortSignal;
+	numResults?: number | undefined;
+	recencyFilter?: "day" | "week" | "month" | "year" | undefined;
+	domainFilter?: string[] | undefined;
+	signal?: AbortSignal | undefined;
 }
 
-interface WebSearchConfig {
-	perplexityApiKey?: JsonInputValue;
-}
-
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const content = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(content);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
 	const key = await resolveCredential({
 		provider: "Perplexity",
-		configuredValue: loadConfig().perplexityApiKey,
-		environmentValue: process.env.PERPLEXITY_API_KEY,
+		configuredValue: loadConfig()["perplexityApiKey"],
+		environmentValue: process.env["PERPLEXITY_API_KEY"],
 		signal,
 	});
 	if (!key) {
 		throw new Error(
 			"Perplexity API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
-			"  2. Set PERPLEXITY_API_KEY environment variable\n" +
-			"Get a key at https://perplexity.ai/settings/api"
+				`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
+				"  2. Set PERPLEXITY_API_KEY environment variable\n" +
+				"Get a key at https://perplexity.ai/settings/api",
 		);
 	}
 	return key;
@@ -83,12 +63,13 @@ function checkRateLimit(): void {
 	const now = Date.now();
 	const windowStart = now - RATE_LIMIT.windowMs;
 
-	while (requestTimestamps.length > 0 && requestTimestamps[0] < windowStart) {
+	while (requestTimestamps[0] !== undefined && requestTimestamps[0] < windowStart) {
 		requestTimestamps.shift();
 	}
 
-	if (requestTimestamps.length >= RATE_LIMIT.maxRequests) {
-		const waitMs = requestTimestamps[0] + RATE_LIMIT.windowMs - now;
+	const oldest = requestTimestamps[0];
+	if (requestTimestamps.length >= RATE_LIMIT.maxRequests && oldest !== undefined) {
+		const waitMs = oldest + RATE_LIMIT.windowMs - now;
 		throw new Error(`Rate limited. Try again in ${Math.ceil(waitMs / 1000)}s`);
 	}
 
@@ -105,8 +86,8 @@ function validateDomainFilter(domains: string[]): string[] {
 export function isPerplexityAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Perplexity",
-		configuredValue: loadConfig().perplexityApiKey,
-		environmentValue: process.env.PERPLEXITY_API_KEY,
+		configuredValue: loadConfig()["perplexityApiKey"],
+		environmentValue: process.env["PERPLEXITY_API_KEY"],
 	});
 }
 
@@ -123,9 +104,10 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	});
 
 	const apiKey = await getApiKey(options.signal);
-	const numResults = isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults)
-		? Math.max(1, Math.min(Math.floor(options.numResults), 20))
-		: 5;
+	const numResults =
+		isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults)
+			? Math.max(1, Math.min(Math.floor(options.numResults), 20))
+			: 5;
 
 	const requestBody: JsonInputObject = {
 		model: "sonar",
@@ -135,13 +117,13 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	};
 
 	if (options.recencyFilter) {
-		requestBody.search_recency_filter = options.recencyFilter;
+		requestBody["search_recency_filter"] = options.recencyFilter;
 	}
 
 	if (options.domainFilter && options.domainFilter.length > 0) {
 		const validated = validateDomainFilter(options.domainFilter);
 		if (validated.length > 0) {
-			requestBody.search_domain_filter = validated;
+			requestBody["search_domain_filter"] = validated;
 		}
 	}
 
@@ -177,7 +159,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		throw new Error(`Perplexity API error ${response.status}: ${errorText}`);
 	}
 
-	let data;
+	let data: JsonInputObject;
 	try {
 		const responseBody = await response.json();
 		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
@@ -188,10 +170,11 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		throw new Error(`Perplexity API returned invalid JSON: ${message}`);
 	}
 
-	const firstChoice = Array.isArray(data.choices) && isJsonInputObject(data.choices[0]) ? data.choices[0] : undefined;
+	const firstChoice =
+		Array.isArray(data["choices"]) && isJsonInputObject(data["choices"][0]) ? data["choices"][0] : undefined;
 	const message = isJsonInputObject(firstChoice?.message) ? firstChoice.message : undefined;
 	const answer = isRuntimeString(message?.content) ? message.content : "";
-	const citations = Array.isArray(data.citations) ? data.citations : [];
+	const citations = Array.isArray(data["citations"]) ? data["citations"] : [];
 
 	const results: SearchResult[] = [];
 	for (let i = 0; i < Math.min(citations.length, numResults); i++) {

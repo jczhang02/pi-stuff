@@ -1,38 +1,175 @@
-import { isJsonInputObject, parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
-
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activityMonitor } from "./activity.ts";
-import { CredentialResolutionError } from "./credential-source.ts";
-import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, isGeminiApiAvailable, redactGeminiApiResponse } from "./gemini-api.ts";
-import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
-import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
-import { isExaAvailable, searchWithExa } from "./exa.ts";
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { readWebConfig } from "../settings.ts";
+import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
-import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts";
-import { isParallelAvailable, searchWithParallel } from "./parallel.ts";
-import { isTinyFishAvailable, searchWithTinyFish } from "./tinyfish.ts";
-import { isSearch1APIAvailable, searchWithSearch1API } from "./search1api.ts";
-import { isSearchinfinityAvailable, searchWithSearchinfinity } from "./searchinfinity.ts";
-import { isQueritAvailable, searchWithQuerit } from "./querit.ts";
-import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
-import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts";
+import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
+import { CredentialResolutionError } from "./credential-source.ts";
+import { isExaAvailable, searchWithExa } from "./exa.ts";
+import { isGeminiApiAvailable, searchWithGeminiApi } from "./gemini-api.ts";
+import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, searchWithGeminiWeb } from "./gemini-web.ts";
 import { isKagiAvailable, searchWithKagi } from "./kagi.ts";
 import { isOllamaAvailable, searchWithOllama } from "./ollama.ts";
+import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts";
+import { isParallelAvailable, searchWithParallel } from "./parallel.ts";
+import {
+	isPerplexityAvailable,
+	type SearchOptions,
+	type SearchResponse,
+	type SearchResult,
+	searchWithPerplexity,
+} from "./perplexity.ts";
+import { isQueritAvailable, searchWithQuerit } from "./querit.ts";
+import { isSearch1APIAvailable, searchWithSearch1API } from "./search1api.ts";
+import { isSearchinfinityAvailable, searchWithSearchinfinity } from "./searchinfinity.ts";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.ts";
-import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
-import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
-import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
 import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts";
+import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
+import { isTinyFishAvailable, searchWithTinyFish } from "./tinyfish.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
+import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
 
-export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "searxng", "perplexity", "gemini", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "brightdata", "serpbase"] as const;
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
+
+interface ProviderRuntimeOptions extends SearchOptions {
+	extensionContext?: ExtensionContext;
+}
+
+type ProviderSearch = (query: string, options: ProviderRuntimeOptions) => Promise<SearchResponse | null>;
+
+interface SearchProviderDefinition<Provider extends string = string> {
+	readonly id: Provider;
+	readonly label: string;
+	readonly search: ProviderSearch;
+	readonly available: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+	readonly automaticAvailable?: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+	readonly catchAutomaticAvailabilityError?: boolean;
+	readonly automaticPriority?: number;
+	readonly automaticSearch?: ProviderSearch;
+	readonly aggregateAvailable?: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+	readonly aggregateEmptyResultMessage?: string;
+	readonly aggregateSearch?: ProviderSearch;
+	readonly emptyResultMessage?: string;
+	readonly stopAutomaticOnCredentialError?: boolean;
+}
+
+const SEARCH_PROVIDER_DEFINITIONS = [
+	{
+		id: "openai",
+		label: "OpenAI",
+		search: (query, options) => searchWithOpenAI(query, options, options.extensionContext),
+		available: (options) => isOpenAISearchAvailable(options.extensionContext),
+		automaticAvailable: async (options) =>
+			shouldTryOpenAIInAuto(options) && (await isOpenAISearchAvailable(options.extensionContext)),
+		catchAutomaticAvailabilityError: true,
+		automaticPriority: 1,
+	},
+	{ id: "brave", label: "Brave", search: searchWithBrave, available: isBraveAvailable, automaticPriority: 3 },
+	{
+		id: "parallel",
+		label: "Parallel",
+		search: searchWithParallel,
+		available: isParallelAvailable,
+		automaticPriority: 4,
+	},
+	{
+		id: "tinyfish",
+		label: "TinyFish",
+		search: searchWithTinyFish,
+		available: isTinyFishAvailable,
+		automaticPriority: 5,
+	},
+	{
+		id: "search1api",
+		label: "Search1API",
+		search: searchWithSearch1API,
+		available: isSearch1APIAvailable,
+		automaticPriority: 6,
+	},
+	{
+		id: "searchinfinity",
+		label: "Searchinfinity",
+		search: searchWithSearchinfinity,
+		available: isSearchinfinityAvailable,
+		automaticPriority: 7,
+	},
+	{ id: "querit", label: "Querit", search: searchWithQuerit, available: isQueritAvailable, automaticPriority: 8 },
+	{ id: "tavily", label: "Tavily", search: searchWithTavily, available: isTavilyAvailable, automaticPriority: 9 },
+	{
+		id: "searxng",
+		label: "SearXNG",
+		search: searchWithSearXNG,
+		available: isSearXNGAvailable,
+		automaticPriority: 0,
+	},
+	{
+		id: "perplexity",
+		label: "Perplexity",
+		search: searchWithPerplexity,
+		available: isPerplexityAvailable,
+		automaticPriority: 13,
+	},
+	{
+		id: "gemini",
+		label: "Gemini",
+		search: (query, options) => searchWithGemini(query, options, true),
+		available: async () => isGeminiApiAvailable() || Boolean(await isGeminiWebAvailable()),
+		automaticAvailable: () => true,
+		automaticPriority: 14,
+		automaticSearch: (query, options) => searchWithGemini(query, options, false),
+		aggregateAvailable: isGeminiApiAvailable,
+		aggregateEmptyResultMessage: "Gemini API search returned no results.",
+		aggregateSearch: searchWithGeminiApi,
+		emptyResultMessage:
+			"Gemini search unavailable. Either:\n" +
+			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
+			"  3. Sign into gemini.google.com in a supported Chromium-based browser",
+	},
+	{
+		id: "exa",
+		label: "Exa",
+		search: searchWithExa,
+		available: isExaAvailable,
+		automaticPriority: 2,
+		emptyResultMessage: "Exa search returned no results.",
+		stopAutomaticOnCredentialError: true,
+	},
+	{
+		id: "serpdive",
+		label: "SERPdive",
+		search: searchWithSerpdive,
+		available: isSerpdiveAvailable,
+		automaticPriority: 10,
+	},
+	{ id: "kagi", label: "Kagi", search: searchWithKagi, available: isKagiAvailable, automaticPriority: 11 },
+	{
+		id: "ollama",
+		label: "Ollama",
+		search: searchWithOllama,
+		available: isOllamaAvailable,
+		automaticPriority: 12,
+	},
+	{ id: "anysearch", label: "AnySearch", search: searchWithAnySearch, available: isAnySearchAvailable },
+	{
+		id: "xai",
+		label: "xAI",
+		search: (query, options) => searchWithXai(query, options, options.extensionContext),
+		available: (options) => isXaiSearchAvailable(options.extensionContext),
+	},
+	{ id: "brightdata", label: "Bright Data", search: searchWithBrightData, available: isBrightDataAvailable },
+	{ id: "serpbase", label: "SerpBase", search: searchWithSerpBase, available: isSerpBaseAvailable },
+] as const satisfies readonly SearchProviderDefinition[];
+
+export type ResolvedSearchProvider = (typeof SEARCH_PROVIDER_DEFINITIONS)[number]["id"];
+const PROVIDER_DEFINITIONS: readonly SearchProviderDefinition<ResolvedSearchProvider>[] = SEARCH_PROVIDER_DEFINITIONS;
+export const RESOLVED_SEARCH_PROVIDERS: readonly ResolvedSearchProvider[] = SEARCH_PROVIDER_DEFINITIONS.map(
+	({ id }) => id,
+);
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
-
-export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
-export type SearchProvider = typeof SEARCH_PROVIDERS[number];
+export type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
 export type SearchProviderSelection = SearchProvider | ResolvedSearchProvider[];
 export type SearchProviderErrorKind =
 	| "transient"
@@ -54,15 +191,15 @@ export interface SearchRoutingConfig {
 export class SearchProviderError extends Error {
 	readonly provider: ResolvedSearchProvider;
 	readonly kind: SearchProviderErrorKind;
-	readonly status?: number;
-	readonly causeError: JsonInputValue;
+	readonly status: number | undefined;
+	readonly causeError: unknown;
 
 	constructor(
 		provider: ResolvedSearchProvider,
 		kind: SearchProviderErrorKind,
 		message: string,
 		status: number | undefined,
-		cause: JsonInputValue,
+		cause: unknown,
 	) {
 		super(`${provider} search failed (${kind}): ${message}`);
 		this.name = "SearchProviderError";
@@ -88,59 +225,45 @@ export interface AttributedSearchResponse extends SearchResponse {
 	providerErrors?: ProviderSearchFailure[];
 }
 
-const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
-const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
-// Explicit-only providers (AnySearch, xAI, Bright Data, SerpBase) are deliberately absent:
-// `all` must never fan out to a paid/surprising provider without the user asking for it.
-const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "serpdive", "kagi", "ollama", "perplexity", "gemini"];
+// Explicit-only providers have no automatic priority. `all` uses the same safe set,
+// so it never fans out to a paid or surprising provider without an explicit choice.
+const AUTOMATIC_PROVIDER_DEFINITIONS = PROVIDER_DEFINITIONS.filter(
+	(provider) => provider.automaticPriority !== undefined,
+).sort((left, right) => (left.automaticPriority ?? 0) - (right.automaticPriority ?? 0));
 const VALID_ROUTING_KINDS = ["transient", "quota", "network"] as const;
 
 type SearchConfig = {
 	searchProvider: SearchProviderSelection;
 	searchProviderConfigured: boolean;
 	searchRouting?: SearchRoutingConfig;
-	searchModel?: string;
 };
 
-let cachedSearchConfig: SearchConfig | null = null;
-
 function getSearchConfig(): SearchConfig {
-	if (!webConfigExists()) {
-		cachedSearchConfig = { searchProvider: "auto", searchProviderConfigured: false };
-		return cachedSearchConfig;
-	}
+	const raw = readWebConfig();
+	if (!raw) return { searchProvider: "auto", searchProviderConfigured: false };
 
-	const rawText = readWebConfigText();
-	let raw: JsonInputObject;
-	try {
-		raw = parseJsonObject(rawText);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-
-	const searchModel = normalizeSearchModel(raw.searchModel);
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
 	const config: SearchConfig = {
-		searchProvider: normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`),
+		searchProvider: normalizeSearchProviderSelection(
+			raw["searchProvider"] ?? raw["provider"],
+			`provider in ${CONFIG_PATH}`,
+		),
 		searchProviderConfigured,
 	};
-	if (Object.hasOwn(raw, "searchRouting")) config.searchRouting = normalizeSearchRouting(raw.searchRouting);
-	if (searchModel) config.searchModel = searchModel;
-	cachedSearchConfig = config;
-	return cachedSearchConfig;
+	if (Object.hasOwn(raw, "searchRouting")) config.searchRouting = normalizeSearchRouting(raw["searchRouting"]);
+	return config;
 }
 
 function normalizeSearchRouting(value: JsonInputValue): SearchRoutingConfig {
 	if (!isJsonInputObject(value)) {
 		throw new Error(`searchRouting in ${CONFIG_PATH} must be an object`);
 	}
-	const providers = normalizeResolvedProviderList(value.providers, `searchRouting.providers in ${CONFIG_PATH}`);
-	if (!Array.isArray(value.fallbackOn) || value.fallbackOn.length === 0) {
+	const providers = normalizeResolvedProviderList(value["providers"], `searchRouting.providers in ${CONFIG_PATH}`);
+	if (!Array.isArray(value["fallbackOn"]) || value["fallbackOn"].length === 0) {
 		throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} must be a non-empty array`);
 	}
 	const fallbackOn: SearchRoutingConfig["fallbackOn"] = [];
-	for (const kind of value.fallbackOn) {
+	for (const kind of value["fallbackOn"]) {
 		if (!isRoutingFallbackKind(kind)) {
 			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, or network`);
 		}
@@ -154,12 +277,6 @@ function normalizeSearchRouting(value: JsonInputValue): SearchRoutingConfig {
 export function getConfiguredSearchRouting(): SearchRoutingConfig | undefined {
 	const config = getSearchConfig();
 	return config.searchProviderConfigured ? undefined : config.searchRouting;
-}
-
-function normalizeSearchModel(value: JsonInputValue): string | undefined {
-	if (!isRuntimeString(value)) return undefined;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : undefined;
 }
 
 function isRoutingFallbackKind(value: JsonInputValue): value is SearchRoutingConfig["fallbackOn"][number] {
@@ -198,23 +315,18 @@ export function normalizeSearchProviderSelection(value: JsonInputValue, label = 
 	return isSearchProvider(normalized) ? normalized : "auto";
 }
 
-export interface FullSearchOptions extends SearchOptions {
+export interface FullSearchOptions extends ProviderRuntimeOptions {
 	provider?: SearchProviderSelection;
 	includeContent?: boolean;
-	extensionContext?: ExtensionContext;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function isAbortError(err: JsonInputValue): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
 }
 
 function shouldTryOpenAIInAuto(options: SearchOptions): boolean {
 	if (options.recencyFilter) return false;
-	if (isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
+	if (
+		isRuntimeNumber(options.numResults) &&
+		Number.isFinite(options.numResults) &&
+		Math.floor(options.numResults) !== 5
+	) {
 		return false;
 	}
 	return true;
@@ -258,13 +370,16 @@ function providerErrorStatus(message: string): number | undefined {
 	return Number(match[1]);
 }
 
-function classifyProviderError(provider: ResolvedSearchProvider, err: JsonInputValue): SearchProviderError {
+function classifyProviderError<ErrorValue>(provider: ResolvedSearchProvider, err: ErrorValue): SearchProviderError {
 	if (err instanceof SearchProviderError) return err;
 	const message = errorMessage(err);
 	const lower = message.toLowerCase();
 	const status = providerErrorStatus(message);
 	let kind: SearchProviderErrorKind = "unknown";
-	if (err instanceof CredentialResolutionError || /(?:api )?key (?:not found|missing)|credential resolution/.test(lower)) {
+	if (
+		err instanceof CredentialResolutionError ||
+		/(?:api )?key (?:not found|missing)|credential resolution/.test(lower)
+	) {
 		kind = "credential";
 	} else if (isAbortError(err)) {
 		kind = "aborted";
@@ -286,7 +401,10 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: JsonInputV
 		kind = "invalid-response";
 	} else if (/temporar|service unavailable|server error/.test(lower)) {
 		kind = "transient";
-	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)) {
+	} else if (
+		err instanceof TypeError ||
+		/fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)
+	) {
 		kind = "network";
 	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(lower)) {
 		kind = "config";
@@ -294,82 +412,32 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: JsonInputV
 	return new SearchProviderError(provider, kind, message, status, err);
 }
 
+function providerDefinition(provider: ResolvedSearchProvider): SearchProviderDefinition<ResolvedSearchProvider> {
+	const definition = PROVIDER_DEFINITIONS.find((candidate) => candidate.id === provider);
+	if (!definition) throw new Error(`Unknown search provider: ${provider}`);
+	return definition;
+}
+
 async function searchWithResolvedProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
 ): Promise<ProviderSearchResponse> {
-	if (provider === "openai") {
-		const result = await searchWithOpenAI(query, options, options.extensionContext);
-		return { ...result, provider };
-	}
-	if (provider === "brave") return { ...(await searchWithBrave(query, options)), provider };
-	if (provider === "parallel") return { ...(await searchWithParallel(query, options)), provider };
-	if (provider === "tinyfish") return { ...(await searchWithTinyFish(query, options)), provider };
-	if (provider === "search1api") return { ...(await searchWithSearch1API(query, options)), provider };
-	if (provider === "searchinfinity") return { ...(await searchWithSearchinfinity(query, options)), provider };
-	if (provider === "querit") return { ...(await searchWithQuerit(query, options)), provider };
-	if (provider === "tavily") return { ...(await searchWithTavily(query, options)), provider };
-	if (provider === "serpdive") return { ...(await searchWithSerpdive(query, options)), provider };
-	if (provider === "kagi") return { ...(await searchWithKagi(query, options)), provider };
-	if (provider === "ollama") return { ...(await searchWithOllama(query, options)), provider };
-	if (provider === "anysearch") return { ...(await searchWithAnySearch(query, options)), provider };
-	if (provider === "xai") return { ...(await searchWithXai(query, options, options.extensionContext)), provider };
-	if (provider === "brightdata") return { ...(await searchWithBrightData(query, options)), provider };
-	if (provider === "serpbase") return { ...(await searchWithSerpBase(query, options)), provider };
-	if (provider === "perplexity") return { ...(await searchWithPerplexity(query, options)), provider };
-	if (provider === "searxng") return { ...(await searchWithSearXNG(query, options)), provider };
-	if (provider === "gemini") {
-		const result = await searchWithGemini(query, options, true);
-		if (result) return { ...result, provider };
-		throw new Error(
-			"Gemini search unavailable. Either:\n" +
-			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
-			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
-			"  3. Sign into gemini.google.com in a supported Chromium-based browser",
-		);
-	}
-	const result = await searchWithExa(query, options);
+	const definition = providerDefinition(provider);
+	const result = await definition.search(query, options);
 	if (result) return { ...result, provider };
-	throw new Error("Exa search returned no results.");
+	throw new Error(definition.emptyResultMessage ?? `${definition.label} search returned no results.`);
 }
 
-async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, options: FullSearchOptions): Promise<boolean> {
-	if (provider === "openai") return isOpenAISearchAvailable(options.extensionContext);
-	if (provider === "brave") return isBraveAvailable();
-	if (provider === "parallel") return isParallelAvailable();
-	if (provider === "tinyfish") return isTinyFishAvailable();
-	if (provider === "search1api") return isSearch1APIAvailable();
-	if (provider === "searchinfinity") return isSearchinfinityAvailable();
-	if (provider === "querit") return isQueritAvailable();
-	if (provider === "tavily") return isTavilyAvailable();
-	if (provider === "serpdive") return isSerpdiveAvailable();
-	if (provider === "kagi") return isKagiAvailable();
-	if (provider === "ollama") return isOllamaAvailable();
-	if (provider === "anysearch") return isAnySearchAvailable();
-	if (provider === "xai") return isXaiSearchAvailable(options.extensionContext);
-	if (provider === "brightdata") return isBrightDataAvailable();
-	if (provider === "serpbase") return isSerpBaseAvailable();
-	if (provider === "perplexity") return isPerplexityAvailable();
-	if (provider === "searxng") return isSearXNGAvailable();
-	if (provider === "gemini") return isGeminiApiAvailable() || !!(await isGeminiWebAvailable());
-	return isExaAvailable();
+async function isResolvedProviderAvailable(
+	provider: ResolvedSearchProvider,
+	options: FullSearchOptions,
+): Promise<boolean> {
+	return providerDefinition(provider).available(options);
 }
 
 function providerLabel(provider: ResolvedSearchProvider): string {
-	if (provider === "openai") return "OpenAI";
-	if (provider === "tinyfish") return "TinyFish";
-	if (provider === "search1api") return "Search1API";
-	if (provider === "searchinfinity") return "Searchinfinity";
-	if (provider === "querit") return "Querit";
-	if (provider === "serpdive") return "SERPdive";
-	if (provider === "searxng") return "SearXNG";
-	if (provider === "kagi") return "Kagi";
-	if (provider === "ollama") return "Ollama";
-	if (provider === "xai") return "xAI";
-	if (provider === "brightdata") return "Bright Data";
-	if (provider === "serpbase") return "SerpBase";
-	return provider.charAt(0).toUpperCase() + provider.slice(1);
+	return providerDefinition(provider).label;
 }
 
 async function searchWithAllProvider(
@@ -377,10 +445,14 @@ async function searchWithAllProvider(
 	query: string,
 	options: FullSearchOptions,
 ): Promise<ProviderSearchResponse> {
-	if (provider !== "gemini") return searchWithResolvedProvider(provider, query, options);
-	const result = await searchWithGeminiApi(query, options);
+	const definition = providerDefinition(provider);
+	const result = await (definition.aggregateSearch ?? definition.search)(query, options);
 	if (result) return { ...result, provider };
-	throw new Error("Gemini API search returned no results.");
+	throw new Error(
+		definition.aggregateEmptyResultMessage ??
+			definition.emptyResultMessage ??
+			`${definition.label} search returned no results.`,
+	);
 }
 
 async function searchWithProviders(
@@ -388,36 +460,49 @@ async function searchWithProviders(
 	options: FullSearchOptions,
 	selectedProviders?: ResolvedSearchProvider[],
 ): Promise<AttributedSearchResponse> {
-	const providers = selectedProviders ?? (await Promise.all(ALL_SEARCH_PROVIDERS.map(async (provider) => ({
-		provider,
-		available: provider === "gemini"
-			? isGeminiApiAvailable()
-			: await isResolvedProviderAvailable(provider, options),
-	})))).filter((entry) => entry.available).map((entry) => entry.provider);
+	const providers =
+		selectedProviders ??
+		(
+			await Promise.all(
+				AUTOMATIC_PROVIDER_DEFINITIONS.map(async (definition) => ({
+					provider: definition.id,
+					available: await (definition.aggregateAvailable ?? definition.available)(options),
+				})),
+			)
+		)
+			.filter((entry) => entry.available)
+			.map((entry) => entry.provider);
 	if (providers.length === 0) {
-		throw new Error("No configured search provider available for provider \"all\". AnySearch, xAI, Bright Data, and SerpBase are excluded.");
+		throw new Error(
+			'No configured search provider available for provider "all". AnySearch, xAI, Bright Data, and SerpBase are excluded.',
+		);
 	}
 
 	const settled = await Promise.allSettled(
-		providers.map((provider) => selectedProviders
-			? searchWithResolvedProvider(provider, query, options)
-			: searchWithAllProvider(provider, query, options)),
+		providers.map((provider) =>
+			selectedProviders
+				? searchWithResolvedProvider(provider, query, options)
+				: searchWithAllProvider(provider, query, options),
+		),
 	);
 	if (options.signal?.aborted) throw new Error("Aborted");
 
 	const successes: ProviderSearchResponse[] = [];
 	const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
-	for (let index = 0; index < settled.length; index++) {
-		const outcome = settled[index];
+	for (const [index, outcome] of settled.entries()) {
+		const provider = providers[index];
+		if (!provider) throw new Error("Search provider result did not match its request");
 		if (outcome.status === "fulfilled") {
 			successes.push(outcome.value);
 		} else {
-			failures.push({ provider: providers[index], error: errorMessage(outcome.reason) });
+			failures.push({ provider, error: errorMessage(outcome.reason) });
 		}
 	}
 	if (successes.length === 0) {
 		const label = selectedProviders ? "Selected-provider" : "All-provider";
-		throw new Error(`${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`);
+		throw new Error(
+			`${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`,
+		);
 	}
 
 	const results: SearchResult[] = [];
@@ -437,8 +522,8 @@ async function searchWithProviders(
 		}
 	}
 
-	const answerSections = successes.map((response) =>
-		`## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`
+	const answerSections = successes.map(
+		(response) => `## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`,
 	);
 	if (failures.length > 0) {
 		answerSections.push(
@@ -483,9 +568,8 @@ async function searchWithConfiguredRouting(
 
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
 	const config = getSearchConfig();
-	const provider = options.provider === undefined || options.provider === "auto"
-		? config.searchProvider
-		: options.provider;
+	const provider =
+		options.provider === undefined || options.provider === "auto" ? config.searchProvider : options.provider;
 	if (Array.isArray(provider)) {
 		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"));
 	}
@@ -496,155 +580,27 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
-
-	if (isSearXNGAvailable()) {
+	for (const definition of AUTOMATIC_PROVIDER_DEFINITIONS) {
+		const available = definition.automaticAvailable ?? definition.available;
 		try {
-			const result = await searchWithSearXNG(query, options);
-			return { ...result, provider: "searxng" };
+			if (!(await available(options))) continue;
 		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SearXNG: ${errorMessage(err)}`);
+			if (!definition.catchAutomaticAvailabilityError || isAbortError(err)) throw err;
+			fallbackErrors.push(`${definition.label}: ${errorMessage(err)}`);
+			continue;
 		}
-	}
-
-	if (shouldTryOpenAIInAuto(options)) {
 		try {
-			if (await isOpenAISearchAvailable(options.extensionContext)) {
-				const result = await searchWithOpenAI(query, options, options.extensionContext);
-				return { ...result, provider: "openai" };
+			const result = await (definition.automaticSearch ?? definition.search)(query, options);
+			if (result) return { ...result, provider: definition.id };
+		} catch (err) {
+			if (
+				isAbortError(err) ||
+				(definition.stopAutomaticOnCredentialError && err instanceof CredentialResolutionError)
+			) {
+				throw err;
 			}
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
+			fallbackErrors.push(`${definition.label}: ${errorMessage(err)}`);
 		}
-	}
-
-	if (isExaAvailable()) {
-		try {
-			const result = await searchWithExa(query, options);
-			if (result) return { ...result, provider: "exa" };
-		} catch (err) {
-			if (err instanceof CredentialResolutionError || isAbortError(err)) throw err;
-			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isBraveAvailable()) {
-		try {
-			const result = await searchWithBrave(query, options);
-			return { ...result, provider: "brave" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Brave: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isParallelAvailable()) {
-		try {
-			const result = await searchWithParallel(query, options);
-			return { ...result, provider: "parallel" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Parallel: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isTinyFishAvailable()) {
-		try {
-			const result = await searchWithTinyFish(query, options);
-			return { ...result, provider: "tinyfish" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`TinyFish: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isSearch1APIAvailable()) {
-		try {
-			const result = await searchWithSearch1API(query, options);
-			return { ...result, provider: "search1api" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Search1API: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isSearchinfinityAvailable()) {
-		try {
-			const result = await searchWithSearchinfinity(query, options);
-			return { ...result, provider: "searchinfinity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Searchinfinity: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isQueritAvailable()) {
-		try {
-			const result = await searchWithQuerit(query, options);
-			return { ...result, provider: "querit" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Querit: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isTavilyAvailable()) {
-		try {
-			const result = await searchWithTavily(query, options);
-			return { ...result, provider: "tavily" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isSerpdiveAvailable()) {
-		try {
-			const result = await searchWithSerpdive(query, options);
-			return { ...result, provider: "serpdive" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SERPdive: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isKagiAvailable()) {
-		try {
-			const result = await searchWithKagi(query, options);
-			return { ...result, provider: "kagi" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Kagi: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isOllamaAvailable()) {
-		try {
-			const result = await searchWithOllama(query, options);
-			return { ...result, provider: "ollama" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Ollama: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isPerplexityAvailable()) {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
-		}
-	}
-
-	try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return { ...geminiResult, provider: "gemini" };
-	} catch (err) {
-		if (isAbortError(err)) throw err;
-		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 	}
 
 	if (fallbackErrors.length > 0) {
@@ -653,217 +609,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
-		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
-		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
-		"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
-		"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
-		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xai\" for Grok, \"brightdata\" with brightdataSerpZone for paid Bright Data SERP, or \"serpbase\" with serpbaseApiKey for paid Google SERP"
+			"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
+			`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
+			"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
+			"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
+			"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
+			'  6. Explicitly select provider: "anysearch" for anonymous AnySearch, "xai" for Grok, "brightdata" with brightdataSerpZone for paid Bright Data SERP, or "serpbase" with serpbaseApiKey for paid Google SERP',
 	);
-}
-
-async function searchWithGeminiApi(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
-	const requestSignal = AbortSignal.any([
-		AbortSignal.timeout(60000),
-		...(options.signal ? [options.signal] : []),
-	]);
-	const apiKey = await getApiKey(requestSignal);
-	if (!apiKey && !isGatewayConfigured()) return null;
-
-	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	try {
-		const model = getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
-		const body = {
-			contents: [{ role: "user", parts: [{ text: query }] }],
-			tools: [{ google_search: {} }],
-		};
-
-		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-			signal: requestSignal,
-		}, apiKey);
-
-		if (!res.ok) {
-			const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
-			throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
-		}
-
-		const data = parseGeminiSearchPayload(parseJsonObject(await res.text()));
-		activityMonitor.logComplete(activityId, res.status);
-
-		const answer = data.parts.map((part) => part.text).filter(Boolean).join("\n");
-		const results = await resolveGroundingChunks(data.groundingChunks, options.signal);
-
-		if (!answer && results.length === 0) return null;
-		return { answer, results };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
-	}
-}
-
-async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
-	const cookies = await isGeminiWebAvailable();
-	if (!cookies) return null;
-
-	const prompt = buildSearchPrompt(query, options);
-	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	try {
-		const text = await queryWithCookies(prompt, cookies, {
-			signal: options.signal,
-			timeoutMs: 60000,
-		});
-
-		activityMonitor.logComplete(activityId, 200);
-
-		const results = extractSourceUrls(text);
-		return { answer: text, results };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
-	}
-}
-
-function buildSearchPrompt(query: string, options: SearchOptions): string {
-	let prompt = `Search the web and answer the following question. Include source URLs for your claims.\nFormat your response as:\n1. A direct answer to the question\n2. Cited sources as markdown links\n\nQuestion: ${query}`;
-
-	if (options.recencyFilter) {
-		const labels = {
-			day: "past 24 hours",
-			week: "past week",
-			month: "past month",
-			year: "past year",
-		};
-		prompt += `\n\nOnly include results from the ${labels[options.recencyFilter]}.`;
-	}
-
-	if (options.domainFilter?.length) {
-		const includes = options.domainFilter.filter(d => !d.startsWith("-"));
-		const excludes = options.domainFilter.filter(d => d.startsWith("-")).map(d => d.slice(1));
-		if (includes.length) prompt += `\n\nOnly cite sources from: ${includes.join(", ")}`;
-		if (excludes.length) prompt += `\n\nDo not cite sources from: ${excludes.join(", ")}`;
-	}
-
-	return prompt;
-}
-
-function extractSourceUrls(markdown: string): SearchResult[] {
-	const results: SearchResult[] = [];
-	const seen = new Set<string>();
-	const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-	for (const match of markdown.matchAll(linkRegex)) {
-		const url = match[2];
-		if (seen.has(url)) continue;
-		seen.add(url);
-		results.push({ title: match[1], url, snippet: "" });
-	}
-	return results;
-}
-
-async function resolveGroundingChunks(
-	chunks: GroundingChunk[] | undefined,
-	signal?: AbortSignal,
-): Promise<SearchResult[]> {
-	if (!chunks?.length) return [];
-
-	const results: SearchResult[] = [];
-	for (const chunk of chunks) {
-		if (!chunk.web) continue;
-		const title = chunk.web.title || "";
-		let url = chunk.web.uri || "";
-
-		if (url.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
-			const resolved = await resolveRedirect(url, signal);
-			if (resolved) url = resolved;
-		}
-
-		if (url) results.push({ title, url, snippet: "" });
-	}
-	return results;
-}
-
-async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string | null> {
-	try {
-		const res = await fetch(proxyUrl, {
-			method: "HEAD",
-			redirect: "manual",
-			signal: AbortSignal.any([
-				AbortSignal.timeout(5000),
-				...(signal ? [signal] : []),
-			]),
-		});
-		return res.headers.get("location") || null;
-	} catch {
-		return null;
-	}
-}
-
-interface GeminiSearchPayload {
-	parts: Array<{ text: string }>;
-	groundingChunks: GroundingChunk[];
-}
-
-interface GroundingChunk {
-	web: { uri: string; title: string } | undefined;
-}
-
-function readOptionalObject(value: JsonInputValue, label: string): JsonInputObject | undefined {
-	if (value === undefined) return undefined;
-	if (!isJsonInputObject(value)) throw new Error(`Gemini API returned invalid ${label}`);
-	return value;
-}
-
-function readOptionalArray(value: JsonInputValue, label: string): JsonInputValue[] {
-	if (value === undefined) return [];
-	if (!Array.isArray(value)) throw new Error(`Gemini API returned invalid ${label}`);
-	return value;
-}
-
-function readOptionalString(value: JsonInputValue, label: string): string {
-	if (value === undefined) return "";
-	if (!isRuntimeString(value)) throw new Error(`Gemini API returned invalid ${label}`);
-	return value;
-}
-
-function parseGeminiSearchPayload(value: JsonInputObject): GeminiSearchPayload {
-	const candidates = readOptionalArray(value.candidates, "candidates");
-	const candidate = readOptionalObject(candidates[0], "candidates[0]");
-	const content = readOptionalObject(candidate?.content, "candidates[0].content");
-	const parts = readOptionalArray(content?.parts, "candidates[0].content.parts").map((part, index) => {
-		const entry = readOptionalObject(part, `candidates[0].content.parts[${index}]`);
-		if (!entry) throw new Error(`Gemini API returned invalid candidates[0].content.parts[${index}]`);
-		return { text: readOptionalString(entry.text, `candidates[0].content.parts[${index}].text`) };
-	});
-
-	const metadata = readOptionalObject(candidate?.groundingMetadata, "candidates[0].groundingMetadata");
-	const groundingChunks = readOptionalArray(metadata?.groundingChunks, "candidates[0].groundingMetadata.groundingChunks")
-		.map((chunk, index) => {
-			const entry = readOptionalObject(chunk, `groundingChunks[${index}]`);
-			if (!entry) throw new Error(`Gemini API returned invalid groundingChunks[${index}]`);
-			const web = readOptionalObject(entry.web, `groundingChunks[${index}].web`);
-			return {
-				web: web
-					? {
-						uri: readOptionalString(web.uri, `groundingChunks[${index}].web.uri`),
-						title: readOptionalString(web.title, `groundingChunks[${index}].web.title`),
-					}
-					: undefined,
-			};
-		});
-
-	return { parts, groundingChunks };
 }

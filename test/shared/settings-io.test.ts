@@ -9,6 +9,7 @@ import {
 	NamespacedSettingsStore,
 	readNamespace,
 	readSettingsFile,
+	SettingsFormatError,
 	writeSettingsFile,
 } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 import { acquireSettingsLock, migrateLegacyNamespace } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
@@ -37,6 +38,12 @@ afterEach(async () => {
 test("readSettingsFile returns {} for a missing file", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	expect(await readSettingsFile(path)).toEqual({});
+});
+
+test("readSettingsFile identifies invalid settings content", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	await Bun.write(path, "{");
+	await expect(readSettingsFile(path)).rejects.toBeInstanceOf(SettingsFormatError);
 });
 
 test("writeSettingsFile writes tab-indented JSON", async () => {

@@ -1,17 +1,16 @@
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as domainMatches,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
-import { isJsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
-import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -35,11 +34,6 @@ const RECENCY_TBS = {
 	year: "qdr:y",
 } satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, string>;
 
-interface WebSearchConfig extends JsonInputObject {
-	brightdataApiKey?: JsonInputValue;
-	brightdataSerpZone?: JsonInputValue;
-}
-
 interface BrightDataOrganicResult {
 	link?: JsonInputValue;
 	title?: JsonInputValue;
@@ -57,52 +51,15 @@ interface BrightDataSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-// The merged Web settings document may contain credentials. V8 quotes a
-// window of the source it choked on back inside the `JSON.parse` message — with a
-// short file, the whole file — so `{"brightdataApiKey": bd-real-token}` (quotes
-// forgotten around a pasted token) produces
-// `Unexpected token 'b', "{"brightdataApiKey": bd-real-token}" is not valid JSON`.
-// There is no credential to redact against at this point, because the credential is
-// what the file was being read for, so the parser's text is dropped entirely and only
-// its position is kept. That position is also the only part that cannot carry a
-// status-shaped phrase into `providerErrorStatus`.
-//
-// This is a deliberate divergence from `serpdive.ts:59-62`, `brave.ts:33-36`,
-// `anysearch.ts:48-51` and `firecrawl.ts:50-53`, which all quote the parser message
-// verbatim. They have the same leak; fixing it for every provider is a separate
-// change, and this module is not going to copy the bug forward to justify symmetry.
-function configParseDetail(err: JsonInputValue): string {
-	const position = errorMessage(err).match(/at position \d+(?: \(line \d+ column \d+\))?/i);
-	return position ? `not valid JSON, ${position[0]}` : "not valid JSON";
-}
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${configParseDetail(err)}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Bright Data",
-		configuredValue: loadConfig().brightdataApiKey,
-		environmentValue: process.env.BRIGHTDATA_API_KEY,
+		configuredValue: loadConfig()["brightdataApiKey"],
+		environmentValue: process.env["BRIGHTDATA_API_KEY"],
 		signal,
 	});
 }
@@ -112,9 +69,9 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Bright Data API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "brightdataApiKey": "your-key" }\n` +
-			"  2. Set BRIGHTDATA_API_KEY environment variable\n" +
-			"Get a key at https://brightdata.com/cp/setting/users",
+				`  1. Create ${CONFIG_PATH} with { "brightdataApiKey": "your-key" }\n` +
+				"  2. Set BRIGHTDATA_API_KEY environment variable\n" +
+				"Get a key at https://brightdata.com/cp/setting/users",
 		);
 	}
 	return apiKey;
@@ -148,11 +105,11 @@ interface ZoneSetting {
 // malformed must not silently hand the request to the config file's zone. The
 // setting the user actually filled in is the setting the error names.
 function serpZoneSetting(): ZoneSetting | null {
-	const fromEnv = process.env.BRIGHTDATA_SERP_ZONE;
+	const fromEnv = process.env["BRIGHTDATA_SERP_ZONE"];
 	if (isRuntimeString(fromEnv) && fromEnv.trim()) {
 		return { raw: fromEnv.trim(), label: "BRIGHTDATA_SERP_ZONE" };
 	}
-	const configured = loadConfig().brightdataSerpZone;
+	const configured = loadConfig()["brightdataSerpZone"];
 	if (isRuntimeString(configured) && configured.trim()) {
 		return { raw: configured.trim(), label: `brightdataSerpZone in ${CONFIG_PATH}` };
 	}
@@ -176,23 +133,18 @@ function requireSerpZone(): string {
 	if (setting) {
 		throw new Error(
 			`Bright Data SERP zone is invalid: ${setting.label} must be a zone name of letters, digits, "-", or "_" ` +
-			`(got "${untrustedText(setting.raw, 60)}").\n` +
-			"The zone must be of Bright Data type `serp`; a Web Unlocker zone (type `unblocker`) is a different product and does not return SERP JSON.\n" +
-			"Create or rename one at https://brightdata.com/cp/zones",
+				`(got "${untrustedText(setting.raw, 60)}").\n` +
+				"The zone must be of Bright Data type `serp`; a Web Unlocker zone (type `unblocker`) is a different product and does not return SERP JSON.\n" +
+				"Create or rename one at https://brightdata.com/cp/zones",
 		);
 	}
 	throw new Error(
 		"Bright Data SERP zone is invalid or missing. Either:\n" +
-		`  1. Create ${CONFIG_PATH} with { "brightdataSerpZone": "your_serp_zone" }\n` +
-		"  2. Set BRIGHTDATA_SERP_ZONE environment variable\n" +
-		"The zone must be of Bright Data type `serp`; a Web Unlocker zone is a different product and does not return SERP JSON.\n" +
-		"Create one at https://brightdata.com/cp/zones",
+			`  1. Create ${CONFIG_PATH} with { "brightdataSerpZone": "your_serp_zone" }\n` +
+			"  2. Set BRIGHTDATA_SERP_ZONE environment variable\n" +
+			"The zone must be of Bright Data type `serp`; a Web Unlocker zone is a different product and does not return SERP JSON.\n" +
+			"Create one at https://brightdata.com/cp/zones",
 	);
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 interface DomainFilters {
@@ -258,15 +210,6 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 	return filters.include.some((domain) => domainMatches(hostname, domain));
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 // Text that did not originate here — a proxied response body, a `JSON.parse`
 // message quoting that body, a config value — is quoted into Error messages, and
 // `gemini-search.ts` classifies routing failures by reading a status back out of
@@ -317,8 +260,8 @@ const QUOTA_FORMAT_PATTERN = /rate limit|quota|too many requests/gi;
 // (c) Neither parser message is quoted at all, so neither needs a filter or a cap. V8
 //     embeds a *prefix* of the offending input in its message, and `redactCredential`
 //     substitutes whole values, so a prefix cannot be redacted out of it. Dropping the
-//     message removes the leak by construction — see `configParseDetail` and the
-//     `JSON.parse` catch on the response path.
+//     message removes the leak by construction — see the canonical Web settings
+//     reader and the `JSON.parse` catch on the response path.
 
 // Truncation happens BEFORE the rewrite, and the order is the whole point.
 // `STATUS_SHAPED_PATTERN` requires `(\d{3})\b`, so `error 5031` is deliberately left
@@ -385,16 +328,16 @@ function parseSerpResponse(value: JsonInputValue, zone: string, apiKey: string |
 	if (upstreamError) {
 		throw invalidResponse(zone, `Bright Data reported an error instead of a SERP: ${upstreamError}`);
 	}
-	if (value.organic === undefined || value.organic === null) {
+	if (value["organic"] === undefined || value["organic"] === null) {
 		throw invalidResponse(
 			zone,
 			"expected an organic array and the envelope carried none. A `serp` zone queried with brd_json=1 " +
-			"returns { organic: [...] }; a zone of type `unblocker`, or a missing brd_json=1, is the usual cause",
+				"returns { organic: [...] }; a zone of type `unblocker`, or a missing brd_json=1, is the usual cause",
 		);
 	}
-	if (!Array.isArray(value.organic)) throw invalidResponse(zone, "expected organic array");
+	if (!Array.isArray(value["organic"])) throw invalidResponse(zone, "expected organic array");
 	const organic: BrightDataOrganicResult[] = [];
-	for (const [index, entry] of value.organic.entries()) {
+	for (const [index, entry] of value["organic"].entries()) {
 		if (!isJsonInputObject(entry)) {
 			throw invalidResponse(zone, `expected organic[${index}] object`);
 		}
@@ -428,9 +371,11 @@ function mapResults(
 // assembled from the sources — the same shape brave.ts and searxng.ts produce.
 function buildAnswer(results: SearchResponse["results"]): string {
 	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
+		.map((result) =>
+			result.snippet
+				? `${result.snippet}\nSource: ${result.title} (${result.url})`
+				: `Source: ${result.title} (${result.url})`,
+		)
 		.join("\n\n");
 }
 
@@ -452,15 +397,18 @@ export function isBrightDataAvailable(): boolean {
 		if (getSerpZone() === null) return false;
 		return hasCredentialSource({
 			provider: "Bright Data",
-			configuredValue: loadConfig().brightdataApiKey,
-			environmentValue: process.env.BRIGHTDATA_API_KEY,
+			configuredValue: loadConfig()["brightdataApiKey"],
+			environmentValue: process.env["BRIGHTDATA_API_KEY"],
 		});
 	} catch {
 		return false;
 	}
 }
 
-export async function searchWithBrightData(query: string, options: BrightDataSearchOptions = {}): Promise<SearchResponse> {
+export async function searchWithBrightData(
+	query: string,
+	options: BrightDataSearchOptions = {},
+): Promise<SearchResponse> {
 	// Zone before key: a config mistake must not spawn a `!command` credential
 	// resolver, and must not reach a billable endpoint.
 	const zone = requireSerpZone();
@@ -484,11 +432,11 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 		response = await fetch(BRIGHTDATA_API_URL, {
 			method: "POST",
 			headers: {
-				"Authorization": `Bearer ${apiKey}`,
+				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);

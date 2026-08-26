@@ -1,15 +1,14 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
-import { activityMonitor, type ActivityEntry } from "./activity.ts";
-import type { ExtractedContent, ExtractOptions } from "./extract.ts";
-import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { type ActivityEntry, activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { ExtractedContent } from "./extract.ts";
+import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { errorMessage, getWebSearchConfigPath, requestSignal } from "./utils.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
@@ -32,10 +31,6 @@ const PLACEHOLDER_API_KEY_DENYLIST = new Set([
 	"api-key",
 	"xxx",
 ]);
-
-interface WebSearchConfig {
-	parallelApiKey?: JsonInputValue;
-}
 
 interface V1WebSearchResult {
 	url: string;
@@ -61,26 +56,8 @@ interface ParallelSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
-
-export function clearParallelConfigCache(): void {
-	cachedConfig = null;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function normalizeApiKey(value: JsonInputValue): string | null {
@@ -95,33 +72,33 @@ function isPlaceholderApiKey(key: string): boolean {
 }
 
 async function resolveApiKey(signal?: AbortSignal): Promise<string | null> {
-	const configKey = normalizeApiKey(loadConfig().parallelApiKey);
+	const configKey = normalizeApiKey(loadConfig()["parallelApiKey"]);
 	if (configKey?.startsWith("$") || configKey?.startsWith("!")) {
 		const resolved = await resolveCredential({
 			provider: "Parallel",
 			configuredValue: configKey,
-			environmentValue: process.env.PARALLEL_API_KEY,
+			environmentValue: process.env["PARALLEL_API_KEY"],
 			signal,
 		});
 		return resolved && !isPlaceholderApiKey(resolved) ? resolved : null;
 	}
 
-	const envKey = normalizeApiKey(process.env.PARALLEL_API_KEY);
+	const envKey = normalizeApiKey(process.env["PARALLEL_API_KEY"]);
 	if (envKey && !isPlaceholderApiKey(envKey)) return envKey;
 	if (configKey && !isPlaceholderApiKey(configKey)) return configKey;
 	return null;
 }
 
 function hasConfiguredApiKey(): boolean {
-	const configKey = normalizeApiKey(loadConfig().parallelApiKey);
+	const configKey = normalizeApiKey(loadConfig()["parallelApiKey"]);
 	if (configKey?.startsWith("$") || configKey?.startsWith("!")) {
 		return hasCredentialSource({
 			provider: "Parallel",
 			configuredValue: configKey,
-			environmentValue: process.env.PARALLEL_API_KEY,
+			environmentValue: process.env["PARALLEL_API_KEY"],
 		});
 	}
-	const envKey = normalizeApiKey(process.env.PARALLEL_API_KEY);
+	const envKey = normalizeApiKey(process.env["PARALLEL_API_KEY"]);
 	return (envKey !== null && !isPlaceholderApiKey(envKey)) || (configKey !== null && !isPlaceholderApiKey(configKey));
 }
 
@@ -130,9 +107,9 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 	if (!key) {
 		throw new Error(
 			"Parallel API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "parallelApiKey": "your-key" }\n` +
-			"  2. Set PARALLEL_API_KEY environment variable\n" +
-			"Get a key at https://platform.parallel.ai",
+				`  1. Create ${CONFIG_PATH} with { "parallelApiKey": "your-key" }\n` +
+				"  2. Set PARALLEL_API_KEY environment variable\n" +
+				"Get a key at https://platform.parallel.ai",
 		);
 	}
 	return key;
@@ -146,29 +123,17 @@ export function isParallelAvailable(): boolean {
 	return hasParallelApiKey();
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function activityContext(
-	url: string,
-	body: JsonInputObject,
-): ActivityContext {
-	if (isRuntimeString(body.objective) && body.objective.trim().length > 0) {
-		return { type: "api", query: body.objective };
+function activityContext(url: string, body: JsonInputObject): ActivityContext {
+	if (isRuntimeString(body["objective"]) && body["objective"].trim().length > 0) {
+		return { type: "api", query: body["objective"] };
 	}
 
-	const searchQueries = body.search_queries;
+	const searchQueries = body["search_queries"];
 	if (Array.isArray(searchQueries) && isRuntimeString(searchQueries[0])) {
 		return { type: "api", query: searchQueries[0] };
 	}
 
-	const urls = body.urls;
+	const urls = body["urls"];
 	if (Array.isArray(urls) && isRuntimeString(urls[0])) {
 		return { type: "fetch", url: urls[0] };
 	}
@@ -207,9 +172,9 @@ function mapDomainFilter(domainFilter: string[] | undefined): ParallelDomainFilt
 function buildSearchRequestBody(query: string, options: ParallelSearchOptions = {}): JsonInputObject {
 	const numResults = Math.max(1, Math.min(Math.floor(options.numResults ?? 5), 20));
 	const sourcePolicy: JsonInputObject = mapDomainFilter(options.domainFilter);
-	if (options.recencyFilter) sourcePolicy.after_date = recencyToAfterDate(options.recencyFilter);
+	if (options.recencyFilter) sourcePolicy["after_date"] = recencyToAfterDate(options.recencyFilter);
 	const advancedSettings: JsonInputObject = { max_results: numResults };
-	if (Object.keys(sourcePolicy).length > 0) advancedSettings.source_policy = sourcePolicy;
+	if (Object.keys(sourcePolicy).length > 0) advancedSettings["source_policy"] = sourcePolicy;
 	return {
 		objective: query,
 		search_queries: [query],
@@ -261,7 +226,7 @@ function mapSearchResults(results: V1WebSearchResult[] | undefined): SearchRespo
 		mapped.push({
 			title: item.title || `Source ${i + 1}`,
 			url: item.url,
-			snippet: excerpts.length > 0 ? excerpts[0].replace(/\s+/g, " ").trim().slice(0, 200) : "",
+			snippet: excerpts[0]?.replace(/\s+/g, " ").trim().slice(0, 200) ?? "",
 		});
 	}
 	return mapped;
@@ -307,15 +272,15 @@ function mapExtractResult(result: V1ExtractResult | undefined | null): Extracted
 	};
 }
 
-function buildExtractRequestBody(url: string, options: ExtractOptions = {}, fullContent = false): JsonInputObject {
+function buildExtractRequestBody(url: string, fullContent = false): JsonInputObject {
 	const body: JsonInputObject = { urls: [url] };
-	if (fullContent) body.advanced_settings = { full_content: true };
+	if (fullContent) body["advanced_settings"] = { full_content: true };
 	return body;
 }
 
 function findExtractResult(results: V1ExtractResult[] | undefined, url: string): V1ExtractResult | undefined {
 	if (!Array.isArray(results)) return undefined;
-	return results.find(item => item?.url === url) ?? results[0];
+	return results.find((item) => item?.url === url) ?? results[0];
 }
 
 function hasExtractUrlError(errors: JsonInputValue, url: string): boolean {
@@ -332,14 +297,14 @@ async function fetchAndMapExtractResult(
 	signal?: AbortSignal,
 ): Promise<{ mapped: ExtractedContent | null; result: V1ExtractResult | undefined }> {
 	const data = await parallelFetch(PARALLEL_EXTRACT_URL, body, signal);
-	if (hasExtractUrlError(data.errors, url)) return { mapped: null, result: undefined };
-	const result = findExtractResult(parseExtractResults(data.results), url);
+	if (hasExtractUrlError(data["errors"], url)) return { mapped: null, result: undefined };
+	const result = findExtractResult(parseExtractResults(data["results"]), url);
 	return { mapped: mapExtractResult(result), result };
 }
 
 export async function searchWithParallel(query: string, options: ParallelSearchOptions = {}): Promise<SearchResponse> {
 	const data = await parallelFetch(PARALLEL_SEARCH_URL, buildSearchRequestBody(query, options), options.signal);
-	const results = parseSearchResults(data.results);
+	const results = parseSearchResults(data["results"]);
 	const response: SearchResponse = {
 		answer: buildAnswerFromExcerpts(results),
 		results: mapSearchResults(results),
@@ -351,24 +316,16 @@ export async function searchWithParallel(query: string, options: ParallelSearchO
 	return response;
 }
 
-export async function extractWithParallel(
-	url: string,
-	signal?: AbortSignal,
-	options: ExtractOptions = {},
-): Promise<ExtractedContent | null> {
-	const initial = await fetchAndMapExtractResult(url, buildExtractRequestBody(url, options), signal);
+export async function extractWithParallel(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
+	const initial = await fetchAndMapExtractResult(url, buildExtractRequestBody(url), signal);
 	if (initial.mapped) return initial.mapped;
 	if (!initial.result || resolveExtractContent(initial.result).length >= MIN_USEFUL_CONTENT) return null;
 
-	const retry = await fetchAndMapExtractResult(url, buildExtractRequestBody(url, options, true), signal);
+	const retry = await fetchAndMapExtractResult(url, buildExtractRequestBody(url, true), signal);
 	return retry.mapped;
 }
 
-async function parallelFetch(
-	url: string,
-	body: JsonInputObject,
-	signal?: AbortSignal,
-): Promise<JsonInputObject> {
+async function parallelFetch(url: string, body: JsonInputObject, signal?: AbortSignal): Promise<JsonInputObject> {
 	const apiKey = await getApiKey(signal);
 	const activityId = activityMonitor.logStart(activityContext(url, body));
 	let response: Response;
@@ -380,7 +337,7 @@ async function parallelFetch(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal),
+			signal: requestSignal(signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);

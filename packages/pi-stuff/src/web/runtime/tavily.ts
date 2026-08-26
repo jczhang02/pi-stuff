@@ -1,52 +1,32 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const TAVILY_API_URL = "https://api.tavily.com/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
-interface WebSearchConfig {
-	tavilyApiKey?: JsonInputValue;
-}
-
 interface TavilySearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Tavily",
-		configuredValue: loadConfig().tavilyApiKey,
-		environmentValue: process.env.TAVILY_API_KEY,
+		configuredValue: loadConfig()["tavilyApiKey"],
+		environmentValue: process.env["TAVILY_API_KEY"],
 		signal,
 	});
 }
@@ -56,17 +36,12 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Tavily API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "tavilyApiKey": "your-key" }\n` +
-			"  2. Set TAVILY_API_KEY environment variable\n" +
-			"Get a key at https://app.tavily.com/",
+				`  1. Create ${CONFIG_PATH} with { "tavilyApiKey": "your-key" }\n` +
+				"  2. Set TAVILY_API_KEY environment variable\n" +
+				"Get a key at https://app.tavily.com/",
 		);
 	}
 	return apiKey;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 interface TavilyDomainFilter {
@@ -90,15 +65,6 @@ function mapDomainFilter(domainFilter: string[] | undefined): TavilyDomainFilter
 	return filter;
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 function mapResults(results: JsonInputValue, numResults: number): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
@@ -117,21 +83,29 @@ function mapResults(results: JsonInputValue, numResults: number): SearchResponse
 function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((item) => {
-		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !isRuntimeString(item.raw_content) || item.raw_content.trim().length === 0) return [];
-		return [{
-			url: item.url,
-			title: isRuntimeString(item.title) ? item.title : "",
-			content: item.raw_content,
-			error: null,
-		}];
+		if (
+			!isJsonInputObject(item) ||
+			!isRuntimeString(item.url) ||
+			!isRuntimeString(item.raw_content) ||
+			item.raw_content.trim().length === 0
+		)
+			return [];
+		return [
+			{
+				url: item.url,
+				title: isRuntimeString(item.title) ? item.title : "",
+				content: item.raw_content,
+				error: null,
+			},
+		];
 	});
 }
 
 export function isTavilyAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Tavily",
-		configuredValue: loadConfig().tavilyApiKey,
-		environmentValue: process.env.TAVILY_API_KEY,
+		configuredValue: loadConfig()["tavilyApiKey"],
+		environmentValue: process.env["TAVILY_API_KEY"],
 	});
 }
 
@@ -145,7 +119,7 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		include_answer: "basic",
 		include_raw_content: options.includeContent ? "markdown" : false,
 	};
-	if (options.recencyFilter) body.time_range = options.recencyFilter;
+	if (options.recencyFilter) body["time_range"] = options.recencyFilter;
 	Object.assign(body, mapDomainFilter(options.domainFilter));
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
@@ -154,11 +128,11 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		response = await fetch(TAVILY_API_URL, {
 			method: "POST",
 			headers: {
-				"Authorization": `Bearer ${apiKey}`,
+				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -177,7 +151,7 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		throw new Error(`Tavily API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data;
+	let data: JsonInputObject;
 	try {
 		const responseBody = await response.json();
 		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
@@ -189,11 +163,11 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 
 	activityMonitor.logComplete(activityId, response.status);
 	const result: SearchResponse = {
-		answer: isRuntimeString(data.answer) ? data.answer : "",
-		results: mapResults(data.results, numResults),
+		answer: isRuntimeString(data["answer"]) ? data["answer"] : "",
+		results: mapResults(data["results"], numResults),
 	};
 	if (options.includeContent) {
-		const inlineContent = mapInlineContent(data.results);
+		const inlineContent = mapInlineContent(data["results"]);
 		if (inlineContent.length > 0) result.inlineContent = inlineContent;
 	}
 	return result;

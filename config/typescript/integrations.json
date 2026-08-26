@@ -12,7 +12,6 @@
 		"erasableSyntaxOnly": false
 	},
 	"include": [
-		"../../packages/pi-stuff/src/web/runtime/**/*.ts",
 		"../../packages/pi-stuff/src/mcp/runtime/**/*.ts",
 		"../../test/mcp/agent-run-origin.test.ts",
 		"../../test/mcp/command-secret.test.ts",
@@ -26,8 +25,7 @@
 		"../../test/mcp/runtime-owner.test.ts",
 		"../../test/mcp/script.test.ts",
 		"../../test/mcp/setup-panel.test.ts",
-		"../../test/mcp/xdg-paths.test.ts",
-		"../../test/web/extraction-process.test.ts"
+		"../../test/mcp/xdg-paths.test.ts"
 	],
 	"exclude": ["../../node_modules"]
 }

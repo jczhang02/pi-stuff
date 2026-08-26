@@ -1,27 +1,33 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { Readability } from "@mozilla/readability";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
+import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
-import TurndownService from "turndown";
 import pLimit from "p-limit";
+import TurndownService from "turndown";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { WebConfigError } from "../settings.ts";
 import { activityMonitor } from "./activity.ts";
-import { extractRSCContent } from "./rsc-extract.ts";
-import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
-import { extractGitHub } from "./github-extract.ts";
+import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
-import { extractWithUrlContext, extractWithGeminiWeb } from "./gemini-url-context.ts";
-import { extractWithParallel, isParallelAvailable } from "./parallel.ts";
-import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
-import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
-import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
+import { appendDeclaredWebLinks, type DeclaredWebLink, discoverDeclaredWebLinks } from "./declared-web-links.ts";
+import { extractWithFirecrawl, isFirecrawlAvailable } from "./firecrawl.ts";
+import { extractWithGeminiWeb, extractWithUrlContext } from "./gemini-url-context.ts";
+import { extractGitHub } from "./github-extract.ts";
 import { extractWithKagi, isKagiExtractAvailable } from "./kagi.ts";
 import { extractWithOllama, isOllamaFetchAvailable } from "./ollama.ts";
-import { extractWithFirecrawl, isFirecrawlAvailable } from "./firecrawl.ts";
-import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
-import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { extractWithParallel, isParallelAvailable } from "./parallel.ts";
+import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
+import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
+import { extractHeadingTitle, extractRSCContent } from "./rsc-extract.ts";
+import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
+import {
+	fetchRemoteUrl,
+	type Lookup,
+	loadFetchContentDomainPolicy,
+	loadSsrfConfig,
+	validateRemoteUrl,
+} from "./ssrf-protection.ts";
+import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const CONCURRENT_LIMIT = 3;
@@ -37,16 +43,8 @@ export function loadSsrfAllowRanges(): string[] {
 	return loadSsrfConfig().allowRanges;
 }
 
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function isConfigParseError(err: JsonInputValue): boolean {
-	return errorMessage(err).startsWith("Failed to parse ");
-}
-
-function isAbortError(err: JsonInputValue): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
+function isConfigParseError<ErrorValue>(err: ErrorValue): boolean {
+	return err instanceof WebConfigError;
 }
 
 function abortedResult(url: string): ExtractedContent {
@@ -73,10 +71,10 @@ export interface ExtractedContent {
 type HttpExtractedContent = ExtractedContent & { declaredLinks?: DeclaredWebLink[] };
 
 export interface ExtractOptions {
-	timeoutMs?: number;
+	timeoutMs?: number | undefined;
 	mode?: "readable" | "raw";
 	/** Custom DNS resolver used for SSRF validation. Primarily a test seam. */
-	lookup?: Lookup;
+	lookup?: Lookup | undefined;
 }
 
 const JINA_READER_BASE = "https://r.jina.ai/";
@@ -102,13 +100,10 @@ async function extractWithJinaReader(
 		});
 		const res = await fetch(jinaUrl, {
 			headers: {
-				"Accept": "text/markdown",
+				Accept: "text/markdown",
 				"X-No-Cache": "true",
 			},
-			signal: AbortSignal.any([
-				AbortSignal.timeout(JINA_TIMEOUT_MS),
-				...(signal ? [signal] : []),
-			]),
+			signal: AbortSignal.any([AbortSignal.timeout(JINA_TIMEOUT_MS), ...(signal ? [signal] : [])]),
 		});
 
 		if (!res.ok) {
@@ -127,9 +122,11 @@ async function extractWithJinaReader(
 		const markdownPart = content.slice(contentStart + 17).trim(); // 17 = "Markdown Content:".length
 
 		// Check for failed JS rendering or minimal content
-		if (markdownPart.length < 100 ||
+		if (
+			markdownPart.length < 100 ||
 			markdownPart.startsWith("Loading...") ||
-			markdownPart.startsWith("Please enable JavaScript")) {
+			markdownPart.startsWith("Please enable JavaScript")
+		) {
 			return null;
 		}
 
@@ -159,8 +156,7 @@ export async function extractContent(
 	try {
 		const parsed = new URL(url);
 		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
-	} catch {
-	}
+	} catch {}
 	if (remoteUrl) {
 		try {
 			const ssrf = loadSsrfConfig();
@@ -209,7 +205,7 @@ export async function extractContent(
 	if (signal?.aborted) return abortedResult(url);
 	if (!httpResult.error) return httpResult;
 	const httpError = httpResult.error;
-	if (NON_RECOVERABLE_ERRORS.some(prefix => httpError.startsWith(prefix))) return httpResult;
+	if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
 
 	let firecrawlError: string | null = null;
 	try {
@@ -321,7 +317,7 @@ export async function extractContent(
 	let parallelError: string | null = null;
 	try {
 		if (isParallelAvailable()) {
-			const parallelResult = await extractWithParallel(url, signal, options);
+			const parallelResult = await extractWithParallel(url, signal);
 			if (parallelResult) return withDeclaredLinks(parallelResult);
 		}
 	} catch (err) {
@@ -355,8 +351,7 @@ export async function extractContent(
 
 	let geminiResult: ExtractedContent | null = null;
 	try {
-		geminiResult = await extractWithUrlContext(url, signal)
-			?? await extractWithGeminiWeb(url, signal);
+		geminiResult = (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal));
 	} catch (err) {
 		if (isAbortError(err)) return abortedResult(url);
 		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
@@ -400,7 +395,7 @@ function isLikelyJSRendered(html: string): boolean {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 	if (!bodyMatch) return false;
 
-	const bodyHtml = bodyMatch[1];
+	const bodyHtml = bodyMatch[1] ?? "";
 
 	// Strip tags to get text content
 	const textContent = bodyHtml
@@ -426,7 +421,8 @@ async function readTextResponseWithLimit(response: Response, maxBytes: number): 
 	const buffer = await readResponseBufferWithLimit(response, maxBytes, () => responseSizeLimitError(maxBytes));
 	const charset = response.headers.get("content-type")?.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1];
 	try {
-		return new TextDecoder(charset || "utf-8").decode(buffer);
+		// SAFETY: Bun narrows TextDecoder labels to Encoding, while the runtime accepts arbitrary labels and throws below.
+		return new TextDecoder((charset || "utf-8") as ConstructorParameters<typeof TextDecoder>[0]).decode(buffer);
 	} catch {
 		return new TextDecoder("utf-8").decode(buffer);
 	}
@@ -434,7 +430,8 @@ async function readTextResponseWithLimit(response: Response, maxBytes: number): 
 
 function isTextContentType(contentType: string): boolean {
 	const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-	return mimeType.startsWith("text/") ||
+	return (
+		mimeType.startsWith("text/") ||
 		mimeType === "application/json" ||
 		mimeType === "application/ld+json" ||
 		mimeType === "application/xml" ||
@@ -442,7 +439,8 @@ function isTextContentType(contentType: string): boolean {
 		mimeType === "application/javascript" ||
 		mimeType === "application/x-javascript" ||
 		mimeType.endsWith("+json") ||
-		mimeType.endsWith("+xml");
+		mimeType.endsWith("+xml")
+	);
 }
 
 async function readResponseBufferWithLimit(
@@ -514,8 +512,10 @@ async function extractViaHttp(
 			{
 				signal: controller.signal,
 				headers: {
-					"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-					"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+					"User-Agent":
+						"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+					Accept:
+						"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 					"Accept-Language": "en-US,en;q=0.9",
 					"Cache-Control": "no-cache",
 					"Sec-Fetch-Dest": "document",
@@ -568,19 +568,43 @@ async function extractViaHttp(
 		if (options?.mode === "raw") {
 			if (!isTextContentType(contentType)) {
 				activityMonitor.logComplete(activityId, response.status);
-				return { url, title: "", content: "", error: `Unsupported content type in raw mode: ${mimeType || "missing"}`, mimeType, status: response.status };
+				return {
+					url,
+					title: "",
+					content: "",
+					error: `Unsupported content type in raw mode: ${mimeType || "missing"}`,
+					mimeType,
+					status: response.status,
+				};
 			}
 			const text = await readTextResponseWithLimit(response, maxResponseSize);
 			activityMonitor.logComplete(activityId, response.status);
-			return { url, title: extractTextTitle(text, url), content: text, error: null, mimeType, status: response.status };
+			return {
+				url,
+				title: extractTextTitle(text, url),
+				content: text,
+				error: null,
+				mimeType,
+				status: response.status,
+			};
 		}
 
 		if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
 			try {
-				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () => responseSizeLimitError(maxResponseSize));
+				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () =>
+					responseSizeLimitError(maxResponseSize),
+				);
 				const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
 				activityMonitor.logComplete(activityId, response.status);
-				if (!resized) return { url, title: "", content: "", error: `Could not decode image: ${mimeType}`, mimeType, status: response.status };
+				if (!resized)
+					return {
+						url,
+						title: "",
+						content: "",
+						error: `Could not decode image: ${mimeType}`,
+						mimeType,
+						status: response.status,
+					};
 				const title = new URL(response.url || url).pathname.split("/").pop() || url;
 				return {
 					url,
@@ -623,11 +647,13 @@ async function extractViaHttp(
 			}
 		}
 
-		if (contentType.includes("application/octet-stream") ||
+		if (
+			contentType.includes("application/octet-stream") ||
 			contentType.includes("image/") ||
 			contentType.includes("audio/") ||
 			contentType.includes("video/") ||
-			contentType.includes("application/zip")) {
+			contentType.includes("application/zip")
+		) {
 			activityMonitor.logComplete(activityId, response.status);
 			return {
 				url,
@@ -648,11 +674,7 @@ async function extractViaHttp(
 
 		const { document } = parseHTML(text);
 		const documentTitle = document.title?.trim() ?? "";
-		const declaredLinks = discoverDeclaredWebLinks(
-			document,
-			response.headers.get("link"),
-			response.url || url,
-		);
+		const declaredLinks = discoverDeclaredWebLinks(document, response.headers.get("link"), response.url || url);
 		const reader = new Readability(document);
 		const article = reader.parse();
 
@@ -721,13 +743,6 @@ async function extractViaHttp(
 		clearTimeout(timeoutId);
 		signal?.removeEventListener("abort", onAbort);
 	}
-}
-
-export function extractHeadingTitle(text: string): string | null {
-	const match = text.match(/^#{1,2}\s+(.+)/m);
-	if (!match) return null;
-	const cleaned = match[1].replace(/\*+/g, "").trim();
-	return cleaned || null;
 }
 
 function extractTextTitle(text: string, url: string): string {

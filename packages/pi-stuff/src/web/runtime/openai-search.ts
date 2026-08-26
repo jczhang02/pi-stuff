@@ -1,13 +1,18 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import { isJsonInputObject, parseJsonObject, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
-
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonObject,
+	parseJsonValue,
+} from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 import { activityMonitor } from "./activity.ts";
-import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import { getWebSearchConfigPath, normalizeHeaders } from "./utils.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -19,10 +24,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 // tiers ("pro"/"ultra" id segments) are excluded, and the numeric-aware sort keeps
 // e.g. gpt-5.10 ahead of gpt-5.9.
 const EXCLUDED_MODEL_SEGMENTS = new Set(["pro", "ultra"]);
-const MODEL_PREFERENCE = [
-	(id: string) => id.includes("terra"),
-	(id: string) => /^gpt-\d+(\.\d+)?$/.test(id),
-];
+const MODEL_PREFERENCE = [(id: string) => id.includes("terra"), (id: string) => /^gpt-\d+(\.\d+)?$/.test(id)];
 const SEARCH_PROVIDERS = ["openai-codex", "openai"] as const;
 
 function pickSearchModel<T extends { id: string }>(models: readonly T[]): T | undefined {
@@ -34,12 +36,6 @@ function pickSearchModel<T extends { id: string }>(models: readonly T[]): T | un
 		if (preferred) return preferred;
 	}
 	return candidates[0];
-}
-
-interface WebSearchConfig {
-	openaiApiKey?: JsonInputValue;
-	openaiResponsesUrl?: JsonInputValue;
-	openaiSearchModel?: JsonInputValue;
 }
 
 interface OpenAIAuth {
@@ -55,22 +51,8 @@ interface NormalizedDomainFilters {
 	blockedDomains?: string[];
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters | null {
@@ -96,7 +78,10 @@ function decodeJwtPayload(token: string): JsonInputObject | null {
 	const parts = token.split(".");
 	if (parts.length !== 3 || !parts[1]) return null;
 	try {
-		const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
+		const padded = parts[1]
+			.replace(/-/g, "+")
+			.replace(/_/g, "/")
+			.padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
 		return parseJsonObject(Buffer.from(padded, "base64").toString("utf8"));
 	} catch {
 		return null;
@@ -112,7 +97,7 @@ function extractAccountId(token: string): string | undefined {
 	const payload = decodeJwtPayload(token);
 	const auth = payload?.["https://api.openai.com/auth"];
 	if (!isJsonInputObject(auth)) return undefined;
-	const id = auth.chatgpt_account_id;
+	const id = auth["chatgpt_account_id"];
 	return isRuntimeString(id) && id.trim().length > 0 ? id.trim() : undefined;
 }
 
@@ -141,7 +126,11 @@ function resolveConfiguredSearchModel(value: JsonInputValue): string | undefined
 	return value.trim();
 }
 
-async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, modelOverride?: string): Promise<OpenAIAuth | undefined> {
+async function resolvePiAuth(
+	ctx: ExtensionContext,
+	responsesUrl: string,
+	modelOverride?: string,
+): Promise<OpenAIAuth | undefined> {
 	let models: ReturnType<typeof ctx.modelRegistry.getAll>;
 	try {
 		models = ctx.modelRegistry.getAll();
@@ -158,20 +147,19 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, modelO
 					provider,
 					apiKey: resolved.apiKey,
 					model: modelOverride ?? preferred.id,
-					headers: resolved.headers ?? {},
+					headers: normalizeHeaders(resolved.headers),
 					responsesUrl,
 				};
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return undefined;
 }
 
 export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<OpenAIAuth | undefined> {
 	const config = loadConfig();
-	const responsesUrl = resolveConfiguredResponsesUrl(config.openaiResponsesUrl);
-	const modelOverride = resolveConfiguredSearchModel(config.openaiSearchModel);
+	const responsesUrl = resolveConfiguredResponsesUrl(config["openaiResponsesUrl"]);
+	const modelOverride = resolveConfiguredSearchModel(config["openaiSearchModel"]);
 	if (ctx) {
 		const auth = await resolvePiAuth(ctx, responsesUrl, modelOverride);
 		if (auth) return auth;
@@ -179,14 +167,14 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 
 	const hasSource = hasCredentialSource({
 		provider: "OpenAI",
-		configuredValue: config.openaiApiKey,
-		environmentValue: process.env.OPENAI_API_KEY,
+		configuredValue: config["openaiApiKey"],
+		environmentValue: process.env["OPENAI_API_KEY"],
 	});
 	if (!hasSource) return undefined;
 	const apiKey = await resolveCredential({
 		provider: "OpenAI",
-		configuredValue: config.openaiApiKey,
-		environmentValue: process.env.OPENAI_API_KEY,
+		configuredValue: config["openaiApiKey"],
+		environmentValue: process.env["OPENAI_API_KEY"],
 		signal,
 	});
 	return apiKey
@@ -196,12 +184,12 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 
 export async function isOpenAISearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
 	const config = loadConfig();
-	const responsesUrl = resolveConfiguredResponsesUrl(config.openaiResponsesUrl);
-	if (ctx && await resolvePiAuth(ctx, responsesUrl)) return true;
+	const responsesUrl = resolveConfiguredResponsesUrl(config["openaiResponsesUrl"]);
+	if (ctx && (await resolvePiAuth(ctx, responsesUrl))) return true;
 	return hasCredentialSource({
 		provider: "OpenAI",
-		configuredValue: config.openaiApiKey,
-		environmentValue: process.env.OPENAI_API_KEY,
+		configuredValue: config["openaiApiKey"],
+		environmentValue: process.env["OPENAI_API_KEY"],
 	});
 }
 
@@ -237,9 +225,9 @@ function buildWebSearchTool(options: SearchOptions): JsonInputObject {
 	const filters = normalizeDomainFilters(options.domainFilter);
 	if (filters) {
 		const filterValues: JsonInputObject = {};
-		if (filters.allowedDomains) filterValues.allowed_domains = filters.allowedDomains;
-		if (filters.blockedDomains) filterValues.blocked_domains = filters.blockedDomains;
-		tool.filters = filterValues;
+		if (filters.allowedDomains) filterValues["allowed_domains"] = filters.allowedDomains;
+		if (filters.blockedDomains) filterValues["blocked_domains"] = filters.blockedDomains;
+		tool["filters"] = filterValues;
 	}
 	return tool;
 }
@@ -267,16 +255,18 @@ async function parseOpenAIResponse(response: Response): Promise<JsonInputObject>
 		try {
 			const parsed = parseJsonValue(data);
 			if (!isJsonInputObject(parsed)) continue;
-			if (parsed.type === "response.output_item.done" && parsed.item) outputItems.push(parsed.item);
-			if ((parsed.type === "response.done" || parsed.type === "response.completed") && isJsonInputObject(parsed.response)) {
-				completedResponse = parsed.response;
+			if (parsed["type"] === "response.output_item.done" && parsed["item"]) outputItems.push(parsed["item"]);
+			if (
+				(parsed["type"] === "response.done" || parsed["type"] === "response.completed") &&
+				isJsonInputObject(parsed["response"])
+			) {
+				completedResponse = parsed["response"];
 			}
-		} catch {
-		}
+		} catch {}
 	}
 
 	if (completedResponse) {
-		const output = Array.isArray(completedResponse.output) ? completedResponse.output : [];
+		const output = Array.isArray(completedResponse["output"]) ? completedResponse["output"] : [];
 		return output.length > 0 ? completedResponse : { ...completedResponse, output: outputItems };
 	}
 	if (outputItems.length > 0) return { output: outputItems };
@@ -297,11 +287,20 @@ function extractSnippetAround(text: string, start: JsonInputValue, end: JsonInpu
 	if (!isRuntimeNumber(start) || !isRuntimeNumber(end) || !text) return "";
 	const before = Math.max(0, start - 100);
 	const after = Math.min(text.length, end + 100);
-	const snippet = text.slice(before, after).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+	const snippet = text
+		.slice(before, after)
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.trim();
 	return snippet.length > 300 ? `${snippet.slice(0, 297)}...` : snippet;
 }
 
-function addResult(results: SearchResult[], seen: Set<string>, url: JsonInputValue, title: JsonInputValue, snippet = ""): void {
+function addResult(
+	results: SearchResult[],
+	seen: Set<string>,
+	url: JsonInputValue,
+	title: JsonInputValue,
+	snippet = "",
+): void {
 	if (!isRuntimeString(url) || url.trim().length === 0) return;
 	const cleanUrl = cleanSourceUrl(url);
 	if (seen.has(cleanUrl)) return;
@@ -318,8 +317,8 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 	const seenUrls = new Set<string>();
 
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "message") continue;
-		const content = item.content;
+		if (!isJsonInputObject(item) || item["type"] !== "message") continue;
+		const content = item["content"];
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (!isJsonInputObject(part)) continue;
@@ -340,11 +339,10 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 	}
 
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "web_search_call") continue;
-		const actionSources = isJsonInputObject(item.action)
-			? item.action.sources
-			: undefined;
-		const sourceGroups = [actionSources, item.sources, item.results];
+		if (!isJsonInputObject(item) || item["type"] !== "web_search_call") continue;
+		const action = item["action"];
+		const actionSources = isJsonInputObject(action) ? action["sources"] : undefined;
+		const sourceGroups = [actionSources, item["sources"], item["results"]];
 		for (const group of sourceGroups) {
 			if (!Array.isArray(group)) continue;
 			for (const source of group) {
@@ -363,8 +361,8 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 function extractAnswer(output: JsonInputValue[]): string {
 	const parts: string[] = [];
 	for (const item of output) {
-		if (!isJsonInputObject(item) || item.type !== "message") continue;
-		const content = item.content;
+		if (!isJsonInputObject(item) || item["type"] !== "message") continue;
+		const content = item["content"];
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (!isJsonInputObject(part)) continue;
@@ -384,9 +382,9 @@ export async function searchWithOpenAI(
 	if (!auth) {
 		throw new Error(
 			"OpenAI web search unavailable. Either:\n" +
-			"  1. Use /login to sign in with a Codex subscription\n" +
-			`  2. Create ${CONFIG_PATH} with { "openaiApiKey": "your-key" }\n` +
-			"  3. Set OPENAI_API_KEY environment variable",
+				"  1. Use /login to sign in with a Codex subscription\n" +
+				`  2. Create ${CONFIG_PATH} with { "openaiApiKey": "your-key" }\n` +
+				"  3. Set OPENAI_API_KEY environment variable",
 		);
 	}
 
@@ -431,7 +429,7 @@ export async function searchWithOpenAI(
 		}
 
 		const parsed = await parseOpenAIResponse(response);
-		const output = Array.isArray(parsed.output) ? parsed.output : [];
+		const output = Array.isArray(parsed["output"]) ? parsed["output"] : [];
 		const answer = extractAnswer(output);
 		const results = extractSearchResults(output, options.numResults);
 

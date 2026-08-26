@@ -1,46 +1,27 @@
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as hostMatchesDomain,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
-import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
-
-interface WebSearchConfig {
-	searxngBaseUrl?: JsonInputValue;
-	searxngHeaders?: JsonInputValue;
-}
 
 interface NormalizedDomainFilters {
 	allowed: string[];
 	blocked: string[];
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function normalizeBaseUrl(value: JsonInputValue): string | null {
@@ -61,10 +42,8 @@ function normalizeBaseUrl(value: JsonInputValue): string | null {
 }
 
 function getBaseUrl(): string | null {
-	const configured = process.env.SEARXNG_BASE_URL;
-	return configured !== undefined
-		? normalizeBaseUrl(configured)
-		: normalizeBaseUrl(loadConfig().searxngBaseUrl);
+	const configured = process.env["SEARXNG_BASE_URL"];
+	return configured !== undefined ? normalizeBaseUrl(configured) : normalizeBaseUrl(loadConfig()["searxngBaseUrl"]);
 }
 
 function normalizeHeaders(value: JsonInputValue): Headers {
@@ -77,20 +56,20 @@ function normalizeHeaders(value: JsonInputValue): Headers {
 		if (!name || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) continue;
 		try {
 			headers.set(name, headerValue);
-		} catch {
-			continue;
-		}
+		} catch {}
 	}
 	return headers;
 }
 
 function getConfiguredHeaders(): Headers {
-	return normalizeHeaders(loadConfig().searxngHeaders);
+	return normalizeHeaders(loadConfig()["searxngHeaders"]);
 }
 
 function mergeDefaultHeaders(configured: Headers): Headers {
 	const headers = new Headers({ Accept: "application/json" });
-	configured.forEach((value, name) => headers.set(name, value));
+	configured.forEach((value, name) => {
+		headers.set(name, value);
+	});
 	return headers;
 }
 
@@ -99,16 +78,11 @@ function requireBaseUrl(): string {
 	if (!baseUrl) {
 		throw new Error(
 			"SearXNG base URL is invalid or missing. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "searxngBaseUrl": "https://search.example.com" }\n` +
-			"  2. Set SEARXNG_BASE_URL to an HTTP(S) URL",
+				`  1. Create ${CONFIG_PATH} with { "searxngBaseUrl": "https://search.example.com" }\n` +
+				"  2. Set SEARXNG_BASE_URL to an HTTP(S) URL",
 		);
 	}
 	return baseUrl;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
@@ -127,7 +101,7 @@ function buildSearXNGQuery(query: string, filters: NormalizedDomainFilters): str
 	if (filters.allowed.length === 1) {
 		parts.push(`site:${filters.allowed[0]}`);
 	} else if (filters.allowed.length > 1) {
-		parts.push(filters.allowed.map(domain => `site:${domain}`).join(" OR "));
+		parts.push(filters.allowed.map((domain) => `site:${domain}`).join(" OR "));
 	}
 	for (const domain of filters.blocked) parts.push(`-site:${domain}`);
 	return parts.join(" ");
@@ -141,8 +115,9 @@ function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): bo
 	} catch {
 		return false;
 	}
-	if (filters.allowed.length > 0 && !filters.allowed.some(domain => hostMatchesDomain(hostname, domain))) return false;
-	return !filters.blocked.some(domain => hostMatchesDomain(hostname, domain));
+	if (filters.allowed.length > 0 && !filters.allowed.some((domain) => hostMatchesDomain(hostname, domain)))
+		return false;
+	return !filters.blocked.some((domain) => hostMatchesDomain(hostname, domain));
 }
 
 function mapTimeRange(recencyFilter: SearchOptions["recencyFilter"]): string | null {
@@ -172,16 +147,21 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 
 	try {
 		const headers = mergeDefaultHeaders(getConfiguredHeaders());
-		const response = await fetchRemoteUrl(url, {
-			method: "GET",
-			headers,
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, {
-			...loadSsrfConfig(),
-			onRedirect: ({ from, to, init }) => from.origin === to.origin ? init : { ...init, headers: { Accept: "application/json" } },
-		});
+		const response = await fetchRemoteUrl(
+			url,
+			{
+				method: "GET",
+				headers,
+				signal: options.signal
+					? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+					: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			},
+			{
+				...loadSsrfConfig(),
+				onRedirect: ({ from, to, init }) =>
+					from.origin === to.origin ? init : { ...init, headers: { Accept: "application/json" } },
+			},
+		);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);
@@ -189,7 +169,7 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 			throw new Error(`SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
 
-		let data;
+		let data: JsonInputObject;
 		try {
 			const responseBody = await response.json();
 			if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
@@ -201,9 +181,10 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 
 		activityMonitor.logComplete(activityId, response.status);
 		const results: SearchResult[] = [];
-		const responseResults = Array.isArray(data.results) ? data.results : [];
+		const responseResults = Array.isArray(data["results"]) ? data["results"] : [];
 		for (const item of responseResults) {
-			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, filters)) continue;
+			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, filters))
+				continue;
 			results.push({
 				title: isRuntimeString(item.title) ? item.title : item.url,
 				url: item.url,
@@ -212,11 +193,17 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 			if (results.length >= numResults) break;
 		}
 
-		const answers = Array.isArray(data.answers) ? data.answers : [];
-		const answerParts = answers.filter((answer): answer is string => isRuntimeString(answer) && answer.trim().length > 0).map(answer => answer.trim());
-		answerParts.push(...results.map(result => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`));
+		const answers = Array.isArray(data["answers"]) ? data["answers"] : [];
+		const answerParts = answers
+			.filter((answer): answer is string => isRuntimeString(answer) && answer.trim().length > 0)
+			.map((answer) => answer.trim());
+		answerParts.push(
+			...results.map((result) =>
+				result.snippet
+					? `${result.snippet}\nSource: ${result.title} (${result.url})`
+					: `Source: ${result.title} (${result.url})`,
+			),
+		);
 		return { answer: answerParts.join("\n\n"), results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

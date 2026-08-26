@@ -18,4 +18,6 @@ The fork identifiers prove which locally adapted snapshot was absorbed; they do 
 repository or Package. This implementation keeps provider search, ordinary HTTP/image/PDF extraction, bounded GitHub
 API reads, validated process-local SSRF defaults, storage, and continuation. Curator, source-check, page-answer,
 repository-clone, YouTube/local-video, command, shortcut, and private Tool-rendering code has been removed. Explicit
-user SSRF configuration remains authoritative.
+user SSRF configuration remains authoritative. Pi Stuff also replaces the snapshot's repeated provider config parsers
+with the Package-owned Web settings reader and derives dispatch, availability, labels, and safe automatic routing from
+one typed provider registry.

@@ -8,7 +8,6 @@
 		"packages/pi-stuff/src/subagents/**",
 		"packages/pi-stuff/src/rtk/**",
 		"packages/pi-stuff/src/goal/**",
-		"packages/pi-stuff/src/web/runtime/**",
 		"packages/pi-stuff/src/mcp/runtime/**",
 		"test/mcp/agent-run-origin.test.ts",
 		"test/mcp/command-secret.test.ts",
@@ -27,7 +26,6 @@
 		"test/agents-pty.test.ts",
 		"test/agents",
 		"test/rtk",
-		"test/goal-upstream",
-		"test/web/extraction-process.test.ts"
+		"test/goal-upstream"
 	]
 }

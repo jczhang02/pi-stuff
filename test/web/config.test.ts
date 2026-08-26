@@ -1,10 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readWebConfig, updateWebConfig } from "../../packages/pi-stuff/src/web/settings.js";
+import { createPiWebAccess, type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
+import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
 
 const roots: string[] = [];
+const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
 
 async function root(): Promise<string> {
 	const value = await mkdtemp(join(tmpdir(), "pi-stuff-web-config-"));
@@ -13,13 +15,48 @@ async function root(): Promise<string> {
 }
 
 afterEach(async () => {
+	if (originalAgentDirectory === undefined) delete process.env["PI_CODING_AGENT_DIR"];
+	else process.env["PI_CODING_AGENT_DIR"] = originalAgentDirectory;
 	await Promise.all(roots.splice(0).map((value) => rm(value, { force: true, recursive: true })));
 });
+
+function installWeb(agentDirectory: string): string[] {
+	process.env["PI_CODING_AGENT_DIR"] = agentDirectory;
+	const tools: string[] = [];
+	const host: PiWebAccessHost = {
+		appendEntry: () => undefined,
+		on: () => undefined,
+		registerTool: (tool) => {
+			tools.push(tool.name);
+		},
+	};
+	createPiWebAccess()(host);
+	return tools;
+}
 
 test("Web configuration stays read-only until an explicit update", async () => {
 	const agentDir = await root();
 	expect(readWebConfig(agentDir)).toBeUndefined();
 	expect(await Bun.file(join(agentDir, "pi-stuff.json")).exists()).toBe(false);
+});
+
+test("invalid Web configuration diagnoses and installs built-in defaults", async () => {
+	const agentDir = await root();
+	await writeFile(join(agentDir, "pi-stuff.json"), "{");
+	expect(installWeb(agentDir)).toEqual(["web_search", "fetch_content", "get_search_content"]);
+});
+
+test("Web configuration I/O failures propagate during initialization", async () => {
+	const agentDir = await root();
+	await mkdir(join(agentDir, "pi-stuff.json"));
+	let failure: unknown;
+	try {
+		installWeb(agentDir);
+	} catch (error) {
+		failure = error;
+	}
+	expect(failure).toBeInstanceOf(Error);
+	expect(failure).not.toBeInstanceOf(WebConfigError);
 });
 
 test("explicit update lifts legacy Web configuration and preserves sibling namespaces", async () => {

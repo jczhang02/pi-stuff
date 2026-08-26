@@ -1,13 +1,13 @@
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
-import { validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const DEFAULT_API_VERSION = "v2";
@@ -26,37 +26,8 @@ export interface FirecrawlExtractOptions extends Pick<ExtractOptions, "timeoutMs
 	ssrf?: FirecrawlSsrfOptions;
 }
 
-interface FirecrawlConfig extends JsonInputObject {
-	firecrawlBaseUrl?: JsonInputValue;
-	firecrawlApiKey?: JsonInputValue;
-	firecrawlApiVersion?: JsonInputValue;
-	firecrawlFreshScrape?: JsonInputValue;
-}
-
-let cachedConfig: FirecrawlConfig | null = null;
-
-function loadConfig(): FirecrawlConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
-}
-
-export function clearFirecrawlConfigCache(): void {
-	cachedConfig = null;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function normalizeBaseUrl(value: JsonInputValue): string | null {
@@ -82,7 +53,7 @@ function normalizeBaseUrl(value: JsonInputValue): string | null {
 }
 
 function getBaseUrl(): string | null {
-	return normalizeBaseUrl(process.env.FIRECRAWL_BASE_URL) ?? normalizeBaseUrl(loadConfig().firecrawlBaseUrl);
+	return normalizeBaseUrl(process.env["FIRECRAWL_BASE_URL"]) ?? normalizeBaseUrl(loadConfig()["firecrawlBaseUrl"]);
 }
 
 function requireBaseUrl(): string {
@@ -90,18 +61,18 @@ function requireBaseUrl(): string {
 	if (!baseUrl) {
 		throw new Error(
 			"Firecrawl base URL not configured. Either:\n" +
-			`  1. Set firecrawlBaseUrl in ${CONFIG_PATH}\n` +
-			"  2. Set FIRECRAWL_BASE_URL environment variable",
+				`  1. Set firecrawlBaseUrl in ${CONFIG_PATH}\n` +
+				"  2. Set FIRECRAWL_BASE_URL environment variable",
 		);
 	}
 	return baseUrl;
 }
 
 function getApiVersion(): FirecrawlApiVersion {
-	const environmentValue = isRuntimeString(process.env.FIRECRAWL_API_VERSION)
-		? process.env.FIRECRAWL_API_VERSION.trim()
+	const environmentValue = isRuntimeString(process.env["FIRECRAWL_API_VERSION"])
+		? process.env["FIRECRAWL_API_VERSION"].trim()
 		: "";
-	const raw = environmentValue || loadConfig().firecrawlApiVersion;
+	const raw = environmentValue || loadConfig()["firecrawlApiVersion"];
 	if (raw === undefined || raw === null) return DEFAULT_API_VERSION;
 	if (!isRuntimeString(raw)) {
 		throw new Error(`firecrawlApiVersion in ${CONFIG_PATH} must be a string ("v1" or "v2")`);
@@ -109,41 +80,30 @@ function getApiVersion(): FirecrawlApiVersion {
 	const normalized = raw.trim().toLowerCase();
 	if (!normalized) return DEFAULT_API_VERSION;
 	if (normalized !== "v1" && normalized !== "v2") {
-		throw new Error(`Unsupported Firecrawl API version "${raw}". Supported versions: ${SUPPORTED_API_VERSIONS.join(", ")}`);
+		throw new Error(
+			`Unsupported Firecrawl API version "${raw}". Supported versions: ${SUPPORTED_API_VERSIONS.join(", ")}`,
+		);
 	}
 	return normalized;
 }
 
 function allowFreshScrape(): boolean {
-	const environmentValue = process.env.FIRECRAWL_FRESH_SCRAPE;
+	const environmentValue = process.env["FIRECRAWL_FRESH_SCRAPE"];
 	if (environmentValue !== undefined) return environmentValue === "1" || environmentValue.toLowerCase() === "true";
-	const configured = loadConfig().firecrawlFreshScrape;
+	const configured = loadConfig()["firecrawlFreshScrape"];
 	if (configured === undefined || configured === null) return false;
 	if (!isRuntimeBoolean(configured)) throw new Error(`firecrawlFreshScrape in ${CONFIG_PATH} must be a boolean`);
 	return configured;
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	const configKey = loadConfig().firecrawlApiKey;
+	const configKey = loadConfig()["firecrawlApiKey"];
 	return resolveCredential({
 		provider: "Firecrawl",
 		configuredValue: configKey,
-		environmentValue: process.env.FIRECRAWL_API_KEY,
+		environmentValue: process.env["FIRECRAWL_API_KEY"],
 		signal,
 	});
-}
-
-function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([timeout, signal]) : timeout;
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function isAbortError(err: JsonInputValue): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
 }
 
 interface FirecrawlValidationOptions {
@@ -197,7 +157,7 @@ function scrapeBody(url: string): JsonInputObject {
 		formats: ["markdown"],
 		onlyMainContent: true,
 	};
-	if (!allowFreshScrape()) body.lockdown = true;
+	if (!allowFreshScrape()) body["lockdown"] = true;
 	return body;
 }
 
@@ -215,30 +175,34 @@ async function firecrawlFetch(
 	const requestUrl = `${baseUrl}/${version}/${endpoint}`;
 	const activityId = activityMonitor.logStart({ type: "fetch", url: requestUrl });
 	try {
-		const response = await fetchFirecrawlApi(requestUrl, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-			signal: requestSignal(options?.timeoutMs ?? EXTRACT_TIMEOUT_MS, signal),
-		}, options);
+		const response = await fetchFirecrawlApi(
+			requestUrl,
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify(body),
+				signal: requestSignal(signal, options?.timeoutMs ?? EXTRACT_TIMEOUT_MS),
+			},
+			options,
+		);
 		if (!response.ok) {
 			const text = await response.text().catch(() => "");
 			throw new Error(`Firecrawl scrape error ${response.status}: ${redactCredential(text.slice(0, 300), apiKey)}`);
 		}
 		let data: JsonInputValue;
 		try {
-			data = await response.json();
+			data = requireJsonInputValue(await response.json(), "Firecrawl response");
 		} catch (err) {
 			throw new Error(`Firecrawl scrape returned invalid JSON: ${errorMessage(err)}`);
 		}
 		if (!isJsonInputObject(data)) {
 			throw new Error("Firecrawl scrape returned an unexpected response shape");
 		}
-		if (data.success === false) {
-			const reason = isRuntimeString(data.error) && data.error.trim() ? data.error : "unknown error";
+		if (data["success"] === false) {
+			const reason = isRuntimeString(data["error"]) && data["error"].trim() ? data["error"] : "unknown error";
 			throw new Error(`Firecrawl scrape unsuccessful: ${redactCredential(reason, apiKey)}`);
 		}
-		if (data.success !== true) {
+		if (data["success"] !== true) {
 			throw new Error("Firecrawl scrape returned an unexpected response shape");
 		}
 		activityMonitor.logComplete(activityId, response.status);
@@ -262,19 +226,22 @@ export async function extractWithFirecrawl(
 	requireBaseUrl();
 	await validateRemoteUrl(url, ssrfOptions(options));
 	const envelope = await firecrawlFetch("scrape", scrapeBody(url), signal, options);
-	const data = envelope.data;
+	const data = envelope["data"];
 	if (!isJsonInputObject(data)) {
 		throw new Error("Firecrawl scrape returned an unexpected data shape");
 	}
-	if (!isRuntimeString(data.markdown)) {
+	if (!isRuntimeString(data["markdown"])) {
 		throw new Error("Firecrawl scrape returned markdown in an unexpected shape");
 	}
-	const content = data.markdown.trim();
+	const content = data["markdown"].trim();
 	if (!content) return null;
-	const metadata = isJsonInputObject(data.metadata) ? data.metadata : undefined;
-	const metadataTitle = metadata?.title;
-	const title = isRuntimeString(metadataTitle) && metadataTitle.trim()
-		? metadataTitle.trim()
-		: isRuntimeString(data.title) ? data.title.trim() : "";
+	const metadata = isJsonInputObject(data["metadata"]) ? data["metadata"] : undefined;
+	const metadataTitle = metadata?.["title"];
+	const title =
+		isRuntimeString(metadataTitle) && metadataTitle.trim()
+			? metadataTitle.trim()
+			: isRuntimeString(data["title"])
+				? data["title"].trim()
+				: "";
 	return { url, title, content, error: null };
 }

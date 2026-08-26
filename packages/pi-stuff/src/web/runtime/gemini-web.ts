@@ -1,10 +1,16 @@
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
-import { getLastGoogleCookieDiagnostic, type CookieMap, getGoogleCookies } from "./chrome-cookies.ts";
-import { getChromeProfileFromConfig, isBrowserCookieAccessAllowed, normalizeChromeProfile } from "./gemini-web-config.ts";
+import { activityMonitor } from "./activity.ts";
+import { type CookieMap, getGoogleCookies, getLastGoogleCookieDiagnostic } from "./chrome-cookies.ts";
+import {
+	getChromeProfileFromConfig,
+	isBrowserCookieAccessAllowed,
+	normalizeChromeProfile,
+} from "./gemini-web-config.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -30,7 +36,7 @@ const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
 export interface GeminiWebOptions {
 	model?: string;
 	files?: string[];
-	signal?: AbortSignal;
+	signal?: AbortSignal | undefined;
 	timeoutMs?: number;
 }
 
@@ -49,21 +55,63 @@ export function getGeminiWebAvailabilityDiagnostic(): string | null {
 	return isBrowserCookieAccessAllowed() ? getLastGoogleCookieDiagnostic() : null;
 }
 
+export async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
+	const cookies = await isGeminiWebAvailable();
+	if (!cookies) return null;
+	const activityId = activityMonitor.logStart({ type: "api", query });
+
+	try {
+		const answer = await queryWithCookies(buildSearchPrompt(query, options), cookies, {
+			signal: options.signal,
+			timeoutMs: 60_000,
+		});
+		activityMonitor.logComplete(activityId, 200);
+		return { answer, results: extractSourceUrls(answer) };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+		else activityMonitor.logError(activityId, message);
+		throw error;
+	}
+}
+
+function buildSearchPrompt(query: string, options: SearchOptions): string {
+	let prompt = `Search the web and answer the following question. Include source URLs for your claims.\nFormat your response as:\n1. A direct answer to the question\n2. Cited sources as markdown links\n\nQuestion: ${query}`;
+	if (options.recencyFilter) {
+		const labels = { day: "past 24 hours", week: "past week", month: "past month", year: "past year" };
+		prompt += `\n\nOnly include results from the ${labels[options.recencyFilter]}.`;
+	}
+	if (options.domainFilter?.length) {
+		const included = options.domainFilter.filter((domain) => !domain.startsWith("-"));
+		const excluded = options.domainFilter.filter((domain) => domain.startsWith("-")).map((domain) => domain.slice(1));
+		if (included.length > 0) prompt += `\n\nOnly cite sources from: ${included.join(", ")}`;
+		if (excluded.length > 0) prompt += `\n\nDo not cite sources from: ${excluded.join(", ")}`;
+	}
+	return prompt;
+}
+
+function extractSourceUrls(markdown: string): SearchResult[] {
+	const results: SearchResult[] = [];
+	const seen = new Set<string>();
+	for (const match of markdown.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g)) {
+		const title = match[1];
+		const url = match[2];
+		if (!title || !url || seen.has(url)) continue;
+		seen.add(url);
+		results.push({ title, url, snippet: "" });
+	}
+	return results;
+}
+
 export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string | null> {
 	const cookieHeader = buildCookieHeader(cookies);
 	if (!cookieHeader) return null;
 
 	try {
-		const html = await fetchWithCookieRedirects(
-			GEMINI_APP_URL,
-			cookieHeader,
-			10,
-			AbortSignal.timeout(10000),
-		);
+		const html = await fetchWithCookieRedirects(GEMINI_APP_URL, cookieHeader, 10, AbortSignal.timeout(10000));
 		const email = extractEmailFromGeminiHtml(html);
 		if (email) return email;
-	} catch {
-	}
+	} catch {}
 
 	try {
 		const response = await fetchWithCookieRedirects(
@@ -85,13 +133,13 @@ export async function queryWithCookies(
 ): Promise<string> {
 	const model = options.model ?? DEFAULT_GEMINI_WEB_MODEL;
 	if (!MODEL_HEADERS.has(model)) {
-		throw new Error(`Gemini Web does not support model ${model}; configure Gemini API or choose a supported Gemini Web model.`);
+		throw new Error(
+			`Gemini Web does not support model ${model}; configure Gemini API or choose a supported Gemini Web model.`,
+		);
 	}
 	const timeoutMs = options.timeoutMs ?? 120000;
 
-	let fullPrompt = prompt;
-
-	const result = await runGeminiWebOnce(fullPrompt, cookieMap, model, options.files, timeoutMs, options.signal);
+	const result = await runGeminiWebOnce(prompt, cookieMap, model, options.files, timeoutMs, options.signal);
 
 	if (result.errorMessage) throw new Error(result.errorMessage);
 	if (!result.text) throw new Error("Gemini Web returned empty response");
@@ -100,7 +148,7 @@ export async function queryWithCookies(
 
 interface GeminiWebResult {
 	text: string;
-	errorCode?: number;
+	errorCode?: number | undefined;
 	errorMessage?: string;
 }
 
@@ -160,8 +208,7 @@ async function runGeminiWebOnce(
 		try {
 			const json = parseJsonValue(trimJsonEnvelope(rawText));
 			errorCode = extractErrorCode(json);
-		} catch {
-		}
+		} catch {}
 		return {
 			text: "",
 			errorCode,
@@ -170,10 +217,7 @@ async function runGeminiWebOnce(
 	}
 }
 
-async function fetchAccessToken(
-	cookieHeader: string,
-	signal: AbortSignal,
-): Promise<string> {
+async function fetchAccessToken(cookieHeader: string, signal: AbortSignal): Promise<string> {
 	const html = await fetchWithCookieRedirects(GEMINI_APP_URL, cookieHeader, 10, signal);
 
 	for (const key of ["SNlM0e", "thykhd"]) {
@@ -181,7 +225,9 @@ async function fetchAccessToken(
 		if (match?.[1]) return match[1];
 	}
 
-	throw new Error("Unable to authenticate with Gemini. Make sure you're signed into gemini.google.com in a supported Chromium-based browser.");
+	throw new Error(
+		"Unable to authenticate with Gemini. Make sure you're signed into gemini.google.com in a supported Chromium-based browser.",
+	);
 }
 
 async function fetchWithCookieRedirects(
@@ -282,7 +328,7 @@ function decodeEmailEscapes(value: string): string {
 		.replace(/\\x40/gi, "@")
 		.replace(/&#64;/gi, "@")
 		.replace(/&commat;/gi, "@")
-		.replace(/\\"/g, "\"")
+		.replace(/\\"/g, '"')
 		.replace(/\\\\/g, "\\");
 }
 
@@ -293,15 +339,11 @@ async function uploadFile(
 ): Promise<{ id: string; name: string }> {
 	const data = readFileSync(filePath);
 	const fileName = basename(filePath);
-	const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
+	const boundary = `----FormBoundary${Math.random().toString(36).slice(2)}`;
 	const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
 	const footer = `\r\n--${boundary}--\r\n`;
 
-	const body = Buffer.concat([
-		Buffer.from(header, "utf-8"),
-		data,
-		Buffer.from(footer, "utf-8"),
-	]);
+	const body = Buffer.concat([Buffer.from(header, "utf-8"), data, Buffer.from(footer, "utf-8")]);
 
 	const res = await fetch(GEMINI_UPLOAD_URL, {
 		method: "POST",
@@ -324,14 +366,8 @@ async function uploadFile(
 	return { id: await res.text(), name: fileName };
 }
 
-function buildFReqPayload(
-	prompt: string,
-	uploaded: Array<{ id: string; name: string }>,
-): string {
-	const promptPayload =
-		uploaded.length > 0
-			? [prompt, 0, null, uploaded.map((file) => [[file.id, 1]])]
-			: [prompt];
+function buildFReqPayload(prompt: string, uploaded: Array<{ id: string; name: string }>): string {
+	const promptPayload = uploaded.length > 0 ? [prompt, 0, null, uploaded.map((file) => [[file.id, 1]])] : [prompt];
 	const innerList = [promptPayload, null, null];
 	return JSON.stringify([null, JSON.stringify(innerList)]);
 }
@@ -389,7 +425,7 @@ function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 	const errorCode = extractErrorCode(responseJson);
 
 	const parts = Array.isArray(responseJson) ? responseJson : [];
-	let firstCandidateSeen: JsonInputValue = undefined;
+	let firstCandidateSeen: JsonInputValue;
 	let latestNonEmptyText = "";
 
 	for (let i = 0; i < parts.length; i++) {
@@ -405,13 +441,10 @@ function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 
 			const text = extractCandidateText(firstCandidate);
 			if (text.length > 0) latestNonEmptyText = text;
-		} catch {
-		}
+		} catch {}
 	}
 
-	const text = latestNonEmptyText.length > 0
-		? latestNonEmptyText
-		: extractCandidateText(firstCandidateSeen);
+	const text = latestNonEmptyText.length > 0 ? latestNonEmptyText : extractCandidateText(firstCandidateSeen);
 
 	return { text, errorCode };
 }

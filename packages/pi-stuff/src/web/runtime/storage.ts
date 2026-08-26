@@ -1,6 +1,6 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchResult } from "./perplexity.ts";
 
@@ -50,11 +50,11 @@ export function clearResults(): void {
 
 function isValidStoredData<Value>(data: Value): data is Value & StoredSearchData {
 	if (!isJsonInputObject(data)) return false;
-	if (!isRuntimeString(data.id) || !data.id) return false;
-	if (data.type !== "search" && data.type !== "fetch") return false;
-	if (!isRuntimeNumber(data.timestamp)) return false;
-	if (data.type === "search" && !Array.isArray(data.queries)) return false;
-	if (data.type === "fetch" && !Array.isArray(data.urls)) return false;
+	if (!isRuntimeString(data["id"]) || !data["id"]) return false;
+	if (data["type"] !== "search" && data["type"] !== "fetch") return false;
+	if (!isRuntimeNumber(data["timestamp"])) return false;
+	if (data["type"] === "search" && !Array.isArray(data["queries"])) return false;
+	if (data["type"] === "fetch" && !Array.isArray(data["urls"])) return false;
 	return true;
 }
 

@@ -1,7 +1,7 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
 import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -78,7 +78,7 @@ export interface CredentialOptions {
 	configuredValue?: JsonInputValue;
 	environmentValue?: JsonInputValue;
 	environment?: Record<string, string | undefined>;
-	signal?: AbortSignal;
+	signal?: AbortSignal | undefined;
 	runCommand?: CredentialCommandRunner;
 	runProgram?: CredentialProgramRunner;
 }
@@ -123,10 +123,7 @@ function isMalformedExplicitSource(source: string): boolean {
 	return source.startsWith("$") && escapedSource(source) === null && explicitEnvironmentName(source) === null;
 }
 
-async function defaultRunCommand(
-	command: string,
-	options: CredentialCommandOptions,
-): Promise<CredentialCommandResult> {
+async function defaultRunCommand(command: string, options: CredentialCommandOptions): Promise<CredentialCommandResult> {
 	const result = await execAsync(command, {
 		encoding: "utf8",
 		env: options.environment,
@@ -175,11 +172,11 @@ function hasControlCharacter(value: string): boolean {
 }
 
 function commandFailureCategory(error: Error, signal?: AbortSignal): CredentialFailureCategory {
-  if (signal?.aborted) return "command-aborted";
-  const code = "code" in error && isRuntimeString(error.code) ? error.code : undefined;
-  if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "command-output-too-large";
-  if (("killed" in error && error.killed === true) || code === "ETIMEDOUT") return "command-timeout";
-  return "command-failed";
+	if (signal?.aborted) return "command-aborted";
+	const code = "code" in error && isRuntimeString(error.code) ? error.code : undefined;
+	if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "command-output-too-large";
+	if (("killed" in error && error.killed === true) || code === "ETIMEDOUT") return "command-timeout";
+	return "command-failed";
 }
 
 export function hasCredentialSource(options: CredentialOptions): boolean {
@@ -202,7 +199,11 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 				environment: commandEnvironment(options.environment ?? process.env),
 			};
 			if (options.signal) commandOptions.signal = options.signal;
-			result = await (options.runProgram ?? defaultRunProgram)("op", ["read", "--no-newline", source], commandOptions);
+			result = await (options.runProgram ?? defaultRunProgram)(
+				"op",
+				["read", "--no-newline", source],
+				commandOptions,
+			);
 		} catch (error) {
 			const cause = error instanceof Error ? error : new Error(String(error));
 			throw new CredentialResolutionError(options.provider, commandFailureCategory(cause, options.signal));

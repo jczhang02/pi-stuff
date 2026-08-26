@@ -1,15 +1,13 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
-import type { JsonInputObject } from "../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
+import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, requestSignal } from "./utils.ts";
 
 const EXA_ANSWER_URL = "https://api.exa.ai/answer";
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
@@ -17,10 +15,6 @@ const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const EXA_MCP_ADVANCED_TOOL = "web_search_advanced_exa";
 const EXA_MCP_BASIC_TOOL = "web_search_exa";
-
-interface WebSearchConfig {
-	exaApiKey?: JsonInputValue;
-}
 
 export type ExaSearchResult = SearchResponse | null;
 
@@ -30,29 +24,15 @@ export interface ExaSearchOptions extends SearchOptions {
 
 type McpParsedResult = { title: string; url: string; content: string };
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Exa",
-		configuredValue: loadConfig().exaApiKey,
-		environmentValue: process.env.EXA_API_KEY,
+		configuredValue: loadConfig()["exaApiKey"],
+		environmentValue: process.env["EXA_API_KEY"],
 		signal,
 	});
 }
@@ -63,11 +43,6 @@ function exaApiHeaders(apiKey: string): Headers {
 		"Content-Type": "application/json",
 		"x-exa-integration": "pi-web-access",
 	});
-}
-
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(60000);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function recencyToStartDate(filter: NonNullable<SearchOptions["recencyFilter"]>): string {
@@ -89,12 +64,10 @@ interface ExaDomainFilter {
 
 function mapDomainFilter(domainFilter: string[] | undefined): ExaDomainFilter {
 	if (!domainFilter?.length) return {};
-	const includeDomains = domainFilter
-		.filter(d => !d.startsWith("-") && d.trim().length > 0)
-		.map(d => d.trim());
+	const includeDomains = domainFilter.filter((d) => !d.startsWith("-") && d.trim().length > 0).map((d) => d.trim());
 	const excludeDomains = domainFilter
-		.filter(d => d.startsWith("-"))
-		.map(d => d.slice(1).trim())
+		.filter((d) => d.startsWith("-"))
+		.map((d) => d.slice(1).trim())
 		.filter(Boolean);
 	const filter: ExaDomainFilter = {};
 	if (includeDomains.length) filter.includeDomains = includeDomains;
@@ -110,7 +83,7 @@ function exaSearchArgs(query: string, options: ExaSearchOptions): JsonInputObjec
 		numResults: options.numResults ?? 5,
 	};
 	Object.assign(args, mapDomainFilter(options.domainFilter));
-	if (startDate) args.startPublishedDate = startDate;
+	if (startDate) args["startPublishedDate"] = startDate;
 	return args;
 }
 
@@ -126,9 +99,12 @@ function buildAnswerFromSearchResults(results: JsonInputValue): string {
 		const item = results[i];
 		if (!isJsonInputObject(item) || !isRuntimeString(item.url)) continue;
 		const highlights = normalizeHighlights(item.highlights);
-		const content = highlights.length > 0
-			? highlights.join(" ")
-			: isRuntimeString(item.text) ? item.text.trim().slice(0, 1000) : "";
+		const content =
+			highlights.length > 0
+				? highlights.join(" ")
+				: isRuntimeString(item.text)
+					? item.text.trim().slice(0, 1000)
+					: "";
 		if (!content) continue;
 		const sourceTitle = isRuntimeString(item.title) ? item.title : `Source ${i + 1}`;
 		parts.push(`${content}\nSource: ${sourceTitle} (${item.url})`);
@@ -153,14 +129,22 @@ function mapResults(results: JsonInputValue): SearchResponse["results"] {
 
 function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
-	return results.flatMap(item => {
-		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !isRuntimeString(item.text) || item.text.length === 0) return [];
-		return [{
-			url: item.url,
-			title: isRuntimeString(item.title) ? item.title : "",
-			content: item.text,
-			error: null,
-		}];
+	return results.flatMap((item) => {
+		if (
+			!isJsonInputObject(item) ||
+			!isRuntimeString(item.url) ||
+			!isRuntimeString(item.text) ||
+			item.text.length === 0
+		)
+			return [];
+		return [
+			{
+				url: item.url,
+				title: isRuntimeString(item.title) ? item.title : "",
+				content: item.text,
+				error: null,
+			},
+		];
 	});
 }
 
@@ -174,16 +158,12 @@ function toSearchResponse(
 	return response;
 }
 
-export async function callExaMcp(
-	toolName: string,
-	args: JsonInputObject,
-	signal?: AbortSignal,
-): Promise<string> {
+export async function callExaMcp(toolName: string, args: JsonInputObject, signal?: AbortSignal): Promise<string> {
 	const response = await fetch(`${EXA_MCP_URL}?tools=${toolName}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"Accept": "application/json, text/event-stream",
+			Accept: "application/json, text/event-stream",
 			"x-exa-source": "pi-web-access",
 		},
 		body: JSON.stringify({
@@ -195,7 +175,7 @@ export async function callExaMcp(
 				arguments: args,
 			},
 		}),
-		signal: requestSignal(signal),
+		signal: requestSignal(signal, 60_000),
 	});
 
 	if (!response.ok) {
@@ -209,7 +189,7 @@ export async function callExaMcp(
 	}
 
 	const body = await response.text();
-	const dataLines = body.split("\n").filter(line => line.startsWith("data:"));
+	const dataLines = body.split("\n").filter((line) => line.startsWith("data:"));
 
 	let parsed: JsonInputObject | null = null;
 	for (const line of dataLines) {
@@ -217,47 +197,47 @@ export async function callExaMcp(
 		if (!payload) continue;
 		try {
 			const candidate = parseJsonObject(payload);
-			if (isJsonInputObject(candidate.result) || isJsonInputObject(candidate.error)) {
+			if (isJsonInputObject(candidate["result"]) || isJsonInputObject(candidate["error"])) {
 				parsed = candidate;
 				break;
 			}
-		} catch {
-		}
+		} catch {}
 	}
 
 	if (!parsed) {
 		try {
 			const candidate = parseJsonObject(body);
-			if (isJsonInputObject(candidate.result) || isJsonInputObject(candidate.error)) {
+			if (isJsonInputObject(candidate["result"]) || isJsonInputObject(candidate["error"])) {
 				parsed = candidate;
 			}
-		} catch {
-		}
+		} catch {}
 	}
 
 	if (!parsed) {
 		throw new Error("Exa MCP returned an empty response");
 	}
 
-	const parsedError = isJsonInputObject(parsed.error) ? parsed.error : undefined;
+	const parsedError = isJsonInputObject(parsed["error"]) ? parsed["error"] : undefined;
 	if (parsedError) {
-		const code = isRuntimeNumber(parsedError.code) ? ` ${parsedError.code}` : "";
-		const message = isRuntimeString(parsedError.message) ? parsedError.message : "Unknown error";
+		const code = isRuntimeNumber(parsedError["code"]) ? ` ${parsedError["code"]}` : "";
+		const message = isRuntimeString(parsedError["message"]) ? parsedError["message"] : "Unknown error";
 		throw new Error(`Exa MCP error${code}: ${message}`);
 	}
 
-	const parsedResult = isJsonInputObject(parsed.result) ? parsed.result : undefined;
-	const contentItems = Array.isArray(parsedResult?.content) ? parsedResult.content : [];
-	if (parsedResult?.isError === true) {
-		const errorItem = contentItems.find(item => isJsonInputObject(item) && item.type === "text" && isRuntimeString(item.text));
+	const parsedResult = isJsonInputObject(parsed["result"]) ? parsed["result"] : undefined;
+	const contentItems = Array.isArray(parsedResult?.["content"]) ? parsedResult["content"] : [];
+	if (parsedResult?.["isError"] === true) {
+		const errorItem = contentItems.find(
+			(item) => isJsonInputObject(item) && item.type === "text" && isRuntimeString(item.text),
+		);
 		const message = isJsonInputObject(errorItem) && isRuntimeString(errorItem.text) ? errorItem.text.trim() : "";
 		throw new Error(message || "Exa MCP returned an error");
 	}
 
-	const textItem = contentItems.find(item => isJsonInputObject(item)
-		&& item.type === "text"
-		&& isRuntimeString(item.text)
-		&& item.text.trim().length > 0);
+	const textItem = contentItems.find(
+		(item) =>
+			isJsonInputObject(item) && item.type === "text" && isRuntimeString(item.text) && item.text.trim().length > 0,
+	);
 	const text = isJsonInputObject(textItem) && isRuntimeString(textItem.text) ? textItem.text : undefined;
 
 	if (!text) {
@@ -268,31 +248,32 @@ export async function callExaMcp(
 }
 
 function parseMcpResults(text: string): McpParsedResult[] | null {
-	const blocks = text.split(/(?=^Title: )/m).filter(block => block.trim().length > 0);
-	const parsed = blocks.map(block => {
-		const title = block.match(/^Title: (.+)/m)?.[1]?.trim() ?? "";
-		const url = block.match(/^URL: (.+)/m)?.[1]?.trim() ?? "";
-		let content = "";
-		const textStart = block.indexOf("\nText: ");
-		if (textStart >= 0) {
-			content = block.slice(textStart + 7).trim();
-		} else {
-			const hlMatch = block.match(/\nHighlights:\s*\n/);
-			if (hlMatch?.index != null) {
-				content = block.slice(hlMatch.index + hlMatch[0].length).trim();
+	const blocks = text.split(/(?=^Title: )/m).filter((block) => block.trim().length > 0);
+	const parsed = blocks
+		.map((block) => {
+			const title = block.match(/^Title: (.+)/m)?.[1]?.trim() ?? "";
+			const url = block.match(/^URL: (.+)/m)?.[1]?.trim() ?? "";
+			let content = "";
+			const textStart = block.indexOf("\nText: ");
+			if (textStart >= 0) {
+				content = block.slice(textStart + 7).trim();
+			} else {
+				const hlMatch = block.match(/\nHighlights:\s*\n/);
+				if (hlMatch?.index != null) {
+					content = block.slice(hlMatch.index + hlMatch[0].length).trim();
+				}
 			}
-		}
-		content = content.replace(/\n---\s*$/, "").trim();
-		return { title, url, content };
-	}).filter(result => result.url.length > 0);
+			content = content.replace(/\n---\s*$/, "").trim();
+			return { title, url, content };
+		})
+		.filter((result) => result.url.length > 0);
 	return parsed.length > 0 ? parsed : null;
 }
 
 function buildAnswerFromMcpResults(results: McpParsedResult[]): string {
 	if (results.length === 0) return "";
 	const parts: string[] = [];
-	for (let i = 0; i < results.length; i++) {
-		const result = results[i];
+	for (const [i, result] of results.entries()) {
 		const snippet = result.content.replace(/\s+/g, " ").trim().slice(0, 500);
 		if (!snippet) continue;
 		const sourceTitle = result.title || `Source ${i + 1}`;
@@ -303,8 +284,8 @@ function buildAnswerFromMcpResults(results: McpParsedResult[]): string {
 
 function mapMcpInlineContent(results: McpParsedResult[]): ExtractedContent[] {
 	return results
-		.filter(result => result.content.length > 0)
-		.map(result => ({
+		.filter((result) => result.content.length > 0)
+		.map((result) => ({
 			url: result.url,
 			title: result.title,
 			content: result.content,
@@ -322,10 +303,18 @@ function buildMcpQuery(query: string, options: ExaSearchOptions): string {
 	if (options.recencyFilter) {
 		const now = new Date();
 		switch (options.recencyFilter) {
-			case "day": parts.push("past 24 hours"); break;
-			case "week": parts.push("past week"); break;
-			case "month": parts.push(`${now.toLocaleString("en", { month: "long" })} ${now.getFullYear()}`); break;
-			case "year": parts.push(String(now.getFullYear())); break;
+			case "day":
+				parts.push("past 24 hours");
+				break;
+			case "week":
+				parts.push("past week");
+				break;
+			case "month":
+				parts.push(`${now.toLocaleString("en", { month: "long" })} ${now.getFullYear()}`);
+				break;
+			case "year":
+				parts.push(String(now.getFullYear()));
+				break;
 		}
 	}
 	return parts.join(" ");
@@ -337,7 +326,7 @@ function isAbortMessage(message: string): boolean {
 
 function parseJsonMcpResults(text: string): JsonInputValue {
 	try {
-		const results = parseJsonObject(text).results;
+		const results = parseJsonObject(text)["results"];
 		return Array.isArray(results) && results.length > 0 ? results : null;
 	} catch {
 		return null;
@@ -381,11 +370,15 @@ async function searchWithFilteredExaMcp(
 	basicArgs: JsonInputObject,
 ): Promise<SearchResponse | null> {
 	try {
-		return await searchWithExaMcpTool(EXA_MCP_ADVANCED_TOOL, {
-			...exaSearchArgs(query, options),
-			enableHighlights: true,
-			textMaxCharacters: options.includeContent ? 50000 : 3000,
-		}, options);
+		return await searchWithExaMcpTool(
+			EXA_MCP_ADVANCED_TOOL,
+			{
+				...exaSearchArgs(query, options),
+				enableHighlights: true,
+				textMaxCharacters: options.includeContent ? 50000 : 3000,
+			},
+			options,
+		);
 	} catch (err) {
 		if (isAbortMessage(err instanceof Error ? err.message : String(err))) throw err;
 		// The basic tool ignores every argument except query/numResults, so the
@@ -420,24 +413,17 @@ export function isExaAvailable(): boolean {
 	return true;
 }
 
-export function hasExaApiKey(): boolean {
-	return hasCredentialSource({
-		provider: "Exa",
-		configuredValue: loadConfig().exaApiKey,
-		environmentValue: process.env.EXA_API_KEY,
-	});
-}
-
 export async function searchWithExa(query: string, options: ExaSearchOptions = {}): Promise<ExaSearchResult> {
 	const apiKey = await getApiKey(options.signal);
 	if (!apiKey) {
 		return searchWithExaMcp(query, options);
 	}
 
-	const useSearch = options.includeContent
-		|| !!options.recencyFilter
-		|| !!options.domainFilter?.length
-		|| !!(options.numResults && options.numResults !== 5);
+	const useSearch =
+		options.includeContent ||
+		!!options.recencyFilter ||
+		!!options.domainFilter?.length ||
+		!!(options.numResults && options.numResults !== 5);
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
@@ -447,7 +433,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 				method: "POST",
 				headers: exaApiHeaders(apiKey),
 				body: JSON.stringify({ query }),
-				signal: requestSignal(options.signal),
+				signal: requestSignal(options.signal, 60_000),
 			});
 
 			if (!response.ok) {
@@ -459,8 +445,8 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 			if (!isJsonInputObject(data)) throw new Error("Exa Answer API returned an invalid response");
 			activityMonitor.logComplete(activityId, response.status);
 			return {
-				answer: isRuntimeString(data.answer) ? data.answer : "",
-				results: mapResults(data.citations),
+				answer: isRuntimeString(data["answer"]) ? data["answer"] : "",
+				results: mapResults(data["citations"]),
 			};
 		}
 
@@ -469,11 +455,9 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 			headers: exaApiHeaders(apiKey),
 			body: JSON.stringify({
 				...exaSearchArgs(query, options),
-				contents: options.includeContent
-					? { text: true, highlights: true }
-					: { highlights: true },
+				contents: options.includeContent ? { text: true, highlights: true } : { highlights: true },
 			}),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, 60_000),
 		});
 
 		if (!response.ok) {
@@ -486,9 +470,9 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 		activityMonitor.logComplete(activityId, response.status);
 
 		return toSearchResponse(
-			buildAnswerFromSearchResults(data.results),
-			mapResults(data.results),
-			options.includeContent ? mapInlineContent(data.results) : null,
+			buildAnswerFromSearchResults(data["results"]),
+			mapResults(data["results"]),
+			options.includeContent ? mapInlineContent(data["results"]) : null,
 		);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

@@ -2,9 +2,10 @@ import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
-import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.ts";
+import type { ExtractedContent } from "./extract.ts";
+import { DEFAULT_MODEL, fetchGeminiApi, getApiKey, getVersionedApiBase, isGatewayConfigured } from "./gemini-api.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
-import { extractHeadingTitle, type ExtractedContent } from "./extract.ts";
+import { extractHeadingTitle } from "./rsc-extract.ts";
 
 const EXTRACTION_PROMPT = `Extract the complete readable content from this URL as clean markdown.
 Include the page title, all text content, code blocks, and tables.
@@ -12,19 +13,13 @@ Do not summarize — extract the full content.
 
 URL: `;
 
-function shouldRethrow(err: JsonInputValue): boolean {
+function shouldRethrow<ErrorValue>(err: ErrorValue): boolean {
 	const message = err instanceof Error ? err.message : String(err);
 	return err instanceof CredentialResolutionError || message.startsWith("Failed to parse ");
 }
 
-export async function extractWithUrlContext(
-	url: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent | null> {
-	const requestSignal = AbortSignal.any([
-		AbortSignal.timeout(60000),
-		...(signal ? [signal] : []),
-	]);
+export async function extractWithUrlContext(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
+	const requestSignal = AbortSignal.any([AbortSignal.timeout(60000), ...(signal ? [signal] : [])]);
 	const apiKey = await getApiKey(requestSignal);
 	if (!apiKey && !isGatewayConfigured()) return null;
 
@@ -37,12 +32,16 @@ export async function extractWithUrlContext(
 			tools: [{ url_context: {} }],
 		};
 
-		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-			signal: requestSignal,
-		}, apiKey);
+		const res = await fetchGeminiApi(
+			`${getVersionedApiBase()}/models/${model}:generateContent`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+				signal: requestSignal,
+			},
+			apiKey,
+		);
 
 		if (!res.ok) {
 			activityMonitor.logComplete(activityId, res.status);
@@ -53,12 +52,11 @@ export async function extractWithUrlContext(
 		if (!isJsonInputObject(data)) throw new Error("Gemini URL context returned an invalid response");
 		activityMonitor.logComplete(activityId, res.status);
 
-		const candidate = Array.isArray(data.candidates) && isJsonInputObject(data.candidates[0])
-			? data.candidates[0]
-			: undefined;
-		const metadata = isJsonInputObject(candidate?.url_context_metadata)
-			? candidate.url_context_metadata
-			: undefined;
+		const candidate =
+			Array.isArray(data["candidates"]) && isJsonInputObject(data["candidates"][0])
+				? data["candidates"][0]
+				: undefined;
+		const metadata = isJsonInputObject(candidate?.url_context_metadata) ? candidate.url_context_metadata : undefined;
 		const urlMetadata = Array.isArray(metadata?.url_metadata) ? metadata.url_metadata : [];
 		if (isJsonInputObject(urlMetadata[0])) {
 			const status = urlMetadata[0].url_retrieval_status;
@@ -68,9 +66,9 @@ export async function extractWithUrlContext(
 		}
 
 		const candidateContent = isJsonInputObject(candidate?.content) ? candidate.content : undefined;
-		const parts = Array.isArray(candidateContent?.parts) ? candidateContent.parts : [];
+		const parts: readonly JsonInputValue[] = Array.isArray(candidateContent?.parts) ? candidateContent.parts : [];
 		const content = parts
-			.map(part => isJsonInputObject(part) && isRuntimeString(part.text) ? part.text : "")
+			.map((part) => (isJsonInputObject(part) && isRuntimeString(part["text"]) ? part["text"] : ""))
 			.filter(Boolean)
 			.join("\n");
 
@@ -90,10 +88,7 @@ export async function extractWithUrlContext(
 	}
 }
 
-export async function extractWithGeminiWeb(
-	url: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent | null> {
+export async function extractWithGeminiWeb(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
 	const cookies = await isGeminiWebAvailable();
 	if (!cookies) return null;
 

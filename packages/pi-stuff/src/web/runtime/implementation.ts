@@ -1,30 +1,33 @@
-import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
-import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig } from "../settings.ts";
+import { type ImageContent, StringEnum, type TextContent } from "@earendil-works/pi-ai/compat";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum, type ImageContent, type TextContent } from "@earendil-works/pi-ai/compat";
-import type { ExtractedContent, ExtractOptions } from "./extract.ts";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { readWebConfig, WebConfigError } from "../settings.ts";
+import { type FindMode, findContent } from "./content-find.ts";
 import { reportWebDiagnostic } from "./diagnostics.ts";
+import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
-import { findContent, type FindMode } from "./content-find.ts";
-import { normalizeSearchProviderSelection, RESOLVED_SEARCH_PROVIDERS, SEARCH_PROVIDERS, search, type SearchProviderSelection } from "./gemini-search.ts";
+import {
+	normalizeSearchProviderSelection,
+	RESOLVED_SEARCH_PROVIDERS,
+	SEARCH_PROVIDERS,
+	type SearchProviderSelection,
+	search,
+} from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
 import {
 	clearResults,
 	generateId,
 	getResult,
-	restoreFromSession,
-	storeResult,
 	type QueryResultData,
+	restoreFromSession,
 	type StoredSearchData,
+	storeResult,
 } from "./storage.ts";
+import { getWebSearchConfigPath, isAbortError } from "./utils.ts";
 
-export type PiWebAccessHost = Pick<
-	ExtensionAPI,
-	"appendEntry" | "on" | "registerTool"
->;
+export type PiWebAccessHost = Pick<ExtensionAPI, "appendEntry" | "on" | "registerTool">;
 
 export { configureRuntimeSsrfDefaults, type RuntimeSsrfDefaults } from "./ssrf-protection.ts";
 
@@ -36,12 +39,9 @@ async function fetchAllContent(
 	signal?: AbortSignal,
 	options?: ExtractOptions,
 ): Promise<ExtractedContent[]> {
-	const extractModule = await (extractModulePromise ??= import("./extract.ts"));
+	extractModulePromise ??= import("./extract.ts");
+	const extractModule = await extractModulePromise;
 	return extractModule.fetchAllContent(urls, signal, options);
-}
-
-function isAbortError(err: JsonInputValue): boolean {
-	return (err instanceof Error ? err.message : String(err)).toLowerCase().includes("abort");
 }
 
 function resolveFindMode(value: JsonInputValue): FindMode {
@@ -90,14 +90,17 @@ const TOOL_NAME_KEYS = ["webSearch", "fetchContent", "getSearchContent"] as cons
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 function searchProviderSchema(description: string) {
-	return Type.Union([
-		StringEnum([...SEARCH_PROVIDERS]),
-		Type.Array(StringEnum([...RESOLVED_SEARCH_PROVIDERS]), { minItems: 1 }),
-	], { description });
+	return Type.Union(
+		[StringEnum([...SEARCH_PROVIDERS]), Type.Array(StringEnum([...RESOLVED_SEARCH_PROVIDERS]), { minItems: 1 })],
+		{ description },
+	);
 }
 
 function resolveToolNames(config: WebSearchConfig): ToolNames {
-	if (config.toolNames !== undefined && (!config.toolNames || !isRuntimeObject(config.toolNames) || Array.isArray(config.toolNames))) {
+	if (
+		config.toolNames !== undefined &&
+		(!config.toolNames || !isRuntimeObject(config.toolNames) || Array.isArray(config.toolNames))
+	) {
 		throw new Error(`toolNames in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
 	const names = { ...DEFAULT_TOOL_NAMES };
@@ -107,13 +110,16 @@ function resolveToolNames(config: WebSearchConfig): ToolNames {
 		if (!isRuntimeString(value)) throw new Error(`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must be a string`);
 		const trimmed = value.trim();
 		if (!TOOL_NAME_PATTERN.test(trimmed)) {
-			throw new Error(`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must start with a letter and contain only letters, numbers, underscores, or hyphens`);
+			throw new Error(
+				`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must start with a letter and contain only letters, numbers, underscores, or hyphens`,
+			);
 		}
 		names[key] = trimmed;
 	}
-	const registeredKeys: Array<keyof ToolNames> = config.webSearch?.enabled === false
-		? ["fetchContent", "getSearchContent"]
-		: ["webSearch", "fetchContent", "getSearchContent"];
+	const registeredKeys: Array<keyof ToolNames> =
+		config.webSearch?.enabled === false
+			? ["fetchContent", "getSearchContent"]
+			: ["webSearch", "fetchContent", "getSearchContent"];
 	const seen = new Map<string, keyof ToolNames>();
 	for (const key of registeredKeys) {
 		const name = names[key];
@@ -128,7 +134,8 @@ function loadConfigForExtensionInit(): WebSearchConfig {
 	try {
 		return loadConfig();
 	} catch (err) {
-		reportWebDiagnostic("Web settings were invalid and built-in defaults are active", err, {
+		if (!(err instanceof WebConfigError)) throw err;
+		reportWebDiagnostic("Web settings were invalid and built-in defaults are active", err.message, {
 			key: "invalid-settings",
 			notice: true,
 			severity: "warning",
@@ -146,13 +153,14 @@ function resolveRequestedProvider(requested: JsonInputValue): SearchProviderSele
 	const normalizedRequested = normalizeProviderInput(requested);
 	if (normalizedRequested && normalizedRequested !== "auto") return normalizedRequested;
 	const config = loadConfig();
-	return normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ?? "auto";
+	return (
+		normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ??
+		"auto"
+	);
 }
 
 function normalizeRecencyFilter(value: JsonInputValue): "day" | "week" | "month" | "year" | undefined {
-	return value === "day" || value === "week" || value === "month" || value === "year"
-		? value
-		: undefined;
+	return value === "day" || value === "week" || value === "month" || value === "year" ? value : undefined;
 }
 
 function normalizeQueryList(queryList: JsonInputValue[]): string[] {
@@ -200,7 +208,7 @@ function initialContentSlice(content: string): InitialContentSlice {
 }
 
 function normalizeFindQueries(value: string | string[]): string[] {
-	const queries = (Array.isArray(value) ? value : [value]).map(query => query.trim()).filter(Boolean);
+	const queries = (Array.isArray(value) ? value : [value]).map((query) => query.trim()).filter(Boolean);
 	if (queries.length === 0) throw new Error("findText must contain at least one non-empty string");
 	return queries;
 }
@@ -232,12 +240,14 @@ function handleSessionChange(ctx: ExtensionContext): void {
 function installPiWebAccess(pi: PiWebAccessHost): void {
 	const initConfig = loadConfigForExtensionInit();
 	const toolNames = resolveToolNames(initConfig);
-	const storedContentSources = initConfig.webSearch?.enabled === false
-		? toolNames.fetchContent
-		: `${toolNames.webSearch} or ${toolNames.fetchContent}`;
-	const searchQueryDescription = initConfig.webSearch?.enabled === false
-		? "Get content for a stored search query"
-		: `Get content for this query (${toolNames.webSearch})`;
+	const storedContentSources =
+		initConfig.webSearch?.enabled === false
+			? toolNames.fetchContent
+			: `${toolNames.webSearch} or ${toolNames.fetchContent}`;
+	const searchQueryDescription =
+		initConfig.webSearch?.enabled === false
+			? "Get content for a stored search query"
+			: `Get content for this query (${toolNames.webSearch})`;
 
 	function storeAndPublishSearch(results: QueryResultData[]): string {
 		const id = generateId();
@@ -256,14 +266,14 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 		let output = "";
 		for (const { query, answer, results: sources, error } of results) {
 			if (queryList.length > 1) output += `## Query: "${query}"\n\n`;
-			output += error ? `Error: ${error}\n\n` : formatSearchSummary(sources, answer) + "\n\n";
+			output += error ? `Error: ${error}\n\n` : `${formatSearchSummary(sources, answer)}\n\n`;
 		}
 		return {
 			content: [{ type: "text", text: output.trim() }],
 			details: {
 				queries: queryList,
 				queryCount: queryList.length,
-				successfulQueries: results.filter(result => !result.error).length,
+				successfulQueries: results.filter((result) => !result.error).length,
 				totalResults: results.reduce((sum, result) => sum + result.results.length, 0),
 				searchId: storeAndPublishSearch(results),
 			},
@@ -275,87 +285,106 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 
 	pi.on("session_shutdown", clearResults);
 
-	if (initConfig.webSearch?.enabled !== false) pi.registerTool({
-		name: toolNames.webSearch,
-		label: "Web Search",
-		description:
-			`Search the web using the configured provider or an explicit provider selection. Returns synthesized answers with source URLs. Use multiple varied queries for broader coverage.`,
-		promptSnippet:
-			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
-		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
-			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
-			recencyFilter: Type.Optional(
-				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
-			),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
-			provider: Type.Optional(searchProviderSchema("Search provider or non-empty list of providers to search simultaneously; use all to search every eligible provider except AnySearch, xAI, Bright Data, and SerpBase, omit this field to use the configured provider, or use auto when none is configured")),
-		}),
+	if (initConfig.webSearch?.enabled !== false)
+		pi.registerTool({
+			name: toolNames.webSearch,
+			label: "Web Search",
+			description: `Search the web using the configured provider or an explicit provider selection. Returns synthesized answers with source URLs. Use multiple varied queries for broader coverage.`,
+			promptSnippet:
+				"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
+			parameters: Type.Object({
+				query: Type.Optional(
+					Type.String({
+						description:
+							"Single search query. For research tasks, prefer 'queries' with multiple varied angles instead.",
+					}),
+				),
+				queries: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							"Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results).",
+					}),
+				),
+				numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
+				recencyFilter: Type.Optional(
+					StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
+				),
+				domainFilter: Type.Optional(
+					Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" }),
+				),
+				provider: Type.Optional(
+					searchProviderSchema(
+						"Search provider or non-empty list of providers to search simultaneously; use all to search every eligible provider except AnySearch, xAI, Bright Data, and SerpBase, omit this field to use the configured provider, or use auto when none is configured",
+					),
+				),
+			}),
 
-		async execute(_callId, params, signal, onUpdate, ctx) {
-			const rawQueryList: JsonInputValue[] = Array.isArray(params.queries)
-				? params.queries
-				: (params.query !== undefined ? [params.query] : []);
-			const queryList = normalizeQueryList(rawQueryList);
-			if (queryList.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: No query provided. Use 'query' or 'queries' parameter." }],
-					details: { error: "No query provided" },
-				};
-			}
-
-			const searchResults: QueryResultData[] = [];
-			const provider = resolveRequestedProvider(params.provider);
-			const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
-			for (let index = 0; index < queryList.length; index++) {
-				const query = queryList[index];
-				onUpdate?.({
-					content: [{ type: "text", text: `Searching ${index + 1}/${queryList.length}: "${query}"...` }],
-					details: { phase: "search", progress: index / queryList.length, currentQuery: query },
-				});
-				try {
-					const response = await search(query, {
-						provider,
-						numResults: params.numResults,
-						recencyFilter,
-						domainFilter: params.domainFilter,
-						signal,
-						extensionContext: ctx,
-					});
-					searchResults.push({
-						query,
-						answer: response.answer,
-						results: response.results,
-						error: null,
-						provider: response.provider,
-					});
-				} catch (err) {
-					if (signal?.aborted || isAbortError(err)) throw err;
-					searchResults.push({
-						query,
-						answer: "",
-						results: [],
-						error: err instanceof Error ? err.message : String(err),
-						provider: Array.isArray(provider) ? "all" : provider,
-					});
+			async execute(_callId, params, signal, onUpdate, ctx) {
+				const rawQueryList: JsonInputValue[] = Array.isArray(params.queries)
+					? params.queries
+					: params.query !== undefined
+						? [params.query]
+						: [];
+				const queryList = normalizeQueryList(rawQueryList);
+				if (queryList.length === 0) {
+					return {
+						content: [{ type: "text", text: "Error: No query provided. Use 'query' or 'queries' parameter." }],
+						details: { error: "No query provided" },
+					};
 				}
-			}
-			return buildSearchReturn(queryList, searchResults);
-		},
 
-	});
+				const searchResults: QueryResultData[] = [];
+				const provider = resolveRequestedProvider(params.provider);
+				const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
+				for (const [index, query] of queryList.entries()) {
+					onUpdate?.({
+						content: [{ type: "text", text: `Searching ${index + 1}/${queryList.length}: "${query}"...` }],
+						details: { phase: "search", progress: index / queryList.length, currentQuery: query },
+					});
+					try {
+						const response = await search(query, {
+							provider,
+							numResults: params.numResults,
+							recencyFilter,
+							domainFilter: params.domainFilter,
+							signal,
+							extensionContext: ctx,
+						});
+						searchResults.push({
+							query,
+							answer: response.answer,
+							results: response.results,
+							error: null,
+							provider: response.provider,
+						});
+					} catch (err) {
+						if (signal?.aborted || isAbortError(err)) throw err;
+						searchResults.push({
+							query,
+							answer: "",
+							results: [],
+							error: err instanceof Error ? err.message : String(err),
+							provider: Array.isArray(provider) ? "all" : provider,
+						});
+					}
+				}
+				return buildSearchReturn(queryList, searchResults);
+			},
+		});
 	pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
 		description: `Fetch public HTTP(S) URL(s) as readable markdown or exact raw text. Direct images return resized image content, PDFs return temporary Markdown artifacts, and GitHub URLs use bounded API reads. Full content is stored for retrieval with ${toolNames.getSearchContent}.`,
-		promptSnippet: "Read public HTTP(S) pages, direct images, GitHub URLs, and PDFs. Use raw only for exact textual response bodies.",
+		promptSnippet:
+			"Read public HTTP(S) pages, direct images, GitHub URLs, and PDFs. Use raw only for exact textual response bodies.",
 		parameters: Type.Object({
 			url: Type.Optional(Type.String({ description: "Single HTTP(S) URL to fetch" })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple HTTP(S) URLs to fetch in parallel" })),
-			mode: Type.Optional(StringEnum(["readable", "raw"], {
-				description: "Fetch mode: readable (default extraction) or raw (exact textual HTTP response body).",
-			})),
+			mode: Type.Optional(
+				StringEnum(["readable", "raw"], {
+					description: "Fetch mode: readable (default extraction) or raw (exact textual HTTP response body).",
+				}),
+			),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate): Promise<AgentToolResult<JsonInputObject>> {
@@ -379,7 +408,7 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 				details: { phase: "fetch", progress: 0 },
 			});
 			const results = await fetchAllContent(urlList, signal, options);
-			const successful = results.filter(result => !result.error).length;
+			const successful = results.filter((result) => !result.error).length;
 			const totalChars = results.reduce((sum, result) => sum + result.content.length, 0);
 			const responseId = generateId();
 			const data: StoredSearchData = {
@@ -393,6 +422,12 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 
 			if (urlList.length === 1) {
 				const result = results[0];
+				if (!result) {
+					return {
+						content: [{ type: "text", text: "Error: Fetch returned no result." }],
+						details: { urls: urlList, urlCount: 1, successful: 0, responseId },
+					};
+				}
 				if (result.error) {
 					return {
 						content: [{ type: "text", text: `Error: ${result.error}` }],
@@ -404,11 +439,13 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 				const truncated = slice.endOffset < result.content.length;
 				let output = slice.text;
 				if (truncated) {
-					output += `\n\n---\nShowing ${slice.endOffset} of ${result.content.length} chars, ${slice.shownBytes} of ${slice.totalBytes} bytes, and ${slice.shownLines} of ${slice.totalLines} lines. ` +
+					output +=
+						`\n\n---\nShowing ${slice.endOffset} of ${result.content.length} chars, ${slice.shownBytes} of ${slice.totalBytes} bytes, and ${slice.shownLines} of ${slice.totalLines} lines. ` +
 						`Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0, offset: ${slice.endOffset} }) for the next slice.`;
 				}
 				const content: Array<TextContent | ImageContent> = [];
-				if (result.thumbnail) content.push({ type: "image", data: result.thumbnail.data, mimeType: result.thumbnail.mimeType });
+				if (result.thumbnail)
+					content.push({ type: "image", data: result.thumbnail.data, mimeType: result.thumbnail.mimeType });
 				content.push({ type: "text", text: output });
 				return {
 					content,
@@ -435,9 +472,7 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 
 			let output = "## Fetched URLs\n\n";
 			for (const { url, title, content, error } of results) {
-				output += error
-					? `- ${url}: Error - ${error}\n`
-					: `- ${title || url} (${content.length} chars)\n`;
+				output += error ? `- ${url}: Error - ${error}\n` : `- ${title || url} (${content.length} chars)\n`;
 			}
 			output += `\n---\nUse ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to retrieve bounded content slices.`;
 			return {
@@ -451,29 +486,49 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 		name: toolNames.getSearchContent,
 		label: "Get Search Content",
 		description: `Retrieve bounded content slices or find matching passages in a previous ${storedContentSources} call.`,
-		promptSnippet:
-			`Use after ${storedContentSources} to retrieve stored content via responseId. Use findText to locate passages without paging through the full content.`,
+		promptSnippet: `Use after ${storedContentSources} to retrieve stored content via responseId. Use findText to locate passages without paging through the full content.`,
 		parameters: Type.Object({
 			responseId: Type.String({ description: `The responseId from ${storedContentSources}` }),
 			query: Type.Optional(Type.String({ description: searchQueryDescription })),
 			queryIndex: Type.Optional(Type.Number({ description: "Get content for query at index" })),
 			url: Type.Optional(Type.String({ description: "Get content for this URL" })),
 			urlIndex: Type.Optional(Type.Number({ description: "Get content for URL at index" })),
-			offset: Type.Optional(Type.Number({ description: "Character offset for fetched URL content slices (default 0)" })),
-			limit: Type.Optional(Type.Number({ description: `Maximum characters to return for fetched URL content slices (default/max ${MAX_CONTENT_SLICE_LENGTH})` })),
-			findText: Type.Optional(Type.Union([
-				Type.String({ minLength: 1, maxLength: 500 }),
-				Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
-			], { description: "Text or texts to find in the selected stored content." })),
-			findMode: Type.Optional(StringEnum(["exact", "case-insensitive", "fuzzy"], { description: "Matching mode for findText (default: case-insensitive)." })),
+			offset: Type.Optional(
+				Type.Number({ description: "Character offset for fetched URL content slices (default 0)" }),
+			),
+			limit: Type.Optional(
+				Type.Number({
+					description: `Maximum characters to return for fetched URL content slices (default/max ${MAX_CONTENT_SLICE_LENGTH})`,
+				}),
+			),
+			findText: Type.Optional(
+				Type.Union(
+					[
+						Type.String({ minLength: 1, maxLength: 500 }),
+						Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
+					],
+					{ description: "Text or texts to find in the selected stored content." },
+				),
+			),
+			findMode: Type.Optional(
+				StringEnum(["exact", "case-insensitive", "fuzzy"], {
+					description: "Matching mode for findText (default: case-insensitive).",
+				}),
+			),
 		}),
 
 		async execute(_toolCallId, params): Promise<AgentToolResult<JsonInputObject>> {
 			if (params.findText !== undefined && (params.offset !== undefined || params.limit !== undefined)) {
-				return { content: [{ type: "text", text: "findText cannot be combined with offset or limit" }], details: { error: "Incompatible find options" } };
+				return {
+					content: [{ type: "text", text: "findText cannot be combined with offset or limit" }],
+					details: { error: "Incompatible find options" },
+				};
 			}
 			if (params.findMode !== undefined && params.findText === undefined) {
-				return { content: [{ type: "text", text: "findMode requires findText" }], details: { error: "findMode requires findText" } };
+				return {
+					content: [{ type: "text", text: "findMode requires findText" }],
+					details: { error: "findMode requires findText" },
+				};
 			}
 			const data = getResult(params.responseId);
 			if (!data) {
@@ -499,7 +554,12 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 					queryData = data.queries[params.queryIndex];
 					if (!queryData) {
 						return {
-							content: [{ type: "text", text: `Index ${params.queryIndex} out of range (0-${data.queries.length - 1})` }],
+							content: [
+								{
+									type: "text",
+									text: `Index ${params.queryIndex} out of range (0-${data.queries.length - 1})`,
+								},
+							],
 							details: { error: "Index out of range" },
 						};
 					}
@@ -521,12 +581,17 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 				const fullResults = formatFullResults(queryData);
 				if (params.findText !== undefined) {
 					try {
-							const findMode = resolveFindMode(params.findMode);
-							const found = findContent(fullResults, normalizeFindQueries(params.findText), findMode);
+						const findMode = resolveFindMode(params.findMode);
+						const found = findContent(fullResults, normalizeFindQueries(params.findText), findMode);
 						const { text, ...findDetails } = found;
 						return {
 							content: [{ type: "text", text }],
-								details: { query: queryData.query, resultCount: queryData.results.length, findMode, ...findDetails },
+							details: {
+								query: queryData.query,
+								resultCount: queryData.results.length,
+								findMode,
+								...findDetails,
+							},
 						};
 					} catch (err) {
 						const error = err instanceof Error ? err.message : String(err);
@@ -559,7 +624,9 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 					urlData = data.urls[selectedUrlIndex];
 					if (!urlData) {
 						return {
-							content: [{ type: "text", text: `Index ${params.urlIndex} out of range (0-${data.urls.length - 1})` }],
+							content: [
+								{ type: "text", text: `Index ${params.urlIndex} out of range (0-${data.urls.length - 1})` },
+							],
 							details: { error: "Index out of range" },
 						};
 					}
@@ -580,12 +647,18 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 
 				if (params.findText !== undefined) {
 					try {
-							const findMode = resolveFindMode(params.findMode);
-							const found = findContent(urlData.content, normalizeFindQueries(params.findText), findMode);
+						const findMode = resolveFindMode(params.findMode);
+						const found = findContent(urlData.content, normalizeFindQueries(params.findText), findMode);
 						const { text, ...findDetails } = found;
 						return {
 							content: [{ type: "text", text: `# ${urlData.title || urlData.url}\n\n${text}` }],
-								details: { url: urlData.url, title: urlData.title, contentLength: urlData.content.length, findMode, ...findDetails },
+							details: {
+								url: urlData.url,
+								title: urlData.title,
+								contentLength: urlData.content.length,
+								findMode,
+								...findDetails,
+							},
 						};
 					} catch (err) {
 						const error = err instanceof Error ? err.message : String(err);
@@ -645,7 +718,6 @@ function installPiWebAccess(pi: PiWebAccessHost): void {
 				details: { error: "Invalid data" },
 			};
 		},
-
 	});
 }
 

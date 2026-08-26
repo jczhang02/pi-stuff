@@ -1,12 +1,12 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonValue, type JsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { execFile } from "node:child_process";
-import { pbkdf2Sync, createDecipheriv } from "node:crypto";
+import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir, homedir, platform } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 import { isAbsolute, join, sep } from "node:path";
 import type { SQLOutputValue } from "node:sqlite";
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 
 export type CookieMap = Record<string, string>;
@@ -22,22 +22,48 @@ interface BrowserConfig {
 type SqliteRow = JsonInputObject;
 type SqliteFailure = "unavailable" | "query";
 
-const GOOGLE_ORIGINS = [
-	"https://gemini.google.com",
-	"https://accounts.google.com",
-	"https://www.google.com",
-];
+const GOOGLE_ORIGINS = ["https://gemini.google.com", "https://accounts.google.com", "https://www.google.com"];
 
 const ALL_COOKIE_NAMES = new Set([
-	"__Secure-1PSID", "__Secure-1PSIDTS", "__Secure-1PSIDCC", "__Secure-1PAPISID", "NID", "AEC", "SOCS",
-	"__Secure-BUCKET", "__Secure-ENID", "SID", "HSID", "SSID", "APISID", "SAPISID", "__Secure-3PSID",
-	"__Secure-3PSIDTS", "__Secure-3PAPISID", "SIDCC",
+	"__Secure-1PSID",
+	"__Secure-1PSIDTS",
+	"__Secure-1PSIDCC",
+	"__Secure-1PAPISID",
+	"NID",
+	"AEC",
+	"SOCS",
+	"__Secure-BUCKET",
+	"__Secure-ENID",
+	"SID",
+	"HSID",
+	"SSID",
+	"APISID",
+	"SAPISID",
+	"__Secure-3PSID",
+	"__Secure-3PSIDTS",
+	"__Secure-3PAPISID",
+	"SIDCC",
 ]);
 
 const MACOS_BROWSER_CONFIGS: BrowserConfig[] = [
-	{ name: "Helium", baseDir: "Library/Application Support/net.imput.helium", keychainService: "Helium Storage Key", keychainAccount: "Helium" },
-	{ name: "Chrome", baseDir: "Library/Application Support/Google/Chrome", keychainService: "Chrome Safe Storage", keychainAccount: "Chrome" },
-	{ name: "Arc", baseDir: "Library/Application Support/Arc/User Data", keychainService: "Arc Safe Storage", keychainAccount: "Arc" },
+	{
+		name: "Helium",
+		baseDir: "Library/Application Support/net.imput.helium",
+		keychainService: "Helium Storage Key",
+		keychainAccount: "Helium",
+	},
+	{
+		name: "Chrome",
+		baseDir: "Library/Application Support/Google/Chrome",
+		keychainService: "Chrome Safe Storage",
+		keychainAccount: "Chrome",
+	},
+	{
+		name: "Arc",
+		baseDir: "Library/Application Support/Arc/User Data",
+		keychainService: "Arc Safe Storage",
+		keychainAccount: "Arc",
+	},
 ];
 
 const LINUX_BROWSER_CONFIGS: BrowserConfig[] = [
@@ -54,9 +80,10 @@ export function getLastGoogleCookieDiagnostic(): string | null {
 	return lastCookieDiagnostic;
 }
 
-export async function getGoogleCookies(
-	options?: { profile?: string; requiredCookies?: string[] },
-): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+export async function getGoogleCookies(options?: {
+	profile?: string | undefined;
+	requiredCookies?: string[];
+}): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
 	lastCookieDiagnostic = null;
 	if (!isBrowserCookieAccessAllowed()) {
 		lastCookieDiagnostic = "Browser cookie access is disabled; enable allowBrowserCookies to use Gemini Web cookies.";
@@ -64,7 +91,8 @@ export async function getGoogleCookies(
 	}
 
 	const currentPlatform = platform();
-	const configs = currentPlatform === "darwin" ? MACOS_BROWSER_CONFIGS : currentPlatform === "linux" ? LINUX_BROWSER_CONFIGS : [];
+	const configs =
+		currentPlatform === "darwin" ? MACOS_BROWSER_CONFIGS : currentPlatform === "linux" ? LINUX_BROWSER_CONFIGS : [];
 	if (configs.length === 0) {
 		lastCookieDiagnostic = "Chromium cookie extraction is unsupported on this platform.";
 		return null;
@@ -129,11 +157,19 @@ export async function getGoogleCookies(
 
 				const cookies: CookieMap = {};
 				for (const row of rowsResult.rows) {
-					const name = isRuntimeString(row.name) ? row.name : "";
+					const name = isRuntimeString(row["name"]) ? row["name"] : "";
 					if (!ALL_COOKIE_NAMES.has(name) || cookies[name]) continue;
-					let value = isRuntimeString(row.value) && row.value.length > 0 ? row.value : null;
-					if (!value && isRuntimeString(row.encrypted_value_hex) && /^[0-9a-f]*$/i.test(row.encrypted_value_hex)) {
-						value = decryptCookieValue(Buffer.from(row.encrypted_value_hex, "hex"), key, metaVersion.value >= 24);
+					let value = isRuntimeString(row["value"]) && row["value"].length > 0 ? row["value"] : null;
+					if (
+						!value &&
+						isRuntimeString(row["encrypted_value_hex"]) &&
+						/^[0-9a-f]*$/i.test(row["encrypted_value_hex"])
+					) {
+						value = decryptCookieValue(
+							Buffer.from(row["encrypted_value_hex"], "hex"),
+							key,
+							metaVersion.value >= 24,
+						);
 					}
 					if (value) cookies[name] = value;
 				}
@@ -159,7 +195,7 @@ export async function getGoogleCookies(
 	} else if (requiredCookies?.length && !sawRequiredCookies) {
 		lastCookieDiagnostic = "No detected Chromium profile contains the required Gemini cookies.";
 	} else if (warningSet.size > 0) {
-		lastCookieDiagnostic = [...warningSet][0];
+		lastCookieDiagnostic = warningSet.values().next().value ?? "Chromium cookie access produced a warning.";
 	} else {
 		lastCookieDiagnostic = "Required Gemini cookies were not available or could not be decrypted.";
 	}
@@ -170,7 +206,13 @@ function normalizeProfileName(value: string | undefined): string | undefined {
 	if (!isRuntimeString(value)) return undefined;
 	const normalized = value.trim();
 	if (!normalized) return undefined;
-	if (isAbsolute(normalized) || normalized === "." || normalized === ".." || normalized.includes("/") || normalized.includes("\\")) {
+	if (
+		isAbsolute(normalized) ||
+		normalized === "." ||
+		normalized === ".." ||
+		normalized.includes("/") ||
+		normalized.includes("\\")
+	) {
 		return undefined;
 	}
 	return normalized;
@@ -184,7 +226,8 @@ function resolveProfilePath(home: string, config: BrowserConfig, profile: string
 	try {
 		const baseRealPath = realpathSync(basePath);
 		const profileRealPath = realpathSync(profilePath);
-		if (profileRealPath !== baseRealPath && !profileRealPath.startsWith(`${baseRealPath}${sep}`)) return "outside-root";
+		if (profileRealPath !== baseRealPath && !profileRealPath.startsWith(`${baseRealPath}${sep}`))
+			return "outside-root";
 		return profileRealPath;
 	} catch {
 		return null;
@@ -193,7 +236,10 @@ function resolveProfilePath(home: string, config: BrowserConfig, profile: string
 
 function normalizeCookieNames(names: string[] | undefined): string[] | undefined {
 	if (!names?.length) return undefined;
-	const normalized = names.filter((name): name is string => isRuntimeString(name)).map((name) => name.trim()).filter(Boolean);
+	const normalized = names
+		.filter((name): name is string => isRuntimeString(name))
+		.map((name) => name.trim())
+		.filter(Boolean);
 	return normalized.length > 0 ? [...new Set(normalized)] : undefined;
 }
 
@@ -205,8 +251,7 @@ function listBrowserProfiles(home: string, config: BrowserConfig): string[] {
 		for (const entry of readdirSync(basePath, { withFileTypes: true })) {
 			if (entry.isDirectory() && existsSync(join(basePath, entry.name, "Cookies"))) profiles.add(entry.name);
 		}
-	} catch {
-	}
+	} catch {}
 	if (profiles.size === 0) return ["Default"];
 	return [...profiles].sort(compareProfileNames);
 }
@@ -250,34 +295,52 @@ function removePkcs7Padding(buf: Buffer): Buffer {
 	return !padding || padding > 16 ? buf : buf.subarray(0, buf.length - padding);
 }
 
-function readBrowserPassword(config: BrowserConfig, currentPlatform: ReturnType<typeof platform>): Promise<string | null> {
+function readBrowserPassword(
+	config: BrowserConfig,
+	currentPlatform: ReturnType<typeof platform>,
+): Promise<string | null> {
 	const cacheKey = `${currentPlatform}:${config.name}`;
 	const cached = browserPasswordCache.get(cacheKey);
 	if (cached) return cached;
-	const passwordResult = currentPlatform === "darwin"
-		? config.keychainAccount && config.keychainService
-			? readKeychainPassword(config.keychainAccount, config.keychainService).then(password => ({ password, cacheable: Boolean(password) }))
-			: Promise.resolve({ password: null, cacheable: false })
-		: currentPlatform === "linux"
-			? readLinuxPassword(config.secretToolApp)
-			: Promise.resolve({ password: null, cacheable: false });
-	const passwordPromise = passwordResult.then(({ password, cacheable }) => {
-		if (!cacheable) browserPasswordCache.delete(cacheKey);
-		return password;
-	}, (error) => {
-		browserPasswordCache.delete(cacheKey);
-		throw error;
-	});
+	const passwordResult =
+		currentPlatform === "darwin"
+			? config.keychainAccount && config.keychainService
+				? readKeychainPassword(config.keychainAccount, config.keychainService).then((password) => ({
+						password,
+						cacheable: Boolean(password),
+					}))
+				: Promise.resolve({ password: null, cacheable: false })
+			: currentPlatform === "linux"
+				? readLinuxPassword(config.secretToolApp)
+				: Promise.resolve({ password: null, cacheable: false });
+	const passwordPromise = passwordResult.then(
+		({ password, cacheable }) => {
+			if (!cacheable) browserPasswordCache.delete(cacheKey);
+			return password;
+		},
+		(error) => {
+			browserPasswordCache.delete(cacheKey);
+			throw error;
+		},
+	);
 	browserPasswordCache.set(cacheKey, passwordPromise);
 	return passwordPromise;
 }
 
 function readKeychainPassword(account: string, service: string): Promise<string | null> {
 	return new Promise((resolve) => {
-		execFile("security", ["find-generic-password", "-w", "-a", account, "-s", service], { timeout: 5000 }, (err, stdout) => {
-			if (err) { resolve(null); return; }
-			resolve(stdout.trim() || null);
-		});
+		execFile(
+			"security",
+			["find-generic-password", "-w", "-a", account, "-s", service],
+			{ timeout: 5000 },
+			(err, stdout) => {
+				if (err) {
+					resolve(null);
+					return;
+				}
+				resolve(stdout.trim() || null);
+			},
+		);
 	});
 }
 
@@ -285,7 +348,10 @@ function readLinuxPassword(secretToolApp: string | undefined): Promise<{ passwor
 	if (!secretToolApp) return Promise.resolve({ password: "peanuts", cacheable: true });
 	return new Promise((resolve) => {
 		execFile("secret-tool", ["lookup", "application", secretToolApp], { timeout: 5000 }, (err, stdout) => {
-			if (err) { resolve({ password: "peanuts", cacheable: false }); return; }
+			if (err) {
+				resolve({ password: "peanuts", cacheable: false });
+				return;
+			}
 			const password = stdout.trim();
 			resolve(password ? { password, cacheable: true } : { password: "peanuts", cacheable: false });
 		});
@@ -293,7 +359,7 @@ function readLinuxPassword(secretToolApp: string | undefined): Promise<{ passwor
 }
 
 async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
-	if (process.env.PI_WEB_ACCESS_DISABLE_NODE_SQLITE === "1") return null;
+	if (process.env["PI_WEB_ACCESS_DISABLE_NODE_SQLITE"] === "1") return null;
 	if (sqliteImportAttempted) return sqliteModule;
 	sqliteImportAttempted = true;
 	const originalEmitWarning = process.emitWarning;
@@ -324,9 +390,7 @@ async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
 	return sqliteModule;
 }
 
-type QueryResult =
-	| { status: "success"; rows: SqliteRow[] }
-	| { status: "failure"; failure: SqliteFailure };
+type QueryResult = { status: "success"; rows: SqliteRow[] } | { status: "failure"; failure: SqliteFailure };
 
 async function runSqliteQuery(dbPath: string, sql: string): Promise<QueryResult> {
 	const sqlite = await importSqlite();
@@ -357,26 +421,42 @@ async function runSqliteQuery(dbPath: string, sql: string): Promise<QueryResult>
 
 function runSqliteCli(dbPath: string, sql: string): Promise<QueryResult> {
 	return new Promise((resolve) => {
-		execFile("sqlite3", ["-readonly", "-json", dbPath, sql], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-			if (err) { resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" }); return; }
-			try {
-				const parsed = parseJsonValue(stdout || "[]");
-				resolve(isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" });
-			} catch {
-				resolve({ status: "failure", failure: "query" });
-			}
-		});
+		execFile(
+			"sqlite3",
+			["-readonly", "-json", dbPath, sql],
+			{ timeout: 5000, maxBuffer: 1024 * 1024 },
+			(err, stdout) => {
+				if (err) {
+					resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" });
+					return;
+				}
+				try {
+					const parsed = parseJsonValue(stdout || "[]");
+					resolve(
+						isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" },
+					);
+				} catch {
+					resolve({ status: "failure", failure: "query" });
+				}
+			},
+		);
 	});
 }
 
 function runPythonSqlite(dbPath: string, sql: string): Promise<QueryResult> {
-	const script = "import json,sqlite3,sys\ntry:\n c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)\n c.row_factory=sqlite3.Row\n print(json.dumps([dict(r) for r in c.execute(sys.argv[2]).fetchall()]))\nexcept Exception:\n sys.exit(1)";
+	const script =
+		"import json,sqlite3,sys\ntry:\n c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)\n c.row_factory=sqlite3.Row\n print(json.dumps([dict(r) for r in c.execute(sys.argv[2]).fetchall()]))\nexcept Exception:\n sys.exit(1)";
 	return new Promise((resolve) => {
 		execFile("python3", ["-c", script, dbPath, sql], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-			if (err) { resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" }); return; }
+			if (err) {
+				resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" });
+				return;
+			}
 			try {
 				const parsed = parseJsonValue(stdout || "[]");
-				resolve(isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" });
+				resolve(
+					isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" },
+				);
 			} catch {
 				resolve({ status: "failure", failure: "query" });
 			}
@@ -391,25 +471,33 @@ function isSqliteRows(value: JsonInputValue | Record<string, SQLOutputValue>[]):
 async function readMetaVersion(dbPath: string): Promise<{ value: number | null; failure?: SqliteFailure }> {
 	const result = await runSqliteQuery(dbPath, "SELECT value FROM meta WHERE key = 'version'");
 	if (result.status === "failure") {
-		return result.failure === "unavailable"
-			? { value: null, failure: result.failure }
-			: { value: 0 };
+		return result.failure === "unavailable" ? { value: null, failure: result.failure } : { value: 0 };
 	}
-	const value = result.rows[0]?.value;
+	const value = result.rows[0]?.["value"];
 	if (isRuntimeNumber(value)) return { value: Math.floor(value) };
 	if (isRuntimeString(value)) return { value: parseInt(value, 10) || 0 };
 	return { value: 0 };
 }
 
-async function hasCookieNames(dbPath: string, hosts: string[], names: string[]): Promise<{ present: boolean; failure?: SqliteFailure }> {
-	const result = await runSqliteQuery(dbPath, `SELECT DISTINCT name FROM cookies WHERE ${buildCookieWhere(hosts, names)}`);
+async function hasCookieNames(
+	dbPath: string,
+	hosts: string[],
+	names: string[],
+): Promise<{ present: boolean; failure?: SqliteFailure }> {
+	const result = await runSqliteQuery(
+		dbPath,
+		`SELECT DISTINCT name FROM cookies WHERE ${buildCookieWhere(hosts, names)}`,
+	);
 	if (result.status === "failure") return { present: false, failure: result.failure };
-	const present = new Set(result.rows.map((row) => isRuntimeString(row.name) ? row.name : ""));
+	const present = new Set(result.rows.map((row) => (isRuntimeString(row["name"]) ? row["name"] : "")));
 	return { present: names.every((name) => present.has(name)) };
 }
 
 async function queryCookieRows(dbPath: string, hosts: string[], names: Iterable<string>): Promise<QueryResult> {
-	return runSqliteQuery(dbPath, `SELECT name, value, host_key, hex(encrypted_value) AS encrypted_value_hex FROM cookies WHERE ${buildCookieWhere(hosts, names)} ORDER BY expires_utc DESC`);
+	return runSqliteQuery(
+		dbPath,
+		`SELECT name, value, host_key, hex(encrypted_value) AS encrypted_value_hex FROM cookies WHERE ${buildCookieWhere(hosts, names)} ORDER BY expires_utc DESC`,
+	);
 }
 
 function buildCookieWhere(hosts: string[], cookieNames?: Iterable<string>): string {
@@ -443,6 +531,5 @@ function copySidecar(srcDb: string, targetDb: string, suffix: string): void {
 	if (!existsSync(sidecar)) return;
 	try {
 		copyFileSync(sidecar, `${targetDb}${suffix}`);
-	} catch {
-	}
+	} catch {}
 }

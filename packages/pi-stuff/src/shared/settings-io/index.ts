@@ -18,6 +18,7 @@ export {
 	readNamespaceSync,
 	readSettingsFile,
 	readSettingsFileSync,
+	SettingsFormatError,
 	type SettingsRecord,
 	writeSettingsFile,
 	writeSettingsFileSync,

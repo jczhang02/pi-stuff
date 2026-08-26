@@ -23,7 +23,10 @@ export interface FindContentResult {
 }
 
 function normalize(value: string): string {
-	return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
+	return value
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.toLocaleLowerCase();
 }
 
 function editDistanceWithin(left: string, right: string, maximum: number): boolean {
@@ -51,7 +54,11 @@ function literalMatches(text: string, query: string, caseInsensitive: boolean): 
 	const haystack = caseInsensitive ? text.toLocaleLowerCase() : text;
 	const needle = caseInsensitive ? query.toLocaleLowerCase() : query;
 	const matches: Match[] = [];
-	for (let start = haystack.indexOf(needle); start >= 0; start = haystack.indexOf(needle, start + Math.max(needle.length, 1))) {
+	for (
+		let start = haystack.indexOf(needle);
+		start >= 0;
+		start = haystack.indexOf(needle, start + Math.max(needle.length, 1))
+	) {
 		matches.push({ query, start, end: start + query.length });
 	}
 	return matches;
@@ -66,17 +73,21 @@ function fuzzyMatches(text: string, query: string): Match[] {
 		const paragraphText = paragraph[0];
 		if (paragraphText.trim().length === 0 || paragraph.index === undefined) continue;
 		const tokens = [...paragraphText.matchAll(/[\p{L}\p{N}]+/gu)];
-		const matched = queryTokens.filter(queryToken => tokens.some(token => {
-			const candidate = normalize(token[0]);
-			const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
-			return editDistanceWithin(queryToken, candidate, maximum);
-		}));
+		const matched = queryTokens.filter((queryToken) =>
+			tokens.some((token) => {
+				const candidate = normalize(token[0]);
+				const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
+				return editDistanceWithin(queryToken, candidate, maximum);
+			}),
+		);
 		const required = queryTokens.length === 1 ? 1 : Math.ceil(queryTokens.length * 0.6);
 		if (matched.length < required) continue;
-		const first = tokens.find(token => matched.some(queryToken => {
-			const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
-			return editDistanceWithin(queryToken, normalize(token[0]), maximum);
-		}));
+		const first = tokens.find((token) =>
+			matched.some((queryToken) => {
+				const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
+				return editDistanceWithin(queryToken, normalize(token[0]), maximum);
+			}),
+		);
 		const start = paragraph.index + (first?.index ?? 0);
 		matches.push({ query, start, end: start + (first?.[0].length ?? query.length) });
 	}
@@ -99,18 +110,14 @@ function mergeRanges(textLength: number, matches: Match[]): Range[] {
 	return ranges;
 }
 
-export function findContent(
-	text: string,
-	queries: string[],
-	mode: FindMode,
-): FindContentResult {
-	const normalizedQueries = [...new Set(queries.map(query => query.trim()).filter(Boolean))];
-	const matches = normalizedQueries.flatMap(query => mode === "fuzzy"
-		? fuzzyMatches(text, query)
-		: literalMatches(text, query, mode === "case-insensitive"));
-	const queryResults = normalizedQueries.map(query => ({
+export function findContent(text: string, queries: string[], mode: FindMode): FindContentResult {
+	const normalizedQueries = [...new Set(queries.map((query) => query.trim()).filter(Boolean))];
+	const matches = normalizedQueries.flatMap((query) =>
+		mode === "fuzzy" ? fuzzyMatches(text, query) : literalMatches(text, query, mode === "case-insensitive"),
+	);
+	const queryResults = normalizedQueries.map((query) => ({
 		query,
-		matchCount: matches.filter(match => match.query === query).length,
+		matchCount: matches.filter((match) => match.query === query).length,
 	}));
 
 	const heading = matches.length > 0 ? `Text matches (${mode})` : `Text matches (${mode}): no matches`;
@@ -121,8 +128,8 @@ export function findContent(
 		const prefix = range.start > 0 ? "…" : "";
 		const suffix = range.end < text.length ? "…" : "";
 		const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
-		const counts = [...new Set(range.matches.map(match => match.query))]
-			.map(query => `"${query}" ×${range.matches.filter(match => match.query === query).length}`)
+		const counts = [...new Set(range.matches.map((match) => match.query))]
+			.map((query) => `"${query}" ×${range.matches.filter((match) => match.query === query).length}`)
 			.join(", ");
 		const section = `${sections.length}. ${counts}\n${snippet}`;
 		if (formattedLength + 2 + section.length > MAX_OUTPUT_CHARS) break;
@@ -131,7 +138,7 @@ export function findContent(
 		returnedMatches += range.matches.length;
 	}
 
-	const missing = queryResults.filter(result => result.matchCount === 0).map(result => `"${result.query}"`);
+	const missing = queryResults.filter((result) => result.matchCount === 0).map((result) => `"${result.query}"`);
 	const footer = [
 		...(missing.length > 0 ? [`No matches: ${missing.join(", ")}`] : []),
 		...(returnedMatches < matches.length ? [`Showing ${returnedMatches} of ${matches.length} matches.`] : []),

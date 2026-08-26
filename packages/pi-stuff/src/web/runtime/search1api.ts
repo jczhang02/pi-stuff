@@ -1,15 +1,14 @@
-import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
-import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
-import { isRuntimeString } from "../../shared/runtime-type.js";
-import { isRuntimeNumber } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
+import { readWebConfig } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
@@ -17,50 +16,27 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 const CRAWL_TIMEOUT_MS = 60_000;
 
-interface WebSearchConfig extends JsonInputObject {
-	search1apiApiKey?: JsonInputValue;
-}
-
 interface Search1APISearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	let parsed: JsonInputValue;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!isJsonInputObject(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed;
-	return cachedConfig;
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
 	const key = await resolveCredential({
 		provider: "Search1API",
-		configuredValue: loadConfig().search1apiApiKey,
-		environmentValue: process.env.SEARCH1API_KEY,
+		configuredValue: loadConfig()["search1apiApiKey"],
+		environmentValue: process.env["SEARCH1API_KEY"],
 		signal,
 	});
 	if (!key) {
 		throw new Error(
 			"Search1API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "search1apiApiKey": "your-key" }\n` +
-			"  2. Set SEARCH1API_KEY environment variable\n" +
-			"Create a key at https://dashboard.search1api.com",
+				`  1. Create ${CONFIG_PATH} with { "search1apiApiKey": "your-key" }\n` +
+				"  2. Set SEARCH1API_KEY environment variable\n" +
+				"Create a key at https://dashboard.search1api.com",
 		);
 	}
 	return key;
@@ -69,23 +45,9 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 export function isSearch1APIAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Search1API",
-		configuredValue: loadConfig().search1apiApiKey,
-		environmentValue: process.env.SEARCH1API_KEY,
+		configuredValue: loadConfig()["search1apiApiKey"],
+		environmentValue: process.env["SEARCH1API_KEY"],
 	});
-}
-
-function errorMessage(err: JsonInputValue): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function normalizeNumResults(value: number | undefined): number {
-	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined) {
@@ -101,16 +63,16 @@ function mapDomainFilter(domainFilter: string[] | undefined) {
 }
 
 function buildSearchBody(query: string, options: Search1APISearchOptions): JsonInputObject {
-	const numResults = normalizeNumResults(options.numResults);
+	const numResults = normalizeCount(options.numResults);
 	const { includeSites, excludeSites } = mapDomainFilter(options.domainFilter);
 	const body: JsonInputObject = {
 		query,
 		max_results: numResults,
 		crawl_results: options.includeContent ? numResults : 0,
 	};
-	if (includeSites.length > 0) body.include_sites = includeSites;
-	if (excludeSites.length > 0) body.exclude_sites = excludeSites;
-	if (options.recencyFilter) body.time_range = options.recencyFilter;
+	if (includeSites.length > 0) body["include_sites"] = includeSites;
+	if (excludeSites.length > 0) body["exclude_sites"] = excludeSites;
+	if (options.recencyFilter) body["time_range"] = options.recencyFilter;
 	return body;
 }
 
@@ -144,7 +106,9 @@ async function search1APIJsonRequest(
 
 	const raw = await response.text();
 	if (!response.ok) {
-		throw new Error(`Search1API ${label} API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`);
+		throw new Error(
+			`Search1API ${label} API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`,
+		);
 	}
 	try {
 		return parseJsonObject(raw);
@@ -160,11 +124,13 @@ function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	return results.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.link) || item.link.trim().length === 0) return [];
 		const url = item.link.trim();
-		return [{
-			title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
-			url,
-			snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
-		}];
+		return [
+			{
+				title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
+				url,
+				snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
+			},
+		];
 	});
 }
 
@@ -173,20 +139,24 @@ function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	return results.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.link) || item.link.trim().length === 0) return [];
 		if (!isRuntimeString(item.content) || item.content.trim().length === 0) return [];
-		return [{
-			url: item.link.trim(),
-			title: isRuntimeString(item.title) ? item.title.trim() : "",
-			content: item.content,
-			error: null,
-		}];
+		return [
+			{
+				url: item.link.trim(),
+				title: isRuntimeString(item.title) ? item.title.trim() : "",
+				content: item.content,
+				error: null,
+			},
+		];
 	});
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
+	return results
+		.map((result) => {
+			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
+			return `Source: ${result.title} (${result.url})`;
+		})
+		.join("\n\n");
 }
 
 export async function searchWithSearch1API(
@@ -204,10 +174,10 @@ export async function searchWithSearch1API(
 			SEARCH_TIMEOUT_MS,
 			options.signal,
 		);
-		const results = mapSearchResults(data.results);
+		const results = mapSearchResults(data["results"]);
 		const response: SearchResponse = { answer: buildAnswer(results), results };
 		if (options.includeContent) {
-			const inlineContent = mapInlineContent(data.results);
+			const inlineContent = mapInlineContent(data["results"]);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
 		activityMonitor.logComplete(activityId, 200);
@@ -242,11 +212,11 @@ export async function extractWithSearch1API(
 				: CRAWL_TIMEOUT_MS,
 			signal,
 		);
-		const result = data.results;
+		const result = data["results"];
 		if (!isJsonInputObject(result)) {
 			throw new Error("Search1API Crawl API returned an unexpected response shape");
 		}
-		const content = isRuntimeString(result.content) ? result.content.trim() : "";
+		const content = isRuntimeString(result["content"]) ? result["content"].trim() : "";
 		if (!content) {
 			activityMonitor.logComplete(activityId, 200);
 			return null;
@@ -254,7 +224,7 @@ export async function extractWithSearch1API(
 		activityMonitor.logComplete(activityId, 200);
 		return {
 			url,
-			title: isRuntimeString(result.title) ? result.title.trim() : "",
+			title: isRuntimeString(result["title"]) ? result["title"].trim() : "",
 			content,
 			error: null,
 		};

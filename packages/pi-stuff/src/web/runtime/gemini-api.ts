@@ -1,8 +1,16 @@
-import { isJsonInputObject, parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonObject,
+	requireJsonInputValue,
+} from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfigText, webConfigExists } from "../settings.ts";
+import { readWebConfig } from "../settings.ts";
 
+import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
@@ -11,28 +19,8 @@ export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 export const DEFAULT_MODEL = "gemini-3.6-flash";
 
-interface GeminiApiConfig {
-	geminiApiKey?: JsonInputValue;
-	geminiBaseUrl?: JsonInputValue;
-	cloudflareApiKey?: JsonInputValue;
-}
-
-let cachedConfig: GeminiApiConfig | null = null;
-
-function loadConfig(): GeminiApiConfig {
-	if (!webConfigExists()) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readWebConfigText();
-	try {
-		cachedConfig = parseJsonObject(raw);
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
+function loadConfig() {
+	return readWebConfig() ?? {};
 }
 
 function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
@@ -59,16 +47,16 @@ function isCloudflareGateway(): boolean {
 export async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Gemini",
-		configuredValue: loadConfig().geminiApiKey,
-		environmentValue: process.env.GEMINI_API_KEY,
+		configuredValue: loadConfig()["geminiApiKey"],
+		environmentValue: process.env["GEMINI_API_KEY"],
 		signal,
 	});
 }
 
 export function getApiHost(): string {
 	return (
-		normalizeBaseUrl(process.env.GOOGLE_GEMINI_BASE_URL) ??
-		normalizeBaseUrl(loadConfig().geminiBaseUrl) ??
+		normalizeBaseUrl(process.env["GOOGLE_GEMINI_BASE_URL"]) ??
+		normalizeBaseUrl(loadConfig()["geminiBaseUrl"]) ??
 		DEFAULT_API_HOST
 	);
 }
@@ -78,14 +66,14 @@ export function getVersionedApiBase(): string {
 }
 
 function getLegacyCloudflareApiKey(): string | null {
-	return normalizeApiKey(process.env.CLOUDFLARE_API_KEY) ?? normalizeApiKey(loadConfig().cloudflareApiKey);
+	return normalizeApiKey(process.env["CLOUDFLARE_API_KEY"]) ?? normalizeApiKey(loadConfig()["cloudflareApiKey"]);
 }
 
 async function resolveCloudflareApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Cloudflare",
-		configuredValue: loadConfig().cloudflareApiKey,
-		environmentValue: process.env.CLOUDFLARE_API_KEY,
+		configuredValue: loadConfig()["cloudflareApiKey"],
+		environmentValue: process.env["CLOUDFLARE_API_KEY"],
 		signal,
 	});
 }
@@ -95,26 +83,39 @@ export function getCloudflareApiKey(): string | null {
 }
 
 export function isGatewayConfigured(): boolean {
-	return isCloudflareGateway() && hasCredentialSource({
-		provider: "Cloudflare",
-		configuredValue: loadConfig().cloudflareApiKey,
-		environmentValue: process.env.CLOUDFLARE_API_KEY,
-	});
+	return (
+		isCloudflareGateway() &&
+		hasCredentialSource({
+			provider: "Cloudflare",
+			configuredValue: loadConfig()["cloudflareApiKey"],
+			environmentValue: process.env["CLOUDFLARE_API_KEY"],
+		})
+	);
 }
 
-export function buildAuthHeaders(apiKey: string | null = null, cloudflareApiKey: string | null = getLegacyCloudflareApiKey()): Record<string, string> {
+export function buildAuthHeaders(
+	apiKey: string | null = null,
+	cloudflareApiKey: string | null = getLegacyCloudflareApiKey(),
+): Record<string, string> {
 	if (!isCloudflareGateway()) return apiKey ? { "x-goog-api-key": apiKey } : {};
 	return cloudflareApiKey ? { "cf-aig-authorization": `Bearer ${cloudflareApiKey}` } : {};
 }
 
-function redactGeminiCredentials(text: string, apiKey: string | null | undefined, cloudflareApiKey: string | null | undefined): string {
+function redactGeminiCredentials(
+	text: string,
+	apiKey: string | null | undefined,
+	cloudflareApiKey: string | null | undefined,
+): string {
 	return redactCredential(redactCredential(text, apiKey), cloudflareApiKey);
 }
 
-const responseCredentials = new WeakMap<Response, {
-	apiKey: string | null | undefined;
-	cloudflareApiKey: string | null | undefined;
-}>();
+const responseCredentials = new WeakMap<
+	Response,
+	{
+		apiKey: string | null | undefined;
+		cloudflareApiKey: string | null | undefined;
+	}
+>();
 
 export function redactGeminiApiResponse(response: Response, text: string, apiKey?: string | null): string {
 	const credentials = responseCredentials.get(response);
@@ -134,10 +135,7 @@ export async function fetchGeminiApi(
 	}
 	const resolvedApiKey = apiKey === undefined ? await getApiKey(init.signal ?? undefined) : apiKey;
 	const cloudflareApiKey = isCloudflareGateway() ? await resolveCloudflareApiKey(init.signal ?? undefined) : null;
-	const allowedOrigins = new Set([
-		new URL(getApiHost()).origin,
-		new URL(DEFAULT_API_HOST).origin,
-	]);
+	const allowedOrigins = new Set([new URL(getApiHost()).origin, new URL(DEFAULT_API_HOST).origin]);
 	if ((resolvedApiKey || isGatewayConfigured()) && !allowedOrigins.has(parsedUrl.origin)) {
 		throw new Error("Gemini API request host is not allowed");
 	}
@@ -162,18 +160,149 @@ export async function fetchGeminiApi(
 }
 
 export function isGeminiApiAvailable(): boolean {
-	return hasCredentialSource({
-		provider: "Gemini",
-		configuredValue: loadConfig().geminiApiKey,
-		environmentValue: process.env.GEMINI_API_KEY,
-	}) || isGatewayConfigured();
+	return (
+		hasCredentialSource({
+			provider: "Gemini",
+			configuredValue: loadConfig()["geminiApiKey"],
+			environmentValue: process.env["GEMINI_API_KEY"],
+		}) || isGatewayConfigured()
+	);
+}
+
+export async function searchWithGeminiApi(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
+	const requestSignal = withTimeout(options.signal, 60_000);
+	const apiKey = await getApiKey(requestSignal);
+	if (!apiKey && !isGatewayConfigured()) return null;
+	const activityId = activityMonitor.logStart({ type: "api", query });
+
+	try {
+		const configuredModel = loadConfig()["searchModel"];
+		const model = isRuntimeString(configuredModel) && configuredModel.trim() ? configuredModel.trim() : DEFAULT_MODEL;
+		const res = await fetchGeminiApi(
+			`${getVersionedApiBase()}/models/${model}:generateContent`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					contents: [{ role: "user", parts: [{ text: query }] }],
+					tools: [{ google_search: {} }],
+				}),
+				signal: requestSignal,
+			},
+			apiKey,
+		);
+		if (!res.ok) {
+			const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
+			throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
+		}
+
+		const data = parseGeminiSearchPayload(parseJsonObject(await res.text()));
+		activityMonitor.logComplete(activityId, res.status);
+		const answer = data.parts
+			.map((part) => part.text)
+			.filter(Boolean)
+			.join("\n");
+		const results = await resolveGroundingChunks(data.groundingChunks, options.signal);
+		return answer || results.length > 0 ? { answer, results } : null;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+		else activityMonitor.logError(activityId, message);
+		throw error;
+	}
+}
+
+interface GeminiSearchPayload {
+	parts: Array<{ text: string }>;
+	groundingChunks: GroundingChunk[];
+}
+
+interface GroundingChunk {
+	web: { uri: string; title: string } | undefined;
+}
+
+async function resolveGroundingChunks(chunks: GroundingChunk[], signal?: AbortSignal): Promise<SearchResult[]> {
+	const results: SearchResult[] = [];
+	for (const chunk of chunks) {
+		if (!chunk.web) continue;
+		const title = chunk.web.title || "";
+		let url = chunk.web.uri || "";
+		if (url.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
+			const resolved = await resolveRedirect(url, signal);
+			if (resolved) url = resolved;
+		}
+		if (url) results.push({ title, url, snippet: "" });
+	}
+	return results;
+}
+
+async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string | null> {
+	try {
+		const res = await fetch(proxyUrl, {
+			method: "HEAD",
+			redirect: "manual",
+			signal: withTimeout(signal, 5_000),
+		});
+		return res.headers.get("location");
+	} catch {
+		return null;
+	}
+}
+
+function readOptionalObject(value: JsonInputValue, label: string): JsonInputObject | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonInputObject(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function readOptionalArray(value: JsonInputValue, label: string): JsonInputValue[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function readOptionalString(value: JsonInputValue, label: string): string {
+	if (value === undefined) return "";
+	if (!isRuntimeString(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function parseGeminiSearchPayload(value: JsonInputObject): GeminiSearchPayload {
+	const candidates = readOptionalArray(value["candidates"], "candidates");
+	const candidate = readOptionalObject(candidates[0], "candidates[0]");
+	const content = readOptionalObject(candidate?.["content"], "candidates[0].content");
+	const parts = readOptionalArray(content?.["parts"], "candidates[0].content.parts").map((part, index) => {
+		const entry = readOptionalObject(part, `candidates[0].content.parts[${index}]`);
+		if (!entry) throw new Error(`Gemini API returned invalid candidates[0].content.parts[${index}]`);
+		return { text: readOptionalString(entry["text"], `candidates[0].content.parts[${index}].text`) };
+	});
+
+	const metadata = readOptionalObject(candidate?.["groundingMetadata"], "candidates[0].groundingMetadata");
+	const groundingChunks = readOptionalArray(
+		metadata?.["groundingChunks"],
+		"candidates[0].groundingMetadata.groundingChunks",
+	).map((chunk, index) => {
+		const entry = readOptionalObject(chunk, `groundingChunks[${index}]`);
+		if (!entry) throw new Error(`Gemini API returned invalid groundingChunks[${index}]`);
+		const web = readOptionalObject(entry["web"], `groundingChunks[${index}].web`);
+		return {
+			web: web
+				? {
+						uri: readOptionalString(web["uri"], `groundingChunks[${index}].web.uri`),
+						title: readOptionalString(web["title"], `groundingChunks[${index}].web.title`),
+					}
+				: undefined,
+		};
+	});
+
+	return { parts, groundingChunks };
 }
 
 export interface GeminiApiOptions {
 	apiKey?: string;
 	model?: string;
 	mimeType?: string;
-	signal?: AbortSignal;
+	signal?: AbortSignal | undefined;
 	timeoutMs?: number;
 }
 
@@ -190,18 +319,21 @@ interface GeminiFileData {
 
 function parseGenerateContentResponse(value: JsonInputValue): GeminiGenerateContentResult {
 	if (!isJsonInputObject(value)) throw new Error("Gemini API returned an invalid response");
-	const candidate = Array.isArray(value.candidates) && isJsonInputObject(value.candidates[0])
-		? value.candidates[0]
-		: undefined;
+	const candidate =
+		Array.isArray(value["candidates"]) && isJsonInputObject(value["candidates"][0])
+			? value["candidates"][0]
+			: undefined;
 	const content = isJsonInputObject(candidate?.content) ? candidate.content : undefined;
-	const parts = Array.isArray(content?.parts) ? content.parts : [];
+	const parts: readonly JsonInputValue[] = Array.isArray(content?.parts) ? content.parts : [];
 	const text = parts
-		.flatMap(part => isJsonInputObject(part) && isRuntimeString(part.text) && part.text.length > 0 ? [part.text] : [])
+		.flatMap((part) =>
+			isJsonInputObject(part) && isRuntimeString(part["text"]) && part["text"].length > 0 ? [part["text"]] : [],
+		)
 		.join("\n");
-	const promptFeedback = isJsonInputObject(value.promptFeedback) ? value.promptFeedback : undefined;
+	const promptFeedback = isJsonInputObject(value["promptFeedback"]) ? value["promptFeedback"] : undefined;
 	const result: GeminiGenerateContentResult = { text };
 	if (isRuntimeString(candidate?.finishReason)) result.finishReason = candidate.finishReason;
-	if (isRuntimeString(promptFeedback?.blockReason)) result.blockReason = promptFeedback.blockReason;
+	if (isRuntimeString(promptFeedback?.["blockReason"])) result.blockReason = promptFeedback["blockReason"];
 	return result;
 }
 
@@ -212,12 +344,12 @@ export async function queryGeminiApiWithInlineData(
 	options: GeminiApiOptions = {},
 ): Promise<GeminiGenerateContentResult> {
 	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const apiKey = options.apiKey ?? await getApiKey(signal);
+	const apiKey = options.apiKey ?? (await getApiKey(signal));
 	if (!apiKey && !isGatewayConfigured()) {
 		throw new Error(
 			"Gemini API not configured. Either:\n" +
-			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
-			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing"
+				`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+				"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing",
 		);
 	}
 
@@ -227,27 +359,28 @@ export async function queryGeminiApiWithInlineData(
 		contents: [
 			{
 				role: "user",
-				parts: [
-					{ inlineData: { mimeType, data } },
-					{ text: prompt },
-				],
+				parts: [{ inlineData: { mimeType, data } }, { text: prompt }],
 			},
 		],
 	};
 
-	const res = await fetchGeminiApi(url, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-		signal,
-	}, apiKey);
+	const res = await fetchGeminiApi(
+		url,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+			signal,
+		},
+		apiKey,
+	);
 
 	if (!res.ok) {
 		const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
 		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	return parseGenerateContentResponse(await res.json());
+	return parseGenerateContentResponse(requireJsonInputValue(await res.json(), "Gemini response"));
 }
 
 export async function queryGeminiApiWithVideo(
@@ -256,12 +389,12 @@ export async function queryGeminiApiWithVideo(
 	options: GeminiApiOptions = {},
 ): Promise<string> {
 	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const apiKey = options.apiKey ?? await getApiKey(signal);
+	const apiKey = options.apiKey ?? (await getApiKey(signal));
 	if (!apiKey && !isGatewayConfigured()) {
 		throw new Error(
 			"Gemini API not configured. Either:\n" +
-			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
-			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing"
+				`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+				"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing",
 		);
 	}
 
@@ -275,27 +408,28 @@ export async function queryGeminiApiWithVideo(
 		contents: [
 			{
 				role: "user",
-				parts: [
-					{ fileData },
-					{ text: prompt },
-				],
+				parts: [{ fileData }, { text: prompt }],
 			},
 		],
 	};
 
-	const res = await fetchGeminiApi(url, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-		signal,
-	}, apiKey);
+	const res = await fetchGeminiApi(
+		url,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+			signal,
+		},
+		apiKey,
+	);
 
 	if (!res.ok) {
 		const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
 		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	const { text } = parseGenerateContentResponse(await res.json());
+	const { text } = parseGenerateContentResponse(requireJsonInputValue(await res.json(), "Gemini response"));
 
 	if (!text) throw new Error("Gemini API returned empty response");
 	return text;
