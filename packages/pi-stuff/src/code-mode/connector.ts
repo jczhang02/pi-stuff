@@ -360,8 +360,9 @@ globalThis.tools=new Proxy(__piStuffRawTools,{get(target,key){const value=Reflec
 const __piStuffHost={text:globalThis.text,image:globalThis.image,generatedImage:globalThis.generatedImage,audio:globalThis.audio,notify:globalThis.notify};
 let __piStuffOutputCount=0;
 const __piStuffOutput=(name)=>(...args)=>{const helper=__piStuffHost[name];if(typeof helper!=="function")throw new Error("Unsupported Code Mode output helper: "+name);__piStuffOutputCount+=1;return helper(...args);};
+const __piStuffImageBlocks=(value)=>{if(!value||typeof value!=="object"||!Array.isArray(value.content))return null;const images=[];for(const item of value.content){if(item&&item.type==="text"&&typeof item.text==="string")continue;if(item&&item.type==="image"&&typeof item.data==="string"&&typeof item.mimeType==="string"){images.push(item);continue;}return null;}return images.length>0?images:null;};
 const text=__piStuffOutput("text");
-const image=__piStuffOutput("image");
+const image=(value,...args)=>{const helper=__piStuffHost.image;if(typeof helper!=="function")throw new Error("Unsupported Code Mode output helper: image");__piStuffOutputCount+=1;const blocks=__piStuffImageBlocks(value);if(!blocks)return helper(value,...args);let output;for(const block of blocks)output=helper(block,...args);return output;};
 const generatedImage=__piStuffOutput("generatedImage");
 const audio=__piStuffOutput("audio");
 const notify=__piStuffOutput("notify");

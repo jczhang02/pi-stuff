@@ -34,15 +34,19 @@ text(pkg.packageManager);
   deadline, call `tools.monitor(...)` once, continue useful work, and do not poll with Bash, sleep, status checks, or
   repeated Agent turns.
 - `await codemode.search(query)` and `await codemode.describe(path)` inspect the local catalog without adding that catalog to
-  model history.
+  model history. Use short intent phrases such as `codemode.search("view image")`; a verbose query still retains
+  candidates whose Tool name contains an exact query token.
 - JavaScript has no direct Node, Bun, filesystem, process, network, module, or credential access. I/O is available
   only through Package-owned Tools.
 - `text(...)`, `image(...)`, `generatedImage(...)`, `store(...)`, `load(...)`, `notify(...)`, and the other Host
-  helpers remain available. `console` is unavailable. Images must come from a complete data URL or the structured
-  result of an image-producing Tool; Base64 from text-producing Tools such as Bash can be truncated and is rejected.
+  helpers remain available. `console` is unavailable. Return image-producing Tool results directly, for example
+  `return await tools.view_image({ path: "/tmp/example.png" })` when that Tool is active. Base64 from text-producing
+  Tools such as Bash can be truncated and is rejected.
 - Cloudflare's `async () => { return value; }` form is accepted. A returned value is emitted only when the program did
-  not already call an output helper, so explicit output is never duplicated. The older `suite.*` namespace remains a
-  compatibility alias, not prompt vocabulary.
+  not already call an output helper, so explicit output is never duplicated. Passing a complete image Tool result to
+  `image(...)` remains a compatibility input, but direct return is canonical; either path passes through the same
+  image-integrity and decoding gates. The older `suite.*` namespace remains a compatibility alias, not prompt
+  vocabulary.
 - The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same Cloudflare-ranked catalog and
   return the same paths and generated TypeScript input types.
 - Yielded V8 cells are resumed internally. `yield_control` remains a Host protocol capability, not model-facing helper
@@ -65,8 +69,9 @@ represented by a nested issue, receive one standard Code Mode fallback row; the 
 Tool outcome or falls back to raw result text. A successful pure-JavaScript fallback uses its first bounded result line
 as the compact summary instead of `done`; formatted expansion shows only subsequent lines. Each nested call uses the exact
 renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the
-original Tool. A missing historical Tool definition or a failing renderer receives a generic Tool row at the same
-source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume
+original Tool. Consequently, `view_image` owns a Viewed image row while an image returned by `read` remains a Read
+file row; Code Mode does not relabel either Tool. A missing historical Tool definition or a failing renderer receives a
+generic Tool row at the same source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume
 rebuild the same projection even when a legal historical result has no `details`. Raw arguments remain available for
 audit, while the Tool's argument compatibility shim supplies Activity semantics and rendering. In particular, Pi
 0.84.3's Edit compatibility shim normalizes both the legacy top-level `oldText`/`newText` form and a single JSON

@@ -88,6 +88,24 @@ async function sessionStart(events: Map<string, EventHandler[]>, ctx: ExtensionC
 	}
 }
 
+test("model guidance discovers image Tools with a short query and returns their results directly", () => {
+	const { tools } = loadExtension({
+		disableEnvelope: () => {},
+		enableEnvelope: () => {},
+		isEnvelopeEnabled: () => false,
+	});
+	const codeMode = tools.get("codemode");
+	const search = tools.get("tool_search");
+	if (!codeMode || !search) throw new Error("missing Code Mode provider Tools");
+
+	expect(codeMode.description).toContain('codemode.search("view image")');
+	expect(codeMode.description).toContain("never pass a complete Tool result to image(...)");
+	expect(codeMode.description.length).toBeLessThanOrEqual(1_473);
+	expect(search.parameters).toMatchObject({
+		properties: { query: { description: 'Short intent phrase, e.g. "view image"' } },
+	});
+});
+
 test("bare /codemode owns the interactive dialog path and status is no longer a command", async () => {
 	const surface: SuiteToolSurfaceController = {
 		disableEnvelope: () => {},

@@ -844,6 +844,52 @@ test("runtime hoists nested media while preserving each image's position inside 
 	]);
 });
 
+test("runtime persists an explicitly emitted nested image only once", async () => {
+	const image = {
+		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		mimeType: "image/png",
+		type: "image" as const,
+	};
+	const executor: CodeModeExecutor = {
+		async execute() {
+			return {
+				cellId: "cell-emitted-media",
+				contentItems: [{ image_url: `data:${image.mimeType};base64,${image.data}`, type: "input_image" as const }],
+				kind: "result" as const,
+				traces: [
+					{
+						id: "nested-emitted-media",
+						input: { path: "pixel.png" },
+						name: "view_image",
+						result: { content: [image], details: { path: "pixel.png" } },
+						status: "done" as const,
+					},
+				],
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
+		"outer-emitted-media",
+		"const result = await tools.view_image({ path: 'pixel.png' }); image(result);",
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+		{ cwd: "/project" } as ExtensionContext,
+	);
+
+	expect(result.content).toEqual([image]);
+	expect(result.details.operations).toMatchObject([
+		{
+			mediaPlacements: [{ afterContentIndex: 0, mediaIndex: 0 }],
+			name: "view_image",
+			result: { content: [], details: { path: "pixel.png" } },
+			state: "success",
+		},
+	]);
+});
+
 test("runtime settles every still-running nested row when the outer execution is cancelled", async () => {
 	const controller = new AbortController();
 	const executor: CodeModeExecutor = {

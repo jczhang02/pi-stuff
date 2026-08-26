@@ -108,15 +108,16 @@ function scoreMatch(item: SearchableItem, query: string): SearchResult | null {
 
 	if (matchedTokens.size === 0) return null;
 
+	const methodTokens = tokenize(item.method);
+	const namesMethodToken = methodTokens.some((token) => queryTokens.includes(token));
 	const coverage = matchedTokens.size / queryTokens.length;
 	const minimumCoverage = queryTokens.length <= 2 ? 1 : 0.6;
-	if (coverage < minimumCoverage && !exactPhrase) return null;
+	if (coverage < minimumCoverage && !exactPhrase && !namesMethodToken) return null;
 
 	if (coverage === 1) score += 25;
 	else score += Math.round(coverage * 10);
 
 	const pathTokens = tokenize(item.path);
-	const methodTokens = tokenize(item.method);
 	if (pathTokens[0] === queryTokens[0] || methodTokens[0] === queryTokens[0]) score += 8;
 
 	if (normalizeSearchText(item.path) === normalizedQuery || normalizeSearchText(item.method) === normalizedQuery)
