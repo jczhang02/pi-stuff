@@ -21,8 +21,14 @@ const MAIN_PROVIDER = "openai-codex";
 const MAIN_MODEL = "gpt-5.3-codex-spark";
 const HISTORIAN_MODEL = "openai-codex/gpt-5.6-terra";
 const EXPECTED_CONTEXT_WINDOW = 128_000;
+const EXPECTED_MAX_OUTPUT_TOKENS = 128_000;
+// Magic Context 0.40.0 caps the shared-window output reserve at 25%.
+const EXPECTED_MAGIC_CONTEXT_LIMIT =
+	EXPECTED_CONTEXT_WINDOW - Math.min(EXPECTED_MAX_OUTPUT_TOKENS, EXPECTED_CONTEXT_WINDOW * 0.25);
 const EXECUTE_THRESHOLD_PERCENTAGE = 65;
 const TARGET_PRESSURE_PERCENTAGE = 82;
+const TARGET_PROVIDER_PRESSURE_PERCENTAGE =
+	(EXPECTED_MAGIC_CONTEXT_LIMIT / EXPECTED_CONTEXT_WINDOW) * TARGET_PRESSURE_PERCENTAGE;
 const TURN_TIMEOUT_MS = 10 * 60_000;
 const HISTORIAN_TIMEOUT_MS = 10 * 60_000;
 const PRESSURE_FILE_BYTES = 48 * 1024;
@@ -96,6 +102,7 @@ const SESSION_STATE_SCHEMA = Type.Object(
 					{
 						contextWindow: Type.Optional(Type.Number()),
 						id: Type.Optional(Type.String()),
+						maxTokens: Type.Optional(Type.Number()),
 						provider: Type.Optional(Type.String()),
 					},
 					{ additionalProperties: true },
@@ -990,7 +997,8 @@ async function main(): Promise<void> {
 		if (
 			initialState.model?.provider !== MAIN_PROVIDER ||
 			initialState.model.id !== MAIN_MODEL ||
-			initialState.model.contextWindow !== EXPECTED_CONTEXT_WINDOW
+			initialState.model.contextWindow !== EXPECTED_CONTEXT_WINDOW ||
+			initialState.model.maxTokens !== EXPECTED_MAX_OUTPUT_TOKENS
 		) {
 			fail(`unexpected real model contract: ${JSON.stringify(initialState.model)}`);
 		}
@@ -1028,7 +1036,7 @@ async function main(): Promise<void> {
 		const earlier = observations.find((observation) => observation.label === "MAGIC_SINGLE_TURN_DONE")?.tokens ?? 0;
 		const setupTokens = observations.find((observation) => observation.label === "setup")?.tokens ?? 0;
 		const perFileEstimate = Math.max(5_000, Math.round((earlier - setupTokens) / 2));
-		const targetTokens = Math.round((EXPECTED_CONTEXT_WINDOW * TARGET_PRESSURE_PERCENTAGE) / 100);
+		const targetTokens = Math.round((EXPECTED_MAGIC_CONTEXT_LIMIT * TARGET_PRESSURE_PERCENTAGE) / 100);
 		const requestedLongReads = Math.max(2, Math.min(7, Math.ceil((targetTokens - currentTokens) / perFileEstimate)));
 		let nextFile = 3;
 		await runReadTurn(
@@ -1040,7 +1048,7 @@ async function main(): Promise<void> {
 		nextFile += requestedLongReads;
 		while (
 			nextFile < pressureFiles.length &&
-			Math.max(...observations.map((observation) => observation.percent)) < 75 &&
+			Math.max(...observations.map((observation) => observation.percent)) < TARGET_PROVIDER_PRESSURE_PERCENTAGE &&
 			magicCompactions(await parseSession(sessionFile)).length === 0
 		) {
 			await runReadTurn(
@@ -1139,6 +1147,32 @@ async function main(): Promise<void> {
 		allRpcRecords.push(...resumed.records);
 		await resumed.stop();
 		resumed = undefined;
+
+		// ponytail: two cold-resume passes bound a final async Historian publication; raise only after a
+		// reproduced chain needs more than one follow-up drain.
+		for (let attempt = 1; attempt <= 2; attempt += 1) {
+			if (!readDatabaseEvidence(databasePath, sessionId).pendingMarker) break;
+			resumed = await createRpcTransport(
+				rpcCommand({
+					packagePath,
+					piBinary: options.piBinary,
+					sessionDirectory: paths.sessions,
+					sessionPath: sessionFile,
+				}),
+				paths.projectA,
+				env,
+			);
+			const completionMarker = `MAGIC_FINAL_DRAIN_${String(attempt)}_DONE`;
+			await resumed.promptAndWait(
+				`Consume the pending Magic Context marker without reading files. Reply exactly ${completionMarker}.`,
+			);
+			if ((await lastAssistantText(resumed)).trim() !== completionMarker) {
+				fail(`final marker drain ${String(attempt)} did not return its completion marker`);
+			}
+			allRpcRecords.push(...resumed.records);
+			await resumed.stop();
+			resumed = undefined;
+		}
 
 		isolated = await createRpcTransport(
 			rpcCommand({
@@ -1247,7 +1281,7 @@ async function main(): Promise<void> {
 			{ label: "none", percent: 0, tokens: 0 },
 		);
 		const magicPressure = readMagicPressure(await readFile(paths.magicLog, "utf8"));
-		if (magicPressure.contextLimit !== EXPECTED_CONTEXT_WINDOW || magicPressure.effectivePercentage < 80) {
+		if (magicPressure.contextLimit !== EXPECTED_MAGIC_CONTEXT_LIMIT || magicPressure.effectivePercentage < 80) {
 			fail(
 				`official Magic Context never observed the real window's critical region: ${JSON.stringify(magicPressure)}`,
 			);
@@ -1327,10 +1361,12 @@ async function main(): Promise<void> {
 				executeThresholdPercentage: EXECUTE_THRESHOLD_PERCENTAGE,
 				historianModel: HISTORIAN_MODEL,
 				package: "@cortexkit/pi-magic-context@0.40.0",
+				usableContextLimit: EXPECTED_MAGIC_CONTEXT_LIMIT,
 			},
 			model: {
 				contextWindow: EXPECTED_CONTEXT_WINDOW,
 				id: MAIN_MODEL,
+				maxOutputTokens: EXPECTED_MAX_OUTPUT_TOKENS,
 				provider: MAIN_PROVIDER,
 			},
 			ownership: {
