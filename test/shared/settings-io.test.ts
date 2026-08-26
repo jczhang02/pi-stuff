@@ -247,3 +247,21 @@ test("NamespacedSettingsStore subscribers receive updated values", async () => {
 	await store.update({ enabled: true });
 	expect(seen).toEqual([{ enabled: true, count: 0 }]);
 });
+
+test("NamespacedSettingsStore skips unchanged writes and notifications", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	let writes = 0;
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+		writer: async () => {
+			writes += 1;
+		},
+	});
+	const seen: TestSettings[] = [];
+	store.subscribe((value) => seen.push(value));
+
+	await store.update({ enabled: false });
+
+	expect(writes).toBe(0);
+	expect(seen).toEqual([]);
+});

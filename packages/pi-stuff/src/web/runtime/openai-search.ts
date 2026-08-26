@@ -1,3 +1,4 @@
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import { isJsonInputObject, parseJsonObject, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
@@ -70,21 +71,6 @@ function loadConfig(): WebSearchConfig {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-}
-
-function normalizeDomain(value: string): string | null {
-	let input = value.trim().toLowerCase();
-	if (!input) return null;
-	if (input.startsWith("-")) input = input.slice(1).trim();
-	if (!input) return null;
-	try {
-		const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`);
-		input = parsed.hostname;
-	} catch {
-		input = input.split("/")[0]?.split(":")[0] ?? "";
-	}
-	input = input.replace(/^\.+|\.+$/g, "");
-	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters | null {

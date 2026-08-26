@@ -21,6 +21,7 @@ import {
 	type McpAdapterHost,
 	routeMcpCustomUiThroughCommandDialog,
 } from "../../packages/pi-stuff/src/mcp/adapter.js";
+import { createMcpAdapter } from "../../packages/pi-stuff/src/mcp/runtime/index.js";
 import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createExtensionContext, testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
@@ -60,13 +61,15 @@ function harness() {
 		list.push(handler);
 		handlers.set(event, list);
 	}) as ExtensionAPI["on"];
-	const pi: McpAdapterHost = {
+	const pi: McpAdapterHost & Pick<ExtensionAPI, "getAllTools" | "registerFlag"> = {
 		events: createEventBus(),
 		getActiveTools: () => [],
+		getAllTools: () => [],
 		on,
 		registerCommand: () => {
 			throw new Error("captured fork commands must not reach the host");
 		},
+		registerFlag: () => undefined,
 		registerTool: (tool) => {
 			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
 			tools.set(tool.name, tool as ToolDefinition);
@@ -94,6 +97,18 @@ function registry(tools: Map<string, ToolDefinition>): SuiteToolDefinitionRegist
 }
 
 describe("Pi Stuff MCP fork boundary", () => {
+	test("runs the pinned runtime through the maintained gateway boundary", () => {
+		const fixture = harness();
+		const commands = {};
+		createMcpAdapter({ config: { mcpServers: {} }, deferStartupConnections: true })(
+			createMcpAdapterApi(fixture.pi, commands),
+		);
+
+		expect([...fixture.tools.keys()]).toEqual(["mcp"]);
+		expect(Object.keys(commands)).toEqual(["mcp"]);
+		expect([...fixture.handlers.keys()].sort()).toEqual(["session_shutdown", "session_start", "tool_result"]);
+	});
+
 	test("retains one gateway and bounds server-only discovery", async () => {
 		const fixture = harness();
 		const commands = {};

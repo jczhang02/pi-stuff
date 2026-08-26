@@ -9,6 +9,7 @@
  */
 
 import { access, unlink } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file.js";
 import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 
@@ -163,7 +164,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		await this.pending;
 	}
 
-	/** Apply a partial patch to the namespace and persist under the whole-file lock. */
+	/** Apply a partial patch under the whole-file lock; unchanged records neither write nor notify. */
 	async update(patch: Partial<T>): Promise<T> {
 		return this.commit((current) => ({ ...current, ...patch }), true);
 	}
@@ -304,6 +305,10 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 			const record = readCurrent ? await readNamespace(this.path, this.namespace) : undefined;
 			const current = record === undefined || !this.normalize ? this.persistedValue : this.normalize(record);
 			const next = apply(current);
+			if (readCurrent && isDeepStrictEqual(current, next)) {
+				this.persistedValue = current;
+				return current;
+			}
 			await this.writer(this.path, this.namespace, next);
 			this.persistedValue = next;
 			return next;
@@ -313,6 +318,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	}
 
 	private replaceValue(next: T): void {
+		if (isDeepStrictEqual(this.value, next)) return;
 		this.value = next;
 		this.notify();
 	}

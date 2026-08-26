@@ -74,6 +74,10 @@ confirmation performs the write. Press `s` from the server list, or Enter on an
 empty list, to open setup inside the same Command Dialog. OAuth authentication
 and logout are available from each eligible server's detail actions.
 
+Setup previews keep exact line diffs through 250,000 compared line pairs. Larger
+configuration previews retain common prefix/suffix lines and show the changed
+middle as a bounded linear remove/add block.
+
 Setup uses the same continuous full-width top rule, two-cell content gutter,
 bold Header, `◆` section headings, bounded list windows, and separate Escape
 route as the other Suite Command Dialogs. Narrow layouts omit optional previews;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { buildUnifiedDiff } from "../../packages/pi-stuff/src/mcp/config-persistence.js";
 import {
 	ensureCompatibilityImports,
 	loadMcpConfig,
@@ -21,6 +22,23 @@ const MCP_CONFIG_DOCUMENT_SCHEMA = Type.Object(
 	},
 	{ additionalProperties: true },
 );
+
+test("keeps exact diffs for ordinary MCP configuration previews", () => {
+	expect(buildUnifiedDiff("alpha\nold\nomega", "alpha\nnew\nomega")).toBe(
+		"--- before\n+++ after\n  alpha\n+ new\n- old\n  omega",
+	);
+});
+
+test("bounds oversized MCP configuration previews with a truthful linear diff", () => {
+	const before = ["head", ...Array.from({ length: 501 }, (_, index) => `old-${String(index)}`), "tail"];
+	const after = ["head", ...Array.from({ length: 501 }, (_, index) => `new-${String(index)}`), "tail"];
+	const diff = buildUnifiedDiff(before.join("\n"), after.join("\n"));
+
+	expect(diff.startsWith("--- before\n+++ after\n  head\n- old-0")).toBe(true);
+	expect(diff.indexOf("- old-500")).toBeLessThan(diff.indexOf("+ new-0"));
+	expect(diff.endsWith("+ new-500\n  tail")).toBe(true);
+	expect(diff.split("\n")).toHaveLength(1_006);
+});
 
 test("parses the full server name after an MCP subcommand", () => {
 	expect(parseMcpCommand("  reconnect docs local  ")).toEqual({

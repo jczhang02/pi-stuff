@@ -1,3 +1,4 @@
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { parseJsonObject } from "../../shared/json-value.js";
@@ -185,21 +186,6 @@ function recencyToAfterDate(filter: string): string {
 	]);
 	const days = offsets.get(filter) ?? 0;
 	return new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
-}
-
-function normalizeDomain(value: string): string | null {
-	let input = value.trim().toLowerCase();
-	if (!input) return null;
-	if (input.startsWith("-")) input = input.slice(1).trim();
-	if (!input) return null;
-	try {
-		const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`);
-		input = parsed.hostname;
-	} catch {
-		input = input.split("/")[0]?.split(":")[0] ?? "";
-	}
-	input = input.replace(/^\.+|\.+$/g, "");
-	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined): ParallelDomainFilter {

@@ -1,3 +1,4 @@
+import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -81,21 +82,6 @@ function errorMessage(err: JsonInputValue): string {
 function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
 	const timeout = AbortSignal.timeout(timeoutMs);
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function normalizeDomain(value: string): string | null {
-	let input = value.trim().toLowerCase();
-	if (!input) return null;
-	if (input.startsWith("-")) input = input.slice(1).trim();
-	if (!input) return null;
-	try {
-		const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`);
-		input = parsed.hostname;
-	} catch {
-		input = input.split("/")[0]?.split(":")[0] ?? "";
-	}
-	input = input.replace(/^\.+|\.+$/g, "");
-	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined) {

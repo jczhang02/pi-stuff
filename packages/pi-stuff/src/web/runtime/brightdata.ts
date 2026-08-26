@@ -1,3 +1,7 @@
+import {
+	hostMatchesProviderDomain as domainMatches,
+	normalizeProviderDomain as normalizeDomain,
+} from "../provider-domain-filter.ts";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
@@ -191,21 +195,6 @@ function normalizeCount(value: number | undefined): number {
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
-function normalizeDomain(value: string): string | null {
-	let input = value.trim().toLowerCase();
-	if (!input) return null;
-	if (input.startsWith("-")) input = input.slice(1).trim();
-	if (!input) return null;
-	try {
-		const parsed = input.includes("://") ? new URL(input) : new URL(`https://${input}`);
-		input = parsed.hostname;
-	} catch {
-		input = input.split("/")[0]?.split(":")[0] ?? "";
-	}
-	input = input.replace(/^\.+|\.+$/g, "");
-	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
-}
-
 interface DomainFilters {
 	include: string[];
 	exclude: string[];
@@ -251,10 +240,6 @@ function buildSerpUrl(searchQuery: string, numResults: number, recencyFilter: Se
 	// Google's HTML. Without it `data_format: "parsed_light"` has nothing to read.
 	params.set("brd_json", "1");
 	return `https://www.google.com/search?${params.toString()}`;
-}
-
-function domainMatches(hostname: string, domain: string): boolean {
-	return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
 // `site:` narrows the SERP but does not guarantee it: Google still mixes in

@@ -4,13 +4,8 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isJsonInputValue, type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import {
-	mergedSettingsPath,
-	mergeNamespaceRecord,
-	readNamespace,
-	resolveSettingsLockPath,
-} from "../shared/settings-io/index.js";
-import { acquireSettingsLock, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
+import { mergedSettingsPath, mergeNamespaceRecord, NamespacedSettingsStore } from "../shared/settings-io/index.js";
+import { acquireSettingsLock } from "../shared/settings-io/lock.js";
 import type { TerminalDeliveryMode } from "./transport.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-notification.json";
@@ -47,6 +42,19 @@ type SettingsWriter = (path: string, settings: NotificationSettings) => Promise<
 type SettingsChanges = {
 	-readonly [Id in Exclude<keyof NotificationSettings, "schemaVersion">]?: NotificationSettings[Id];
 };
+
+interface NotificationSettingsRecord extends JsonInputObject {
+	completionAlerts: boolean;
+	delivery: TerminalDeliveryMode;
+	enabled: boolean;
+	failureAlerts: boolean;
+	gracePeriodMs: number;
+	minimumDurationMs: number;
+	responsePreview: boolean;
+	schemaVersion: 3;
+	terminalBell: boolean;
+	tmuxNotification: boolean;
+}
 
 function isRecord(value: JsonInputValue): value is JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
@@ -105,157 +113,85 @@ function parseSettings(value: JsonInputValue): NotificationSettings {
 	};
 }
 
-async function readSettings(path: string): Promise<NotificationSettings> {
-	try {
-		const namespace = await readNamespace(path, NOTIFICATION_NAMESPACE);
-		return namespace === undefined ? DEFAULT_NOTIFICATION_SETTINGS : parseSettings(namespace);
-	} catch (error) {
-		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") {
-			return DEFAULT_NOTIFICATION_SETTINGS;
-		}
-		reportDiagnostic({
-			action: "/notifications",
-			capability: "Notification",
-			details: path,
-			error,
-			key: "invalid-settings",
-			severity: "warning",
-			summary: "Notification settings were invalid and built-in defaults are active",
-			visibility: "notice",
-		});
-		return DEFAULT_NOTIFICATION_SETTINGS;
-	}
-}
-
 async function writeSettings(path: string, settings: NotificationSettings): Promise<void> {
-	await mergeNamespaceRecord(path, NOTIFICATION_NAMESPACE, { ...settings });
+	await mergeNamespaceRecord(path, NOTIFICATION_NAMESPACE, toRecord(settings));
 }
 
 /** One-time lift of the legacy `pi-stuff-notification.json` into the merged `notification` namespace. */
 async function readLegacySettings(path: string): Promise<NotificationSettings | undefined> {
 	try {
-		return parseSettings(parseJsonValue(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
+		return parseSettings(parseJsonValue(await readFile(path, "utf8")));
 	} catch {
 		return undefined;
 	}
 }
 
-// resolveSettingsLockPath is imported from shared/settings-io for the merged file.
-
-function applySettingsChanges(
-	settings: NotificationSettings,
-	changes: SettingsChanges | undefined,
-): NotificationSettings {
-	return parseSettings({ ...settings, ...changes });
+function toRecord(settings: NotificationSettings): NotificationSettingsRecord {
+	return { ...settings };
 }
 
-function sameSettings(left: NotificationSettings, right: NotificationSettings): boolean {
-	return JSON.stringify(left) === JSON.stringify(right);
+function normalizeRecord<Value>(value: Value): NotificationSettingsRecord {
+	if (!isJsonInputValue(value)) throw new Error("expected JSON-compatible Notification settings");
+	return toRecord(parseSettings(value));
 }
 
-async function persistSettingsChanges(
-	path: string,
-	lockPath: string,
-	changes: SettingsChanges,
-	writer: SettingsWriter,
-): Promise<NotificationSettings> {
-	const release = await acquireSettingsLock(lockPath, "Notification");
-	try {
-		const current = await readSettings(path);
-		const next = applySettingsChanges(current, changes);
-		if (!sameSettings(current, next)) await writer(path, next);
-		return next;
-	} finally {
-		await release();
-	}
+function reportSettingsDiagnostic(diagnostic: Parameters<typeof reportDiagnostic>[0]): void {
+	reportDiagnostic({
+		...diagnostic,
+		action: "/notifications",
+		capability: "Notification",
+		summary: "Notification settings were invalid and built-in defaults are active",
+	});
 }
 
 /** Loading is read-only; only direct user updates create the settings file. */
 export class NotificationSettingsStore {
-	private readonly listeners = new Set<(settings: NotificationSettings) => void>();
-	private readonly lockPath: string;
-	private readonly path: string;
-	private pending = Promise.resolve();
-	private value: NotificationSettings;
-	private readonly writer: SettingsWriter;
+	private readonly store: NamespacedSettingsStore<NotificationSettingsRecord>;
 
-	private constructor(path: string, lockPath: string, value: NotificationSettings, writer: SettingsWriter) {
-		this.path = path;
-		this.lockPath = lockPath;
-		this.value = value;
-		this.writer = writer;
+	private constructor(store: NamespacedSettingsStore<NotificationSettingsRecord>) {
+		this.store = store;
 	}
 
 	static async load(
 		path = mergedSettingsPath(getAgentDir()),
 		writer: SettingsWriter = writeSettings,
 	): Promise<NotificationSettingsStore> {
-		const value = await readSettings(path);
-		if (value === DEFAULT_NOTIFICATION_SETTINGS) {
-			const legacy = await readLegacySettings(path);
-			if (
-				legacy &&
-				(await migrateLegacyNamespace(
-					path,
-					NOTIFICATION_NAMESPACE,
-					join(dirname(path), SETTINGS_FILE_NAME),
-					{ ...legacy },
-					"Notification",
-					(value) => isValidSettings(value),
-				))
-			) {
-				return new NotificationSettingsStore(path, resolveSettingsLockPath(path), legacy, writer);
-			}
-		}
-		return new NotificationSettingsStore(path, resolveSettingsLockPath(path), await readSettings(path), writer);
+		const store = await NamespacedSettingsStore.load<NotificationSettingsRecord>(
+			NOTIFICATION_NAMESPACE,
+			toRecord(DEFAULT_NOTIFICATION_SETTINGS),
+			normalizeRecord,
+			{
+				acquireLock: acquireSettingsLock,
+				legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
+				migrator: async (legacyPath) => {
+					const settings = await readLegacySettings(legacyPath);
+					return settings ? toRecord(settings) : undefined;
+				},
+				path,
+				reportDiagnostic: reportSettingsDiagnostic,
+				writer: async (settingsPath, _namespace, record) => writer(settingsPath, parseSettings(record)),
+			},
+		);
+		return new NotificationSettingsStore(store);
 	}
 
 	static memory(value: NotificationSettings = DEFAULT_NOTIFICATION_SETTINGS): NotificationSettingsStore {
-		return new NotificationSettingsStore("", "", value, writeSettings);
+		return new NotificationSettingsStore(NamespacedSettingsStore.memory(toRecord(value)));
 	}
 
 	get(): NotificationSettings {
-		return this.value;
+		return parseSettings(this.store.get());
 	}
 
 	subscribe(listener: (settings: NotificationSettings) => void): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
+		return this.store.subscribe((record) => listener(parseSettings(record)));
 	}
 
 	async update(patch: SettingsChanges): Promise<void> {
-		if (!this.path) {
-			this.replaceValue(applySettingsChanges(this.value, patch));
-			return;
-		}
-		const write = this.pending.then(async () => {
-			this.replaceValue(await persistSettingsChanges(this.path, this.lockPath, patch, this.writer));
-		});
-		this.pending = write.catch(() => undefined);
-		await write;
+		await this.store.updateWith((current) => normalizeRecord({ ...current, ...patch }));
 	}
 
 	async whenIdle(): Promise<void> {
-		await this.pending;
-	}
-
-	private notify(): void {
-		for (const listener of this.listeners) listener(this.value);
-	}
-
-	private replaceValue(next: NotificationSettings): void {
-		if (sameSettings(this.value, next)) return;
-		this.value = next;
-		this.notify();
-	}
-}
-
-function isValidSettings<Value>(value: Value): boolean {
-	try {
-		if (!isJsonInputValue(value)) return false;
-		parseSettings(value);
-		return true;
-	} catch {
-		return false;
+		await this.store.whenIdle();
 	}
 }

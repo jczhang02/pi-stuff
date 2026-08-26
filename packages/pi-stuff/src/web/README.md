@@ -18,6 +18,10 @@ All three Tools use Pi Stuff's shared one-row lifecycle renderer. Model-visible
 results, citations, cancellation, SSRF protection, redirects, extraction, and
 PDF handling remain owned by the pinned fork.
 
+Provider include/exclude values share one Suite-owned domain normalizer. It
+accepts URL-shaped host input, rejects literal IPs and single-label hosts, and
+matches only exact hosts or their subdomains.
+
 On systems whose TUN resolver maps public domains into `198.18.0.0/15`, page
 fetching detects the condition lazily with both the requested host and a public
 canary. Compatibility is process-local, explicit SSRF settings still win, and
