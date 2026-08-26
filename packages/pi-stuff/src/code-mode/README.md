@@ -90,9 +90,10 @@ image output becomes an error before it can be persisted. A provider-context pro
 images from older Code Mode results that predate normalized presentation details with an actionable text error without
 rewriting Session history.
 
-The real Pi 0.84.3 acceptance gate compares the full ANSI screen and exact Tool Activity block with Code Mode on and
-off at 100×32 and 64×28, both before and after session resume. Only the truthful context-usage number is normalized:
-Code Mode exists to change that value, while its icons, placement, colors, and surrounding layout must remain equal.
+The real Pi 0.84.3 acceptance gate compares the full plain-screen layout and exact ANSI Tool Activity block with Code
+Mode on and off at 100×32 and 64×28, both before and after session resume. Truthful Context pressure and its resulting
+full/compact fixture model label are normalized; icons, placement, and surrounding text remain equal, while Tool
+Activity colors remain exact.
 The gate exercises a mixed Activity containing Read, Bash, Background Work, and Agent management, plus a failed Tool
 call, a cancellation-classified Tool result, and interleaved real PNG/text/PNG reads through Pi's media normalization
 and terminal fallback path. The media gate also proves that both images reach the next provider request after the UI

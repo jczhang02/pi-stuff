@@ -13,8 +13,8 @@ const execFileAsync = promisify(execFile);
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
 const SCENARIO_FILTER = process.env["PI_STUFF_CODE_MODE_TUI_SCENARIO"];
-const ANSI_ESCAPE = String.fromCharCode(27);
-const CONTEXT_USAGE_PATTERN = new RegExp(`(󰌨(?:${ANSI_ESCAPE}\\[[0-9;]*m|\\s)*)\\d+(?:\\.\\d+)?%`, "gu");
+const CONTEXT_USAGE_PATTERN = /(󰌨\s*)\d+(?:\.\d+)?%/gu;
+const FULL_FIXTURE_MODEL_PATTERN = /^(󱙺\s*)pi-stuff-code-mode-fixture\/fixture(?=\s*·)/gmu;
 const MEDIA_FIXTURE_PNG =
 	"iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6ggKByYdgVHAmQAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wOC0xMFQwNzozODoyOSswMDowMNCRiLcAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDgtMTBUMDc6Mzg6MjkrMDA6MDChzDALAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA4LTEwVDA3OjM4OjI5KzAwOjAw9tkR1AAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAAABJRU5ErkJggg==";
 
@@ -75,7 +75,8 @@ function activityBlock(plainScreen: string, styledScreen: string, marker = "read
 }
 
 function normalizeRuntimeMetrics(screen: string): string {
-	return screen.replace(CONTEXT_USAGE_PATTERN, "$1<context>%");
+	// Different truthful Context pressure can select the Statusline's full or compact model identity.
+	return screen.replace(FULL_FIXTURE_MODEL_PATTERN, "$1fixture").replace(CONTEXT_USAGE_PATTERN, "$1<context>%");
 }
 
 async function assertCertifiedPi(): Promise<void> {
@@ -246,14 +247,14 @@ async function runArm(
 			await waitFor(tmux, session, activityMarker);
 			const plain = await capture(tmux, session);
 			const styled = await capture(tmux, session, true);
-			return { activity: activityBlock(plain, styled, activityMarker), screen: styled };
+			return { activity: activityBlock(plain, styled, activityMarker), screen: plain };
 		}
 		await tmux(["send-keys", "-t", session, "-l", "--", "VERIFY_TOOL_UI"]);
 		await submit(scenario !== "cancel");
 		await waitFor(tmux, session, "VERIFY_COMPLETE");
 		const plain = await capture(tmux, session);
 		const styled = await capture(tmux, session, true);
-		return { activity: activityBlock(plain, styled, activityMarker), screen: styled };
+		return { activity: activityBlock(plain, styled, activityMarker), screen: plain };
 	} finally {
 		try {
 			await tmux(["send-keys", "-t", session, "C-d"]);
@@ -443,7 +444,7 @@ try {
 		);
 	}
 	console.log(
-		`Real Pi TUI ${selectedScenarios.join("/")} layout and Tool Activity are identical with Code Mode on and off, before and after resume, at 100 and 64 columns (excluding the truthful context-usage value)`,
+		`Real Pi TUI ${selectedScenarios.join("/")} plain-screen layout and ANSI Tool Activity are identical with Code Mode on and off, before and after resume, at 100 and 64 columns (excluding truthful Context pressure and its responsive fixture model label)`,
 	);
 	console.log(
 		`Provider Tool schema: ${String(directRequest.toolNames.length)} Tools / ${String(directRequest.schemaChars)} chars direct; ${String(oldEnvelopeRequest.toolNames.length)} Tool / ${String(oldEnvelopeRequest.schemaChars)} chars old envelope; ${String(codeRequest.toolNames.length)} Tools / ${String(codeRequest.schemaChars)} chars full envelope`,
