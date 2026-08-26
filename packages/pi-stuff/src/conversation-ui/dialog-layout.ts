@@ -188,7 +188,7 @@ function commandDialogNavigationKeyHelp(
 	];
 }
 
-function commandDialogExitKeyHelp(keybindings: CommandDialogKeybindings): CommandDialogKeyHelpEntry[] {
+export function commandDialogExitKeyHelp(keybindings: CommandDialogKeybindings): CommandDialogKeyHelpEntry[] {
 	return [
 		{ keys: "?", description: "Show this key guide" },
 		{

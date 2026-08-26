@@ -45,6 +45,7 @@ export {
 	type CommandDialogKeyHelpEntry,
 	type CommandDialogNavigation,
 	type CommandDialogRowSections,
+	commandDialogExitKeyHelp,
 	commandDialogHintLines,
 	commandDialogKeys,
 	commandDialogListIndex,

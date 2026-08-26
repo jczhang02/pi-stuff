@@ -87,6 +87,11 @@ describe("/tasks Command Dialog", () => {
 		expect(output).not.toContain("details");
 		expect(output).toContain("? keys");
 		expect(output).toContain("Esc close");
+		component.handleInput?.("?");
+		const keyHelp = component.render(64).join("\n");
+		expect(keyHelp).not.toContain("Previous/next");
+		expect(keyHelp).not.toContain("Open details");
+		expect(keyHelp).toContain("Return one level");
 		component.dispose?.();
 	});
 

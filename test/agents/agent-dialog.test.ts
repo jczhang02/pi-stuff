@@ -181,6 +181,11 @@ describe("Agent Command Dialog", () => {
 		expect(output).not.toContain("details");
 		expect(output).toContain("? keys");
 		expect(output).toContain("Esc close");
+		input(component, "?");
+		const keyHelp = text(component);
+		expect(keyHelp).not.toContain("Previous/next");
+		expect(keyHelp).not.toContain("Open details");
+		expect(keyHelp).toContain("Return one level");
 		component.dispose?.();
 	});
 

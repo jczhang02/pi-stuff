@@ -4,6 +4,7 @@ import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogExitKeyHelp,
 	commandDialogListIndex,
 	commandDialogListKeyHelp,
 	commandDialogNavigation,
@@ -254,14 +255,14 @@ class TasksDialogComponent implements CommandDialogComponent {
 				...(isSplit ? [{ keys: "Tab/Shift+Tab", description: "Switch panes" }] : []),
 				...(this.selected()?.status !== "stopping" ? [{ keys: "x", description: "Stop selected task" }] : []),
 			];
-			return renderCommandDialogKeyHelp(
-				this.context,
-				this.lastWidth,
-				"Tasks",
-				list
-					? commandDialogListKeyHelp(this.context.keybindings, "task", extra)
-					: commandDialogReadKeyHelp(this.context.keybindings, "line", extra),
-			);
+			let keyHelp = commandDialogReadKeyHelp(this.context.keybindings, "line", extra);
+			if (list) {
+				keyHelp =
+					this.rows.length > 0
+						? commandDialogListKeyHelp(this.context.keybindings, "task", extra)
+						: commandDialogExitKeyHelp(this.context.keybindings);
+			}
+			return renderCommandDialogKeyHelp(this.context, this.lastWidth, "Tasks", keyHelp);
 		}
 		const lines = isSplit ? this.renderSplit() : this.mode === "list" ? this.renderList() : this.renderDetail();
 		return lines.map((line) => bounded(this.lastWidth, line));
@@ -357,10 +358,14 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const rowHints: string[] = [];
+		if (this.rows.length > 0) {
+			rowHints.push(`${up}/${down} select`);
+			if (this.isSplit()) rowHints.push("Tab pane");
+			rowHints.push(`${confirm} details`);
+		}
 		const baseHints = [
-			...(this.rows.length > 0
-				? [`${up}/${down} select`, ...(this.isSplit() ? ["Tab pane"] : []), `${confirm} details`]
-				: []),
+			...rowHints,
 			...(selected && selected.status !== "stopping" ? ["x stop"] : []),
 			"? keys",
 			`${cancel} close`,

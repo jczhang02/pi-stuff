@@ -17,6 +17,7 @@ import type {
 	CommandDialogViewContext,
 } from "../../../conversation-ui/index.js";
 import {
+	commandDialogExitKeyHelp,
 	commandDialogListIndex,
 	commandDialogListKeyHelp,
 	commandDialogNavigation,
@@ -250,14 +251,15 @@ class AgentDialogComponent implements CommandDialogComponent {
 					: []),
 			];
 			const list = this.mode === "list" || this.mode === "nested-list";
-			return renderCommandDialogKeyHelp(
-				this.context,
-				renderWidth,
-				"Agents",
-				list
+			const hasListRows =
+				this.mode === "list" ? this.snapshotValue.rows.length > 0 : (row?.nestedAgents.length ?? 0) > 0;
+			let keyHelp = commandDialogReadKeyHelp(this.context.keybindings, "line", extras);
+			if (list) {
+				keyHelp = hasListRows
 					? commandDialogListKeyHelp(this.context.keybindings, "Agent", extras)
-					: commandDialogReadKeyHelp(this.context.keybindings, "line", extras),
-			);
+					: commandDialogExitKeyHelp(this.context.keybindings);
+			}
+			return renderCommandDialogKeyHelp(this.context, renderWidth, "Agents", keyHelp);
 		}
 		const lines =
 			this.mode === "list"
