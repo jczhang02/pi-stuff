@@ -9,8 +9,11 @@ RTK, Web, MCP, or another Capability Module. Their mechanism implementations rem
 Pi Stuff Package. Upstream changes may be reviewed and incorporated selectively, but Pi Stuff does not depend on
 upstream projects exposing or maintaining decomposition seams for its architecture.
 
-This preserves fork ownership, lifecycle authority, visible behavior, and certification in one repository. Repository
-line count alone is not a reason to transfer mechanism ownership or add upstream Package dependencies.
+Every such implementation is Repository-owned Source. Provenance remains relevant for attribution, licensing, and
+reviewing later upstream changes, but it never creates an architecture, formatting, lint, type-safety, dependency, or
+maintainability exemption. This preserves fork ownership, lifecycle authority, visible behavior, and certification in
+one repository. Repository line count alone is not a reason to transfer mechanism ownership or add upstream Package
+dependencies.
 
 ## Consequences
 
@@ -18,6 +21,9 @@ line count alone is not a reason to transfer mechanism ownership or add upstream
 - Behavior-preserving reduction stays repository-local: delete behavior that is no longer needed, deepen internal
   Modules, reuse Pi public interfaces and native or standard-library mechanisms, and selectively incorporate upstream
   fixes.
+- Repository-owned implementation, test, script, prototype, and quality-tool code passes the same current quality
+  gates. Runtime-specific TypeScript profiles may select different platform libraries or module targets, but may not
+  weaken the shared strictness rules.
 - Architecture reviews and plans must not reopen upstream `core` or factory externalization unless the maintainer
   explicitly chooses to supersede this ADR.
 - Adopting Effect or another runtime library would not change this ownership decision.

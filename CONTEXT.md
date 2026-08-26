@@ -25,6 +25,11 @@ An internal, independently understandable implementation boundary for one Capabi
 version, installation, or publication lifecycle of its own.
 _Avoid_: Capability Package, npm package, plugin fragment
 
+**Repository-owned Source**:
+Code maintained inside Pi Stuff and subject to the same architecture, quality, compatibility, and certification
+obligations regardless of whether it originated locally, in a fork, or from vendored upstream material.
+_Avoid_: upstream exception, vendored exception, fork exemption
+
 **Diagnostic Record**:
 A bounded, current-process account of a Suite problem for human inspection. It never enters Session history or model
 context. The owning Capability presents ordinary state locally; only a user-relevant problem may raise the shared

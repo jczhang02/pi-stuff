@@ -6,6 +6,7 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 ## Read by task
 
 - Before changing code, read `CONTEXT.md`, the relevant accepted ADRs, and `docs/compatibility.md`.
+- Before quality, refactoring, fork-integration, or source-reduction work, also read `docs/code-quality.md`.
 - For visible surfaces, also read `DESIGN.md` and the owning Module README or ADR. For work items, read
   `docs/agents/issue-tracker.md`.
 - Use the glossary's canonical terms. Record durable terminology or architecture decisions in `CONTEXT.md` or an ADR,
@@ -15,6 +16,11 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 
 - Fix the shared root cause and inspect the complete affected Capability, not only the reported example. Prefer the
   smallest change at the owning seam and reuse Pi's public APIs, native behavior, and existing Suite components.
+- Treat every tracked implementation, test, script, prototype, generated source, and repository quality tool as
+  Repository-owned Source regardless of provenance. Source origin never permits a Biome, Oxlint/anti-slop, TypeScript,
+  dependency-analysis, file-size, or maintainability exemption. Exclude only non-code machine state and artifacts.
+- Follow the size and reduction gates in `docs/code-quality.md`. File splitting must deepen an owning Module and reduce
+  concepts or state, not distribute the same complexity across mechanical fragments.
 - For material design choices, compare viable options and evidence before choosing the smallest adequate one. Explain
   unfamiliar terms and the result in plain language.
 - Make obvious, reversible repository-local decisions without asking. Ask one concise question in the conversation,

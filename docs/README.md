@@ -5,6 +5,7 @@ Current engineering documentation is English. Use these sources in this order:
 - [`README.md`](../README.md) — user entry point and current Capability overview.
 - [`CONTEXT.md`](../CONTEXT.md) — canonical domain language and ownership boundaries.
 - [`DESIGN.md`](../DESIGN.md) — shared visual and interaction language.
+- [`code-quality.md`](code-quality.md) — mandatory source ownership, maintainability, and size standards.
 - [`compatibility.md`](compatibility.md) — the only current Host and toolchain certification statement.
 - [`adr/`](adr/) — accepted and superseded architectural decisions.
 - [`agents/`](agents/) and [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) — maintainer workflows.
@@ -22,6 +23,7 @@ Current engineering documentation is English. Use these sources in this order:
 | Settings and Web configuration | ADR [0012](adr/0012-merge-pi-stuff-settings-file.md) as amended by [0013](adr/0013-unify-web-configuration.md) |
 | Session Naming | ADR [0020](adr/0020-add-automatic-session-naming.md) and the owning Module README |
 | Agent lifecycle compatibility | ADR [0018](adr/0018-end-live-v1-agent-governor-coexistence.md) |
+| Repository-owned source quality | [`code-quality.md`](code-quality.md) and ADR [0016](adr/0016-keep-capability-mechanisms-repository-owned.md) |
 | Compatibility and verification | [`compatibility.md`](compatibility.md) and the root [`AGENTS.md`](../AGENTS.md) |
 
 ## Time-bound evidence
