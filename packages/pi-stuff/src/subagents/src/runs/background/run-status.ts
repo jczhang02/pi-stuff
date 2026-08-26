@@ -75,11 +75,15 @@ function formatElapsed(elapsedMs: number | null): string | undefined {
 	return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
-function rowSummary(row: AgentRow): string {
+function rowHeading(row: AgentRow): string {
 	const elapsed = formatElapsed(row.elapsedMs);
-	const heading = [`id=${row.runId}`, `index=${String(row.childIndex)}`, row.name, row.status, elapsed]
+	return [`id=${row.runId}`, `index=${String(row.childIndex)}`, row.name, row.status, elapsed]
 		.filter(Boolean)
 		.join(" · ");
+}
+
+function rowSummary(row: AgentRow): string {
+	const heading = rowHeading(row);
 	const task = compactChildText(row.task, MAX_LIST_TASK_CHARS);
 	return task ? `- ${heading}\n  ${task}` : `- ${heading}`;
 }
@@ -89,10 +93,7 @@ function rowsSummary(rows: readonly AgentRow[], heading: string): string {
 }
 
 function rowDetail(row: AgentRow): string {
-	const elapsed = formatElapsed(row.elapsedMs);
-	const lines = [
-		[`id=${row.runId}`, `index=${String(row.childIndex)}`, row.name, row.status, elapsed].filter(Boolean).join(" · "),
-	];
+	const lines = [rowHeading(row)];
 	const task = compactChildText(row.task, MAX_DETAIL_TASK_CHARS);
 	if (task) lines.push(`Task: ${task}`);
 	if (row.error)
