@@ -51,7 +51,8 @@ unknown third-party Tools keep their native renderer and form a display boundary
   shim before Activity classification, semantic detail, and rendering. Historical results may omit `details`; optional
   malformed metadata is ignored without discarding the operation. Control-only `<system-reminder>` blocks added by a
   nested result hook do not become Code Mode business output; the owning outer Host result remains the control-message
-  delivery boundary.
+  delivery boundary. Nested streaming reaches the caller immediately; informational update hooks run one at a time and
+  retain only the latest pending update when a hook lags, while the final Tool result remains authoritative.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
   Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,

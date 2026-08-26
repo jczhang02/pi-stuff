@@ -2010,6 +2010,62 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 	expect(order).toEqual(["start", "call", "execute:value-hook", "update", "result", "end"]);
 });
 
+test("nested invocation bounds update handlers to one active and one latest pending update", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	let releaseFirst: () => void = () => {};
+	const firstBlocked = new Promise<void>((resolve) => {
+		releaseFirst = resolve;
+	});
+	let firstEntered: () => void = () => {};
+	const firstStarted = new Promise<void>((resolve) => {
+		firstEntered = resolve;
+	});
+	const entered: string[] = [];
+	const completed: string[] = [];
+	registrations.api.on("tool_execution_update", async (event) => {
+		const content = event.partialResult.content[0];
+		const update = content?.type === "text" ? content.text : "";
+		entered.push(update);
+		if (entered.length === 1) {
+			firstEntered();
+			await firstBlocked;
+		}
+		completed.push(update);
+	});
+	registerSuiteOwnedTool(
+		registrations.api,
+		{
+			description: "ordered update fixture",
+			execute: async (_id, _args, _signal, onUpdate) => {
+				onUpdate?.({ content: [{ type: "text", text: "first" }], details: {} });
+				onUpdate?.({ content: [{ type: "text", text: "second" }], details: {} });
+				onUpdate?.({ content: [{ type: "text", text: "latest" }], details: {} });
+				return { content: [{ type: "text", text: "done" }], details: {} };
+			},
+			label: "Ordered updates",
+			name: "ordered_updates",
+			parameters: Params,
+		},
+		presentation("run-command"),
+	);
+
+	const invocation = registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+		context: { cwd: "/project" } as never,
+		input: { value: "value" },
+		name: "ordered_updates",
+		toolCallId: "nested-ordered-updates",
+	});
+	await firstStarted;
+	await Bun.sleep(0);
+	expect(entered).toEqual(["first"]);
+	releaseFirst();
+	await invocation;
+	expect(entered).toEqual(["first", "latest"]);
+	expect(completed).toEqual(["first", "latest"]);
+});
+
 test("nested invocation keeps Tool control reminders out of Code Mode business results", async () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);

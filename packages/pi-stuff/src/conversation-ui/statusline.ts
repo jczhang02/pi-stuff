@@ -1,22 +1,30 @@
 import { basename } from "node:path";
-import type { Usage } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 	ReadonlyFooterDataProvider,
-	SessionEntry,
 	Theme,
 	ThemeColor,
 } from "@earendil-works/pi-coding-agent";
-import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeNumber } from "../shared/runtime-type.js";
 import { getHostSharedResource } from "./host-resource.js";
+import type { GitChangeCounts, GitChangeCountsSource } from "./statusline-git.js";
+import {
+	type PromptPreview,
+	readSkillAliases,
+	type SessionStatusSnapshot,
+	SessionStatusSource,
+	type StatuslineSessionManager,
+	type UsageTotals,
+} from "./statusline-session.js";
+import { sanitizeOneLine } from "./terminal-text.js";
+
+export type { GitChangeCounts } from "./statusline-git.js";
+export { GitStatusSource, parseGitStatusPorcelain } from "./statusline-git.js";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
-const GIT_STATUS_TIMEOUT_MS = 2_000;
 const GOAL_CLOCK_REFRESH_MS = 1_000;
-const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
 const MIN_TRUNCATED_PROMPT_WIDTH = 6;
 const STATUSLINE_SEPARATOR = " · ";
 
@@ -267,20 +275,6 @@ export interface StatuslinePreferencesSource {
 	subscribe(listener: () => void): () => void;
 }
 
-export interface GitChangeCounts {
-	readonly ahead?: number;
-	readonly behind?: number;
-	readonly conflicted?: number;
-	readonly staged: number;
-	readonly unstaged: number;
-	readonly untracked: number;
-}
-
-interface GitChangeCountsSource {
-	get(cwd?: string, branch?: string): GitChangeCounts | undefined;
-	subscribe(listener: () => void): () => void;
-}
-
 interface SharedStatuslineControllerOptions {
 	readonly autocompleteVisible?: BooleanValueSource;
 	readonly codexStatus?: CodexStatusSource;
@@ -295,33 +289,11 @@ export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
 		| { readonly enabled?: never; readonly preferences: StatuslinePreferencesSource }
 	);
 
-interface UsageTotals {
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	input: number;
-}
-
-interface PromptPreview {
-	readonly skills: readonly string[];
-	readonly text: string | undefined;
-}
-
-interface SessionStatusSnapshot {
-	readonly latestPrompt: PromptPreview | undefined;
-	readonly usage: UsageTotals;
-}
-
 interface RenderRegistration {
 	requestRender(force?: boolean): void;
 }
 
 export type StatuslineHost = Pick<ExtensionAPI, "getCommands" | "getThinkingLevel">;
-
-type StatuslineSessionManager = Pick<
-	ExtensionContext["sessionManager"],
-	"getCwd" | "getEntry" | "getLeafId" | "getSessionId"
->;
 
 export interface StatuslineContext {
 	readonly cwd: string;
@@ -332,159 +304,6 @@ export interface StatuslineContext {
 	readonly modelRegistry: Pick<ExtensionContext["modelRegistry"], "isUsingOAuth">;
 	readonly sessionManager: StatuslineSessionManager;
 	readonly thinkingLevel?: ExtensionContext["thinkingLevel"];
-}
-
-type GitStatusHost = Pick<ExtensionAPI, "exec">;
-
-/**
- * Mutable Git summary refreshed by the integration layer after accepted Host
- * lifecycle events. Construction and session startup remain free of subprocess
- * work.
- */
-export class GitStatusSource implements GitChangeCountsSource {
-	private counts: GitChangeCounts | undefined;
-	private disposed = false;
-	private generation = 0;
-	private readonly listeners = new Set<() => void>();
-	private measuredBranch: string | undefined;
-	private measuredCwd: string | undefined;
-	private refreshPromise: Promise<void> | undefined;
-	private requestedCwd: string | undefined;
-
-	dispose(): void {
-		if (this.disposed) return;
-		this.disposed = true;
-		this.generation += 1;
-		this.requestedCwd = undefined;
-		this.listeners.clear();
-	}
-
-	get(cwd?: string, branch?: string): GitChangeCounts | undefined {
-		if (cwd !== undefined && cwd !== this.measuredCwd) return undefined;
-		if (branch !== undefined && branch !== this.measuredBranch) return undefined;
-		return this.counts;
-	}
-
-	refresh(pi: GitStatusHost, cwd: string): Promise<void> {
-		if (this.disposed) return Promise.resolve();
-		this.requestedCwd = cwd;
-		if (this.refreshPromise) return this.refreshPromise;
-		const refresh = this.drainRefreshes(pi);
-		const completion = refresh.finally(() => {
-			if (this.refreshPromise === completion) {
-				this.refreshPromise = undefined;
-			}
-		});
-		this.refreshPromise = completion;
-		return completion;
-	}
-
-	private async drainRefreshes(pi: GitStatusHost): Promise<void> {
-		while (!this.disposed && this.requestedCwd !== undefined) {
-			const cwd = this.requestedCwd;
-			this.requestedCwd = undefined;
-			await this.performRefresh(pi, cwd);
-		}
-	}
-
-	private async performRefresh(pi: GitStatusHost, cwd: string): Promise<void> {
-		const generation = ++this.generation;
-		let next: GitChangeCounts | undefined;
-		let nextBranch: string | undefined;
-		try {
-			const result = await pi.exec(
-				"git",
-				["--no-optional-locks", "status", "--porcelain=v1", "-z", "--branch", "--untracked-files=normal"],
-				{ cwd, timeout: GIT_STATUS_TIMEOUT_MS },
-			);
-			if (!result.killed && result.code === 0) {
-				next = parseGitStatusPorcelain(result.stdout);
-				nextBranch = parseGitBranchPorcelain(result.stdout);
-			}
-		} catch {
-			// Missing Git and a non-repository cwd are ordinary Statusline states.
-			next = undefined;
-		}
-		if (this.disposed || generation !== this.generation) return;
-		this.set(next, next ? cwd : undefined, nextBranch);
-	}
-
-	subscribe(listener: () => void): () => void {
-		if (this.disposed) return () => {};
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	private set(next: GitChangeCounts | undefined, measuredCwd?: string, measuredBranch?: string): void {
-		if (
-			sameGitCounts(this.counts, next) &&
-			this.measuredCwd === measuredCwd &&
-			this.measuredBranch === measuredBranch
-		) {
-			return;
-		}
-		this.counts = next;
-		this.measuredCwd = measuredCwd;
-		this.measuredBranch = measuredBranch;
-		for (const listener of this.listeners) callObserver(listener);
-	}
-}
-
-/** Interpret NUL-delimited `git status --porcelain=v1 -z` output. */
-export function parseGitStatusPorcelain(output: string): GitChangeCounts {
-	let ahead = 0;
-	let behind = 0;
-	let conflicted = 0;
-	let staged = 0;
-	let unstaged = 0;
-	let untracked = 0;
-	const records = output.split("\0");
-	for (let index = 0; index < records.length; index += 1) {
-		const record = records[index] ?? "";
-		if (record.startsWith("## ")) {
-			ahead = parseGitTrackingCount(record, "ahead");
-			behind = parseGitTrackingCount(record, "behind");
-			continue;
-		}
-		if (record.length < 3) continue;
-		const indexStatus = record[0] ?? " ";
-		const worktreeStatus = record[1] ?? " ";
-		if (indexStatus === "!" && worktreeStatus === "!") continue;
-
-		if (isGitConflict(indexStatus, worktreeStatus)) {
-			conflicted += 1;
-		} else if (indexStatus === "?" && worktreeStatus === "?") {
-			untracked += 1;
-		} else {
-			if (indexStatus !== " ") staged += 1;
-			if (worktreeStatus !== " ") unstaged += 1;
-		}
-
-		// Rename/copy records carry a second NUL-delimited path with no status.
-		if (/[RC]/u.test(indexStatus) || /[RC]/u.test(worktreeStatus)) index += 1;
-	}
-	return { ahead, behind, conflicted, staged, unstaged, untracked };
-}
-
-function parseGitTrackingCount(header: string, label: "ahead" | "behind"): number {
-	const match = header.match(new RegExp(`\\b${label} (\\d+)(?:[,\\]]|$)`, "u"));
-	return match?.[1] ? Number.parseInt(match[1], 10) : 0;
-}
-
-function isGitConflict(indexStatus: string, worktreeStatus: string): boolean {
-	return ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].includes(`${indexStatus}${worktreeStatus}`);
-}
-
-function parseGitBranchPorcelain(output: string): string | undefined {
-	const header = output.split("\0", 1)[0];
-	if (!header?.startsWith("## ")) return undefined;
-	const value = header.slice(3);
-	for (const prefix of ["No commits yet on ", "Initial commit on "]) {
-		if (value.startsWith(prefix)) return sanitizeOneLine(value.slice(prefix.length)) || undefined;
-	}
-	if (value === "HEAD (no branch)") return "detached";
-	const upstream = value.indexOf("...");
-	return sanitizeOneLine(upstream >= 0 ? value.slice(0, upstream) : value) || undefined;
 }
 
 /**
@@ -645,95 +464,6 @@ export class StatuslineController {
 			this.sessionStatusSources.set(sessionManager, source);
 		}
 		return source;
-	}
-}
-
-/**
- * Incrementally derives the session-backed fields from Pi's append-only entry
- * tree. A repaint only reads the current leaf id; new tails are folded until a
- * cached ancestor is reached, including after tree navigation or compaction.
- */
-class SessionStatusSource {
-	private activeLeafId: string | null | undefined;
-	private readonly byEntryId = new Map<string, SessionStatusSnapshot>();
-	private readonly sessionManager: StatuslineSessionManager;
-	private sessionId: string | undefined;
-	private snapshot = emptySessionStatus();
-	private readonly skillAliases: ReadonlyMap<string, string>;
-
-	constructor(sessionManager: StatuslineSessionManager, skillAliases: ReadonlyMap<string, string>) {
-		this.sessionManager = sessionManager;
-		this.skillAliases = skillAliases;
-	}
-
-	get(): SessionStatusSnapshot {
-		let leafId: string | null;
-		let sessionId: string;
-		try {
-			sessionId = this.sessionManager.getSessionId();
-			leafId = this.sessionManager.getLeafId();
-		} catch {
-			return emptySessionStatus();
-		}
-
-		if (sessionId !== this.sessionId) this.reset(sessionId);
-		if (leafId === this.activeLeafId) return this.snapshot;
-		if (leafId === null) {
-			this.activeLeafId = null;
-			this.snapshot = emptySessionStatus();
-			return this.snapshot;
-		}
-
-		let next: SessionStatusSnapshot | undefined;
-		try {
-			next = this.buildSnapshot(leafId);
-		} catch {
-			// A partial third-party SessionManager must not take down the TUI. Do
-			// not cache the failure, so a later repaint can recover automatically.
-			return emptySessionStatus();
-		}
-		if (!next) return emptySessionStatus();
-
-		this.activeLeafId = leafId;
-		this.snapshot = next;
-		return next;
-	}
-
-	private buildSnapshot(leafId: string): SessionStatusSnapshot | undefined {
-		const tail: SessionEntry[] = [];
-		const visited = new Set<string>();
-		let ancestor = emptySessionStatus();
-		let entryId: string | null = leafId;
-
-		while (entryId !== null) {
-			const cached = this.byEntryId.get(entryId);
-			if (cached) {
-				ancestor = cached;
-				break;
-			}
-			if (visited.has(entryId)) return undefined;
-			visited.add(entryId);
-
-			const entry = this.sessionManager.getEntry(entryId);
-			if (!entry || entry.id !== entryId) return undefined;
-			tail.push(entry);
-			entryId = entry.parentId;
-		}
-
-		for (let index = tail.length - 1; index >= 0; index -= 1) {
-			const entry = tail[index];
-			if (!entry) continue;
-			ancestor = extendSessionStatus(ancestor, entry, this.skillAliases);
-			this.byEntryId.set(entry.id, ancestor);
-		}
-		return ancestor;
-	}
-
-	private reset(sessionId: string): void {
-		this.sessionId = sessionId;
-		this.activeLeafId = undefined;
-		this.snapshot = emptySessionStatus();
-		this.byEntryId.clear();
 	}
 }
 
@@ -1133,125 +863,6 @@ function formatSkillBadge(skills: readonly string[], compact: boolean): string {
 	return compact ? `[skills:${String(skills.length)}]` : `[skills:${skills.join(",")}]`;
 }
 
-function emptySessionStatus(): SessionStatusSnapshot {
-	return { latestPrompt: undefined, usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0 } };
-}
-
-function extendSessionStatus(
-	previous: SessionStatusSnapshot,
-	entry: SessionEntry,
-	skillAliases: ReadonlyMap<string, string>,
-): SessionStatusSnapshot {
-	const usage = { ...previous.usage };
-	let latestPrompt = previous.latestPrompt;
-	if (entry.type === "message") {
-		const message = entry.message;
-		if (message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
-			addUsage(usage, message.usage);
-		}
-		if (message.role === "user") latestPrompt = userPrompt(message.content, skillAliases) ?? latestPrompt;
-	}
-	return { latestPrompt, usage };
-}
-
-function userPrompt(
-	content: string | ReadonlyArray<{ type: string; text?: string }>,
-	skillAliases: ReadonlyMap<string, string>,
-): PromptPreview | undefined {
-	const text = isRuntimeString(content)
-		? content
-		: content
-				.filter((part): part is { type: "text"; text: string } => part.type === "text" && !!part.text)
-				.map((part) => part.text)
-				.join(" ");
-	return buildPromptPreview(text, skillAliases);
-}
-
-function buildPromptPreview(rawText: string, skillAliases: ReadonlyMap<string, string>): PromptPreview | undefined {
-	const parsed = parseSkillBlock(rawText);
-	if (parsed) {
-		const skill = normalizeSkillName(parsed.name);
-		const userText = parsed.userMessage ?? extractEmbeddedSkillUserText(parsed.content);
-		const rawPreview = rawSkillPromptPreview(userText ?? "", skillAliases);
-		return promptPreview(rawPreview.text, uniqueSkills([...(skill ? [skill] : []), ...rawPreview.skills]));
-	}
-
-	const source = rawText;
-	const skills: string[] = [];
-	for (const match of source.matchAll(/<skill\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>/giu)) {
-		const skill = normalizeSkillName(match[1] ?? "");
-		if (skill && !skills.includes(skill)) skills.push(skill);
-	}
-	const embeddedUserText = extractEmbeddedSkillUserText(source);
-	if (embeddedUserText) {
-		const rawPreview = rawSkillPromptPreview(embeddedUserText, skillAliases);
-		return promptPreview(rawPreview.text, uniqueSkills([...skills, ...rawPreview.skills]));
-	}
-
-	const withoutSkillPayloads = source
-		.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/giu, " ")
-		.replace(/<skill\b[^>]*>[\s\S]*$/giu, " ");
-	const rawPreview = rawSkillPromptPreview(withoutSkillPayloads, skillAliases);
-	return promptPreview(rawPreview.text, uniqueSkills([...skills, ...rawPreview.skills]));
-}
-
-function rawSkillPromptPreview(value: string, aliases: ReadonlyMap<string, string>) {
-	const skills: string[] = [];
-	const text = value.replace(/(^|\s)\/([^\s]+)/gu, (match, prefix: string, commandName: string) => {
-		const skill = aliases.get(commandName.toLowerCase());
-		if (!skill) return match;
-		skills.push(skill);
-		return prefix;
-	});
-	return { skills: uniqueSkills(skills), text: sanitizeOneLine(text) || undefined };
-}
-
-function readSkillAliases(pi: StatuslineHost): ReadonlyMap<string, string> {
-	const aliases = new Map<string, string>();
-	try {
-		for (const command of pi.getCommands()) {
-			if (command.source !== "skill") continue;
-			const name = sanitizeOneLine(command.name);
-			const skill = normalizeSkillName(name);
-			if (name && skill) aliases.set(name.toLowerCase(), skill);
-		}
-	} catch {
-		// Registry discovery is optional presentation data.
-	}
-	return aliases;
-}
-
-function uniqueSkills(values: readonly string[]): string[] {
-	return [...new Set(values.filter(Boolean))];
-}
-
-function extractEmbeddedSkillUserText(value: string): string | undefined {
-	let latest: string | undefined;
-	for (const match of value.matchAll(/(?:^|\r?\n)\s*User:\s*([\s\S]*?)(?=\r?\n\s*<\/skill>|<\/skill>|$)/giu)) {
-		const candidate = match[1]?.trim();
-		if (candidate) latest = candidate;
-	}
-	return latest;
-}
-
-function normalizeSkillName(value: string): string {
-	return sanitizeOneLine(value).replace(/^skill:/iu, "");
-}
-
-function promptPreview(text: string | undefined, skills: readonly string[]): PromptPreview | undefined {
-	const normalizedText = text || undefined;
-	if (!normalizedText && skills.length === 0) return undefined;
-	return { skills, text: normalizedText };
-}
-
-function addUsage(totals: UsageTotals, usage: Usage | undefined): void {
-	if (!usage) return;
-	if (Number.isFinite(usage.input) && usage.input > 0) totals.input += usage.input;
-	if (Number.isFinite(usage.cacheRead) && usage.cacheRead > 0) totals.cacheRead += usage.cacheRead;
-	if (Number.isFinite(usage.cacheWrite) && usage.cacheWrite > 0) totals.cacheWrite += usage.cacheWrite;
-	if (Number.isFinite(usage.cost.total) && usage.cost.total > 0) totals.cost += usage.cost.total;
-}
-
 function formatCacheHitRate(usage: UsageTotals): string | undefined {
 	const denominator = usage.input + usage.cacheRead + usage.cacheWrite;
 	if (!Number.isFinite(denominator) || denominator <= 0) return undefined;
@@ -1392,89 +1003,6 @@ function readRawCwd(ctx: StatuslineContext): string {
 	}
 }
 
-function sanitizeOneLine(value: string): string {
-	return stripTerminalControls(value.slice(0, MAX_DYNAMIC_TEXT_CODE_UNITS)).replace(/\s+/gu, " ").trim();
-}
-
-function stripTerminalControls(value: string): string {
-	let text = "";
-	let index = 0;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x1b) {
-			const introducer = value.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index = skipControlSequence(value, index + 2);
-				continue;
-			}
-			if (isStringControl(introducer)) {
-				index = skipControlString(value, index + 2);
-				continue;
-			}
-			index += 1;
-			while (index < value.length && value.charCodeAt(index) >= 0x20 && value.charCodeAt(index) <= 0x2f) index += 1;
-			if (index < value.length) index += 1;
-			continue;
-		}
-		if (code === 0x9b) {
-			index = skipControlSequence(value, index + 1);
-			continue;
-		}
-		if (isC1StringControl(code)) {
-			index = skipControlString(value, index + 1);
-			continue;
-		}
-		if (isBidiControl(code) || code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-			text += " ";
-			index += 1;
-			continue;
-		}
-		const point = value.codePointAt(index);
-		if (point === undefined) break;
-		text += String.fromCodePoint(point);
-		index += point > 0xffff ? 2 : 1;
-	}
-	return text;
-}
-
-function skipControlSequence(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index++);
-		if (code >= 0x40 && code <= 0x7e) break;
-	}
-	return index;
-}
-
-function skipControlString(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x07 || code === 0x9c) return index + 1;
-		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
-		index += 1;
-	}
-	return index;
-}
-
-function isStringControl(code: number): boolean {
-	return code === 0x5d || code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f;
-}
-
-function isC1StringControl(code: number): boolean {
-	return code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
-}
-
-function isBidiControl(code: number): boolean {
-	return (
-		code === 0x061c ||
-		code === 0x200e ||
-		code === 0x200f ||
-		(code >= 0x202a && code <= 0x202e) ||
-		(code >= 0x2066 && code <= 0x2069)
-	);
-}
-
 function callObserver(observer: () => void): void {
 	try {
 		observer();
@@ -1493,18 +1021,4 @@ function subscribeObserver(
 	} catch {
 		// One unavailable observer source must not disable the Statusline.
 	}
-}
-
-function sameGitCounts(left: GitChangeCounts | undefined, right: GitChangeCounts | undefined): boolean {
-	return (
-		left === right ||
-		(left !== undefined &&
-			right !== undefined &&
-			(left.ahead ?? 0) === (right.ahead ?? 0) &&
-			(left.behind ?? 0) === (right.behind ?? 0) &&
-			(left.conflicted ?? 0) === (right.conflicted ?? 0) &&
-			left.staged === right.staged &&
-			left.unstaged === right.unstaged &&
-			left.untracked === right.untracked)
-	);
 }

@@ -1,0 +1,4 @@
+export const DETAIL_LINE_LIMIT = 240;
+export const DETAIL_BYTE_LIMIT = 24 * 1_024;
+export const BASH_OUTPUT_SOURCE_LIMIT = 32 * 1_024;
+export const BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT = 2 * 1_024;

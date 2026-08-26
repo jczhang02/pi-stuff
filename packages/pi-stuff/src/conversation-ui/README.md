@@ -43,6 +43,10 @@ The cache value is the active branch's cumulative hit rate across successful ass
 rate or cost. A zero denominator, unavailable context, and Thinking for a non-reasoning model are omitted. Subscription
 models omit both cost and the former `(sub)` label.
 
+The controller consumes an incremental Session snapshot and an explicitly refreshed Git snapshot. Layout and rendering
+therefore do not spawn subprocesses or traverse raw Session history themselves; both data sources remain bounded and
+recover independently from unavailable Host state.
+
 For `openai-codex`, cost is always replaced by observed weekly remaining percentage. When Fast mode is active, `fast`
 occupies its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
 internal Codex module publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
