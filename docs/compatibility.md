@@ -12,6 +12,9 @@
 | System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities; no `pwsh` |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
+| Optional RTK runtime | Official `0.45.0`, source `b34be37caf3796b69a50952a28e60e32b5daad43`, Linux x64 |
+| RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
 The certified upstream Host is the `v0.84.3` Linux x64 release built from the commit above and reports `0.84.3`. Every
 acceptance path hashes the executable and rejects anything outside the audited allowlist before exercising the complete

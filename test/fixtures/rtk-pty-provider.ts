@@ -6,6 +6,8 @@ import { Guard } from "typebox/guard";
 
 const PROVIDER = "pi-stuff-rtk-pty";
 const MODEL = "fixture-model";
+const RG_FILES_COMMAND = "rg --files -g '*.txt' .";
+const RG_SEARCH_COMMAND = "rg -n RTK untracked.txt";
 const LONG_OUTPUT_COMMAND =
 	"printf '\\033[31mRAW_RTK_RESULT_MARKER\\033[0m\\n'; i=0; while [ \"$i\" -lt 1600 ]; do printf 'RAW_RTK_LONG_LINE_%04d\\n' \"$i\"; i=$((i + 1)); done";
 
@@ -86,7 +88,9 @@ function fixtureStream(context: Context) {
 		(entry) => entry.role === "toolResult" && entry.toolName === "bash",
 	).length;
 	if (completed === 0) return toolCallStream("rtk-pty-git-status", "git status");
-	if (completed === 1) return toolCallStream("rtk-pty-long-output", LONG_OUTPUT_COMMAND);
+	if (completed === 1) return toolCallStream("rtk-pty-rg-files", RG_FILES_COMMAND);
+	if (completed === 2) return toolCallStream("rtk-pty-rg-search", RG_SEARCH_COMMAND);
+	if (completed === 3) return toolCallStream("rtk-pty-long-output", LONG_OUTPUT_COMMAND);
 	return textStream("RTK_FRESH_DONE");
 }
 

@@ -173,7 +173,7 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 | Pi Host 内嵌 Bun runtime | `1.3.14` |
 | 仓库 Bun 工具链 | `1.4.0` |
 | TypeScript | `5.9.3` |
-| 可选 RTK runtime | `0.42.4`，只认证 Linux x64 构建 |
+| 可选 RTK runtime | 官方 `0.45.0`，只认证 Linux x64 发布二进制文件 |
 
 仓库不声明兼容其他 Pi 构建。升级 Pi 必须作为一次协调变更，同时更新固定的 Host 源码配置、开发类型依赖和
 公开接缝验收检查。完整信息见 [`兼容性契约`](../../compatibility.md)。

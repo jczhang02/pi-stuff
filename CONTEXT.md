@@ -35,6 +35,11 @@ _Avoid_: console warning, transcript message, notification log
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file
 
+**RTK Runtime**:
+The separately installed, certified RTK executable whose CLI owns RTK command rewriting and output optimization. The
+Suite adapts the Host to it without duplicating its rewrite registry or installation lifecycle.
+_Avoid_: Embedded RTK, Pi Stuff command parser
+
 **Session Name**:
 Pi-owned Session metadata that gives one coding conversation a concise semantic identity. Session Naming may propose
 and persist this value after settled direct-user work, but it does not replace the Session, task, Goal, or Agent name.

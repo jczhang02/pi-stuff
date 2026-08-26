@@ -16,8 +16,6 @@ export {
 } from "./projection.js";
 export {
 	CERTIFIED_RTK_LINUX_X64_SHA256,
-	CERTIFIED_RTK_LINUX_X64_SHA256S,
-	CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256,
 	CERTIFIED_RTK_VERSION,
 	RtkRuntime,
 	type RtkRuntimeOptions,

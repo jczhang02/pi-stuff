@@ -187,7 +187,7 @@ the user's theme choice.
 | Pi Host embedded Bun runtime | `1.3.14` |
 | Repository Bun toolchain | `1.4.0` |
 | TypeScript | `5.9.3` |
-| Optional RTK runtime | `0.42.4`, certified Linux x64 builds only |
+| Optional RTK runtime | Official `0.45.0`, certified Linux x64 release binary only |
 
 Compatibility with other Pi builds is not claimed. A Pi upgrade is a coordinated repository change that updates the
 pinned Host source profile, development types, and public-seam acceptance checks together. See the full

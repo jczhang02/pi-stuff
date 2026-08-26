@@ -7,14 +7,8 @@ const RESOLVE_TIMEOUT_MS = 600;
 const VERSION_TIMEOUT_MS = 1_000;
 const REWRITE_TIMEOUT_MS = 2_500;
 
-export const CERTIFIED_RTK_VERSION = "0.42.4";
-export const CERTIFIED_RTK_LINUX_X64_SHA256 = "5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250";
-export const CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256 =
-	"1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a";
-export const CERTIFIED_RTK_LINUX_X64_SHA256S = [
-	CERTIFIED_RTK_LINUX_X64_SHA256,
-	CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256,
-] as const;
+export const CERTIFIED_RTK_VERSION = "0.45.0";
+export const CERTIFIED_RTK_LINUX_X64_SHA256 = "99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535";
 
 export type RtkRuntimeState = "drifted" | "ready" | "unavailable" | "unchecked";
 
@@ -84,7 +78,7 @@ async function fileFingerprint(path: string): Promise<string> {
 }
 
 function defaultExpectedSha256s(platform: NodeJS.Platform): readonly string[] {
-	return platform === "linux" && process.arch === "x64" ? CERTIFIED_RTK_LINUX_X64_SHA256S : [];
+	return platform === "linux" && process.arch === "x64" ? [CERTIFIED_RTK_LINUX_X64_SHA256] : [];
 }
 
 /** Certifies one local RTK executable and fails open whenever that identity changes. */

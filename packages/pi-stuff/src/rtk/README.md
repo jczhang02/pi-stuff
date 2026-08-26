@@ -10,7 +10,8 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 - `/rtk settings` opens Pi's native settings component for the two persistent behavior switches: **Command rewriting**
   and **Model projection**.
 - Startup performs no subprocess, file write, hook installation, notice, floating UI, or Statusline mutation.
-- The first Bash call verifies RTK `0.42.4`, its executable path, and one certified Linux x64 SHA-256 before rewriting.
+- The first Bash call verifies RTK `0.45.0`, its executable path, and the certified official Linux x64 SHA-256 before
+  rewriting.
 - Missing, slow, replaced, or otherwise drifting RTK executables leave the original Bash command unchanged.
 - Projection uses Pi's `context` event. It never returns a `tool_result` patch and never edits stored messages.
 - Failed Tool results, non-text blocks, Reads, and unknown tools remain exact.
@@ -40,11 +41,11 @@ enabled, and how much model-visible result text this session avoided:
 
 ```text
 RTK
-✓ ready · v0.42.4
+✓ ready · v0.45.0
 
 ◆ Runtime
 Binary  ~/.local/bin/rtk
-SHA-256  1d8bf5f1861f5ce3…
+SHA-256  99e0cff729d52297…
 
 ◆ Behavior
 ✓ Command rewriting on
@@ -83,15 +84,22 @@ wording, low-height fitting, and failure behavior; the real PTY verifier covers 
 
 ## Certified RTK runtime
 
-The Linux x64 runtime is pinned to [`rtk-ai/rtk` v0.42.4](https://github.com/rtk-ai/rtk/releases/tag/v0.42.4), source commit `8a7dd7e5570d7744d4b6508479a3674fe8c49286`. Two immutable builds of that exact source are accepted:
+The Linux x64 runtime is pinned to the official [`rtk-ai/rtk` v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0),
+source commit `b34be37caf3796b69a50952a28e60e32b5daad43`. Only the released binary below is accepted:
 
 | Build | SHA-256 |
 | --- | --- |
-| Official `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `34975116da11e09e502501daf758143e0b22ed3a42a10eb67fb693a6270d9e36` |
-| Official archive's `rtk` binary | `1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a` |
-| Certified local source build used by the maintainer | `5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250` |
+| Official `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| Official archive's `rtk` binary | `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-Every rewrite rechecks the selected path, resolved path, file fingerprint, and actual binary SHA. A switch between accepted binaries still counts as identity drift until `/rtk verify` explicitly re-certifies it.
+Every rewrite rechecks the selected path, resolved path, file fingerprint, and actual binary SHA. Any identity change
+disables rewriting until `/rtk verify` explicitly re-certifies it.
+
+RTK v0.45.0 preserves supported `rg` syntax, including `--files`, globs, and ordinary line-number searches. Its
+official `find` wrapper still rejects compound predicates and actions such as `-not` and `-exec`; pipelines such as
+`find ... -print0 | xargs ...` are left native. This is an external RTK constraint. Pi Stuff does not parse or repair
+commands; disable Command rewriting in `/rtk settings` when an unsupported `find` form is required, then remove that
+workaround after a later official RTK release is certified.
 
 ## Context composition
 
