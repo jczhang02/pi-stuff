@@ -4,8 +4,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-import { estimateTokens } from "@earendil-works/pi-coding-agent";
+import type { Message } from "@earendil-works/pi-ai";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { normalizePonytailMode, PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
@@ -19,7 +18,6 @@ import {
 } from "../../../../shared/runtime-type.js";
 import {
 	appendArtifactJsonl,
-	appendJsonl,
 	formatOutputArtifactContent,
 	getArtifactPaths,
 	withArtifactGroupWriteClaim,
@@ -32,14 +30,12 @@ import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import {
 	type AgentContextUsage,
 	type ArtifactPaths,
-	type CostSummary,
 	getSubagentDepthEnv,
 	type ModelAttempt,
 	type ProtocolOutputLimit,
 	type SteeringTargetState,
 	type SteeringTargetStatus,
 	SUBAGENT_ASYNC_STATUS_EVENT,
-	type TokenUsage,
 	type ToolBudgetState,
 	type TurnBudgetState,
 	type Usage,
@@ -128,6 +124,27 @@ import {
 	type ProcessTerminalCandidate,
 	writeProcessTerminalCandidate,
 } from "./process-terminal.ts";
+import {
+	addUsage,
+	appendDiagnosticEvent,
+	appendRecentOutput,
+	assistantStartsToolCall,
+	boundResultText,
+	boundRunResultOutputs,
+	costSummary,
+	DEFAULT_MAX_TASK_RESULT_BYTES,
+	emptyUsage,
+	estimatedChildMessageTokens,
+	MAX_MODEL_ATTEMPT_ERROR_BYTES,
+	MAX_RESULT_ERROR_BYTES,
+	maxChildProtocolBytes,
+	positiveByteLimit,
+	providerContextTokens,
+	resolveTaskContextWindow,
+	TASK_RESULT_MAX_BYTES_ENV,
+	terminalAssistantStop,
+	tokenUsage,
+} from "./runner-output.ts";
 import {
 	findSteeringRequest,
 	MAX_PENDING_STEERING_REQUESTS,
@@ -229,19 +246,6 @@ interface BackgroundCompletion {
 }
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
-const DEFAULT_MAX_ASYNC_EVENTS_BYTES = 4 * 1024 * 1024;
-const ASYNC_EVENTS_MAX_BYTES_ENV = "PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES";
-const DEFAULT_MAX_CHILD_PROTOCOL_BYTES = 32 * 1024 * 1024;
-const CHILD_PROTOCOL_MAX_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
-const MAX_RECENT_OUTPUT_BYTES = 64 * 1024;
-const MAX_RECENT_OUTPUT_LINES = 50;
-const DEFAULT_MAX_TASK_RESULT_BYTES = 256 * 1024;
-const TASK_RESULT_MAX_BYTES_ENV = "PI_SUBAGENT_TASK_RESULT_MAX_BYTES";
-const DEFAULT_MAX_RUN_RESULT_BYTES = 1024 * 1024;
-const RUN_RESULT_MAX_BYTES_ENV = "PI_SUBAGENT_RUN_RESULT_MAX_BYTES";
-const MAX_RESULT_ERROR_BYTES = 32 * 1024;
-const MAX_MODEL_ATTEMPT_ERROR_BYTES = 8 * 1024;
-const RESULT_TRUNCATION_MARKER = "\n[output truncated; full text remains in the Agent transcript/output artifact]\n";
 const BACKGROUND_RUNNER_SENTINEL_ENV = "PI_STUFF_BACKGROUND_RUNNER";
 const BACKGROUND_RUNNER_CONFIG_ENV = "PI_STUFF_BACKGROUND_RUNNER_CONFIG";
 
@@ -266,202 +270,6 @@ export function buildWriterProcessEnv(
 	delete env[BACKGROUND_RUNNER_SENTINEL_ENV];
 	delete env[BACKGROUND_RUNNER_CONFIG_ENV];
 	return env;
-}
-
-function maxAsyncEventsBytes(): number {
-	const parsed = Number(process.env[ASYNC_EVENTS_MAX_BYTES_ENV]);
-	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : DEFAULT_MAX_ASYNC_EVENTS_BYTES;
-}
-
-function maxChildProtocolBytes(): number {
-	const parsed = Number(process.env[CHILD_PROTOCOL_MAX_BYTES_ENV]);
-	return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_MAX_CHILD_PROTOCOL_BYTES;
-}
-
-function positiveByteLimit(name: string, fallback: number): number {
-	const parsed = Number(process.env[name]);
-	return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : fallback;
-}
-
-function utf8Tail(value: string, maxBytes: number): string {
-	const bytes = Buffer.from(value, "utf-8");
-	if (bytes.length <= maxBytes) return value;
-	let start = bytes.length - maxBytes;
-	while (start < bytes.length && (bytes[start] ?? 0) >> 6 === 2) start++;
-	return bytes.subarray(start).toString("utf-8");
-}
-
-function utf8Head(value: string, maxBytes: number): string {
-	const bytes = Buffer.from(value, "utf-8");
-	if (bytes.length <= maxBytes) return value;
-	let end = maxBytes;
-	while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--;
-	return bytes.subarray(0, end).toString("utf-8");
-}
-
-function boundResultText(value: string, maxBytes: number): string {
-	if (Buffer.byteLength(value, "utf-8") <= maxBytes) return value;
-	const markerBytes = Buffer.byteLength(RESULT_TRUNCATION_MARKER, "utf-8");
-	if (maxBytes <= markerBytes) return utf8Tail(value, maxBytes);
-	const payloadBytes = maxBytes - markerBytes;
-	const headBytes = Math.floor(payloadBytes / 2);
-	const tailBytes = payloadBytes - headBytes;
-	return `${utf8Head(value, headBytes)}${RESULT_TRUNCATION_MARKER}${utf8Tail(value, tailBytes)}`;
-}
-
-function fairResultBudgets(values: readonly string[], maxBytes: number): number[] {
-	const budgets = Array.from({ length: values.length }, () => 0);
-	let remaining = maxBytes;
-	let unresolved = values.map((_, index) => index);
-	while (unresolved.length > 0 && remaining > 0) {
-		const share = Math.floor(remaining / unresolved.length);
-		if (share <= 0) {
-			for (const index of unresolved.slice(0, remaining)) budgets[index] = 1;
-			break;
-		}
-		const fitting = unresolved.filter((index) => Buffer.byteLength(values[index] ?? "", "utf-8") <= share);
-		if (fitting.length === 0) {
-			for (const [position, index] of unresolved.entries()) {
-				budgets[index] = share + (position < remaining % unresolved.length ? 1 : 0);
-			}
-			break;
-		}
-		const fittingSet = new Set(fitting);
-		for (const index of fitting) {
-			const bytes = Buffer.byteLength(values[index] ?? "", "utf-8");
-			budgets[index] = bytes;
-			remaining -= bytes;
-		}
-		unresolved = unresolved.filter((index) => !fittingSet.has(index));
-	}
-	return budgets;
-}
-
-function boundRunResultOutputs(results: BackgroundTaskResult[]): BackgroundTaskResult[] {
-	const budgets = fairResultBudgets(
-		results.map((result) => result.output),
-		positiveByteLimit(RUN_RESULT_MAX_BYTES_ENV, DEFAULT_MAX_RUN_RESULT_BYTES),
-	);
-	return results.map((result, index) => ({
-		...result,
-		output: boundResultText(result.output, budgets[index] ?? 0),
-	}));
-}
-
-function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: Event): void {
-	try {
-		const limit = maxAsyncEventsBytes();
-		const line = `${JSON.stringify(event)}\n`;
-		const lineBytes = Buffer.byteLength(line, "utf-8");
-		if (lineBytes > limit || limit === 0) return;
-		let size = 0;
-		try {
-			const stat = fs.lstatSync(eventsPath);
-			if (stat.isSymbolicLink() || !stat.isFile()) return;
-			size = stat.size;
-		} catch (error) {
-			if (runtimeErrorCode(error) !== "ENOENT") return;
-		}
-		if (size + lineBytes <= limit) {
-			appendJsonl(eventsPath, line.trimEnd());
-			return;
-		}
-		const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes);
-		let retained = "";
-		if (retainedBudget > 0 && size > 0) {
-			const descriptor = fs.openSync(eventsPath, fs.constants.O_RDONLY);
-			try {
-				const buffer = Buffer.allocUnsafe(Math.min(size, retainedBudget));
-				const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, Math.max(0, size - buffer.length));
-				retained = buffer.subarray(0, bytesRead).toString("utf-8");
-				const firstNewline = retained.indexOf("\n");
-				if (size > bytesRead) retained = firstNewline >= 0 ? retained.slice(firstNewline + 1) : "";
-			} finally {
-				fs.closeSync(descriptor);
-			}
-		}
-		const temporary = `${eventsPath}.${process.pid}.${randomUUID()}.tmp`;
-		fs.writeFileSync(temporary, `${retained}${line}`, { mode: 0o600, flag: "wx" });
-		fs.renameSync(temporary, eventsPath);
-	} catch {
-		// Diagnostics never determine run success.
-	}
-}
-
-function emptyUsage(): Usage {
-	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
-}
-
-function finiteUsageNumber<Value>(value: Value): number {
-	return isRuntimeNumber(value) && Number.isFinite(value) ? value : 0;
-}
-
-function addUsage(target: Usage, message: ChildMessage): void {
-	const usage = message.usage;
-	target.turns += 1;
-	if (!usage || !isRuntimeObject(usage)) return;
-	target.input += finiteUsageNumber(usage.input ?? usage.inputTokens);
-	target.output += finiteUsageNumber(usage.output ?? usage.outputTokens);
-	target.cacheRead += finiteUsageNumber(usage.cacheRead);
-	target.cacheWrite += finiteUsageNumber(usage.cacheWrite);
-	target.cost += finiteUsageNumber(usage.cost?.total);
-}
-
-function providerContextTokens(message: ChildMessage): number | undefined {
-	const usage = message.usage;
-	if (!usage || !isRuntimeObject(usage)) return undefined;
-	const nativeTotal = finiteUsageNumber(usage.totalTokens);
-	if (nativeTotal > 0) return nativeTotal;
-	const calculated =
-		finiteUsageNumber(usage.input ?? usage.inputTokens) +
-		finiteUsageNumber(usage.output ?? usage.outputTokens) +
-		finiteUsageNumber(usage.cacheRead) +
-		finiteUsageNumber(usage.cacheWrite);
-	return calculated > 0 ? calculated : undefined;
-}
-
-function estimatedChildMessageTokens(message: ChildMessage): number {
-	try {
-		const estimated = estimateTokens(message);
-		return Number.isFinite(estimated) ? Math.max(0, estimated) : 0;
-	} catch {
-		return 0;
-	}
-}
-
-function resolveTaskContextWindow(task: RunnerAgentTask, model: string | undefined): number | undefined {
-	if (!model || !Array.isArray(task.modelContextWindows)) return undefined;
-	for (const candidate of task.modelContextWindows) {
-		if (!isRuntimeObject(candidate) || candidate === null || candidate.model !== model) continue;
-		if (
-			isRuntimeNumber(candidate.contextWindow) &&
-			Number.isSafeInteger(candidate.contextWindow) &&
-			candidate.contextWindow > 0
-		) {
-			return candidate.contextWindow;
-		}
-	}
-	return undefined;
-}
-
-function tokenUsage(usage: Usage): TokenUsage | undefined {
-	const total = usage.input + usage.output;
-	return total > 0 ? { input: usage.input, output: usage.output, total } : undefined;
-}
-
-function costSummary(attempts: ModelAttempt[]): CostSummary | undefined {
-	const inputTokens = attempts.reduce((sum, attempt) => sum + (attempt.usage?.input ?? 0), 0);
-	const outputTokens = attempts.reduce((sum, attempt) => sum + (attempt.usage?.output ?? 0), 0);
-	const costUsd = attempts.reduce((sum, attempt) => sum + (attempt.usage?.cost ?? 0), 0);
-	return inputTokens || outputTokens || costUsd ? { inputTokens, outputTokens, costUsd } : undefined;
-}
-
-function assistantStartsToolCall(message: AssistantMessage): boolean {
-	return message.content.some((part) => part.type === "toolCall");
-}
-
-function terminalAssistantStop(message: AssistantMessage): boolean {
-	return message.stopReason === "stop" && !assistantStartsToolCall(message);
 }
 
 function findLatestSessionFile(sessionDir: string | undefined): string | undefined {
@@ -804,27 +612,6 @@ function writeStatus(statusPath: string, status: RunnerStatus): void {
 	} catch (error) {
 		reportAgentDiagnostic(`Foreground Agent status observer failed for '${status.runId}':`, error);
 	}
-}
-
-function appendRecentOutput(step: RunnerStatusStep, text: string): void {
-	const lines = utf8Tail(text, MAX_RECENT_OUTPUT_BYTES)
-		.split(/\r?\n/)
-		.filter((line) => line.trim())
-		.slice(-MAX_RECENT_OUTPUT_LINES);
-	if (lines.length === 0) return;
-	const candidates = [...(step.recentOutput ?? []), ...lines].slice(-MAX_RECENT_OUTPUT_LINES);
-	const retained: string[] = [];
-	let remaining = MAX_RECENT_OUTPUT_BYTES;
-	for (let index = candidates.length - 1; index >= 0 && remaining > 0; index--) {
-		const separatorBytes = retained.length > 0 ? 1 : 0;
-		if (remaining <= separatorBytes) break;
-		const candidate = candidates[index] ?? "";
-		const bounded = utf8Tail(candidate, remaining - separatorBytes);
-		if (!bounded) break;
-		retained.unshift(bounded);
-		remaining -= Buffer.byteLength(bounded, "utf-8") + separatorBytes;
-	}
-	step.recentOutput = retained;
 }
 
 function interruptDescendants(config: BackgroundRunnerConfig, kind: "pause" | "timeout" | "stop"): void {
