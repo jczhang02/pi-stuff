@@ -1294,8 +1294,8 @@ async function verifyWideInteractions(
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
-	await session.waitForText("\uF4591");
-	await session.waitForText("\uF4201");
+	await session.waitForText("\u{F03EB}1");
+	await session.waitForText("\u{F0752}1");
 	screen = await session.waitForAbsence("Welcome back!");
 	if (!screen.includes(`${NERD_PONYTAIL_MARKER} full`)) fail("settled Statusline lost Ponytail's mode authority");
 	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
@@ -1320,7 +1320,7 @@ async function verifyWideInteractions(
 		"\uF0EB",
 		"\u{F024B}",
 		"\uF418",
-		"\uF459",
+		"\u{F03EB}",
 		"\u{F0328}",
 		"\u{F01BC}",
 		"\uF155",
@@ -1331,6 +1331,11 @@ async function verifyWideInteractions(
 		if (markerIndex < 0) fail(`wide Statusline is missing accepted segment icon ${marker}\n${screen}`);
 		if (markerIndex <= priorMarker) fail(`wide Statusline segment order is incorrect\n${screen}`);
 		priorMarker = markerIndex;
+	}
+	const branchIndex = status.indexOf("\uF418");
+	const fileStateIndex = status.indexOf("\u{F03EB}");
+	if (status.slice(branchIndex, fileStateIndex).includes(" · ")) {
+		fail(`wide Statusline split the Git branch and file state into separate groups\n${screen}`);
 	}
 	if (status.includes("Fast")) fail("disabled Fast mode left a Statusline segment or gap");
 	const history = await session.waitForText(finalThought, true);

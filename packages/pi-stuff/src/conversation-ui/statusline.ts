@@ -69,8 +69,8 @@ const STATUSLINE_ICONS: StatuslineIcons = {
 	prompt: "\uF460",
 	staged: "\uF457",
 	thinking: "\uF0EB",
-	unstaged: "\uF459",
-	untracked: "\uF420",
+	unstaged: "\u{F03EB}",
+	untracked: "\u{F0752}",
 	weekly: "\u{F029A}",
 };
 
@@ -797,14 +797,23 @@ function renderStatusRow(
 	const compactIds = new Set<StatusSegmentId>(["model", "thinking", "cwd", "branch", "context", "goal"]);
 	const eligible = density === "compact" ? segments.filter((segment) => compactIds.has(segment.id)) : segments;
 	if (eligible.length === 0 || width < 1) return "";
-	const full = eligible.map((segment) => segment.full).join(theme.fg("dim", STATUSLINE_SEPARATOR));
+	const join = (items: readonly { readonly id: StatusSegmentId; readonly text: string }[]): string =>
+		items
+			.map((item, index) => {
+				if (index === 0) return item.text;
+				const separator =
+					items[index - 1]?.id === "branch" && item.id === "diff" ? " " : theme.fg("dim", STATUSLINE_SEPARATOR);
+				return `${separator}${item.text}`;
+			})
+			.join("");
+	const full = join(eligible.map((segment) => ({ id: segment.id, text: segment.full })));
 	if (density !== "compact" && visibleWidth(full) <= width) return full;
 
 	const selected = eligible.map((segment) => ({
 		...segment,
 		text: density === "full" ? segment.full : segment.compact,
 	}));
-	const render = (): string => selected.map((segment) => segment.text).join(theme.fg("dim", STATUSLINE_SEPARATOR));
+	const render = (): string => join(selected);
 	while (selected.length > 1 && visibleWidth(render()) > width) {
 		let removalIndex = 0;
 		for (let index = 1; index < selected.length; index += 1) {

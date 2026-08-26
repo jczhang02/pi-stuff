@@ -9,10 +9,11 @@ the shared non-floating Command Dialog used by focused Suite commands.
 ### Statusline
 
 The Statusline is exactly one icon-led status row followed by one optional previous-prompt row. The status row uses dim
-middle-dot separators and this stable order: model, Thinking, conditional `fast`, working directory, Git branch, Git file
-state, Context percentage, cache hit rate, metered cost or Codex weekly allowance, the conditional current Goal, and the
-conditional Ponytail Mode. It deliberately omits token-window counts and ordinary Agent worktime. Capability state such
-as MCP, Agents, Todo, BTW, and Tool activity stays on its own focused surface instead of adding Statusline segments.
+middle-dot separators between top-level groups and this stable order: model, Thinking, conditional `fast`, working
+directory, Git, Context percentage, cache hit rate, metered cost or Codex weekly allowance, the conditional current Goal,
+and the conditional Ponytail Mode. Git branch tracking and file state share one visual group separated by spaces. It
+deliberately omits token-window counts and ordinary Agent worktime. Capability state such as MCP, Agents, Todo, BTW,
+and Tool activity stays on its own focused surface instead of adding Statusline segments.
 Ponytail is the narrow exception: `󱖿 <mode>` is its sole persistent mode authority, disappears for `off` or an explicit
 hide preference, and never represents Agent activity.
 
@@ -26,7 +27,7 @@ the Statusline remains the sole persistent Goal presentation authority.
 Automatic density first changes long fields to their compact form, then removes complete low-priority segments. It
 never wraps the status row or leaves clipped field fragments. Model and Context survive first, followed by cwd, branch,
 Thinking, allowance, file state, `fast`, and cache according to their accepted priorities. A constrained dirty Git state
-aggregates file changes as `N`; branch tracking remains attributable through `` and `` markers.
+aggregates file changes as `󰏫N`; branch tracking remains attributable through `` and `` markers.
 
 The previous prompt is always bounded to one row when enabled. Its muted `` cue occupies the same first visual column
 as the model icon. Both rows reserve one marker cell followed by one stable gap, so Latin, CJK, and emoji text begin in

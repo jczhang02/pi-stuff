@@ -159,10 +159,11 @@ Its Dialog temporarily suppresses the composed Footer, preserves the editor draf
 visible without presenting them as writable settings.
 
 The Statusline is a Nerd Font-only surface. Its fixed grammar is `󱙺` model, `` Thinking, `` Fast, `󰉋` directory,
-``/``/`` branch tracking, ``/``/``/`` Git state, `󰌨` Context, `󰆼` cache, `󰊚` weekly
-allowance, `` cost, ``/``/``/`` Goal state, `󱖿` Ponytail, and `` Prompt. Every semantic icon and state
-marker in either row must use a Nerd Font glyph; do not add Unicode/ASCII fallbacks, terminal detection, or an icon-mode
-setting. Separators and truncation marks such as `·` and `…` remain punctuation rather than semantic icons. Reuse a
+``/``/`` branch tracking, ``/``/`󰏫`/`󰝒` Git state, `󰌨` Context, `󰆼` cache, `󰊚` weekly
+allowance, `` cost, ``/``/``/`` Goal state, `󱖿` Ponytail, and `` Prompt. Branch tracking and Git
+file state form one visual group separated by spaces; middle dots separate that Git group from neighboring Statusline
+groups. Every semantic icon and state marker in either row must use a Nerd Font glyph; do not add Unicode/ASCII
+fallbacks, terminal detection, or an icon-mode setting. Separators and truncation marks such as `·` and `…` remain punctuation rather than semantic icons. Reuse a
 Capability identity icon, such as Ponytail's `󱖿`, in its owning Dialog instead of introducing a second visual identity.
 A Dialog redesign does not silently change transcript markers or Tool rendering.
 
