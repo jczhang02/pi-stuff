@@ -37,12 +37,7 @@ import {
 	resolveEffectiveSubagentModel,
 } from "../shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../shared/model-scope.ts";
-import {
-	type BackgroundRunnerWork,
-	MAX_BACKGROUND_TASKS,
-	MAX_PARALLEL_CONCURRENCY,
-	type RunnerAgentTask,
-} from "../shared/parallel-utils.ts";
+import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import { DEFAULT_AGENT_TOOL_BUDGET, validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { DEFAULT_AGENT_TURN_BUDGET, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
@@ -102,33 +97,6 @@ export interface CommonBuildParams {
 	childBaseExtensionPath?: string;
 }
 
-export interface AsyncParallelRunnerWorkBuildParams extends CommonBuildParams {
-	agents: AgentConfig[];
-	tasks: AsyncParallelTaskInput[];
-	contextForAgent?: (agentName: string) => ContextMode;
-	thinking?: AgentConfig["thinking"];
-	thinkingOverridesByIndex?: Array<AgentConfig["thinking"] | undefined>;
-	sessionFilesByIndex?: Array<string | undefined>;
-	modelCandidatesByIndex?: Array<string[] | undefined>;
-	concurrency?: number;
-	globalConcurrencyLimit?: number;
-	worktree?: boolean;
-}
-
-export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
-	agent: string;
-	description?: string;
-	delegatedTask?: string;
-	task: string;
-	agentConfig: AgentConfig;
-	context?: ContextMode;
-	skills?: string[];
-	sessionFile?: string;
-	modelOverride?: string;
-	modelCandidates?: string[];
-	thinkingOverride?: AgentConfig["thinking"];
-}
-
 export interface BackgroundRecoveryDescriptor {
 	version: 2;
 	sourceRunId: string;
@@ -163,25 +131,40 @@ export interface BackgroundRecoveryDescriptor {
 	artifactConfig?: ArtifactConfig;
 }
 
-export type AsyncRunnerWorkBuildResult =
-	| {
-			runnerCwd: string;
-			work: BackgroundRunnerWork;
-			recoveries: BackgroundRecoveryDescriptor[];
-	  }
-	| { error: string };
-
-export type AsyncSingleRunnerWorkBuildResult =
-	| {
-			runnerCwd: string;
-			work: Extract<BackgroundRunnerWork, { mode: "single" }>;
-			recovery: BackgroundRecoveryDescriptor;
-	  }
-	| { error: string };
-
 export interface BuiltTask {
 	task: RunnerAgentTask;
 	recovery: BackgroundRecoveryDescriptor;
+}
+
+export interface ResolvedTaskBuildInput {
+	runId: string;
+	index: number;
+	taskInput: AsyncParallelTaskInput;
+	agent: AgentConfig;
+	params: CommonBuildParams;
+	runnerCwd: string;
+	context?: ContextMode;
+	skills?: string[];
+	sessionFile?: string;
+	modelOverride?: string;
+	modelCandidatesOverride?: string[];
+	thinkingOverride?: AgentConfig["thinking"];
+}
+
+interface ResolvedTaskProjection {
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	definitionDigest: string;
+	launchContractDigest: string;
+	maxSubagentDepth: number;
+	modelCandidates: string[];
+	modelContextWindows: Array<{ model: string; contextWindow: number }>;
+	primaryModel?: string;
+	skillNames: string[];
+	systemPrompt: string;
+	taskCwd: string;
+	thinking?: string;
+	toolBudget?: ResolvedToolBudget;
+	turnBudget?: ResolvedTurnBudget;
 }
 
 function resolveTaskTurnBudget(
@@ -213,20 +196,83 @@ function resolveTaskToolBudget(
 	return { toolBudget: configBudget ?? DEFAULT_AGENT_TOOL_BUDGET };
 }
 
-export function buildResolvedTask(input: {
-	runId: string;
-	index: number;
-	taskInput: AsyncParallelTaskInput;
-	agent: AgentConfig;
-	params: CommonBuildParams;
-	runnerCwd: string;
-	context?: ContextMode;
-	skills?: string[];
-	sessionFile?: string;
-	modelOverride?: string;
-	modelCandidatesOverride?: string[];
-	thinkingOverride?: AgentConfig["thinking"];
-}): BuiltTask | { error: string } {
+function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskProjection): BuiltTask {
+	const { agent, params, taskInput } = input;
+	const task: RunnerAgentTask = {
+		governorSessionId: params.ctx.governorSessionId ?? params.ctx.currentSessionId,
+		physicalSessionId: params.ctx.physicalSessionId ?? params.ctx.currentSessionId,
+		parentSessionId: params.ctx.parentSessionId ?? params.ctx.currentSessionId,
+		logicalAgentPathComponent: `${params.logicalSourceRunId ?? input.runId}:${
+			params.logicalChildIndex ?? input.index
+		}`,
+		agent: agent.name,
+		description: resolveDisplayDescription(taskInput.description, taskInput.task),
+		delegatedTask: taskInput.delegatedTask ?? taskInput.task,
+		task: taskInput.task,
+		cwd: resolved.taskCwd,
+		modelCandidates: [...resolved.modelCandidates],
+		systemPrompt: resolved.systemPrompt,
+		systemPromptMode: agent.systemPromptMode,
+		inheritProjectContext: agent.inheritProjectContext,
+		inheritSkills: agent.inheritSkills,
+		skills: [...resolved.skillNames],
+		maxSubagentDepth: resolved.maxSubagentDepth,
+		definitionDigest: resolved.definitionDigest,
+		launchBindingTask: taskInput.task,
+		launchContractDigest: resolved.launchContractDigest,
+	};
+	if (input.context) task.context = input.context;
+	if (resolved.primaryModel) task.model = resolved.primaryModel;
+	if (resolved.thinking) task.thinking = resolved.thinking;
+	if (resolved.modelContextWindows.length > 0) {
+		task.modelContextWindows = resolved.modelContextWindows.map((entry) => ({ ...entry }));
+	}
+	if (agent.tools) task.tools = [...agent.tools];
+	if (agent.extensions) task.extensions = [...agent.extensions];
+	if (agent.subagentOnlyExtensions) task.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
+	if (agent.mcpDirectTools) task.mcpDirectTools = [...agent.mcpDirectTools];
+	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
+	if (input.sessionFile) task.sessionFile = input.sessionFile;
+	if (resolved.turnBudget) task.turnBudget = resolved.turnBudget;
+	if (resolved.toolBudget) task.toolBudget = resolved.toolBudget;
+	if (resolved.capabilityCeiling) task.capabilityCeiling = resolved.capabilityCeiling;
+	const recovery: BackgroundRecoveryDescriptor = {
+		version: 2,
+		sourceRunId: params.logicalSourceRunId ?? input.runId,
+		childIndex: params.logicalChildIndex ?? input.index,
+		launchContractDigest: resolved.launchContractDigest,
+		agent: agent.name,
+		cwd: resolved.taskCwd,
+		systemPromptMode: agent.systemPromptMode,
+		inheritProjectContext: agent.inheritProjectContext,
+		inheritSkills: agent.inheritSkills,
+		maxSubagentDepth: resolved.maxSubagentDepth,
+	};
+	if (input.context) recovery.context = input.context;
+	if (input.sessionFile) recovery.sessionFile = input.sessionFile;
+	if (resolved.primaryModel) recovery.model = resolved.primaryModel;
+	if (resolved.modelCandidates.length > 1) recovery.fallbackModels = resolved.modelCandidates.slice(1);
+	if (resolved.thinking) recovery.thinking = resolved.thinking;
+	if (agent.tools) recovery.tools = [...agent.tools];
+	if (agent.extensions) recovery.extensions = [...agent.extensions];
+	if (agent.subagentOnlyExtensions) recovery.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
+	if (agent.mcpDirectTools) recovery.mcpDirectTools = [...agent.mcpDirectTools];
+	if (resolved.systemPrompt) recovery.systemPrompt = resolved.systemPrompt;
+	if (resolved.skillNames.length > 0) recovery.skills = [...resolved.skillNames];
+	if (agent.skillPath) recovery.skillPath = [...agent.skillPath];
+	if (agent.filePath) recovery.agentFilePath = agent.filePath;
+	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
+	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
+	if (resolved.turnBudget) recovery.initialTurnBudget = resolved.turnBudget;
+	if (resolved.toolBudget) recovery.initialToolBudget = resolved.toolBudget;
+	if (resolved.capabilityCeiling) recovery.capabilityCeiling = resolved.capabilityCeiling;
+	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
+	if (params.artifactsDir) recovery.artifactsDir = params.artifactsDir;
+	if (params.artifactConfig) recovery.artifactConfig = params.artifactConfig;
+	return { task, recovery };
+}
+
+export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { error: string } {
 	const { taskInput, agent, params } = input;
 	const taskCwd = resolveChildCwd(input.runnerCwd, taskInput.cwd);
 	const normalizedTaskSkills = normalizeSkillInput(taskInput.skill);
@@ -322,44 +368,25 @@ export function buildResolvedTask(input: {
 			};
 		}
 	}
-	const launchBinding: Partial<LaunchBindingInput> = {
+	const skillNames = resolvedSkills.map((skill) => skill.name);
+	const launchBinding: LaunchBindingInput = {
 		definitionDigest,
 		task: taskInput.task,
-		modelCandidates,
+		modelCandidates: [...modelCandidates],
+		systemPrompt,
+		systemPromptMode: agent.systemPromptMode,
+		inheritProjectContext: agent.inheritProjectContext,
+		inheritSkills: agent.inheritSkills,
+		skills: [...skillNames],
+		maxSubagentDepth,
 	};
 	if (thinking) launchBinding.thinking = thinking;
-	launchBinding.systemPrompt = systemPrompt;
-	launchBinding.systemPromptMode = agent.systemPromptMode;
-	launchBinding.inheritProjectContext = agent.inheritProjectContext;
-	launchBinding.inheritSkills = agent.inheritSkills;
-	launchBinding.skills = resolvedSkills.map((skill) => skill.name);
-	launchBinding.tools = toolPlan.effectiveToolAllowlist;
-	launchBinding.extensions = toolPlan.extensionArgs;
-	launchBinding.mcpDirectTools = toolPlan.effectiveMcpTools;
-	launchBinding.turnBudget = turnBudget.turnBudget;
-	launchBinding.toolBudget = toolBudget.toolBudget;
-	launchBinding.maxSubagentDepth = maxSubagentDepth;
-	launchBinding.capabilityCeiling = capabilityCeiling;
-	// SAFETY: both required launch-binding flags and the definition digest are assigned before hashing.
-	const launchContractDigest = launchBindingDigest(launchBinding as LaunchBindingInput);
-
-	const task: Partial<RunnerAgentTask> = {
-		governorSessionId: params.ctx.governorSessionId ?? params.ctx.currentSessionId,
-		physicalSessionId: params.ctx.physicalSessionId ?? params.ctx.currentSessionId,
-		parentSessionId: params.ctx.parentSessionId ?? params.ctx.currentSessionId,
-		logicalAgentPathComponent: `${params.logicalSourceRunId ?? input.runId}:${
-			params.logicalChildIndex ?? input.index
-		}`,
-		agent: agent.name,
-		description: resolveDisplayDescription(taskInput.description, taskInput.task),
-		delegatedTask: taskInput.delegatedTask ?? taskInput.task,
-		task: taskInput.task,
-	};
-	if (input.context) task.context = input.context;
-	task.cwd = taskCwd;
-	if (primaryModel) task.model = primaryModel;
-	if (thinking) task.thinking = thinking;
-	task.modelCandidates = modelCandidates;
+	if (toolPlan.effectiveToolAllowlist) launchBinding.tools = [...toolPlan.effectiveToolAllowlist];
+	if (toolPlan.extensionArgs) launchBinding.extensions = [...toolPlan.extensionArgs];
+	if (toolPlan.effectiveMcpTools) launchBinding.mcpDirectTools = [...toolPlan.effectiveMcpTools];
+	if (turnBudget.turnBudget) launchBinding.turnBudget = turnBudget.turnBudget;
+	if (toolBudget.toolBudget) launchBinding.toolBudget = toolBudget.toolBudget;
+	if (capabilityCeiling) launchBinding.capabilityCeiling = capabilityCeiling;
 	const modelContextWindows = modelCandidates.flatMap((model) => {
 		const contextWindow = findModelInfo(
 			model,
@@ -369,144 +396,20 @@ export function buildResolvedTask(input: {
 		if (contextWindow === undefined || !Number.isSafeInteger(contextWindow) || contextWindow <= 0) return [];
 		return [{ model, contextWindow }];
 	});
-	if (modelContextWindows.length > 0) task.modelContextWindows = modelContextWindows;
-	task.tools = agent.tools;
-	task.extensions = agent.extensions;
-	task.subagentOnlyExtensions = agent.subagentOnlyExtensions;
-	task.mcpDirectTools = agent.mcpDirectTools;
-	task.systemPrompt = systemPrompt;
-	task.systemPromptMode = agent.systemPromptMode;
-	task.inheritProjectContext = agent.inheritProjectContext;
-	task.inheritSkills = agent.inheritSkills;
-	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
-	task.skills = resolvedSkills.map((skill) => skill.name);
-	if (input.sessionFile) task.sessionFile = input.sessionFile;
-	task.maxSubagentDepth = maxSubagentDepth;
-	task.definitionDigest = definitionDigest;
-	task.launchBindingTask = taskInput.task;
-	task.launchContractDigest = launchContractDigest;
-	if (turnBudget.turnBudget) task.turnBudget = turnBudget.turnBudget;
-	if (toolBudget.toolBudget) task.toolBudget = toolBudget.toolBudget;
-	if (capabilityCeiling) task.capabilityCeiling = capabilityCeiling;
-
-	const recovery: Partial<BackgroundRecoveryDescriptor> = {
-		version: 2,
-		sourceRunId: params.logicalSourceRunId ?? input.runId,
-		childIndex: params.logicalChildIndex ?? input.index,
-		launchContractDigest,
-		agent: agent.name,
+	const projection: ResolvedTaskProjection = {
+		definitionDigest,
+		launchContractDigest: launchBindingDigest(launchBinding),
+		maxSubagentDepth,
+		modelCandidates,
+		modelContextWindows,
+		skillNames,
+		systemPrompt,
+		taskCwd,
 	};
-	if (input.context) recovery.context = input.context;
-	if (input.sessionFile) recovery.sessionFile = input.sessionFile;
-	recovery.cwd = taskCwd;
-	if (primaryModel) recovery.model = primaryModel;
-	if (modelCandidates.length > 1) recovery.fallbackModels = modelCandidates.slice(1);
-	if (thinking) recovery.thinking = thinking;
-	if (agent.tools) recovery.tools = [...agent.tools];
-	if (agent.extensions) recovery.extensions = [...agent.extensions];
-	if (agent.subagentOnlyExtensions) recovery.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
-	if (agent.mcpDirectTools) recovery.mcpDirectTools = [...agent.mcpDirectTools];
-	if (systemPrompt) recovery.systemPrompt = systemPrompt;
-	recovery.systemPromptMode = agent.systemPromptMode;
-	recovery.inheritProjectContext = agent.inheritProjectContext;
-	recovery.inheritSkills = agent.inheritSkills;
-	if (resolvedSkills.length) recovery.skills = resolvedSkills.map((skill) => skill.name);
-	if (agent.skillPath) recovery.skillPath = [...agent.skillPath];
-	if (agent.filePath) recovery.agentFilePath = agent.filePath;
-	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
-	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
-	if (turnBudget.turnBudget) recovery.initialTurnBudget = turnBudget.turnBudget;
-	if (toolBudget.toolBudget) recovery.initialToolBudget = toolBudget.toolBudget;
-	recovery.maxSubagentDepth = maxSubagentDepth;
-	if (capabilityCeiling) recovery.capabilityCeiling = capabilityCeiling;
-	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
-	if (params.artifactsDir) recovery.artifactsDir = params.artifactsDir;
-	if (params.artifactConfig) recovery.artifactConfig = params.artifactConfig;
-	// SAFETY: every required RunnerAgentTask field is assigned from resolved launch inputs above.
-	const resolvedTask = task as RunnerAgentTask;
-	// SAFETY: every required recovery descriptor field is assigned alongside its paired RunnerAgentTask.
-	const recoveryDescriptor = recovery as BackgroundRecoveryDescriptor;
-	return { task: resolvedTask, recovery: recoveryDescriptor };
-}
-
-export function buildAsyncParallelRunnerWork(
-	id: string,
-	params: AsyncParallelRunnerWorkBuildParams,
-): AsyncRunnerWorkBuildResult {
-	if (params.tasks.length === 0) return { error: "Parallel background work requires at least one task." };
-	if (params.tasks.length > MAX_BACKGROUND_TASKS) {
-		return { error: `Parallel background work supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.` };
-	}
-	const runnerCwd = resolveChildCwd(params.ctx.cwd, params.cwd);
-	const resolved: BuiltTask[] = [];
-	for (let index = 0; index < params.tasks.length; index++) {
-		const taskInput = params.tasks[index];
-		if (!taskInput) return { error: `Parallel task ${index} is missing.` };
-		const agent = params.agents.find((candidate) => candidate.name === taskInput.agent);
-		if (!agent) return { error: `Unknown agent: ${taskInput.agent}` };
-		const built = buildResolvedTask({
-			runId: id,
-			index,
-			taskInput,
-			agent,
-			params,
-			runnerCwd,
-			context: params.contextForAgent?.(taskInput.agent),
-			sessionFile: params.sessionFilesByIndex?.[index],
-			thinkingOverride: params.thinkingOverridesByIndex?.[index] ?? params.thinking,
-			modelCandidatesOverride: params.modelCandidatesByIndex?.[index],
-		});
-		if ("error" in built) return built;
-		resolved.push(built);
-	}
-	const configuredConcurrency = Math.max(1, Math.floor(params.concurrency ?? MAX_PARALLEL_CONCURRENCY) || 1);
-	const concurrency = Math.min(
-		params.tasks.length,
-		configuredConcurrency,
-		Math.max(1, Math.floor(params.globalConcurrencyLimit ?? configuredConcurrency) || 1),
-	);
-	return {
-		runnerCwd,
-		work: {
-			mode: "parallel",
-			group: {
-				tasks: resolved.map((entry) => entry.task),
-				concurrency,
-				worktree: params.worktree === true,
-			},
-		},
-		recoveries: resolved.map((entry) => entry.recovery),
-	};
-}
-
-export function buildAsyncSingleRunnerWork(
-	id: string,
-	params: AsyncSingleRunnerWorkBuildParams,
-): AsyncSingleRunnerWorkBuildResult {
-	const runnerCwd = resolveChildCwd(params.ctx.cwd, params.cwd);
-	const built = buildResolvedTask({
-		runId: id,
-		index: 0,
-		taskInput: {
-			agent: params.agent,
-			description: params.description,
-			delegatedTask: params.delegatedTask,
-			task: params.task,
-		},
-		agent: params.agentConfig,
-		params,
-		runnerCwd,
-		context: params.context,
-		skills: params.skills,
-		sessionFile: params.sessionFile,
-		modelOverride: params.modelOverride,
-		modelCandidatesOverride: params.modelCandidates,
-		thinkingOverride: params.thinkingOverride,
-	});
-	if ("error" in built) return built;
-	return {
-		runnerCwd,
-		work: { mode: "single", task: built.task },
-		recovery: built.recovery,
-	};
+	if (primaryModel) projection.primaryModel = primaryModel;
+	if (thinking) projection.thinking = thinking;
+	if (turnBudget.turnBudget) projection.turnBudget = turnBudget.turnBudget;
+	if (toolBudget.toolBudget) projection.toolBudget = toolBudget.toolBudget;
+	if (capabilityCeiling) projection.capabilityCeiling = capabilityCeiling;
+	return projectBuiltTask(input, projection);
 }

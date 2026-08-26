@@ -48,13 +48,9 @@ import type { SessionLeaseIntent } from "../shared/session-lease.ts";
 import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import { createInitialStatus } from "./initial-status.ts";
 import { finalizeProcessTerminal, readProcessTerminal } from "./process-terminal.ts";
-import type {
-	AsyncExecutionContext,
-	AsyncParallelRunnerWorkBuildParams,
-	AsyncSingleRunnerWorkBuildParams,
-	BackgroundRecoveryDescriptor,
-} from "./resolved-task.ts";
-import { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "./resolved-task.ts";
+import type { AsyncExecutionContext, BackgroundRecoveryDescriptor } from "./resolved-task.ts";
+import type { AsyncParallelRunnerWorkBuildParams, AsyncSingleRunnerWorkBuildParams } from "./runner-work.ts";
+import { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "./runner-work.ts";
 import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,
@@ -63,20 +59,20 @@ import {
 
 export type {
 	AsyncExecutionContext,
-	AsyncParallelRunnerWorkBuildParams,
 	AsyncParallelTaskInput,
-	AsyncRunnerWorkBuildResult,
-	AsyncSingleRunnerWorkBuildParams,
-	AsyncSingleRunnerWorkBuildResult,
 	BackgroundRecoveryDescriptor,
 	BuiltTask,
 	CommonBuildParams,
+	ResolvedTaskBuildInput,
 } from "./resolved-task.ts";
-export {
-	buildAsyncParallelRunnerWork,
-	buildAsyncSingleRunnerWork,
-	buildResolvedTask,
-} from "./resolved-task.ts";
+export { buildResolvedTask } from "./resolved-task.ts";
+export type {
+	AsyncParallelRunnerWorkBuildParams,
+	AsyncRunnerWorkBuildResult,
+	AsyncSingleRunnerWorkBuildParams,
+	AsyncSingleRunnerWorkBuildResult,
+} from "./runner-work.ts";
+export { buildAsyncParallelRunnerWork, buildAsyncSingleRunnerWork } from "./runner-work.ts";
 
 const START_EVENT_TASK_PREVIEW_CODE_UNITS = 500;
 const MAX_NESTED_RESULT_FILE_BYTES = 32 * 1024 * 1024;
