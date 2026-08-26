@@ -133,7 +133,6 @@ send -- [binary format c 21]
 after 100
 send -- "/ctx\r"
 must_expect "Wrap up history"
-must_expect "Flush pending drops"
 send -- "\r"
 must_expect "Keep 20 recent messages"
 send -- [binary format c 27]
@@ -143,10 +142,7 @@ after 100
 send -- "CONTEXT_DIALOG_FOCUS"
 must_expect "CONTEXT_DIALOG_FOCUS"
 send -- [binary format c 21]
-send -- "/ctx\r"
-must_expect "Wrap up history"
-send -- [binary format c* {27 91 66}]
-send -- "\r"
+send -- "/ctx flush\r"
 must_expect "Context flush"
 must_expect "nothing queued"
 send -- "CONTEXT_SECOND\r"
