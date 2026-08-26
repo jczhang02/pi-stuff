@@ -84,3 +84,10 @@ Recorded at 2026-08-26T01:17:43Z after the runner started and before any run out
 Pi Stuff Package. Ponytail's standing contribution remains `off`; the Package-declared Skill catalog is the same in both
 arms and is part of the real installed-Package target surface. No benchmark input, ordering, measure, threshold, or
 failure policy changed.
+
+Recorded at 2026-08-26T01:22:25Z before any benchmark Session or Provider request: the first command invocation stopped
+inside the mandatory Host-provenance preflight because `PI_BIN` selected a non-release local build. It produced zero
+samples and no model outcome. The certified v0.84.3 Linux x64 release artifact was then downloaded from the
+preregistered official release and verified as 104,487,040 bytes with SHA-256
+`ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08`. Supplying that artifact through `PI_BIN`
+starts the first and only sample set; this preflight correction does not retry or replace a sample.
