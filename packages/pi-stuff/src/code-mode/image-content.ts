@@ -2,7 +2,7 @@ import { type AgentToolResult, resizeImage } from "@earendil-works/pi-coding-age
 import { getImageDimensions } from "@earendil-works/pi-tui";
 
 export const INVALID_CODE_MODE_IMAGE_MESSAGE =
-	"Code Mode rejected an invalid or incomplete image. Use an image-producing Tool such as tools.read instead of Base64 from a text Tool.";
+	"Code Mode rejected an invalid or incomplete image. Use tools.view_image when active, or tools.read, instead of Base64 from a text Tool.";
 
 export class InvalidCodeModeImageError extends Error {
 	constructor() {

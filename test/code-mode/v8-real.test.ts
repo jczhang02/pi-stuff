@@ -58,6 +58,47 @@ realTest("the certified V8 host executes a real Connector call and returns its t
 	}
 });
 
+realTest("the certified V8 host accepts a complete image Tool result through image", async () => {
+	const executor = new V8CodeModeExecutor();
+	const image = {
+		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		mimeType: "image/png",
+		type: "image" as const,
+	};
+	const tool: SuiteSandboxTool = {
+		description: "Return one valid image",
+		inputSchema: Type.Object({ path: Type.String() }),
+		name: "view_image",
+		usage: "tools.view_image({ path })",
+		async invoke(_input, context) {
+			const result = { content: [image], details: { path: "pixel.png" } };
+			context.captureResult?.(result);
+			return result;
+		},
+	};
+	try {
+		let response: RuntimeResponse = await executor.execute({
+			context: { cwd: process.cwd() },
+			source: buildSuiteSandboxSource(
+				`const result = await tools.view_image({ path: "pixel.png" }); image(result);`,
+				[{ description: tool.description, inputSchema: tool.inputSchema, name: tool.name, replay: "record" }],
+			),
+			tools: [tool],
+		});
+		while (response.kind === "yielded") {
+			response = await executor.wait(response.cellId, { context: { cwd: process.cwd() }, yieldTimeMs: 60_000 });
+		}
+		expect(response).toMatchObject({ kind: "result" });
+		expect(response).not.toHaveProperty("errorText");
+		expect(response.contentItems).toEqual([
+			{ detail: "high", image_url: `data:${image.mimeType};base64,${image.data}`, type: "input_image" },
+		]);
+		expect(response.traces).toMatchObject([{ name: "view_image", result: { content: [image] }, status: "done" }]);
+	} finally {
+		await executor.shutdown();
+	}
+});
+
 realTest("the certified V8 host cannot persist malformed image helper output", async () => {
 	const executor = new V8CodeModeExecutor();
 	const registry: SuiteToolDefinitionRegistry = {
@@ -70,15 +111,21 @@ realTest("the certified V8 host cannot persist malformed image helper output", a
 	};
 	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(registry), executor);
 	try {
-		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
-		const result = await runtime.execute(
-			"outer-invalid-image",
-			'image({image_url:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12No/wAAggCB3UNq9AAAAABJRU5ErkJggg=="});',
-			{ cwd: process.cwd() } as ExtensionContext,
-		);
-		expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
-		expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
-		expect(result.content.some((item) => item.type === "image")).toBe(false);
+		const invalidData =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12No/wAAggCB3UNq9AAAAABJRU5ErkJggg==";
+		const programs = [
+			`image({image_url:"data:image/png;base64,${invalidData}"});`,
+			`image({content:[{type:"image",data:"${invalidData}",mimeType:"image/png"}],details:{}});`,
+		];
+		for (const [index, source] of programs.entries()) {
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+			const result = await runtime.execute(`outer-invalid-image-${String(index)}`, source, {
+				cwd: process.cwd(),
+			} as ExtensionContext);
+			expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
+			expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+			expect(result.content.some((item) => item.type === "image")).toBe(false);
+		}
 	} finally {
 		await runtime.shutdown();
 	}

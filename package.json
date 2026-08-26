@@ -12,6 +12,7 @@
 		"acceptance:code-mode:tui": "bun scripts/verify-code-mode-tui.ts",
 		"acceptance:magic-context:real": "bun scripts/verify-magic-context-real.ts",
 		"beads:publish": "bun scripts/publish-beads.ts",
+		"benchmark:code-mode-image": "bun scripts/benchmark-code-mode-image.ts",
 		"benchmark:conversation-markdown": "bun scripts/benchmark-conversation-markdown.ts",
 		"benchmark:ponytail": "bun scripts/benchmark-ponytail.ts",
 		"benchmark:lifecycle": "bun scripts/benchmark-lifecycle.ts --acceptance --trace --long-tools 6500 --long-tool-bytes 8192",

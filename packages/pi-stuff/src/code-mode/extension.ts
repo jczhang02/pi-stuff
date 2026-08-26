@@ -54,20 +54,19 @@ const CODE_MODE_PARAMETERS = Type.Object(
 );
 
 const CODE_MODE_SEARCH_PARAMETERS = Type.Object(
-	{ query: Type.String({ description: "Short intent phrase for programmatic Tool or snippet discovery" }) },
+	{ query: Type.String({ description: 'Short intent phrase, e.g. "view image"' }) },
 	{ additionalProperties: false },
 );
 
 const CODE_MODE_DESCRIPTION = `Run JavaScript in isolated V8 and compose eligible Pi Stuff Tools through tools.*.
 Rules:
 - Write plain JavaScript with top-level await and await every tools.* call.
-- Call only methods listed for this Agent or returned by codemode.search(query); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
+- Call only listed or searched methods, e.g. codemode.search("view image"); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
 - Structured results are already unwrapped; do not pass them to JSON.parse. Example: const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);
 - Await ordinary Tool work normally. For one concrete observable command, file, log, or HTTP condition with a deadline, call tools.monitor(...) once; continue useful work and do not poll with Bash, sleep, status checks, or repeated turns.
-- Emit only the evidence needed with text(...), image(...), or another supported output helper.
-- Do not pass image Base64 through a text-producing Tool such as Bash; return the structured result of an image-producing Tool such as read.
-Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, and clearTimeout.`;
+- For an image Tool result, return await tools.view_image(...); never call image(result). image(...) is only for generated data URLs, image_url objects, or raw image blocks. Do not pass image Base64 through Bash.
+Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted. tools.* and explicit helpers for non-Tool output are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, and clearTimeout.`;
 
 export interface PiStuffCodeModeOptions {
 	readonly registry: SuiteToolDefinitionRegistry;
