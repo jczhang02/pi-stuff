@@ -5,6 +5,7 @@ import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } f
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
+import { isCodeModeToolContent } from "./presentation.js";
 import type { RuntimeToolCallPlan, RuntimeToolCallSettlement, RuntimeToolReplay } from "./protocol.js";
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
@@ -492,19 +493,6 @@ function normalizeHistoricalToolErrors(state: LedgerSnapshot): void {
 	}
 }
 
-function isStoredToolContent(value: CodemodeValue): boolean {
-	return (
-		Array.isArray(value) &&
-		value.every(
-			(item) =>
-				isRuntimeObject(item) &&
-				item !== null &&
-				isRuntimeString(item["type"]) &&
-				(item["type"] !== "text" || isRuntimeString(item["text"])),
-		)
-	);
-}
-
 function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	if (event.kind === "execution-started") {
 		const execution: ExecutionState = {
@@ -581,7 +569,12 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	}
 	if (event.result) {
 		const result = restoreValue(event.result);
-		if (isRuntimeObject(result) && result !== null && "content" in result && isStoredToolContent(result["content"])) {
+		if (
+			isRuntimeObject(result) &&
+			result !== null &&
+			"content" in result &&
+			isCodeModeToolContent(result["content"])
+		) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
 		}

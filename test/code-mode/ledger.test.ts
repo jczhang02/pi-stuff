@@ -108,6 +108,8 @@ test("historical replay does not infer Tool errors from prose or malformed resul
 		{ content: "malformed", details: {}, isError: true },
 		{ content: [null], details: {}, isError: true },
 		{ content: [{ type: "text", text: 42 }], details: {}, isError: true },
+		{ content: [{ type: "image" }], details: {}, isError: true },
+		{ content: [{ type: "unknown" }], details: {}, isError: true },
 	]) {
 		const { context, ledger } = fixture();
 		const policies = new Map([

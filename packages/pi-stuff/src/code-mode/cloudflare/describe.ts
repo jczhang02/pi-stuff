@@ -3,10 +3,27 @@
  * connector descriptors on demand. Also renders snippet source.
  */
 
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { ConnectorDescription, DescribeOutput } from "./connector-types.js";
 import { generateTypesFromJsonSchema, type JsonSchemaToolDescriptors } from "./json-schema-types.js";
 import type { Snippet } from "./snippet.js";
-import { sanitizeToolName } from "./utils.js";
+import { sanitizeToolName, toolPath } from "./utils.js";
+
+function splitTarget(target: string): readonly [string, string | undefined] {
+	const bracket = target.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\[("(?:\\.|[^"\\])*")\]$/u);
+	const owner = bracket?.[1];
+	const literal = bracket?.[2];
+	if (owner && literal) {
+		try {
+			const method: unknown = JSON.parse(literal);
+			if (isRuntimeString(method)) return [owner, method];
+		} catch {
+			// Malformed bracket targets fall through to the ordinary not-found result.
+		}
+	}
+	const separator = target.indexOf(".");
+	return separator < 0 ? [target, undefined] : [target.slice(0, separator), target.slice(separator + 1)];
+}
 
 function renderConnectorTypes(
 	connectorName: string,
@@ -47,7 +64,7 @@ export function describeTarget(
 		}
 	}
 
-	const [maybeConnector, maybeMethod] = target.includes(".") ? target.split(".", 2) : [target, undefined];
+	const [maybeConnector, maybeMethod] = splitTarget(target);
 
 	const connector = descriptions.find((d) => d.name === maybeConnector);
 
@@ -68,7 +85,7 @@ export function describeTarget(
 	for (const candidate of candidates) {
 		if (candidate.descriptors[methodName]) {
 			const result: DescribeOutput = {
-				path: `${candidate.name}.${methodName}`,
+				path: toolPath(methodName, candidate.name),
 				description: candidate.descriptors[methodName]?.description,
 				types: renderMethodTypes(methodName, candidate.descriptors),
 				kind: "method",

@@ -95,8 +95,8 @@ export function sanitizeToolName(name: string): string {
 	return sanitized;
 }
 
-export function toolPath(name: string): string {
-	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) ? `tools.${name}` : `tools[${JSON.stringify(name)}]`;
+export function toolPath(name: string, owner = "tools"): string {
+	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) ? `${owner}.${name}` : `${owner}[${JSON.stringify(name)}]`;
 }
 
 export function toPascalCase(str: string) {

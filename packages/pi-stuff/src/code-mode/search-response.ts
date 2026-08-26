@@ -74,7 +74,7 @@ export function projectCodeModeSearchResponse(
 		return projection(search, JSON.stringify({ ...search, definitions: [], representation: "definitions" }), []);
 	}
 
-	const descriptions = results.map(describe);
+	const descriptions = results.map((result) => ({ ...describe(result), path: projectedPath(result) }));
 	let fullResults: Array<ReturnType<typeof definitionResult>> = [];
 	let fullDescriptions: DescribeOutput[] = [];
 	let fullText: string | undefined;

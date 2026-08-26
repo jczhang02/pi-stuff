@@ -6,6 +6,7 @@ import type {
 	SearchOutput,
 	SearchResult,
 } from "../../packages/pi-stuff/src/code-mode/cloudflare/connector-types.js";
+import { describeTarget } from "../../packages/pi-stuff/src/code-mode/cloudflare/describe.js";
 import {
 	buildSuiteSandboxSource,
 	SuiteCodeModeConnector,
@@ -282,6 +283,24 @@ test("Tool Discovery keeps deterministic lexical matches without unrelated fallb
 	expect(connector.search(query)).toEqual(connector.search(query));
 });
 
+test("Tool descriptions accept and return executable bracket paths", () => {
+	const descriptions = [
+		{
+			descriptors: {
+				"task-create": {
+					description: "Create a task",
+					inputSchema: Type.Object({ description: Type.String() }),
+				},
+			},
+			name: "tools",
+		},
+	];
+	const canonical = describeTarget("tools.task-create", descriptions);
+	const executable = describeTarget('tools["task-create"]', descriptions);
+	expect(canonical.path).toBe('tools["task-create"]');
+	expect(executable).toEqual(canonical);
+});
+
 test("the Connector rejects malformed supported images returned by nested Tools", async () => {
 	const base = registryFixture();
 	const registry: SuiteToolDefinitionRegistry = {
@@ -392,6 +411,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 
 	const bracketDefinition = await executeDiscovery(discoveryConnectorFixture([{ name: "task-create", typesSize: 5 }]));
 	expect(bracketDefinition.payload.representation).toBe("definitions");
+	expect(bracketDefinition.payload.definitions[0]?.path).toBe('tools["task-create"]');
 	expect(bracketDefinition.payload.results[0]).toMatchObject({
 		path: 'tools["task-create"]',
 		signature: 'tools["task-create"](input: TaskCreateInput): Promise<TaskCreateOutput>',
