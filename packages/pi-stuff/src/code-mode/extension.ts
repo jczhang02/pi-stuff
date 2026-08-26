@@ -64,7 +64,7 @@ Rules:
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
 - Structured results are already unwrapped; do not pass them to JSON.parse. Example: const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);
 - Await ordinary Tool work normally. For one concrete observable command, file, log, or HTTP condition with a deadline, call tools.monitor(...) once; continue useful work and do not poll with Bash, sleep, status checks, or repeated turns.
-- Emit only needed evidence. Return image-producing Tool results directly; never pass a complete Tool result to image(...). Do not pass image Base64 through text-producing Tools such as Bash.
+- For an image Tool result, return await tools.view_image(...); never call image(result). image(...) is only for generated data URLs, image_url objects, or raw image blocks. Do not pass image Base64 through Bash.
 Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted. tools.* and explicit helpers for non-Tool output are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, and clearTimeout.`;
 
 export interface PiStuffCodeModeOptions {
