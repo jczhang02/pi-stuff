@@ -1047,7 +1047,7 @@ async function verifySessionNamingDialog(
 	await session.waitForDialogFrame("Search models", 100);
 	session.sendLiteral("kimi");
 	screen = await session.waitForAbsence("pi-stuff-ui-pty/ui-pty-model");
-	if (!screen.includes("kimi-coding/ui-pty-subscription")) {
+	if (!screen.includes("kimi-coding/ui-pty-su")) {
 		fail(`/autoname model search lost its match\n${screen}`);
 	}
 	session.sendKey("Enter");
