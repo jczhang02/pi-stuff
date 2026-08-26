@@ -255,6 +255,17 @@ async function runArm(
 		const styled = await capture(tmux, session, true);
 		return { activity: activityBlock(plain, styled, activityMarker), screen: styled };
 	} finally {
+		try {
+			await tmux(["send-keys", "-t", session, "C-d"]);
+			const deadline = Date.now() + 5_000;
+			while (Date.now() < deadline) {
+				const paneDead = (await tmux(["display-message", "-p", "-t", session, "#{pane_dead}"])).stdout.trim();
+				if (paneDead === "1") break;
+				await Bun.sleep(10);
+			}
+		} catch {
+			// The pane may already have exited while the verifier captured its final frame.
+		}
 		Bun.spawnSync(["tmux", "-S", socket, "kill-session", "-t", session], {
 			stderr: "ignore",
 			stdout: "ignore",
@@ -276,6 +287,7 @@ try {
 		`${JSON.stringify({ enableInstallTelemetry: false, quietStartup: true, theme: "dark" })}\n`,
 	);
 	await writeFile(join(temporary, "project", "README.md"), '<div align="center">\nCode Mode fixture\n');
+	await writeFile(join(temporary, "project", "package.json"), '{"packageManager":"bun@1.4.0"}\n');
 	await writeFile(join(temporary, "project", "pixel.png"), Buffer.from(MEDIA_FIXTURE_PNG, "base64"));
 	await writeFile(join(temporary, "project", "pixel-copy.png"), Buffer.from(MEDIA_FIXTURE_PNG, "base64"));
 	const oldEnvelopeRequest = await runOldEnvelopeBenchmark(root, temporary);

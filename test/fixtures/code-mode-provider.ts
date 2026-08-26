@@ -173,11 +173,30 @@ function directToolStream() {
 function fixtureStream(context: Context) {
 	const toolNames = (context.tools ?? []).map((tool) => tool.name);
 	const direct = process.env[DIRECT_ENV] === "1";
-	const directResultName = process.env[SCENARIO_ENV] === "cancel" ? "bash" : "read";
+	const directCall = direct
+		? [...context.messages]
+				.reverse()
+				.find(
+					(message) =>
+						message.role === "assistant" &&
+						Array.isArray(message.content) &&
+						message.content.some((part) => part.type === "toolCall"),
+				)
+		: undefined;
+	const directCallIds =
+		directCall?.role === "assistant" && Array.isArray(directCall.content)
+			? directCall.content.filter((part) => part.type === "toolCall").map((part) => part.id)
+			: [];
+	const completedDirectCallIds = new Set(
+		context.messages.filter((message) => message.role === "toolResult").map((message) => message.toolCallId),
+	);
+	const directSettled = directCallIds.length > 0 && directCallIds.every((id) => completedDirectCallIds.has(id));
 	const result = [...context.messages]
 		.reverse()
 		.find(
-			(message) => message.role === "toolResult" && message.toolName === (direct ? directResultName : "codemode"),
+			(message) =>
+				message.role === "toolResult" &&
+				(direct ? directSettled && directCallIds.includes(message.toolCallId) : message.toolName === "codemode"),
 		);
 	const logPath = process.env[LOG_ENV];
 	if (logPath) {
