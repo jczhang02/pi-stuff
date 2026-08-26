@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-	CERTIFIED_RTK_LINUX_X64_SHA256S,
+	CERTIFIED_RTK_LINUX_X64_SHA256,
 	CERTIFIED_RTK_VERSION,
 	RtkRuntime,
 } from "../../packages/pi-stuff/src/rtk/runtime.js";
@@ -28,12 +28,16 @@ async function execute(command: string, args: string[], options: { timeout?: num
 	return { code, killed, stderr, stdout };
 }
 
-test.skipIf(!localRtk)("certifies and uses the real local RTK 0.42.4 executable", async () => {
+test.skipIf(!localRtk)("certifies and uses the official RTK 0.45.0 executable", async () => {
 	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 	const pi = { exec: execute } as Pick<ExtensionAPI, "exec">;
 	const runtime = new RtkRuntime();
 
 	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
+	expect(await runtime.rewrite(pi, "rg --files -g '*.ts' packages")).toBe("rtk rg --files -g '*.ts' packages");
+	expect(await runtime.rewrite(pi, "rg -n CERTIFIED_RTK_VERSION packages/pi-stuff/src/rtk")).toBe(
+		"rtk rg -n CERTIFIED_RTK_VERSION packages/pi-stuff/src/rtk",
+	);
 	const snapshot = runtime.snapshot();
 	expect(snapshot).toMatchObject({
 		path: realpathSync(localRtk),
@@ -41,6 +45,12 @@ test.skipIf(!localRtk)("certifies and uses the real local RTK 0.42.4 executable"
 		version: CERTIFIED_RTK_VERSION,
 	});
 	const sha256 = snapshot.sha256;
-	expect(sha256).toBeDefined();
-	expect(CERTIFIED_RTK_LINUX_X64_SHA256S.some((candidate) => candidate === sha256)).toBeTrue();
+	expect(sha256).toBe(CERTIFIED_RTK_LINUX_X64_SHA256);
+
+	const files = await execute(localRtk, ["rg", "--files", "-g", "*.ts", "packages"]);
+	expect(files.code).toBe(0);
+	expect(files.stdout).toContain("packages/pi-stuff/src/rtk/runtime.ts");
+	const matches = await execute(localRtk, ["rg", "-n", "CERTIFIED_RTK_VERSION", "packages/pi-stuff/src/rtk"]);
+	expect(matches.code).toBe(0);
+	expect(matches.stdout).toContain("runtime.ts");
 });

@@ -213,36 +213,38 @@ function summaryLine(context: CommandDialogViewContext<ContextDialogCommand>, sn
 }
 
 function overviewItems(snapshot: ContextDialogSnapshot): SelectItem[] {
-	return [
+	const items: SelectItem[] = [
 		{
 			description: "Compact older history · choose how many recent messages stay raw",
 			label: "Wrap up history",
 			value: "wrapup",
 		},
-		{
-			description:
-				snapshot.pendingOps > 0
-					? `${plural(snapshot.pendingOps, "drop")} queued · apply on the next request`
-					: "Nothing queued right now · safe to check",
+	];
+	if (snapshot.pendingOps > 0) {
+		items.push({
+			description: `${plural(snapshot.pendingOps, "drop")} queued · apply on the next request`,
 			label: "Flush pending drops",
 			value: "flush",
-		},
-		{
-			description: "Repair derived history · scope and confirmation follow",
-			label: "Rebuild compartments",
-			value: "recomp",
-		},
-		{
-			description:
-				snapshot.upgradeNeeded === undefined
-					? "Check and upgrade legacy history and memories"
-					: snapshot.upgradeNeeded > 0
-						? `${plural(snapshot.upgradeNeeded, "compartment")} need upgrade`
-						: "Session history is already up to date",
+		});
+	}
+	items.push({
+		description: "Repair derived history · scope and confirmation follow",
+		label: "Rebuild compartments",
+		value: "recomp",
+	});
+	if (snapshot.upgradeNeeded === undefined || snapshot.upgradeNeeded > 0) {
+		let description = "Check and upgrade legacy history and memories";
+		if (snapshot.upgradeNeeded !== undefined) {
+			const verb = snapshot.upgradeNeeded === 1 ? "needs" : "need";
+			description = `${plural(snapshot.upgradeNeeded, "compartment")} ${verb} upgrade`;
+		}
+		items.push({
+			description,
 			label: "Upgrade session",
 			value: "upgrade",
-		},
-	];
+		});
+	}
+	return items;
 }
 
 function screenItems(screen: ContextDialogScreen, snapshot: ContextDialogSnapshot): SelectItem[] {

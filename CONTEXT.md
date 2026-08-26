@@ -35,6 +35,11 @@ _Avoid_: console warning, transcript message, notification log
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file
 
+**RTK Runtime**:
+The separately installed, certified RTK executable whose CLI owns RTK command rewriting and output optimization. The
+Suite adapts the Host to it without duplicating its rewrite registry or installation lifecycle.
+_Avoid_: Embedded RTK, Pi Stuff command parser
+
 **Session Name**:
 Pi-owned Session metadata that gives one coding conversation a concise semantic identity. Session Naming may propose
 and persist this value after settled direct-user work, but it does not replace the Session, task, Goal, or Agent name.
@@ -72,6 +77,11 @@ A Code Mode execution that carries only Host scheduling or continuation signals 
 remains diagnostic evidence rather than a Conversation Transcript event.
 _Avoid_: Internal wait, empty Code Mode call, no-op Tool
 
+**Tool Discovery**:
+The model-facing search over the currently active Package-owned Tool catalog. It returns bounded, ranked matches that
+help invoke a relevant Tool and never substitutes an unrelated Tool when no catalog entry matches.
+_Avoid_: Tool recommendation, Tool activation
+
 **Agent Context Usage**:
 The current Provider payload token estimate for one child Agent, measured against the selected child Host model's
 reported Context window. Authoritative Assistant usage replaces the estimate; later Tool results and other trailing
@@ -79,6 +89,11 @@ messages add bounded Host-equivalent estimates. Parent-Host model metadata is on
 child Host reports its actual selection. It is not cumulative run usage and is unavailable while compaction or model
 fallback makes the current payload uncertain.
 _Avoid_: Agent tokens, total Agent usage, Context budget
+
+**Agent Target**:
+The public pair of a stable Agent run ID and child index used by Agent control actions. Model-visible status exposes
+these fields separately; an internal roster row key is display identity rather than an Agent Target.
+_Avoid_: Agent key, child address
 
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row

@@ -5,6 +5,7 @@ import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } f
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
+import { isCodeModeToolContent } from "./presentation.js";
 import type { RuntimeToolCallPlan, RuntimeToolCallSettlement, RuntimeToolReplay } from "./protocol.js";
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
@@ -558,10 +559,20 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	}
 	if (event.result) {
 		const result = restoreValue(event.result);
-		if (isRuntimeObject(result) && result !== null && "content" in result && Array.isArray(result["content"])) {
+		if (
+			isRuntimeObject(result) &&
+			result !== null &&
+			"content" in result &&
+			isCodeModeToolContent(result["content"])
+		) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
 		}
+	}
+	if (call.status === "success" && call.result && "isError" in call.result && call.result.isError === true) {
+		call.status = "error";
+		const text = call.result.content.find((item) => item.type === "text" && item.text.trim());
+		call.error ??= text?.type === "text" ? text.text.trim() : `${call.name} failed`;
 	}
 }
 

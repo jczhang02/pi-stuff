@@ -137,6 +137,75 @@ test("the Session ledger replays completed values and preserves binary, bigint, 
 	expect(branch.every((entry) => entry.customType === CODE_MODE_LEDGER_ENTRY_TYPE)).toBe(true);
 });
 
+test("historical explicit Tool errors override a stale success classification in memory", () => {
+	const { branch, context, ledger } = fixture();
+	const policies = new Map([
+		["read", "record"],
+		["write", "never"],
+	] as const);
+	const approvals = new Set(["write"]);
+	const controller = ledger.begin(
+		context,
+		"outer-historical-error",
+		"await tools.read({}); await tools.write({})",
+		policies,
+		approvals,
+	);
+	controller.beginPass(0);
+	const read = controller.beginToolCall("read", {});
+	controller.completeToolCall(read, {
+		result: Object.assign(
+			{ content: [{ type: "text" as const, text: "nested failure" }], details: {} },
+			{ isError: true },
+		),
+		status: "success",
+		value: "stale success value",
+	});
+	const latest = branch.at(-1);
+	if (!latest) throw new Error("historical settlement was not persisted");
+	const persistedSettlement = structuredClone(latest);
+	controller.beginToolCall("write", {});
+
+	const resumed = ledger.resume(context, controller.executionId, policies, approvals);
+	if (!resumed) throw new Error("historical execution did not resume");
+	resumed.beginPass(1);
+	const replay = resumed.beginToolCall("read", {});
+	expect(replay.replay).toMatchObject({
+		kind: "error",
+		message: "nested failure",
+		result: { content: [{ text: "nested failure", type: "text" }], isError: true },
+	});
+	expect(branch).toContainEqual(persistedSettlement);
+});
+
+test("historical replay does not infer Tool errors from prose or malformed results", () => {
+	for (const result of [
+		{ content: [{ type: "text", text: "error: ordinary business text" }], details: {} },
+		{ content: "malformed", details: {}, isError: true },
+		{ content: [null], details: {}, isError: true },
+		{ content: [{ type: "text", text: 42 }], details: {}, isError: true },
+		{ content: [{ type: "image" }], details: {}, isError: true },
+		{ content: [{ type: "unknown" }], details: {}, isError: true },
+	]) {
+		const { context, ledger } = fixture();
+		const policies = new Map([
+			["read", "record"],
+			["write", "never"],
+		] as const);
+		const approvals = new Set(["write"]);
+		const controller = ledger.begin(context, "outer-control", "await tools.read({});", policies, approvals);
+		controller.beginPass(0);
+		const read = controller.beginToolCall("read", {});
+		// SAFETY: this test deliberately supplies malformed historical presentation data to exercise fail-open replay.
+		controller.completeToolCall(read, { result: result as never, status: "success", value: "success" });
+		controller.beginToolCall("write", {});
+		const resumed = ledger.resume(context, controller.executionId, policies, approvals);
+		if (!resumed) throw new Error("historical execution did not resume");
+		resumed.beginPass(1);
+		expect(resumed.beginToolCall("read", {}).replay?.kind).toBe("result");
+	}
+});
+
 test("approval pauses before the effect and resumes it only after an explicit user decision", () => {
 	const { context, ledger } = fixture();
 	const policies = new Map([["write", "never"]] as const);

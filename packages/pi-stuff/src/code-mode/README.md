@@ -29,7 +29,8 @@ text(pkg.packageManager);
 - `tools` contains every currently active Pi Stuff Package-owned Tool, including Tools activated after Code Mode was
   enabled.
 - Await every `tools.*` call. Stable structured content is returned directly; textual JSON is parsed; other text is
-  returned as a string.
+  returned as a string. An explicit Tool `isError: true` result rejects that call; an uncaught rejection stops the
+  execution, while ordinary JavaScript `try/catch` is the recovery mechanism.
 - Await ordinary Tool work normally. For one concrete observable command, file, log, or HTTP condition with a
   deadline, call `tools.monitor(...)` once, continue useful work, and do not poll with Bash, sleep, status checks, or
   repeated Agent turns.
@@ -43,8 +44,11 @@ text(pkg.packageManager);
 - Cloudflare's `async () => { return value; }` form is accepted. A returned value is emitted only when the program did
   not already call an output helper, so explicit output is never duplicated. The older `suite.*` namespace remains a
   compatibility alias, not prompt vocabulary.
-- The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same Cloudflare-ranked catalog and
-  return the same paths and generated TypeScript input types.
+- The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same deterministically ranked
+  catalog. Search requires one lexical query-token match and returns no fallback when nothing matches. The top-level
+  response projects at most five matches into 4,000 characters: full definitions while they fit, then a typed top
+  match with signatures, signatures alone, and finally paths. `codemode.describe(path)` remains available for the full
+  generated TypeScript input and result types.
 - Yielded V8 cells are resumed internally. `yield_control` remains a Host protocol capability, not model-facing helper
   vocabulary or a user-level completion signal.
 
@@ -60,8 +64,10 @@ Code Mode has no visible Tool row of its own while nested rows completely repres
 Execution and a successful program with only the no-output diagnostic are also absent from the Conversation Transcript
 and ordinary `/tools`. The strict live/replay classifier accepts only one zero-argument awaited `yield_control()`
 expression, optionally followed by one literal `text(...)` acknowledgement; ambiguous source stays visible. Raw
-Session JSONL and ledger records remain unchanged. Other executions with no nested operation, or an outer error not
-represented by a nested issue, receive one standard Code Mode fallback row; the transcript therefore never hides a
+Session JSONL and ledger records remain unchanged. Historical nested results with explicit `isError: true` project as
+errors even when an older ledger status said success; absent flags, malformed results, and error-like prose do not.
+Other executions with no nested operation, or an outer error not represented by a nested issue, receive one standard
+Code Mode fallback row; the transcript therefore never hides a
 Tool outcome or falls back to raw result text. A successful pure-JavaScript fallback uses its first bounded result line
 as the compact summary instead of `done`; formatted expansion shows only subsequent lines. Each nested call uses the exact
 renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the

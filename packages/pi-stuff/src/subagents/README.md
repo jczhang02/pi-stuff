@@ -59,6 +59,9 @@ model attempts.
   resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request
   instead of silently declaring it delivered.
+- Model-visible status exposes each Agent Target as separate `id=<run id>` and `index=<child index>` fields. Pass that
+  pair to status, steer, stop, or resume; the roster row key remains internal. A legacy combined key is accepted only
+  when it uniquely identifies a current row, while ambiguous or unknown keys act on nothing.
 - Child Agents automatically reuse the exact standalone Pi Host that launched the session; no separate child-binary
   setting is required. Their extension surface is deterministic: ambient discovery is disabled, the owning Pi Stuff
   Package is loaded explicitly unless an inherited capability ceiling forbids extensions, Agent-specific extensions
@@ -85,7 +88,8 @@ model attempts.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
   direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a
-  bounded failure category and path-scrubbed terminal reason before any stale progress text.
+  bounded failure category and path-scrubbed terminal reason before any stale progress text. Legacy task-derived status
+  labels shorten absolute POSIX and Windows path tokens while preserving URLs, relative paths, and slash-delimited prose.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
   them once in the current answer. Long reports preserve both their opening evidence and conclusion, identify the
   omitted middle, and point to the durable output artifact for full model retrieval. Parallel projection divides the
@@ -141,7 +145,7 @@ remains single-column at every width: list and detail are sequential modes, and 
 Agent's Task, outcome, and Activity rather than a persistent roster pane. Action hints wrap instead of dropping the
 close or back key: Escape closes the Agent list and returns one level from details or a steer/resume composer. At low
 terminal heights, the selected Agent or attached error and that Escape path take priority over surrounding transcript
-rows.
+rows. An empty list keeps key-help and close hints but omits selection and detail hints until an Agent exists.
 
 The accepted Agent Command Dialog redesign is recorded in the
 [Agent activity UI reference](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).

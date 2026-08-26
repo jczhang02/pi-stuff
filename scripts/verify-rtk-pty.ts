@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
-import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
+import { CERTIFIED_RTK_LINUX_X64_SHA256, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
@@ -13,6 +13,8 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/rtk-pty-provider.ts");
 const runner = join(root, "test/fixtures/rtk-pty-runner.sh");
 const LONG_RESULT_ID = "rtk-pty-long-output";
+const RG_FILES_COMMAND = "rg --files -g '*.txt' .";
+const RG_SEARCH_COMMAND = "rg -n RTK untracked.txt";
 const SESSION_TOOL_RESULT_SCHEMA = Type.Object(
 	{
 		message: Type.Object(
@@ -34,6 +36,7 @@ const SESSION_TOOL_RESULT_SCHEMA = Type.Object(
 const CONTEXT_RECORD_SCHEMA = Type.Object(
 	{
 		bashCommands: Type.Optional(Type.Array(Type.String())),
+		executedCommands: Type.Optional(Type.Array(Type.String())),
 		phase: Type.Optional(Type.String()),
 		toolResults: Type.Optional(
 			Type.Array(
@@ -76,7 +79,7 @@ after 200
 send -- "/rtk\\r"
 must_expect "RTK"
 must_expect "ready"
-must_expect "0.42.4"
+must_expect "${CERTIFIED_RTK_VERSION}"
 must_expect "/rtk settings"
 send -- "\\033"
 after 100
@@ -163,8 +166,8 @@ async function resolveCertifiedRtk(): Promise<string> {
 	const digest = createHash("sha256")
 		.update(await readFile(path))
 		.digest("hex");
-	if (!new Set<string>(CERTIFIED_RTK_LINUX_X64_SHA256S).has(digest)) {
-		fail("local RTK executable does not match a certified SHA-256");
+	if (digest !== CERTIFIED_RTK_LINUX_X64_SHA256) {
+		fail("local RTK executable does not match the certified SHA-256");
 	}
 	return path;
 }
@@ -276,8 +279,19 @@ function projectedResult(record: ContextRecord): string {
 
 function verifyCommandHistory(record: ContextRecord): void {
 	if (!Array.isArray(record.bashCommands)) fail("provider record has no Bash command history");
-	if (!record.bashCommands.includes("git status")) {
-		fail(`model context did not retain the original Bash command: ${JSON.stringify(record.bashCommands)}`);
+	for (const command of ["git status", RG_FILES_COMMAND, RG_SEARCH_COMMAND]) {
+		if (!record.bashCommands.includes(command)) {
+			fail(`model context did not retain ${command}: ${JSON.stringify(record.bashCommands)}`);
+		}
+	}
+}
+
+function verifyExecutedCommands(record: ContextRecord): void {
+	if (!Array.isArray(record.executedCommands)) fail("provider record has no executed Bash command history");
+	for (const command of [`rtk git status`, `rtk ${RG_FILES_COMMAND}`, `rtk ${RG_SEARCH_COMMAND}`]) {
+		if (!record.executedCommands.includes(command)) {
+			fail(`Host did not pass the RTK-rewritten command to Bash: ${JSON.stringify(record.executedCommands)}`);
+		}
 	}
 }
 
@@ -363,9 +377,18 @@ export async function verifyRtkPty(options: {
 			fail(`real Host did not execute the RTK-rewritten git status command: ${rawGitStatus}`);
 		}
 		if (rawGitStatus.includes("On branch fixture")) fail("real Host executed raw git status instead of RTK");
+		const rawRgFiles = rawResult(sessionBeforeResume, "rtk-pty-rg-files");
+		if (!rawRgFiles.includes("untracked.txt")) {
+			fail(`real Host did not execute the RTK-rewritten rg --files command: ${rawRgFiles}`);
+		}
+		const rawRgSearch = rawResult(sessionBeforeResume, "rtk-pty-rg-search");
+		if (!rawRgSearch.includes("1:RTK fixture")) {
+			fail(`real Host did not execute the RTK-rewritten rg search command: ${rawRgSearch}`);
+		}
 		const rawBeforeResume = rawResult(sessionBeforeResume, LONG_RESULT_ID);
 		const freshRecord = recordForPhase(parseContextRecords(await readFile(logPath, "utf8")), "fresh");
 		verifyCommandHistory(freshRecord);
+		verifyExecutedCommands(freshRecord);
 		const projectedFresh = projectedResult(freshRecord);
 		verifyProjection(rawBeforeResume, projectedFresh, "fresh");
 

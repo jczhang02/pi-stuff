@@ -29,6 +29,7 @@ import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
+	resolveLegacyAgentParams,
 	resolveResumeTargetRunId,
 	type SubagentExecutionHooks,
 	type SubagentParamsLike,
@@ -899,11 +900,22 @@ export default function registerSubagentExtension(
 		const launchRunId = deriveLaunchRunId(id, launchIdentity);
 		const invocationEpoch = sessionEpoch;
 		const invocationSessionId = state.currentSessionId;
-		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, { parentRunOrigin });
+		let targetParams = params;
+		if (params.action === "resume" || params.action === "steer" || params.action === "stop") {
+			try {
+				targetParams = resolveLegacyAgentParams(params, state);
+			} catch (error) {
+				return projectEngineResult(
+					params,
+					governorFailureResult(params, error instanceof Error ? error.message : String(error)),
+				);
+			}
+		}
+		const nestedControl = await routeLiveNestedAgentControl(targetParams, state, signal, { parentRunOrigin });
 		if (nestedControl) return projectEngineResult(params, nestedControl);
 		let resumeTargetRunId: string | undefined;
 		try {
-			resumeTargetRunId = resolveResumeTargetRunId(params, state);
+			resumeTargetRunId = resolveResumeTargetRunId(targetParams, state);
 		} catch (error) {
 			return projectEngineResult(
 				params,
@@ -912,7 +924,7 @@ export default function registerSubagentExtension(
 		}
 		let prepareInput: Parameters<typeof executionGovernor.prepare>[0] = {
 			launchRunId,
-			params,
+			params: targetParams,
 		};
 		if (resumeTargetRunId) prepareInput = { ...prepareInput, resumeTargetRunId };
 		const prepared = await executionGovernor.prepare(prepareInput);
@@ -936,7 +948,7 @@ export default function registerSubagentExtension(
 			if (invocation) {
 				startRunRuntime({ createDirectories: true, primeExisting: true });
 			}
-			const engineParams = { ...toEngineParams(params), launchRunId };
+			const engineParams = { ...toEngineParams(targetParams), launchRunId };
 			let hooks: SubagentExecutionHooks = { parentRunOrigin };
 			if (invocation && params.foreground === true) {
 				hooks = {

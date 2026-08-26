@@ -17,6 +17,7 @@ import type {
 	CommandDialogViewContext,
 } from "../../../conversation-ui/index.js";
 import {
+	commandDialogExitKeyHelp,
 	commandDialogListIndex,
 	commandDialogListKeyHelp,
 	commandDialogNavigation,
@@ -250,14 +251,15 @@ class AgentDialogComponent implements CommandDialogComponent {
 					: []),
 			];
 			const list = this.mode === "list" || this.mode === "nested-list";
-			return renderCommandDialogKeyHelp(
-				this.context,
-				renderWidth,
-				"Agents",
-				list
+			const hasListRows =
+				this.mode === "list" ? this.snapshotValue.rows.length > 0 : (row?.nestedAgents.length ?? 0) > 0;
+			let keyHelp = commandDialogReadKeyHelp(this.context.keybindings, "line", extras);
+			if (list) {
+				keyHelp = hasListRows
 					? commandDialogListKeyHelp(this.context.keybindings, "Agent", extras)
-					: commandDialogReadKeyHelp(this.context.keybindings, "line", extras),
-			);
+					: commandDialogExitKeyHelp(this.context.keybindings);
+			}
+			return renderCommandDialogKeyHelp(this.context, renderWidth, "Agents", keyHelp);
 		}
 		const lines =
 			this.mode === "list"
@@ -676,7 +678,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			const later = rows.length - window.start - window.rows.length;
 			if (later > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
-		const hints = [`${up}/${down} select`, `${confirm} details`];
+		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
 		const selected = this.listRow();
 		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
 		hints.push("? keys", `${cancel} close`);
@@ -738,12 +740,14 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const later = rows.length - window.start - window.rows.length;
 		if (later > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${later} later`)}`);
 		body.push("");
+		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
+		hints.push("? keys", `${cancel} back`);
 		const selectedIndex = window.rows.findIndex((row) => row.key === this.nestedSelectedKey);
 		return fitCommandDialogRows(
 			{
 				header,
 				body,
-				footer: hintLines(theme, width, [`${up}/${down} select`, `${confirm} details`, "? keys", `${cancel} back`]),
+				footer: hintLines(theme, width, hints),
 				priority: [rowLines[selectedIndex] ?? body[1] ?? ""],
 			},
 			commandDialogRows(this.context),

@@ -169,10 +169,16 @@ export const SubagentParams = Type.Object(
 		id: Type.Optional(
 			Type.String({
 				minLength: 1,
-				description: "Stable Agent or run id. Optional for status; required for steer, stop, and resume.",
+				description:
+					"Agent Target run id shown by status. Optional for status; required for steer, stop, and resume.",
 			}),
 		),
-		index: Type.Optional(Type.Integer({ minimum: 0 })),
+		index: Type.Optional(
+			Type.Integer({
+				description: "Agent Target child index shown by status; pair it with id to address one child.",
+				minimum: 0,
+			}),
+		),
 		message: Type.Optional(
 			Type.String({ minLength: 1, description: "Required steering message, or an optional resume message." }),
 		),

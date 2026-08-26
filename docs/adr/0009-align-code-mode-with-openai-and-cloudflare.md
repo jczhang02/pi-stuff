@@ -56,8 +56,11 @@ Tool. This wrapper does not create a second JavaScript dialect.
 
 Cloudflare's `async () => { return value; }` form and the older `suite.*` namespace remain compatibility inputs. A
 returned value is emitted only if the program did not call an output helper, so output is never duplicated.
-`tool_search`, `codemode.search`, and `codemode.describe` read the same active local catalog and generated TypeScript
-signatures. Full nested schemas stay inside V8 and never enter provider history.
+`tool_search`, `codemode.search`, and `codemode.describe` read the same active local catalog and deterministic ranking.
+Discovery requires one lexical query-token match and never substitutes an unrelated Tool. The top-level response is
+bounded to 4,000 characters and degrades from full definitions to a typed top match with compact signatures, then
+signatures, and finally paths; `codemode.describe` retains the full generated TypeScript input and result types. Full
+nested schemas stay inside V8 and never enter provider history.
 
 Pi Stuff reuses the runtime-neutral parts of `@cloudflare/codemode` 0.5.1: source normalization, Connector search and
 describe, name sanitation, JSON-schema-to-TypeScript conversion, snippets, binary and bigint codecs, stable replay
@@ -70,7 +73,8 @@ imported.
 Every nested call goes through the Suite Tool registry's single `invoke()` seam. It therefore preserves Pi argument
 preparation and validation, `tool_call` and `tool_result` hooks, permission prompts, lifecycle events, streaming
 updates, cancellation, Tool Activity, media, usage, dynamically activated Tool names, and termination hints. Code
-Mode never calls a captured Tool callback directly.
+Mode never calls a captured Tool callback directly. A returned result with explicit `isError: true` rejects the nested
+JavaScript call; uncaught rejection stops that execution, while ordinary `try/catch` may recover deliberately.
 
 The existing Codex V8 Runtime remains the default Executor. Local workerd/Miniflare is unnecessary because the
 missing behavior was the Connector, ledger, and approval contract, not JavaScript syntax. Replacing V8 with a Workers
@@ -91,6 +95,10 @@ Each execution and nested call has a stable ID in an append-only Pi Session ledg
 - `reexecute` deliberately runs again during replay and must be explicitly declared only for safely repeatable or
   idempotency-protected operations.
 - `requiresApproval` pauses before the Tool effect. It cannot be combined with `reexecute`.
+
+During historical replay, a valid persisted nested result with explicit `isError: true` is classified as an error in
+memory even if an older envelope recorded success. Its old value remains diagnostic evidence; Session JSONL is not
+rewritten, and prose, absent flags, or malformed result data never trigger inference.
 
 Approval is durable rather than an in-memory prompt. The first encounter appends a pending action and returns a
 paused result without invoking the Tool. `/codemode pending` shows the execution ID, sequence, Tool, and arguments.

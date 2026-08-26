@@ -1026,7 +1026,6 @@ describe("Context capability lifecycle", () => {
 						void Promise.resolve(factory(new TestTui(28), testTheme, keybindings, resolve)).then((component) => {
 							queueMicrotask(() => {
 								component.handleInput?.("\u001b[B");
-								component.handleInput?.("\u001b[B");
 								component.handleInput?.("\r");
 								component.handleInput?.("\u001b[B");
 								component.handleInput?.("\r");

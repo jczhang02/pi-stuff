@@ -1,13 +1,16 @@
 import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
 
 const PROVIDER = "pi-stuff-rtk-pty";
 const MODEL = "fixture-model";
+const RG_FILES_COMMAND = "rg --files -g '*.txt' .";
+const RG_SEARCH_COMMAND = "rg -n RTK untracked.txt";
 const LONG_OUTPUT_COMMAND =
 	"printf '\\033[31mRAW_RTK_RESULT_MARKER\\033[0m\\n'; i=0; while [ \"$i\" -lt 1600 ]; do printf 'RAW_RTK_LONG_LINE_%04d\\n' \"$i\"; i=$((i + 1)); done";
+const executedCommands: string[] = [];
 
 const ZERO_USAGE = {
 	input: 0,
@@ -74,7 +77,7 @@ function contextRecord(context: Context, phase: string) {
 				.join("\n"),
 		});
 	}
-	return { bashCommands, phase, toolResults };
+	return { bashCommands, executedCommands: [...executedCommands], phase, toolResults };
 }
 
 function fixtureStream(context: Context) {
@@ -86,11 +89,16 @@ function fixtureStream(context: Context) {
 		(entry) => entry.role === "toolResult" && entry.toolName === "bash",
 	).length;
 	if (completed === 0) return toolCallStream("rtk-pty-git-status", "git status");
-	if (completed === 1) return toolCallStream("rtk-pty-long-output", LONG_OUTPUT_COMMAND);
+	if (completed === 1) return toolCallStream("rtk-pty-rg-files", RG_FILES_COMMAND);
+	if (completed === 2) return toolCallStream("rtk-pty-rg-search", RG_SEARCH_COMMAND);
+	if (completed === 3) return toolCallStream("rtk-pty-long-output", LONG_OUTPUT_COMMAND);
 	return textStream("RTK_FRESH_DONE");
 }
 
 export default function rtkPtyProvider(pi: ExtensionAPI): void {
+	pi.on("tool_call", (event) => {
+		if (isToolCallEventType("bash", event)) executedCommands.push(event.input.command);
+	});
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff RTK PTY fixture",
 		baseUrl: "https://fixture.invalid",

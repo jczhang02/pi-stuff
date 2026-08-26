@@ -36,13 +36,13 @@ The upstream `LICENSE` is preserved byte-for-byte. Files under `upstream/techniq
 
 ## External RTK runtime certification
 
-The optional executable is not bundled. Linux x64 command rewriting accepts only RTK `v0.42.4`, source commit `8a7dd7e5570d7744d4b6508479a3674fe8c49286`, with one of these immutable build identities:
+The optional executable is not bundled. Linux x64 command rewriting accepts only the official RTK `v0.45.0` release,
+source commit `b34be37caf3796b69a50952a28e60e32b5daad43`, with this immutable artifact identity:
 
 | Build | SHA-256 |
 | --- | --- |
-| Official `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `34975116da11e09e502501daf758143e0b22ed3a42a10eb67fb693a6270d9e36` |
-| Official archive's `rtk` binary | `1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a` |
-| Maintainer source build | `5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250` |
+| Official `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| Official archive's `rtk` binary | `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
 ## Pi Stuff delta
 
@@ -50,7 +50,10 @@ The optional executable is not bundled. Linux x64 command rewriting accepts only
 - Replaces upstream `tool_result` mutation with Pi's model-visible `context` seam so transcript and session JSONL remain raw.
 - Keeps `read` and source projection disabled; failed results and non-text blocks always remain exact.
 - Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/rtk settings`, and the shared non-floating Command Dialog.
-- Certifies the local Linux x64 RTK 0.42.4 executable against the documented official or maintainer build SHA-256; path, binary, timeout, or availability drift fails open.
+- Certifies only the official Linux x64 RTK 0.45.0 executable against the documented SHA-256; path, binary, timeout,
+  or availability drift fails open.
+- Delegates the complete rewrite registry to RTK. Official v0.45.0 still rejects compound `find` predicates and
+  actions; Pi Stuff documents that constraint instead of adding a command parser or fork.
 - Exposes one small `ContextProjectionAdapter` for composition with the Suite Context Capability.
 - Does not contain or derive from implementation code in `jczhang02/pi-agent`; that repository supplied behavior evidence only.
 

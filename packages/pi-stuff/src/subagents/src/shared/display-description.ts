@@ -2,15 +2,21 @@ import { boundTerminalLine } from "../../../tool-display/index.js";
 
 const MAX_DISPLAY_DESCRIPTION_WIDTH = 60;
 const MAX_DISPLAY_SOURCE_WIDTH = 4_096;
-const PATH_TOKEN = /(?:\.{1,2}\/|\/)[^\s"'`<>|,，;；:：!?！？()[\]{}]+/gu;
+const QUOTED_PATH_TOKEN = /(["'`])(?:file:\/{2,}|\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^"'`<>|]+\1/giu;
+const FILE_URL_TOKEN = /\bfile:\/{2,}[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]+[/\\][^\s"'`<>|]+)*/giu;
+const PATH_TOKEN =
+	/(?<![\p{L}\p{N}_/\\.-])(?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]+[/\\][^\s"'`<>|]+)*/gu;
 
 function basename(token: string): string {
 	const normalized = token.replaceAll("\\", "/").replace(/[.。]+$/u, "");
 	return normalized.split("/").filter(Boolean).at(-1) ?? token;
 }
 
-function compactPaths(value: string): string {
-	return value.replace(PATH_TOKEN, basename);
+export function compactAbsolutePaths(value: string): string {
+	return value
+		.replace(QUOTED_PATH_TOKEN, (token) => `${token[0]}${basename(token.slice(1, -1))}${token.at(-1)}`)
+		.replace(FILE_URL_TOKEN, basename)
+		.replace(PATH_TOKEN, basename);
 }
 
 /** Strip terminal controls and collapse one bounded display line. */
@@ -35,7 +41,7 @@ export function resolveDisplayDescription(
 ): string {
 	const explicit = boundedTerminalLine(description);
 	if (explicit) return boundTerminalLine(explicit, MAX_DISPLAY_DESCRIPTION_WIDTH);
-	const legacyTask = compactPaths(boundedTerminalLine(task));
+	const legacyTask = compactAbsolutePaths(boundedTerminalLine(task));
 	const source = legacyTask || "Agent task";
 	return boundTerminalLine(source, MAX_DISPLAY_DESCRIPTION_WIDTH);
 }

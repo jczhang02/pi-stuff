@@ -2288,7 +2288,7 @@ describe("reduced foreground Agent engine", () => {
 			coldResumeCwd = launch.cwd;
 		}).execute(
 			"parallel-cold-resume",
-			{ action: "resume", id: sourceRunId, index: 1, message: "Continue second after reload" },
+			{ action: "resume", id: `${sourceRunId}:1`, message: "Continue second after reload" },
 			new AbortController().signal,
 			undefined,
 			context(parentCwd),

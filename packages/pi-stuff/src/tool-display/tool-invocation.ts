@@ -277,7 +277,7 @@ export class SuiteToolInvocationRuntime {
 			content: executed.result.content ?? [],
 			details: executed.result.details,
 			input: prepared,
-			isError: executed.isError,
+			isError: executed.isError || ("isError" in executed.result && executed.result.isError === true),
 			toolCallId: invocation.toolCallId,
 			toolName: invocation.name,
 			type: "tool_result",
@@ -307,6 +307,8 @@ export class SuiteToolInvocationRuntime {
 			details: event.details,
 		};
 		if (event.usage !== undefined) Object.assign(result, { usage: event.usage });
+		if (event.isError === true) Object.assign(result, { isError: true });
+		else Reflect.deleteProperty(result, "isError");
 		return { isError: event.isError === true, result: stripToolControlMetadata(result) };
 	}
 

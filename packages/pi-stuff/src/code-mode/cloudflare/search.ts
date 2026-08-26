@@ -2,10 +2,11 @@
  * Executor-style ranked search over connector methods and saved snippets.
  *
  * Normalizes camelCase, snake_case, dots, and path separators into tokens,
- * scores fields by weight, requires token coverage, and sorts by score.
+ * scores fields by weight, requires one lexical match, and sorts by score.
  */
 import type { ConnectorDescription, SearchOutput, SearchResult } from "./connector-types.js";
 import type { Snippet } from "./snippet.js";
+import { toolPath } from "./utils.js";
 
 const SEARCH_RESULT_LIMIT = 50;
 
@@ -34,7 +35,6 @@ function tokenize(value: string): string[] {
 type PreparedField = { raw: string; tokens: string[] };
 
 interface FieldScore {
-	exactPhrase: boolean;
 	matchedTokens: Set<string>;
 	score: number;
 }
@@ -47,7 +47,7 @@ function prepareField(value?: string): PreparedField {
 }
 
 function scoreField(query: string, queryTokens: string[], field: PreparedField, weight: number): FieldScore {
-	if (field.raw.length === 0) return { score: 0, matchedTokens: new Set(), exactPhrase: false };
+	if (field.raw.length === 0) return { score: 0, matchedTokens: new Set() };
 
 	let score = 0;
 	const matchedTokens = new Set<string>();
@@ -72,7 +72,7 @@ function scoreField(query: string, queryTokens: string[], field: PreparedField, 
 		}
 	}
 
-	return { score, matchedTokens, exactPhrase };
+	return { score, matchedTokens };
 }
 
 type SearchableItem = {
@@ -98,20 +98,15 @@ function scoreMatch(item: SearchableItem, query: string): SearchResult | null {
 
 	const matchedTokens = new Set<string>();
 	let score = 0;
-	let exactPhrase = false;
 
 	for (const field of fields) {
 		score += field.score;
-		exactPhrase ||= field.exactPhrase;
 		for (const t of field.matchedTokens) matchedTokens.add(t);
 	}
 
 	if (matchedTokens.size === 0) return null;
 
 	const coverage = matchedTokens.size / queryTokens.length;
-	const minimumCoverage = queryTokens.length <= 2 ? 1 : 0.6;
-	if (coverage < minimumCoverage && !exactPhrase) return null;
-
 	if (coverage === 1) score += 25;
 	else score += Math.round(coverage * 10);
 
@@ -144,7 +139,7 @@ export function searchConnectors(
 	for (const desc of descriptions) {
 		for (const [methodName, descriptor] of Object.entries(desc.descriptors)) {
 			const item: SearchableItem = {
-				path: `${desc.name}.${methodName}`,
+				path: toolPath(methodName, desc.name),
 				connector: desc.name,
 				method: methodName,
 				description: descriptor?.description,

@@ -31,6 +31,7 @@ import {
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
 import { CODE_MODE_NO_OUTPUT_MESSAGE, CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
+import { projectCodeModeSearchResponse } from "./search-response.js";
 import {
 	readCodeModeGlobalEnabled,
 	readCodeModeProjectEnabled,
@@ -324,7 +325,7 @@ export function createCodeModeDefinition(
 }
 
 export function createCodeModeSearchDefinition(
-	connector: SuiteCodeModeConnector,
+	connector: Pick<SuiteCodeModeConnector, "describe" | "search">,
 	ledger?: CodeModeSessionLedger,
 ): ToolDefinition<typeof CODE_MODE_SEARCH_PARAMETERS, CodeModeSearchDetails> {
 	return {
@@ -334,22 +335,21 @@ export function createCodeModeSearchDefinition(
 		async execute(_toolCallId, input, _signal, _onUpdate, context) {
 			const snippets = ledger?.snippets(context) ?? [];
 			const search = connector.search(input.query, snippets);
-			const paths = search.results.slice(0, 5).map((result) => result.path);
+			const projection = projectCodeModeSearchResponse(search, (result) =>
+				connector.describe(result.path, snippets),
+			);
 			return {
 				content: [
 					{
-						text: JSON.stringify({
-							...search,
-							definitions: search.results.slice(0, 5).map((result) => connector.describe(result.path, snippets)),
-						}),
+						text: projection.text,
 						type: "text",
 					},
 				],
 				details: {
-					paths,
+					paths: projection.paths,
 					query: input.query,
 					total: search.total,
-					truncated: search.truncated,
+					truncated: projection.truncated,
 				},
 			};
 		},

@@ -5,6 +5,7 @@ import {
 	type CommandDialogRowSections,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogExitKeyHelp,
 	commandDialogListIndex,
 	commandDialogListKeyHelp,
 	commandDialogNavigation,
@@ -247,17 +248,17 @@ class ToolDialogComponent implements CommandDialogComponent {
 		if (this.showKeyHelp) {
 			const list = isSplit ? this.splitFocus === "left" : this.mode === "list";
 			const pane = isSplit ? [{ keys: "Tab/Shift+Tab", description: "Switch panes" }] : [];
-			return renderCommandDialogKeyHelp(
-				this.context,
-				renderWidth,
-				"Tools",
-				list
-					? commandDialogListKeyHelp(this.context.keybindings, "activity", pane)
-					: commandDialogReadKeyHelp(this.context.keybindings, "call", [
-							...pane,
-							{ keys: "r", description: "Toggle formatted/raw result" },
-						]),
-			);
+			let keyHelp = commandDialogReadKeyHelp(this.context.keybindings, "call", [
+				...pane,
+				{ keys: "r", description: "Toggle formatted/raw result" },
+			]);
+			if (list) {
+				keyHelp =
+					this.groups.length > 0
+						? commandDialogListKeyHelp(this.context.keybindings, "activity", pane)
+						: commandDialogExitKeyHelp(this.context.keybindings);
+			}
+			return renderCommandDialogKeyHelp(this.context, renderWidth, "Tools", keyHelp);
 		}
 		const lines = isSplit
 			? this.renderSplit(renderWidth)
@@ -368,13 +369,13 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		const footer = hintLines(theme, width, [
-			`${up}/${down} select`,
-			...(this.isSplit() ? ["Tab pane"] : []),
-			`${confirm} details`,
-			"? keys",
-			`${cancel} close`,
-		]);
+		const activityHints: string[] = [];
+		if (this.groups.length > 0) {
+			activityHints.push(`${up}/${down} select`);
+			if (this.isSplit()) activityHints.push("Tab pane");
+			activityHints.push(`${confirm} details`);
+		}
+		const footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
 		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		this.lastListViewportRows = Math.max(1, viewportRows);
 		const selectedIndex = Math.max(

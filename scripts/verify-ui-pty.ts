@@ -1050,7 +1050,7 @@ async function verifySessionNamingDialog(
 	session.resize(100, 32);
 	await session.waitForDialogFrame("Search models", 100);
 	session.sendLiteral("kimi");
-	screen = await session.waitForDialogFrame("kimi-coding/ui-pty-subscription", 100, "pi-stuff-ui-pty/ui-pty-model");
+	screen = await session.waitForDialogFrame("kimi-coding/ui-pty-su", 100, "pi-stuff-ui-pty/ui-pty-model");
 	session.sendKey("Enter");
 	await waitForPersistedSetting(settingsPath, "sessionNaming", "model", "kimi-coding/ui-pty-subscription");
 	screen = await session.waitForText("kimi-coding/ui-pty-subscription");

@@ -80,7 +80,7 @@ import {
 } from "../background/async-resume.ts";
 import { deliverStopRequest, requestAsyncSteer } from "../background/control-channel.ts";
 import { createInitialStatus } from "../background/initial-status.ts";
-import { inspectSubagentStatus } from "../background/run-status.ts";
+import { inspectSubagentStatus, resolveLegacyAgentTarget } from "../background/run-status.ts";
 import { reconcileAsyncRun } from "../background/stale-run-reconciler.ts";
 import { waitForSteeringAction } from "../background/steering.ts";
 import {
@@ -1889,6 +1889,18 @@ export function resolveResumeTargetRunId(
 	return uniqueIds[0] ?? requested;
 }
 
+/** Convert one current-session legacy row key before public control preflight. */
+export function resolveLegacyAgentParams<Params extends { readonly id?: string; readonly index?: number }>(
+	params: Params,
+	state: SubagentState,
+): Params {
+	if (!params.id) return params;
+	const requested = params.index === undefined ? { id: params.id } : { id: params.id, index: params.index };
+	const target = resolveLegacyAgentTarget(requested, { state });
+	if (target.id === params.id && target.index === params.index) return params;
+	return target.index === undefined ? { ...params, id: target.id } : { ...params, id: target.id, index: target.index };
+}
+
 async function resumeRun(input: {
 	params: SubagentParamsLike;
 	ctx: ExtensionContext;
@@ -2066,19 +2078,33 @@ async function controlAction(
 	if (params.action === "status") {
 		return inspectSubagentStatus({ action: "status", id: params.id, index: params.index }, { state: deps.state });
 	}
-	if (params.action === "stop") return stopRun(params, deps);
-	if (params.action === "resume")
-		return resumeRun({ params, ctx, deps, engines, parentModel, parentRunOrigin: hooks?.parentRunOrigin });
-	if (params.action === "steer") {
-		if (!params.id || !params.message) return errorResult("management", "action='steer' requires id and message.");
+	let targetParams: SubagentParamsLike;
+	try {
+		targetParams = resolveLegacyAgentParams(params, deps.state);
+	} catch (error) {
+		return errorResult("management", error instanceof Error ? error.message : String(error));
+	}
+	if (targetParams.action === "stop") return stopRun(targetParams, deps);
+	if (targetParams.action === "resume")
+		return resumeRun({
+			params: targetParams,
+			ctx,
+			deps,
+			engines,
+			parentModel,
+			parentRunOrigin: hooks?.parentRunOrigin,
+		});
+	if (targetParams.action === "steer") {
+		if (!targetParams.id || !targetParams.message)
+			return errorResult("management", "action='steer' requires id and message.");
 		let job: ReturnType<typeof resolveCurrentAsyncJob>;
 		try {
-			job = resolveCurrentAsyncJob(deps.state, params.id);
+			job = resolveCurrentAsyncJob(deps.state, targetParams.id);
 		} catch (error) {
 			return errorResult("management", error instanceof Error ? error.message : String(error));
 		}
-		if (!job) return errorResult("management", `Agent '${params.id}' is not running in the current session.`);
-		return steerRun(job, params.message.trim(), params.index, deps, signal, hooks?.parentRunOrigin);
+		if (!job) return errorResult("management", `Agent '${targetParams.id}' is not running in the current session.`);
+		return steerRun(job, targetParams.message.trim(), targetParams.index, deps, signal, hooks?.parentRunOrigin);
 	}
 	return errorResult("management", "Unknown Agent action. Valid actions: status, steer, stop, resume.");
 }

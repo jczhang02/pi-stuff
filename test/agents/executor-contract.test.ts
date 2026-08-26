@@ -13,6 +13,11 @@ import {
 import { deriveLaunchRunId } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
 
 describe("Agent product contract", () => {
+	test("describes the public Agent Target as the status run id and child index pair", () => {
+		expect(JSON.stringify(SubagentParams.properties.id)).toContain("run id shown by status");
+		expect(JSON.stringify(SubagentParams.properties.index)).toContain("child index shown by status");
+	});
+
 	test("accepts only single, parallel, and four current-session controls", () => {
 		const accepted = [
 			{ agent: "general-purpose", task: "Investigate" },

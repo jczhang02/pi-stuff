@@ -167,6 +167,31 @@ describe("Context Command Dialog", () => {
 		component.dispose?.();
 	});
 
+	test("shows only actions that can change the current Context state", () => {
+		const base = statusSnapshotFromMagic(
+			{ details: MAGIC_DETAILS, level: "info", text: MAGIC_STATUS, title: "/ctx-status" },
+			{ contextWindow: 200_000, percent: 24, tokens: 48_000 },
+		);
+		for (const [pendingOps, upgradeNeeded, flushVisible, upgradeVisible] of [
+			[0, 0, false, false],
+			[1, 0, true, false],
+			[0, 1, false, true],
+			[0, undefined, false, true],
+		] as const) {
+			const snapshot =
+				upgradeNeeded === undefined ? { ...base, pendingOps } : { ...base, pendingOps, upgradeNeeded };
+			const { context } = harness();
+			const component = createContextDialogView(snapshot).create(context);
+			const text = component.render(64).join("\n");
+			expect(text).toContain("Wrap up history");
+			expect(text).toContain("Rebuild compartments");
+			expect(text.includes("Flush pending drops")).toBe(flushVisible);
+			expect(text.includes("Upgrade session")).toBe(upgradeVisible);
+			if (upgradeNeeded === 1) expect(text).toContain("1 compartment needs upgrade");
+			component.dispose?.();
+		}
+	});
+
 	test("keeps custom wrapup input inside the dialog and validates it", () => {
 		const snapshot = statusSnapshotFromMagic(
 			{ details: MAGIC_DETAILS, level: "info", text: MAGIC_STATUS, title: "/ctx-status" },
