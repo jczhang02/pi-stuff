@@ -237,7 +237,7 @@ function overviewItems(snapshot: ContextDialogSnapshot): SelectItem[] {
 			description:
 				snapshot.upgradeNeeded === undefined
 					? "Check and upgrade legacy history and memories"
-					: `${plural(snapshot.upgradeNeeded, "compartment")} need upgrade`,
+					: `${plural(snapshot.upgradeNeeded, "compartment")} ${snapshot.upgradeNeeded === 1 ? "needs" : "need"} upgrade`,
 			label: "Upgrade session",
 			value: "upgrade",
 		});

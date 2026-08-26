@@ -187,6 +187,7 @@ describe("Context Command Dialog", () => {
 			expect(text).toContain("Rebuild compartments");
 			expect(text.includes("Flush pending drops")).toBe(flushVisible);
 			expect(text.includes("Upgrade session")).toBe(upgradeVisible);
+			if (upgradeNeeded === 1) expect(text).toContain("1 compartment needs upgrade");
 			component.dispose?.();
 		}
 	});
