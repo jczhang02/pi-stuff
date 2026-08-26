@@ -1216,6 +1216,174 @@ export function persistRecoveries(asyncDir: string, recoveries: BackgroundRecove
 	});
 }
 
+interface PreparedAsyncLaunch {
+	id: string;
+	params: AsyncParallelParams | AsyncSingleParams;
+	location: BackgroundRunDirectoryClaim;
+	work: BackgroundRunnerWork;
+	runnerCwd: string;
+	timeoutMs?: number | undefined;
+	deadlineAt?: number | undefined;
+	sessionDir?: string | undefined;
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
+}
+
+function createAsyncRunnerConfig(input: PreparedAsyncLaunch): BackgroundRunnerConfig {
+	const { id, params, location, work } = input;
+	const config: BackgroundRunnerConfig = {
+		version: 2,
+		id,
+		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
+		work,
+		resultPath: location.inheritedNestedRoute
+			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
+			: path.join(RESULTS_DIR, `${id}.json`),
+		cwd: input.runnerCwd,
+		asyncDir: location.asyncDir,
+		sessionId: params.ctx.currentSessionId,
+		artifactConfig: params.artifactConfig,
+		nativeSupervisor: location.inheritedNestedRoute === undefined,
+	};
+	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
+	if (process.argv[1]) config.piArgv1 = process.argv[1];
+	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
+	if (params.worktreeSetupHookTimeoutMs !== undefined)
+		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
+	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
+	if (params.controlConfig) config.controlConfig = params.controlConfig;
+	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
+	if (params.childIntercomTarget) {
+		const tasks = work.mode === "single" ? [work.task] : work.group.tasks;
+		config.childIntercomTargets = tasks.map((task, index) => params.childIntercomTarget?.(task.agent, index));
+	}
+	const nestedRoute = params.nestedRoute ?? location.inheritedNestedRoute;
+	const nestedSelf = nestedSelfFromLocation(location);
+	if (nestedRoute) config.nestedRoute = nestedRoute;
+	if (nestedSelf) config.nestedSelf = nestedSelf;
+	if (input.timeoutMs !== undefined) config.timeoutMs = input.timeoutMs;
+	if (input.deadlineAt !== undefined) config.deadlineAt = input.deadlineAt;
+	if (work.mode === "single" && "revivalLease" in params && params.revivalLease)
+		config.revivalLease = { ...params.revivalLease, asyncDir: location.asyncDir };
+	if (work.mode === "single" && work.task.launchContractDigest)
+		config.launchContractDigest = work.task.launchContractDigest;
+	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
+	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
+	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
+	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
+	if (input.sessionDir) config.sessionDir = input.sessionDir;
+	if (piExecutable) config.piExecutable = piExecutable;
+	if (input.capabilityCeiling) config.capabilityCeiling = input.capabilityCeiling;
+	return config;
+}
+
+function emitPreparedStarted(
+	input: PreparedAsyncLaunch,
+	binding: SpawnedRunnerLifecycle,
+	acknowledgeStart = binding.acknowledgeStart,
+): void {
+	if (!binding.pid || !binding.processStartIdentity) return;
+	emitStarted({
+		id: input.id,
+		pid: binding.pid,
+		processStartIdentity: binding.processStartIdentity,
+		work: input.work,
+		runnerCwd: input.runnerCwd,
+		asyncDir: input.location.asyncDir,
+		ctx: input.params.ctx,
+		goal: input.params.goal,
+		timeoutMs: input.timeoutMs,
+		deadlineAt: input.deadlineAt,
+		nestedRoute: input.params.nestedRoute ?? input.location.inheritedNestedRoute,
+		nestedSelf: nestedSelfFromLocation(input.location),
+		capabilityCeiling: input.capabilityCeiling,
+		acknowledgeStart,
+		abortStart: binding.abortStart,
+	});
+}
+
+async function executePreparedAsync(input: PreparedAsyncLaunch): Promise<AsyncExecutionResult> {
+	const { id, params, location, work } = input;
+	const mode = work.mode;
+	const subject = mode === "single" ? "Background Agent" : "Background Agents";
+	const config = createAsyncRunnerConfig(input);
+	const spawned = await spawnRunner(
+		config,
+		id,
+		input.runnerCwd,
+		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
+	);
+	if (spawned.error) {
+		if (spawned.safeToCleanup !== false) {
+			location.cleanup();
+			return formatAsyncStartError(mode, `Failed to start ${subject} '${id}': ${spawned.error}`);
+		}
+		location.commit();
+		const lifecycleBinding = retainedRunnerLifecycleBinding(location.asyncDir, spawned);
+		emitPreparedStarted(input, spawned, undefined);
+		return formatAsyncStartError(
+			mode,
+			`Failed to start ${subject} '${id}'; lifecycle recovery is still pending: ${spawned.error}`,
+			lifecycleRecoveryDetails(id, location.asyncDir, lifecycleBinding),
+		);
+	}
+	const ownershipError = (message: string): AsyncExecutionResult => {
+		const resolution = resolveBackgroundOwnershipFailure(location, spawned);
+		if (!resolution.safeToRelease && resolution.lifecycleBinding)
+			emitPreparedStarted(input, resolution.lifecycleBinding);
+		return formatAsyncStartError(
+			mode,
+			resolution.safeToRelease ? `${message}.` : `${message}; lifecycle recovery is still pending.`,
+			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
+		);
+	};
+	if (!spawned.pid || !spawned.processStartIdentity || !spawned.acknowledgeStart || !spawned.abortStart)
+		return ownershipError(`${subject} '${id}' started without a complete lifecycle binding`);
+	if (!location.commit())
+		return ownershipError(
+			`${subject} '${id}' could not commit ownership of ${mode === "single" ? "its" : "their"} lifecycle directory`,
+		);
+	emitPreparedStarted(input, spawned);
+	const details: Details = {
+		mode,
+		runId: id,
+		results: [],
+		asyncId: id,
+		asyncDir: location.asyncDir,
+		lifecycleBinding: {
+			pid: spawned.pid,
+			processStartIdentity: spawned.processStartIdentity,
+			asyncDir: location.asyncDir,
+			acknowledgeStart: spawned.acknowledgeStart,
+			abortStart: spawned.abortStart,
+		},
+	};
+	if (input.capabilityCeiling) details.capabilityCeiling = input.capabilityCeiling;
+	if (input.timeoutMs !== undefined) {
+		details.timeoutMs = input.timeoutMs;
+		if (input.deadlineAt !== undefined) details.deadlineAt = input.deadlineAt;
+	}
+	const agents = work.mode === "single" ? [work.task.agent] : work.group.tasks.map((task) => task.agent);
+	if (work.mode === "single") {
+		if (work.task.launchContractDigest) details.launchContractDigest = work.task.launchContractDigest;
+		if ("context" in params && params.context) details.context = params.context;
+		if (work.task.turnBudget) details.turnBudget = work.task.turnBudget;
+		if (work.task.toolBudget) details.toolBudget = work.task.toolBudget;
+	}
+	return {
+		content: [
+			{
+				type: "text",
+				text: formatAsyncStartedMessage(
+					`${subject}: ${agents.join(", ")} [${id}]`,
+					params.ctx.interactive === true,
+				),
+			},
+		],
+		details,
+	};
+}
+
 export async function executeAsyncParallel(id: string, params: AsyncParallelParams): Promise<AsyncExecutionResult> {
 	const location = claimBackgroundRunDirectory(id);
 	if ("error" in location) return formatAsyncStartError("parallel", location.error);
@@ -1249,189 +1417,17 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 			}`,
 		);
 	}
-	const nestedRoute = params.nestedRoute ?? location.inheritedNestedRoute;
-	const nestedSelf = nestedSelfFromLocation(location);
-	const config: BackgroundRunnerConfig = {
-		version: 2,
+	return executePreparedAsync({
 		id,
-		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
-		work: parallelWork,
-		resultPath: location.inheritedNestedRoute
-			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
-			: path.join(RESULTS_DIR, `${id}.json`),
-		cwd: built.runnerCwd,
-		asyncDir: location.asyncDir,
-		sessionId: params.ctx.currentSessionId,
-		artifactConfig: params.artifactConfig,
-		nativeSupervisor: location.inheritedNestedRoute === undefined,
-	};
-	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
-	if (process.argv[1]) config.piArgv1 = process.argv[1];
-	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
-	if (params.worktreeSetupHookTimeoutMs !== undefined)
-		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
-	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
-	if (params.controlConfig) config.controlConfig = params.controlConfig;
-	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
-	if (params.childIntercomTarget)
-		config.childIntercomTargets = parallelWork.group.tasks.map((task, index) =>
-			params.childIntercomTarget?.(task.agent, index),
-		);
-	if (nestedRoute) config.nestedRoute = nestedRoute;
-	if (nestedSelf) config.nestedSelf = nestedSelf;
-	if (params.timeoutMs !== undefined) config.timeoutMs = params.timeoutMs;
-	if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
-	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
-	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
-	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
-	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
-	if (sessionDir) config.sessionDir = sessionDir;
-	if (piExecutable) config.piExecutable = piExecutable;
-	if (capabilityCeiling) config.capabilityCeiling = capabilityCeiling;
-	const spawned = await spawnRunner(
-		config,
-		id,
-		built.runnerCwd,
-		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
-		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
-	);
-	if (spawned.error) {
-		if (spawned.safeToCleanup !== false) {
-			location.cleanup();
-			return formatAsyncStartError("parallel", `Failed to start background Agents '${id}': ${spawned.error}`);
-		}
-		location.commit();
-		const lifecycleBinding = retainedRunnerLifecycleBinding(location.asyncDir, spawned);
-		if (spawned.pid && spawned.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: spawned.pid,
-				processStartIdentity: spawned.processStartIdentity,
-				work: parallelWork,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs: params.timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				abortStart: spawned.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"parallel",
-			`Failed to start background Agents '${id}'; lifecycle recovery is still pending: ${spawned.error}`,
-			lifecycleRecoveryDetails(id, location.asyncDir, lifecycleBinding),
-		);
-	}
-	if (!spawned.pid || !spawned.processStartIdentity || !spawned.acknowledgeStart || !spawned.abortStart) {
-		const resolution = resolveBackgroundOwnershipFailure(location, spawned);
-		if (!resolution.safeToRelease && resolution.lifecycleBinding?.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: resolution.lifecycleBinding.pid,
-				processStartIdentity: resolution.lifecycleBinding.processStartIdentity,
-				work: parallelWork,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs: params.timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				acknowledgeStart: resolution.lifecycleBinding.acknowledgeStart,
-				abortStart: resolution.lifecycleBinding.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"parallel",
-			resolution.safeToRelease
-				? `Background Agents '${id}' started without a complete lifecycle binding.`
-				: `Background Agents '${id}' started without a complete lifecycle binding; lifecycle recovery is still pending.`,
-			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
-		);
-	}
-	if (!location.commit()) {
-		const resolution = resolveBackgroundOwnershipFailure(location, spawned);
-		if (!resolution.safeToRelease && resolution.lifecycleBinding?.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: resolution.lifecycleBinding.pid,
-				processStartIdentity: resolution.lifecycleBinding.processStartIdentity,
-				work: parallelWork,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs: params.timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				acknowledgeStart: resolution.lifecycleBinding.acknowledgeStart,
-				abortStart: resolution.lifecycleBinding.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"parallel",
-			resolution.safeToRelease
-				? `Background Agents '${id}' could not commit ownership of their lifecycle directory.`
-				: `Background Agents '${id}' could not commit ownership of their lifecycle directory; lifecycle recovery is still pending.`,
-			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
-		);
-	}
-	emitStarted({
-		id,
-		pid: spawned.pid,
-		processStartIdentity: spawned.processStartIdentity,
+		params,
+		location,
 		work: parallelWork,
 		runnerCwd: built.runnerCwd,
-		asyncDir: location.asyncDir,
-		ctx: params.ctx,
-		goal: params.goal,
 		timeoutMs: params.timeoutMs,
 		deadlineAt,
-		nestedRoute,
-		nestedSelf,
+		sessionDir,
 		capabilityCeiling,
-		acknowledgeStart: spawned.acknowledgeStart,
-		abortStart: spawned.abortStart,
 	});
-	const details: Details = {
-		mode: "parallel",
-		runId: id,
-		results: [],
-		asyncId: id,
-		asyncDir: location.asyncDir,
-		lifecycleBinding: {
-			pid: spawned.pid,
-			processStartIdentity: spawned.processStartIdentity,
-			asyncDir: location.asyncDir,
-			acknowledgeStart: spawned.acknowledgeStart,
-			abortStart: spawned.abortStart,
-		},
-	};
-	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
-	if (params.timeoutMs !== undefined) {
-		details.timeoutMs = params.timeoutMs;
-		if (deadlineAt !== undefined) details.deadlineAt = deadlineAt;
-	}
-	return {
-		content: [
-			{
-				type: "text",
-				text: formatAsyncStartedMessage(
-					`Background Agents: ${parallelWork.group.tasks.map((task) => task.agent).join(", ")} [${id}]`,
-					params.ctx.interactive === true,
-				),
-			},
-		],
-		details,
-	};
 }
 
 export async function executeAsyncSingle(id: string, params: AsyncSingleParams): Promise<AsyncExecutionResult> {
@@ -1473,190 +1469,15 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 			}`,
 		);
 	}
-	const nestedRoute = params.nestedRoute ?? location.inheritedNestedRoute;
-	const nestedSelf = nestedSelfFromLocation(location);
-	const config: BackgroundRunnerConfig = {
-		version: 2,
+	return executePreparedAsync({
 		id,
-		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
-		work: built.work,
-		resultPath: location.inheritedNestedRoute
-			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
-			: path.join(RESULTS_DIR, `${id}.json`),
-		cwd: built.runnerCwd,
-		asyncDir: location.asyncDir,
-		sessionId: params.ctx.currentSessionId,
-		artifactConfig: params.artifactConfig,
-		nativeSupervisor: location.inheritedNestedRoute === undefined,
-	};
-	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
-	if (process.argv[1]) config.piArgv1 = process.argv[1];
-	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
-	if (params.worktreeSetupHookTimeoutMs !== undefined)
-		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
-	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
-	if (params.controlConfig) config.controlConfig = params.controlConfig;
-	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
-	if (params.childIntercomTarget) config.childIntercomTargets = [params.childIntercomTarget(built.work.task.agent, 0)];
-	if (nestedRoute) config.nestedRoute = nestedRoute;
-	if (nestedSelf) config.nestedSelf = nestedSelf;
-	if (timeoutMs !== undefined) config.timeoutMs = timeoutMs;
-	if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
-	if (params.revivalLease) config.revivalLease = { ...params.revivalLease, asyncDir: location.asyncDir };
-	if (built.work.task.launchContractDigest) config.launchContractDigest = built.work.task.launchContractDigest;
-	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
-	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
-	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
-	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
-	if (sessionDir) config.sessionDir = sessionDir;
-	if (piExecutable) config.piExecutable = piExecutable;
-	if (capabilityCeiling) config.capabilityCeiling = capabilityCeiling;
-	const spawned = await spawnRunner(
-		config,
-		id,
-		built.runnerCwd,
-		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
-		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
-	);
-	if (spawned.error) {
-		if (spawned.safeToCleanup !== false) {
-			location.cleanup();
-			return formatAsyncStartError("single", `Failed to start background Agent '${id}': ${spawned.error}`);
-		}
-		location.commit();
-		const lifecycleBinding = retainedRunnerLifecycleBinding(location.asyncDir, spawned);
-		if (spawned.pid && spawned.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: spawned.pid,
-				processStartIdentity: spawned.processStartIdentity,
-				work: built.work,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				abortStart: spawned.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"single",
-			`Failed to start background Agent '${id}'; lifecycle recovery is still pending: ${spawned.error}`,
-			lifecycleRecoveryDetails(id, location.asyncDir, lifecycleBinding),
-		);
-	}
-	if (!spawned.pid || !spawned.processStartIdentity || !spawned.acknowledgeStart || !spawned.abortStart) {
-		const resolution = resolveBackgroundOwnershipFailure(location, spawned);
-		if (!resolution.safeToRelease && resolution.lifecycleBinding?.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: resolution.lifecycleBinding.pid,
-				processStartIdentity: resolution.lifecycleBinding.processStartIdentity,
-				work: built.work,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				acknowledgeStart: resolution.lifecycleBinding.acknowledgeStart,
-				abortStart: resolution.lifecycleBinding.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"single",
-			resolution.safeToRelease
-				? `Background Agent '${id}' started without a complete lifecycle binding.`
-				: `Background Agent '${id}' started without a complete lifecycle binding; lifecycle recovery is still pending.`,
-			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
-		);
-	}
-	if (!location.commit()) {
-		const resolution = resolveBackgroundOwnershipFailure(location, spawned);
-		if (!resolution.safeToRelease && resolution.lifecycleBinding?.processStartIdentity) {
-			emitStarted({
-				id,
-				pid: resolution.lifecycleBinding.pid,
-				processStartIdentity: resolution.lifecycleBinding.processStartIdentity,
-				work: built.work,
-				runnerCwd: built.runnerCwd,
-				asyncDir: location.asyncDir,
-				ctx: params.ctx,
-				goal: params.goal,
-				timeoutMs,
-				deadlineAt,
-				nestedRoute,
-				nestedSelf,
-				capabilityCeiling,
-				acknowledgeStart: resolution.lifecycleBinding.acknowledgeStart,
-				abortStart: resolution.lifecycleBinding.abortStart,
-			});
-		}
-		return formatAsyncStartError(
-			"single",
-			resolution.safeToRelease
-				? `Background Agent '${id}' could not commit ownership of its lifecycle directory.`
-				: `Background Agent '${id}' could not commit ownership of its lifecycle directory; lifecycle recovery is still pending.`,
-			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
-		);
-	}
-	emitStarted({
-		id,
-		pid: spawned.pid,
-		processStartIdentity: spawned.processStartIdentity,
+		params,
+		location,
 		work: built.work,
 		runnerCwd: built.runnerCwd,
-		asyncDir: location.asyncDir,
-		ctx: params.ctx,
-		goal: params.goal,
 		timeoutMs,
 		deadlineAt,
-		nestedRoute,
-		nestedSelf,
+		sessionDir,
 		capabilityCeiling,
-		acknowledgeStart: spawned.acknowledgeStart,
-		abortStart: spawned.abortStart,
 	});
-	const details: Details = {
-		mode: "single",
-		runId: id,
-		results: [],
-		asyncId: id,
-		asyncDir: location.asyncDir,
-		lifecycleBinding: {
-			pid: spawned.pid,
-			processStartIdentity: spawned.processStartIdentity,
-			asyncDir: location.asyncDir,
-			acknowledgeStart: spawned.acknowledgeStart,
-			abortStart: spawned.abortStart,
-		},
-	};
-	if (built.work.task.launchContractDigest) details.launchContractDigest = built.work.task.launchContractDigest;
-	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
-	if (params.context) details.context = params.context;
-	if (timeoutMs !== undefined) {
-		details.timeoutMs = timeoutMs;
-		if (deadlineAt !== undefined) details.deadlineAt = deadlineAt;
-	}
-	if (built.work.task.turnBudget) details.turnBudget = built.work.task.turnBudget;
-	if (built.work.task.toolBudget) details.toolBudget = built.work.task.toolBudget;
-	return {
-		content: [
-			{
-				type: "text",
-				text: formatAsyncStartedMessage(
-					`Background Agent: ${built.work.task.agent} [${id}]`,
-					params.ctx.interactive === true,
-				),
-			},
-		],
-		details,
-	};
 }
