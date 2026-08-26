@@ -142,7 +142,7 @@ test("the outer Tool result boundary replaces malformed images before Session pe
 	});
 });
 
-test("Control-only and no-output Code Mode executions stay out of live and replay Tool UI", () => {
+test("successful pure-JavaScript Code Mode executions stay out of live and replay Tool UI", () => {
 	const loaded = loadExtension({
 		disableEnvelope: () => {},
 		enableEnvelope: () => {},
@@ -208,35 +208,50 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 		{
 			code: 'text("2")',
 			content: [{ type: "text" as const, text: "2" }],
-			expected: ["codemode"],
+			expected: [],
 			id: "meaningful-output",
+			operations: [],
+		},
+		{
+			code: "image(value)",
+			content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
+			expected: [],
+			id: "media-output",
+			operations: [],
+		},
+		{
+			code: "image(value)",
+			content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
+			expected: [],
+			id: "media-error",
+			isError: true,
 			operations: [],
 		},
 		{
 			code: 'text("yield_control() is only text")',
 			content: [{ type: "text" as const, text: "yield_control() is only text" }],
-			expected: ["codemode"],
+			expected: [],
 			id: "yield-literal",
 			operations: [],
 		},
 		{
 			code: "await yield_control(1)",
 			content: [{ type: "text" as const, text: "argument result" }],
-			expected: ["codemode"],
+			expected: [],
 			id: "control-argument",
 			operations: [],
 		},
 		{
 			code: 'const message = "waiting"; await yield_control(); text(message)',
 			content: [{ type: "text" as const, text: "waiting" }],
-			expected: ["codemode"],
+			expected: [],
 			id: "dynamic-output",
 			operations: [],
 		},
 		{
 			code: "await yield_control(); await yield_control()",
 			content: [{ type: "text" as const, text: "two yields" }],
-			expected: ["codemode"],
+			expected: [],
 			id: "repeated-control",
 			operations: [],
 		},
@@ -245,6 +260,7 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 			content: [{ type: "text" as const, text: "parse failure evidence" }],
 			expected: ["codemode"],
 			id: "parse-failure",
+			isError: true,
 			operations: [],
 		},
 		{
@@ -316,6 +332,7 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 	for (const [id, code, text] of [
 		["live-control", 'await yield_control(); text("waiting")', "waiting"],
 		["live-no-output", "const total = 1 + 1", noOutput],
+		["live-output", 'text("2")', "2"],
 	] as const) {
 		const args = { code };
 		const context = {
@@ -346,6 +363,8 @@ test("Control-only and no-output Code Mode executions stay out of live and repla
 		);
 		expect(result?.render(120), id).toEqual([]);
 	}
+	expect(runtime.listGroups().flatMap((group) => group.memberIds)).not.toContain("live-output");
+	expect(runtime.toolActivityDetail("live-output", "formatted")).toBeUndefined();
 });
 
 test("Code Mode follows trusted project settings, persists explicit toggles, and rolls back failed writes", async () => {

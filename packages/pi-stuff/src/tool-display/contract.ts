@@ -13,13 +13,13 @@ import { getHostSharedResource } from "../conversation-ui/host-resource.js";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import {
 	type ActivitySummaryMember,
-	classifyToolActivityGroupInvocation,
-	type PlannedToolActivityGroup,
+	classifyRetrievalGroupInvocation,
+	type PlannedRetrievalGroup,
 	type PlannedToolActivityMember,
-	planToolActivityGroups,
+	planRetrievalGroups,
+	type RetrievalGroupDisposition,
+	summarizeRetrievalGroup,
 	summarizeToolActivityAggregate,
-	summarizeToolActivityGroup,
-	type ToolActivityGroupDisposition,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
 	type ToolActivityOutcome,
@@ -61,14 +61,15 @@ import {
 	type SuiteToolEnvelopeMarker,
 } from "./registration-tracker.js";
 import {
-	type ActivityGroupRowModel,
 	type BashOperationRowModel,
 	buildRawToolDetailLines,
 	buildToolResultLines,
 	type CachedToolRow,
 	capDetailLines,
 	EmptyToolComponent,
+	formatElapsed,
 	oneLine,
+	type RetrievalGroupRowModel,
 	sanitizeTerminalText,
 	summarizeBuiltin,
 	type ToolRowModel,
@@ -148,7 +149,7 @@ function consumeReloadHandoff(): ToolReloadHandoff | undefined {
 }
 
 export interface SuiteToolPresentation<TArgs extends ToolArguments, TDetails> {
-	/** Required semantic metadata for complete Tool Activity Group projection. */
+	/** Required semantic metadata for Retrieval Group projection and independent Tool Activity. */
 	readonly activity: ToolActivityMetadata<TArgs, TDetails>;
 	readonly detailLines?: (
 		args: Readonly<TArgs>,
@@ -330,6 +331,7 @@ interface GroupedRowBinding {
 	invalidate: () => void;
 	metadata: PresentedToolMetadata;
 	row: CachedToolRow;
+	startedAt: number | undefined;
 }
 
 interface HintState {
@@ -348,7 +350,7 @@ interface ToolTimerState {
 	visible: boolean;
 }
 
-export interface ToolActivityGroupView {
+export interface ToolActivityView {
 	readonly id: string;
 	readonly memberIds: readonly string[];
 	readonly state: ToolActivityOutcome;
@@ -394,7 +396,7 @@ export class ToolUiRuntime {
 	private readonly groupPulses = new Map<string, GroupPulseState>();
 	private groupPulseTimer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
 	private readonly groupOrder: string[] = [];
-	private readonly groups = new Map<string, PlannedToolActivityGroup>();
+	private readonly groups = new Map<string, PlannedRetrievalGroup>();
 	private readonly groupSummaries = new Map<string, GroupSummaryIndex>();
 	private invalidationGeneration = 0;
 	private invalidationScheduled = false;
@@ -414,6 +416,7 @@ export class ToolUiRuntime {
 	private readonly renderedToolNames = new Set<string>();
 	private streamActive = false;
 	private readonly streamedProseIndexes = new Set<number>();
+	private readonly streamedThinkingIndexes = new Set<number>();
 	private readonly streamedToolCallSignatures = new Map<string, string>();
 	private agentActive = false;
 	private readonly scheduler: ToolUiTimerScheduler;
@@ -610,9 +613,9 @@ export class ToolUiRuntime {
 		});
 	}
 
-	private groupDisposition(name: string, args: ToolArguments): ToolActivityGroupDisposition {
+	private groupDisposition(name: string, args: ToolArguments): RetrievalGroupDisposition {
 		if (!this.renderedToolNames.has(name)) return "boundary";
-		return classifyToolActivityGroupInvocation(name, args, this.activityPolicies.get(name));
+		return classifyRetrievalGroupInvocation(name, args, this.activityPolicies.get(name));
 	}
 
 	startTurn(messages?: readonly unknown[]): void {
@@ -646,6 +649,7 @@ export class ToolUiRuntime {
 		if (!this.streamActive) {
 			this.streamActive = true;
 			this.streamedProseIndexes.clear();
+			this.streamedThinkingIndexes.clear();
 			this.streamedToolCallSignatures.clear();
 		}
 		this.applyAssistantContent(message.content, true, assistantTerminalState(message.stopReason));
@@ -655,12 +659,20 @@ export class ToolUiRuntime {
 		if (!this.streamActive) {
 			this.streamActive = true;
 			this.streamedProseIndexes.clear();
+			this.streamedThinkingIndexes.clear();
 			this.streamedToolCallSignatures.clear();
 		}
 		if (event.type === "text_delta" || event.type === "text_end") {
 			const text = event.type === "text_delta" ? event.delta : event.content;
 			if (!text.trim() || this.streamedProseIndexes.has(event.contentIndex)) return;
 			this.streamedProseIndexes.add(event.contentIndex);
+			this.observeAssistantProse();
+			return;
+		}
+		if (event.type === "thinking_delta" || event.type === "thinking_end") {
+			const thinking = event.type === "thinking_delta" ? event.delta : event.content;
+			if (!thinking.trim() || this.streamedThinkingIndexes.has(event.contentIndex)) return;
+			this.streamedThinkingIndexes.add(event.contentIndex);
 			this.observeAssistantProse();
 			return;
 		}
@@ -684,6 +696,7 @@ export class ToolUiRuntime {
 		if (isRecordValue(message) && message.role === "assistant") {
 			this.streamActive = false;
 			this.streamedProseIndexes.clear();
+			this.streamedThinkingIndexes.clear();
 			this.streamedToolCallSignatures.clear();
 		}
 	}
@@ -743,6 +756,7 @@ export class ToolUiRuntime {
 		this.indexedMessages = [...messages];
 		this.streamActive = false;
 		this.streamedProseIndexes.clear();
+		this.streamedThinkingIndexes.clear();
 		this.streamedToolCallSignatures.clear();
 		this.rebuildGroups();
 		const currentToolCallIds = new Set(
@@ -770,6 +784,7 @@ export class ToolUiRuntime {
 		this.openGroupLeaderId = undefined;
 		this.streamActive = false;
 		this.streamedProseIndexes.clear();
+		this.streamedThinkingIndexes.clear();
 		this.streamedToolCallSignatures.clear();
 		this.agentActive = false;
 		this.tailForcedClosed = false;
@@ -806,6 +821,7 @@ export class ToolUiRuntime {
 				invalidate: () => {},
 				metadata: projectedMetadata,
 				row,
+				startedAt: model.state === "running" ? this.now() : undefined,
 			};
 		} else {
 			binding.row = row;
@@ -814,6 +830,7 @@ export class ToolUiRuntime {
 			binding.expanded = expanded;
 			binding.invalidate = invalidate;
 			binding.metadata = projectedMetadata;
+			if (binding.startedAt === undefined && model.state === "running") binding.startedAt = this.now();
 		}
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
@@ -839,6 +856,7 @@ export class ToolUiRuntime {
 		binding.expanded = expanded;
 		binding.invalidate = invalidate;
 		binding.metadata = metadata;
+		if (binding.startedAt === undefined && model.state === "running") binding.startedAt = this.now();
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
 		const leaderId = this.membership.get(toolCallId);
@@ -928,17 +946,17 @@ export class ToolUiRuntime {
 		for (const leaderId of groups) this.reconcileGroup(this.groups.get(leaderId));
 	}
 
-	listGroups(): readonly ToolActivityGroupView[] {
+	listGroups(): readonly ToolActivityView[] {
 		return this.allGroupViews()
 			.sort((left, right) => right.order - left.order)
 			.slice(0, GROUP_LIST_LIMIT)
 			.map(({ order: _order, ...group }) => group);
 	}
 
-	private allGroupViews(): Array<ToolActivityGroupView & { order: number }> {
+	private allGroupViews(): Array<ToolActivityView & { order: number }> {
 		const grouped = this.groupOrder
 			.map((id) => this.groupView(this.groups.get(id)))
-			.filter((group): group is ToolActivityGroupView => group !== undefined)
+			.filter((group): group is ToolActivityView => group !== undefined)
 			.map((group, order) => ({
 				...(group.summary ? group : { ...group, summary: "Internal activity" }),
 				order,
@@ -957,7 +975,7 @@ export class ToolUiRuntime {
 		return [...grouped, ...standalone];
 	}
 
-	resolveGroup(query: string): ToolActivityGroupView | "ambiguous" | undefined {
+	resolveGroup(query: string): ToolActivityView | "ambiguous" | undefined {
 		const normalized = query.trim();
 		if (!normalized) return undefined;
 		const matches = this.allGroupViews().filter(
@@ -1196,7 +1214,7 @@ export class ToolUiRuntime {
 		this.memberIndexes.clear();
 		this.openGroupLeaderId = undefined;
 		const closeTail = !this.agentActive || this.tailForcedClosed;
-		const planned = planToolActivityGroups(
+		const planned = planRetrievalGroups(
 			this.projectMessages(this.indexedMessages),
 			(name, args) => this.groupDisposition(name, args),
 			closeTail,
@@ -1261,6 +1279,24 @@ export class ToolUiRuntime {
 		for (let index = 0; index < content.length; index += 1) {
 			const block = content[index];
 			if (!isRecordValue(block)) continue;
+			if (
+				block.type === "thinking" &&
+				"thinking" in block &&
+				isRuntimeString(block.thinking) &&
+				block.thinking.trim()
+			) {
+				if (
+					streaming
+						? this.streamedThinkingIndexes.has(index)
+						: this.streamActive && this.streamedThinkingIndexes.has(index)
+				) {
+					continue;
+				}
+				this.streamedThinkingIndexes.add(index);
+				this.tailForcedClosed = true;
+				this.closeOpenGroup();
+				continue;
+			}
 			if (block.type === "text" && "text" in block && isRuntimeString(block.text) && block.text.trim()) {
 				if (
 					streaming
@@ -1320,16 +1356,15 @@ export class ToolUiRuntime {
 			if (terminalState) Object.assign(completeMember, { terminalState });
 			this.mutableMembers(group)[memberIndex] = completeMember;
 			this.pendingResults.delete(member.id);
+			if (this.isTransparentIssue(completeMember)) {
+				this.splitGroupAtIssue(group, memberIndex);
+				return;
+			}
 			this.reconcileGroup(group, member.id);
 			if (terminalState) this.stopTimer(member.id);
 			return;
 		}
 		const disposition = this.groupDisposition(member.name, member.args);
-		if (disposition === "boundary") {
-			this.closeOpenGroup();
-			this.tailForcedClosed = true;
-		}
-		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
 		const result = member.result ?? this.pendingResults.get(member.id);
 		const terminalState = result ? undefined : member.terminalState;
 		const completeMember = {
@@ -1340,9 +1375,16 @@ export class ToolUiRuntime {
 		if (result) Object.assign(completeMember, { result });
 		if (terminalState) Object.assign(completeMember, { terminalState });
 		this.pendingResults.delete(member.id);
+		const infrastructureIssue = this.isTransparentIssue(completeMember);
+		const independent = disposition === "boundary" || infrastructureIssue;
+		if (independent) {
+			this.closeOpenGroup();
+			this.tailForcedClosed = true;
+		}
+		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
 		if (!group || group.closed) {
 			const nextGroup = {
-				closed: disposition === "boundary" || !this.agentActive,
+				closed: independent || !this.agentActive,
 				leaderId: member.id,
 				members: [completeMember],
 			};
@@ -1380,8 +1422,58 @@ export class ToolUiRuntime {
 		}
 		const previous = group.members[memberIndex];
 		if (!previous) return;
-		this.mutableMembers(group)[memberIndex] = { ...previous, result };
+		const updated = { ...previous, result };
+		this.mutableMembers(group)[memberIndex] = updated;
+		if (this.isTransparentIssue(updated)) {
+			this.splitGroupAtIssue(group, memberIndex);
+			return;
+		}
 		this.reconcileGroup(group, id);
+	}
+
+	private isTransparentIssue(member: PlannedToolActivityMember): boolean {
+		if (this.groupDisposition(member.name, member.args) !== "transparent") return false;
+		if (member.terminalState !== undefined) return true;
+		return Boolean(
+			member.result && isIssueState(terminalStateFromResult(member, this.errorPolicies.get(member.name))),
+		);
+	}
+
+	private splitGroupAtIssue(group: PlannedRetrievalGroup, issueIndex: number): void {
+		const issue = group.members[issueIndex];
+		if (!issue) return;
+		const before = group.members.slice(0, issueIndex);
+		const after = group.members.slice(issueIndex + 1);
+		const replacements: PlannedRetrievalGroup[] = [];
+		if (before[0]) replacements.push({ closed: true, leaderId: before[0].id, members: before });
+		replacements.push({ closed: true, leaderId: issue.id, members: [issue] });
+		if (after[0]) replacements.push({ closed: group.closed, leaderId: after[0].id, members: after });
+
+		const orderIndex = this.groupOrder.indexOf(group.leaderId);
+		if (orderIndex < 0) return;
+		const wasOpen = this.openGroupLeaderId === group.leaderId;
+		this.stopGroupPulse(group.leaderId);
+		this.groups.delete(group.leaderId);
+		this.groupSummaries.delete(group.leaderId);
+		this.groupHints.delete(group.leaderId);
+		for (const member of group.members) {
+			this.membership.delete(member.id);
+			this.memberIndexes.delete(member.id);
+		}
+		this.groupOrder.splice(orderIndex, 1, ...replacements.map((replacement) => replacement.leaderId));
+		for (const replacement of replacements) {
+			this.groups.set(replacement.leaderId, replacement);
+			replacement.members.forEach((member, index) => {
+				this.membership.set(member.id, replacement.leaderId);
+				this.memberIndexes.set(member.id, index);
+			});
+		}
+		if (wasOpen) {
+			const tail = replacements.at(-1);
+			this.openGroupLeaderId = tail && !tail.closed ? tail.leaderId : undefined;
+			this.tailForcedClosed = this.openGroupLeaderId === undefined;
+		}
+		for (const replacement of replacements) this.reconcileGroup(replacement);
 	}
 
 	private closeOpenGroup(): void {
@@ -1395,7 +1487,7 @@ export class ToolUiRuntime {
 		this.reconcileGroup(closed);
 	}
 
-	private mutableMembers(group: PlannedToolActivityGroup): PlannedToolActivityMember[] {
+	private mutableMembers(group: PlannedRetrievalGroup): PlannedToolActivityMember[] {
 		// SAFETY: groups are owned by this runtime; mutation is confined to its indexed reconciliation methods.
 		return group.members as PlannedToolActivityMember[];
 	}
@@ -1410,7 +1502,7 @@ export class ToolUiRuntime {
 		this.reconcileGroup(this.groups.get(leaderId), semanticChange ? toolCallId : undefined);
 	}
 
-	private reconcileGroup(group: PlannedToolActivityGroup | undefined, changedMemberId?: string): void {
+	private reconcileGroup(group: PlannedRetrievalGroup | undefined, changedMemberId?: string): void {
 		if (!group) return;
 		const leader = this.bindings.get(group.leaderId);
 		if (group.standalone) {
@@ -1449,16 +1541,17 @@ export class ToolUiRuntime {
 		}
 		const summary = summarizeToolActivityAggregate(index.aggregate(), group.closed);
 		this.reconcileGroupPulse(group, summary.active);
-		const issueHint = this.issueHint(index);
-		const elapsedHint = this.elapsedHint(group);
-		const hint = issueHint || elapsedHint || this.stableTarget(group.leaderId, summary.target, summary.active);
-		const model: ActivityGroupRowModel = {
+		const model: RetrievalGroupRowModel = {
 			active: summary.active,
+			elapsed: this.groupElapsed(group),
 			expandable: true,
-			hint,
+			issueDetail: this.firstIssueDetail(index),
+			issueText: summary.semanticSummary ? summary.issueText : summary.summary,
 			kind: "activity",
 			outcome: summary.outcome,
+			semanticSummary: summary.semanticSummary,
 			summary: summary.summary,
+			target: this.stableTarget(group.leaderId, summary.target, summary.active),
 		};
 		const leaderModelChanged = leader.row.setModel(model);
 		const leaderVisibilityChanged = leader.row.setVisible(Boolean(summary.summary));
@@ -1526,7 +1619,7 @@ export class ToolUiRuntime {
 		return { text: output, truncated };
 	}
 
-	private summaryIndex(group: PlannedToolActivityGroup, changedMemberId?: string): GroupSummaryIndex {
+	private summaryIndex(group: PlannedRetrievalGroup, changedMemberId?: string): GroupSummaryIndex {
 		let index = this.groupSummaries.get(group.leaderId);
 		if (!index) {
 			index = new GroupSummaryIndex();
@@ -1638,19 +1731,24 @@ export class ToolUiRuntime {
 		}
 	}
 
-	private issueHint(index: GroupSummaryIndex): string {
+	private firstIssueDetail(index: GroupSummaryIndex): string {
 		const issueSummary = index.issue();
 		if (!issueSummary.id || !issueSummary.detail) return "";
-		const remaining = Math.max(0, issueSummary.count - 1);
-		return oneLine(`${issueSummary.detail}${remaining > 0 ? ` · +${String(remaining)} issues` : ""}`);
+		return oneLine(issueSummary.detail);
 	}
 
-	private elapsedHint(group: PlannedToolActivityGroup): string {
+	private groupElapsed(group: PlannedRetrievalGroup): string {
+		if (!this.showLiveElapsed()) return "";
 		for (let index = group.members.length - 1; index >= 0; index -= 1) {
-			const binding = this.bindings.get(group.members[index]?.id ?? "");
+			const memberId = group.members[index]?.id ?? "";
+			const binding = this.bindings.get(memberId);
 			if (binding?.baseModel.state !== "running") continue;
-			if ((binding.baseModel.durationMs ?? 0) < 2_000) return "";
-			return oneLine(binding.baseModel.summary);
+			const elapsed = Math.max(
+				binding.baseModel.durationMs ?? 0,
+				binding.startedAt === undefined ? 0 : this.now() - binding.startedAt,
+			);
+			if (elapsed < 2_000) return "";
+			return formatElapsed(elapsed);
 		}
 		return "";
 	}
@@ -1663,18 +1761,17 @@ export class ToolUiRuntime {
 		const now = this.now();
 		let state = this.groupHints.get(leaderId);
 		if (!state) {
-			state = { candidate, shownAt: now, value: candidate };
+			state = { candidate, shownAt: now, value: "" };
 			this.groupHints.set(leaderId, state);
 			return state.value;
 		}
-		if (candidate === state.value) {
+		if (candidate !== state.candidate) {
 			state.candidate = candidate;
+			state.shownAt = now;
 			return state.value;
 		}
-		state.candidate = candidate;
-		if (now - state.shownAt >= ACTIVITY_HINT_HOLD_MS) {
+		if (candidate !== state.value && now - state.shownAt >= ACTIVITY_HINT_HOLD_MS) {
 			state.value = candidate;
-			state.shownAt = now;
 		}
 		return state.value;
 	}
@@ -1694,7 +1791,7 @@ export class ToolUiRuntime {
 		);
 	}
 
-	private reconcileGroupPulse(group: PlannedToolActivityGroup, active: boolean): void {
+	private reconcileGroupPulse(group: PlannedRetrievalGroup, active: boolean): void {
 		const hasToolTimer = group.members.some((member) => this.timerStates.has(member.id));
 		if (!active || hasToolTimer) {
 			this.stopGroupPulse(group.leaderId);
@@ -1763,7 +1860,7 @@ export class ToolUiRuntime {
 		});
 	}
 
-	private groupView(group: PlannedToolActivityGroup | undefined): ToolActivityGroupView | undefined {
+	private groupView(group: PlannedRetrievalGroup | undefined): ToolActivityView | undefined {
 		if (!group) return undefined;
 		if (group.standalone) {
 			const member = group.members[0];
@@ -1796,7 +1893,7 @@ export class ToolUiRuntime {
 		const classifiedItems =
 			transparent || (member.terminalState && !member.result) ? [] : this.classify(metadata, state);
 		const items = visibleActivityItems(classifiedItems, state);
-		const summary = summarizeToolActivityGroup([{ items, state }], state !== "running");
+		const summary = summarizeRetrievalGroup([{ items, state }], state !== "running");
 		const presentation = this.detailPresentations.get(member.name);
 		let label = member.name;
 		let target =

@@ -1,9 +1,13 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0022-restrict-folding-to-native-retrieval
 supersedes: 0002-group-complete-tool-activity-between-narrative-boundaries
 ---
 
 # Fold continuous retrieval segments
+
+> Superseded by [ADR 0022](0022-restrict-folding-to-native-retrieval.md). Do not implement this design; retain it only
+> as decision history.
 
 ADR 0002 grouped every controlled non-Bash Tool between Narrative Boundaries. That made compact transcripts dense in
 meaning rather than rows, but it also hid the important separation between inspection and consequential work. Pi Stuff

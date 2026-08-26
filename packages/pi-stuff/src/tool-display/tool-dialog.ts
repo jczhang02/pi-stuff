@@ -22,7 +22,7 @@ import {
 } from "../conversation-ui/index.js";
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
-import type { ToolActivityGroupView, ToolUiRuntime } from "./contract.js";
+import type { ToolActivityView, ToolUiRuntime } from "./contract.js";
 import { oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
 
 type ToolDialogMode = "detail" | "list";
@@ -62,7 +62,7 @@ function callCount(count: number): string {
 	return `${String(count)} ${count === 1 ? "call" : "calls"}`;
 }
 
-function activityRow(theme: Theme, group: ToolActivityGroupView, selected: boolean, width: number): string {
+function activityRow(theme: Theme, group: ToolActivityView, selected: boolean, width: number): string {
 	const cursor = selected ? theme.fg("accent", "›") : " ";
 	const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
 	const count =
@@ -121,7 +121,7 @@ interface DetailWrapCache {
 	readonly width: number;
 }
 
-function singletonGroup(activity: ToolActivity): ToolActivityGroupView {
+function singletonGroup(activity: ToolActivity): ToolActivityView {
 	return {
 		id: activity.id,
 		memberIds: [activity.id],
@@ -136,7 +136,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private detailWrapCache: DetailWrapCache | undefined;
 	private detailRepresentation: ToolDetailRepresentation = "formatted";
 	private disposed = false;
-	private groups: readonly ToolActivityGroupView[];
+	private groups: readonly ToolActivityView[];
 	private lastDetailWidth = 64;
 	private lastListViewportRows = NARROW_LIST_ROWS;
 	private lastRenderWidth = 64;
@@ -144,7 +144,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private mode: ToolDialogMode;
 	private splitFocus: "left" | "right" = "left";
 	private pendingFocusId: string | undefined;
-	private pinnedGroup: ToolActivityGroupView | undefined;
+	private pinnedGroup: ToolActivityView | undefined;
 	private readonly runtime: ToolUiRuntime;
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
@@ -280,7 +280,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		return this.lastRenderWidth >= WIDE_COMMAND_DIALOG_MIN_WIDTH && this.groups.length > 0;
 	}
 
-	private currentGroups(): readonly ToolActivityGroupView[] {
+	private currentGroups(): readonly ToolActivityView[] {
 		const groups = this.runtime.listGroups();
 		const listed = groups.length > 0 ? groups : this.activities.map(singletonGroup);
 		const resolved = this.pinnedGroup ? this.runtime.resolveGroup(this.pinnedGroup.id) : undefined;
@@ -462,7 +462,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		return fitFixedCommandDialogRows(sections, Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context)));
 	}
 
-	private detailLayout(group: ToolActivityGroupView, width: number) {
+	private detailLayout(group: ToolActivityView, width: number) {
 		const memberStart = Math.max(
 			0,
 			Math.min(
@@ -523,7 +523,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		};
 	}
 
-	private detailDocument(group: ToolActivityGroupView, width: number): readonly string[] {
+	private detailDocument(group: ToolActivityView, width: number): readonly string[] {
 		const activityId = group.memberIds[this.detailMemberIndex];
 		if (!activityId) return [];
 		const detail = this.runtime.toolActivityDetail(activityId, this.detailRepresentation);
@@ -564,7 +564,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.detailMemberIndex = 0;
 	}
 
-	private selected(): ToolActivityGroupView | undefined {
+	private selected(): ToolActivityView | undefined {
 		return this.groups.find((group) => group.id === this.selectedId);
 	}
 }

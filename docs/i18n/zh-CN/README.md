@@ -38,8 +38,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
 
 - **对话优先界面**——响应式 Welcome 卡片、单行有界 Statusline、实时 Thought 投影、终端 `chart`/`tree`
   fence、输入高亮，以及使用 Pi 原生交互方式的全宽 Command Dialog。
-- **紧凑的 Tool 活动**——连续 Tool 工作会汇总为一个语义化 Activity Group；随时通过 `Ctrl+O` 或
-  `/tools` 查看原始细节。
+- **紧凑的 Tool 活动**——连续的原生 Read、Grep/Find 与 List 会汇总为一个语义化 Retrieval Group；其他
+  Tool 保持独立，并可随时通过 `Ctrl+O` 或 `/tools` 查看原始细节。
 - **语义化 Session 名称**——首次由用户直接发起的工作 settled 后，会获得一个有界的模型生成名称；
   `/autoname` 可显式刷新，`/autoname settings` 可调整常用策略和主模型，而自动命名不会接管 Child Agent Session。
 - **持久的目标与计划**——Goal 能自动推进一个需要证据才能结束的目标；Todo 则用有界清单维护可恢复的
@@ -80,7 +80,7 @@ Pi 启动后，可以从这些命令开始：
 | `/btw <问题>` | 提出一个不改变主对话记录、且不调用 Tool 的临时问题 |
 | `/tasks` | 检查和控制 Background Shell 与 Monitor |
 | `/agents` | 检查和控制当前会话中的 Agent |
-| `/tools` | 查看一个 Tool Activity Group 的成员和有界结果 |
+| `/tools` | 查看 Retrieval Group 成员与独立 Tool Activity 的有界结果 |
 | `/diagnostics` | 查看当前进程中有界且已脱敏的 Suite 问题记录 |
 | `/codex` | 使用受支持的 Codex 模型时，查看用量和 Fast mode |
 | `/mcp` | 查看按需配置的 MCP 服务器 |
@@ -124,7 +124,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 | --- | --- |
 | `conversation-ui` | Welcome、Statusline、实时 Thought、`chart`/`tree` fence 投影、输入呈现、`/ui`、诊断与共享 Command Dialog 生命周期 |
 | `session-naming` | 用户直接发起的工作 settled 后生成有界语义 Session 名称，维护分支内所有权状态，并提供 `/autoname` 策略与模型控制 |
-| `tool-display` | 紧凑 Tool Activity Group、原生展开、`/tools` 与确定性的会话恢复重建 |
+| `tool-display` | 紧凑 Retrieval Group、独立 Tool Activity、原生展开、`/tools` 与确定性的会话恢复重建 |
 | `rtk` | 可选且 fail-open 的 Bash 命令改写，以及仅面向模型的 Bash/Grep 输出投影 |
 | `codex` | `/codex`、Fast mode、订阅用量、`apply_patch`、`view_image` 与 `imagegen` |
 | `goal` | 一个持久会话目标、自动延续，以及基于证据的完成或阻塞判定 |

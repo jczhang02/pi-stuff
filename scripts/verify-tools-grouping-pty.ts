@@ -115,23 +115,33 @@ function normalized(frame: string): string {
 }
 
 function requireGroup(frame: string): void {
-	const summaries = ["Searched 1 pattern, read 1 file, listed 1 directory"];
+	const summaries = ["Read 1 file", "Searched 1 pattern", "Listed 1 directory"];
 	const compact = normalized(frame);
 	for (const summary of summaries) {
-		if (!compact.includes(summary)) fail(`settled non-Bash activity omitted ${summary}\n${frame}`);
+		if (!compact.includes(summary)) fail(`settled Retrieval Group omitted ${summary}\n${frame}`);
 		if (compact.split(summary).length - 1 !== 1) {
-			fail(`settled non-Bash activity rendered ${summary} more than once\n${frame}`);
+			fail(`settled Retrieval Group rendered ${summary} more than once\n${frame}`);
 		}
 	}
 	if (!frame.includes("• Bash(pwd)") || !frame.includes("⎿ ")) fail(`standalone Bash operation was lost\n${frame}`);
 	if (compact.includes("ran 1 command") || compact.includes("Ran 1 command")) {
 		fail(`Bash leaked back into an aggregate command count\n${frame}`);
 	}
-	if (!compact.includes("ctrl+o to expand")) fail(`activity summary omitted its disclosure hint\n${frame}`);
+	if (!compact.includes("ctrl+o to expand")) fail(`Retrieval Group omitted its disclosure hint\n${frame}`);
+}
+
+function requireCombinedGroup(frame: string): void {
+	const compact = normalized(frame);
+	const summary = "Searched 1 pattern, read 1 file, listed 1 directory";
+	if (!compact.includes(summary)) fail(`continuous native retrieval did not form one Retrieval Group\n${frame}`);
+	if (!frame.includes("• Bash(pwd)")) fail(`standalone Bash operation was lost\n${frame}`);
+	if (!compact.includes("ctrl+o to expand")) fail(`Retrieval Group omitted its disclosure hint\n${frame}`);
 }
 
 function successGroup(frame: string): void {
-	requireGroup(frame);
+	const groupEnd = frame.indexOf("GROUP_SUCCESS_DONE");
+	const initialFrame = groupEnd < 0 ? frame : frame.slice(0, groupEnd + "GROUP_SUCCESS_DONE".length);
+	requireGroup(initialFrame);
 	for (const required of [
 		"THINKING_STEP_1",
 		"THINKING_STEP_2",
@@ -139,10 +149,11 @@ function successGroup(frame: string): void {
 		"THINKING_STEP_4",
 		"THINKING_STEP_5",
 	]) {
-		if (!frame.includes(required)) fail(`visible Thinking was lost while grouping: ${required}\n${frame}`);
+		if (!initialFrame.includes(required))
+			fail(`visible Thinking was lost while grouping: ${required}\n${initialFrame}`);
 	}
 	for (const forbidden of ["• Read input-工具.txt", "• Find *.txt", "• List .", "• Bash pwd"]) {
-		if (frame.includes(forbidden)) fail(`compact frame retained individual row ${forbidden}\n${frame}`);
+		if (initialFrame.includes(forbidden)) fail(`compact frame retained individual row ${forbidden}\n${initialFrame}`);
 	}
 }
 
@@ -154,7 +165,16 @@ function backgroundBarrier(frame: string): void {
 		if (!frame.includes(required)) fail(`background Bash operation omitted ${required}\n${frame}`);
 	}
 	for (const forbidden of ["Launched 2 background tasks", "• Read input-工具.txt"]) {
-		if (frame.includes(forbidden)) fail(`background Activity Group leaked raw member ${forbidden}\n${frame}`);
+		if (frame.includes(forbidden)) fail(`background activity leaked raw member ${forbidden}\n${frame}`);
+	}
+}
+
+function requireRetrievalIssue(frame: string): void {
+	const lines = frame.split("\n");
+	const summaryIndex = lines.findIndex((line) => line.includes("1 failed") && line.includes("Read"));
+	if (summaryIndex < 0) fail(`native retrieval issue omitted its state count\n${frame}`);
+	if (!lines[summaryIndex + 1]?.includes("⎿")) {
+		fail(`native retrieval issue omitted its one child reason row\n${frame}`);
 	}
 }
 
@@ -186,6 +206,7 @@ export async function verifyToolsGroupingPty(options: {
 		writeFile(join(temporaryDirectory, "input-工具.txt"), "alpha\nbeta\n", {
 			mode: 0o600,
 		}),
+		writeFile(join(temporaryDirectory, "slow-target.txt"), "SLOW_RETRIEVAL_DATA\n", { mode: 0o600 }),
 	]);
 	const environment = {
 		PI_CODING_AGENT_DIR: configDirectory,
@@ -238,11 +259,27 @@ export async function verifyToolsGroupingPty(options: {
 		else {
 			successGroup(await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE"));
 			if (scenario === "lifecycle") {
-				successfulMarkerColor = markerColor(
-					captureAnsiHistory(tmux, tmuxSession),
-					"Searched 1 pattern, read 1 file, listed 1 directory",
-				);
+				successfulMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Listed 1 directory");
 			}
+		}
+
+		if (scenario === "basic" || scenario === "lifecycle") {
+			await sendTurn(tmux, tmuxSession, "slow-retrieval");
+			await waitForText(tmux, tmuxSession, "Reading 1 file", 4_000);
+			const targeted = await waitForText(tmux, tmuxSession, "slow-target.txt", 2_500);
+			const targetLine = targeted.split("\n").find((line) => line.includes("Reading 1 file"));
+			if (!targetLine?.includes("slow-target.txt") || targetLine.includes("ctrl+o to expand")) {
+				fail(`active Retrieval Group lost its stabilized inline target or retained an expansion hint\n${targeted}`);
+			}
+			const timed = await waitForText(tmux, tmuxSession, " · 2s", 2_500);
+			const timedLine = timed.split("\n").find((line) => line.includes("Reading 1 file"));
+			if (!timedLine?.includes(" · 2s")) {
+				fail(`active Retrieval Group omitted enabled inline elapsed time\n${timed}`);
+			}
+			await waitForText(tmux, tmuxSession, "GROUP_SLOW_RETRIEVAL_DONE", 5_000);
+
+			await sendTurn(tmux, tmuxSession, "retrieval-issue");
+			requireRetrievalIssue(await waitForText(tmux, tmuxSession, "GROUP_RETRIEVAL_ISSUE_DONE"));
 		}
 
 		if (scenario === "lifecycle") {
@@ -461,11 +498,11 @@ export async function verifyToolsGroupingPty(options: {
 			await Bun.sleep(250);
 			await sendTurn(tmux, tmuxSession, "postcompact");
 			await waitForText(tmux, tmuxSession, "GROUP_POST_COMPACT_DONE");
-			requireGroup(capture(tmux, tmuxSession));
+			requireCombinedGroup(capture(tmux, tmuxSession));
 			await Bun.sleep(250);
 			send(tmux, tmuxSession, "/compact");
 			await waitForText(tmux, tmuxSession, "Compacted from");
-			requireGroup(capture(tmux, tmuxSession));
+			requireCombinedGroup(capture(tmux, tmuxSession));
 		} else if (scenario === "tree") {
 			await Bun.sleep(250);
 			await sendTurn(tmux, tmuxSession, "plain");
@@ -480,9 +517,11 @@ export async function verifyToolsGroupingPty(options: {
 			const treeHistory = capture(tmux, tmuxSession);
 			const treeText = normalized(treeHistory);
 			for (const required of [
-				"Searched 1 pattern, read 1 file, listed 1 directory",
+				"Read 1 file",
+				"Searched 1 pattern",
+				"Listed 1 directory",
 				"Bash(pwd)",
-				"Certify Activity Group",
+				"Certify Retrieval Groups",
 			]) {
 				if (!treeText.includes(required)) fail(`session_tree replay lost ${required}\n${treeHistory}`);
 			}
@@ -508,7 +547,7 @@ export async function verifyToolsGroupingPty(options: {
 			]);
 			await waitForText(tmux, tmuxSession, "GROUP_BACKGROUND_DONE");
 			const resumed = captureHistory(tmux, tmuxSession);
-			requireGroup(resumed);
+			successGroup(resumed);
 			backgroundBarrier(resumed);
 		}
 
@@ -525,7 +564,15 @@ export async function verifyToolsGroupingPty(options: {
 			})
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
-			scenario === "lifecycle" ? 22 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
+			scenario === "lifecycle"
+				? 26
+				: scenario === "compaction"
+					? 6
+					: scenario === "resume"
+						? 10
+						: scenario === "basic"
+							? 9
+							: 5;
 		if (toolResults.length !== expectedResults) {
 			fail(
 				`grouping changed model-visible results: expected ${String(expectedResults)}, found ${String(toolResults.length)}`,
@@ -543,7 +590,7 @@ export async function verifyToolsGroupingPty(options: {
 		for (const required of requiredTranscriptText) {
 			if (!transcript.includes(required)) fail(`persisted transcript lost ${required}`);
 		}
-		for (const displayOnly of ["ctrl+o to expand", "Searched 1 pattern, read 1 file", "• Bash(pwd)"]) {
+		for (const displayOnly of ["ctrl+o to expand", "Searched 1 pattern", "• Bash(pwd)"]) {
 			if (transcript.includes(displayOnly))
 				fail(`display-only grouping leaked into persisted session data: ${displayOnly}`);
 		}
@@ -596,5 +643,5 @@ if (import.meta.main) {
 		packagePath,
 		piBinary: PI_BIN,
 	});
-	console.log("Certified complete Tool Activity Grouping in 100x32 and 64x28 PTYs");
+	console.log("Certified native Retrieval Groups in 100x32 and 64x28 PTYs");
 }

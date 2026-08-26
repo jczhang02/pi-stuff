@@ -52,13 +52,18 @@ export interface ToolRowModel {
 	readonly target: string;
 }
 
-export interface ActivityGroupRowModel {
+export interface RetrievalGroupRowModel {
 	readonly active: boolean;
+	readonly elapsed?: string;
 	readonly expandable: boolean;
-	readonly hint: string;
+	readonly hint?: string;
+	readonly issueDetail?: string;
+	readonly issueText?: string;
 	readonly kind: "activity";
 	readonly outcome: ToolActivityOutcome | "stopped";
+	readonly semanticSummary?: string;
 	readonly summary: string;
+	readonly target?: string;
 }
 
 export interface BashOperationRowModel {
@@ -72,7 +77,7 @@ export interface BashOperationRowModel {
 	readonly state: ToolActivityState;
 }
 
-export type ToolTranscriptRowModel = ActivityGroupRowModel | BashOperationRowModel | ToolRowModel;
+export type ToolTranscriptRowModel = RetrievalGroupRowModel | BashOperationRowModel | ToolRowModel;
 
 export class EmptyToolComponent implements Component {
 	invalidate(): void {}
@@ -101,10 +106,14 @@ function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel):
 			left.kind === "activity" &&
 			right.kind === "activity" &&
 			left.active === right.active &&
+			left.elapsed === right.elapsed &&
 			left.expandable === right.expandable &&
-			left.hint === right.hint &&
+			left.issueDetail === right.issueDetail &&
+			left.issueText === right.issueText &&
 			left.outcome === right.outcome &&
-			left.summary === right.summary
+			left.semanticSummary === right.semanticSummary &&
+			left.summary === right.summary &&
+			left.target === right.target
 		);
 	}
 	return (
@@ -145,7 +154,7 @@ export class CachedToolRow implements Component {
 		if (cached) return cached;
 		const rendered =
 			this.model.kind === "activity"
-				? renderActivityGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+				? renderRetrievalGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
 				: this.model.kind === "bash-operation"
 					? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
 					: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
@@ -213,7 +222,6 @@ function styleState(theme: Theme, state: ToolActivityState, text: string): strin
 	}
 }
 
-const ACTIVITY_HINT_MAX_WIDTH = 160;
 const BASH_COMMAND_MAX_CODE_UNITS = 160;
 const BASH_COMMAND_MAX_LINES = 2;
 const BASH_OUTPUT_PREVIEW_LINES = 3;
@@ -228,8 +236,8 @@ function activityMarkerColor(
 	return "muted";
 }
 
-function renderActivityGroupRow(
-	model: ActivityGroupRowModel,
+function renderRetrievalGroupRow(
+	model: RetrievalGroupRowModel,
 	theme: Theme,
 	width: number,
 	markerVisible: boolean,
@@ -237,23 +245,46 @@ function renderActivityGroupRow(
 	if (!model.summary) return [];
 	const marker = model.active && !markerVisible ? " " : TRANSCRIPT_MARKER;
 	const markerSlot = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${theme.fg(activityMarkerColor(model.outcome), marker)} `;
-	const summary = theme.fg(model.active ? "text" : "muted", model.summary);
-	const progress = model.active ? theme.fg("dim", "…") : "";
-	const expandHint = model.expandable ? theme.fg("dim", "  (ctrl+o to expand)") : "";
 	const contentWidth = Math.max(1, width - visibleWidth(markerSlot));
-	const wrapped = wrapTextWithAnsi(`${summary}${progress}${expandHint}`, contentWidth);
-	const continuationPrefix = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${TRANSCRIPT_CONTINUATION}`;
-	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : continuationPrefix}${line}`);
-	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
-	if (!safeHint) return lines;
-	const hintPrefix = `${continuationPrefix}⎿ `;
-	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
-	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
-	const hintContinuation = " ".repeat(visibleWidth(hintPrefix));
-	for (const [index, line] of hintLines.entries()) {
-		lines.push(`${index === 0 ? hintPrefix : hintContinuation}${line}`);
+	const semantic = oneLine(model.semanticSummary ?? model.summary);
+	const issue = oneLine(model.issueText ?? "");
+	const expandHint = model.expandable ? "  (ctrl+o to expand)" : "";
+	let content = semantic;
+
+	if (issue) {
+		const separator = semantic ? " · " : "";
+		if (visibleWidth(`${semantic}${separator}${issue}`) > contentWidth) {
+			const reserved = visibleWidth(issue) + visibleWidth(separator);
+			content =
+				semantic && reserved < contentWidth
+					? `${truncateToWidth(semantic, contentWidth - reserved, "…")}${separator}${issue}`
+					: truncateToWidth(issue, contentWidth, "…");
+		} else {
+			content = `${semantic}${separator}${issue}`;
+		}
+		if (expandHint && visibleWidth(`${content}${expandHint}`) <= contentWidth) content += expandHint;
+	} else if (model.active) {
+		content = `${semantic}…`;
+		const elapsed = oneLine(model.elapsed ?? "");
+		const target = oneLine(model.target ?? model.hint ?? "");
+		if (elapsed && visibleWidth(`${content} · ${elapsed}`) <= contentWidth) content += ` · ${elapsed}`;
+		if (
+			target &&
+			(!elapsed || content.endsWith(` · ${elapsed}`)) &&
+			visibleWidth(`${content} · ${target}`) <= contentWidth
+		) {
+			content += ` · ${target}`;
+		}
+	} else if (expandHint && visibleWidth(`${content}${expandHint}`) <= contentWidth) {
+		content += expandHint;
 	}
-	return lines;
+
+	const first = `${markerSlot}${truncateToWidth(theme.fg(model.active ? "text" : "muted", content), contentWidth, "…")}`;
+	if (!issue) return [first];
+	const detailPrefix = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${TRANSCRIPT_CONTINUATION}⎿ `;
+	const detailWidth = Math.max(1, width - visibleWidth(detailPrefix));
+	const detail = oneLine(model.issueDetail ?? model.hint ?? "") || issue;
+	return [first, `${detailPrefix}${truncateToWidth(theme.fg("dim", detail), detailWidth, "…")}`];
 }
 
 function bashCommandLines(command: string, expanded: boolean): string[] {

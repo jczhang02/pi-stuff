@@ -118,8 +118,7 @@ send_and_expect "\\017" "Tool output: expanded"
 send_and_expect "\\017" "Tool output: collapsed"
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "11 activities"
-must_expect "Code Mode · VISIBLE_CODE_MODE"
+must_expect "10 activities"
 must_expect "Esc close"
 wait_for_quiet
 send -- "?"
@@ -153,19 +152,6 @@ send_and_expect "\\033\\[6~" "Result content"
 send_and_expect "\\033" "r raw"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
-send -- "/tools tools-pty-15\\r"
-must_expect "Tools / Code Mode"
-must_expect "VISIBLE_CODE_MODE_SUMMARY"
-must_expect "VISIBLE_CODE_MODE_DETAIL"
-must_expect "Esc back"
-send -- "r"
-must_expect "Raw"
-must_expect "Call ID: tools-pty-15"
-must_expect "VISIBLE_CODE_MODE_SUMMARY"
-must_expect "VISIBLE_CODE_MODE_DETAIL"
-send_and_expect "\\033" "r raw"
-send_and_expect "\\033" "activities"
-send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-8\\r"
 must_expect "Tools /"
 must_expect "BUILTIN_FAILURE_工具"
@@ -186,17 +172,6 @@ set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
 must_expect "Searched 2 patterns, listed 1 directory"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
-send -- "/tools tools-pty-15\\r"
-must_expect "Tools / Code Mode"
-must_expect "VISIBLE_CODE_MODE_SUMMARY"
-must_expect "VISIBLE_CODE_MODE_DETAIL"
-wait_for_quiet
-send -- "r"
-must_expect "Raw"
-must_expect "Call ID: tools-pty-15"
-send_and_expect "\\033" "r raw"
-send_and_expect "\\033" "activities"
-send_and_expect "\\033" $conversation_marker
 send -- "DRAFT_AFTER_TOOLS"
 must_expect "DRAFT_AFTER_TOOLS"
 send -- "\\003\\004"
@@ -292,10 +267,15 @@ function verifyOutput(output: string, columns: number): void {
 	}
 	const visible = stripTerminalControls(output);
 	verifyLifecycleFrames(visible);
-	if (visible.includes("CONTROL_ONLY_ACK") || visible.includes(CODE_MODE_NO_OUTPUT_MESSAGE)) {
-		fail("Control-only or no-output Code Mode evidence reached ordinary Tool UI");
+	for (const hidden of [
+		"CONTROL_ONLY_ACK",
+		CODE_MODE_NO_OUTPUT_MESSAGE,
+		"VISIBLE_CODE_MODE_SUMMARY",
+		"VISIBLE_CODE_MODE_DETAIL",
+	]) {
+		if (visible.includes(hidden)) fail(`successful pure-JavaScript Code Mode output reached Tool UI: ${hidden}`);
 	}
-	if (/• Code Mode[^\n]*· done/u.test(visible)) fail("Control-only Code Mode rendered a misleading done row");
+	if (/• Code Mode/u.test(visible)) fail("successful pure-JavaScript Code Mode rendered envelope chrome");
 	for (const required of [
 		"TOOLS_DONE",
 		"• TOOLS_DONE",
@@ -308,7 +288,6 @@ function verifyOutput(output: string, columns: number): void {
 		"• Edit written.txt · +1/-1",
 		"• State error · working",
 		"• State error · error",
-		"• Code Mode · VISIBLE_CODE_MODE_SUMMARY",
 		"• Bash(printf '",
 		"⎿  PREFIX_CJK_工具",
 		"⎿  Error: Exit code 7",
@@ -321,7 +300,6 @@ function verifyOutput(output: string, columns: number): void {
 		"Tools / Keys",
 		"Ctrl+Y",
 		"Call ID: tools-pty-4",
-		"Call ID: tools-pty-15",
 		"Arguments",
 		"Result content",
 		"PREFIX_CJK_工具",
@@ -330,7 +308,6 @@ function verifyOutput(output: string, columns: number): void {
 		"FIXTURE_ERROR",
 		"FIXTURE_REJECTED",
 		"FIXTURE_CANCELLED",
-		"VISIBLE_CODE_MODE_DETAIL",
 		"UI",
 		"Tool running timer",
 		"→ Tool running timer",
@@ -363,10 +340,10 @@ function verifyLifecycleFrames(visible: string): void {
 	if (firstRetrieval < 0 || modification < 0 || secondRetrieval < 0) {
 		fail("retrieval groups and their independent modification boundary lost source order");
 	}
-	const activeRetrieval = visible.indexOf("• Searching 1 pattern", secondRetrieval + 1);
-	const settledRetrieval = visible.indexOf("• Searched 1 pattern", activeRetrieval + 1);
-	if (activeRetrieval < 0 || settledRetrieval < 0) {
-		fail("retrieval group did not expose its active and settled states");
+	const activeThirdParty = visible.indexOf("• Search fixture · searching", secondRetrieval + 1);
+	const settledThirdParty = visible.indexOf("• Search fixture · searched", activeThirdParty + 1);
+	if (activeThirdParty < 0 || settledThirdParty < 0) {
+		fail("third-party retrieval metadata escaped its independent active and settled Tool Activity");
 	}
 	const firstBash = visible.indexOf("⎿  PREFIX_CJK_工具");
 	const failedBash = visible.indexOf("⎿  Error: Exit code 7", firstBash + 1);

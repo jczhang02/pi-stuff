@@ -62,7 +62,7 @@ export type ToolArguments = Readonly<ToolCall["arguments"]>;
 
 export interface ToolActivityItem {
 	readonly category: ToolActivityCategory;
-	/** Stable identities are deduplicated within one Activity Group. */
+	/** Stable identities are deduplicated within one Retrieval Group. */
 	readonly countKeys?: readonly string[];
 	/** Invocation-like work adds this quantity instead of deduplicating. */
 	readonly count?: number;
@@ -444,7 +444,7 @@ export interface PlannedToolActivityMember {
 	readonly terminalState?: "cancelled" | "error";
 }
 
-export interface PlannedToolActivityGroup {
+export interface PlannedRetrievalGroup {
 	readonly closed: boolean;
 	readonly leaderId: string;
 	readonly members: readonly PlannedToolActivityMember[];
@@ -452,34 +452,25 @@ export interface PlannedToolActivityGroup {
 	readonly standalone?: boolean;
 }
 
-export type ToolActivityGroupDisposition = "boundary" | "retrieval" | "transparent";
-export type ToolActivityGroupClassifier = (name: string, args: ToolArguments) => ToolActivityGroupDisposition;
+export type RetrievalGroupDisposition = "boundary" | "retrieval" | "transparent";
+export type RetrievalGroupClassifier = (name: string, args: ToolArguments) => RetrievalGroupDisposition;
 
 const RETRIEVAL_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>(["read-file", "search-pattern", "list-directory"]);
+const RETRIEVAL_ACTIVITY_TOOL_NAMES = new Set(["find", "grep", "ls", "read"]);
 const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
 
 /** One invocation-level policy shared by streaming, replay, and envelope projection. */
-export function classifyToolActivityGroupInvocation(
+export function classifyRetrievalGroupInvocation(
 	name: string,
-	args: ToolArguments,
+	_args: ToolArguments,
 	metadata: ToolActivityMetadata<ToolArguments, unknown> | undefined,
-): ToolActivityGroupDisposition {
+): RetrievalGroupDisposition {
 	if (TRANSPARENT_ACTIVITY_TOOL_NAMES.has(name)) return "transparent";
-	if (!metadata) return "boundary";
-	if (name !== "bash") {
-		return metadata.categories.length > 0 &&
-			metadata.categories.every((category) => RETRIEVAL_ACTIVITY_CATEGORIES.has(category))
-			? "retrieval"
-			: "boundary";
-	}
-	try {
-		const items = metadata.classify({ args, state: "running" });
-		return items.length > 0 && items.every((item) => RETRIEVAL_ACTIVITY_CATEGORIES.has(item.category))
-			? "retrieval"
-			: "boundary";
-	} catch {
-		return "boundary";
-	}
+	if (!metadata || !RETRIEVAL_ACTIVITY_TOOL_NAMES.has(name)) return "boundary";
+	return metadata.categories.length > 0 &&
+		metadata.categories.every((category) => RETRIEVAL_ACTIVITY_CATEGORIES.has(category))
+		? "retrieval"
+		: "boundary";
 }
 
 export interface ActivitySummaryMember {
@@ -504,6 +495,7 @@ export interface ToolActivitySummary {
 	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
 	readonly issueText: string;
 	readonly outcome: ToolActivityOutcome;
+	readonly semanticSummary: string;
 	readonly summary: string;
 	readonly target: string;
 }
@@ -881,7 +873,7 @@ function toolCall<Value>(value: Value): Omit<PlannedToolActivityMember, "result"
 
 function toolResult<Value>(
 	value: Value,
-): { readonly id: string; readonly result: AgentToolResult<unknown> } | undefined {
+): { readonly id: string; readonly result: AgentToolResult<unknown> & { readonly isError?: true } } | undefined {
 	if (!isRecord(value) || !("role" in value) || value.role !== "toolResult") return undefined;
 	const id = "toolCallId" in value ? value.toolCallId : undefined;
 	const content = "content" in value ? value.content : undefined;
@@ -891,7 +883,7 @@ function toolResult<Value>(
 		content: content as AgentToolResult<unknown>["content"],
 		details: "details" in value ? value.details : undefined,
 	};
-	const result = "isError" in value && value.isError === true ? { ...baseResult, isError: true } : baseResult;
+	const result = "isError" in value && value.isError === true ? { ...baseResult, isError: true as const } : baseResult;
 	return {
 		id,
 		result,
@@ -909,6 +901,17 @@ function hasVisibleText<Value>(block: Value): boolean {
 	);
 }
 
+function hasVisibleThinking<Value>(block: Value): boolean {
+	return (
+		isRecord(block) &&
+		"type" in block &&
+		block.type === "thinking" &&
+		"thinking" in block &&
+		isRuntimeString(block.thinking) &&
+		block.thinking.trim().length > 0
+	);
+}
+
 function isVisibleMessageBoundary(message: ToolTranscriptRecord): boolean {
 	const role = message.role;
 	if (role === "custom") return message.display === true;
@@ -921,22 +924,22 @@ function assistantTerminalState(message: ToolTranscriptRecord): "cancelled" | "e
 }
 
 /**
- * Derive display-only Activity Groups from the current model-visible message order.
- * Tool results and Thinking are transparent; prose, user-visible context, and
- * unsupported Tool calls close the current group.
+ * Derive display-only Retrieval Groups from the current model-visible message order.
+ * Tool results are transparent; visible Thinking runs, prose, user-visible context,
+ * and unsupported Tool calls close the current group.
  */
-export function planToolActivityGroups(
+export function planRetrievalGroups(
 	messages: readonly unknown[],
-	classifyInvocation: ToolActivityGroupClassifier,
+	classifyInvocation: RetrievalGroupClassifier,
 	closeTail: boolean,
-): readonly PlannedToolActivityGroup[] {
-	const results = new Map<string, AgentToolResult<unknown>>();
+): readonly PlannedRetrievalGroup[] {
+	const results = new Map<string, AgentToolResult<unknown> & { readonly isError?: true }>();
 	for (const message of messages) {
 		const parsed = toolResult(message);
 		if (parsed) results.set(parsed.id, parsed.result);
 	}
 
-	const groups: PlannedToolActivityGroup[] = [];
+	const groups: PlannedRetrievalGroup[] = [];
 	let members: PlannedToolActivityMember[] = [];
 	const flush = (closed: boolean) => {
 		const leader = members[0];
@@ -955,6 +958,10 @@ export function planToolActivityGroups(
 			standalone: true,
 		});
 	};
+	const appendInfrastructureIssue = (member: PlannedToolActivityMember) => {
+		flush(true);
+		groups.push({ closed: true, leaderId: member.id, members: [member] });
+	};
 
 	for (const candidate of messages) {
 		if (!isRecord(candidate)) continue;
@@ -965,7 +972,7 @@ export function planToolActivityGroups(
 		if (candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) continue;
 		const terminalState = assistantTerminalState(candidate);
 		for (const block of candidate["content"]) {
-			if (hasVisibleText(block)) {
+			if (hasVisibleText(block) || hasVisibleThinking(block)) {
 				flush(true);
 				continue;
 			}
@@ -979,6 +986,10 @@ export function planToolActivityGroups(
 			const disposition = classifyInvocation(call.name, call.args);
 			if (disposition === "boundary") {
 				appendStandalone(member);
+				continue;
+			}
+			if (disposition === "transparent" && (result?.isError === true || terminalState !== undefined)) {
+				appendInfrastructureIssue(member);
 				continue;
 			}
 			append(member);
@@ -1081,7 +1092,7 @@ export function effectiveToolActivityOutcome(members: readonly ActivitySummaryMe
 	return "success";
 }
 
-/** Format a pre-aggregated Activity Group without rescanning every member. */
+/** Format a pre-aggregated Retrieval Group without rescanning every member. */
 export function summarizeToolActivityAggregate(aggregate: ToolActivityAggregate, closed: boolean): ToolActivitySummary {
 	const active = !closed || (aggregate.stateCounts.running ?? 0) > 0;
 	const clauses = [...aggregate.categories]
@@ -1107,13 +1118,14 @@ export function summarizeToolActivityAggregate(aggregate: ToolActivityAggregate,
 		issueState: issues.issueState,
 		issueText: issues.text,
 		outcome: active ? "running" : aggregate.outcome,
+		semanticSummary: base,
 		summary,
 		target: active ? activityTarget(aggregate.target ?? "") : "",
 	};
 }
 
-/** Build a deterministic Claude-style semantic clause for one Activity Group. */
-export function summarizeToolActivityGroup(
+/** Build a deterministic Claude-style semantic clause for one Retrieval Group. */
+export function summarizeRetrievalGroup(
 	members: readonly ActivitySummaryMember[],
 	closed: boolean,
 ): ToolActivitySummary {

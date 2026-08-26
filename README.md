@@ -37,8 +37,8 @@ The result is a denser, quieter coding workflow:
 
 - **Conversation-first UI** — a responsive Welcome card, one bounded Statusline, live Thought projection, terminal
   `chart`/`tree` fences, input highlighting, and full-width Pi-native Command Dialogs.
-- **Compact Tool activity** — continuous Tool work becomes one semantic Activity Group; `Ctrl+O` and `/tools` restore
-  the underlying detail.
+- **Compact Tool activity** — continuous native Read, Grep/Find, and List work becomes one semantic Retrieval Group;
+  other Tools stay independent, while `Ctrl+O` and `/tools` restore the underlying detail.
 - **Semantic Session names** — the first settled direct-user exchange receives a bounded model-generated name;
   `/autoname` refreshes it explicitly, `/autoname settings` controls routine policy and the primary model, and automatic naming never takes over Child Agent Sessions.
 - **Durable objectives and plans** — Goal can continue one evidence-gated objective, while Todo keeps recoverable
@@ -82,7 +82,7 @@ Once Pi starts, these are useful entry points:
 | `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
 | `/tasks` | Inspect and control Background Shells and Monitors |
 | `/agents` | Inspect and control current-session Agents |
-| `/tools` | Inspect the members and bounded results of a Tool Activity Group |
+| `/tools` | Inspect Retrieval Group members and independent Tool Activities |
 | `/diagnostics` | Review bounded, redacted Suite problems from the current process |
 | `/codex` | Inspect Codex usage and Fast mode when using a supported Codex model |
 | `/mcp` | Inspect lazily configured MCP servers |
@@ -127,7 +127,7 @@ The ordered Suite currently contains:
 | --- | --- |
 | `conversation-ui` | Welcome, Statusline, live Thoughts, `chart`/`tree` fence projection, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
 | `session-naming` | Bounded semantic Session names after settled direct-user work, branch-local ownership state, and `/autoname` policy/model controls |
-| `tool-display` | Compact Tool Activity Groups, native expansion, `/tools`, and deterministic resume reconstruction |
+| `tool-display` | Compact Retrieval Groups, independent Tool Activities, native expansion, `/tools`, and deterministic resume reconstruction |
 | `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
 | `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
 | `goal` | One persistent session objective with automatic continuation and evidence-gated completion or blocking |

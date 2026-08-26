@@ -16,7 +16,7 @@ Current engineering documentation is English. Use these sources in this order:
 | --- | --- |
 | Host and Package boundary | [`CONTEXT.md`](../CONTEXT.md), ADR [0001](adr/0001-keep-pi-as-the-host.md), and [0003](adr/0003-maintain-one-local-package-with-internal-capability-modules.md) |
 | Visible UI | [`DESIGN.md`](../DESIGN.md) plus the owning Module README or accepted ADR |
-| Tool Activity | ADR [0010](adr/0010-fold-continuous-retrieval-segments.md); ADR 0002 is superseded |
+| Tool Activity | ADR [0022](adr/0022-restrict-folding-to-native-retrieval.md); ADRs 0010 and 0002 are superseded |
 | Code Mode | ADR [0009](adr/0009-align-code-mode-with-openai-and-cloudflare.md), [0011](adr/0011-add-global-code-mode-default.md), and [0014](adr/0014-expose-code-mode-configuration-scope.md); ADR 0005 is superseded |
 | Context Management | ADR [0007](adr/0007-initialize-configured-context-before-editor-readiness.md) and [0008](adr/0008-own-the-context-command-surface.md) |
 | Settings and Web configuration | ADR [0012](adr/0012-merge-pi-stuff-settings-file.md) as amended by [0013](adr/0013-unify-web-configuration.md) |

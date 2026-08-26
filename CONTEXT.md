@@ -44,27 +44,38 @@ _Avoid_: chat title, task name, autoname state
 User-owned declarations that select and configure Packages and Runtime Resources for a Host installation.
 _Avoid_: Suite configuration, installer state
 
-**Narrative Boundary**:
-Visible Assistant prose, user input, or any visible model-context Custom Message that separates one Tool execution phase from the next. Thinking remains visible but does not create a boundary; hidden state and branch/compaction metadata do not either.
-_Avoid_: Assistant message boundary, API turn, Thinking block
+**Logical Thinking Run**:
+A continuously updated visible reasoning segment treated as one narrative unit. A later separately visible reasoning
+segment is a new run; streaming deltas, terminal wrapping, and redraw are not.
+_Avoid_: Thinking row, terminal line, provider content index
 
-**Tool Activity Group**:
-A derived display-only summary of one continuous retrieval segment within a user turn. Read, Grep/Find, List, and
-conservatively classified read-only Bash calls may participate across Tool results and Thinking. Consequential,
-unsupported, and unknown Tools remain independent and bound the segment. The individual protocol events, ordering,
-and Session history remain unchanged.
+**Narrative Boundary**:
+A visible event that separates one Tool execution phase from the next: Assistant prose, user input, a visible
+model-context Custom Message, or a new Logical Thinking Run after Tool activity. Updates within the current Logical
+Thinking Run, hidden state, and branch or compaction metadata do not create another boundary.
+_Avoid_: Assistant message boundary, API turn, physical terminal row
+
+**Tool Activity**:
+A display-only unit representing either one independent Tool invocation or one Retrieval Group. Its projection does
+not merge or alter the underlying protocol events, ordering, or Session history.
+_Avoid_: Tool call, Tool row, Tool Activity Group
+
+**Retrieval Group**:
+A derived display-only summary of one continuous segment of native Read, Grep/Find, or List invocations. A Narrative
+Boundary, independent Tool Activity, automatic continuation, or turn completion closes it.
 _Avoid_: Exploration group, Tool batch, merged Tool call
 
 **Bash Operation Block**:
-A display-only projection of one Bash Tool call, with one bounded command title and child output preview. It appears at
-the call's native position when Bash is independent and is restored there when a retrieval group is expanded. Shell
-composition inside the call remains one operation, and the underlying Tool result and Session records are unchanged.
-_Avoid_: Command group, parsed subcommand, Tool Activity Group
+A display-only projection of one Bash Tool call, with one bounded command title and child output preview at the call's
+native position. Shell composition inside the call remains one operation, and the underlying Tool result and Session
+records remain unchanged.
+_Avoid_: Command group, parsed subcommand, Retrieval Group
 
 **Envelope Fallback Row**:
-The single ordinary Tool row that represents a Tool envelope only when no nested operation owns its outcome, or when
-the envelope itself fails after every nested operation succeeds. Valid nested rows remain the sole visible authority;
-missing historical definitions and presentation failures instead use generic rows at their original source positions.
+The single ordinary Tool Activity that represents an envelope only when no nested operation or media projection owns
+its user-visible outcome, including an unmatched outer error, rejection, or cancellation. Valid nested activities
+remain the sole visible authority; missing historical definitions and presentation failures instead use generic
+activities at their original source positions.
 _Avoid_: Envelope chrome, raw Tool result, duplicate error row
 
 **Control-only Execution**:
