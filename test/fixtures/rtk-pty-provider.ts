@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
 
 const PROVIDER = "pi-stuff-rtk-pty";
@@ -10,6 +10,7 @@ const RG_FILES_COMMAND = "rg --files -g '*.txt' .";
 const RG_SEARCH_COMMAND = "rg -n RTK untracked.txt";
 const LONG_OUTPUT_COMMAND =
 	"printf '\\033[31mRAW_RTK_RESULT_MARKER\\033[0m\\n'; i=0; while [ \"$i\" -lt 1600 ]; do printf 'RAW_RTK_LONG_LINE_%04d\\n' \"$i\"; i=$((i + 1)); done";
+const executedCommands: string[] = [];
 
 const ZERO_USAGE = {
 	input: 0,
@@ -76,7 +77,7 @@ function contextRecord(context: Context, phase: string) {
 				.join("\n"),
 		});
 	}
-	return { bashCommands, phase, toolResults };
+	return { bashCommands, executedCommands: [...executedCommands], phase, toolResults };
 }
 
 function fixtureStream(context: Context) {
@@ -95,6 +96,9 @@ function fixtureStream(context: Context) {
 }
 
 export default function rtkPtyProvider(pi: ExtensionAPI): void {
+	pi.on("tool_call", (event) => {
+		if (isToolCallEventType("bash", event)) executedCommands.push(event.input.command);
+	});
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff RTK PTY fixture",
 		baseUrl: "https://fixture.invalid",

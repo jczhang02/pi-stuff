@@ -36,6 +36,7 @@ const SESSION_TOOL_RESULT_SCHEMA = Type.Object(
 const CONTEXT_RECORD_SCHEMA = Type.Object(
 	{
 		bashCommands: Type.Optional(Type.Array(Type.String())),
+		executedCommands: Type.Optional(Type.Array(Type.String())),
 		phase: Type.Optional(Type.String()),
 		toolResults: Type.Optional(
 			Type.Array(
@@ -285,6 +286,15 @@ function verifyCommandHistory(record: ContextRecord): void {
 	}
 }
 
+function verifyExecutedCommands(record: ContextRecord): void {
+	if (!Array.isArray(record.executedCommands)) fail("provider record has no executed Bash command history");
+	for (const command of [`rtk git status`, `rtk ${RG_FILES_COMMAND}`, `rtk ${RG_SEARCH_COMMAND}`]) {
+		if (!record.executedCommands.includes(command)) {
+			fail(`Host did not pass the RTK-rewritten command to Bash: ${JSON.stringify(record.executedCommands)}`);
+		}
+	}
+}
+
 function rawResult(sessionContents: string, toolCallId: string): string {
 	for (const line of sessionContents.split("\n")) {
 		if (!line) continue;
@@ -378,6 +388,7 @@ export async function verifyRtkPty(options: {
 		const rawBeforeResume = rawResult(sessionBeforeResume, LONG_RESULT_ID);
 		const freshRecord = recordForPhase(parseContextRecords(await readFile(logPath, "utf8")), "fresh");
 		verifyCommandHistory(freshRecord);
+		verifyExecutedCommands(freshRecord);
 		const projectedFresh = projectedResult(freshRecord);
 		verifyProjection(rawBeforeResume, projectedFresh, "fresh");
 
