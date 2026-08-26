@@ -89,10 +89,10 @@ export function childMessageProtocolError(value: JsonValue | undefined): string 
 	if (!isJsonObject(value)) return "message must be an object";
 	const message = value;
 	if (
-		message.role !== "assistant" &&
-		message.role !== "user" &&
-		message.role !== "toolResult" &&
-		message.role !== "custom"
+		message["role"] !== "assistant" &&
+		message["role"] !== "user" &&
+		message["role"] !== "toolResult" &&
+		message["role"] !== "custom"
 	) {
 		return "message.role is invalid";
 	}
@@ -101,46 +101,46 @@ export function childMessageProtocolError(value: JsonValue | undefined): string 
 			return `message.${field} must be a string`;
 		}
 	}
-	if (message.role === "custom") {
-		if (!isRuntimeString(message.customType) || !message.customType.trim()) {
+	if (message["role"] === "custom") {
+		if (!isRuntimeString(message["customType"]) || !message["customType"].trim()) {
 			return "message.customType must be a non-empty string";
 		}
-		if (!isRuntimeBoolean(message.display)) return "message.display must be a boolean";
-		if (!isRuntimeNumber(message.timestamp) || !Number.isFinite(message.timestamp)) {
+		if (!isRuntimeBoolean(message["display"])) return "message.display must be a boolean";
+		if (!isRuntimeNumber(message["timestamp"]) || !Number.isFinite(message["timestamp"])) {
 			return "message.timestamp must be a finite number";
 		}
-		if (isRuntimeString(message.content)) return undefined;
-		if (!Array.isArray(message.content)) return "message.content for role 'custom' must be a string or array";
+		if (isRuntimeString(message["content"])) return undefined;
+		if (!Array.isArray(message["content"])) return "message.content for role 'custom' must be a string or array";
 	}
-	if (message.role === "user" && isRuntimeString(message.content)) return undefined;
-	if (!Array.isArray(message.content)) return `message.content for role '${message.role}' must be an array`;
-	for (const part of message.content) {
+	if (message["role"] === "user" && isRuntimeString(message["content"])) return undefined;
+	if (!Array.isArray(message["content"])) return `message.content for role '${message["role"]}' must be an array`;
+	for (const part of message["content"]) {
 		if (!isJsonObject(part)) return "message.content contains a non-object part";
 		const content = part;
-		if (!isRuntimeString(content.type)) return "message.content part type must be a string";
-		if (content.type === "text" && !isRuntimeString(content.text)) {
+		if (!isRuntimeString(content["type"])) return "message.content part type must be a string";
+		if (content["type"] === "text" && !isRuntimeString(content["text"])) {
 			return "message.content text must be a string";
 		}
-		if (content.type === "thinking" && !isRuntimeString(content.thinking)) {
+		if (content["type"] === "thinking" && !isRuntimeString(content["thinking"])) {
 			return "message.content thinking must be a string";
 		}
-		if (content.type === "image" && (!isRuntimeString(content.data) || !isRuntimeString(content.mimeType))) {
+		if (content["type"] === "image" && (!isRuntimeString(content["data"]) || !isRuntimeString(content["mimeType"]))) {
 			return "message.content image fields must be strings";
 		}
 		if (
-			content.type === "toolCall" &&
-			(!isRuntimeString(content.id) || !isRuntimeString(content.name) || !isJsonObject(content.arguments))
+			content["type"] === "toolCall" &&
+			(!isRuntimeString(content["id"]) || !isRuntimeString(content["name"]) || !isJsonObject(content["arguments"]))
 		) {
 			return "message.content toolCall fields are invalid";
 		}
 		const allowedTypes =
-			message.role === "assistant"
+			message["role"] === "assistant"
 				? ["text", "thinking", "toolCall"]
-				: message.role === "user" || message.role === "toolResult" || message.role === "custom"
+				: message["role"] === "user" || message["role"] === "toolResult" || message["role"] === "custom"
 					? ["text", "image"]
 					: [];
-		if (!allowedTypes.includes(content.type)) {
-			return `message.content type '${content.type}' is invalid for role '${message.role}'`;
+		if (!allowedTypes.includes(content["type"])) {
+			return `message.content type '${content["type"]}' is invalid for role '${message["role"]}'`;
 		}
 	}
 	return undefined;
@@ -168,46 +168,46 @@ export function parseChildProtocolEvent(value: JsonValue): ParsedChildProtocolEv
 		return { error: "event must be an object" };
 	}
 	const event = value;
-	if (!isRuntimeString(event.type) || !event.type.trim()) {
+	if (!isRuntimeString(event["type"]) || !event["type"].trim()) {
 		return { error: "event.type must be a non-empty string" };
 	}
-	if (!CHILD_PROTOCOL_EVENT_TYPES.has(event.type)) {
-		return { error: `event.type '${event.type}' is unsupported` };
+	if (!CHILD_PROTOCOL_EVENT_TYPES.has(event["type"])) {
+		return { error: `event.type '${event["type"]}' is unsupported` };
 	}
-	if (event.type === "message_end" || event.type === "tool_result_end") {
-		const error = childMessageProtocolError(event.message);
-		if (error) return { error: `${event.type} ${error}` };
+	if (event["type"] === "message_end" || event["type"] === "tool_result_end") {
+		const error = childMessageProtocolError(event["message"]);
+		if (error) return { error: `${event["type"]} ${error}` };
 	}
 	let modelContext: ChildModelContext | undefined;
-	if (event.type === "entry_appended" && isJsonObject(event.entry)) {
-		const entry = event.entry;
-		if (entry.customType === CHILD_MODEL_CONTEXT_ENTRY_TYPE) {
-			if (entry.type !== "custom") return { error: "entry_appended model context entry.type must be 'custom'" };
-			if (!isJsonObject(entry.data)) return { error: "entry_appended model context data must be an object" };
-			const data = entry.data;
-			if (data.version !== 1) return { error: "entry_appended model context data.version must be 1" };
-			if (!isRuntimeString(data.provider) || !data.provider.trim()) {
+	if (event["type"] === "entry_appended" && isJsonObject(event["entry"])) {
+		const entry = event["entry"];
+		if (entry["customType"] === CHILD_MODEL_CONTEXT_ENTRY_TYPE) {
+			if (entry["type"] !== "custom") return { error: "entry_appended model context entry.type must be 'custom'" };
+			if (!isJsonObject(entry["data"])) return { error: "entry_appended model context data must be an object" };
+			const data = entry["data"];
+			if (data["version"] !== 1) return { error: "entry_appended model context data.version must be 1" };
+			if (!isRuntimeString(data["provider"]) || !data["provider"].trim()) {
 				return { error: "entry_appended model context data.provider must be a non-empty string" };
 			}
-			if (!isRuntimeString(data.model) || !data.model.trim()) {
+			if (!isRuntimeString(data["model"]) || !data["model"].trim()) {
 				return { error: "entry_appended model context data.model must be a non-empty string" };
 			}
 			if (
-				!isRuntimeNumber(data.contextWindow) ||
-				!Number.isSafeInteger(data.contextWindow) ||
-				data.contextWindow <= 0
+				!isRuntimeNumber(data["contextWindow"]) ||
+				!Number.isSafeInteger(data["contextWindow"]) ||
+				data["contextWindow"] <= 0
 			) {
 				return { error: "entry_appended model context data.contextWindow must be a positive safe integer" };
 			}
 			modelContext = {
-				provider: data.provider,
-				model: data.model,
-				contextWindow: data.contextWindow,
+				provider: data["provider"],
+				model: data["model"],
+				contextWindow: data["contextWindow"],
 			};
 		}
 	}
 	// SAFETY: supported event names are checked above, and final message events pass the complete message validator.
-	return { event: { ...event, type: event.type, modelContext } as ChildProtocolEvent };
+	return { event: { ...event, type: event["type"], modelContext } as ChildProtocolEvent };
 }
 
 export function formatProtocolOutputLimit(limit: ProtocolOutputLimit): string {

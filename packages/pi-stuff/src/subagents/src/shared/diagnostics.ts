@@ -41,7 +41,7 @@ function detachedRunnerLine(severity: "error" | "warning", summary: string, deta
 
 function emitAgentDiagnostic(severity: "error" | "warning", values: readonly unknown[]): void {
 	const { details, error, summary } = normalize(values);
-	if (process.env.PI_STUFF_BACKGROUND_RUNNER === "1") {
+	if (process.env["PI_STUFF_BACKGROUND_RUNNER"] === "1") {
 		writeDetachedRunnerDiagnostic(
 			detachedRunnerLine(severity, summary, [
 				...details,

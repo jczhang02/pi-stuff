@@ -227,32 +227,32 @@ export function resolveNestedTerminalStatus(
 }
 
 interface AsyncParallelParams extends AsyncParallelRunnerWorkBuildParams {
-	goal?: string;
-	artifactsDir?: string;
+	goal?: string | undefined;
+	artifactsDir?: string | undefined;
 	artifactConfig: ArtifactConfig;
-	sessionRoot?: string;
-	worktreeSetupHook?: string;
-	worktreeSetupHookTimeoutMs?: number;
-	worktreeBaseDir?: string;
-	controlIntercomTarget?: string;
-	childIntercomTarget?: (agent: string, index: number) => string | undefined;
-	nestedRoute?: NestedRouteInfo;
-	timeoutMs?: number;
+	sessionRoot?: string | undefined;
+	worktreeSetupHook?: string | undefined;
+	worktreeSetupHookTimeoutMs?: number | undefined;
+	worktreeBaseDir?: string | undefined;
+	controlIntercomTarget?: string | undefined;
+	childIntercomTarget?: ((agent: string, index: number) => string | undefined) | undefined;
+	nestedRoute?: NestedRouteInfo | undefined;
+	timeoutMs?: number | undefined;
 }
 
 interface AsyncSingleParams extends AsyncSingleRunnerWorkBuildParams {
-	goal?: string;
-	artifactsDir?: string;
+	goal?: string | undefined;
+	artifactsDir?: string | undefined;
 	artifactConfig: ArtifactConfig;
-	sessionRoot?: string;
-	revivalLease?: SessionLeaseIntent;
-	worktreeSetupHook?: string;
-	worktreeSetupHookTimeoutMs?: number;
-	worktreeBaseDir?: string;
-	controlIntercomTarget?: string;
-	childIntercomTarget?: (agent: string, index: number) => string | undefined;
-	nestedRoute?: NestedRouteInfo;
-	timeoutMs?: number;
+	sessionRoot?: string | undefined;
+	revivalLease?: SessionLeaseIntent | undefined;
+	worktreeSetupHook?: string | undefined;
+	worktreeSetupHookTimeoutMs?: number | undefined;
+	worktreeBaseDir?: string | undefined;
+	controlIntercomTarget?: string | undefined;
+	childIntercomTarget?: ((agent: string, index: number) => string | undefined) | undefined;
+	nestedRoute?: NestedRouteInfo | undefined;
+	timeoutMs?: number | undefined;
 }
 
 interface AsyncExecutionResult {
@@ -313,17 +313,17 @@ function readRunnerStartup(
 	try {
 		const payload = parseJsonValue(readBoundedOwnedFile(startupPath, MAX_RUNNER_STARTUP_FILE_BYTES));
 		if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) return undefined;
-		if (payload.state === "error" && isRuntimeString(payload.error)) {
-			return { ok: false, error: payload.error };
+		if (payload["state"] === "error" && isRuntimeString(payload["error"])) {
+			return { ok: false, error: payload["error"] };
 		}
-		if (payload.state !== expectedState) return undefined;
-		if (!isRuntimeString(payload.token) || (expectedToken !== undefined && payload.token !== expectedToken)) {
+		if (payload["state"] !== expectedState) return undefined;
+		if (!isRuntimeString(payload["token"]) || (expectedToken !== undefined && payload["token"] !== expectedToken)) {
 			return {
 				ok: false,
 				error: `Async runner wrote an invalid ${expectedState} startup handshake: ${startupPath}`,
 			};
 		}
-		return { ok: true, token: payload.token };
+		return { ok: true, token: payload["token"] };
 	} catch (error) {
 		return {
 			ok: false,
@@ -487,7 +487,7 @@ export function finalizeSpawnedRunnerClose(input: {
 	readonly runnerProcessInstanceId: string;
 	readonly exitCode: number | null;
 	readonly signal: NodeJS.Signals | null;
-	readonly onProcessTerminal?: (proof: ProcessTerminalNotice) => void;
+	readonly onProcessTerminal?: ((proof: ProcessTerminalNotice) => void) | undefined;
 }): void {
 	try {
 		finalizeProcessTerminal(input.launchConfig.asyncDir, input.launchConfig.id, {
@@ -504,21 +504,26 @@ export function finalizeSpawnedRunnerClose(input: {
 		if (input.launchConfig.nestedRoute && input.launchConfig.nestedSelf) {
 			try {
 				const status = resolveNestedTerminalStatus(input.launchConfig, persisted);
-				writeNestedEvent(input.launchConfig.nestedRoute, {
+				const fallback: Parameters<typeof nestedSummaryFromAsyncStatus>[2] = {
+					id: input.launchConfig.id,
+					parentRunId: input.launchConfig.nestedSelf.parentRunId,
+					depth: input.launchConfig.nestedSelf.depth,
+					mode: status.mode,
+					ts: Date.now(),
+				};
+				if (input.launchConfig.nestedSelf.parentStepIndex !== undefined)
+					fallback.parentStepIndex = input.launchConfig.nestedSelf.parentStepIndex;
+				if (input.launchConfig.nestedSelf.path !== undefined) fallback.path = input.launchConfig.nestedSelf.path;
+				const child = nestedSummaryFromAsyncStatus(status, input.launchConfig.asyncDir, fallback);
+				const event: Parameters<typeof writeNestedEvent>[1] = {
 					type: "subagent.nested.completed",
 					ts: Date.now(),
 					parentRunId: input.launchConfig.nestedSelf.parentRunId,
-					parentStepIndex: input.launchConfig.nestedSelf.parentStepIndex,
-					child: nestedSummaryFromAsyncStatus(status, input.launchConfig.asyncDir, {
-						id: input.launchConfig.id,
-						parentRunId: input.launchConfig.nestedSelf.parentRunId,
-						parentStepIndex: input.launchConfig.nestedSelf.parentStepIndex,
-						depth: input.launchConfig.nestedSelf.depth,
-						path: input.launchConfig.nestedSelf.path,
-						mode: status.mode,
-						ts: Date.now(),
-					}),
-				});
+					child,
+				};
+				if (input.launchConfig.nestedSelf.parentStepIndex !== undefined)
+					event.parentStepIndex = input.launchConfig.nestedSelf.parentStepIndex;
+				writeNestedEvent(input.launchConfig.nestedRoute, event);
 			} catch (error) {
 				if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") {
 					reportAgentDiagnostic("Failed to emit final nested Agent state:", error);
@@ -526,11 +531,12 @@ export function finalizeSpawnedRunnerClose(input: {
 			}
 		}
 		try {
-			input.onProcessTerminal?.({
+			const notice: ProcessTerminalNotice = {
 				...persisted,
 				asyncDir: input.launchConfig.asyncDir,
-				sessionId: input.launchConfig.sessionId,
-			});
+			};
+			if (input.launchConfig.sessionId !== undefined) notice.sessionId = input.launchConfig.sessionId;
+			input.onProcessTerminal?.(notice);
 		} catch (error) {
 			reportAgentDiagnostic(`Process-terminal observer failed for '${input.launchConfig.id}':`, error);
 		}
@@ -616,8 +622,8 @@ async function spawnRunner(
 			stderrFd = fs.openSync(logPaths.stderrPath, "a", 0o600);
 		}
 		const env = Object.assign({}, process.env);
-		env.PI_STUFF_BACKGROUND_RUNNER = "1";
-		env.PI_STUFF_BACKGROUND_RUNNER_CONFIG = configPath;
+		env["PI_STUFF_BACKGROUND_RUNNER"] = "1";
+		env["PI_STUFF_BACKGROUND_RUNNER_CONFIG"] = configPath;
 		if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
 		proc = spawn(bunCommand, [runner, configPath], {
 			cwd,
@@ -655,12 +661,13 @@ async function spawnRunner(
 			)
 				return;
 			try {
-				onStatus?.({
+				const notice: AsyncStatusNotice = {
 					id: launchConfig.id,
 					asyncDir: launchConfig.asyncDir,
-					sessionId: launchConfig.sessionId,
 					status: update.status,
-				});
+				};
+				if (launchConfig.sessionId !== undefined) notice.sessionId = launchConfig.sessionId;
+				onStatus?.(notice);
 			} catch (error) {
 				reportAgentDiagnostic(`Agent status observer failed for '${launchConfig.id}':`, error);
 			}
@@ -1043,15 +1050,13 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 				const current = fs.lstatSync(asyncDir);
 				if (!current.isDirectory() || current.dev !== created.dev || current.ino !== created.ino) return false;
 				const marker = parseJsonValue(readBoundedOwnedFile(markerPath, 4 * 1024));
-				return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker.token === token;
+				return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker["token"] === token;
 			} catch {
 				return false;
 			}
 		};
-		return {
+		const claim: BackgroundRunDirectoryClaim = {
 			asyncDir,
-			inheritedNestedRoute,
-			nestedAddress,
 			cleanup: () => {
 				if (!stillOwned()) return;
 				const failedPath = `${asyncDir}.failed-${token}`;
@@ -1076,6 +1081,9 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 				}
 			},
 		};
+		if (inheritedNestedRoute && nestedAddress) return { ...claim, inheritedNestedRoute, nestedAddress };
+		if (inheritedNestedRoute) return { ...claim, inheritedNestedRoute };
+		return claim;
 	} catch (error) {
 		return {
 			error: `Failed to create background run directory '${asyncDir}': ${
@@ -1089,12 +1097,14 @@ function nestedSelfFromLocation(
 	location: Exclude<ReturnType<typeof claimBackgroundRunDirectory>, { error: string }>,
 ): BackgroundRunnerConfig["nestedSelf"] {
 	if (!location.inheritedNestedRoute || !location.nestedAddress) return undefined;
-	return {
+	const nestedSelf: NonNullable<BackgroundRunnerConfig["nestedSelf"]> = {
 		parentRunId: location.nestedAddress.parentRunId,
-		parentStepIndex: location.nestedAddress.parentStepIndex,
 		depth: location.nestedAddress.depth,
 		path: location.nestedAddress.path,
 	};
+	if (location.nestedAddress.parentStepIndex !== undefined)
+		nestedSelf.parentStepIndex = location.nestedAddress.parentStepIndex;
+	return nestedSelf;
 }
 
 function emitStarted(input: {
@@ -1105,14 +1115,14 @@ function emitStarted(input: {
 	runnerCwd: string;
 	asyncDir: string;
 	ctx: AsyncExecutionContext;
-	goal?: string;
-	timeoutMs?: number;
-	deadlineAt?: number;
-	nestedRoute?: NestedRouteInfo;
-	nestedSelf?: BackgroundRunnerConfig["nestedSelf"];
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	acknowledgeStart?: () => void;
-	abortStart?: () => boolean;
+	goal?: string | undefined;
+	timeoutMs?: number | undefined;
+	deadlineAt?: number | undefined;
+	nestedRoute?: NestedRouteInfo | undefined;
+	nestedSelf?: BackgroundRunnerConfig["nestedSelf"] | undefined;
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
+	acknowledgeStart?: (() => void) | undefined;
+	abortStart?: (() => boolean) | undefined;
 }): void {
 	const tasks = input.work.mode === "single" ? [input.work.task] : input.work.group.tasks;
 	const first = tasks[0];
@@ -1123,12 +1133,10 @@ function emitStarted(input: {
 			const child: NestedRunSummary = {
 				id: input.id,
 				parentRunId: input.nestedSelf.parentRunId,
-				parentStepIndex: input.nestedSelf.parentStepIndex,
 				depth: input.nestedSelf.depth,
 				path: input.nestedSelf.path ?? [],
 				asyncDir: input.asyncDir,
 				pid: input.pid,
-				ownerIntercomTarget: process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME,
 				ownerState: "live",
 				mode: input.work.mode,
 				state: "running",
@@ -1137,21 +1145,25 @@ function emitStarted(input: {
 				startedAt: now,
 				lastUpdate: now,
 			};
+			if (input.nestedSelf.parentStepIndex !== undefined) child.parentStepIndex = input.nestedSelf.parentStepIndex;
+			const ownerIntercomTarget = process.env["PI_SUBAGENT_INTERCOM_SESSION_NAME"];
+			if (ownerIntercomTarget !== undefined) child.ownerIntercomTarget = ownerIntercomTarget;
 			if (input.timeoutMs !== undefined) {
 				child.timeoutMs = input.timeoutMs;
-				child.deadlineAt = input.deadlineAt;
+				if (input.deadlineAt !== undefined) child.deadlineAt = input.deadlineAt;
 			}
 			if (input.work.mode === "single" && first.turnBudget) {
 				child.turnBudget = initialTurnBudgetState(first.turnBudget);
 			}
 			if (input.capabilityCeiling) child.capabilityCeiling = input.capabilityCeiling;
-			writeNestedEvent(input.nestedRoute, {
+			const event: Parameters<typeof writeNestedEvent>[1] = {
 				type: "subagent.nested.started",
 				ts: now,
 				parentRunId: input.nestedSelf.parentRunId,
-				parentStepIndex: input.nestedSelf.parentStepIndex,
 				child,
-			});
+			};
+			if (input.nestedSelf.parentStepIndex !== undefined) event.parentStepIndex = input.nestedSelf.parentStepIndex;
+			writeNestedEvent(input.nestedRoute, event);
 		} catch (error) {
 			reportAgentDiagnostic("Failed to emit nested Agent start:", error);
 		}
@@ -1166,18 +1178,18 @@ function emitStarted(input: {
 			mode: input.work.mode,
 			agent: first.agent,
 			agents: tasks.map((task) => task.agent),
-			description: first.description,
 			descriptions: tasks.map((task) => resolveDisplayDescription(task.description, task.task)),
 			task: (first.delegatedTask ?? first.task).slice(0, 50),
 			tasks: tasks.map((task) => taskPreview(task.delegatedTask ?? task.task)),
 			goal: (input.goal ?? first.task).slice(0, 120),
 			cwd: input.runnerCwd,
 			asyncDir: input.asyncDir,
-			nestedRoute: input.nestedRoute,
 		};
+		if (first.description !== undefined) started.description = first.description;
+		if (input.nestedRoute !== undefined) started.nestedRoute = input.nestedRoute;
 		if (input.timeoutMs !== undefined) {
 			started.timeoutMs = input.timeoutMs;
-			started.deadlineAt = input.deadlineAt;
+			if (input.deadlineAt !== undefined) started.deadlineAt = input.deadlineAt;
 		}
 		if (input.work.mode === "single" && first.turnBudget) {
 			started.turnBudget = initialTurnBudgetState(first.turnBudget);
@@ -1193,7 +1205,9 @@ function emitStarted(input: {
 
 export function persistRecoveries(asyncDir: string, recoveries: BackgroundRecoveryDescriptor[]): void {
 	if (recoveries.length === 1) {
-		writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptor.json"), recoveries[0]);
+		const recovery = recoveries[0];
+		if (!recovery) throw new Error("Background recovery descriptor is missing.");
+		writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptor.json"), recovery);
 		return;
 	}
 	writePrivateAtomicJson(path.join(asyncDir, "recovery-descriptors.json"), {
@@ -1249,22 +1263,24 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		asyncDir: location.asyncDir,
 		sessionId: params.ctx.currentSessionId,
 		artifactConfig: params.artifactConfig,
-		piPackageRoot,
-		piArgv1: process.argv[1],
-		worktreeSetupHook: params.worktreeSetupHook,
-		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
-		worktreeBaseDir: params.worktreeBaseDir,
-		controlConfig: params.controlConfig,
 		nativeSupervisor: location.inheritedNestedRoute === undefined,
-		controlIntercomTarget: params.controlIntercomTarget,
-		childIntercomTargets: params.childIntercomTarget
-			? parallelWork.group.tasks.map((task, index) => params.childIntercomTarget?.(task.agent, index))
-			: undefined,
-		nestedRoute,
-		nestedSelf,
-		timeoutMs: params.timeoutMs,
-		deadlineAt,
 	};
+	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
+	if (process.argv[1]) config.piArgv1 = process.argv[1];
+	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
+	if (params.worktreeSetupHookTimeoutMs !== undefined)
+		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
+	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
+	if (params.controlConfig) config.controlConfig = params.controlConfig;
+	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
+	if (params.childIntercomTarget)
+		config.childIntercomTargets = parallelWork.group.tasks.map((task, index) =>
+			params.childIntercomTarget?.(task.agent, index),
+		);
+	if (nestedRoute) config.nestedRoute = nestedRoute;
+	if (nestedSelf) config.nestedSelf = nestedSelf;
+	if (params.timeoutMs !== undefined) config.timeoutMs = params.timeoutMs;
+	if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
 	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
 	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
 	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
@@ -1402,7 +1418,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
 	if (params.timeoutMs !== undefined) {
 		details.timeoutMs = params.timeoutMs;
-		details.deadlineAt = deadlineAt;
+		if (deadlineAt !== undefined) details.deadlineAt = deadlineAt;
 	}
 	return {
 		content: [
@@ -1471,24 +1487,23 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		asyncDir: location.asyncDir,
 		sessionId: params.ctx.currentSessionId,
 		artifactConfig: params.artifactConfig,
-		piPackageRoot,
-		piArgv1: process.argv[1],
-		worktreeSetupHook: params.worktreeSetupHook,
-		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
-		worktreeBaseDir: params.worktreeBaseDir,
-		controlConfig: params.controlConfig,
 		nativeSupervisor: location.inheritedNestedRoute === undefined,
-		controlIntercomTarget: params.controlIntercomTarget,
-		childIntercomTargets: params.childIntercomTarget
-			? [params.childIntercomTarget(built.work.task.agent, 0)]
-			: undefined,
-		nestedRoute,
-		nestedSelf,
-		timeoutMs,
-		deadlineAt,
-		revivalLease: params.revivalLease ? { ...params.revivalLease, asyncDir: location.asyncDir } : undefined,
-		launchContractDigest: built.work.task.launchContractDigest,
 	};
+	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
+	if (process.argv[1]) config.piArgv1 = process.argv[1];
+	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
+	if (params.worktreeSetupHookTimeoutMs !== undefined)
+		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
+	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
+	if (params.controlConfig) config.controlConfig = params.controlConfig;
+	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
+	if (params.childIntercomTarget) config.childIntercomTargets = [params.childIntercomTarget(built.work.task.agent, 0)];
+	if (nestedRoute) config.nestedRoute = nestedRoute;
+	if (nestedSelf) config.nestedSelf = nestedSelf;
+	if (timeoutMs !== undefined) config.timeoutMs = timeoutMs;
+	if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
+	if (params.revivalLease) config.revivalLease = { ...params.revivalLease, asyncDir: location.asyncDir };
+	if (built.work.task.launchContractDigest) config.launchContractDigest = built.work.task.launchContractDigest;
 	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
 	if (params.ponytailMode !== undefined) config.ponytailMode = params.ponytailMode;
 	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
@@ -1615,7 +1630,6 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		results: [],
 		asyncId: id,
 		asyncDir: location.asyncDir,
-		launchContractDigest: built.work.task.launchContractDigest,
 		lifecycleBinding: {
 			pid: spawned.pid,
 			processStartIdentity: spawned.processStartIdentity,
@@ -1624,11 +1638,12 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 			abortStart: spawned.abortStart,
 		},
 	};
+	if (built.work.task.launchContractDigest) details.launchContractDigest = built.work.task.launchContractDigest;
 	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
 	if (params.context) details.context = params.context;
 	if (timeoutMs !== undefined) {
 		details.timeoutMs = timeoutMs;
-		details.deadlineAt = deadlineAt;
+		if (deadlineAt !== undefined) details.deadlineAt = deadlineAt;
 	}
 	if (built.work.task.turnBudget) details.turnBudget = built.work.task.turnBudget;
 	if (built.work.task.toolBudget) details.toolBudget = built.work.task.toolBudget;

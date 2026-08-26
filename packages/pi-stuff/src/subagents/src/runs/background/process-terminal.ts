@@ -252,7 +252,7 @@ function sessionProjection(
 function validateProof<Value>(
 	raw: Value,
 	asyncDir: string,
-	fallback?: { runId?: string; runnerProcessInstanceId?: string },
+	fallback?: { runId?: string | undefined; runnerProcessInstanceId?: string | undefined },
 ): asserts raw is Value & ProcessTerminalV1 {
 	if (
 		!isRecord(raw) ||
@@ -315,7 +315,7 @@ function validateProof<Value>(
 
 export function sanitizeProcessTerminal<Value>(
 	value: Value,
-	fallback: { runId?: string; runnerProcessInstanceId?: string },
+	fallback: { runId?: string | undefined; runnerProcessInstanceId?: string | undefined },
 	label = "status",
 ): ProcessTerminalV1 | undefined {
 	if (value === undefined) return undefined;
@@ -334,7 +334,7 @@ export function sanitizeProcessTerminal<Value>(
 
 export function readProcessTerminal(
 	asyncDir: string,
-	fallback?: { runId?: string; runnerProcessInstanceId?: string },
+	fallback?: { runId?: string | undefined; runnerProcessInstanceId?: string | undefined },
 ): ProcessTerminalV1 | undefined {
 	try {
 		assertPrivateDirectory(asyncDir);

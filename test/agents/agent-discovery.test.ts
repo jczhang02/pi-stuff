@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { discoverAgents, EXTRA_AGENT_DIRS_ENV } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
 
 const roots: string[] = [];
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env["PI_CODING_AGENT_DIR"];
 const originalExtraDirs = process.env[EXTRA_AGENT_DIRS_ENV];
 
 afterEach(async () => {
-	if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-	else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+	if (originalAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];
+	else process.env["PI_CODING_AGENT_DIR"] = originalAgentDir;
 	if (originalExtraDirs === undefined) delete process.env[EXTRA_AGENT_DIRS_ENV];
 	else process.env[EXTRA_AGENT_DIRS_ENV] = originalExtraDirs;
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -38,7 +38,7 @@ describe("Claude-style Agent definition discovery", () => {
 		const nested = join(project, "src", "feature");
 		const projectAgents = join(project, ".pi", "agents");
 		const installedPackage = join(root, "sample-agents");
-		process.env.PI_CODING_AGENT_DIR = user;
+		process.env["PI_CODING_AGENT_DIR"] = user;
 
 		await Promise.all([
 			mkdir(nested, { recursive: true }),
@@ -75,7 +75,7 @@ describe("Claude-style Agent definition discovery", () => {
 	test("parses only current execution controls and skips one malformed definition locally", async () => {
 		const root = await temporaryRoot();
 		const user = join(root, "user");
-		process.env.PI_CODING_AGENT_DIR = user;
+		process.env["PI_CODING_AGENT_DIR"] = user;
 		await writeAgent(
 			join(user, "agents"),
 			"configured",
@@ -129,7 +129,7 @@ describe("Claude-style Agent definition discovery", () => {
 		const user = join(root, "user");
 		const project = join(root, "project");
 		const installed = join(root, "installed-agent-package");
-		process.env.PI_CODING_AGENT_DIR = user;
+		process.env["PI_CODING_AGENT_DIR"] = user;
 		await Promise.all([
 			mkdir(join(project, ".git"), { recursive: true }),
 			mkdir(join(project, ".pi", "agents"), { recursive: true }),

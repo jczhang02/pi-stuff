@@ -117,7 +117,10 @@ export function parseFrontmatter(content: string) {
 
 		const match = line.match(/^([\w-]+):\s*(.*)$/);
 		if (match) {
-			const rawValue = match[2].trim();
+			const key = match[1];
+			const raw = match[2];
+			if (key === undefined || raw === undefined) continue;
+			const rawValue = raw.trim();
 			const isQuoted =
 				(rawValue.startsWith('"') && rawValue.endsWith('"')) ||
 				(rawValue.startsWith("'") && rawValue.endsWith("'"));
@@ -126,13 +129,13 @@ export function parseFrontmatter(content: string) {
 
 			if (value === "" || isFolded) {
 				// Key with empty value or folded block indicator — defer storing until we see indent
-				currentKey = match[1];
+				currentKey = key;
 				currentBlockLines = [];
 				currentIndent = indent;
 				currentFolded = isFolded;
 			} else {
 				// Simple key: value
-				frontmatter[match[1]] = value;
+				frontmatter[key] = value;
 			}
 		}
 		// Lines that don't match a key pattern (e.g., comments, empty lines) are ignored

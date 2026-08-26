@@ -175,7 +175,7 @@ interface HarnessOptions {
 interface RootHarness {
 	readonly api: ApiHarness;
 	readonly chrome: { registered: number; unregistered: number };
-	readonly current: { disposed: number; refreshes: number; value?: CurrentAgents };
+	readonly current: { disposed: number; refreshes: number; value: CurrentAgents | undefined };
 	readonly directories: string[];
 	readonly dialogs: Array<{ initialKey?: string; hasReader: boolean }>;
 	readonly engineParams: SubagentParamsLike[];
@@ -191,11 +191,11 @@ interface RootHarness {
 		settlements: number;
 		starts: unknown[];
 	};
-	readonly notifier: { value?: { deliver(result: CompletionNotification): Promise<boolean> } };
+	readonly notifier: { value: { deliver(result: CompletionNotification): Promise<boolean> } | undefined };
 	readonly projectionOwnership: { delegated: boolean };
 	readonly projections: string[];
 	readonly roster: { contexts: number; disposed: number; suppressed: boolean[] };
-	readonly state: { value?: SubagentState };
+	readonly state: { value: SubagentState | undefined };
 	readonly supervisor: { disposed: number; started: number };
 	readonly tracker: {
 		completed: number;

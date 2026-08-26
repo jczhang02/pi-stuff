@@ -66,8 +66,8 @@ describe("Agent product contract", () => {
 			if (!node || Array.isArray(node) || !isRuntimeObject(node)) continue;
 			const schema = node;
 			expect(Object.hasOwn(schema, "oneOf")).toBeFalse();
-			if (schema.properties && isRuntimeObject(schema.properties)) {
-				for (const property of Object.values(schema.properties)) expect(property).not.toBe(false);
+			if (schema["properties"] && isRuntimeObject(schema["properties"])) {
+				for (const property of Object.values(schema["properties"])) expect(property).not.toBe(false);
 			}
 			nodes.push(...Object.values(schema));
 		}

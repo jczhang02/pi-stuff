@@ -172,7 +172,7 @@ function buildWorktreeBranch(runId: string, index: number): string {
 }
 
 function resolveWorktreeBaseDir(configuredBaseDir: string | undefined, repoRoot: string): string {
-	const rawBaseDir = configuredBaseDir ?? process.env.PI_SUBAGENTS_WORKTREE_DIR;
+	const rawBaseDir = configuredBaseDir ?? process.env["PI_SUBAGENTS_WORKTREE_DIR"];
 	if (rawBaseDir === undefined) return os.tmpdir();
 
 	const trimmed = rawBaseDir.trim();
@@ -373,7 +373,7 @@ function createSingleWorktree(
 		if (nodeModulesLinked) syntheticPaths.push("node_modules");
 
 		if (setupHook) {
-			const hookSyntheticPaths = runWorktreeSetupHook(setupHook, {
+			const hookInput: WorktreeSetupHookInput = {
 				version: 1,
 				repoRoot: toplevel,
 				worktreePath,
@@ -382,8 +382,11 @@ function createSingleWorktree(
 				index,
 				runId,
 				baseCommit,
-				agent,
-			});
+			};
+			const hookSyntheticPaths = runWorktreeSetupHook(
+				setupHook,
+				agent === undefined ? hookInput : { ...hookInput, agent },
+			);
 			syntheticPaths.push(...hookSyntheticPaths);
 		}
 

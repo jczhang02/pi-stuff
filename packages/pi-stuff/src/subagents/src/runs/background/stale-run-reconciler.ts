@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
@@ -22,7 +27,10 @@ import {
 	nestedWorkIncludesUser,
 	projectNestedEvents,
 	resolveNestedAsyncDir,
+	sanitizeCost,
 	sanitizeSummary,
+	sanitizeToolBudget,
+	sanitizeTurnBudget,
 	writeNestedEvent,
 } from "../shared/nested-events.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
@@ -53,9 +61,9 @@ interface StartedRunMetadata {
 }
 
 interface ReconcileAsyncRunOptions {
-	resultsDir?: string;
-	kill?: KillFn;
-	now?: () => number;
+	resultsDir?: string | undefined;
+	kill?: KillFn | undefined;
+	now?: (() => number) | undefined;
 	startedRun?: StartedRunMetadata;
 	missingStatusGraceMs?: number;
 	staleAlivePidMs?: number;
@@ -221,8 +229,129 @@ interface ResultFileRecord {
 	readonly timedOut?: JsonValue;
 }
 
-function isResultFileRecord<Value extends JsonValue>(value: Value): value is Value & ResultFileRecord {
+function isResultFileRecord(value: JsonValue): value is JsonObject & ResultFileRecord {
 	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function isJsonString(value: JsonValue | undefined): value is string {
+	return isRuntimeString(value);
+}
+
+function isJsonBoolean(value: JsonValue | undefined): value is boolean {
+	return isRuntimeBoolean(value);
+}
+
+function isFiniteJsonNumber(value: JsonValue | undefined): value is number {
+	return isRuntimeNumber(value) && Number.isFinite(value);
+}
+
+function parseResultChildOutcome(
+	entry: JsonObject & ResultFileRecord,
+	resultPath: string,
+	index: number,
+): ResultChildOutcome {
+	const outcome: ResultChildOutcome = {};
+	const invalid = (field: string): Error =>
+		new Error(`Invalid async result file '${resultPath}': results[${index}].${field}.`);
+	for (const field of [
+		"agent",
+		"error",
+		"sessionFile",
+		"model",
+		"thinking",
+		"transcriptPath",
+		"transcriptError",
+	] as const) {
+		const value = entry[field];
+		if (value === undefined) continue;
+		if (!isJsonString(value)) throw invalid(`${field} must be a string`);
+		outcome[field] = value;
+	}
+	for (const field of [
+		"success",
+		"interrupted",
+		"stopped",
+		"timedOut",
+		"turnBudgetExceeded",
+		"wrapUpRequested",
+		"toolBudgetBlocked",
+	] as const) {
+		const value = entry[field];
+		if (value === undefined) continue;
+		if (!isJsonBoolean(value)) throw invalid(`${field} must be a boolean`);
+		outcome[field] = value;
+	}
+	const exitCode = entry["exitCode"];
+	if (exitCode !== undefined) {
+		if (exitCode !== null && !isFiniteJsonNumber(exitCode)) throw invalid("exitCode must be a finite number or null");
+		outcome.exitCode = exitCode;
+	}
+	const attemptedModels = entry["attemptedModels"];
+	if (attemptedModels !== undefined) {
+		if (!Array.isArray(attemptedModels) || !attemptedModels.every(isJsonString))
+			throw invalid("attemptedModels must contain strings");
+		outcome.attemptedModels = [...attemptedModels];
+	}
+	const turnBudget = sanitizeTurnBudget(entry["turnBudget"]);
+	if (entry["turnBudget"] !== undefined && !turnBudget) throw invalid("turnBudget is malformed");
+	if (turnBudget) outcome.turnBudget = turnBudget;
+	const toolBudget = sanitizeToolBudget(entry["toolBudget"]);
+	if (entry["toolBudget"] !== undefined && !toolBudget) throw invalid("toolBudget is malformed");
+	if (toolBudget) outcome.toolBudget = toolBudget;
+	const totalCost = sanitizeCost(entry["totalCost"]);
+	if (entry["totalCost"] !== undefined && !totalCost) throw invalid("totalCost is malformed");
+	if (totalCost) outcome.totalCost = totalCost;
+	const modelAttempts = entry["modelAttempts"];
+	if (modelAttempts !== undefined) {
+		if (!Array.isArray(modelAttempts)) throw invalid("modelAttempts must be an array");
+		outcome.modelAttempts = modelAttempts.map((raw, attemptIndex) => {
+			if (!isResultFileRecord(raw)) throw invalid(`modelAttempts[${attemptIndex}] must be an object`);
+			const model = raw["model"];
+			const success = raw["success"];
+			if (!isJsonString(model)) throw invalid(`modelAttempts[${attemptIndex}].model must be a string`);
+			if (!isJsonBoolean(success)) throw invalid(`modelAttempts[${attemptIndex}].success must be a boolean`);
+			const attempt: NonNullable<ResultChildOutcome["modelAttempts"]>[number] = { model, success };
+			const attemptExitCode = raw["exitCode"];
+			if (attemptExitCode !== undefined) {
+				if (attemptExitCode !== null && !isFiniteJsonNumber(attemptExitCode))
+					throw invalid(`modelAttempts[${attemptIndex}].exitCode must be a finite number or null`);
+				attempt.exitCode = attemptExitCode;
+			}
+			const error = raw["error"];
+			if (error !== undefined) {
+				if (!isJsonString(error)) throw invalid(`modelAttempts[${attemptIndex}].error must be a string`);
+				attempt.error = error;
+			}
+			const rawUsage = raw["usage"];
+			if (rawUsage !== undefined) {
+				if (!isResultFileRecord(rawUsage)) throw invalid(`modelAttempts[${attemptIndex}].usage must be an object`);
+				const input = rawUsage["input"];
+				const output = rawUsage["output"];
+				const cacheRead = rawUsage["cacheRead"];
+				const cacheWrite = rawUsage["cacheWrite"];
+				const cost = rawUsage["cost"];
+				const turns = rawUsage["turns"];
+				if (
+					!isFiniteJsonNumber(input) ||
+					!isFiniteJsonNumber(output) ||
+					!isFiniteJsonNumber(cacheRead) ||
+					!isFiniteJsonNumber(cacheWrite) ||
+					!isFiniteJsonNumber(cost) ||
+					!isFiniteJsonNumber(turns)
+				)
+					throw invalid(`modelAttempts[${attemptIndex}].usage is malformed`);
+				attempt.usage = { input, output, cacheRead, cacheWrite, cost, turns };
+			}
+			return attempt;
+		});
+	}
+	if (Array.isArray(entry.children)) {
+		const children = entry.children
+			.map((nested) => sanitizeSummary(nested))
+			.filter((nested): nested is NestedRunSummary => Boolean(nested));
+		if (children.length) outcome.children = children;
+	}
+	return outcome;
 }
 
 function finiteTimestamp<Value>(value: Value): number | undefined {
@@ -253,24 +382,7 @@ function readResultRepairData(
 		const results = Array.isArray(data.results)
 			? data.results.map((entry, index) => {
 					if (!isResultFileRecord(entry)) return {};
-					// SAFETY: Suite result writers own this child shape; the object boundary and compatibility fields are checked here.
-					const child = entry as ResultChildOutcome;
-					if (child.model !== undefined && !isRuntimeString(child.model))
-						throw new Error(
-							`Invalid async result file '${resultPath}': results[${index}].model must be a string.`,
-						);
-					if (child.thinking !== undefined && !isRuntimeString(child.thinking))
-						throw new Error(
-							`Invalid async result file '${resultPath}': results[${index}].thinking must be a string.`,
-						);
-					const children = Array.isArray(entry.children)
-						? entry.children
-								.map((nested) => sanitizeSummary(nested))
-								.filter((nested): nested is NestedRunSummary => Boolean(nested))
-						: undefined;
-					const outcome: ResultChildOutcome = { ...child };
-					if (children?.length) outcome.children = children;
-					return outcome;
+					return parseResultChildOutcome(entry, resultPath, index);
 				})
 			: undefined;
 		const nestedChildren = Array.isArray(data.nestedChildren)
@@ -470,7 +582,6 @@ function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, no
 		runId: startedRun.runId || path.basename(asyncDir),
 		mode: startedRun.mode ?? (agents.length > 1 ? "parallel" : "single"),
 		state: "running",
-		pid: startedRun.pid,
 		startedAt,
 		lastUpdate: now,
 		currentStep: 0,
@@ -480,6 +591,7 @@ function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, no
 			startedAt,
 		})),
 	};
+	if (startedRun.pid !== undefined) status.pid = startedRun.pid;
 	if (startedRun.sessionId) status.sessionId = startedRun.sessionId;
 	if (startedRun.nestedRoute) status.nestedRoute = startedRun.nestedRoute;
 	if (parallelGroups.length) status.parallelGroups = parallelGroups;
@@ -638,21 +750,24 @@ export function reconcileNestedAsyncDescendants(route: NestedRoute, options: Rec
 		if (!status) continue;
 		if (!result.repaired && !terminal(status.state)) continue;
 		const ts = options.now?.() ?? Date.now();
-		writeNestedEvent(route, {
+		const fallback: Parameters<typeof nestedSummaryFromAsyncStatus>[2] = {
+			id: run.id,
+			parentRunId: run.parentRunId,
+			depth: run.depth,
+			ts,
+		};
+		if (run.mode !== undefined) fallback.mode = run.mode;
+		if (run.parentStepIndex !== undefined) fallback.parentStepIndex = run.parentStepIndex;
+		if (run.path !== undefined) fallback.path = run.path;
+		const child = nestedSummaryFromAsyncStatus(status, asyncDir, fallback);
+		const event: Parameters<typeof writeNestedEvent>[1] = {
 			type: terminal(status.state) ? "subagent.nested.completed" : "subagent.nested.updated",
 			ts,
 			parentRunId: run.parentRunId,
-			parentStepIndex: run.parentStepIndex,
-			child: nestedSummaryFromAsyncStatus(status, asyncDir, {
-				id: run.id,
-				parentRunId: run.parentRunId,
-				parentStepIndex: run.parentStepIndex,
-				depth: run.depth,
-				path: run.path,
-				mode: run.mode,
-				ts,
-			}),
-		});
+			child,
+		};
+		if (run.parentStepIndex !== undefined) event.parentStepIndex = run.parentStepIndex;
+		writeNestedEvent(route, event);
 	}
 }
 
@@ -726,8 +841,8 @@ function reconcileAsyncRunWithStatusClaim(
 		const result: ReconcileAsyncRunResult = {
 			status: finalized,
 			repaired: changed,
-			resultPath: resultPresent ? resultPath : undefined,
 		};
+		if (resultPresent) result.resultPath = resultPath;
 		if (changed) result.message = "Merged durable Agent process-terminal proof into terminal status.";
 		return result;
 	}

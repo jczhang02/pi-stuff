@@ -13,7 +13,8 @@ export function findPiPackageRootFromEntry(entryPoint: string): string | undefin
 		const packageJsonPath = path.join(dir, "package.json");
 		if (fs.existsSync(packageJsonPath)) {
 			const pkg = parseJsonValue(fs.readFileSync(packageJsonPath, "utf-8"));
-			if (isRuntimeObject(pkg) && pkg !== null && "name" in pkg && pkg.name === PI_CODING_AGENT_PACKAGE) return dir;
+			if (isRuntimeObject(pkg) && pkg !== null && "name" in pkg && pkg["name"] === PI_CODING_AGENT_PACKAGE)
+				return dir;
 		}
 		dir = path.dirname(dir);
 	}
@@ -114,10 +115,10 @@ export function resolvePiCliScript(deps: PiSpawnDeps = {}): string | undefined {
 		const packageJsonPath = resolvePackageJson();
 		const packageJson = parseJsonValue(readFileSync(packageJsonPath, "utf-8"));
 		if (!isRuntimeObject(packageJson) || packageJson === null || !("bin" in packageJson)) return undefined;
-		const binField = packageJson.bin;
+		const binField = packageJson["bin"];
 		let binPath = isRuntimeString(binField) ? binField : undefined;
 		if (!binPath && isRuntimeObject(binField) && binField !== null && !Array.isArray(binField)) {
-			const candidate = "pi" in binField ? binField.pi : Object.values(binField)[0];
+			const candidate = "pi" in binField ? binField["pi"] : Object.values(binField)[0];
 			if (isRuntimeString(candidate)) binPath = candidate;
 		}
 		if (!binPath) return undefined;

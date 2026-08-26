@@ -307,10 +307,10 @@ function readChildMetadata():
 			runId: string;
 			agent: string;
 			childIndex: number;
-			orchestratorTarget?: string;
+			orchestratorTarget?: string | undefined;
 			orchestratorSessionId?: string;
 			physicalSessionId: string;
-			childTarget?: string;
+			childTarget?: string | undefined;
 	  }
 	| undefined {
 	const channelDir = readTextEnv(SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV);
@@ -357,12 +357,12 @@ function reasonHeading(reason: SupervisorReason): string {
 
 function formatChildMessage(input: {
 	reason: SupervisorReason;
-	message?: string;
+	message?: string | undefined;
 	interview?: unknown;
 	runId: string;
 	agent: string;
 	childIndex: number;
-	childTarget?: string;
+	childTarget?: string | undefined;
 }): string {
 	const lines = [
 		reasonHeading(input.reason),
@@ -394,7 +394,7 @@ function parseStructuredReply(message: string) {
 }
 
 function askTimeoutMs(): number {
-	const parsed = Number(process.env.PI_INTERCOM_ASK_TIMEOUT_MS);
+	const parsed = Number(process.env["PI_INTERCOM_ASK_TIMEOUT_MS"]);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ASK_TIMEOUT_MS;
 }
 
@@ -590,13 +590,21 @@ function toolResultText<Details>(result: AgentToolResult<Details>): string {
 }
 
 function communicationTarget(args: ToolArguments): string {
-	const action = isRuntimeString(args.action) ? args.action : isRuntimeString(args.reason) ? args.reason : "";
-	const destination = isRuntimeString(args.replyTo) ? args.replyTo : isRuntimeString(args.to) ? args.to : "";
+	const action = isRuntimeString(args["action"])
+		? args["action"]
+		: isRuntimeString(args["reason"])
+			? args["reason"]
+			: "";
+	const destination = isRuntimeString(args["replyTo"])
+		? args["replyTo"]
+		: isRuntimeString(args["to"])
+			? args["to"]
+			: "";
 	return [action, destination].filter(Boolean).join(" · ");
 }
 
 function communicationCategory(args: ToolArguments) {
-	const action = isRuntimeString(args.action) ? args.action : "";
+	const action = isRuntimeString(args["action"]) ? args["action"] : "";
 	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
 }
 
@@ -610,7 +618,7 @@ function registerCommunicationTool<TParams extends TSchema, Details>(
 			categories: ["check-agent", "message-agent"],
 			classify: ({ args }) =>
 				singleActivity(communicationCategory(args), {
-					key: activityKey(args.action, args.to, args.replyTo),
+					key: activityKey(args["action"], args["to"], args["replyTo"]),
 					target: communicationTarget(args),
 				}),
 		},

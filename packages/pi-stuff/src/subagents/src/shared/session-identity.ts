@@ -148,15 +148,15 @@ function parseHeaderCandidate(line: string): HeaderCandidate | null | undefined 
 	}
 	if (!isJsonObject(parsed)) return null;
 	const candidate = parsed;
-	return candidate.type === "session" && isRuntimeString(candidate.id) ? candidate : null;
+	return candidate["type"] === "session" && isRuntimeString(candidate["id"]) ? candidate : null;
 }
 
 function matchingHeader(
 	header: HeaderCandidate,
 	logicalSessionId: string,
 ): { readonly id: string; readonly startedAtMs: number } | undefined {
-	if (header.id !== logicalSessionId || !isRuntimeString(header.timestamp)) return undefined;
-	const startedAtMs = Date.parse(header.timestamp);
+	if (header["id"] !== logicalSessionId || !isRuntimeString(header["timestamp"])) return undefined;
+	const startedAtMs = Date.parse(header["timestamp"]);
 	return Number.isFinite(startedAtMs) ? { id: logicalSessionId, startedAtMs } : undefined;
 }
 
@@ -215,24 +215,24 @@ function collectLegacyRunIds(entries: Iterable<SessionHistoryValue>): Set<string
 	const runIds = new Set<string>();
 	for (const value of entries) {
 		const entry = record(value);
-		if (entry.type !== "message") continue;
-		const message = record(entry.message);
-		if (message.role === "assistant" && Array.isArray(message.content)) {
-			for (const itemValue of message.content) {
+		if (entry["type"] !== "message") continue;
+		const message = record(entry["message"]);
+		if (message["role"] === "assistant" && Array.isArray(message["content"])) {
+			for (const itemValue of message["content"]) {
 				const item = record(itemValue);
-				if (item.type !== "toolCall" || item.name !== "subagent" || !isRuntimeString(item.id)) continue;
-				const args = record(item.arguments);
-				if (isRuntimeString(args.action)) continue;
+				if (item["type"] !== "toolCall" || item["name"] !== "subagent" || !isRuntimeString(item["id"])) continue;
+				const args = record(item["arguments"]);
+				if (isRuntimeString(args["action"])) continue;
 				if (
-					(isRuntimeString(args.agent) && isRuntimeString(args.task)) ||
-					(Array.isArray(args.tasks) && args.tasks.length > 0)
+					(isRuntimeString(args["agent"]) && isRuntimeString(args["task"])) ||
+					(Array.isArray(args["tasks"]) && args["tasks"].length > 0)
 				) {
-					runIds.add(legacyLaunchRunId(item.id));
+					runIds.add(legacyLaunchRunId(item["id"]));
 				}
 			}
 		}
-		if (message.role !== "toolResult" || message.toolName !== "subagent") continue;
-		const details = record(message.details);
+		if (message["role"] !== "toolResult" || message["toolName"] !== "subagent") continue;
+		const details = record(message["details"]);
 		for (const field of ["runId", "asyncId"] as const) {
 			const runId = details[field];
 			if (isRuntimeString(runId) && runId.trim()) runIds.add(runId);
@@ -255,25 +255,25 @@ function legacyLaunchDeclarations(entries: Iterable<SessionHistoryValue>) {
 
 	for (const value of values) {
 		const entry = record(value);
-		if (entry.type !== "message") continue;
-		const message = record(entry.message);
-		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
-		for (const itemValue of message.content) {
+		if (entry["type"] !== "message") continue;
+		const message = record(entry["message"]);
+		if (message["role"] !== "assistant" || !Array.isArray(message["content"])) continue;
+		for (const itemValue of message["content"]) {
 			const item = record(itemValue);
-			if (item.type !== "toolCall" || item.name !== "subagent" || !isRuntimeString(item.id)) continue;
-			const args = record(item.arguments);
-			if (isRuntimeString(args.action)) continue;
+			if (item["type"] !== "toolCall" || item["name"] !== "subagent" || !isRuntimeString(item["id"])) continue;
+			const args = record(item["arguments"]);
+			if (isRuntimeString(args["action"])) continue;
 			const childCount =
-				isRuntimeString(args.agent) && isRuntimeString(args.task)
+				isRuntimeString(args["agent"]) && isRuntimeString(args["task"])
 					? 1
-					: Array.isArray(args.tasks) && args.tasks.length > 0
-						? args.tasks.length
+					: Array.isArray(args["tasks"]) && args["tasks"].length > 0
+						? args["tasks"].length
 						: 0;
 			if (childCount === 0) continue;
-			const runId = legacyLaunchRunId(item.id);
+			const runId = legacyLaunchRunId(item["id"]);
 			const logicalAgentIds = Object.freeze(Array.from({ length: childCount }, (_, index) => `${runId}:${index}`));
 			const declaration = Object.freeze({ runId, logicalAgentIds });
-			byToolCallId.set(item.id, declaration);
+			byToolCallId.set(item["id"], declaration);
 			byRunId.set(runId, declaration);
 			for (const logicalAgentId of logicalAgentIds) declared.add(logicalAgentId);
 		}
@@ -281,25 +281,27 @@ function legacyLaunchDeclarations(entries: Iterable<SessionHistoryValue>) {
 
 	for (const value of values) {
 		const entry = record(value);
-		if (entry.type !== "message") continue;
-		const message = record(entry.message);
-		if (message.role !== "toolResult" || message.toolName !== "subagent") continue;
-		const details = record(message.details);
+		if (entry["type"] !== "message") continue;
+		const message = record(entry["message"]);
+		if (message["role"] !== "toolResult" || message["toolName"] !== "subagent") continue;
+		const details = record(message["details"]);
 		const resultRunId =
-			isRuntimeString(details.asyncId) && details.asyncId.trim()
-				? details.asyncId.trim()
-				: isRuntimeString(details.runId) && details.runId.trim()
-					? details.runId.trim()
+			isRuntimeString(details["asyncId"]) && details["asyncId"].trim()
+				? details["asyncId"].trim()
+				: isRuntimeString(details["runId"]) && details["runId"].trim()
+					? details["runId"].trim()
 					: undefined;
 		const toolCallId =
-			isRuntimeString(message.toolCallId) && message.toolCallId.trim() ? message.toolCallId.trim() : undefined;
+			isRuntimeString(message["toolCallId"]) && message["toolCallId"].trim()
+				? message["toolCallId"].trim()
+				: undefined;
 		const declaration =
 			(toolCallId ? byToolCallId.get(toolCallId) : undefined) ??
 			(resultRunId ? byRunId.get(resultRunId) : undefined);
 		if (!declaration) continue;
 		const provesStart =
-			(isRuntimeString(details.asyncId) && details.asyncId.trim().length > 0) ||
-			(Array.isArray(details.results) && details.results.length > 0);
+			(isRuntimeString(details["asyncId"]) && details["asyncId"].trim().length > 0) ||
+			(Array.isArray(details["results"]) && details["results"].length > 0);
 		if (!provesStart) continue;
 		for (const logicalAgentId of declaration.logicalAgentIds) started.add(logicalAgentId);
 	}

@@ -359,16 +359,16 @@ async function readSnapshotBuildState(target: string): Promise<SnapshotBuildStat
 			!isRuntimeObject(parsed) ||
 			parsed === null ||
 			Array.isArray(parsed) ||
-			parsed.version !== 1 ||
-			!isRuntimeString(parsed.cookie) ||
-			!/^\d+$/u.test(parsed.cookie) ||
-			!isRuntimeNumber(parsed.size) ||
-			!Number.isSafeInteger(parsed.size) ||
-			parsed.size < 0 ||
-			parsed.size > MAX_SNAPSHOT_BYTES
+			parsed["version"] !== 1 ||
+			!isRuntimeString(parsed["cookie"]) ||
+			!/^\d+$/u.test(parsed["cookie"]) ||
+			!isRuntimeNumber(parsed["size"]) ||
+			!Number.isSafeInteger(parsed["size"]) ||
+			parsed["size"] < 0 ||
+			parsed["size"] > MAX_SNAPSHOT_BYTES
 		)
 			return undefined;
-		return { version: 1, cookie: parsed.cookie, size: parsed.size };
+		return { version: 1, cookie: parsed["cookie"], size: parsed["size"] };
 	} catch {
 		return undefined;
 	}
@@ -411,9 +411,9 @@ async function snapshotOverflowIsDeferred(target: string, now: number): Promise<
 			isRuntimeObject(parsed) &&
 			parsed !== null &&
 			!Array.isArray(parsed) &&
-			isRuntimeNumber(parsed.retryAt) &&
-			Number.isFinite(parsed.retryAt) &&
-			parsed.retryAt > now
+			isRuntimeNumber(parsed["retryAt"]) &&
+			Number.isFinite(parsed["retryAt"]) &&
+			parsed["retryAt"] > now
 		) {
 			return true;
 		}
@@ -756,29 +756,29 @@ async function readSnapshotCursor(cursorPath: string, snapshot: string): Promise
 			!isRuntimeObject(value) ||
 			value === null ||
 			Array.isArray(value) ||
-			value.version !== 2 ||
-			!sameCleanupSnapshotIdentity(value.snapshot, identity)
+			value["version"] !== 2 ||
+			!sameCleanupSnapshotIdentity(value["snapshot"], identity)
 		) {
 			return 0;
 		}
 		if (
-			!isRuntimeNumber(value.offset) ||
-			!Number.isSafeInteger(value.offset) ||
-			value.offset < 0 ||
-			value.offset > identity.size
+			!isRuntimeNumber(value["offset"]) ||
+			!Number.isSafeInteger(value["offset"]) ||
+			value["offset"] < 0 ||
+			value["offset"] > identity.size
 		)
 			return 0;
-		if (value.offset > 0) {
+		if (value["offset"] > 0) {
 			const handle = await fs.promises.open(snapshot, "r");
 			try {
 				const boundary = Buffer.allocUnsafe(1);
-				const { bytesRead } = await handle.read(boundary, 0, 1, value.offset - 1);
+				const { bytesRead } = await handle.read(boundary, 0, 1, value["offset"] - 1);
 				if (bytesRead !== 1 || boundary[0] !== 0x0a) return 0;
 			} finally {
 				await handle.close();
 			}
 		}
-		return value.offset;
+		return value["offset"];
 	} catch {
 		return 0;
 	}
@@ -1153,32 +1153,32 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			!isRuntimeObject(parsed) ||
 			parsed === null ||
 			Array.isArray(parsed) ||
-			parsed.version !== 3 ||
-			!Array.isArray(parsed.pending) ||
-			parsed.pending.length > MAX_ARTIFACT_ENTRIES_PER_PASS
+			parsed["version"] !== 3 ||
+			!Array.isArray(parsed["pending"]) ||
+			parsed["pending"].length > MAX_ARTIFACT_ENTRIES_PER_PASS
 		)
 			return undefined;
 		const pending: DiscoveryFrame[] = [];
-		for (const frame of parsed.pending) {
+		for (const frame of parsed["pending"]) {
 			if (!frame || !isRuntimeObject(frame) || Array.isArray(frame)) return undefined;
-			if (!safeDiscoveryDirectory(frame.directory)) return undefined;
-			if (frame.snapshot !== undefined && !safeDiscoverySnapshot(frame.snapshot)) return undefined;
+			if (!safeDiscoveryDirectory(frame["directory"])) return undefined;
+			if (frame["snapshot"] !== undefined && !safeDiscoverySnapshot(frame["snapshot"])) return undefined;
 			if (
-				frame.offset !== undefined &&
-				(!isRuntimeNumber(frame.offset) || !Number.isSafeInteger(frame.offset) || frame.offset < 0)
+				frame["offset"] !== undefined &&
+				(!isRuntimeNumber(frame["offset"]) || !Number.isSafeInteger(frame["offset"]) || frame["offset"] < 0)
 			)
 				return undefined;
-			if (frame.artifact !== undefined && frame.artifact !== true) return undefined;
-			if (frame.building !== undefined && frame.building !== true) return undefined;
-			if (frame.artifact && (frame.snapshot !== undefined || frame.offset !== undefined)) return undefined;
-			if (frame.offset !== undefined && frame.snapshot === undefined) return undefined;
-			if (frame.building && frame.snapshot === undefined) return undefined;
-			if (frame.building && frame.offset !== undefined) return undefined;
-			let candidate: DiscoveryFrame = { directory: frame.directory };
-			if (isRuntimeString(frame.snapshot)) candidate = { ...candidate, snapshot: frame.snapshot };
-			if (isRuntimeNumber(frame.offset)) candidate = { ...candidate, offset: frame.offset };
-			if (frame.building === true) candidate = { ...candidate, building: true };
-			if (frame.artifact === true) candidate = { ...candidate, artifact: true };
+			if (frame["artifact"] !== undefined && frame["artifact"] !== true) return undefined;
+			if (frame["building"] !== undefined && frame["building"] !== true) return undefined;
+			if (frame["artifact"] && (frame["snapshot"] !== undefined || frame["offset"] !== undefined)) return undefined;
+			if (frame["offset"] !== undefined && frame["snapshot"] === undefined) return undefined;
+			if (frame["building"] && frame["snapshot"] === undefined) return undefined;
+			if (frame["building"] && frame["offset"] !== undefined) return undefined;
+			let candidate: DiscoveryFrame = { directory: frame["directory"] };
+			if (isRuntimeString(frame["snapshot"])) candidate = { ...candidate, snapshot: frame["snapshot"] };
+			if (isRuntimeNumber(frame["offset"])) candidate = { ...candidate, offset: frame["offset"] };
+			if (frame["building"] === true) candidate = { ...candidate, building: true };
+			if (frame["artifact"] === true) candidate = { ...candidate, artifact: true };
 			pending.push(candidate);
 		}
 		return pending;

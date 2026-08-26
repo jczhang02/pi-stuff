@@ -33,12 +33,8 @@ export function writeChildToolDiagnostic(
 	}
 
 	const missingMcpDirectTools = mcpDirectTools?.length ? missing.filter((name) => mcpDirectTools.includes(name)) : [];
-	const diagnostic: ChildToolDiagnostic = {
-		agent,
-		required,
-		available,
-		missing,
-	};
+	const diagnostic: ChildToolDiagnostic = { required, available, missing };
+	if (agent !== undefined) diagnostic.agent = agent;
 	if (missingMcpDirectTools.length > 0) diagnostic.missingMcpDirectTools = missingMcpDirectTools;
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	fs.writeFileSync(filePath, JSON.stringify(diagnostic), { mode: 0o600 });

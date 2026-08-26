@@ -62,19 +62,19 @@ function readConfigDirNameFromPackageRoot(packageRoot: string | undefined): stri
 			pkg === null ||
 			Array.isArray(pkg) ||
 			!("name" in pkg) ||
-			pkg.name !== PI_CODING_AGENT_PACKAGE_NAME
+			pkg["name"] !== PI_CODING_AGENT_PACKAGE_NAME
 		) {
 			return undefined;
 		}
 		if (
 			!("piConfig" in pkg) ||
-			!isRuntimeObject(pkg.piConfig) ||
-			pkg.piConfig === null ||
-			Array.isArray(pkg.piConfig)
+			!isRuntimeObject(pkg["piConfig"]) ||
+			pkg["piConfig"] === null ||
+			Array.isArray(pkg["piConfig"])
 		) {
 			return undefined;
 		}
-		return "configDir" in pkg.piConfig ? validConfigDirName(pkg.piConfig.configDir) : undefined;
+		return "configDir" in pkg["piConfig"] ? validConfigDirName(pkg["piConfig"]["configDir"]) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -125,8 +125,8 @@ export function getAgentDir(): string {
 }
 
 export function getAgentSessionsDir(environment: NodeJS.ProcessEnv = process.env): string {
-	const configured = environment.PI_CODING_AGENT_SESSION_DIR;
-	const home = environment.HOME ?? os.homedir();
+	const configured = environment["PI_CODING_AGENT_SESSION_DIR"];
+	const home = environment["HOME"] ?? os.homedir();
 	if (configured === "~") return home;
 	if (configured?.startsWith("~/")) return path.join(home, configured.slice(2));
 	return configured || path.join(getAgentDir(), "sessions");
@@ -157,7 +157,7 @@ function asyncStatusForRun(status: JsonValue, statusPath: string, expectedRunId:
 		status === null ||
 		Array.isArray(status) ||
 		!("runId" in status) ||
-		status.runId !== expectedRunId
+		status["runId"] !== expectedRunId
 	) {
 		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
 	}
@@ -307,7 +307,7 @@ export function findLatestSessionFile(sessionDir: string): string | null {
 			};
 		})
 		.sort((a, b) => b.mtime - a.mtime);
-	return files.length > 0 ? files[0].path : null;
+	return files[0]?.path ?? null;
 }
 
 // ============================================================================
@@ -398,21 +398,22 @@ export function getDisplayItems(messages: Message[] | undefined): DisplayItem[] 
 
 function compactCompletedProgress(progress: AgentProgress): AgentProgress {
 	if (progress.status === "running") return progress;
-	return {
+	const compacted: AgentProgress = {
 		index: progress.index,
 		agent: progress.agent,
 		status: progress.status,
-		activityState: progress.activityState,
 		task: progress.task,
-		skills: progress.skills,
 		toolCount: progress.toolCount,
 		tokens: progress.tokens,
 		durationMs: progress.durationMs,
-		error: progress.error,
-		failedTool: progress.failedTool,
 		recentTools: [],
 		recentOutput: [],
 	};
+	if (progress.activityState !== undefined) compacted.activityState = progress.activityState;
+	if (progress.skills !== undefined) compacted.skills = progress.skills;
+	if (progress.error !== undefined) compacted.error = progress.error;
+	if (progress.failedTool !== undefined) compacted.failedTool = progress.failedTool;
+	return compacted;
 }
 
 function extractToolCallSummaries(messages: Message[] | undefined): ToolCallSummary[] {
@@ -479,20 +480,22 @@ export function sumResultsCost(results: SingleResult[]): NonNullable<Details["to
 export function compactForegroundResult(result: SingleResult): SingleResult {
 	if (result.progress?.status === "running") return result;
 	const toolCalls = result.toolCalls?.length ? result.toolCalls : extractToolCallSummaries(result.messages);
-	return {
-		...result,
-		messages: undefined,
-		progress: undefined,
-		toolCalls: toolCalls.length ? toolCalls : undefined,
-	};
+	const compacted = { ...result };
+	delete compacted.messages;
+	delete compacted.progress;
+	delete compacted.toolCalls;
+	if (toolCalls.length) compacted.toolCalls = toolCalls;
+	return compacted;
 }
 
 export function compactForegroundDetails(details: Details): Details {
-	return {
+	const compacted: Details = {
 		...details,
 		results: details.results.map(compactForegroundResult),
-		progress: details.progress ? details.progress.map(compactCompletedProgress) : undefined,
 	};
+	delete compacted.progress;
+	if (details.progress) compacted.progress = details.progress.map(compactCompletedProgress);
+	return compacted;
 }
 
 /**
@@ -590,12 +593,13 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 		);
 		const details = text && "text" in text && isRuntimeString(text.text) ? text.text : undefined;
 		const exitMatch = details?.match(/exit(?:ed)?\s*(?:with\s*)?(?:code|status)?\s*[:\s]?\s*(\d+)/i);
-		return {
+		const error: ErrorInfo = {
 			hasError: true,
-			exitCode: exitMatch ? parseInt(exitMatch[1], 10) : 1,
+			exitCode: exitMatch?.[1] ? parseInt(exitMatch[1], 10) : 1,
 			errorType: toolName || "tool",
-			details: details?.slice(0, 200),
 		};
+		if (details !== undefined) error.details = details.slice(0, 200);
+		return error;
 	}
 
 	return { hasError: false };
@@ -623,20 +627,20 @@ export function extractToolArgsPreview(args: ToolArguments): string {
 	};
 
 	// Handle MCP tool calls - show server/tool info
-	if (args.tool && isRuntimeString(args.tool)) {
-		const server = args.server && isRuntimeString(args.server) ? `${args.server}/` : "";
-		const toolArgs = args.args && isRuntimeString(args.args) ? ` ${truncatePreview(args.args, 40)}` : "";
-		return `${server}${args.tool}${toolArgs}`;
+	if (args["tool"] && isRuntimeString(args["tool"])) {
+		const server = args["server"] && isRuntimeString(args["server"]) ? `${args["server"]}/` : "";
+		const toolArgs = args["args"] && isRuntimeString(args["args"]) ? ` ${truncatePreview(args["args"], 40)}` : "";
+		return `${server}${args["tool"]}${toolArgs}`;
 	}
 
-	const queriesPreview = previewArray(args.queries);
+	const queriesPreview = previewArray(args["queries"]);
 	if (queriesPreview) return truncatePreview(queriesPreview, 60);
-	if (isRuntimeString(args.query) && args.query.trim().length > 0) return truncatePreview(args.query, 60);
+	if (isRuntimeString(args["query"]) && args["query"].trim().length > 0) return truncatePreview(args["query"], 60);
 
-	if (isRuntimeString(args.url) && args.url.trim().length > 0) return truncatePreview(args.url, 60);
-	const urlsPreview = previewArray(args.urls);
+	if (isRuntimeString(args["url"]) && args["url"].trim().length > 0) return truncatePreview(args["url"], 60);
+	const urlsPreview = previewArray(args["urls"]);
 	if (urlsPreview) return truncatePreview(urlsPreview, 60);
-	if (isRuntimeString(args.prompt) && args.prompt.trim().length > 0) return truncatePreview(args.prompt, 60);
+	if (isRuntimeString(args["prompt"]) && args["prompt"].trim().length > 0) return truncatePreview(args["prompt"], 60);
 
 	const previewKeys = ["command", "path", "file_path", "pattern", "query", "url", "task", "describe", "search"];
 	for (const key of previewKeys) {

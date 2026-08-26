@@ -93,7 +93,11 @@ export interface AgentRuntimeCompletionEvent {
  * It intentionally knows nothing about Pi tool calls, renderers, or host result types.
  */
 export class AgentExecutionGovernor {
-	constructor(private readonly backend: AgentExecutionGovernorBackend) {}
+	private readonly backend: AgentExecutionGovernorBackend;
+
+	constructor(backend: AgentExecutionGovernorBackend) {
+		this.backend = backend;
+	}
 
 	/** Reserve an entire launch in one backend transaction. */
 	async reserveSpawn(input: ReserveAgentSpawnInput): Promise<AgentExecutionReservationResult> {

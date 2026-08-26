@@ -53,7 +53,7 @@ function rewriteLocalJsonPointerRefs(
 	if (isRuntimeBoolean(schema) || !isJsonInputObject(schema)) return schema;
 	const source: JsonInputObject = schema;
 	const rewritten: JsonInputObject = { ...source };
-	const sharesWrapperResource = inheritsWrapperResource && !isRuntimeString(source.$id);
+	const sharesWrapperResource = inheritsWrapperResource && !isRuntimeString(source["$id"]);
 	if (sharesWrapperResource) {
 		for (const keyword of ["$ref", "$dynamicRef", "$recursiveRef"] as const) {
 			const ref = source[keyword];
@@ -71,13 +71,13 @@ function rewriteLocalJsonPointerRefs(
 			]),
 		);
 	}
-	const items = source.items;
+	const items = source["items"];
 	if (Array.isArray(items))
-		rewritten.items = items.map((nested) =>
+		rewritten["items"] = items.map((nested) =>
 			rewriteLocalJsonPointerRefs(nested, pointerPrefix, sharesWrapperResource),
 		);
 	else if (items !== undefined)
-		rewritten.items = rewriteLocalJsonPointerRefs(items, pointerPrefix, sharesWrapperResource);
+		rewritten["items"] = rewriteLocalJsonPointerRefs(items, pointerPrefix, sharesWrapperResource);
 	for (const keyword of SCHEMA_SINGLE_KEYWORDS) {
 		if (source[keyword] !== undefined)
 			rewritten[keyword] = rewriteLocalJsonPointerRefs(source[keyword], pointerPrefix, sharesWrapperResource);
@@ -88,9 +88,9 @@ function rewriteLocalJsonPointerRefs(
 				rewriteLocalJsonPointerRefs(nested, pointerPrefix, sharesWrapperResource),
 			);
 	}
-	const dependencies = source.dependencies;
+	const dependencies = source["dependencies"];
 	if (dependencies && isRuntimeObject(dependencies) && !Array.isArray(dependencies)) {
-		rewritten.dependencies = Object.fromEntries(
+		rewritten["dependencies"] = Object.fromEntries(
 			Object.entries(dependencies).map(([name, nested]) => [
 				name,
 				Array.isArray(nested) ? nested : rewriteLocalJsonPointerRefs(nested, pointerPrefix, sharesWrapperResource),

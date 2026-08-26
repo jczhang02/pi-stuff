@@ -488,13 +488,14 @@ describe("AgentRoster", () => {
 			setTimeout: clock.setTimeout,
 		});
 		expect(lineFor(result.ui.render(100), "reviewer")).toMatch(/\s{2,}18s$/u);
+		if (running.startedAt == null) throw new Error("Expected running start time");
 
 		result.current.update([
 			row("reviewer", "completed", {
 				description: "Review sample output",
 				elapsedMs: 18_000,
 				endedAt: clock.now,
-				startedAt: running.startedAt ?? undefined,
+				startedAt: running.startedAt,
 			}),
 		]);
 		for (const width of [100, 64, 48, 32, 24]) {

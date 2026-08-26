@@ -157,8 +157,8 @@ interface WriterSupervisorEnvelope {
 	args: string[];
 	parentPid: number;
 	parentStarted: string;
-	dispositionPath?: string;
-	groupMemberProofPath?: string;
+	dispositionPath?: string | undefined;
+	groupMemberProofPath?: string | undefined;
 	controlPath?: string;
 	controlToken?: string;
 }
@@ -179,20 +179,20 @@ interface ChildProcessResult {
 	stderr: string;
 	messages: ChildMessage[];
 	output: string;
-	error?: string;
-	protocolError?: ProtocolOutputLimit;
+	error?: string | undefined;
+	protocolError?: ProtocolOutputLimit | undefined;
 	usage: Usage;
 	toolCount: number;
 	durationMs: number;
-	model?: string;
-	contextUsage?: AgentContextUsage;
-	interrupted?: boolean;
-	timedOut?: boolean;
-	stopped?: boolean;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	contextNudgeObserved?: boolean;
-	process?: WriterProcess;
+	model?: string | undefined;
+	contextUsage?: AgentContextUsage | undefined;
+	interrupted?: boolean | undefined;
+	timedOut?: boolean | undefined;
+	stopped?: boolean | undefined;
+	turnBudget?: TurnBudgetState | undefined;
+	turnBudgetExceeded?: boolean | undefined;
+	contextNudgeObserved?: boolean | undefined;
+	process?: WriterProcess | undefined;
 }
 
 type WriterProcess = NonNullable<BackgroundTaskResult["writerProcesses"]>[number];
@@ -258,37 +258,37 @@ function readWriterSupervisorDisposition(
 			!isRuntimeObject(value) ||
 			value === null ||
 			Array.isArray(value) ||
-			value.version !== 1 ||
-			value.supervisorPid !== supervisorPid ||
-			value.supervisorProcessStartIdentity !== supervisorProcessStartIdentity ||
-			!isRuntimeNumber(value.childPid) ||
-			!Number.isSafeInteger(value.childPid) ||
-			!isRuntimeString(value.childProcessStartIdentity) ||
-			!value.childProcessStartIdentity ||
-			(!isRuntimeNumber(value.exitCode) && value.exitCode !== null) ||
-			(!isRuntimeString(value.signal) && value.signal !== null) ||
-			(value.origin !== null &&
-				value.origin !== "external" &&
-				value.origin !== "manager-final-drain" &&
-				value.origin !== "manager-request") ||
-			!isRuntimeBoolean(value.reaped) ||
-			(value.outputForwardingError !== undefined &&
-				(!isRuntimeString(value.outputForwardingError) || value.outputForwardingError.length > 1_000))
+			value["version"] !== 1 ||
+			value["supervisorPid"] !== supervisorPid ||
+			value["supervisorProcessStartIdentity"] !== supervisorProcessStartIdentity ||
+			!isRuntimeNumber(value["childPid"]) ||
+			!Number.isSafeInteger(value["childPid"]) ||
+			!isRuntimeString(value["childProcessStartIdentity"]) ||
+			!value["childProcessStartIdentity"] ||
+			(!isRuntimeNumber(value["exitCode"]) && value["exitCode"] !== null) ||
+			(!isRuntimeString(value["signal"]) && value["signal"] !== null) ||
+			(value["origin"] !== null &&
+				value["origin"] !== "external" &&
+				value["origin"] !== "manager-final-drain" &&
+				value["origin"] !== "manager-request") ||
+			!isRuntimeBoolean(value["reaped"]) ||
+			(value["outputForwardingError"] !== undefined &&
+				(!isRuntimeString(value["outputForwardingError"]) || value["outputForwardingError"].length > 1_000))
 		)
 			return undefined;
 		const disposition: WriterSupervisorDisposition = {
 			version: 1,
 			supervisorPid,
 			supervisorProcessStartIdentity,
-			childPid: value.childPid,
-			childProcessStartIdentity: value.childProcessStartIdentity,
-			exitCode: value.exitCode,
-			signal: value.signal,
-			origin: value.origin,
-			reaped: value.reaped,
+			childPid: value["childPid"],
+			childProcessStartIdentity: value["childProcessStartIdentity"],
+			exitCode: value["exitCode"],
+			signal: value["signal"],
+			origin: value["origin"],
+			reaped: value["reaped"],
 		};
-		if (value.outputForwardingError !== undefined) {
-			disposition.outputForwardingError = value.outputForwardingError;
+		if (value["outputForwardingError"] !== undefined) {
+			disposition.outputForwardingError = value["outputForwardingError"];
 		}
 		return disposition;
 	} catch {
@@ -1015,9 +1015,14 @@ function interruptDescendants(config: BackgroundRunnerConfig, kind: "pause" | "t
 			if (child.state !== "running" && child.state !== "queued") continue;
 			const asyncDir = resolveNestedAsyncDir(config.nestedRoute.rootRunId, child);
 			if (!asyncDir) continue;
-			if (kind === "stop") deliverStopRequest({ asyncDir, pid: child.pid, source: "ancestor-stop" });
-			else if (kind === "timeout") deliverTimeoutRequest({ asyncDir, pid: child.pid, source: "ancestor-timeout" });
-			else deliverInterruptRequest({ asyncDir, pid: child.pid, source: "ancestor-pause" });
+			const request: Parameters<typeof deliverStopRequest>[0] = {
+				asyncDir,
+				source: `ancestor-${kind}`,
+			};
+			if (child.pid !== undefined) request.pid = child.pid;
+			if (kind === "stop") deliverStopRequest(request);
+			else if (kind === "timeout") deliverTimeoutRequest(request);
+			else deliverInterruptRequest(request);
 		}
 	} catch {
 		// Descendant propagation is best effort; the direct children are still stopped.
@@ -1084,22 +1089,22 @@ function runChildProcess(input: {
 	config: BackgroundRunnerConfig;
 	task: RunnerAgentTask;
 	index: number;
-	model?: string;
+	model?: string | undefined;
 	taskCwd: string;
-	sessionDir?: string;
+	sessionDir?: string | undefined;
 	outputFile: string;
 	transcript: ChildTranscriptWriter;
-	artifactJsonlPath?: string;
+	artifactJsonlPath?: string | undefined;
 	statusStep: RunnerStatusStep;
 	statusPath: string;
 	status: RunnerStatus;
 	activeControls: Map<number, ChildRuntimeControl>;
 	consumeScheduledStop: () => boolean;
-	onWriterProcess?: (writer: WriterRuntimeState) => void;
-	afterWriterSpawnBeforeBinding?: (index: number, pid: number) => void;
-	beforeWriterCloseRecovery?: (index: number) => void | Promise<void>;
-	beforeWriterSupervisorDispositionRead?: (filePath: string, index: number) => void;
-	writerSupervisorRuntime?: string;
+	onWriterProcess?: ((writer: WriterRuntimeState) => void) | undefined;
+	afterWriterSpawnBeforeBinding?: ((index: number, pid: number) => void) | undefined;
+	beforeWriterCloseRecovery?: ((index: number) => void | Promise<void>) | undefined;
+	beforeWriterSupervisorDispositionRead?: ((filePath: string, index: number) => void) | undefined;
+	writerSupervisorRuntime?: string | undefined;
 }): Promise<ChildProcessResult> {
 	return new Promise((resolve, reject) => {
 		void (async () => {
@@ -1935,11 +1940,11 @@ async function runResolvedTask(input: {
 	eventsPath: string;
 	activeControls: Map<number, ChildRuntimeControl>;
 	consumeScheduledStop: (index: number) => boolean;
-	onWriterProcess?: (writer: WriterRuntimeState) => void;
-	afterWriterSpawnBeforeBinding?: (index: number, pid: number) => void;
-	beforeWriterCloseRecovery?: (index: number) => void | Promise<void>;
-	beforeWriterSupervisorDispositionRead?: (filePath: string, index: number) => void;
-	writerSupervisorRuntime?: string;
+	onWriterProcess?: ((writer: WriterRuntimeState) => void) | undefined;
+	afterWriterSpawnBeforeBinding?: ((index: number, pid: number) => void) | undefined;
+	beforeWriterCloseRecovery?: ((index: number) => void | Promise<void>) | undefined;
+	beforeWriterSupervisorDispositionRead?: ((filePath: string, index: number) => void) | undefined;
+	writerSupervisorRuntime?: string | undefined;
 }): Promise<BackgroundTaskResult> {
 	const { config, task, index, status, statusPath } = input;
 	const statusStep = status.steps[index];
@@ -2183,15 +2188,16 @@ async function runResolvedTask(input: {
 	if (task.capabilityCeiling) result.capabilityCeiling = task.capabilityCeiling;
 
 	if (transcript.artifactPaths && config.artifactConfig?.includeOutput !== false) {
+		const artifactContent: Parameters<typeof formatOutputArtifactContent>[0] = {
+			output: fullOutput,
+			transcriptPath: transcript.path,
+		};
+		if (result.error) artifactContent.error = result.error;
+		if (config.artifactConfig?.includeMetadata !== false)
+			artifactContent.metadataPath = transcript.artifactPaths.metadataPath;
 		const error = writeOptionalArtifact(
 			transcript.artifactPaths.outputPath,
-			formatOutputArtifactContent({
-				output: fullOutput,
-				error: result.error,
-				transcriptPath: transcript.path,
-				metadataPath:
-					config.artifactConfig?.includeMetadata === false ? undefined : transcript.artifactPaths.metadataPath,
-			}),
+			formatOutputArtifactContent(artifactContent),
 		);
 		if (error) {
 			reportAgentDiagnostic(error);
@@ -2380,13 +2386,14 @@ async function runConfiguredWork(
 			if (reason) target.reason = reason;
 			return target;
 		});
-		recordSteeringRequest(projection, {
+		const steeringRequest: Parameters<typeof recordSteeringRequest>[1] = {
 			id: request.id,
 			requestedAt: request.ts,
-			source: request.source,
 			message: request.message,
 			targets,
-		});
+		};
+		if (request.source !== undefined) steeringRequest.source = request.source;
+		recordSteeringRequest(projection, steeringRequest);
 		for (const target of targets) {
 			if (target.state === "routed") routeSteering(request, target.index);
 		}
@@ -2454,16 +2461,19 @@ async function runConfiguredWork(
 		let results: BackgroundTaskResult[];
 		try {
 			if (config.work.mode === "parallel" && config.work.group.worktree) {
-				worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, {
+				const worktreeOptions: NonNullable<Parameters<typeof createWorktrees>[3]> = {
 					agents: config.work.group.tasks.map((task) => task.agent),
-					setupHook: config.worktreeSetupHook
-						? {
-								hookPath: config.worktreeSetupHook,
-								timeoutMs: config.worktreeSetupHookTimeoutMs,
-							}
-						: undefined,
-					baseDir: config.worktreeBaseDir,
-				});
+				};
+				if (config.worktreeSetupHook) {
+					const setupHook: NonNullable<typeof worktreeOptions.setupHook> = {
+						hookPath: config.worktreeSetupHook,
+					};
+					if (config.worktreeSetupHookTimeoutMs !== undefined)
+						setupHook.timeoutMs = config.worktreeSetupHookTimeoutMs;
+					worktreeOptions.setupHook = setupHook;
+				}
+				if (config.worktreeBaseDir) worktreeOptions.baseDir = config.worktreeBaseDir;
+				worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, worktreeOptions);
 			}
 			results = await runBackgroundWork(
 				config.work,
@@ -2631,21 +2641,26 @@ async function runConfiguredWork(
 		}
 		if (config.nestedRoute && config.nestedSelf) {
 			try {
-				writeNestedEvent(config.nestedRoute, {
+				const fallback: Parameters<typeof nestedSummaryFromAsyncStatus>[2] = {
+					id: config.id,
+					parentRunId: config.nestedSelf.parentRunId,
+					depth: config.nestedSelf.depth,
+					mode: status.mode,
+					ts: endedAt,
+				};
+				if (config.nestedSelf.parentStepIndex !== undefined)
+					fallback.parentStepIndex = config.nestedSelf.parentStepIndex;
+				if (config.nestedSelf.path !== undefined) fallback.path = config.nestedSelf.path;
+				const child = nestedSummaryFromAsyncStatus(status, config.asyncDir, fallback);
+				const event: Parameters<typeof writeNestedEvent>[1] = {
 					type: "subagent.nested.completed",
 					ts: endedAt,
 					parentRunId: config.nestedSelf.parentRunId,
-					parentStepIndex: config.nestedSelf.parentStepIndex,
-					child: nestedSummaryFromAsyncStatus(status, config.asyncDir, {
-						id: config.id,
-						parentRunId: config.nestedSelf.parentRunId,
-						parentStepIndex: config.nestedSelf.parentStepIndex,
-						depth: config.nestedSelf.depth,
-						path: config.nestedSelf.path,
-						mode: status.mode,
-						ts: endedAt,
-					}),
-				});
+					child,
+				};
+				if (config.nestedSelf.parentStepIndex !== undefined)
+					event.parentStepIndex = config.nestedSelf.parentStepIndex;
+				writeNestedEvent(config.nestedRoute, event);
 			} catch (error) {
 				if (errorCode(error) !== "ENOENT") {
 					reportAgentDiagnostic(`Failed to settle nested route after '${config.id}' completed:`, error);
@@ -2674,9 +2689,9 @@ export async function waitForStartupControl(
 			if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
 				throw new Error("Runner startup control payload is invalid.");
 			}
-			if (payload.token !== token) throw new Error("Runner startup token does not match the session lease.");
-			if (payload.action === action) return;
-			if (payload.action !== "ack" && payload.action !== "proceed") {
+			if (payload["token"] !== token) throw new Error("Runner startup token does not match the session lease.");
+			if (payload["action"] === action) return;
+			if (payload["action"] !== "ack" && payload["action"] !== "proceed") {
 				throw new Error("Runner startup control action is invalid.");
 			}
 		} catch (error) {
@@ -2829,56 +2844,61 @@ function isJsonObject(value: JsonValue): value is JsonObject {
 function isRunnerAgentTask(value: JsonValue): value is JsonObject & RunnerAgentTask {
 	return (
 		isJsonObject(value) &&
-		isRuntimeString(value.agent) &&
-		isRuntimeString(value.task) &&
-		isRuntimeString(value.cwd) &&
-		isRuntimeBoolean(value.inheritProjectContext) &&
-		isRuntimeBoolean(value.inheritSkills)
+		isRuntimeString(value["agent"]) &&
+		isRuntimeString(value["task"]) &&
+		isRuntimeString(value["cwd"]) &&
+		isRuntimeBoolean(value["inheritProjectContext"]) &&
+		isRuntimeBoolean(value["inheritSkills"])
 	);
 }
 
 function isBackgroundRunnerWork(value: JsonValue): value is JsonObject & BackgroundRunnerWork {
 	if (!isJsonObject(value)) return false;
-	if (value.mode === "single") return isRunnerAgentTask(value.task);
+	const task = value["task"];
+	if (value["mode"] === "single") return task !== undefined && isRunnerAgentTask(task);
+	const group = value["group"];
 	return (
-		value.mode === "parallel" &&
-		isJsonObject(value.group) &&
-		Array.isArray(value.group.tasks) &&
-		value.group.tasks.every(isRunnerAgentTask) &&
-		isRuntimeNumber(value.group.concurrency) &&
-		Number.isSafeInteger(value.group.concurrency) &&
-		value.group.concurrency > 0 &&
-		isRuntimeBoolean(value.group.worktree)
+		value["mode"] === "parallel" &&
+		group !== undefined &&
+		isJsonObject(group) &&
+		Array.isArray(group["tasks"]) &&
+		group["tasks"].every(isRunnerAgentTask) &&
+		isRuntimeNumber(group["concurrency"]) &&
+		Number.isSafeInteger(group["concurrency"]) &&
+		group["concurrency"] > 0 &&
+		isRuntimeBoolean(group["worktree"])
 	);
 }
 
 function parseBackgroundRunnerConfig(text: string): BackgroundRunnerConfig {
 	const value = parseJsonValue(text);
+	const work = isJsonObject(value) ? value["work"] : undefined;
 	if (
 		!isRuntimeObject(value) ||
 		value === null ||
 		Array.isArray(value) ||
-		value.version !== 2 ||
-		!isRuntimeString(value.id) ||
-		!value.id ||
-		!isRuntimeString(value.resultPath) ||
-		!value.resultPath ||
-		!isRuntimeString(value.cwd) ||
-		!value.cwd ||
-		!isRuntimeString(value.asyncDir) ||
-		!value.asyncDir ||
-		(value.ponytailMode !== undefined && normalizePonytailMode(value.ponytailMode) === undefined) ||
-		!isBackgroundRunnerWork(value.work)
+		value["version"] !== 2 ||
+		!isRuntimeString(value["id"]) ||
+		!value["id"] ||
+		!isRuntimeString(value["resultPath"]) ||
+		!value["resultPath"] ||
+		!isRuntimeString(value["cwd"]) ||
+		!value["cwd"] ||
+		!isRuntimeString(value["asyncDir"]) ||
+		!value["asyncDir"] ||
+		(value["ponytailMode"] !== undefined && normalizePonytailMode(value["ponytailMode"]) === undefined) ||
+		work === undefined ||
+		!isBackgroundRunnerWork(work)
 	) {
 		throw new Error("Background runner config is invalid.");
 	}
 	return Object.assign({}, value, {
 		version: 2 as const,
-		id: value.id,
-		resultPath: value.resultPath,
-		cwd: value.cwd,
-		asyncDir: value.asyncDir,
-		work: value.work,
+		id: value["id"],
+		resultPath: value["resultPath"],
+		cwd: value["cwd"],
+		asyncDir: value["asyncDir"],
+		work,
 	});
 }
 

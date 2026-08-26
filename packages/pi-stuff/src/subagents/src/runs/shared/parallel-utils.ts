@@ -176,16 +176,15 @@ export async function mapConcurrent<T, R>(
 ): Promise<R[]> {
 	const safeLimit = Math.max(1, Math.floor(limit) || 1);
 	const results: R[] = [];
-	let next = 0;
+	const pending = items.entries();
 
-	async function worker(_workerIndex: number): Promise<void> {
-		while (next < items.length) {
-			const i = next++;
-			results[i] = await fn(items[i], i);
+	async function worker(): Promise<void> {
+		for (const [index, item] of pending) {
+			results[index] = await fn(item, index);
 		}
 	}
 
-	await Promise.all(Array.from({ length: Math.min(safeLimit, items.length) }, (_, wi) => worker(wi)));
+	await Promise.all(Array.from({ length: Math.min(safeLimit, items.length) }, () => worker()));
 	return results;
 }
 

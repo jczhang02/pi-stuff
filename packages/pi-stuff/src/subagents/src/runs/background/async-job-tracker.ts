@@ -531,7 +531,7 @@ export function createAsyncJobTracker(
 				);
 				if (!observation.retryTimer) {
 					observation.retryTimer = setTimeout(() => {
-						observation.retryTimer = undefined;
+						delete observation.retryTimer;
 						void observeJob(job, { status: true, control: true });
 					}, fallbackIntervalMs);
 					observation.retryTimer.unref?.();

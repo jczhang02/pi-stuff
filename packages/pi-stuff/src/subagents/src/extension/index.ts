@@ -165,14 +165,14 @@ interface CompactCompletionNotifier {
 
 interface RootExecutorInput {
 	readonly config: PiStuffAgentsConfig;
-	readonly codeModeProviderTools?: readonly string[];
+	readonly codeModeProviderTools?: readonly string[] | undefined;
 	readonly discoverAgents: (cwd: string, scope: AgentScope) => Promise<AgentDiscoveryResult>;
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
-	readonly resolveCodeModeEnabled?: () => boolean;
-	readonly onForegroundStatus?: () => void;
+	readonly resolveCodeModeEnabled?: (() => boolean) | undefined;
+	readonly onForegroundStatus?: (() => void) | undefined;
 	readonly state: SubagentState;
-	readonly childBaseExtensionPath?: string;
+	readonly childBaseExtensionPath?: string | undefined;
 }
 
 interface RootWatcherInput {

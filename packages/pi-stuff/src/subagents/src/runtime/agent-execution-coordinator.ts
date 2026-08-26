@@ -108,9 +108,9 @@ export interface AgentExecutionCoordinatorPort {
 
 export interface AgentExecutionCoordinatorOptions {
 	readonly createSession: (identity: AgentExecutionSessionIdentity) => AgentExecutionCoordinatorSession;
-	readonly isPidAlive?: (pid: number) => boolean | undefined;
-	readonly readProcessStartIdentity?: (pid: number) => string | undefined;
-	readonly readSystemBootIdentity?: () => string | undefined;
+	readonly isPidAlive?: ((pid: number) => boolean | undefined) | undefined;
+	readonly readProcessStartIdentity?: ((pid: number) => string | undefined) | undefined;
+	readonly readSystemBootIdentity?: (() => string | undefined) | undefined;
 }
 
 interface AsyncStart {
@@ -175,7 +175,7 @@ interface PendingSettlementInput {
 	readonly session: AgentExecutionCoordinatorSession;
 	readonly reservation: AgentExecutionReservation;
 	readonly runtimeRunId: string;
-	start?: AsyncStart;
+	start?: AsyncStart | undefined;
 	readonly bindRuntime: boolean;
 	readonly settlement: AgentExecutionSettlement;
 }
@@ -483,7 +483,9 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	}
 
 	private createPendingSettlement(input: PendingSettlementInput): PendingSettlement {
-		const pending: PendingSettlement = { ...input, retryIndex: 0 };
+		const { start, ...settlement } = input;
+		const pending: PendingSettlement =
+			start === undefined ? { ...settlement, retryIndex: 0 } : { ...settlement, start, retryIndex: 0 };
 		this.pendingSettlements.add(pending);
 		return pending;
 	}
@@ -532,7 +534,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		try {
 			await inFlight;
 		} finally {
-			if (pending.inFlight === inFlight) pending.inFlight = undefined;
+			if (pending.inFlight === inFlight) delete pending.inFlight;
 		}
 	}
 
@@ -541,7 +543,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const delay = retryDelay(pending.retryIndex);
 		pending.retryIndex += 1;
 		pending.retryTimer = setTimeout(() => {
-			pending.retryTimer = undefined;
+			delete pending.retryTimer;
 			void this.attemptPendingSettlement(pending).catch(() => this.scheduleSettlementRetry(pending));
 		}, delay);
 		pending.retryTimer.unref?.();
@@ -550,11 +552,11 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	private finishPendingSettlement(pending: PendingSettlement): void {
 		if (!this.pendingSettlements.delete(pending)) return;
 		if (pending.retryTimer) clearTimeout(pending.retryTimer);
-		pending.retryTimer = undefined;
+		delete pending.retryTimer;
 		const owner = pending.owner;
 		if (owner) {
 			owner.settled = true;
-			if (owner.pending === pending) owner.pending = undefined;
+			if (owner.pending === pending) delete owner.pending;
 			if (this.active.get(owner.invocation.launchRunId) === owner) {
 				this.active.delete(owner.invocation.launchRunId);
 			}
@@ -654,7 +656,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		try {
 			await inFlight;
 		} finally {
-			if (pending.inFlight === inFlight) pending.inFlight = undefined;
+			if (pending.inFlight === inFlight) delete pending.inFlight;
 		}
 	}
 
@@ -678,7 +680,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const delay = retryDelay(pending.retryIndex);
 		pending.retryIndex += 1;
 		pending.retryTimer = setTimeout(() => {
-			pending.retryTimer = undefined;
+			delete pending.retryTimer;
 			void this.attemptPendingCompletion(pending).catch(() => this.scheduleCompletionRetry(pending));
 		}, delay);
 		pending.retryTimer.unref?.();
@@ -689,7 +691,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		if (this.pendingCompletions.get(key) !== pending) return;
 		this.pendingCompletions.delete(key);
 		if (pending.retryTimer) clearTimeout(pending.retryTimer);
-		pending.retryTimer = undefined;
+		delete pending.retryTimer;
 	}
 
 	private async drainPendingCompletions(

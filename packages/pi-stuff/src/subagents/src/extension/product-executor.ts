@@ -120,17 +120,20 @@ export interface PublicAgentParams {
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
 }
 
-function mutableSkill(value: PublicAgentParams["skill"]): SubagentParamsLike["skill"] {
-	if (isRuntimeString(value) || isRuntimeBoolean(value) || value === undefined) return value;
+function mutableSkill(
+	value: Exclude<PublicAgentParams["skill"], undefined>,
+): Exclude<SubagentParamsLike["skill"], undefined> {
+	if (isRuntimeString(value) || isRuntimeBoolean(value)) return value;
 	return [...value];
 }
 
-function mutableToolBudget(value: PublicAgentParams["toolBudget"]): SubagentParamsLike["toolBudget"] {
-	if (!value) return undefined;
+function mutableToolBudget(
+	value: NonNullable<PublicAgentParams["toolBudget"]>,
+): NonNullable<SubagentParamsLike["toolBudget"]> {
 	const budget: NonNullable<SubagentParamsLike["toolBudget"]> = {
-		soft: value.soft,
 		hard: value.hard,
 	};
+	if (value.soft !== undefined) budget.soft = value.soft;
 	if (Array.isArray(value.block)) budget.block = [...value.block];
 	else if (value.block === "*") budget.block = "*";
 	return budget;

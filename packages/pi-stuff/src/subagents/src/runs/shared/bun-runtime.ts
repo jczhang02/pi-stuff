@@ -23,12 +23,12 @@ export function resolveBunRuntimeCommand(options: BunRuntimeResolutionOptions = 
 	const execPath = options.execPath ?? process.execPath;
 	if (path.basename(execPath).toLowerCase() === executable && executableFile(execPath)) return execPath;
 	const env = options.env ?? process.env;
-	const bunInstall = env.BUN_INSTALL?.trim();
+	const bunInstall = env["BUN_INSTALL"]?.trim();
 	if (bunInstall) {
 		const candidate = path.join(bunInstall, "bin", executable);
 		if (executableFile(candidate)) return candidate;
 	}
-	for (const directory of (env.PATH ?? "").split(path.delimiter)) {
+	for (const directory of (env["PATH"] ?? "").split(path.delimiter)) {
 		if (!directory) continue;
 		const candidate = path.join(directory, executable);
 		if (executableFile(candidate)) return candidate;

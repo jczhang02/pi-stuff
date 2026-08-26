@@ -66,16 +66,17 @@ export function resolveControlConfig(globalConfig?: ControlConfig, override?: Co
 		parseControlList(override?.notifyChannels, CONTROL_NOTIFICATION_CHANNELS) ??
 		parseControlList(globalConfig?.notifyChannels, CONTROL_NOTIFICATION_CHANNELS) ??
 		DEFAULT_CONTROL_CONFIG.notifyChannels;
-	return {
+	const resolved: ResolvedControlConfig = {
 		enabled,
 		needsAttentionAfterMs,
 		activeNoticeAfterMs,
-		activeNoticeAfterTurns,
-		activeNoticeAfterTokens,
 		failedToolAttemptsBeforeAttention,
 		notifyOn: [...notifyOn],
 		notifyChannels: [...notifyChannels],
 	};
+	if (activeNoticeAfterTurns !== undefined) resolved.activeNoticeAfterTurns = activeNoticeAfterTurns;
+	if (activeNoticeAfterTokens !== undefined) resolved.activeNoticeAfterTokens = activeNoticeAfterTokens;
+	return resolved;
 }
 
 export function deriveActivityState(input: {

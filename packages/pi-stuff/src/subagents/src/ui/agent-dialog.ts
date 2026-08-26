@@ -880,14 +880,14 @@ class AgentDialogComponent implements CommandDialogComponent {
 		if (later > 0 && visible.length > 0) {
 			visible[visible.length - 1] = `${GUTTER}${this.context.theme.fg("dim", `… ${later} later lines`)}`;
 		}
+		const sections = {
+			header,
+			body: ["", ...(feedbackLine ? [feedbackLine, ""] : []), ...visible, ""],
+			footer,
+			priority,
+		};
 		return fitFixedCommandDialogRows(
-			{
-				header,
-				body: ["", ...(feedbackLine ? [feedbackLine, ""] : []), ...visible, ""],
-				footer,
-				overflowTitle: header[1],
-				priority,
-			},
+			header[1] === undefined ? sections : { ...sections, overflowTitle: header[1] },
 			maximum,
 		);
 	}

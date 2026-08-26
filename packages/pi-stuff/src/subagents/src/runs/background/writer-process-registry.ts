@@ -369,74 +369,74 @@ async function readWriterProcessRegistryAsync(asyncDir: string): Promise<WriterP
 function parseWriterProcessRegistry(value: JsonValue): WriterProcessRegistry | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	if (
-		value.version !== 1 ||
-		!isRuntimeString(value.runId) ||
-		!positiveInteger(value.runnerPid) ||
-		(value.runnerProcessStartIdentity !== undefined && !isRuntimeString(value.runnerProcessStartIdentity)) ||
-		(value.writerStartupGate !== undefined && value.writerStartupGate !== "parent-pipe-v1") ||
-		(value.writerProcessGroup !== undefined && value.writerProcessGroup !== "writer-pid-v1") ||
-		!isRuntimeNumber(value.updatedAt) ||
-		!value.writers ||
-		!isRuntimeObject(value.writers) ||
-		Array.isArray(value.writers)
+		value["version"] !== 1 ||
+		!isRuntimeString(value["runId"]) ||
+		!positiveInteger(value["runnerPid"]) ||
+		(value["runnerProcessStartIdentity"] !== undefined && !isRuntimeString(value["runnerProcessStartIdentity"])) ||
+		(value["writerStartupGate"] !== undefined && value["writerStartupGate"] !== "parent-pipe-v1") ||
+		(value["writerProcessGroup"] !== undefined && value["writerProcessGroup"] !== "writer-pid-v1") ||
+		!isRuntimeNumber(value["updatedAt"]) ||
+		!value["writers"] ||
+		!isRuntimeObject(value["writers"]) ||
+		Array.isArray(value["writers"])
 	)
 		return undefined;
 	const writers: Record<string, PersistedWriterState> = {};
-	for (const [index, rawWriter] of Object.entries(value.writers)) {
+	for (const [index, rawWriter] of Object.entries(value["writers"])) {
 		const writer = parseWriterState(rawWriter);
 		if (!/^\d+$/.test(index) || !writer) return undefined;
 		writers[index] = writer;
 	}
 	const registry: WriterProcessRegistry = {
 		version: 1,
-		runId: value.runId,
-		runnerPid: value.runnerPid,
-		updatedAt: value.updatedAt,
+		runId: value["runId"],
+		runnerPid: value["runnerPid"],
+		updatedAt: value["updatedAt"],
 		writers,
 	};
-	if (isRuntimeString(value.runnerProcessStartIdentity)) {
-		registry.runnerProcessStartIdentity = value.runnerProcessStartIdentity;
+	if (isRuntimeString(value["runnerProcessStartIdentity"])) {
+		registry.runnerProcessStartIdentity = value["runnerProcessStartIdentity"];
 	}
-	if (value.writerStartupGate === "parent-pipe-v1") registry.writerStartupGate = value.writerStartupGate;
-	if (value.writerProcessGroup === "writer-pid-v1") registry.writerProcessGroup = value.writerProcessGroup;
+	if (value["writerStartupGate"] === "parent-pipe-v1") registry.writerStartupGate = value["writerStartupGate"];
+	if (value["writerProcessGroup"] === "writer-pid-v1") registry.writerProcessGroup = value["writerProcessGroup"];
 	return registry;
 }
 
 function parseWriterState(value: JsonValue): PersistedWriterState | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	if (value.state !== "none" && value.state !== "spawning" && value.state !== "running") return undefined;
-	if (value.state === "running") {
+	if (value["state"] !== "none" && value["state"] !== "spawning" && value["state"] !== "running") return undefined;
+	if (value["state"] === "running") {
 		if (
-			!positiveInteger(value.pid) ||
-			(value.processStartIdentity !== undefined && !isRuntimeString(value.processStartIdentity)) ||
-			(value.groupMemberProofFile !== undefined &&
-				(!isRuntimeString(value.groupMemberProofFile) || !safeProofFileName(value.groupMemberProofFile))) ||
-			(value.terminationRequestedAt !== undefined &&
-				(!isRuntimeNumber(value.terminationRequestedAt) || !Number.isFinite(value.terminationRequestedAt))) ||
-			(value.killRequestedAt !== undefined &&
-				(!isRuntimeNumber(value.killRequestedAt) || !Number.isFinite(value.killRequestedAt)))
+			!positiveInteger(value["pid"]) ||
+			(value["processStartIdentity"] !== undefined && !isRuntimeString(value["processStartIdentity"])) ||
+			(value["groupMemberProofFile"] !== undefined &&
+				(!isRuntimeString(value["groupMemberProofFile"]) || !safeProofFileName(value["groupMemberProofFile"]))) ||
+			(value["terminationRequestedAt"] !== undefined &&
+				(!isRuntimeNumber(value["terminationRequestedAt"]) || !Number.isFinite(value["terminationRequestedAt"]))) ||
+			(value["killRequestedAt"] !== undefined &&
+				(!isRuntimeNumber(value["killRequestedAt"]) || !Number.isFinite(value["killRequestedAt"])))
 		) {
 			return undefined;
 		}
-		const writer: PersistedWriterState = { state: "running", pid: value.pid };
-		if (isRuntimeString(value.processStartIdentity)) writer.processStartIdentity = value.processStartIdentity;
-		if (isRuntimeString(value.groupMemberProofFile)) writer.groupMemberProofFile = value.groupMemberProofFile;
-		if (isRuntimeNumber(value.terminationRequestedAt)) {
-			writer.terminationRequestedAt = value.terminationRequestedAt;
+		const writer: PersistedWriterState = { state: "running", pid: value["pid"] };
+		if (isRuntimeString(value["processStartIdentity"])) writer.processStartIdentity = value["processStartIdentity"];
+		if (isRuntimeString(value["groupMemberProofFile"])) writer.groupMemberProofFile = value["groupMemberProofFile"];
+		if (isRuntimeNumber(value["terminationRequestedAt"])) {
+			writer.terminationRequestedAt = value["terminationRequestedAt"];
 		}
-		if (isRuntimeNumber(value.killRequestedAt)) writer.killRequestedAt = value.killRequestedAt;
+		if (isRuntimeNumber(value["killRequestedAt"])) writer.killRequestedAt = value["killRequestedAt"];
 		return writer;
 	}
 	if (
-		value.pid !== undefined ||
-		value.processStartIdentity !== undefined ||
-		value.groupMemberProofFile !== undefined ||
-		value.terminationRequestedAt !== undefined ||
-		value.killRequestedAt !== undefined
+		value["pid"] !== undefined ||
+		value["processStartIdentity"] !== undefined ||
+		value["groupMemberProofFile"] !== undefined ||
+		value["terminationRequestedAt"] !== undefined ||
+		value["killRequestedAt"] !== undefined
 	) {
 		return undefined;
 	}
-	return { state: value.state };
+	return { state: value["state"] };
 }
 
 function positiveInteger(value: JsonValue | undefined): value is number {
@@ -515,23 +515,23 @@ export function readAuthenticatedGroupMember(
 			!parsed ||
 			!isRuntimeObject(parsed) ||
 			Array.isArray(parsed) ||
-			parsed.version !== 1 ||
-			parsed.groupLeaderPid !== writer.pid ||
-			parsed.groupLeaderProcessStartIdentity !== writer.processStartIdentity ||
-			!positiveInteger(parsed.memberPid) ||
-			!isRuntimeString(parsed.memberProcessStartIdentity)
+			parsed["version"] !== 1 ||
+			parsed["groupLeaderPid"] !== writer.pid ||
+			parsed["groupLeaderProcessStartIdentity"] !== writer.processStartIdentity ||
+			!positiveInteger(parsed["memberPid"]) ||
+			!isRuntimeString(parsed["memberProcessStartIdentity"])
 		) {
 			return undefined;
 		}
-		const snapshot = readSnapshot(parsed.memberPid);
+		const snapshot = readSnapshot(parsed["memberPid"]);
 		if (
 			!snapshot ||
-			snapshot.processStartIdentity !== parsed.memberProcessStartIdentity ||
+			snapshot.processStartIdentity !== parsed["memberProcessStartIdentity"] ||
 			snapshot.processGroupId !== writer.pid
 		) {
 			return undefined;
 		}
-		return { pid: parsed.memberPid, identity: parsed.memberProcessStartIdentity };
+		return { pid: parsed["memberPid"], identity: parsed["memberProcessStartIdentity"] };
 	} catch {
 		return undefined;
 	}

@@ -605,7 +605,7 @@ function processDurableControlRecords<T>(input: {
 	readonly parse: (raw: JsonValue) => T | undefined;
 	readonly callback: (value: T, complete: () => boolean) => undefined | "retain";
 	readonly kind: "interrupt" | "timeout" | "stop" | "steer" | "steer-ack";
-	readonly afterClaim?: (kind: string, claimedPath: string) => void;
+	readonly afterClaim?: ((kind: string, claimedPath: string) => void) | undefined;
 }): void {
 	const consumerId = randomUUID();
 	activeControlConsumers.add(consumerId);
@@ -919,7 +919,7 @@ function processSingletonRequest<T>(input: {
 	readonly parse: (raw: JsonValue) => T | undefined;
 	readonly callback: (request: T) => void;
 	readonly kind: "interrupt" | "timeout";
-	readonly afterClaim?: (kind: string, claimedPath: string) => void;
+	readonly afterClaim?: ((kind: string, claimedPath: string) => void) | undefined;
 }): void {
 	const name = path.basename(input.target);
 	processDurableControlRecords({
@@ -949,9 +949,8 @@ export function deliverInterruptRequest(input: {
 	now?: () => number;
 	source?: string;
 }): void {
-	const requestPath = requestAsyncInterrupt(input.asyncDir, input.source ? { source: input.source } : {}, {
-		now: input.now,
-	});
+	const timing = input.now === undefined ? {} : { now: input.now };
+	const requestPath = requestAsyncInterrupt(input.asyncDir, input.source ? { source: input.source } : {}, timing);
 	if (isRuntimeNumber(input.pid) && input.pid > 0) {
 		try {
 			(input.kill ?? process.kill)(input.pid, input.signal ?? INTERRUPT_SIGNAL);
@@ -978,7 +977,11 @@ export function deliverTimeoutRequest(input: {
 	now?: () => number;
 	source?: string;
 }): void {
-	requestAsyncTimeout(input.asyncDir, input.source ? { source: input.source } : {}, { now: input.now });
+	requestAsyncTimeout(
+		input.asyncDir,
+		input.source ? { source: input.source } : {},
+		input.now === undefined ? {} : { now: input.now },
+	);
 }
 
 export function deliverStopRequest(input: {
@@ -993,7 +996,7 @@ export function deliverStopRequest(input: {
 	const request: Omit<StopRequest, "type" | "id"> = {};
 	if (input.source) request.source = input.source;
 	if (input.targetIndex !== undefined) request.targetIndex = input.targetIndex;
-	requestAsyncStop(input.asyncDir, request, { now: input.now });
+	requestAsyncStop(input.asyncDir, request, input.now === undefined ? {} : { now: input.now });
 }
 
 /**

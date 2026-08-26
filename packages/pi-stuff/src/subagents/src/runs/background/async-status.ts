@@ -238,7 +238,7 @@ function deriveAsyncActivityState(asyncDir: string, status: AsyncStatus) {
 
 function statusToSummary(
 	asyncDir: string,
-	status: AsyncStatus & { cwd?: string },
+	status: AsyncStatus,
 	nestedWarnings: string[] = [],
 	nestedRoute?: NestedRoute,
 	projectNested = true,
@@ -349,22 +349,22 @@ function statusToSummary(
 		id: status.runId || path.basename(asyncDir),
 		asyncDir,
 		state: status.state,
-		activityState,
-		lastActivityAt,
-		currentTool: status.currentTool,
-		currentToolStartedAt: status.currentToolStartedAt,
-		currentPath: status.currentPath,
-		turnCount: status.turnCount,
-		toolCount: status.toolCount,
-		steering: status.steering,
 		mode: status.mode,
-		cwd: status.cwd,
 		startedAt: status.startedAt,
-		lastUpdate: status.lastUpdate,
-		endedAt: status.endedAt,
-		currentStep: status.currentStep,
 		steps: summarizedSteps,
 	};
+	if (activityState !== undefined) summary.activityState = activityState;
+	if (lastActivityAt !== undefined) summary.lastActivityAt = lastActivityAt;
+	if (status.currentTool !== undefined) summary.currentTool = status.currentTool;
+	if (status.currentToolStartedAt !== undefined) summary.currentToolStartedAt = status.currentToolStartedAt;
+	if (status.currentPath !== undefined) summary.currentPath = status.currentPath;
+	if (status.turnCount !== undefined) summary.turnCount = status.turnCount;
+	if (status.toolCount !== undefined) summary.toolCount = status.toolCount;
+	if (status.steering !== undefined) summary.steering = status.steering;
+	if (status.cwd !== undefined) summary.cwd = status.cwd;
+	if (status.lastUpdate !== undefined) summary.lastUpdate = status.lastUpdate;
+	if (status.endedAt !== undefined) summary.endedAt = status.endedAt;
+	if (status.currentStep !== undefined) summary.currentStep = status.currentStep;
 	if (status.sessionId) summary.sessionId = status.sessionId;
 	if (status.error) summary.error = status.error;
 	if (context) summary.context = context;
@@ -391,7 +391,7 @@ function statusToSummary(
 	return summary;
 }
 
-export function summarizeAsyncStatus(asyncDir: string, status: AsyncStatus & { cwd?: string }): AsyncRunSummary {
+export function summarizeAsyncStatus(asyncDir: string, status: AsyncStatus): AsyncRunSummary {
 	return statusToSummary(asyncDir, status);
 }
 

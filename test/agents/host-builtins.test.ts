@@ -35,9 +35,9 @@ test("MCP direct Tools cannot replace Pi's PowerShell built-in", async () => {
 	const cwd = join(directory, "project");
 	const cacheDirectory = join(directory, "cache");
 	try {
-		process.env.PI_CODING_AGENT_DIR = join(directory, "agent");
-		process.env.XDG_CACHE_HOME = cacheDirectory;
-		process.env.XDG_CONFIG_HOME = join(directory, "config");
+		process.env["PI_CODING_AGENT_DIR"] = join(directory, "agent");
+		process.env["XDG_CACHE_HOME"] = cacheDirectory;
+		process.env["XDG_CONFIG_HOME"] = join(directory, "config");
 		await mkdir(join(cacheDirectory, "pi-stuff", "mcp"), { recursive: true });
 		await mkdir(cwd, { recursive: true });
 		await writeFile(

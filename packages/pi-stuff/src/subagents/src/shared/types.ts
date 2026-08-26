@@ -43,7 +43,7 @@ interface TruncationResult {
 	truncated: boolean;
 	originalBytes?: number;
 	originalLines?: number;
-	artifactPath?: string;
+	artifactPath?: string | undefined;
 }
 
 export interface Usage {
@@ -111,8 +111,8 @@ export interface ControlConfig {
 	enabled?: boolean;
 	needsAttentionAfterMs?: number;
 	activeNoticeAfterMs?: number;
-	activeNoticeAfterTurns?: number;
-	activeNoticeAfterTokens?: number;
+	activeNoticeAfterTurns?: number | undefined;
+	activeNoticeAfterTokens?: number | undefined;
 	failedToolAttemptsBeforeAttention?: number;
 	notifyOn?: ControlEventType[];
 	notifyChannels?: ControlNotificationChannel[];
@@ -529,7 +529,7 @@ export interface ModelAttempt {
 	model: string;
 	success: boolean;
 	exitCode?: number | null;
-	error?: string;
+	error?: string | undefined;
 	usage?: Usage;
 }
 
@@ -842,7 +842,7 @@ export type ArtifactDirPreference = "project" | "session" | "temp";
 
 export interface ArtifactConfig {
 	enabled: boolean;
-	dir?: ArtifactDirPreference;
+	dir?: ArtifactDirPreference | undefined;
 	includeInput: boolean;
 	includeOutput: boolean;
 	includeJsonl: boolean;
@@ -867,7 +867,7 @@ export type NestedOwnerState = "live" | "gone" | "unknown";
 export interface NestedRunAddress {
 	id: string;
 	parentRunId: string;
-	parentStepIndex?: number;
+	parentStepIndex?: number | undefined;
 	parentAgent?: string;
 	depth: number;
 	path: Array<{ runId: string; stepIndex?: number; agent?: string }>;
@@ -906,7 +906,7 @@ export interface NestedStepSummary {
 	processTerminal?: ProcessTerminalV1;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
-	children?: NestedRunSummary[];
+	children?: NestedRunSummary[] | undefined;
 }
 
 export interface NestedRunSummary extends NestedRunAddress {
@@ -1005,114 +1005,116 @@ export interface AsyncStatus {
 	mode: SubagentRunMode;
 	isNested?: boolean;
 	/** Exact nested event route selected at launch; legacy statuses may omit it. */
-	nestedRoute?: NestedRouteInfo;
+	nestedRoute?: NestedRouteInfo | undefined;
 	state: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
-	error?: string;
-	activityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	toolCount?: number;
-	steering?: SteeringStatus;
+	error?: string | undefined;
+	activityState?: ActivityState | undefined;
+	lastActivityAt?: number | undefined;
+	currentTool?: string | undefined;
+	currentToolStartedAt?: number | undefined;
+	currentPath?: string | undefined;
+	turnCount?: number | undefined;
+	toolCount?: number | undefined;
+	steering?: SteeringStatus | undefined;
 	startedAt: number;
-	endedAt?: number;
-	lastUpdate?: number;
-	timeoutMs?: number;
-	deadlineAt?: number;
-	timedOut?: boolean;
-	stopped?: boolean;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-	toolBudget?: ToolBudgetState;
-	toolBudgetBlocked?: boolean;
+	endedAt?: number | undefined;
+	lastUpdate?: number | undefined;
+	timeoutMs?: number | undefined;
+	deadlineAt?: number | undefined;
+	timedOut?: boolean | undefined;
+	stopped?: boolean | undefined;
+	turnBudget?: TurnBudgetState | undefined;
+	turnBudgetExceeded?: boolean | undefined;
+	wrapUpRequested?: boolean | undefined;
+	toolBudget?: ToolBudgetState | undefined;
+	toolBudgetBlocked?: boolean | undefined;
 	pid?: number;
 	/** OS process-birth identity paired with pid to reject PID reuse. */
 	processStartIdentity?: string;
 	/** First escalation boundary for a proven, stale runner process. */
 	runnerTerminationRequestedAt?: number;
-	cwd?: string;
-	currentStep?: number;
+	cwd?: string | undefined;
+	currentStep?: number | undefined;
 	parallelGroups?: AsyncParallelGroupStatus[];
-	processTerminal?: ProcessTerminalV1;
+	processTerminal?: ProcessTerminalV1 | undefined;
 	launchContractDigest?: string;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
-	steps?: Array<{
-		agent: string;
-		/** Small explicit UI projection when recovery proves an unexpected owner crash. */
-		agentStatus?: "crashed";
-		/** In-memory compatibility proof recovered asynchronously from a legacy transcript. */
-		legacyFinalReportComplete?: true;
-		/** Resolved launch context for this child step. */
-		context?: "fresh" | "fork";
-		phase?: string;
-		/** Full execution task; legacy status files may only have label. */
-		task?: string;
-		/** Original delegated task before Suite-owned execution context is prepended. */
-		delegatedTask?: string;
-		label?: string;
-		outputName?: string;
-		structured?: boolean;
-		status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
-		children?: NestedRunSummary[];
-		sessionFile?: string;
-		transcriptPath?: string;
-		transcriptError?: string;
-		/** Bounded final Agent answer retained separately from recent activity. */
-		finalOutput?: string;
-		savedOutputPath?: string;
-		activityState?: ActivityState;
-		lastActivityAt?: number;
-		currentTool?: string;
-		currentToolArgs?: string;
-		currentToolStartedAt?: number;
-		currentPath?: string;
-		recentTools?: Array<{ tool: string; args: string; endMs: number }>;
-		recentOutput?: string[];
-		turnCount?: number;
-		toolCount?: number;
-		startedAt?: number;
-		endedAt?: number;
-		durationMs?: number;
-		exitCode?: number | null;
-		timedOut?: boolean;
-		stopped?: boolean;
-		turnBudget?: TurnBudgetState;
-		turnBudgetExceeded?: boolean;
-		wrapUpRequested?: boolean;
-		toolBudget?: ToolBudgetState;
-		toolBudgetBlocked?: boolean;
-		tokens?: TokenUsage;
-		contextUsage?: AgentContextUsage;
-		skills?: string[];
-		model?: string;
-		thinking?: string;
-		attemptedModels?: string[];
-		modelAttempts?: ModelAttempt[];
-		totalCost?: CostSummary;
-		steering?: SteeringStatus;
-		error?: string;
-		structuredOutput?: unknown;
-		structuredOutputPath?: string;
-		structuredOutputSchemaPath?: string;
-		acceptance?: AcceptanceLedger;
-		agentContract?: AgentContract;
-		launchContractDigest?: string;
-		execution?: ExecutionProjection;
-		review?: ReviewProjection;
-		effects?: EffectsProjection;
-		processTerminal?: ProcessTerminalV1;
-		capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-		capabilityAudit?: SubagentCapabilityAudit;
-	}>;
-	sessionDir?: string;
-	outputFile?: string;
-	totalTokens?: TokenUsage;
+	steps?:
+		| Array<{
+				agent: string;
+				/** Small explicit UI projection when recovery proves an unexpected owner crash. */
+				agentStatus?: "crashed";
+				/** In-memory compatibility proof recovered asynchronously from a legacy transcript. */
+				legacyFinalReportComplete?: true;
+				/** Resolved launch context for this child step. */
+				context?: "fresh" | "fork";
+				phase?: string;
+				/** Full execution task; legacy status files may only have label. */
+				task?: string;
+				/** Original delegated task before Suite-owned execution context is prepended. */
+				delegatedTask?: string;
+				label?: string;
+				outputName?: string;
+				structured?: boolean;
+				status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
+				children?: NestedRunSummary[] | undefined;
+				sessionFile?: string | undefined;
+				transcriptPath?: string | undefined;
+				transcriptError?: string | undefined;
+				/** Bounded final Agent answer retained separately from recent activity. */
+				finalOutput?: string | undefined;
+				savedOutputPath?: string | undefined;
+				activityState?: ActivityState | undefined;
+				lastActivityAt?: number;
+				currentTool?: string | undefined;
+				currentToolArgs?: string | undefined;
+				currentToolStartedAt?: number | undefined;
+				currentPath?: string | undefined;
+				recentTools?: Array<{ tool: string; args: string; endMs: number }>;
+				recentOutput?: string[] | undefined;
+				turnCount?: number;
+				toolCount?: number;
+				startedAt?: number;
+				endedAt?: number;
+				durationMs?: number | undefined;
+				exitCode?: number | null | undefined;
+				timedOut?: boolean | undefined;
+				stopped?: boolean | undefined;
+				turnBudget?: TurnBudgetState | undefined;
+				turnBudgetExceeded?: boolean | undefined;
+				wrapUpRequested?: boolean | undefined;
+				toolBudget?: ToolBudgetState | undefined;
+				toolBudgetBlocked?: boolean | undefined;
+				tokens?: TokenUsage | undefined;
+				contextUsage?: AgentContextUsage | undefined;
+				skills?: string[];
+				model?: string | undefined;
+				thinking?: string | undefined;
+				attemptedModels?: string[] | undefined;
+				modelAttempts?: ModelAttempt[] | undefined;
+				totalCost?: CostSummary | undefined;
+				steering?: SteeringStatus;
+				error?: string | undefined;
+				structuredOutput?: unknown;
+				structuredOutputPath?: string;
+				structuredOutputSchemaPath?: string;
+				acceptance?: AcceptanceLedger;
+				agentContract?: AgentContract;
+				launchContractDigest?: string;
+				execution?: ExecutionProjection;
+				review?: ReviewProjection;
+				effects?: EffectsProjection;
+				processTerminal?: ProcessTerminalV1;
+				capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+				capabilityAudit?: SubagentCapabilityAudit;
+		  }>
+		| undefined;
+	sessionDir?: string | undefined;
+	outputFile?: string | undefined;
+	totalTokens?: TokenUsage | undefined;
 	totalCost?: CostSummary;
-	sessionFile?: string;
+	sessionFile?: string | undefined;
 }
 
 export type AsyncJobStep = NonNullable<AsyncStatus["steps"]>[number] & {
@@ -1123,58 +1125,58 @@ export interface AsyncJobState {
 	asyncId: string;
 	asyncDir: string;
 	/** Parent-resolved launch directory retained for trusted live artifact lookup. */
-	cwd?: string;
+	cwd?: string | undefined;
 	status: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
-	error?: string;
+	error?: string | undefined;
 	/** Short caller-facing task/goal shown in Agent surfaces when available. */
-	description?: string;
+	description?: string | undefined;
 	/** Short per-child UI descriptions available before the first status poll. */
-	descriptions?: string[];
+	descriptions?: string[] | undefined;
 	/** Bounded per-child task previews available before the first status poll. */
-	tasks?: string[];
-	pid?: number;
-	sessionId?: string;
-	activityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	toolCount?: number;
-	steering?: SteeringStatus;
-	mode?: SubagentRunMode;
+	tasks?: string[] | undefined;
+	pid?: number | undefined;
+	sessionId?: string | undefined;
+	activityState?: ActivityState | undefined;
+	lastActivityAt?: number | undefined;
+	currentTool?: string | undefined;
+	currentToolStartedAt?: number | undefined;
+	currentPath?: string | undefined;
+	turnCount?: number | undefined;
+	toolCount?: number | undefined;
+	steering?: SteeringStatus | undefined;
+	mode?: SubagentRunMode | undefined;
 	/** Run-level context summary derived from step contexts. */
-	context?: "fresh" | "fork" | "mixed";
-	agents?: string[];
-	currentStep?: number;
-	parallelGroups?: AsyncParallelGroupStatus[];
+	context?: "fresh" | "fork" | "mixed" | undefined;
+	agents?: string[] | undefined;
+	currentStep?: number | undefined;
+	parallelGroups?: AsyncParallelGroupStatus[] | undefined;
 	steps?: AsyncJobStep[];
-	stepsTotal?: number;
+	stepsTotal?: number | undefined;
 	runningSteps?: number;
 	completedSteps?: number;
-	hasParallelGroups?: boolean;
-	activeParallelGroup?: boolean;
-	startedAt?: number;
-	updatedAt?: number;
-	timeoutMs?: number;
-	deadlineAt?: number;
-	timedOut?: boolean;
-	stopped?: boolean;
+	hasParallelGroups?: boolean | undefined;
+	activeParallelGroup?: boolean | undefined;
+	startedAt?: number | undefined;
+	updatedAt?: number | undefined;
+	timeoutMs?: number | undefined;
+	deadlineAt?: number | undefined;
+	timedOut?: boolean | undefined;
+	stopped?: boolean | undefined;
 	/** Detached runner/writer proof; pending/unknown keeps physical recovery polled. */
-	processTerminal?: ProcessTerminalV1;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-	toolBudget?: ToolBudgetState;
-	toolBudgetBlocked?: boolean;
-	sessionDir?: string;
-	outputFile?: string;
-	totalTokens?: TokenUsage;
-	sessionFile?: string;
+	processTerminal?: ProcessTerminalV1 | undefined;
+	turnBudget?: TurnBudgetState | undefined;
+	turnBudgetExceeded?: boolean | undefined;
+	wrapUpRequested?: boolean | undefined;
+	toolBudget?: ToolBudgetState | undefined;
+	toolBudgetBlocked?: boolean | undefined;
+	sessionDir?: string | undefined;
+	outputFile?: string | undefined;
+	totalTokens?: TokenUsage | undefined;
+	sessionFile?: string | undefined;
 	controlEventCursor?: number;
 	/** A restored observer failed to stat events; first successful read starts at EOF. */
-	controlEventCursorPending?: boolean;
-	nestedRoute?: NestedRouteInfo;
+	controlEventCursorPending?: boolean | undefined;
+	nestedRoute?: NestedRouteInfo | undefined;
 	nestedChildren?: NestedRunSummary[];
 }
 
@@ -1182,8 +1184,8 @@ export interface ForegroundResumeChild {
 	agent: string;
 	index: number;
 	cwd?: string;
-	description?: string;
-	task?: string;
+	description?: string | undefined;
+	task?: string | undefined;
 	startedAt?: number;
 	context?: "fresh" | "fork";
 	sessionFile?: string;
@@ -1192,11 +1194,11 @@ export interface ForegroundResumeChild {
 	status: SubagentResultStatus;
 	/** Explicit process proof projected by the shared foreground runner. */
 	crashed?: boolean;
-	activityState?: ActivityState;
+	activityState?: ActivityState | undefined;
 	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
+	currentTool?: string | undefined;
+	currentToolStartedAt?: number | undefined;
+	currentPath?: string | undefined;
 	turnCount?: number;
 	tokens?: number;
 	contextUsage?: AgentContextUsage;
@@ -1239,24 +1241,24 @@ export interface ForegroundResumeRun {
 export interface ForegroundChildControl {
 	index: number;
 	agent: string;
-	description?: string;
+	description?: string | undefined;
 	task?: string;
 	startedAt: number;
 	updatedAt: number;
 	status?: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
-	currentActivityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
+	currentActivityState?: ActivityState | undefined;
+	lastActivityAt?: number | undefined;
+	currentTool?: string | undefined;
+	currentToolStartedAt?: number | undefined;
+	currentPath?: string | undefined;
+	turnCount?: number | undefined;
 	tokens?: number;
-	contextUsage?: AgentContextUsage;
+	contextUsage?: AgentContextUsage | undefined;
 	inputTokens?: number;
 	outputTokens?: number;
 	model?: string;
 	thinking?: string;
-	toolCount?: number;
+	toolCount?: number | undefined;
 	interrupt?: () => boolean;
 }
 
@@ -1495,7 +1497,7 @@ export function resolveTempScopeId(options?: {
 		// Fall through to home-directory-based scoping.
 	}
 
-	const homedir = env.USERPROFILE ?? env.HOME;
+	const homedir = env["USERPROFILE"] ?? env["HOME"];
 	if (homedir) return `home-${sanitizeTempScopeSegment(homedir)}`;
 
 	const resolveHomedir = options && Object.hasOwn(options, "homedir") ? options.homedir : os.homedir;
@@ -1599,7 +1601,7 @@ export function normalizeMaxSubagentDepth(value: NumericConfigInput): number | u
 
 export function resolveCurrentMaxSubagentDepth(configMaxDepth?: number): number {
 	return (
-		normalizeMaxSubagentDepth(process.env.PI_SUBAGENT_MAX_DEPTH) ??
+		normalizeMaxSubagentDepth(process.env["PI_SUBAGENT_MAX_DEPTH"]) ??
 		normalizeMaxSubagentDepth(configMaxDepth) ??
 		DEFAULT_SUBAGENT_MAX_DEPTH
 	);
@@ -1612,7 +1614,7 @@ export function resolveChildMaxSubagentDepth(parentMaxDepth: number, agentMaxDep
 }
 
 export function checkSubagentDepth(configMaxDepth?: number) {
-	const depth = Number(process.env.PI_SUBAGENT_DEPTH ?? "0");
+	const depth = Number(process.env["PI_SUBAGENT_DEPTH"] ?? "0");
 	const maxDepth = resolveCurrentMaxSubagentDepth(configMaxDepth);
 	const blocked = Number.isFinite(depth) && depth >= maxDepth;
 	return { blocked, depth, maxDepth };
@@ -1624,13 +1626,13 @@ export interface SubagentDepthEnvironment {
 }
 
 export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = process.env): SubagentDepthEnvironment {
-	const parentDepth = Number(env.PI_SUBAGENT_DEPTH ?? "0");
+	const parentDepth = Number(env["PI_SUBAGENT_DEPTH"] ?? "0");
 	const nextDepth = Number.isFinite(parentDepth) ? parentDepth + 1 : 1;
 	return {
 		PI_SUBAGENT_DEPTH: String(nextDepth),
 		PI_SUBAGENT_MAX_DEPTH: String(
 			normalizeMaxSubagentDepth(maxDepth) ??
-				normalizeMaxSubagentDepth(env.PI_SUBAGENT_MAX_DEPTH) ??
+				normalizeMaxSubagentDepth(env["PI_SUBAGENT_MAX_DEPTH"]) ??
 				DEFAULT_SUBAGENT_MAX_DEPTH,
 		),
 	};
@@ -1642,7 +1644,7 @@ export function normalizeMaxSubagentSpawnsPerSession(value: NumericConfigInput):
 }
 
 export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): number {
-	const envMaxSpawns = normalizeMaxSubagentSpawnsPerSession(process.env.PI_SUBAGENT_MAX_SPAWNS_PER_SESSION);
+	const envMaxSpawns = normalizeMaxSubagentSpawnsPerSession(process.env["PI_SUBAGENT_MAX_SPAWNS_PER_SESSION"]);
 	if (envMaxSpawns !== undefined) return envMaxSpawns;
 	const configuredMaxSpawns = normalizeMaxSubagentSpawnsPerSession(configMaxSpawns);
 	return configuredMaxSpawns ?? 200;

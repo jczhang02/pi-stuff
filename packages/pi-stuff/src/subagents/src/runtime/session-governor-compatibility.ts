@@ -242,28 +242,28 @@ async function readCurrentBarrierOwner(ownerPath: string): Promise<CurrentBarrie
 		!isRuntimeObject(value) ||
 		value === null ||
 		!("token" in value) ||
-		!isRuntimeString(value.token) ||
-		!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.token) ||
+		!isRuntimeString(value["token"]) ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value["token"]) ||
 		!("pid" in value) ||
-		!isRuntimeNumber(value.pid) ||
-		!Number.isSafeInteger(value.pid) ||
-		value.pid <= 0 ||
+		!isRuntimeNumber(value["pid"]) ||
+		!Number.isSafeInteger(value["pid"]) ||
+		value["pid"] <= 0 ||
 		!("processStartIdentity" in value) ||
-		!isRuntimeString(value.processStartIdentity) ||
-		value.processStartIdentity.length === 0 ||
-		value.processStartIdentity.length > 512 ||
+		!isRuntimeString(value["processStartIdentity"]) ||
+		value["processStartIdentity"].length === 0 ||
+		value["processStartIdentity"].length > 512 ||
 		!("acquiredAtMs" in value) ||
-		!isRuntimeNumber(value.acquiredAtMs) ||
-		!Number.isSafeInteger(value.acquiredAtMs) ||
-		value.acquiredAtMs <= 0
+		!isRuntimeNumber(value["acquiredAtMs"]) ||
+		!Number.isSafeInteger(value["acquiredAtMs"]) ||
+		value["acquiredAtMs"] <= 0
 	) {
 		return undefined;
 	}
 	return {
-		token: value.token,
-		pid: value.pid,
-		processStartIdentity: value.processStartIdentity,
-		acquiredAtMs: value.acquiredAtMs,
+		token: value["token"],
+		pid: value["pid"],
+		processStartIdentity: value["processStartIdentity"],
+		acquiredAtMs: value["acquiredAtMs"],
 	};
 }
 

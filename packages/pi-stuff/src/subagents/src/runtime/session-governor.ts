@@ -33,7 +33,7 @@ export interface SessionAgentGovernorOptions {
 	readonly rootDir: string;
 	readonly sessionId: string;
 	readonly ownerAgentPath?: readonly string[];
-	readonly limits?: SessionGovernorLimitInput;
+	readonly limits?: SessionGovernorLimitInput | undefined;
 	readonly pid?: number;
 	readonly now?: () => number;
 	readonly token?: () => string;
@@ -42,7 +42,7 @@ export interface SessionAgentGovernorOptions {
 	readonly staleLockMs?: number;
 	readonly isLockOwnerAlive?: (pid: number) => boolean | undefined;
 	readonly readProcessStartIdentity?: (pid: number) => string | undefined;
-	readonly readSystemBootIdentity?: () => string | undefined;
+	readonly readSystemBootIdentity?: (() => string | undefined) | undefined;
 	readonly fs?: SessionGovernorFileSystem;
 }
 

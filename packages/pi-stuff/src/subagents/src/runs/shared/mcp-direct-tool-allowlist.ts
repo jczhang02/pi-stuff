@@ -82,25 +82,25 @@ interface MetadataCache {
 
 function cachedTool(value: JsonValue): CachedTool | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	return isRuntimeString(value.name) ? { name: value.name } : {};
+	return isRuntimeString(value["name"]) ? { name: value["name"] } : {};
 }
 
 function cachedResource(value: JsonValue): CachedResource | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const resource: CachedResource = {};
-	if (isRuntimeString(value.name)) resource.name = value.name;
-	if (isRuntimeString(value.uri)) resource.uri = value.uri;
+	if (isRuntimeString(value["name"])) resource.name = value["name"];
+	if (isRuntimeString(value["uri"])) resource.uri = value["uri"];
 	return resource;
 }
 
 function serverCacheEntry(value: JsonValue): ServerCacheEntry | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const entry: ServerCacheEntry = {};
-	if (isRuntimeString(value.configHash)) entry.configHash = value.configHash;
-	if (isRuntimeNumber(value.cachedAt)) entry.cachedAt = value.cachedAt;
-	if (Array.isArray(value.tools)) entry.tools = value.tools.flatMap((tool) => cachedTool(tool) ?? []);
-	if (Array.isArray(value.resources)) {
-		entry.resources = value.resources.flatMap((resource) => cachedResource(resource) ?? []);
+	if (isRuntimeString(value["configHash"])) entry.configHash = value["configHash"];
+	if (isRuntimeNumber(value["cachedAt"])) entry.cachedAt = value["cachedAt"];
+	if (Array.isArray(value["tools"])) entry.tools = value["tools"].flatMap((tool) => cachedTool(tool) ?? []);
+	if (Array.isArray(value["resources"])) {
+		entry.resources = value["resources"].flatMap((resource) => cachedResource(resource) ?? []);
 	}
 	return entry;
 }
@@ -153,15 +153,15 @@ function loadMetadataCache(): MetadataCache | null {
 		!parsed ||
 		!isRuntimeObject(parsed) ||
 		Array.isArray(parsed) ||
-		parsed.version !== CACHE_VERSION ||
-		!parsed.servers ||
-		!isRuntimeObject(parsed.servers) ||
-		Array.isArray(parsed.servers)
+		parsed["version"] !== CACHE_VERSION ||
+		!parsed["servers"] ||
+		!isRuntimeObject(parsed["servers"]) ||
+		Array.isArray(parsed["servers"])
 	) {
 		return null;
 	}
 	const servers = Object.fromEntries(
-		Object.entries(parsed.servers).flatMap(([name, value]) => {
+		Object.entries(parsed["servers"]).flatMap(([name, value]) => {
 			const entry = serverCacheEntry(value);
 			return entry ? [[name, entry]] : [];
 		}),
@@ -236,16 +236,22 @@ function serverEntry(value: JsonValue): McpDirectToolServerEntry | undefined {
 		if (field !== undefined && !parsed) return undefined;
 		if (parsed) entry[key] = parsed;
 	}
-	if (value.auth !== undefined && value.auth !== "oauth" && value.auth !== "bearer" && value.auth !== false) {
+	if (
+		value["auth"] !== undefined &&
+		value["auth"] !== "oauth" &&
+		value["auth"] !== "bearer" &&
+		value["auth"] !== false
+	) {
 		return undefined;
 	}
-	if (value.auth === "oauth" || value.auth === "bearer" || value.auth === false) entry.auth = value.auth;
-	if (value.exposeResources !== undefined && !isRuntimeBoolean(value.exposeResources)) return undefined;
-	if (isRuntimeBoolean(value.exposeResources)) entry.exposeResources = value.exposeResources;
-	if (value.directTools !== undefined) {
-		const directTools = stringArray(value.directTools);
-		if (!isRuntimeBoolean(value.directTools) && !directTools) return undefined;
-		entry.directTools = isRuntimeBoolean(value.directTools) ? value.directTools : directTools;
+	if (value["auth"] === "oauth" || value["auth"] === "bearer" || value["auth"] === false) entry.auth = value["auth"];
+	if (value["exposeResources"] !== undefined && !isRuntimeBoolean(value["exposeResources"])) return undefined;
+	if (isRuntimeBoolean(value["exposeResources"])) entry.exposeResources = value["exposeResources"];
+	if (value["directTools"] !== undefined) {
+		const directTools = stringArray(value["directTools"]);
+		if (!isRuntimeBoolean(value["directTools"]) && !directTools) return undefined;
+		if (isRuntimeBoolean(value["directTools"])) entry.directTools = value["directTools"];
+		else if (directTools) entry.directTools = directTools;
 	}
 	return entry;
 }
@@ -263,29 +269,29 @@ function serverEntries(value: JsonValue | undefined): Record<string, McpDirectTo
 function configSettings(value: JsonValue | undefined): McpConfig["settings"] | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const settings: NonNullable<McpConfig["settings"]> = {};
-	if (value.toolPrefix === "server" || value.toolPrefix === "none" || value.toolPrefix === "short") {
-		settings.toolPrefix = value.toolPrefix;
+	if (value["toolPrefix"] === "server" || value["toolPrefix"] === "none" || value["toolPrefix"] === "short") {
+		settings.toolPrefix = value["toolPrefix"];
 	}
-	if (isRuntimeBoolean(value.directTools)) settings.directTools = value.directTools;
+	if (isRuntimeBoolean(value["directTools"])) settings.directTools = value["directTools"];
 	return settings;
 }
 
 function validateConfig(raw: JsonValue): McpConfig {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return { mcpServers: {} };
-	const config: McpConfig = { mcpServers: serverEntries(raw.mcpServers ?? raw["mcp-servers"] ?? {}) };
-	if (Array.isArray(raw.imports)) config.imports = raw.imports.filter(isImportKind);
-	const settings = configSettings(raw.settings);
+	const config: McpConfig = { mcpServers: serverEntries(raw["mcpServers"] ?? raw["mcp-servers"] ?? {}) };
+	if (Array.isArray(raw["imports"])) config.imports = raw["imports"].filter(isImportKind);
+	const settings = configSettings(raw["settings"]);
 	if (settings) config.settings = settings;
 	return config;
 }
 
 function mergeConfigs(base: McpConfig, next: McpConfig): McpConfig {
 	const imports = [...(base.imports ?? []), ...(next.imports ?? [])];
-	return {
-		mcpServers: { ...base.mcpServers, ...next.mcpServers },
-		imports: imports.length ? [...new Set(imports)] : undefined,
-		settings: next.settings ? { ...base.settings, ...next.settings } : base.settings,
-	};
+	const merged: McpConfig = { mcpServers: { ...base.mcpServers, ...next.mcpServers } };
+	if (imports.length) merged.imports = [...new Set(imports)];
+	const settings = next.settings ? { ...base.settings, ...next.settings } : base.settings;
+	if (settings) merged.settings = settings;
+	return merged;
 }
 
 function expandImports(config: McpConfig, cwd: string): McpConfig {
@@ -306,11 +312,12 @@ function expandImports(config: McpConfig, cwd: string): McpConfig {
 		}
 	}
 
-	return {
+	const expanded: McpConfig = {
 		imports: config.imports,
-		settings: config.settings,
 		mcpServers: { ...importedServers, ...config.mcpServers },
 	};
+	if (config.settings) expanded.settings = config.settings;
+	return expanded;
 }
 
 function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
@@ -325,8 +332,8 @@ function extractServers(config: JsonValue, kind: ImportKind): Record<string, Mcp
 	if (!config || !isRuntimeObject(config) || Array.isArray(config)) return {};
 	const servers =
 		kind === "cursor" || kind === "windsurf" || kind === "vscode"
-			? (config.mcpServers ?? config["mcp-servers"])
-			: config.mcpServers;
+			? (config["mcpServers"] ?? config["mcp-servers"])
+			: config["mcpServers"];
 	return serverEntries(servers);
 }
 

@@ -186,14 +186,21 @@ export function compactNestedResultChildren(
 	return compact.length ? compact : undefined;
 }
 
+function compactResultChild(child: SubagentResultIntercomChild): SubagentResultIntercomChild {
+	const compact = compactNestedResultChildren(child.children);
+	const projected = { ...child };
+	delete projected.children;
+	if (compact) projected.children = compact;
+	return projected;
+}
+
 export function attachNestedChildrenToResultChildren(
 	runId: string,
 	children: SubagentResultIntercomChild[],
 	nestedChildren: NestedRunSummary[] | undefined,
 ): SubagentResultIntercomChild[] {
 	const compact = compactNestedResultChildren(nestedChildren);
-	if (!compact?.length)
-		return children.map((child) => ({ ...child, children: compactNestedResultChildren(child.children) }));
+	if (!compact?.length) return children.map(compactResultChild);
 	return children.map((child, index) => {
 		const childIndex = child.index ?? index;
 		const alreadyAttachedIds = new Set(child.children?.map((nested) => nested.id) ?? []);
@@ -211,7 +218,10 @@ export function attachNestedChildrenToResultChildren(
 					)
 				: [];
 		const merged = compactNestedResultChildren([...(child.children ?? []), ...attached, ...fallbackAttached]);
-		return merged?.length ? { ...child, children: merged } : { ...child, children: undefined };
+		const projected = { ...child };
+		delete projected.children;
+		if (merged?.length) projected.children = merged;
+		return projected;
 	});
 }
 
@@ -250,9 +260,8 @@ export function buildSubagentResultIntercomPayload(
 	input: GroupedResultIntercomMessageInput,
 ): SubagentResultIntercomPayload {
 	const children = input.children.map((child) => ({
-		...child,
+		...compactResultChild(child),
 		summary: scanAgentReport(child.summary.trim() || "(no output)").text.slice(0, 4_000),
-		children: compactNestedResultChildren(child.children),
 	}));
 	const status = resolveGroupedStatus(children);
 	const summary = formatStatusCounts(countStatuses(children));

@@ -82,47 +82,47 @@ function jsonObject(value: JsonValue): JsonObject {
 function validateTaskResult(value: JsonValue, source: string): BackgroundTaskResult {
 	const candidate = jsonObject(value);
 	if (
-		!isRuntimeString(candidate.agent) ||
-		!isRuntimeString(candidate.output) ||
-		!isRuntimeBoolean(candidate.success) ||
-		!(candidate.exitCode === null || isRuntimeNumber(candidate.exitCode))
+		!isRuntimeString(candidate["agent"]) ||
+		!isRuntimeString(candidate["output"]) ||
+		!isRuntimeBoolean(candidate["success"]) ||
+		!(candidate["exitCode"] === null || isRuntimeNumber(candidate["exitCode"]))
 	) {
 		throw new Error(`Foreground Agent task result is malformed: ${source}`);
 	}
 	// SAFETY: the foreground result is runner-owned JSON whose required task fields were validated above.
 	return {
 		...candidate,
-		agent: candidate.agent,
-		exitCode: candidate.exitCode,
-		output: candidate.output,
-		success: candidate.success,
+		agent: candidate["agent"],
+		exitCode: candidate["exitCode"],
+		output: candidate["output"],
+		success: candidate["success"],
 	} as BackgroundTaskResult;
 }
 
 function validateCompletion(value: JsonValue, source: string): ForegroundCompletion {
 	const candidate = jsonObject(value);
 	if (
-		!isRuntimeString(candidate.id) ||
-		!isRuntimeString(candidate.runId) ||
-		(candidate.mode !== "single" && candidate.mode !== "parallel") ||
-		!Array.isArray(candidate.results) ||
-		!isRuntimeBoolean(candidate.success)
+		!isRuntimeString(candidate["id"]) ||
+		!isRuntimeString(candidate["runId"]) ||
+		(candidate["mode"] !== "single" && candidate["mode"] !== "parallel") ||
+		!Array.isArray(candidate["results"]) ||
+		!isRuntimeBoolean(candidate["success"])
 	) {
 		throw new Error(`Foreground Agent result is malformed: ${source}`);
 	}
-	const state = candidate.state;
+	const state = candidate["state"];
 	if (state !== "complete" && state !== "failed" && state !== "stopped" && state !== "paused") {
 		throw new Error(`Foreground Agent result has an invalid state: ${source}`);
 	}
 	// SAFETY: the runner-owned completion fields and every child result were validated above.
 	return {
 		...candidate,
-		id: candidate.id,
-		mode: candidate.mode,
-		results: candidate.results.map((result) => validateTaskResult(result, source)),
-		runId: candidate.runId,
+		id: candidate["id"],
+		mode: candidate["mode"],
+		results: candidate["results"].map((result) => validateTaskResult(result, source)),
+		runId: candidate["runId"],
 		state,
-		success: candidate.success,
+		success: candidate["success"],
 	} as ForegroundCompletion;
 }
 
@@ -343,7 +343,8 @@ function projectForegroundStatus(
 		if (step.thinking) projected.thinking = step.thinking;
 		if (step.attemptedModels) projected.attemptedModels = [...step.attemptedModels];
 		if (step.modelAttempts) projected.modelAttempts = step.modelAttempts.map((attempt) => ({ ...attempt }));
-		if (step.error || (!detached && status.error)) projected.error = step.error ?? status.error;
+		if (step.error) projected.error = step.error;
+		else if (!detached && status.error) projected.error = status.error;
 		if (step.sessionFile) projected.sessionFile = step.sessionFile;
 		if (step.transcriptPath) projected.transcriptPath = step.transcriptPath;
 		if (step.transcriptError) projected.transcriptError = step.transcriptError;

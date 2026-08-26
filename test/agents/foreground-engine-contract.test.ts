@@ -11,6 +11,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
+import type { executeAsyncSingle } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-execution.js";
 import { steerRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import { createInitialStatus } from "../../packages/pi-stuff/src/subagents/src/runs/background/initial-status.js";
 import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
@@ -27,7 +28,10 @@ import {
 	projectNestedEvents,
 	writeNestedEvent,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
-import type { BackgroundRunnerConfig } from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
+import type {
+	BackgroundRunnerConfig,
+	BackgroundTaskResult,
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
 import {
 	SUBAGENT_CHILD_ENV,
 	SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV,
@@ -134,13 +138,14 @@ function state(): SubagentState {
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 
 function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameters" | "promptGuidelines">): ToolInfo {
-	return {
+	const info: ToolInfo = {
 		description: tool.description,
 		name: tool.name,
 		parameters: tool.parameters,
-		promptGuidelines: tool.promptGuidelines,
 		sourceInfo: createSyntheticSourceInfo(`/test/${tool.name}`, { source: "extension" }),
 	};
+	if (tool.promptGuidelines !== undefined) info.promptGuidelines = tool.promptGuidelines;
+	return info;
 }
 
 function userEntry(content: string): SessionEntry {
@@ -223,24 +228,7 @@ function context(
 function executor(
 	cwd: string,
 	runState: SubagentState,
-	onBackgroundSingle?: (launch: {
-		agentConfig?: AgentConfig;
-		capabilityCeiling?: { allowedTools?: "*" | string[] };
-		codeModeEnabled?: boolean;
-		cwd?: string;
-		description?: string;
-		modelCandidates?: string[];
-		nestedRoute?: {
-			rootRunId: string;
-			eventSink: string;
-			controlInbox: string;
-			capabilityToken: string;
-		};
-		parentRunOrigin?: "automatic" | "user";
-		sessionFile?: string;
-		task: string;
-		timeoutMs?: number;
-	}) => void,
+	onBackgroundSingle?: (launch: Parameters<typeof executeAsyncSingle>[1]) => void,
 	options: {
 		agent?: AgentConfig;
 		agents?: AgentConfig[];
@@ -297,32 +285,29 @@ function executor(
 					state: options.foregroundCrash ? "failed" : "complete",
 					success: !options.foregroundCrash,
 					results: (config.work.mode === "single" ? [config.work.task] : config.work.group.tasks).map(
-						(task, index) =>
-							Object.assign(
-								{
-									agent: task.agent,
-									context: task.context,
-									output: `result-${index + 1}`,
-									success: !options.foregroundCrash,
-									exitCode: options.foregroundCrash ? 1 : 0,
-									sessionFile: path.join(cwd, `child-${index}.jsonl`),
-								},
-								options.foregroundCrash
-									? {
-											writerProcesses: [
-												{
-													attempt: 0,
-													closeObservedAt: Date.now(),
-													exitCode: null,
-													kind: "pi-writer" as const,
-													processInstanceId: "external-crash",
-													signal: "SIGSEGV" as const,
-													terminationOrigin: "external" as const,
-												},
-											],
-										}
-									: undefined,
-							),
+						(task, index) => {
+							const result: BackgroundTaskResult = {
+								agent: task.agent,
+								output: `result-${index + 1}`,
+								success: !options.foregroundCrash,
+								exitCode: options.foregroundCrash ? 1 : 0,
+								sessionFile: path.join(cwd, `child-${index}.jsonl`),
+							};
+							if (task.context !== undefined) result.context = task.context;
+							if (options.foregroundCrash)
+								result.writerProcesses = [
+									{
+										attempt: 0,
+										closeObservedAt: Date.now(),
+										exitCode: null,
+										kind: "pi-writer",
+										processInstanceId: "external-crash",
+										signal: "SIGSEGV",
+										terminationOrigin: "external",
+									},
+								];
+							return result;
+						},
 					),
 				});
 			},
@@ -1016,13 +1001,7 @@ describe("reduced foreground Agent engine", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured:
-			| {
-					description?: string;
-					nestedRoute?: { rootRunId: string; eventSink: string; controlInbox: string; capabilityToken: string };
-					task: string;
-			  }
-			| undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		const requestedBudgets: number[] = [];
 		const smallAgent = { ...agent(), model: "test/large", fallbackModels: ["test/small"] };
 		await executor(
@@ -1070,7 +1049,7 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const requestedBudgets: number[] = [];
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 3_500);
 		ctx.sessionManager.openSession = () => {
@@ -1107,7 +1086,7 @@ describe("reduced foreground Agent engine", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-too-large-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 7_000);
 		ctx.sessionManager.openSession = () => {
@@ -1379,7 +1358,7 @@ describe("reduced foreground Agent engine", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-filter-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured: { modelCandidates?: string[]; sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		const result = await executor(
 			cwd,
 			state(),
@@ -1441,7 +1420,7 @@ describe("reduced foreground Agent engine", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-effective-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "large", contextWindow: 128_000, maxTokens: 8_000 }], 70_000);
 		ctx.sessionManager.buildContextEntries = () => [userEntry("x".repeat(2_000_000))];
@@ -1481,7 +1460,7 @@ describe("reduced foreground Agent engine", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-unmeasured-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 500);
 		ctx.sessionManager.buildContextEntries = () => {
@@ -1722,7 +1701,7 @@ describe("reduced foreground Agent engine", () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		let projectionCalls = 0;
 
 		const result = await executor(
@@ -1776,7 +1755,7 @@ describe("reduced foreground Agent engine", () => {
 			return { createBranchedSession: () => path.join(parentCwd, "child.jsonl") };
 		};
 		let projectionCalls = 0;
-		let captured: { sessionFile?: string; task: string } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 
 		const result = await executor(
 			parentCwd,
@@ -1944,14 +1923,7 @@ describe("reduced foreground Agent engine", () => {
 			sessionId: sessionIdentity,
 			updatedAt: 1_000,
 		});
-		let captured:
-			| {
-					codeModeEnabled?: boolean;
-					description?: string;
-					nestedRoute?: { rootRunId: string; eventSink: string; controlInbox: string; capabilityToken: string };
-					task: string;
-			  }
-			| undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		const result = await executor(
 			cwd,
 			runState,
@@ -2069,7 +2041,7 @@ describe("reduced foreground Agent engine", () => {
 			[SUBAGENT_PARENT_DEPTH_ENV]: "1",
 		};
 		const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]] as const));
-		let captured: { nestedRoute?: typeof route } | undefined;
+		let captured: Parameters<typeof executeAsyncSingle>[1] | undefined;
 		try {
 			Object.assign(process.env, environment);
 			const result = await executor(cwd, runState, (launch) => {

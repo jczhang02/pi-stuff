@@ -292,7 +292,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 			],
 		}),
 	).toBe("reviewer · Inspect the partial payload.");
-	expect(presentation.target?.({ agent: undefined, task: undefined })).toBe("");
+	expect(presentation.target?.({})).toBe("");
 	const longReport = {
 		content: [
 			{ type: "text" as const, text: "Agent general-purpose returned a deliberately long final report.".repeat(20) },
@@ -1465,6 +1465,7 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 	});
 	handlers.get("agent_start")?.({});
 	const formatted = delivered[0];
+	if (formatted === undefined) throw new Error("Expected steering delivery");
 	expect(formatted).toContain("Finish the accepted work.");
 	handlers.get("input")?.({ content: formatted, source: "extension", streamingBehavior: "steer" });
 	expect(existsSync(steerAckPathFromDir(ackDir, "shutdown-retry-ack"))).toBe(false);
@@ -1553,8 +1554,10 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 	replacementHandlers.get("session_start")?.({});
 	replacementHandlers.get("agent_start")?.({});
 	expect(replacementDeliveries).toHaveLength(1);
+	const replacementDelivery = replacementDeliveries[0];
+	if (replacementDelivery === undefined) throw new Error("Expected replacement steering delivery");
 	replacementHandlers.get("input")?.({
-		content: replacementDeliveries[0],
+		content: replacementDelivery,
 		source: "extension",
 	});
 	expect(readFileSync(steerAckPathFromDir(ackDir, request.id), "utf-8")).toContain('"state": "delivered"');
@@ -1655,7 +1658,9 @@ test("polling delivers and acknowledges steering exactly once when fs.watch stay
 		expect(delivered).toEqual([]);
 		poll();
 		expect(delivered).toHaveLength(1);
-		handlers.get("input")?.({ content: delivered[0], source: "extension", streamingBehavior: "steer" });
+		const delivery = delivered[0];
+		if (delivery === undefined) throw new Error("Expected polled steering delivery");
+		handlers.get("input")?.({ content: delivery, source: "extension", streamingBehavior: "steer" });
 		expect(readFileSync(steerAckPathFromDir(ackDir, "poll-fallback"), "utf-8")).toContain('"state": "delivered"');
 		poll();
 		expect(delivered).toHaveLength(1);

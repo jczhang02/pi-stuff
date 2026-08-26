@@ -156,8 +156,8 @@ function contentText(value: JsonValue | undefined): string {
 			if (isRuntimeString(item)) return item;
 			const part = record(item);
 			if (!part) return "";
-			if (isRuntimeString(part.text)) return part.text;
-			if (isRuntimeString(part.content)) return part.content;
+			if (isRuntimeString(part["text"])) return part["text"];
+			if (isRuntimeString(part["content"])) return part["content"];
 			return "";
 		})
 		.filter(Boolean)
@@ -199,13 +199,17 @@ interface MessageProjection {
 }
 
 function messageBlock(entry: JsonObject, agentName: string): MessageProjection | null {
-	const message = record(entry.message);
-	const role = isRuntimeString(entry.role) ? entry.role : isRuntimeString(message?.role) ? message.role : undefined;
+	const message = record(entry["message"]);
+	const role = isRuntimeString(entry["role"])
+		? entry["role"]
+		: isRuntimeString(message?.["role"])
+			? message["role"]
+			: undefined;
 	const text =
-		(isRuntimeString(entry.text) ? entry.text : "") ||
-		contentText(entry.content) ||
-		(isRuntimeString(message?.text) ? message.text : "") ||
-		contentText(message?.content);
+		(isRuntimeString(entry["text"]) ? entry["text"] : "") ||
+		contentText(entry["content"]) ||
+		(isRuntimeString(message?.["text"]) ? message["text"] : "") ||
+		contentText(message?.["content"]);
 	if (!text.trim()) return null;
 	if (role === "assistant") return { speaker: agentName, text: text.trim() };
 	if (role === "user") return { speaker: "You", text: text.trim() };
@@ -228,12 +232,12 @@ type ParsedTranscriptItem =
 	| { readonly kind: "tool"; tool: ToolProjection };
 
 function toolResultText(entry: JsonObject): string {
-	const message = record(entry.message);
+	const message = record(entry["message"]);
 	return (
-		(isRuntimeString(entry.text) ? entry.text : "") ||
-		contentText(entry.content) ||
-		(isRuntimeString(message?.text) ? message.text : "") ||
-		contentText(message?.content)
+		(isRuntimeString(entry["text"]) ? entry["text"] : "") ||
+		contentText(entry["content"]) ||
+		(isRuntimeString(message?.["text"]) ? message["text"] : "") ||
+		contentText(message?.["content"])
 	).trim();
 }
 
@@ -251,7 +255,11 @@ function toolOutcome(tool: ToolProjection): AgentToolOutcome {
 function createToolProjection(
 	items: ParsedTranscriptItem[],
 	byId: Map<string, ToolProjection>,
-	input: { readonly name?: string; readonly target?: string; readonly toolCallId?: string },
+	input: {
+		readonly name?: string | undefined;
+		readonly target?: string | undefined;
+		readonly toolCallId?: string | undefined;
+	},
 ): ToolProjection {
 	const tool: ToolProjection = {
 		ended: false,
@@ -346,7 +354,7 @@ function jsonlTranscript(
 			continue;
 		}
 		if (!entry) continue;
-		const recordType = isRuntimeString(entry.recordType) ? entry.recordType : undefined;
+		const recordType = isRuntimeString(entry["recordType"]) ? entry["recordType"] : undefined;
 		if (recordType === "tool_start") {
 			const toolCallId = stringField(entry, undefined, "toolCallId");
 			const name = stringField(entry, undefined, "toolName") ?? "Tool";
@@ -369,8 +377,12 @@ function jsonlTranscript(
 			continue;
 		}
 		if (recordType && recordType !== "message") continue;
-		const message = record(entry.message);
-		const role = isRuntimeString(entry.role) ? entry.role : isRuntimeString(message?.role) ? message.role : undefined;
+		const message = record(entry["message"]);
+		const role = isRuntimeString(entry["role"])
+			? entry["role"]
+			: isRuntimeString(message?.["role"])
+				? message["role"]
+				: undefined;
 		if (role === "toolResult" || role === "tool_result") {
 			const toolCallId = stringField(entry, message, "toolCallId");
 			const name = stringField(entry, message, "toolName");

@@ -256,15 +256,15 @@ function isResultDeliveryState(value: JsonValue): value is JsonObject & ResultDe
 		isRuntimeObject(value) &&
 		value !== null &&
 		!Array.isArray(value) &&
-		value.version === 1 &&
-		isRuntimeString(value.completionKey) &&
-		isRuntimeString(value.resultDigest) &&
-		isRuntimeBoolean(value.intercomComplete) &&
-		isRuntimeBoolean(value.intercomDelivered) &&
-		isRuntimeBoolean(value.notificationAccepted) &&
-		isRuntimeBoolean(value.completionEmitted) &&
-		isRuntimeNumber(value.updatedAt) &&
-		Number.isFinite(value.updatedAt)
+		value["version"] === 1 &&
+		isRuntimeString(value["completionKey"]) &&
+		isRuntimeString(value["resultDigest"]) &&
+		isRuntimeBoolean(value["intercomComplete"]) &&
+		isRuntimeBoolean(value["intercomDelivered"]) &&
+		isRuntimeBoolean(value["notificationAccepted"]) &&
+		isRuntimeBoolean(value["completionEmitted"]) &&
+		isRuntimeNumber(value["updatedAt"]) &&
+		Number.isFinite(value["updatedAt"])
 	);
 }
 
@@ -648,9 +648,11 @@ export function createResultWatcher(
 
 			const persistedResults = Array.isArray(data.results) && data.results.length > 0 ? data.results : undefined;
 			const hasResultChildren = persistedResults !== undefined;
-			const resultChildren: ResultFileChild[] = persistedResults ?? [
-				{ agent: data.agent ?? undefined, output: data.summary, success: data.success },
-			];
+			const fallbackChild: ResultFileChild = {};
+			if (isRuntimeString(data.agent)) fallbackChild.agent = data.agent;
+			if (data.summary !== undefined) fallbackChild.output = data.summary;
+			if (data.success !== undefined) fallbackChild.success = data.success;
+			const resultChildren: ResultFileChild[] = persistedResults ?? [fallbackChild];
 			const sessionPaths = await Promise.all(
 				resultChildren.map(async (result) => {
 					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
@@ -686,16 +688,20 @@ export function createResultWatcher(
 												!isRuntimeBoolean(result.success))
 										? data.state
 										: undefined;
+					const statusInput: Parameters<typeof resolveSubagentResultStatus>[0] = {};
+					if (childState !== undefined) statusInput.state = childState;
+					if (isRuntimeBoolean(result.success)) statusInput.success = result.success;
 					const child: SubagentResultIntercomChild = {
 						agent: result.agent ?? data.agent ?? `step-${index + 1}`,
-						status: resolveSubagentResultStatus({ success: result.success, state: childState }),
+						status: resolveSubagentResultStatus(statusInput),
 						summary,
 						index,
-						artifactPath: result.artifactPaths?.outputPath,
 					};
+					if (result.artifactPaths?.outputPath) child.artifactPath = result.artifactPaths.outputPath;
 					if (sessionPath) child.sessionPath = sessionPath;
 					if (result.intercomTarget) child.intercomTarget = result.intercomTarget;
-					if (childNestedChildren) child.children = childNestedChildren;
+					const publicChildren = compactNestedResultChildren(childNestedChildren);
+					if (publicChildren) child.children = publicChildren;
 					return child;
 				}),
 				nestedChildren,
@@ -744,15 +750,16 @@ export function createResultWatcher(
 			const shouldDeliverIntercom = deliverIntercomResults && Boolean(intercomTarget);
 			if (!deliveryState.intercomComplete && shouldDeliverIntercom && intercomTarget) {
 				if (!ownsSession(data.sessionId, runId, epoch)) return;
-				const payload = buildSubagentResultIntercomPayload({
+				const payloadInput: Parameters<typeof buildSubagentResultIntercomPayload>[0] = {
 					to: intercomTarget,
 					runId,
 					mode,
 					source: "async",
 					children: normalizedChildren,
-					asyncId: data.id ?? undefined,
-					asyncDir: data.asyncDir,
-				});
+				};
+				if (isRuntimeString(data.id)) payloadInput.asyncId = data.id;
+				if (data.asyncDir !== undefined) payloadInput.asyncDir = data.asyncDir;
+				const payload = buildSubagentResultIntercomPayload(payloadInput);
 				intercomDelivered = await deliverSubagentResultIntercomEvent(pi.events, {
 					...payload,
 					requestId: stableDeliveryId(completionKey),

@@ -60,7 +60,7 @@ export function toolBudgetState(budget: ResolvedToolBudget, toolCount: number, b
 	if (overSoft && budget.soft !== undefined) state.softReachedAt = budget.soft;
 	if (overHard) {
 		state.hardReachedAt = budget.hard;
-		state.blockedTool = blockedTool;
+		if (blockedTool !== undefined) state.blockedTool = blockedTool;
 	}
 	return state;
 }

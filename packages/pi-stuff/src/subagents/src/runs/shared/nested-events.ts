@@ -310,7 +310,7 @@ function validateRouteStorage(route: NestedRoute): void {
 	if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) {
 		throw new Error("Nested event route metadata is not an object.");
 	}
-	if (metadata.rootRunId !== route.rootRunId || metadata.capabilityToken !== route.capabilityToken) {
+	if (metadata["rootRunId"] !== route.rootRunId || metadata["capabilityToken"] !== route.capabilityToken) {
 		throw new Error("Nested event route metadata does not match the provided root id and capability token.");
 	}
 }
@@ -499,7 +499,7 @@ function sanitizeTokenUsage<Value>(value: Value): NestedRunSummary["totalTokens"
 	return input !== undefined && output !== undefined && total !== undefined ? { input, output, total } : undefined;
 }
 
-function sanitizeCost<Value>(value: Value): NestedRunSummary["totalCost"] | undefined {
+export function sanitizeCost<Value>(value: Value): NestedRunSummary["totalCost"] | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
 	// SAFETY: the object guard proves this cost candidate has inspectable optional raw fields.
 	const raw = value as Value & RawCost;
@@ -511,7 +511,7 @@ function sanitizeCost<Value>(value: Value): NestedRunSummary["totalCost"] | unde
 		: undefined;
 }
 
-function sanitizeTurnBudget<Value>(value: Value): TurnBudgetState | undefined {
+export function sanitizeTurnBudget<Value>(value: Value): TurnBudgetState | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
 	// SAFETY: the object guard proves this turn-budget candidate has inspectable optional raw fields.
 	const raw = value as Value & RawTurnBudget;
@@ -536,7 +536,7 @@ function sanitizeTurnBudget<Value>(value: Value): TurnBudgetState | undefined {
 	return budget;
 }
 
-function sanitizeToolBudget<Value>(value: Value): NestedStepSummary["toolBudget"] | undefined {
+export function sanitizeToolBudget<Value>(value: Value): NestedStepSummary["toolBudget"] | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	// SAFETY: the non-array object guard proves this tool-budget candidate has inspectable optional raw fields.
 	const raw = value as Value & RawToolBudget;
@@ -1184,11 +1184,14 @@ function canonicalNestedForest(
 	const summaries = new Map<string, NestedRunSummary>();
 	const collect = (run: NestedRunSummary): void => {
 		const nested = [...(run.children ?? []), ...(run.steps?.flatMap((step) => step.children ?? []) ?? [])];
-		const stripped: NestedRunSummary = {
-			...run,
-			children: undefined,
-		};
-		if (run.steps) stripped.steps = run.steps.map((step) => ({ ...step, children: undefined }));
+		const stripped: NestedRunSummary = { ...run };
+		delete stripped.children;
+		if (run.steps)
+			stripped.steps = run.steps.map((step) => {
+				const strippedStep = { ...step };
+				delete strippedStep.children;
+				return strippedStep;
+			});
 		summaries.set(run.id, mergeStoredSummary(summaries.get(run.id), stripped));
 		for (const child of nested) collect(child);
 	};
@@ -1241,7 +1244,8 @@ function canonicalNestedForest(
 		left.id.localeCompare(right.id);
 	const sortTree = (run: NestedRunSummary): NestedRunSummary => {
 		const sorted = { ...run };
-		sorted.children = run.children?.length ? run.children.map(sortTree).sort(stable) : undefined;
+		if (run.children?.length) sorted.children = run.children.map(sortTree).sort(stable);
+		else delete sorted.children;
 		return sorted;
 	};
 	return {
@@ -1350,13 +1354,13 @@ function routeFromRoot(routeRoot: string): NestedRoute | undefined {
 		assertPrivateDirectory(routeRoot);
 		const metadata = parseJsonValue(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES));
 		if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) return undefined;
-		if (!isSafeNestedId(metadata.rootRunId) || !isSafeNestedId(metadata.capabilityToken)) return undefined;
-		if (path.basename(routeRoot) !== `${metadata.rootRunId}-${metadata.capabilityToken}`) return undefined;
+		if (!isSafeNestedId(metadata["rootRunId"]) || !isSafeNestedId(metadata["capabilityToken"])) return undefined;
+		if (path.basename(routeRoot) !== `${metadata["rootRunId"]}-${metadata["capabilityToken"]}`) return undefined;
 		const route: NestedRoute = {
-			rootRunId: metadata.rootRunId,
+			rootRunId: metadata["rootRunId"],
 			eventSink: path.join(routeRoot, "events"),
 			controlInbox: path.join(routeRoot, "controls"),
-			capabilityToken: metadata.capabilityToken,
+			capabilityToken: metadata["capabilityToken"],
 		};
 		validateRouteStorage(route);
 		return route;
@@ -1517,10 +1521,9 @@ export async function findNestedRunMatchesByIdAuthoritatively(
 	const matches: NestedRunMatch[] = [];
 	for (const route of routes) {
 		const remaining = Math.max(0, deadline - Date.now());
-		const registry = await projectNestedEventsAuthoritatively(route, {
-			timeoutMs: remaining,
-			signal: options.signal,
-		});
+		const projectionOptions: AuthoritativeNestedProjectionOptions =
+			options.signal === undefined ? { timeoutMs: remaining } : { timeoutMs: remaining, signal: options.signal };
+		const registry = await projectNestedEventsAuthoritatively(route, projectionOptions);
 		collectMatchesFromRegistry(matches, route, registry, id, options);
 	}
 	return matches;
@@ -1816,19 +1819,19 @@ function readRootTerminalMarker(route: NestedRoute): NestedRootTerminalMarker | 
 		);
 		if (!isRuntimeObject(marker) || marker === null || Array.isArray(marker)) return undefined;
 		if (
-			marker.version === 1 &&
-			marker.rootRunId === route.rootRunId &&
-			marker.capabilityToken === route.capabilityToken &&
-			isRuntimeString(marker.rootAsyncDir) &&
-			isRuntimeNumber(marker.committedAt) &&
-			Number.isFinite(marker.committedAt)
+			marker["version"] === 1 &&
+			marker["rootRunId"] === route.rootRunId &&
+			marker["capabilityToken"] === route.capabilityToken &&
+			isRuntimeString(marker["rootAsyncDir"]) &&
+			isRuntimeNumber(marker["committedAt"]) &&
+			Number.isFinite(marker["committedAt"])
 		) {
 			return {
 				version: 1,
-				rootRunId: marker.rootRunId,
-				capabilityToken: marker.capabilityToken,
-				rootAsyncDir: marker.rootAsyncDir,
-				committedAt: marker.committedAt,
+				rootRunId: marker["rootRunId"],
+				capabilityToken: marker["capabilityToken"],
+				rootAsyncDir: marker["rootAsyncDir"],
+				committedAt: marker["committedAt"],
 			};
 		}
 		return undefined;
@@ -2042,14 +2045,14 @@ export function nestedRouteEnv(route: NestedRoute): NestedRouteEnvironment {
 	};
 }
 
-export function attachRootChildrenToSteps<T extends { children?: NestedRunSummary[]; index?: number }>(
+export function attachRootChildrenToSteps<T extends { children?: NestedRunSummary[] | undefined; index?: number }>(
 	rootRunId: string,
 	steps: T[] | undefined,
 	children: NestedRunSummary[] | undefined,
 ): void {
 	if (!steps?.length) return;
 	for (const step of steps) {
-		step.children = undefined;
+		delete step.children;
 	}
 	if (!children?.length) return;
 	for (const child of children) {
@@ -2088,8 +2091,8 @@ export function hasLiveNestedDescendants(children: NestedRunSummary[] | undefine
 
 interface NestedOriginProjection {
 	readonly parentRunOrigin?: AgentWorkOrigin;
-	readonly children?: readonly NestedOriginProjection[];
-	readonly steps?: readonly { readonly children?: readonly NestedOriginProjection[] }[];
+	readonly children?: readonly NestedOriginProjection[] | undefined;
+	readonly steps?: readonly { readonly children?: readonly NestedOriginProjection[] | undefined }[] | undefined;
 }
 
 /** Whether any descendant was directly taken over by user-attributed work. */
@@ -2138,11 +2141,12 @@ export function nestedSummaryFromAsyncStatus(
 				? "live"
 				: "unknown";
 	if (status.processTerminal) {
-		summary.processTerminal = sanitizeProcessTerminal(
+		const processTerminal = sanitizeProcessTerminal(
 			status.processTerminal,
 			{ runId, runnerProcessInstanceId: status.processTerminal.runnerProcessInstanceId },
 			`${asyncDir}/status.json`,
 		);
+		if (processTerminal) summary.processTerminal = processTerminal;
 	}
 	if (status.capabilityCeiling) summary.capabilityCeiling = status.capabilityCeiling;
 	if (status.capabilityAudit) summary.capabilityAudit = status.capabilityAudit;
@@ -2195,11 +2199,12 @@ export function nestedSummaryFromAsyncStatus(
 				if (step.turnBudgetExceeded !== undefined) projected.turnBudgetExceeded = step.turnBudgetExceeded;
 				if (step.wrapUpRequested !== undefined) projected.wrapUpRequested = step.wrapUpRequested;
 				if (step.processTerminal) {
-					projected.processTerminal = sanitizeProcessTerminal(
+					const processTerminal = sanitizeProcessTerminal(
 						step.processTerminal,
 						{ runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
 						`${asyncDir}/status.json step ${index}`,
 					);
+					if (processTerminal) projected.processTerminal = processTerminal;
 				}
 				if (step.capabilityCeiling) projected.capabilityCeiling = step.capabilityCeiling;
 				if (step.capabilityAudit) projected.capabilityAudit = step.capabilityAudit;

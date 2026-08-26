@@ -71,6 +71,7 @@ import {
 	persistRecoveries,
 } from "../background/async-execution.ts";
 import {
+	type AsyncResumeParams,
 	type AsyncResumeTarget,
 	applySteeringRecoveryAgentConfig,
 	buildRevivedAsyncTask,
@@ -113,6 +114,7 @@ import {
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_SESSION_ENV,
 } from "../shared/pi-args.ts";
+import type { SessionLeaseIntent } from "../shared/session-lease.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { executeForegroundConfig } from "./execution.ts";
@@ -164,7 +166,7 @@ export interface SubagentParamsLike {
 	thinking?: string | false;
 	skill?: string | string[] | boolean;
 	/** Suite-owned, bounded reference context. Never part of the public tool schema. */
-	contextProjection?: string;
+	contextProjection?: string | undefined;
 	/** Suite-owned launch identity already bound to the physical parent session. */
 	launchRunId?: string;
 }
@@ -189,11 +191,11 @@ interface ExecutorDeps {
 	) =>
 		| { agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }
 		| Promise<{ agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }>;
-	projectContext?: typeof projectCurrentContext;
-	childBaseExtensionPath?: string;
-	codeModeProviderTools?: readonly string[];
-	resolveCodeModeEnabled?: () => boolean;
-	onForegroundStatus?: () => void;
+	projectContext?: typeof projectCurrentContext | undefined;
+	childBaseExtensionPath?: string | undefined;
+	codeModeProviderTools?: readonly string[] | undefined;
+	resolveCodeModeEnabled?: (() => boolean) | undefined;
+	onForegroundStatus?: (() => void) | undefined;
 	allowMutatingManagementActions?: boolean;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	engines?: Partial<ExecutorEngines>;
@@ -221,34 +223,34 @@ interface PreparedLaunch {
 	agents: AgentConfig[];
 	currentSessionId: string;
 	governorSessionId: string;
-	directParentSessionId?: string;
+	directParentSessionId?: string | undefined;
 	parentSessionFile: string | null;
-	parentModel?: ParentModel;
+	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig;
+	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
 	runId: string;
 	sessionRoot: string;
 	artifactConfig: ArtifactConfig;
 	artifactsDir: string;
-	turnBudget?: ResolvedTurnBudget;
-	toolBudget?: ResolvedToolBudget;
-	configToolBudget?: ResolvedToolBudget;
-	timeoutMs?: number;
+	turnBudget?: ResolvedTurnBudget | undefined;
+	toolBudget?: ResolvedToolBudget | undefined;
+	configToolBudget?: ResolvedToolBudget | undefined;
+	timeoutMs?: number | undefined;
 	context: ContextMode;
 	contextSummary: ContextSummary;
-	forkContextTokens?: number;
+	forkContextTokens?: number | undefined;
 	/** Frozen persisted branch used for both fork admission and projected fallback. */
-	forkSourceMessages?: ContextEvent["messages"];
+	forkSourceMessages?: ContextEvent["messages"] | undefined;
 	/** true uses Pi's native raw branch; false uses a bounded projected fork. */
 	rawForkByIndex: boolean[];
 	fixedInputTokensByIndex: number[];
 	modelCandidatesByIndex: Array<string[] | undefined>;
 	nestedRoute: ReturnType<typeof createNestedRoute>;
-	inheritedNestedRoute?: ReturnType<typeof resolveInheritedNestedRouteFromEnv>;
-	nestedParentAddress?: ReturnType<typeof resolveNestedParentAddressFromEnv>;
+	inheritedNestedRoute?: ReturnType<typeof resolveInheritedNestedRouteFromEnv> | undefined;
+	nestedParentAddress?: ReturnType<typeof resolveNestedParentAddressFromEnv> | undefined;
 	sessionFiles: Array<string | undefined>;
 	thinkingOverrides: Array<AgentConfig["thinking"] | undefined>;
-	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling>;
+	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling> | undefined;
 	maxSubagentDepth: number;
 }
 
@@ -523,16 +525,16 @@ function prepareLaunchModelPlan(input: {
 	effectiveCwd: string;
 	currentSessionId: string;
 	governorSessionId: string;
-	directParentSessionId?: string;
-	parentModel?: ParentModel;
+	directParentSessionId?: string | undefined;
+	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig;
-	turnBudget?: ResolvedTurnBudget;
-	toolBudget?: ResolvedToolBudget;
-	configToolBudget?: ResolvedToolBudget;
-	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling>;
+	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
+	turnBudget?: ResolvedTurnBudget | undefined;
+	toolBudget?: ResolvedToolBudget | undefined;
+	configToolBudget?: ResolvedToolBudget | undefined;
+	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling> | undefined;
 	maxSubagentDepth: number;
-	childBaseExtensionPath?: string;
+	childBaseExtensionPath?: string | undefined;
 }) {
 	const tasks = taskInputs(input.params);
 	const forkSnapshot: { readonly messages?: ContextEvent["messages"]; readonly tokens: number } =
@@ -683,7 +685,7 @@ function rememberParentModel(
 	sessionId: string,
 	model: ExtensionContext["model"],
 ): ParentModel | undefined {
-	if (state.currentSessionId !== sessionId) state.lastParentModel = undefined;
+	if (state.currentSessionId !== sessionId) delete state.lastParentModel;
 	state.currentSessionId = sessionId;
 	const current = normalizeParentModel(model);
 	if (current) state.lastParentModel = current;
@@ -741,9 +743,9 @@ function prepareForkSessions(input: {
 	agents: readonly AgentConfig[];
 	ctx: ExtensionContext;
 	context: ContextMode;
-	parentModel?: ParentModel;
+	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig;
+	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
 	modelCandidatesByIndex: Array<string[] | undefined>;
 	rawForkByIndex: boolean[];
 }) {
@@ -991,7 +993,7 @@ function maxDepthFor(data: PreparedLaunch, agent?: AgentConfig): number {
 }
 
 function effectiveCodeModeEnabled(deps: ExecutorDeps): boolean {
-	return deps.resolveCodeModeEnabled?.() ?? process.env.PI_STUFF_CODE_MODE_DEFAULT?.trim().toLowerCase() === "on";
+	return deps.resolveCodeModeEnabled?.() ?? process.env["PI_STUFF_CODE_MODE_DEFAULT"]?.trim().toLowerCase() === "on";
 }
 
 export function ponytailLaunchSnapshot(pi: Pick<ExtensionAPI, "events">) {
@@ -1177,17 +1179,18 @@ function buildForegroundConfig(
 		artifactConfig: data.artifactConfig,
 		nativeSupervisor: false,
 		sessionDir: data.sessionRoot,
-		worktreeSetupHook: deps.config.worktreeSetupHook,
-		worktreeSetupHookTimeoutMs: deps.config.worktreeSetupHookTimeoutMs,
-		worktreeBaseDir: deps.config.worktreeBaseDir,
-		nestedRoute: data.nestedRoute,
-		nestedSelf,
 	};
+	if (deps.config.worktreeSetupHook) config.worktreeSetupHook = deps.config.worktreeSetupHook;
+	if (deps.config.worktreeSetupHookTimeoutMs !== undefined)
+		config.worktreeSetupHookTimeoutMs = deps.config.worktreeSetupHookTimeoutMs;
+	if (deps.config.worktreeBaseDir) config.worktreeBaseDir = deps.config.worktreeBaseDir;
+	if (data.nestedRoute) config.nestedRoute = data.nestedRoute;
+	if (nestedSelf) config.nestedSelf = nestedSelf;
 	if (common.codeModeProviderTools?.length) config.codeModeProviderTools = [...common.codeModeProviderTools];
 	if (data.artifactConfig.enabled) config.artifactsDir = data.artifactsDir;
 	if (data.timeoutMs !== undefined) {
 		config.timeoutMs = data.timeoutMs;
-		config.deadlineAt = deadlineAt;
+		if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
 	}
 	if (data.capabilityCeiling) config.capabilityCeiling = data.capabilityCeiling;
 	const recoveries = "recoveries" in built ? built.recoveries : [built.recovery];
@@ -1357,15 +1360,13 @@ function foregroundControl(data: PreparedLaunch, config: BackgroundRunnerConfig)
 			},
 		]),
 	);
-	return {
+	const control: ForegroundRunControl = {
 		runId: data.runId,
 		sessionId: data.currentSessionId,
 		mode: data.mode,
 		startedAt: now,
 		updatedAt: now,
 		cwd: data.effectiveCwd,
-		description: taskInputs(data.params)[0]?.description,
-		task: taskInputs(data.params)[0]?.task,
 		activeChildren,
 		nestedRoute: data.nestedRoute,
 		interrupt: () => {
@@ -1377,6 +1378,10 @@ function foregroundControl(data: PreparedLaunch, config: BackgroundRunnerConfig)
 			}
 		},
 	};
+	const firstTask = taskInputs(data.params)[0];
+	if (firstTask?.description) control.description = firstTask.description;
+	if (firstTask?.task) control.task = firstTask.task;
+	return control;
 }
 
 function updateForegroundControl(control: ForegroundRunControl, status: AsyncStatus): void {
@@ -1471,18 +1476,19 @@ function emitNestedLifecycle(
 	const nestedChild: NestedRunSummary = {
 		id: data.runId,
 		parentRunId: data.nestedParentAddress.parentRunId,
-		parentStepIndex: data.nestedParentAddress.parentStepIndex,
 		depth: data.nestedParentAddress.depth,
 		path: data.nestedParentAddress.path,
 		asyncDir: config.asyncDir,
 		ownerState: state === "running" ? "live" : "gone",
 		mode: data.mode,
 		state,
-		agent: directTasks[0]?.agent,
 		agents: directTasks.map((task) => task.agent),
 		startedAt,
 		lastUpdate: now,
 	};
+	if (data.nestedParentAddress.parentStepIndex !== undefined)
+		nestedChild.parentStepIndex = data.nestedParentAddress.parentStepIndex;
+	if (directTasks[0]) nestedChild.agent = directTasks[0].agent;
 	if (terminalResult) nestedChild.endedAt = now;
 	if (result?.details.results.length) {
 		nestedChild.steps = result.details.results.map((child, index): NestedStepSummary => {
@@ -1512,7 +1518,7 @@ function emitNestedLifecycle(
 		nestedChild.steps = projectedLiveSteps;
 	}
 	try {
-		writeNestedEvent(data.inheritedNestedRoute, {
+		const event: Parameters<typeof writeNestedEvent>[1] = {
 			type: terminalResult
 				? "subagent.nested.completed"
 				: result || updated
@@ -1520,9 +1526,11 @@ function emitNestedLifecycle(
 					: "subagent.nested.started",
 			ts: now,
 			parentRunId: data.nestedParentAddress.parentRunId,
-			parentStepIndex: data.nestedParentAddress.parentStepIndex,
 			child: nestedChild,
-		});
+		};
+		if (data.nestedParentAddress.parentStepIndex !== undefined)
+			event.parentStepIndex = data.nestedParentAddress.parentStepIndex;
+		writeNestedEvent(data.inheritedNestedRoute, event);
 	} catch (error) {
 		reportAgentDiagnostic("Failed to record nested foreground Agent lifecycle:", error);
 	}
@@ -1778,10 +1786,10 @@ function stopRun(params: SubagentParamsLike, deps: ExecutorDeps): AgentToolResul
 	try {
 		const input: Parameters<typeof deliverStopRequest>[0] = {
 			asyncDir: job.asyncDir,
-			pid: isRuntimeNumber(status.pid) ? status.pid : undefined,
-			kill: deps.kill,
 			source: "agent-stop",
 		};
+		if (isRuntimeNumber(status.pid)) input.pid = status.pid;
+		if (deps.kill) input.kill = deps.kill;
 		if (params.index !== undefined) input.targetIndex = params.index;
 		deliverStopRequest(input);
 		return {
@@ -1906,9 +1914,9 @@ async function resumeRun(input: {
 	ctx: ExtensionContext;
 	deps: ExecutorDeps;
 	engines: ExecutorEngines;
-	parentModel?: ParentModel;
+	parentModel?: ParentModel | undefined;
 	absoluteDeadlineAt?: number;
-	parentRunOrigin?: AgentWorkOrigin;
+	parentRunOrigin?: AgentWorkOrigin | undefined;
 }): Promise<AgentToolResult<Details>> {
 	if (!input.params.id) return errorResult("management", "action='resume' requires id.");
 	const followUp = input.params.message?.trim() || "Continue the previous task and report the current result.";
@@ -1916,18 +1924,16 @@ async function resumeRun(input: {
 	try {
 		const resolvedRunId = resolveResumeTargetRunId({ action: "resume", id: input.params.id }, input.deps.state);
 		if (!resolvedRunId) throw new Error("Agent resume target could not be resolved.");
+		const resumeTarget: AsyncResumeParams =
+			input.params.index === undefined ? { id: resolvedRunId } : { id: resolvedRunId, index: input.params.index };
+		const resumeOptions: Parameters<typeof resolveAsyncResumeTarget>[2] = input.deps.state.currentSessionScope
+			? { requireSessionFile: true, sessionScope: input.deps.state.currentSessionScope }
+			: input.deps.state.currentSessionId
+				? { requireSessionFile: true, sessionId: input.deps.state.currentSessionId }
+				: { requireSessionFile: true };
 		target =
 			foregroundResumeTarget(input.params, input.deps.state, resolvedRunId) ??
-			resolveAsyncResumeTarget(
-				{ id: resolvedRunId, index: input.params.index },
-				{ kill: input.deps.kill },
-				{
-					requireSessionFile: true,
-					...(input.deps.state.currentSessionScope
-						? { sessionScope: input.deps.state.currentSessionScope }
-						: { sessionId: input.deps.state.currentSessionId ?? undefined }),
-				},
-			);
+			resolveAsyncResumeTarget(resumeTarget, { kill: input.deps.kill }, resumeOptions);
 	} catch (error) {
 		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
@@ -1982,6 +1988,12 @@ async function resumeRun(input: {
 	const nestedRoute = inheritedNestedRoute ?? createNestedRoute(runId);
 	let backgroundOwnsRoute = false;
 	try {
+		const revivalLease: SessionLeaseIntent = {
+			sessionFile: target.sessionFile,
+			runId,
+			sourceRunId: target.runId,
+		};
+		if (input.deps.state.currentSessionId) revivalLease.parentSessionId = input.deps.state.currentSessionId;
 		const resumeInput: Parameters<ExecutorEngines["backgroundSingle"]>[1] = {
 			agent: target.agent,
 			description: resolveDisplayDescription(undefined, followUp),
@@ -2011,12 +2023,7 @@ async function resumeRun(input: {
 			nestedRoute,
 			sessionRoot: input.deps.getSubagentSessionRoot(parentSessionFile),
 			sessionFile: target.sessionFile,
-			revivalLease: {
-				sessionFile: target.sessionFile,
-				runId,
-				sourceRunId: target.runId,
-				parentSessionId: input.deps.state.currentSessionId ?? undefined,
-			},
+			revivalLease,
 			modelOverride: descriptor?.model ?? target.model,
 			thinkingOverride: descriptor?.thinking ?? target.thinking,
 			logicalSourceRunId: descriptor?.sourceRunId ?? target.runId,
@@ -2076,7 +2083,15 @@ async function controlAction(
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
 	if (params.action === "status") {
-		return inspectSubagentStatus({ action: "status", id: params.id, index: params.index }, { state: deps.state });
+		const statusParams: Parameters<typeof inspectSubagentStatus>[0] =
+			params.id === undefined
+				? params.index === undefined
+					? { action: "status" }
+					: { action: "status", index: params.index }
+				: params.index === undefined
+					? { action: "status", id: params.id }
+					: { action: "status", id: params.id, index: params.index };
+		return inspectSubagentStatus(statusParams, { state: deps.state });
 	}
 	let targetParams: SubagentParamsLike;
 	try {

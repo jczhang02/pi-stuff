@@ -9,9 +9,9 @@ export type { AvailableModelInfo };
 interface ModelAttemptSummary {
 	model: string;
 	success: boolean;
-	exitCode?: number | null;
-	error?: string;
-	usage?: Usage;
+	exitCode?: number | null | undefined;
+	error?: string | undefined;
+	usage?: Usage | undefined;
 }
 
 export function splitThinkingSuffix(model: string) {
@@ -170,7 +170,7 @@ export function resolveModelCandidate(
 
 export interface ResolveSubagentModelOverrideOptions {
 	/** When set with `enforce: true`, out-of-scope models are rejected. */
-	scope?: ModelScopeConfig;
+	scope?: ModelScopeConfig | undefined;
 	/** Origin of the requested model: explicit caller-supplied (hard error) vs inherited (warn). Defaults to `"inherited"`. */
 	source?: ModelSource;
 	/** Called for warn-severity violations instead of the default warning sink. */
@@ -248,7 +248,7 @@ export function resolveEffectiveSubagentModel(
 
 export interface BuildModelCandidatesOptions {
 	/** Fallback models are inherited agent config and warn, rather than error, when out of scope. */
-	scope?: ModelScopeConfig;
+	scope?: ModelScopeConfig | undefined;
 	onWarn?: (violation: ModelScopeViolation) => void;
 }
 

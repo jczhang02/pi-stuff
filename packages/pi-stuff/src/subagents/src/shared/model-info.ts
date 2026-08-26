@@ -24,16 +24,17 @@ interface RegistryModelLike {
 }
 
 export function toModelInfo(model: RegistryModelLike): ModelInfo {
-	return {
+	const info: ModelInfo = {
 		provider: model.provider,
 		id: model.id,
 		fullId: `${model.provider}/${model.id}`,
-		api: model.api,
-		contextWindow: model.contextWindow,
-		maxTokens: model.maxTokens,
-		reasoning: model.reasoning,
-		thinkingLevelMap: model.thinkingLevelMap,
 	};
+	if (model.api !== undefined) info.api = model.api;
+	if (model.contextWindow !== undefined) info.contextWindow = model.contextWindow;
+	if (model.maxTokens !== undefined) info.maxTokens = model.maxTokens;
+	if (model.reasoning !== undefined) info.reasoning = model.reasoning;
+	if (model.thinkingLevelMap !== undefined) info.thinkingLevelMap = model.thinkingLevelMap;
+	return info;
 }
 
 /** Resolve the effective thinking level from a model string (which may contain a known suffix like `:high`)

@@ -15,28 +15,28 @@ import {
 export interface AsyncParallelRunnerWorkBuildParams extends CommonBuildParams {
 	agents: AgentConfig[];
 	tasks: AsyncParallelTaskInput[];
-	contextForAgent?: (agentName: string) => ContextMode;
-	thinking?: AgentConfig["thinking"];
-	thinkingOverridesByIndex?: Array<AgentConfig["thinking"] | undefined>;
-	sessionFilesByIndex?: Array<string | undefined>;
-	modelCandidatesByIndex?: Array<string[] | undefined>;
-	concurrency?: number;
-	globalConcurrencyLimit?: number;
-	worktree?: boolean;
+	contextForAgent?: ((agentName: string) => ContextMode) | undefined;
+	thinking?: AgentConfig["thinking"] | undefined;
+	thinkingOverridesByIndex?: Array<AgentConfig["thinking"] | undefined> | undefined;
+	sessionFilesByIndex?: Array<string | undefined> | undefined;
+	modelCandidatesByIndex?: Array<string[] | undefined> | undefined;
+	concurrency?: number | undefined;
+	globalConcurrencyLimit?: number | undefined;
+	worktree?: boolean | undefined;
 }
 
 export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
 	agent: string;
-	description?: string;
-	delegatedTask?: string;
+	description?: string | undefined;
+	delegatedTask?: string | undefined;
 	task: string;
 	agentConfig: AgentConfig;
-	context?: ContextMode;
-	skills?: string[];
-	sessionFile?: string;
-	modelOverride?: string;
-	modelCandidates?: string[];
-	thinkingOverride?: AgentConfig["thinking"];
+	context?: ContextMode | undefined;
+	skills?: string[] | undefined;
+	sessionFile?: string | undefined;
+	modelOverride?: string | undefined;
+	modelCandidates?: string[] | undefined;
+	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
 
 export type AsyncRunnerWorkBuildResult =

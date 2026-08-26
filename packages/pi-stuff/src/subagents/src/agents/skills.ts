@@ -126,7 +126,7 @@ function extractSkillPathsFromPackageRoot(
 let cachedGlobalNpmRoot: string | null = null;
 
 function getGlobalNpmRoot(): string | null {
-	const offline = process.env.PI_OFFLINE?.toLowerCase();
+	const offline = process.env["PI_OFFLINE"]?.toLowerCase();
 	if (offline === "1" || offline === "true" || offline === "yes") return null;
 	if (cachedGlobalNpmRoot !== null) return cachedGlobalNpmRoot;
 	try {
@@ -438,23 +438,28 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		if (existingIndex !== undefined) {
 			const existing = entries[existingIndex];
 			if (existing && (SOURCE_PRIORITY[source] ?? 0) > (SOURCE_PRIORITY[existing.source] ?? 0)) {
-				entries[existingIndex] = {
+				const updated: CachedSkillEntry = {
 					...existing,
 					name,
 					source,
-					description: maybeReadSkillDescription(resolvedFile),
 				};
+				delete updated.description;
+				const description = maybeReadSkillDescription(resolvedFile);
+				if (description !== undefined) updated.description = description;
+				entries[existingIndex] = updated;
 			}
 			return;
 		}
 		seen.set(resolvedFile, entries.length);
-		entries.push({
+		const entry: CachedSkillEntry = {
 			name,
 			filePath: resolvedFile,
 			source,
-			description: maybeReadSkillDescription(resolvedFile),
 			order: order++,
-		});
+		};
+		const description = maybeReadSkillDescription(resolvedFile);
+		if (description !== undefined) entry.description = description;
+		entries.push(entry);
 	};
 
 	const shouldSkipDirectory = (name: string) => name.startsWith(".") || name === "node_modules";
@@ -615,9 +620,9 @@ function readSkill(skillName: string, skillPath: string, source: SkillSource): R
 			name: skillName,
 			path: skillPath,
 			content,
-			description,
 			source,
 		};
+		if (description !== undefined) skill.description = description;
 
 		skillCache.set(skillPath, { mtime: stat.mtimeMs, skill });
 		if (skillCache.size > MAX_CACHE_SIZE) {
@@ -754,11 +759,11 @@ export function discoverAvailableSkills(cwd: string): Array<{
 	const skills = getCachedSkills(cwd);
 	return skills
 		.filter((s) => s.name !== SUBAGENT_ORCHESTRATION_SKILL)
-		.map((s) => ({
-			name: s.name,
-			source: s.source,
-			description: s.description,
-		}))
+		.map((s) =>
+			s.description === undefined
+				? { name: s.name, source: s.source }
+				: { name: s.name, source: s.source, description: s.description },
+		)
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
 

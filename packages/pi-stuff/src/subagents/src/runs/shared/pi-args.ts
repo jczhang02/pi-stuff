@@ -75,58 +75,60 @@ export const PI_INTERCOM_SESSION_ID_ENV = "PI_INTERCOM_SESSION_ID";
 
 export interface BuildPiArgsInput {
 	/** Ledger namespace. It may temporarily remain v1 during an in-flight upgrade. */
-	governorSessionId?: string;
+	governorSessionId?: string | undefined;
 	/** Physical v2 session identity written to lifecycle and supervisor artifacts. */
-	physicalSessionId?: string;
-	parentSessionId?: string;
+	physicalSessionId?: string | undefined;
+	parentSessionId?: string | undefined;
 	baseArgs: string[];
 	task: string;
 	sessionEnabled: boolean;
-	sessionDir?: string;
-	sessionFile?: string;
-	model?: string;
-	thinking?: string | false;
-	systemPromptMode?: "append" | "replace";
+	sessionDir?: string | undefined;
+	sessionFile?: string | undefined;
+	model?: string | undefined;
+	thinking?: string | false | undefined;
+	systemPromptMode?: "append" | "replace" | undefined;
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
-	codeModeEnabled?: boolean;
-	codeModeProviderTools?: readonly string[];
-	childBaseExtensionPath?: string;
-	requireReadTool?: boolean;
-	tools?: string[];
-	extensions?: string[];
-	subagentOnlyExtensions?: string[];
-	systemPrompt?: string | null;
-	mcpDirectTools?: string[];
-	cwd?: string;
-	promptFileStem?: string;
-	intercomSessionName?: string;
-	orchestratorIntercomTarget?: string;
+	codeModeEnabled?: boolean | undefined;
+	codeModeProviderTools?: readonly string[] | undefined;
+	childBaseExtensionPath?: string | undefined;
+	requireReadTool?: boolean | undefined;
+	tools?: string[] | undefined;
+	extensions?: string[] | undefined;
+	subagentOnlyExtensions?: string[] | undefined;
+	systemPrompt?: string | null | undefined;
+	mcpDirectTools?: string[] | undefined;
+	cwd?: string | undefined;
+	promptFileStem?: string | undefined;
+	intercomSessionName?: string | undefined;
+	orchestratorIntercomTarget?: string | undefined;
 	/** Enable the native supervisor channel only when the parent turn is not owner-blocking. */
-	enableNativeSupervisor?: boolean;
-	runId?: string;
-	logicalAgentPathComponent?: string;
-	childAgentName?: string;
-	childIndex?: number;
-	parentEventSink?: string;
-	parentControlInbox?: string;
-	parentRootRunId?: string;
-	parentRunId?: string;
-	parentChildIndex?: number;
-	parentDepth?: number;
-	parentPath?: NestedPathEntry[];
-	parentCapabilityToken?: string;
-	steerInboxDir?: string;
-	steerCapabilityPath?: string;
-	steerAckDir?: string;
-	structuredOutput?: {
-		schema: JsonSchemaObject;
-		schemaPath: string;
-		outputPath: string;
-	};
-	toolBudget?: ResolvedToolBudget;
-	allowZeroToolBudget?: boolean;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	enableNativeSupervisor?: boolean | undefined;
+	runId?: string | undefined;
+	logicalAgentPathComponent?: string | undefined;
+	childAgentName?: string | undefined;
+	childIndex?: number | undefined;
+	parentEventSink?: string | undefined;
+	parentControlInbox?: string | undefined;
+	parentRootRunId?: string | undefined;
+	parentRunId?: string | undefined;
+	parentChildIndex?: number | undefined;
+	parentDepth?: number | undefined;
+	parentPath?: NestedPathEntry[] | undefined;
+	parentCapabilityToken?: string | undefined;
+	steerInboxDir?: string | undefined;
+	steerCapabilityPath?: string | undefined;
+	steerAckDir?: string | undefined;
+	structuredOutput?:
+		| {
+				schema: JsonSchemaObject;
+				schemaPath: string;
+				outputPath: string;
+		  }
+		| undefined;
+	toolBudget?: ResolvedToolBudget | undefined;
+	allowZeroToolBudget?: boolean | undefined;
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
 }
 
 export interface BuildPiArgsResult {
@@ -134,7 +136,7 @@ export interface BuildPiArgsResult {
 	env: Record<string, string | undefined>;
 	tempDir?: string;
 	toolDiagnosticPath?: string;
-	capabilityAudit?: SubagentCapabilityAudit;
+	capabilityAudit?: SubagentCapabilityAudit | undefined;
 }
 
 function sanitizeSupervisorChannelSegment(value: string): string {
@@ -174,17 +176,17 @@ export function applyThinkingSuffix(
 }
 
 export interface ResolvePiLaunchToolPlanInput {
-	tools?: string[];
-	extensions?: string[];
-	subagentOnlyExtensions?: string[];
-	mcpDirectTools?: string[];
-	cwd?: string;
-	requireReadTool?: boolean;
-	structuredOutput?: boolean;
-	nativeSupervisor?: boolean;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	childBaseExtensionPath?: string;
+	tools?: string[] | undefined;
+	extensions?: string[] | undefined;
+	subagentOnlyExtensions?: string[] | undefined;
+	mcpDirectTools?: string[] | undefined;
+	cwd?: string | undefined;
+	requireReadTool?: boolean | undefined;
+	structuredOutput?: boolean | undefined;
+	nativeSupervisor?: boolean | undefined;
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
+	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
+	childBaseExtensionPath?: string | undefined;
 }
 
 export interface PiLaunchToolPlan {
@@ -504,8 +506,8 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] = toolPlan.fanoutAuthorized
 		? (input.parentCapabilityToken ?? process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] ?? "")
 		: "";
-	env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = input.inheritProjectContext ? "1" : "0";
-	env.PI_SUBAGENT_INHERIT_SKILLS = input.inheritSkills ? "1" : "0";
+	env["PI_SUBAGENT_INHERIT_PROJECT_CONTEXT"] = input.inheritProjectContext ? "1" : "0";
+	env["PI_SUBAGENT_INHERIT_SKILLS"] = input.inheritSkills ? "1" : "0";
 	env[PI_INTERCOM_STABLE_ID_ENV] = input.intercomSessionName || undefined;
 	env[PI_INTERCOM_SESSION_ID_ENV] = undefined;
 	env[SUBAGENT_ORCHESTRATOR_TARGET_ENV] = input.orchestratorIntercomTarget || undefined;
@@ -513,7 +515,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	env[SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV] = undefined;
 	env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV] = undefined;
 	if (input.intercomSessionName) {
-		env.PI_SUBAGENT_INTERCOM_SESSION_NAME = input.intercomSessionName;
+		env["PI_SUBAGENT_INTERCOM_SESSION_NAME"] = input.intercomSessionName;
 	}
 	if (nativeSupervisor && physicalSessionId && input.parentSessionId && input.runId && input.childAgentName) {
 		const childIndex = input.childIndex ?? 0;
@@ -541,14 +543,14 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		env[SUBAGENT_CHILD_INDEX_ENV] = String(input.childIndex);
 	}
 	if (!toolPlan.capabilityCeiling && input.mcpDirectTools?.length)
-		env.MCP_DIRECT_TOOLS = input.mcpDirectTools.join(",");
+		env["MCP_DIRECT_TOOLS"] = input.mcpDirectTools.join(",");
 	else if (
 		toolPlan.capabilityCeiling &&
 		toolPlan.effectiveMcpSelections.length &&
 		!toolPlan.capabilityCeiling.denyExtensions
 	)
-		env.MCP_DIRECT_TOOLS = toolPlan.effectiveMcpSelections.map((selection) => selection.selector).join(",");
-	else env.MCP_DIRECT_TOOLS = "__none__";
+		env["MCP_DIRECT_TOOLS"] = toolPlan.effectiveMcpSelections.map((selection) => selection.selector).join(",");
+	else env["MCP_DIRECT_TOOLS"] = "__none__";
 	const encodedCapabilityCeiling = encodeSubagentCapabilityCeiling(toolPlan.capabilityCeiling);
 	if (encodedCapabilityCeiling) env[SUBAGENT_CAPABILITY_CEILING_ENV] = encodedCapabilityCeiling;
 	if (input.structuredOutput) {

@@ -97,7 +97,8 @@ async function directorySnapshot(
 				// Most runs have no pending result notification.
 			}
 		}
-		return { directory, kind, mtimeMs: stat.mtimeMs, diagnosticBytes, resultMtimeMs };
+		const run: RuntimeRunDirectory = { directory, kind, mtimeMs: stat.mtimeMs, diagnosticBytes };
+		return resultMtimeMs === undefined ? run : { ...run, resultMtimeMs };
 	} catch {
 		return undefined;
 	}
@@ -257,15 +258,15 @@ async function retireStaleResult(
 		const result = parseJsonValue(snapshot.text);
 		if (
 			!isJsonInputObject(result) ||
-			result.id !== status.runId ||
-			result.runId !== status.runId ||
-			result.sessionId !== status.sessionId ||
-			!isRuntimeString(result.asyncDir) ||
-			path.resolve(result.asyncDir) !== path.resolve(directory) ||
-			(result.state !== "complete" &&
-				result.state !== "failed" &&
-				result.state !== "paused" &&
-				result.state !== "stopped")
+			result["id"] !== status.runId ||
+			result["runId"] !== status.runId ||
+			result["sessionId"] !== status.sessionId ||
+			!isRuntimeString(result["asyncDir"]) ||
+			path.resolve(result["asyncDir"]) !== path.resolve(directory) ||
+			(result["state"] !== "complete" &&
+				result["state"] !== "failed" &&
+				result["state"] !== "paused" &&
+				result["state"] !== "stopped")
 		) {
 			return false;
 		}
@@ -368,8 +369,8 @@ async function readStaleResultCursor(resultsDir: string): Promise<string | undef
 		const value = parseJsonValue(
 			(await readBoundedOwnedFileSnapshotAsync(path.join(resultsDir, STALE_RESULT_CURSOR_FILE), 1_024)).text,
 		);
-		return isJsonInputObject(value) && isRuntimeString(value.runId) && safeSegment(value.runId)
-			? value.runId
+		return isJsonInputObject(value) && isRuntimeString(value["runId"]) && safeSegment(value["runId"])
+			? value["runId"]
 			: undefined;
 	} catch {
 		return undefined;
@@ -523,13 +524,11 @@ export async function maintainAgentRuntime(
 	const now = options.now ?? Date.now();
 	const resultsDir = path.join(rootDirectory, "async-subagent-results");
 	const resultCursor = await readStaleResultCursor(resultsDir);
+	const resultSelection = { directory: resultsDir, cutoff: now - RESULT_RETENTION_MS };
+	if (resultCursor !== undefined) Object.assign(resultSelection, { cursor: resultCursor });
 	const groups = await Promise.all([
 		runDirectories(path.join(rootDirectory, "foreground-runs"), 1, "foreground"),
-		runDirectories(path.join(rootDirectory, "async-subagent-runs"), 1, "async", {
-			directory: resultsDir,
-			cutoff: now - RESULT_RETENTION_MS,
-			cursor: resultCursor,
-		}),
+		runDirectories(path.join(rootDirectory, "async-subagent-runs"), 1, "async", resultSelection),
 		runDirectories(path.join(rootDirectory, "nested-subagent-runs"), 2, "nested"),
 	]);
 	const directories = candidateDirectories(groups);

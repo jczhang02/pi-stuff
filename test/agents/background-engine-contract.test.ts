@@ -75,13 +75,13 @@ import {
 import { ASYNC_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
-const originalPiBinary = process.env.PI_SUBAGENT_PI_BINARY;
-const originalChildProtocolMaxBytes = process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES;
-const originalTaskResultMaxBytes = process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES;
-const originalRunResultMaxBytes = process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES;
-const originalTmpDir = process.env.TMPDIR;
-const originalTmp = process.env.TMP;
-const originalTemp = process.env.TEMP;
+const originalPiBinary = process.env["PI_SUBAGENT_PI_BINARY"];
+const originalChildProtocolMaxBytes = process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"];
+const originalTaskResultMaxBytes = process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"];
+const originalRunResultMaxBytes = process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"];
+const originalTmpDir = process.env["TMPDIR"];
+const originalTmp = process.env["TMP"];
+const originalTemp = process.env["TEMP"];
 const WRITER_REGISTRY_SCHEMA = Type.Object(
 	{
 		writers: Type.Optional(
@@ -120,20 +120,20 @@ afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
 		fs.rmSync(directory, { recursive: true, force: true });
 	}
-	if (originalPiBinary === undefined) delete process.env.PI_SUBAGENT_PI_BINARY;
-	else process.env.PI_SUBAGENT_PI_BINARY = originalPiBinary;
-	if (originalChildProtocolMaxBytes === undefined) delete process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES;
-	else process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES = originalChildProtocolMaxBytes;
-	if (originalTaskResultMaxBytes === undefined) delete process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES;
-	else process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES = originalTaskResultMaxBytes;
-	if (originalRunResultMaxBytes === undefined) delete process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES;
-	else process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES = originalRunResultMaxBytes;
-	if (originalTmpDir === undefined) delete process.env.TMPDIR;
-	else process.env.TMPDIR = originalTmpDir;
-	if (originalTmp === undefined) delete process.env.TMP;
-	else process.env.TMP = originalTmp;
-	if (originalTemp === undefined) delete process.env.TEMP;
-	else process.env.TEMP = originalTemp;
+	if (originalPiBinary === undefined) delete process.env["PI_SUBAGENT_PI_BINARY"];
+	else process.env["PI_SUBAGENT_PI_BINARY"] = originalPiBinary;
+	if (originalChildProtocolMaxBytes === undefined) delete process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"];
+	else process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = originalChildProtocolMaxBytes;
+	if (originalTaskResultMaxBytes === undefined) delete process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"];
+	else process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"] = originalTaskResultMaxBytes;
+	if (originalRunResultMaxBytes === undefined) delete process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"];
+	else process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"] = originalRunResultMaxBytes;
+	if (originalTmpDir === undefined) delete process.env["TMPDIR"];
+	else process.env["TMPDIR"] = originalTmpDir;
+	if (originalTmp === undefined) delete process.env["TMP"];
+	else process.env["TMP"] = originalTmp;
+	if (originalTemp === undefined) delete process.env["TEMP"];
+	else process.env["TEMP"] = originalTemp;
 });
 
 function fixtureRoot(): string {
@@ -151,9 +151,9 @@ function fixtureRoot(): string {
 function isolatedSystemTempRoot(): string {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-owned-tmp-"));
 	temporaryDirectories.push(root);
-	process.env.TMPDIR = root;
-	process.env.TMP = root;
-	process.env.TEMP = root;
+	process.env["TMPDIR"] = root;
+	process.env["TMP"] = root;
+	process.env["TEMP"] = root;
 	return root;
 }
 
@@ -525,14 +525,34 @@ describe("background runner configuration", () => {
 					exitCode: 1,
 					timedOut: true,
 					error: "Agent timed out.",
+					attemptedModels: ["test/first"],
+					modelAttempts: [
+						{
+							model: "test/first",
+							success: false,
+							exitCode: 1,
+							error: "provider timeout",
+							usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, cost: 0.5, turns: 1 },
+						},
+					],
+					totalCost: { inputTokens: 1, outputTokens: 2, costUsd: 0.5 },
+					turnBudget: { maxTurns: 1, graceTurns: 0, turnCount: 2, outcome: "exceeded" },
 					turnBudgetExceeded: true,
 					wrapUpRequested: true,
+					toolBudget: { hard: 3, block: "*", outcome: "hard-blocked", toolCount: 3 },
+					toolBudgetBlocked: true,
 				},
 				expected: {
 					status: "failed",
 					timedOut: true,
+					attemptedModels: ["test/first"],
+					modelAttempts: [{ model: "test/first", error: "provider timeout" }],
+					totalCost: { inputTokens: 1, outputTokens: 2, costUsd: 0.5 },
+					turnBudget: { maxTurns: 1, graceTurns: 0, turnCount: 2, outcome: "exceeded" },
 					turnBudgetExceeded: true,
 					wrapUpRequested: true,
+					toolBudget: { hard: 3, block: "*", outcome: "hard-blocked", toolCount: 3 },
+					toolBudgetBlocked: true,
 					error: "Agent timed out.",
 				},
 				missingStatus: false,
@@ -1069,12 +1089,12 @@ describe("background runner configuration", () => {
 			3,
 		);
 
-		expect(writerEnv.PATH).toBe("/bin");
-		expect(writerEnv.CHILD_SETTING).toBe("enabled");
-		expect(writerEnv.PI_SUBAGENT_DEPTH).toBe("2");
-		expect(writerEnv.PI_SUBAGENT_MAX_DEPTH).toBe("3");
-		expect(writerEnv.PI_STUFF_BACKGROUND_RUNNER).toBeUndefined();
-		expect(writerEnv.PI_STUFF_BACKGROUND_RUNNER_CONFIG).toBeUndefined();
+		expect(writerEnv["PATH"]).toBe("/bin");
+		expect(writerEnv["CHILD_SETTING"]).toBe("enabled");
+		expect(writerEnv["PI_SUBAGENT_DEPTH"]).toBe("2");
+		expect(writerEnv["PI_SUBAGENT_MAX_DEPTH"]).toBe("3");
+		expect(writerEnv["PI_STUFF_BACKGROUND_RUNNER"]).toBeUndefined();
+		expect(writerEnv["PI_STUFF_BACKGROUND_RUNNER_CONFIG"]).toBeUndefined();
 	});
 
 	test("creates a runnable lifecycle status before child launch", () => {
@@ -1391,7 +1411,7 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const id = `route-retire-${randomUUID()}`;
 		const nestedRoute = createNestedRoute(id);
 		const routeRoot = path.dirname(nestedRoute.eventSink);
@@ -1459,7 +1479,7 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 			].join("\n"),
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-context-usage");
 		const resultPath = path.join(asyncDir, "result.json");
 		const statusPath = path.join(asyncDir, "status.json");
@@ -1516,9 +1536,9 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
-		const originalPath = process.env.PATH;
-		process.env.PATH = root;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+		const originalPath = process.env["PATH"];
+		process.env["PATH"] = root;
 		try {
 			const runtime = resolveBunRuntimeCommand({
 				execPath: process.execPath,
@@ -1544,8 +1564,8 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 				results: [{ output: "NODELESS_OK", success: true }],
 			});
 		} finally {
-			if (originalPath === undefined) delete process.env.PATH;
-			else process.env.PATH = originalPath;
+			if (originalPath === undefined) delete process.env["PATH"];
+			else process.env["PATH"] = originalPath;
 		}
 	}, 10_000);
 
@@ -1569,7 +1589,7 @@ for (let offset = 0; offset < line.length; offset += 4096) {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-backpressured-output");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -1890,7 +1910,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -1978,7 +1998,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -2052,7 +2072,7 @@ const timer = setInterval(() => {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const running = runConfiguredBackground({
@@ -2175,7 +2195,7 @@ process.stdout.write(JSON.stringify({
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-payload-diagnostic");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -2201,7 +2221,7 @@ process.stdout.write(JSON.stringify({
 		const root = fixtureRoot();
 		const writer = path.join(root, "silent-nonzero-writer.ts");
 		fs.writeFileSync(writer, "#!/usr/bin/env bun\nprocess.exit(7);\n", { mode: 0o700 });
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -2233,7 +2253,7 @@ process.stdout.write(JSON.stringify({
 		const root = fixtureRoot();
 		const writer = path.join(root, "silent-signal-writer.ts");
 		fs.writeFileSync(writer, '#!/usr/bin/env bun\nprocess.kill(process.pid, "SIGTERM");\n', { mode: 0o700 });
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -2274,7 +2294,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -2327,7 +2347,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const observedStates: string[] = [];
@@ -2402,7 +2422,7 @@ setInterval(() => {}, 1_000);
 
 	test("rolls writer identity back when child_process.spawn throws synchronously", async () => {
 		const root = fixtureRoot();
-		process.env.PI_SUBAGENT_PI_BINARY = "\0";
+		process.env["PI_SUBAGENT_PI_BINARY"] = "\0";
 		const asyncDir = path.join(root, "async-sync-spawn-error");
 		const resultPath = path.join(asyncDir, "result.json");
 		const observedStates: string[] = [];
@@ -2533,7 +2553,7 @@ if (model.endsWith("model-a")) {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const sessionFile = path.join(root, "fork.jsonl");
 		fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
 		const asyncDir = path.join(root, "async-clean-fallback");
@@ -2626,7 +2646,7 @@ if (model.endsWith("model-a")) {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const sessionByOldLifecycleShard = new Map<number, string>();
 		const sessionFiles: string[] = [];
 		for (let index = 0; index < 10_000 && sessionFiles.length === 0; index += 1) {
@@ -2725,7 +2745,7 @@ setTimeout(() => process.stdout.write(JSON.stringify({
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-same-session");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -2803,7 +2823,7 @@ process.stdout.write(JSON.stringify({
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const runSweep = async (index: number): Promise<void> => {
 			const sessionFile = path.join(root, `sweep-${index}.jsonl`);
 			fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
@@ -2974,7 +2994,7 @@ if (model.endsWith("model-a")) {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-no-fallback-after-tool");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -3033,7 +3053,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-retry-proof");
 		const resultPath = path.join(asyncDir, "result.json");
 		const statusPath = path.join(asyncDir, "status.json");
@@ -3123,7 +3143,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-finalization-signal");
 		const resultPath = path.join(asyncDir, "result.json");
 		const interruptSignal = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
@@ -3186,7 +3206,7 @@ setTimeout(() => {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-status-degradation");
 		const resultPath = path.join(asyncDir, "result.json");
 		const statusPath = path.join(asyncDir, "status.json");
@@ -3238,7 +3258,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-malformed-protocol");
 		const resultPath = path.join(asyncDir, "result.json");
 		let writerPid: number | undefined;
@@ -3325,7 +3345,7 @@ process.exit(0);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-custom-message");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -3386,7 +3406,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-malformed-tool-result");
 		const resultPath = path.join(asyncDir, "result.json");
 		let writerPid: number | undefined;
@@ -3440,7 +3460,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "result-persistence");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -3508,7 +3528,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 			const command = Bun.spawnSync(["git", ...args], { cwd: root, stderr: "pipe", stdout: "pipe" });
 			if (command.exitCode !== 0) throw new Error(command.stderr.toString("utf-8"));
 		}
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const resultRoot = fixtureRoot();
 		const asyncDir = path.join(resultRoot, "async-worktree-evidence");
 		const resultPath = path.join(asyncDir, "result.json");
@@ -3577,7 +3597,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -3640,7 +3660,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-missing-disposition");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -3698,7 +3718,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-close-recovery-rejection");
 		const resultPath = path.join(asyncDir, "result.json");
 		const tempRoot = isolatedSystemTempRoot();
@@ -3737,7 +3757,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 		const root = fixtureRoot();
 		const writer = path.join(root, "external-supervisor-signal-writer.ts");
 		fs.writeFileSync(writer, "#!/usr/bin/env bun\nsetInterval(() => {}, 1_000);\n", { mode: 0o700 });
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-external-supervisor-signal");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -3789,7 +3809,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-external-then-manager");
 		const resultPath = path.join(asyncDir, "result.json");
 		let supervisorPid: number | undefined;
@@ -3837,7 +3857,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-stubborn-writer");
 		const resultPath = path.join(asyncDir, "result.json");
 		let supervisorPid: number | undefined;
@@ -3903,7 +3923,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-escaped-writer-descendant");
 		const resultPath = path.join(asyncDir, "result.json");
 		let escapedPid: number | undefined;
@@ -3964,7 +3984,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-143-manager");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -4030,7 +4050,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-steer-drain-race");
 		const resultPath = path.join(asyncDir, "result.json");
 		const running = runConfiguredBackground({
@@ -4088,7 +4108,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-143-external");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -4145,7 +4165,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4208,7 +4228,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4266,7 +4286,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4325,7 +4345,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4378,7 +4398,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 
 	test("bounds aggregate newline-delimited child protocol output and reaps the writer", async () => {
 		const root = fixtureRoot();
-		process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES = "4096";
+		process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = "4096";
 		const writer = path.join(root, "aggregate-protocol-limit.ts");
 		fs.writeFileSync(
 			writer,
@@ -4400,7 +4420,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-aggregate-protocol");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -4443,7 +4463,7 @@ setInterval(() => {}, 1_000);
 
 	test("compacts redundant Pi lifecycle payloads before applying the aggregate protocol limit", async () => {
 		const root = fixtureRoot();
-		process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES = "4096";
+		process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = "4096";
 		const writer = path.join(root, "redundant-protocol-payloads.ts");
 		fs.writeFileSync(
 			writer,
@@ -4474,7 +4494,7 @@ process.stdout.write(events.map((event) => JSON.stringify(event)).join("\\n") + 
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-redundant-protocol");
 		const resultPath = path.join(asyncDir, "result.json");
 
@@ -4527,10 +4547,10 @@ process.stdout.write(JSON.stringify(event), () => process.exit(0));
 		] as const;
 
 		for (const fixture of cases) {
-			process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES = fixture.protocolLimit;
+			process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = fixture.protocolLimit;
 			const writer = path.join(root, `${fixture.id}.ts`);
 			fs.writeFileSync(writer, `#!/usr/bin/env bun\n${fixture.script}`, { mode: 0o700 });
-			process.env.PI_SUBAGENT_PI_BINARY = writer;
+			process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 			const asyncDir = path.join(root, fixture.id);
 			const resultPath = path.join(asyncDir, "result.json");
 			await runConfiguredBackground({
@@ -4566,7 +4586,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-large-recent");
 		const resultPath = path.join(asyncDir, "result.json");
 		await runConfiguredBackground({
@@ -4594,8 +4614,8 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 
 	test("fairly bounds multi-Agent result projections while preserving full output artifacts", async () => {
 		const root = fixtureRoot();
-		process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES = "1024";
-		process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES = "2048";
+		process.env["PI_SUBAGENT_TASK_RESULT_MAX_BYTES"] = "1024";
+		process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"] = "2048";
 		const writer = path.join(root, "bounded-run-results.ts");
 		fs.writeFileSync(
 			writer,
@@ -4607,7 +4627,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-bounded-run-results");
 		const resultPath = path.join(asyncDir, "result.json");
 		await runConfiguredBackground({
@@ -4654,7 +4674,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4719,7 +4739,7 @@ setTimeout(() => process.exit(0), 1_225);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4787,7 +4807,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4844,7 +4864,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {
@@ -4915,7 +4935,7 @@ const timer = setInterval(() => {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-ack-before-source");
 		const resultPath = path.join(asyncDir, "result.json");
 		const requestId = "ack-visible-first";
@@ -4985,7 +5005,7 @@ const timer = setInterval(() => {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-steer-retry");
 		const resultPath = path.join(asyncDir, "result.json");
 		const statusPath = path.join(asyncDir, "status.json");
@@ -5071,7 +5091,7 @@ const timer = setInterval(() => {
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async-steering-persistence");
 		const resultPath = path.join(asyncDir, "result.json");
 		const statusPath = path.join(asyncDir, "status.json");
@@ -5162,7 +5182,7 @@ setInterval(() => {}, 1_000);
 `,
 			{ mode: 0o700 },
 		);
-		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 		const asyncDir = path.join(root, "async");
 		const resultPath = path.join(asyncDir, "result.json");
 		const config: BackgroundRunnerConfig = {

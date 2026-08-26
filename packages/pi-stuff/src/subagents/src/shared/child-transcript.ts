@@ -284,7 +284,10 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		if (message.model) record.model = message.model;
 		if (message.stopReason) record.stopReason = message.stopReason;
 		if (message.errorMessage) record.errorMessage = message.errorMessage;
-		if (message.usage) record.usage = normalizeUsage(message.usage);
+		if (message.usage) {
+			const usage = normalizeUsage(message.usage);
+			if (usage) record.usage = usage;
+		}
 		writeRecord(record);
 	};
 

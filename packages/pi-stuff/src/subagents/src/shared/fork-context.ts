@@ -82,11 +82,11 @@ function isUnsafeAnthropicThinkingBlock<Block>(message: BranchSessionEntry["mess
 	const api = isRuntimeString(message.api) ? message.api.toLowerCase() : "";
 	const model = isRuntimeString(message.model) ? message.model.toLowerCase() : "";
 	const isAnthropic = provider === "anthropic" || api === "anthropic-messages" || model.startsWith("anthropic/");
-	if (block.type === "redacted_thinking") return true;
-	if (block.type !== "thinking" || !isAnthropic) return false;
+	if (block["type"] === "redacted_thinking") return true;
+	if (block["type"] !== "thinking" || !isAnthropic) return false;
 	const signature =
-		"thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
-	return ("redacted" in block && block.redacted === true) || (isRuntimeString(signature) && signature.length > 0);
+		"thinkingSignature" in block ? block["thinkingSignature"] : "signature" in block ? block["signature"] : undefined;
+	return ("redacted" in block && block["redacted"] === true) || (isRuntimeString(signature) && signature.length > 0);
 }
 
 function isOptionalString(value: JsonInputValue): boolean {

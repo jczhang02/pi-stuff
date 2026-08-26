@@ -51,7 +51,7 @@ function lastUserText(context: Context): string {
 }
 
 function record(value: ProviderLogRecord): void {
-	const logPath = process.env.PI_STUFF_PROCESS_CONTROLS_LOG;
+	const logPath = process.env["PI_STUFF_PROCESS_CONTROLS_LOG"];
 	if (!logPath) return;
 	appendFileSync(logPath, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
 }
@@ -67,14 +67,16 @@ function textStream(text: string, delayMs: number, signal?: AbortSignal) {
 		if (timer) clearTimeout(timer);
 		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
 		stream.push({ type: "done", reason: "stop", message: assistant([{ type: "text", text }], "stop") });
-		record({ kind: "finished", childIndex: process.env[CHILD_INDEX_ENV], text });
+		const childIndex = process.env[CHILD_INDEX_ENV];
+		record(childIndex === undefined ? { kind: "finished", text } : { kind: "finished", childIndex, text });
 	};
 	const abort = (): void => {
 		if (settled) return;
 		settled = true;
 		if (timer) clearTimeout(timer);
 		stream.push({ type: "error", reason: "aborted", error: assistant([{ type: "text", text }], "aborted") });
-		record({ kind: "aborted", childIndex: process.env[CHILD_INDEX_ENV], text });
+		const childIndex = process.env[CHILD_INDEX_ENV];
+		record(childIndex === undefined ? { kind: "aborted", text } : { kind: "aborted", childIndex, text });
 	};
 
 	stream.push({ type: "start", partial: pending });

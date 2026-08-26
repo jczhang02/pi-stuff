@@ -235,7 +235,7 @@ export function decodeSubagentCapabilityCeiling(
 		!isRuntimeObject(parsed) ||
 		Array.isArray(parsed) ||
 		!("version" in parsed) ||
-		parsed.version !== SUBAGENT_CAPABILITY_CEILING_VERSION
+		parsed["version"] !== SUBAGENT_CAPABILITY_CEILING_VERSION
 	) {
 		throw new Error("Invalid inherited capability ceiling version.");
 	}

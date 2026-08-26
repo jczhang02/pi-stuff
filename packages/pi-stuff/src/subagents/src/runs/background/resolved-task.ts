@@ -47,21 +47,21 @@ export interface AsyncExecutionContext {
 	cwd: string;
 	currentSessionId: string;
 	/** Ledger namespace used by the cross-process Agent governor. */
-	governorSessionId?: string;
+	governorSessionId?: string | undefined;
 	/** Physical v2 identity written by every new child. */
-	physicalSessionId?: string;
+	physicalSessionId?: string | undefined;
 	/** Direct parent session used for supervisor routing from the child. */
-	parentSessionId?: string;
-	currentModelProvider?: string;
-	currentModel?: ParentModel;
-	modelScope?: ModelScopeConfig;
-	interactive?: boolean;
+	parentSessionId?: string | undefined;
+	currentModelProvider?: string | undefined;
+	currentModel?: ParentModel | undefined;
+	modelScope?: ModelScopeConfig | undefined;
+	interactive?: boolean | undefined;
 }
 
 export interface AsyncParallelTaskInput {
 	agent: string;
-	description?: string;
-	delegatedTask?: string;
+	description?: string | undefined;
+	delegatedTask?: string | undefined;
 	task: string;
 	cwd?: string;
 	model?: string;
@@ -73,28 +73,28 @@ export interface AsyncParallelTaskInput {
 export interface CommonBuildParams {
 	ctx: AsyncExecutionContext;
 	/** Parent Agent attribution captured before asynchronous launch begins. */
-	parentRunOrigin?: AgentWorkOrigin;
+	parentRunOrigin?: AgentWorkOrigin | undefined;
 	/** Effective parent Code Mode state captured before child process launch. */
-	codeModeEnabled?: boolean;
+	codeModeEnabled?: boolean | undefined;
 	/** Effective parent Ponytail mode captured before child process launch. */
-	ponytailMode?: PonytailMode;
-	codeModeProviderTools?: readonly string[];
-	availableModels?: AvailableModelInfo[];
-	cwd?: string;
+	ponytailMode?: PonytailMode | undefined;
+	codeModeProviderTools?: readonly string[] | undefined;
+	availableModels?: AvailableModelInfo[] | undefined;
+	cwd?: string | undefined;
 	maxSubagentDepth: number;
-	turnBudget?: ResolvedTurnBudget;
-	toolBudget?: ResolvedToolBudget;
-	configToolBudget?: ResolvedToolBudget;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	controlConfig?: ResolvedControlConfig;
-	absoluteDeadlineAt?: number;
-	artifactsDir?: string;
-	artifactConfig?: ArtifactConfig;
-	sessionDir?: string;
+	turnBudget?: ResolvedTurnBudget | undefined;
+	toolBudget?: ResolvedToolBudget | undefined;
+	configToolBudget?: ResolvedToolBudget | undefined;
+	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
+	controlConfig?: ResolvedControlConfig | undefined;
+	absoluteDeadlineAt?: number | undefined;
+	artifactsDir?: string | undefined;
+	artifactConfig?: ArtifactConfig | undefined;
+	sessionDir?: string | undefined;
 	/** Preserve the original governor identity when reviving under a new runtime id. */
-	logicalSourceRunId?: string;
-	logicalChildIndex?: number;
-	childBaseExtensionPath?: string;
+	logicalSourceRunId?: string | undefined;
+	logicalChildIndex?: number | undefined;
+	childBaseExtensionPath?: string | undefined;
 }
 
 export interface BackgroundRecoveryDescriptor {
@@ -143,12 +143,12 @@ export interface ResolvedTaskBuildInput {
 	agent: AgentConfig;
 	params: CommonBuildParams;
 	runnerCwd: string;
-	context?: ContextMode;
-	skills?: string[];
-	sessionFile?: string;
-	modelOverride?: string;
-	modelCandidatesOverride?: string[];
-	thinkingOverride?: AgentConfig["thinking"];
+	context?: ContextMode | undefined;
+	skills?: string[] | undefined;
+	sessionFile?: string | undefined;
+	modelOverride?: string | undefined;
+	modelCandidatesOverride?: string[] | undefined;
+	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
 
 interface ResolvedTaskProjection {

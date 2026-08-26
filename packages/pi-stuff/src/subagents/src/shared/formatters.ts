@@ -56,14 +56,18 @@ export function formatDuration(ms: number): string {
 export function formatToolCall(name: string, args: JsonInputObject, expanded = false): string {
 	switch (name) {
 		case "bash": {
-			const command = isRuntimeString(args.command) ? args.command : "";
+			const command = isRuntimeString(args["command"]) ? args["command"] : "";
 			const maxLength = expanded ? 240 : 60;
 			return `$ ${command.slice(0, maxLength)}${command.length > maxLength ? "..." : ""}`;
 		}
 		case "read":
 		case "write":
 		case "edit": {
-			const target = isRuntimeString(args.path) ? args.path : isRuntimeString(args.file_path) ? args.file_path : "";
+			const target = isRuntimeString(args["path"])
+				? args["path"]
+				: isRuntimeString(args["file_path"])
+					? args["file_path"]
+					: "";
 			return `${name} ${shortenPath(target)}`;
 		}
 		default: {
@@ -78,7 +82,7 @@ export function formatToolCall(name: string, args: JsonInputObject, expanded = f
  * Shorten a path by replacing home directory with ~
  */
 export function shortenPath(p: string): string {
-	const home = process.env.HOME;
+	const home = process.env["HOME"];
 	if (home && p.startsWith(home)) {
 		return `~${p.slice(home.length)}`;
 	}

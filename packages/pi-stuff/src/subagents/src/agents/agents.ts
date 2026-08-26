@@ -130,42 +130,45 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 
 	try {
 		const { frontmatter, body } = parseFrontmatter(content);
-		const localName = frontmatter.name?.trim();
-		const description = frontmatter.description?.trim();
+		const localName = frontmatter["name"]?.trim();
+		const description = frontmatter["description"]?.trim();
 		if (!localName || !AGENT_NAME.test(localName) || !description || !body.trim()) return undefined;
 
-		const parsedPackage = parsePackageName(frontmatter.package, `Agent '${localName}' package`);
+		const parsedPackage = parsePackageName(frontmatter["package"], `Agent '${localName}' package`);
 		if (parsedPackage.error) return undefined;
 		const packageName = parsedPackage.packageName;
-		const rawTools = parseFrontmatterList(frontmatter.tools);
+		const rawTools = parseFrontmatterList(frontmatter["tools"]);
 		const { tools, mcpDirectTools } = splitTools(rawTools);
-		const fallbackModels = nonEmpty(parseFrontmatterList(frontmatter.fallbackModels));
+		const fallbackModels = nonEmpty(parseFrontmatterList(frontmatter["fallbackModels"]));
 		if (fallbackModels && fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) return undefined;
-		const skills = nonEmpty(parseFrontmatterList(frontmatter.skill ?? frontmatter.skills));
-		const skillPath = nonEmpty(parseFrontmatterList(frontmatter.skillPath));
-		const extensions = parseFrontmatterList(frontmatter.extensions);
-		const subagentOnlyExtensions = nonEmpty(parseFrontmatterList(frontmatter.subagentOnlyExtensions));
+		const skills = nonEmpty(parseFrontmatterList(frontmatter["skill"] ?? frontmatter["skills"]));
+		const skillPath = nonEmpty(parseFrontmatterList(frontmatter["skillPath"]));
+		const extensions = parseFrontmatterList(frontmatter["extensions"]);
+		const subagentOnlyExtensions = nonEmpty(parseFrontmatterList(frontmatter["subagentOnlyExtensions"]));
 
-		const defaultTurnBudget = parseTurnBudget(frontmatter.turnBudget, localName);
-		const toolBudget = parseToolBudget(frontmatter.toolBudget, localName);
-		const maxSubagentDepth = optionalNonNegativeInteger(frontmatter.maxSubagentDepth);
-		if (frontmatter.maxSubagentDepth !== undefined && maxSubagentDepth === undefined) return undefined;
+		const defaultTurnBudget = parseTurnBudget(frontmatter["turnBudget"], localName);
+		const toolBudget = parseToolBudget(frontmatter["toolBudget"], localName);
+		const maxSubagentDepth = optionalNonNegativeInteger(frontmatter["maxSubagentDepth"]);
+		if (frontmatter["maxSubagentDepth"] !== undefined && maxSubagentDepth === undefined) return undefined;
 
 		const systemPromptMode =
-			optionalEnum(frontmatter.systemPromptMode, ["append", "replace"] as const) ?? defaultSystemPromptMode();
+			optionalEnum(frontmatter["systemPromptMode"], ["append", "replace"] as const) ?? defaultSystemPromptMode();
 		const inheritProjectContext =
-			optionalBoolean(frontmatter.inheritProjectContext) ?? defaultInheritProjectContext();
-		const inheritSkills = optionalBoolean(frontmatter.inheritSkills) ?? defaultInheritSkills();
-		if (frontmatter.systemPromptMode !== undefined && !["append", "replace"].includes(frontmatter.systemPromptMode)) {
-			return undefined;
-		}
+			optionalBoolean(frontmatter["inheritProjectContext"]) ?? defaultInheritProjectContext();
+		const inheritSkills = optionalBoolean(frontmatter["inheritSkills"]) ?? defaultInheritSkills();
 		if (
-			frontmatter.inheritProjectContext !== undefined &&
-			optionalBoolean(frontmatter.inheritProjectContext) === undefined
+			frontmatter["systemPromptMode"] !== undefined &&
+			!["append", "replace"].includes(frontmatter["systemPromptMode"])
 		) {
 			return undefined;
 		}
-		if (frontmatter.inheritSkills !== undefined && optionalBoolean(frontmatter.inheritSkills) === undefined) {
+		if (
+			frontmatter["inheritProjectContext"] !== undefined &&
+			optionalBoolean(frontmatter["inheritProjectContext"]) === undefined
+		) {
+			return undefined;
+		}
+		if (frontmatter["inheritSkills"] !== undefined && optionalBoolean(frontmatter["inheritSkills"]) === undefined) {
 			return undefined;
 		}
 
@@ -183,10 +186,10 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		if (packageName) agent = { ...agent, packageName };
 		if (rawTools !== undefined) agent = { ...agent, tools };
 		if (mcpDirectTools.length > 0) agent = { ...agent, mcpDirectTools };
-		if (optionalText(frontmatter.model)) agent = { ...agent, model: frontmatter.model.trim() };
+		if (optionalText(frontmatter["model"])) agent = { ...agent, model: frontmatter["model"].trim() };
 		if (fallbackModels) agent = { ...agent, fallbackModels };
-		if (frontmatter.thinking === "false") agent = { ...agent, thinking: false };
-		else if (optionalText(frontmatter.thinking)) agent = { ...agent, thinking: frontmatter.thinking.trim() };
+		if (frontmatter["thinking"] === "false") agent = { ...agent, thinking: false };
+		else if (optionalText(frontmatter["thinking"])) agent = { ...agent, thinking: frontmatter["thinking"].trim() };
 		if (defaultTurnBudget) agent = { ...agent, defaultTurnBudget };
 		if (skills) agent = { ...agent, skills };
 		if (skillPath) agent = { ...agent, skillPath };
@@ -277,10 +280,14 @@ async function collectPackageAgentPaths(
 async function packageAgentPaths(packageRoot: string): Promise<string[]> {
 	const manifest = await readJson(path.join(packageRoot, "package.json"));
 	if (!isRecord(manifest)) return [];
-	const pi = isRecord(manifest.pi) ? manifest.pi : undefined;
-	const piSubagents = isRecord(pi?.subagents) ? pi.subagents : undefined;
+	const pi = isRecord(manifest["pi"]) ? manifest["pi"] : undefined;
+	const piSubagents = isRecord(pi?.["subagents"]) ? pi["subagents"] : undefined;
 	const legacy = isRecord(manifest["pi-subagents"]) ? manifest["pi-subagents"] : undefined;
-	const entries = [...stringArray(pi?.agents), ...stringArray(piSubagents?.agents), ...stringArray(legacy?.agents)];
+	const entries = [
+		...stringArray(pi?.["agents"]),
+		...stringArray(piSubagents?.["agents"]),
+		...stringArray(legacy?.["agents"]),
+	];
 	const root = path.resolve(packageRoot);
 	return entries.map((entry) => path.resolve(root, entry)).filter((candidate) => isWithin(candidate, root));
 }
@@ -300,10 +307,10 @@ async function packageRootsInNodeModules(nodeModules: string): Promise<string[]>
 
 async function packageRootsFromSettings(settingsPath: string, baseDir: string): Promise<string[]> {
 	const settings = await readJson(settingsPath);
-	if (!isRecord(settings) || !Array.isArray(settings.packages)) return [];
+	if (!isRecord(settings) || !Array.isArray(settings["packages"])) return [];
 	const roots: string[] = [];
-	for (const entry of settings.packages) {
-		const source = isRuntimeString(entry) ? entry : isRecord(entry) ? entry.source : undefined;
+	for (const entry of settings["packages"]) {
+		const source = isRuntimeString(entry) ? entry : isRecord(entry) ? entry["source"] : undefined;
 		if (!isRuntimeString(source)) continue;
 		const resolved = resolvePackageSource(source, baseDir);
 		if (resolved) roots.push(resolved);
