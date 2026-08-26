@@ -6,6 +6,7 @@
  */
 import type { ConnectorDescription, SearchOutput, SearchResult } from "./connector-types.js";
 import type { Snippet } from "./snippet.js";
+import { toolPath } from "./utils.js";
 
 const SEARCH_RESULT_LIMIT = 50;
 
@@ -138,7 +139,7 @@ export function searchConnectors(
 	for (const desc of descriptions) {
 		for (const [methodName, descriptor] of Object.entries(desc.descriptors)) {
 			const item: SearchableItem = {
-				path: `${desc.name}.${methodName}`,
+				path: toolPath(methodName, desc.name),
 				connector: desc.name,
 				method: methodName,
 				description: descriptor?.description,

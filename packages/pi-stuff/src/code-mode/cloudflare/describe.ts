@@ -7,20 +7,35 @@ import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { ConnectorDescription, DescribeOutput } from "./connector-types.js";
 import { generateTypesFromJsonSchema, type JsonSchemaToolDescriptors } from "./json-schema-types.js";
 import type { Snippet } from "./snippet.js";
-import { sanitizeToolName, toolPath } from "./utils.js";
+import { sanitizeToolName, toolOwnerPath, toolPath } from "./utils.js";
+
+function parseStringLiteral(literal: string | undefined): string | undefined {
+	if (!literal) return undefined;
+	try {
+		const value: unknown = JSON.parse(literal);
+		return isRuntimeString(value) ? value : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 function splitTarget(target: string): readonly [string, string | undefined] {
-	const bracket = target.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\[("(?:\\.|[^"\\])*")\]$/u);
-	const owner = bracket?.[1];
-	const literal = bracket?.[2];
-	if (owner && literal) {
-		try {
-			const method: unknown = JSON.parse(literal);
-			if (isRuntimeString(method)) return [owner, method];
-		} catch {
-			// Malformed bracket targets fall through to the ordinary not-found result.
+	const global = target.match(
+		/^globalThis\[("(?:\\.|[^"\\])*")\](?:\.([A-Za-z_$][A-Za-z0-9_$]*)|\[("(?:\\.|[^"\\])*")\])?$/u,
+	);
+	if (global) {
+		const owner = parseStringLiteral(global[1]);
+		if (owner !== undefined) {
+			if (global[2] !== undefined) return [owner, global[2]];
+			if (global[3] === undefined) return [owner, undefined];
+			const method = parseStringLiteral(global[3]);
+			if (method !== undefined) return [owner, method];
 		}
 	}
+	const bracket = target.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\[("(?:\\.|[^"\\])*")\]$/u);
+	const owner = bracket?.[1];
+	const method = parseStringLiteral(bracket?.[2]);
+	if (owner && method !== undefined) return [owner, method];
 	const separator = target.indexOf(".");
 	return separator < 0 ? [target, undefined] : [target.slice(0, separator), target.slice(separator + 1)];
 }
@@ -71,7 +86,7 @@ export function describeTarget(
 	// Connector-level describe
 	if (connector && !maybeMethod) {
 		return {
-			path: connector.name,
+			path: toolOwnerPath(connector.name),
 			description: connector.instructions,
 			types: renderConnectorTypes(connector.name, connector.instructions, connector.descriptors),
 			kind: "connector",

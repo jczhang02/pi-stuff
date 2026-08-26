@@ -21,7 +21,7 @@ function signature(result: SearchResult, typed = true): string {
 }
 
 function projectedPath(result: SearchResult): string {
-	return result.kind === "snippet" ? result.path : toolPath(result.method);
+	return result.kind === "snippet" ? result.path : toolPath(result.method, result.connector);
 }
 
 function signatureResult(result: SearchResult, typed = true) {

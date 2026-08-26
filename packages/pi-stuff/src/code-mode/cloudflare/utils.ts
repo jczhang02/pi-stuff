@@ -65,6 +65,7 @@ const JS_RESERVED = new Set([
 	"with",
 	"yield",
 ]);
+const JS_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/u;
 
 /**
  * Sanitize a tool name into a valid JavaScript identifier.
@@ -95,8 +96,13 @@ export function sanitizeToolName(name: string): string {
 	return sanitized;
 }
 
+export function toolOwnerPath(owner: string): string {
+	return JS_IDENTIFIER.test(owner) && !JS_RESERVED.has(owner) ? owner : `globalThis[${JSON.stringify(owner)}]`;
+}
+
 export function toolPath(name: string, owner = "tools"): string {
-	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) ? `${owner}.${name}` : `${owner}[${JSON.stringify(name)}]`;
+	const ownerPath = toolOwnerPath(owner);
+	return JS_IDENTIFIER.test(name) ? `${ownerPath}.${name}` : `${ownerPath}[${JSON.stringify(name)}]`;
 }
 
 export function toPascalCase(str: string) {

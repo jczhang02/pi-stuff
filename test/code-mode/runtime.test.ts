@@ -7,6 +7,7 @@ import type {
 	SearchResult,
 } from "../../packages/pi-stuff/src/code-mode/cloudflare/connector-types.js";
 import { describeTarget } from "../../packages/pi-stuff/src/code-mode/cloudflare/describe.js";
+import { toolPath } from "../../packages/pi-stuff/src/code-mode/cloudflare/utils.js";
 import {
 	buildSuiteSandboxSource,
 	SuiteCodeModeConnector,
@@ -130,16 +131,22 @@ function sessionLedgerFixture() {
 type DiscoveryConnector = Parameters<typeof createCodeModeSearchDefinition>[0];
 
 function discoveryConnectorFixture(
-	entries: readonly { readonly descriptionSize?: number; readonly name?: string; readonly typesSize: number }[],
+	entries: readonly {
+		readonly connector?: string;
+		readonly descriptionSize?: number;
+		readonly name?: string;
+		readonly typesSize: number;
+	}[],
 ): DiscoveryConnector {
 	const results: SearchResult[] = entries.map((entry, index) => {
+		const connector = entry.connector ?? "tools";
 		const method = entry.name ?? `fixture_${String(index)}`;
 		return {
-			connector: "tools",
+			connector,
 			description: "d".repeat(entry.descriptionSize ?? 0),
 			kind: "method",
 			method,
-			path: `tools.${method}`,
+			path: toolPath(method, connector),
 			score: 100 - index,
 		};
 	});
@@ -283,7 +290,10 @@ test("Tool Discovery keeps deterministic lexical matches without unrelated fallb
 	expect(connector.search(query)).toEqual(connector.search(query));
 });
 
-test("Tool descriptions accept and return executable bracket paths", () => {
+test.each([
+	["tools", "tools.task-create", 'tools["task-create"]', "tools"],
+	["my-tools", "my-tools.task-create", 'globalThis["my-tools"]["task-create"]', 'globalThis["my-tools"]'],
+])("Tool descriptions round-trip executable paths for connector %s", (name, target, path, ownerPath) => {
 	const descriptions = [
 		{
 			descriptors: {
@@ -292,13 +302,13 @@ test("Tool descriptions accept and return executable bracket paths", () => {
 					inputSchema: Type.Object({ description: Type.String() }),
 				},
 			},
-			name: "tools",
+			name,
 		},
 	];
-	const canonical = describeTarget("tools.task-create", descriptions);
-	const executable = describeTarget('tools["task-create"]', descriptions);
-	expect(canonical.path).toBe('tools["task-create"]');
-	expect(executable).toEqual(canonical);
+	const canonical = describeTarget(target, descriptions);
+	expect(canonical.path).toBe(path);
+	expect(describeTarget(path, descriptions)).toEqual(canonical);
+	expect(describeTarget(name, descriptions).path).toBe(ownerPath);
 });
 
 test("the Connector rejects malformed supported images returned by nested Tools", async () => {
@@ -416,6 +426,11 @@ test("top-level Tool Discovery deterministically degrades every response within 
 		path: 'tools["task-create"]',
 		signature: 'tools["task-create"](input: TaskCreateInput): Promise<TaskCreateOutput>',
 	});
+
+	const customOwner = await executeDiscovery(
+		discoveryConnectorFixture([{ connector: "my-tools", name: "task-create", typesSize: 5 }]),
+	);
+	expect(customOwner.payload.results[0]?.path).toBe('globalThis["my-tools"]["task-create"]');
 
 	const longNames = Array.from({ length: 5 }, (_, index) => ({
 		name: `${String(index)}_${"n".repeat(2_100)}`,
