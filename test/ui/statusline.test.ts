@@ -379,7 +379,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
+				"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main 12 󰏫3 󰝒1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
 				" Implement the accepted Pi Stuff statusline.",
 			]);
 		});
@@ -461,7 +461,7 @@ describe("StatuslineController", () => {
 			const component = controller.createFooter(context({}), tuiHarness().tui, theme, footerData("main"));
 			const rendered = component.render(160).join("\n");
 
-			expect(rendered).toContain(" main 2 1 · 2 1");
+			expect(rendered).toContain(" main 2 1 2 1");
 		});
 	});
 
@@ -491,11 +491,11 @@ describe("StatuslineController", () => {
 			expect(colored.get("accent")).toEqual(expect.arrayContaining(["󱙺 anthropic/sonnet-4.5", "󰉋"]));
 			expect(colored.get("accent")).not.toContain("");
 			expect(colored.get("thinkingMedium")).toContain("");
-			expect(colored.get("warning")).toEqual(expect.arrayContaining(["", "3", ""]));
+			expect(colored.get("warning")).toEqual(expect.arrayContaining(["", "󰏫3", ""]));
 			expect(colored.get("success")).toContain("12");
 			expect(colored.get("dim")).toEqual(expect.arrayContaining(["󰌨", " · "]));
 			expect(colored.get("muted")).toEqual(
-				expect.arrayContaining(["", "med", "1", "󰆼", "Implement the accepted Pi Stuff statusline."]),
+				expect.arrayContaining(["", "med", "󰝒1", "󰆼", "Implement the accepted Pi Stuff statusline."]),
 			);
 			expect([...colored.values()].flat()).not.toContain("goal:UI");
 			expect(colored.get("text")).toEqual(expect.arrayContaining(["pi-stuff", "main", "42.4%", "99.9%", "$0.42"]));
@@ -525,7 +525,7 @@ describe("StatuslineController", () => {
 			expect(rendered).toContain("sonnet-4.5");
 			expect(rendered).toMatch(/󰌨 42(?:\.4)?%/u);
 			expect(rendered).toContain(" main");
-			expect(rendered).not.toMatch(/[]\d+[^\n]*…/u);
+			expect(rendered).not.toMatch(/[󰏫󰝒]\d+[^\n]*…/u);
 			expect(rendered).not.toContain("AC");
 			expect(lines).toHaveLength(2);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
@@ -626,7 +626,7 @@ describe("StatuslineController", () => {
 			);
 
 			const wide = component.render(400).join("\n");
-			for (const marker of ["2", "12", "3", "1", "2", "1"]) expect(wide).toContain(marker);
+			for (const marker of ["2", "12", "󰏫3", "󰝒1", "2", "1"]) expect(wide).toContain(marker);
 
 			for (const width of [64, 48, 32, 24]) {
 				const lines = component.render(width);
@@ -666,7 +666,7 @@ describe("StatuslineController", () => {
 			);
 
 			const wide = component.render(600).join("\n");
-			for (const marker of ["2", "12", "3", "1", "2", "1"]) expect(wide).toContain(marker);
+			for (const marker of ["2", "12", "󰏫3", "󰝒1", "2", "1"]) expect(wide).toContain(marker);
 			expect(wide).not.toContain("42.4%");
 
 			for (const width of [100, 64, 48, 32, 24]) {
@@ -718,7 +718,7 @@ describe("StatuslineController", () => {
 
 		const lines = withFormerFallbackOverride(() => component.render(120));
 		expect(lines).toEqual([
-			"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main · 12 3 1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
+			"󱙺 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main 12 󰏫3 󰝒1 · 󰌨 42.4% · 󰆼 99.9% ·  $0.42",
 			" Implement the accepted Pi Stuff statusline.",
 		]);
 		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);
@@ -1210,7 +1210,7 @@ describe("GitStatusSource", () => {
 		});
 		const component = controller.createFooter(context({}), tuiHarness().tui, theme, data);
 
-		expect(withFormerFallbackOverride(() => component.render(120).join("\n"))).toContain(" old-branch · 1");
+		expect(withFormerFallbackOverride(() => component.render(120).join("\n"))).toContain(" old-branch 󰏫1");
 		branch = "new-branch";
 		notifyBranchChange?.();
 		const changed = withFormerFallbackOverride(() => component.render(120).join("\n"));
@@ -1221,6 +1221,6 @@ describe("GitStatusSource", () => {
 		await source.refresh(fakeApi, cwd);
 		notifyBranchChange?.();
 		const settled = withFormerFallbackOverride(() => component.render(120).join("\n"));
-		expect(settled).toContain(" new-branch · 2");
+		expect(settled).toContain(" new-branch 󰏫2");
 	});
 });
