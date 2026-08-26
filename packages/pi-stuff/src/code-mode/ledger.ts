@@ -475,11 +475,24 @@ function effectiveEvents(context: ExtensionContext): LedgerEvent[] {
 
 function snapshot(context: ExtensionContext): LedgerSnapshot {
 	const state: LedgerSnapshot = { executions: new Map(), snippets: new Map() };
-	for (const event of effectiveEvents(context)) applyEvent(state, event, true);
+	for (const event of effectiveEvents(context)) applyEvent(state, event);
+	normalizeHistoricalToolErrors(state);
 	return state;
 }
 
-function applyEvent(state: LedgerSnapshot, event: LedgerEvent, historical = false): void {
+function normalizeHistoricalToolErrors(state: LedgerSnapshot): void {
+	for (const execution of state.executions.values()) {
+		for (const call of execution.calls.values()) {
+			const result = call.result;
+			if (call.status !== "success" || !result || !("isError" in result) || result.isError !== true) continue;
+			call.status = "error";
+			const text = result.content.find((item) => item.type === "text" && item.text.trim());
+			call.error ??= text?.type === "text" ? text.text.trim() : `${call.name} failed`;
+		}
+	}
+}
+
+function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	if (event.kind === "execution-started") {
 		const execution: ExecutionState = {
 			attempt: 0,
@@ -558,11 +571,6 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent, historical = fals
 		if (isRuntimeObject(result) && result !== null && "content" in result && Array.isArray(result["content"])) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
-			if (historical && call.status === "success" && "isError" in call.result && call.result.isError === true) {
-				call.status = "error";
-				const text = call.result.content.find((item) => item.type === "text" && item.text.trim());
-				call.error ??= text?.type === "text" ? text.text.trim() : `${call.name} failed`;
-			}
 		}
 	}
 }
