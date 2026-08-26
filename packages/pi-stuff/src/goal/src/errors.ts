@@ -12,8 +12,8 @@ type AgentStopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
 export interface AssistantMessageLike {
 	role: "assistant";
-	stopReason?: AgentStopReason;
-	errorMessage?: string;
+	stopReason?: AgentStopReason | undefined;
+	errorMessage?: string | undefined;
 	content?: PiAssistantMessage["content"];
 	api?: PiAssistantMessage["api"];
 	provider?: PiAssistantMessage["provider"];
@@ -111,7 +111,7 @@ export function findFinalAssistantMessage(messages: unknown[]): AssistantMessage
 }
 
 function toPiAssistantMessage(assistant: AssistantMessageLike): PiAssistantMessage {
-	return {
+	const message: PiAssistantMessage = {
 		role: "assistant",
 		content: assistant.content ?? [],
 		api: assistant.api ?? "openai-responses",
@@ -119,9 +119,9 @@ function toPiAssistantMessage(assistant: AssistantMessageLike): PiAssistantMessa
 		model: assistant.model ?? "unknown",
 		usage: assistant.usage ?? zeroUsage(),
 		stopReason: assistant.stopReason ?? "error",
-		errorMessage: assistant.errorMessage,
 		timestamp: assistant.timestamp ?? Date.now(),
 	};
+	return assistant.errorMessage === undefined ? message : { ...message, errorMessage: assistant.errorMessage };
 }
 
 function zeroUsage(): Usage {

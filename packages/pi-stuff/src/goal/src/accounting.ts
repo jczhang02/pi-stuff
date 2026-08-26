@@ -5,7 +5,7 @@ export interface GoalAccountingState {
 	baselineTokens: number;
 	tokensUsed: number;
 	timeUsedSeconds: number;
-	activeStartedAt?: number;
+	activeStartedAt?: number | undefined;
 	updatedAt: number;
 }
 

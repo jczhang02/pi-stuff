@@ -7,7 +7,7 @@ export interface GoalCommandFeatures {
 export interface CommandResult {
 	kind: "start" | "pause" | "resume" | "clear" | "show" | "edit" | "add" | "prioritize" | "drop-last" | "skip";
 	objective?: string;
-	tokenBudget?: number;
+	tokenBudget?: number | undefined;
 }
 
 export interface GoalArgumentCompletion {

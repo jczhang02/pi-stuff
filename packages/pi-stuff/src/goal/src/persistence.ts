@@ -36,25 +36,25 @@ export interface ActiveGoal {
 	startedAt: number;
 	updatedAt: number;
 	iteration: number;
-	tokenBudget?: number;
+	tokenBudget?: number | undefined;
 	tokensUsed: number;
 	timeUsedSeconds: number;
 	baselineTokens: number;
-	activeStartedAt?: number;
+	activeStartedAt?: number | undefined;
 	automaticModelTurns: number;
 	toolFreeRepeatCount: number;
-	lastToolFreeOutputFingerprint?: string;
-	blockerAudit?: GoalBlockerAudit;
-	safetyPauseCause?: SafetyPauseCause;
-	safetyResetPending?: boolean;
+	lastToolFreeOutputFingerprint?: string | undefined;
+	blockerAudit?: GoalBlockerAudit | undefined;
+	safetyPauseCause?: SafetyPauseCause | undefined;
+	safetyResetPending?: boolean | undefined;
 }
 
 export type PendingQueueAction =
 	| {
 			kind: "prioritize";
 			objective: string;
-			tokenBudget?: number;
-			displacedUsageFinalized?: boolean;
+			tokenBudget?: number | undefined;
+			displacedUsageFinalized?: boolean | undefined;
 	  }
 	| {
 			kind: "advance";
@@ -123,13 +123,13 @@ export function loadGoalStateFromSession(ctx: SessionContext): LoadedGoalState {
 
 function loadCanonicalGoalState(data: JsonInputValue): LoadedGoalState {
 	if (!isRecord(data)) return emptyGoalState("canonical");
-	const rawGoal = data.goal;
+	const rawGoal = data["goal"];
 	if (rawGoal !== null && !isGoal(rawGoal)) return emptyGoalState("canonical");
-	const rawQueue = Object.hasOwn(data, "queue") ? data.queue : [];
+	const rawQueue = Object.hasOwn(data, "queue") ? data["queue"] : [];
 	if (!Array.isArray(rawQueue) || !rawQueue.every(isQueueGoal)) {
 		return emptyGoalState("canonical");
 	}
-	const pendingAction = normalizePendingQueueAction(data.pendingAction);
+	const pendingAction = normalizePendingQueueAction(data["pendingAction"]);
 	if (Object.hasOwn(data, "pendingAction") && !pendingAction) {
 		return emptyGoalState("canonical");
 	}
@@ -150,16 +150,16 @@ function loadCanonicalGoalState(data: JsonInputValue): LoadedGoalState {
 function loadLegacyGoalsState(data: JsonInputValue): LoadedGoalState {
 	if (!isRecord(data)) return emptyGoalState("legacy-goals");
 	let rawGoals: ActiveGoal[];
-	if (Array.isArray(data.goals)) {
-		if (!data.goals.every(isGoal)) return emptyGoalState("legacy-goals");
-		rawGoals = data.goals.filter((goal) => goal.status !== "complete");
-	} else if (isGoal(data.goal) && data.goal.status !== "complete") {
-		rawGoals = [data.goal];
+	if (Array.isArray(data["goals"])) {
+		if (!data["goals"].every(isGoal)) return emptyGoalState("legacy-goals");
+		rawGoals = data["goals"].filter((goal) => goal.status !== "complete");
+	} else if (isGoal(data["goal"]) && data["goal"].status !== "complete") {
+		rawGoals = [data["goal"]];
 	} else {
 		rawGoals = [];
 	}
 	const goals = rawGoals.map((goal, index) => (index === 0 ? normalizeLoadedGoal(goal) : normalizeQueuedGoal(goal)));
-	const pendingAction = normalizeLegacyPendingPrioritize(data.pendingUnshift);
+	const pendingAction = normalizeLegacyPendingPrioritize(data["pendingUnshift"]);
 	if (goals.length === 0) return emptyGoalState("legacy-goals");
 	return {
 		goal: goals[0],
@@ -172,47 +172,47 @@ function loadLegacyGoalsState(data: JsonInputValue): LoadedGoalState {
 
 function normalizePendingQueueAction(value: JsonInputValue): PendingQueueAction | undefined {
 	if (!isRecord(value)) return undefined;
-	if (value.kind === "prioritize") {
+	if (value["kind"] === "prioritize") {
 		if (
-			!validObjective(value.objective) ||
-			(Object.hasOwn(value, "displacedUsageFinalized") && !isRuntimeBoolean(value.displacedUsageFinalized))
+			!validObjective(value["objective"]) ||
+			(Object.hasOwn(value, "displacedUsageFinalized") && !isRuntimeBoolean(value["displacedUsageFinalized"]))
 		) {
 			return undefined;
 		}
 		const action: Extract<PendingQueueAction, { kind: "prioritize" }> = {
 			kind: "prioritize",
-			objective: value.objective,
-			tokenBudget: normalizeTokenBudget(value.tokenBudget),
+			objective: value["objective"],
+			tokenBudget: normalizeTokenBudget(value["tokenBudget"]),
 		};
-		if (value.displacedUsageFinalized === true) action.displacedUsageFinalized = true;
+		if (value["displacedUsageFinalized"] === true) action.displacedUsageFinalized = true;
 		return action;
 	}
-	if (value.kind === "advance") {
+	if (value["kind"] === "advance") {
 		if (
-			!isRuntimeString(value.goalId) ||
-			!value.goalId ||
-			value.goalId !== value.goalId.trim() ||
-			(value.reason !== "complete" && value.reason !== "skip") ||
-			!validObjective(value.completedText)
+			!isRuntimeString(value["goalId"]) ||
+			!value["goalId"] ||
+			value["goalId"] !== value["goalId"].trim() ||
+			(value["reason"] !== "complete" && value["reason"] !== "skip") ||
+			!validObjective(value["completedText"])
 		) {
 			return undefined;
 		}
 		return {
 			kind: "advance",
-			goalId: value.goalId,
-			reason: value.reason,
-			completedText: value.completedText,
+			goalId: value["goalId"],
+			reason: value["reason"],
+			completedText: value["completedText"],
 		};
 	}
 	return undefined;
 }
 
 function normalizeLegacyPendingPrioritize(value: JsonInputValue): PendingQueueAction | undefined {
-	if (!isRecord(value) || !validObjective(value.objective)) return undefined;
+	if (!isRecord(value) || !validObjective(value["objective"])) return undefined;
 	return {
 		kind: "prioritize",
-		objective: value.objective,
-		tokenBudget: normalizeTokenBudget(value.tokenBudget),
+		objective: value["objective"],
+		tokenBudget: normalizeTokenBudget(value["tokenBudget"]),
 	};
 }
 
@@ -339,21 +339,21 @@ async function legacyStateLock(): Promise<LegacyStateLock> {
 function isGoal(value: JsonInputValue): value is JsonInputValue & ActiveGoal {
 	if (!isRecord(value)) return false;
 	return (
-		isRuntimeString(value.id) &&
-		Boolean(value.id) &&
-		value.id === value.id.trim() &&
-		validObjective(value.text) &&
+		isRuntimeString(value["id"]) &&
+		Boolean(value["id"]) &&
+		value["id"] === value["id"].trim() &&
+		validObjective(value["text"]) &&
 		["active", "queued", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(
-			String(value.status),
+			String(value["status"]),
 		) &&
-		isRuntimeNumber(value.startedAt) &&
-		isRuntimeNumber(value.updatedAt) &&
-		isRuntimeNumber(value.iteration) &&
-		isRuntimeNumber(value.tokensUsed) &&
-		isRuntimeNumber(value.timeUsedSeconds) &&
-		isRuntimeNumber(value.baselineTokens) &&
-		(value.activeStartedAt === undefined || isRuntimeNumber(value.activeStartedAt)) &&
-		(value.safetyResetPending === undefined || isRuntimeBoolean(value.safetyResetPending))
+		isRuntimeNumber(value["startedAt"]) &&
+		isRuntimeNumber(value["updatedAt"]) &&
+		isRuntimeNumber(value["iteration"]) &&
+		isRuntimeNumber(value["tokensUsed"]) &&
+		isRuntimeNumber(value["timeUsedSeconds"]) &&
+		isRuntimeNumber(value["baselineTokens"]) &&
+		(value["activeStartedAt"] === undefined || isRuntimeNumber(value["activeStartedAt"])) &&
+		(value["safetyResetPending"] === undefined || isRuntimeBoolean(value["safetyResetPending"]))
 	);
 }
 

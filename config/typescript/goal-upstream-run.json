@@ -1,5 +1,5 @@
 {
-	"extends": "./goal-tests.json",
+	"extends": "./base.json",
 	"compilerOptions": {
 		"allowImportingTsExtensions": false,
 		"noEmit": false,

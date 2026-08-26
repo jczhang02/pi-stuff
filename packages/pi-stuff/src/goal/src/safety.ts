@@ -27,7 +27,7 @@ const BLOCKER_RESULT_RE =
 
 export interface ToolFreeRepeatState {
 	toolFreeRepeatCount: number;
-	lastToolFreeOutputFingerprint?: string;
+	lastToolFreeOutputFingerprint?: string | undefined;
 }
 
 export function queueGoalSafetyReset(goal: ActiveGoal): ActiveGoal {

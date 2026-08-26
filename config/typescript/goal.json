@@ -1,8 +1,0 @@
-{
-	"extends": "./base.json",
-	"compilerOptions": {
-		"exactOptionalPropertyTypes": false,
-		"noPropertyAccessFromIndexSignature": false
-	},
-	"include": ["../../packages/pi-stuff/src/goal/**/*.ts"]
-}

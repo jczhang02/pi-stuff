@@ -5064,17 +5064,17 @@ type StoredGoal = {
 	startedAt?: number;
 	updatedAt?: number;
 	iteration?: number;
-	tokenBudget?: number;
+	tokenBudget?: number | undefined;
 	tokensUsed?: number;
 	timeUsedSeconds?: number;
 	baselineTokens?: number;
-	activeStartedAt?: number;
+	activeStartedAt?: number | undefined;
 	automaticModelTurns?: number;
 	toolFreeRepeatCount?: number;
-	lastToolFreeOutputFingerprint?: string;
-	safetyPauseCause?: string;
-	safetyResetPending?: boolean;
-	blockerAudit?: ActiveGoal["blockerAudit"];
+	lastToolFreeOutputFingerprint?: string | undefined;
+	safetyPauseCause?: string | undefined;
+	safetyResetPending?: boolean | undefined;
+	blockerAudit?: ActiveGoal["blockerAudit"] | undefined;
 };
 
 function primeBlockerAudit(goal: StoredGoal, reason: string) {

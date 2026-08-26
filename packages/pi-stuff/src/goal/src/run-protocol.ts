@@ -68,7 +68,7 @@ interface ManagedRun {
 	lastStatus?: GoalRunStatus;
 	closed: boolean;
 	cancelRequested: boolean;
-	cancelReason?: string;
+	cancelReason?: string | undefined;
 }
 
 function goalRunEventChannel(runId: string) {
@@ -144,8 +144,8 @@ export class GoalRunController {
 	private readonly runtime: GoalRuntime;
 	private readonly commands: GoalCommandController;
 	private generation = 0;
-	private session?: BoundSession;
-	private run?: ManagedRun;
+	private session: BoundSession | undefined;
+	private run: ManagedRun | undefined;
 	private readonly usedRunIds = new Set<string>();
 
 	constructor(runtime: GoalRuntime, commands: GoalCommandController) {

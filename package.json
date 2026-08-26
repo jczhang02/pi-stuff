@@ -33,7 +33,7 @@
 		"test:ci": "bun run test:isolated && bun run test:goal",
 		"test:goal": "bun scripts/test-goal-upstream.ts",
 		"test:isolated": "bun scripts/run-isolated-tests.ts",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p config/typescript/rtk.json && tsc --noEmit -p config/typescript/agents.json && tsc --noEmit -p config/typescript/agents-tests.json && tsc --noEmit -p config/typescript/goal.json && tsc --noEmit -p config/typescript/goal-tests.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p config/typescript/rtk.json && tsc --noEmit -p config/typescript/agents.json && tsc --noEmit -p config/typescript/agents-tests.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",

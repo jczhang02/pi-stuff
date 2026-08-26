@@ -96,8 +96,8 @@ export interface RunMenuOptions<State> {
 		readonly signal: AbortSignal;
 	}) => State | Promise<State>;
 	readonly isCurrent?: () => boolean;
-	readonly pi?: ExtensionAPI;
-	readonly signal?: AbortSignal;
+	readonly pi?: ExtensionAPI | undefined;
+	readonly signal?: AbortSignal | undefined;
 }
 
 export type RunMenuResult =
@@ -259,23 +259,25 @@ class SuiteMenuDialog<ScreenId extends string, ActionId extends string> implemen
 		this.removeOwnerAbort = () => ownerSignal.removeEventListener("abort", abort);
 
 		if (screen.kind === "actions") {
-			const items = screen.items.map<SelectItem>((item) => ({
-				description: item.description,
-				label: item.label,
-				value: item.id,
-			}));
+			const items = screen.items.map<SelectItem>((item) =>
+				item.description === undefined
+					? { label: item.label, value: item.id }
+					: { description: item.description, label: item.label, value: item.id },
+			);
 			const list = new SelectList(items, Math.max(1, Math.min(items.length, 10)), getSelectListTheme());
 			list.onSelect = (item) => context.close({ kind: "activate", itemId: item.value });
 			list.onCancel = () => context.close({ kind: "cancel" });
 			this.list = list;
 		} else if (screen.kind === "settings") {
-			const items = screen.items.map<SettingItem>((item) => ({
-				currentValue: item.currentValue,
-				description: item.description,
-				id: item.id,
-				label: item.label,
-				values: [...(item.values ?? [item.currentValue])],
-			}));
+			const items = screen.items.map<SettingItem>((item) => {
+				const setting = {
+					currentValue: item.currentValue,
+					id: item.id,
+					label: item.label,
+					values: [...(item.values ?? [item.currentValue])],
+				};
+				return item.description === undefined ? setting : { ...setting, description: item.description };
+			});
 			this.list = new SettingsList(
 				items,
 				Math.max(1, Math.min(items.length, 10)),

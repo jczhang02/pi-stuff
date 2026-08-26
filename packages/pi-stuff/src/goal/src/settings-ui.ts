@@ -6,10 +6,10 @@ import { GOAL_SETTINGS_FILE, type GoalSettings, saveGoalSettings } from "./setti
 import { defineMenu, runMenu } from "./suite-menu.js";
 
 interface GoalSettingsUiOptions {
-	settingsPath?: string;
+	settingsPath?: string | undefined;
 	save?: (settings: GoalSettings, settingsPath: string) => void;
 	onQueueUnfrozen?: (ctx: ExtensionCommandContext) => Promise<void>;
-	withLock?: <Value>(settingsPath: string, operation: () => Value | Promise<Value>) => Promise<Value>;
+	withLock?: (<Value>(settingsPath: string, operation: () => Value | Promise<Value>) => Promise<Value>) | undefined;
 }
 
 interface GoalSettingsApplyOptions {

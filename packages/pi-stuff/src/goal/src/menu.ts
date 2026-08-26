@@ -32,9 +32,9 @@ const QUEUE_ACTIONS = {
 } as const;
 
 interface GoalMenuRuntimeView {
-	activeGoal?: ActiveGoal;
+	activeGoal?: ActiveGoal | undefined;
 	queuedGoals: ActiveGoal[];
-	pendingQueueAction?: PendingQueueAction;
+	pendingQueueAction?: PendingQueueAction | undefined;
 	queueFrozen: boolean;
 	settings: GoalRuntime["settings"];
 	menuController?: GoalRuntime["menuController"];

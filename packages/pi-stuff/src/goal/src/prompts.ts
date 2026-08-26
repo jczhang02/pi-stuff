@@ -7,13 +7,13 @@ export interface GoalPromptContext {
 	text: string;
 	status: GoalStatus;
 	iteration: number;
-	tokenBudget?: number;
+	tokenBudget?: number | undefined;
 	tokensUsed: number;
 	startedAt: number;
 	updatedAt: number;
 	timeUsedSeconds: number;
 	baselineTokens: number;
-	activeStartedAt?: number;
+	activeStartedAt?: number | undefined;
 }
 
 export function buildGoalPrompt(goal: GoalPromptContext) {

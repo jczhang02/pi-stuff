@@ -280,7 +280,7 @@ export function createMockPi(
 }
 
 export function createMockContext(overrides: MockContextOverrides = {}) {
-	const notifications: Array<{ message: string; level?: string }> = [];
+	const notifications: Array<{ message: string; level?: string | undefined }> = [];
 	const statuses = new Map<string, string | undefined>();
 	const widgets = new Map<string, unknown>();
 	let footer: unknown;

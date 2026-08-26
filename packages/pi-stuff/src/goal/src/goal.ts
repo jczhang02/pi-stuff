@@ -288,11 +288,11 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 					clearBudgetWrapUp();
 				}
 
-				return {
-					content: [{ type: "text", text: rejection }],
+				const result = {
+					content: [{ type: "text" as const, text: rejection }],
 					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-					terminate: completingDuringBudgetWrapUp || undefined,
 				};
+				return completingDuringBudgetWrapUp ? { ...result, terminate: true as const } : result;
 			}
 			if (completedGoal.status !== "active" && !completingDuringBudgetWrapUp) {
 				const rejection = `Goal completion rejected: goal is ${completedGoal.status}, not active.`;
@@ -327,16 +327,16 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 				ctx.ui.notify(rejection, "warning");
 				if (completingDuringBudgetWrapUp) clearBudgetWrapUp();
 
-				return {
+				const result = {
 					content: [
 						{
-							type: "text",
+							type: "text" as const,
 							text: rejection,
 						},
 					],
 					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-					terminate: completingDuringBudgetWrapUp || undefined,
 				};
+				return completingDuringBudgetWrapUp ? { ...result, terminate: true as const } : result;
 			}
 
 			runtime.activeGoal = transitionGoal(completedGoal, "complete");

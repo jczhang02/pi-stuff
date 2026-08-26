@@ -49,12 +49,12 @@ export interface GoalRecovery {
 	goalId: string;
 	kind: GoalRecoveryKind;
 	automaticOwner: boolean;
-	errorMessage?: string;
+	errorMessage?: string | undefined;
 }
 
 export interface CompletedGoalRun {
-	goalId?: string | null;
-	origin?: GoalRunOrigin;
+	goalId?: string | null | undefined;
+	origin?: GoalRunOrigin | undefined;
 	toolAttempted: boolean;
 }
 
@@ -138,17 +138,17 @@ interface GoalTerminalDetails {
 
 export interface GoalSettingsRuntimeSnapshot {
 	settings: GoalSettings;
-	activeGoal?: ActiveGoal;
+	activeGoal?: ActiveGoal | undefined;
 	queueFrozen: boolean;
 	queueFreezeAwaitingSettle: boolean;
-	continuationIntent?: ContinuationTicket;
-	continuationDelivery?: ContinuationTicket;
-	goalRecovery?: GoalRecovery;
-	budgetWrapUp?: BudgetWrapUp;
-	guardAbortGoalId?: string;
+	continuationIntent?: ContinuationTicket | undefined;
+	continuationDelivery?: ContinuationTicket | undefined;
+	goalRecovery?: GoalRecovery | undefined;
+	budgetWrapUp?: BudgetWrapUp | undefined;
+	guardAbortGoalId?: string | undefined;
 	staleGoalToolCallsBlocked: boolean;
 	cancelledContinuationMarkers: string[];
-	terminalDetails?: GoalTerminalDetails;
+	terminalDetails?: GoalTerminalDetails | undefined;
 	toolVisibility: GoalToolVisibilitySnapshot;
 }
 
@@ -184,27 +184,27 @@ const CONTRADICTORY_COMPLETION_PATTERNS = [
 // persistence invariants across modules.
 export class GoalRuntime {
 	settings: GoalSettings = DEFAULT_GOAL_SETTINGS;
-	settingsLoadIssue?: GoalSettingsLoadIssue;
-	activeGoal?: ActiveGoal;
+	settingsLoadIssue: GoalSettingsLoadIssue | undefined;
+	activeGoal: ActiveGoal | undefined;
 	/** Terminal details captured for the matching persisted-state snapshot. */
-	private terminalDetails?: GoalTerminalDetails;
-	private goalStateSink?: (snapshot: GoalStateSnapshot) => void;
-	private deferredSessionStartState?: GoalStateEntryData;
+	private terminalDetails: GoalTerminalDetails | undefined;
+	private goalStateSink: ((snapshot: GoalStateSnapshot) => void) | undefined;
+	private deferredSessionStartState: GoalStateEntryData | undefined;
 	private sessionStartReadOnly = false;
 	queuedGoals: ActiveGoal[] = [];
-	pendingQueueAction?: PendingQueueAction;
+	pendingQueueAction: PendingQueueAction | undefined;
 	queueFrozen = false;
 	queueFreezeAwaitingSettle = false;
-	completionStatusTimer?: NodeJS.Timeout;
-	continuationIntent?: ContinuationTicket;
-	continuationDelivery?: ContinuationTicket;
-	goalRecovery?: GoalRecovery;
-	budgetWrapUp?: BudgetWrapUp;
+	completionStatusTimer: NodeJS.Timeout | undefined;
+	continuationIntent: ContinuationTicket | undefined;
+	continuationDelivery: ContinuationTicket | undefined;
+	goalRecovery: GoalRecovery | undefined;
+	budgetWrapUp: BudgetWrapUp | undefined;
 	/** `null` marks a run that must not be charged to the active goal. */
-	agentRunGoalId?: string | null;
-	agentRunOrigin?: GoalRunOrigin;
+	agentRunGoalId: string | null | undefined;
+	agentRunOrigin: GoalRunOrigin | undefined;
 	agentRunToolAttempted = false;
-	guardAbortGoalId?: string;
+	guardAbortGoalId: string | undefined;
 	staleGoalToolCallsBlocked = false;
 	/** Once true, goal tools stay in the active set for this runtime (prompt-cache stable). */
 	goalToolsUnlocked = false;
