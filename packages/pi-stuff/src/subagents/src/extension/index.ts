@@ -903,12 +903,14 @@ export default function registerSubagentExtension(
 		let targetParams = params;
 		let targetResolutionError: Error | undefined;
 		let requireExactNestedMatch = false;
-		try {
-			targetParams = resolveLegacyAgentParams(params, state);
-			requireExactNestedMatch = targetParams.id !== params.id || targetParams.index !== params.index;
-		} catch (error) {
-			targetResolutionError = error instanceof Error ? error : new Error(String(error));
-			requireExactNestedMatch = true;
+		if (params.action === "resume" || params.action === "steer" || params.action === "stop") {
+			try {
+				targetParams = resolveLegacyAgentParams(params, state);
+				requireExactNestedMatch = targetParams.id !== params.id || targetParams.index !== params.index;
+			} catch (error) {
+				targetResolutionError = error instanceof Error ? error : new Error(String(error));
+				requireExactNestedMatch = true;
+			}
 		}
 		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, {
 			parentRunOrigin,

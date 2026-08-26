@@ -2075,17 +2075,14 @@ async function controlAction(
 		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
+	if (params.action === "status") {
+		return inspectSubagentStatus({ action: "status", id: params.id, index: params.index }, { state: deps.state });
+	}
 	let targetParams: SubagentParamsLike;
 	try {
 		targetParams = resolveLegacyAgentParams(params, deps.state);
 	} catch (error) {
 		return errorResult("management", error instanceof Error ? error.message : String(error));
-	}
-	if (targetParams.action === "status") {
-		return inspectSubagentStatus(
-			{ action: "status", id: targetParams.id, index: targetParams.index },
-			{ state: deps.state },
-		);
 	}
 	if (targetParams.action === "stop") return stopRun(targetParams, deps);
 	if (targetParams.action === "resume")
