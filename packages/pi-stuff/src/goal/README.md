@@ -43,6 +43,11 @@ The full objective, completion guard, and continuation protocol are delivered as
 model receives them and the session retains them, while the TUI and HTML conversation export stay focused on the
 user's command, Tool outcome, and final response.
 
+Internally, `goal.ts` is the single Pi lifecycle composition root: event order and per-factory closures remain together.
+The generation-guarded state machine stays in `runtime.ts`, command transitions in `commands.ts`, automatic-run
+coordination in `run-protocol.ts`, and stateless terminal Tool schemas and presentation in `tool-contract.ts`. Splitting
+lifecycle handlers by event would duplicate continuation, stale-turn, persistence, and safety invariants.
+
 ## Terminal tools
 
 - `goal_complete({ goal_id, summary, evidence })` accepts only the current guarded Goal id, a substantive completion

@@ -12,6 +12,9 @@ Current-session Background Shell, one-shot Monitor, and `/tasks` management for 
 
 Todo, Goal, Beads, and Agent details retain their existing authorities and are not duplicated here.
 
+`runtime.ts` remains the sole process, queue, retry, and notification-delivery owner. The stateless
+`notification-projection.ts` seam only bounds and escapes a completed batch before delivery.
+
 ## Accepted `/tasks` readability target
 
 **Decision update:** 2026-08-17

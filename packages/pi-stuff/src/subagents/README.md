@@ -15,6 +15,10 @@ Pi Stuff ships no Agent definitions. Launches select an Agent supplied by an ins
 `agents` directory, or the current project's `.pi/agents` directory. When names collide, project definitions override
 user definitions, and user definitions override Package definitions.
 
+The detached launch composition stays in `async-execution.ts`, with model/Skill/Tool launch-contract resolution in
+`resolved-task.ts`. `subagent-runner.ts` remains the child-process and terminal-lifecycle owner; `fallback-session.ts`
+only freezes and restores a fork between eligible model attempts.
+
 ## Everyday behavior
 
 - Each public Tool call has one of three mutually exclusive shapes: `agent` plus `task` for one launch, `tasks` for a

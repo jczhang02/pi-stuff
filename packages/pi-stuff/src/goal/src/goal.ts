@@ -4,12 +4,11 @@ import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { activityKey, singleActivity } from "../../tool-display/activity.js";
-import { registerSuiteOwnedTool, type SuiteToolPresentation } from "../../tool-display/contract.js";
+import { registerSuiteOwnedTool } from "../../tool-display/contract.js";
 import { currentTokenTotal } from "./accounting.js";
 import { completeGoalArguments, parseCommand } from "./command.js";
 import { GoalCommandController } from "./commands.js";
-import { safeGoalMenuText, showGoalManager } from "./menu.js";
+import { showGoalManager } from "./menu.js";
 import { type ActiveGoal, loadGoalStateFromSession } from "./persistence.js";
 import { buildGoalPrompt, buildGoalSystemPrompt } from "./prompts.js";
 import { activateQueuedGoal } from "./queue.js";
@@ -42,41 +41,22 @@ import {
 import {
 	blockerReportRejectionReason,
 	completionEvidenceRejectionReason,
-	type GoalCompletionEvidence,
 	hasAssistantToolCall,
 	recordGoalBlockerAttempt,
 } from "./safety.js";
 import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked, withGoalSettingsLock } from "./settings.js";
+import {
+	GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA,
+	type GoalBlockedDetails,
+	type GoalCompleteDetails,
+	goalBlockedPresentation,
+	goalCompletePresentation,
+	MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
+} from "./tool-contract.js";
 
 // goal.ts remains the Pi-facing composition root despite its size because tool contracts and
 // lifecycle-event registration share order-sensitive wiring. Per-session mechanisms live in
 // runtime.ts, while user-command transitions live in commands.ts; each factory stays isolated.
-
-interface GoalCompleteDetails {
-	goal: string;
-	goal_id: string;
-	summary: string;
-	evidence: GoalCompletionEvidence[];
-}
-
-interface GoalBlockedDetails {
-	goal: string;
-	goal_id: string;
-	reason: string;
-	attempt: string;
-	evidence: string;
-	repeated_turns: number;
-}
-
-interface GoalCompletePresentationArguments {
-	goal_id?: string;
-	summary?: string;
-}
-
-interface GoalBlockedPresentationArguments {
-	goal_id?: string;
-	reason?: string;
-}
 
 interface GoalOptions {
 	settingsPath?: string;
@@ -84,75 +64,11 @@ interface GoalOptions {
 
 const BUN_RUNTIME = process.versions["bun"] !== undefined;
 
-function goalToolText(result: {
-	readonly content: readonly { readonly type: string; readonly text?: string }[];
-}): string {
-	const text = result.content.find((part) => part.type === "text")?.text;
-	return isRuntimeString(text) ? text : "";
-}
-
-function goalCompletePresentation(): SuiteToolPresentation<GoalCompletePresentationArguments, GoalCompleteDetails> {
-	return {
-		activity: {
-			categories: ["complete-goal"],
-			classify: ({ args, state }) => {
-				if (state !== "running" && state !== "success") return [];
-				const goalId = isRuntimeString(args["goal_id"]) ? args["goal_id"] : "goal";
-				const summary = isRuntimeString(args["summary"]) ? args["summary"] : goalId;
-				return singleActivity("complete-goal", { key: activityKey(goalId), target: summary });
-			},
-		},
-		detailLines: (_params, result) => {
-			if (goalToolText(result).startsWith("Goal completion rejected:")) return [goalToolText(result)];
-			return [
-				"Summary",
-				safeGoalMenuText(result.details.summary, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH),
-				"",
-				"Evidence",
-				...result.details.evidence.flatMap((item, index) => [
-					`${String(index + 1)}. ${safeGoalMenuText(item.requirement, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH)}`,
-					`   ${safeGoalMenuText(item.proof, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH)}`,
-				]),
-			];
-		},
-		label: "Goal complete",
-		resultIsError: (_params, result) => goalToolText(result).startsWith("Goal completion rejected:"),
-		runningSummary: "checking",
-		summarize: (_params, result, state) =>
-			state === "success" ? "done" : goalToolText(result).replace(/^Goal completion rejected:\s*/u, "") || state,
-	};
-}
-
-function goalBlockedPresentation(): SuiteToolPresentation<GoalBlockedPresentationArguments, GoalBlockedDetails> {
-	return {
-		activity: {
-			categories: ["block-goal"],
-			classify: ({ args, state }) => {
-				if (state !== "running" && state !== "success") return [];
-				const goalId = isRuntimeString(args["goal_id"]) ? args["goal_id"] : "goal";
-				const reason = isRuntimeString(args["reason"]) ? args["reason"] : goalId;
-				return singleActivity("block-goal", { key: activityKey(goalId), target: reason });
-			},
-		},
-		label: "Goal blocked",
-		resultIsError: (_params, result) => goalToolText(result).startsWith("goal_blocked rejected:"),
-		runningSummary: "checking",
-		summarize: (_params, result, state) =>
-			state === "success" ? "blocked" : goalToolText(result).replace(/^goal_blocked rejected:\s*/u, "") || state,
-	};
-}
-
 const EXPERIMENTAL_GOALS_WARNING =
 	"Experimental ordered goals are enabled for pi-goal. Queue behavior and persisted state may change.";
 const MAX_BLOCKER_REASON_LENGTH = 1_000;
 const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
 const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
-const MAX_COMPLETION_EVIDENCE_TEXT_LENGTH = 4_000;
-
-const GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA = Type.Object(
-	{ proof: Type.String(), requirement: Type.String() },
-	{ additionalProperties: true },
-);
 const MESSAGE_ENVELOPE_SCHEMA = Type.Object(
 	{
 		content: Type.Optional(Type.Unknown()),

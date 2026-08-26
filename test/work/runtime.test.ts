@@ -308,6 +308,24 @@ describe("bounded background output", () => {
 		expect(projected.outcomes).toHaveLength(1_000);
 	});
 
+	test("uses a real line break in truncated inline notification output", () => {
+		const projected = projectNotificationBatch([
+			{
+				endedAt: 2,
+				id: "truncated-output",
+				kind: "shell",
+				recentOutput: "payload".repeat(10_000),
+				startedAt: 1,
+				status: "completed",
+				summary: "done",
+				title: "truncated output",
+			},
+		]);
+		expect(projected.content).toContain("<recent_output>[earlier output omitted]\n");
+		expect(projected.content).not.toContain("[earlier output omitted]\\n");
+		expect(projected.outcomes[0]?.recentOutput).toStartWith("[earlier output omitted]\n");
+	});
+
 	test("uses bounded inline output when an existing output path is too long to disclose", () => {
 		const root = temporaryRoot();
 		let directory = root;
