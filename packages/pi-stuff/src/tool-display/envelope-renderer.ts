@@ -22,7 +22,6 @@ import {
 	formattedResultLines,
 	terminalSummary,
 } from "./registered-tool-renderer.js";
-import { stripToolControlMetadata } from "./registration-tracker.js";
 import {
 	CachedToolRow,
 	capDetailLines,
@@ -31,6 +30,7 @@ import {
 	oneLine,
 	sanitizeTerminalText,
 } from "./render.js";
+import { stripToolControlMetadata } from "./tool-invocation.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 interface EnvelopeChildRenderer {
