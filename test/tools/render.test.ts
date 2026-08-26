@@ -131,11 +131,15 @@ describe("terminal-safe Tool rendering", () => {
 			} as Theme,
 			{
 				active: false,
+				elapsed: "",
 				expandable: false,
-				hint: "",
+				issueDetail: "",
+				issueText: "",
 				kind: "activity",
 				outcome: "stopped",
+				semanticSummary: "Agent stopped",
 				summary: "Agent stopped",
+				target: "",
 			},
 		);
 		expect(stopped.render(54)).toEqual([" • Agent stopped"]);
@@ -143,30 +147,56 @@ describe("terminal-safe Tool rendering", () => {
 
 		const active = new CachedToolRow(theme, {
 			active: true,
+			elapsed: "",
 			expandable: true,
-			hint: "Running focused checks in packages/pi-stuff/src/tool-display",
+			issueDetail: "",
+			issueText: "",
 			kind: "activity",
 			outcome: "running",
+			semanticSummary: "Changing 2 files, running 3 commands, reading 4 files",
 			summary: "Changing 2 files, running 3 commands, reading 4 files",
+			target: "Running focused checks in packages/pi-stuff/src/tool-display",
 		});
-		expect(active.render(54)).toEqual([
-			" • Changing 2 files, running 3 commands, reading 4",
-			"   files…  (ctrl+o to expand)",
-			"   ⎿ Running focused checks in",
-			"     packages/pi-stuff/src/tool-display",
-		]);
+		expect(active.render(54)).toHaveLength(1);
+		expect(active.render(54)[0]).not.toContain("ctrl+o");
+		expect(visibleWidth(active.render(54)[0] ?? "")).toBeLessThanOrEqual(54);
 		active.setMarkerVisible(false);
 		expect(active.render(54)[0]).toStartWith("   Changing");
 
 		const settled = new CachedToolRow(theme, {
 			active: false,
+			elapsed: "",
 			expandable: true,
-			hint: "",
+			issueDetail: "",
+			issueText: "",
 			kind: "activity",
 			outcome: "success",
+			semanticSummary: "Changed 2 files, ran 3 commands",
 			summary: "Changed 2 files, ran 3 commands",
+			target: "",
 		});
 		expect(settled.render(80)).toEqual([" • Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
+		expect(settled.render(30)).toHaveLength(1);
+		expect(settled.render(30)[0]).not.toContain("ctrl+o");
+	});
+
+	test("fits active Retrieval Group fields by summary, elapsed, then target priority", () => {
+		const row = new CachedToolRow(theme, {
+			active: true,
+			elapsed: "2s",
+			expandable: true,
+			issueDetail: "",
+			issueText: "",
+			kind: "activity",
+			outcome: "running",
+			semanticSummary: "Reading 2 files",
+			summary: "Reading 2 files",
+			target: "/.../tool-display/contract.ts",
+		});
+
+		expect(row.render(80)).toEqual([" • Reading 2 files… · 2s · /.../tool-display/contract.ts"]);
+		expect(row.render(30)).toEqual([" • Reading 2 files… · 2s"]);
+		expect(row.render(20)).toEqual([" • Reading 2 files…"]);
 	});
 
 	test("renders each Bash call as one Claude-style operation with bounded child output", () => {
@@ -442,7 +472,7 @@ describe("terminal-safe Tool rendering", () => {
 		expect(rendered.every((line) => visibleWidth(line) <= 64)).toBe(true);
 	});
 
-	test("colors Activity Group markers by effective outcome", () => {
+	test("colors Retrieval Group markers by effective outcome", () => {
 		for (const [outcome, expectedColor] of [
 			["running", "muted"],
 			["success", "success"],
@@ -460,30 +490,41 @@ describe("terminal-safe Tool rendering", () => {
 			} as Theme;
 			const row = new CachedToolRow(recordingTheme, {
 				active: outcome === "running",
+				elapsed: "",
 				expandable: true,
-				hint: "",
+				issueDetail: "",
+				issueText: "",
 				kind: "activity",
 				outcome,
+				semanticSummary: "Activity result",
 				summary: "Activity result",
+				target: "",
 			});
 			expect(row.render(80)[0]).toStartWith(" • ");
 			expect(colors).toEqual([expectedColor]);
 		}
 	});
 
-	test("bounds activity hints to two rows and keeps issue markers visible", () => {
+	test("keeps Retrieval Group issues to a summary row and one bounded reason row", () => {
 		const row = new CachedToolRow(theme, {
 			active: false,
+			elapsed: "",
 			expandable: true,
-			hint: "x".repeat(1_000),
+			issueDetail: "x".repeat(1_000),
+			issueText: "1 failed",
 			kind: "activity",
 			outcome: "error",
+			semanticSummary: "Ran 8 commands",
 			summary: "Ran 8 commands · 1 failed",
+			target: "",
 		});
 		const rendered = row.render(40);
 		expect(rendered[0]).toStartWith(" • Ran 8 commands · 1 failed");
-		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("     x"))).toHaveLength(2);
+		expect(rendered).toHaveLength(2);
+		expect(rendered[1]).toStartWith("   ⎿ x");
 		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
+		expect(row.render(12)[0]).toContain("1 failed");
+		expect(row.render(12)[0]).not.toContain("Ran");
 	});
 
 	test("removes ANSI, OSC, DCS, C0, and C1 protocols while preserving CJK", () => {

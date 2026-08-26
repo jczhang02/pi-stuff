@@ -44,17 +44,18 @@
 - Add a global Code Mode default. `/codemode global on|off` persists the Suite-wide default into the `codeMode` namespace
   of the merged file, and the project-scoped `.pi/code-mode.json` now records only an explicit difference from that global
   default. See ADR 0011.
-- Replace complete non-Bash Tool grouping with Claude-style continuous retrieval segments. Read, Grep/Find, List, and
-  conservatively read-only Bash now fold across Tool rounds and Thinking; consequential and unknown Tools remain
-  independent boundaries, while failed, rejected, and cancelled retrieval stays explicit. `Ctrl+O` restores formatted
-  Tool details and Bash Operation Blocks without protocol dumps, and `/tools` adds lazy per-call formatted/Raw views,
-  a five-member selector, and content scrolling without caching a global Raw transcript.
+- Restrict compact Retrieval Groups to native Read, Grep/Find, and List. Keep Bash, Web, MCP, media, mutations,
+  delegated work, lifecycle Tools, and unknown Tools independent; make each new visible Logical Thinking Run a
+  boundary; and keep infrastructure issues visible between retrieval segments. Successful and active groups occupy
+  one row, issue groups use one bounded reason row, and active elapsed time and stabilized targets yield by width.
+  Remove successful pure-JavaScript Code Mode envelope chrome while preserving nested Tools, Host media, Session/model
+  content, `Ctrl+O`, and `/tools` inspection contracts. See ADR 0022.
 - Replace raw image MIME placeholders in terminals without inline-image support with a dim, transcript-aligned preview
   explanation that preserves format, dimensions, and media order.
 - Unify Conversation Transcript hierarchy with a one-cell, text-axis-centered `∗` Thought marker, small bullets for
   Suite-owned outcome records, and one outer bullet for every Assistant Markdown message. Show each Bash call as its own
-  screenshot-verified Claude-style `Bash(<command>)` operation block with bounded `⎿` output while retaining non-Bash
-  Tool Activity grouping; `Ctrl+O` expands the bounded Bash command and output inside that same block instead of restoring
+  screenshot-verified Claude-style `Bash(<command>)` operation block with bounded `⎿` output beside native Retrieval
+  Groups; `Ctrl+O` expands the bounded Bash command and output inside that same block instead of restoring
   generic Pi Tool chrome.
 - Remove the bundled `general-purpose` Agent definition. Subagents now discover only Agent definitions supplied by
   installed Pi Packages, the user, or the current project.

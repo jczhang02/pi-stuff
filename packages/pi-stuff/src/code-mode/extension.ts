@@ -17,7 +17,6 @@ import {
 	withDirectUserActivation,
 } from "../tool-display/contract.js";
 import { stringifyForStorage } from "./cloudflare/codec.js";
-import { isControlOnlyProgram } from "./cloudflare/normalize.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { createCodeModeDialogView } from "./dialog.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";
@@ -30,7 +29,7 @@ import {
 	rehydrateCodeModeMessages,
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
-import { CODE_MODE_NO_OUTPUT_MESSAGE, CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
+import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
 import { projectCodeModeSearchResponse } from "./search-response.js";
 import {
 	readCodeModeGlobalEnabled,
@@ -292,19 +291,12 @@ export function decodeCodeModeOperations<Value>(details: Value): readonly SuiteT
 }
 
 function showCodeModeFallback(
-	args: ToolArguments,
+	_args: ToolArguments,
 	result: AgentToolResult<unknown>,
 	state: "cancelled" | "error" | "rejected" | "running" | "success",
 ): boolean {
-	if (state !== "running" && state !== "success") return true;
-	if (isRuntimeString(args["code"]) && isControlOnlyProgram(args["code"])) return false;
-	return !(
-		state === "success" &&
-		(result.content.length === 0 ||
-			(result.content.length === 1 &&
-				result.content[0]?.type === "text" &&
-				result.content[0].text === CODE_MODE_NO_OUTPUT_MESSAGE))
-	);
+	if (result.content.some((item) => item.type === "image")) return false;
+	return state !== "running" && state !== "success";
 }
 
 export function createCodeModeDefinition(

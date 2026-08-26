@@ -25,10 +25,10 @@ This module contains source derived from the pinned `@mobrienv/pi-tidy-tools` 0.
   Stuff Command Dialog.
 - Adds a required Activity metadata contract for every Suite-owned Tool, with semantic present/past clauses,
   deduplication identities, bounded live targets, and honest issue states.
-- Composes public lifecycle events, current-branch reconstruction, and per-row invalidation into complete Tool
-  Activity Groups across Assistant Tool round-trips and visible Thinking. Assistant prose, user input, and visible
-  model-context Custom Messages are boundaries. Ctrl+O restores native Tool rows; model-visible results and persisted
-  session data remain unchanged.
+- Composes public lifecycle events, current-branch reconstruction, and per-row invalidation into native Retrieval
+  Groups across Assistant Tool round-trips. Bash and every non-native retrieval Tool remain independent; Assistant
+  prose, user input, visible model-context Custom Messages, and new Logical Thinking Runs are boundaries. Ctrl+O
+  restores eligible native Tool rows; model-visible results and persisted Session data remain unchanged.
 - Does not contain or derive from code in `jczhang02/pi-agent`.
 
 The upstream license is preserved in `LICENSE`. The source is absorbed into Pi Stuff and has no independent Package or

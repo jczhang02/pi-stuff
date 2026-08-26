@@ -68,11 +68,11 @@ export {
 	bashResultMovedToBackground,
 	classifyBashActivity,
 	classifyBashRetrievalActivity,
-	classifyToolActivityGroupInvocation,
+	classifyRetrievalGroupInvocation,
+	type RetrievalGroupDisposition,
 	singleActivity,
 	type ToolActivityCategory,
 	type ToolActivityClassifierInput,
-	type ToolActivityGroupDisposition,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
 	type ToolArguments,
@@ -105,7 +105,7 @@ export {
 	type SuiteToolTrackerHost,
 	type ToolActivityDetailMode,
 	type ToolActivityDetailView,
-	type ToolActivityGroupView,
+	type ToolActivityView,
 	ToolUiRuntime,
 	type ToolUiRuntimeHost,
 } from "./contract.js";
@@ -160,11 +160,11 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				if (requestedId) {
 					const resolved = runtime.resolveGroup(requestedId);
 					if (resolved === "ambiguous") {
-						ctx.ui.notify(`More than one Tool Activity Group matches ${requestedId}.`, "warning");
+						ctx.ui.notify(`More than one Tool Activity matches ${requestedId}.`, "warning");
 						return;
 					}
 					if (!resolved) {
-						ctx.ui.notify(`No current-session Tool Activity Group matches ${requestedId}.`, "warning");
+						ctx.ui.notify(`No current-session Tool Activity matches ${requestedId}.`, "warning");
 						return;
 					}
 				}

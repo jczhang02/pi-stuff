@@ -29,8 +29,8 @@ const SUCCESS_CALLS: readonly FixtureCall[] = [
 	{
 		name: "TaskCreate",
 		arguments: {
-			subject: "Certify Activity Group",
-			description: "Exercise a Suite-owned non-builtin Tool inside the same display group.",
+			subject: "Certify Retrieval Groups",
+			description: "Exercise a Suite-owned non-builtin Tool as an independent activity.",
 		},
 	},
 ];
@@ -93,6 +93,12 @@ const PARTIAL_BASH_CALLS: readonly FixtureCall[] = [
 		name: "bash",
 		arguments: { command: "sleep 2.1; printf PARTIAL_BASH_VISIBLE; sleep 0.6" },
 	},
+];
+const SLOW_RETRIEVAL_CALLS: readonly FixtureCall[] = [{ name: "read", arguments: { path: "slow-target.txt" } }];
+const RETRIEVAL_ISSUE_CALLS: readonly FixtureCall[] = [
+	{ name: "read", arguments: { path: "input-工具.txt" } },
+	{ name: "read", arguments: { path: "missing-retrieval.txt" } },
+	{ name: "read", arguments: { path: "input-工具.txt" } },
 ];
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
@@ -253,6 +259,16 @@ function fixtureStream(context: Context) {
 			? toolCallsStream("group-partial-bash", PARTIAL_BASH_CALLS)
 			: textStream("GROUP_PARTIAL_BASH_DONE");
 	}
+	if (request.includes("slow-retrieval")) {
+		return completed === 0
+			? toolCallsStream("group-slow-retrieval", SLOW_RETRIEVAL_CALLS)
+			: textStream("GROUP_SLOW_RETRIEVAL_DONE");
+	}
+	if (request.includes("retrieval-issue")) {
+		return completed === 0
+			? toolCallsStream("group-retrieval-issue", RETRIEVAL_ISSUE_CALLS)
+			: textStream("GROUP_RETRIEVAL_ISSUE_DONE");
+	}
 	if (request.includes("structured")) {
 		return textStream(
 			[
@@ -296,10 +312,15 @@ function fixtureStream(context: Context) {
 }
 
 export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
+	pi.on("tool_result", async (event) => {
+		if (event.toolCallId === "group-slow-retrieval-1") {
+			await new Promise((resolve) => setTimeout(resolve, 3_200));
+		}
+	});
 	registerSuiteOwnedTool(
 		pi,
 		{
-			description: "Request deterministic interactive confirmation for Tool grouping certification",
+			description: "Request deterministic interactive confirmation for Retrieval Group certification",
 			execute: async (_toolCallId, args, _signal, _onUpdate, context) => {
 				const confirmed = await context.ui.confirm(
 					args.reject ? "Fixture rejection" : "Fixture permission",
@@ -338,7 +359,7 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
-			description: "Return one deterministic cancellation for Tool grouping certification",
+			description: "Return one deterministic cancellation for Retrieval Group certification",
 			execute: async () => ({
 				content: [{ type: "text", text: "Operation aborted" }],
 				details: { cancelled: true },
@@ -360,7 +381,7 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
-			description: "Return one deterministic error for Tool grouping certification",
+			description: "Return one deterministic error for Retrieval Group certification",
 			execute: async () => ({
 				content: [{ type: "text", text: "FIXTURE_GROUP_ERROR" }],
 				details: { error: true },
@@ -409,7 +430,7 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
-			description: "Return one deterministic visible image for Tool grouping certification",
+			description: "Return one deterministic visible image for Retrieval Group certification",
 			execute: async () => ({
 				content: [
 					{
@@ -460,14 +481,14 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 		},
 	);
 	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Tool grouping PTY fixture",
+		name: "Pi Stuff Retrieval Group PTY fixture",
 		baseUrl: "https://fixture.invalid",
 		apiKey: "fixture",
 		api: "openai-completions",
 		models: [
 			{
 				id: MODEL,
-				name: "Pi Stuff Tool grouping PTY fixture",
+				name: "Pi Stuff Retrieval Group PTY fixture",
 				reasoning: true,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

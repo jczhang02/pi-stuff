@@ -64,20 +64,17 @@ callbacks.
 
 ## UI and session contract
 
-Code Mode has no visible Tool row of its own while nested rows completely represent its outcome. A Control-only
-Execution and a successful program with only the no-output diagnostic are also absent from the Conversation Transcript
-and ordinary `/tools`. The strict live/replay classifier accepts only one zero-argument awaited `yield_control()`
-expression, optionally followed by one literal `text(...)` acknowledgement; ambiguous source stays visible. Raw
-Session JSONL and ledger records remain unchanged. Historical nested results with explicit `isError: true` project as
-errors even when an older ledger status said success; absent flags, malformed results, and error-like prose do not.
-Other executions with no nested operation, or an outer error not represented by a nested issue, receive one standard
-Code Mode fallback row; the transcript therefore never hides a
-Tool outcome or falls back to raw result text. A successful pure-JavaScript fallback uses its first bounded result line
-as the compact summary instead of `done`; formatted expansion shows only subsequent lines. Each nested call uses the exact
-renderer, Activity Group metadata, streaming state, failure state, expansion behavior, and media behavior of the
-original Tool. Consequently, `view_image` owns a Viewed image row while an image returned by `read` remains a Read
-file row; Code Mode does not relabel either Tool. A missing historical Tool definition or a failing renderer receives a
-generic Tool row at the same source position. The outer result stores the nested calls in normal Pi session JSONL details, so reload and resume
+Code Mode has no visible Tool row of its own while nested Tools or media represent its outcome. A successful text-only
+pure-JavaScript execution with no nested Tool or media row is absent from the Conversation Transcript, `Ctrl+O`, and
+ordinary `/tools`, regardless of whether it emitted text; its model-visible result, Session JSONL, and ledger records
+remain unchanged. Standalone media remains Host-rendered without textual envelope chrome. An outer error, rejection,
+or cancellation receives one Envelope Fallback Row only when no nested Tool or media activity already owns that
+outcome. Historical nested results with explicit `isError: true` project as errors even when an older ledger status
+said success; absent flags, malformed results, and error-like prose do not. Each nested call keeps the exact renderer,
+Tool Activity metadata, streaming state, failure state, expansion behavior, and media behavior of the original Tool.
+Consequently, `view_image` owns a Viewed image row while an image returned by `read` remains a Read file row; Code Mode
+does not relabel either Tool. A missing historical Tool definition or a failing renderer receives a generic Tool row at
+the same source position. The outer result stores the nested calls in normal Pi Session JSONL details, so reload and resume
 rebuild the same projection even when a legal historical result has no `details`. Raw arguments remain available for
 audit, while the Tool's argument compatibility shim supplies Activity semantics and rendering. In particular, Pi
 0.84.3's Edit compatibility shim normalizes both the legacy top-level `oldText`/`newText` form and a single JSON
@@ -115,7 +112,8 @@ nested result hook stay outside the JavaScript business result; the outer Host T
 boundary.
 
 One Code Mode execution may issue at most 768 nested Tool calls. Crossing the safety bound fails explicitly; calls
-are never silently dropped, and separate Code Mode calls can still contribute to the same unbounded Activity Group.
+are never silently dropped, and adjacent native retrieval across Code Mode calls may contribute to one Retrieval Group
+until a Narrative Boundary closes it.
 
 ## Recovery and reusable programs
 

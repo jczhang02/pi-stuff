@@ -1777,7 +1777,7 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 
 	const groupActivityNames = (runtime: ToolUiRuntime) =>
 		runtime.listGroups().map((group) => runtime.groupActivities(group.id).map((activity) => activity.name));
-	const expected = [["read"], ["edit"], ["read", "bash"]];
+	const expected = [["read"], ["edit"], ["bash"], ["read"]];
 	expect(groupActivityNames(rebuilt)).toEqual(expected);
 	expect(groupActivityNames(streaming)).toEqual(expected);
 	expect(groupActivityNames(codeMode)).toEqual(expected);
@@ -2361,7 +2361,7 @@ test("nested invocation records Tools activated by the original Pi Tool", async 
 	expect(invocation.result.addedToolNames).toEqual(["deferred"]);
 });
 
-test("live Activity Groups hold a target for 700 ms before advancing", async () => {
+test("live Retrieval Groups hold a target for 700 ms before advancing", async () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
 	const runtime = getToolUiRuntime(harness.api);
@@ -2370,8 +2370,12 @@ test("live Activity Groups hold a target for 700 ms before advancing", async () 
 	runtime.startTurn([assistant(call("r1", "read", "first.ts"))]);
 	const first = read.renderCall?.({ value: "first.ts" }, theme, firstContext);
 	if (!first) throw new Error("missing first component");
+	expect(renderLines(first).join("\n")).not.toContain("first.ts");
+	await Bun.sleep(720);
+	read.renderCall?.({ value: "first.ts" }, theme, firstContext);
+	expect(renderLines(first).join("\n")).toContain("first.ts");
 	runtime.indexMessage(result("r1"));
-	runtime.indexMessage(assistant({ type: "thinking", thinking: "continue" }, call("r2", "read", "second.ts")));
+	runtime.indexMessage(assistant(call("r2", "read", "second.ts")));
 	read.renderCall?.({ value: "second.ts" }, theme, renderContext({}, { value: "second.ts" }, { toolCallId: "r2" }));
 	expect(renderLines(first).join("\n")).toContain("first.ts");
 	await Bun.sleep(650);
@@ -2399,14 +2403,15 @@ test("settling an earlier group member preserves the latest source-order target"
 		theme,
 		{ ...firstContext, lastComponent: first },
 	);
-	expect(renderLines(first).join("\n")).toContain("second.ts");
+	expect(renderLines(first).join("\n")).not.toContain("second.ts");
 	await Bun.sleep(720);
+	runtime.syncTimers();
 	read.renderCall?.({ value: "first.ts" }, theme, firstContext);
 	expect(renderLines(first).join("\n")).toContain("second.ts");
 	runtime.clear();
 });
 
-test("one retrieval group spans Tool round-trips and Thinking, then closes on prose", () => {
+test("a later Thinking run splits Retrieval Groups before prose closes the tail", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
 	const grep = toolFromHarness(harness, "grep", "search-pattern");
@@ -2419,11 +2424,11 @@ test("one retrieval group spans Tool round-trips and Thinking, then closes on pr
 	runtime.startTurn(messages);
 	const first = settle(read, "r1", "a.ts");
 	const second = settle(grep, "g1", "needle");
-	expect(first.callLines.join("\n")).toContain("Searching 1 pattern, reading 1 file");
-	expect(second.callLines).toEqual([]);
+	expect(first.callLines.join("\n")).toContain("Read 1 file");
+	expect(second.callLines.join("\n")).toContain("Searching 1 pattern");
 
 	runtime.indexMessage(assistant({ type: "text", text: "Done." }));
-	expect(renderLines(first.callComponent).join("\n")).toContain("Searched 1 pattern, read 1 file");
+	expect(renderLines(second.callComponent).join("\n")).toContain("Searched 1 pattern");
 });
 
 test("multiple Bash calls render as separate operation blocks in native order", () => {
@@ -2749,7 +2754,7 @@ test("turn end closes retrieval before an automatic continuation", () => {
 	expect(renderLines(leader.callComponent).join("\n")).toContain("Read 1 file");
 });
 
-test("Tool results, Thinking, and hidden Custom Messages keep the live group open", () => {
+test("Tool results and hidden Custom Messages stay transparent while Thinking closes the live group", () => {
 	const harness = apiHarness();
 	toolFromHarness(harness, "read", "read-file");
 	const runtime = getToolUiRuntime(harness.api);
@@ -2762,9 +2767,9 @@ test("Tool results, Thinking, and hidden Custom Messages keep the live group ope
 		content: "hidden",
 		display: false,
 	});
-	const active = runtime.resolveGroup("r1");
-	if (!active || active === "ambiguous") throw new Error("active group missing");
-	expect(active.summary).toContain("Reading 1 file");
+	const afterThinking = runtime.resolveGroup("r1");
+	if (!afterThinking || afterThinking === "ambiguous") throw new Error("closed group missing");
+	expect(afterThinking.summary).toContain("Read 1 file");
 
 	runtime.indexMessage({
 		role: "custom",
@@ -2800,6 +2805,43 @@ test("streaming Tool snapshots replace partial arguments and the final message w
 	if (!group || group === "ambiguous") throw new Error("streamed group missing");
 	expect(group.summary).toContain("Reading 2 files");
 	runtime.clear();
+});
+
+test("only the first visible update in a streamed Thinking run closes the Retrieval Group", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const partial = assistant();
+	const emitRead = (id: string, value: string) =>
+		runtime.observeAssistantEvent({
+			contentIndex: 0,
+			// SAFETY: this test double implements the exact Pi members exercised by this case.
+			partial: partial as never,
+			toolCall: { type: "toolCall", id, name: "read", arguments: { value } },
+			type: "toolcall_end",
+		});
+
+	runtime.startTurn();
+	emitRead("r1", "a.ts");
+	runtime.observeAssistantEvent({
+		contentIndex: 1,
+		delta: "inspect the next files",
+		// SAFETY: this test double implements the exact Pi members exercised by this case.
+		partial: partial as never,
+		type: "thinking_delta",
+	});
+	emitRead("r2", "b.ts");
+	runtime.observeAssistantEvent({
+		contentIndex: 1,
+		delta: " more",
+		// SAFETY: this test double implements the exact Pi members exercised by this case.
+		partial: partial as never,
+		type: "thinking_delta",
+	});
+	emitRead("r3", "c.ts");
+
+	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1"] });
+	expect(runtime.resolveGroup("r2")).toMatchObject({ memberIds: ["r2", "r3"] });
 });
 
 test("streaming Tool argument deltas do not rescan the accumulated argument", () => {
@@ -2903,7 +2945,7 @@ test("Ctrl+O restores every member and bounded result detail", () => {
 	expect(formatted).not.toContain("Details");
 });
 
-test("Ctrl+O restores retrieval Bash as an Operation Block in source order", () => {
+test("Bash stays a standalone Operation Block beside a Retrieval Group", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
 	const bash = toolFromHarness(harness, "bash", "run-command");
@@ -2916,8 +2958,8 @@ test("Ctrl+O restores retrieval Bash as an Operation Block in source order", () 
 
 	const compactRead = settle(read, "r1", "a.ts");
 	const compactBash = settle(bash, "b1", command, false, false, "contents");
-	expect(compactRead.callLines.join("\n")).toContain("Read 2 files");
-	expect(compactBash.callLines).toEqual([]);
+	expect(compactRead.callLines.join("\n")).toContain("Read 1 file");
+	expect(compactBash.callLines).toEqual([" • Bash(cat a.ts)", "  ⎿  contents"]);
 
 	const expandedRead = settle(read, "r1", "a.ts", false, true);
 	const expandedBash = settle(bash, "b1", command, false, true, "contents");
@@ -3193,6 +3235,10 @@ test("folded retrieval exposes failed, rejected, and cancelled calls plus the fi
 	const compact = renderLines(leader.callComponent).join("\n");
 	expect(compact).toContain("1 failed, 1 rejected, 1 cancelled");
 	expect(compact).toContain("FIRST REASON");
+	const narrow = renderLines(leader.callComponent, 32);
+	expect(narrow).toHaveLength(2);
+	expect(narrow[0]).toContain("failed");
+	expect(narrow[1]).toContain("FIRST REASON");
 	expect(runtime.resolveGroup("ok")).toMatchObject({ state: "warning" });
 });
 
@@ -3252,6 +3298,29 @@ test("failed infrastructure-only groups use the protocol fallback label", () => 
 	expect(output).toContain("Internal operation failed");
 	expect(output).not.toContain("ctx_reduce failed");
 	expect(runtime.resolveGroup("i1")).toMatchObject({ state: "error", summary: "Internal operation failed" });
+});
+
+test("a live infrastructure issue splits retrieval on both sides", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const infrastructure = toolFromHarness(harness, "ctx_reduce", "search-pattern");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([
+		assistant(call("r1", "read", "a.ts"), call("i1", "ctx_reduce", "context"), call("r2", "read", "b.ts")),
+	]);
+	read.renderCall?.({ value: "a.ts" }, theme, renderContext({}, { value: "a.ts" }, { toolCallId: "r1" }));
+	infrastructure.renderCall?.(
+		{ value: "context" },
+		theme,
+		renderContext({}, { value: "context" }, { toolCallId: "i1" }),
+	);
+	read.renderCall?.({ value: "b.ts" }, theme, renderContext({}, { value: "b.ts" }, { toolCallId: "r2" }));
+	settle(infrastructure, "i1", "context", true, false, "reduction failed");
+	runtime.indexMessage(result("i1", "reduction failed", true));
+
+	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1"] });
+	expect(runtime.resolveGroup("i1")).toMatchObject({ memberIds: ["i1"], state: "error" });
+	expect(runtime.resolveGroup("r2")).toMatchObject({ memberIds: ["r2"] });
 });
 
 test("group details rebuild every member from the current branch beyond the live cache limit", () => {
@@ -3314,6 +3383,66 @@ test("timers blink, invalidate, synchronize, and are cleared for reload", () => 
 	runtime.prepareReload([]);
 	expect(scheduler.activeCount).toBe(0);
 	expect(runtime.consumeReloadActiveTools()).toEqual([]);
+});
+
+test("active Retrieval Groups show elapsed time only when the setting and threshold allow it", () => {
+	for (const [liveElapsed, expected] of [
+		[true, true],
+		[false, false],
+	] as const) {
+		const runtime = new ToolUiRuntime(
+			ToolUiSettingsStore.memory({ liveElapsed, schemaVersion: 1 }),
+			new ManualTimerScheduler(),
+		);
+		runtime.registerActivity("read", presentation("read-file").activity);
+		runtime.markRendererAttached("read");
+		runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+		const model = {
+			durationMs: 2_500,
+			label: "read",
+			state: "running" as const,
+			summary: "working",
+			target: "a.ts",
+		};
+		const row = new CachedToolRow(theme, model);
+		runtime.presentRow("r1", row, model, true, () => {}, false, {
+			args: { value: "a.ts" },
+			cwd: "/project",
+			name: "read",
+		});
+
+		expect(row.render(80)[0]?.includes(" · 2s")).toBe(expected);
+		runtime.clear();
+	}
+});
+
+test("active Retrieval Group timers advance without a fresh member renderer pass", () => {
+	let now = 1_000;
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler, () => now);
+	runtime.registerActivity("read", presentation("read-file").activity);
+	runtime.markRendererAttached("read");
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+	const model = {
+		durationMs: 0,
+		label: "read",
+		state: "running" as const,
+		summary: "working",
+		target: "a.ts",
+	};
+	const row = new CachedToolRow(theme, model);
+	runtime.presentRow("r1", row, model, true, () => {}, false, {
+		args: { value: "a.ts" },
+		cwd: "/project",
+		name: "read",
+	});
+	runtime.startTimer("r1", () => {});
+	expect(row.render(80)[0]).not.toContain(" · 2s");
+
+	now = 3_500;
+	scheduler.tick();
+	expect(row.render(80)[0]).toContain(" · 2s");
+	runtime.clear();
 });
 
 test("parallel timers keep independent marker phases", () => {

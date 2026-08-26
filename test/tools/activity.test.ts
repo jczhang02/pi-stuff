@@ -5,10 +5,10 @@ import {
 	bashResultMovedToBackground,
 	classifyBashActivity,
 	classifyBashRetrievalActivity,
-	classifyToolActivityGroupInvocation,
-	planToolActivityGroups,
+	classifyRetrievalGroupInvocation,
+	planRetrievalGroups,
 	singleActivity,
-	summarizeToolActivityGroup,
+	summarizeRetrievalGroup,
 	type ToolActivityCategory,
 	type ToolActivityMetadata,
 	type ToolArguments,
@@ -40,7 +40,7 @@ const policies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>([
 	],
 ]);
 const classify = (name: string, args: ToolArguments) =>
-	classifyToolActivityGroupInvocation(name, args, policies.get(name));
+	classifyRetrievalGroupInvocation(name, args, policies.get(name));
 
 const call = (id: string, name: string, value: string) => ({
 	type: "toolCall",
@@ -61,7 +61,7 @@ test("active path targets preserve only the nearest useful directory and basenam
 });
 
 test("plans retrieval segments across Tool round-trips and keeps boundaries standalone", () => {
-	const groups = planToolActivityGroups(
+	const groups = planRetrievalGroups(
 		[
 			{ role: "user", content: [{ type: "text", text: "work" }] },
 			assistant({ type: "thinking", thinking: "inspect" }, call("r1", "read", "a")),
@@ -83,8 +83,25 @@ test("plans retrieval segments across Tool round-trips and keeps boundaries stan
 	expect(groups.slice(1).every((group) => group.closed && group.standalone)).toBe(true);
 });
 
+test("a new visible Thinking run closes the current Retrieval Group", () => {
+	const groups = planRetrievalGroups(
+		[
+			assistant(
+				{ type: "thinking", thinking: "inspect the first file" },
+				call("r1", "read", "a"),
+				{ type: "thinking", thinking: "inspect the second file" },
+				call("r2", "read", "b"),
+			),
+		],
+		classify,
+		true,
+	);
+
+	expect(groups.map((group) => group.members.map((member) => member.id))).toEqual([["r1"], ["r2"]]);
+});
+
 test("ordinary Bash calls are standalone boundaries between retrieval segments", () => {
-	const groups = planToolActivityGroups(
+	const groups = planRetrievalGroups(
 		[
 			assistant(call("r1", "read", "a"), call("r2", "read", "b"), call("b1", "bash", "first")),
 			{ role: "toolResult", toolCallId: "b1", content: [{ type: "text", text: "one" }], details: {} },
@@ -104,8 +121,8 @@ test("ordinary Bash calls are standalone boundaries between retrieval segments",
 	expect(groups.map((group) => group.standalone === true)).toEqual([false, true, true, true]);
 });
 
-test("branch and compaction metadata stay transparent to Activity Groups", () => {
-	const groups = planToolActivityGroups(
+test("branch and compaction metadata stay transparent to Retrieval Groups", () => {
+	const groups = planRetrievalGroups(
 		[
 			assistant(call("r1", "read", "a")),
 			{ role: "branchSummary", summary: "branch metadata" },
@@ -119,7 +136,7 @@ test("branch and compaction metadata stay transparent to Activity Groups", () =>
 });
 
 test("prose, visible context, user input, and unknown Tools are boundaries", () => {
-	const groups = planToolActivityGroups(
+	const groups = planRetrievalGroups(
 		[
 			assistant(call("r1", "read", "a"), { type: "text", text: "I found it." }, call("e1", "edit", "a")),
 			assistant(call("x1", "third_party", "x"), call("b1", "bash", "test")),
@@ -145,13 +162,13 @@ test("prose, visible context, user input, and unknown Tools are boundaries", () 
 });
 
 test("a singleton forms a group and historical tails close deterministically", () => {
-	const [group] = planToolActivityGroups([assistant(call("r1", "read", "a"))], classify, true);
+	const [group] = planRetrievalGroups([assistant(call("r1", "read", "a"))], classify, true);
 	expect(group?.members).toHaveLength(1);
 	expect(group?.closed).toBe(true);
 });
 
 test("assistant lifecycle failures settle calls that never received Tool results", () => {
-	const groups = planToolActivityGroups(
+	const groups = planRetrievalGroups(
 		[
 			{ ...assistant(call("cancelled", "read", "a")), stopReason: "aborted" },
 			{ ...assistant(call("failed", "read", "b")), stopReason: "error" },
@@ -177,6 +194,9 @@ test("classifies only explicit retrieval metadata and the two transparent infras
 	expect(classify("third_party_read", { value: "a.ts" })).toBe("boundary");
 	expect(classify("tool_search", { query: "read" })).toBe("transparent");
 	expect(classify("ctx_reduce", {})).toBe("transparent");
+	expect(classifyRetrievalGroupInvocation("mcp__files__read", { value: "a.ts" }, retrieval("read-file"))).toBe(
+		"boundary",
+	);
 });
 
 test("consequential Suite categories and unknown MCP calls are group boundaries", () => {
@@ -195,7 +215,7 @@ test("consequential Suite categories and unknown MCP calls are group boundaries"
 	];
 	for (const [name, category] of cases) {
 		expect(
-			classifyToolActivityGroupInvocation(
+			classifyRetrievalGroupInvocation(
 				name,
 				{},
 				{
@@ -205,11 +225,11 @@ test("consequential Suite categories and unknown MCP calls are group boundaries"
 			),
 		).toBe("boundary");
 	}
-	expect(classifyToolActivityGroupInvocation("mcp__unknown__read", {}, undefined)).toBe("boundary");
+	expect(classifyRetrievalGroupInvocation("mcp__unknown__read", {}, undefined)).toBe("boundary");
 });
 
 test("transparent infrastructure stays recoverable without splitting retrieval", () => {
-	const groups = planToolActivityGroups(
+	const groups = planRetrievalGroups(
 		[
 			assistant(call("r1", "read", "a")),
 			assistant(call("s1", "tool_search", "catalog")),
@@ -221,7 +241,27 @@ test("transparent infrastructure stays recoverable without splitting retrieval",
 	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1", "s1", "r2"]]);
 });
 
-test("folds only conservatively parsed read-only Bash operations", () => {
+test("an infrastructure issue becomes an independent boundary on both sides", () => {
+	const groups = planRetrievalGroups(
+		[
+			assistant(call("r1", "read", "a"), call("s1", "tool_search", "catalog"), call("r2", "read", "b")),
+			{
+				role: "toolResult",
+				toolCallId: "s1",
+				content: [{ type: "text", text: "catalog unavailable" }],
+				details: {},
+				isError: true,
+			},
+		],
+		classify,
+		true,
+	);
+
+	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1"], ["s1"], ["r2"]]);
+	expect(groups.every((group) => group.closed)).toBe(true);
+});
+
+test("keeps every Bash invocation outside Retrieval Groups", () => {
 	for (const command of [
 		"cat a.ts",
 		"head -n 5 a.ts",
@@ -237,7 +277,7 @@ test("folds only conservatively parsed read-only Bash operations", () => {
 		"printf 'scan\\n' && rg needle src | head",
 		"cat a.ts;\n",
 	]) {
-		expect(classify("bash", { command })).toBe("retrieval");
+		expect(classify("bash", { command })).toBe("boundary");
 	}
 
 	for (const command of [
@@ -278,7 +318,7 @@ function recoverableMember(
 }
 
 test("summarizes semantic categories in fixed order with object deduplication", () => {
-	const summary = summarizeToolActivityGroup(
+	const summary = summarizeRetrievalGroup(
 		[
 			member("success", [{ category: "read-file", countKeys: ["/a.ts"], target: "a.ts" }]),
 			member("success", [{ category: "run-command", count: 1, target: "Running tests" }]),
@@ -359,7 +399,7 @@ test("detects Background Work handoff markers only at bounded result edges", () 
 });
 
 test("uses present tense, latest bounded target, structured outcomes, and honest issues", () => {
-	const active = summarizeToolActivityGroup(
+	const active = summarizeRetrievalGroup(
 		[
 			member("success", [{ category: "commit", count: 1, detail: "cf12251" }]),
 			member("error", [{ category: "run-command", count: 1, target: "Typechecking" }]),
@@ -375,7 +415,7 @@ test("uses present tense, latest bounded target, structured outcomes, and honest
 	expect(active.target).toBe("Typechecking");
 	expect(active.issueState).toBe("error");
 
-	const settled = summarizeToolActivityGroup(
+	const settled = summarizeRetrievalGroup(
 		[member("success", [{ category: "commit", count: 1, detail: "cf12251" }])],
 		true,
 	);
@@ -383,8 +423,8 @@ test("uses present tense, latest bounded target, structured outcomes, and honest
 });
 
 test("successful infrastructure-only groups are silent but issues remain visible", () => {
-	expect(summarizeToolActivityGroup([member("success", [])], true).summary).toBe("");
-	expect(summarizeToolActivityGroup([member("error", [])], true).summary).toBe("Internal operation failed");
+	expect(summarizeRetrievalGroup([member("success", [])], true).summary).toBe("");
+	expect(summarizeRetrievalGroup([member("error", [])], true).summary).toBe("Internal operation failed");
 });
 
 test("derives effective outcomes only from success, exact recovery, and explicit issues", () => {
@@ -392,17 +432,15 @@ test("derives effective outcomes only from success, exact recovery, and explicit
 	const failure = recoverableMember("error", "retry\u0000a", [{ category: "run-command", count: 1 }]);
 	const retry = recoverableMember("success", "retry\u0000a", [{ category: "run-command", count: 1 }]);
 
-	expect(summarizeToolActivityGroup([member("running", [])], false).outcome).toBe("running");
-	expect(summarizeToolActivityGroup([success], true).outcome).toBe("success");
-	expect(summarizeToolActivityGroup([failure, retry], true)).toMatchObject({
+	expect(summarizeRetrievalGroup([member("running", [])], false).outcome).toBe("running");
+	expect(summarizeRetrievalGroup([success], true).outcome).toBe("success");
+	expect(summarizeRetrievalGroup([failure, retry], true)).toMatchObject({
 		issueText: "1 failed",
 		outcome: "success",
 	});
-	expect(summarizeToolActivityGroup([success, failure], true).outcome).toBe("warning");
-	expect(summarizeToolActivityGroup([failure, recoverableMember("success", "retry\u0000b")], true).outcome).toBe(
-		"error",
-	);
-	expect(summarizeToolActivityGroup([failure], true).outcome).toBe("error");
-	expect(summarizeToolActivityGroup([member("rejected", [])], true).outcome).toBe("warning");
-	expect(summarizeToolActivityGroup([member("cancelled", [])], true).outcome).toBe("warning");
+	expect(summarizeRetrievalGroup([success, failure], true).outcome).toBe("warning");
+	expect(summarizeRetrievalGroup([failure, recoverableMember("success", "retry\u0000b")], true).outcome).toBe("error");
+	expect(summarizeRetrievalGroup([failure], true).outcome).toBe("error");
+	expect(summarizeRetrievalGroup([member("rejected", [])], true).outcome).toBe("warning");
+	expect(summarizeRetrievalGroup([member("cancelled", [])], true).outcome).toBe("warning");
 });

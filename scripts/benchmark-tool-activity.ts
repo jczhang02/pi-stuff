@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { planToolActivityGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
+import { planRetrievalGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
 import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
 import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/render.js";
 
@@ -18,7 +18,7 @@ interface ReadActivityArguments {
 
 const messages: unknown[] = [{ role: "user", content: [{ type: "text", text: "benchmark" }] }];
 for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
-	const content: unknown[] = [{ type: "thinking", thinking: "inspect" }];
+	const content: unknown[] = [];
 	for (let index = start; index < Math.min(CALLS, start + CALLS_PER_ROUND); index += 1) {
 		content.push({
 			type: "toolCall",
@@ -107,7 +107,7 @@ function benchmark(run: () => void): number {
 }
 
 const baselineMs = benchmark(() => shippedExplorationProjection(messages));
-const activityMs = benchmark(() => planToolActivityGroups(messages, classify, true));
+const activityMs = benchmark(() => planRetrievalGroups(messages, classify, true));
 const streamingSamples: number[] = [];
 for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 	const runtime = new ToolUiRuntime();
@@ -151,11 +151,11 @@ for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 	streamingSamples.push(performance.now() - started);
 	const streamedGroup = runtime.resolveGroup("stream-0");
 	if (!streamedGroup || streamedGroup === "ambiguous" || streamedGroup.memberIds.length !== STREAMING_UPDATES / 2) {
-		throw new Error("Incremental Activity benchmark did not build the streamed Tool Activity Group");
+		throw new Error("Incremental Activity benchmark did not build the streamed Retrieval Group");
 	}
 }
 const streamingMs = median(streamingSamples);
-const groups = planToolActivityGroups(messages, classify, true);
+const groups = planRetrievalGroups(messages, classify, true);
 const shortResults = Array.from({ length: FORMATTED_RESULTS }, (_, index) => ({
 	content: [{ type: "text" as const, text: `result ${String(index)}` }],
 	details: { index },
