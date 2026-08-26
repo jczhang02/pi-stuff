@@ -12,7 +12,6 @@
 			"!**/.artifacts",
 			"!**/.beads",
 			"!**/.pi-subagents",
-			"!tools/oxlint/anti-slop",
 			"!packages/pi-stuff/src/rtk/upstream",
 			"!packages/pi-stuff/src/web/runtime",
 			"!packages/pi-stuff/src/mcp/runtime",

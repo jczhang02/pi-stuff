@@ -1,6 +1,5 @@
-import { defineRule } from "@oxlint/plugins";
-
 import type { ESTree, SourceCode } from "@oxlint/plugins";
+import { defineRule } from "@oxlint/plugins";
 
 import { lexicalTypeParameterNames } from "../shared/lexical-type-parameters.ts";
 
@@ -58,16 +57,12 @@ export const noObjectParametersRule = defineRule({
 			if (type.type === "TSParenthesizedType")
 				return resolvesToObject(type.typeAnnotation, shadowedAliases, visited);
 			if (type.type === "TSUnionType") {
-				return type.types.some((member) =>
-					resolvesToObject(member, shadowedAliases, visited),
-				);
+				return type.types.some((member) => resolvesToObject(member, shadowedAliases, visited));
 			}
 			if (
 				type.type !== "TSTypeReference" ||
 				type.typeName.type !== "Identifier" ||
-				(type.typeArguments !== null &&
-					type.typeArguments !== undefined &&
-					type.typeArguments.params.length > 0) ||
+				(type.typeArguments !== null && type.typeArguments !== undefined && type.typeArguments.params.length > 0) ||
 				visited.has(type.typeName.name) ||
 				shadowedAliases.has(type.typeName.name)
 			) {
@@ -81,10 +76,7 @@ export const noObjectParametersRule = defineRule({
 		};
 
 		const checkParameters = (node: ParameterOwner) => {
-			const shadowedAliases = lexicalTypeParameterNames(
-				node,
-				context.sourceCode.visitorKeys,
-			);
+			const shadowedAliases = lexicalTypeParameterNames(node, context.sourceCode.visitorKeys);
 			for (const parameter of node.params) {
 				const annotation = parameterAnnotation(parameter);
 				if (annotation === null || annotation === undefined) continue;
@@ -101,8 +93,7 @@ export const noObjectParametersRule = defineRule({
 			Program(node) {
 				aliases.clear();
 				for (const statement of node.body) {
-					const declaration =
-						statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+					const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
 					if (
 						declaration?.type === "TSTypeAliasDeclaration" &&
 						(declaration.typeParameters === null || declaration.typeParameters === undefined)

@@ -23,8 +23,7 @@
 		"dist/**",
 		"docs/prototypes/**",
 		"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
-		"packages/pi-stuff/src/rtk/upstream/techniques/**",
-		"tools/oxlint/anti-slop/**"
+		"packages/pi-stuff/src/rtk/upstream/techniques/**"
 	],
 	"jsPlugins": [
 		{

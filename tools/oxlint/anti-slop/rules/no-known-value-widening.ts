@@ -1,5 +1,5 @@
+import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
 import { defineRule } from "@oxlint/plugins";
-
 import {
 	classifyWideningTarget,
 	createTypeEnvironment,
@@ -7,8 +7,6 @@ import {
 	type TypeEnvironment,
 	type WideningTarget,
 } from "../shared/dictionary-types.ts";
-
-import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
 
 type FunctionExpression = ESTree.ArrowFunctionExpression | ESTree.Function;
 
@@ -26,10 +24,7 @@ function unwrapExpression(expression: ESTree.Expression): ESTree.Expression {
 	return current;
 }
 
-function resolveVariable(
-	sourceCode: SourceCode,
-	identifier: ESTree.IdentifierReference,
-): Variable | null {
+function resolveVariable(sourceCode: SourceCode, identifier: ESTree.IdentifierReference): Variable | null {
 	let scope: Scope | null = sourceCode.getScope(identifier);
 	while (scope !== null) {
 		const variable = scope.set.get(identifier.name);
@@ -42,9 +37,7 @@ function resolveVariable(
 function variableDeclarator(variable: Variable): ESTree.VariableDeclarator | null {
 	if (variable.defs.length !== 1) return null;
 	const [definition] = variable.defs;
-	return definition?.type === "Variable" && definition.node.type === "VariableDeclarator"
-		? definition.node
-		: null;
+	return definition?.type === "Variable" && definition.node.type === "VariableDeclarator" ? definition.node : null;
 }
 
 function isStableConstVariable(variable: Variable, declarator: ESTree.VariableDeclarator): boolean {
@@ -66,11 +59,7 @@ function hasKnownEvidence(
 	const variable = resolveVariable(sourceCode, unwrapped);
 	if (variable === null || visitedVariables.has(variable)) return false;
 	const declarator = variableDeclarator(variable);
-	if (
-		declarator === null ||
-		declarator.init === null ||
-		!isStableConstVariable(variable, declarator)
-	) {
+	if (declarator === null || declarator.init === null || !isStableConstVariable(variable, declarator)) {
 		return false;
 	}
 	visitedVariables.add(variable);
@@ -111,8 +100,7 @@ function functionName(sourceCode: SourceCode, owner: FunctionExpression | null):
 	if (owner === null) return "anonymous function";
 	if (owner.id !== null) return owner.id.name;
 	const parent = owner.parent;
-	if (parent.type === "VariableDeclarator" && parent.id.type === "Identifier")
-		return parent.id.name;
+	if (parent.type === "VariableDeclarator" && parent.id.type === "Identifier") return parent.id.name;
 	if (parent.type === "MethodDefinition") return sourceKeyName(sourceCode, parent.key);
 	return "anonymous function";
 }
@@ -146,16 +134,9 @@ export const noKnownValueWideningRule = defineRule({
 	createOnce(context) {
 		let environment: TypeEnvironment | null = null;
 
-		const reportFlow = (
-			expression: ESTree.Expression,
-			destination: WideningTarget | null,
-			subject: string,
-		) => {
+		const reportFlow = (expression: ESTree.Expression, destination: WideningTarget | null, subject: string) => {
 			if (destination === null) return;
-			if (
-				isDictionaryAccumulatorTarget(destination) &&
-				isEmptyObjectExpression(expression)
-			) {
+			if (isDictionaryAccumulatorTarget(destination) && isEmptyObjectExpression(expression)) {
 				return;
 			}
 			if (!hasKnownEvidence(context.sourceCode, expression)) return;
@@ -175,11 +156,7 @@ export const noKnownValueWideningRule = defineRule({
 			},
 			VariableDeclarator(node) {
 				if (node.init === null || node.id.type !== "Identifier") return;
-				reportFlow(
-					node.init,
-					targetFromAnnotation(node.id.typeAnnotation),
-					`binding \`${node.id.name}\``,
-				);
+				reportFlow(node.init, targetFromAnnotation(node.id.typeAnnotation), `binding \`${node.id.name}\``);
 			},
 			PropertyDefinition(node) {
 				if (node.value === null) return;
@@ -228,19 +205,11 @@ export const noKnownValueWideningRule = defineRule({
 			},
 			TSAsExpression(node) {
 				if (environment === null || hasParentAssertion(node)) return;
-				reportFlow(
-					node.expression,
-					classifyWideningTarget(node.typeAnnotation, environment),
-					"assertion",
-				);
+				reportFlow(node.expression, classifyWideningTarget(node.typeAnnotation, environment), "assertion");
 			},
 			TSTypeAssertion(node) {
 				if (environment === null || hasParentAssertion(node)) return;
-				reportFlow(
-					node.expression,
-					classifyWideningTarget(node.typeAnnotation, environment),
-					"assertion",
-				);
+				reportFlow(node.expression, classifyWideningTarget(node.typeAnnotation, environment), "assertion");
 			},
 		};
 	},

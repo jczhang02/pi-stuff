@@ -1,6 +1,5 @@
-import { defineRule } from "@oxlint/plugins";
-
 import type { ESTree } from "@oxlint/plugins";
+import { defineRule } from "@oxlint/plugins";
 
 const SERVICE_CONSTRUCTOR_NAME = /^make[A-Z]/u;
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/u;
@@ -19,8 +18,7 @@ export const noServiceConstructorImportsRule = defineRule({
 	meta: {
 		type: "problem",
 		docs: {
-			description:
-				"Disallow project-local make<CapabilityName> imports outside test and spec files.",
+			description: "Disallow project-local make<CapabilityName> imports outside test and spec files.",
 		},
 		messages: {
 			serviceConstructorImport:

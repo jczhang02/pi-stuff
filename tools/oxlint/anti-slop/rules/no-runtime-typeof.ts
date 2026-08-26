@@ -1,6 +1,5 @@
+import type { ESTree, Options } from "@oxlint/plugins";
 import { defineRule } from "@oxlint/plugins";
-
-import type { ESTree } from "@oxlint/plugins";
 
 type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
 
@@ -21,6 +20,10 @@ function isInsideTypeGuard(node: ESTree.Node): boolean {
 		current = current.parent;
 	}
 	return false;
+}
+
+function allowsTypeGuardChecks(option: Options[number] | undefined): boolean {
+	return option instanceof Object && !Array.isArray(option) && option["allowInTypeGuards"] === true;
 }
 
 /** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
@@ -49,16 +52,8 @@ export const noRuntimeTypeofRule = defineRule({
 	createOnce(context) {
 		return {
 			UnaryExpression(node) {
-				const option = context.options?.[0];
-				const allowInTypeGuards =
-					typeof option === "object" &&
-					option !== null &&
-					!Array.isArray(option) &&
-					option.allowInTypeGuards === true;
-				if (
-					node.operator === "typeof" &&
-					(!allowInTypeGuards || !isInsideTypeGuard(node))
-				) {
+				const allowInTypeGuards = allowsTypeGuardChecks(context.options[0]);
+				if (node.operator === "typeof" && (!allowInTypeGuards || !isInsideTypeGuard(node))) {
 					context.report({ node, messageId: "runtimeTypeof" });
 				}
 			},
