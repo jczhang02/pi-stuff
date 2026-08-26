@@ -59,7 +59,7 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 				return;
 			}
 			if (!action || action === "status" || action === "verify") {
-				await runtime.verify(pi, { refresh: true, signal: ctx.signal });
+				await runtime.verify(pi, ctx.signal ? { refresh: true, signal: ctx.signal } : { refresh: true });
 			} else if (action === "clear-stats") {
 				projection.reset();
 				note = "Projection statistics cleared.";
@@ -68,7 +68,8 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 			} else if (action !== "stats") {
 				note = `Unknown action: ${action}`;
 			}
-			await dialogs.show(ctx, createRtkDialogView({ note, projection, runtime, settings }));
+			const dialogOptions = { projection, runtime, settings };
+			await dialogs.show(ctx, createRtkDialogView(note === undefined ? dialogOptions : { ...dialogOptions, note }));
 		},
 	});
 

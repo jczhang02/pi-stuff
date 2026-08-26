@@ -1,31 +1,22 @@
-export type Language =
-	| "typescript"
-	| "javascript"
-	| "python"
-	| "rust"
-	| "go"
-	| "java"
-	| "c"
-	| "cpp"
-	| "unknown";
+export type Language = "typescript" | "javascript" | "python" | "rust" | "go" | "java" | "c" | "cpp" | "unknown";
 
-const LANGUAGE_EXTENSIONS: Record<string, Language> = {
-	".ts": "typescript",
-	".tsx": "typescript",
-	".js": "javascript",
-	".jsx": "javascript",
-	".mjs": "javascript",
-	".py": "python",
-	".pyw": "python",
-	".rs": "rust",
-	".go": "go",
-	".java": "java",
-	".c": "c",
-	".h": "c",
-	".cpp": "cpp",
-	".hpp": "cpp",
-	".cc": "cpp",
-};
+const LANGUAGE_EXTENSIONS = new Map<string, Language>([
+	[".ts", "typescript"],
+	[".tsx", "typescript"],
+	[".js", "javascript"],
+	[".jsx", "javascript"],
+	[".mjs", "javascript"],
+	[".py", "python"],
+	[".pyw", "python"],
+	[".rs", "rust"],
+	[".go", "go"],
+	[".java", "java"],
+	[".c", "c"],
+	[".h", "c"],
+	[".cpp", "cpp"],
+	[".hpp", "cpp"],
+	[".cc", "cpp"],
+]);
 
 interface CommentPatterns {
 	line?: string;
@@ -35,17 +26,17 @@ interface CommentPatterns {
 	docBlockStart?: string;
 }
 
-const COMMENT_PATTERNS: Record<Language, CommentPatterns> = {
-	typescript: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	javascript: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	python: { line: "#", blockStart: '"""', blockEnd: '"""', docBlockStart: '"""' },
+const COMMENT_PATTERNS = {
+	typescript: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	javascript: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	python: { line: "#", blockStart: '"""', blockEnd: '"""', docLine: "", docBlockStart: '"""' },
 	rust: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "///", docBlockStart: "/**" },
-	go: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	java: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	c: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	cpp: { line: "//", blockStart: "/*", blockEnd: "*/", docBlockStart: "/**" },
-	unknown: { line: "//", blockStart: "/*", blockEnd: "*/" },
-};
+	go: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	java: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	c: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	cpp: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "/**" },
+	unknown: { line: "//", blockStart: "/*", blockEnd: "*/", docLine: "", docBlockStart: "" },
+} satisfies Readonly<Record<Language, CommentPatterns>>;
 
 const IMPORT_PATTERN = /^(use\s+|import\s+|from\s+|require\(|#include)/;
 const SIGNATURE_PATTERN = /^(pub\s+)?(async\s+)?(fn|def|function|func|class|struct|enum|trait|interface|type)\s+\w+/;
@@ -100,7 +91,7 @@ function getCodePortion(line: string, language: Language): string {
 	return code;
 }
 
-function countCodeBraces(line: string, language: Language): { open: number; close: number } {
+function countCodeBraces(line: string, language: Language) {
 	let open = 0;
 	let close = 0;
 
@@ -121,7 +112,7 @@ export function detectLanguage(filePath: string): Language {
 		return "unknown";
 	}
 	const extension = filePath.slice(lastDot).toLowerCase();
-	return LANGUAGE_EXTENSIONS[extension] ?? "unknown";
+	return LANGUAGE_EXTENSIONS.get(extension) ?? "unknown";
 }
 
 export function filterMinimal(content: string, language: Language): string {

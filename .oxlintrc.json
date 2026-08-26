@@ -22,8 +22,7 @@
 		"coverage/**",
 		"dist/**",
 		"docs/prototypes/**",
-		"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
-		"packages/pi-stuff/src/rtk/upstream/techniques/**"
+		"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js"
 	],
 	"jsPlugins": [
 		{

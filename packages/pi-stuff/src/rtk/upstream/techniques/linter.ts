@@ -40,14 +40,14 @@ function parseLine(line: string): Issue | null {
 			severity,
 			rule,
 			file,
-			line: Number.isNaN(lineNumber) ? undefined : lineNumber,
+			line: lineNumber,
 			message: content,
 		};
 	}
 
 	const rustMatch = line.match(rustPattern);
 	if (rustMatch) {
-		const severity = (rustMatch[1]?.toUpperCase() ?? "ERROR") as "ERROR" | "WARNING";
+		const severity = rustMatch[1]?.toLowerCase() === "warning" ? "WARNING" : "ERROR";
 		const message = rustMatch[2] ?? line;
 		const file = rustMatch[3] ?? "unknown";
 		const lineNumber = Number.parseInt(rustMatch[4] ?? "0", 10);
@@ -55,7 +55,7 @@ function parseLine(line: string): Issue | null {
 			severity,
 			rule: "unknown",
 			file,
-			line: Number.isNaN(lineNumber) ? undefined : lineNumber,
+			line: lineNumber,
 			message,
 		};
 	}

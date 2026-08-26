@@ -1,3 +1,4 @@
+import { boundTerminalLine } from "../../../tool-display/index.js";
 import { matchesCommandPatterns, normalizeCommandForDetection } from "./command-detection.js";
 
 const GIT_COMMAND_PATTERNS = [/^git\s+(diff|status|log|show|stash)\b/] as const;
@@ -126,8 +127,8 @@ export function compactStatus(output: string): string {
 
 		const status = line.slice(0, 2);
 		const filename = line.slice(3);
-		const indexStatus = status[0];
-		const worktreeStatus = status[1];
+		const indexStatus = status.charAt(0);
+		const worktreeStatus = status.charAt(1);
 
 		if (["M", "A", "D", "R", "C"].includes(indexStatus)) {
 			stats.staged++;
@@ -225,4 +226,3 @@ export function compactGitOutput(output: string, command: string | undefined | n
 
 	return null;
 }
-import { boundTerminalLine } from "../../../tool-display/index.js";

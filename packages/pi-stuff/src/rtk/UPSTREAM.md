@@ -16,9 +16,10 @@ This module contains source derived from the pinned MIT-licensed `pi-rtk-optimiz
 | npm archive SHA-256 | `4f7c6d98ed90a999deee7b5a4f8315bd0fd17f99d21022b0d0b64f77bc11d3c8` |
 | npm integrity | `sha512-yj5DEdutRco5WvYEMEO0krZJP5Z6CpuNZoxlXSGmHEi2srB5Gao1xah/RnmVDn2se1FcqlmtS8+K/nzzkq0Pug==` |
 
-The upstream `LICENSE` is preserved byte-for-byte. Files under `upstream/techniques/` are byte-for-byte copies of the pinned upstream `src/techniques/*.ts` algorithms.
+The upstream `LICENSE` is preserved byte-for-byte. Files under `upstream/techniques/` retain the pinned algorithms but
+are maintained as Repository-owned Source under Pi Stuff's formatter, lint, and strict TypeScript baseline.
 
-## Mirrored technique SHA-256
+## Pinned upstream technique SHA-256
 
 | File | SHA-256 |
 | --- | --- |
@@ -47,6 +48,7 @@ source commit `b34be37caf3796b69a50952a28e60e32b5daad43`, with this immutable ar
 ## Pi Stuff delta
 
 - Keeps only the upstream pure compaction algorithms behind a Suite-owned projection adapter.
+- Formats and strictly types the retained algorithms without weakening their output contracts.
 - Replaces upstream `tool_result` mutation with Pi's model-visible `context` seam so transcript and session JSONL remain raw.
 - Keeps `read` and source projection disabled; failed results and non-text blocks always remain exact.
 - Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/rtk settings`, and the shared non-floating Command Dialog.

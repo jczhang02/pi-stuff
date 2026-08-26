@@ -36,9 +36,7 @@ export function groupSearchResults(output: string, maxResults = 50): string | nu
 	}
 
 	let outputText = `${results.length} matches in ${byFile.size} files:\n\n`;
-	const sortedFiles = Array.from(byFile.entries()).sort((left, right) =>
-		left[0].localeCompare(right[0]),
-	);
+	const sortedFiles = Array.from(byFile.entries()).sort((left, right) => left[0].localeCompare(right[0]));
 
 	let shown = 0;
 	for (const [file, matches] of sortedFiles) {

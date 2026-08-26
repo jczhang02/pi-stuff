@@ -20,9 +20,7 @@ function sliceFirstSegment(command: string): string {
 }
 
 export function normalizeCommandForDetection(command: string | undefined | null): string | null {
-	if (typeof command !== "string") {
-		return null;
-	}
+	if (command === undefined || command === null) return null;
 
 	const firstNonEmptyLine = command
 		.split(/\r?\n/)
@@ -41,10 +39,7 @@ export function normalizeCommandForDetection(command: string | undefined | null)
 	return firstSegment || null;
 }
 
-export function matchesCommandPatterns(
-	command: string | undefined | null,
-	patterns: readonly RegExp[],
-): boolean {
+export function matchesCommandPatterns(command: string | undefined | null, patterns: readonly RegExp[]): boolean {
 	const normalized = normalizeCommandForDetection(command);
 	if (!normalized) {
 		return false;

@@ -4,9 +4,7 @@
 		"target": "ES2023",
 		"lib": ["ES2023"],
 		"module": "ESNext",
-		"moduleResolution": "Bundler",
-		"exactOptionalPropertyTypes": false,
-		"noUncheckedIndexedAccess": false
+		"moduleResolution": "Bundler"
 	},
 	"include": ["../../packages/pi-stuff/src/rtk/**/*.ts", "../../test/rtk/**/*.ts"],
 	"exclude": ["../../node_modules"]

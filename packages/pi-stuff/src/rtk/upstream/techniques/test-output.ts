@@ -1,3 +1,4 @@
+import { boundTerminalLine } from "../../../tool-display/index.js";
 import { matchesCommandPatterns } from "./command-detection.js";
 
 interface TestSummary {
@@ -172,4 +173,3 @@ export function aggregateTestOutput(output: string, command: string | undefined 
 
 	return result.join("\n");
 }
-import { boundTerminalLine } from "../../../tool-display/index.js";
