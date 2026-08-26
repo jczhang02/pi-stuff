@@ -394,33 +394,6 @@ describe("nested event projection ownership", () => {
 		expect(fs.readdirSync(stopRequestsDir(asyncDir))).toHaveLength(1);
 	});
 
-	test("an exact nested id wins while a legacy top-level selector rejects nested prefix matches", async () => {
-		const routeInfo = route("nested-legacy-control");
-		writeRunningChild(routeInfo, "parallel:1-extra");
-		const state = stateWithRoute(routeInfo);
-		const signal = new AbortController().signal;
-
-		expect(
-			await routeLiveNestedAgentControl({ action: "stop", id: "parallel:1" }, state, signal, {
-				parentRunOrigin: "automatic",
-				requireExactMatch: true,
-			}),
-		).toBeUndefined();
-
-		const runRoot = path.join(TEMP_ROOT_DIR, "nested-subagent-runs", routeInfo.rootRunId);
-		nestedRunRoots.push(runRoot);
-		const asyncDir = path.join(runRoot, "parallel:1");
-		fs.mkdirSync(asyncDir, { recursive: true, mode: 0o700 });
-		writeRunningChild(routeInfo, "parallel:1");
-		const result = await routeLiveNestedAgentControl({ action: "stop", id: "parallel:1" }, state, signal, {
-			parentRunOrigin: "automatic",
-			requireExactMatch: true,
-		});
-
-		expect(result?.isError).not.toBe(true);
-		expect(fs.readdirSync(stopRequestsDir(asyncDir))).toHaveLength(1);
-	});
-
 	test("nested user steering remains user-attributed through completion and registry reload", async () => {
 		const routeInfo = route("nested-user-steer");
 		const childId = "nested-user-steer-child";

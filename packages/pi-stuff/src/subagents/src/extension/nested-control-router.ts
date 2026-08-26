@@ -18,7 +18,6 @@ interface NestedControlParams {
 interface NestedControlRouterOptions {
 	readonly now?: () => number;
 	readonly parentRunOrigin: AgentWorkOrigin;
-	readonly requireExactMatch?: boolean;
 	readonly timeoutMs?: number;
 	readonly requestId?: () => string;
 }
@@ -111,7 +110,6 @@ export async function routeLiveNestedAgentControl(
 		);
 	}
 	const exactNested = matches.filter(({ run }) => run.id === requested);
-	if (options.requireExactMatch && exactNested.length === 0) return undefined;
 	const candidates = exactNested.length > 0 ? exactNested : matches;
 	const unique = new Map(candidates.map((match) => [`${match.rootRunId}\0${match.run.id}`, match]));
 	if (unique.size === 0) return undefined;
