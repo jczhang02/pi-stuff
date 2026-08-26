@@ -15,10 +15,10 @@ export type CodeModeEffectiveSource = "frozen" | "project" | "global" | "environ
 export interface CodeModeDialogSnapshot {
 	readonly effectiveSource: CodeModeEffectiveSource;
 	readonly enabled: boolean;
-	readonly executionCount: number;
 	readonly fallbackEnabled: boolean;
 	readonly frozen: boolean;
 	readonly globalEnabled: boolean | undefined;
+	readonly history: { readonly retainedCount: number; readonly totalCount: number };
 	readonly pendingCount: number;
 	readonly projectEnabled: boolean | undefined;
 	readonly projectTrusted: boolean;
@@ -125,7 +125,8 @@ class CodeModeDialog implements CommandDialogComponent {
 		const selected = nativeBody.find((line) => line.includes("→"));
 		const effective = `${GUTTER}${this.context.theme.bold("Effective")}  ${snapshot.enabled ? "on" : "off"} · ${snapshot.effectiveSource}`;
 		const session = [
-			countLabel(snapshot.executionCount, "execution"),
+			`${countLabel(snapshot.history.totalCount, "execution")} total`,
+			`${String(snapshot.history.retainedCount)} retained`,
 			countLabel(snapshot.pendingCount, "pending"),
 			countLabel(snapshot.snippetCount, "snippet"),
 		].join(" · ");

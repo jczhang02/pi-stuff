@@ -357,7 +357,7 @@ export async function compensateCodeModeExecution(
 	context: Parameters<CodeModeSessionLedger["history"]>[0],
 	executionId: string,
 	signal?: AbortSignal,
-): Promise<{ readonly compensated: number; readonly failures: readonly string[] }> {
+): Promise<{ readonly complete: boolean; readonly compensated: number; readonly failures: readonly string[] }> {
 	let compensated = 0;
 	const failures: string[] = [];
 	for (const target of ledger.compensationTargets(context, executionId)) {
@@ -372,15 +372,15 @@ export async function compensateCodeModeExecution(
 			};
 			if (signal) Object.assign(invocation, { signal });
 			const didCompensate = await registry.compensate(invocation);
-			if (!didCompensate) continue;
+			if (!didCompensate) throw new Error("no compensating operation accepted the call");
 			ledger.markCompensated(context, executionId, target.callId);
 			compensated += 1;
 		} catch (error) {
 			failures.push(`${target.name}: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
-	if (compensated > 0) ledger.markCompensationComplete(context, executionId);
-	return { compensated, failures };
+	const complete = failures.length === 0 && ledger.markCompensationComplete(context, executionId);
+	return { complete, compensated, failures };
 }
 
 async function deliverCodeModeDecision(
@@ -560,10 +560,10 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 							getSnapshot: () => ({
 								effectiveSource,
 								enabled,
-								executionCount: ledger.history(context).length,
 								fallbackEnabled: defaultEnabled,
 								frozen: frozenEnabled !== undefined,
 								globalEnabled,
+								history: ledger.historyPage(context),
 								pendingCount: runtime.pending(context).length,
 								projectEnabled,
 								projectTrusted: context.isProjectTrusted(),
@@ -594,15 +594,17 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 					return;
 				}
 				if (action === "history") {
-					const history = ledger.history(context);
+					const history = ledger.historyPage(context);
 					context.ui.notify(
-						history.length === 0
+						history.totalCount === 0
 							? "No Code Mode executions in this Session."
-							: history
-									.map(
-										(item) => `${item.executionId} · ${item.status} · ${String(item.toolCalls)} Tool call(s)`,
-									)
-									.join("\n"),
+							: [
+									`${String(history.displayedCount)} displayed · ${String(history.retainedCount)} retained · ${String(history.totalCount)} total${history.truncated ? " · history truncated" : ""}`,
+									...history.items.map(
+										(item) =>
+											`${new Date(item.updatedAt).toISOString()} · ${item.executionId} · ${item.tools.length > 0 ? item.tools.map((tool) => `tools.${tool}`).join(", ") : "JavaScript only"} · ${item.status} · ${String(item.toolCalls)} Tool call(s)${item.error ? ` · ${item.error}` : ""}`,
+									),
+								].join("\n"),
 						"info",
 					);
 					return;
@@ -720,11 +722,13 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 							"error",
 						);
 					} else {
-						if (outcome.compensated > 0) await connector.disposeExecution(rest[0], "rolled_back");
+						if (outcome.complete) await connector.disposeExecution(rest[0], "rolled_back");
 						context.ui.notify(
-							outcome.compensated > 0
+							outcome.complete
 								? `Compensated ${String(outcome.compensated)} call(s) in reverse order.`
-								: "No applied Tool in that execution declares a compensating operation.",
+								: outcome.failures.length > 0
+									? `Compensated ${String(outcome.compensated)} call(s); ${outcome.failures.join("; ")}. Retry rollback to finish.`
+									: "No applied Tool in that execution declares a compensating operation.",
 							"info",
 						);
 					}

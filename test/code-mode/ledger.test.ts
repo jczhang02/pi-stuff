@@ -5,113 +5,130 @@ import {
 	CODE_MODE_LEDGER_ENTRY_TYPE,
 	CodeModeIncompleteExecutionError,
 	CodeModeSessionLedger,
+	MAX_CODE_MODE_LEDGER_BYTES,
 } from "../../packages/pi-stuff/src/code-mode/ledger.js";
 import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
+type ReplayPolicies = Readonly<Record<string, "never" | "record" | "reexecute">>;
+type CompensationRegistry = Parameters<typeof compensateCodeModeExecution>[0];
+
+function compensationRegistry(compensate: CompensationRegistry["compensate"]): CompensationRegistry {
+	return {
+		catalog: () => [],
+		compensate,
+		get: () => undefined,
+		invoke: async () => {
+			throw new Error("unexpected invoke");
+		},
+		isActive: () => false,
+		list: () => [],
+	};
+}
+
 function fixture() {
 	const branch: Array<{ customType: string; data: unknown; id: string; type: "custom" }> = [];
-	let branchReads = 0;
-	let leafError: Error | undefined;
-	let leafRevision = 0;
-	let readError: Error | undefined;
-	let sessionId = "session-code-mode";
+	// SAFETY: undefined initializes optional Error slots that tests later assign only Error values to.
+	const state = {
+		branchReads: 0,
+		leafError: undefined as Error | undefined,
+		leafRevision: 0,
+		readError: undefined as Error | undefined,
+		sessionId: "session-code-mode",
+	};
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: "/project",
 		sessionManager: {
 			getBranch: () => {
-				branchReads++;
-				if (readError) throw readError;
+				state.branchReads++;
+				if (state.readError) throw state.readError;
 				return branch;
 			},
 			getEntries: () => branch,
 			getLeafId: () => {
-				if (leafError) throw leafError;
-				return `${String(branch.length)}:${String(leafRevision)}`;
+				if (state.leafError) throw state.leafError;
+				return `${String(branch.length)}:${String(state.leafRevision)}`;
 			},
-			getSessionId: () => sessionId,
+			getSessionId: () => state.sessionId,
 		},
 	} as ExtensionContext;
 	const ledger = new CodeModeSessionLedger({
 		appendEntry(customType, data) {
-			leafRevision++;
-			branch.push({ customType, data, id: `entry-${String(leafRevision)}`, type: "custom" });
+			state.leafRevision++;
+			branch.push({ customType, data, id: `entry-${String(state.leafRevision)}`, type: "custom" });
 		},
 	});
+	const start = (
+		outerToolCallId: string,
+		policies: ReplayPolicies = {},
+		requiresApproval: readonly string[] = [],
+		code = "text('fixture')",
+	) => {
+		const activePolicies = new Map(Object.entries(policies));
+		const controller = ledger.begin(context, outerToolCallId, code, activePolicies, new Set(requiresApproval));
+		controller.beginPass(0);
+		return controller;
+	};
+	const resume = (executionId: string, policies: ReplayPolicies = {}, requiresApproval: readonly string[] = []) =>
+		ledger.resume(context, executionId, new Map(Object.entries(policies)), new Set(requiresApproval));
 	return {
 		branch,
-		branchReadCount: () => branchReads,
 		context,
 		ledger,
-		setLeafError: (error: Error | undefined) => {
-			leafError = error;
-		},
-		setReadError: (error: Error | undefined) => {
-			readError = error;
-		},
-		setSessionId: (id: string) => {
-			sessionId = id;
-		},
-		touchBranch: () => {
-			leafRevision++;
-		},
+		resume,
+		state,
+		start,
 	};
 }
 
 test("Session ledger reads fail closed when the active branch is unavailable", () => {
-	const { context, ledger, setReadError } = fixture();
+	const { context, ledger, state } = fixture();
 	const unavailable = new Error("Session branch unavailable");
-	setReadError(unavailable);
+	state.readError = unavailable;
 
 	expect(() => ledger.history(context)).toThrow(unavailable);
 });
 
 test("Session leaf probe failures disable caching without hiding durable branch state", () => {
-	const { branchReadCount, context, ledger, setLeafError } = fixture();
-	setLeafError(new Error("leaf unavailable"));
+	const { context, ledger, state } = fixture();
+	state.leafError = new Error("leaf unavailable");
 
 	expect(ledger.history(context)).toEqual([]);
 	expect(ledger.history(context)).toEqual([]);
-	expect(branchReadCount()).toBe(2);
+	expect(state.branchReads).toBe(2);
 });
 
 test("Session ledger reuses one branch fold until the Session leaf changes", () => {
-	const { branchReadCount, context, ledger } = fixture();
+	const { context, ledger, state } = fixture();
 	const controller = ledger.begin(context, "outer-cache", "text('ok')", new Map());
 	controller.finish("success");
 
 	expect(ledger.history(context)).toHaveLength(1);
 	expect(ledger.history(context)).toHaveLength(1);
 	expect(ledger.snippets(context)).toEqual([]);
-	expect(branchReadCount()).toBe(1);
+	expect(state.branchReads).toBe(1);
 });
 
 test("Session ledger invalidates its fold for branch and Session changes", () => {
-	const { branch, branchReadCount, context, ledger, setSessionId, touchBranch } = fixture();
+	const { branch, context, ledger, state } = fixture();
 	const controller = ledger.begin(context, "outer-original", "text('original')", new Map());
 	controller.finish("success");
 	expect(ledger.history(context)[0]?.outerToolCallId).toBe("outer-original");
-	expect(branchReadCount()).toBe(1);
+	expect(state.branchReads).toBe(1);
 
 	branch.length = 0;
-	touchBranch();
+	state.leafRevision++;
 	expect(ledger.history(context)).toEqual([]);
-	expect(branchReadCount()).toBe(2);
+	expect(state.branchReads).toBe(2);
 
-	setSessionId("session-code-mode-next");
+	state.sessionId = "session-code-mode-next";
 	expect(ledger.history(context)).toEqual([]);
-	expect(branchReadCount()).toBe(3);
+	expect(state.branchReads).toBe(3);
 });
 
 test("the Session ledger replays completed values and preserves binary, bigint, history, and snippets", () => {
-	const { branch, context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-read",
-		"async (input) => await tools.read({ path: input.path })",
-		new Map([["read", "record"]]),
-	);
-	controller.beginPass(0);
+	const { branch, context, ledger, start } = fixture();
+	const controller = start("outer-read", { read: "record" });
 	const first = controller.beginToolCall("read", { path: "a.bin" });
 	controller.completeToolCall(first, {
 		status: "success",
@@ -131,6 +148,7 @@ test("the Session ledger replays completed values and preserves binary, bigint, 
 	expect(history).toMatchObject([
 		{ executionId: controller.executionId, outerToolCallId: "outer-read", status: "success", toolCalls: 1 },
 	]);
+	expect(history[0]?.tools).toEqual(["read"]);
 	const snippet = ledger.saveSnippet(context, controller.executionId, " read-binary ", "Read one binary file");
 	expect(snippet.name).toBe("read-binary");
 	expect(ledger.snippets(context)).toEqual([snippet]);
@@ -138,20 +156,9 @@ test("the Session ledger replays completed values and preserves binary, bigint, 
 });
 
 test("historical explicit Tool errors override a stale success classification in memory", () => {
-	const { branch, context, ledger } = fixture();
-	const policies = new Map([
-		["read", "record"],
-		["write", "never"],
-	] as const);
-	const approvals = new Set(["write"]);
-	const controller = ledger.begin(
-		context,
-		"outer-historical-error",
-		"await tools.read({}); await tools.write({})",
-		policies,
-		approvals,
-	);
-	controller.beginPass(0);
+	const { branch, resume, start } = fixture();
+	const policies = { read: "record", write: "never" } as const;
+	const controller = start("outer-historical-error", policies, ["write"]);
 	const read = controller.beginToolCall("read", {});
 	controller.completeToolCall(read, {
 		result: Object.assign(
@@ -166,7 +173,7 @@ test("historical explicit Tool errors override a stale success classification in
 	const persistedSettlement = structuredClone(latest);
 	controller.beginToolCall("write", {});
 
-	const resumed = ledger.resume(context, controller.executionId, policies, approvals);
+	const resumed = resume(controller.executionId, policies, ["write"]);
 	if (!resumed) throw new Error("historical execution did not resume");
 	resumed.beginPass(1);
 	const replay = resumed.beginToolCall("read", {});
@@ -187,37 +194,41 @@ test("historical replay does not infer Tool errors from prose or malformed resul
 		{ content: [{ type: "image" }], details: {}, isError: true },
 		{ content: [{ type: "unknown" }], details: {}, isError: true },
 	]) {
-		const { context, ledger } = fixture();
-		const policies = new Map([
-			["read", "record"],
-			["write", "never"],
-		] as const);
-		const approvals = new Set(["write"]);
-		const controller = ledger.begin(context, "outer-control", "await tools.read({});", policies, approvals);
-		controller.beginPass(0);
+		const { resume, start } = fixture();
+		const policies = { read: "record", write: "never" } as const;
+		const controller = start("outer-control", policies, ["write"]);
 		const read = controller.beginToolCall("read", {});
 		// SAFETY: this test deliberately supplies malformed historical presentation data to exercise fail-open replay.
 		controller.completeToolCall(read, { result: result as never, status: "success", value: "success" });
 		controller.beginToolCall("write", {});
-		const resumed = ledger.resume(context, controller.executionId, policies, approvals);
+		const resumed = resume(controller.executionId, policies, ["write"]);
 		if (!resumed) throw new Error("historical execution did not resume");
 		resumed.beginPass(1);
 		expect(resumed.beginToolCall("read", {}).replay?.kind).toBe("result");
 	}
 });
 
+test("completion stores one reconstructable Tool result instead of duplicate value and presentation payloads", () => {
+	const { branch, start } = fixture();
+	const controller = start("outer-single-result", { read: "record" });
+	const plan = controller.beginToolCall("read", {});
+	controller.completeToolCall(plan, {
+		result: { content: [{ text: '{"observed":true}', type: "text" }], details: {} },
+		status: "success",
+		value: { observed: true },
+	});
+	const settlement = branch.at(-1);
+	expect(settlement?.data).toHaveProperty("result");
+	expect(settlement?.data).not.toHaveProperty("value");
+
+	controller.beginPass(1);
+	expect(controller.beginToolCall("read", {}).replay).toMatchObject({ kind: "result", value: { observed: true } });
+});
+
 test("approval pauses before the effect and resumes it only after an explicit user decision", () => {
-	const { context, ledger } = fixture();
-	const policies = new Map([["write", "never"]] as const);
-	const approvals = new Set(["write"]);
-	const controller = ledger.begin(
-		context,
-		"outer-write",
-		"await tools.write({ path: 'a.txt', content: 'ok' })",
-		policies,
-		approvals,
-	);
-	controller.beginPass(0);
+	const { context, ledger, resume, start } = fixture();
+	const policies = { write: "never" } as const;
+	const controller = start("outer-write", policies, ["write"]);
 	const paused = controller.beginToolCall("write", { path: "a.txt", content: "ok" });
 	expect(paused.pause).toBeDefined();
 	expect(ledger.history(context)[0]?.status).toBe("paused");
@@ -234,7 +245,7 @@ test("approval pauses before the effect and resumes it only after an explicit us
 	expect(swallowedPauseFollowUp.pause).toBeDefined();
 	expect(ledger.history(context)[0]?.toolCalls).toBe(1);
 
-	const resumed = ledger.resume(context, controller.executionId, policies, approvals);
+	const resumed = resume(controller.executionId, policies, ["write"]);
 	if (!resumed) throw new Error("paused execution did not resume");
 	resumed.beginPass(1);
 	const approved = resumed.beginToolCall("write", { path: "a.txt", content: "ok" });
@@ -242,59 +253,38 @@ test("approval pauses before the effect and resumes it only after an explicit us
 	resumed.completeToolCall(approved, { status: "success", value: { written: true } });
 	resumed.finish("success");
 	expect(ledger.pending(context)).toEqual([]);
-	expect(ledger.resume(context, controller.executionId, policies, approvals)).toBeUndefined();
+	expect(resume(controller.executionId, policies, ["write"])).toBeUndefined();
 });
 
 test("approval stays paused when the working directory changed", () => {
-	const { context, ledger } = fixture();
-	const policies = new Map([["write", "never"]] as const);
+	const { context, ledger, start } = fixture();
+	const policies = { write: "never" } as const;
 	const approvals = new Set(["write"]);
-	const controller = ledger.begin(context, "outer-cwd", "await tools.write({ path: 'a.txt' })", policies, approvals);
-	controller.beginPass(0);
+	const controller = start("outer-cwd", policies, ["write"]);
 	controller.beginToolCall("write", { path: "a.txt" });
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const movedContext = { ...context, cwd: "/another-project" } as ExtensionContext;
 
-	expect(() => ledger.resume(movedContext, controller.executionId, policies, approvals)).toThrow(
-		'Code Mode execution started in "/project"; current working directory is "/another-project"',
-	);
+	expect(() =>
+		ledger.resume(movedContext, controller.executionId, new Map(Object.entries(policies)), approvals),
+	).toThrow('Code Mode execution started in "/project"; current working directory is "/another-project"');
 	expect(ledger.history(context)[0]?.status).toBe("paused");
 });
 
 test("approval stays paused when its Tool is no longer active", () => {
-	const { context, ledger } = fixture();
-	const policies = new Map([["write", "never"]] as const);
-	const approvals = new Set(["write"]);
-	const controller = ledger.begin(
-		context,
-		"outer-missing",
-		"await tools.write({ path: 'a.txt' })",
-		policies,
-		approvals,
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-missing", { write: "never" }, ["write"]);
 	controller.beginToolCall("write", { path: "a.txt" });
 
-	expect(() => ledger.resume(context, controller.executionId, new Map(), approvals)).toThrow(
+	expect(() => ledger.resume(context, controller.executionId, new Map(), new Set(["write"]))).toThrow(
 		'Code Mode pending Tool "write" is no longer active',
 	);
 	expect(ledger.history(context)[0]?.status).toBe("paused");
 });
 
 test("reject ends only the matching pending action and leaves earlier applied work available for rollback", () => {
-	const { context, ledger } = fixture();
-	const policies = new Map([
-		["read", "record"],
-		["write", "never"],
-	] as const);
-	const controller = ledger.begin(
-		context,
-		"outer-reject",
-		"await tools.read({}); await tools.write({ value: 1 })",
-		policies,
-		new Set(["write"]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-reject", { read: "record", write: "never" }, ["write"]);
 	const read = controller.beginToolCall("read", {});
 	controller.completeToolCall(read, { status: "success", value: { observed: true } });
 	controller.beginToolCall("write", { value: 1 });
@@ -308,15 +298,8 @@ test("reject ends only the matching pending action and leaves earlier applied wo
 });
 
 test("expiring a stale approval rejects it without executing the pending Tool", () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-expire",
-		"await tools.write({ value: 1 })",
-		new Map([["write", "never"]]),
-		new Set(["write"]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-expire", { write: "never" }, ["write"]);
 	controller.beginToolCall("write", { value: 1 });
 
 	expect(ledger.expire(context, 0)).toEqual([controller.executionId]);
@@ -325,14 +308,8 @@ test("expiring a stale approval rejects it without executing the pending Tool", 
 });
 
 test("an unrecorded non-replayable effect stops recovery as incomplete until the user abandons it", () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-effect",
-		"await tools.bash({ command: 'deploy' })",
-		new Map([["bash", "never"]]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-effect", { bash: "never" });
 	controller.beginToolCall("bash", { command: "deploy" });
 
 	controller.beginPass(1);
@@ -344,14 +321,8 @@ test("an unrecorded non-replayable effect stops recovery as incomplete until the
 });
 
 test("an unsettled recorded call is not repeated automatically after Runtime loss", () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-record",
-		"await tools.read({ path: 'possibly-applied' })",
-		new Map([["read", "record"]]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-record", { read: "record" });
 	controller.beginToolCall("read", { path: "possibly-applied" });
 
 	controller.beginPass(1);
@@ -362,14 +333,8 @@ test("an unsettled recorded call is not repeated automatically after Runtime los
 });
 
 test("only an explicit reexecute policy repeats an unsettled call after Runtime loss", () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-reexecute",
-		"await tools.retryable({})",
-		new Map([["retryable", "reexecute"]]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-reexecute", { retryable: "reexecute" });
 	controller.beginToolCall("retryable", {});
 
 	controller.beginPass(1);
@@ -380,15 +345,22 @@ test("only an explicit reexecute policy repeats an unsettled call after Runtime 
 	expect(ledger.history(context)[0]).toMatchObject({ status: "success", toolCalls: 1 });
 });
 
-test("a result that cannot fit in the durable log fails instead of being replayed approximately", () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-large",
-		"await tools.read({ path: 'large' })",
-		new Map([["read", "record"]]),
+test("a delayed obsolete result cannot settle the active reexecution attempt", () => {
+	const { start } = fixture();
+	const controller = start("outer-stale-attempt", { retryable: "reexecute" });
+	const stale = controller.beginToolCall("retryable", {});
+	controller.beginPass(1);
+	const active = controller.beginToolCall("retryable", {});
+
+	expect(() => controller.completeToolCall(stale, { status: "success", value: "obsolete" })).toThrow(
+		"no matching running ledger call",
 	);
-	controller.beginPass(0);
+	controller.completeToolCall(active, { status: "success", value: "current" });
+});
+
+test("a result that cannot fit in the durable log fails instead of being replayed approximately", () => {
+	const { start } = fixture();
+	const controller = start("outer-large", { read: "record" });
 	const call = controller.beginToolCall("read", { path: "large" });
 	expect(() => controller.completeToolCall(call, { status: "success", value: "x".repeat(1_000_001) })).toThrow(
 		/too large to record durably.*small reference/s,
@@ -396,17 +368,8 @@ test("a result that cannot fit in the durable log fails instead of being replaye
 });
 
 test("explicit compensation attempts applied calls in reverse order and records what was undone", async () => {
-	const { context, ledger } = fixture();
-	const controller = ledger.begin(
-		context,
-		"outer-write",
-		"await tools.first({}); await tools.second({})",
-		new Map([
-			["first", "never"],
-			["second", "never"],
-		]),
-	);
-	controller.beginPass(0);
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-write", { first: "never", second: "never" });
 	for (const name of ["first", "second"]) {
 		const plan = controller.beginToolCall(name, { name });
 		controller.completeToolCall(plan, { status: "success", value: { created: name } });
@@ -414,27 +377,42 @@ test("explicit compensation attempts applied calls in reverse order and records 
 	controller.finish("success");
 	const order: string[] = [];
 	const outcome = await compensateCodeModeExecution(
-		{
-			catalog: () => [],
-			async compensate(invocation) {
-				order.push(invocation.name);
-				return true;
-			},
-			get: () => undefined,
-			invoke: async () => {
-				throw new Error("unexpected invoke");
-			},
-			isActive: () => false,
-			list: () => [],
-		},
+		compensationRegistry(async (invocation) => {
+			order.push(invocation.name);
+			return true;
+		}),
 		ledger,
 		context,
 		controller.executionId,
 	);
 	expect(order).toEqual(["second", "first"]);
-	expect(outcome).toEqual({ compensated: 2, failures: [] });
-	expect(ledger.history(context)[0]?.status).toBe("rolled_back");
+	expect(outcome).toEqual({ complete: true, compensated: 2, failures: [] });
 	expect(ledger.compensationTargets(context, controller.executionId)).toEqual([]);
+});
+
+test("mixed compensation stays partial and retryable until every target succeeds", async () => {
+	const { context, ledger, start } = fixture();
+	const controller = start("outer-partial-rollback", { first: "never", second: "never" });
+	for (const name of ["first", "second"]) {
+		const plan = controller.beginToolCall(name, {});
+		controller.completeToolCall(plan, { status: "success", value: { created: name } });
+	}
+	controller.finish("success");
+	const registry = compensationRegistry(async ({ name }) => name !== "first");
+	const partial = await compensateCodeModeExecution(registry, ledger, context, controller.executionId);
+	expect(partial).toMatchObject({ complete: false, compensated: 1 });
+	expect(partial.failures).toEqual(["first: no compensating operation accepted the call"]);
+	expect(ledger.history(context)[0]?.status).toBe("compensated");
+	expect(ledger.compensationTargets(context, controller.executionId)).toMatchObject([{ name: "first" }]);
+
+	const complete = await compensateCodeModeExecution(
+		{ ...registry, compensate: async () => true },
+		ledger,
+		context,
+		controller.executionId,
+	);
+	expect(complete).toEqual({ complete: true, compensated: 1, failures: [] });
+	expect(ledger.history(context)[0]?.status).toBe("rolled_back");
 });
 
 test("ledger maintenance expires stale work and retains only the newest fifty terminal executions", () => {
@@ -479,4 +457,22 @@ test("ledger maintenance expires stale work and retains only the newest fifty te
 	const history = ledger.history(context, 100);
 	expect(history.find((item) => item.executionId === "stale-running")?.status).toBe("expired");
 	expect(history.filter((item) => item.status !== "running" && item.status !== "incomplete")).toHaveLength(50);
+	const page = ledger.historyPage(context);
+	expect([page.displayedCount, page.retainedCount, page.totalCount, page.truncated]).toEqual([20, 51, 53, true]);
+	expect(branch).toHaveLength(105);
+});
+
+test("the physical Session ledger budget rejects growth before its aggregate exceeds the bound", () => {
+	const { branch, start } = fixture();
+	const large = "x".repeat(800_000);
+	expect(() => {
+		for (let index = 0; index < 40; index += 1) {
+			const controller = start(`outer-${String(index)}`, { read: "record" });
+			const plan = controller.beginToolCall("read", { index });
+			controller.completeToolCall(plan, { status: "success", value: large });
+			controller.finish("success");
+		}
+	}).toThrow("physical limit");
+	const physicalBytes = branch.reduce((total, entry) => total + Buffer.byteLength(JSON.stringify(entry)) + 1, 0);
+	expect(physicalBytes).toBeLessThanOrEqual(MAX_CODE_MODE_LEDGER_BYTES);
 });

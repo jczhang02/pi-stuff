@@ -131,14 +131,19 @@ pending Tool; stale decisions change nothing. A swallowed pause cannot reach lat
 
 `/codemode history`, `/codemode abandon <execution-id>`, `/codemode expire`, and
 `/codemode rollback <execution-id>` expose recovery decisions. The older `compensate` command remains an alias.
-Rollback runs only explicitly declared inverse operations, in reverse order; it never erases history or assumes an
-external effect disappeared. Connector cleanup runs after every pass and once at terminal completion, rejection, or
-rollback without masking the original result.
+History distinguishes displayed, retained, and total execution counts and reports time, Tool identity, status, and
+errors. Rollback runs only explicitly declared inverse operations, in reverse order; a mixed result remains
+`compensated` and retryable until every target succeeds, and it never erases history or assumes an external effect
+disappeared. Connector cleanup runs after every pass and once at terminal completion, rejection, or rollback without
+masking the original result.
 
 `codemode.step(name, fn)` gives a long program a durable named checkpoint. `/codemode save <execution-id> <name>` saves
 a successful program as a Session snippet; `codemode.run(name, input)`, `/codemode snippets`, and
 `/codemode delete <name>` reuse or curate it. The ledger retains bounded terminal history and expires stale unfinished
-work; it is Session data, not a second database.
+work. New prune tombstones are unnecessary: replay folds the active branch and derives the retained view in memory.
+Completion stores either one reconstructable Tool result or its canonical value, never both, and all Code Mode ledger
+entries in one Session have a fixed 16 MiB physical budget. Further durable work fails before crossing that budget and
+asks for a new Pi Session. The ledger remains Session data, not a second database.
 
 ## Native host
 

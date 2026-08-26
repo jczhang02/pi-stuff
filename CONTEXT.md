@@ -93,6 +93,12 @@ A Code Mode execution that carries only Host scheduling or continuation signals 
 remains diagnostic evidence rather than a Conversation Transcript event.
 _Avoid_: Internal wait, empty Code Mode call, no-op Tool
 
+**Execution Ledger**:
+Code Mode's replay and recovery state stored in bounded Pi Session custom entries. It keeps one canonical completion
+payload, has a fixed physical aggregate budget, and rejects further durable work before crossing that budget; it is
+not a second database or an unbounded event archive.
+_Avoid_: Code Mode database, recovery log
+
 **Tool Discovery**:
 The model-facing search over the currently active Package-owned Tool catalog. It returns bounded, ranked matches that
 help invoke a relevant Tool and never substitutes an unrelated Tool when no catalog entry matches.

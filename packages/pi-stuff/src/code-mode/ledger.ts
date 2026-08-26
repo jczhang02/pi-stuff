@@ -1,211 +1,56 @@
 import { randomUUID } from "node:crypto";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isJsonSourceValue, type JsonObject, type JsonValue, parseJsonValue } from "../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { isJsonSourceValue } from "../shared/json-value.js";
+import type { CodemodeValue } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
-import { isCodeModeToolContent } from "./presentation.js";
+import {
+	applyEvent,
+	type CallPendingEvent,
+	type CallSettledEvent,
+	type CallStartedEvent,
+	type CallState,
+	type CodeModeCompensationTarget,
+	type CodeModeExecutionHistoryItem,
+	type CodeModeExecutionStatus,
+	type CodeModePendingAction,
+	createLedgerSnapshot,
+	durableValue,
+	type ExecutionSettledEvent,
+	type ExecutionState,
+	eventFrom,
+	executionHistory,
+	type LedgerEvent,
+	type LedgerSnapshot,
+	MAX_DURABLE_VALUE_BYTES,
+	optionalPresentationValue,
+	type ReplayPolicy,
+	trimTerminalExecutions,
+} from "./ledger-state.js";
 import type { RuntimeToolCallPlan, RuntimeToolCallSettlement, RuntimeToolReplay } from "./protocol.js";
 
+export type {
+	CodeModeCompensationTarget,
+	CodeModeExecutionHistoryItem,
+	CodeModeExecutionStatus,
+	CodeModePendingAction,
+};
+
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
-const SCHEMA_VERSION = 1;
-const MAX_DURABLE_VALUE_BYTES = 1_000_000;
-const MAX_EXECUTIONS = 50;
+export const MAX_CODE_MODE_LEDGER_BYTES = 16 * 1024 * 1024;
+const PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES = 512;
 const PAUSED_TTL_MS = 24 * 60 * 60 * 1_000;
-
-export type CodeModeExecutionStatus =
-	| "abandoned"
-	| "cancelled"
-	| "compensated"
-	| "error"
-	| "expired"
-	| "incomplete"
-	| "paused"
-	| "rejected"
-	| "rolled_back"
-	| "running"
-	| "success";
-
-type ReplayPolicy = "never" | "record" | "reexecute";
-
-type StoredValue = { readonly kind: "undefined" } | { readonly json: JsonValue; readonly kind: "json" };
-
-interface ExecutionStartedEvent {
-	readonly at: number;
-	readonly code: string;
-	readonly cwd?: string;
-	readonly executionId: string;
-	readonly kind: "execution-started";
-	readonly outerToolCallId: string;
-	readonly schemaVersion: 1;
-}
-
-interface CallStartedEvent {
-	readonly args: StoredValue;
-	readonly argsKey: string;
-	readonly at: number;
-	readonly attempt: number;
-	readonly callId: string;
-	readonly executionId: string;
-	readonly kind: "call-started";
-	readonly name: string;
-	readonly replay: ReplayPolicy;
-	readonly requiresApproval?: boolean;
-	readonly schemaVersion: 1;
-	readonly sequence: number;
-}
-
-interface CallPendingEvent {
-	readonly args: StoredValue;
-	readonly argsKey: string;
-	readonly at: number;
-	readonly attempt: number;
-	readonly callId: string;
-	readonly executionId: string;
-	readonly kind: "call-pending";
-	readonly name: string;
-	readonly replay: ReplayPolicy;
-	readonly schemaVersion: 1;
-	readonly sequence: number;
-}
-
-interface CallSettledEvent {
-	readonly at: number;
-	readonly callId: string;
-	readonly error?: string;
-	readonly executionId: string;
-	readonly kind: "call-settled";
-	readonly result?: StoredValue;
-	readonly schemaVersion: 1;
-	readonly status: "error" | "success";
-	readonly value?: StoredValue;
-}
-
-interface CallCompensatedEvent {
-	readonly at: number;
-	readonly callId: string;
-	readonly executionId: string;
-	readonly kind: "call-compensated";
-	readonly schemaVersion: 1;
-}
-
-interface ExecutionSettledEvent {
-	readonly at: number;
-	readonly attempt: number;
-	readonly error?: string;
-	readonly executionId: string;
-	readonly kind: "execution-settled";
-	readonly schemaVersion: 1;
-	readonly status: CodeModeExecutionStatus;
-}
-
-interface ExecutionPrunedEvent {
-	readonly at: number;
-	readonly executionId: string;
-	readonly kind: "execution-pruned";
-	readonly schemaVersion: 1;
-}
-
-interface ExecutionResumedEvent {
-	readonly at: number;
-	readonly attempt: number;
-	readonly executionId: string;
-	readonly kind: "execution-resumed";
-	readonly schemaVersion: 1;
-}
-
-interface SnippetSavedEvent {
-	readonly at: number;
-	readonly kind: "snippet-saved";
-	readonly schemaVersion: 1;
-	readonly snippet: Snippet;
-}
-
-interface SnippetDeletedEvent {
-	readonly at: number;
-	readonly kind: "snippet-deleted";
-	readonly name: string;
-	readonly schemaVersion: 1;
-}
-
-type LedgerEvent =
-	| CallCompensatedEvent
-	| CallPendingEvent
-	| CallSettledEvent
-	| CallStartedEvent
-	| ExecutionPrunedEvent
-	| ExecutionResumedEvent
-	| ExecutionSettledEvent
-	| ExecutionStartedEvent
-	| SnippetDeletedEvent
-	| SnippetSavedEvent;
-
-interface CallState {
-	args: CodemodeValue;
-	argsKey: string;
-	attempt: number;
-	callId: string;
-	compensated?: boolean;
-	error?: string;
-	name: string;
-	replay: ReplayPolicy;
-	requiresApproval: boolean;
-	result?: AgentToolResult<unknown>;
-	sequence: number;
-	status: "error" | "pending" | "running" | "success";
-	value?: CodemodeValue;
-	valuePresent?: boolean;
-}
-
-export interface CodeModeExecutionHistoryItem {
-	code: string;
-	createdAt: number;
-	error?: string;
-	executionId: string;
-	outerToolCallId: string;
-	status: CodeModeExecutionStatus;
-	toolCalls: number;
-	updatedAt: number;
-}
-
-export interface CodeModeCompensationTarget {
-	readonly callId: string;
-	readonly input: CodemodeValue;
-	readonly name: string;
-	readonly sequence: number;
-	readonly value: CodemodeValue;
-}
-
-export interface CodeModePendingAction {
-	readonly args: CodemodeValue;
-	readonly connector: "tools";
-	readonly executionId: string;
-	readonly method: string;
-	readonly seq: number;
-}
 
 export type CodeModeStepDecision =
 	| { readonly kind: "execute"; readonly plan: RuntimeToolCallPlan }
 	| { readonly kind: "replay"; readonly result: CodemodeValue };
 
-interface ExecutionState extends CodeModeExecutionHistoryItem {
-	attempt: number;
-	calls: Map<number, CallState>;
-	cwd?: string;
-	status: CodeModeExecutionStatus;
-	updatedAt: number;
-}
-
-interface LedgerSnapshot {
-	executions: Map<string, ExecutionState>;
-	snippets: Map<string, Snippet>;
-}
-
-interface SessionEntry {
-	readonly customType?: string;
-	readonly data?: unknown;
-	readonly type?: string;
+export interface CodeModeHistoryPage {
+	readonly displayedCount: number;
+	readonly items: readonly CodeModeExecutionHistoryItem[];
+	readonly retainedCount: number;
+	readonly totalCount: number;
+	readonly truncated: boolean;
 }
 
 interface SessionScope {
@@ -220,360 +65,36 @@ interface LedgerSnapshotCache {
 	readonly state: LedgerSnapshot;
 }
 
-function isRecord(value: JsonValue | undefined): value is JsonObject {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
-}
-
-function sessionId(context: ExtensionContext): string | undefined {
-	return context.sessionManager.getSessionId();
-}
-
-function sessionEntries(context: ExtensionContext): readonly SessionEntry[] {
-	return context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries();
-}
-
-function sessionLeafId(context: ExtensionContext): string | null | undefined {
-	return context.sessionManager.getLeafId?.();
-}
-
 function sessionScope(context: ExtensionContext): SessionScope {
-	const id = sessionId(context);
+	const id = context.sessionManager.getSessionId();
 	return id ? { context, sessionId: id } : { context };
 }
 
-function durableValue<Value>(what: string, value: Value): StoredValue {
-	let serialized: string | undefined;
-	try {
-		serialized = stringifyForStorage(value);
-	} catch (error) {
-		throw new Error(
-			`${what} could not be recorded durably (not serializable: ${error instanceof Error ? error.message : String(error)}). Only JSON-compatible values, binary, and bigint can cross a replay boundary.`,
-		);
-	}
-	if (serialized === undefined) return { kind: "undefined" };
-	const bytes = Buffer.byteLength(serialized);
-	if (bytes > MAX_DURABLE_VALUE_BYTES) {
-		throw new Error(
-			`${what} is too large to record durably (${String(bytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Write large data to a file or workspace and return a small reference such as a path.`,
-		);
-	}
-	return { json: parseJsonValue(serialized), kind: "json" };
+function isLedgerEntry(entry: SessionEntry): entry is Extract<SessionEntry, { type: "custom" }> {
+	return entry.type === "custom" && entry.customType === CODE_MODE_LEDGER_ENTRY_TYPE;
 }
 
-function optionalPresentationValue(value: AgentToolResult<unknown>): StoredValue | undefined {
+function physicalEntryBytes(entry: SessionEntry): number {
 	try {
-		return durableValue("The Tool presentation result", value);
+		return Buffer.byteLength(JSON.stringify(entry)) + 1;
 	} catch {
-		return undefined;
+		return MAX_CODE_MODE_LEDGER_BYTES + 1;
 	}
-}
-
-function restoreValue(value: StoredValue | undefined): CodemodeValue {
-	if (!value || value.kind === "undefined") return undefined;
-	return parseForStorage(JSON.stringify(value.json));
-}
-
-function parseStoredValue(value: JsonValue | undefined): StoredValue | undefined {
-	if (!value || !isRecord(value)) return undefined;
-	if (value["kind"] === "undefined") return { kind: "undefined" };
-	const json = value["json"];
-	return value["kind"] === "json" && Object.hasOwn(value, "json") && json !== undefined
-		? { json, kind: "json" }
-		: undefined;
-}
-
-function eventFrom(source: SessionEntry["data"]): LedgerEvent | undefined {
-	if (!isJsonSourceValue(source)) return undefined;
-	const value = parseJsonValue(JSON.stringify(source));
-	if (!isRecord(value) || value["schemaVersion"] !== SCHEMA_VERSION || !isRuntimeString(value["kind"])) {
-		return undefined;
-	}
-	if (!isRuntimeNumber(value["at"]) || !Number.isFinite(value["at"])) return undefined;
-	const at = value["at"];
-	const executionId =
-		isRuntimeString(value["executionId"]) && value["executionId"].length > 0 ? value["executionId"] : undefined;
-	switch (value["kind"]) {
-		case "execution-started": {
-			const code = value["code"];
-			const cwd = value["cwd"];
-			const outerToolCallId = value["outerToolCallId"];
-			if (
-				!executionId ||
-				!isRuntimeString(code) ||
-				(cwd !== undefined && !isRuntimeString(cwd)) ||
-				!isRuntimeString(outerToolCallId)
-			) {
-				return undefined;
-			}
-			const event: ExecutionStartedEvent = {
-				at,
-				code,
-				executionId,
-				kind: "execution-started",
-				outerToolCallId,
-				schemaVersion: SCHEMA_VERSION,
-			};
-			return cwd === undefined ? event : { ...event, cwd };
-		}
-		case "call-pending":
-		case "call-started": {
-			const args = parseStoredValue(value["args"]);
-			const argsKey = value["argsKey"];
-			const attempt = value["attempt"];
-			const callId = value["callId"];
-			const name = value["name"];
-			const replay = value["replay"];
-			const requiresApproval = value["requiresApproval"];
-			const sequence = value["sequence"];
-			if (
-				!executionId ||
-				!args ||
-				!isRuntimeString(argsKey) ||
-				!isRuntimeNumber(attempt) ||
-				!Number.isInteger(attempt) ||
-				!isRuntimeString(callId) ||
-				!isRuntimeString(name) ||
-				(replay !== "never" && replay !== "record" && replay !== "reexecute") ||
-				(requiresApproval !== undefined && !isRuntimeBoolean(requiresApproval)) ||
-				!isRuntimeNumber(sequence) ||
-				!Number.isInteger(sequence)
-			) {
-				return undefined;
-			}
-			const common: Omit<CallPendingEvent, "kind"> = {
-				args,
-				argsKey,
-				at,
-				attempt,
-				callId,
-				executionId,
-				name,
-				replay,
-				schemaVersion: SCHEMA_VERSION,
-				sequence,
-			};
-			if (value["kind"] === "call-pending") return { ...common, kind: "call-pending" };
-			const event: CallStartedEvent = { ...common, kind: "call-started" };
-			return requiresApproval === undefined ? event : { ...event, requiresApproval };
-		}
-		case "call-settled": {
-			const callId = value["callId"];
-			const error = value["error"];
-			const result = parseStoredValue(value["result"]);
-			const status = value["status"];
-			const settledValue = parseStoredValue(value["value"]);
-			if (
-				!executionId ||
-				!isRuntimeString(callId) ||
-				(status !== "error" && status !== "success") ||
-				(error !== undefined && !isRuntimeString(error)) ||
-				(value["result"] !== undefined && !result) ||
-				(value["value"] !== undefined && !settledValue)
-			) {
-				return undefined;
-			}
-			const event: CallSettledEvent = {
-				at,
-				callId,
-				executionId,
-				kind: "call-settled",
-				schemaVersion: SCHEMA_VERSION,
-				status,
-			};
-			if (error !== undefined) Object.assign(event, { error });
-			if (result !== undefined) Object.assign(event, { result });
-			if (settledValue !== undefined) Object.assign(event, { value: settledValue });
-			return event;
-		}
-		case "call-compensated": {
-			const callId = value["callId"];
-			return executionId && isRuntimeString(callId)
-				? { at, callId, executionId, kind: "call-compensated", schemaVersion: SCHEMA_VERSION }
-				: undefined;
-		}
-		case "execution-settled": {
-			const attempt = value["attempt"];
-			const error = value["error"];
-			const status = value["status"];
-			if (
-				!executionId ||
-				!isRuntimeNumber(attempt) ||
-				!Number.isInteger(attempt) ||
-				(status !== "abandoned" &&
-					status !== "cancelled" &&
-					status !== "compensated" &&
-					status !== "error" &&
-					status !== "expired" &&
-					status !== "incomplete" &&
-					status !== "paused" &&
-					status !== "rejected" &&
-					status !== "rolled_back" &&
-					status !== "running" &&
-					status !== "success") ||
-				(error !== undefined && !isRuntimeString(error))
-			) {
-				return undefined;
-			}
-			const event: ExecutionSettledEvent = {
-				at,
-				attempt,
-				executionId,
-				kind: "execution-settled",
-				schemaVersion: SCHEMA_VERSION,
-				status,
-			};
-			if (error !== undefined) Object.assign(event, { error });
-			return event;
-		}
-		case "execution-pruned":
-			return executionId ? { at, executionId, kind: "execution-pruned", schemaVersion: SCHEMA_VERSION } : undefined;
-		case "execution-resumed": {
-			const attempt = value["attempt"];
-			return executionId && isRuntimeNumber(attempt) && Number.isInteger(attempt)
-				? { at, attempt, executionId, kind: "execution-resumed", schemaVersion: SCHEMA_VERSION }
-				: undefined;
-		}
-		case "snippet-saved": {
-			const snippet = value["snippet"];
-			if (!isRecord(snippet)) return undefined;
-			const code = snippet["code"];
-			const connectors = snippet["connectors"];
-			const description = snippet["description"];
-			const name = snippet["name"];
-			const savedAt = snippet["savedAt"];
-			if (
-				!isRuntimeString(code) ||
-				(connectors !== undefined &&
-					(!Array.isArray(connectors) || !connectors.every((connector) => isRuntimeString(connector)))) ||
-				!isRuntimeString(description) ||
-				!isRuntimeString(name) ||
-				!isRuntimeNumber(savedAt) ||
-				!Number.isFinite(savedAt)
-			) {
-				return undefined;
-			}
-			const parsed: Snippet = { code, description, name, savedAt };
-			if (connectors !== undefined) parsed.connectors = connectors;
-			if (Object.hasOwn(snippet, "inputSchema")) parsed.inputSchema = snippet["inputSchema"];
-			return { at, kind: "snippet-saved", schemaVersion: SCHEMA_VERSION, snippet: parsed };
-		}
-		case "snippet-deleted": {
-			const name = value["name"];
-			return isRuntimeString(name)
-				? { at, kind: "snippet-deleted", name, schemaVersion: SCHEMA_VERSION }
-				: undefined;
-		}
-		default:
-			return undefined;
-	}
-}
-
-function effectiveEvents(context: ExtensionContext): LedgerEvent[] {
-	return sessionEntries(context)
-		.filter((entry) => entry.type === "custom" && entry.customType === CODE_MODE_LEDGER_ENTRY_TYPE)
-		.flatMap((entry) => {
-			const event = eventFrom(entry.data);
-			return event ? [event] : [];
-		});
 }
 
 function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
-	const state: LedgerSnapshot = { executions: new Map(), snippets: new Map() };
-	for (const event of effectiveEvents(context)) applyEvent(state, event);
+	const state = createLedgerSnapshot();
+	for (const entry of context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries()) {
+		if (!isLedgerEntry(entry) || !isJsonSourceValue(entry.data)) continue;
+		const event = eventFrom(entry.data);
+		if (event) applyEvent(state, event);
+	}
+	state.physicalBytes = context.sessionManager
+		.getEntries()
+		.filter(isLedgerEntry)
+		.reduce((total, entry) => total + physicalEntryBytes(entry), 0);
+	trimTerminalExecutions(state);
 	return state;
-}
-
-function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
-	if (event.kind === "execution-started") {
-		const execution: ExecutionState = {
-			attempt: 0,
-			calls: new Map(),
-			code: event.code,
-			createdAt: event.at,
-			executionId: event.executionId,
-			outerToolCallId: event.outerToolCallId,
-			status: "running",
-			toolCalls: 0,
-			updatedAt: event.at,
-		};
-		if (event.cwd !== undefined) execution.cwd = event.cwd;
-		state.executions.set(event.executionId, execution);
-		return;
-	}
-	if (event.kind === "execution-pruned") {
-		state.executions.delete(event.executionId);
-		return;
-	}
-	if (event.kind === "snippet-saved") {
-		state.snippets.set(event.snippet.name, event.snippet);
-		return;
-	}
-	if (event.kind === "snippet-deleted") {
-		state.snippets.delete(event.name);
-		return;
-	}
-	const execution = state.executions.get(event.executionId);
-	if (!execution) return;
-	execution.updatedAt = event.at;
-	if (event.kind === "execution-resumed") {
-		execution.attempt = event.attempt;
-		execution.status = "running";
-		delete execution.error;
-		return;
-	}
-	if (event.kind === "execution-settled") {
-		execution.attempt = event.attempt;
-		execution.status = event.status;
-		if (event.error) execution.error = event.error;
-		else delete execution.error;
-		return;
-	}
-	if (event.kind === "call-pending" || event.kind === "call-started") {
-		execution.attempt = Math.max(execution.attempt, event.attempt);
-		execution.calls.set(event.sequence, {
-			args: restoreValue(event.args),
-			argsKey: event.argsKey,
-			attempt: event.attempt,
-			callId: event.callId,
-			name: event.name,
-			replay: event.replay,
-			requiresApproval: event.kind === "call-pending" || event.requiresApproval === true,
-			sequence: event.sequence,
-			status: event.kind === "call-pending" ? "pending" : "running",
-		});
-		if (event.kind === "call-pending") execution.status = "paused";
-		execution.toolCalls = Math.max(execution.toolCalls, event.sequence + 1);
-		return;
-	}
-	const call = [...execution.calls.values()].find((candidate) => candidate.callId === event.callId);
-	if (!call) return;
-	if (event.kind === "call-compensated") {
-		call.compensated = true;
-		return;
-	}
-	call.status = event.status;
-	if (event.error) call.error = event.error;
-	if (event.value) {
-		call.value = restoreValue(event.value);
-		call.valuePresent = true;
-	}
-	if (event.result) {
-		const result = restoreValue(event.result);
-		if (
-			isRuntimeObject(result) &&
-			result !== null &&
-			"content" in result &&
-			isCodeModeToolContent(result["content"])
-		) {
-			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
-			call.result = result as CodemodeValue & AgentToolResult<unknown>;
-		}
-	}
-	if (call.status === "success" && call.result && "isError" in call.result && call.result.isError === true) {
-		call.status = "error";
-		const text = call.result.content.find((item) => item.type === "text" && item.text.trim());
-		call.error ??= text?.type === "text" ? text.text.trim() : `${call.name} failed`;
-	}
 }
 
 export class CodeModeIncompleteExecutionError extends Error {
@@ -609,18 +130,17 @@ export class CodeModeSessionLedger {
 		}
 		const scope = sessionScope(context);
 		const state = this.snapshot(scope);
-		this.maintain(scope, state);
+		this.expireState(scope, state, Date.now(), PAUSED_TTL_MS);
 		const executionId = `cm_${randomUUID()}`;
-		const event: ExecutionStartedEvent = {
+		this.append(scope, state, {
 			at: Date.now(),
 			code,
 			cwd: context.cwd,
 			executionId,
 			kind: "execution-started",
 			outerToolCallId,
-			schemaVersion: SCHEMA_VERSION,
-		};
-		this.append(scope, state, event);
+			schemaVersion: 1,
+		});
 		const execution = state.executions.get(executionId);
 		if (!execution) throw new Error("Code Mode execution ledger failed to initialize");
 		return new CodeModeExecutionController(this, scope, state, execution, policies, requiresApproval);
@@ -656,9 +176,7 @@ export class CodeModeSessionLedger {
 		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		const pending = execution ? [...execution.calls.values()].filter((call) => call.status === "pending") : [];
-		if (execution?.status !== "paused" || pending.length === 0) {
-			return undefined;
-		}
+		if (execution?.status !== "paused" || pending.length === 0) return undefined;
 		if (execution.cwd !== undefined && execution.cwd !== context.cwd) {
 			throw new Error(
 				`Code Mode execution started in ${JSON.stringify(execution.cwd)}; current working directory is ${JSON.stringify(context.cwd)}. Return to the original directory before approving it.`,
@@ -675,7 +193,7 @@ export class CodeModeSessionLedger {
 			attempt: execution.attempt + 1,
 			executionId,
 			kind: "execution-resumed",
-			schemaVersion: SCHEMA_VERSION,
+			schemaVersion: 1,
 		});
 		return new CodeModeExecutionController(this, scope, state, execution, policies, requiresApproval);
 	}
@@ -685,23 +203,31 @@ export class CodeModeSessionLedger {
 		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (execution?.status !== "paused" || execution.calls.get(sequence)?.status !== "pending") return false;
-		this.append(scope, state, {
-			at: Date.now(),
-			attempt: execution.attempt,
-			error: `Rejected by the user before ${execution.calls.get(sequence)?.name ?? "pending Tool"}`,
-			executionId,
-			kind: "execution-settled",
-			schemaVersion: SCHEMA_VERSION,
-			status: "rejected",
-		});
+		this.settleExecution(
+			scope,
+			state,
+			execution,
+			"rejected",
+			`Rejected by the user before ${execution.calls.get(sequence)?.name ?? "pending Tool"}`,
+		);
 		return true;
 	}
 
+	historyPage(context: ExtensionContext, limit = 20): CodeModeHistoryPage {
+		const state = this.snapshot(sessionScope(context));
+		const retained = executionHistory(state);
+		const items = retained.slice(0, Math.max(0, Math.floor(limit)));
+		return {
+			displayedCount: items.length,
+			items,
+			retainedCount: retained.length,
+			totalCount: state.totalExecutions,
+			truncated: items.length < state.totalExecutions,
+		};
+	}
+
 	history(context: ExtensionContext, limit = 20): readonly CodeModeExecutionHistoryItem[] {
-		return [...this.snapshot(sessionScope(context)).executions.values()]
-			.sort((left, right) => right.createdAt - left.createdAt)
-			.slice(0, Math.max(0, limit))
-			.map(({ calls: _calls, attempt: _attempt, cwd: _cwd, ...execution }) => execution);
+		return this.historyPage(context, limit).items;
 	}
 
 	snippets(context: ExtensionContext): readonly Snippet[] {
@@ -712,9 +238,8 @@ export class CodeModeSessionLedger {
 
 	saveSnippet(context: ExtensionContext, executionId: string, name: string, description = ""): Snippet {
 		const normalizedName = name.trim();
-		if (!normalizedName || normalizedName.length > 120) {
+		if (!normalizedName || normalizedName.length > 120)
 			throw new Error("Code Mode snippet name must be 1-120 characters");
-		}
 		const scope = sessionScope(context);
 		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
@@ -727,7 +252,7 @@ export class CodeModeSessionLedger {
 			name: normalizedName,
 			savedAt: Date.now(),
 		};
-		this.append(scope, state, { at: snippet.savedAt, kind: "snippet-saved", schemaVersion: SCHEMA_VERSION, snippet });
+		this.append(scope, state, { at: snippet.savedAt, kind: "snippet-saved", schemaVersion: 1, snippet });
 		return snippet;
 	}
 
@@ -735,7 +260,7 @@ export class CodeModeSessionLedger {
 		const scope = sessionScope(context);
 		const state = this.snapshot(scope);
 		if (!state.snippets.has(name)) return false;
-		this.append(scope, state, { at: Date.now(), kind: "snippet-deleted", name, schemaVersion: SCHEMA_VERSION });
+		this.append(scope, state, { at: Date.now(), kind: "snippet-deleted", name, schemaVersion: 1 });
 		return true;
 	}
 
@@ -743,8 +268,7 @@ export class CodeModeSessionLedger {
 		if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0)
 			throw new Error("Code Mode expiry age must be a non-negative number");
 		const scope = sessionScope(context);
-		const state = this.snapshot(scope);
-		return this.expireState(scope, state, Date.now(), maxAgeMs);
+		return this.expireState(scope, this.snapshot(scope), Date.now(), maxAgeMs);
 	}
 
 	abandon(context: ExtensionContext, executionId: string): boolean {
@@ -752,15 +276,7 @@ export class CodeModeSessionLedger {
 		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (!execution || (execution.status !== "running" && execution.status !== "incomplete")) return false;
-		this.append(scope, state, {
-			at: Date.now(),
-			attempt: execution.attempt,
-			error: "Abandoned by explicit user decision",
-			executionId,
-			kind: "execution-settled",
-			schemaVersion: SCHEMA_VERSION,
-			status: "abandoned",
-		});
+		this.settleExecution(scope, state, execution, "abandoned", "Abandoned by explicit user decision");
 		return true;
 	}
 
@@ -790,45 +306,65 @@ export class CodeModeSessionLedger {
 			throw new Error(`No applied Code Mode call ${JSON.stringify(callId)} exists in execution ${executionId}`);
 		}
 		if (call.compensated) return;
-		this.append(scope, state, {
-			at: Date.now(),
-			callId,
-			executionId,
-			kind: "call-compensated",
-			schemaVersion: SCHEMA_VERSION,
-		});
+		this.append(scope, state, { at: Date.now(), callId, executionId, kind: "call-compensated", schemaVersion: 1 });
 	}
 
-	markCompensationComplete(context: ExtensionContext, executionId: string): void {
+	markCompensationComplete(context: ExtensionContext, executionId: string): boolean {
 		const scope = sessionScope(context);
 		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (!execution) throw new Error(`No Code Mode execution ${JSON.stringify(executionId)} exists in this Session`);
-		this.append(scope, state, {
-			at: Date.now(),
-			attempt: execution.attempt,
-			executionId,
-			kind: "execution-settled",
-			schemaVersion: SCHEMA_VERSION,
-			status: "rolled_back",
-		});
+		if (execution.status === "rolled_back") return true;
+		const calls = [...execution.calls.values()];
+		if (
+			!calls.some((call) => call.compensated) ||
+			calls.some((call) => call.status === "success" && call.valuePresent && !call.compensated)
+		)
+			return false;
+		this.settleExecution(scope, state, execution, "rolled_back");
+		return true;
 	}
 
 	append(scope: SessionScope, state: LedgerSnapshot, event: LedgerEvent): void {
-		if (scope.sessionId) {
-			if (sessionId(scope.context) !== scope.sessionId) {
-				throw new Error("Code Mode Session changed before its execution ledger could be updated");
-			}
+		if (scope.sessionId && scope.context.sessionManager.getSessionId() !== scope.sessionId) {
+			throw new Error("Code Mode Session changed before its execution ledger could be updated");
+		}
+		const bytes = Buffer.byteLength(JSON.stringify(event)) + PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES;
+		if (state.physicalBytes + bytes > MAX_CODE_MODE_LEDGER_BYTES) {
+			throw new Error(
+				`Code Mode Session ledger reached its ${String(MAX_CODE_MODE_LEDGER_BYTES)} byte physical limit. Start a new Pi Session before running more durable Code Mode work.`,
+			);
 		}
 		this.pi.appendEntry(CODE_MODE_LEDGER_ENTRY_TYPE, event);
+		state.physicalBytes += bytes;
 		applyEvent(state, event);
+		trimTerminalExecutions(state);
 		this.rememberSnapshot(scope, state);
+	}
+
+	private settleExecution(
+		scope: SessionScope,
+		state: LedgerSnapshot,
+		execution: ExecutionState,
+		status: CodeModeExecutionStatus,
+		error?: string,
+	): void {
+		const event: ExecutionSettledEvent = {
+			at: Date.now(),
+			attempt: execution.attempt,
+			executionId: execution.executionId,
+			kind: "execution-settled",
+			schemaVersion: 1,
+			status,
+		};
+		if (error) Object.assign(event, { error });
+		this.append(scope, state, event);
 	}
 
 	private snapshot(scope: SessionScope): LedgerSnapshot {
 		let leafId: string | null | undefined;
 		try {
-			leafId = sessionLeafId(scope.context);
+			leafId = scope.context.sessionManager.getLeafId?.();
 		} catch {
 			this.cache = undefined;
 			return loadSnapshot(scope.context);
@@ -838,90 +374,53 @@ export class CodeModeSessionLedger {
 			this.cache?.sessionManager === scope.context.sessionManager &&
 			this.cache.sessionId === scope.sessionId &&
 			this.cache.leafId === leafId
-		) {
+		)
 			return this.cache.state;
-		}
 		this.cache = undefined;
 		const state = loadSnapshot(scope.context);
-		if (leafId !== undefined) {
-			this.cache = {
-				leafId,
-				sessionId: scope.sessionId,
-				sessionManager: scope.context.sessionManager,
-				state,
-			};
-		}
+		if (leafId !== undefined) this.storeCache(scope, state, leafId);
 		return state;
 	}
 
 	private rememberSnapshot(scope: SessionScope, state: LedgerSnapshot): void {
 		try {
-			const leafId = sessionLeafId(scope.context);
-			this.cache =
-				leafId === undefined
-					? undefined
-					: {
-							leafId,
-							sessionId: scope.sessionId,
-							sessionManager: scope.context.sessionManager,
-							state,
-						};
+			const leafId = scope.context.sessionManager.getLeafId?.();
+			if (leafId === undefined) this.cache = undefined;
+			else this.storeCache(scope, state, leafId);
 		} catch {
 			// The ledger append is already durable; a failed cache probe only disables the optimization.
 			this.cache = undefined;
 		}
 	}
 
-	private maintain(scope: SessionScope, state: LedgerSnapshot): void {
-		const now = Date.now();
-		this.expireState(scope, state, now, PAUSED_TTL_MS);
-		const terminal = [...state.executions.values()]
-			.filter(
-				(execution) =>
-					execution.status !== "running" && execution.status !== "incomplete" && execution.status !== "paused",
-			)
-			.sort((left, right) => right.updatedAt - left.updatedAt);
-		for (const execution of terminal.slice(MAX_EXECUTIONS)) {
-			this.append(scope, state, {
-				at: now,
-				executionId: execution.executionId,
-				kind: "execution-pruned",
-				schemaVersion: SCHEMA_VERSION,
-			});
-		}
+	private storeCache(scope: SessionScope, state: LedgerSnapshot, leafId: string | null): void {
+		this.cache = { leafId, sessionId: scope.sessionId, sessionManager: scope.context.sessionManager, state };
 	}
 
 	private expireState(scope: SessionScope, state: LedgerSnapshot, now: number, maxAgeMs: number): string[] {
 		const expired: string[] = [];
 		for (const execution of state.executions.values()) {
-			if (
-				(execution.status === "running" || execution.status === "incomplete" || execution.status === "paused") &&
-				now - execution.updatedAt >= maxAgeMs
-			) {
-				const paused = execution.status === "paused";
-				this.append(scope, state, {
-					at: now,
-					attempt: execution.attempt,
-					error: paused
-						? "Code Mode approval expired after 24 hours"
-						: "Code Mode execution expired after 24 hours",
-					executionId: execution.executionId,
-					kind: "execution-settled",
-					schemaVersion: SCHEMA_VERSION,
-					status: paused ? "rejected" : "expired",
-				});
-				expired.push(execution.executionId);
-			}
+			if (!["running", "incomplete", "paused"].includes(execution.status) || now - execution.updatedAt < maxAgeMs)
+				continue;
+			const paused = execution.status === "paused";
+			this.settleExecution(
+				scope,
+				state,
+				execution,
+				paused ? "rejected" : "expired",
+				paused ? "Code Mode approval expired after 24 hours" : "Code Mode execution expired after 24 hours",
+			);
+			expired.push(execution.executionId);
 		}
 		return expired;
 	}
 }
 
 export class CodeModeExecutionController {
-	private passAttempt = 0;
 	private cursor = 0;
 	private readonly execution: ExecutionState;
 	private readonly ledger: CodeModeSessionLedger;
+	private passAttempt = 0;
 	private readonly policies: ReadonlyMap<string, ReplayPolicy>;
 	private readonly requiresApproval: ReadonlySet<string>;
 	private readonly scope: SessionScope;
@@ -947,19 +446,15 @@ export class CodeModeExecutionController {
 	get executionId(): string {
 		return this.execution.executionId;
 	}
-
 	get attempt(): number {
 		return this.execution.attempt;
 	}
-
 	get code(): string {
 		return this.execution.code;
 	}
-
 	get outerToolCallId(): string {
 		return this.execution.outerToolCallId;
 	}
-
 	get isPaused(): boolean {
 		return this.execution.status === "paused";
 	}
@@ -988,14 +483,16 @@ export class CodeModeExecutionController {
 
 	private planCall(name: string, input: CodemodeValue, policy?: ReplayPolicy): RuntimeToolCallPlan {
 		const sequence = this.cursor++;
-		const callId = `${this.execution.executionId}:${String(sequence)}`;
+		const plan: RuntimeToolCallPlan = {
+			attempt: this.passAttempt,
+			executionId: this.execution.executionId,
+			id: `${this.execution.executionId}:${String(sequence)}`,
+			sequence,
+		};
 		if (this.execution.status !== "running") {
 			return {
-				attempt: this.passAttempt,
-				executionId: this.execution.executionId,
-				id: callId,
+				...plan,
 				pause: { message: `Code Mode execution ${this.execution.executionId} is paused for user approval` },
-				sequence,
 			};
 		}
 		const replay = policy ?? this.policies.get(name) ?? "never";
@@ -1006,107 +503,88 @@ export class CodeModeExecutionController {
 		}
 		const argsKey = serializedArgs ?? "undefined";
 		const existing = this.execution.calls.get(sequence);
-		if (existing) {
-			if (existing.name !== name || existing.argsKey !== argsKey) {
-				const message = `Code Mode replay divergence at step ${String(sequence)}: expected ${existing.name} with the recorded arguments, received ${name}.`;
-				this.finish("error", message);
-				throw new Error(message);
-			}
-			if (existing.status === "error") {
-				const replayResult: RuntimeToolReplay = {
-					kind: "error",
-					message: existing.error ?? `${name} failed`,
-				};
-				if (existing.result) Object.assign(replayResult, { result: existing.result });
-				return {
-					attempt: this.passAttempt,
-					executionId: this.execution.executionId,
-					id: callId,
-					replay: replayResult,
-					sequence,
-				};
-			}
-			if (existing.status === "pending") {
-				this.ledger.append(this.scope, this.state, {
-					args,
-					argsKey,
-					at: Date.now(),
-					attempt: this.passAttempt,
-					callId,
-					executionId: this.execution.executionId,
-					kind: "call-started",
-					name,
-					replay: existing.replay,
-					requiresApproval: true,
-					schemaVersion: SCHEMA_VERSION,
-					sequence,
-				});
-				return { attempt: this.passAttempt, executionId: this.execution.executionId, id: callId, sequence };
-			}
-			if (existing.status === "success" && replay !== "reexecute" && existing.valuePresent) {
-				const replayResult: RuntimeToolReplay = {
-					kind: "result",
-					value: existing.value,
-				};
-				if (existing.result) Object.assign(replayResult, { result: existing.result });
-				return {
-					attempt: this.passAttempt,
-					executionId: this.execution.executionId,
-					id: callId,
-					replay: replayResult,
-					sequence,
-				};
-			}
-			if (replay !== "reexecute") {
-				const message = `Code Mode execution ${this.execution.executionId} stopped after Runtime loss at unsettled Tool ${JSON.stringify(name)} with replay policy ${JSON.stringify(replay)}. The external effect may have happened; inspect it and explicitly decide whether to repeat or abandon the work.`;
-				this.incompleteError = new CodeModeIncompleteExecutionError(this.execution.executionId, message);
-				this.finish("incomplete", message);
-				throw this.incompleteError;
-			}
-		}
+		const prior = existing ? this.replayExisting(plan, existing, name, args, argsKey, replay) : undefined;
+		if (prior) return prior;
 		if (this.requiresApproval.has(name)) {
 			if (replay === "reexecute") {
 				throw new Error(
 					`Code Mode Tool ${JSON.stringify(name)} cannot combine requiresApproval with replay: reexecute`,
 				);
 			}
-			const message = `Code Mode execution ${this.execution.executionId} paused before ${name}; user approval is required`;
-			this.ledger.append(this.scope, this.state, {
-				args,
-				argsKey,
-				at: Date.now(),
-				attempt: this.passAttempt,
-				callId,
-				executionId: this.execution.executionId,
-				kind: "call-pending",
-				name,
-				replay,
-				schemaVersion: SCHEMA_VERSION,
-				sequence,
-			});
+			this.appendCall(plan, name, args, argsKey, replay, "call-pending");
 			return {
-				attempt: this.passAttempt,
-				executionId: this.execution.executionId,
-				id: callId,
-				pause: { message },
-				sequence,
+				...plan,
+				pause: {
+					message: `Code Mode execution ${this.execution.executionId} paused before ${name}; user approval is required`,
+				},
 			};
 		}
-		this.ledger.append(this.scope, this.state, {
+		this.appendCall(plan, name, args, argsKey, replay, "call-started", false);
+		return plan;
+	}
+
+	private replayExisting(
+		plan: RuntimeToolCallPlan,
+		existing: CallState,
+		name: string,
+		args: CallStartedEvent["args"],
+		argsKey: string,
+		replay: ReplayPolicy,
+	): RuntimeToolCallPlan | undefined {
+		if (existing.name !== name || existing.argsKey !== argsKey) {
+			const message = `Code Mode replay divergence at step ${String(plan.sequence)}: expected ${existing.name} with the recorded arguments, received ${name}.`;
+			this.finish("error", message);
+			throw new Error(message);
+		}
+		if (existing.status === "error") {
+			const replayResult: RuntimeToolReplay = { kind: "error", message: existing.error ?? `${name} failed` };
+			if (existing.result) Object.assign(replayResult, { result: existing.result });
+			return { ...plan, replay: replayResult };
+		}
+		if (existing.status === "pending") {
+			this.appendCall(plan, name, args, argsKey, existing.replay, "call-started", true);
+			return plan;
+		}
+		if (existing.status === "success" && replay !== "reexecute" && existing.valuePresent) {
+			const replayResult: RuntimeToolReplay = { kind: "result", value: existing.value };
+			if (existing.result) Object.assign(replayResult, { result: existing.result });
+			return { ...plan, replay: replayResult };
+		}
+		if (replay === "reexecute") return undefined;
+		const message = `Code Mode execution ${this.execution.executionId} stopped after Runtime loss at unsettled Tool ${JSON.stringify(name)} with replay policy ${JSON.stringify(replay)}. The external effect may have happened; inspect it and explicitly decide whether to repeat or abandon the work.`;
+		this.incompleteError = new CodeModeIncompleteExecutionError(this.execution.executionId, message);
+		this.finish("incomplete", message);
+		throw this.incompleteError;
+	}
+
+	private appendCall(
+		plan: RuntimeToolCallPlan,
+		name: string,
+		args: CallStartedEvent["args"],
+		argsKey: string,
+		replay: ReplayPolicy,
+		kind: "call-pending" | "call-started",
+		requiresApproval?: boolean,
+	): void {
+		const common: Omit<CallPendingEvent, "kind"> = {
 			args,
 			argsKey,
 			at: Date.now(),
-			attempt: this.passAttempt,
-			callId,
-			executionId: this.execution.executionId,
-			kind: "call-started",
+			attempt: plan.attempt,
+			callId: plan.id,
+			executionId: plan.executionId,
 			name,
 			replay,
-			requiresApproval: false,
-			schemaVersion: SCHEMA_VERSION,
-			sequence,
-		});
-		return { attempt: this.passAttempt, executionId: this.execution.executionId, id: callId, sequence };
+			schemaVersion: 1,
+			sequence: plan.sequence,
+		};
+		let event: CallPendingEvent | CallStartedEvent;
+		if (kind === "call-pending") event = { ...common, kind };
+		else {
+			event = { ...common, kind };
+			if (requiresApproval !== undefined) Object.assign(event, { requiresApproval });
+		}
+		this.ledger.append(this.scope, this.state, event);
 	}
 
 	completeToolCall = (plan: RuntimeToolCallPlan, settlement: RuntimeToolCallSettlement): void => {
@@ -1115,19 +593,21 @@ export class CodeModeExecutionController {
 			plan.executionId !== this.execution.executionId ||
 			!call ||
 			call.callId !== plan.id ||
+			call.attempt !== plan.attempt ||
 			call.status !== "running"
-		) {
+		)
 			throw new Error("Code Mode Tool result has no matching running ledger call");
-		}
+		const result = settlement.result ? optionalPresentationValue(call.name, settlement.result) : undefined;
 		const value =
-			settlement.status === "success" ? durableValue(`The result of ${call.name}`, settlement.value) : undefined;
-		const result = settlement.result ? optionalPresentationValue(settlement.result) : undefined;
+			settlement.status === "success" && !result
+				? durableValue(`The result of ${call.name}`, settlement.value)
+				: undefined;
 		const event: CallSettledEvent = {
 			at: Date.now(),
 			callId: plan.id,
 			executionId: this.execution.executionId,
 			kind: "call-settled",
-			schemaVersion: SCHEMA_VERSION,
+			schemaVersion: 1,
 			status: settlement.status,
 		};
 		if (settlement.message) Object.assign(event, { error: settlement.message });
@@ -1143,7 +623,7 @@ export class CodeModeExecutionController {
 			attempt: this.passAttempt,
 			executionId: this.execution.executionId,
 			kind: "execution-settled",
-			schemaVersion: SCHEMA_VERSION,
+			schemaVersion: 1,
 			status,
 		};
 		if (error) Object.assign(event, { error });

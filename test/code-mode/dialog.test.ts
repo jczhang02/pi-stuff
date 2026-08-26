@@ -11,10 +11,10 @@ function snapshot(overrides: Partial<CodeModeDialogSnapshot> = {}): CodeModeDial
 	return {
 		effectiveSource: "project",
 		enabled: false,
-		executionCount: 2,
 		fallbackEnabled: false,
 		frozen: false,
 		globalEnabled: undefined,
+		history: { retainedCount: 2, totalCount: 2 },
 		pendingCount: 1,
 		projectEnabled: false,
 		projectTrusted: true,
@@ -60,6 +60,7 @@ test("shows effective provenance and persists independent project and global set
 	expect(initial).toContain("Effective");
 	expect(initial).toContain("off · project");
 	expect(initial).toContain("This project");
+	expect(initial).toContain("2 executions total · 2 retained");
 	component.handleInput?.("\r");
 	await Promise.resolve();
 	expect(projectWrites).toEqual([true]);
