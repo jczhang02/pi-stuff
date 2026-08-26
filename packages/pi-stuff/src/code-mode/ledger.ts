@@ -492,6 +492,19 @@ function normalizeHistoricalToolErrors(state: LedgerSnapshot): void {
 	}
 }
 
+function isStoredToolContent(value: CodemodeValue): boolean {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(item) =>
+				isRuntimeObject(item) &&
+				item !== null &&
+				isRuntimeString(item["type"]) &&
+				(item["type"] !== "text" || isRuntimeString(item["text"])),
+		)
+	);
+}
+
 function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	if (event.kind === "execution-started") {
 		const execution: ExecutionState = {
@@ -568,7 +581,7 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	}
 	if (event.result) {
 		const result = restoreValue(event.result);
-		if (isRuntimeObject(result) && result !== null && "content" in result && Array.isArray(result["content"])) {
+		if (isRuntimeObject(result) && result !== null && "content" in result && isStoredToolContent(result["content"])) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
 			call.result = result as CodemodeValue & AgentToolResult<unknown>;
 		}

@@ -343,7 +343,10 @@ test("top-level and in-program discovery share Cloudflare-ranked catalog data an
 	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
 	const payload = JSON.parse(text) as DiscoveryPayload;
 	expect(payload.definitions[0]).toMatchObject({ kind: "method", path: "tools.read" });
-	expect(payload.results[0]).toMatchObject({ path: "tools.read" });
+	expect(payload.results[0]).toMatchObject({
+		path: "tools.read",
+		signature: "tools.read(input: ReadInput): Promise<ReadOutput>",
+	});
 	expect(result.details).toEqual({
 		paths: ["tools.read", "tools.write"],
 		query: "read file",
@@ -387,6 +390,13 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(bracketPath.payload.representation).toBe("signatures");
 	expect(bracketPath.payload.results[0]?.signature).toBe('tools["task-create"](input: unknown): Promise<unknown>');
 
+	const bracketDefinition = await executeDiscovery(discoveryConnectorFixture([{ name: "task-create", typesSize: 5 }]));
+	expect(bracketDefinition.payload.representation).toBe("definitions");
+	expect(bracketDefinition.payload.results[0]).toMatchObject({
+		path: 'tools["task-create"]',
+		signature: 'tools["task-create"](input: TaskCreateInput): Promise<TaskCreateOutput>',
+	});
+
 	const longNames = Array.from({ length: 5 }, (_, index) => ({
 		name: `${String(index)}_${"n".repeat(2_100)}`,
 		typesSize: 5_000,
@@ -394,9 +404,9 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	const paths = await executeDiscovery(discoveryConnectorFixture(longNames));
 	expect(paths.text.length).toBeLessThanOrEqual(4_000);
 	expect(paths.payload.representation).toBe("paths");
-	expect(paths.payload.results[0]).toEqual({ path: `tools.${longNames[0]?.name}` });
+	expect(paths.payload.results[0]).toEqual({ path: `tools[${JSON.stringify(longNames[0]?.name)}]` });
 
-	for (const projection of [definitions, typedTop, signatures, bracketPath, paths]) {
+	for (const projection of [definitions, typedTop, signatures, bracketPath, bracketDefinition, paths]) {
 		expect(projection.details.paths).toEqual(projection.payload.results.map((result) => result.path));
 		expect(projection.details.truncated).toBe(projection.payload.truncated);
 	}

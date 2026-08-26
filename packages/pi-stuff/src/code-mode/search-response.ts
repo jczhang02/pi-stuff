@@ -14,15 +14,23 @@ function metadata(search: SearchOutput, included: number) {
 function signature(result: SearchResult, typed = true): string {
 	if (result.kind === "snippet")
 		return `codemode.run(${JSON.stringify(result.path)}, input?: unknown): Promise<unknown>`;
-	const path = toolPath(result.method);
+	const path = projectedPath(result);
 	if (!typed) return `${path}(input: unknown): Promise<unknown>`;
 	const typeName = toPascalCase(sanitizeToolName(result.method));
 	return `${path}(input: ${typeName}Input): Promise<${typeName}Output>`;
 }
 
+function projectedPath(result: SearchResult): string {
+	return result.kind === "snippet" ? result.path : toolPath(result.method);
+}
+
 function signatureResult(result: SearchResult, typed = true) {
-	const compact = { kind: result.kind, path: result.path, signature: signature(result, typed) };
+	const compact = { kind: result.kind, path: projectedPath(result), signature: signature(result, typed) };
 	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
+}
+
+function definitionResult(result: SearchResult) {
+	return { ...result, path: projectedPath(result), signature: signature(result) };
 }
 
 function compactDescription(description: DescribeOutput) {
@@ -67,13 +75,13 @@ export function projectCodeModeSearchResponse(
 	}
 
 	const descriptions = results.map(describe);
-	let fullResults: SearchResult[] = [];
+	let fullResults: Array<ReturnType<typeof definitionResult>> = [];
 	let fullDescriptions: DescribeOutput[] = [];
 	let fullText: string | undefined;
 	for (const [index, result] of results.entries()) {
 		const description = descriptions[index];
 		if (!description) break;
-		const nextResults = [...fullResults, result];
+		const nextResults = [...fullResults, definitionResult(result)];
 		const nextDescriptions = [...fullDescriptions, description];
 		const encoded = encode(search, "definitions", nextResults, nextDescriptions);
 		if (!encoded) break;
@@ -119,7 +127,7 @@ export function projectCodeModeSearchResponse(
 	let pathText = encode(search, "paths", pathResults);
 	if (!pathText) throw new Error("Tool Discovery metadata exceeds its response budget.");
 	for (const result of results) {
-		const nextResults = [...pathResults, { path: result.path }];
+		const nextResults = [...pathResults, { path: projectedPath(result) }];
 		const encoded = encode(search, "paths", nextResults);
 		if (!encoded) break;
 		pathResults = nextResults;
