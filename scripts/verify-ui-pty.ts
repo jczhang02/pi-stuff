@@ -306,9 +306,13 @@ class TmuxPiSession {
 		return this.waitFor((screen) => !hasStatusline(screen), "absence of the shared Statusline Footer");
 	}
 
-	async waitForDialogFrame(text: string, columns: number): Promise<string> {
+	async waitForDialogFrame(text: string, columns: number, excludedText?: string): Promise<string> {
 		return this.waitFor(
-			(screen) => screen.includes(text) && hasFullWidthDivider(screen, columns) && !hasStatusline(screen),
+			(screen) =>
+				screen.includes(text) &&
+				(excludedText === undefined || !screen.includes(excludedText)) &&
+				hasFullWidthDivider(screen, columns) &&
+				!hasStatusline(screen),
 			`${String(columns)}-column Command Dialog frame containing ${JSON.stringify(text)}`,
 		);
 	}
@@ -1046,10 +1050,7 @@ async function verifySessionNamingDialog(
 	session.resize(100, 32);
 	await session.waitForDialogFrame("Search models", 100);
 	session.sendLiteral("kimi");
-	screen = await session.waitForAbsence("pi-stuff-ui-pty/ui-pty-model");
-	if (!screen.includes("kimi-coding/ui-pty-subscription")) {
-		fail(`/autoname model search lost its match\n${screen}`);
-	}
+	screen = await session.waitForDialogFrame("kimi-coding/ui-pty-subscription", 100, "pi-stuff-ui-pty/ui-pty-model");
 	session.sendKey("Enter");
 	await waitForPersistedSetting(settingsPath, "sessionNaming", "model", "kimi-coding/ui-pty-subscription");
 	screen = await session.waitForText("kimi-coding/ui-pty-subscription");
