@@ -19,7 +19,7 @@ import {
 import { stringifyForStorage } from "./cloudflare/codec.js";
 import { isControlOnlyProgram } from "./cloudflare/normalize.js";
 import { sanitizeToolName, toPascalCase } from "./cloudflare/utils.js";
-import { SuiteCodeModeConnector } from "./connector.js";
+import { SuiteCodeModeConnector, toolPath } from "./connector.js";
 import { createCodeModeDialogView } from "./dialog.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";
 import { CodeModeSessionLedger } from "./ledger.js";
@@ -98,15 +98,17 @@ function searchMetadata(search: ConnectorSearch, included: number) {
 	};
 }
 
-function searchSignature(result: ConnectorSearchResult): string {
+function searchSignature(result: ConnectorSearchResult, typed = true): string {
 	if (result.kind === "snippet")
 		return `codemode.run(${JSON.stringify(result.path)}, input?: unknown): Promise<unknown>`;
+	const path = toolPath(result.method);
+	if (!typed) return `${path}(input: unknown): Promise<unknown>`;
 	const typeName = toPascalCase(sanitizeToolName(result.method));
-	return `${result.path}(input: ${typeName}Input): Promise<${typeName}Output>`;
+	return `${path}(input: ${typeName}Input): Promise<${typeName}Output>`;
 }
 
-function signatureResult(result: ConnectorSearchResult) {
-	const compact = { kind: result.kind, path: result.path, signature: searchSignature(result) };
+function signatureResult(result: ConnectorSearchResult, typed = true) {
+	const compact = { kind: result.kind, path: result.path, signature: searchSignature(result, typed) };
 	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }
 
@@ -134,10 +136,25 @@ function encodeSearchProjection(
 	return text.length <= CODE_MODE_SEARCH_RESPONSE_CHARS ? text : undefined;
 }
 
-function projectSearchResponse(search: ConnectorSearch, descriptions: readonly ConnectorDescription[]): string {
+function searchProjection(search: ConnectorSearch, text: string, results: readonly { readonly path: string }[]) {
+	return {
+		paths: results.map((result) => result.path),
+		text,
+		truncated: searchMetadata(search, results.length).truncated,
+	};
+}
+
+function projectSearchResponse(
+	search: ConnectorSearch,
+	descriptions: readonly ConnectorDescription[],
+): ReturnType<typeof searchProjection> {
 	const results = search.results.slice(0, CODE_MODE_SEARCH_RESULT_LIMIT);
 	if (results.length === 0) {
-		return JSON.stringify({ ...search, definitions: [], representation: "definitions" });
+		return searchProjection(
+			search,
+			JSON.stringify({ ...search, definitions: [], representation: "definitions" }),
+			[],
+		);
 	}
 
 	let fullResults: ConnectorSearchResult[] = [];
@@ -154,37 +171,39 @@ function projectSearchResponse(search: ConnectorSearch, descriptions: readonly C
 		fullDescriptions = nextDescriptions;
 		fullText = encoded;
 	}
-	if (fullText) return fullText;
+	if (fullText) return searchProjection(search, fullText, fullResults);
 
-	const signatures = results.map(signatureResult);
 	const topDescription = descriptions[0];
-	const topSignature = signatures[0];
+	const topResult = results[0];
+	const topSignature = topResult ? signatureResult(topResult) : undefined;
 	if (topDescription && topSignature) {
 		let typedResults = [topSignature];
 		const typedDescription = compactDescription(topDescription);
 		let typedText = encodeSearchProjection(search, "typed-top", typedResults, [typedDescription]);
 		if (typedText) {
-			for (const signature of signatures.slice(1)) {
+			for (const result of results.slice(1)) {
+				const signature = signatureResult(result, false);
 				const nextResults = [...typedResults, signature];
 				const encoded = encodeSearchProjection(search, "typed-top", nextResults, [typedDescription]);
 				if (!encoded) break;
 				typedResults = nextResults;
 				typedText = encoded;
 			}
-			return typedText;
+			return searchProjection(search, typedText, typedResults);
 		}
 	}
 
-	let compactResults: typeof signatures = [];
+	let compactResults: Array<ReturnType<typeof signatureResult>> = [];
 	let compactText: string | undefined;
-	for (const signature of signatures) {
+	for (const result of results) {
+		const signature = signatureResult(result, false);
 		const nextResults = [...compactResults, signature];
 		const encoded = encodeSearchProjection(search, "signatures", nextResults);
 		if (!encoded) break;
 		compactResults = nextResults;
 		compactText = encoded;
 	}
-	if (compactText) return compactText;
+	if (compactText) return searchProjection(search, compactText, compactResults);
 
 	let pathResults: Array<{ readonly path: string }> = [];
 	let pathText = encodeSearchProjection(search, "paths", pathResults);
@@ -196,7 +215,7 @@ function projectSearchResponse(search: ConnectorSearch, descriptions: readonly C
 		pathResults = nextResults;
 		pathText = encoded;
 	}
-	return pathText;
+	return searchProjection(search, pathText, pathResults);
 }
 
 function environmentMode(name: string): boolean | undefined {
@@ -449,20 +468,21 @@ export function createCodeModeSearchDefinition(
 		async execute(_toolCallId, input, _signal, _onUpdate, context) {
 			const snippets = ledger?.snippets(context) ?? [];
 			const search = connector.search(input.query, snippets);
-			const paths = search.results.slice(0, CODE_MODE_SEARCH_RESULT_LIMIT).map((result) => result.path);
-			const definitions = paths.map((path) => connector.describe(path, snippets));
+			const selected = search.results.slice(0, CODE_MODE_SEARCH_RESULT_LIMIT);
+			const definitions = selected.map((result) => connector.describe(result.path, snippets));
+			const projection = projectSearchResponse(search, definitions);
 			return {
 				content: [
 					{
-						text: projectSearchResponse(search, definitions),
+						text: projection.text,
 						type: "text",
 					},
 				],
 				details: {
-					paths,
+					paths: projection.paths,
 					query: input.query,
 					total: search.total,
-					truncated: search.truncated || search.results.length > paths.length,
+					truncated: projection.truncated,
 				},
 			};
 		},

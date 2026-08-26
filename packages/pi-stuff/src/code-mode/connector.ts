@@ -45,7 +45,7 @@ function identifier(value: string): boolean {
 	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(value);
 }
 
-function toolPath(name: string): string {
+export function toolPath(name: string): string {
 	return identifier(name) ? `tools.${name}` : `tools[${JSON.stringify(name)}]`;
 }
 

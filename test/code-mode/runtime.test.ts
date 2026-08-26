@@ -13,6 +13,7 @@ import {
 } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import {
 	CODE_MODE_SEARCH_PRESENTATION,
+	type CodeModeSearchDetails,
 	createCodeModeDefinition,
 	createCodeModeSearchDefinition,
 } from "../../packages/pi-stuff/src/code-mode/extension.js";
@@ -166,9 +167,11 @@ interface DiscoveryPayload {
 	readonly definitions: readonly { readonly path: string; readonly types?: string }[];
 	readonly representation: "definitions" | "typed-top" | "signatures" | "paths";
 	readonly results: readonly { readonly path: string; readonly signature?: string }[];
+	readonly truncated: boolean;
 }
 
 async function executeDiscovery(connector: DiscoveryConnector): Promise<{
+	readonly details: CodeModeSearchDetails;
 	readonly payload: DiscoveryPayload;
 	readonly text: string;
 }> {
@@ -182,7 +185,7 @@ async function executeDiscovery(connector: DiscoveryConnector): Promise<{
 	);
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
-	return { payload: JSON.parse(text) as DiscoveryPayload, text };
+	return { details: result.details, payload: JSON.parse(text) as DiscoveryPayload, text };
 }
 
 test("the compact Tool contract describes canonical unwrapped Read results", () => {
@@ -372,22 +375,31 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(typedTop.text.length).toBeLessThanOrEqual(4_000);
 	expect(typedTop.payload.representation).toBe("typed-top");
 	expect(typedTop.payload.definitions[0]?.types).toHaveLength(500);
-	expect(typedTop.payload.results[1]?.signature).toContain("Promise");
+	expect(typedTop.payload.results[1]?.signature).toContain("(input: unknown): Promise<unknown>");
 
 	const signatures = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 5_000 }, { typesSize: 5_000 }]));
 	expect(signatures.text.length).toBeLessThanOrEqual(4_000);
 	expect(signatures.payload.representation).toBe("signatures");
 	expect(signatures.payload.definitions).toEqual([]);
-	expect(signatures.payload.results[0]?.signature).toContain("Promise");
+	expect(signatures.payload.results[0]?.signature).toContain("(input: unknown): Promise<unknown>");
+
+	const bracketPath = await executeDiscovery(discoveryConnectorFixture([{ name: "task-create", typesSize: 5_000 }]));
+	expect(bracketPath.payload.representation).toBe("signatures");
+	expect(bracketPath.payload.results[0]?.signature).toBe('tools["task-create"](input: unknown): Promise<unknown>');
 
 	const longNames = Array.from({ length: 5 }, (_, index) => ({
-		name: `${String(index)}_${"n".repeat(1_500)}`,
+		name: `${String(index)}_${"n".repeat(2_100)}`,
 		typesSize: 5_000,
 	}));
 	const paths = await executeDiscovery(discoveryConnectorFixture(longNames));
 	expect(paths.text.length).toBeLessThanOrEqual(4_000);
 	expect(paths.payload.representation).toBe("paths");
 	expect(paths.payload.results[0]).toEqual({ path: `tools.${longNames[0]?.name}` });
+
+	for (const projection of [definitions, typedTop, signatures, bracketPath, paths]) {
+		expect(projection.details.paths).toEqual(projection.payload.results.map((result) => result.path));
+		expect(projection.details.truncated).toBe(projection.payload.truncated);
+	}
 });
 
 test("approval-required Tools cannot opt into reexecute replay", () => {
