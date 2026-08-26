@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
@@ -16,6 +15,7 @@ import {
 	isRuntimeNumber,
 	isRuntimeObject,
 	isRuntimeString,
+	runtimeErrorCode,
 } from "../../../../shared/runtime-type.js";
 import {
 	appendArtifactJsonl,
@@ -29,7 +29,6 @@ import { type ChildTranscriptWriter, createChildTranscriptWriter } from "../../s
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
 	type AgentContextUsage,
 	type ArtifactPaths,
@@ -51,7 +50,6 @@ import {
 	extractToolArgsPreview,
 	getFinalOutput,
 } from "../../shared/utils.ts";
-import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
 import {
 	type ChildProtocolEvent,
 	type ChildProtocolMessage,
@@ -139,6 +137,12 @@ import {
 	updateSteeringTarget,
 } from "./steering.ts";
 import {
+	buildWriterSpawnCommand,
+	captureWriterProcessStartIdentity,
+	closeWriterProcessGroup,
+	readWriterSupervisorDisposition,
+} from "./writer-process-lifecycle.ts";
+import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,
 	reapOrphanWriterProcesses,
@@ -147,21 +151,11 @@ import {
 } from "./writer-process-registry.ts";
 
 export { createInitialStatus } from "./initial-status.ts";
+export { buildWriterSpawnCommand, captureWriterProcessStartIdentity } from "./writer-process-lifecycle.ts";
 
 type ChildMessage = ChildProtocolMessage;
 
 type ChildEvent = ChildProtocolEvent;
-
-interface WriterSupervisorEnvelope {
-	command: string;
-	args: string[];
-	parentPid: number;
-	parentStarted: string;
-	dispositionPath?: string | undefined;
-	groupMemberProofPath?: string | undefined;
-	controlPath?: string;
-	controlToken?: string;
-}
 
 interface ChildCompletedDiagnosticEvent {
 	type: "subagent.child.completed";
@@ -196,171 +190,6 @@ interface ChildProcessResult {
 }
 
 type WriterProcess = NonNullable<BackgroundTaskResult["writerProcesses"]>[number];
-
-export function buildWriterSpawnCommand(
-	command: string,
-	args: readonly string[],
-	platform: NodeJS.Platform = process.platform,
-	dispositionPath?: string,
-	groupMemberProofPath?: string,
-	writerSupervisorRuntime = resolveBunRuntimeCommand(),
-	control?: { readonly path: string; readonly token: string },
-) {
-	if (platform === "win32") return { command, args: [...args], gated: false };
-	const parentStarted = readProcessStartIdentity(process.pid);
-	if (!parentStarted) throw new Error("Agent writer supervisor requires a stable runner process identity.");
-	if (!writerSupervisorRuntime) {
-		throw new Error("Bun is required to launch the Agent writer supervisor, but no executable was found.");
-	}
-	const supervisor = path.join(path.dirname(fileURLToPath(import.meta.url)), "writer-process-supervisor.mjs");
-	const supervisorEnvelope: WriterSupervisorEnvelope = {
-		command,
-		args: [...args],
-		parentPid: process.pid,
-		parentStarted,
-		dispositionPath,
-		groupMemberProofPath,
-	};
-	if (control) {
-		supervisorEnvelope.controlPath = control.path;
-		supervisorEnvelope.controlToken = control.token;
-	}
-	const envelope = Buffer.from(JSON.stringify(supervisorEnvelope), "utf-8").toString("base64url");
-	return {
-		command: writerSupervisorRuntime,
-		args: [supervisor, envelope],
-		gated: true,
-	};
-}
-
-interface WriterSupervisorDisposition {
-	version: 1;
-	supervisorPid: number;
-	supervisorProcessStartIdentity: string;
-	childPid: number;
-	childProcessStartIdentity: string;
-	exitCode: number | null;
-	signal: string | null;
-	origin: "external" | "manager-final-drain" | "manager-request" | null;
-	reaped: boolean;
-	outputForwardingError?: string;
-}
-
-function readWriterSupervisorDisposition(
-	filePath: string,
-	supervisorPid: number | undefined,
-	supervisorProcessStartIdentity: string | undefined,
-): WriterSupervisorDisposition | undefined {
-	if (supervisorPid === undefined || !supervisorProcessStartIdentity) return undefined;
-	try {
-		const value = parseJsonValue(readBoundedOwnedFile(filePath, 8 * 1024));
-		if (
-			!isRuntimeObject(value) ||
-			value === null ||
-			Array.isArray(value) ||
-			value["version"] !== 1 ||
-			value["supervisorPid"] !== supervisorPid ||
-			value["supervisorProcessStartIdentity"] !== supervisorProcessStartIdentity ||
-			!isRuntimeNumber(value["childPid"]) ||
-			!Number.isSafeInteger(value["childPid"]) ||
-			!isRuntimeString(value["childProcessStartIdentity"]) ||
-			!value["childProcessStartIdentity"] ||
-			(!isRuntimeNumber(value["exitCode"]) && value["exitCode"] !== null) ||
-			(!isRuntimeString(value["signal"]) && value["signal"] !== null) ||
-			(value["origin"] !== null &&
-				value["origin"] !== "external" &&
-				value["origin"] !== "manager-final-drain" &&
-				value["origin"] !== "manager-request") ||
-			!isRuntimeBoolean(value["reaped"]) ||
-			(value["outputForwardingError"] !== undefined &&
-				(!isRuntimeString(value["outputForwardingError"]) || value["outputForwardingError"].length > 1_000))
-		)
-			return undefined;
-		const disposition: WriterSupervisorDisposition = {
-			version: 1,
-			supervisorPid,
-			supervisorProcessStartIdentity,
-			childPid: value["childPid"],
-			childProcessStartIdentity: value["childProcessStartIdentity"],
-			exitCode: value["exitCode"],
-			signal: value["signal"],
-			origin: value["origin"],
-			reaped: value["reaped"],
-		};
-		if (value["outputForwardingError"] !== undefined) {
-			disposition.outputForwardingError = value["outputForwardingError"];
-		}
-		return disposition;
-	} catch {
-		return undefined;
-	}
-}
-
-function writerProcessGroupAlive(pid: number): boolean | undefined {
-	if (process.platform === "win32") return false;
-	try {
-		process.kill(-pid, 0);
-		return true;
-	} catch (error) {
-		const code = errorCode(error);
-		if (code === "ESRCH") return false;
-		return undefined;
-	}
-}
-
-function ownedWriterProcessGroupAlive(pid: number, expectedProcessStartIdentity?: string): boolean | undefined {
-	const groupState = writerProcessGroupAlive(pid);
-	if (groupState !== true) return groupState;
-	if (!expectedProcessStartIdentity) return undefined;
-	const currentIdentity = readProcessStartIdentity(pid);
-	if (currentIdentity) return currentIdentity === expectedProcessStartIdentity;
-	return undefined;
-}
-
-export async function captureWriterProcessStartIdentity(
-	pid: number,
-	options: {
-		readonly read?: (pid: number) => string | undefined;
-		readonly timeoutMs?: number;
-		readonly intervalMs?: number;
-	} = {},
-): Promise<string | undefined> {
-	const read = options.read ?? readProcessStartIdentity;
-	const deadline = Date.now() + (options.timeoutMs ?? 250);
-	do {
-		const identity = read(pid);
-		if (identity) return identity;
-		try {
-			process.kill(pid, 0);
-		} catch (error) {
-			if (errorCode(error) !== "EPERM") return undefined;
-		}
-		if (Date.now() >= deadline) return undefined;
-		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
-	} while (Date.now() <= deadline);
-	return undefined;
-}
-
-async function closeWriterProcessGroup(pid: number, expectedProcessStartIdentity?: string): Promise<boolean> {
-	if (process.platform === "win32") return true;
-	for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-		const state = ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity);
-		if (state === false) return true;
-		if (state === undefined) return false;
-		try {
-			process.kill(-pid, signal);
-		} catch (error) {
-			if (errorCode(error) === "ESRCH") return true;
-			return false;
-		}
-		const deadline = Date.now() + 500;
-		while (Date.now() < deadline) {
-			if (ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false) return true;
-			await new Promise<void>((resolve) => setTimeout(resolve, 20));
-		}
-	}
-	return ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false;
-}
 
 interface ChildRuntimeControl {
 	state: "running" | "paused" | "timed-out" | "stopped" | "failed";
@@ -415,10 +244,6 @@ const MAX_MODEL_ATTEMPT_ERROR_BYTES = 8 * 1024;
 const RESULT_TRUNCATION_MARKER = "\n[output truncated; full text remains in the Agent transcript/output artifact]\n";
 const BACKGROUND_RUNNER_SENTINEL_ENV = "PI_STUFF_BACKGROUND_RUNNER";
 const BACKGROUND_RUNNER_CONFIG_ENV = "PI_STUFF_BACKGROUND_RUNNER_CONFIG";
-
-function errorCode<Value>(cause: Value): string | undefined {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause ? String(cause.code) : undefined;
-}
 
 /** Runner identity must never leak into a Pi writer process. */
 export function ponytailWriterEnvironmentOverrides(mode: BackgroundRunnerConfig["ponytailMode"]) {
@@ -535,7 +360,7 @@ function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: 
 			if (stat.isSymbolicLink() || !stat.isFile()) return;
 			size = stat.size;
 		} catch (error) {
-			if (errorCode(error) !== "ENOENT") return;
+			if (runtimeErrorCode(error) !== "ENOENT") return;
 		}
 		if (size + lineBytes <= limit) {
 			appendJsonl(eventsPath, line.trimEnd());
@@ -2662,7 +2487,7 @@ async function runConfiguredWork(
 					event.parentStepIndex = config.nestedSelf.parentStepIndex;
 				writeNestedEvent(config.nestedRoute, event);
 			} catch (error) {
-				if (errorCode(error) !== "ENOENT") {
+				if (runtimeErrorCode(error) !== "ENOENT") {
 					reportAgentDiagnostic(`Failed to settle nested route after '${config.id}' completed:`, error);
 				}
 			}
@@ -2695,7 +2520,7 @@ export async function waitForStartupControl(
 				throw new Error("Runner startup control action is invalid.");
 			}
 		} catch (error) {
-			if (errorCode(error) !== "ENOENT") throw error;
+			if (runtimeErrorCode(error) !== "ENOENT") throw error;
 		}
 		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 	}
@@ -2822,7 +2647,7 @@ export async function runConfiguredBackground(
 			try {
 				await finalizeNestedRouteRoot(config.nestedRoute, config.asyncDir);
 			} catch (error) {
-				if (errorCode(error) !== "ENOENT") {
+				if (runtimeErrorCode(error) !== "ENOENT") {
 					reportAgentDiagnostic(`Failed to settle terminal nested route for '${config.id}':`, error);
 				}
 			}

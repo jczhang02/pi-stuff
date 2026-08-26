@@ -19,3 +19,7 @@ export function isRuntimeNumber<Value>(value: Value): value is Value & number {
 export function isRuntimeObject<Value>(value: Value): value is Value & (object | null) {
 	return Guard.IsObject(value) || Guard.IsNull(value);
 }
+
+export function runtimeErrorCode<Value>(value: Value): string | undefined {
+	return isRuntimeObject(value) && value !== null && "code" in value ? String(value.code) : undefined;
+}
