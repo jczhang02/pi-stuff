@@ -5,12 +5,10 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
-import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { normalizePonytailMode, PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
-	isRuntimeFunction,
 	isRuntimeNumber,
 	isRuntimeObject,
 	isRuntimeString,
@@ -35,7 +33,6 @@ import {
 	type ProtocolOutputLimit,
 	type SteeringTargetState,
 	type SteeringTargetStatus,
-	SUBAGENT_ASYNC_STATUS_EVENT,
 	type ToolBudgetState,
 	type TurnBudgetState,
 	type Usage,
@@ -76,7 +73,6 @@ import {
 	type BackgroundRunnerWork,
 	type BackgroundTaskResult,
 	MAX_BACKGROUND_TASKS,
-	mapConcurrent,
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
@@ -146,6 +142,20 @@ import {
 	tokenUsage,
 } from "./runner-output.ts";
 import {
+	applyTerminalResultToStep,
+	type BackgroundCompletion,
+	createBackgroundCompletion,
+	failedResult,
+	failUndeliveredSteering,
+	reconcileUnfinishedSteps,
+	runBackgroundWork,
+	setStatusUpdateObserver,
+	stoppedResult,
+	taskList,
+	terminalizeRejectedStep,
+	writeStatus,
+} from "./runner-state.ts";
+import {
 	findSteeringRequest,
 	MAX_PENDING_STEERING_REQUESTS,
 	pendingSteeringRequestCount,
@@ -168,21 +178,12 @@ import {
 } from "./writer-process-registry.ts";
 
 export { createInitialStatus } from "./initial-status.ts";
+export { createBackgroundCompletion, runBackgroundWork } from "./runner-state.ts";
 export { buildWriterSpawnCommand, captureWriterProcessStartIdentity } from "./writer-process-lifecycle.ts";
 
 type ChildMessage = ChildProtocolMessage;
 
 type ChildEvent = ChildProtocolEvent;
-
-interface ChildCompletedDiagnosticEvent {
-	type: "subagent.child.completed";
-	ts: number;
-	runId: string;
-	index: number;
-	agent: string;
-	success: boolean;
-	error?: string;
-}
 
 interface ChildProcessResult {
 	exitCode: number | null;
@@ -212,37 +213,6 @@ interface ChildRuntimeControl {
 	state: "running" | "paused" | "timed-out" | "stopped" | "failed";
 	interrupt(kind: "pause" | "timeout" | "stop"): void;
 	revokeFinalization(): void;
-}
-
-interface RunBackgroundWorkOptions {
-	signal?: AbortSignal;
-}
-
-interface BackgroundCompletion {
-	id: string;
-	runId: string;
-	parentRunOrigin?: AgentWorkOrigin;
-	sessionId?: string | null;
-	mode: "single" | "parallel";
-	state: "complete" | "failed" | "stopped" | "paused";
-	success: boolean;
-	stopped?: boolean;
-	timedOut?: boolean;
-	interrupted?: boolean;
-	summary: string;
-	results: BackgroundTaskResult[];
-	cwd: string;
-	asyncDir: string;
-	startedAt: number;
-	endedAt: number;
-	sessionFile?: string;
-	nestedChildren?: import("../../shared/types.ts").NestedRunSummary[];
-	worktree?: {
-		diffs: ReturnType<typeof diffWorktrees>;
-		summary: string;
-		cleanup: ReturnType<typeof cleanupWorktrees>;
-		error?: string;
-	};
 }
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
@@ -283,334 +253,6 @@ function findLatestSessionFile(sessionDir: string | undefined): string | undefin
 		return files[0];
 	} catch {
 		return undefined;
-	}
-}
-
-function taskList(work: BackgroundRunnerWork): RunnerAgentTask[] {
-	return work.mode === "single" ? [work.task] : work.group.tasks;
-}
-
-function stoppedResult(
-	task: RunnerAgentTask,
-	cause: NonNullable<BackgroundTaskResult["preStartTerminalCause"]>,
-): BackgroundTaskResult {
-	const message = `Agent ${cause === "timeout" ? "timed out" : cause === "pause" ? "paused" : "stopped"} before it started.`;
-	const result: BackgroundTaskResult = {
-		agent: task.agent,
-		output: message,
-		success: false,
-		exitCode: 1,
-		error: message,
-		preStartTerminalCause: cause,
-	};
-	if (cause === "pause") result.interrupted = true;
-	else if (cause === "timeout") result.timedOut = true;
-	else result.stopped = true;
-	if (task.context) result.context = task.context;
-	if (task.sessionFile) result.sessionFile = task.sessionFile;
-	if (task.model) result.model = task.model;
-	if (task.thinking) result.thinking = task.thinking;
-	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
-	return result;
-}
-
-function failedResult(task: RunnerAgentTask, cause: unknown): BackgroundTaskResult {
-	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
-	const result: BackgroundTaskResult = {
-		agent: task.agent,
-		output: message,
-		success: false,
-		exitCode: 1,
-		error: message,
-	};
-	if (task.context) result.context = task.context;
-	if (task.sessionFile) result.sessionFile = task.sessionFile;
-	if (task.model) result.model = task.model;
-	if (task.thinking) result.thinking = task.thinking;
-	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
-	return result;
-}
-
-function terminalizeRejectedStep(
-	status: RunnerStatus,
-	statusPath: string,
-	eventsPath: string,
-	index: number,
-	cause: unknown,
-): void {
-	const step = status.steps[index];
-	if (!step) return;
-	const endedAt = Date.now();
-	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
-	step.status = "failed";
-	step.endedAt = endedAt;
-	step.durationMs = Math.max(0, endedAt - (step.startedAt ?? endedAt));
-	step.exitCode = 1;
-	step.error = message;
-	step.currentTool = undefined;
-	step.currentToolArgs = undefined;
-	step.currentToolStartedAt = undefined;
-	step.currentPath = undefined;
-	step.activityState = undefined;
-	try {
-		writeStatus(statusPath, status);
-		appendDiagnosticEvent(eventsPath, {
-			type: "subagent.child.completed",
-			ts: endedAt,
-			runId: status.runId,
-			index,
-			agent: step.agent,
-			success: false,
-			error: message,
-		});
-	} catch (persistError) {
-		reportAgentDiagnostic(`Failed to persist rejected Agent step ${String(index)}:`, persistError);
-	}
-}
-
-function applyTerminalResultToStep(step: RunnerStatusStep, result: BackgroundTaskResult, endedAt: number): void {
-	step.status = result.interrupted ? "paused" : result.stopped ? "stopped" : result.success ? "complete" : "failed";
-	step.endedAt = endedAt;
-	step.durationMs = Math.max(0, endedAt - (step.startedAt ?? endedAt));
-	step.exitCode = result.exitCode;
-	step.error = result.error;
-	step.sessionFile = result.sessionFile;
-	step.model = result.model;
-	step.contextUsage = result.contextUsage;
-	step.thinking = result.thinking;
-	step.attemptedModels = result.attemptedModels;
-	step.modelAttempts = result.modelAttempts;
-	step.totalCost = result.totalCost;
-	step.timedOut = result.timedOut;
-	step.stopped = result.stopped;
-	step.turnBudget = result.turnBudget;
-	step.turnBudgetExceeded = result.turnBudgetExceeded;
-	step.wrapUpRequested = result.wrapUpRequested;
-	step.toolBudget = result.toolBudget;
-	step.toolBudgetBlocked = result.toolBudgetBlocked;
-	step.transcriptPath = result.transcriptPath;
-	step.transcriptError = result.transcriptError;
-	step.finalOutput = boundResultText(result.output, MAX_RESULT_ERROR_BYTES);
-	step.savedOutputPath = result.artifactPaths?.outputPath;
-	step.currentTool = undefined;
-	step.currentToolArgs = undefined;
-	step.currentToolStartedAt = undefined;
-	step.currentPath = undefined;
-	step.activityState = undefined;
-}
-
-function reconcileUnfinishedSteps(
-	status: RunnerStatus,
-	results: readonly BackgroundTaskResult[],
-	eventsPath: string,
-	endedAt: number,
-): void {
-	for (const [index, result] of results.entries()) {
-		const step = status.steps[index];
-		if (!step || (step.status !== "pending" && step.status !== "running")) continue;
-		applyTerminalResultToStep(step, result, endedAt);
-		const event: ChildCompletedDiagnosticEvent = {
-			type: "subagent.child.completed",
-			ts: endedAt,
-			runId: status.runId,
-			index,
-			agent: step.agent,
-			success: result.success,
-		};
-		if (result.error) event.error = result.error;
-		appendDiagnosticEvent(eventsPath, event);
-	}
-}
-
-function failUndeliveredSteering(
-	status: RunnerStatus,
-	eventsPath: string,
-	terminalState: BackgroundCompletion["state"],
-	endedAt: number,
-): void {
-	const projection = steeringStatus(status);
-	for (const request of projection.recent) {
-		for (const target of request.targets) {
-			if (target.state !== "scheduled" && target.state !== "routed") continue;
-			const previousState = target.state;
-			const reason = `Agent run ended as ${terminalState} before steering was delivered.`;
-			updateSteeringTarget(projection, request.id, target.index, "failed", endedAt, { reason });
-			appendDiagnosticEvent(eventsPath, {
-				type: "subagent.steer.failed",
-				ts: endedAt,
-				runId: status.runId,
-				requestId: request.id,
-				index: target.index,
-				message: reason,
-				previousState,
-			});
-		}
-	}
-}
-
-/**
- * Execute the resolved runner shape. This is deliberately small: single runs
- * invoke once; parallel runs are one bounded group and never form a sequence.
- */
-export async function runBackgroundWork(
-	work: BackgroundRunnerWork,
-	runTask: (task: RunnerAgentTask, index: number, signal?: AbortSignal) => Promise<BackgroundTaskResult>,
-	options: RunBackgroundWorkOptions = {},
-): Promise<BackgroundTaskResult[]> {
-	const tasks = taskList(work);
-	if (tasks.length > MAX_BACKGROUND_TASKS) {
-		throw new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`);
-	}
-	const executeTask = async (task: RunnerAgentTask, index: number): Promise<BackgroundTaskResult> => {
-		if (options.signal?.aborted) {
-			const reason = options.signal.reason;
-			return stoppedResult(task, reason === "pause" || reason === "timeout" ? reason : "stop");
-		}
-		try {
-			return await runTask(task, index, options.signal);
-		} catch (error) {
-			return failedResult(task, error);
-		}
-	};
-	if (work.mode === "single") {
-		return [await executeTask(work.task, 0)];
-	}
-	return mapConcurrent(tasks, work.group.concurrency, executeTask);
-}
-
-function parallelSummary(results: BackgroundTaskResult[]): string {
-	return results
-		.map((result, index) => {
-			const state = result.success
-				? "complete"
-				: result.interrupted
-					? "paused"
-					: result.stopped
-						? "stopped"
-						: result.timedOut
-							? "timed out"
-							: "failed";
-			return `=== Agent ${index + 1} (${result.agent}) · ${state} ===\n${result.output || result.error || "(no output)"}`;
-		})
-		.join("\n\n");
-}
-
-export function createBackgroundCompletion(
-	config: BackgroundRunnerConfig,
-	results: BackgroundTaskResult[],
-	startedAt: number,
-	endedAt: number,
-	extras: Pick<BackgroundCompletion, "nestedChildren" | "worktree"> = {},
-): BackgroundCompletion {
-	const success = results.length > 0 && results.every((result) => result.success);
-	const failed = results.some((result) => !result.success && !result.stopped && !result.interrupted);
-	const stopped = !failed && results.some((result) => result.stopped);
-	const interrupted = !failed && !stopped && results.some((result) => result.interrupted);
-	const timedOut = results.some((result) => result.timedOut);
-	const state = failed ? "failed" : stopped ? "stopped" : interrupted ? "paused" : success ? "complete" : "failed";
-	const summary =
-		config.work.mode === "single"
-			? results[0]?.output || results[0]?.error || "(no output)"
-			: parallelSummary(results);
-	const completion: BackgroundCompletion = {
-		id: config.id,
-		runId: config.id,
-		mode: config.work.mode,
-		state,
-		success,
-		summary,
-		results,
-		cwd: config.cwd,
-		asyncDir: config.asyncDir,
-		startedAt,
-		endedAt,
-	};
-	if (config.parentRunOrigin) completion.parentRunOrigin = config.parentRunOrigin;
-	if (config.sessionId !== undefined) completion.sessionId = config.sessionId;
-	if (stopped) completion.stopped = true;
-	if (timedOut) completion.timedOut = true;
-	if (interrupted) completion.interrupted = true;
-	if (results.length === 1 && results[0]?.sessionFile) completion.sessionFile = results[0].sessionFile;
-	if (extras.nestedChildren) completion.nestedChildren = extras.nestedChildren;
-	if (extras.worktree) completion.worktree = extras.worktree;
-	return completion;
-}
-
-function updateRunProjection(status: RunnerStatus): void {
-	const active = status.steps.filter((step) => step.status === "running");
-	status.activityState = active.some((step) => step.activityState === "needs_attention")
-		? "needs_attention"
-		: active.some((step) => step.activityState === "active_long_running")
-			? "active_long_running"
-			: undefined;
-	status.lastActivityAt = active.reduce((latest, step) => Math.max(latest, step.lastActivityAt ?? 0), 0) || undefined;
-	status.currentTool = active.length === 1 ? active[0]?.currentTool : undefined;
-	status.currentToolStartedAt = active.length === 1 ? active[0]?.currentToolStartedAt : undefined;
-	status.currentPath = active.length === 1 ? active[0]?.currentPath : undefined;
-	status.turnCount = status.steps.reduce((sum, step) => sum + (step.turnCount ?? 0), 0);
-	status.toolCount = status.steps.reduce((sum, step) => sum + (step.toolCount ?? 0), 0);
-	const totals = status.steps.reduce(
-		(acc, step) => {
-			acc.input += step.tokens?.input ?? 0;
-			acc.output += step.tokens?.output ?? 0;
-			acc.total += step.tokens?.total ?? 0;
-			return acc;
-		},
-		{ input: 0, output: 0, total: 0 },
-	);
-	status.totalTokens = totals.total > 0 ? totals : undefined;
-	status.lastUpdate = Date.now();
-}
-
-const STATUS_PUBLISH_INTERVAL_MS = 100;
-let pendingPublishedStatus: { statusPath: string; status: RunnerStatus } | undefined;
-let statusPublishTimer: ReturnType<typeof setTimeout> | undefined;
-const statusUpdateObservers = new Map<string, (status: RunnerStatus) => void>();
-
-function sendPublishedStatus(): void {
-	const pending = pendingPublishedStatus;
-	pendingPublishedStatus = undefined;
-	statusPublishTimer = undefined;
-	if (!pending || !isRuntimeFunction(process.send) || process.connected === false) return;
-	try {
-		process.send(
-			{
-				type: SUBAGENT_ASYNC_STATUS_EVENT,
-				asyncDir: path.dirname(pending.statusPath),
-				status: pending.status,
-			},
-			() => {},
-		);
-	} catch {
-		// The detached run remains authoritative on disk after its parent disconnects.
-	}
-}
-
-function publishStatus(statusPath: string, status: RunnerStatus): void {
-	pendingPublishedStatus = { statusPath, status };
-	if (
-		status.state === "complete" ||
-		status.state === "failed" ||
-		status.state === "paused" ||
-		status.state === "stopped"
-	) {
-		if (statusPublishTimer) clearTimeout(statusPublishTimer);
-		sendPublishedStatus();
-		return;
-	}
-	if (statusPublishTimer) return;
-	statusPublishTimer = setTimeout(sendPublishedStatus, STATUS_PUBLISH_INTERVAL_MS);
-	statusPublishTimer.unref?.();
-}
-
-function writeStatus(statusPath: string, status: RunnerStatus): void {
-	updateRunProjection(status);
-	writePrivateAtomicJson(statusPath, status);
-	publishStatus(statusPath, status);
-	try {
-		statusUpdateObservers.get(statusPath)?.(status);
-	} catch (error) {
-		reportAgentDiagnostic(`Foreground Agent status observer failed for '${status.runId}':`, error);
 	}
 }
 
@@ -2341,7 +1983,7 @@ export async function runConfiguredBackground(
 	const proceedPath = path.join(config.asyncDir, "runner-startup-proceed.json");
 	const gatePath = path.join(config.asyncDir, "runner-startup-gate.json");
 	const statusPath = path.join(config.asyncDir, "status.json");
-	if (hooks.afterStatusUpdate) statusUpdateObservers.set(statusPath, hooks.afterStatusUpdate);
+	setStatusUpdateObserver(statusPath, hooks.afterStatusUpdate);
 	const releaseOnExit = () => {
 		try {
 			if (lease && inspectWriterProcessLiveness(config.asyncDir) === false) lease.release();
@@ -2412,7 +2054,7 @@ export async function runConfiguredBackground(
 		}
 		throw error;
 	} finally {
-		statusUpdateObservers.delete(statusPath);
+		setStatusUpdateObserver(statusPath, undefined);
 		process.off("exit", releaseOnExit);
 		if (lease) {
 			let acknowledged = false;
