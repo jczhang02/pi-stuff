@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Readable } from "node:stream";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
@@ -631,6 +632,52 @@ describe("BackgroundWorkRuntime", () => {
 		} finally {
 			clearInterval(timer);
 		}
+	});
+
+	test("accepts a command acknowledgement after a fast supervisor exit", async () => {
+		const root = temporaryRoot();
+		const supervisorIdentity = { pid: 987_654, started: "test:fast-supervisor" };
+		const active = new BackgroundWorkRuntime({
+			captureSupervisorIdentity: async () => supervisorIdentity,
+			cwd: root,
+			pi: { sendMessage: () => {} },
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+			supervisorFactory: (_executable, encoded) => {
+				const envelope = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
+				let resolveCompletion!: (value: { code: number; signal: null }) => void;
+				const completion = new Promise<{ code: number; signal: null }>((resolve) => {
+					resolveCompletion = resolve;
+				});
+				setTimeout(() => {
+					writeFileSync(
+						envelope.commandAcknowledgementPath,
+						`${JSON.stringify({
+							version: 1,
+							token: envelope.commandAuthorizationToken,
+							supervisorPid: supervisorIdentity.pid,
+							supervisorStarted: supervisorIdentity.started,
+						})}\n`,
+						{ mode: 0o600 },
+					);
+					resolveCompletion({ code: 0, signal: null });
+				}, 0);
+				const control = Readable.from([]);
+				return {
+					closeControl: () => control.destroy(),
+					completion,
+					control,
+					kill: () => {},
+					output: Readable.from([]),
+					pid: supervisorIdentity.pid,
+					unref: () => {},
+				};
+			},
+		});
+
+		const result = await active.executeBash({ command: ":", toolCallId: "tool-fast-exit" }, context(root));
+		expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
+		await active.shutdown();
 	});
 
 	test("settles from the in-memory tail when output-file writes fail", async () => {

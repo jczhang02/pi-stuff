@@ -471,6 +471,7 @@ export class BackgroundWorkRuntime {
 	private readonly commandPrefix: string | undefined;
 	private readonly cwd: string;
 	private disposed = false;
+	private readonly launchActivityIds = new Set<string>();
 	private launchReservations = 0;
 	private readonly launchSettlements = new Set<Promise<void>>();
 	private readonly listeners = new Set<() => void>();
@@ -804,6 +805,8 @@ export class BackgroundWorkRuntime {
 		if (this.activities.size + this.monitors.size + this.launchReservations >= MAX_CONCURRENT_ACTIVITIES) {
 			throw new Error(`At most ${String(MAX_CONCURRENT_ACTIVITIES)} Background Work activities may run at once`);
 		}
+		const id = this.randomId(input.kind ?? "shell");
+		this.launchActivityIds.add(id);
 		this.launchReservations += 1;
 		const reservation = { active: true };
 		let settleLaunch!: () => void;
@@ -812,8 +815,9 @@ export class BackgroundWorkRuntime {
 		});
 		this.launchSettlements.add(launchSettlement);
 		try {
-			return await this.spawnProcessTransaction(input, reservation);
+			return await this.spawnProcessTransaction(input, reservation, id);
 		} finally {
+			this.launchActivityIds.delete(id);
 			if (reservation.active) {
 				reservation.active = false;
 				this.launchReservations -= 1;
@@ -826,10 +830,10 @@ export class BackgroundWorkRuntime {
 	private async spawnProcessTransaction(
 		input: SpawnProcessInput,
 		reservation: { active: boolean },
+		id: string,
 	): Promise<SpawnedActivity> {
 		if (this.disposed) throw new Error("Background Work session is shutting down");
 		const kind = input.kind ?? "shell";
-		const id = this.randomId(kind);
 		const outputPath = this.storage.outputPath(id);
 		const commandAuthorizationPath = this.storage.commandAuthorizationPath(id);
 		const commandAcknowledgementPath = `${commandAuthorizationPath}.ack`;
@@ -1110,6 +1114,9 @@ export class BackgroundWorkRuntime {
 			activity.launchAuthorized = true;
 			this.requestStopInBackground(activity, "abort", "command acknowledgement failure");
 			throw error;
+		} finally {
+			this.removeLaunchArtifact(activity.commandAuthorizationPath);
+			this.removeLaunchArtifact(activity.commandAcknowledgementPath);
 		}
 	}
 
@@ -1257,8 +1264,6 @@ export class BackgroundWorkRuntime {
 			// The control descriptor is already terminal from the supervisor's perspective.
 		}
 		activity.output.close();
-		this.removeLaunchArtifact(activity.commandAuthorizationPath);
-		this.removeLaunchArtifact(activity.commandAcknowledgementPath);
 		const endedAt = Date.now();
 		let status: BackgroundWorkTerminalStatus;
 		if (activity.stopReason === "timeout") status = "timed_out";
@@ -1546,6 +1551,7 @@ export class BackgroundWorkRuntime {
 	private randomId(kind: BackgroundWorkKind): string {
 		const ids = new Map<string, true>();
 		for (const id of this.activities.keys()) ids.set(id, true);
+		for (const id of this.launchActivityIds) ids.set(id, true);
 		for (const id of this.monitors.keys()) ids.set(id, true);
 		for (const id of this.terminalOutcomes.keys()) ids.set(id, true);
 		return randomActivityId(kind, ids);
