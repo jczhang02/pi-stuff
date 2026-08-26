@@ -2742,6 +2742,8 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			details: resultEvent.details,
 		};
 		if (resultEvent.usage !== undefined) Object.assign(finalResult, { usage: resultEvent.usage });
+		if (resultEvent.isError === true) Object.assign(finalResult, { isError: true });
+		else Reflect.deleteProperty(finalResult, "isError");
 		result = stripToolControlMetadata(finalResult);
 		isError = resultEvent.isError === true;
 		await dispatchInformational(
