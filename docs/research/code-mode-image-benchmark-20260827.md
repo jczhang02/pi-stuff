@@ -76,3 +76,11 @@ Run from the candidate worktree with a baseline repository root that still has t
 ```sh
 bun run benchmark:code-mode-image --baseline-root <absolute-baseline-root> --output <absolute-report-path>
 ```
+
+## Pre-outcome clarification
+
+Recorded at 2026-08-26T01:17:43Z after the runner started and before any run output, log, or outcome was inspected:
+`--no-skills` disables ordinary discovered Skills, but Pi 0.84.3 can still expose Skills declared by the explicitly loaded
+Pi Stuff Package. Ponytail's standing contribution remains `off`; the Package-declared Skill catalog is the same in both
+arms and is part of the real installed-Package target surface. No benchmark input, ordering, measure, threshold, or
+failure policy changed.
