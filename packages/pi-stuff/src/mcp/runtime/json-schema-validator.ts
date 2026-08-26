@@ -1,68 +1,64 @@
-import { isRuntimeString } from "../../shared/runtime-type.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
+import type {
+	JsonSchemaType,
+	JsonSchemaValidator,
+	jsonSchemaValidator as JsonSchemaValidatorProvider,
+} from "@modelcontextprotocol/sdk/validation/types.js";
 import { Ajv } from "ajv";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import formatsModule from "ajv-formats";
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
-import type {
-  JsonSchemaType,
-  JsonSchemaValidator,
-  jsonSchemaValidator as JsonSchemaValidatorProvider,
-} from "@modelcontextprotocol/sdk/validation/types.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 
-type SchemaDialect =
-  | { status: "unstamped" }
-	  | { status: "stamped"; uri: string };
+type SchemaDialect = { status: "unstamped" } | { status: "stamped"; uri: string };
 
 const addFormats = formatsModule.default;
 
 const DRAFT_07_SCHEMA_URIS: ReadonlySet<string> = new Set([
-  "http://json-schema.org/draft-07/schema",
-  "https://json-schema.org/draft-07/schema",
+	"http://json-schema.org/draft-07/schema",
+	"https://json-schema.org/draft-07/schema",
 ]);
-const DRAFT_2020_12_SCHEMA_URIS: ReadonlySet<string> = new Set([
-  "https://json-schema.org/draft/2020-12/schema",
-]);
+const DRAFT_2020_12_SCHEMA_URIS: ReadonlySet<string> = new Set(["https://json-schema.org/draft/2020-12/schema"]);
 
 function schemaDialect(schema: JsonSchemaType): SchemaDialect {
-  if (!("$schema" in schema) || !isRuntimeString(schema.$schema)) {
-    return { status: "unstamped" };
-  }
-  return {
-    status: "stamped",
-    uri: schema.$schema.endsWith("#") ? schema.$schema.slice(0, -1) : schema.$schema,
-  };
+	if (!("$schema" in schema) || !isRuntimeString(schema.$schema)) {
+		return { status: "unstamped" };
+	}
+	return {
+		status: "stamped",
+		uri: schema.$schema.endsWith("#") ? schema.$schema.slice(0, -1) : schema.$schema,
+	};
 }
 
 export function createJsonSchemaValidator(): JsonSchemaValidatorProvider {
-  let draft07Validator: AjvJsonSchemaValidator | undefined;
-  let draft2020Validator: AjvJsonSchemaValidator | undefined;
+	let draft07Validator: AjvJsonSchemaValidator | undefined;
+	let draft2020Validator: AjvJsonSchemaValidator | undefined;
 
-  return {
-    getValidator<T>(schema: JsonSchemaType): JsonSchemaValidator<T> {
-      const dialect = schemaDialect(schema);
-      if (dialect.status === "unstamped" || DRAFT_2020_12_SCHEMA_URIS.has(dialect.uri)) {
-        draft2020Validator ??= (() => {
-          const ajv = new Ajv2020({ strict: false, allErrors: true });
-          addFormats(ajv);
-          return new AjvJsonSchemaValidator(ajv);
-        })();
-        return draft2020Validator.getValidator<T>(schema);
-      }
-      if (!DRAFT_07_SCHEMA_URIS.has(dialect.uri)) {
-        throw new Error(`Unsupported JSON Schema dialect: ${dialect.uri}`);
-      }
+	return {
+		getValidator<T>(schema: JsonSchemaType): JsonSchemaValidator<T> {
+			const dialect = schemaDialect(schema);
+			if (dialect.status === "unstamped" || DRAFT_2020_12_SCHEMA_URIS.has(dialect.uri)) {
+				draft2020Validator ??= (() => {
+					const ajv = new Ajv2020({ strict: false, allErrors: true });
+					addFormats(ajv);
+					return new AjvJsonSchemaValidator(ajv);
+				})();
+				return draft2020Validator.getValidator<T>(schema);
+			}
+			if (!DRAFT_07_SCHEMA_URIS.has(dialect.uri)) {
+				throw new Error(`Unsupported JSON Schema dialect: ${dialect.uri}`);
+			}
 
-      draft07Validator ??= (() => {
-        const ajv = new Ajv({
-          strict: false,
-          validateFormats: true,
-          validateSchema: false,
-          allErrors: true,
-        });
-        addFormats(ajv);
-        return new AjvJsonSchemaValidator(ajv);
-      })();
-      return draft07Validator.getValidator<T>(schema);
-    },
-  };
+			draft07Validator ??= (() => {
+				const ajv = new Ajv({
+					strict: false,
+					validateFormats: true,
+					validateSchema: false,
+					allErrors: true,
+				});
+				addFormats(ajv);
+				return new AjvJsonSchemaValidator(ajv);
+			})();
+			return draft07Validator.getValidator<T>(schema);
+		},
+	};
 }

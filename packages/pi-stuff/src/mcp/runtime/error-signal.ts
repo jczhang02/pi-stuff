@@ -12,11 +12,11 @@ import { isJsonInputObject } from "../../shared/json-value.js";
  * states, search/validation feedback, ...) are not failed tool calls, so they get no override.
  */
 export function toolErrorOverride<Value>(details: Value): { isError: true } | undefined {
-	  if (isJsonInputObject(details)) {
-	    const code = details.error;
-    if (code === "tool_error" || code === "call_failed") {
-      return { isError: true };
-    }
-  }
-  return undefined;
+	if (isJsonInputObject(details)) {
+		const code = details["error"];
+		if (code === "tool_error" || code === "call_failed") {
+			return { isError: true };
+		}
+	}
+	return undefined;
 }

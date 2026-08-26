@@ -22,10 +22,10 @@
 //   - treat AbortError/cancellation as a session failure
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { logger } from "./logger.ts";
 import { throwIfAborted } from "./abort.ts";
-import { isServerDisabled, type McpConfig } from "./types.ts";
+import { logger } from "./logger.ts";
 import type { McpServerManager, ServerConnection } from "./server-manager.ts";
+import { isServerDisabled, type McpConfig } from "./types.ts";
 
 /**
  * True when `err` is a stale Streamable HTTP session signal for a request
@@ -39,43 +39,52 @@ import type { McpServerManager, ServerConnection } from "./server-manager.ts";
  * before the call rather than rely on catch-time transport state.
  */
 const SERVER_NOT_INITIALIZED_MCP_MESSAGES = new Set([
-  `MCP error ${ErrorCode.ConnectionClosed}: Server not initialized`,
-  `MCP error ${ErrorCode.ConnectionClosed}: Bad Request: Server not initialized`,
+	`MCP error ${ErrorCode.ConnectionClosed}: Server not initialized`,
+	`MCP error ${ErrorCode.ConnectionClosed}: Bad Request: Server not initialized`,
 ]);
 
 export function isTerminatedSession<ErrorValue>(err: ErrorValue, hadSessionId: boolean): boolean {
-  if (!hadSessionId) return false;
-  if (err instanceof StreamableHTTPError) {
-    return err.code === 404
-      || (err.code === 400
-        && /"code"\s*:\s*-32000/.test(err.message)
-        && /"message"\s*:\s*"Bad Request: Server not initialized"/.test(err.message));
-  }
-  return err instanceof McpError
-    && err.code === ErrorCode.ConnectionClosed
-    && SERVER_NOT_INITIALIZED_MCP_MESSAGES.has(err.message);
+	if (!hadSessionId) return false;
+	if (err instanceof StreamableHTTPError) {
+		return (
+			err.code === 404 ||
+			(err.code === 400 &&
+				/"code"\s*:\s*-32000/.test(err.message) &&
+				/"message"\s*:\s*"Bad Request: Server not initialized"/.test(err.message))
+		);
+	}
+	return (
+		err instanceof McpError &&
+		err.code === ErrorCode.ConnectionClosed &&
+		SERVER_NOT_INITIALIZED_MCP_MESSAGES.has(err.message)
+	);
 }
 
 function hasSessionId(connection: ServerConnection): boolean {
-  // Only StreamableHTTPClientTransport exposes `sessionId`; stdio/SSE
-  // transports (and test doubles that omit `transport` entirely) simply
-  // read as `undefined` here.
-	  const transport = connection.transport;
-	  return !!transport && "sessionId" in transport && transport.sessionId != null;
+	// Only StreamableHTTPClientTransport exposes `sessionId`; stdio/SSE
+	// transports (and test doubles that omit `transport` entirely) simply
+	// read as `undefined` here.
+	const transport = connection.transport;
+	return !!transport && "sessionId" in transport && transport.sessionId != null;
 }
 
 export class SessionRecoveryAuthRequiredError extends Error {
-  constructor(readonly serverName: string, readonly authMessage?: string) {
-    super(authMessage ?? `MCP server "${serverName}" requires OAuth authentication after reconnect.`);
-    this.name = "SessionRecoveryAuthRequiredError";
-  }
+	readonly serverName: string;
+	readonly authMessage: string | undefined;
+
+	constructor(serverName: string, authMessage?: string) {
+		super(authMessage ?? `MCP server "${serverName}" requires OAuth authentication after reconnect.`);
+		this.name = "SessionRecoveryAuthRequiredError";
+		this.serverName = serverName;
+		this.authMessage = authMessage;
+	}
 }
 
 export interface SessionRecoveryDeps {
-  manager: McpServerManager;
-  config: McpConfig;
-  signal?: AbortSignal;
-  onNeedsAuth?: (serverName: string) => Promise<ServerConnection | undefined>;
+	manager: McpServerManager;
+	config: McpConfig;
+	signal?: AbortSignal;
+	onNeedsAuth?: (serverName: string) => Promise<ServerConnection | undefined>;
 }
 
 /**
@@ -90,57 +99,57 @@ export interface SessionRecoveryDeps {
  * unchanged through the caller's existing error handling.
  */
 export async function withSessionRecovery<T>(
-  deps: SessionRecoveryDeps,
-  serverName: string,
-  fn: (conn: ServerConnection) => Promise<T>,
+	deps: SessionRecoveryDeps,
+	serverName: string,
+	fn: (conn: ServerConnection) => Promise<T>,
 ): Promise<T> {
-  if (isServerDisabled(deps.config.mcpServers[serverName])) {
-    throw new Error(`MCP server "${serverName}" is disabled`);
-  }
-  const connection = deps.manager.getConnection(serverName);
-  if (!connection) {
-    throw new Error(`Server "${serverName}" is not connected`);
-  }
+	if (isServerDisabled(deps.config.mcpServers[serverName])) {
+		throw new Error(`MCP server "${serverName}" is disabled`);
+	}
+	const connection = deps.manager.getConnection(serverName);
+	if (!connection) {
+		throw new Error(`Server "${serverName}" is not connected`);
+	}
 
-  const hadSessionId = hasSessionId(connection);
+	const hadSessionId = hasSessionId(connection);
 
-  try {
-    return await fn(connection);
-  } catch (err) {
-    if (!isTerminatedSession(err, hadSessionId)) {
-      throw err;
-    }
+	try {
+		return await fn(connection);
+	} catch (err) {
+		if (!isTerminatedSession(err, hadSessionId)) {
+			throw err;
+		}
 
-    // Re-read the live definition rather than reusing the stale
-    // connection's definition, in case config changed since connect. If the
-    // server was removed from config in the meantime there is nothing to
-    // reconnect to, so surface the original error.
-    const definition = deps.config.mcpServers[serverName];
-    if (!definition) {
-      throw err;
-    }
+		// Re-read the live definition rather than reusing the stale
+		// connection's definition, in case config changed since connect. If the
+		// server was removed from config in the meantime there is nothing to
+		// reconnect to, so surface the original error.
+		const definition = deps.config.mcpServers[serverName];
+		if (!definition) {
+			throw err;
+		}
 
-    throwIfAborted(deps.signal);
-    logger.debug(`MCP session for "${serverName}" expired; reconnecting`, {
-      server: serverName,
-    });
-    let freshConnection = deps.signal
-      ? await deps.manager.reconnect(serverName, definition, connection, deps.signal)
-      : await deps.manager.reconnect(serverName, definition, connection);
-    throwIfAborted(deps.signal);
+		throwIfAborted(deps.signal);
+		logger.debug(`MCP session for "${serverName}" expired; reconnecting`, {
+			server: serverName,
+		});
+		let freshConnection = deps.signal
+			? await deps.manager.reconnect(serverName, definition, connection, deps.signal)
+			: await deps.manager.reconnect(serverName, definition, connection);
+		throwIfAborted(deps.signal);
 
-    if (freshConnection.status === "needs-auth") {
-      freshConnection = await deps.onNeedsAuth?.(serverName) ?? freshConnection;
-      throwIfAborted(deps.signal);
-    }
+		if (freshConnection.status === "needs-auth") {
+			freshConnection = (await deps.onNeedsAuth?.(serverName)) ?? freshConnection;
+			throwIfAborted(deps.signal);
+		}
 
-    if (freshConnection.status === "needs-auth") {
-      throw new SessionRecoveryAuthRequiredError(serverName);
-    }
-    if (freshConnection.status !== "connected") {
-      throw err;
-    }
+		if (freshConnection.status === "needs-auth") {
+			throw new SessionRecoveryAuthRequiredError(serverName);
+		}
+		if (freshConnection.status !== "connected") {
+			throw err;
+		}
 
-    return fn(freshConnection);
-  }
+		return fn(freshConnection);
+	}
 }

@@ -12,7 +12,6 @@
 			"!**/.artifacts",
 			"!**/.beads",
 			"!**/.pi-subagents",
-			"!packages/pi-stuff/src/mcp/runtime",
 			"!bun.lock"
 		]
 	},

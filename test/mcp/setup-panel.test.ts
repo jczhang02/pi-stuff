@@ -194,14 +194,22 @@ test("MCP Setup pages only overflowing lists and renders active Pi bindings", ()
 		callbacks(async () => ({ path: "/project/.mcp.json" })),
 		{
 			keybindings: {
-				getKeys: (binding) =>
-					({
-						"tui.select.confirm": ["ctrl+y"],
-						"tui.select.down": ["ctrl+j"],
-						"tui.select.pageDown": ["ctrl+f"],
-						"tui.select.pageUp": ["ctrl+b"],
-						"tui.select.up": ["ctrl+k"],
-					})[binding] ?? [],
+				getKeys: (binding) => {
+					switch (binding) {
+						case "tui.select.confirm":
+							return ["ctrl+y"];
+						case "tui.select.down":
+							return ["ctrl+j"];
+						case "tui.select.pageDown":
+							return ["ctrl+f"];
+						case "tui.select.pageUp":
+							return ["ctrl+b"];
+						case "tui.select.up":
+							return ["ctrl+k"];
+						default:
+							return [];
+					}
+				},
 				matches: (data, binding) =>
 					(data === "accept" && binding === "tui.select.confirm") ||
 					(data === "go-down" && binding === "tui.select.down"),
