@@ -112,6 +112,8 @@ Each execution and nested call receives a stable ID in an append-only Pi Session
 reused after one typed V8 Host-loss retry. The default `never` policy refuses to repeat an ambiguous unfinished
 effect; `record` reuses only a settled result, and `reexecute` deliberately runs an operation again. Any unfinished
 `never` or `record` call becomes `incomplete` and is never guessed or repeated.
+Ledger reads reuse one fold while Pi reports the same Session leaf and refresh when the Session or leaf changes. If
+Pi cannot provide the current branch, recovery commands fail instead of treating durable history as empty.
 
 A Tool marked `requiresApproval` pauses durably before its effect. `/codemode pending` shows the exact action;
 `/codemode approve <execution-id>` resumes it once, and `/codemode reject <execution-id> <seq>` terminates it without

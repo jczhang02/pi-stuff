@@ -9,23 +9,99 @@ import {
 import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 function fixture() {
-	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
+	const branch: Array<{ customType: string; data: unknown; id: string; type: "custom" }> = [];
+	let branchReads = 0;
+	let leafError: Error | undefined;
+	let leafRevision = 0;
+	let readError: Error | undefined;
+	let sessionId = "session-code-mode";
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: "/project",
 		sessionManager: {
-			getBranch: () => branch,
+			getBranch: () => {
+				branchReads++;
+				if (readError) throw readError;
+				return branch;
+			},
 			getEntries: () => branch,
-			getSessionId: () => "session-code-mode",
+			getLeafId: () => {
+				if (leafError) throw leafError;
+				return `${String(branch.length)}:${String(leafRevision)}`;
+			},
+			getSessionId: () => sessionId,
 		},
 	} as ExtensionContext;
 	const ledger = new CodeModeSessionLedger({
 		appendEntry(customType, data) {
-			branch.push({ customType, data, type: "custom" });
+			leafRevision++;
+			branch.push({ customType, data, id: `entry-${String(leafRevision)}`, type: "custom" });
 		},
 	});
-	return { branch, context, ledger };
+	return {
+		branch,
+		branchReadCount: () => branchReads,
+		context,
+		ledger,
+		setLeafError: (error: Error | undefined) => {
+			leafError = error;
+		},
+		setReadError: (error: Error | undefined) => {
+			readError = error;
+		},
+		setSessionId: (id: string) => {
+			sessionId = id;
+		},
+		touchBranch: () => {
+			leafRevision++;
+		},
+	};
 }
+
+test("Session ledger reads fail closed when the active branch is unavailable", () => {
+	const { context, ledger, setReadError } = fixture();
+	const unavailable = new Error("Session branch unavailable");
+	setReadError(unavailable);
+
+	expect(() => ledger.history(context)).toThrow(unavailable);
+});
+
+test("Session leaf probe failures disable caching without hiding durable branch state", () => {
+	const { branchReadCount, context, ledger, setLeafError } = fixture();
+	setLeafError(new Error("leaf unavailable"));
+
+	expect(ledger.history(context)).toEqual([]);
+	expect(ledger.history(context)).toEqual([]);
+	expect(branchReadCount()).toBe(2);
+});
+
+test("Session ledger reuses one branch fold until the Session leaf changes", () => {
+	const { branchReadCount, context, ledger } = fixture();
+	const controller = ledger.begin(context, "outer-cache", "text('ok')", new Map());
+	controller.finish("success");
+
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(ledger.snippets(context)).toEqual([]);
+	expect(branchReadCount()).toBe(1);
+});
+
+test("Session ledger invalidates its fold for branch and Session changes", () => {
+	const { branch, branchReadCount, context, ledger, setSessionId, touchBranch } = fixture();
+	const controller = ledger.begin(context, "outer-original", "text('original')", new Map());
+	controller.finish("success");
+	expect(ledger.history(context)[0]?.outerToolCallId).toBe("outer-original");
+	expect(branchReadCount()).toBe(1);
+
+	branch.length = 0;
+	touchBranch();
+	expect(ledger.history(context)).toEqual([]);
+	expect(branchReadCount()).toBe(2);
+
+	setSessionId("session-code-mode-next");
+	expect(ledger.history(context)).toEqual([]);
+	expect(branchReadCount()).toBe(3);
+});
 
 test("the Session ledger replays completed values and preserves binary, bigint, history, and snippets", () => {
 	const { branch, context, ledger } = fixture();
@@ -296,7 +372,12 @@ test("ledger maintenance expires stale work and retains only the newest fifty te
 	const { branch, context, ledger } = fixture();
 	const now = Date.now();
 	const append = (data: JsonInputObject): void => {
-		branch.push({ customType: CODE_MODE_LEDGER_ENTRY_TYPE, data, type: "custom" });
+		branch.push({
+			customType: CODE_MODE_LEDGER_ENTRY_TYPE,
+			data,
+			id: `legacy-${String(branch.length)}`,
+			type: "custom",
+		});
 	};
 	append({
 		at: now - 25 * 60 * 60 * 1_000,

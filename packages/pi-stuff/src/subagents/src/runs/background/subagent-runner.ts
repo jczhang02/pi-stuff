@@ -25,7 +25,7 @@ import {
 	getArtifactPaths,
 	withArtifactGroupWriteClaim,
 } from "../../shared/artifacts.ts";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { writePrivateAtomicJson, writePrivateAtomicText } from "../../shared/atomic-json.ts";
 import { type ChildTranscriptWriter, createChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
@@ -1068,11 +1068,10 @@ function createTranscript(config: BackgroundRunnerConfig, task: RunnerAgentTask,
 	};
 }
 
-function writeOptionalArtifact(filePath: string, content: string, artifactManaged = false): string | undefined {
+function writeOptionalArtifact(filePath: string, content: string): string | undefined {
 	try {
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		if (artifactManaged) withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, content, "utf-8"));
-		else fs.writeFileSync(filePath, content, "utf-8");
+		withArtifactGroupWriteClaim(filePath, () => writePrivateAtomicText(filePath, content));
 		return undefined;
 	} catch (error) {
 		return `Failed to write optional Agent artifact '${filePath}': ${
@@ -2483,7 +2482,6 @@ async function runResolvedTask(input: {
 		const error = writeOptionalArtifact(
 			transcript.artifactPaths.inputPath,
 			`# Task for ${task.agent}\n\n${task.task}`,
-			true,
 		);
 		if (error) reportAgentDiagnostic(error);
 	}
@@ -2503,7 +2501,6 @@ async function runResolvedTask(input: {
 				null,
 				2,
 			),
-			true,
 		);
 		if (error) reportAgentDiagnostic(error);
 	}
@@ -2713,7 +2710,6 @@ async function runResolvedTask(input: {
 				metadataPath:
 					config.artifactConfig?.includeMetadata === false ? undefined : transcript.artifactPaths.metadataPath,
 			}),
-			true,
 		);
 		if (error) {
 			reportAgentDiagnostic(error);
@@ -2744,7 +2740,6 @@ async function runResolvedTask(input: {
 				null,
 				2,
 			),
-			true,
 		);
 		if (error) {
 			reportAgentDiagnostic(error);

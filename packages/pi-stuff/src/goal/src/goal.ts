@@ -469,7 +469,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			persistGoal(runtime.activeGoal);
 
 			runtime.publishPresentationStatus(runtime.activeGoal);
-			clearActiveGoal(ctx);
+			await clearActiveGoal(ctx);
 			showCompletionStatus(ctx, completedTimeUsedSeconds);
 
 			return {
@@ -644,7 +644,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			}
 			if (runtime.queueFrozen) {
 				if (result.kind === "show") commands.showGoal(ctx);
-				else if (result.kind === "clear") commands.clearGoal(ctx);
+				else if (result.kind === "clear") await commands.clearGoal(ctx);
 				else commands.notifyFrozenQueue(ctx);
 				return;
 			}
@@ -665,7 +665,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 						await commands.resumeGoal(ctx);
 						return;
 					case "clear":
-						commands.clearGoal(ctx);
+						await commands.clearGoal(ctx);
 						return;
 					case "edit":
 						await commands.editGoal(result.objective ?? "", result.tokenBudget, ctx);
@@ -677,7 +677,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 						await commands.prioritizeGoal(result.objective ?? "", result.tokenBudget, ctx);
 						return;
 					case "drop-last":
-						commands.dropLastGoal(ctx);
+						await commands.dropLastGoal(ctx);
 						return;
 					case "skip":
 						await commands.skipGoal(ctx);

@@ -271,7 +271,7 @@ export async function showGoalManager(
 					);
 					return { kind: "stay" };
 				}
-				commands.clearGoal(ctx);
+				await commands.clearGoal(ctx);
 				return { kind: "close" };
 			},
 			"queue-add": async () => {
@@ -320,7 +320,7 @@ export async function showGoalManager(
 					`Remove from queue:\n${safeGoalMenuText(last.text, 4_000)}`,
 				);
 				if (confirmed && requireCurrentQueueSelection(runtime, goal, last, "last", ctx)) {
-					commands.dropLastGoal(ctx);
+					await commands.dropLastGoal(ctx);
 				}
 				return { kind: "close" };
 			},

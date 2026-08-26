@@ -113,14 +113,6 @@ export function getArtifactPaths(artifactsDir: string, runId: string, agent: str
 	};
 }
 
-export function ensureArtifactsDir(dir: string): void {
-	fs.mkdirSync(dir, { recursive: true });
-}
-
-export function writeArtifact(filePath: string, content: string): void {
-	withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, content, "utf-8"));
-}
-
 export function formatOutputArtifactContent(input: {
 	output: string;
 	error?: string;
@@ -132,10 +124,6 @@ export function formatOutputArtifactContent(input: {
 	if (input.transcriptPath) lines.push("", `Transcript: ${input.transcriptPath}`);
 	if (input.metadataPath) lines.push(`Metadata: ${input.metadataPath}`);
 	return lines.join("\n");
-}
-
-export function writeMetadata<Metadata extends object>(filePath: string, metadata: Metadata): void {
-	withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, JSON.stringify(metadata, null, 2), "utf-8"));
 }
 
 export function appendJsonl(filePath: string, line: string): void {

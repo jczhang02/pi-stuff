@@ -34,6 +34,8 @@ budget remain authoritative.
 
 Goal state is appended to Pi's session JSONL and restored on reload, resume, and compaction. Reload automatically
 continues an active idle Goal from a fresh guarded continuation; a new session does not inherit another session's Goal.
+Explicit clear also removes this project's obsolete pre-Session state under the shared Settings lock and an atomic
+replace. Invalid legacy JSON is left untouched and reported instead of being discarded.
 When Magic Context or another Extension cancels native Pi compaction, Pi 0.84.3 emits `session_compact_failed`. Goal
 accepts that native failure only for the matching compaction it observed at `session_before_compact`, then replaces its
 stale continuation exactly once. A successful `session_compact` remains the only success boundary.

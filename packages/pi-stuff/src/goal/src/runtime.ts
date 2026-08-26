@@ -835,7 +835,7 @@ export class GoalRuntime {
 		}
 	}
 
-	clearPersistedGoal(cwd: string, clearedGoal?: ActiveGoal, reason = "goal cleared") {
+	async clearPersistedGoal(cwd: string, clearedGoal?: ActiveGoal, reason = "goal cleared"): Promise<void> {
 		this.persistGoalState(serializeGoalState(undefined, [], undefined));
 		if (clearedGoal) {
 			this.publishGoalState({
@@ -846,7 +846,7 @@ export class GoalRuntime {
 		}
 		this.clearTerminalDetails();
 		this.clearPresentationStatus();
-		clearLegacyPersistedGoal(cwd);
+		await clearLegacyPersistedGoal(cwd);
 	}
 
 	private persistGoalState(state: GoalStateEntryData) {
@@ -858,7 +858,7 @@ export class GoalRuntime {
 		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, state);
 	}
 
-	clearActiveGoal(ctx: StatusContext, reason = "goal cleared") {
+	async clearActiveGoal(ctx: StatusContext, reason = "goal cleared"): Promise<void> {
 		const clearedGoal = this.activeGoal;
 		this.cancelContinuationWork();
 		this.clearGoalRecovery();
@@ -869,7 +869,7 @@ export class GoalRuntime {
 		this.pendingQueueAction = undefined;
 		this.queueFrozen = false;
 		this.queueFreezeAwaitingSettle = false;
-		this.clearPersistedGoal(ctx.cwd, clearedGoal, reason);
+		await this.clearPersistedGoal(ctx.cwd, clearedGoal, reason);
 		// Do not clear goalToolsUnlocked: after first activation, keep tools visible
 		// for the rest of this extension runtime to avoid repeated goal-tool schema
 		// churn within the same runtime.

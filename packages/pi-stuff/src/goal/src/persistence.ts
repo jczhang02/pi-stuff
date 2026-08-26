@@ -1,20 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import {
-	isJsonInputValue,
-	type JsonInputObject,
-	type JsonInputValue,
-	type JsonObject,
-	parseJsonValue,
-} from "../../shared/json-value.js";
+import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { readSettingsFileSync, writeSettingsFileSync } from "../../shared/settings-io/file.js";
 import { isNonNegativeFiniteNumber, nonNegativeFiniteNumber, normalizeTokenBudget } from "./accounting.js";
 import type { GoalStatus } from "./prompts.js";
 
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
 const LEGACY_GOALS_STATE_ENTRY_TYPE = "goals-state";
 const STATE_FILE = join(getAgentDir(), "pi-goal-state.json");
+
+type LegacyStateLock = <Value>(path: string, owner: string, operation: () => Value | Promise<Value>) => Promise<Value>;
 
 export type SafetyPauseCause = "continuation_limit" | "no_progress" | "runaway_backstop";
 
@@ -316,26 +313,27 @@ function normalizeSafetyPauseCause(value: JsonInputValue): SafetyPauseCause | un
 	return value === "continuation_limit" || value === "no_progress" || value === "runaway_backstop" ? value : undefined;
 }
 
-export function clearLegacyPersistedGoal(cwd: string) {
-	if (!existsSync(STATE_FILE)) return;
-	const goals = readState();
-	delete goals[cwd];
-	mkdirSync(dirname(STATE_FILE), { recursive: true });
-	writeFileSync(STATE_FILE, `${JSON.stringify(goals, null, 2)}\n`);
+export async function clearLegacyPersistedGoal(
+	cwd: string,
+	stateFile = STATE_FILE,
+	withLock?: LegacyStateLock,
+): Promise<void> {
+	const lock = withLock ?? (await legacyStateLock());
+	await lock(stateFile, "Goal legacy state", () => {
+		if (!existsSync(stateFile)) return;
+		const goals = readSettingsFileSync(stateFile);
+		if (!Object.hasOwn(goals, cwd)) return;
+		delete goals[cwd];
+		writeSettingsFileSync(stateFile, goals);
+	});
 }
 
-function isJsonObject(value: JsonInputValue): value is JsonObject {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
-}
-
-function readState(): JsonObject {
-	if (!existsSync(STATE_FILE)) return {};
-	try {
-		const parsed = parseJsonValue(readFileSync(STATE_FILE, "utf8"));
-		return isJsonObject(parsed) ? parsed : {};
-	} catch {
-		return {};
+async function legacyStateLock(): Promise<LegacyStateLock> {
+	if (!Object.hasOwn(process.versions, "bun")) {
+		return async <Value>(_path: string, _owner: string, operation: () => Value | Promise<Value>) => operation();
 	}
+	const { withSettingsLock } = await import("../../shared/settings-io/lock.js");
+	return withSettingsLock;
 }
 
 function isGoal(value: JsonInputValue): value is JsonInputValue & ActiveGoal {

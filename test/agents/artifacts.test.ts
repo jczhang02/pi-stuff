@@ -7,6 +7,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	utimesSync,
@@ -22,6 +23,7 @@ import {
 	maintainAgentArtifacts,
 	withArtifactGroupWriteClaim,
 } from "../../packages/pi-stuff/src/subagents/src/shared/artifacts.js";
+import { createAtomicTextWriter } from "../../packages/pi-stuff/src/subagents/src/shared/atomic-json.js";
 import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
@@ -49,6 +51,39 @@ function writeArtifactGroup(
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+test("atomic text publication leaves the previous artifact visible until rename", () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-artifact-atomic-"));
+	temporaryDirectories.push(directory);
+	const filePath = join(directory, "agent_output.md");
+	writeFileSync(filePath, "previous", "utf8");
+	let temporaryPath = "";
+	const write = createAtomicTextWriter({
+		fs: {
+			mkdirSync,
+			renameSync(sourcePath, targetPath) {
+				expect(targetPath).toBe(filePath);
+				expect(readFileSync(filePath, "utf8")).toBe("previous");
+				renameSync(sourcePath, targetPath);
+			},
+			rmSync,
+			writeFileSync(targetPath, content, options) {
+				temporaryPath = String(targetPath);
+				expect(temporaryPath).not.toBe(filePath);
+				expect(readFileSync(filePath, "utf8")).toBe("previous");
+				writeFileSync(targetPath, content, options);
+			},
+		},
+		now: () => 10,
+		pid: 20,
+		random: () => 0.5,
+	});
+
+	write(filePath, "complete");
+
+	expect(readFileSync(filePath, "utf8")).toBe("complete");
+	expect(existsSync(temporaryPath)).toBe(false);
 });
 
 describe("Agent artifact location", () => {

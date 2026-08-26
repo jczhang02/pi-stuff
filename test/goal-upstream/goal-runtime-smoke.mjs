@@ -297,7 +297,10 @@ async function normalContinuationScenario() {
 	const unsubscribe = harness.session.subscribe((event) => events.push(event.type));
 	try {
 		await harness.session.prompt("/goal runtime continuation smoke");
-		await waitFor(() => harness.faux.state.callCount === 2, "settled continuation");
+		await waitFor(
+			() => events.filter((type) => type === "agent_settled").length === 2,
+			"two settled continuation runs",
+		);
 		await harness.session.agent.waitForIdle();
 		assert.equal(events.filter((type) => type === "agent_settled").length, 2);
 		assert.equal(persistedGoalStatus(harness.session), null);

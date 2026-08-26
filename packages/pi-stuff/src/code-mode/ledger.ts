@@ -212,24 +212,27 @@ interface SessionScope {
 	readonly sessionId?: string;
 }
 
+interface LedgerSnapshotCache {
+	readonly leafId: string | null;
+	readonly sessionId: string | undefined;
+	readonly sessionManager: ExtensionContext["sessionManager"];
+	readonly state: LedgerSnapshot;
+}
+
 function isRecord(value: JsonValue | undefined): value is JsonObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function sessionId(context: ExtensionContext): string | undefined {
-	try {
-		return context.sessionManager.getSessionId();
-	} catch {
-		return undefined;
-	}
+	return context.sessionManager.getSessionId();
 }
 
 function sessionEntries(context: ExtensionContext): readonly SessionEntry[] {
-	try {
-		return context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries();
-	} catch {
-		return [];
-	}
+	return context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries();
+}
+
+function sessionLeafId(context: ExtensionContext): string | null | undefined {
+	return context.sessionManager.getLeafId?.();
 }
 
 function sessionScope(context: ExtensionContext): SessionScope {
@@ -473,7 +476,7 @@ function effectiveEvents(context: ExtensionContext): LedgerEvent[] {
 		});
 }
 
-function snapshot(context: ExtensionContext): LedgerSnapshot {
+function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
 	const state: LedgerSnapshot = { executions: new Map(), snippets: new Map() };
 	for (const event of effectiveEvents(context)) applyEvent(state, event);
 	return state;
@@ -573,6 +576,7 @@ export class CodeModeIncompleteExecutionError extends Error {
 }
 
 export class CodeModeSessionLedger {
+	private cache: LedgerSnapshotCache | undefined;
 	private readonly pi: Pick<ExtensionAPI, "appendEntry">;
 
 	constructor(pi: Pick<ExtensionAPI, "appendEntry">) {
@@ -593,7 +597,7 @@ export class CodeModeSessionLedger {
 			);
 		}
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		this.maintain(scope, state);
 		const executionId = `cm_${randomUUID()}`;
 		const event: ExecutionStartedEvent = {
@@ -612,7 +616,7 @@ export class CodeModeSessionLedger {
 	}
 
 	pending(context: ExtensionContext, executionId?: string): readonly CodeModePendingAction[] {
-		return [...snapshot(context).executions.values()]
+		return [...this.snapshot(sessionScope(context)).executions.values()]
 			.filter(
 				(execution) => execution.status === "paused" && (!executionId || execution.executionId === executionId),
 			)
@@ -638,7 +642,7 @@ export class CodeModeSessionLedger {
 		requiresApproval: ReadonlySet<string> = new Set(),
 	): CodeModeExecutionController | undefined {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		const pending = execution ? [...execution.calls.values()].filter((call) => call.status === "pending") : [];
 		if (execution?.status !== "paused" || pending.length === 0) {
@@ -667,7 +671,7 @@ export class CodeModeSessionLedger {
 
 	reject(context: ExtensionContext, executionId: string, sequence: number): boolean {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (execution?.status !== "paused" || execution.calls.get(sequence)?.status !== "pending") return false;
 		this.append(scope, state, {
@@ -683,14 +687,16 @@ export class CodeModeSessionLedger {
 	}
 
 	history(context: ExtensionContext, limit = 20): readonly CodeModeExecutionHistoryItem[] {
-		return [...snapshot(context).executions.values()]
+		return [...this.snapshot(sessionScope(context)).executions.values()]
 			.sort((left, right) => right.createdAt - left.createdAt)
 			.slice(0, Math.max(0, limit))
 			.map(({ calls: _calls, attempt: _attempt, cwd: _cwd, ...execution }) => execution);
 	}
 
 	snippets(context: ExtensionContext): readonly Snippet[] {
-		return [...snapshot(context).snippets.values()].sort((left, right) => left.name.localeCompare(right.name));
+		return [...this.snapshot(sessionScope(context)).snippets.values()].sort((left, right) =>
+			left.name.localeCompare(right.name),
+		);
 	}
 
 	saveSnippet(context: ExtensionContext, executionId: string, name: string, description = ""): Snippet {
@@ -699,7 +705,7 @@ export class CodeModeSessionLedger {
 			throw new Error("Code Mode snippet name must be 1-120 characters");
 		}
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (!execution) throw new Error(`No Code Mode execution ${JSON.stringify(executionId)} exists in this Session`);
 		if (execution.status !== "success") throw new Error("Only a successful Code Mode execution can become a snippet");
@@ -716,7 +722,7 @@ export class CodeModeSessionLedger {
 
 	deleteSnippet(context: ExtensionContext, name: string): boolean {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		if (!state.snippets.has(name)) return false;
 		this.append(scope, state, { at: Date.now(), kind: "snippet-deleted", name, schemaVersion: SCHEMA_VERSION });
 		return true;
@@ -726,13 +732,13 @@ export class CodeModeSessionLedger {
 		if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0)
 			throw new Error("Code Mode expiry age must be a non-negative number");
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		return this.expireState(scope, state, Date.now(), maxAgeMs);
 	}
 
 	abandon(context: ExtensionContext, executionId: string): boolean {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (!execution || (execution.status !== "running" && execution.status !== "incomplete")) return false;
 		this.append(scope, state, {
@@ -748,7 +754,7 @@ export class CodeModeSessionLedger {
 	}
 
 	compensationTargets(context: ExtensionContext, executionId: string): readonly CodeModeCompensationTarget[] {
-		const execution = snapshot(context).executions.get(executionId);
+		const execution = this.snapshot(sessionScope(context)).executions.get(executionId);
 		if (!execution) throw new Error(`No Code Mode execution ${JSON.stringify(executionId)} exists in this Session`);
 		return [...execution.calls.values()]
 			.filter((call) => call.status === "success" && call.valuePresent && !call.compensated)
@@ -764,7 +770,7 @@ export class CodeModeSessionLedger {
 
 	markCompensated(context: ExtensionContext, executionId: string, callId: string): void {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		const call = execution
 			? [...execution.calls.values()].find((candidate) => candidate.callId === callId)
@@ -784,7 +790,7 @@ export class CodeModeSessionLedger {
 
 	markCompensationComplete(context: ExtensionContext, executionId: string): void {
 		const scope = sessionScope(context);
-		const state = snapshot(context);
+		const state = this.snapshot(scope);
 		const execution = state.executions.get(executionId);
 		if (!execution) throw new Error(`No Code Mode execution ${JSON.stringify(executionId)} exists in this Session`);
 		this.append(scope, state, {
@@ -805,6 +811,54 @@ export class CodeModeSessionLedger {
 		}
 		this.pi.appendEntry(CODE_MODE_LEDGER_ENTRY_TYPE, event);
 		applyEvent(state, event);
+		this.rememberSnapshot(scope, state);
+	}
+
+	private snapshot(scope: SessionScope): LedgerSnapshot {
+		let leafId: string | null | undefined;
+		try {
+			leafId = sessionLeafId(scope.context);
+		} catch {
+			this.cache = undefined;
+			return loadSnapshot(scope.context);
+		}
+		if (
+			leafId !== undefined &&
+			this.cache?.sessionManager === scope.context.sessionManager &&
+			this.cache.sessionId === scope.sessionId &&
+			this.cache.leafId === leafId
+		) {
+			return this.cache.state;
+		}
+		this.cache = undefined;
+		const state = loadSnapshot(scope.context);
+		if (leafId !== undefined) {
+			this.cache = {
+				leafId,
+				sessionId: scope.sessionId,
+				sessionManager: scope.context.sessionManager,
+				state,
+			};
+		}
+		return state;
+	}
+
+	private rememberSnapshot(scope: SessionScope, state: LedgerSnapshot): void {
+		try {
+			const leafId = sessionLeafId(scope.context);
+			this.cache =
+				leafId === undefined
+					? undefined
+					: {
+							leafId,
+							sessionId: scope.sessionId,
+							sessionManager: scope.context.sessionManager,
+							state,
+						};
+		} catch {
+			// The ledger append is already durable; a failed cache probe only disables the optimization.
+			this.cache = undefined;
+		}
 	}
 
 	private maintain(scope: SessionScope, state: LedgerSnapshot): void {

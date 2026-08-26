@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
 	type ActiveGoal,
+	clearLegacyPersistedGoal,
 	loadGoalStateFromSession,
 	serializeGoalState,
 } from "../../packages/pi-stuff/src/goal/src/persistence.js";
@@ -16,6 +20,27 @@ function branch(...entries: Array<{ customType: string; data: unknown }>) {
 		},
 	};
 }
+
+test("legacy file cleanup preserves sibling projects and fails closed on malformed state", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-goal-legacy-"));
+	const stateFile = join(directory, "pi-goal-state.json");
+	const lockCalls: Array<{ owner: string; path: string }> = [];
+	try {
+		writeFileSync(stateFile, JSON.stringify({ "/project-a": { text: "a" }, "/project-b": { text: "b" } }));
+		await clearLegacyPersistedGoal("/project-a", stateFile, async (path, owner, operation) => {
+			lockCalls.push({ owner, path });
+			return operation();
+		});
+		assert.deepEqual(lockCalls, [{ owner: "Goal legacy state", path: stateFile }]);
+		assert.deepEqual(JSON.parse(readFileSync(stateFile, "utf8")), { "/project-b": { text: "b" } });
+
+		writeFileSync(stateFile, "{ invalid", "utf8");
+		await assert.rejects(clearLegacyPersistedGoal("/project-b", stateFile), /contains invalid JSON/);
+		assert.equal(readFileSync(stateFile, "utf8"), "{ invalid");
+	} finally {
+		rmSync(directory, { force: true, recursive: true });
+	}
+});
 
 test("canonical persistence keeps the legacy single-goal shape when queue metadata is empty", () => {
 	assert.deepEqual(serializeGoalState(active, [], undefined), { goal: active });

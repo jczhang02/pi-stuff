@@ -98,7 +98,9 @@ user definitions, and user definitions override Package definitions.
 - Suite-owned Agent input, output, metadata, and transcript artifacts live beside the persisted Pi session under Pi's
   Settings-owned session root by default. Ordinary read-only delegation therefore does not create `.pi-subagents` in
   the project. The engine retains an explicit project-directory policy for embedding compatibility, but Pi Stuff does
-  not select it by default. Cleanup removes only old, terminal-proven owned groups; active evidence is retained.
+  not select it by default. Optional final artifacts publish by atomic rename while holding the group write claim, so
+  readers see either the previous complete file or the replacement. Cleanup removes only old, terminal-proven owned
+  groups; active evidence is retained.
   Durable kernel claims, incrementally persisted directory snapshots, identity-bound cursors, and orphan sweeping make
   interrupted or concurrent maintenance safe. Scan and snapshot-processing budgets are independently bounded, fair
   per-directory quotas advance later sessions, and temp artifacts receive an independent pass. Undelivered background

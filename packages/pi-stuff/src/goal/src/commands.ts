@@ -156,7 +156,7 @@ export class GoalCommandController {
 					this.runtime.persistGoal(this.runtime.activeGoal);
 					this.runtime.updateStatus(ctx, this.runtime.activeGoal);
 				} else {
-					this.runtime.clearActiveGoal(ctx);
+					await this.runtime.clearActiveGoal(ctx);
 				}
 			}
 			if (rolledBackStartedGoal) {
@@ -205,7 +205,7 @@ export class GoalCommandController {
 		await this.dispatchPendingQueueActionIfSettled(ctx);
 	}
 
-	dropLastGoal(ctx: StatusContext) {
+	async dropLastGoal(ctx: StatusContext): Promise<void> {
 		const currentGoal = this.runtime.activeGoal;
 		if (!currentGoal) {
 			ctx.ui.notify("No goals to drop.", "info");
@@ -213,7 +213,7 @@ export class GoalCommandController {
 		}
 		const result = dropLastQueuedGoal(currentGoal, this.runtime.queuedGoals);
 		if (!result.goal) {
-			this.runtime.clearActiveGoal(ctx);
+			await this.runtime.clearActiveGoal(ctx);
 			ctx.ui.notify(`Goal dropped: ${result.removed?.text ?? currentGoal.text}`, "warning");
 			return;
 		}
@@ -229,7 +229,7 @@ export class GoalCommandController {
 			return;
 		}
 		if (this.runtime.queuedGoals.length === 0) {
-			this.runtime.clearActiveGoal(ctx);
+			await this.runtime.clearActiveGoal(ctx);
 			ctx.ui.notify(`Goal skipped: ${currentGoal.text}. No goals remain.`, "warning");
 			return;
 		}
@@ -311,7 +311,7 @@ export class GoalCommandController {
 		this.runtime.queuedGoals = next.queue;
 		this.runtime.activeGoal = next.goal ? activateQueuedGoal(next.goal, currentTokenTotal(ctx)) : undefined;
 		if (!this.runtime.activeGoal) {
-			this.runtime.clearActiveGoal(ctx);
+			await this.runtime.clearActiveGoal(ctx);
 			ctx.ui.notify(
 				reason === "complete"
 					? `Goal complete: ${previousText}. No goals remain.`
@@ -454,20 +454,20 @@ export class GoalCommandController {
 		notifyGoalLifecycle(ctx, "resumed", resumedGoal.text, ` from ${stoppedStatusLabel(stoppedStatus)}`);
 	}
 
-	clearGoal(ctx: StatusContext) {
+	async clearGoal(ctx: StatusContext): Promise<void> {
 		if (!this.runtime.activeGoal) {
 			ctx.ui.notify("No active goal.", "info");
 			this.runtime.cancelContinuationWork();
 			this.runtime.clearGoalRecovery();
 			this.runtime.clearBudgetWrapUp();
 			this.runtime.clearStaleGoalToolCallBlock();
-			this.runtime.clearPersistedGoal(ctx.cwd);
+			await this.runtime.clearPersistedGoal(ctx.cwd);
 			this.runtime.clearPresentationStatus();
 			return;
 		}
 
 		const stoppedGoal = this.runtime.activeGoal.text;
-		this.runtime.clearActiveGoal(ctx);
+		await this.runtime.clearActiveGoal(ctx);
 		ctx.ui.notify(`Goal cleared: ${stoppedGoal}`, "warning");
 	}
 

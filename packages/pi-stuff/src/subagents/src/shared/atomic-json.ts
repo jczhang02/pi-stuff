@@ -7,10 +7,10 @@ import {
 	waitForFileSystemRetry,
 } from "./file-system-retry.ts";
 
-type AtomicJsonFs = Pick<typeof fs, "mkdirSync" | "writeFileSync" | "renameSync" | "rmSync">;
+type AtomicFileFs = Pick<typeof fs, "mkdirSync" | "writeFileSync" | "renameSync" | "rmSync">;
 
-type AtomicJsonWriterOptions = {
-	fs?: AtomicJsonFs;
+type AtomicFileWriterOptions = {
+	fs?: AtomicFileFs;
 	now?: () => number;
 	pid?: number;
 	random?: () => number;
@@ -22,7 +22,7 @@ type AtomicJsonWriterOptions = {
 };
 
 function renameWithRetry(
-	fsImpl: AtomicJsonFs,
+	fsImpl: AtomicFileFs,
 	sourcePath: string,
 	targetPath: string,
 	retryDelaysMs: readonly number[],
@@ -36,9 +36,9 @@ function renameWithRetry(
 	);
 }
 
-export function createAtomicJsonWriter(
-	options: AtomicJsonWriterOptions = {},
-): <Payload extends object>(filePath: string, payload: Payload) => void {
+export function createAtomicTextWriter(
+	options: AtomicFileWriterOptions = {},
+): (filePath: string, content: string) => void {
 	const fsImpl = options.fs ?? fs;
 	const now = options.now ?? Date.now;
 	const pid = options.pid ?? process.pid;
@@ -50,7 +50,7 @@ export function createAtomicJsonWriter(
 	const renameRetryDelaysMs = retryRenameErrors ? retryDelaysMs : [];
 	const directoryRetryDelaysMs = retryDirectoryErrors ? retryDelaysMs : [];
 	const wait = options.wait ?? waitForFileSystemRetry;
-	return <Payload extends object>(filePath: string, payload: Payload): void => {
+	return (filePath: string, content: string): void => {
 		runFileSystemOperationWithRetry(
 			() => {
 				fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -62,11 +62,7 @@ export function createAtomicJsonWriter(
 			`.${path.basename(filePath)}.${pid}.${now()}.${random().toString(36).slice(2)}.tmp`,
 		);
 		try {
-			fsImpl.writeFileSync(
-				tempPath,
-				JSON.stringify(payload, null, 2),
-				mode === undefined ? "utf-8" : { encoding: "utf-8", mode },
-			);
+			fsImpl.writeFileSync(tempPath, content, mode === undefined ? "utf-8" : { encoding: "utf-8", mode });
 			renameWithRetry(fsImpl, tempPath, filePath, renameRetryDelaysMs, wait);
 		} finally {
 			fsImpl.rmSync(tempPath, { force: true });
@@ -74,8 +70,18 @@ export function createAtomicJsonWriter(
 	};
 }
 
+export function createAtomicJsonWriter(
+	options: AtomicFileWriterOptions = {},
+): <Payload extends object>(filePath: string, payload: Payload) => void {
+	const write = createAtomicTextWriter(options);
+	return <Payload extends object>(filePath: string, payload: Payload): void => {
+		write(filePath, JSON.stringify(payload, null, 2));
+	};
+}
+
 export const writeAtomicJson = createAtomicJsonWriter();
 export const writePrivateAtomicJson = createAtomicJsonWriter({ mode: 0o600 });
+export const writePrivateAtomicText = createAtomicTextWriter({ mode: 0o600 });
 
 /** Host-side atomic writer; unlike the runner writer, retries never sleep the TUI thread. */
 export async function writePrivateAtomicJsonAsync<Payload extends object>(
