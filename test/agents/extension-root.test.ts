@@ -811,7 +811,7 @@ describe("Agents extension composition root", () => {
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
 	});
 
-	test("normalizes a legacy resume selector before governor reservation", async () => {
+	test("normalizes legacy control selectors before governor reservation", async () => {
 		const root = createHarness();
 		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
 		const state = root.state.value;
@@ -845,6 +845,22 @@ describe("Agents extension composition root", () => {
 			message: "Continue review",
 		});
 		expect(root.engineParams.at(-1)).toMatchObject({ action: "resume", id: "parallel", index: 1 });
+
+		await tool.execute(
+			"legacy-steer",
+			{ action: "steer", id: "parallel:1", message: "Apply review feedback" },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+
+		expect(root.governor.prepares.at(-1)?.params).toMatchObject({
+			action: "steer",
+			id: "parallel",
+			index: 1,
+			message: "Apply review feedback",
+		});
+		expect(root.engineParams.at(-1)).toMatchObject({ action: "steer", id: "parallel", index: 1 });
 	});
 
 	test("captures user attribution before launching a background Agent", async () => {

@@ -900,12 +900,24 @@ export default function registerSubagentExtension(
 		const launchRunId = deriveLaunchRunId(id, launchIdentity);
 		const invocationEpoch = sessionEpoch;
 		const invocationSessionId = state.currentSessionId;
-		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, { parentRunOrigin });
-		if (nestedControl) return projectEngineResult(params, nestedControl);
 		let targetParams = params;
+		let targetResolutionError: Error | undefined;
+		let requireExactNestedMatch = false;
+		try {
+			targetParams = resolveLegacyAgentParams(params, state);
+			requireExactNestedMatch = targetParams.id !== params.id || targetParams.index !== params.index;
+		} catch (error) {
+			targetResolutionError = error instanceof Error ? error : new Error(String(error));
+			requireExactNestedMatch = true;
+		}
+		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, {
+			parentRunOrigin,
+			requireExactMatch: requireExactNestedMatch,
+		});
+		if (nestedControl) return projectEngineResult(params, nestedControl);
 		let resumeTargetRunId: string | undefined;
 		try {
-			if (params.action === "resume") targetParams = resolveLegacyAgentParams(params, state);
+			if (targetResolutionError) throw targetResolutionError;
 			resumeTargetRunId = resolveResumeTargetRunId(targetParams, state);
 		} catch (error) {
 			return projectEngineResult(

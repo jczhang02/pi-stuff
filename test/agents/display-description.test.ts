@@ -29,6 +29,7 @@ describe("Agent display descriptions", () => {
 		["Open /workspace/private dir/report.txt", "Open report.txt"],
 		["Open C:\\Users\\Private User\\report.txt", "Open report.txt"],
 		['Open "/workspace/My Private Project/report.txt"', 'Open "report.txt"'],
+		["Compare /private/a.ts /private/b.ts", "Compare a.ts b.ts"],
 		["See //cdn.example.test/assets/file.js", "See //cdn.example.test/assets/file.js"],
 		["See https://example.test/a/b", "See https://example.test/a/b"],
 	])("redacts absolute paths after token delimiters in %s", (value, expected) => {

@@ -3,9 +3,9 @@ import { boundTerminalLine } from "../../../tool-display/index.js";
 const MAX_DISPLAY_DESCRIPTION_WIDTH = 60;
 const MAX_DISPLAY_SOURCE_WIDTH = 4_096;
 const QUOTED_PATH_TOKEN = /(["'`])(?:file:\/{2,}|\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^"'`<>|]+\1/giu;
-const FILE_URL_TOKEN = /\bfile:\/{2,}[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]*[/\\][^\s"'`<>|]+)*/giu;
+const FILE_URL_TOKEN = /\bfile:\/{2,}[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]+[/\\][^\s"'`<>|]+)*/giu;
 const PATH_TOKEN =
-	/(?<![\p{L}\p{N}_/\\.-])(?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]*[/\\][^\s"'`<>|]+)*/gu;
+	/(?<![\p{L}\p{N}_/\\.-])(?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>|]+(?:[ \t]+[^\s"'`<>|/\\]+[/\\][^\s"'`<>|]+)*/gu;
 
 function basename(token: string): string {
 	const normalized = token.replaceAll("\\", "/").replace(/[.。]+$/u, "");
