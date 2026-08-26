@@ -402,6 +402,10 @@ function lastLine(value: string): string {
 			.at(-1) ?? ""
 	);
 }
+export function sanitizeBenchmarkSearchQuery(query: string, project: string): string {
+	return query.replaceAll(project, "<project>");
+}
+
 function safeAnswer(value: string): string {
 	return /^[0-9A-Z_]{1,32}$/u.test(value) ? value : "<nonconforming>";
 }
@@ -534,7 +538,7 @@ async function runCase(
 			providerToolDefinitionCharacters,
 			repetition,
 			resumeExit: resumed.exitCode,
-			searchQueries: analysis.searchQueries,
+			searchQueries: analysis.searchQueries.map((query) => sanitizeBenchmarkSearchQuery(query, paths.project)),
 			sessionImageCount: analysis.imageBlocks.length,
 			sessionSafe,
 			timedOut: first.timedOut || resumed.timedOut,

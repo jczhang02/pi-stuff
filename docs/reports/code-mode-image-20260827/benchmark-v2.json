@@ -1,0 +1,3741 @@
+{
+	"completedAt": "2026-08-26T02:18:36.030Z",
+	"host": "0.84.3+source.4e58f324fae8.binary.ca858fde375a.bun.1.3.14",
+	"model": "openai-codex/gpt-5.6-sol",
+	"packages": {
+		"baseline": {
+			"commit": "65b676474cc73411b62bf2cab1c910e2e359a6b9",
+			"tree": "24cab67c6893732155ad113747b7f8830335d5c9"
+		},
+		"candidate": {
+			"commit": "7a3e753975cf54bfa6e2f3ee99e5242de5f8a731",
+			"tree": "ddc5e95dd6817abac6c131d36a6b5eb7d0497a4a"
+		}
+	},
+	"preregistration": {
+		"codes": {
+			"baseline": [
+				"731905",
+				"284167",
+				"609352",
+				"418730",
+				"952641",
+				"367824",
+				"805219",
+				"146593",
+				"573086",
+				"920475",
+				"238761",
+				"694028",
+				"351972",
+				"782436",
+				"469105",
+				"817354",
+				"205687",
+				"936412",
+				"542809",
+				"173648"
+			],
+			"candidate": [
+				"615204",
+				"807361",
+				"392570",
+				"708143",
+				"154829",
+				"683517",
+				"429630",
+				"571264",
+				"836951",
+				"247583",
+				"918426",
+				"365701",
+				"729815",
+				"481692",
+				"653278",
+				"194537",
+				"826149",
+				"537284",
+				"961750",
+				"348625"
+			]
+		},
+		"confidenceInterval": "Wilson score 95%",
+		"minimumEndToEnd": 18,
+		"minimumHardGate": 20,
+		"minimumToolChoice": 18,
+		"noExclusions": true,
+		"noRetries": true,
+		"sessionsPerArm": 20
+	},
+	"cases": [
+		{
+			"answer": "615204",
+			"arm": "candidate",
+			"code": "615204",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "742e29932db7cabd96dc54a87d7fd063ab89a3dc13786c42d17e75a003294832",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6848,
+					"payloadSha256": "fe4d2f9e4b06c535eb67f6e77a794e03dc2d8040a64bbd7aee8d7eb709c76466",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 353,
+							"mimeType": "image/png",
+							"sha256": "3a874c3ba62ffeba6b56ffd6b2b55cdc7d4327ca944d7eaac28fac2a277a7616",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7800,
+					"payloadSha256": "e8a436d8e92ca10fb1f6ae2e3782e92f2af0dd3e3ecdbb03c6fd4bb5724d0c7e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 353,
+							"mimeType": "image/png",
+							"sha256": "3a874c3ba62ffeba6b56ffd6b2b55cdc7d4327ca944d7eaac28fac2a277a7616",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8098,
+					"payloadSha256": "df728ba23f335ebf292d7f35c10096fb6f9175251d71385ddb6a71849e4a72b0",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 1,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "731805",
+			"arm": "baseline",
+			"code": "731905",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "bfe0a977bbeb1785400e3e064e555fe5e67da0d1f07d6b859974021a23ba585a",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 7627,
+					"payloadSha256": "0ce46c8f66131dc7720c43f57a0528f62391fa391c909108d11733238eb85ed2",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 338,
+							"mimeType": "image/png",
+							"sha256": "6a091baac50e02ed9ca075aa819245a2411c8e6110221c82ed9bebb021d4fd24",
+							"valid": true
+						}
+					],
+					"nodes": 87,
+					"payloadBytes": 8633,
+					"payloadSha256": "baad1d6a283e9f4901cc58c29878f41ecdee0fe21f307066184fa56ee2845724",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 338,
+							"mimeType": "image/png",
+							"sha256": "6a091baac50e02ed9ca075aa819245a2411c8e6110221c82ed9bebb021d4fd24",
+							"valid": true
+						}
+					],
+					"nodes": 113,
+					"payloadBytes": 10535,
+					"payloadSha256": "9e0a4a60f35cf215cdb8019e68baf3df5a2aa249741430dcf941b6c975957df8",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 1,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display image output"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": false
+		},
+		{
+			"answer": "284167",
+			"arm": "baseline",
+			"code": "284167",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "cdd40357393ae11127b332449754fa6c3b3ab301e674bea8eac6690ee4361cd5",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6554,
+					"payloadSha256": "29a428d7b6f279efbb0c8053d46ea40250efb7b93904ae51bc03c8747f53c51e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 9606,
+					"payloadSha256": "7a7cc80861c883bca756cdf5015635b1b9adc8494ff2fce1a6b86b244784cecb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 335,
+							"mimeType": "image/png",
+							"sha256": "b8b03984268d271f203eb60f1f075dc8ed9f836b0ae8856d8453e5ed1ecbc79a",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 10608,
+					"payloadSha256": "89366f904d7c18bb472c0510134d964583ba5501ca261b76412e441373a0df7e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 335,
+							"mimeType": "image/png",
+							"sha256": "b8b03984268d271f203eb60f1f075dc8ed9f836b0ae8856d8453e5ed1ecbc79a",
+							"valid": true
+						}
+					],
+					"nodes": 123,
+					"payloadBytes": 10906,
+					"payloadSha256": "55f7fb1edc021ea9cfe3d41d2d09a5a78e9e5d1761e077458e2cd9cd0d3247eb",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 2,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image for visual inspection",
+				"image file read inspect png vision local filesystem"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "807361",
+			"arm": "candidate",
+			"code": "807361",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "b9a543eb86aaa26ed50f5a4d4b5942c6df2a594707dde0909bf1725089dca282",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6835,
+					"payloadSha256": "00f6c4538dab868f3dfc0618156ffc27ed0c30c43ffdce15426923d718094c97",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 341,
+							"mimeType": "image/png",
+							"sha256": "7908c957378af2792649d638b79424fc94128a5a1618ba95688bdc75bf302504",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7771,
+					"payloadSha256": "e739c8810a2dc41e1d3dcd95f5bbcddb75b64451d6f2e2bcd5b8772b2ab16bc6",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 341,
+							"mimeType": "image/png",
+							"sha256": "7908c957378af2792649d638b79424fc94128a5a1618ba95688bdc75bf302504",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8069,
+					"payloadSha256": "91d35ea39525158874354712c50eef1965ee527c9c445a2d954a6018053f2a86",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 2,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "392570",
+			"arm": "candidate",
+			"code": "392570",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "f104e039cbdbee9227b00ff8688f9e7f108bde55d099bbd4d0d6e7003602c1eb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6848,
+					"payloadSha256": "c5318ee621261004f71c29154a608f6103065fdb86e5061a79b609579d7bb81d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 327,
+							"mimeType": "image/png",
+							"sha256": "f0978a8a13abd9326dadc762513f3497aeccd021b2f3c93ff676be9337cf1fb6",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7764,
+					"payloadSha256": "a99eac059b7c48744ad91bfed84f2581f9925b0e661f34067f2158160de7c575",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 327,
+							"mimeType": "image/png",
+							"sha256": "f0978a8a13abd9326dadc762513f3497aeccd021b2f3c93ff676be9337cf1fb6",
+							"valid": true
+						}
+					],
+					"nodes": 110,
+					"payloadBytes": 9745,
+					"payloadSha256": "22273228bb34449a98ebc15676cf807680a0c22244d56fc803f21822b1615a4a",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 3,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "609352",
+			"arm": "baseline",
+			"code": "609352",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "2a0aed7d1c0173c3e67dad820f08a6c10547fc975fac972f3280396cdbcd6f62",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6553,
+					"payloadSha256": "31d6dc12f421ccb1c0b2dc66c84aca2a6cb60c176581196196cc6dc6a5c6f1be",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 10378,
+					"payloadSha256": "0d8bb2b53b63f89c84faab032fb58497b040a804dafab91eb885534c2ff13cae",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "7c2c033bbb44f1a190b6402a799e7c43a19f69ad45b5fb6fb2c0fcaed67633f6",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 11423,
+					"payloadSha256": "c827cf068303c745c96d1580b11ecd30286183f125a3cb0b64eed8815cfe8177",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "7c2c033bbb44f1a190b6402a799e7c43a19f69ad45b5fb6fb2c0fcaed67633f6",
+							"valid": true
+						}
+					],
+					"nodes": 123,
+					"payloadBytes": 11721,
+					"payloadSha256": "4d4f59be9ca25630f8390fb7b945b873647541518514e0e2a3ec58d12b06e615",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 3,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display/inspect it, path challenge.png", "image"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "418730",
+			"arm": "baseline",
+			"code": "418730",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "a460fff29e2d89d63be0d28ac5c741ee23c83c7e26af0aa8273ca9f0aec49b14",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6550,
+					"payloadSha256": "5381024c070b241daf3b100c3848b7ada41cc361843274183db6ed21990dec8d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 9524,
+					"payloadSha256": "a2125e3c70a81b0c139b7007d67e84a968ef08022ab2601f79763b3f69c4b0e7",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "b3cf43f92fc09adc258ab0b1d32f70fd89b643f13de049c3233a65a17d2a6f9e",
+							"valid": true
+						}
+					],
+					"nodes": 103,
+					"payloadBytes": 10538,
+					"payloadSha256": "25db9f474d728bb17b611fe9e9c588f1d2dfeacbaf50af2316751838be8315bb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "b3cf43f92fc09adc258ab0b1d32f70fd89b643f13de049c3233a65a17d2a6f9e",
+							"valid": true
+						}
+					],
+					"nodes": 129,
+					"payloadBytes": 12481,
+					"payloadSha256": "acf648e2d36fdd6d7b0938c55a273fbb56228196ffa9c3f676a2e2dd092dde1c",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 4,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image for visual inspection",
+				"image inspect png local filesystem read"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "708143",
+			"arm": "candidate",
+			"code": "708143",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "cc8356b809720f4af2a12dbb80fcff73d369cbcde56b78e262e419e5c5ab3426",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6850,
+					"payloadSha256": "dfdc6f93a7425855cbbea9fa6f6e5462eef15bcdf1f1e93f82e68a144d7a0e20",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 342,
+							"mimeType": "image/png",
+							"sha256": "9fedefbefd9374c6dda091e38287100549917a792f1a8561239f80e21e3496f7",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7786,
+					"payloadSha256": "2fd72a3f0a1602783bc0dea476472b4b4ed664a66a5099bfcd2788b27971f4b4",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 342,
+							"mimeType": "image/png",
+							"sha256": "9fedefbefd9374c6dda091e38287100549917a792f1a8561239f80e21e3496f7",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8084,
+					"payloadSha256": "10e1d9ce8544ecc254877544c4e3e675f7d3f25053dea76f6e29a80182481ed7",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 4,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "154829",
+			"arm": "candidate",
+			"code": "154829",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "c64e96a6fd912933568f79e914d5baddd50cf6f87e0b9175d18141f05dc2c8ca",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6843,
+					"payloadSha256": "a7adf98ad8e7927946d8daa096860e01f991cdbc66dda521704ac2c1fff5a850",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 332,
+							"mimeType": "image/png",
+							"sha256": "bb3782dc0cf373cc3ac2b122524db6d778d04be3067c65bf361f860fea0f9c71",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7767,
+					"payloadSha256": "abcc2dae82538ef9ada9cbceec821fa18c6bf653b4bd876137b6c6c3967044d5",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 332,
+							"mimeType": "image/png",
+							"sha256": "bb3782dc0cf373cc3ac2b122524db6d778d04be3067c65bf361f860fea0f9c71",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8065,
+					"payloadSha256": "3c8b247b089149ef89c9df68e8772f497cf0293a767c61672d61be7a2c59396c",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 5,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "952641",
+			"arm": "baseline",
+			"code": "952641",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "0804bfbe2229ce0d7abf831ab493a9987fd4aed7673deb2bb6d7cfdb9757429b",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6606,
+					"payloadSha256": "8a53d0aeeb183c51155371c3259961fcb74577f1fe04cb5e49c5c8ad29f22fb1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 8912,
+					"payloadSha256": "86fde2eb93032e56ae6308237e953732dd8e249bb58daa42b873ac8c2465a0a7",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 323,
+							"mimeType": "image/png",
+							"sha256": "634a207b3f70e36de250916f9fe8b63bddbc9acad573209a8589ca7ea20b4660",
+							"valid": true
+						}
+					],
+					"nodes": 103,
+					"payloadBytes": 9956,
+					"payloadSha256": "3cb9b6eaf99e2bd8b7957fb475673a1c1e6f1c4d369ebb356dddd4a47fb62859",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 323,
+							"mimeType": "image/png",
+							"sha256": "634a207b3f70e36de250916f9fe8b63bddbc9acad573209a8589ca7ea20b4660",
+							"valid": true
+						}
+					],
+					"nodes": 120,
+					"payloadBytes": 10254,
+					"payloadSha256": "e8beca98f945135eddb382a1b14febee88922f552aaf2f3b4c02fa0b08ec7067",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 5,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image visual <benchmark-root>/case-10/project/challenge.png"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "367824",
+			"arm": "baseline",
+			"code": "367824",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "e30b23f0de19926578330558a9190bb5035a4232744c80aeb087c6646893804d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6553,
+					"payloadSha256": "9a4e969168718d0cb07aa060090a38c5b2d8f53b16975bce5ed5df66fc7bdea0",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 8415,
+					"payloadSha256": "e80687129614f3f7f4f0ca7146a9b1a5aabca8ef3d74ebfdefc43bb42c153a5c",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 105,
+					"payloadBytes": 10345,
+					"payloadSha256": "8f086d96689391f055751d74fe568ec0fd38de588abfd5cd3ae86e49ca409ead",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 124,
+					"payloadBytes": 13105,
+					"payloadSha256": "647c53171ca403d16f816a7cee3afa672371af19c62833482007c1a59642b63e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 326,
+							"mimeType": "image/png",
+							"sha256": "c33de360999382172220f7f63b8e38ff5e73800bd5e8384503cd161581168baf",
+							"valid": true
+						}
+					],
+					"nodes": 141,
+					"payloadBytes": 14095,
+					"payloadSha256": "b2cd2faac31cf1c29b74ef798d577ecbedb457dd4c6abc6038aaaab1a42db6f7",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 326,
+							"mimeType": "image/png",
+							"sha256": "c33de360999382172220f7f63b8e38ff5e73800bd5e8384503cd161581168baf",
+							"valid": true
+						}
+					],
+					"nodes": 158,
+					"payloadBytes": 14393,
+					"payloadSha256": "72cca00ee2adbde936367f359c542459df519ff51d2a35dad3774719dc8eb076",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 7,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 6,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return/display image content from path",
+				"computer vision OCR image analyze challenge.png"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "683517",
+			"arm": "candidate",
+			"code": "683517",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "96a4dd121cc5ead6bdc732c2a2048f3df1b508efc5eeda99a7b7b8261ef5a714",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6850,
+					"payloadSha256": "f73e6b2bfef9e2e1e00ce58d7a64c929790c1730c2b0f777eb27e0441d192790",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 334,
+							"mimeType": "image/png",
+							"sha256": "7b56c889a20f42e1dce5579c8520ed0cc147f6bf9d46b8c17afedab4b51c16dc",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7777,
+					"payloadSha256": "963ed903745c06ebc4a9483f9eae9c3b818dacf6f95792cd4cd9fae24269459f",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 334,
+							"mimeType": "image/png",
+							"sha256": "7b56c889a20f42e1dce5579c8520ed0cc147f6bf9d46b8c17afedab4b51c16dc",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8075,
+					"payloadSha256": "998f7bf60fbed3cdb4f5c764b630fde8bcc2ebdd6454164c3dab49d09d5d3eb0",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 6,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "429630",
+			"arm": "candidate",
+			"code": "429630",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "37ece92d351116ca375292e1ef95338cde69ea3c306e710220992405ca2927fe",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6840,
+					"payloadSha256": "b795bff2e6398d2e9f4ea2259c08449d0c03344569f08457603abfc39b9a1da6",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 320,
+							"mimeType": "image/png",
+							"sha256": "6f83da04d67969c764a9808391b696510c3ed5c1286830ff67b6047802b5e62e",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7748,
+					"payloadSha256": "857305351f419fad9f754403bea25e75b1519991a2dee78f9565a31ff7fdd467",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 320,
+							"mimeType": "image/png",
+							"sha256": "6f83da04d67969c764a9808391b696510c3ed5c1286830ff67b6047802b5e62e",
+							"valid": true
+						}
+					],
+					"nodes": 110,
+					"payloadBytes": 9760,
+					"payloadSha256": "f8607aec8fcc846630451bc8151a60d7cd15a0c0a52dc866aae0735d28e980fa",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 7,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "805219",
+			"arm": "baseline",
+			"code": "805219",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "2facfbf37efa3581bb1b36ef55380ba8efd254b843cc350c5713f3ea4b7ff78f",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6558,
+					"payloadSha256": "7fd52124aa4a60b9b1273d172b9ee47fb72f3f27ff46de546fd23e69a4c72dd1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 9291,
+					"payloadSha256": "22fd82888143c99e2da336adefa01639158c41e773e5b54e53baec8d4bdb34c1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 349,
+							"mimeType": "image/png",
+							"sha256": "ab981f97afb6979c10447061d24b4b01a2380452158fe6fcd4fdb6411b2ea648",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 10313,
+					"payloadSha256": "40ee636832da83ea00778a2f3c14fa0560df6a45e8488f785da5396d5c086bbf",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 349,
+							"mimeType": "image/png",
+							"sha256": "ab981f97afb6979c10447061d24b4b01a2380452158fe6fcd4fdb6411b2ea648",
+							"valid": true
+						}
+					],
+					"nodes": 132,
+					"payloadBytes": 12259,
+					"payloadSha256": "a0d87d5b957ca73c81b529eaa743170235424e09263e2f2bc11549face2b5d69",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 7,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display/inspect image at path challenge.png"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "146593",
+			"arm": "baseline",
+			"code": "146593",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "194b0293bb980c9132f3f65cf4151ac3bb4b3ea9f8bdedc6c0cc7b8ac14f4919",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 7629,
+					"payloadSha256": "e318f9ef979ff85e732d2686eca66c95f86eaee4d42acca6420b25f0dffff1a1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 322,
+							"mimeType": "image/png",
+							"sha256": "7e7999ad61095de846e0628c6f2c61665b62da3e173201f031e3b0a0c5f7e7ea",
+							"valid": true
+						}
+					],
+					"nodes": 87,
+					"payloadBytes": 8615,
+					"payloadSha256": "4d0cf7c23d0203e03bfed173416c2c57b9fe22293ac26c16dda34c036ebd58c1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 322,
+							"mimeType": "image/png",
+							"sha256": "7e7999ad61095de846e0628c6f2c61665b62da3e173201f031e3b0a0c5f7e7ea",
+							"valid": true
+						}
+					],
+					"nodes": 104,
+					"payloadBytes": 8913,
+					"payloadSha256": "fe07a35fb52577c3db68cb25ee48a38eb1a9cb7dd51832170e9e063982ab3500",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 8,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display/inspect it"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "571264",
+			"arm": "candidate",
+			"code": "571264",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "d89888bf8468fa6281a3dbc3830fff570b19061e5d3f92f7223f3cc505628191",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6840,
+					"payloadSha256": "e61ad00e7c5968a57f6a357154ea41aed852e75af7367d2e1ea0e2fb19719869",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 341,
+							"mimeType": "image/png",
+							"sha256": "06161ade539bf83f28fd68a15ccd1d7c49b90aac9db0f73ce2adcf7217d0ffda",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7776,
+					"payloadSha256": "eb329124c0bab43226b982340d3d447310d42d083e776856555cbb53167e7c45",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 341,
+							"mimeType": "image/png",
+							"sha256": "06161ade539bf83f28fd68a15ccd1d7c49b90aac9db0f73ce2adcf7217d0ffda",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8074,
+					"payloadSha256": "f460a832fd73a6f6374c2a9c797cfd93e9cc01d049e192ce45dd76325fb09aba",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 8,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "836951",
+			"arm": "candidate",
+			"code": "836951",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "7ffdfdfc676908b3b46df43b362f859d76f97048140ff58d139bc047ece3af38",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6854,
+					"payloadSha256": "6913a1b032cca659909604e64a93bd6ba2fb6de81b20a4b69a4c21c1a7f672eb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 314,
+							"mimeType": "image/png",
+							"sha256": "02bdcf722f0ac233dddd81aef8d255f620b8f52d938415d238e0c3b398852ad2",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7696,
+					"payloadSha256": "b48ffb6c538a8849e33d58ad6be1c5deec4485c281ec62b4b8055426f70e5f0f",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 314,
+							"mimeType": "image/png",
+							"sha256": "02bdcf722f0ac233dddd81aef8d255f620b8f52d938415d238e0c3b398852ad2",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 7994,
+					"payloadSha256": "6cfaca19acea3c351cc18d41ac4d79cd96bc54657e42a56790f5b134f21e022e",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 9,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "573086",
+			"arm": "baseline",
+			"code": "573086",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "73d0fe4a613529f04dc589173884b272996c87da0be5ccf24bb50de3465a4ba2",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6548,
+					"payloadSha256": "e58b7c0e14033853aa12d559596239af5d55cbd66f1c8749bcb4e62eb967ffa3",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 10316,
+					"payloadSha256": "a28fc47480e794d19a6f99a57fb65230f71d2c488840f0bee153462c0e3b9485",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "6403fc9feeccc4346594cd79b7ad8858adbad4ac95fd844eee13ba74c29c5534",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 11330,
+					"payloadSha256": "1f1c35077939846281cdfce097870add8e0f5d6e312029f88a181a85de9432be",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "6403fc9feeccc4346594cd79b7ad8858adbad4ac95fd844eee13ba74c29c5534",
+							"valid": true
+						}
+					],
+					"nodes": 132,
+					"payloadBytes": 13183,
+					"payloadSha256": "62ed683a9242f64f960a3cb0f1231c12ff471ba206336f72210355fa24015de3",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 9,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display/inspect pixels image tool", "image read file path png"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "920475",
+			"arm": "baseline",
+			"code": "920475",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "0b2d7c4b79c713a648faccf1b6bca3b5ec4b47d6c1b682241fda224a2ccd6e6b",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6616,
+					"payloadSha256": "544b9e432fe33924b209bb2085792df73d2fae363c046a207f48d4046c1f2b5a",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 10347,
+					"payloadSha256": "fd491d60ac7e56448076e18839666709ecf1ad794532938d27f1a43e3141cfbb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 360,
+							"mimeType": "image/png",
+							"sha256": "a3913a54f01947d4c0b4dca1f52d15231668c4664a16710a0b2a35e971215c2b",
+							"valid": true
+						}
+					],
+					"nodes": 103,
+					"payloadBytes": 11439,
+					"payloadSha256": "a23bfb7b9f7ca059769f91ed63ed178328c7bebe279c5c248a6fb5f0f367ff1c",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 360,
+							"mimeType": "image/png",
+							"sha256": "a3913a54f01947d4c0b4dca1f52d15231668c4664a16710a0b2a35e971215c2b",
+							"valid": true
+						}
+					],
+					"nodes": 120,
+					"payloadBytes": 11737,
+					"payloadSha256": "5ae845754981920af633f3b8cdf9019a30a8da5239d632f8adcc85ade4dc9cf3",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 10,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image visually inspect <benchmark-root>/case-19/project/challenge.png",
+				"image read file"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "247583",
+			"arm": "candidate",
+			"code": "247583",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "a2d4622cc4ed4b2b6ffedb6c1cba947b11f05e0803a20a5970a254f33e6a9177",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6841,
+					"payloadSha256": "c0c3c8fd1c39dab0bbb346c420ed6bcced21ddf23dbbaf5520a1c53c49454bb9",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 350,
+							"mimeType": "image/png",
+							"sha256": "198fcb8f48073f860b8cfdd3f00de3ca4c67aebf623993d4093c88f923797dee",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7789,
+					"payloadSha256": "dc703dffed4e847a0e8171fb2d2ca00a78c780ddf3b49f4832a2105c1c8c61e2",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 350,
+							"mimeType": "image/png",
+							"sha256": "198fcb8f48073f860b8cfdd3f00de3ca4c67aebf623993d4093c88f923797dee",
+							"valid": true
+						}
+					],
+					"nodes": 113,
+					"payloadBytes": 11030,
+					"payloadSha256": "c70cc917e93b295bfdfd023213be064a1f500920dd7580f5620643134353b4da",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 10,
+			"resumeExit": 0,
+			"searchQueries": ["view image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "918426",
+			"arm": "candidate",
+			"code": "918426",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "34c2c9b06cb61db113c38900c65f3368bdcec1db688bd4df07427bd54c29b699",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6845,
+					"payloadSha256": "89276b4bbb35aac74cd9ce85402141fca522cf502beee4c9eee89489b6c5d1fe",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 339,
+							"mimeType": "image/png",
+							"sha256": "11032c3c4697d407abbe2b19093aed32fc14e9f3d22a9384f89cf8697b4fca20",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7776,
+					"payloadSha256": "7682dcc5c369d546f5b58e4cb3c0b45743136655d44663afaae2f2e515f4bf64",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 339,
+							"mimeType": "image/png",
+							"sha256": "11032c3c4697d407abbe2b19093aed32fc14e9f3d22a9384f89cf8697b4fca20",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8074,
+					"payloadSha256": "f23943a9bb5ef4ca0d903c9b5ede8d595bb918c2edde93880142af00a3dfc728",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 11,
+			"resumeExit": 0,
+			"searchQueries": ["view image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "238761",
+			"arm": "baseline",
+			"code": "238761",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "b1cd68501d69fbe79cf528ecf59641699a914524428c0c0155d1a3878897858e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6546,
+					"payloadSha256": "8f0dc92d7617cd2e2fb9907aa3ed9ca700cc4ee9154685f97cbbe28c104be50d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 8564,
+					"payloadSha256": "2f1e105f12430aea227a285a86aba84d92fcd955f19ce6eeded2e8b6246045c3",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 339,
+							"mimeType": "image/png",
+							"sha256": "e3a37366ba06c01dcd1ff801decea084177d96504fb4d73e0a8829ba92f449f8",
+							"valid": true
+						}
+					],
+					"nodes": 112,
+					"payloadBytes": 11418,
+					"payloadSha256": "3d707bf70dc6026973609432165b1933f9b7cb196613bed0d7f2d7a66da90189",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 339,
+							"mimeType": "image/png",
+							"sha256": "e3a37366ba06c01dcd1ff801decea084177d96504fb4d73e0a8829ba92f449f8",
+							"valid": true
+						}
+					],
+					"nodes": 138,
+					"payloadBytes": 13338,
+					"payloadSha256": "97797d2ee9785a9221aa13703993923cd384df2084b8f52a22030ffb1e53def6",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 11,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return/display image from path",
+				"image vision inspect png file local filesystem"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "694028",
+			"arm": "baseline",
+			"code": "694028",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "8a8cb5975a59b33feca2ad1cd7b76cbc05197aea48631b144a9f9d29d3382d98",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6549,
+					"payloadSha256": "413a3bfb1c3123f93d94d66f1fad2be2fae8a478aaf41f9f99729d92e10bd87d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 8402,
+					"payloadSha256": "e4de664bea2340256c951c8a54993deb9cd81168f798710981cecc821009ead8",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 105,
+					"payloadBytes": 10761,
+					"payloadSha256": "6e6a6d7130f6e13b2d59734c754ad02e1c0ddf82d84418fff4355ebb83129665",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 342,
+							"mimeType": "image/png",
+							"sha256": "16a95105371c36449a6da6919235bf9888223d7034630b5d38f4bebd64383b7f",
+							"valid": true
+						}
+					],
+					"nodes": 128,
+					"payloadBytes": 13258,
+					"payloadSha256": "01375fe24cb74435df8f9ef8ff8175c33c86abeb0e9e70fedea017ae12123c83",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 342,
+							"mimeType": "image/png",
+							"sha256": "16a95105371c36449a6da6919235bf9888223d7034630b5d38f4bebd64383b7f",
+							"valid": true
+						}
+					],
+					"nodes": 154,
+					"payloadBytes": 15090,
+					"payloadSha256": "2fd18ff19fc3dc9ce886b20ea9235db337c00af42eb49bb6b2a729fdf02e70b0",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 6,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 12,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image for visual inspection",
+				"image inspect open png image file"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "365701",
+			"arm": "candidate",
+			"code": "365701",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "3620a4008cea3ed41f878688f864d686f4424dd554e43bae357745e12d3820f9",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6846,
+					"payloadSha256": "41ea7fd82912c95673015cecb25dbd414f7fc15fcb9eee7e6b2da40467a53883",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 368,
+							"mimeType": "image/png",
+							"sha256": "b77f72322453ad127dcf4ed149718e53a2720cc1af95248c716bcc67d183376a",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7818,
+					"payloadSha256": "35238e680a213ef2bd664f16309bd8968d177199aa043d518c84bc2126ea561e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 368,
+							"mimeType": "image/png",
+							"sha256": "b77f72322453ad127dcf4ed149718e53a2720cc1af95248c716bcc67d183376a",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8116,
+					"payloadSha256": "06e94abae4acc980b4a01befc0b59f6891de627070f5d6112aee00d7d7a0bf76",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 12,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "729815",
+			"arm": "candidate",
+			"code": "729815",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "dfd90ef6e7f30d46bff3f5061229c165c5422e0ab4d801f84a5ef2dc7cf8a5aa",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6843,
+					"payloadSha256": "e91639b833553824b0f888ecf990ffc5803fed3488318a4296d99c8869dadacc",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 360,
+							"mimeType": "image/png",
+							"sha256": "b01fddaec2a27e179148802bf2b8bc89f3744a1d64d3875c1be96b6dc72575b1",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7803,
+					"payloadSha256": "d40196086aee3c3c9fc14d701092a5429e8f4c0adc92f5cdcfd7132b2b9e50f9",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 360,
+							"mimeType": "image/png",
+							"sha256": "b01fddaec2a27e179148802bf2b8bc89f3744a1d64d3875c1be96b6dc72575b1",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8101,
+					"payloadSha256": "801455f1afbbd84fd0dbbf9e4bab8c5f8a8d58a077db0ce8a80beaaade04bb46",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 13,
+			"resumeExit": 0,
+			"searchQueries": ["view image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "351972",
+			"arm": "baseline",
+			"code": "351972",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "948da857d0320062b8e568db3456b78840bc71aff4c0eefa705d308520dd95f4",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6559,
+					"payloadSha256": "c0094b93643de6ae5cdc34e3ba6b954ff540ab9e03bbf8437377ec2cda9b186e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 9587,
+					"payloadSha256": "be51b30aad6db84f439404c2526919610318be684c2bc086cfa1aae2d0cb769d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 353,
+							"mimeType": "image/png",
+							"sha256": "9484f2d71c73b7f984ac3ede96864ec1942ec348a3a3686a76573ca3532943b1",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 10613,
+					"payloadSha256": "abd3ee63420894867ad622dfa6c3f489c812a9eb2daf20e7bc4f7d403c900b09",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 353,
+							"mimeType": "image/png",
+							"sha256": "9484f2d71c73b7f984ac3ede96864ec1942ec348a3a3686a76573ca3532943b1",
+							"valid": true
+						}
+					],
+					"nodes": 132,
+					"payloadBytes": 12464,
+					"payloadSha256": "d8f0a10ebeeb54df1b8b602532ef2e4eaf4d0424c6663d53dad7ac7968e3069f",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 13,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return image pixels/display; path challenge.png",
+				"image viewer read file"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "782436",
+			"arm": "baseline",
+			"code": "782436",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "a55cf3993c1e57b01ef318316540e39aa4c6f222a0788b3ce64ed527a5a0b747",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6557,
+					"payloadSha256": "d5b9195b1ea28f0637ac02849a4e023297f61c081e28ccabba188376002f80b8",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 10330,
+					"payloadSha256": "26ad7c62348129edbd873c38f5863fd1fd3440d590153a33b699e413f2da7522",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 337,
+							"mimeType": "image/png",
+							"sha256": "0434f781aba28b3d4410b54e095262525506da55911cfa66c769174a7623d7e6",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 11336,
+					"payloadSha256": "0adf2e4c0793fa76853a6321639d65f81c0857175ad34bc674836998902afdb3",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 337,
+							"mimeType": "image/png",
+							"sha256": "0434f781aba28b3d4410b54e095262525506da55911cfa66c769174a7623d7e6",
+							"valid": true
+						}
+					],
+					"nodes": 123,
+					"payloadBytes": 11634,
+					"payloadSha256": "345385d228345dc0e046b5ee81b8fef623cb7e0137d85c142837154f21104e45",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 14,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and return image visually, path challenge.png", "image file read"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "481692",
+			"arm": "candidate",
+			"code": "481692",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "68a1c84db49a6e7be1e2999a560d5640acdf7260c7625f56ae4690b080c6312c",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6848,
+					"payloadSha256": "ef57dd6dca8262801e7add80fe15f92f5d20cff25f25c2c416b9a5a2fc61bed1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 355,
+							"mimeType": "image/png",
+							"sha256": "df969f1188fea85146d7c9651214880ee88c0b5f9068bbaeecfadd40c059e7ac",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7746,
+					"payloadSha256": "d5463a345282bda9af46fe0ec3337ce235f9b518ff290532894439eaaeefc081",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 355,
+							"mimeType": "image/png",
+							"sha256": "df969f1188fea85146d7c9651214880ee88c0b5f9068bbaeecfadd40c059e7ac",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8044,
+					"payloadSha256": "e25ad413c9bd58f6d3105c86f8947dac8b18770ad818051579aad69ad4445698",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 14,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "653278",
+			"arm": "candidate",
+			"code": "653278",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "db378c00be37534a0dd23e7f2b7a0d9581e5743cf0a9412b21f71004ddcd1ab5",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6848,
+					"payloadSha256": "a20e3521dc20d42c97cd96aaca21a67cc0807560a3db4fcf086a253d665e152d",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 316,
+							"mimeType": "image/png",
+							"sha256": "84aea95ae2c800057b49e05180056a1c3ed1b8a4db351cdf5034fd3ed2d5c593",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7752,
+					"payloadSha256": "d6b2931efde568641b74f3e85cb92a41bffaba645c5d87c3a4e57ebfd152c449",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 316,
+							"mimeType": "image/png",
+							"sha256": "84aea95ae2c800057b49e05180056a1c3ed1b8a4db351cdf5034fd3ed2d5c593",
+							"valid": true
+						}
+					],
+					"nodes": 110,
+					"payloadBytes": 9733,
+					"payloadSha256": "dd14e5e55bd5f05e6f9f9629dd21565ce6618cd219c399ec342eb6e55407d9b8",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 15,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "469105",
+			"arm": "baseline",
+			"code": "469105",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "3ce000fb393e56a3647887b8f826f124da99e49d747ee53bed0d20451e076d36",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6608,
+					"payloadSha256": "301c47955823eda48244700a60f9b3938317d8b90021e3af67dd671b4cbb14ad",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 10373,
+					"payloadSha256": "f4a0c99e9de02a72e2fa4212993f4087199d8b4ad9380508bb65dc0a8e768555",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 352,
+							"mimeType": "image/png",
+							"sha256": "92d89eca72fc60bc8cb0d009179a6164ab7ad79ed283e8794fc954a9f38620e1",
+							"valid": true
+						}
+					],
+					"nodes": 103,
+					"payloadBytes": 11488,
+					"payloadSha256": "71edd338d124716d8b6f098a54e972712fda5a55b0ee25817b067dd814fe82d0",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 352,
+							"mimeType": "image/png",
+							"sha256": "92d89eca72fc60bc8cb0d009179a6164ab7ad79ed283e8794fc954a9f38620e1",
+							"valid": true
+						}
+					],
+					"nodes": 120,
+					"payloadBytes": 11786,
+					"payloadSha256": "f7c5ae0cf780545d0549c8f88b9764b4987a29b6f22a8c5146c45dce64deb0b7",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 15,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and inspect/display image <benchmark-root>/case-30/project/challenge.png",
+				"image"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "817354",
+			"arm": "baseline",
+			"code": "817354",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "728393863222ace6b6002c4a56e429bfb536ec44984325ad5dc4fb92dcba79c8",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6563,
+					"payloadSha256": "64a917304ed340fefc33004c4c870a33ba5681d1cb227d1caad7d56b4140d83f",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 8498,
+					"payloadSha256": "f0843fda16dc6d09b8ce052b73a4e8ca67cd4863b8091c224aeb828c9b570a51",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 105,
+					"payloadBytes": 10435,
+					"payloadSha256": "05ea708da2d9a2d4a6065f095176722a9265695871dd9116259e400c4a5c431c",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 124,
+					"payloadBytes": 23135,
+					"payloadSha256": "865dc2a73e9e90a2a316fd2f98f6fd69b79a35d392d028bd0e053b1dd55243ea",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 344,
+							"mimeType": "image/png",
+							"sha256": "e0863bcbeaf3f5f90cb30c31fa4b5891a5254ceaab5d1577154250af6230a0e3",
+							"valid": true
+						}
+					],
+					"nodes": 141,
+					"payloadBytes": 24149,
+					"payloadSha256": "91b7ad71f657f0d0a278004c3e1a07ca612b3e1b70fb51474a78a533712226f7",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 344,
+							"mimeType": "image/png",
+							"sha256": "e0863bcbeaf3f5f90cb30c31fa4b5891a5254ceaab5d1577154250af6230a0e3",
+							"valid": true
+						}
+					],
+					"nodes": 158,
+					"payloadBytes": 24447,
+					"payloadSha256": "35d8b01c1884148af99980c676879199dee97f25a8feaa3fa496d460c3c92aec",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 7,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 16,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and return/display image contents path challenge.png",
+				"image vision inspect image png local filesystem read",
+				"read file from filesystem by path including PNG image",
+				"read"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "194537",
+			"arm": "candidate",
+			"code": "194537",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "5abc21ac957ddc83727f287f1ed0561e7fe494cdc23368197b690d79a0064b46",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6848,
+					"payloadSha256": "c5af181e5f8b791f7c613633433ce88de6da141fbe703dfcb3076ba7bedfda55",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 334,
+							"mimeType": "image/png",
+							"sha256": "1a68f8578b9d28686db5871218dd3789d4575ac9a8ad81b7f5ba93bf4b9ee816",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7718,
+					"payloadSha256": "09dc4b39895a71584e2df495682ffb369bb09c012d9584fd39065bba4e4d2852",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 334,
+							"mimeType": "image/png",
+							"sha256": "1a68f8578b9d28686db5871218dd3789d4575ac9a8ad81b7f5ba93bf4b9ee816",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8016,
+					"payloadSha256": "063bf3e94483538b759a853a420d306dbffb87e6c2b26a364212bfbeed589706",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 16,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file by path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "826149",
+			"arm": "candidate",
+			"code": "826149",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "6671a9506cbfa41b42a06a05a9a6eb741524186fcc830b7a8819872964a867e9",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6840,
+					"payloadSha256": "f5ea0334e388d2515a621487d4329370a51a71b4a15f10045a83c46a25801a17",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 340,
+							"mimeType": "image/png",
+							"sha256": "7fcbf63c5129ee2f5c8e96b1bf69fb46f4d544bae1e4e9bcb2f3615c8dcb951e",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7775,
+					"payloadSha256": "dbcfb87d704b0c2349a8430897a8b94c91a29bdb10655341702d131d9408ef55",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 340,
+							"mimeType": "image/png",
+							"sha256": "7fcbf63c5129ee2f5c8e96b1bf69fb46f4d544bae1e4e9bcb2f3615c8dcb951e",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8073,
+					"payloadSha256": "5b22887a8f9b4025e8eda0b864d2ef4c7dc1a2fe81aa1f42e9fb3895076e034c",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 17,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "205687",
+			"arm": "baseline",
+			"code": "205687",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "adda3671d18c329e2e4033f117912db7cf995e58ee9a73a5671180f5b9b9607b",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6555,
+					"payloadSha256": "8b9433ca67c87855442021f54075a06635b4cabcd5e2208297cdaa9387dd97fb",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 8509,
+					"payloadSha256": "915d50ac42e28279f016a3e7dcf3f1f4bbeb65d6653be0488d6f4273fda72b62",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 108,
+					"payloadBytes": 12572,
+					"payloadSha256": "9924ba38ecd82cb884bb41eaa2a35893e28bc6a8adbe125acedc29c0d48e0b7b",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 325,
+							"mimeType": "image/png",
+							"sha256": "4f2d814f7e71ef30fdff57a61520fc074b26df0a468c9de07bcacb02228e6e41",
+							"valid": true
+						}
+					],
+					"nodes": 125,
+					"payloadBytes": 13562,
+					"payloadSha256": "f0c2b1794e9352588604e58fa12409d22a067042341ab2c85ee933879ff62a4e",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 325,
+							"mimeType": "image/png",
+							"sha256": "4f2d814f7e71ef30fdff57a61520fc074b26df0a468c9de07bcacb02228e6e41",
+							"valid": true
+						}
+					],
+					"nodes": 151,
+					"payloadBytes": 15470,
+					"payloadSha256": "3a49de09353cf2446940e962598c51795eb7bb562c9a01233c9034805957216a",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 6,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 17,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and display image output path challenge.png",
+				"image tool inspect image local filesystem",
+				"read file path"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "936412",
+			"arm": "baseline",
+			"code": "936412",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "b3e97bba8d2dba3e2ae2ba51b1658b41c3a129b57997268c3ea20279c6110b18",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6563,
+					"payloadSha256": "be5036725527a647d558df1ef396a6958bb034508d251450fb2daae3421c864b",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 86,
+					"payloadBytes": 10304,
+					"payloadSha256": "f2bb7b61ea00a6085d3d276d840b3f68d6dc14ad0131caaee6ed15b78271a983",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 357,
+							"mimeType": "image/png",
+							"sha256": "b219377d304c0b5d8cad039f82cb1d1aef3fa9c0e42e0d728dae5d963da4cdb6",
+							"valid": true
+						}
+					],
+					"nodes": 103,
+					"payloadBytes": 11365,
+					"payloadSha256": "081f0a47a1c5a523f1d34a205536fbffdbb83a22fe4b6129475bac0685df5490",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 357,
+							"mimeType": "image/png",
+							"sha256": "b219377d304c0b5d8cad039f82cb1d1aef3fa9c0e42e0d728dae5d963da4cdb6",
+							"valid": true
+						}
+					],
+					"nodes": 120,
+					"payloadBytes": 11663,
+					"payloadSha256": "1ebb5a9736df1120d59b5104b916481068ab7b19ea7dd7696d947762f06f5790",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 18,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and return image visually inspect path challenge.png", "image"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "537284",
+			"arm": "candidate",
+			"code": "537284",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "01e429b6400979e42d840aa0f12820a4911b11d57af08e98b02696c8c434f6c1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6845,
+					"payloadSha256": "3b814cf654eabe925be05a2bb5baf8d3bec335aa4f047b4472d883106b43fe94",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 327,
+							"mimeType": "image/png",
+							"sha256": "4f9463526be1d4382676e48d284c1f745c825bf25ff7c756713c1f4789789fa8",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7703,
+					"payloadSha256": "439aef98f643f42278e091ad5a980458756f4290ed9fbe71bc39aff90bfb1703",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 327,
+							"mimeType": "image/png",
+							"sha256": "4f9463526be1d4382676e48d284c1f745c825bf25ff7c756713c1f4789789fa8",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8001,
+					"payloadSha256": "658212f9828437cb0b96af9d75571a31e024b6b92b8a34b37489633cb8659a53",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 18,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "961750",
+			"arm": "candidate",
+			"code": "961750",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "ba9f7368303a3b375af23962692a6895d424d2f164eb15fc79348186403f1110",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6843,
+					"payloadSha256": "a2335810fbfcb9e6dc875629804c736180adee5db518db0b7f5275bf114641f1",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 354,
+							"mimeType": "image/png",
+							"sha256": "0d9e76e598fe648048d21ea75baa24e65780c909b66eaf8b01f65aa3ddd5c527",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7737,
+					"payloadSha256": "a75bec9b36b1876d60ac71aa8f44221ae86806cdd01111b79a57ab636e6331c3",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 354,
+							"mimeType": "image/png",
+							"sha256": "0d9e76e598fe648048d21ea75baa24e65780c909b66eaf8b01f65aa3ddd5c527",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8035,
+					"payloadSha256": "6ea34caca55e1b10ce727dc1fd09e09fb99e2aa857ee847f4cac104e7e70d776",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 19,
+			"resumeExit": 0,
+			"searchQueries": ["view image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "542809",
+			"arm": "baseline",
+			"code": "542809",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "9a1e59c8d68f5179d5632eb23e1f20fb891839d534791050d5f6b957bba366fe",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 7639,
+					"payloadSha256": "620329c440a43a737a25b1e6410b89339d3645f8e4d9c2afcfb4eba4215024d5",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 350,
+							"mimeType": "image/png",
+							"sha256": "4c9852af03bc400c62027c3d393f723c9b2abef152809cc8fc67f091a9f79c1b",
+							"valid": true
+						}
+					],
+					"nodes": 87,
+					"payloadBytes": 8661,
+					"payloadSha256": "f084310b4c776a726c092565105978e7d6122313d48d94e30148f6f348543b7a",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 350,
+							"mimeType": "image/png",
+							"sha256": "4c9852af03bc400c62027c3d393f723c9b2abef152809cc8fc67f091a9f79c1b",
+							"valid": true
+						}
+					],
+					"nodes": 113,
+					"payloadBytes": 10613,
+					"payloadSha256": "37e6b529e339c58e89745073a97d22bc744607597d813f531a4f42f90bf38a61",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 19,
+			"resumeExit": 0,
+			"searchQueries": ["read local image file and display it, path challenge.png"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "173648",
+			"arm": "baseline",
+			"code": "173648",
+			"codeModeErrors": 1,
+			"endToEnd": false,
+			"explicitImageHelper": true,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["read"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4603,
+					"payloadSha256": "0d9c686afb902b3c3390eb7507c1d194dced21c9867a9770224bb459ddedacef",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6558,
+					"payloadSha256": "8ca315b27c877b4f0e86afaf7f19d8fb0685c232ca843a67767bd2936b35df79",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 89,
+					"payloadBytes": 9577,
+					"payloadSha256": "a08187adbbc934bd16ddc558f52f446e8315a8e0f8488908165f877abad2a6ef",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "5d7488e7de9c72bf8f64de3edf7f4b96254a275367dc8356ef9d74e9bb553c37",
+							"valid": true
+						}
+					],
+					"nodes": 106,
+					"payloadBytes": 10591,
+					"payloadSha256": "2d26b8dc40c94421a335ca37aee60c9a20b4e1727c72a163626dc17ad5febcd2",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1748,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 343,
+							"mimeType": "image/png",
+							"sha256": "5d7488e7de9c72bf8f64de3edf7f4b96254a275367dc8356ef9d74e9bb553c37",
+							"valid": true
+						}
+					],
+					"nodes": 123,
+					"payloadBytes": 10889,
+					"payloadSha256": "b7315d98273c27ff33cf368c783201dc32b65f3b8f97933648b6960a957fc38f",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2177,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 5,
+			"providerToolDefinitionCharacters": 2177,
+			"repetition": 20,
+			"resumeExit": 0,
+			"searchQueries": [
+				"read local image file and display/inspect image at path challenge.png",
+				"image vision local file read"
+			],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": false,
+			"transferExact": true,
+			"understood": true
+		},
+		{
+			"answer": "348625",
+			"arm": "candidate",
+			"code": "348625",
+			"codeModeErrors": 0,
+			"endToEnd": true,
+			"explicitImageHelper": false,
+			"firstExit": 0,
+			"imagePersistedOnce": true,
+			"instrumentationValid": true,
+			"nestedTools": ["view_image"],
+			"providerEvidence": [
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 51,
+					"payloadBytes": 4561,
+					"payloadSha256": "4b6c4bb2fe86b303fc8fd5251fc586a534fb0f89e4b41df8fbb81035511f7b1f",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 0,
+					"images": [],
+					"nodes": 70,
+					"payloadBytes": 6845,
+					"payloadSha256": "c864aa3a44d2816c5cdac141ca370d074538f403e1c42dbac4969c82dd3eeee9",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 321,
+							"mimeType": "image/png",
+							"sha256": "35be2554ccca1de046c3c218c951b37b0e5ee695a3ce2fb40621d030d5938146",
+							"valid": true
+						}
+					],
+					"nodes": 84,
+					"payloadBytes": 7753,
+					"payloadSha256": "8a62080b496521a4f7e1804764b5a4a86595f07eec6ec97a2a278863990ae6ce",
+					"phase": "image",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				},
+				{
+					"codeModeDefinitionCharacters": 1728,
+					"imageCount": 1,
+					"images": [
+						{
+							"bytes": 321,
+							"mimeType": "image/png",
+							"sha256": "35be2554ccca1de046c3c218c951b37b0e5ee695a3ce2fb40621d030d5938146",
+							"valid": true
+						}
+					],
+					"nodes": 101,
+					"payloadBytes": 8051,
+					"payloadSha256": "f6ba856d6e4054cc99d89ac30cc94aeb6ee454b57b085842dcbd495087de7d64",
+					"phase": "resume",
+					"providerToolDefinitionCharacters": 2135,
+					"toolNames": ["codemode", "tool_search"]
+				}
+			],
+			"providerRequests": 4,
+			"providerToolDefinitionCharacters": 2135,
+			"repetition": 20,
+			"resumeExit": 0,
+			"searchQueries": ["view local image file path"],
+			"sessionImageCount": 1,
+			"sessionSafe": true,
+			"timedOut": false,
+			"toolChoice": true,
+			"transferExact": true,
+			"understood": true
+		}
+	],
+	"evaluation": {
+		"baseline": {
+			"endToEnd": {
+				"successes": 0,
+				"total": 20,
+				"interval95": [0, 0.16112515805281938]
+			},
+			"sessionSafe": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"toolChoice": {
+				"successes": 0,
+				"total": 20,
+				"interval95": [0, 0.16112515805281938]
+			},
+			"transferExact": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"understood": {
+				"successes": 19,
+				"total": 20,
+				"interval95": [0.763868806553258, 0.9911185511992047]
+			}
+		},
+		"candidate": {
+			"endToEnd": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"sessionSafe": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"toolChoice": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"transferExact": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			},
+			"understood": {
+				"successes": 20,
+				"total": 20,
+				"interval95": [0.8388748419471806, 1]
+			}
+		},
+		"standingContextNoIncrease": true,
+		"candidatePass": true
+	}
+}

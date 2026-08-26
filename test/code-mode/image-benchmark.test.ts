@@ -7,6 +7,7 @@ import {
 	evaluateImageBenchmark,
 	IMAGE_BENCHMARK_CODES,
 	type ImageBenchmarkCase,
+	sanitizeBenchmarkSearchQuery,
 } from "../../scripts/benchmark-code-mode-image.js";
 import { inspectProviderPayload } from "../fixtures/code-mode-image-benchmark-observer.js";
 
@@ -54,6 +55,12 @@ test("Session analysis counts images only in persisted Provider messages", () =>
 		{ message: { content: [image], role: "toolResult" }, type: "message" },
 	]);
 	expect(analysis.imageBlocks).toEqual([{ data: image.data, mimeType: "image/png" }]);
+});
+
+test("benchmark search evidence redacts temporary project paths", () => {
+	expect(sanitizeBenchmarkSearchQuery("view /run/private/project/challenge.png", "/run/private/project")).toBe(
+		"view <project>/challenge.png",
+	);
 });
 
 test("Provider observer traverses complete payloads while retaining only image and schema evidence", () => {

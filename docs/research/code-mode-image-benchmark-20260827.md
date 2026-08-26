@@ -133,3 +133,31 @@ any V2 run or outcome:
 V2 remains a failure if any candidate Session is retried or replaced, any candidate Provider image is malformed,
 truncated, undecodable, or hash-mismatched, any candidate durable Provider message persists other than exactly one
 challenge image, any resumed payload fails image validation, or any original acceptance threshold is missed.
+
+## V2 certified outcome
+
+V2 completed at 2026-08-26T02:18:36.030Z on the certified Pi 0.84.3 artifact and passed every preregistered gate.
+The complete sanitized report is `docs/reports/code-mode-image-20260827/benchmark-v2.json`.
+
+| Measure | Baseline | Candidate | Candidate gate |
+| --- | ---: | ---: | ---: |
+| Activated `view_image` and returned its result directly | 0/20 | 20/20 | at least 18/20 |
+| Challenge bytes reached the Provider exactly | 20/20 | 20/20 | 20/20 |
+| Model read the challenge correctly | 19/20 | 20/20 | at least 18/20 |
+| End to end | 0/20 | 20/20 | at least 18/20 |
+| Safe after Session resume | 20/20 | 20/20 | 20/20 |
+| Code Mode envelope errors | 20 | 0 | 0 |
+
+The 20/20 candidate proportions have Wilson 95% intervals of [0.8389, 1.0000]. All 40 challenge PNG hashes were
+distinct and decoder-readable. Every candidate durable Provider message contained exactly one valid challenge image,
+every image and resumed Provider payload preserved its exact SHA-256, and no malformed, truncated, undecodable, or
+extra image was observed. All candidate runs used nested `view_image`; none called `image(result)`, timed out, was
+retried, was replaced, or failed instrumentation.
+
+The complete candidate Provider Tool surface was 2,135 characters, including a 1,728-character Code Mode definition,
+versus 2,177 and 1,748 respectively for the baseline. The standing Provider context therefore decreased by 42
+characters overall and 20 characters for Code Mode while adding the direct-return rule. V1 remains archived as a
+failed experiment and is not included in these V2 pass counts. Temporary benchmark paths in both archived reports
+were replaced with stable placeholders after execution; no outcome, payload hash, metric, or sample was changed. The
+sanitized V1 and V2 report SHA-256 values are `3d1807dd304e7582535b5d8752b8f94bb42d7f62c93bf1f61d53e1b22a5b248f`
+and `4943cc1296d575f067221333c780bf9e4ca6866d07b1a6fb1a03d9ee1ae93297`, respectively.
