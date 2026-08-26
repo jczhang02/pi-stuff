@@ -25,6 +25,7 @@ import { describeTarget } from "./cloudflare/describe.js";
 import { normalizeCode } from "./cloudflare/normalize.js";
 import { searchConnectors } from "./cloudflare/search.js";
 import type { Snippet } from "./cloudflare/snippet.js";
+import { toolPath } from "./cloudflare/utils.js";
 import { assertValidSupportedCodeModeImages, INVALID_CODE_MODE_IMAGE_MESSAGE } from "./image-content.js";
 import type { SandboxToolExecutionContext, SuiteSandboxTool } from "./protocol.js";
 
@@ -39,14 +40,6 @@ export interface SuiteSandboxCatalogEntry {
 	readonly name: string;
 	readonly replay: "never" | "record" | "reexecute";
 	readonly requiresApproval?: boolean;
-}
-
-function identifier(value: string): boolean {
-	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(value);
-}
-
-export function toolPath(name: string): string {
-	return identifier(name) ? `tools.${name}` : `tools[${JSON.stringify(name)}]`;
 }
 
 function oneLine(value: string): string {

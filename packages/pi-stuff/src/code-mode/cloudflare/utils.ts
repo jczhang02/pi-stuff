@@ -95,6 +95,10 @@ export function sanitizeToolName(name: string): string {
 	return sanitized;
 }
 
+export function toolPath(name: string): string {
+	return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) ? `tools.${name}` : `tools[${JSON.stringify(name)}]`;
+}
+
 export function toPascalCase(str: string) {
 	return str
 		.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
