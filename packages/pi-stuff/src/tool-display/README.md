@@ -11,6 +11,8 @@ unknown third-party Tools keep their native renderer and form a display boundary
 `envelope-projection.ts` owns nested Tool decoding and ordinary-protocol projection; `group-projection.ts` owns
 transcript grouping and result association; `activity-presentation.ts` owns compact rows, summaries, and Tool detail;
 and `activity-clock.ts` owns running markers. `ToolUiRuntime` remains the single public live-projection facade.
+`activity-model.ts` owns Activity vocabulary, `activity.ts` preserves the public facade and Bash classification,
+`retrieval-groups.ts` plans transcript membership, and `activity-summary-format.ts` owns pure summary wording.
 
 ## Daily use
 
