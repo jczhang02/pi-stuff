@@ -13,7 +13,13 @@ import {
 	updateServerMetadata,
 	updateStatusBar,
 } from "./init.ts";
-import { authenticate, completeAuthFromInput, startAuth, supportsOAuth } from "./mcp-auth-flow.ts";
+import {
+	type AuthenticateOptions,
+	authenticate,
+	completeAuthFromInput,
+	startAuth,
+	supportsOAuth,
+} from "./mcp-auth-flow.ts";
 import { guardedMcpDetails, guardMcpOutput, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { paginate, rankSuggestions, rankToolMatches } from "./search-ranking.ts";
@@ -38,11 +44,36 @@ const INSTRUCTIONS_PREVIEW_LENGTH = 300;
 
 type AutoAuthResult = { status: "skipped" } | { status: "success" } | { status: "failed"; message: string };
 
-function disabledResult(mode: string, serverName: string): ProxyToolResult {
+function disabledResult(mode: string, serverName: string, details: JsonInputObject = {}): ProxyToolResult {
 	const message = `Server "${serverName}" is disabled. Run /mcp enable ${serverName} and /reload to enable it.`;
 	return {
 		content: [{ type: "text" as const, text: message }],
-		details: { mode, error: "server_disabled", server: serverName, message },
+		details: { mode, error: "server_disabled", server: serverName, ...details, message },
+	};
+}
+
+function missingServerResult(mode: string, serverName: string, details: JsonInputObject = {}): ProxyToolResult {
+	return {
+		content: [
+			{ type: "text" as const, text: `Server "${serverName}" not found. Use mcp({}) to see available servers.` },
+		],
+		details: { mode, error: "not_found", server: serverName, ...details },
+	};
+}
+
+function authOptions(state: McpExtensionState, signal?: AbortSignal): AuthenticateOptions {
+	const options: AuthenticateOptions = {
+		authStorageOptions: state.authStorageOptions,
+		runtime: state.oauthRuntime,
+	};
+	if (signal) options.signal = signal;
+	return options;
+}
+
+function authRequiredCallResult(message: string, details: JsonInputObject): ProxyToolResult {
+	return {
+		content: [{ type: "text" as const, text: message }],
+		details: { mode: "call", error: "auth_required", ...details, message },
 	};
 }
 
@@ -134,22 +165,7 @@ async function attemptAutoAuth(
 	}
 
 	try {
-		if (state.authStorageOptions) {
-			await authenticate(
-				serverName,
-				serverUrl,
-				definition,
-				signal
-					? { authStorageOptions: state.authStorageOptions, signal, runtime: state.oauthRuntime }
-					: { authStorageOptions: state.authStorageOptions, runtime: state.oauthRuntime },
-			);
-		} else {
-			if (signal) {
-				await authenticate(serverName, serverUrl, definition, { signal, runtime: state.oauthRuntime });
-			} else {
-				await authenticate(serverName, serverUrl, definition, { runtime: state.oauthRuntime });
-			}
-		}
+		await authenticate(serverName, serverUrl, definition, authOptions(state, signal));
 		return { status: "success" };
 	} catch (error) {
 		if (isAbortError(error, signal)) throw error;
@@ -242,14 +258,7 @@ export async function executeAuthStart(
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
 	throwIfAborted(ownedSignal);
 	const definition = state.config.mcpServers[serverName];
-	if (!definition) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${serverName}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "auth-start", error: "not_found", server: serverName },
-		};
-	}
+	if (!definition) return missingServerResult("auth-start", serverName);
 	if (isServerDisabled(definition)) return disabledResult("auth-start", serverName);
 
 	try {
@@ -261,20 +270,7 @@ export async function executeAuthStart(
 			};
 		}
 
-		const { authorizationUrl } = state.authStorageOptions
-			? ownedSignal
-				? await startAuth(serverName, serverUrl, definition, {
-						authStorageOptions: state.authStorageOptions,
-						signal: ownedSignal,
-						runtime: state.oauthRuntime,
-					})
-				: await startAuth(serverName, serverUrl, definition, {
-						authStorageOptions: state.authStorageOptions,
-						runtime: state.oauthRuntime,
-					})
-			: ownedSignal
-				? await startAuth(serverName, serverUrl, definition, { signal: ownedSignal, runtime: state.oauthRuntime })
-				: await startAuth(serverName, serverUrl, definition, { runtime: state.oauthRuntime });
+		const { authorizationUrl } = await startAuth(serverName, serverUrl, definition, authOptions(state, ownedSignal));
 		if (!authorizationUrl) {
 			return {
 				content: [{ type: "text" as const, text: `OAuth authentication successful for "${serverName}".` }],
@@ -304,31 +300,11 @@ export async function executeAuthComplete(
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
 	throwIfAborted(ownedSignal);
 	const definition = state.config.mcpServers[serverName];
-	if (!definition) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${serverName}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "auth-complete", error: "not_found", server: serverName },
-		};
-	}
+	if (!definition) return missingServerResult("auth-complete", serverName);
 	if (isServerDisabled(definition)) return disabledResult("auth-complete", serverName);
 
 	try {
-		const status = state.authStorageOptions
-			? ownedSignal
-				? await completeAuthFromInput(serverName, input, {
-						authStorageOptions: state.authStorageOptions,
-						signal: ownedSignal,
-						runtime: state.oauthRuntime,
-					})
-				: await completeAuthFromInput(serverName, input, {
-						authStorageOptions: state.authStorageOptions,
-						runtime: state.oauthRuntime,
-					})
-			: ownedSignal
-				? await completeAuthFromInput(serverName, input, { signal: ownedSignal, runtime: state.oauthRuntime })
-				: await completeAuthFromInput(serverName, input, { runtime: state.oauthRuntime });
+		const status = await completeAuthFromInput(serverName, input, authOptions(state, ownedSignal));
 		if (status !== "authenticated") {
 			return {
 				content: [{ type: "text" as const, text: `OAuth authentication did not complete for "${serverName}".` }],
@@ -503,14 +479,7 @@ export function executeSearch(
 
 export function executeList(state: McpExtensionState, server: string): ProxyToolResult {
 	const definition = state.config.mcpServers[server];
-	if (!definition) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${server}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "list", server, tools: [], count: 0, error: "not_found" },
-		};
-	}
+	if (!definition) return missingServerResult("list", server, { tools: [], count: 0 });
 	if (isServerDisabled(definition)) return disabledResult("list", server);
 
 	const metadata = state.toolMetadata.get(server);
@@ -603,14 +572,7 @@ export function executeList(state: McpExtensionState, server: string): ProxyTool
 
 export function executeInstructions(state: McpExtensionState, server: string): ProxyToolResult {
 	const definition = state.config.mcpServers[server];
-	if (!definition) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${server}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "instructions", server, error: "not_found" },
-		};
-	}
+	if (!definition) return missingServerResult("instructions", server);
 	if (isServerDisabled(definition)) return disabledResult("instructions", server);
 
 	const instructions = state.serverInstructions.get(server);
@@ -648,14 +610,7 @@ export async function executeConnect(
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
 	throwIfAborted(ownedSignal);
 	const definition = state.config.mcpServers[serverName];
-	if (!definition) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${serverName}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "connect", error: "not_found", server: serverName },
-		};
-	}
+	if (!definition) return missingServerResult("connect", serverName);
 	if (isServerDisabled(definition)) return disabledResult("connect", serverName);
 
 	try {
@@ -734,37 +689,19 @@ export async function executeCall(
 	let toolMeta: ToolMetadata | undefined;
 	let autoAuthAttempted = false;
 	const prefixMode = state.config.settings?.toolPrefix ?? "server";
-	const disabledCallResult = (disabledServer: string, metadata?: ToolMetadata): ProxyToolResult => {
-		if (!metadata) {
-			const message = `Server "${disabledServer}" is disabled. Run /mcp enable ${disabledServer} and /reload to enable it.`;
-			return {
-				content: [{ type: "text" as const, text: message }],
-				details: {
-					mode: "call",
-					error: "server_disabled",
-					server: disabledServer,
-					requestedTool: toolName,
-					message,
-				},
-			};
-		}
-		const message = `Server "${disabledServer}" is disabled. Run /mcp enable ${disabledServer} and /reload to enable it.`;
-		const identity = metadata.resourceUri
-			? { server: disabledServer, resourceUri: metadata.resourceUri }
-			: { server: disabledServer, tool: metadata.originalName };
-		return {
-			content: [{ type: "text" as const, text: message }],
-			details: { mode: "call", error: "server_disabled", ...identity, message },
-		};
-	};
+	const disabledCallResult = (disabledServer: string, metadata?: ToolMetadata): ProxyToolResult =>
+		disabledResult(
+			"call",
+			disabledServer,
+			metadata
+				? metadata.resourceUri
+					? { resourceUri: metadata.resourceUri }
+					: { tool: metadata.originalName }
+				: { requestedTool: toolName },
+		);
 
 	if (serverName && !state.config.mcpServers[serverName]) {
-		return {
-			content: [
-				{ type: "text" as const, text: `Server "${serverName}" not found. Use mcp({}) to see available servers.` },
-			],
-			details: { mode: "call", error: "server_not_found", server: serverName, requestedTool: toolName },
-		};
+		return missingServerResult("call", serverName, { error: "server_not_found", requestedTool: toolName });
 	}
 	if (serverName) {
 		toolMeta = findToolByName(state.toolMetadata.get(serverName), toolName);
@@ -798,16 +735,7 @@ export async function executeCall(
 					autoAuthAttempted = true;
 					const autoAuth = await attemptAutoAuth(state, serverName, ownedSignal);
 					if (autoAuth.status === "failed") {
-						return {
-							content: [{ type: "text" as const, text: autoAuth.message }],
-							details: {
-								mode: "call",
-								error: "auth_required",
-								server: serverName,
-								requestedTool: toolName,
-								message: autoAuth.message,
-							},
-						};
+						return authRequiredCallResult(autoAuth.message, { server: serverName, requestedTool: toolName });
 					}
 					if (autoAuth.status === "success") {
 						await state.manager.close(serverName);
@@ -840,16 +768,7 @@ export async function executeCall(
 
 				if (!toolMeta && state.manager.getConnection(serverName)?.status === "needs-auth") {
 					const message = getAuthRequiredMessage(state, serverName);
-					return {
-						content: [{ type: "text" as const, text: message }],
-						details: {
-							mode: "call",
-							error: "auth_required",
-							server: serverName,
-							requestedTool: toolName,
-							message,
-						},
-					};
+					return authRequiredCallResult(message, { server: serverName, requestedTool: toolName });
 				}
 			}
 
@@ -893,16 +812,10 @@ export async function executeCall(
 				autoAuthAttempted = true;
 				const autoAuth = await attemptAutoAuth(state, configuredServer, ownedSignal);
 				if (autoAuth.status === "failed") {
-					return {
-						content: [{ type: "text" as const, text: autoAuth.message }],
-						details: {
-							mode: "call",
-							error: "auth_required",
-							server: configuredServer,
-							requestedTool: toolName,
-							message: autoAuth.message,
-						},
-					};
+					return authRequiredCallResult(autoAuth.message, {
+						server: configuredServer,
+						requestedTool: toolName,
+					});
 				}
 				if (autoAuth.status === "success") {
 					await state.manager.close(configuredServer);
@@ -963,10 +876,7 @@ export async function executeCall(
 			autoAuthAttempted = true;
 			const autoAuth = await attemptAutoAuth(state, serverName, ownedSignal);
 			if (autoAuth.status === "failed") {
-				return {
-					content: [{ type: "text" as const, text: autoAuth.message }],
-					details: { mode: "call", error: "auth_required", ...callIdentity, message: autoAuth.message },
-				};
+				return authRequiredCallResult(autoAuth.message, callIdentity);
 			}
 			if (autoAuth.status === "success") {
 				await state.manager.close(serverName);
@@ -977,10 +887,7 @@ export async function executeCall(
 
 		if (connection?.status === "needs-auth") {
 			const message = getAuthRequiredMessage(state, serverName);
-			return {
-				content: [{ type: "text" as const, text: message }],
-				details: { mode: "call", error: "auth_required", ...callIdentity, message },
-			};
+			return authRequiredCallResult(message, callIdentity);
 		}
 	}
 	if (connection?.status !== "connected") {
@@ -1012,10 +919,7 @@ export async function executeCall(
 					autoAuthAttempted = true;
 					const autoAuth = await attemptAutoAuth(state, serverName, ownedSignal);
 					if (autoAuth.status === "failed") {
-						return {
-							content: [{ type: "text" as const, text: autoAuth.message }],
-							details: { mode: "call", error: "auth_required", ...callIdentity, message: autoAuth.message },
-						};
+						return authRequiredCallResult(autoAuth.message, callIdentity);
 					}
 					if (autoAuth.status === "success") {
 						await state.manager.close(serverName);
@@ -1025,10 +929,7 @@ export async function executeCall(
 
 				if (connection.status === "needs-auth") {
 					const message = getAuthRequiredMessage(state, serverName);
-					return {
-						content: [{ type: "text" as const, text: message }],
-						details: { mode: "call", error: "auth_required", ...callIdentity, message },
-					};
+					return authRequiredCallResult(message, callIdentity);
 				}
 			}
 			clearFailure(state, serverName);
@@ -1205,10 +1106,7 @@ export async function executeCall(
 	} catch (error) {
 		if (error instanceof SessionRecoveryAuthRequiredError) {
 			const message = error.authMessage ?? getAuthRequiredMessage(state, serverName);
-			return {
-				content: [{ type: "text" as const, text: message }],
-				details: { mode: "call", error: "auth_required", ...callIdentity, message, autoAuthAttempted },
-			};
+			return authRequiredCallResult(message, { ...callIdentity, autoAuthAttempted });
 		}
 		const message = error instanceof Error ? error.message : String(error);
 
