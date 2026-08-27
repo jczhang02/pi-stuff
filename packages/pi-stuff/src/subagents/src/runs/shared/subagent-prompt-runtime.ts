@@ -3,25 +3,11 @@ import * as path from "node:path";
 import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type JsonInputValue, parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isRuntimeFunction,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { ResolvedToolBudget } from "../../shared/types.ts";
-import { resolveWatchPath } from "../../shared/utils.ts";
-import {
-	processSteerRequestsFromDir,
-	readSteerAckAt,
-	type SteerRequest,
-	steerAckPathFromDir,
-	writeSteerAckAt,
-	writeSteerCapabilityAt,
-} from "../background/control-channel.ts";
 import { CHILD_MODEL_CONTEXT_ENTRY_TYPE, type ChildModelContext } from "./child-protocol.ts";
 import {
 	childContextHasOwnContinuation,
@@ -29,14 +15,8 @@ import {
 	projectChildContinuationContext,
 	validateChildProviderPayload,
 } from "./continuation-context.ts";
-import {
-	SUBAGENT_CHILD_AGENT_ENV,
-	SUBAGENT_CHILD_INDEX_ENV,
-	SUBAGENT_FANOUT_CHILD_ENV,
-	SUBAGENT_STEER_ACK_DIR_ENV,
-	SUBAGENT_STEER_CAPABILITY_ENV,
-	SUBAGENT_STEER_INBOX_ENV,
-} from "./pi-args.ts";
+import { SUBAGENT_CHILD_AGENT_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./pi-args.ts";
+import { formatSteerMessage, registerSteeringInbox } from "./steering-inbox.ts";
 import {
 	assertJsonSchemaObject,
 	createStructuredOutputToolParameters,
@@ -60,6 +40,8 @@ import {
 	toolBudgetBlockedMessage,
 	toolBudgetSoftNudge,
 } from "./tool-budget.ts";
+
+export { formatSteerMessage, registerSteeringInbox };
 
 const SUBAGENT_INHERIT_PROJECT_CONTEXT_ENV = "PI_SUBAGENT_INHERIT_PROJECT_CONTEXT";
 const SUBAGENT_INHERIT_SKILLS_ENV = "PI_SUBAGENT_INHERIT_SKILLS";
@@ -199,30 +181,6 @@ export function stripParentOnlySubagentMessages(messages: SubagentContextMessage
 	return changed ? filtered : messages;
 }
 
-export function formatSteerMessage(request: SteerRequest): string {
-	const marker = Buffer.from(request.id, "utf-8").toString("base64url");
-	return [
-		`<pi-stuff-steer request="${marker}">`,
-		"Mid-run steering from the parent orchestrator:",
-		"",
-		request.message,
-		"",
-		"Incorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.",
-		"</pi-stuff-steer>",
-	].join("\n");
-}
-
-function steerRequestIdFromInput(text: string): string | undefined {
-	const encoded = /<pi-stuff-steer request="([A-Za-z0-9_-]{1,342})">/u.exec(text)?.[1];
-	if (!encoded) return undefined;
-	try {
-		const requestId = Buffer.from(encoded, "base64url").toString("utf-8");
-		return /^\S{1,256}$/u.test(requestId) ? requestId : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undefined): void {
 	if (!budget) return;
 	let toolCount = 0;
@@ -260,224 +218,44 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 	});
 }
 
-export function registerSteeringInbox(
-	pi: ExtensionAPI,
-	deps: {
-		watch?: typeof fs.watch;
-		nativeRealpath?: (filePath: string) => string;
-		timers?: { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
-	} = {},
-): void {
-	const timers = deps.timers ?? { setInterval, clearInterval };
-	const steerInbox = process.env[SUBAGENT_STEER_INBOX_ENV]?.trim();
-	if (!steerInbox) return;
-	const capabilityPath = process.env[SUBAGENT_STEER_CAPABILITY_ENV]?.trim();
-	const ackDir = process.env[SUBAGENT_STEER_ACK_DIR_ENV]?.trim();
-	// SAFETY: Pi exposes sendUserMessage at runtime; canSteer and isRuntimeFunction gate every call.
-	const sendUserMessage = (
-		pi as {
-			sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => PromiseLike<void> | void;
-		}
-	).sendUserMessage;
-	const childIndex = Number(process.env[SUBAGENT_CHILD_INDEX_ENV]);
-	type PendingDelivery = { request: SteerRequest; complete: () => boolean };
-	type PendingAck = {
-		request: SteerRequest;
-		state: "delivered" | "failed";
-		message: string;
-		complete: () => boolean;
+function registerStructuredOutputTool(pi: ExtensionAPI): void {
+	const outputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
+	const schemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
+	if (!outputPath || !schemaPath) return;
+	const schema = parseJsonValue(fs.readFileSync(schemaPath, "utf-8"));
+	assertJsonSchemaObject(schema, "structured output schema");
+	const parameters = Type.Unsafe<{ value: JsonInputValue }>(createStructuredOutputToolParameters(schema));
+	const tool: ToolDefinition<typeof parameters, { readonly path: string }> = {
+		name: "structured_output",
+		label: "Structured Output",
+		description: "Submit the required final structured output for this subagent step. This terminates the step.",
+		parameters,
+		async execute(_id, params) {
+			const validation = await validateStructuredOutputValue(schema, params.value);
+			if (validation.status === "invalid") {
+				throw new Error(`Structured output validation failed: ${validation.message}`);
+			}
+			fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+			fs.writeFileSync(outputPath, JSON.stringify(params.value), { mode: 0o600 });
+			return {
+				content: [{ type: "text", text: "Structured output captured." }],
+				details: { path: outputPath },
+				terminate: true,
+			};
+		},
 	};
-	const pendingById = new Map<string, PendingDelivery>();
-	const pendingAcks = new Map<string, PendingAck>();
-	let disposed = false;
-	let flushing = false;
-	let started = false;
-	let ready = false;
-	const canSteer = isRuntimeFunction(sendUserMessage);
-	let watcher: fs.FSWatcher | undefined;
-	let interval: NodeJS.Timeout | undefined;
-	let lastRuntimeError = "";
-	let lastRuntimeErrorAt = 0;
-	const reportRuntimeError = (context: string, cause: unknown): void => {
-		const message = `${context}: ${cause instanceof Error ? cause.message : String(cause)}`;
-		const now = Date.now();
-		if (message === lastRuntimeError && now - lastRuntimeErrorAt < 30_000) return;
-		lastRuntimeError = message;
-		lastRuntimeErrorAt = now;
-		reportAgentDiagnostic(`[pi-stuff-agents] ${message}`);
-	};
-	const acknowledge = (
-		request: SteerRequest,
-		state: "delivered" | "failed",
-		message: string,
-		complete: () => boolean,
-	): boolean => {
-		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) {
-			pendingAcks.delete(request.id);
-			complete();
-			return true;
-		}
-		try {
-			writeSteerAckAt(steerAckPathFromDir(ackDir, request.id), {
-				requestId: request.id,
-				index: childIndex,
-				ts: Date.now(),
-				state,
-				message,
-			});
-			pendingAcks.delete(request.id);
-			complete();
-			return true;
-		} catch (error) {
-			pendingAcks.set(request.id, { request, state, message, complete });
-			reportRuntimeError(`Failed to persist steering acknowledgement '${request.id}'`, error);
-			return false;
-		}
-	};
-	const retryAcknowledgements = (): void => {
-		for (const { request, state, message, complete } of Array.from(pendingAcks.values()))
-			acknowledge(request, state, message, complete);
-	};
-	const forgetPendingDelivery = (delivery: PendingDelivery): void => {
-		pendingById.delete(delivery.request.id);
-	};
-	const existingAcknowledgement = (request: SteerRequest): boolean => {
-		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) return false;
-		const ack = readSteerAckAt(steerAckPathFromDir(ackDir, request.id));
-		return ack?.requestId === request.id && ack.index === childIndex;
-	};
-	const publishCapability = (): void => {
-		if (!capabilityPath || !Number.isInteger(childIndex) || childIndex < 0) return;
-		writeSteerCapabilityAt(capabilityPath, {
-			index: childIndex,
-			pid: process.pid,
-			readyAt: Date.now(),
-			supported: canSteer,
-		});
-	};
-	const flush = (): void => {
-		if (disposed || flushing || !ready) return;
-		flushing = true;
-		try {
-			retryAcknowledgements();
-			processSteerRequestsFromDir(steerInbox, (request, complete) => {
-				if (existingAcknowledgement(request)) {
-					complete();
-					return "retain";
-				}
-				if (pendingById.has(request.id) || pendingAcks.has(request.id)) return "retain";
-				if (!canSteer || !isRuntimeFunction(sendUserMessage)) {
-					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.", complete);
-					return "retain";
-				}
-				const formatted = formatSteerMessage(request);
-				const delivery: PendingDelivery = { request, complete };
-				pendingById.set(request.id, delivery);
-				try {
-					const dispatched = sendUserMessage(formatted, { deliverAs: "steer" });
-					if (dispatched) {
-						void Promise.resolve(dispatched).catch((error) => {
-							if (pendingById.get(request.id) !== delivery) return;
-							forgetPendingDelivery(delivery);
-							acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
-						});
-					}
-				} catch (error) {
-					forgetPendingDelivery(delivery);
-					acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
-				}
-				return "retain";
-			});
-		} finally {
-			flushing = false;
-		}
-	};
-	const safeFlush = (): void => {
-		try {
-			flush();
-		} catch (error) {
-			reportRuntimeError("Failed to process child steering inbox", error);
-		}
-	};
-	const onInput = <Event>(event: Event): undefined => {
-		if (disposed || !event || !isRuntimeObject(event)) return undefined;
-		const source = "source" in event ? event.source : undefined;
-		const streamingBehavior = "streamingBehavior" in event ? event.streamingBehavior : undefined;
-		const eventText = "text" in event ? event.text : undefined;
-		const content = "content" in event ? event.content : undefined;
-		// Pi reports `steer` only when the Agent is still streaming. If the same
-		// accepted extension message arrives just after the stream ends, it starts a
-		// normal turn and the field is undefined. Exact pending-text correlation makes
-		// both forms authoritative while still rejecting queued follow-ups.
-		if (source !== "extension" || (streamingBehavior !== undefined && streamingBehavior !== "steer"))
-			return undefined;
-		const text = isRuntimeString(eventText) ? eventText : isRuntimeString(content) ? content : undefined;
-		if (!text) return undefined;
-		const requestId = steerRequestIdFromInput(text);
-		const delivery = requestId ? pendingById.get(requestId) : undefined;
-		if (!delivery) return undefined;
-		forgetPendingDelivery(delivery);
-		acknowledge(delivery.request, "delivered", "Pi accepted the correlated steering input.", delivery.complete);
-		return undefined;
-	};
-	const start = (): void => {
-		if (started || disposed) return;
-		try {
-			fs.mkdirSync(steerInbox, { recursive: true });
-		} catch {
-			return;
-		}
-		started = true;
-		try {
-			watcher = (deps.watch ?? fs.watch)(resolveWatchPath(steerInbox, deps.nativeRealpath), safeFlush);
-			watcher.on("error", () => {});
-		} catch {
-			watcher = undefined;
-		}
-		interval = timers.setInterval(safeFlush, 250);
-		interval.unref?.();
-	};
-	const activate = (): undefined => {
-		start();
-		safeFlush();
-		return undefined;
-	};
-	const markReady = (): undefined => {
-		start();
-		if (!ready) {
-			ready = true;
-			publishCapability();
-		}
-		safeFlush();
-		return undefined;
-	};
-
-	// SAFETY: these literal event names are Pi lifecycle events; each handler validates fields before use.
-	const onRuntimeEvent = pi.on as <Event>(event: string, handler: (event: Event) => void) => void;
-	// Register input before the watcher so an accepted extension input cannot race request dispatch.
-	onRuntimeEvent("input", onInput);
-	onRuntimeEvent("session_start", activate);
-	onRuntimeEvent("agent_start", markReady);
-	for (const eventName of [
-		"message_start",
-		"message_update",
-		"message_end",
-		"tool_execution_start",
-		"tool_execution_end",
-		"turn_end",
-	] as const) {
-		onRuntimeEvent(eventName, activate);
-	}
-	onRuntimeEvent("session_shutdown", () => {
-		// A correlated input may be accepted immediately before shutdown. Give any
-		// acknowledgement whose first durable write failed one final synchronous
-		// retry before disabling the inbox timer.
-		retryAcknowledgements();
-		disposed = true;
-		try {
-			watcher?.close();
-		} catch {}
-		if (interval) timers.clearInterval(interval);
+	registerSuiteOwnedTool(pi, tool, {
+		activity: {
+			categories: ["record-result"],
+			classify: ({ result }) =>
+				singleActivity("record-result", {
+					key: activityKey(result?.details.path ?? outputPath),
+					target: "final output",
+				}),
+		},
+		runningSummary: "validating",
+		summarize: () => "captured",
+		target: () => "final output",
 	});
 }
 
@@ -535,46 +313,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		}
 		ctx.abort();
 	});
-	const structuredOutputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
-	const structuredSchemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
-	if (structuredOutputPath && structuredSchemaPath) {
-		const schema = parseJsonValue(fs.readFileSync(structuredSchemaPath, "utf-8"));
-		assertJsonSchemaObject(schema, "structured output schema");
-		const parameters = Type.Unsafe<{ value: JsonInputValue }>(createStructuredOutputToolParameters(schema));
-		const structuredOutputTool: ToolDefinition<typeof parameters, { readonly path: string }> = {
-			name: "structured_output",
-			label: "Structured Output",
-			description: "Submit the required final structured output for this subagent step. This terminates the step.",
-			parameters,
-			async execute(_id, params) {
-				const validation = await validateStructuredOutputValue(schema, params.value);
-				if (validation.status === "invalid") {
-					throw new Error(`Structured output validation failed: ${validation.message}`);
-				}
-				fs.mkdirSync(path.dirname(structuredOutputPath), { recursive: true });
-				fs.writeFileSync(structuredOutputPath, JSON.stringify(params.value), { mode: 0o600 });
-				return {
-					content: [{ type: "text", text: "Structured output captured." }],
-					details: { path: structuredOutputPath },
-					terminate: true,
-				};
-			},
-		};
-		registerSuiteOwnedTool(pi, structuredOutputTool, {
-			activity: {
-				categories: ["record-result"],
-				classify: ({ result }) =>
-					singleActivity("record-result", {
-						key: activityKey(result?.details.path ?? structuredOutputPath),
-						target: "final output",
-					}),
-			},
-			runningSummary: "validating",
-			summarize: () => "captured",
-			target: () => "final output",
-		});
-	}
-
+	registerStructuredOutputTool(pi);
 	pi.on("context", (event, ctx) => {
 		const messages = stripParentOnlySubagentMessages(event.messages);
 		continuationHistoryObserved ||= childContextHasOwnContinuation(messages);
