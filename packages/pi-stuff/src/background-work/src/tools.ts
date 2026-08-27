@@ -165,15 +165,10 @@ const backgroundPresentation: SuiteToolPresentation<Static<typeof BACKGROUND_PAR
 	target: (args) => (isRuntimeString(args["task_id"]) ? args["task_id"] : String(args["action"] ?? "")),
 };
 
-export function registerWorkTools(
-	pi: SuiteToolRegistrationHost,
-	runtimeRef: WorkToolRuntimeRef,
-	options: { readonly includeBash?: boolean } = {},
-): void {
-	const includeBash = options.includeBash !== false;
-	const bashWasActive = includeBash ? pi.getActiveTools().includes("bash") : false;
-	if (includeBash) {
-		const bash: ToolDefinition<typeof BASH_PARAMETERS, BackgroundWorkBashDetails | undefined> = {
+function registerBashTool(pi: SuiteToolRegistrationHost, runtimeRef: WorkToolRuntimeRef): void {
+	registerSuiteOwnedTool<typeof BASH_PARAMETERS, BackgroundWorkBashDetails | undefined>(
+		pi,
+		{
 			name: "bash",
 			label: "bash",
 			description:
@@ -194,46 +189,51 @@ export function registerWorkTools(
 				if (params.timeout !== undefined) Object.assign(input, { timeoutSeconds: params.timeout });
 				return requireRuntime(runtimeRef).executeBash(input, ctx);
 			},
-		};
-		registerSuiteOwnedTool(
-			pi,
-			bash,
-			{
-				activity: {
-					categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
-					classify: (input) => {
-						if (input.result && !isForegroundBashResult(input.result)) {
-							const taskId = input.result.details?.backgroundTaskId;
-							return singleActivity("launch-background", {
-								key: activityKey(taskId ?? input.args.description ?? input.args.command),
-								target: firstLine(input.args.description) || "background command",
-							});
-						}
-						return classifyBashActivity(input);
-					},
-					summarizeIssue: (_args, result, state) => {
-						const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
-						return line || state;
-					},
+		},
+		{
+			activity: {
+				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+				classify: (input) => {
+					if (input.result && !isForegroundBashResult(input.result)) {
+						const taskId = input.result.details?.backgroundTaskId;
+						return singleActivity("launch-background", {
+							key: activityKey(taskId ?? input.args.description ?? input.args.command),
+							target: firstLine(input.args.description) || "background command",
+						});
+					}
+					return classifyBashActivity(input);
 				},
-				detailLines: (_args, result) => backgroundBashDetailLines(result),
-				label: "Bash",
-				runningSummary: (_args, durationMs) =>
-					`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
-				summarize: (_args, result, state) => {
-					const id = result.details?.backgroundTaskId;
-					if (id) return `background · ${id}`;
-					if (state === "success") return "done";
-					const text = resultText(result);
-					const terminal = text.trim().split(/\r?\n/u).at(-1)?.trim();
-					return terminal || state;
+				summarizeIssue: (_args, result, state) => {
+					const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
+					return line || state;
 				},
-				target: (args) => firstLine(args.description) || "command",
-				tracksElapsed: true,
 			},
-			BASH_CODE_MODE_CONTRACT,
-		);
-	}
+			detailLines: (_args, result) => backgroundBashDetailLines(result),
+			label: "Bash",
+			runningSummary: (_args, durationMs) =>
+				`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
+			summarize: (_args, result, state) => {
+				const id = result.details?.backgroundTaskId;
+				if (id) return `background · ${id}`;
+				if (state === "success") return "done";
+				const terminal = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
+				return terminal || state;
+			},
+			target: (args) => firstLine(args.description) || "command",
+			tracksElapsed: true,
+		},
+		BASH_CODE_MODE_CONTRACT,
+	);
+}
+
+export function registerWorkTools(
+	pi: SuiteToolRegistrationHost,
+	runtimeRef: WorkToolRuntimeRef,
+	options: { readonly includeBash?: boolean } = {},
+): void {
+	const includeBash = options.includeBash !== false;
+	const bashWasActive = includeBash ? pi.getActiveTools().includes("bash") : false;
+	if (includeBash) registerBashTool(pi, runtimeRef);
 
 	const background: ToolDefinition<typeof BACKGROUND_PARAMETERS, WorkToolDetails> = {
 		name: "background",
