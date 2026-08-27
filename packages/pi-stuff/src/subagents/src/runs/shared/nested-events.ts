@@ -5,12 +5,10 @@ import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-orig
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
-import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
 import {
 	assertPrivateDirectory,
 	assertPrivateDirectoryWithin,
-	ensurePrivateDirectory,
 	type OwnedFileSnapshot,
 	readBoundedOwnedFile,
 	readBoundedOwnedFileSnapshot,
@@ -30,24 +28,12 @@ import {
 import { readStatus } from "../../shared/utils.ts";
 import { readProcessTerminal, sanitizeProcessTerminal } from "../background/process-terminal.ts";
 import * as nestedEventModel from "./nested-events-model.ts";
-import { isSafeNestedPathId, type NestedPathEntry, parseNestedPathEnv } from "./nested-path.ts";
-import { MAX_CHILDREN, MAX_DEPTH, MAX_STEPS, sanitizeSummary } from "./nested-summary.ts";
-import {
-	SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV,
-	SUBAGENT_PARENT_CHILD_INDEX_ENV,
-	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
-	SUBAGENT_PARENT_DEPTH_ENV,
-	SUBAGENT_PARENT_EVENT_SINK_ENV,
-	SUBAGENT_PARENT_PATH_ENV,
-	SUBAGENT_PARENT_ROOT_RUN_ID_ENV,
-	SUBAGENT_PARENT_RUN_ID_ENV,
-} from "./pi-args.ts";
+import type { NestedPathEntry } from "./nested-path.ts";
+import * as nestedRoute from "./nested-route.ts";
+import { MAX_CHILDREN, MAX_STEPS, sanitizeSummary } from "./nested-summary.ts";
 
-export const NESTED_EVENTS_DIR = path.join(TEMP_ROOT_DIR, "nested-subagent-events");
-const ROUTE_FILE = "route.json";
 const REGISTRY_FILE = "registry.json";
 const ROOT_TERMINAL_FILE = "root-terminal.json";
-const MAX_ROUTE_METADATA_BYTES = 16 * 1024;
 const MAX_EVENT_FILES_PER_PROJECTION = 2_000;
 const REGISTRY_LOCK = "registry-project.lock";
 const AUTHORITATIVE_PROJECTION_TIMEOUT_MS = 3_000;
@@ -59,6 +45,20 @@ const MIN_REGISTRY_CACHE_ENTRY_WEIGHT_BYTES = 4 * 1024;
 
 export type { NestedEventRecord, NestedRegistry, NestedRoute } from "./nested-events-model.ts";
 export { applyNestedEvent, findNestedRun, parseNestedEventRecords } from "./nested-events-model.ts";
+export type { NestedRouteEnvironment } from "./nested-route.ts";
+export {
+	assertSafeNestedId,
+	createNestedRoute,
+	isSafeNestedId,
+	NESTED_EVENTS_DIR,
+	nestedRouteEnv,
+	recoverRetiredNestedRouteStatus,
+	resolveInheritedNestedRouteFromEnv,
+	resolveNestedAsyncDir,
+	resolveNestedParentAddressFromEnv,
+	resolveNestedRouteFromEnv,
+	resolvePersistedNestedRoute,
+} from "./nested-route.ts";
 
 type NestedEventRecord = nestedEventModel.NestedEventRecord;
 type NestedRegistry = nestedEventModel.NestedRegistry;
@@ -72,26 +72,12 @@ interface CachedNestedRegistry {
 	readonly weightBytes: number;
 }
 
-interface RawNestedRoute {
-	rootRunId?: unknown;
-	eventSink?: unknown;
-	controlInbox?: unknown;
-	capabilityToken?: unknown;
-}
-
 interface RawNestedRegistry {
 	rootRunId?: unknown;
 	updatedAt?: unknown;
 	children?: unknown;
 	pendingChildren?: unknown;
 	processedEvents?: unknown;
-}
-
-interface NestedParentAddress {
-	parentRunId: string;
-	parentStepIndex?: number;
-	depth: number;
-	path: NestedPathEntry[];
 }
 
 /**
@@ -108,226 +94,8 @@ export interface AuthoritativeNestedProjectionOptions {
 	readonly timeoutMs?: number;
 }
 
-export function isSafeNestedId<Value>(value: Value): value is Value & string {
-	return isSafeNestedPathId(value);
-}
-
-export function assertSafeNestedId(label: string, value: string): void {
-	if (!isSafeNestedId(value)) throw new Error(`${label} must be a non-empty safe id token.`);
-}
-
-function assertSafeId(label: string, value: string): void {
-	assertSafeNestedId(label, value);
-}
-
-function containedPath(base: string, candidate: string): boolean {
-	const resolvedBase = path.resolve(base);
-	const resolvedCandidate = path.resolve(candidate);
-	return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
-}
-
-function commonRouteRoot(route: Pick<NestedRoute, "eventSink" | "controlInbox">): string {
-	return path.dirname(path.resolve(route.eventSink));
-}
-
-function validateRoutePaths(route: NestedRoute): void {
-	assertSafeId("rootRunId", route.rootRunId);
-	assertSafeId("capabilityToken", route.capabilityToken);
-	if (!containedPath(NESTED_EVENTS_DIR, route.eventSink))
-		throw new Error("Nested event sink is outside the subagent nested event root.");
-	if (!containedPath(NESTED_EVENTS_DIR, route.controlInbox))
-		throw new Error("Nested control inbox is outside the subagent nested event root.");
-	if (commonRouteRoot(route) !== path.dirname(path.resolve(route.controlInbox)))
-		throw new Error("Nested event sink and control inbox must share one route root.");
-}
-
-function validateRouteStorage(route: NestedRoute): void {
-	validateRoutePaths(route);
-	assertPrivateDirectory(TEMP_ROOT_DIR);
-	assertPrivateDirectory(NESTED_EVENTS_DIR);
-	const routeRoot = commonRouteRoot(route);
-	assertPrivateDirectory(routeRoot);
-	assertPrivateDirectory(route.eventSink);
-	assertPrivateDirectory(route.controlInbox);
-	const metadata = parseJsonValue(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES));
-	if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) {
-		throw new Error("Nested event route metadata is not an object.");
-	}
-	if (metadata["rootRunId"] !== route.rootRunId || metadata["capabilityToken"] !== route.capabilityToken) {
-		throw new Error("Nested event route metadata does not match the provided root id and capability token.");
-	}
-}
-
-export function createNestedRoute(rootRunId: string): NestedRoute {
-	assertSafeId("rootRunId", rootRunId);
-	const capabilityToken = randomUUID();
-	const routeRoot = path.join(NESTED_EVENTS_DIR, `${rootRunId}-${capabilityToken}`);
-	const stagingRoot = path.join(NESTED_EVENTS_DIR, `.creating-${rootRunId}-${capabilityToken}`);
-	const eventSink = path.join(routeRoot, "events");
-	const controlInbox = path.join(routeRoot, "controls");
-	ensurePrivateDirectory(TEMP_ROOT_DIR);
-	ensurePrivateDirectory(NESTED_EVENTS_DIR);
-	fs.mkdirSync(stagingRoot, { mode: 0o700 });
-	const staged = fs.lstatSync(stagingRoot);
-	try {
-		ensurePrivateDirectory(stagingRoot);
-		ensurePrivateDirectory(path.join(stagingRoot, "events"));
-		ensurePrivateDirectory(path.join(stagingRoot, "controls"));
-		fs.writeFileSync(
-			path.join(stagingRoot, ROUTE_FILE),
-			`${JSON.stringify({ rootRunId, capabilityToken, createdAt: Date.now() })}\n`,
-			{ mode: 0o600, flag: "wx" },
-		);
-		fs.renameSync(stagingRoot, routeRoot);
-	} catch (error) {
-		try {
-			const current = fs.lstatSync(stagingRoot);
-			if (current.isDirectory() && current.dev === staged.dev && current.ino === staged.ino) {
-				fs.rmSync(stagingRoot, { recursive: true });
-			}
-		} catch {
-			// Preserve the original route construction failure.
-		}
-		throw error;
-	}
-	const route = { rootRunId, eventSink, controlInbox, capabilityToken };
-	validateRouteStorage(route);
-	return route;
-}
-
-export function resolveNestedRouteFromEnv(env: NodeJS.ProcessEnv = process.env): NestedRoute | undefined {
-	const rootRunId = env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV];
-	const eventSink = env[SUBAGENT_PARENT_EVENT_SINK_ENV];
-	const controlInbox = env[SUBAGENT_PARENT_CONTROL_INBOX_ENV];
-	const capabilityToken = env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV];
-	if (!rootRunId || !eventSink || !controlInbox || !capabilityToken) return undefined;
-	const route = { rootRunId, eventSink, controlInbox, capabilityToken };
-	validateRouteStorage(route);
-	return route;
-}
-
-export function resolveInheritedNestedRouteFromEnv(env: NodeJS.ProcessEnv = process.env): NestedRoute | undefined {
-	try {
-		return resolveNestedRouteFromEnv(env);
-	} catch (error) {
-		reportAgentDiagnostic("Ignoring invalid nested subagent event route:", error);
-		return undefined;
-	}
-}
-
-/** Validate one exact persisted route without falling back to another route with the same root id. */
-export function resolvePersistedNestedRoute<Value>(value: Value, expectedRootRunId: string): NestedRoute | undefined {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	// SAFETY: the object guard proves the persisted route can be inspected through its optional raw fields.
-	const raw = value as Value & RawNestedRoute;
-	if (
-		raw.rootRunId !== expectedRootRunId ||
-		!isSafeNestedId(raw.rootRunId) ||
-		!isRuntimeString(raw.eventSink) ||
-		!isRuntimeString(raw.controlInbox) ||
-		!isSafeNestedId(raw.capabilityToken)
-	) {
-		return undefined;
-	}
-	const route: NestedRoute = {
-		rootRunId: raw.rootRunId,
-		eventSink: raw.eventSink,
-		controlInbox: raw.controlInbox,
-		capabilityToken: raw.capabilityToken,
-	};
-	try {
-		validateRouteStorage(route);
-		return route;
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Recover a terminal root after its exact route was already retired. This also
- * repairs a stale status overlay that resurrected the retired route pointer.
- */
-export function recoverRetiredNestedRouteStatus(route: NestedRoute, rootAsyncDir: string): AsyncStatus | undefined {
-	validateRoutePaths(route);
-	if (path.basename(rootAsyncDir) !== route.rootRunId) return undefined;
-	assertPrivateDirectoryWithin(TEMP_ROOT_DIR, rootAsyncDir);
-	try {
-		fs.lstatSync(commonRouteRoot(route));
-		return undefined;
-	} catch (error) {
-		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") return undefined;
-	}
-	const claim = tryAcquireStatusMutationClaim(rootAsyncDir);
-	if (!claim) return undefined;
-	try {
-		const status = readStatus(rootAsyncDir);
-		if (!status || status.runId !== route.rootRunId || !nestedEventModel.isTerminalNestedRunState(status.state))
-			return undefined;
-		if (status.nestedRoute) {
-			const persisted = status.nestedRoute;
-			if (
-				persisted.rootRunId !== route.rootRunId ||
-				persisted.capabilityToken !== route.capabilityToken ||
-				path.resolve(persisted.eventSink) !== path.resolve(route.eventSink) ||
-				path.resolve(persisted.controlInbox) !== path.resolve(route.controlInbox)
-			)
-				return undefined;
-		}
-		const processTerminal = readProcessTerminal(rootAsyncDir, {
-			runId: status.runId,
-			runnerProcessInstanceId: status.processTerminal?.runnerProcessInstanceId,
-		});
-		const repaired: AsyncStatus = {
-			...status,
-			nestedRoute: undefined,
-		};
-		if (processTerminal) repaired.processTerminal = processTerminal;
-		writePrivateAtomicJson(path.join(rootAsyncDir, "status.json"), repaired);
-		return repaired;
-	} finally {
-		claim.release();
-	}
-}
-
-export function resolveNestedParentAddressFromEnv(
-	env: NodeJS.ProcessEnv = process.env,
-): NestedParentAddress | undefined {
-	const parentRunId = env[SUBAGENT_PARENT_RUN_ID_ENV];
-	if (!isSafeNestedId(parentRunId)) return undefined;
-	const rawIndex = env[SUBAGENT_PARENT_CHILD_INDEX_ENV];
-	const parentStepIndex = rawIndex && /^\d+$/.test(rawIndex) ? Number(rawIndex) : undefined;
-	const rawDepth = Number(env[SUBAGENT_PARENT_DEPTH_ENV]);
-	const depth = Math.min(Math.max(1, Number.isFinite(rawDepth) ? rawDepth : 1), MAX_DEPTH);
-	const parsedPath = parseNestedPathEnv(env[SUBAGENT_PARENT_PATH_ENV]);
-	const parentPath: NestedPathEntry = { runId: parentRunId };
-	if (parentStepIndex !== undefined) parentPath.stepIndex = parentStepIndex;
-	const nestedPath = parsedPath.length ? parsedPath : [parentPath];
-	const address: NestedParentAddress = {
-		parentRunId,
-		depth,
-		path: nestedPath,
-	};
-	if (parentStepIndex !== undefined) address.parentStepIndex = parentStepIndex;
-	return address;
-}
-
-export function resolveNestedAsyncDir(rootRunId: string, run: NestedRunSummary): string | undefined {
-	if (!isSafeNestedId(rootRunId) || !isSafeNestedId(run.id)) return undefined;
-	const expected = path.resolve(TEMP_ROOT_DIR, "nested-subagent-runs", rootRunId, run.id);
-	// The nested run directory is a trusted, deterministic address. Event
-	// projections may deliberately omit an unusually long locator to stay
-	// bounded; when they do, control and transcript fallback must still work.
-	if (run.asyncDir && path.resolve(run.asyncDir) !== expected) return undefined;
-	try {
-		assertPrivateDirectoryWithin(TEMP_ROOT_DIR, expected);
-		return expected;
-	} catch {
-		return undefined;
-	}
-}
-
 function registryPath(route: NestedRoute): string {
-	return path.join(commonRouteRoot(route), REGISTRY_FILE);
+	return path.join(nestedRoute.commonRouteRoot(route), REGISTRY_FILE);
 }
 
 function sameRegistryFingerprint(stat: fs.Stats, fingerprint: NestedRegistryFingerprint): boolean {
@@ -405,8 +173,8 @@ function rememberNestedRegistry(filePath: string, snapshot: NestedRegistryFinger
 function nestedRouteEntries(): string[] {
 	try {
 		assertPrivateDirectory(TEMP_ROOT_DIR);
-		assertPrivateDirectory(NESTED_EVENTS_DIR);
-		return fs.readdirSync(NESTED_EVENTS_DIR);
+		assertPrivateDirectory(nestedRoute.NESTED_EVENTS_DIR);
+		return fs.readdirSync(nestedRoute.NESTED_EVENTS_DIR);
 	} catch (error) {
 		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") return [];
 		throw error;
@@ -416,9 +184,15 @@ function nestedRouteEntries(): string[] {
 function routeFromRoot(routeRoot: string): NestedRoute | undefined {
 	try {
 		assertPrivateDirectory(routeRoot);
-		const metadata = parseJsonValue(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES));
+		const metadata = parseJsonValue(
+			readBoundedOwnedFile(path.join(routeRoot, nestedRoute.ROUTE_FILE), nestedRoute.MAX_ROUTE_METADATA_BYTES),
+		);
 		if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) return undefined;
-		if (!isSafeNestedId(metadata["rootRunId"]) || !isSafeNestedId(metadata["capabilityToken"])) return undefined;
+		if (
+			!nestedRoute.isSafeNestedId(metadata["rootRunId"]) ||
+			!nestedRoute.isSafeNestedId(metadata["capabilityToken"])
+		)
+			return undefined;
 		if (path.basename(routeRoot) !== `${metadata["rootRunId"]}-${metadata["capabilityToken"]}`) return undefined;
 		const route: NestedRoute = {
 			rootRunId: metadata["rootRunId"],
@@ -426,7 +200,7 @@ function routeFromRoot(routeRoot: string): NestedRoute | undefined {
 			controlInbox: path.join(routeRoot, "controls"),
 			capabilityToken: metadata["capabilityToken"],
 		};
-		validateRouteStorage(route);
+		nestedRoute.validateRouteStorage(route);
 		return route;
 	} catch {
 		return undefined;
@@ -434,10 +208,10 @@ function routeFromRoot(routeRoot: string): NestedRoute | undefined {
 }
 
 export function findNestedRouteForRootId(rootRunId: string): NestedRoute | undefined {
-	assertSafeId("rootRunId", rootRunId);
+	nestedRoute.assertSafeNestedId("rootRunId", rootRunId);
 	for (const entry of nestedRouteEntries()) {
 		if (!entry.startsWith(`${rootRunId}-`)) continue;
-		const route = routeFromRoot(path.join(NESTED_EVENTS_DIR, entry));
+		const route = routeFromRoot(path.join(nestedRoute.NESTED_EVENTS_DIR, entry));
 		if (route?.rootRunId === rootRunId) return route;
 	}
 	return undefined;
@@ -452,7 +226,7 @@ export function findNestedRouteForRootId(rootRunId: string): NestedRoute | undef
 export function buildNestedRouteIndex(): Map<string, NestedRoute> {
 	const index = new Map<string, NestedRoute>();
 	for (const entry of nestedRouteEntries()) {
-		const route = routeFromRoot(path.join(NESTED_EVENTS_DIR, entry));
+		const route = routeFromRoot(path.join(nestedRoute.NESTED_EVENTS_DIR, entry));
 		if (route && !index.has(route.rootRunId)) index.set(route.rootRunId, route);
 	}
 	return index;
@@ -524,7 +298,7 @@ function collectScopedNestedRuns(
 function listNestedRoutes(): NestedRoute[] {
 	const routes: NestedRoute[] = [];
 	for (const entry of nestedRouteEntries()) {
-		const route = routeFromRoot(path.join(NESTED_EVENTS_DIR, entry));
+		const route = routeFromRoot(path.join(nestedRoute.NESTED_EVENTS_DIR, entry));
 		if (route) routes.push(route);
 	}
 	return routes;
@@ -548,7 +322,7 @@ export function findNestedRunMatchesById(
 	id: string,
 	options: { prefix?: boolean; scope?: NestedRunResolutionScope } = {},
 ): NestedRunMatch[] {
-	assertSafeId("id", id);
+	nestedRoute.assertSafeNestedId("id", id);
 	const matches: NestedRunMatch[] = [];
 	for (const route of options.scope?.routes ?? listNestedRoutes()) {
 		try {
@@ -564,7 +338,7 @@ export async function findNestedRunMatchesByIdAuthoritatively(
 	id: string,
 	options: { prefix?: boolean; scope?: NestedRunResolutionScope; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<NestedRunMatch[]> {
-	assertSafeId("id", id);
+	nestedRoute.assertSafeNestedId("id", id);
 	const routes = options.scope?.routes ?? listNestedRoutes();
 	const deadline = Date.now() + (options.timeoutMs ?? AUTHORITATIVE_PROJECTION_TIMEOUT_MS);
 	const matches: NestedRunMatch[] = [];
@@ -584,7 +358,7 @@ export function findNestedRunById(id: string): { rootRunId: string; run: NestedR
 }
 
 export function readNestedRegistry(route: NestedRoute): NestedRegistry {
-	validateRouteStorage(route);
+	nestedRoute.validateRouteStorage(route);
 	const filePath = registryPath(route);
 	const cached = cachedNestedRegistry(filePath);
 	if (cached) return cached;
@@ -679,7 +453,7 @@ function projectNestedEventBatch(route: NestedRoute, registry: NestedRegistry) {
 	}
 	for (const entry of entries) {
 		const eventPath = path.join(route.eventSink, entry);
-		if (!containedPath(route.eventSink, eventPath)) continue;
+		if (!nestedRoute.containedPath(route.eventSink, eventPath)) continue;
 		let content: string;
 		try {
 			content = readBoundedOwnedFile(eventPath, nestedEventModel.MAX_EVENT_BYTES);
@@ -718,7 +492,7 @@ function projectNestedEventBatch(route: NestedRoute, registry: NestedRegistry) {
 		// Remove immutable records only after their projection is durable.
 		for (const entry of evictedEvents) {
 			const eventPath = path.join(route.eventSink, entry);
-			if (!containedPath(route.eventSink, eventPath)) continue;
+			if (!nestedRoute.containedPath(route.eventSink, eventPath)) continue;
 			try {
 				fs.unlinkSync(eventPath);
 			} catch {
@@ -764,8 +538,8 @@ function projectNestedEventsWithClaim(
  * interactive host.
  */
 export function projectNestedEvents(route: NestedRoute): NestedRegistry {
-	validateRouteStorage(route);
-	const claim = tryAcquireDurableClaim(commonRouteRoot(route), REGISTRY_LOCK);
+	nestedRoute.validateRouteStorage(route);
+	const claim = tryAcquireDurableClaim(nestedRoute.commonRouteRoot(route), REGISTRY_LOCK);
 	return claim ? projectNestedEventsWithClaim(route, claim) : readNestedRegistry(route);
 }
 
@@ -791,9 +565,9 @@ function waitForProjectionRetry(delayMs: number, signal?: AbortSignal): Promise<
 
 function routeHasRetainedState(route: NestedRoute): boolean {
 	if (fs.readdirSync(route.eventSink).length > 0 || fs.readdirSync(route.controlInbox).length > 0) return true;
-	const routeRoot = commonRouteRoot(route);
+	const routeRoot = nestedRoute.commonRouteRoot(route);
 	const allowed = new Set([
-		ROUTE_FILE,
+		nestedRoute.ROUTE_FILE,
 		REGISTRY_FILE,
 		ROOT_TERMINAL_FILE,
 		`${REGISTRY_LOCK}.lock`,
@@ -819,23 +593,26 @@ export async function retireUnusedNestedRoute(
 	route: NestedRoute,
 	options: AuthoritativeNestedProjectionOptions = {},
 ): Promise<boolean> {
-	validateRouteStorage(route);
+	nestedRoute.validateRouteStorage(route);
 	const timeoutMs = options.timeoutMs ?? AUTHORITATIVE_PROJECTION_TIMEOUT_MS;
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
 		throw new Error("Nested route retirement timeout must be a finite non-negative number.");
 	}
 	const deadline = Date.now() + timeoutMs;
-	const routeRoot = commonRouteRoot(route);
+	const routeRoot = nestedRoute.commonRouteRoot(route);
 	for (;;) {
 		if (options.signal?.aborted) throw abortReason(options.signal);
 		const claim = tryAcquireDurableClaim(routeRoot, REGISTRY_LOCK);
 		if (claim) {
 			let retiredRoot: string | undefined;
 			try {
-				validateRouteStorage(route);
+				nestedRoute.validateRouteStorage(route);
 				if (routeHasRetainedState(route)) return false;
 				const before = fs.lstatSync(routeRoot);
-				retiredRoot = path.join(NESTED_EVENTS_DIR, `.retired-${path.basename(routeRoot)}-${claim.token}`);
+				retiredRoot = path.join(
+					nestedRoute.NESTED_EVENTS_DIR,
+					`.retired-${path.basename(routeRoot)}-${claim.token}`,
+				);
 				fs.renameSync(routeRoot, retiredRoot);
 				forgetNestedRegistry(registryPath(route));
 				const moved = fs.lstatSync(retiredRoot);
@@ -865,7 +642,10 @@ interface NestedRootTerminalMarker {
 function readRootTerminalMarker(route: NestedRoute): NestedRootTerminalMarker | undefined {
 	try {
 		const marker = parseJsonValue(
-			readBoundedOwnedFile(path.join(commonRouteRoot(route), ROOT_TERMINAL_FILE), MAX_ROUTE_METADATA_BYTES),
+			readBoundedOwnedFile(
+				path.join(nestedRoute.commonRouteRoot(route), ROOT_TERMINAL_FILE),
+				nestedRoute.MAX_ROUTE_METADATA_BYTES,
+			),
 		);
 		if (!isRuntimeObject(marker) || marker === null || Array.isArray(marker)) return undefined;
 		if (
@@ -933,9 +713,9 @@ function persistTerminalRootProjection(
 }
 
 function retireClaimedRoute(route: NestedRoute, claim: DurableClaim): string {
-	const routeRoot = commonRouteRoot(route);
+	const routeRoot = nestedRoute.commonRouteRoot(route);
 	const before = fs.lstatSync(routeRoot);
-	const retiredRoot = path.join(NESTED_EVENTS_DIR, `.retired-${path.basename(routeRoot)}-${claim.token}`);
+	const retiredRoot = path.join(nestedRoute.NESTED_EVENTS_DIR, `.retired-${path.basename(routeRoot)}-${claim.token}`);
 	fs.renameSync(routeRoot, retiredRoot);
 	forgetNestedRegistry(registryPath(route));
 	const moved = fs.lstatSync(retiredRoot);
@@ -950,20 +730,20 @@ async function settleTerminalNestedRoute(
 	options: AuthoritativeNestedProjectionOptions,
 	rootAsyncDir?: string,
 ): Promise<boolean> {
-	validateRouteStorage(route);
+	nestedRoute.validateRouteStorage(route);
 	const timeoutMs = options.timeoutMs ?? AUTHORITATIVE_PROJECTION_TIMEOUT_MS;
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
 		throw new Error("Nested route settlement timeout must be a finite non-negative number.");
 	}
 	const deadline = Date.now() + timeoutMs;
-	const routeRoot = commonRouteRoot(route);
+	const routeRoot = nestedRoute.commonRouteRoot(route);
 	for (;;) {
 		if (options.signal?.aborted) throw abortReason(options.signal);
 		const claim = tryAcquireDurableClaim(routeRoot, REGISTRY_LOCK);
 		if (claim) {
 			let retiredRoot: string | undefined;
 			try {
-				validateRouteStorage(route);
+				nestedRoute.validateRouteStorage(route);
 				if (rootAsyncDir) {
 					if (path.basename(rootAsyncDir) !== route.rootRunId) {
 						throw new Error("Nested route root runtime does not match its root run id.");
@@ -1027,13 +807,13 @@ export async function projectNestedEventsAuthoritatively(
 	route: NestedRoute,
 	options: AuthoritativeNestedProjectionOptions = {},
 ): Promise<NestedRegistry> {
-	validateRouteStorage(route);
+	nestedRoute.validateRouteStorage(route);
 	const timeoutMs = options.timeoutMs ?? AUTHORITATIVE_PROJECTION_TIMEOUT_MS;
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
 		throw new Error("Authoritative nested projection timeout must be a finite non-negative number.");
 	}
 	const deadline = Date.now() + timeoutMs;
-	const routeRoot = commonRouteRoot(route);
+	const routeRoot = nestedRoute.commonRouteRoot(route);
 	for (;;) {
 		if (options.signal?.aborted) throw abortReason(options.signal);
 		const claim = tryAcquireDurableClaim(routeRoot, REGISTRY_LOCK);
@@ -1065,7 +845,7 @@ export function writeNestedEvent(
 	route: NestedRoute,
 	event: Omit<NestedEventRecord, "rootRunId" | "capabilityToken">,
 ): void {
-	validateRouteStorage(route);
+	nestedRoute.validateRouteStorage(route);
 	const child = sanitizeSummary(event.child);
 	if (!child || child.id === route.rootRunId) throw new Error("Nested event child failed validation.");
 	const record: NestedEventRecord = {
@@ -1077,23 +857,6 @@ export function writeNestedEvent(
 	const sanitized = nestedEventModel.parseRecord(JSON.stringify(record), route);
 	if (!sanitized) throw new Error("Nested event record failed validation.");
 	writeRouteRecord(route.eventSink, sanitized.ts, sanitized);
-}
-
-export interface NestedRouteEnvironment {
-	readonly [SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV]: string;
-	readonly [SUBAGENT_PARENT_CONTROL_INBOX_ENV]: string;
-	readonly [SUBAGENT_PARENT_EVENT_SINK_ENV]: string;
-	readonly [SUBAGENT_PARENT_ROOT_RUN_ID_ENV]: string;
-}
-
-export function nestedRouteEnv(route: NestedRoute): NestedRouteEnvironment {
-	validateRouteStorage(route);
-	return {
-		[SUBAGENT_PARENT_EVENT_SINK_ENV]: route.eventSink,
-		[SUBAGENT_PARENT_CONTROL_INBOX_ENV]: route.controlInbox,
-		[SUBAGENT_PARENT_ROOT_RUN_ID_ENV]: route.rootRunId,
-		[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV]: route.capabilityToken,
-	};
 }
 
 export function attachRootChildrenToSteps<T extends { children?: NestedRunSummary[] | undefined; index?: number }>(
@@ -1283,12 +1046,13 @@ export function nestedArtifactEnv(rootRunId: string, parentRunId: string): Neste
 export function isTopLevelAsyncDir(asyncDir: string): boolean {
 	const resolved = path.resolve(asyncDir);
 	return (
-		containedPath(ASYNC_DIR, resolved) && !containedPath(path.join(TEMP_ROOT_DIR, "nested-subagent-runs"), resolved)
+		nestedRoute.containedPath(ASYNC_DIR, resolved) &&
+		!nestedRoute.containedPath(path.join(TEMP_ROOT_DIR, "nested-subagent-runs"), resolved)
 	);
 }
 
 export function nestedResultsPath(rootRunId: string, id: string): string {
-	assertSafeId("rootRunId", rootRunId);
-	assertSafeId("id", id);
+	nestedRoute.assertSafeNestedId("rootRunId", rootRunId);
+	nestedRoute.assertSafeNestedId("id", id);
 	return path.join(RESULTS_DIR, "nested", rootRunId, `${id}.json`);
 }
