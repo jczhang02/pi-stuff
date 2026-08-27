@@ -5,6 +5,13 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	AGENTS_EXPECT_PROGRAM,
+	type FleetviewSelection,
+	fail,
+	fleetviewHelp,
+	verifyTerminalOutput,
+} from "./agents-pty-contract.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
@@ -46,153 +53,6 @@ const OUTCOME_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 type LogRecord = Static<typeof LOG_RECORD_SCHEMA>;
-
-function expectProgram(): string {
-	return `
-set timeout 40
-
-proc must_expect {pattern} {
-    expect {
-        -exact $pattern {}
-        timeout {
-            puts stderr "Timed out waiting for: $pattern"
-            exit 2
-        }
-        eof {
-            puts stderr "Reached EOF while waiting for: $pattern"
-            exit 3
-        }
-    }
-}
-
-proc discard_pending_output {} {
-    set discarded ""
-    expect -timeout 0 {
-        -re {.+} {
-            append discarded $expect_out(0,string)
-            exp_continue
-        }
-        timeout {}
-        eof {
-            puts stderr "Reached EOF while discarding pending output"
-            exit 3
-        }
-    }
-    return $discarded
-}
-
-proc wait_for_quiet {} {
-    set deadline [expr {[clock milliseconds] + 5000}]
-    set quiet_since [clock milliseconds]
-    set output ""
-    while {[clock milliseconds] < $deadline} {
-        set pending [discard_pending_output]
-        append output $pending
-        set now [clock milliseconds]
-        if {$pending ne ""} {
-            set quiet_since $now
-        } elseif {$now - $quiet_since >= 100} {
-            return $output
-        }
-        after 10
-    }
-    puts stderr "Timed out waiting for terminal output to settle"
-    exit 2
-}
-
-proc send_and_expect {keys pattern} {
-    discard_pending_output
-    send -- $keys
-    must_expect $pattern
-    wait_for_quiet
-}
-
-proc show_agent_tool_result {} {
-    discard_pending_output
-    send -- "t"
-    for {set index 0} {$index < 4} {incr index} {
-        expect {
-            -exact "AGENT_TOOL_RESULT" {
-                wait_for_quiet
-                return
-            }
-            -exact "later lines" {
-                set pending [wait_for_quiet]
-                if {[string first "AGENT_TOOL_RESULT" $pending] >= 0} {
-                    return
-                }
-            }
-            timeout {
-                puts stderr "Timed out waiting for expanded Agent Tool result"
-                exit 2
-            }
-            eof {
-                puts stderr "Reached EOF while waiting for expanded Agent Tool result"
-                exit 3
-            }
-        }
-        discard_pending_output
-        send -- " "
-    }
-    puts stderr "Expanded Agent Tool result remained outside the bounded viewport"
-    exit 2
-}
-
-set conversation_marker "launch one background general-purpose Agent"
-spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
-must_expect "MAIN_NOT_BLOCKED"
-send -- "\\033\\[B"
-must_expect $env(PI_STUFF_AGENTS_PTY_MAIN_HELP)
-send -- "\\033"
-must_expect "inspect with /agents"
-send -- "/agents\\r"
-must_expect "↑/↓ select · Enter details"
-send -- "\\r"
-must_expect "Agents / general-purpose"
-must_expect "Activity"
-must_expect "t tool details"
-wait_for_quiet
-send_and_expect " " "CHILD_MARKDOWN_RENDERED"
-show_agent_tool_result
-send_and_expect "\\033" "↑/↓ select · Enter details"
-send_and_expect "\\033" $conversation_marker
-send -- "\\004"
-expect {
-    eof {}
-    timeout {
-        puts stderr "Timed out waiting for Pi to exit"
-        exit 4
-    }
-}
-
-set env(PI_STUFF_AGENTS_PTY_RESUME) 1
-spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
-must_expect "inspect with /agents"
-send -- "/agents\\r"
-must_expect "↑/↓ select · Enter details"
-send -- "\\r"
-must_expect "Agents / general-purpose"
-must_expect "Activity"
-must_expect "t tool details"
-wait_for_quiet
-send_and_expect " " "CHILD_MARKDOWN_RENDERED"
-show_agent_tool_result
-send_and_expect "\\033" "↑/↓ select · Enter details"
-send_and_expect "\\033" $conversation_marker
-send -- "\\004"
-expect {
-    eof {}
-    timeout {
-        puts stderr "Timed out waiting for resumed Pi to exit"
-        exit 5
-    }
-}
-`;
-}
-
-function fail(message: string): never {
-	throw new Error(`Agents PTY verification failed: ${message}`);
-}
 
 function number<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
@@ -242,103 +102,6 @@ function git(cwd: string, args: readonly string[]): string {
 		fail(`git ${args.join(" ")} failed: ${result.stderr.toString().trim()}`);
 	}
 	return result.stdout.toString().trim();
-}
-
-function stripTerminalControls(output: string): string {
-	let visible = "";
-	for (let index = 0; index < output.length; index++) {
-		const code = output.charCodeAt(index);
-		if (code === 13) continue;
-		if (code !== 27) {
-			visible += output[index];
-			continue;
-		}
-
-		const introducer = output[index + 1];
-		if (introducer === "[") {
-			index += 2;
-			while (index < output.length) {
-				const finalCode = output.charCodeAt(index);
-				if (finalCode >= 0x40 && finalCode <= 0x7e) break;
-				index++;
-			}
-			continue;
-		}
-		if (introducer === "]") {
-			index += 2;
-			while (index < output.length) {
-				if (output.charCodeAt(index) === 7) break;
-				if (output.charCodeAt(index) === 27 && output[index + 1] === "\\") {
-					index++;
-					break;
-				}
-				index++;
-			}
-			continue;
-		}
-		if (introducer !== undefined) index++;
-	}
-	return visible;
-}
-
-type FleetviewSelection = "idle" | "live" | "main" | "terminal";
-
-function fleetviewHelp(columns: number, selection: Exclude<FleetviewSelection, "idle">): string {
-	const action = selection === "main" ? "" : ` · x ${selection === "terminal" ? "dismiss" : "stop"}`;
-	return columns <= 64 ? `↑/↓ · Enter${action} · Esc` : `↑/↓ select · Enter view${action} · Esc return`;
-}
-
-function verifyTerminalOutput(output: string, columns: number): void {
-	const visible = stripTerminalControls(output);
-	for (const required of [
-		"MAIN_NOT_BLOCKED",
-		fleetviewHelp(columns, "main"),
-		"复核工具结果 🧪",
-		"AGENT_PTY_TASK",
-		"中文长任务",
-		"Agents / general-purpose",
-		"Agent finished",
-		"inspect with /agents",
-		"CHILD_FINAL_SUMMARY",
-		"AGENT_TOOL_RESULT",
-	]) {
-		if (!visible.includes(required)) fail(`terminal output is missing ${required}\n${visible.slice(-8_000)}`);
-	}
-	const compact = visible.replace(/\s+/gu, " ");
-	if (!/• Agent general-purpose\b.*?· launched/u.test(compact)) {
-		fail(`terminal output is missing the standalone Agent launch row\n${visible.slice(-8_000)}`);
-	}
-	if (compact.includes("Launched 1 background agent")) fail("Agent launch leaked into an aggregate summary");
-	if (!visible.includes("━".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
-	for (const forbidden of [
-		"↓ to manage",
-		"Fleet",
-		"latest action",
-		"statusline",
-		"UNSOLICITED_MAIN_TURN",
-		"MAIN_SAW_DIRECT_SUMMARY",
-	]) {
-		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI: ${forbidden}`);
-	}
-	if (/● Agent[^\n]* · done(?:\s|$)/u.test(visible)) {
-		fail("a live background Agent launch was presented as completed");
-	}
-	if (!/(?:^|[\r\n])[ \t]*• Agent finished ·/u.test(visible)) {
-		fail(`the Conversation Transcript Agent outcome did not use the small bullet\n${visible.slice(-8_000)}`);
-	}
-	if (/(?:^|[\r\n])[ \t]*● Agent finished ·/u.test(visible)) {
-		fail("the Conversation Transcript Agent outcome retained the large state dot");
-	}
-	if (
-		/sample\.tx…[ \t]*(?:done|completed|queued|running|waiting|permission|failed|crashed|stopped|cancelled|\d+[smh])/i.test(
-			visible,
-		)
-	) {
-		fail("narrow Agent rows joined an ellipsis fragment to the terminal state");
-	}
-	if (/↓\s+\d+(?:\.\d+)?[kKmM]?\s+tokens?/.test(visible)) {
-		fail("terminal output exposed the removed Agent token statusline");
-	}
 }
 
 function verifyRequests(records: readonly LogRecord[]): void {
@@ -623,6 +386,138 @@ function sanitizeFleetviewEvidence(value: string): string {
 	return value.replace(/\/tmp\/pi-(?:stuff-agents-pty|subagent-session)-[^/\s]+/gu, "[fixture]").trimEnd();
 }
 
+async function writeFleetviewEvidence(
+	directory: string | undefined,
+	entries: readonly (readonly [name: string, value: string])[],
+): Promise<void> {
+	if (!directory) return;
+	await mkdir(directory, { recursive: true });
+	await Promise.all(
+		entries.map(([name, value]) => writeFile(join(directory, name), sanitizeFleetviewEvidence(value), "utf8")),
+	);
+}
+
+async function verifyFleetviewNavigation(
+	session: TmuxAgentsSession,
+	options: AgentsPtyVerificationOptions,
+): Promise<void> {
+	session.start();
+	await session.waitForText("MAIN_NOT_BLOCKED");
+	let screen = await session.waitForFleetviewFrame("idle");
+	verifyFleetviewFrame(screen, options.columns, "idle");
+	const idleIndices = fleetviewLineIndices(screen, undefined);
+	const prompt = screen.split("\n").map((line) => line.trimEnd())[idleIndices.prompt];
+	if (!prompt) fail(`${String(options.columns)}-column idle Fleetview has no latest Prompt row\n${screen}`);
+	const idleName = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-idle-${String(options.columns)}x${String(options.rows)}`;
+	await writeFleetviewEvidence(options.artifactDirectory, [
+		[`${idleName}.txt`, screen],
+		[`${idleName}.ansi`, session.capture(true)],
+	]);
+
+	session.sendKey("Down");
+	screen = await session.waitForFleetviewFrame("main");
+	verifyFleetviewFrame(screen, options.columns, "main");
+	const activeName = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
+	await writeFleetviewEvidence(options.artifactDirectory, [
+		[`${activeName}.txt`, screen],
+		[`${activeName}.ansi`, session.capture(true)],
+	]);
+
+	session.sendKey("Down");
+	await session.waitForText("37%");
+	screen = await session.waitForFleetviewFrame("live");
+	verifyFleetviewFrame(screen, options.columns, "live");
+	verifyFleetviewContextPercent(screen, options.columns, 37);
+	if (options.columns > 64) {
+		session.resize(64, 28);
+		screen = await session.waitForFleetviewFrame("live", 64);
+		verifyFleetviewFrame(screen, 64, "live");
+		verifyFleetviewContextPercent(screen, 64, 37);
+		session.resize(options.columns, options.rows);
+		screen = await session.waitForFleetviewFrame("live");
+		verifyFleetviewFrame(screen, options.columns, "live");
+		verifyFleetviewContextPercent(screen, options.columns, 37);
+	}
+
+	session.sendKey("Escape");
+	screen = await session.waitForFleetviewFrame("idle");
+	verifyFleetviewFrame(screen, options.columns, "idle");
+	if (
+		!screen
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.includes(prompt)
+	) {
+		fail(`${String(options.columns)}-column Fleetview did not restore the exact latest Prompt row\n${screen}`);
+	}
+}
+
+async function verifyAgentDetail(session: TmuxAgentsSession, options: AgentsPtyVerificationOptions): Promise<void> {
+	session.sendLiteral("/agents");
+	session.sendKey("Enter");
+	await session.waitForText("↑/↓ select · Enter details");
+	session.sendKey("Enter");
+	await session.waitForText("Agents / general-purpose");
+	await session.waitForText("Activity");
+	session.sendKey("Escape");
+	await session.waitForText("↑/↓ select");
+	session.sendKey("Escape");
+	await session.waitForAbsence("Agents ·");
+	let screen = await session.waitForFleetviewFrame("idle");
+	verifyFleetviewFrame(screen, options.columns, "idle");
+	await session.waitForText("done ·");
+	await session.waitForText("inspect with /agents");
+	session.sendLiteral("/agents");
+	session.sendKey("Enter");
+	await session.waitForText("↑/↓ select · Enter details");
+	session.sendKey("Enter");
+	await session.waitForText("Agents / general-purpose");
+	await session.waitForText("Activity");
+	await session.waitForText("CHILD_FINAL_SUMMARY");
+	const detailInitial = await session.waitForStableScreen();
+	if (detailInitial.includes("pi-stuff-context")) fail("Agent detail exposed Suite-owned execution context");
+	if (detailInitial.split("Agents / general-purpose").length !== 2) fail("Agent detail repeated its title");
+	if (!detailInitial.includes("◆ Result") || !detailInitial.includes("CHILD_RUNNING")) {
+		fail("completed Agent detail did not start with its retained Result");
+	}
+	if (!detailInitial.includes("CHILD_MARKDOWN_RENDERED")) fail("Agent Result did not render Markdown content");
+	if (detailInitial.includes("## CHILD_FINAL_SUMMARY") || detailInitial.includes("**CHILD_MARKDOWN_RENDERED**")) {
+		fail("Agent Result exposed unrendered Markdown markers");
+	}
+	const detailDown = await session.sendAndWaitForChange("Down");
+	if (detailDown === detailInitial) fail(`Down did not move the completed Agent detail\n${detailInitial}`);
+	const detailEnd = await session.sendAndWaitForChange(" ", true);
+	if (detailEnd.includes("AGENT_TOOL_RESULT")) fail(`successful Tool result was expanded by default\n${detailEnd}`);
+	await session.sendAndWaitForChange("t");
+	await session.sendAndWaitForChange(" ", true);
+	await session.waitForText("AGENT_TOOL_RESULT");
+	const prefix = `pi-${CERTIFIED_PI_VERSION}-agents-detail-${String(options.columns)}x${String(options.rows)}`;
+	await writeFleetviewEvidence(options.artifactDirectory, [
+		[`${prefix}-initial.txt`, detailInitial],
+		[`${prefix}-down.txt`, detailDown],
+		[`${prefix}-end.txt`, detailEnd],
+		[`${prefix}-tools.txt`, session.capture()],
+	]);
+
+	session.sendKey("Escape");
+	await session.waitForText("↑/↓ select");
+	session.sendKey("Escape");
+	screen = await session.waitForFleetviewFrame("idle");
+	verifyFleetviewFrame(screen, options.columns, "idle");
+	session.sendKey("Down");
+	screen = await session.waitForFleetviewFrame("main");
+	verifyFleetviewFrame(screen, options.columns, "main");
+	session.sendKey("Down");
+	screen = await session.waitForFleetviewFrame("terminal");
+	verifyFleetviewFrame(screen, options.columns, "terminal");
+	verifyFleetviewContextPercent(screen, options.columns, 40);
+	session.sendKey("Escape");
+	screen = await session.waitForFleetviewFrame("idle");
+	verifyFleetviewFrame(screen, options.columns, "idle");
+	session.sendKey("C-d");
+	await Bun.sleep(250);
+}
+
 async function verifyFleetviewFooterLayout(
 	options: AgentsPtyVerificationOptions,
 	temporaryDirectory: string,
@@ -653,140 +548,8 @@ async function verifyFleetviewFooterLayout(
 
 	const session = new TmuxAgentsSession(options, { config, log, runtime, sessions, workspace });
 	try {
-		session.start();
-		await session.waitForText("MAIN_NOT_BLOCKED");
-		let screen = await session.waitForFleetviewFrame("idle");
-		verifyFleetviewFrame(screen, options.columns, "idle");
-		const idleIndices = fleetviewLineIndices(screen, undefined);
-		const prompt = screen.split("\n").map((line) => line.trimEnd())[idleIndices.prompt];
-		if (!prompt) fail(`${String(options.columns)}-column idle Fleetview has no latest Prompt row\n${screen}`);
-		if (options.artifactDirectory) {
-			await mkdir(options.artifactDirectory, { recursive: true });
-			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-idle-${String(options.columns)}x${String(options.rows)}`;
-			await Promise.all([
-				writeFile(join(options.artifactDirectory, `${name}.txt`), sanitizeFleetviewEvidence(screen), "utf8"),
-				writeFile(
-					join(options.artifactDirectory, `${name}.ansi`),
-					sanitizeFleetviewEvidence(session.capture(true)),
-					"utf8",
-				),
-			]);
-		}
-
-		session.sendKey("Down");
-		screen = await session.waitForFleetviewFrame("main");
-		verifyFleetviewFrame(screen, options.columns, "main");
-		if (options.artifactDirectory) {
-			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
-			await Promise.all([
-				writeFile(join(options.artifactDirectory, `${name}.txt`), sanitizeFleetviewEvidence(screen), "utf8"),
-				writeFile(
-					join(options.artifactDirectory, `${name}.ansi`),
-					sanitizeFleetviewEvidence(session.capture(true)),
-					"utf8",
-				),
-			]);
-		}
-
-		session.sendKey("Down");
-		await session.waitForText("37%");
-		screen = await session.waitForFleetviewFrame("live");
-		verifyFleetviewFrame(screen, options.columns, "live");
-		verifyFleetviewContextPercent(screen, options.columns, 37);
-		if (options.columns > 64) {
-			session.resize(64, 28);
-			screen = await session.waitForFleetviewFrame("live", 64);
-			verifyFleetviewFrame(screen, 64, "live");
-			verifyFleetviewContextPercent(screen, 64, 37);
-			session.resize(options.columns, options.rows);
-			screen = await session.waitForFleetviewFrame("live");
-			verifyFleetviewFrame(screen, options.columns, "live");
-			verifyFleetviewContextPercent(screen, options.columns, 37);
-		}
-
-		session.sendKey("Escape");
-		screen = await session.waitForFleetviewFrame("idle");
-		verifyFleetviewFrame(screen, options.columns, "idle");
-		if (
-			!screen
-				.split("\n")
-				.map((line) => line.trimEnd())
-				.includes(prompt)
-		) {
-			fail(`${String(options.columns)}-column Fleetview did not restore the exact latest Prompt row\n${screen}`);
-		}
-
-		session.sendLiteral("/agents");
-		session.sendKey("Enter");
-		await session.waitForText("↑/↓ select · Enter details");
-		session.sendKey("Enter");
-		await session.waitForText("Agents / general-purpose");
-		await session.waitForText("Activity");
-		session.sendKey("Escape");
-		await session.waitForText("↑/↓ select");
-		session.sendKey("Escape");
-		await session.waitForAbsence("Agents ·");
-		screen = await session.waitForFleetviewFrame("idle");
-		verifyFleetviewFrame(screen, options.columns, "idle");
-		await session.waitForText("done ·");
-		await session.waitForText("inspect with /agents");
-		session.sendLiteral("/agents");
-		session.sendKey("Enter");
-		await session.waitForText("↑/↓ select · Enter details");
-		session.sendKey("Enter");
-		await session.waitForText("Agents / general-purpose");
-		await session.waitForText("Activity");
-		await session.waitForText("CHILD_FINAL_SUMMARY");
-		const detailInitial = await session.waitForStableScreen();
-		if (detailInitial.includes("pi-stuff-context")) fail("Agent detail exposed Suite-owned execution context");
-		if (detailInitial.split("Agents / general-purpose").length !== 2) fail("Agent detail repeated its title");
-		if (!detailInitial.includes("◆ Result") || !detailInitial.includes("CHILD_RUNNING")) {
-			fail("completed Agent detail did not start with its retained Result");
-		}
-		if (!detailInitial.includes("CHILD_MARKDOWN_RENDERED")) fail("Agent Result did not render Markdown content");
-		if (detailInitial.includes("## CHILD_FINAL_SUMMARY") || detailInitial.includes("**CHILD_MARKDOWN_RENDERED**")) {
-			fail("Agent Result exposed unrendered Markdown markers");
-		}
-		const detailDown = await session.sendAndWaitForChange("Down");
-		if (detailDown === detailInitial) fail(`Down did not move the completed Agent detail\n${detailInitial}`);
-		const detailEnd = await session.sendAndWaitForChange(" ", true);
-		if (detailEnd.includes("AGENT_TOOL_RESULT")) fail(`successful Tool result was expanded by default\n${detailEnd}`);
-		await session.sendAndWaitForChange("t");
-		await session.sendAndWaitForChange(" ", true);
-		await session.waitForText("AGENT_TOOL_RESULT");
-		const detailTools = session.capture();
-		if (options.artifactDirectory) {
-			const prefix = `pi-${CERTIFIED_PI_VERSION}-agents-detail-${String(options.columns)}x${String(options.rows)}`;
-			for (const [state, value] of [
-				["initial", detailInitial],
-				["down", detailDown],
-				["end", detailEnd],
-				["tools", detailTools],
-			] as const) {
-				await writeFile(
-					join(options.artifactDirectory, `${prefix}-${state}.txt`),
-					sanitizeFleetviewEvidence(value),
-					"utf8",
-				);
-			}
-		}
-		session.sendKey("Escape");
-		await session.waitForText("↑/↓ select");
-		session.sendKey("Escape");
-		screen = await session.waitForFleetviewFrame("idle");
-		verifyFleetviewFrame(screen, options.columns, "idle");
-		session.sendKey("Down");
-		screen = await session.waitForFleetviewFrame("main");
-		verifyFleetviewFrame(screen, options.columns, "main");
-		session.sendKey("Down");
-		screen = await session.waitForFleetviewFrame("terminal");
-		verifyFleetviewFrame(screen, options.columns, "terminal");
-		verifyFleetviewContextPercent(screen, options.columns, 40);
-		session.sendKey("Escape");
-		screen = await session.waitForFleetviewFrame("idle");
-		verifyFleetviewFrame(screen, options.columns, "idle");
-		session.sendKey("C-d");
-		await Bun.sleep(250);
+		await verifyFleetviewNavigation(session, options);
+		await verifyAgentDetail(session, options);
 	} catch (error) {
 		const providerLog = await readFile(log, "utf8").catch(() => "(provider log unavailable)");
 		const diagnostics = await readFailureDiagnostics(rootDirectory);
@@ -797,6 +560,82 @@ async function verifyFleetviewFooterLayout(
 		fail(`${reason}\nProvider log:\n${providerLog.trim()}\nRuntime diagnostics:\n${diagnostics || "(none)"}`);
 	} finally {
 		session.stop();
+	}
+}
+
+async function verifyPersistedAgentState(
+	requestLog: string,
+	sessionDirectory: string,
+	workspaceDirectory: string,
+): Promise<void> {
+	const records = (await readFile(requestLog, "utf8"))
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(LOG_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+			return record;
+		});
+	verifyRequests(records);
+	const gitStatus = git(workspaceDirectory, ["status", "--porcelain"]);
+	if (gitStatus) fail(`read-only Agent delegation dirtied the workspace:\n${gitStatus}`);
+	const workspaceEntries = await readdir(workspaceDirectory, { recursive: true });
+	if (workspaceEntries.some((entry) => entry.split(/[\\/]/).includes(".pi-subagents"))) {
+		fail("read-only Agent delegation created a project-local .pi-subagents directory");
+	}
+
+	const topLevelSessions = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
+	if (topLevelSessions.length !== 1 || !topLevelSessions[0]) fail("expected exactly one isolated main session");
+	const transcript = await readFile(join(sessionDirectory, topLevelSessions[0]), "utf8");
+	for (const required of ["subagent", "MAIN_NOT_BLOCKED", "pi-stuff-agent-outcome"]) {
+		if (!transcript.includes(required)) fail(`main session transcript is missing ${required}`);
+	}
+	for (const forbidden of [
+		"Fleet",
+		"statusline",
+		"CHILD_FINAL_SUMMARY",
+		"AGENT_TOOL_RESULT",
+		"pi-stuff-agent-complete",
+		"UNSOLICITED_MAIN_TURN",
+	]) {
+		if (transcript.includes(forbidden)) fail(`ephemeral or removed UI leaked into the session: ${forbidden}`);
+	}
+	const sessionEntries = transcript
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const entry = JSON.parse(line);
+			if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("session contains a malformed entry");
+			return entry;
+		});
+	const outcomes = sessionEntries.filter(
+		(entry) => entry.type === "custom" && entry.customType === "pi-stuff-agent-outcome",
+	);
+	if (outcomes.length !== 1) {
+		fail(`expected one durable completion outcome across fresh and resumed Pi; received ${String(outcomes.length)}`);
+	}
+	const outcomeData = outcomes[0]?.data;
+	if (!Check(OUTCOME_SCHEMA, outcomeData)) fail("durable completion outcome has invalid data");
+	const outcome = outcomeData;
+	if (outcome.version !== 1 || outcome.count !== 1 || outcome.status !== "completed") {
+		fail("durable completion outcome has the wrong public state projection");
+	}
+	if (!isRuntimeString(outcome.key) || !/^[a-f0-9]{24}$/.test(outcome.key)) {
+		fail("durable completion outcome does not use a safe digest key");
+	}
+	for (const forbiddenKey of ["agent", "task", "report", "summary", "path", "error", "output"]) {
+		if (forbiddenKey in outcome) fail(`durable completion outcome exposed ${forbiddenKey}`);
+	}
+
+	const artifactsDirectory = join(sessionDirectory, "subagent-artifacts");
+	const artifactEntries = await readdir(artifactsDirectory, { recursive: true }).catch((): string[] => []);
+	if (!artifactEntries.some((entry) => entry.endsWith("_transcript.jsonl"))) {
+		fail("Settings-owned session artifacts did not retain the Agent transcript for /agents resume inspection");
+	}
+	if (!artifactEntries.some((entry) => entry.endsWith("_output.md"))) {
+		fail("Settings-owned session artifacts did not retain the Agent report");
 	}
 }
 
@@ -838,7 +677,7 @@ Return the deterministic fixture result.
 
 	try {
 		await verifyFleetviewFooterLayout(options, temporaryDirectory, workspaceDirectory, agentDefinition);
-		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
+		const result = Bun.spawnSync(["expect", "-c", AGENTS_EXPECT_PROGRAM], {
 			cwd: workspaceDirectory,
 			env: {
 				...process.env,
@@ -874,78 +713,7 @@ Return the deterministic fixture result.
 			);
 		}
 		verifyTerminalOutput(output, options.columns);
-
-		const records = (await readFile(requestLog, "utf8"))
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => {
-				const record = JSON.parse(line);
-				if (!Check(LOG_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
-				return record;
-			});
-		verifyRequests(records);
-		const gitStatus = git(workspaceDirectory, ["status", "--porcelain"]);
-		if (gitStatus) fail(`read-only Agent delegation dirtied the workspace:\n${gitStatus}`);
-		const workspaceEntries = await readdir(workspaceDirectory, { recursive: true });
-		if (workspaceEntries.some((entry) => entry.split(/[\\/]/).includes(".pi-subagents"))) {
-			fail("read-only Agent delegation created a project-local .pi-subagents directory");
-		}
-
-		const topLevelSessions = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
-		if (topLevelSessions.length !== 1 || !topLevelSessions[0]) fail("expected exactly one isolated main session");
-		const transcript = await readFile(join(sessionDirectory, topLevelSessions[0]), "utf8");
-		for (const required of ["subagent", "MAIN_NOT_BLOCKED", "pi-stuff-agent-outcome"]) {
-			if (!transcript.includes(required)) fail(`main session transcript is missing ${required}`);
-		}
-		for (const forbidden of [
-			"Fleet",
-			"statusline",
-			"CHILD_FINAL_SUMMARY",
-			"AGENT_TOOL_RESULT",
-			"pi-stuff-agent-complete",
-			"UNSOLICITED_MAIN_TURN",
-		]) {
-			if (transcript.includes(forbidden)) fail(`ephemeral or removed UI leaked into the session: ${forbidden}`);
-		}
-		const sessionEntries = transcript
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => {
-				const entry = JSON.parse(line);
-				if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("session contains a malformed entry");
-				return entry;
-			});
-		const outcomes = sessionEntries.filter(
-			(entry) => entry.type === "custom" && entry.customType === "pi-stuff-agent-outcome",
-		);
-		if (outcomes.length !== 1) {
-			fail(
-				`expected one durable completion outcome across fresh and resumed Pi; received ${String(outcomes.length)}`,
-			);
-		}
-		const outcomeData = outcomes[0]?.data;
-		if (!Check(OUTCOME_SCHEMA, outcomeData)) fail("durable completion outcome has invalid data");
-		const outcome = outcomeData;
-		if (outcome.version !== 1 || outcome.count !== 1 || outcome.status !== "completed") {
-			fail("durable completion outcome has the wrong public state projection");
-		}
-		if (!isRuntimeString(outcome.key) || !/^[a-f0-9]{24}$/.test(outcome.key)) {
-			fail("durable completion outcome does not use a safe digest key");
-		}
-		for (const forbiddenKey of ["agent", "task", "report", "summary", "path", "error", "output"]) {
-			if (forbiddenKey in outcome) fail(`durable completion outcome exposed ${forbiddenKey}`);
-		}
-
-		const artifactsDirectory = join(sessionDirectory, "subagent-artifacts");
-		const artifactEntries = await readdir(artifactsDirectory, { recursive: true }).catch((): string[] => []);
-		if (!artifactEntries.some((entry) => entry.endsWith("_transcript.jsonl"))) {
-			fail("Settings-owned session artifacts did not retain the Agent transcript for /agents resume inspection");
-		}
-		if (!artifactEntries.some((entry) => entry.endsWith("_output.md"))) {
-			fail("Settings-owned session artifacts did not retain the Agent report");
-		}
+		await verifyPersistedAgentState(requestLog, sessionDirectory, workspaceDirectory);
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 		if (await pathExists(temporaryDirectory)) fail("temporary verification directory was not removed");
