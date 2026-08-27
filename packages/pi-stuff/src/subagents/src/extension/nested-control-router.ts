@@ -72,6 +72,95 @@ function currentTopLevelIds(state: SubagentState): string[] {
 	return [...ids];
 }
 
+type NestedRunMatch = Awaited<ReturnType<typeof findNestedRunMatchesByIdAuthoritatively>>[number];
+
+function errorMessage<Cause>(error: Cause): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function stopNestedAgent(
+	match: NestedRunMatch,
+	asyncDir: string,
+	index: number | undefined,
+): AgentToolResult<Details> & { isError?: boolean } {
+	try {
+		const request: Parameters<typeof deliverStopRequest>[0] = { asyncDir, source: "nested-agent-stop" };
+		if (index !== undefined) Object.assign(request, { targetIndex: index });
+		deliverStopRequest(request);
+		return managementResult(
+			`Interrupt requested for nested Agent ${match.run.id}${index === undefined ? "" : ` child ${index}`}.`,
+		);
+	} catch (error) {
+		return managementResult(`Failed to stop nested Agent '${match.run.id}': ${errorMessage(error)}`, true);
+	}
+}
+
+async function steerNestedAgent(
+	params: NestedControlParams,
+	match: NestedRunMatch,
+	asyncDir: string,
+	signal: AbortSignal,
+	options: NestedControlRouterOptions,
+	startedAt: number,
+	timeoutMs: number,
+): Promise<AgentToolResult<Details> & { isError?: boolean }> {
+	const steps = match.run.steps ?? [];
+	const liveIndexes = steps
+		.map((step, index) => (step.status === "pending" || step.status === "running" ? index : undefined))
+		.filter((index): index is number => index !== undefined);
+	if (steps.length > 0 && params.index === undefined && liveIndexes.length === 0) {
+		return managementResult(`Nested Agent '${match.run.id}' has no live child to steer.`, true);
+	}
+	const requestId = (options.requestId ?? randomUUID)();
+	try {
+		requestAsyncSteer(asyncDir, {
+			id: requestId,
+			message: params.message?.trim() ?? "",
+			parentRunOrigin: options.parentRunOrigin,
+			source: "nested-agent-steer",
+			...(params.index !== undefined
+				? { targetIndex: params.index }
+				: liveIndexes.length > 0
+					? { targetIndexes: liveIndexes }
+					: {}),
+		});
+	} catch (error) {
+		return managementResult(`Failed to steer nested Agent '${match.run.id}': ${errorMessage(error)}`, true);
+	}
+	const now = options.now ?? Date.now;
+	const waited = await waitForSteeringAction({
+		asyncDir,
+		sourceRunId: match.run.id,
+		requestId,
+		timeoutMs: Math.max(0, timeoutMs - (now() - startedAt)),
+		signal,
+	});
+	const targetIndexes = params.index !== undefined ? [params.index] : liveIndexes;
+	const steering =
+		waited ??
+		({
+			requestId,
+			state: "pending",
+			sourceRunId: match.run.id,
+			targets: targetIndexes.map((index) => ({ index, state: "routed" as const })),
+		} as const);
+	const failed = steering.state === "failed" || steering.state === "partial";
+	const label =
+		steering.state === "delivered"
+			? "delivered"
+			: steering.state === "scheduled"
+				? "scheduled"
+				: steering.state === "pending"
+					? "pending acknowledgment"
+					: steering.state;
+	const result: AgentToolResult<Details> & { isError?: boolean } = {
+		content: [{ type: "text", text: `Steering ${label} for nested Agent ${match.run.id} (request ${requestId}).` }],
+		details: { mode: "management", results: [], steering },
+	};
+	if (failed) Object.assign(result, { isError: true });
+	return result;
+}
+
 /**
  * Route steer/stop to an owner-blocking nested run. Returning undefined means
  * the id belongs to the ordinary top-level engine (or no nested run matched).
@@ -104,10 +193,7 @@ export async function routeLiveNestedAgentControl(
 			timeoutMs,
 		});
 	} catch (error) {
-		return managementResult(
-			`Nested Agent control lookup could not complete: ${error instanceof Error ? error.message : String(error)}`,
-			true,
-		);
+		return managementResult(`Nested Agent control lookup could not complete: ${errorMessage(error)}`, true);
 	}
 	const exactNested = matches.filter(({ run }) => run.id === requested);
 	const candidates = exactNested.length > 0 ? exactNested : matches;
@@ -149,79 +235,6 @@ export async function routeLiveNestedAgentControl(
 		}
 	}
 
-	if (params.action === "stop") {
-		try {
-			const request: Parameters<typeof deliverStopRequest>[0] = {
-				asyncDir,
-				source: "nested-agent-stop",
-			};
-			if (params.index !== undefined) Object.assign(request, { targetIndex: params.index });
-			deliverStopRequest(request);
-			return managementResult(
-				`Interrupt requested for nested Agent ${match.run.id}${params.index === undefined ? "" : ` child ${params.index}`}.`,
-			);
-		} catch (error) {
-			return managementResult(
-				`Failed to stop nested Agent '${match.run.id}': ${error instanceof Error ? error.message : String(error)}`,
-				true,
-			);
-		}
-	}
-
-	const liveIndexes = steps
-		.map((step, index) => (step.status === "pending" || step.status === "running" ? index : undefined))
-		.filter((index): index is number => index !== undefined);
-	if (steps.length > 0 && params.index === undefined && liveIndexes.length === 0) {
-		return managementResult(`Nested Agent '${match.run.id}' has no live child to steer.`, true);
-	}
-	const requestId = (options.requestId ?? randomUUID)();
-	try {
-		requestAsyncSteer(asyncDir, {
-			id: requestId,
-			message: params.message?.trim() ?? "",
-			parentRunOrigin: options.parentRunOrigin,
-			source: "nested-agent-steer",
-			...(params.index !== undefined
-				? { targetIndex: params.index }
-				: liveIndexes.length > 0
-					? { targetIndexes: liveIndexes }
-					: {}),
-		});
-	} catch (error) {
-		return managementResult(
-			`Failed to steer nested Agent '${match.run.id}': ${error instanceof Error ? error.message : String(error)}`,
-			true,
-		);
-	}
-	const waited = await waitForSteeringAction({
-		asyncDir,
-		sourceRunId: match.run.id,
-		requestId,
-		timeoutMs: Math.max(0, timeoutMs - (now() - startedAt)),
-		signal,
-	});
-	const targetIndexes = params.index !== undefined ? [params.index] : liveIndexes;
-	const steering =
-		waited ??
-		({
-			requestId,
-			state: "pending",
-			sourceRunId: match.run.id,
-			targets: targetIndexes.map((index) => ({ index, state: "routed" as const })),
-		} as const);
-	const failed = steering.state === "failed" || steering.state === "partial";
-	const label =
-		steering.state === "delivered"
-			? "delivered"
-			: steering.state === "scheduled"
-				? "scheduled"
-				: steering.state === "pending"
-					? "pending acknowledgment"
-					: steering.state;
-	const result: AgentToolResult<Details> & { isError?: boolean } = {
-		content: [{ type: "text", text: `Steering ${label} for nested Agent ${match.run.id} (request ${requestId}).` }],
-		details: { mode: "management", results: [], steering },
-	};
-	if (failed) Object.assign(result, { isError: true });
-	return result;
+	if (params.action === "stop") return stopNestedAgent(match, asyncDir, params.index);
+	return steerNestedAgent(params, match, asyncDir, signal, options, startedAt, timeoutMs);
 }

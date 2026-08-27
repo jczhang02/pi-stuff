@@ -450,6 +450,58 @@ export function projectForegroundCompletion(
 	return projected;
 }
 
+async function recoverForegroundFailure(
+	config: BackgroundRunnerConfig,
+	deps: ForegroundExecutionDependencies,
+	notifyStatus: ForegroundExecutionDependencies["onStatus"],
+	ownerFailure: string,
+): Promise<{ status: AsyncStatus | undefined; terminalOverlay: AsyncStatus | undefined }> {
+	let status = readMatchingStatus(config);
+	// The execution frame has ended whether status.json is readable or not.
+	// Persist that semantic boundary first so the long-lived Pi PID cannot be
+	// mistaken for proof that this foreground frame is still active.
+	try {
+		recordForegroundOwnerExit(config.asyncDir, config.id, ownerFailure);
+	} catch (markerError) {
+		reportAgentDiagnostic(`Failed to persist foreground owner exit for '${config.id}':`, markerError);
+	}
+	let remainingWriters = 1;
+	try {
+		remainingWriters = (await deps.reapWriters(config.asyncDir)).remaining;
+	} catch (reapError) {
+		reportAgentDiagnostic(`Failed to reap foreground writers for '${config.id}':`, reapError);
+	}
+	let terminalOverlay: AsyncStatus | undefined;
+	if (!status || terminalStatus(status) || remainingWriters !== 0) return { status, terminalOverlay };
+	let claim: ReturnType<ForegroundExecutionDependencies["acquireStatusClaim"]>;
+	try {
+		claim = deps.acquireStatusClaim(config.asyncDir);
+	} catch (claimError) {
+		reportAgentDiagnostic(`Failed to acquire foreground status claim for '${config.id}':`, claimError);
+	}
+	if (!claim) return { status, terminalOverlay };
+	try {
+		const current = readMatchingStatus(config);
+		if (current) {
+			status = terminalizeForegroundOwnerFailure(current, ownerFailure);
+			terminalOverlay = status;
+			if (!terminalStatus(current)) {
+				deps.writeStatus(path.join(config.asyncDir, "status.json"), status);
+				notifyStatus(status);
+			}
+		}
+	} catch (statusError) {
+		reportAgentDiagnostic(`Failed to persist foreground owner failure for '${config.id}':`, statusError);
+	} finally {
+		try {
+			claim.release();
+		} catch (releaseError) {
+			reportAgentDiagnostic(`Failed to release foreground status claim for '${config.id}':`, releaseError);
+		}
+	}
+	return { status, terminalOverlay };
+}
+
 export async function executeForegroundConfig(
 	config: BackgroundRunnerConfig,
 	signal?: AbortSignal,
@@ -504,51 +556,7 @@ export async function executeForegroundConfig(
 				: stopRequestError instanceof Error
 					? stopRequestError.message
 					: String(stopRequestError);
-		let status = readMatchingStatus(config);
-		// The execution frame has ended whether status.json is readable or not.
-		// Persist that semantic boundary first so the long-lived Pi PID cannot be
-		// mistaken for proof that this foreground frame is still active.
-		try {
-			recordForegroundOwnerExit(config.asyncDir, config.id, ownerFailure);
-		} catch (markerError) {
-			reportAgentDiagnostic(`Failed to persist foreground owner exit for '${config.id}':`, markerError);
-		}
-		let remainingWriters = 1;
-		try {
-			remainingWriters = (await deps.reapWriters(config.asyncDir)).remaining;
-		} catch (reapError) {
-			reportAgentDiagnostic(`Failed to reap foreground writers for '${config.id}':`, reapError);
-		}
-		let terminalOverlay: AsyncStatus | undefined;
-		if (status && !terminalStatus(status) && remainingWriters === 0) {
-			let claim: ReturnType<ForegroundExecutionDependencies["acquireStatusClaim"]>;
-			try {
-				claim = deps.acquireStatusClaim(config.asyncDir);
-			} catch (claimError) {
-				reportAgentDiagnostic(`Failed to acquire foreground status claim for '${config.id}':`, claimError);
-			}
-			if (claim) {
-				try {
-					const current = readMatchingStatus(config);
-					if (current) {
-						status = terminalizeForegroundOwnerFailure(current, ownerFailure);
-						terminalOverlay = status;
-						if (!terminalStatus(current)) {
-							deps.writeStatus(path.join(config.asyncDir, "status.json"), status);
-							notifyStatus(status);
-						}
-					}
-				} catch (statusError) {
-					reportAgentDiagnostic(`Failed to persist foreground owner failure for '${config.id}':`, statusError);
-				} finally {
-					try {
-						claim.release();
-					} catch (releaseError) {
-						reportAgentDiagnostic(`Failed to release foreground status claim for '${config.id}':`, releaseError);
-					}
-				}
-			}
-		}
+		const { status, terminalOverlay } = await recoverForegroundFailure(config, deps, notifyStatus, ownerFailure);
 		if (status) {
 			const latest = terminalOverlay ?? readMatchingStatus(config) ?? status;
 			const projected = projectForegroundStatus(config, latest, terminalStatus(latest) ? undefined : ownerFailure);

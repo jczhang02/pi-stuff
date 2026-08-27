@@ -165,6 +165,86 @@ function eventArgs(event: ChildTranscriptEvent): ToolArguments {
 	return event.args as ToolArguments;
 }
 
+function transcriptMessageRecord(
+	sourceEventType: string,
+	message: ChildTranscriptMessage,
+	baseRecord: (recordType: ChildTranscriptRecordType) => ChildTranscriptRecord,
+): ChildTranscriptRecord {
+	const text = extractTextFromContent(message.content);
+	if (message.role === "toolResult") {
+		const output = boundedPayload(text);
+		const nestedMessage = {
+			role: message.role,
+			toolCallId: message.toolCallId,
+			toolName: message.toolName,
+			isError: message.isError,
+			content: output ? [{ type: "text", text: output }] : [],
+		};
+		if (message.timestamp !== undefined) Object.assign(nestedMessage, { timestamp: message.timestamp });
+		const record: ChildTranscriptRecord = {
+			...baseRecord("message"),
+			sourceEventType,
+			role: message.role,
+			toolCallId: message.toolCallId,
+			toolName: message.toolName,
+			isError: message.isError,
+			message: nestedMessage,
+		};
+		if (output) {
+			record.text = output;
+			record.outputTruncated = output.includes("… payload truncated");
+		}
+		return record;
+	}
+	const record: ChildTranscriptRecord = {
+		...baseRecord("message"),
+		sourceEventType,
+		role: message.role,
+		message,
+	};
+	if (message.role === "custom") {
+		record.customType = message.customType;
+		record.display = message.display;
+	}
+	if (text) record.text = text;
+	if (message.model) record.model = message.model;
+	if (message.stopReason) record.stopReason = message.stopReason;
+	if (message.errorMessage) record.errorMessage = message.errorMessage;
+	if (message.usage) {
+		const usage = normalizeUsage(message.usage);
+		if (usage) record.usage = usage;
+	}
+	return record;
+}
+
+function transcriptEventRecord(
+	event: ChildTranscriptEvent,
+	baseRecord: (recordType: ChildTranscriptRecordType) => ChildTranscriptRecord,
+): ChildTranscriptRecord | undefined {
+	if ((event.type === "message_end" || event.type === "tool_result_end") && event.message) {
+		return transcriptMessageRecord(event.type, event.message, baseRecord);
+	}
+	if (event.type === "tool_execution_start" && event.toolName) {
+		const args = eventArgs(event);
+		const argsPayload = boundedPayload(args);
+		const record: ChildTranscriptRecord = {
+			...baseRecord("tool_start"),
+			sourceEventType: event.type,
+			toolName: event.toolName,
+		};
+		if (event.toolCallId) record.toolCallId = event.toolCallId;
+		if (Object.keys(args).length > 0) record.argsPreview = extractToolArgsPreview(args);
+		if (argsPayload) record.argsPayload = argsPayload;
+		return record;
+	}
+	if (event.type !== "tool_execution_end") return undefined;
+	const record: ChildTranscriptRecord = { ...baseRecord("tool_end"), sourceEventType: event.type };
+	if (event.toolCallId) record.toolCallId = event.toolCallId;
+	if (event.toolName) record.toolName = event.toolName;
+	if (isRuntimeBoolean(event.isError)) record.isError = event.isError;
+	return record;
+}
+
 export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): ChildTranscriptWriter {
 	let bytesWritten = 0;
 	let writeError: string | undefined;
@@ -190,14 +270,16 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		if (input.childIndex !== undefined) record.childIndex = input.childIndex;
 		return record;
 	};
-
-	const writeTruncatedMarker = () => {
-		truncated = true;
-		const marker = `${JSON.stringify({
+	const truncatedLine = () =>
+		`${JSON.stringify({
 			...baseRecord("truncated"),
 			maxBytes,
 			message: `Child transcript exceeded ${maxBytes} bytes; further records were omitted.`,
 		})}\n`;
+
+	const writeTruncatedMarker = () => {
+		truncated = true;
+		const marker = truncatedLine();
 		const markerBytes = Buffer.byteLength(marker, "utf-8");
 		if (bytesWritten + markerBytes > maxBytes) return false;
 		try {
@@ -218,11 +300,7 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 			writeTruncatedMarker();
 			return;
 		}
-		const markerProbe = `${JSON.stringify({
-			...baseRecord("truncated"),
-			maxBytes,
-			message: `Child transcript exceeded ${maxBytes} bytes; further records were omitted.`,
-		})}\n`;
+		const markerProbe = truncatedLine();
 		if (bytesWritten + bytes + Buffer.byteLength(markerProbe, "utf-8") > maxBytes) {
 			writeTruncatedMarker();
 			return;
@@ -242,55 +320,6 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		writeError = `Failed to initialize child transcript '${input.transcriptPath}': ${errorMessage(error)}`;
 	}
 
-	const writeMessage = (sourceEventType: string, message: ChildTranscriptMessage) => {
-		const text = extractTextFromContent(message.content);
-		if (message.role === "toolResult") {
-			const output = boundedPayload(text);
-			const nestedMessage = {
-				role: message.role,
-				toolCallId: message.toolCallId,
-				toolName: message.toolName,
-				isError: message.isError,
-				content: output ? [{ type: "text", text: output }] : [],
-			};
-			if (message.timestamp !== undefined) Object.assign(nestedMessage, { timestamp: message.timestamp });
-			const record: ChildTranscriptRecord = {
-				...baseRecord("message"),
-				sourceEventType,
-				role: message.role,
-				toolCallId: message.toolCallId,
-				toolName: message.toolName,
-				isError: message.isError,
-				message: nestedMessage,
-			};
-			if (output) {
-				record.text = output;
-				record.outputTruncated = output.includes("… payload truncated");
-			}
-			writeRecord(record);
-			return;
-		}
-		const record: ChildTranscriptRecord = {
-			...baseRecord("message"),
-			sourceEventType,
-			role: message.role,
-			message,
-		};
-		if (message.role === "custom") {
-			record.customType = message.customType;
-			record.display = message.display;
-		}
-		if (text) record.text = text;
-		if (message.model) record.model = message.model;
-		if (message.stopReason) record.stopReason = message.stopReason;
-		if (message.errorMessage) record.errorMessage = message.errorMessage;
-		if (message.usage) {
-			const usage = normalizeUsage(message.usage);
-			if (usage) record.usage = usage;
-		}
-		writeRecord(record);
-	};
-
 	return {
 		path: input.transcriptPath,
 		writeInitialUserMessage(prompt: string) {
@@ -303,34 +332,8 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 			});
 		},
 		writeChildEvent(event: ChildTranscriptEvent) {
-			if ((event.type === "message_end" || event.type === "tool_result_end") && event.message) {
-				writeMessage(event.type, event.message);
-				return;
-			}
-			if (event.type === "tool_execution_start" && event.toolName) {
-				const args = eventArgs(event);
-				const argsPayload = boundedPayload(args);
-				const record: ChildTranscriptRecord = {
-					...baseRecord("tool_start"),
-					sourceEventType: event.type,
-					toolName: event.toolName,
-				};
-				if (event.toolCallId) record.toolCallId = event.toolCallId;
-				if (Object.keys(args).length > 0) record.argsPreview = extractToolArgsPreview(args);
-				if (argsPayload) record.argsPayload = argsPayload;
-				writeRecord(record);
-				return;
-			}
-			if (event.type === "tool_execution_end") {
-				const record: ChildTranscriptRecord = {
-					...baseRecord("tool_end"),
-					sourceEventType: event.type,
-				};
-				if (event.toolCallId) record.toolCallId = event.toolCallId;
-				if (event.toolName) record.toolName = event.toolName;
-				if (isRuntimeBoolean(event.isError)) record.isError = event.isError;
-				writeRecord(record);
-			}
+			const record = transcriptEventRecord(event, baseRecord);
+			if (record) writeRecord(record);
 		},
 		writeStdoutLine(line: string) {
 			if (!line.trim()) return;
