@@ -63,9 +63,9 @@ function firstOutcomeStatus(messages: readonly { readonly message: SuiteAgentMes
 	return Check(COMPLETION_DETAILS_SCHEMA, details) ? details.outcomes[0]?.status : undefined;
 }
 
-async function run(input: Omit<MonitorInput, "toolCallId">): Promise<string> {
+async function run(input: MonitorInput): Promise<string> {
 	const state = setup();
-	await startMonitor(state.runtime, { ...input, toolCallId: "monitor-call" }, state.context);
+	await startMonitor(state.runtime, input, state.context);
 	await waitUntil(() => state.messages.length === 1);
 	const status = firstOutcomeStatus(state.messages);
 	await state.runtime.shutdown();
@@ -100,7 +100,6 @@ describe("file and log Monitor", () => {
 				source: "file",
 				target: join(state.root, "never"),
 				timeoutSeconds: 3,
-				toolCallId: "monitor-description",
 			},
 			state.context,
 		);
@@ -122,7 +121,6 @@ describe("file and log Monitor", () => {
 				successText: "READY",
 				target: path,
 				timeoutSeconds: 3,
-				toolCallId: "monitor-log",
 			},
 			state.context,
 		);
@@ -153,7 +151,6 @@ describe("file and log Monitor", () => {
 				successText: "READY",
 				target: directory,
 				timeoutSeconds: 3,
-				toolCallId: "monitor-error",
 			},
 			state.context,
 		);
@@ -171,7 +168,6 @@ describe("file and log Monitor", () => {
 				source: "file",
 				target: join(state.root, "never"),
 				timeoutSeconds: 3,
-				toolCallId: "monitor-cancel",
 			},
 			state.context,
 		);
@@ -200,7 +196,6 @@ describe("HTTP Monitor", () => {
 				successText: "READY",
 				target: `http://127.0.0.1:${String(server.port)}/health`,
 				timeoutSeconds: 3,
-				toolCallId: "monitor-http",
 			},
 			state.context,
 		);

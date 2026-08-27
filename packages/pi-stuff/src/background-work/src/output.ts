@@ -1,5 +1,6 @@
-import { closeSync, mkdirSync, openSync, readSync, statSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "@earendil-works/pi-coding-agent";
 
 const OVERFLOW_MARKER = Buffer.from("\n[Pi Stuff stopped this task: output limit reached.]\n", "utf-8");
 
@@ -33,7 +34,11 @@ export function utf8SafePrefix(buffer: Buffer): Buffer {
 export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
 	const buffer = Buffer.from(value, "utf-8");
 	const selected = utf8SafeTail(buffer, maxBytes);
-	const prefix = buffer.length > selected.length ? "…[earlier output omitted]\n" : "";
+	return formatTextTail(selected, buffer.length > selected.length);
+}
+
+function formatTextTail(selected: Buffer, omitted: boolean): string {
+	const prefix = omitted ? "…[earlier output omitted]\n" : "";
 	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
 }
 
@@ -162,8 +167,7 @@ export class BoundedOutputFile {
 
 	recentText(maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
 		const selected = utf8SafeTail(this.tail, maxBytes);
-		const prefix = this.bytes > selected.length ? "…[earlier output omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
+		return formatTextTail(selected, this.bytes > selected.length);
 	}
 
 	close(): void {
@@ -221,8 +225,7 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 		const buffer = Buffer.alloc(bytes);
 		readSync(fd, buffer, 0, bytes, Math.max(0, size - bytes));
 		const selected = utf8SafeTail(buffer, bytes);
-		const prefix = size > bytes ? "…[earlier output omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
+		return formatTextTail(selected, size > bytes);
 	} catch {
 		return undefined;
 	} finally {
@@ -237,6 +240,28 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 	}
 }
 
-export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
-	return tryReadBoundedTail(path, maxBytes) ?? "(no output yet)";
+export function foregroundOutputSnapshot(outputPath: string | undefined, recentOutput: string | undefined) {
+	if (!outputPath) return { text: recentOutput ?? "" };
+	let raw: string;
+	try {
+		raw = readFileSync(outputPath, "utf8");
+	} catch {
+		return { text: recentOutput ?? "" };
+	}
+	const truncation = truncateTail(raw, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
+	if (!truncation.truncated) return { text: truncation.content };
+	const startLine = truncation.totalLines - truncation.outputLines + 1;
+	const endLine = truncation.totalLines;
+	let footer: string;
+	if (truncation.lastLinePartial) {
+		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. Full output: ${outputPath}`;
+	} else if (truncation.truncatedBy === "lines") {
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)}. Full output: ${outputPath}`;
+	} else {
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${outputPath}`;
+	}
+	return {
+		details: { fullOutputPath: outputPath, truncation },
+		text: `${truncation.content}\n\n[${footer}]`,
+	};
 }

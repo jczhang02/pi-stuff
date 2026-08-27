@@ -1,10 +1,190 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { isRuntimeObject } from "../../shared/runtime-type.js";
+import { randomBytes } from "node:crypto";
+import { lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
+import { formatSize } from "@earendil-works/pi-coding-agent";
+import { parseJsonValue } from "../../shared/json-value.js";
+import { isRuntimeFunction, isRuntimeObject } from "../../shared/runtime-type.js";
+
+const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
+const SUPERVISOR_POST_EXIT_DRAIN_MS = 500;
+const SUPERVISOR_PATH = fileURLToPath(new URL("./process-supervisor.mjs", import.meta.url));
 
 export interface ProcessIdentity {
 	readonly pid: number;
 	readonly started: string;
+}
+
+export interface SupervisorProcess {
+	closeControl(): void;
+	readonly completion: Promise<{
+		readonly code: number | null;
+		readonly error?: Error;
+		readonly signal: NodeJS.Signals | null;
+	}>;
+	readonly control: Readable;
+	readonly output: Readable;
+	readonly pid: number;
+	kill(signal: NodeJS.Signals): void;
+	unref(): void;
+}
+
+export type SignalVerifiedSupervisor = (
+	supervisor: SupervisorProcess,
+	identity: ProcessIdentity,
+	signal: NodeJS.Signals,
+) => "gone" | "requested" | "unresolved";
+
+export function resolveSupervisorExecutable(override: string | undefined): string {
+	if (override) return override;
+	// The supervisor is plain ESM. Prefer Node's mature concurrent child-process
+	// pipe implementation; Bun remains a portable fallback for Bun-only hosts.
+	const executable = Bun.which("node") ?? Bun.which("bun");
+	if (!executable) throw new Error("Background Work requires Node.js or Bun on PATH to run its process supervisor");
+	return executable;
+}
+
+export function spawnSupervisor(
+	executable: string,
+	envelope: string,
+	options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
+): SupervisorProcess {
+	const subprocess = Bun.spawn({
+		cmd: [executable, SUPERVISOR_PATH, envelope],
+		cwd: options.cwd,
+		detached: process.platform !== "win32",
+		env: options.env,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	if (!subprocess.pid) {
+		subprocess.kill("SIGKILL");
+		subprocess.unref();
+		throw new Error("Background Work supervisor pipes were not created");
+	}
+	const control = Readable.fromWeb(subprocess.stdout);
+	// The supervisor reserves stdout for control and merges command output onto stderr.
+	const output = Readable.fromWeb(subprocess.stderr);
+	const closeControl = () => {
+		if (!control.destroyed) control.destroy();
+	};
+	const streamCompletion = Promise.all([
+		finished(output, { cleanup: true }).catch(() => undefined),
+		finished(control, { cleanup: true }).catch(() => undefined),
+	]);
+	const completion = subprocess.exited.then(async () => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const drained = await Promise.race([
+			streamCompletion.then(() => true),
+			new Promise<false>((resolve) => {
+				timer = setTimeout(() => resolve(false), SUPERVISOR_POST_EXIT_DRAIN_MS);
+			}),
+		]);
+		if (timer) clearTimeout(timer);
+		if (!drained) {
+			// A detached grandchild may inherit the supervisor's output descriptor
+			// after both the command shell and supervisor have exited.
+			// Process exit is authoritative; never let foreign pipe ownership keep a
+			// completed Work task alive forever.
+			output.destroy();
+			closeControl();
+		}
+		return { code: subprocess.exitCode, signal: subprocess.signalCode };
+	});
+	return {
+		closeControl,
+		completion,
+		control,
+		output,
+		pid: subprocess.pid,
+		kill: (signal) => subprocess.kill(signal),
+		unref: () => subprocess.unref(),
+	};
+}
+
+export function signalVerifiedSupervisor(
+	supervisor: SupervisorProcess,
+	identity: ProcessIdentity,
+	signal: NodeJS.Signals,
+): "gone" | "requested" | "unresolved" {
+	if (!identityMatches(identity)) return "gone";
+	try {
+		// Signal only the still-authenticated supervisor. It remains the process
+		// group leader while it escalates and reaps descendants; a group-wide
+		// SIGKILL here would destroy that sole durable authority first.
+		supervisor.kill(signal);
+		return "requested";
+	} catch {
+		return identityMatches(identity) ? "unresolved" : "gone";
+	}
+}
+
+export async function abandonSupervisorAndWait(supervisor: SupervisorProcess): Promise<void> {
+	try {
+		supervisor.kill("SIGKILL");
+	} catch {
+		// The exact subprocess may already have exited.
+	}
+	supervisor.output.destroy();
+	supervisor.closeControl();
+	supervisor.unref();
+	await supervisor.completion;
+}
+
+export function publishCommandAuthorization(filePath: string, token: string, command: string): void {
+	const content = `${JSON.stringify({ version: 1, token, command })}\n`;
+	if (Buffer.byteLength(content, "utf-8") > MAX_COMMAND_AUTHORIZATION_BYTES) {
+		throw new Error(
+			`Background Work command exceeds the ${formatSize(MAX_COMMAND_AUTHORIZATION_BYTES)} transport limit`,
+		);
+	}
+	const temporary = `${filePath}.${randomBytes(6).toString("hex")}.tmp`;
+	try {
+		writeFileSync(temporary, content, { encoding: "utf-8", flag: "wx", mode: 0o600 });
+		renameSync(temporary, filePath);
+	} catch (error) {
+		rmSync(temporary, { force: true });
+		throw error;
+	}
+}
+
+export function consumeCommandAcknowledgement(
+	filePath: string,
+	token: string,
+	supervisorIdentity: ProcessIdentity,
+): boolean {
+	try {
+		const stat = lstatSync(filePath);
+		const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
+		if (
+			stat.isSymbolicLink() ||
+			!stat.isFile() ||
+			stat.size <= 0 ||
+			stat.size > 8 * 1024 ||
+			(stat.mode & 0o077) !== 0 ||
+			(currentUid !== undefined && stat.uid !== currentUid)
+		) {
+			throw new Error("Background Work command acknowledgement is not a private bounded regular file.");
+		}
+		const payload = parseJsonValue(readFileSync(filePath, "utf-8"));
+		if (
+			!isRuntimeObject(payload) ||
+			payload === null ||
+			Array.isArray(payload) ||
+			payload["version"] !== 1 ||
+			payload["token"] !== token ||
+			payload["supervisorPid"] !== supervisorIdentity.pid ||
+			payload["supervisorStarted"] !== supervisorIdentity.started
+		) {
+			throw new Error("Background Work command acknowledgement does not match its supervisor authority.");
+		}
+		rmSync(filePath, { force: true });
+		return true;
+	} catch (cause) {
+		if (cause && isRuntimeObject(cause) && "code" in cause && cause.code === "ENOENT") return false;
+		throw cause;
+	}
 }
 
 function errorCode(cause: unknown): string | undefined {
@@ -43,10 +223,6 @@ export function captureProcessIdentity(pid: number): ProcessIdentity | undefined
 	return started ? { pid, started } : undefined;
 }
 
-function waitForIdentityRetry(milliseconds: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, Math.max(0, milliseconds)));
-}
-
 /**
  * Newly spawned processes can exist briefly before their platform start marker
  * is readable. Retry that observation before deciding launch authority is
@@ -65,7 +241,7 @@ export async function captureProcessIdentityWithRetry(
 	const capture = deps.capture ?? captureProcessIdentity;
 	const exists = deps.exists ?? processExists;
 	const now = deps.now ?? Date.now;
-	const wait = deps.wait ?? waitForIdentityRetry;
+	const wait = deps.wait ?? ((milliseconds: number) => Bun.sleep(milliseconds));
 	const deadline = now() + Math.max(0, timeoutMs);
 	for (;;) {
 		const identity = capture(pid);

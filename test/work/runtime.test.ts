@@ -19,7 +19,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
-import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
+import { BoundedOutputFile, tryReadBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
 	captureProcessIdentity,
 	captureProcessIdentityWithRetry,
@@ -284,7 +284,7 @@ describe("bounded background output", () => {
 		expect(output.append(Buffer.from("界".repeat(100), "utf-8"))).toBe(true);
 		const memoryTail = output.recentText(5);
 		output.close();
-		const diskTail = readBoundedTail(path, 5);
+		const diskTail = tryReadBoundedTail(path, 5) ?? "";
 
 		expect(memoryTail).toEndWith("界");
 		expect(diskTail).toEndWith("界");
@@ -416,9 +416,9 @@ describe("BackgroundWorkRuntime", () => {
 			}),
 		});
 
-		await expect(
-			active.executeBash({ command: "printf 'must-not-start\\n'", toolCallId: "tool-path-failure" }, context(root)),
-		).rejects.toThrow("injected command path EIO");
+		await expect(active.executeBash({ command: "printf 'must-not-start\\n'" }, context(root))).rejects.toThrow(
+			"injected command path EIO",
+		);
 		expect(active.detachActiveForeground()).toBeFalse();
 		expect(outputFactoryCalls).toBe(0);
 		expect(
@@ -455,10 +455,7 @@ describe("BackgroundWorkRuntime", () => {
 			storage,
 		});
 
-		const execution = active.executeBash(
-			{ command: `touch ${JSON.stringify(marker)}`, toolCallId: "tool-shutdown-launch-race" },
-			context(root),
-		);
+		const execution = active.executeBash({ command: `touch ${JSON.stringify(marker)}` }, context(root));
 		await captureStarted;
 		let shutdownSettled = false;
 		const shutdown = active.shutdown().then(() => {
@@ -552,9 +549,7 @@ describe("BackgroundWorkRuntime", () => {
 			});
 		}
 
-		const launches = Array.from({ length: 2 }, (_, index) =>
-			active.executeBash({ command: ":", toolCallId: `tool-reserved-slot-${String(index)}` }, context(root)),
-		);
+		const launches = Array.from({ length: 2 }, () => active.executeBash({ command: ":" }, context(root)));
 		const outcomesPromise = Promise.allSettled(launches);
 		await waitUntil(() => captureCalls === 1);
 		releaseCaptures();
@@ -589,10 +584,7 @@ describe("BackgroundWorkRuntime", () => {
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
 
-		const execution = active.executeBash(
-			{ command: "sleep 30", toolCallId: "tool-pending-manual-detach" },
-			context(root),
-		);
+		const execution = active.executeBash({ command: "sleep 30" }, context(root));
 		await started;
 		expect(active.detachActiveForeground()).toBeTrue();
 		expect(active.detachActiveForeground()).toBeFalse();
@@ -675,7 +667,7 @@ describe("BackgroundWorkRuntime", () => {
 			},
 		});
 
-		const result = await active.executeBash({ command: ":", toolCallId: "tool-fast-exit" }, context(root));
+		const result = await active.executeBash({ command: ":" }, context(root));
 		expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
 		await active.shutdown();
 	});
@@ -694,10 +686,7 @@ describe("BackgroundWorkRuntime", () => {
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
-		const result = await active.executeBash(
-			{ command: "printf 'MEMORY-RUNTIME-RESULT\\n'", toolCallId: "tool-memory-output" },
-			context(root),
-		);
+		const result = await active.executeBash({ command: "printf 'MEMORY-RUNTIME-RESULT\\n'" }, context(root));
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toContain("MEMORY-RUNTIME-RESULT");
 		expect(text?.type === "text" ? text.text : "").toContain("injected runtime output EIO");
@@ -708,7 +697,7 @@ describe("BackgroundWorkRuntime", () => {
 		const root = temporaryRoot();
 		const active = runtime(root);
 		const result = await active.executeBash(
-			{ command: "printf '\\033[31mRAW_FOREGROUND\\033[0m\\n'", toolCallId: "tool-raw" },
+			{ command: "printf '\\033[31mRAW_FOREGROUND\\033[0m\\n'" },
 			context(root),
 		);
 		const text = result.content.find((item) => item.type === "text");
@@ -721,9 +710,9 @@ describe("BackgroundWorkRuntime", () => {
 	test("preserves the native foreground failure wording", async () => {
 		const root = temporaryRoot();
 		const active = runtime(root);
-		await expect(
-			active.executeBash({ command: "printf FAILURE >&2; exit 7", toolCallId: "tool-failure" }, context(root)),
-		).rejects.toThrow("FAILURE\n\nCommand exited with code 7");
+		await expect(active.executeBash({ command: "printf FAILURE >&2; exit 7" }, context(root))).rejects.toThrow(
+			"FAILURE\n\nCommand exited with code 7",
+		);
 		await active.shutdown();
 	});
 
@@ -731,7 +720,7 @@ describe("BackgroundWorkRuntime", () => {
 		const root = temporaryRoot();
 		const active = runtime(root);
 		const execution = active.executeBash(
-			{ command: "printf 'LIVE\\n'; sleep 0.3; printf 'SURVIVED\\n'", toolCallId: "tool-storage-loss" },
+			{ command: "printf 'LIVE\\n'; sleep 0.3; printf 'SURVIVED\\n'" },
 			context(root),
 		);
 		await waitUntil(() => existsSync(join(root, ".pi")) && active.snapshot().length > 0);
@@ -746,10 +735,7 @@ describe("BackgroundWorkRuntime", () => {
 		expect(text?.type === "text" ? text.text : "").toContain("SURVIVED");
 		expect(active.snapshot()).toHaveLength(0);
 
-		const next = await active.executeBash(
-			{ command: "printf 'NEXT\\n'", toolCallId: "tool-after-storage-loss" },
-			context(root),
-		);
+		const next = await active.executeBash({ command: "printf 'NEXT\\n'" }, context(root));
 		const nextText = next.content.find((item) => item.type === "text");
 		expect(nextText?.type === "text" ? nextText.text : "").toBe("NEXT\n");
 		await active.shutdown();
@@ -763,7 +749,6 @@ describe("BackgroundWorkRuntime", () => {
 			{
 				command: "sleep 0.2; printf 'BACKGROUND-SURVIVED\\n'",
 				runInBackground: true,
-				toolCallId: "tool-background-storage-loss",
 			},
 			context(root),
 		);
@@ -787,10 +772,7 @@ describe("BackgroundWorkRuntime", () => {
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
 		try {
-			await active.executeBash(
-				{ command: "sleep 30", runInBackground: true, toolCallId: "tool-heartbeat-recovery" },
-				context(root),
-			);
+			await active.executeBash({ command: "sleep 30", runInBackground: true }, context(root));
 			const taskRoot = join(root, ".pi", "tasks");
 			await waitUntil(() => readdirSync(taskRoot).some((entry) => entry.startsWith("pi-stuff-")));
 			const original = readdirSync(taskRoot).find((entry) => entry.startsWith("pi-stuff-"));
@@ -837,7 +819,6 @@ describe("BackgroundWorkRuntime", () => {
 				{
 					command: "sleep 0.1; printf 'RETRY-DELIVERY\\n'",
 					runInBackground: true,
-					toolCallId: "tool-notification-retry",
 				},
 				context(root),
 			);
@@ -865,10 +846,7 @@ describe("BackgroundWorkRuntime", () => {
 			throw new Error("renderer failed");
 		});
 
-		const result = await active.executeBash(
-			{ command: "printf 'SUBSCRIBER-SAFE\\n'", toolCallId: "tool-subscriber-failure" },
-			context(root),
-		);
+		const result = await active.executeBash({ command: "printf 'SUBSCRIBER-SAFE\\n'" }, context(root));
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toBe("SUBSCRIBER-SAFE\n");
 		await active.shutdown();
@@ -884,7 +862,6 @@ describe("BackgroundWorkRuntime", () => {
 					onUpdate: () => {
 						throw new Error("progress renderer failed");
 					},
-					toolCallId: "tool-update-observer-failure",
 				},
 				context(root),
 			);
@@ -931,7 +908,6 @@ describe("BackgroundWorkRuntime", () => {
 								trigger === "output-limit"
 									? `printf '${"x".repeat(512)}'; sleep 30`
 									: "sleep 30; printf 'TERMINAL\\n'",
-							toolCallId: `tool-${trigger}-stop-rejection`,
 						},
 						trigger === "abort" ? { signal: controller.signal } : undefined,
 						trigger === "timeout" ? { timeoutSeconds: 0.01 } : undefined,
@@ -968,10 +944,7 @@ describe("BackgroundWorkRuntime", () => {
 			},
 		});
 		try {
-			await active.executeBash(
-				{ command: "sleep 30", runInBackground: true, toolCallId: "tool-retry-unresolved-stop" },
-				context(root),
-			);
+			await active.executeBash({ command: "sleep 30", runInBackground: true }, context(root));
 			const id = active.snapshot()[0]?.id;
 			expect(id).toBeString();
 			await expect(active.stop(id ?? "")).rejects.toThrow("could not be proven stopped");
@@ -993,10 +966,7 @@ describe("BackgroundWorkRuntime", () => {
 			storage,
 		});
 		try {
-			const started = await active.startCommandMonitor(
-				{ command: "sleep 0.2", timeoutSeconds: 5, toolCallId: "tool-cleanup-failure" },
-				context(root),
-			);
+			const started = await active.startCommandMonitor({ command: "sleep 0.2", timeoutSeconds: 5 }, context(root));
 			mkdirSync(storage.commandAuthorizationPath(started.id), { recursive: true });
 			mkdirSync(`${storage.commandAuthorizationPath(started.id)}.ack`, { recursive: true });
 			const outcome = await Promise.race([
@@ -1024,12 +994,9 @@ describe("BackgroundWorkRuntime", () => {
 			}),
 		});
 		try {
-			await expect(
-				active.executeBash(
-					{ command: "printf 'MUST-NOT-RUN\\n'", toolCallId: "tool-persist-rollback" },
-					context(root),
-				),
-			).rejects.toThrow("injected metadata failure");
+			await expect(active.executeBash({ command: "printf 'MUST-NOT-RUN\\n'" }, context(root))).rejects.toThrow(
+				"injected metadata failure",
+			);
 			expect(active.snapshot()).toHaveLength(0);
 		} finally {
 			await active.shutdown();
@@ -1078,9 +1045,9 @@ describe("BackgroundWorkRuntime", () => {
 		});
 
 		try {
-			await expect(
-				active.executeBash({ command: "sleep 30", toolCallId: "tool-corrupt-ack" }, context(root)),
-			).rejects.toThrow("acknowledgement does not match its supervisor authority");
+			await expect(active.executeBash({ command: "sleep 30" }, context(root))).rejects.toThrow(
+				"acknowledgement does not match its supervisor authority",
+			);
 			await waitUntil(() => terminationAttempts >= 1);
 			const [retained] = active.snapshot();
 			expect(retained).toMatchObject({ status: "stopping" });
@@ -1107,10 +1074,7 @@ describe("BackgroundWorkRuntime", () => {
 			}),
 		});
 
-		const result = await active.executeBash(
-			{ command: "printf 'PERSIST-DEGRADED\\n'", toolCallId: "tool-live-persist-degraded" },
-			context(root),
-		);
+		const result = await active.executeBash({ command: "printf 'PERSIST-DEGRADED\\n'" }, context(root));
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toBe("PERSIST-DEGRADED\n");
 		expect(active.snapshot()).toHaveLength(0);
@@ -1127,7 +1091,6 @@ describe("BackgroundWorkRuntime", () => {
 						{
 							command: `sleep 0.1; printf 'TASK-${String(index)}\\n'`,
 							timeoutSeconds: 3,
-							toolCallId: `tool-concurrent-${String(index)}`,
 						},
 						context(root),
 					),
@@ -1154,7 +1117,6 @@ describe("BackgroundWorkRuntime", () => {
 			const result = await active.executeBash(
 				{
 					command: `setsid sh -c 'echo $$ > "$1"; sleep 30' sh ${JSON.stringify(pidPath)} & while [ ! -s ${JSON.stringify(pidPath)} ]; do sleep 0.01; done`,
-					toolCallId: "tool-inherited-pipe",
 				},
 				context(root),
 			);
@@ -1178,16 +1140,10 @@ describe("BackgroundWorkRuntime", () => {
 		const active = runtime(root);
 		try {
 			for (let index = 0; index < 24; index += 1) {
-				await active.executeBash(
-					{ command: ":", toolCallId: `tool-fd-sequential-${String(index)}` },
-					context(root),
-				);
+				await active.executeBash({ command: ":" }, context(root));
 			}
 			const concurrent = Array.from({ length: 8 }, (_, index) =>
-				active.executeBash(
-					{ command: `printf '${String(index)}'`, toolCallId: `tool-fd-concurrent-${String(index)}` },
-					context(root),
-				),
+				active.executeBash({ command: `printf '${String(index)}'` }, context(root)),
 			);
 			const results = await Promise.all(concurrent);
 			for (const result of results) {
@@ -1205,7 +1161,7 @@ describe("BackgroundWorkRuntime", () => {
 	test("moves only the active foreground Bash command and then cleans its process tree", async () => {
 		const root = temporaryRoot();
 		const active = runtime(root);
-		const execution = active.executeBash({ command: "sleep 30", toolCallId: "tool-foreground" }, context(root));
+		const execution = active.executeBash({ command: "sleep 30" }, context(root));
 		await Bun.sleep(100);
 		expect(active.detachActiveForeground()).toBe(true);
 		expect(active.detachActiveForeground()).toBe(false);
@@ -1220,7 +1176,7 @@ describe("BackgroundWorkRuntime", () => {
 	test("automatically hands off a foreground command after the configured production seam", async () => {
 		const root = temporaryRoot();
 		const active = runtime(root, [], 100);
-		const result = await active.executeBash({ command: "sleep 30", toolCallId: "tool-automatic" }, context(root));
+		const result = await active.executeBash({ command: "sleep 30" }, context(root));
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toContain("moved to background task");
 		expect(isForegroundBashResult(result)).toBe(false);
@@ -1249,7 +1205,6 @@ describe("BackgroundWorkRuntime", () => {
 				{
 					command: `sleep 0.2; printf 'edited\n' > ${JSON.stringify(marker)}`,
 					runInBackground: true,
-					toolCallId: "tool-user-origin-background-edit",
 				},
 				context(root),
 			);
@@ -1281,7 +1236,6 @@ describe("BackgroundWorkRuntime", () => {
 				{
 					command: `sleep 0.1; printf 'edited\n' > ${JSON.stringify(marker)}`,
 					runInBackground: true,
-					toolCallId: "tool-automatic-background-edit",
 				},
 				context(root),
 			);
@@ -1304,7 +1258,6 @@ describe("BackgroundWorkRuntime", () => {
 			{
 				command: `trap '' TERM HUP INT; sh -c 'trap "" TERM HUP INT; while :; do sleep 1; done' & echo $! > ${JSON.stringify(childPath)}; wait`,
 				runInBackground: true,
-				toolCallId: "tool-tree",
 			},
 			context(root),
 		);
@@ -1330,7 +1283,6 @@ describe("BackgroundWorkRuntime", () => {
 				successText: "READY",
 				target,
 				timeoutSeconds: 3,
-				toolCallId: "tool-monitor",
 			},
 			context(root),
 		);
@@ -1355,10 +1307,7 @@ describe("BackgroundWorkRuntime", () => {
 		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		try {
-			await active.executeBash(
-				{ command: "sleep 30", runInBackground: true, toolCallId: "tool-user-stopped-shell" },
-				context(root),
-			);
+			await active.executeBash({ command: "sleep 30", runInBackground: true }, context(root));
 			const shellId = active.snapshot()[0]?.id;
 			expect(shellId).toBeString();
 			const shellOutcome = await active.stop(shellId ?? "");
@@ -1374,7 +1323,6 @@ describe("BackgroundWorkRuntime", () => {
 					successText: "READY",
 					target: join(root, "never-ready"),
 					timeoutSeconds: 30,
-					toolCallId: "tool-user-stopped-monitor",
 				},
 				context(root),
 			);
@@ -1398,7 +1346,6 @@ describe("BackgroundWorkRuntime", () => {
 				{
 					command: "sleep 0.1; printf 'BACKGROUND-FAILED\\n' >&2; exit 7",
 					runInBackground: true,
-					toolCallId: "tool-background-failed-receipt",
 				},
 				context(root),
 			);
@@ -1495,7 +1442,6 @@ describe("BackgroundWorkRuntime", () => {
 						{
 							command: `sleep 0.3; dd if=/dev/zero bs=50000 count=1 2>/dev/null | tr '\\0' x; printf '<unsafe&界-TAIL-${String(index)}\\n'`,
 							runInBackground: true,
-							toolCallId: `tool-notification-${String(index)}`,
 						},
 						context(root),
 					),
@@ -1538,7 +1484,6 @@ describe("BackgroundWorkRuntime", () => {
 				{
 					command: "sleep 0.1; printf 'LIVE-PATH\\n'",
 					runInBackground: true,
-					toolCallId: "tool-live-notification-path",
 				},
 				context(root),
 			);
@@ -1559,10 +1504,7 @@ describe("BackgroundWorkRuntime", () => {
 		const root = temporaryRoot();
 		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
-		await active.executeBash(
-			{ command: "sleep 30", runInBackground: true, timeoutSeconds: 0.2, toolCallId: "tool-timeout" },
-			context(root),
-		);
+		await active.executeBash({ command: "sleep 30", runInBackground: true, timeoutSeconds: 0.2 }, context(root));
 		const taskId = active.snapshot()[0]?.id;
 		expect(taskId).toBeString();
 		await waitUntil(() => active.snapshot().length === 0);

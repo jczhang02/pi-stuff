@@ -184,8 +184,8 @@ export function registerWorkTools(
 				"Inspect PI_* environment variables for current model and session details.",
 			],
 			parameters: BASH_PARAMETERS,
-			async execute(toolCallId, params, signal, onUpdate, ctx) {
-				const input = { command: params.command, toolCallId };
+			async execute(_toolCallId, params, signal, onUpdate, ctx) {
+				const input = { command: params.command };
 				if (params.description) Object.assign(input, { description: params.description });
 				if (onUpdate) Object.assign(input, { onUpdate });
 				if (params.run_in_background !== undefined)
@@ -276,11 +276,11 @@ export function registerWorkTools(
 		],
 		parameters: MONITOR_PARAMETERS,
 		executionMode: "parallel",
-		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
 				const runtime = requireRuntime(runtimeRef);
 				await runtime.prepare();
-				const input = { source: params.source, target: params.target, toolCallId };
+				const input = { source: params.source, target: params.target };
 				if (params.description) Object.assign(input, { description: params.description });
 				if (params.failure_text) Object.assign(input, { failureText: params.failure_text });
 				if (params.interval_seconds !== undefined)

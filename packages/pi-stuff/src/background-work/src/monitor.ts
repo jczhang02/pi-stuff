@@ -25,7 +25,6 @@ export interface MonitorInput {
 	readonly successText?: string;
 	readonly target: string;
 	readonly timeoutSeconds?: number;
-	readonly toolCallId: string;
 }
 
 export interface StartedMonitor {
@@ -290,7 +289,6 @@ export async function startMonitor(
 		const commandInput = {
 			command: input.target,
 			timeoutSeconds,
-			toolCallId: input.toolCallId,
 		};
 		if (input.description) Object.assign(commandInput, { description: input.description });
 		if (input.failureText) Object.assign(commandInput, { failureText: input.failureText });
