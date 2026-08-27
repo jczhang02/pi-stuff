@@ -35,6 +35,35 @@ interface ResumeFixture {
 	readonly resultText?: string;
 }
 
+interface ToolsResumePtyOptions {
+	readonly packagePath: string;
+	readonly piBinary: string;
+}
+
+const RESUME_FIXTURES = [
+	{
+		compactRow: "Read 1 file",
+		expectedBuiltins: ["bash", "edit", "read", "write"],
+		mode: "default",
+		rawMarker: "RAW_RESUME_READ_RESULT_MARKER",
+	},
+	{ expectedBuiltins: [], mode: "disabled" },
+	{
+		compactRow: "Searched 1 pattern",
+		expectedBuiltins: ["find", "grep", "ls"],
+		mode: "allowlist",
+		rawMarker: "resume-target.txt:1:RAW_RESUME_GREP_RESULT_MARKER",
+	},
+	{
+		compactRow: "Subagent Supervisor pending · No pending supervisor requests.",
+		expectedBuiltins: ["bash", "edit", "read", "write"],
+		forbiddenProviderTools: ["subagent_supervisor", "intercom"],
+		forbiddenText: '"action": "pending"',
+		mode: "supervisor",
+		resultText: "No pending supervisor requests.",
+	},
+] satisfies readonly ResumeFixture[];
+
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -48,8 +77,7 @@ function fail(message: string): never {
 	throw new Error(`Tools resume PTY verification failed: ${message}`);
 }
 
-function expectProgram(): string {
-	return `
+const EXPECT_PROGRAM = `
 set timeout 20
 
 proc must_expect {pattern} {
@@ -85,10 +113,8 @@ expect {
     }
 }
 `;
-}
 
-function coldExpectProgram(): string {
-	return `
+const COLD_EXPECT_PROGRAM = `
 set timeout 20
 
 proc must_expect {pattern} {
@@ -126,7 +152,6 @@ expect {
     }
 }
 `;
-}
 
 function stripTerminalControls(output: string): string {
 	let visible = "";
@@ -271,37 +296,64 @@ function readRequestRecords(content: string): RequestRecord[] {
 		});
 }
 
-export async function verifyToolsResumePty(options: {
-	readonly packagePath: string;
-	readonly piBinary: string;
-}): Promise<void> {
+async function verifySupervisorColdStart(
+	options: ToolsResumePtyOptions,
+	fixture: ResumeFixture,
+	temporaryDirectory: string,
+	configDirectory: string,
+	sessionDirectory: string,
+	targetDirectory: string,
+	targetSession: string,
+	resumedRecords: readonly RequestRecord[],
+): Promise<void> {
+	const requestLog = join(temporaryDirectory, "cold-requests.jsonl");
+	const result = Bun.spawnSync(["expect", "-c", COLD_EXPECT_PROGRAM], {
+		cwd: targetDirectory,
+		env: {
+			...process.env,
+			PI_CODING_AGENT_DIR: configDirectory,
+			PI_STUFF_TOOLS_RESUME_PTY_BIN: options.piBinary,
+			PI_STUFF_TOOLS_RESUME_PTY_COLD: "1",
+			PI_STUFF_TOOLS_RESUME_PTY_LOG: requestLog,
+			PI_STUFF_TOOLS_RESUME_PTY_MODE: fixture.mode,
+			PI_STUFF_TOOLS_RESUME_PTY_PACKAGE: resolve(options.packagePath),
+			PI_STUFF_TOOLS_RESUME_PTY_PROVIDER_EXTENSION: providerExtension,
+			PI_STUFF_TOOLS_RESUME_PTY_RUNNER: runner,
+			PI_STUFF_TOOLS_RESUME_PTY_SESSIONS: sessionDirectory,
+			PI_STUFF_TOOLS_RESUME_PTY_TARGET: targetSession,
+			SHELL: "/bin/sh",
+			TERM: "xterm-256color",
+		},
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const output = result.stdout.toString();
+	if (result.exitCode !== 0) {
+		fail(`supervisor cold start failed: ${result.stderr.toString().trim()}\nPTY tail:\n${output.slice(-10_000)}`);
+	}
+	const boundary = output.indexOf(COLD_FIRST_FRAME_BOUNDARY);
+	if (boundary < 0) fail("supervisor cold start did not capture the first frame boundary");
+	const firstFrame = stripTerminalControls(output.slice(0, boundary));
+	if (fixture.forbiddenText && firstFrame.includes(fixture.forbiddenText)) {
+		fail("supervisor cold first frame used the generic Tool renderer");
+	}
+	if (fixture.compactRow && !firstFrame.includes(fixture.compactRow)) {
+		fail(`supervisor cold first frame did not contain compact row: ${fixture.compactRow}`);
+	}
+	const records = readRequestRecords(await readFile(requestLog, "utf8"));
+	if (records.length !== 2) {
+		fail(`supervisor cold start expected pre- and post-activation requests; received ${String(records.length)}`);
+	}
+	verifyActiveToolOrder(resumedRecords[1], records[0], "supervisor cold startup");
+	verifyRequest(records[0], fixture);
+	if (!Array.isArray(records[1]?.tools) || !records[1].tools.includes("subagent_supervisor")) {
+		fail("live subagent_supervisor did not replace the replay definition after /agents activation");
+	}
+}
+
+export async function verifyToolsResumePty(options: ToolsResumePtyOptions): Promise<void> {
 	verifyHostVersion(options.piBinary);
-	for (const fixture of [
-		{
-			compactRow: "Read 1 file",
-			expectedBuiltins: ["bash", "edit", "read", "write"],
-			mode: "default",
-			rawMarker: "RAW_RESUME_READ_RESULT_MARKER",
-		},
-		{
-			expectedBuiltins: [],
-			mode: "disabled",
-		},
-		{
-			compactRow: "Searched 1 pattern",
-			expectedBuiltins: ["find", "grep", "ls"],
-			mode: "allowlist",
-			rawMarker: "resume-target.txt:1:RAW_RESUME_GREP_RESULT_MARKER",
-		},
-		{
-			compactRow: "Subagent Supervisor pending · No pending supervisor requests.",
-			expectedBuiltins: ["bash", "edit", "read", "write"],
-			forbiddenProviderTools: ["subagent_supervisor", "intercom"],
-			forbiddenText: '"action": "pending"',
-			mode: "supervisor",
-			resultText: "No pending supervisor requests.",
-		},
-	] satisfies readonly ResumeFixture[]) {
+	for (const fixture of RESUME_FIXTURES) {
 		const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-tools-resume-"));
 		const configDirectory = join(temporaryDirectory, "config");
 		const sessionDirectory = join(temporaryDirectory, "sessions");
@@ -330,7 +382,7 @@ export async function verifyToolsResumePty(options: {
 		]);
 		const targetSession = seedTargetSession(sessionDirectory, targetDirectory, fixture);
 		try {
-			const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
+			const result = Bun.spawnSync(["expect", "-c", EXPECT_PROGRAM], {
 				cwd: sourceDirectory,
 				env: {
 					...process.env,
@@ -376,53 +428,16 @@ export async function verifyToolsResumePty(options: {
 			verifyRequest(records[1], fixture);
 
 			if (fixture.mode === "supervisor") {
-				const coldRequestLog = join(temporaryDirectory, "cold-requests.jsonl");
-				const cold = Bun.spawnSync(["expect", "-c", coldExpectProgram()], {
-					cwd: targetDirectory,
-					env: {
-						...process.env,
-						PI_CODING_AGENT_DIR: configDirectory,
-						PI_STUFF_TOOLS_RESUME_PTY_BIN: options.piBinary,
-						PI_STUFF_TOOLS_RESUME_PTY_COLD: "1",
-						PI_STUFF_TOOLS_RESUME_PTY_LOG: coldRequestLog,
-						PI_STUFF_TOOLS_RESUME_PTY_MODE: fixture.mode,
-						PI_STUFF_TOOLS_RESUME_PTY_PACKAGE: resolve(options.packagePath),
-						PI_STUFF_TOOLS_RESUME_PTY_PROVIDER_EXTENSION: providerExtension,
-						PI_STUFF_TOOLS_RESUME_PTY_RUNNER: runner,
-						PI_STUFF_TOOLS_RESUME_PTY_SESSIONS: sessionDirectory,
-						PI_STUFF_TOOLS_RESUME_PTY_TARGET: targetSession,
-						SHELL: "/bin/sh",
-						TERM: "xterm-256color",
-					},
-					stdout: "pipe",
-					stderr: "pipe",
-				});
-				const coldOutput = cold.stdout.toString();
-				if (cold.exitCode !== 0) {
-					fail(
-						`supervisor cold start failed: ${cold.stderr.toString().trim()}\nPTY tail:\n${coldOutput.slice(-10_000)}`,
-					);
-				}
-				const coldBoundary = coldOutput.indexOf(COLD_FIRST_FRAME_BOUNDARY);
-				if (coldBoundary < 0) fail("supervisor cold start did not capture the first frame boundary");
-				const coldFirstFrame = stripTerminalControls(coldOutput.slice(0, coldBoundary));
-				if (fixture.forbiddenText && coldFirstFrame.includes(fixture.forbiddenText)) {
-					fail("supervisor cold first frame used the generic Tool renderer");
-				}
-				if (fixture.compactRow && !coldFirstFrame.includes(fixture.compactRow)) {
-					fail(`supervisor cold first frame did not contain compact row: ${fixture.compactRow}`);
-				}
-				const coldRecords = readRequestRecords(await readFile(coldRequestLog, "utf8"));
-				if (coldRecords.length !== 2) {
-					fail(
-						`supervisor cold start expected pre- and post-activation requests; received ${String(coldRecords.length)}`,
-					);
-				}
-				verifyActiveToolOrder(records[1], coldRecords[0], "supervisor cold startup");
-				verifyRequest(coldRecords[0], fixture);
-				if (!Array.isArray(coldRecords[1]?.tools) || !coldRecords[1].tools.includes("subagent_supervisor")) {
-					fail("live subagent_supervisor did not replace the replay definition after /agents activation");
-				}
+				await verifySupervisorColdStart(
+					options,
+					fixture,
+					temporaryDirectory,
+					configDirectory,
+					sessionDirectory,
+					targetDirectory,
+					targetSession,
+					records,
+				);
 			}
 		} finally {
 			await rm(temporaryDirectory, { force: true, recursive: true });
