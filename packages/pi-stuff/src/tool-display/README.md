@@ -8,8 +8,9 @@ unchanged. Pi 0.84.3's PowerShell Tool remains entirely Host-rendered; Pi Stuff 
 for reload/resume membership. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`;
 unknown third-party Tools keep their native renderer and form a display boundary.
 `registration.ts` owns Suite Tool decoration, Activity coverage, and historical replay binding;
-`envelope-projection.ts` owns nested Tool decoding and ordinary-protocol projection; `ToolUiRuntime` remains the single
-live transcript projection owner.
+`envelope-projection.ts` owns nested Tool decoding and ordinary-protocol projection; `group-projection.ts` owns
+transcript grouping and result association; `activity-presentation.ts` owns compact rows, summaries, and Tool detail;
+and `activity-clock.ts` owns running markers. `ToolUiRuntime` remains the single public live-projection facade.
 
 ## Daily use
 
