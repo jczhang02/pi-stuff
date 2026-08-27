@@ -30,6 +30,8 @@ separately own private directory proof, current/nested state projection, and exe
 `runtime/session-governor-spawn.ts` owns spawn admission and staging, while `runtime/session-governor-ledger.ts` owns
 the durable contracts, validation, lock, and atomic ledger storage. `runtime/agent-runtime-event.ts` validates raw
 lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed process and writer-registry proof.
+`session/current-agents.ts` owns subscriptions, controls, overrides, and revisions;
+`session/current-agents-projection.ts` normalizes durable and live sources into immutable rows.
 
 ## Everyday behavior
 
