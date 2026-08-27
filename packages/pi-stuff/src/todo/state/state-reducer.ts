@@ -59,6 +59,121 @@ function hasUpdatePatch(params: TaskMutationParams): boolean {
 	);
 }
 
+function updateTask(state: TaskState, params: TaskMutationParams): ApplyResult {
+	if (!params.taskId) return errorResult(state, "taskId required for update");
+	const current = state.tasks.find((task) => task.id === params.taskId);
+	if (!current) return errorResult(state, `#${params.taskId} not found`);
+	if (current.status === "deleted") return errorResult(state, `#${current.id} is deleted`);
+	if (!hasUpdatePatch(params)) return errorResult(state, "update requires at least one mutable field");
+	if (params.subject !== undefined && !params.subject.trim()) {
+		return errorResult(state, "subject cannot be empty");
+	}
+	if (params.description !== undefined && !params.description.trim()) {
+		return errorResult(state, "description cannot be empty");
+	}
+	if (params.status !== undefined && !isTransitionValid(current.status, params.status)) {
+		return errorResult(state, `illegal transition ${current.status} -> ${params.status}`);
+	}
+
+	const addBlockedBy = [...new Set(params.addBlockedBy ?? [])];
+	const addBlocks = [...new Set(params.addBlocks ?? [])];
+	if (params.status === "deleted" && (addBlockedBy.length > 0 || addBlocks.length > 0)) {
+		return errorResult(state, "cannot add dependencies while deleting a task");
+	}
+
+	const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
+	for (const blockerId of addBlockedBy) {
+		if (blockerId === current.id) return errorResult(state, `cannot block #${current.id} on itself`);
+		const blocker = tasksById.get(blockerId);
+		if (!blocker) return errorResult(state, `addBlockedBy: #${blockerId} not found`);
+		if (blocker.status === "deleted") return errorResult(state, `addBlockedBy: #${blockerId} is deleted`);
+	}
+	for (const blockedTaskId of addBlocks) {
+		if (blockedTaskId === current.id) return errorResult(state, `cannot make #${current.id} block itself`);
+		const blockedTask = tasksById.get(blockedTaskId);
+		if (!blockedTask) return errorResult(state, `addBlocks: #${blockedTaskId} not found`);
+		if (blockedTask.status === "deleted") return errorResult(state, `addBlocks: #${blockedTaskId} is deleted`);
+	}
+
+	const updatedFields: string[] = [];
+	let updatedCurrent: Task = { ...current };
+	if (params.subject !== undefined && params.subject !== current.subject) {
+		updatedCurrent.subject = params.subject;
+		updatedFields.push("subject");
+	}
+	if (params.description !== undefined && params.description !== current.description) {
+		updatedCurrent.description = params.description;
+		updatedFields.push("description");
+	}
+	if (params.activeForm !== undefined && params.activeForm !== current.activeForm) {
+		updatedCurrent.activeForm = params.activeForm;
+		updatedFields.push("activeForm");
+	}
+	if (params.status !== undefined && params.status !== current.status) {
+		updatedCurrent.status = params.status;
+		updatedFields.push("status");
+	}
+	if (params.owner !== undefined && params.owner !== current.owner) {
+		updatedCurrent.owner = params.owner;
+		updatedFields.push("owner");
+	}
+	if (params.metadata !== undefined) {
+		const metadata = mergeMetadata(current.metadata, params.metadata);
+		if (!sameRecord(metadata, current.metadata)) {
+			if (metadata === undefined) delete updatedCurrent.metadata;
+			else updatedCurrent.metadata = metadata;
+			updatedFields.push("metadata");
+		}
+	}
+
+	const currentBlockedBy = [...new Set(current.blockedBy ?? [])];
+	const mergedBlockedBy = [...new Set([...currentBlockedBy, ...addBlockedBy])];
+	if (mergedBlockedBy.length !== currentBlockedBy.length) {
+		updatedCurrent = setBlockedBy(updatedCurrent, mergedBlockedBy);
+		updatedFields.push("blockedBy");
+	}
+
+	const changedTasks = new Map<string, Task>([[current.id, updatedCurrent]]);
+	let blocksChanged = false;
+	for (const blockedTaskId of addBlocks) {
+		const target = changedTasks.get(blockedTaskId) ?? tasksById.get(blockedTaskId);
+		if (!target) continue;
+		const blockedBy = [...new Set(target.blockedBy ?? [])];
+		if (blockedBy.includes(current.id)) continue;
+		blockedBy.push(current.id);
+		changedTasks.set(blockedTaskId, setBlockedBy(target, blockedBy));
+		blocksChanged = true;
+	}
+	if (blocksChanged) updatedFields.push("blocks");
+
+	if (updatedFields.length === 0) {
+		return {
+			state,
+			op: {
+				kind: "update",
+				taskId: current.id,
+				fromStatus: current.status,
+				toStatus: current.status,
+				updatedFields,
+			},
+		};
+	}
+
+	const tasks = state.tasks.map((task) => changedTasks.get(task.id) ?? task);
+	if (hasCycle(tasks)) return errorResult(state, "dependency update would create a cycle");
+
+	return {
+		state: { tasks, nextId: state.nextId },
+		op: {
+			kind: "update",
+			taskId: current.id,
+			fromStatus: current.status,
+			toStatus: updatedCurrent.status,
+			updatedFields,
+		},
+	};
+}
+
 /** Pure task-state reducer. Failed mutations always return the original state by identity. */
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {
@@ -87,133 +202,13 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 		case "get": {
 			if (!params.taskId) return errorResult(state, "taskId required for get");
 			const task = state.tasks.find((task) => task.id === params.taskId && task.status !== "deleted") ?? null;
-			return {
-				state,
-				op: { kind: "get", task },
-			};
+			return { state, op: { kind: "get", task } };
 		}
 
-		case "list": {
-			return {
-				state,
-				op: { kind: "list", tasks: state.tasks.filter((task) => task.status !== "deleted") },
-			};
-		}
+		case "list":
+			return { state, op: { kind: "list", tasks: state.tasks.filter((task) => task.status !== "deleted") } };
 
-		case "update": {
-			if (!params.taskId) return errorResult(state, "taskId required for update");
-			const current = state.tasks.find((task) => task.id === params.taskId);
-			if (!current) return errorResult(state, `#${params.taskId} not found`);
-			if (current.status === "deleted") return errorResult(state, `#${current.id} is deleted`);
-			if (!hasUpdatePatch(params)) return errorResult(state, "update requires at least one mutable field");
-			if (params.subject !== undefined && !params.subject.trim()) {
-				return errorResult(state, "subject cannot be empty");
-			}
-			if (params.description !== undefined && !params.description.trim()) {
-				return errorResult(state, "description cannot be empty");
-			}
-			if (params.status !== undefined && !isTransitionValid(current.status, params.status)) {
-				return errorResult(state, `illegal transition ${current.status} -> ${params.status}`);
-			}
-
-			const addBlockedBy = [...new Set(params.addBlockedBy ?? [])];
-			const addBlocks = [...new Set(params.addBlocks ?? [])];
-			if (params.status === "deleted" && (addBlockedBy.length > 0 || addBlocks.length > 0)) {
-				return errorResult(state, "cannot add dependencies while deleting a task");
-			}
-
-			const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
-			for (const blockerId of addBlockedBy) {
-				if (blockerId === current.id) return errorResult(state, `cannot block #${current.id} on itself`);
-				const blocker = tasksById.get(blockerId);
-				if (!blocker) return errorResult(state, `addBlockedBy: #${blockerId} not found`);
-				if (blocker.status === "deleted") return errorResult(state, `addBlockedBy: #${blockerId} is deleted`);
-			}
-			for (const blockedTaskId of addBlocks) {
-				if (blockedTaskId === current.id) return errorResult(state, `cannot make #${current.id} block itself`);
-				const blockedTask = tasksById.get(blockedTaskId);
-				if (!blockedTask) return errorResult(state, `addBlocks: #${blockedTaskId} not found`);
-				if (blockedTask.status === "deleted") return errorResult(state, `addBlocks: #${blockedTaskId} is deleted`);
-			}
-
-			const updatedFields: string[] = [];
-			let updatedCurrent: Task = { ...current };
-			if (params.subject !== undefined && params.subject !== current.subject) {
-				updatedCurrent.subject = params.subject;
-				updatedFields.push("subject");
-			}
-			if (params.description !== undefined && params.description !== current.description) {
-				updatedCurrent.description = params.description;
-				updatedFields.push("description");
-			}
-			if (params.activeForm !== undefined && params.activeForm !== current.activeForm) {
-				updatedCurrent.activeForm = params.activeForm;
-				updatedFields.push("activeForm");
-			}
-			if (params.status !== undefined && params.status !== current.status) {
-				updatedCurrent.status = params.status;
-				updatedFields.push("status");
-			}
-			if (params.owner !== undefined && params.owner !== current.owner) {
-				updatedCurrent.owner = params.owner;
-				updatedFields.push("owner");
-			}
-			if (params.metadata !== undefined) {
-				const metadata = mergeMetadata(current.metadata, params.metadata);
-				if (!sameRecord(metadata, current.metadata)) {
-					if (metadata === undefined) delete updatedCurrent.metadata;
-					else updatedCurrent.metadata = metadata;
-					updatedFields.push("metadata");
-				}
-			}
-
-			const currentBlockedBy = [...new Set(current.blockedBy ?? [])];
-			const mergedBlockedBy = [...new Set([...currentBlockedBy, ...addBlockedBy])];
-			if (mergedBlockedBy.length !== currentBlockedBy.length) {
-				updatedCurrent = setBlockedBy(updatedCurrent, mergedBlockedBy);
-				updatedFields.push("blockedBy");
-			}
-
-			const changedTasks = new Map<string, Task>([[current.id, updatedCurrent]]);
-			let blocksChanged = false;
-			for (const blockedTaskId of addBlocks) {
-				const target = changedTasks.get(blockedTaskId) ?? tasksById.get(blockedTaskId);
-				if (!target) continue;
-				const blockedBy = [...new Set(target.blockedBy ?? [])];
-				if (blockedBy.includes(current.id)) continue;
-				blockedBy.push(current.id);
-				changedTasks.set(blockedTaskId, setBlockedBy(target, blockedBy));
-				blocksChanged = true;
-			}
-			if (blocksChanged) updatedFields.push("blocks");
-
-			const changed = updatedFields.length > 0;
-			if (!changed) {
-				return {
-					state,
-					op: {
-						kind: "update",
-						taskId: current.id,
-						fromStatus: current.status,
-						toStatus: current.status,
-						updatedFields,
-					},
-				};
-			}
-
-			const tasks = state.tasks.map((task) => changedTasks.get(task.id) ?? task);
-			if (hasCycle(tasks)) return errorResult(state, "dependency update would create a cycle");
-
-			return {
-				state: { tasks, nextId: state.nextId },
-				op: {
-					kind: "update",
-					taskId: current.id,
-					fromStatus: current.status,
-					toStatus: updatedCurrent.status,
-					updatedFields,
-				},
-			};
-		}
+		case "update":
+			return updateTask(state, params);
 	}
 }
