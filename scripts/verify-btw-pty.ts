@@ -85,8 +85,7 @@ async function readSession(path: string): Promise<PersistedSession> {
 	};
 }
 
-function expectProgram(): string {
-	return `
+const EXPECT_PROGRAM = `
 set timeout 20
 
 proc must_expect {pattern} {
@@ -173,10 +172,8 @@ expect {
     }
 }
 `;
-}
 
-function resumeExpectProgram(): string {
-	return `
+const RESUME_EXPECT_PROGRAM = `
 set timeout 20
 
 proc must_expect {pattern} {
@@ -212,10 +209,8 @@ expect {
     }
 }
 `;
-}
 
-function largeFitExpectProgram(): string {
-	return `
+const LARGE_FIT_EXPECT_PROGRAM = `
 set timeout 30
 
 proc must_expect {pattern} {
@@ -256,10 +251,122 @@ expect {
     }
 }
 `;
-}
 
 function fail(message: string): never {
 	throw new Error(`BTW PTY verification failed: ${message}`);
+}
+
+function runExpect(program: string, environment: NodeJS.ProcessEnv, label: string): string {
+	const result = Bun.spawnSync(["expect", "-c", program], {
+		cwd: root,
+		env: environment,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const output = result.stdout.toString();
+	if (result.exitCode !== 0) {
+		const diagnostic = [result.stderr.toString().trim(), output.trim()].filter(Boolean).join("\n");
+		fail(diagnostic || `${label} expect exited ${String(result.exitCode)}`);
+	}
+	return output;
+}
+
+async function verifyFreshBtwState(requestLog: string, sessionDirectory: string): Promise<string> {
+	const requests = parseRequestRecords(await readFile(requestLog, "utf8"));
+	if (requests.length !== 3) fail(`expected three model requests, received ${String(requests.length)}`);
+	const [main, side, secondSide] = requests;
+	if (main?.lastUser !== "main request") fail("main request was not observed");
+	if (!Array.isArray(main.tools) || !main.tools.includes("TaskCreate")) fail("Suite Todo tools were not active");
+	if (side?.lastUser !== "side question") fail("side request was not observed");
+	if (side.messageCount !== 2) fail("side request included the pending main assistant or missed the main user");
+	if (!Array.isArray(side.tools) || side.tools.length !== 0) fail("side request exposed tools");
+	if (secondSide?.lastUser !== "second question") fail("second side request was not observed");
+	if (secondSide.messageCount !== 3) fail("second side request did not include the completed main turn exactly once");
+	if (!Array.isArray(secondSide.tools) || secondSide.tools.length !== 0) fail("second side request exposed tools");
+
+	const sessionFiles = (await readdir(sessionDirectory))
+		.filter((entry) => entry.endsWith(".jsonl"))
+		.map((entry) => join(sessionDirectory, entry));
+	if (sessionFiles.length !== 2)
+		fail(`expected original and promoted sessions, received ${String(sessionFiles.length)}`);
+	const sessions = await Promise.all(sessionFiles.map(readSession));
+	const original = sessions.find((session) => session.messageText.includes("main request"));
+	const promoted = sessions.find((session) => session.messageText.includes("second question"));
+	if (!original || !promoted || original === promoted) fail("could not distinguish original and promoted sessions");
+	if (!original.messageText.includes("MAIN_START MAIN_DONE")) fail("the main turn did not finish while BTW was open");
+	for (const forbidden of ["side question", "second question", "BTW_STREAM", "BTW_DONE", "DRAFT_RESTORED"]) {
+		if (original.messageText.some((text) => text.includes(forbidden))) {
+			fail(`ephemeral text leaked into the original formal transcript: ${forbidden}`);
+		}
+	}
+	const originalHistory = original.lines.filter(
+		(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
+	);
+	if (
+		originalHistory.length !== 3 ||
+		!originalHistory.some((line) => JSON.stringify(line).includes('"operation":"retain"')) ||
+		!JSON.stringify(originalHistory).includes("second question")
+	) {
+		fail("the original session did not retain the confirmed BTW history reduction");
+	}
+	if (
+		!promoted.messageText.includes("second question") ||
+		!promoted.messageText.some((text) => text.includes("BTW_DONE"))
+	) {
+		fail("the selected BTW question and answer were not promoted as formal turns");
+	}
+	if (
+		promoted.lines.some(
+			(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
+		)
+	) {
+		fail("the promoted session inherited BTW display history");
+	}
+	const promotedHeader = promoted.lines.find((line) => line["type"] === "session");
+	if (promotedHeader?.["parentSession"] !== original.path)
+		fail("the promoted session lost its original-session lineage");
+	return original.path;
+}
+
+async function verifyLargeBtwFit(
+	options: BtwPtyVerificationOptions,
+	baseEnvironment: NodeJS.ProcessEnv,
+	requestLog: string,
+	sessionDirectory: string,
+): Promise<void> {
+	const output = runExpect(
+		LARGE_FIT_EXPECT_PROGRAM,
+		{
+			...baseEnvironment,
+			PI_STUFF_PTY_LOG: requestLog,
+			PI_STUFF_PTY_SESSIONS: sessionDirectory,
+			PI_STUFF_PTY_SESSION_ID: `btw-large-pty-${String(options.columns)}x${String(options.rows)}`,
+		},
+		"large-fit",
+	);
+	const fitDuration = /BTW_LARGE_FIT_MS (\d+)/u.exec(output)?.[1];
+	if (!fitDuration || Number(fitDuration) > 2_000) {
+		fail(`large BTW fit took ${fitDuration ?? "an unknown number of"} ms`);
+	}
+	const requests = parseRequestRecords(await readFile(requestLog, "utf8"));
+	if (requests.length !== 2) fail(`expected main and large BTW requests, received ${String(requests.length)}`);
+	const request = requests[1];
+	if (request?.lastUser !== "large fit question") fail("large BTW question was not observed");
+	if (request.messageChars === undefined || request.messageChars > 750_000) {
+		fail(`large BTW request was not fitted to the model window: ${String(request.messageChars)}`);
+	}
+	if (!Array.isArray(request.tools) || request.tools.length !== 0) fail("large BTW request exposed tools");
+	const sessionFiles = (await readdir(sessionDirectory))
+		.filter((entry) => entry.endsWith(".jsonl"))
+		.map((entry) => join(sessionDirectory, entry));
+	if (sessionFiles.length !== 1) fail(`expected one large-fit session, received ${String(sessionFiles.length)}`);
+	const [sessionFile] = sessionFiles;
+	if (!sessionFile) fail("large-fit session file was not found");
+	const session = await readSession(sessionFile);
+	const history = session.lines.filter(
+		(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
+	);
+	if (!JSON.stringify(history).includes('"contextTrimmed":true')) fail("large BTW fit was not recorded as trimmed");
 }
 
 export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<void> {
@@ -290,136 +397,12 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 		};
-		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
-			cwd: root,
-			env: baseEnvironment,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		if (result.exitCode !== 0) {
-			const diagnostic = [result.stderr.toString().trim(), result.stdout.toString().trim()]
-				.filter((text) => text.length > 0)
-				.join("\n");
-			fail(diagnostic || `expect exited ${result.exitCode}`);
-		}
-
-		const requests = parseRequestRecords(await readFile(requestLog, "utf8"));
-		if (requests.length !== 3) fail(`expected three model requests, received ${requests.length}`);
-		const [main, side, secondSide] = requests;
-		if (main?.lastUser !== "main request") fail("main request was not observed");
-		if (!Array.isArray(main.tools) || !main.tools.includes("TaskCreate")) fail("Suite Todo tools were not active");
-		if (side?.lastUser !== "side question") fail("side request was not observed");
-		if (side.messageCount !== 2) fail("side request included the pending main assistant or missed the main user");
-		if (!Array.isArray(side.tools) || side.tools.length !== 0) fail("side request exposed tools");
-		if (secondSide?.lastUser !== "second question") fail("second side request was not observed");
-		if (secondSide.messageCount !== 3)
-			fail("second side request did not include the completed main turn exactly once");
-		if (!Array.isArray(secondSide.tools) || secondSide.tools.length !== 0) fail("second side request exposed tools");
-
-		const sessionFiles = (await readdir(sessionDirectory))
-			.filter((entry) => entry.endsWith(".jsonl"))
-			.map((entry) => join(sessionDirectory, entry));
-		if (sessionFiles.length !== 2) fail(`expected original and promoted sessions, received ${sessionFiles.length}`);
-		const sessions = await Promise.all(sessionFiles.map(readSession));
-		const original = sessions.find((session) => session.messageText.includes("main request"));
-		const promoted = sessions.find((session) => session.messageText.includes("second question"));
-		if (!original || !promoted || original === promoted) fail("could not distinguish original and promoted sessions");
-		if (!original.messageText.includes("MAIN_START MAIN_DONE")) {
-			fail("the main turn did not finish while BTW was open");
-		}
-		for (const forbidden of ["side question", "second question", "BTW_STREAM", "BTW_DONE", "DRAFT_RESTORED"]) {
-			if (original.messageText.some((text) => text.includes(forbidden))) {
-				fail(`ephemeral text leaked into the original formal transcript: ${forbidden}`);
-			}
-		}
-		const originalHistory = original.lines.filter(
-			(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
-		);
-		if (
-			originalHistory.length !== 3 ||
-			!originalHistory.some((line) => JSON.stringify(line).includes('"operation":"retain"')) ||
-			!JSON.stringify(originalHistory).includes("second question")
-		) {
-			fail("the original session did not retain the confirmed BTW history reduction");
-		}
-		if (
-			!promoted.messageText.includes("second question") ||
-			!promoted.messageText.some((text) => text.includes("BTW_DONE"))
-		) {
-			fail("the selected BTW question and answer were not promoted as formal turns");
-		}
-		if (
-			promoted.lines.some(
-				(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
-			)
-		) {
-			fail("the promoted session inherited BTW display history");
-		}
-		const promotedHeader = promoted.lines.find((line) => line["type"] === "session");
-		if (promotedHeader?.["parentSession"] !== original.path)
-			fail("the promoted session lost its original-session lineage");
-
-		const resume = Bun.spawnSync(["expect", "-c", resumeExpectProgram()], {
-			cwd: root,
-			env: { ...baseEnvironment, PI_STUFF_PTY_RESUME_SESSION: original.path },
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		if (resume.exitCode !== 0) {
-			fail(
-				resume.stderr.toString().trim() ||
-					resume.stdout.toString().trim() ||
-					`resumed expect exited ${resume.exitCode}`,
-			);
-		}
+		runExpect(EXPECT_PROGRAM, baseEnvironment, "fresh");
+		const originalSession = await verifyFreshBtwState(requestLog, sessionDirectory);
+		runExpect(RESUME_EXPECT_PROGRAM, { ...baseEnvironment, PI_STUFF_PTY_RESUME_SESSION: originalSession }, "resumed");
 		const requestsAfterResume = (await readFile(requestLog, "utf8")).trim().split("\n");
 		if (requestsAfterResume.length !== 3) fail("reopening durable BTW history made an unexpected model request");
-
-		const largeFit = Bun.spawnSync(["expect", "-c", largeFitExpectProgram()], {
-			cwd: root,
-			env: {
-				...baseEnvironment,
-				PI_STUFF_PTY_LOG: largeRequestLog,
-				PI_STUFF_PTY_SESSIONS: largeSessionDirectory,
-				PI_STUFF_PTY_SESSION_ID: `btw-large-pty-${options.columns}x${options.rows}`,
-			},
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		if (largeFit.exitCode !== 0) {
-			fail(
-				largeFit.stderr.toString().trim() ||
-					largeFit.stdout.toString().trim() ||
-					`large-fit expect exited ${largeFit.exitCode}`,
-			);
-		}
-		const fitDuration = /BTW_LARGE_FIT_MS (\d+)/u.exec(largeFit.stdout.toString())?.[1];
-		if (!fitDuration || Number(fitDuration) > 2_000) {
-			fail(`large BTW fit took ${fitDuration ?? "an unknown number of"} ms`);
-		}
-		const largeRequests = parseRequestRecords(await readFile(largeRequestLog, "utf8"));
-		if (largeRequests.length !== 2) fail(`expected main and large BTW requests, received ${largeRequests.length}`);
-		const largeRequest = largeRequests[1];
-		if (largeRequest?.lastUser !== "large fit question") fail("large BTW question was not observed");
-		if (largeRequest.messageChars === undefined || largeRequest.messageChars > 750_000) {
-			fail(`large BTW request was not fitted to the model window: ${String(largeRequest.messageChars)}`);
-		}
-		if (!Array.isArray(largeRequest.tools) || largeRequest.tools.length !== 0) {
-			fail("large BTW request exposed tools");
-		}
-		const largeSessionFiles = (await readdir(largeSessionDirectory))
-			.filter((entry) => entry.endsWith(".jsonl"))
-			.map((entry) => join(largeSessionDirectory, entry));
-		if (largeSessionFiles.length !== 1) fail(`expected one large-fit session, received ${largeSessionFiles.length}`);
-		const [largeSessionFile] = largeSessionFiles;
-		if (!largeSessionFile) fail("large-fit session file was not found");
-		const largeSession = await readSession(largeSessionFile);
-		const largeHistory = largeSession.lines.filter(
-			(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
-		);
-		if (!JSON.stringify(largeHistory).includes('"contextTrimmed":true')) {
-			fail("large BTW fit was not recorded as trimmed");
-		}
+		await verifyLargeBtwFit(options, baseEnvironment, largeRequestLog, largeSessionDirectory);
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}
