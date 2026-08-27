@@ -438,3 +438,46 @@ export function findNestedRun(children: NestedRunSummary[] | undefined, id: stri
 	}
 	return undefined;
 }
+
+export function attachRootChildrenToSteps<Step extends { children?: NestedRunSummary[] | undefined; index?: number }>(
+	rootRunId: string,
+	steps: Step[] | undefined,
+	children: NestedRunSummary[] | undefined,
+): void {
+	if (!steps?.length) return;
+	for (const step of steps) delete step.children;
+	if (!children?.length) return;
+	for (const child of children) {
+		if (child.parentRunId !== rootRunId || child.parentStepIndex === undefined) continue;
+		const step = steps.find((candidate, index) => (candidate.index ?? index) === child.parentStepIndex);
+		if (!step) continue;
+		step.children ??= [];
+		step.children = [...step.children.filter((existing) => existing.id !== child.id), child].slice(-MAX_CHILDREN);
+	}
+}
+
+export function hasLiveNestedDescendants(children: NestedRunSummary[] | undefined): boolean {
+	if (!children?.length) return false;
+	for (const child of children) {
+		if (!isTerminalNestedRunState(child.state)) return true;
+		if (hasLiveNestedDescendants(child.children)) return true;
+		if (hasLiveNestedDescendants(child.steps?.flatMap((step) => step.children ?? []))) return true;
+	}
+	return false;
+}
+
+interface NestedOriginProjection {
+	readonly parentRunOrigin?: NestedRunSummary["parentRunOrigin"];
+	readonly children?: readonly NestedOriginProjection[] | undefined;
+	readonly steps?: readonly { readonly children?: readonly NestedOriginProjection[] | undefined }[] | undefined;
+}
+
+/** Whether any descendant was directly taken over by user-attributed work. */
+export function nestedWorkIncludesUser(children: readonly NestedOriginProjection[] | undefined): boolean {
+	for (const child of children ?? []) {
+		if (child.parentRunOrigin === "user") return true;
+		if (nestedWorkIncludesUser(child.children)) return true;
+		if (nestedWorkIncludesUser(child.steps?.flatMap((step) => step.children ?? []))) return true;
+	}
+	return false;
+}
