@@ -1,6 +1,5 @@
 /** Detached runner for one Agent or one parallel Agent batch. */
 
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { normalizePonytailMode } from "../../../../ponytail/types.js";
@@ -180,6 +179,31 @@ export async function waitForStartupControl(
 	throw new Error(`Timed out after ${timeoutMs}ms waiting for runner startup '${action}'.`);
 }
 
+async function completeRevivalHandshake(
+	config: BackgroundRunnerConfig,
+	startupPath: string,
+	lease: ReturnType<typeof acquireSessionLease>,
+): Promise<void> {
+	config.revivalLeaseToken = lease.owner.token;
+	writePrivateAtomicJson(startupPath, {
+		state: "ready",
+		token: lease.owner.token,
+		pid: process.pid,
+		owner: lease.owner,
+	});
+	const ackPath = path.join(config.asyncDir, "runner-startup-ack.json");
+	await waitForStartupControl(ackPath, lease.owner.token, "ack");
+	writePrivateAtomicJson(startupPath, {
+		state: "acknowledged",
+		token: lease.owner.token,
+		pid: process.pid,
+	});
+	const proceedPath = path.join(config.asyncDir, "runner-startup-proceed.json");
+	await waitForStartupControl(proceedPath, lease.owner.token, "proceed");
+	fs.rmSync(ackPath, { force: true });
+	fs.rmSync(proceedPath, { force: true });
+}
+
 export async function runConfiguredBackground(
 	config: BackgroundRunnerConfig,
 	hooks: {
@@ -203,8 +227,6 @@ export async function runConfiguredBackground(
 	let terminalCommitted = false;
 	let startupCommitted = !config.revivalLease && !config.startupGateToken;
 	const startupPath = path.join(config.asyncDir, "runner-startup.json");
-	const ackPath = path.join(config.asyncDir, "runner-startup-ack.json");
-	const proceedPath = path.join(config.asyncDir, "runner-startup-proceed.json");
 	const gatePath = path.join(config.asyncDir, "runner-startup-gate.json");
 	const statusPath = path.join(config.asyncDir, "status.json");
 	setStatusUpdateObserver(statusPath, hooks.afterStatusUpdate);
@@ -223,27 +245,10 @@ export async function runConfiguredBackground(
 			fs.rmSync(gatePath, { force: true });
 		}
 		initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, taskList(config.work).length);
-		let startupToken: string = randomUUID();
 		if (config.revivalLease) {
 			lease = acquireSessionLease(config.revivalLease, { inspectWriterLiveness: inspectWriterProcessLiveness });
-			config.revivalLeaseToken = lease.owner.token;
-			startupToken = lease.owner.token;
-			writePrivateAtomicJson(startupPath, {
-				state: "ready",
-				token: startupToken,
-				pid: process.pid,
-				owner: lease.owner,
-			});
-			await waitForStartupControl(ackPath, startupToken, "ack");
-			writePrivateAtomicJson(startupPath, {
-				state: "acknowledged",
-				token: startupToken,
-				pid: process.pid,
-			});
-			await waitForStartupControl(proceedPath, startupToken, "proceed");
+			await completeRevivalHandshake(config, startupPath, lease);
 			startupCommitted = true;
-			fs.rmSync(ackPath, { force: true });
-			fs.rmSync(proceedPath, { force: true });
 		}
 		await runConfiguredWork(
 			config,

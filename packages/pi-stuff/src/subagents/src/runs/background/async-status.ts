@@ -228,6 +228,77 @@ function deriveAsyncActivityState(asyncDir: string, status: AsyncStatus) {
 	};
 }
 
+function summarizeAsyncStep(
+	asyncDir: string,
+	status: AsyncStatus,
+	step: AsyncJobStep,
+	index: number,
+): AsyncRunStepSummary {
+	const stepActivityState = step.activityState;
+	const stepLastActivityAt = step.lastActivityAt;
+	const summary: AsyncRunStepSummary = {
+		index,
+		agent: step.agent,
+		status: step.status,
+	};
+	if (step.context) summary.context = step.context;
+	if (step.delegatedTask) summary.delegatedTask = step.delegatedTask;
+	if (step.task) summary.task = step.task;
+	if (step.label) summary.label = step.label;
+	if (step.phase) summary.phase = step.phase;
+	if (step.outputName) summary.outputName = step.outputName;
+	if (step.structured) summary.structured = step.structured;
+	if (stepActivityState) summary.activityState = stepActivityState;
+	if (stepLastActivityAt) summary.lastActivityAt = stepLastActivityAt;
+	if (step.currentTool) summary.currentTool = step.currentTool;
+	if (step.currentToolArgs) summary.currentToolArgs = step.currentToolArgs;
+	if (step.currentToolStartedAt) summary.currentToolStartedAt = step.currentToolStartedAt;
+	if (step.currentPath) summary.currentPath = step.currentPath;
+	if (step.recentTools) summary.recentTools = step.recentTools.map((tool) => ({ ...tool }));
+	if (step.recentOutput) summary.recentOutput = [...step.recentOutput];
+	if (step.turnCount !== undefined) summary.turnCount = step.turnCount;
+	if (step.toolCount !== undefined) summary.toolCount = step.toolCount;
+	if (step.steering) summary.steering = step.steering;
+	if (step.durationMs !== undefined) summary.durationMs = step.durationMs;
+	if (step.tokens) summary.tokens = step.tokens;
+	if (step.contextUsage) summary.contextUsage = step.contextUsage;
+	if (step.totalCost) summary.totalCost = step.totalCost;
+	if (step.skills) summary.skills = step.skills;
+	if (step.model) summary.model = step.model;
+	if (step.thinking) summary.thinking = step.thinking;
+	if (step.attemptedModels) summary.attemptedModels = step.attemptedModels;
+	if (step.sessionFile) summary.sessionFile = step.sessionFile;
+	if (step.transcriptPath) summary.transcriptPath = step.transcriptPath;
+	if (step.transcriptError) summary.transcriptError = step.transcriptError;
+	if (step.error) summary.error = step.error;
+	if (step.timedOut !== undefined) summary.timedOut = step.timedOut;
+	if (step.stopped !== undefined) summary.stopped = step.stopped;
+	if (step.turnBudget) summary.turnBudget = step.turnBudget;
+	if (step.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = step.turnBudgetExceeded;
+	if (step.wrapUpRequested !== undefined) summary.wrapUpRequested = step.wrapUpRequested;
+	if (step.acceptance) summary.acceptance = step.acceptance;
+	if (step.agentContract) summary.agentContract = step.agentContract;
+	if (step.launchContractDigest) summary.launchContractDigest = step.launchContractDigest;
+	if (step.execution) summary.execution = step.execution;
+	if (step.review) summary.review = step.review;
+	if (step.effects) summary.effects = step.effects;
+	if (step.processTerminal) {
+		summary.processTerminal = sanitizeProcessTerminal(
+			step.processTerminal,
+			{ runId: status.runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
+			`${path.join(asyncDir, "status.json")} step ${index}`,
+		);
+	}
+	if (step.capabilityCeiling) summary.capabilityCeiling = step.capabilityCeiling;
+	if (step.capabilityAudit) summary.capabilityAudit = step.capabilityAudit;
+	if (step.children?.length) {
+		summary.children = step.children
+			.map((child) => sanitizeSummary(child))
+			.filter((child): child is NestedRunSummary => child !== undefined);
+	}
+	return summary;
+}
+
 function statusToSummary(
 	asyncDir: string,
 	status: AsyncStatus,
@@ -263,71 +334,7 @@ function statusToSummary(
 			nestedWarnings.push(`Nested status unavailable: ${getErrorMessage(error)}`);
 		}
 	}
-	const summarizedSteps = steps.map((step, index) => {
-		const stepActivityState = step.activityState;
-		const stepLastActivityAt = step.lastActivityAt;
-		const summary: AsyncRunStepSummary = {
-			index,
-			agent: step.agent,
-			status: step.status,
-		};
-		if (step.context) summary.context = step.context;
-		if (step.delegatedTask) summary.delegatedTask = step.delegatedTask;
-		if (step.task) summary.task = step.task;
-		if (step.label) summary.label = step.label;
-		if (step.phase) summary.phase = step.phase;
-		if (step.outputName) summary.outputName = step.outputName;
-		if (step.structured) summary.structured = step.structured;
-		if (stepActivityState) summary.activityState = stepActivityState;
-		if (stepLastActivityAt) summary.lastActivityAt = stepLastActivityAt;
-		if (step.currentTool) summary.currentTool = step.currentTool;
-		if (step.currentToolArgs) summary.currentToolArgs = step.currentToolArgs;
-		if (step.currentToolStartedAt) summary.currentToolStartedAt = step.currentToolStartedAt;
-		if (step.currentPath) summary.currentPath = step.currentPath;
-		if (step.recentTools) summary.recentTools = step.recentTools.map((tool) => ({ ...tool }));
-		if (step.recentOutput) summary.recentOutput = [...step.recentOutput];
-		if (step.turnCount !== undefined) summary.turnCount = step.turnCount;
-		if (step.toolCount !== undefined) summary.toolCount = step.toolCount;
-		if (step.steering) summary.steering = step.steering;
-		if (step.durationMs !== undefined) summary.durationMs = step.durationMs;
-		if (step.tokens) summary.tokens = step.tokens;
-		if (step.contextUsage) summary.contextUsage = step.contextUsage;
-		if (step.totalCost) summary.totalCost = step.totalCost;
-		if (step.skills) summary.skills = step.skills;
-		if (step.model) summary.model = step.model;
-		if (step.thinking) summary.thinking = step.thinking;
-		if (step.attemptedModels) summary.attemptedModels = step.attemptedModels;
-		if (step.sessionFile) summary.sessionFile = step.sessionFile;
-		if (step.transcriptPath) summary.transcriptPath = step.transcriptPath;
-		if (step.transcriptError) summary.transcriptError = step.transcriptError;
-		if (step.error) summary.error = step.error;
-		if (step.timedOut !== undefined) summary.timedOut = step.timedOut;
-		if (step.stopped !== undefined) summary.stopped = step.stopped;
-		if (step.turnBudget) summary.turnBudget = step.turnBudget;
-		if (step.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = step.turnBudgetExceeded;
-		if (step.wrapUpRequested !== undefined) summary.wrapUpRequested = step.wrapUpRequested;
-		if (step.acceptance) summary.acceptance = step.acceptance;
-		if (step.agentContract) summary.agentContract = step.agentContract;
-		if (step.launchContractDigest) summary.launchContractDigest = step.launchContractDigest;
-		if (step.execution) summary.execution = step.execution;
-		if (step.review) summary.review = step.review;
-		if (step.effects) summary.effects = step.effects;
-		if (step.processTerminal) {
-			summary.processTerminal = sanitizeProcessTerminal(
-				step.processTerminal,
-				{ runId: status.runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
-				`${path.join(asyncDir, "status.json")} step ${index}`,
-			);
-		}
-		if (step.capabilityCeiling) summary.capabilityCeiling = step.capabilityCeiling;
-		if (step.capabilityAudit) summary.capabilityAudit = step.capabilityAudit;
-		if (step.children?.length) {
-			summary.children = step.children
-				.map((child) => sanitizeSummary(child))
-				.filter((child): child is NestedRunSummary => child !== undefined);
-		}
-		return summary;
-	});
+	const summarizedSteps = steps.map((step, index) => summarizeAsyncStep(asyncDir, status, step, index));
 	if (nestedProjectionAvailable) {
 		attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, nestedChildren);
 	} else {
@@ -413,45 +420,40 @@ function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
 	});
 }
 
-export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions = {}): AsyncRunSummary[] {
-	const matchesSession = (status: AsyncStatus): boolean =>
-		options.sessionScope
-			? sessionArtifactMatches(options.sessionScope, status.sessionId, status.runId)
-			: !options.sessionId || status.sessionId === options.sessionId;
-	let entries: string[];
+function listAsyncRunEntries(asyncDirRoot: string, options: AsyncRunListOptions): string[] {
 	try {
-		if (options.runId !== undefined) {
-			const runId = options.runId;
-			const resolution = resolveTargetedAsyncRun(
-				asyncDirRoot,
-				runId,
-				options.sessionScope ? undefined : options.sessionId,
+		if (options.runId === undefined)
+			return fs.readdirSync(asyncDirRoot).filter((entry) => isAsyncRunDir(asyncDirRoot, entry));
+		const { runId } = options;
+		const resolution = resolveTargetedAsyncRun(
+			asyncDirRoot,
+			runId,
+			options.sessionScope ? undefined : options.sessionId,
+		);
+		if (resolution.kind === "exact") return [resolution.id];
+		if (resolution.kind !== "scan") return [];
+		return fs
+			.readdirSync(asyncDirRoot)
+			.filter(
+				(entry) =>
+					(entry === runId || entry.startsWith(runId)) &&
+					resolveTargetedAsyncRun(asyncDirRoot, entry, options.sessionScope ? undefined : options.sessionId)
+						.kind === "exact",
 			);
-			entries =
-				resolution.kind === "exact"
-					? [resolution.id]
-					: resolution.kind === "scan"
-						? fs
-								.readdirSync(asyncDirRoot)
-								.filter(
-									(entry) =>
-										(entry === runId || entry.startsWith(runId)) &&
-										resolveTargetedAsyncRun(
-											asyncDirRoot,
-											entry,
-											options.sessionScope ? undefined : options.sessionId,
-										).kind === "exact",
-								)
-						: [];
-		} else {
-			entries = fs.readdirSync(asyncDirRoot).filter((entry) => isAsyncRunDir(asyncDirRoot, entry));
-		}
 	} catch (error) {
 		if (isNotFoundError(error)) return [];
 		throw new Error(`Failed to list async runs in '${asyncDirRoot}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
+}
+
+export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions = {}): AsyncRunSummary[] {
+	const matchesSession = (status: AsyncStatus): boolean =>
+		options.sessionScope
+			? sessionArtifactMatches(options.sessionScope, status.sessionId, status.runId)
+			: !options.sessionId || status.sessionId === options.sessionId;
+	const entries = listAsyncRunEntries(asyncDirRoot, options);
 	if (options.preselectRecent) {
 		const statusMtimes = new Map<string, number>();
 		for (const entry of entries) {
