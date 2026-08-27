@@ -32,6 +32,8 @@ the durable contracts, validation, lock, and atomic ledger storage. `runtime/age
 lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed process and writer-registry proof.
 `session/current-agents.ts` owns subscriptions, controls, overrides, and revisions;
 `session/current-agents-projection.ts` normalizes durable and live sources into immutable rows.
+`ui/agent-dialog.ts` owns interaction and async control/transcript generations; `ui/agent-dialog-renderer.ts` owns the
+single-column `/agents` layout, terminal-width fitting, and scroll metrics.
 
 ## Everyday behavior
 
