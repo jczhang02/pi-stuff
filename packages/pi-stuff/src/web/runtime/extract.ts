@@ -15,7 +15,7 @@ import { extractGitHub } from "./github-extract.ts";
 import { extractWithKagi, isKagiExtractAvailable } from "./kagi.ts";
 import { extractWithOllama, isOllamaFetchAvailable } from "./ollama.ts";
 import { extractWithParallel, isParallelAvailable } from "./parallel.ts";
-import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
+import { extractPDFToMarkdown, isPDF, loadPDFConfig, type PDFConfig } from "./pdf-extract.ts";
 import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
 import { extractHeadingTitle, extractRSCContent } from "./rsc-extract.ts";
 import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
@@ -36,6 +36,18 @@ const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large"
 const MIN_USEFUL_CONTENT = 500;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
+const PAGE_REQUEST_HEADERS = {
+	"User-Agent":
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+	Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+	"Accept-Language": "en-US,en;q=0.9",
+	"Cache-Control": "no-cache",
+	"Sec-Fetch-Dest": "document",
+	"Sec-Fetch-Mode": "navigate",
+	"Sec-Fetch-Site": "none",
+	"Sec-Fetch-User": "?1",
+	"Upgrade-Insecure-Requests": "1",
+};
 
 export { loadSsrfConfig } from "./ssrf-protection.ts";
 
@@ -143,236 +155,92 @@ async function extractWithJinaReader(
 	}
 }
 
-export async function extractContent(
+interface ContentFallback {
+	readonly available: () => boolean;
+	readonly extract: () => Promise<ExtractedContent | null>;
+	readonly label?: string;
+}
+
+interface ContentFallbackResult {
+	readonly errors: string[];
+	readonly result: ExtractedContent | null;
+}
+
+function appendLinks(result: ExtractedContent, declaredLinks: DeclaredWebLink[]): ExtractedContent {
+	return { ...result, content: appendDeclaredWebLinks(result.content, declaredLinks) };
+}
+
+function contentFallbacks(url: string, signal: AbortSignal | undefined, options: ExtractOptions | undefined) {
+	const ssrfOptions = () => {
+		const ssrf = loadSsrfConfig();
+		return { timeoutMs: options?.timeoutMs, lookup: options?.lookup, ssrf };
+	};
+	return [
+		{
+			available: isFirecrawlAvailable,
+			extract: () => extractWithFirecrawl(url, signal, ssrfOptions()),
+			label: "Firecrawl",
+		},
+		{ available: () => true, extract: () => extractWithJinaReader(url, signal, options?.lookup) },
+		{
+			available: isTinyFishAvailable,
+			extract: () => extractWithTinyFish(url, signal, options),
+			label: "TinyFish",
+		},
+		{
+			available: isSearch1APIAvailable,
+			extract: () => extractWithSearch1API(url, signal, options),
+			label: "Search1API",
+		},
+		{
+			available: isQueritAvailable,
+			extract: () => extractWithQuerit(url, signal, options),
+			label: "Querit",
+		},
+		{ available: isKagiExtractAvailable, extract: () => extractWithKagi(url, signal, ssrfOptions()), label: "Kagi" },
+		{
+			available: isOllamaFetchAvailable,
+			extract: () => extractWithOllama(url, signal, ssrfOptions()),
+			label: "Ollama",
+		},
+		{ available: isParallelAvailable, extract: () => extractWithParallel(url, signal), label: "Parallel" },
+		{
+			available: isBrightDataUnlockerAvailable,
+			extract: () => extractWithBrightDataUnlocker(url, signal, ssrfOptions()),
+			label: "Bright Data",
+		},
+	] satisfies readonly ContentFallback[];
+}
+
+async function tryContentFallbacks(
 	url: string,
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<ExtractedContent> {
-	if (signal?.aborted) {
-		return { url, title: "", content: "", error: "Aborted" };
-	}
-
-	let remoteUrl: URL | null = null;
-	try {
-		const parsed = new URL(url);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
-	} catch {}
-	if (remoteUrl) {
+	signal: AbortSignal | undefined,
+	options: ExtractOptions | undefined,
+	httpResult: ExtractedContent,
+	declaredLinks: DeclaredWebLink[],
+): Promise<ContentFallbackResult> {
+	const errors: string[] = [];
+	for (const fallback of contentFallbacks(url, signal, options)) {
 		try {
-			const ssrf = loadSsrfConfig();
-			const domainPolicy = loadFetchContentDomainPolicy();
-			await validateRemoteUrl(remoteUrl, {
-				allowRanges: ssrf.allowRanges,
-				trustEnvProxy: ssrf.trustEnvProxy,
-				domainPolicy,
-				lookup: options?.lookup,
-			});
+			if (fallback.available()) {
+				const result = await fallback.extract();
+				if (result) return { errors, result: appendLinks(result, declaredLinks) };
+			}
 		} catch (err) {
-			return { url, title: "", content: "", error: errorMessage(err) };
+			if (isAbortError(err)) return { errors, result: abortedResult(url) };
+			const message = errorMessage(err);
+			if (isConfigParseError(err)) return { errors, result: { ...httpResult, error: message } };
+			if (fallback.label) errors.push(`${fallback.label} fallback failed: ${message}`);
 		}
+		if (signal?.aborted) return { errors, result: abortedResult(url) };
 	}
+	return { errors, result: null };
+}
 
-	if (options?.mode === "raw") {
-		return extractViaHttp(url, signal, options);
-	}
-
-	try {
-		if (!remoteUrl) new URL(url);
-	} catch (err) {
-		return { url, title: "", content: "", error: errorMessage(err) };
-	}
-
-	try {
-		const ghResult = await extractGitHub(url, signal);
-		if (ghResult) return ghResult;
-		if (signal?.aborted) return abortedResult(url);
-	} catch (err) {
-		const message = errorMessage(err);
-		if (isAbortError(err)) return abortedResult(url);
-		if (isConfigParseError(err)) {
-			return { url, title: "", content: "", error: message };
-		}
-	}
-
-	if (signal?.aborted) return abortedResult(url);
-
-	const { declaredLinks = [], ...httpResult } = await extractViaHttp(url, signal, options);
-	const withDeclaredLinks = (result: ExtractedContent): ExtractedContent => ({
-		...result,
-		content: appendDeclaredWebLinks(result.content, declaredLinks),
-	});
-
-	if (signal?.aborted) return abortedResult(url);
-	if (!httpResult.error) return httpResult;
-	const httpError = httpResult.error;
-	if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
-
-	let firecrawlError: string | null = null;
-	try {
-		if (isFirecrawlAvailable()) {
-			const ssrf = loadSsrfConfig();
-			const firecrawlResult = await extractWithFirecrawl(url, signal, {
-				timeoutMs: options?.timeoutMs,
-				lookup: options?.lookup,
-				ssrf,
-			});
-			if (firecrawlResult) return withDeclaredLinks(firecrawlResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		firecrawlError = errorMessage(err);
-		if (isConfigParseError(err)) return { ...httpResult, error: firecrawlError };
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	const jinaResult = await extractWithJinaReader(url, signal, options?.lookup);
-	if (jinaResult) return withDeclaredLinks(jinaResult);
-	if (signal?.aborted) return abortedResult(url);
-
-	let tinyfishError: string | null = null;
-	try {
-		if (isTinyFishAvailable()) {
-			const tinyfishResult = await extractWithTinyFish(url, signal, options);
-			if (tinyfishResult) return withDeclaredLinks(tinyfishResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		tinyfishError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: tinyfishError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let search1apiError: string | null = null;
-	try {
-		if (isSearch1APIAvailable()) {
-			const search1apiResult = await extractWithSearch1API(url, signal, options);
-			if (search1apiResult) return withDeclaredLinks(search1apiResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		search1apiError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: search1apiError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let queritError: string | null = null;
-	try {
-		if (isQueritAvailable()) {
-			const queritResult = await extractWithQuerit(url, signal, options);
-			if (queritResult) return withDeclaredLinks(queritResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		queritError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: queritError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let kagiError: string | null = null;
-	try {
-		if (isKagiExtractAvailable()) {
-			const ssrf = loadSsrfConfig();
-			const kagiResult = await extractWithKagi(url, signal, {
-				timeoutMs: options?.timeoutMs,
-				lookup: options?.lookup,
-				ssrf,
-			});
-			if (kagiResult) return withDeclaredLinks(kagiResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		kagiError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: kagiError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let ollamaError: string | null = null;
-	try {
-		if (isOllamaFetchAvailable()) {
-			const ssrf = loadSsrfConfig();
-			const ollamaResult = await extractWithOllama(url, signal, {
-				timeoutMs: options?.timeoutMs,
-				lookup: options?.lookup,
-				ssrf,
-			});
-			if (ollamaResult) return withDeclaredLinks(ollamaResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		ollamaError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: ollamaError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let parallelError: string | null = null;
-	try {
-		if (isParallelAvailable()) {
-			const parallelResult = await extractWithParallel(url, signal);
-			if (parallelResult) return withDeclaredLinks(parallelResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		parallelError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: parallelError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let brightdataError: string | null = null;
-	try {
-		if (isBrightDataUnlockerAvailable()) {
-			const ssrf = loadSsrfConfig();
-			const brightdataResult = await extractWithBrightDataUnlocker(url, signal, {
-				timeoutMs: options?.timeoutMs,
-				lookup: options?.lookup,
-				ssrf,
-			});
-			if (brightdataResult) return withDeclaredLinks(brightdataResult);
-		}
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		brightdataError = errorMessage(err);
-		if (isConfigParseError(err)) {
-			return { ...httpResult, error: brightdataError };
-		}
-	}
-	if (signal?.aborted) return abortedResult(url);
-
-	let geminiResult: ExtractedContent | null = null;
-	try {
-		geminiResult = (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal));
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
-			return { ...httpResult, error: errorMessage(err) };
-		}
-	}
-
-	if (geminiResult) return withDeclaredLinks(geminiResult);
-	if (signal?.aborted) return abortedResult(url);
-	if (declaredLinks.length > 0) return { ...httpResult, error: null };
-
-	const guidance = [
-		httpResult.error,
-		...(firecrawlError ? [`Firecrawl fallback failed: ${firecrawlError}`] : []),
-		...(tinyfishError ? [`TinyFish fallback failed: ${tinyfishError}`] : []),
-		...(search1apiError ? [`Search1API fallback failed: ${search1apiError}`] : []),
-		...(queritError ? [`Querit fallback failed: ${queritError}`] : []),
-		...(kagiError ? [`Kagi fallback failed: ${kagiError}`] : []),
-		...(ollamaError ? [`Ollama fallback failed: ${ollamaError}`] : []),
-		...(parallelError ? [`Parallel fallback failed: ${parallelError}`] : []),
-		...(brightdataError ? [`Bright Data fallback failed: ${brightdataError}`] : []),
+function extractionGuidance(httpError: string, fallbackErrors: readonly string[]): string {
+	return [
+		httpError,
+		...fallbackErrors,
 		"",
 		"Fallback options:",
 		`  \u2022 Set firecrawlBaseUrl in ${WEB_SEARCH_CONFIG_PATH} to a self-hosted Firecrawl instance`,
@@ -387,7 +255,67 @@ export async function extractContent(
 		"  \u2022 Sign into gemini.google.com in Chrome",
 		"  \u2022 Use web_search to find content about this topic",
 	].join("\n");
-	return { ...httpResult, error: guidance };
+}
+
+export async function extractContent(
+	url: string,
+	signal?: AbortSignal,
+	options?: ExtractOptions,
+): Promise<ExtractedContent> {
+	if (signal?.aborted) return abortedResult(url);
+	let remoteUrl: URL | null = null;
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
+	} catch {}
+	if (remoteUrl) {
+		try {
+			const ssrf = loadSsrfConfig();
+			await validateRemoteUrl(remoteUrl, {
+				allowRanges: ssrf.allowRanges,
+				trustEnvProxy: ssrf.trustEnvProxy,
+				domainPolicy: loadFetchContentDomainPolicy(),
+				lookup: options?.lookup,
+			});
+		} catch (err) {
+			return { url, title: "", content: "", error: errorMessage(err) };
+		}
+	}
+	if (options?.mode === "raw") return extractViaHttp(url, signal, options);
+	try {
+		if (!remoteUrl) new URL(url);
+	} catch (err) {
+		return { url, title: "", content: "", error: errorMessage(err) };
+	}
+	try {
+		const ghResult = await extractGitHub(url, signal);
+		if (ghResult) return ghResult;
+		if (signal?.aborted) return abortedResult(url);
+	} catch (err) {
+		if (isAbortError(err)) return abortedResult(url);
+		if (isConfigParseError(err)) return { url, title: "", content: "", error: errorMessage(err) };
+	}
+	if (signal?.aborted) return abortedResult(url);
+	const { declaredLinks = [], ...httpResult } = await extractViaHttp(url, signal, options);
+	if (signal?.aborted) return abortedResult(url);
+	if (!httpResult.error) return httpResult;
+	const httpError = httpResult.error;
+	if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
+	const fallback = await tryContentFallbacks(url, signal, options, httpResult, declaredLinks);
+	if (fallback.result) return fallback.result;
+	let geminiResult: ExtractedContent | null = null;
+	try {
+		geminiResult = (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal));
+	} catch (err) {
+		if (isAbortError(err)) return abortedResult(url);
+		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
+			return { ...httpResult, error: errorMessage(err) };
+		}
+	}
+	if (geminiResult) return appendLinks(geminiResult, declaredLinks);
+	if (signal?.aborted) return abortedResult(url);
+	if (declaredLinks.length > 0) return { ...httpResult, error: null };
+	return { ...httpResult, error: extractionGuidance(httpError, fallback.errors) };
 }
 
 function isLikelyJSRendered(html: string): boolean {
@@ -490,254 +418,247 @@ function responseSizeLimitError(maxBytes: number): Error {
 	return new Error(`Response too large (${Math.round(maxBytes / 1024 / 1024)}MB)`);
 }
 
+function oversizedResponse(
+	response: Response,
+	url: string,
+	maxResponseSize: number,
+	pdfConfig: PDFConfig | null,
+	activityId: string,
+): HttpExtractedContent | null {
+	const header = response.headers.get("content-length");
+	if (!header) return null;
+	const contentLength = Number.parseInt(header, 10);
+	if (!Number.isFinite(contentLength) || contentLength <= maxResponseSize) return null;
+	activityMonitor.logComplete(activityId, response.status);
+	return {
+		url,
+		title: "",
+		content: "",
+		error: pdfConfig
+			? pdfSizeLimitError(pdfConfig.maxSizeMB).message
+			: `Response too large (${Math.round(contentLength / 1024 / 1024)}MB)`,
+	};
+}
+
+async function extractRawResponse(
+	response: Response,
+	url: string,
+	contentType: string,
+	mimeType: string,
+	maxResponseSize: number,
+	activityId: string,
+): Promise<HttpExtractedContent> {
+	if (!isTextContentType(contentType)) {
+		activityMonitor.logComplete(activityId, response.status);
+		return {
+			url,
+			title: "",
+			content: "",
+			error: `Unsupported content type in raw mode: ${mimeType || "missing"}`,
+			mimeType,
+			status: response.status,
+		};
+	}
+	const text = await readTextResponseWithLimit(response, maxResponseSize);
+	activityMonitor.logComplete(activityId, response.status);
+	return { url, title: extractTextTitle(text, url), content: text, error: null, mimeType, status: response.status };
+}
+
+async function extractImageResponse(
+	response: Response,
+	url: string,
+	mimeType: string,
+	maxResponseSize: number,
+	activityId: string,
+): Promise<HttpExtractedContent> {
+	try {
+		const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () =>
+			responseSizeLimitError(maxResponseSize),
+		);
+		const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
+		activityMonitor.logComplete(activityId, response.status);
+		if (!resized) {
+			return {
+				url,
+				title: "",
+				content: "",
+				error: `Could not decode image: ${mimeType}`,
+				mimeType,
+				status: response.status,
+			};
+		}
+		const title = new URL(response.url || url).pathname.split("/").pop() || url;
+		return {
+			url,
+			title,
+			content: `Image fetched (${resized.width}×${resized.height}, ${resized.mimeType})`,
+			error: null,
+			thumbnail: { data: resized.data, mimeType: resized.mimeType },
+			mimeType: resized.mimeType,
+			status: response.status,
+		};
+	} catch (err) {
+		const message = errorMessage(err);
+		activityMonitor.logError(activityId, message);
+		return { url, title: "", content: "", error: message, mimeType, status: response.status };
+	}
+}
+
+async function extractPdfResponse(
+	response: Response,
+	url: string,
+	signal: AbortSignal | undefined,
+	pdfConfig: PDFConfig,
+	activityId: string,
+): Promise<HttpExtractedContent> {
+	try {
+		const buffer = await readPDFResponseBuffer(response, pdfConfig.maxSizeMB);
+		if (signal?.aborted) return abortedResult(url);
+		const result = await extractPDFToMarkdown(buffer, url, { signal });
+		activityMonitor.logComplete(activityId, response.status);
+		return {
+			url,
+			title: result.title,
+			content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
+			error: null,
+		};
+	} catch (err) {
+		const message = errorMessage(err);
+		activityMonitor.logError(activityId, message);
+		if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
+			return { url, title: "", content: "", error: message };
+		}
+		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
+			return { url, title: "", content: "", error: message };
+		}
+		return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };
+	}
+}
+
+function isUnsupportedBinary(contentType: string): boolean {
+	return (
+		contentType.includes("application/octet-stream") ||
+		contentType.includes("image/") ||
+		contentType.includes("audio/") ||
+		contentType.includes("video/") ||
+		contentType.includes("application/zip")
+	);
+}
+
+function extractHtmlResponse(response: Response, url: string, text: string, activityId: string): HttpExtractedContent {
+	const { document } = parseHTML(text);
+	const documentTitle = document.title?.trim() ?? "";
+	const declaredLinks = discoverDeclaredWebLinks(document, response.headers.get("link"), response.url || url);
+	const article = new Readability(document).parse();
+	if (!article) {
+		const rscResult = extractRSCContent(text);
+		if (rscResult) {
+			activityMonitor.logComplete(activityId, response.status);
+			return {
+				url,
+				title: rscResult.title,
+				content: appendDeclaredWebLinks(rscResult.content, declaredLinks),
+				error: null,
+				declaredLinks,
+			};
+		}
+		activityMonitor.logComplete(activityId, response.status);
+		return {
+			url,
+			title: documentTitle,
+			content: appendDeclaredWebLinks("", declaredLinks),
+			error: isLikelyJSRendered(text)
+				? "Page appears to be JavaScript-rendered (content loads dynamically)"
+				: "Could not extract readable content from HTML structure",
+			declaredLinks,
+		};
+	}
+	if (!isRuntimeString(article.content)) throw new Error("Readability returned invalid article content");
+	const markdown = turndown.turndown(article.content);
+	activityMonitor.logComplete(activityId, response.status);
+	return {
+		url,
+		title: article.title || documentTitle,
+		content: appendDeclaredWebLinks(markdown, declaredLinks),
+		error:
+			markdown.length >= MIN_USEFUL_CONTENT
+				? null
+				: isLikelyJSRendered(text)
+					? "Page appears to be JavaScript-rendered (content loads dynamically)"
+					: "Extracted content appears incomplete",
+		declaredLinks,
+	};
+}
+
+async function extractHttpResponse(
+	response: Response,
+	url: string,
+	signal: AbortSignal | undefined,
+	options: ExtractOptions | undefined,
+	activityId: string,
+): Promise<HttpExtractedContent> {
+	if (!response.ok && options?.mode !== "raw") {
+		activityMonitor.logComplete(activityId, response.status);
+		return {
+			url,
+			title: "",
+			content: "",
+			error: `HTTP ${response.status}: ${response.statusText}`,
+			status: response.status,
+		};
+	}
+	const contentType = response.headers.get("content-type") || "";
+	const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+	const pdfConfig = isPDF(url, contentType) ? loadPDFConfig() : null;
+	const maxResponseSize = (pdfConfig?.maxSizeMB ?? 5) * 1024 * 1024;
+	const sizeError = oversizedResponse(response, url, maxResponseSize, pdfConfig, activityId);
+	if (sizeError) return sizeError;
+	if (options?.mode === "raw") {
+		return extractRawResponse(response, url, contentType, mimeType, maxResponseSize, activityId);
+	}
+	if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+		return extractImageResponse(response, url, mimeType, maxResponseSize, activityId);
+	}
+	if (pdfConfig) return extractPdfResponse(response, url, signal, pdfConfig, activityId);
+	if (isUnsupportedBinary(contentType)) {
+		activityMonitor.logComplete(activityId, response.status);
+		return { url, title: "", content: "", error: `Unsupported content type: ${contentType.split(";")[0]}` };
+	}
+	const text = await readTextResponseWithLimit(response, maxResponseSize);
+	if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+		activityMonitor.logComplete(activityId, response.status);
+		return { url, title: extractTextTitle(text, url), content: text, error: null };
+	}
+	return extractHtmlResponse(response, url, text, activityId);
+}
+
 async function extractViaHttp(
 	url: string,
 	signal?: AbortSignal,
 	options?: ExtractOptions,
 ): Promise<HttpExtractedContent> {
-	const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
-
 	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
+	const timeoutId = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 	const onAbort = () => controller.abort();
 	signal?.addEventListener("abort", onAbort);
-
 	try {
 		const ssrf = loadSsrfConfig();
-		const domainPolicy = loadFetchContentDomainPolicy();
 		const response = await fetchRemoteUrl(
 			url,
-			{
-				signal: controller.signal,
-				headers: {
-					"User-Agent":
-						"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-					Accept:
-						"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-					"Accept-Language": "en-US,en;q=0.9",
-					"Cache-Control": "no-cache",
-					"Sec-Fetch-Dest": "document",
-					"Sec-Fetch-Mode": "navigate",
-					"Sec-Fetch-Site": "none",
-					"Sec-Fetch-User": "?1",
-					"Upgrade-Insecure-Requests": "1",
-				},
-			},
+			{ headers: PAGE_REQUEST_HEADERS, signal: controller.signal },
 			{
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
-				domainPolicy,
+				domainPolicy: loadFetchContentDomainPolicy(),
 				lookup: options?.lookup,
 			},
 		);
-
-		if (!response.ok && options?.mode !== "raw") {
-			activityMonitor.logComplete(activityId, response.status);
-			return {
-				url,
-				title: "",
-				content: "",
-				error: `HTTP ${response.status}: ${response.statusText}`,
-				status: response.status,
-			};
-		}
-
-		const contentLengthHeader = response.headers.get("content-length");
-		const contentType = response.headers.get("content-type") || "";
-		const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-		const isPDFContent = isPDF(url, contentType);
-		const pdfConfig = isPDFContent ? loadPDFConfig() : null;
-		const maxResponseSize = (pdfConfig?.maxSizeMB ?? 5) * 1024 * 1024;
-		if (contentLengthHeader) {
-			const contentLength = Number.parseInt(contentLengthHeader, 10);
-			if (Number.isFinite(contentLength) && contentLength > maxResponseSize) {
-				activityMonitor.logComplete(activityId, response.status);
-				return {
-					url,
-					title: "",
-					content: "",
-					error: pdfConfig
-						? pdfSizeLimitError(pdfConfig.maxSizeMB).message
-						: `Response too large (${Math.round(contentLength / 1024 / 1024)}MB)`,
-				};
-			}
-		}
-
-		if (options?.mode === "raw") {
-			if (!isTextContentType(contentType)) {
-				activityMonitor.logComplete(activityId, response.status);
-				return {
-					url,
-					title: "",
-					content: "",
-					error: `Unsupported content type in raw mode: ${mimeType || "missing"}`,
-					mimeType,
-					status: response.status,
-				};
-			}
-			const text = await readTextResponseWithLimit(response, maxResponseSize);
-			activityMonitor.logComplete(activityId, response.status);
-			return {
-				url,
-				title: extractTextTitle(text, url),
-				content: text,
-				error: null,
-				mimeType,
-				status: response.status,
-			};
-		}
-
-		if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
-			try {
-				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () =>
-					responseSizeLimitError(maxResponseSize),
-				);
-				const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
-				activityMonitor.logComplete(activityId, response.status);
-				if (!resized)
-					return {
-						url,
-						title: "",
-						content: "",
-						error: `Could not decode image: ${mimeType}`,
-						mimeType,
-						status: response.status,
-					};
-				const title = new URL(response.url || url).pathname.split("/").pop() || url;
-				return {
-					url,
-					title,
-					content: `Image fetched (${resized.width}×${resized.height}, ${resized.mimeType})`,
-					error: null,
-					thumbnail: { data: resized.data, mimeType: resized.mimeType },
-					mimeType: resized.mimeType,
-					status: response.status,
-				};
-			} catch (err) {
-				const message = errorMessage(err);
-				activityMonitor.logError(activityId, message);
-				return { url, title: "", content: "", error: message, mimeType, status: response.status };
-			}
-		}
-
-		if (isPDFContent && pdfConfig) {
-			try {
-				const buffer = await readPDFResponseBuffer(response, pdfConfig.maxSizeMB);
-				if (signal?.aborted) return abortedResult(url);
-				const result = await extractPDFToMarkdown(buffer, url, { signal });
-				activityMonitor.logComplete(activityId, response.status);
-				return {
-					url,
-					title: result.title,
-					content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
-					error: null,
-				};
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				activityMonitor.logError(activityId, message);
-				if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
-					return { url, title: "", content: "", error: message };
-				}
-				if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
-					return { url, title: "", content: "", error: message };
-				}
-				return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };
-			}
-		}
-
-		if (
-			contentType.includes("application/octet-stream") ||
-			contentType.includes("image/") ||
-			contentType.includes("audio/") ||
-			contentType.includes("video/") ||
-			contentType.includes("application/zip")
-		) {
-			activityMonitor.logComplete(activityId, response.status);
-			return {
-				url,
-				title: "",
-				content: "",
-				error: `Unsupported content type: ${contentType.split(";")[0]}`,
-			};
-		}
-
-		const text = await readTextResponseWithLimit(response, maxResponseSize);
-		const isHTML = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
-
-		if (!isHTML) {
-			activityMonitor.logComplete(activityId, response.status);
-			const title = extractTextTitle(text, url);
-			return { url, title, content: text, error: null };
-		}
-
-		const { document } = parseHTML(text);
-		const documentTitle = document.title?.trim() ?? "";
-		const declaredLinks = discoverDeclaredWebLinks(document, response.headers.get("link"), response.url || url);
-		const reader = new Readability(document);
-		const article = reader.parse();
-
-		if (!article) {
-			const rscResult = extractRSCContent(text);
-			if (rscResult) {
-				activityMonitor.logComplete(activityId, response.status);
-				return {
-					url,
-					title: rscResult.title,
-					content: appendDeclaredWebLinks(rscResult.content, declaredLinks),
-					error: null,
-					declaredLinks,
-				};
-			}
-
-			activityMonitor.logComplete(activityId, response.status);
-			const jsRendered = isLikelyJSRendered(text);
-			const errorMsg = jsRendered
-				? "Page appears to be JavaScript-rendered (content loads dynamically)"
-				: "Could not extract readable content from HTML structure";
-
-			return {
-				url,
-				title: documentTitle,
-				content: appendDeclaredWebLinks("", declaredLinks),
-				error: errorMsg,
-				declaredLinks,
-			};
-		}
-
-		if (!isRuntimeString(article.content)) {
-			throw new Error("Readability returned invalid article content");
-		}
-		const markdown = turndown.turndown(article.content);
-		activityMonitor.logComplete(activityId, response.status);
-
-		if (markdown.length < MIN_USEFUL_CONTENT) {
-			return {
-				url,
-				title: article.title || documentTitle,
-				content: appendDeclaredWebLinks(markdown, declaredLinks),
-				error: isLikelyJSRendered(text)
-					? "Page appears to be JavaScript-rendered (content loads dynamically)"
-					: "Extracted content appears incomplete",
-				declaredLinks,
-			};
-		}
-
-		return {
-			url,
-			title: article.title || documentTitle,
-			content: appendDeclaredWebLinks(markdown, declaredLinks),
-			error: null,
-			declaredLinks,
-		};
+		return await extractHttpResponse(response, url, signal, options, activityId);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
+		const message = errorMessage(err);
+		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+		else activityMonitor.logError(activityId, message);
 		return { url, title: "", content: "", error: message };
 	} finally {
 		clearTimeout(timeoutId);

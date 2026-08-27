@@ -16,6 +16,9 @@ execution, storage, and Session restoration only.
 `rsc-extract.ts` separates flight-chunk parsing from the cycle-safe node traversal that renders referenced content and
 Markdown tables.
 
+`extract.ts` keeps the ordered provider fallback policy in one sequence and delegates HTTP response types to focused
+raw, image, PDF, text, HTML, and RSC handlers.
+
 `gemini-search.ts` owns one typed provider registry and the routing policy built from it. Each provider is declared
 once with its dispatch, availability, label, and automatic-routing metadata. Gemini API and browser transports remain
 inside `gemini-api.ts` and `gemini-web.ts`; extraction providers keep their separate content contract. Every provider
