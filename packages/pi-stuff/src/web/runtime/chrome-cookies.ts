@@ -99,9 +99,8 @@ export async function getGoogleCookies(options?: {
 	}
 
 	const warningSet = new Set<string>();
-	const rawProfile = isRuntimeString(options?.profile) ? options.profile.trim() : "";
 	const requestedProfile = normalizeProfileName(options?.profile);
-	if (rawProfile && !requestedProfile) {
+	if (!requestedProfile && isRuntimeString(options?.profile) && options.profile.trim()) {
 		lastCookieDiagnostic = "Configured Chromium profile must be a profile directory name, not a path.";
 		return null;
 	}
