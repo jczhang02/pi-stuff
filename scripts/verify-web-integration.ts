@@ -129,6 +129,92 @@ async function execute(
 	return tool.execute(callId, parameters, AbortSignal.timeout(45_000), undefined, context);
 }
 
+async function verifyPublicSearch(searchTool: ToolDefinition, context: ExtensionContext): Promise<void> {
+	const search = await execute(
+		searchTool,
+		"public-search",
+		{ numResults: 3, provider: "anysearch", query: "IETF HTTP Semantics RFC 9110 official" },
+		context,
+	);
+	const details = checkedDetails(search, SEARCH_SUCCESS_DETAILS_SCHEMA, "public search");
+	if (
+		details.error ||
+		details.successfulQueries !== 1 ||
+		details.totalResults < 1 ||
+		!resultText(search).includes("http")
+	) {
+		fail("real anonymous public search did not return a cited result");
+	}
+}
+
+async function verifyPublicFetches(
+	fetchTool: ToolDefinition,
+	continuationTool: ToolDefinition,
+	context: ExtensionContext,
+	recordPdfPath: (path: string) => void,
+): Promise<void> {
+	const page = await execute(fetchTool, "public-page", { url: "https://example.com" }, context);
+	if (
+		checkedDetails(page, FETCH_DETAILS_SCHEMA, "public page").error ||
+		!resultText(page).includes("documentation examples")
+	) {
+		fail("real public HTML extraction did not return the Example Domain body");
+	}
+	const redirect = await execute(
+		fetchTool,
+		"public-redirect",
+		{ mode: "raw", url: "http://www.rfc-editor.org/rfc/rfc9110.txt" },
+		context,
+	);
+	if (
+		checkedDetails(redirect, FETCH_DETAILS_SCHEMA, "public redirect").error ||
+		!resultText(redirect).includes("HTTP Semantics")
+	) {
+		fail("real HTTP-to-HTTPS redirect did not reach its validated RFC Editor destination");
+	}
+
+	const pdf = await execute(
+		fetchTool,
+		"public-pdf",
+		{ url: "https://enterprise.github.com/downloads/en/markdown-cheatsheet.pdf" },
+		context,
+	);
+	const pdfText = resultText(pdf);
+	const pdfPathMatch = /^PDF extracted and saved to: (.+)$/mu.exec(pdfText);
+	if (checkedDetails(pdf, FETCH_DETAILS_SCHEMA, "public PDF").error || !pdfPathMatch?.[1]) {
+		fail("real public PDF extraction did not return its Markdown artifact path");
+	}
+	const pdfOutputPath = resolve(pdfPathMatch[1].trim());
+	recordPdfPath(pdfOutputPath);
+	if (!pdfOutputPath.startsWith(`${resolve(tmpdir())}${sep}`)) {
+		fail("PDF extraction returned an artifact outside the temporary directory");
+	}
+	const pdfMarkdown = await readFile(pdfOutputPath, "utf8");
+	if (pdfMarkdown.length < 500 || !/markdown|heading|header/iu.test(pdfMarkdown)) {
+		fail("real public PDF artifact did not contain extracted document text");
+	}
+
+	const longDocument = await execute(
+		fetchTool,
+		"public-long-document",
+		{ url: "https://www.rfc-editor.org/rfc/rfc9110.txt" },
+		context,
+	);
+	const longDetails = checkedDetails(longDocument, LONG_DOCUMENT_DETAILS_SCHEMA, "long document");
+	if (longDetails.error) fail("real long-document extraction did not create a continuation id");
+	if (resultText(longDocument).length > 55_000) fail("long-document inline result exceeded its bounded budget");
+	const continuation = await execute(
+		continuationTool,
+		"public-long-document-slice",
+		{ limit: 2_000, offset: 10_000, responseId: longDetails.responseId, urlIndex: 0 },
+		context,
+	);
+	const continuationDetails = checkedDetails(continuation, CONTINUATION_DETAILS_SCHEMA, "document continuation");
+	if (continuationDetails.error || continuationDetails.returnedChars !== 2_000) {
+		fail("stored public content could not be retrieved as a bounded continuation slice");
+	}
+}
+
 export async function verifyWebIntegration(options: WebIntegrationVerificationOptions = {}): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-web-integration-"));
 	const priorAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
@@ -151,23 +237,7 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 		const continuationTool = fixture.tools.get("get_search_content");
 		if (!searchTool || !fetchTool || !continuationTool) fail("the three bounded Web Tools were not registered");
 
-		if (options.publicNetwork) {
-			const search = await execute(
-				searchTool,
-				"public-search",
-				{ numResults: 3, provider: "anysearch", query: "IETF HTTP Semantics RFC 9110 official" },
-				fixture.context,
-			);
-			const searchDetails = checkedDetails(search, SEARCH_SUCCESS_DETAILS_SCHEMA, "public search");
-			if (
-				searchDetails.error ||
-				searchDetails.successfulQueries !== 1 ||
-				searchDetails.totalResults < 1 ||
-				!resultText(search).includes("http")
-			) {
-				fail("real anonymous public search did not return a cited result");
-			}
-		}
+		if (options.publicNetwork) await verifyPublicSearch(searchTool, fixture.context);
 		const missingCredential = await execute(
 			searchTool,
 			"missing-credential",
@@ -186,74 +256,10 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 		) {
 			fail("missing provider credentials were not returned as a visible bounded search failure");
 		}
-
 		if (options.publicNetwork) {
-			const page = await execute(fetchTool, "public-page", { url: "https://example.com" }, fixture.context);
-			if (
-				checkedDetails(page, FETCH_DETAILS_SCHEMA, "public page").error ||
-				!resultText(page).includes("documentation examples")
-			) {
-				fail("real public HTML extraction did not return the Example Domain body");
-			}
-			const redirect = await execute(
-				fetchTool,
-				"public-redirect",
-				{ mode: "raw", url: "http://www.rfc-editor.org/rfc/rfc9110.txt" },
-				fixture.context,
-			);
-			if (
-				checkedDetails(redirect, FETCH_DETAILS_SCHEMA, "public redirect").error ||
-				!resultText(redirect).includes("HTTP Semantics")
-			) {
-				fail("real HTTP-to-HTTPS redirect did not reach its validated RFC Editor destination");
-			}
-
-			const pdf = await execute(
-				fetchTool,
-				"public-pdf",
-				{
-					url: "https://enterprise.github.com/downloads/en/markdown-cheatsheet.pdf",
-				},
-				fixture.context,
-			);
-			const pdfText = resultText(pdf);
-			const pdfPathMatch = /^PDF extracted and saved to: (.+)$/mu.exec(pdfText);
-			if (checkedDetails(pdf, FETCH_DETAILS_SCHEMA, "public PDF").error || !pdfPathMatch?.[1]) {
-				fail("real public PDF extraction did not return its Markdown artifact path");
-			}
-			pdfOutputPath = resolve(pdfPathMatch[1].trim());
-			const temporaryRoot = resolve(tmpdir());
-			if (!pdfOutputPath.startsWith(`${temporaryRoot}${sep}`)) {
-				fail("PDF extraction returned an artifact outside the temporary directory");
-			}
-			const pdfMarkdown = await readFile(pdfOutputPath, "utf8");
-			if (pdfMarkdown.length < 500 || !/markdown|heading|header/iu.test(pdfMarkdown)) {
-				fail("real public PDF artifact did not contain extracted document text");
-			}
-
-			const longDocument = await execute(
-				fetchTool,
-				"public-long-document",
-				{ url: "https://www.rfc-editor.org/rfc/rfc9110.txt" },
-				fixture.context,
-			);
-			const longDetails = checkedDetails(longDocument, LONG_DOCUMENT_DETAILS_SCHEMA, "long document");
-			if (longDetails.error) {
-				fail("real long-document extraction did not create a continuation id");
-			}
-			if (resultText(longDocument).length > 55_000) {
-				fail("long-document inline result exceeded its bounded budget");
-			}
-			const continuation = await execute(
-				continuationTool,
-				"public-long-document-slice",
-				{ limit: 2_000, offset: 10_000, responseId: longDetails.responseId, urlIndex: 0 },
-				fixture.context,
-			);
-			const continuationDetails = checkedDetails(continuation, CONTINUATION_DETAILS_SCHEMA, "document continuation");
-			if (continuationDetails.error || continuationDetails.returnedChars !== 2_000) {
-				fail("stored public content could not be retrieved as a bounded continuation slice");
-			}
+			await verifyPublicFetches(fetchTool, continuationTool, fixture.context, (path) => {
+				pdfOutputPath = path;
+			});
 		}
 
 		const local = await execute(fetchTool, "blocked-local", { url: "http://127.0.0.1/private" }, fixture.context);
