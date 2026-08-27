@@ -9,7 +9,7 @@ import {
 	listenForAgentWorkOriginQueries,
 } from "./agent-run-origin.js";
 import { type CommandDialogCoordinatorImplementation, getCommandDialogCoordinator } from "./command-dialog.js";
-import { activateDiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
+import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { getHostSharedResource } from "./host-resource.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
@@ -321,6 +321,24 @@ export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 	return registry;
 }
 
+function registerDiagnosticsCommand(
+	pi: ExtensionAPI,
+	coordinator: CommandDialogCoordinatorImplementation,
+	diagnostics: DiagnosticChannel,
+): void {
+	pi.registerCommand("diagnostics", {
+		description: "Inspect Pi Stuff diagnostics",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("/diagnostics requires interactive TUI mode.", "warning");
+				return;
+			}
+			diagnostics.acknowledgeNotices();
+			await coordinator.show(ctx, createDiagnosticsView(diagnostics));
+		},
+	});
+}
+
 export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<UiLifecycleState>(
 		pi.events,
@@ -351,17 +369,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 	const diagnostics = getDiagnosticChannel(pi);
 	activateDiagnosticChannel(diagnostics);
 	const registry = ensureUiSettingsCommand(pi);
-	pi.registerCommand("diagnostics", {
-		description: "Inspect Pi Stuff diagnostics",
-		handler: async (_args, ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify("/diagnostics requires interactive TUI mode.", "warning");
-				return;
-			}
-			diagnostics.acknowledgeNotices();
-			await coordinator.show(ctx, createDiagnosticsView(diagnostics));
-		},
-	});
+	registerDiagnosticsCommand(pi, coordinator, diagnostics);
 	registerLiveThoughtDisplay(pi);
 	const settings = await UiSettingsStore.load();
 	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
@@ -394,30 +402,21 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 			void presentation?.refreshGit();
 		});
 	};
-	let stopListeningForGitRefresh = listenForStatuslineGitRefreshAfterUserWorkRequests(
-		pi,
-		scheduleGitRefreshAtQuietBoundary,
-	);
-	let stopListeningForUserSteers = listenForActiveAgentWorkUserPromotions(pi, () => {
-		agentRunOrigin.promoteActiveWorkToUser();
-	});
-	let stopListeningForAgentWorkOriginQueries = listenForAgentWorkOriginQueries(pi, () => agentRunOrigin.current());
-	let stopListeningForUiRender = listenForUiRenderRequests(pi, (force) => {
-		presentation?.requestRender(force);
-	});
+	const stopListeners = [
+		listenForStatuslineGitRefreshAfterUserWorkRequests(pi, scheduleGitRefreshAtQuietBoundary),
+		listenForActiveAgentWorkUserPromotions(pi, () => agentRunOrigin.promoteActiveWorkToUser()),
+		listenForAgentWorkOriginQueries(pi, () => agentRunOrigin.current()),
+		listenForUiRenderRequests(pi, (force) => presentation?.requestRender(force)),
+	];
 	pi.on("session_start", (_event, ctx) => {
-		// Observe input after every Package Capability has registered its handler.
-		// Pi stops dispatch after a handler returns `handled`, so rejected command or
-		// policy input never enters the delivery-attribution queue.
+		// Register after every Capability so rejected input never enters attribution.
 		if (!inputObserverRegistered) {
 			inputObserverRegistered = true;
 			pi.on("input", (event) => {
 				agentRunOrigin.noteInput(event);
 			});
 		}
-		// Register after every Suite Capability factory has initialized. Goal may
-		// start an automatic continuation from agent_settled; this observer must
-		// run after that decision and re-check the Host's live idle boundary.
+		// Register last so Goal continuation decides before this Host-idle check.
 		if (!agentSettledObserverRegistered) {
 			agentSettledObserverRegistered = true;
 			pi.on("agent_settled", async () => {
@@ -458,24 +457,11 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 	pi.on("agent_start", () => {
 		agentSettlementPending = true;
 	});
-	pi.on("turn_start", () => {
-		agentRunOrigin.noteTurnStart();
-	});
-	pi.on("turn_end", () => {
-		agentRunOrigin.noteTurnEnd();
-	});
-	pi.on("message_start", (event) => {
-		agentRunOrigin.noteMessageStart(event.message);
-	});
+	pi.on("turn_start", () => agentRunOrigin.noteTurnStart());
+	pi.on("turn_end", () => agentRunOrigin.noteTurnEnd());
+	pi.on("message_start", (event) => agentRunOrigin.noteMessageStart(event.message));
 	pi.on("session_shutdown", async () => {
-		stopListeningForGitRefresh();
-		stopListeningForGitRefresh = () => {};
-		stopListeningForUserSteers();
-		stopListeningForUserSteers = () => {};
-		stopListeningForAgentWorkOriginQueries();
-		stopListeningForAgentWorkOriginQueries = () => {};
-		stopListeningForUiRender();
-		stopListeningForUiRender = () => {};
+		for (const stop of stopListeners.splice(0)) stop();
 		presentation?.dispose();
 		presentation = undefined;
 		sessionGeneration += 1;
