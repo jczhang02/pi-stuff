@@ -115,6 +115,54 @@ function presentationDetails<TArgs extends ToolArguments, TDetails>(
 	}
 }
 
+function argsForPresentation<TArgs extends ToolArguments, Args>(args: Args): Readonly<TArgs> {
+	// SAFETY: callers use this only inside the renderer attached to the Tool that schema-validated these arguments.
+	return args as Readonly<TArgs>;
+}
+
+function resultForPresentation<TDetails>(result: AgentToolResult<unknown>): AgentToolResult<TDetails> {
+	// SAFETY: callers use this only inside the renderer attached to the Tool that declared these result details.
+	return result as AgentToolResult<TDetails>;
+}
+
+function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
+	tool: ToolDefinition<TSchema, TDetails>,
+	presentation: SuiteToolPresentation<TArgs, TDetails>,
+): ToolDetailPresentation {
+	const detail: ToolDetailPresentation = {
+		label: (args) => labelFor(tool, presentation, argsForPresentation<TArgs, ToolArguments>(args)),
+		summary: (args, result, state) => {
+			const typedArgs = argsForPresentation<TArgs, ToolArguments>(args);
+			if (state === "running") {
+				const source = presentation.runningSummary;
+				return {
+					fromResult: false,
+					text: oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working")),
+				};
+			}
+			return result
+				? presentationSummary(presentation, typedArgs, resultForPresentation<TDetails>(result), state, undefined)
+				: { fromResult: false, text: state };
+		},
+		target: (args) => oneLine(presentation.target?.(argsForPresentation<TArgs, ToolArguments>(args)) ?? ""),
+	};
+	if (presentation.detailLines) {
+		Object.assign(detail, {
+			detailLines: (
+				args: ToolArguments,
+				result: AgentToolResult<unknown>,
+				state: Exclude<ToolActivityState, "running">,
+			) =>
+				presentation.detailLines?.(
+					argsForPresentation<TArgs, ToolArguments>(args),
+					resultForPresentation<TDetails>(result),
+					state,
+				) ?? [],
+		});
+	}
+	return detail;
+}
+
 function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 	tool: ToolDefinition<TSchema, TDetails>,
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
@@ -169,6 +217,19 @@ function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 		);
 	}
 	return state.component;
+}
+
+function presentSettledRow<TArgs extends ToolArguments, TDetails>(
+	runtime: ToolUiRuntime,
+	state: RendererState<TArgs, TDetails>,
+	component: CachedToolRow,
+	context: ToolRenderContext<TArgs>,
+	model: ToolRowModel,
+	metadata: PresentedToolMetadata,
+): void {
+	const row = [context.toolCallId, component, model, true, context.invalidate, context.expanded, metadata] as const;
+	if (!state.projectedReplay || !runtime.updateProjectedRow(...row)) runtime.presentRow(...row);
+	state.projectedReplay = false;
 }
 
 function settleRow<TArgs extends ToolArguments, TDetails>(
@@ -262,29 +323,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		name: tool.name,
 		result,
 	};
-	if (
-		!state.projectedReplay ||
-		!runtime.updateProjectedRow(
-			context.toolCallId,
-			state.component,
-			model,
-			true,
-			context.invalidate,
-			context.expanded,
-			metadata,
-		)
-	) {
-		runtime.presentRow(
-			context.toolCallId,
-			state.component,
-			model,
-			true,
-			context.invalidate,
-			context.expanded,
-			metadata,
-		);
-	}
-	state.projectedReplay = false;
+	presentSettledRow(runtime, state, state.component, context, model, metadata);
 	if (state.wasLiveExecution) {
 		const activity = {
 			id: context.toolCallId,
@@ -382,46 +421,12 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 	runtime: ToolUiRuntime,
 ): ToolDefinition<TParams, TDetails> {
 	type TArgs = Static<TParams> & ToolArguments;
-	const argsForPresentation = <Args>(args: Args): Readonly<TArgs> => {
-		// SAFETY: this renderer is attached to the same Tool definition and therefore receives its schema-validated arguments.
-		return args as Readonly<TArgs>;
-	};
-	const resultForPresentation = (result: AgentToolResult<unknown>): AgentToolResult<TDetails> => {
-		// SAFETY: this renderer is attached to the same Tool definition and therefore receives its declared result details.
-		return result as AgentToolResult<TDetails>;
-	};
-	const detailPresentation: ToolDetailPresentation = {
-		label: (args) => labelFor(tool, presentation, argsForPresentation(args)),
-		summary: (args, result, state) => {
-			const typedArgs = argsForPresentation(args);
-			if (state === "running") {
-				const source = presentation.runningSummary;
-				return {
-					fromResult: false,
-					text: oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working")),
-				};
-			}
-			return result
-				? presentationSummary(presentation, typedArgs, resultForPresentation(result), state, undefined)
-				: { fromResult: false, text: state };
-		},
-		target: (args) => oneLine(presentation.target?.(argsForPresentation(args)) ?? ""),
-	};
-	if (presentation.detailLines) {
-		Object.assign(detailPresentation, {
-			detailLines: (
-				args: ToolArguments,
-				result: AgentToolResult<unknown>,
-				state: Exclude<ToolActivityState, "running">,
-			) => presentation.detailLines?.(argsForPresentation(args), resultForPresentation(result), state) ?? [],
-		});
-	}
-	runtime.registerDetailPresentation(tool.name, detailPresentation);
+	runtime.registerDetailPresentation(tool.name, createDetailPresentation<TArgs, TDetails>(tool, presentation));
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
 		renderShell: "self" as const,
 		renderCall: (args, theme, context) => {
-			const typedArgs = argsForPresentation(args);
+			const typedArgs = argsForPresentation<TArgs, typeof args>(args);
 			const typed: ToolRenderContext<TArgs> = {
 				...context,
 				args: typedArgs,
@@ -466,7 +471,7 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 			const renderOptions = options as ToolResultRenderOptions;
 			// SAFETY: Pi reuses the state object initialized by this Tool's renderCall callback.
 			const state = context.state as RendererState<TArgs, TDetails>;
-			const args = state.args ?? argsForPresentation({});
+			const args = state.args ?? argsForPresentation<TArgs, ToolArguments>({});
 			const typed: ToolRenderContext<TArgs> = {
 				...context,
 				args,

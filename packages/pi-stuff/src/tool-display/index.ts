@@ -63,6 +63,79 @@ function currentTranscript(ctx: ExtensionContext): CurrentTranscript {
 	return { messages, toolNames };
 }
 
+type InstalledToolUiRuntime = ReturnType<typeof installToolUiRuntime>;
+type ResumeToolHandoff = ReturnType<typeof consumeResumeToolHandoff>;
+
+function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRuntime, ctx: ExtensionContext): void {
+	const transcript = currentTranscript(ctx);
+	const activeTools = pi.getActiveTools();
+	if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0) pi.setActiveTools(activeTools);
+	runtime.resetProjection(transcript.messages);
+}
+
+function registerToolProjectionEvents(
+	pi: ExtensionAPI,
+	runtime: InstalledToolUiRuntime,
+	resumeHandoff: ResumeToolHandoff,
+): void {
+	pi.on("session_start", (_event, ctx) => {
+		const transcript = currentTranscript(ctx);
+		const replayOnlyNames = new Set(runtime.replayOnlyTools());
+		registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
+		let restoredActiveTools: readonly string[] | undefined;
+		if (resumeHandoff) {
+			restoredActiveTools = restoreResumeActiveToolOrder(
+				pi.getActiveTools().filter((name) => !replayOnlyNames.has(name)),
+				resumeHandoff,
+			);
+		} else {
+			const restoreActiveBuiltins = runtime.consumeReloadActiveTools();
+			if (restoreActiveBuiltins) {
+				const activeNonBuiltins = pi
+					.getActiveTools()
+					.filter((name) => !BUILTIN_TOOL_NAMES.has(name) && !replayOnlyNames.has(name));
+				restoredActiveTools = [...activeNonBuiltins, ...restoreActiveBuiltins];
+			}
+		}
+		const activeToolsBeforeReplay = restoredActiveTools ?? pi.getActiveTools();
+		const registeredReplayNames = registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames);
+		if (restoredActiveTools || registeredReplayNames.length > 0) pi.setActiveTools([...activeToolsBeforeReplay]);
+		runtime.resetProjection(transcript.messages);
+	});
+	pi.on("session_compact", (_event, ctx) => resetHistoricalProjection(pi, runtime, ctx));
+	pi.on("session_tree", (_event, ctx) => resetHistoricalProjection(pi, runtime, ctx));
+	pi.on("input", () => runtime.observeUserBoundary());
+	pi.on("tool_execution_start", (event) => {
+		if (runtime.hasActivityRenderer(event.toolName)) runtime.observeToolExecutionStart(event.toolCallId);
+	});
+	pi.on("tool_execution_update", (event) => {
+		if (runtime.hasActivityRenderer(event.toolName)) {
+			runtime.observeToolExecutionUpdate(event.toolCallId, event.partialResult);
+		}
+	});
+	pi.on("tool_execution_end", (event) => {
+		if (runtime.hasActivityRenderer(event.toolName)) {
+			runtime.observeToolExecutionEnd(
+				event.toolCallId,
+				event.isError ? { ...event.result, isError: true } : event.result,
+			);
+		}
+	});
+	pi.on("agent_start", () => runtime.startTurn());
+	pi.on("message_update", (event) => runtime.observeAssistantEvent(event.assistantMessageEvent));
+	pi.on("message_end", (event) => {
+		if (
+			event.message.role === "assistant" ||
+			event.message.role === "bashExecution" ||
+			event.message.role === "toolResult" ||
+			event.message.role === "custom"
+		) {
+			runtime.indexMessage(event.message);
+		}
+	});
+	pi.on("agent_end", () => runtime.endTurn());
+}
+
 export {
 	activityKey,
 	activityTarget,
@@ -177,84 +250,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			},
 		});
 
-		pi.on("session_start", (_event, ctx) => {
-			const transcript = currentTranscript(ctx);
-			const replayOnlyNames = new Set(runtime.replayOnlyTools());
-			registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
-			let restoredActiveTools: readonly string[] | undefined;
-			if (resumeHandoff) {
-				restoredActiveTools = restoreResumeActiveToolOrder(
-					pi.getActiveTools().filter((name) => !replayOnlyNames.has(name)),
-					resumeHandoff,
-				);
-			} else {
-				const restoreActiveBuiltins = runtime.consumeReloadActiveTools();
-				if (restoreActiveBuiltins) {
-					const activeNonBuiltins = pi
-						.getActiveTools()
-						.filter((name) => !BUILTIN_TOOL_NAMES.has(name) && !replayOnlyNames.has(name));
-					restoredActiveTools = [...activeNonBuiltins, ...restoreActiveBuiltins];
-				}
-			}
-			const activeToolsBeforeReplay = restoredActiveTools ?? pi.getActiveTools();
-			const registeredReplayNames = registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames);
-			if (restoredActiveTools || registeredReplayNames.length > 0) pi.setActiveTools([...activeToolsBeforeReplay]);
-			runtime.resetProjection(transcript.messages);
-		});
-		pi.on("session_compact", (_event, ctx) => {
-			const transcript = currentTranscript(ctx);
-			const activeTools = pi.getActiveTools();
-			if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0)
-				pi.setActiveTools(activeTools);
-			runtime.resetProjection(transcript.messages);
-		});
-		pi.on("session_tree", (_event, ctx) => {
-			const transcript = currentTranscript(ctx);
-			const activeTools = pi.getActiveTools();
-			if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0)
-				pi.setActiveTools(activeTools);
-			runtime.resetProjection(transcript.messages);
-		});
-		pi.on("input", () => {
-			runtime.observeUserBoundary();
-		});
-		pi.on("tool_execution_start", (event) => {
-			if (runtime.hasActivityRenderer(event.toolName)) {
-				runtime.observeToolExecutionStart(event.toolCallId);
-			}
-		});
-		pi.on("tool_execution_update", (event) => {
-			if (runtime.hasActivityRenderer(event.toolName)) {
-				runtime.observeToolExecutionUpdate(event.toolCallId, event.partialResult);
-			}
-		});
-		pi.on("tool_execution_end", (event) => {
-			if (runtime.hasActivityRenderer(event.toolName)) {
-				runtime.observeToolExecutionEnd(
-					event.toolCallId,
-					event.isError ? { ...event.result, isError: true } : event.result,
-				);
-			}
-		});
-		pi.on("agent_start", () => {
-			runtime.startTurn();
-		});
-		pi.on("message_update", (event) => {
-			runtime.observeAssistantEvent(event.assistantMessageEvent);
-		});
-		pi.on("message_end", (event) => {
-			if (
-				event.message.role === "assistant" ||
-				event.message.role === "bashExecution" ||
-				event.message.role === "toolResult" ||
-				event.message.role === "custom"
-			) {
-				runtime.indexMessage(event.message);
-			}
-		});
-		pi.on("agent_end", () => {
-			runtime.endTurn();
-		});
+		registerToolProjectionEvents(pi, runtime, resumeHandoff);
 		pi.on("session_shutdown", async (event) => {
 			unsubscribeSettings();
 			unregisterUiSetting();

@@ -230,6 +230,42 @@ function outerEnvelopeState(
 	return options.isPartial ? "running" : "success";
 }
 
+function envelopeHostImageKeys(
+	result: AgentToolResult<unknown>,
+	showImages: boolean | undefined,
+): Map<string, Set<string>> | undefined {
+	if (!getCapabilities().images || !showImages) return;
+	let keys: Map<string, Set<string>> | undefined;
+	for (const item of result.content) {
+		if (item.type !== "image" || !isRuntimeString(item.data) || !isRuntimeString(item.mimeType)) continue;
+		keys ??= new Map();
+		const data = keys.get(item.mimeType) ?? new Set<string>();
+		data.add(item.data);
+		keys.set(item.mimeType, data);
+	}
+	return keys;
+}
+
+function renderEnvelopeFallback(
+	theme: Theme,
+	envelope: ToolDefinition,
+	result: AgentToolResult<unknown>,
+	state: ToolActivityState,
+	options: ToolResultRenderOptions,
+	successFromResult = false,
+): Component {
+	return fallbackToolComponent(
+		theme,
+		envelope.name,
+		envelope.label,
+		{},
+		result,
+		state,
+		options.expanded,
+		successFromResult,
+	);
+}
+
 export function renderEnvelopeOperations(
 	result: AgentToolResult<unknown>,
 	options: ToolResultRenderOptions,
@@ -245,27 +281,9 @@ export function renderEnvelopeOperations(
 		if (!envelopeFallbackVisible(presentation.showFallback, context.args, visibleResult, state)) {
 			return new EmptyToolComponent();
 		}
-		return fallbackToolComponent(
-			theme,
-			envelope.name,
-			envelope.label,
-			{},
-			visibleResult,
-			state,
-			options.expanded,
-			true,
-		);
+		return renderEnvelopeFallback(theme, envelope, visibleResult, state, options, true);
 	}
-	let hostImageKeys: Map<string, Set<string>> | undefined;
-	if (getCapabilities().images && context.showImages) {
-		for (const item of result.content) {
-			if (item.type !== "image" || !isRuntimeString(item.data) || !isRuntimeString(item.mimeType)) continue;
-			hostImageKeys ??= new Map();
-			const data = hostImageKeys.get(item.mimeType) ?? new Set<string>();
-			data.add(item.data);
-			hostImageKeys.set(item.mimeType, data);
-		}
-	}
+	const hostImageKeys = envelopeHostImageKeys(result, context.showImages);
 	const media = resolveEnvelopeMedia(result, presentation);
 	const rendererState = envelopeRendererState(context.state);
 	const renderedOperations: Component[] = [];
@@ -273,89 +291,75 @@ export function renderEnvelopeOperations(
 	for (const operation of operations) {
 		const tool = presentation.registry.get(operation.name);
 		const operationResult = projectEnvelopeOperationResult(operation, media) ?? envelopeOperationResult(operation);
-		if (!tool?.renderCall) {
-			renderedOperations.push(
-				fallbackToolComponent(
-					theme,
-					operation.name,
-					tool?.label ?? operation.name,
-					operation.args,
-					operationResult,
-					operation.state,
-					options.expanded,
-				),
-			);
-			continue;
-		}
-		const args = prepareEnvelopeRenderArguments(tool, operation.args);
-		retained.add(operation.id);
-		const child = rendererState.children.get(operation.id) ?? { state: {} };
-		rendererState.children.set(operation.id, child);
-		const childContext = {
-			...context,
-			[EMBEDDED_TOOL_RESULT]: true,
-			args,
-			argsComplete: true,
-			executionStarted: operation.state === "running" && context.executionStarted !== false,
-			isError: operation.state !== "running" && operation.state !== "success",
-			isPartial: options.isPartial,
-			lastComponent: child.component,
-			state: child.state,
-			toolCallId: operation.id,
-		};
-		if (hostImageKeys)
-			Object.assign(childContext, {
-				[EMBEDDED_HOST_IMAGE_KEYS]: hostImageKeys,
-			});
-		try {
-			const container = new Container();
-			// SAFETY: the registry returns the Tool that owns this decoded operation and child renderer context.
-			const call = tool.renderCall(args, theme, childContext as never);
-			child.component = call;
-			container.addChild(call);
-			if (operationResult && tool.renderResult) {
-				const childIsPartial = options.isPartial && operation.state === "running";
-				// SAFETY: the registry-selected Tool owns both the decoded result and the child renderer context.
-				const body = tool.renderResult(
-					operationResult,
-					{ expanded: options.expanded, isPartial: childIsPartial },
-					theme,
-					{
-						...childContext,
-						isPartial: childIsPartial,
-						lastComponent: call,
-					} as never,
-				);
-				if (body) container.addChild(body);
+		let args = operation.args;
+		if (tool?.renderCall) {
+			args = prepareEnvelopeRenderArguments(tool, args);
+			retained.add(operation.id);
+			const child = rendererState.children.get(operation.id) ?? { state: {} };
+			rendererState.children.set(operation.id, child);
+			const childContext = {
+				...context,
+				[EMBEDDED_TOOL_RESULT]: true,
+				args,
+				argsComplete: true,
+				executionStarted: operation.state === "running" && context.executionStarted !== false,
+				isError: operation.state !== "running" && operation.state !== "success",
+				isPartial: options.isPartial,
+				lastComponent: child.component,
+				state: child.state,
+				toolCallId: operation.id,
+			};
+			if (hostImageKeys) Object.assign(childContext, { [EMBEDDED_HOST_IMAGE_KEYS]: hostImageKeys });
+			try {
+				const container = new Container();
+				// SAFETY: the registry returns the Tool that owns this decoded operation and child renderer context.
+				const call = tool.renderCall(args, theme, childContext as never);
+				child.component = call;
+				container.addChild(call);
+				if (operationResult && tool.renderResult) {
+					const childIsPartial = options.isPartial && operation.state === "running";
+					// SAFETY: the registry-selected Tool owns both the decoded result and the child renderer context.
+					const body = tool.renderResult(
+						operationResult,
+						{ expanded: options.expanded, isPartial: childIsPartial },
+						theme,
+						{
+							...childContext,
+							isPartial: childIsPartial,
+							lastComponent: call,
+						} as never,
+					);
+					if (body) container.addChild(body);
+				}
+				renderedOperations.push(container);
+				continue;
+			} catch {
+				// Fall through to the stable fallback row.
 			}
-			renderedOperations.push(container);
-		} catch {
-			renderedOperations.push(
-				fallbackToolComponent(
-					theme,
-					operation.name,
-					tool.label ?? operation.name,
-					args,
-					operationResult,
-					operation.state,
-					options.expanded,
-				),
-			);
 		}
+		renderedOperations.push(
+			fallbackToolComponent(
+				theme,
+				operation.name,
+				tool?.label ?? operation.name,
+				args,
+				operationResult,
+				operation.state,
+				options.expanded,
+			),
+		);
 	}
 	for (const id of rendererState.children.keys()) {
 		if (!retained.has(id)) rendererState.children.delete(id);
 	}
 	if (context.isError && !operations.some((operation) => isIssueState(operation.state))) {
 		renderedOperations.push(
-			fallbackToolComponent(
+			renderEnvelopeFallback(
 				theme,
-				envelope.name,
-				envelope.label,
-				{},
+				envelope,
 				visibleResult,
 				outerEnvelopeState(visibleResult, options, context),
-				options.expanded,
+				options,
 			),
 		);
 	}

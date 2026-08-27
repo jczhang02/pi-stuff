@@ -195,7 +195,6 @@ export class ToolActivityPresentation {
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.bindings.clear();
 		this.groupSummaries.clear();
-		this.liveResults.clear();
 		this.groupHints.clear();
 		this.activities.clear();
 	}

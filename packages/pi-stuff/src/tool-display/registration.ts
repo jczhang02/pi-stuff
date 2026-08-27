@@ -99,6 +99,11 @@ export function assertSuiteToolActivityCoverage(
 	}
 }
 
+function restoreReplacedReplayTool(pi: SuiteToolRegistrationHost, name: string, replaced: boolean): void {
+	if (!replaced || pi.getActiveTools().includes(name)) return;
+	pi.setActiveTools([...pi.getActiveTools(), name]);
+}
+
 /**
  * Register an execution envelope whose nested Suite Tools retain their original
  * Tool Activity renderers. The envelope stays silent only while nested rows own its outcome.
@@ -172,9 +177,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		value: marker,
 	});
 	pi.registerTool<TParams, TDetails>(decorated);
-	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
-		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
-	}
+	restoreReplacedReplayTool(pi, tool.name, replacesReplay);
 }
 
 /** Register a Tool that is visible only while its owning execution envelope is enabled. */
@@ -193,9 +196,7 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
 	});
 	pi.registerTool<TParams, TDetails>(decorated);
-	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
-		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
-	}
+	restoreReplacedReplayTool(pi, tool.name, replacesReplay);
 	runtime.markRendererAttached(tool.name);
 }
 
@@ -230,9 +231,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 		) satisfies SuiteToolReplayDefinition,
 	});
 	pi.registerTool<TParams, TDetails>(decorated);
-	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
-		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
-	}
+	restoreReplacedReplayTool(pi, tool.name, replacesReplay);
 	runtime.markRendererAttached(tool.name);
 	return decorated;
 }
@@ -247,6 +246,14 @@ function replayFallbackLabel(name: string): string {
 	);
 }
 
+function replayUnavailableResult(name: string): AgentToolResult<unknown> & { isError: true } {
+	return {
+		content: [{ type: "text", text: `${name} is unavailable during Session replay.` }],
+		details: undefined,
+		isError: true,
+	};
+}
+
 function replayFallbackDefinition(name: string): SuiteToolReplayDefinition {
 	return {
 		tool: {
@@ -254,16 +261,7 @@ function replayFallbackDefinition(name: string): SuiteToolReplayDefinition {
 			label: replayFallbackLabel(name),
 			description: `Historical ${name} Tool display`,
 			parameters: Type.Object({}, { additionalProperties: true }),
-			execute: async () => ({
-				content: [
-					{
-						type: "text",
-						text: `${name} is unavailable during Session replay.`,
-					},
-				],
-				details: undefined,
-				isError: true,
-			}),
+			execute: async () => replayUnavailableResult(name),
 		},
 		presentation: {
 			activity: { categories: [], classify: () => [] },
@@ -292,16 +290,7 @@ function registerMissingReplayToolDefinitions(
 			pi,
 			{
 				...definition.tool,
-				execute: async () => ({
-					content: [
-						{
-							type: "text",
-							text: `${definition.tool.name} is unavailable during Session replay.`,
-						},
-					],
-					details: undefined,
-					isError: true,
-				}),
+				execute: async () => replayUnavailableResult(definition.tool.name),
 			},
 			definition.presentation,
 			definition.codeMode,

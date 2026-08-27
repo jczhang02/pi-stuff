@@ -42,6 +42,45 @@ export function resolveBuiltinHostSettings(
 	};
 }
 
+function registerBashBuiltin(
+	pi: SuiteToolRegistrationHost,
+	cwd: string,
+	hostSettings: BuiltinHostSettings,
+	factories: BuiltinFactoryOverrides,
+): void {
+	const bashOptions: BashToolOptions = {};
+	if (hostSettings.shellCommandPrefix !== undefined) bashOptions.commandPrefix = hostSettings.shellCommandPrefix;
+	if (hostSettings.shellPath !== undefined) bashOptions.shellPath = hostSettings.shellPath;
+	const bash = (factories.bash ?? createBashToolDefinition)(cwd, bashOptions);
+	registerSuiteOwnedTool(
+		pi,
+		bash,
+		{
+			activity: {
+				categories: [
+					"commit",
+					"push",
+					"merge",
+					"rebase",
+					"create-pr",
+					"launch-background",
+					"run-command",
+					"read-file",
+					"search-pattern",
+					"list-directory",
+				],
+				classify: classifyBashActivity,
+			},
+			label: "Bash",
+			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs ?? 0)}`,
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("bash", args),
+			tracksElapsed: true,
+		},
+		BASH_CODE_MODE_CONTRACT,
+	);
+}
+
 export function registerBuiltins(
 	pi: SuiteToolRegistrationHost,
 	cwd: string,
@@ -99,39 +138,7 @@ export function registerBuiltins(
 	}
 
 	if (!selectedNames || selectedNames.has("bash")) {
-		const bashOptions: BashToolOptions = {};
-		if (hostSettings.shellCommandPrefix !== undefined) {
-			bashOptions.commandPrefix = hostSettings.shellCommandPrefix;
-		}
-		if (hostSettings.shellPath !== undefined) bashOptions.shellPath = hostSettings.shellPath;
-		const bash = (factories.bash ?? createBashToolDefinition)(cwd, bashOptions);
-		registerSuiteOwnedTool(
-			pi,
-			bash,
-			{
-				activity: {
-					categories: [
-						"commit",
-						"push",
-						"merge",
-						"rebase",
-						"create-pr",
-						"launch-background",
-						"run-command",
-						"read-file",
-						"search-pattern",
-						"list-directory",
-					],
-					classify: classifyBashActivity,
-				},
-				label: "Bash",
-				runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs ?? 0)}`,
-				summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
-				target: (args) => describeBuiltinTarget("bash", args),
-				tracksElapsed: true,
-			},
-			BASH_CODE_MODE_CONTRACT,
-		);
+		registerBashBuiltin(pi, cwd, hostSettings, factories);
 	}
 
 	if (!selectedNames || selectedNames.has("grep")) {
@@ -142,10 +149,7 @@ export function registerBuiltins(
 			{
 				activity: {
 					categories: ["search-pattern"],
-					classify: ({ args }) =>
-						singleActivity("search-pattern", {
-							target: args.pattern,
-						}),
+					classify: ({ args }) => singleActivity("search-pattern", { target: args.pattern }),
 				},
 				label: "Grep",
 				runningSummary: "searching",
@@ -164,10 +168,7 @@ export function registerBuiltins(
 			{
 				activity: {
 					categories: ["search-pattern"],
-					classify: ({ args }) =>
-						singleActivity("search-pattern", {
-							target: args.pattern,
-						}),
+					classify: ({ args }) => singleActivity("search-pattern", { target: args.pattern }),
 				},
 				label: "Find",
 				runningSummary: "searching",
