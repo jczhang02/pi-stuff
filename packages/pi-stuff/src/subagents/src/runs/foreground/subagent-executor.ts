@@ -92,7 +92,7 @@ import {
 	intersectSubagentCapabilityCeilings,
 	resolveCurrentSubagentCapabilityCeiling,
 } from "../shared/capability-ceiling.ts";
-import type { ContextMode, ContextSummary } from "../shared/context-mode.ts";
+import type { ContextMode } from "../shared/context-mode.ts";
 import {
 	buildModelCandidates,
 	normalizeParentModel,
@@ -182,7 +182,6 @@ interface ExecutorDeps {
 	state: SubagentState;
 	config: ExtensionConfig;
 	asyncByDefault: boolean;
-	tempArtifactsDir: string;
 	getSubagentSessionRoot: (parentSessionFile: string | null) => string;
 	expandTilde: (value: string) => string;
 	discoverAgents: (
@@ -237,7 +236,6 @@ interface PreparedLaunch {
 	configToolBudget?: ResolvedToolBudget | undefined;
 	timeoutMs?: number | undefined;
 	context: ContextMode;
-	contextSummary: ContextSummary;
 	forkContextTokens?: number | undefined;
 	/** Frozen persisted branch used for both fork admission and projected fallback. */
 	forkSourceMessages?: ContextEvent["messages"] | undefined;
@@ -740,12 +738,10 @@ function taskInputs(params: SubagentParamsLike): TaskParam[] {
 
 function prepareForkSessions(input: {
 	params: SubagentParamsLike;
-	agents: readonly AgentConfig[];
 	ctx: ExtensionContext;
 	context: ContextMode;
 	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
 	modelCandidatesByIndex: Array<string[] | undefined>;
 	rawForkByIndex: boolean[];
 }) {
@@ -876,12 +872,10 @@ async function prepareLaunch(
 	try {
 		fork = prepareForkSessions({
 			params,
-			agents: discovered.agents,
 			ctx,
 			context,
 			parentModel,
 			availableModels: models,
-			modelScope: discovered.modelScope,
 			modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,
 			rawForkByIndex: modelPlan.rawForkByIndex,
 		});
@@ -923,7 +917,6 @@ async function prepareLaunch(
 		configToolBudget: configTool.budget,
 		timeoutMs: timeout.timeoutMs,
 		context,
-		contextSummary: context,
 		rawForkByIndex: modelPlan.rawForkByIndex,
 		fixedInputTokensByIndex: modelPlan.fixedInputTokensByIndex,
 		modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,
@@ -1676,7 +1669,7 @@ async function launchForeground(
 	emitNestedLifecycle(data, config, control, control.startedAt);
 	emitUpdate({
 		content: [{ type: "text", text: `${data.mode === "parallel" ? "Agents" : "Agent"} running in foreground.` }],
-		details: { mode: data.mode, runId: data.runId, results: [], context: data.contextSummary },
+		details: { mode: data.mode, runId: data.runId, results: [], context: data.context },
 	});
 	let result: AgentToolResult<Details>;
 	let abortedBeforeStart = false;

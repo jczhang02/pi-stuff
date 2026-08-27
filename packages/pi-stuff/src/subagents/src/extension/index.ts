@@ -67,7 +67,7 @@ import {
 	replayForegroundRuns,
 } from "../session/foreground-replay.ts";
 import { ensureAccessibleDir } from "../shared/accessible-dir.ts";
-import { getArtifactsDir, maintainAgentArtifacts } from "../shared/artifacts.ts";
+import { maintainAgentArtifacts } from "../shared/artifacts.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import {
 	buildSessionCompatibilityScope,
@@ -261,7 +261,6 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			state,
 			config,
 			asyncByDefault: true,
-			tempArtifactsDir: getArtifactsDir(null),
 			getSubagentSessionRoot,
 			expandTilde,
 			discoverAgents: discoverAgentDefinitions,

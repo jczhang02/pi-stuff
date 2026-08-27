@@ -249,7 +249,6 @@ function executor(
 		state: runState,
 		config: { artifactDir: "temp", maxSubagentDepth: 3 },
 		asyncByDefault: true,
-		tempArtifactsDir: cwd,
 		getSubagentSessionRoot: () => path.join(cwd, "sessions"),
 		expandTilde: (value) => value,
 		discoverAgents: options.discoverAgents ?? (() => ({ agents: options.agents ?? [options.agent ?? agent()] })),

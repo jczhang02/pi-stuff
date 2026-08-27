@@ -27,7 +27,6 @@ import {
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
-import { getArtifactsDir } from "../shared/artifacts.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import {
 	type Details,
@@ -100,7 +99,6 @@ const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
 			state,
 			config,
 			asyncByDefault: false,
-			tempArtifactsDir: getArtifactsDir(null),
 			getSubagentSessionRoot,
 			expandTilde,
 			discoverAgents,
