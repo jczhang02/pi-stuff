@@ -1,14 +1,12 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { StringDecoder } from "node:string_decoder";
+import { dirname, isAbsolute, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
 	isJsonInputObject,
-	type JsonInputObject,
 	type JsonSourceObject,
 	type JsonSourceValue,
 	parseJsonObject,
@@ -19,14 +17,16 @@ import {
 	isRuntimeObject,
 	isRuntimeString,
 } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	createPonytailBenchmarkRpc,
+	PONYTAIL_BENCHMARK_MODEL as MODEL,
+	PONYTAIL_BENCHMARK_PROVIDER as PROVIDER,
+} from "./benchmark-ponytail-rpc.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
-const root = resolve(import.meta.dir, "..");
-const ponytailPackage = join(root, "packages/pi-stuff");
-const observerExtension = join(root, "test/fixtures/ponytail-benchmark-observer.ts");
-const PROVIDER = "jcapi";
-const MODEL = "openrouter/stealth/ox-alpha";
+export { buildPonytailBenchmarkEnvironment } from "./benchmark-ponytail-rpc.js";
+
 const EXPECTED_TOOLS = ["bash", "edit", "read", "write"] as const;
 const EXPECTED_SKILLS = [
 	"ponytail",
@@ -36,8 +36,6 @@ const EXPECTED_SKILLS = [
 	"ponytail-help",
 	"ponytail-review",
 ] as const;
-const COMMAND_TIMEOUT_MS = 60_000;
-const CASE_TIMEOUT_MS = 15 * 60_000;
 
 export type BenchmarkMode = "off" | "ultra";
 export interface BenchmarkScenario {
@@ -474,200 +472,6 @@ function promptBoundaryValid(mode: BenchmarkMode, observations: readonly Provide
 	);
 }
 
-interface RpcClient {
-	readonly events: readonly JsonSourceObject[];
-	close(): Promise<void>;
-	command(payload: JsonInputObject, timeoutMs?: number): Promise<JsonSourceObject>;
-	promptAndSettle(message: string): Promise<void>;
-	stderr(): string;
-}
-export function buildPonytailBenchmarkEnvironment(
-	base: NodeJS.ProcessEnv,
-	runtime: string,
-	temporary: string,
-	observerLog: string,
-): NodeJS.ProcessEnv {
-	const environment: NodeJS.ProcessEnv = {
-		...base,
-		XDG_RUNTIME_DIR: runtime,
-		TMPDIR: temporary,
-		PI_STUFF_CODE_MODE_DEFAULT: "off",
-		PI_STUFF_PONYTAIL_BENCHMARK_LOG: observerLog,
-	};
-	for (const key of Object.keys(environment))
-		if (
-			key.startsWith("PONYTAIL_") ||
-			key.startsWith("PI_SUBAGENT_PARENT_") ||
-			key === "PI_STUFF_PONYTAIL_MODE" ||
-			key === "PI_STUFF_CODE_MODE_FROZEN"
-		)
-			delete environment[key];
-	environment["PONYTAIL_DEFAULT_MODE"] = "off";
-	environment["PONYTAIL_HIDE_STATUS"] = "0";
-	environment["PONYTAIL_QUIET_STARTUP"] = "1";
-	return environment;
-}
-
-function createRpc(
-	project: string,
-	sessions: string,
-	runtime: string,
-	temporary: string,
-	observerLog: string,
-): RpcClient {
-	const environment = buildPonytailBenchmarkEnvironment(process.env, runtime, temporary, observerLog);
-	const child = spawn(
-		process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
-		[
-			"--mode",
-			"rpc",
-			"--approve",
-			"--no-extensions",
-			"--no-context-files",
-			"--no-prompt-templates",
-			"--no-skills",
-			"--extension",
-			ponytailPackage,
-			"--extension",
-			observerExtension,
-			"--tools",
-			"read,write,edit,bash",
-			"--provider",
-			PROVIDER,
-			"--model",
-			MODEL,
-			"--thinking",
-			"medium",
-			"--session-dir",
-			sessions,
-		],
-		{ cwd: project, env: environment, stdio: ["pipe", "pipe", "pipe"] },
-	);
-	const events: JsonSourceObject[] = [];
-	const waiters = new Set<{
-		after: number;
-		predicate: (event: JsonSourceObject) => boolean;
-		reject: (error: Error) => void;
-		resolve: (event: JsonSourceObject) => void;
-		timer: ReturnType<typeof setTimeout>;
-	}>();
-	let errorOutput = "";
-	let requestSequence = 0;
-	let buffer = "";
-	const decoder = new StringDecoder("utf8");
-	function dispatch(event: JsonSourceObject): void {
-		events.push(event);
-		for (const waiter of waiters)
-			if (events.length > waiter.after && waiter.predicate(event)) {
-				clearTimeout(waiter.timer);
-				waiters.delete(waiter);
-				waiter.resolve(event);
-			}
-	}
-	function rejectWaiters(message: string): void {
-		for (const waiter of waiters) {
-			clearTimeout(waiter.timer);
-			waiter.reject(new Error(message));
-		}
-		waiters.clear();
-	}
-	function waitFor(
-		after: number,
-		predicate: (event: JsonSourceObject) => boolean,
-		timeoutMs: number,
-		label: string,
-	): Promise<JsonSourceObject> {
-		for (let index = after; index < events.length; index++) {
-			const event = events[index];
-			if (event && predicate(event)) return Promise.resolve(event);
-		}
-		return new Promise((resolvePromise, reject) => {
-			const waiter = {
-				after,
-				predicate,
-				resolve: resolvePromise,
-				reject,
-				timer: setTimeout(() => {
-					waiters.delete(waiter);
-					reject(new Error(`timed out waiting for ${label}`));
-				}, timeoutMs),
-			};
-			waiters.add(waiter);
-		});
-	}
-	child.stdout.on("data", (chunk: Buffer) => {
-		buffer += decoder.write(chunk);
-		while (true) {
-			const newline = buffer.indexOf("\n");
-			if (newline < 0) break;
-			const line = buffer.slice(0, newline).replace(/\r$/u, "");
-			buffer = buffer.slice(newline + 1);
-			if (!line) continue;
-			try {
-				dispatch(parseJsonObject(line));
-			} catch {
-				rejectWaiters("Pi RPC emitted malformed JSON");
-			}
-		}
-	});
-	child.stderr.on("data", (chunk: Buffer) => {
-		errorOutput = (errorOutput + chunk.toString("utf8")).slice(-12_000);
-	});
-	child.once("exit", (code) => rejectWaiters(`Pi RPC exited unexpectedly with ${String(code)}`));
-	async function command(payload: JsonInputObject, timeoutMs = COMMAND_TIMEOUT_MS): Promise<JsonSourceObject> {
-		const requestId = `request-${String(++requestSequence)}`;
-		const after = events.length;
-		const pending = waitFor(
-			after,
-			(event) => isSourceObject(event) && event["type"] === "response" && event["id"] === requestId,
-			timeoutMs,
-			requestId,
-		);
-		child.stdin.write(`${JSON.stringify({ id: requestId, ...payload })}\n`);
-		const response = await pending;
-		if (!isSourceObject(response)) fail("Pi RPC response is malformed");
-		if (response["success"] !== true) fail(`Pi RPC command failed: ${String(response["error"])}`);
-		return response;
-	}
-	async function promptAndSettle(message: string): Promise<void> {
-		const after = events.length;
-		const settled = waitFor(
-			after,
-			(event) => isSourceObject(event) && event["type"] === "agent_settled",
-			CASE_TIMEOUT_MS,
-			"agent_settled",
-		);
-		await command({ type: "prompt", message });
-		await settled;
-	}
-	let closePromise: Promise<void> | undefined;
-	function close(): Promise<void> {
-		closePromise ??= (async () => {
-			if (child.exitCode !== null) return;
-			child.stdin.end();
-			child.kill("SIGTERM");
-			await new Promise<void>((resolvePromise) => {
-				const timer = setTimeout(resolvePromise, 5_000);
-				child.once("exit", () => {
-					clearTimeout(timer);
-					resolvePromise();
-				});
-			});
-			if (child.exitCode !== null) return;
-			child.kill("SIGKILL");
-			await new Promise<void>((resolvePromise) => {
-				const timer = setTimeout(resolvePromise, 5_000);
-				child.once("exit", () => {
-					clearTimeout(timer);
-					resolvePromise();
-				});
-			});
-			if (child.exitCode === null) fail("Pi RPC process did not terminate");
-		})();
-		return closePromise;
-	}
-	return { events, command, promptAndSettle, close, stderr: () => errorOutput };
-}
 function responseData(response: JsonSourceObject): JsonSourceValue | undefined {
 	return response["data"];
 }
@@ -697,7 +501,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 	await writeFile(join(project, ".pi/code-mode.json"), '{"enabled":false}\n', { mode: 0o600 });
 	initializeBenchmarkInventory(project, inventory);
 	const before = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
-	const rpc = createRpc(project, sessions, runtime, temporary, observerLog);
+	const rpc = createPonytailBenchmarkRpc(project, sessions, runtime, temporary, observerLog);
 	try {
 		const state = responseData(await rpc.command({ type: "get_state" }));
 		const commandResponse = responseData(await rpc.command({ type: "get_commands" }));
