@@ -37,6 +37,9 @@ lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed pro
 `shared/artifacts.ts` is the stable artifact facade; `shared/artifact-files.ts` owns paths, writers, and group claims,
 `shared/artifact-snapshot.ts` owns bounded crash-resumable directory snapshots, and
 `shared/artifact-maintenance.ts` owns cleanup discovery and orchestration.
+`intercom/native-supervisor-channel.ts` owns parent delivery orchestration and run lifecycle;
+`intercom/native-supervisor-client.ts` owns child communication Tools and request orchestration, while
+`intercom/native-supervisor-storage.ts` owns the validated filesystem protocol, delivery records, and channel GC mechanics.
 `session/current-agents.ts` owns subscriptions, controls, overrides, and revisions;
 `session/current-agents-projection.ts` normalizes durable and live sources into immutable rows.
 `ui/agent-dialog.ts` owns interaction and async control/transcript generations; `ui/agent-dialog-renderer.ts` owns the

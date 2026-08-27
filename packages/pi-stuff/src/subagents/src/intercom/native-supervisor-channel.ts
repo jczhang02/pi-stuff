@@ -1,938 +1,58 @@
-import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { type TSchema, Type } from "typebox";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import type { ToolArguments } from "../../../tool-display/activity.js";
-import { activityKey, getToolUiRuntime, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
-import {
-	SUBAGENT_CHILD_AGENT_ENV,
-	SUBAGENT_CHILD_INDEX_ENV,
-	SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV,
-	SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV,
-	SUBAGENT_ORCHESTRATOR_TARGET_ENV,
-	SUBAGENT_RUN_ID_ENV,
-	SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV,
-	supervisorChannelDir,
-} from "../runs/shared/pi-args.ts";
-import { writeAtomicJson } from "../shared/atomic-json.ts";
+import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import {
-	type DurableClaim,
-	tryAcquireDurableClaim,
-	tryAcquireKernelClaim,
-	tryAcquireKernelClaimAsync,
-} from "../shared/durable-claim.ts";
-import {
-	ensurePrivateDirectory,
-	type OwnedFileSnapshot,
-	readBoundedOwnedFile,
-	readBoundedOwnedFileSnapshot,
-	readBoundedOwnedFileSnapshotAsync,
-	removeOwnedFileSnapshot,
-} from "../shared/private-directory.ts";
-import { readProcessStartIdentity, readProcessStartIdentityAsync } from "../shared/process-identity.ts";
+import { type DurableClaim, type tryAcquireDurableClaim, tryAcquireKernelClaim } from "../shared/durable-claim.ts";
 import { sessionArtifactMatches } from "../shared/session-identity.ts";
 import {
 	INTERCOM_DETACH_REQUEST_EVENT,
 	type IntercomEventBus,
 	POLL_INTERVAL_MS,
 	type SubagentState,
-	TEMP_ROOT_DIR,
 } from "../shared/types.ts";
+import {
+	hasLiveTool,
+	type IntercomParams,
+	IntercomParamsSchema,
+	registerCommunicationTool,
+} from "./native-supervisor-client.ts";
+import {
+	askTimeoutMs,
+	collectSupervisorChannel,
+	errorCode,
+	type PendingSupervisorRequest,
+	parseRequestFile,
+	publishSupervisorReply,
+	readRequestDeliveryState,
+	removeRequestFile,
+	replyPath,
+	requestDeliveryClaimName,
+	requestFilesInChannelAsync,
+	SUPERVISOR_CHANNEL_ROOT,
+	type SupervisorChannelMetadata,
+	type SupervisorReason,
+	type SupervisorRequest,
+	supervisorChannelDirsAsync,
+	supervisorChannelRecord,
+	writeRequestDeliveryState,
+} from "./native-supervisor-storage.ts";
 
-const SUPERVISOR_CHANNEL_ROOT = path.join(TEMP_ROOT_DIR, "supervisor-channels");
-const REQUESTS_DIR = "requests";
-const REPLIES_DIR = "replies";
+export { registerNativeSupervisorClient } from "./native-supervisor-client.ts";
+export {
+	ensureSupervisorChannelDir,
+	resolveSupervisorChannelDir,
+} from "./native-supervisor-storage.ts";
+
 export const NATIVE_SUPERVISOR_TOOL_NAME = "subagent_supervisor";
-const MAX_MESSAGE_BYTES = 64 * 1024;
-const DEFAULT_ASK_TIMEOUT_MS = 10 * 60 * 1000;
 const CHANNEL_POLL_MS = Math.min(POLL_INTERVAL_MS, 500);
 const MAX_REQUEST_FILES_PER_POLL = 256;
 const MAX_CHANNEL_DIRS_PER_POLL = 128;
 const DELIVERY_RETRY_GRACE_MS = 5_000;
-const MAX_DELIVERY_STATE_BYTES = 8 * 1024;
 const MAX_SESSION_DELIVERY_SCAN_BYTES = 32 * 1024 * 1024;
-const CHANNEL_METADATA_FILE = "channel.json";
-const CHANNEL_LIFECYCLE_CLAIM = "channel-lifecycle";
-const MAX_CHANNEL_METADATA_BYTES = 16 * 1024;
-const METADATALESS_CHANNEL_GRACE_MS = 60_000;
-
-function requestDeliveryClaimName(requestId: string): string {
-	return `request-delivery-${createHash("sha256").update(requestId).digest("hex")}`;
-}
-
-type SupervisorReason = "need_decision" | "interview_request" | "progress_update";
-
-interface SupervisorRequest {
-	type: "subagent.supervisor.request";
-	id: string;
-	createdAt: number;
-	expiresAt?: number;
-	reason: SupervisorReason;
-	message: string;
-	expectsReply: boolean;
-	orchestratorTarget?: string;
-	orchestratorSessionId?: string;
-	physicalSessionId?: string;
-	runId: string;
-	agent: string;
-	childIndex: number;
-	childTarget?: string;
-	interview?: unknown;
-}
-
-interface PendingSupervisorRequest extends SupervisorRequest {
-	protocolVersion: 1 | 2;
-	channelDir: string;
-	requestFile: string;
-	requestSnapshot: OwnedFileSnapshot;
-}
-
-interface SupervisorRequestFileRead {
-	readonly request?: PendingSupervisorRequest;
-	readonly snapshot: OwnedFileSnapshot;
-}
-
-interface SupervisorReply {
-	type: "subagent.supervisor.reply";
-	requestId: string;
-	createdAt: number;
-	message: string;
-}
-
-interface SupervisorChannelMetadata {
-	readonly version: 1;
-	readonly physicalSessionId: string;
-	readonly runId: string;
-	readonly agent: string;
-	readonly childIndex: number;
-	readonly ownerPid: number;
-	readonly ownerProcessStartIdentity?: string;
-	readonly updatedAt: number;
-}
-
-interface ContactSupervisorParams {
-	reason: SupervisorReason;
-	message?: string;
-	interview?: unknown;
-}
-
-interface IntercomParams {
-	action: "list" | "send" | "ask" | "reply" | "pending" | "status";
-	to?: string;
-	message?: string;
-	replyTo?: string;
-}
-
-interface SupervisorChannelRecord {
-	readonly acceptedAt?: unknown;
-	readonly agent?: unknown;
-	readonly childIndex?: unknown;
-	readonly childTarget?: unknown;
-	readonly createdAt?: unknown;
-	readonly customType?: unknown;
-	readonly details?: unknown;
-	readonly expectsReply?: unknown;
-	readonly expiresAt?: unknown;
-	readonly id?: unknown;
-	readonly interview?: unknown;
-	readonly lastAttemptAt?: unknown;
-	readonly message?: unknown;
-	readonly orchestratorSessionId?: unknown;
-	readonly orchestratorTarget?: unknown;
-	readonly ownerPid?: unknown;
-	readonly ownerProcessStartIdentity?: unknown;
-	readonly physicalSessionId?: unknown;
-	readonly reason?: unknown;
-	readonly requestId?: unknown;
-	readonly runId?: unknown;
-	readonly type?: unknown;
-	readonly updatedAt?: unknown;
-	readonly version?: unknown;
-}
-
-function supervisorChannelRecord<Value>(value: Value): SupervisorChannelRecord {
-	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
-	// SAFETY: consumers read only the declared raw fields and validate them before use.
-	return value as Value & SupervisorChannelRecord;
-}
-
-function errorCode<Value>(cause: Value): string | undefined {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause ? String(cause.code) : undefined;
-}
-
-const ContactSupervisorParamsSchema = Type.Object(
-	{
-		reason: Type.String({ enum: ["need_decision", "interview_request", "progress_update"] }),
-		message: Type.Optional(Type.String()),
-		interview: Type.Optional(Type.Unsafe({ type: "object", additionalProperties: true })),
-	},
-	{ additionalProperties: false },
-);
-
-const IntercomParamsSchema = Type.Object(
-	{
-		action: Type.String({ enum: ["list", "send", "ask", "reply", "pending", "status"] }),
-		to: Type.Optional(Type.String()),
-		message: Type.Optional(Type.String()),
-		replyTo: Type.Optional(Type.String()),
-	},
-	{ additionalProperties: false },
-);
-
-function safeSegment(value: string): string {
-	return (
-		value
-			.trim()
-			.replace(/[^A-Za-z0-9._-]+/g, "-")
-			.replace(/^-+|-+$/g, "") || "unknown"
-	);
-}
-
-export function resolveSupervisorChannelDir(
-	runId: string,
-	agent: string,
-	childIndex: number,
-	physicalSessionId = "legacy-test-session",
-): string {
-	return supervisorChannelDir(physicalSessionId, runId, agent, childIndex);
-}
-
-function resolveLegacySupervisorChannelDir(runId: string, agent: string, childIndex: number): string {
-	return path.join(SUPERVISOR_CHANNEL_ROOT, `${safeSegment(runId)}-${safeSegment(agent)}-${childIndex}`);
-}
-
-export function ensureSupervisorChannelDir(channelDir: string): void {
-	const resolved = path.resolve(channelDir);
-	const root = path.resolve(SUPERVISOR_CHANNEL_ROOT);
-	if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) {
-		throw new Error(`Supervisor channel '${channelDir}' is outside the private channel root.`);
-	}
-	ensurePrivateDirectory(TEMP_ROOT_DIR);
-	ensurePrivateDirectory(SUPERVISOR_CHANNEL_ROOT);
-	ensurePrivateDirectory(resolved);
-	ensurePrivateDirectory(path.join(resolved, REQUESTS_DIR));
-	ensurePrivateDirectory(path.join(resolved, REPLIES_DIR));
-}
-
-function writeSupervisorChannelMetadata(
-	channelDir: string,
-	metadata: Omit<SupervisorChannelMetadata, "version" | "ownerPid" | "ownerProcessStartIdentity" | "updatedAt">,
-): void {
-	const ownerProcessStartIdentity = readProcessStartIdentity(process.pid);
-	const record: SupervisorChannelMetadata = {
-		version: 1,
-		...metadata,
-		ownerPid: process.pid,
-		updatedAt: Date.now(),
-	};
-	writeAtomicJson(
-		path.join(channelDir, CHANNEL_METADATA_FILE),
-		ownerProcessStartIdentity ? { ...record, ownerProcessStartIdentity } : record,
-	);
-}
-
-function requestPath(channelDir: string, requestId: string): string {
-	return path.join(channelDir, REQUESTS_DIR, `${safeSegment(requestId)}.json`);
-}
-
-function replyPath(channelDir: string, requestId: string): string {
-	return path.join(channelDir, REPLIES_DIR, `${safeSegment(requestId)}.json`);
-}
-
-function requestDeliveryStatePath(requestFile: string): string {
-	return path.join(path.dirname(requestFile), `.${path.basename(requestFile)}.delivery-state`);
-}
-
-interface RequestDeliveryState {
-	readonly version: 2;
-	readonly requestId: string;
-	readonly lastAttemptAt: number;
-	readonly acceptedAt?: number;
-}
-
-function readRequestDeliveryState(requestFile: string, requestId: string): RequestDeliveryState | undefined {
-	try {
-		const value = supervisorChannelRecord(
-			parseJsonValue(readBoundedOwnedFile(requestDeliveryStatePath(requestFile), MAX_DELIVERY_STATE_BYTES)),
-		);
-		if (
-			(value.version !== 1 && value.version !== 2) ||
-			value.requestId !== requestId ||
-			!isRuntimeNumber(value.lastAttemptAt) ||
-			!Number.isFinite(value.lastAttemptAt)
-		)
-			return undefined;
-		const acceptedAt =
-			isRuntimeNumber(value.acceptedAt) && Number.isFinite(value.acceptedAt) ? value.acceptedAt : undefined;
-		const state: RequestDeliveryState = {
-			version: 2,
-			requestId,
-			lastAttemptAt: value.lastAttemptAt,
-		};
-		return acceptedAt === undefined ? state : { ...state, acceptedAt };
-	} catch {
-		return undefined;
-	}
-}
-
-function writeRequestDeliveryState(requestFile: string, state: RequestDeliveryState): void {
-	writeAtomicJson(requestDeliveryStatePath(requestFile), {
-		...state,
-	});
-}
-
-function removeRequestDeliveryAttempt(requestFile: string): void {
-	try {
-		fs.unlinkSync(requestDeliveryStatePath(requestFile));
-	} catch (error) {
-		if (errorCode(error) !== "ENOENT") throw error;
-	}
-}
-
-function readTextEnv(name: string): string | undefined {
-	const value = process.env[name]?.trim();
-	return value ? value : undefined;
-}
-
-function readChildMetadata():
-	| {
-			channelDir: string;
-			runId: string;
-			agent: string;
-			childIndex: number;
-			orchestratorTarget?: string | undefined;
-			orchestratorSessionId?: string;
-			physicalSessionId: string;
-			childTarget?: string | undefined;
-	  }
-	| undefined {
-	const channelDir = readTextEnv(SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV);
-	const runId = readTextEnv(SUBAGENT_RUN_ID_ENV);
-	const agent = readTextEnv(SUBAGENT_CHILD_AGENT_ENV);
-	const rawIndex = readTextEnv(SUBAGENT_CHILD_INDEX_ENV);
-	const orchestratorSessionId = readTextEnv(SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV);
-	const physicalSessionId = readTextEnv(SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV);
-	if (
-		!channelDir ||
-		!runId ||
-		!agent ||
-		!orchestratorSessionId ||
-		!physicalSessionId ||
-		rawIndex === undefined ||
-		!/^\d+$/.test(rawIndex)
-	)
-		return undefined;
-	const childIndex = Number(rawIndex);
-	if (!Number.isSafeInteger(childIndex)) return undefined;
-	if (
-		path.resolve(channelDir) !==
-		path.resolve(resolveSupervisorChannelDir(runId, agent, childIndex, physicalSessionId))
-	) {
-		return undefined;
-	}
-	return {
-		channelDir,
-		runId,
-		agent,
-		childIndex,
-		orchestratorTarget: readTextEnv(SUBAGENT_ORCHESTRATOR_TARGET_ENV),
-		orchestratorSessionId,
-		physicalSessionId,
-		childTarget: readTextEnv("PI_SUBAGENT_INTERCOM_SESSION_NAME"),
-	};
-}
-
-function reasonHeading(reason: SupervisorReason): string {
-	if (reason === "interview_request") return "Subagent requests a structured supervisor interview.";
-	if (reason === "progress_update") return "Subagent progress update.";
-	return "Subagent needs a supervisor decision.";
-}
-
-function formatChildMessage(input: {
-	reason: SupervisorReason;
-	message?: string | undefined;
-	interview?: unknown;
-	runId: string;
-	agent: string;
-	childIndex: number;
-	childTarget?: string | undefined;
-}): string {
-	const lines = [
-		reasonHeading(input.reason),
-		`Run: ${input.runId}`,
-		`Agent: ${input.agent}`,
-		`Child index: ${input.childIndex}`,
-	];
-	if (input.childTarget) lines.push(`Child intercom target: ${input.childTarget}`);
-	lines.push("");
-	if (input.message?.trim()) lines.push(input.message.trim());
-	if (input.reason === "interview_request") {
-		lines.push(
-			"",
-			"Structured response requested. Reply with JSON, optionally fenced in ```json, matching the requested interview shape.",
-		);
-		if (input.interview !== undefined) lines.push(JSON.stringify(input.interview, null, "\t"));
-	}
-	return lines.join("\n").trimEnd();
-}
-
-function parseStructuredReply(message: string) {
-	const trimmed = message.trim();
-	const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim();
-	try {
-		return { value: JSON.parse(fenced ?? trimmed) };
-	} catch (error) {
-		return { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
-	}
-}
-
-function askTimeoutMs(): number {
-	const parsed = Number(process.env["PI_INTERCOM_ASK_TIMEOUT_MS"]);
-	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ASK_TIMEOUT_MS;
-}
-
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new Error("Supervisor request cancelled."));
-			return;
-		}
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const cleanup = () => {
-			if (timer) clearTimeout(timer);
-			signal?.removeEventListener("abort", onAbort);
-		};
-		const onAbort = () => {
-			cleanup();
-			reject(new Error("Supervisor request cancelled."));
-		};
-		timer = setTimeout(() => {
-			cleanup();
-			resolve();
-		}, ms);
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
-}
-
-async function acquireChannelLifecycleClaim(signal?: AbortSignal): Promise<DurableClaim> {
-	ensurePrivateDirectory(TEMP_ROOT_DIR);
-	ensurePrivateDirectory(SUPERVISOR_CHANNEL_ROOT);
-	const deadline = Date.now() + 3_000;
-	for (;;) {
-		const claim = tryAcquireDurableClaim(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
-		if (claim) return claim;
-		if (Date.now() >= deadline) throw new Error("Supervisor channel lifecycle is busy; retry the request.");
-		await delay(20, signal);
-	}
-}
-
-async function waitForReply(
-	channelDir: string,
-	requestId: string,
-	deadline: number,
-	signal?: AbortSignal,
-): Promise<SupervisorReply> {
-	const file = replyPath(channelDir, requestId);
-	while (Date.now() <= deadline) {
-		if (signal?.aborted) throw new Error("Supervisor request cancelled.");
-		if (fs.existsSync(file)) {
-			let parsed: SupervisorChannelRecord | undefined;
-			let snapshot: OwnedFileSnapshot | undefined;
-			try {
-				snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
-				parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
-			} catch (error) {
-				if (errorCode(error) === "ENOENT") continue;
-				throw error;
-			}
-			if (
-				parsed.type === "subagent.supervisor.reply" &&
-				parsed.requestId === requestId &&
-				isRuntimeNumber(parsed.createdAt) &&
-				Number.isFinite(parsed.createdAt) &&
-				isRuntimeString(parsed.message) &&
-				Buffer.byteLength(parsed.message, "utf-8") <= MAX_MESSAGE_BYTES
-			) {
-				const reply: SupervisorReply = {
-					type: "subagent.supervisor.reply",
-					requestId,
-					createdAt: parsed.createdAt,
-					message: parsed.message,
-				};
-				try {
-					if (!snapshot || removeOwnedFileSnapshot(file, snapshot) !== "removed") continue;
-				} catch (error) {
-					reportAgentDiagnostic(`Failed to remove consumed supervisor reply '${file}':`, error);
-				}
-				removeRequestFile(requestPath(channelDir, requestId));
-				return reply;
-			}
-		}
-		await delay(250, signal);
-	}
-	throw new Error("Timed out waiting for supervisor reply.");
-}
-
-interface SupervisorRequestDetails {
-	delivered?: true;
-	readonly reason: SupervisorReason;
-	readonly requestId: string;
-	structuredReply?: unknown;
-	structuredReplyParseError?: string;
-}
-
-type NativeCommunicationDetails =
-	| SupervisorRequestDetails
-	| { readonly active: true }
-	| { readonly sessions: readonly never[] };
-
-async function sendSupervisorRequest(
-	params: ContactSupervisorParams,
-	signal?: AbortSignal,
-): Promise<AgentToolResult<SupervisorRequestDetails>> {
-	const metadata = readChildMetadata();
-	if (!metadata) throw new Error("Native supervisor channel is not available for this subagent.");
-	if (params.reason !== "progress_update" && !params.message?.trim() && params.reason !== "interview_request") {
-		throw new Error("message is required for supervisor decisions.");
-	}
-	const requestId = randomUUID();
-	const expectsReply = params.reason !== "progress_update";
-	const createdAt = Date.now();
-	const replyDeadline = createdAt + askTimeoutMs();
-	const expiresAt = replyDeadline;
-	const message = formatChildMessage({
-		...metadata,
-		reason: params.reason,
-		message: params.message,
-		interview: params.interview,
-	});
-	const request: SupervisorRequest = {
-		type: "subagent.supervisor.request",
-		id: requestId,
-		createdAt,
-		expiresAt,
-		reason: params.reason,
-		message,
-		expectsReply,
-		physicalSessionId: metadata.physicalSessionId,
-		runId: metadata.runId,
-		agent: metadata.agent,
-		childIndex: metadata.childIndex,
-	};
-	if (metadata.orchestratorTarget) request.orchestratorTarget = metadata.orchestratorTarget;
-	if (metadata.orchestratorSessionId) request.orchestratorSessionId = metadata.orchestratorSessionId;
-	if (metadata.childTarget) request.childTarget = metadata.childTarget;
-	if (params.interview !== undefined) request.interview = params.interview;
-	const serialized = JSON.stringify(request, null, "\t");
-	if (Buffer.byteLength(serialized, "utf-8") > MAX_MESSAGE_BYTES) throw new Error("Supervisor request is too large.");
-	const lifecycleClaim = await acquireChannelLifecycleClaim(signal);
-	try {
-		ensureSupervisorChannelDir(metadata.channelDir);
-		writeSupervisorChannelMetadata(metadata.channelDir, {
-			physicalSessionId: metadata.physicalSessionId,
-			runId: metadata.runId,
-			agent: metadata.agent,
-			childIndex: metadata.childIndex,
-		});
-		writeAtomicJson(requestPath(metadata.channelDir, requestId), request);
-	} finally {
-		lifecycleClaim.release();
-	}
-
-	if (!expectsReply) {
-		return {
-			content: [{ type: "text", text: "Supervisor progress update queued." }],
-			details: { delivered: true, requestId, reason: params.reason },
-		};
-	}
-
-	try {
-		const reply = await waitForReply(metadata.channelDir, requestId, replyDeadline, signal);
-		const details: SupervisorRequestDetails = { requestId, reason: params.reason };
-		if (params.reason === "interview_request") {
-			const structured = parseStructuredReply(reply.message);
-			if (structured.error) details.structuredReplyParseError = structured.error;
-			else details.structuredReply = structured.value;
-		}
-		return {
-			content: [{ type: "text", text: `**Reply from supervisor:**\n${reply.message}` }],
-			details,
-		};
-	} catch (error) {
-		removeRequestFile(requestPath(metadata.channelDir, requestId));
-		throw error;
-	}
-}
-
-function hasLiveTool(pi: ExtensionAPI, name: string): boolean {
-	if (getToolUiRuntime(pi).isReplayOnlyTool(name)) return false;
-	try {
-		return pi.getAllTools?.().some((tool: { name?: unknown }) => tool.name === name) === true;
-	} catch {
-		return false;
-	}
-}
-
-function toolResultText<Details>(result: AgentToolResult<Details>): string {
-	for (const entry of result.content) {
-		if (entry.type !== "text") continue;
-		const preview = entry.text.slice(0, 8 * 1024).trim();
-		if (preview) return preview;
-	}
-	return "";
-}
-
-function communicationTarget(args: ToolArguments): string {
-	const action = isRuntimeString(args["action"])
-		? args["action"]
-		: isRuntimeString(args["reason"])
-			? args["reason"]
-			: "";
-	const destination = isRuntimeString(args["replyTo"])
-		? args["replyTo"]
-		: isRuntimeString(args["to"])
-			? args["to"]
-			: "";
-	return [action, destination].filter(Boolean).join(" · ");
-}
-
-function communicationCategory(args: ToolArguments) {
-	const action = isRuntimeString(args["action"]) ? args["action"] : "";
-	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
-}
-
-function registerCommunicationTool<TParams extends TSchema, Details>(
-	pi: ExtensionAPI,
-	tool: ToolDefinition<TParams, Details>,
-	runningSummary: string,
-): void {
-	registerSuiteOwnedTool(pi, tool, {
-		activity: {
-			categories: ["check-agent", "message-agent"],
-			classify: ({ args }) =>
-				singleActivity(communicationCategory(args), {
-					key: activityKey(args["action"], args["to"], args["replyTo"]),
-					target: communicationTarget(args),
-				}),
-		},
-		runningSummary,
-		summarize: (_args, result, state) => toolResultText(result) || (state === "success" ? "done" : "failed"),
-		target: communicationTarget,
-	});
-}
-
-export function registerNativeSupervisorClient(
-	pi: ExtensionAPI,
-	options: { includeIntercomFallback?: boolean } = {},
-): void {
-	if (!readChildMetadata()) return;
-	const includeIntercomFallback = options.includeIntercomFallback !== false;
-	if (!hasLiveTool(pi, "contact_supervisor")) {
-		const tool: ToolDefinition<typeof ContactSupervisorParamsSchema, SupervisorRequestDetails> = {
-			name: "contact_supervisor",
-			label: "Contact Supervisor",
-			description:
-				"Contact the parent/supervisor session for a blocking decision, structured interview, or progress update.",
-			parameters: ContactSupervisorParamsSchema,
-			execute(_id, params, signal) {
-				// SAFETY: Pi validates Tool arguments against ContactSupervisorParamsSchema before execute.
-				return sendSupervisorRequest(params as ContactSupervisorParams, signal);
-			},
-		};
-		registerCommunicationTool(pi, tool, "contacting");
-	}
-	if (includeIntercomFallback && !hasLiveTool(pi, "intercom")) {
-		const tool: ToolDefinition<typeof IntercomParamsSchema, NativeCommunicationDetails> = {
-			name: "intercom",
-			label: "Intercom",
-			description:
-				"Native supervisor-channel intercom fallback for subagents. Prefer contact_supervisor when available.",
-			parameters: IntercomParamsSchema,
-			async execute(_id, params, signal) {
-				// SAFETY: Pi validates Tool arguments against IntercomParamsSchema before execute.
-				const input = params as IntercomParams;
-				const action = input.action;
-				if (action === "status")
-					return {
-						content: [{ type: "text", text: "Native supervisor channel is active." }],
-						details: { active: true },
-					};
-				if (action === "list")
-					return {
-						content: [{ type: "text", text: "Supervisor session available through contact_supervisor." }],
-						details: { sessions: [] },
-					};
-				if (action === "send")
-					return sendSupervisorRequest({ reason: "progress_update", message: input.message ?? "" }, signal);
-				if (action === "ask")
-					return sendSupervisorRequest({ reason: "need_decision", message: input.message ?? "" }, signal);
-				throw new Error(
-					"Native child intercom supports status, list, send, and ask. Use parent intercom reply from the supervisor session.",
-				);
-			},
-		};
-		registerCommunicationTool(pi, tool, "sending");
-	}
-}
-
-function parseRequestFile(file: string, channelDir: string): SupervisorRequestFileRead | undefined {
-	let snapshot: OwnedFileSnapshot;
-	try {
-		snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
-	} catch (error) {
-		if (errorCode(error) === "ENOENT") return undefined;
-		throw error;
-	}
-	try {
-		const parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
-		if (parsed.type !== "subagent.supervisor.request") return { snapshot };
-		if (!isRuntimeString(parsed.id) || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
-		if (
-			parsed.reason !== "need_decision" &&
-			parsed.reason !== "interview_request" &&
-			parsed.reason !== "progress_update"
-		)
-			return { snapshot };
-		const physicalSessionId =
-			isRuntimeString(parsed.physicalSessionId) && parsed.physicalSessionId.trim()
-				? parsed.physicalSessionId
-				: undefined;
-		const protocolVersion = physicalSessionId ? 2 : 1;
-		if (
-			!isRuntimeString(parsed.message) ||
-			!parsed.message ||
-			Buffer.byteLength(parsed.message, "utf-8") > MAX_MESSAGE_BYTES
-		)
-			return { snapshot };
-		if (
-			!isRuntimeNumber(parsed.createdAt) ||
-			!Number.isFinite(parsed.createdAt) ||
-			parsed.createdAt <= 0 ||
-			(parsed.expiresAt !== undefined &&
-				(!isRuntimeNumber(parsed.expiresAt) ||
-					!Number.isFinite(parsed.expiresAt) ||
-					parsed.expiresAt < parsed.createdAt)) ||
-			(protocolVersion === 2 && (!isRuntimeNumber(parsed.expiresAt) || !Number.isFinite(parsed.expiresAt))) ||
-			!isRuntimeBoolean(parsed.expectsReply) ||
-			parsed.expectsReply !== (parsed.reason !== "progress_update") ||
-			!isRuntimeString(parsed.orchestratorSessionId) ||
-			!parsed.orchestratorSessionId.trim() ||
-			!isRuntimeString(parsed.runId) ||
-			!parsed.runId.trim() ||
-			!isRuntimeString(parsed.agent) ||
-			!parsed.agent.trim() ||
-			!isRuntimeNumber(parsed.childIndex) ||
-			!Number.isSafeInteger(parsed.childIndex) ||
-			(parsed.childIndex ?? -1) < 0
-		)
-			return { snapshot };
-		if (path.basename(file) !== `${safeSegment(parsed.id)}.json`) return { snapshot };
-		const expectedChannel = physicalSessionId
-			? resolveSupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex, physicalSessionId)
-			: resolveLegacySupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex);
-		if (path.resolve(channelDir) !== path.resolve(expectedChannel)) {
-			return { snapshot };
-		}
-		const request: PendingSupervisorRequest = {
-			type: "subagent.supervisor.request",
-			id: parsed.id,
-			createdAt: parsed.createdAt,
-			reason: parsed.reason,
-			message: parsed.message,
-			expectsReply: parsed.expectsReply,
-			orchestratorSessionId: parsed.orchestratorSessionId,
-			runId: parsed.runId,
-			agent: parsed.agent,
-			childIndex: parsed.childIndex,
-			protocolVersion,
-			channelDir,
-			requestFile: file,
-			requestSnapshot: snapshot,
-		};
-		if (isRuntimeNumber(parsed.expiresAt)) request.expiresAt = parsed.expiresAt;
-		if (physicalSessionId) request.physicalSessionId = physicalSessionId;
-		if (isRuntimeString(parsed.orchestratorTarget)) request.orchestratorTarget = parsed.orchestratorTarget;
-		if (isRuntimeString(parsed.childTarget)) request.childTarget = parsed.childTarget;
-		if (parsed.interview !== undefined) request.interview = parsed.interview;
-		return { snapshot, request };
-	} catch {
-		return { snapshot };
-	}
-}
-
-async function requestFilesInChannelAsync(channelDir: string, limit: number): Promise<string[]> {
-	try {
-		return (await fs.promises.readdir(path.join(channelDir, REQUESTS_DIR), { withFileTypes: true }))
-			.filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-			.sort((left, right) => left.name.localeCompare(right.name))
-			.slice(0, limit)
-			.map((entry) => path.join(channelDir, REQUESTS_DIR, entry.name));
-	} catch {
-		return [];
-	}
-}
-
-async function channelOwnerAlive(metadata: SupervisorChannelMetadata): Promise<boolean | undefined> {
-	if (metadata.ownerProcessStartIdentity) {
-		const current = await readProcessStartIdentityAsync(metadata.ownerPid);
-		if (current) return current === metadata.ownerProcessStartIdentity;
-	}
-	try {
-		process.kill(metadata.ownerPid, 0);
-		return undefined;
-	} catch (error) {
-		return errorCode(error) === "ESRCH" ? false : undefined;
-	}
-}
-
-function channelRunInactive(metadata: SupervisorChannelMetadata, state: SubagentState): boolean {
-	return requestRunInactive(
-		{
-			type: "subagent.supervisor.request",
-			id: "channel-lifecycle",
-			createdAt: metadata.updatedAt,
-			reason: "progress_update",
-			message: "channel lifecycle",
-			expectsReply: false,
-			physicalSessionId: metadata.physicalSessionId,
-			runId: metadata.runId,
-			agent: metadata.agent,
-			childIndex: metadata.childIndex,
-		},
-		state,
-	);
-}
-
-async function metadataLessChannelSafeToCollect(channelDir: string, now: number): Promise<boolean> {
-	const resolved = path.resolve(channelDir);
-	if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
-	try {
-		const stat = await fs.promises.lstat(resolved);
-		const currentUid = process.getuid?.();
-		if (
-			!stat.isDirectory() ||
-			stat.isSymbolicLink() ||
-			(currentUid !== undefined && stat.uid !== currentUid) ||
-			now - stat.mtimeMs < METADATALESS_CHANNEL_GRACE_MS
-		) {
-			return false;
-		}
-		try {
-			await fs.promises.lstat(path.join(resolved, CHANNEL_METADATA_FILE));
-			return false;
-		} catch (error) {
-			if (errorCode(error) !== "ENOENT") return false;
-		}
-		for (const entry of await fs.promises.readdir(resolved, { withFileTypes: true })) {
-			if (entry.name !== REQUESTS_DIR && entry.name !== REPLIES_DIR) return false;
-			const child = path.join(resolved, entry.name);
-			const childStat = await fs.promises.lstat(child);
-			if (
-				!entry.isDirectory() ||
-				entry.isSymbolicLink() ||
-				(currentUid !== undefined && childStat.uid !== currentUid) ||
-				(await fs.promises.readdir(child)).length > 0
-			) {
-				return false;
-			}
-		}
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<SupervisorChannelMetadata | undefined> {
-	try {
-		const value = supervisorChannelRecord(
-			parseJsonValue(
-				(
-					await readBoundedOwnedFileSnapshotAsync(
-						path.join(channelDir, CHANNEL_METADATA_FILE),
-						MAX_CHANNEL_METADATA_BYTES,
-					)
-				).text,
-			),
-		);
-		if (
-			value.version !== 1 ||
-			!isRuntimeString(value.physicalSessionId) ||
-			!value.physicalSessionId ||
-			!isRuntimeString(value.runId) ||
-			!value.runId ||
-			!isRuntimeString(value.agent) ||
-			!value.agent ||
-			!isRuntimeNumber(value.childIndex) ||
-			!Number.isSafeInteger(value.childIndex) ||
-			value.childIndex < 0 ||
-			!isRuntimeNumber(value.ownerPid) ||
-			!Number.isSafeInteger(value.ownerPid) ||
-			value.ownerPid <= 0 ||
-			!isRuntimeNumber(value.updatedAt) ||
-			!Number.isFinite(value.updatedAt) ||
-			(value.ownerProcessStartIdentity !== undefined &&
-				(!isRuntimeString(value.ownerProcessStartIdentity) || !value.ownerProcessStartIdentity))
-		) {
-			return undefined;
-		}
-		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
-		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
-		const metadata: SupervisorChannelMetadata = {
-			version: 1,
-			physicalSessionId: value.physicalSessionId,
-			runId: value.runId,
-			agent: value.agent,
-			childIndex: value.childIndex,
-			ownerPid: value.ownerPid,
-			updatedAt: value.updatedAt,
-		};
-		return value.ownerProcessStartIdentity === undefined
-			? metadata
-			: { ...metadata, ownerProcessStartIdentity: value.ownerProcessStartIdentity };
-	} catch {
-		return undefined;
-	}
-}
-
-export async function garbageCollectSupervisorChannel(
-	channelDir: string,
-	state: SubagentState,
-	now = Date.now(),
-): Promise<boolean> {
-	const metadata = await readSupervisorChannelMetadataAsync(channelDir);
-	if (metadata) {
-		if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
-		if ((await channelOwnerAlive(metadata)) !== false && !channelRunInactive(metadata, state)) return false;
-	}
-	const claim = await tryAcquireKernelClaimAsync(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
-	if (!claim) return false;
-	try {
-		const current = await readSupervisorChannelMetadataAsync(channelDir);
-		if (!current) {
-			if (!(await metadataLessChannelSafeToCollect(channelDir, now))) return false;
-		} else {
-			if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
-			if ((await channelOwnerAlive(current)) !== false && !channelRunInactive(current, state)) return false;
-		}
-		const resolved = path.resolve(channelDir);
-		if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
-		const stat = await fs.promises.lstat(resolved);
-		if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
-		await fs.promises.rm(resolved, { recursive: true });
-		return true;
-	} catch {
-		return false;
-	} finally {
-		await claim.release();
-	}
-}
 
 function requestMatchesContext(
 	request: SupervisorRequest,
@@ -1017,12 +137,50 @@ async function persistedSupervisorRequestIds(ctx: ExtensionContext): Promise<Rea
 	}
 }
 
-function rememberedForegroundChild(request: SupervisorRequest, state: SubagentState) {
+type SupervisorRunIdentity = Pick<SupervisorRequest, "runId" | "agent" | "childIndex">;
+
+function rememberedForegroundChild(request: SupervisorRunIdentity, state: SubagentState) {
 	const run = state.foregroundRuns?.get(request.runId);
 	const child =
 		run?.children.find((candidate) => candidate.index === request.childIndex && candidate.agent === request.agent) ??
 		run?.children[request.childIndex];
 	return run && child ? { run, child } : undefined;
+}
+
+function requestRunInactive(request: SupervisorRunIdentity, state: SubagentState): boolean {
+	if (state.foregroundControls.has(request.runId)) return false;
+	const foreground = rememberedForegroundChild(request, state);
+	if (foreground) return foreground.child.status !== "detached";
+
+	const asyncJob = state.asyncJobs.get(request.runId) ?? state.recentAgentJobs?.get(request.runId);
+	if (!asyncJob) return false;
+	if (
+		asyncJob.status === "complete" ||
+		asyncJob.status === "failed" ||
+		asyncJob.status === "paused" ||
+		asyncJob.status === "stopped"
+	)
+		return true;
+	const stepStatus = asyncJob.steps?.[request.childIndex]?.status;
+	return (
+		stepStatus === "complete" ||
+		stepStatus === "completed" ||
+		stepStatus === "failed" ||
+		stepStatus === "paused" ||
+		stepStatus === "stopped"
+	);
+}
+
+export function garbageCollectSupervisorChannel(
+	channelDir: string,
+	state: SubagentState,
+	now = Date.now(),
+): Promise<boolean> {
+	return collectSupervisorChannel(
+		channelDir,
+		(metadata: SupervisorChannelMetadata) => requestRunInactive(metadata, state),
+		now,
+	);
 }
 
 function markForegroundSupervisorAttention(request: SupervisorRequest, state: SubagentState): void {
@@ -1063,51 +221,12 @@ function clearForegroundSupervisorAttention(
 	remembered.child.updatedAt = updatedAt;
 }
 
-function removeRequestFile(file: string, snapshot?: OwnedFileSnapshot): boolean {
-	try {
-		if (snapshot) {
-			const outcome = removeOwnedFileSnapshot(file, snapshot);
-			if (outcome !== "removed") return false;
-		}
-		if (!snapshot) fs.rmSync(file, { force: true });
-		removeRequestDeliveryAttempt(file);
-		return true;
-	} catch {
-		// Request cleanup is best-effort; reply files and timeout errors remain authoritative.
-		return false;
-	}
-}
-
 type SupervisorRequestLifecycle = "pending" | "resolved" | "expired" | "inactive" | "missing" | "wrong-session";
 
 function requestExpiresAt(request: SupervisorRequest, now: number): number {
 	const expiresAt = request.expiresAt;
 	if (isRuntimeNumber(expiresAt) && Number.isFinite(expiresAt)) return expiresAt;
 	return Number.isFinite(request.createdAt) ? request.createdAt + askTimeoutMs() : now;
-}
-
-function requestRunInactive(request: SupervisorRequest, state: SubagentState): boolean {
-	if (state.foregroundControls.has(request.runId)) return false;
-	const foreground = rememberedForegroundChild(request, state);
-	if (foreground) return foreground.child.status !== "detached";
-
-	const asyncJob = state.asyncJobs.get(request.runId) ?? state.recentAgentJobs?.get(request.runId);
-	if (!asyncJob) return false;
-	if (
-		asyncJob.status === "complete" ||
-		asyncJob.status === "failed" ||
-		asyncJob.status === "paused" ||
-		asyncJob.status === "stopped"
-	)
-		return true;
-	const stepStatus = asyncJob.steps?.[request.childIndex]?.status;
-	return (
-		stepStatus === "complete" ||
-		stepStatus === "completed" ||
-		stepStatus === "failed" ||
-		stepStatus === "paused" ||
-		stepStatus === "stopped"
-	);
 }
 
 function requestLifecycle(
@@ -1160,46 +279,6 @@ function requestVisibleText(request: PendingSupervisorRequest): string {
 		);
 	}
 	return lines.join("\n");
-}
-
-function writeReply(
-	request: PendingSupervisorRequest,
-	message: string,
-	afterPublish?: (replyPath: string) => void,
-): void {
-	if (!message.trim()) throw new Error("message is required for supervisor replies.");
-	const reply: SupervisorReply = {
-		type: "subagent.supervisor.reply",
-		requestId: request.id,
-		createdAt: Date.now(),
-		message: message.trim(),
-	};
-	if (Buffer.byteLength(JSON.stringify(reply), "utf-8") > MAX_MESSAGE_BYTES) {
-		throw new Error("Supervisor reply is too large.");
-	}
-	const outputPath = replyPath(request.channelDir, request.id);
-	writeAtomicJson(outputPath, reply);
-	afterPublish?.(outputPath);
-	if (removeRequestFile(request.requestFile, request.requestSnapshot)) return;
-
-	// The child consumes the reply before removing its request. Either file can
-	// therefore disappear between publication and parent cleanup. Missing reply
-	// or request is positive consumption evidence, not a failed delivery.
-	try {
-		fs.lstatSync(request.requestFile);
-	} catch (error) {
-		if (errorCode(error) === "ENOENT") return;
-		throw error;
-	}
-	let replySnapshot: OwnedFileSnapshot;
-	try {
-		replySnapshot = readBoundedOwnedFileSnapshot(outputPath, MAX_MESSAGE_BYTES);
-	} catch (error) {
-		if (errorCode(error) === "ENOENT") return;
-		throw error;
-	}
-	removeOwnedFileSnapshot(outputPath, replySnapshot);
-	throw new Error(`Supervisor request '${request.id}' is no longer pending.`);
 }
 
 function resolvePendingRequest(
@@ -1289,7 +368,7 @@ function buildParentIntercomTool(
 			}
 			if (input.action === "reply") {
 				const request = resolvePendingRequest(pending, input);
-				writeReply(request, input.message ?? "", afterReplyPublish);
+				publishSupervisorReply(request, input.message ?? "", afterReplyPublish);
 				pending.delete(request.id);
 				clearForegroundSupervisorAttention(request, pending, state);
 				return {
@@ -1307,271 +386,296 @@ function buildParentIntercomTool(
 	};
 }
 
-export function createNativeSupervisorChannel(
-	pi: ExtensionAPI,
-	state: SubagentState,
-	options: {
-		acquireDeliveryClaim?: typeof tryAcquireDurableClaim;
-		afterReplyPublish?: (replyPath: string) => void;
-	} = {},
-) {
-	const pending = new Map<string, PendingSupervisorRequest>();
-	let poller: ReturnType<typeof setInterval> | undefined;
-	let pollInFlight = false;
-	let channelScanEntries: fs.Dirent[] = [];
-	let channelScanOffset = 0;
-	let lifecycleGeneration = 0;
-	let persistedIndexGeneration = -1;
-	const persistedRequestIds = new Set<string>();
-	const deliveryClaims = new Map<string, DurableClaim>();
-	const deliveryClaimFiles = new Map<string, string>();
-	const deliveryDispatches = new Map<string, object>();
-	const acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireKernelClaim;
-	const releaseDeliveryClaim = (requestId: string): void => {
+interface NativeSupervisorChannelOptions {
+	readonly acquireDeliveryClaim?: typeof tryAcquireDurableClaim;
+	readonly afterReplyPublish?: (replyPath: string) => void;
+}
+
+class NativeSupervisorParent {
+	readonly pending = new Map<string, PendingSupervisorRequest>();
+	private poller: ReturnType<typeof setInterval> | undefined;
+	private pollInFlight = false;
+	private channelScanEntries: string[] = [];
+	private channelScanOffset = 0;
+	private lifecycleGeneration = 0;
+	private persistedIndexGeneration = -1;
+	private readonly persistedRequestIds = new Set<string>();
+	private readonly deliveryClaims = new Map<string, DurableClaim>();
+	private readonly deliveryClaimFiles = new Map<string, string>();
+	private readonly deliveryDispatches = new Map<string, object>();
+	private readonly acquireDeliveryClaim: typeof tryAcquireDurableClaim;
+	private readonly afterReplyPublish: ((replyPath: string) => void) | undefined;
+	private readonly pi: ExtensionAPI;
+	private readonly state: SubagentState;
+
+	constructor(pi: ExtensionAPI, state: SubagentState, options: NativeSupervisorChannelOptions) {
+		this.pi = pi;
+		this.state = state;
+		this.acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireKernelClaim;
+		this.afterReplyPublish = options.afterReplyPublish;
+		pi.on("before_agent_start", () => {
+			if (this.poller) this.registerParentIntercomFallback();
+		});
+	}
+
+	private releaseDeliveryClaim(requestId: string): void {
 		try {
-			deliveryClaims.get(requestId)?.release();
+			this.deliveryClaims.get(requestId)?.release();
 		} catch (error) {
 			reportAgentDiagnostic(`Failed to release supervisor delivery claim '${requestId}':`, error);
 		} finally {
-			deliveryClaims.delete(requestId);
-			deliveryClaimFiles.delete(requestId);
+			this.deliveryClaims.delete(requestId);
+			this.deliveryClaimFiles.delete(requestId);
 		}
-	};
-	const releaseIdleDeliveryClaims = (): void => {
-		for (const requestId of Array.from(deliveryClaims.keys())) {
-			if (!deliveryDispatches.has(requestId)) releaseDeliveryClaim(requestId);
-		}
-	};
+	}
 
-	const registerPrimaryParentTool = (): void => {
-		if (!hasLiveTool(pi, NATIVE_SUPERVISOR_TOOL_NAME))
+	private releaseIdleDeliveryClaims(): void {
+		for (const requestId of Array.from(this.deliveryClaims.keys())) {
+			if (!this.deliveryDispatches.has(requestId)) this.releaseDeliveryClaim(requestId);
+		}
+	}
+
+	private registerPrimaryParentTool(): void {
+		if (!hasLiveTool(this.pi, NATIVE_SUPERVISOR_TOOL_NAME))
 			registerCommunicationTool(
-				pi,
-				buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME, options.afterReplyPublish),
+				this.pi,
+				buildParentIntercomTool(this.pending, this.state, NATIVE_SUPERVISOR_TOOL_NAME, this.afterReplyPublish),
 				"checking",
 			);
-	};
-	const registerParentIntercomFallback = (): void => {
-		if (!hasLiveTool(pi, "intercom"))
+	}
+
+	private registerParentIntercomFallback(): void {
+		if (!hasLiveTool(this.pi, "intercom"))
 			registerCommunicationTool(
-				pi,
-				buildParentIntercomTool(pending, state, "intercom", options.afterReplyPublish),
+				this.pi,
+				buildParentIntercomTool(this.pending, this.state, "intercom", this.afterReplyPublish),
 				"checking",
 			);
-	};
-	pi.on("before_agent_start", () => {
-		if (poller) registerParentIntercomFallback();
-	});
+	}
 
-	const resetChannelScan = (): void => {
-		channelScanEntries = [];
-		channelScanOffset = 0;
-	};
-	const scanRequestFiles = async (): Promise<Array<{ channelDir: string; file: string }>> => {
+	private resetChannelScan(): void {
+		this.channelScanEntries = [];
+		this.channelScanOffset = 0;
+	}
+
+	private async scanRequestFiles(): Promise<Array<{ channelDir: string; file: string }>> {
 		const files: Array<{ channelDir: string; file: string }> = [];
 		let scannedChannels = 0;
 		try {
-			if (channelScanOffset >= channelScanEntries.length) {
-				channelScanEntries = (await fs.promises.readdir(SUPERVISOR_CHANNEL_ROOT, { withFileTypes: true }))
-					.filter((entry) => entry.isDirectory())
-					.sort((left, right) => left.name.localeCompare(right.name));
-				channelScanOffset = 0;
+			if (this.channelScanOffset >= this.channelScanEntries.length) {
+				this.channelScanEntries = await supervisorChannelDirsAsync();
+				this.channelScanOffset = 0;
 			}
 			while (scannedChannels < MAX_CHANNEL_DIRS_PER_POLL && files.length < MAX_REQUEST_FILES_PER_POLL) {
-				const entry = channelScanEntries[channelScanOffset++];
-				if (!entry) break;
+				const channelDir = this.channelScanEntries[this.channelScanOffset++];
+				if (!channelDir) break;
 				scannedChannels += 1;
-				const channelDir = path.join(SUPERVISOR_CHANNEL_ROOT, entry.name);
 				const requestFiles = await requestFilesInChannelAsync(
 					channelDir,
 					MAX_REQUEST_FILES_PER_POLL - files.length,
 				);
-				if (requestFiles.length === 0) await garbageCollectSupervisorChannel(channelDir, state);
+				if (requestFiles.length === 0) await garbageCollectSupervisorChannel(channelDir, this.state);
 				else files.push(...requestFiles.map((file) => ({ channelDir, file })));
 			}
-			if (channelScanOffset >= channelScanEntries.length) resetChannelScan();
+			if (this.channelScanOffset >= this.channelScanEntries.length) this.resetChannelScan();
 		} catch (error) {
-			resetChannelScan();
+			this.resetChannelScan();
 			if (errorCode(error) !== "ENOENT") throw error;
 		}
 		return files;
-	};
+	}
 
-	const poll = async (): Promise<void> => {
-		if (pollInFlight) return;
-		pollInFlight = true;
-		try {
-			const ctx = state.lastUiContext;
-			if (!ctx) return;
-			const pollGeneration = lifecycleGeneration;
-			const isPollCurrent = (): boolean =>
-				poller !== undefined && lifecycleGeneration === pollGeneration && state.lastUiContext === ctx;
-			refreshPendingRequests(pending, state, ctx);
-			for (const requestId of deliveryClaims.keys()) {
-				const requestFile = deliveryClaimFiles.get(requestId);
-				if (requestFile && fs.existsSync(requestFile)) continue;
-				releaseDeliveryClaim(requestId);
+	private isPollCurrent(ctx: ExtensionContext, generation: number): boolean {
+		return this.poller !== undefined && this.lifecycleGeneration === generation && this.state.lastUiContext === ctx;
+	}
+
+	private releaseMissingDeliveryClaims(): void {
+		for (const requestId of this.deliveryClaims.keys()) {
+			const requestFile = this.deliveryClaimFiles.get(requestId);
+			if (requestFile && fs.existsSync(requestFile)) continue;
+			this.releaseDeliveryClaim(requestId);
+		}
+	}
+
+	private ensureDeliveryClaim(file: string, requestId: string): DurableClaim | undefined {
+		let claim = this.deliveryClaims.get(requestId);
+		if (claim) return claim;
+		claim = this.acquireDeliveryClaim(path.dirname(file), requestDeliveryClaimName(requestId));
+		if (!claim) return undefined;
+		this.deliveryClaims.set(requestId, claim);
+		this.deliveryClaimFiles.set(requestId, file);
+		return claim;
+	}
+
+	private async restorePersistedRequestIds(ctx: ExtensionContext, pollGeneration: number): Promise<boolean> {
+		if (this.persistedIndexGeneration === pollGeneration) return true;
+		const restored = await persistedSupervisorRequestIds(ctx);
+		if (!this.isPollCurrent(ctx, pollGeneration)) return false;
+		this.persistedRequestIds.clear();
+		for (const requestId of restored) this.persistedRequestIds.add(requestId);
+		this.persistedIndexGeneration = pollGeneration;
+		return true;
+	}
+
+	private retainAcceptedRequest(request: PendingSupervisorRequest): void {
+		if (request.expectsReply) {
+			// The delivery claim remains the durable reply-owner claim until reply, expiry, or disposal.
+			this.pending.set(request.id, request);
+			markForegroundSupervisorAttention(request, this.state);
+		} else {
+			removeRequestFile(request.requestFile, request.requestSnapshot);
+			this.releaseDeliveryClaim(request.id);
+		}
+	}
+
+	private dispatchRequest(ctx: ExtensionContext, request: PendingSupervisorRequest, file: string, now: number): void {
+		writeRequestDeliveryState(request.requestFile, {
+			version: 2,
+			requestId: request.id,
+			lastAttemptAt: now,
+		});
+		const dispatchGeneration = this.lifecycleGeneration;
+		const dispatchToken = {};
+		this.deliveryDispatches.set(request.id, dispatchToken);
+		const dispatchIsCurrent = (): boolean =>
+			this.lifecycleGeneration === dispatchGeneration &&
+			this.state.lastUiContext === ctx &&
+			this.deliveryDispatches.get(request.id) === dispatchToken &&
+			this.deliveryClaims.has(request.id);
+		const acceptDelivery = (): void => {
+			if (!dispatchIsCurrent()) return;
+			this.persistedRequestIds.add(request.id);
+			writeRequestDeliveryState(request.requestFile, {
+				version: 2,
+				requestId: request.id,
+				lastAttemptAt: now,
+				acceptedAt: Date.now(),
+			});
+			if (!request.expectsReply) return;
+			this.pending.set(request.id, request);
+			markForegroundSupervisorAttention(request, this.state);
+			try {
+				// SAFETY: ExtensionAPI owns the optional typed event bus used by this Suite integration.
+				(this.pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
+					requestId: request.id,
+					runId: request.runId,
+					agent: request.agent,
+					childIndex: request.childIndex,
+				});
+			} catch (error) {
+				reportAgentDiagnostic(`Supervisor detach observer failed for request '${request.id}':`, error);
 			}
+		};
+		void sendSuiteAgentMessage(
+			this.pi,
+			withAgentWorkOrigin(
+				{
+					customType: "subagent_supervisor_request",
+					content: requestVisibleText(request),
+					display: true,
+					details: {
+						id: request.id,
+						reason: request.reason,
+						expectsReply: request.expectsReply,
+						runId: request.runId,
+						agent: request.agent,
+						childIndex: request.childIndex,
+					},
+				},
+				"automatic",
+			),
+			{ triggerTurn: true },
+			dispatchIsCurrent,
+			acceptDelivery,
+		)
+			.catch((error) => {
+				reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
+			})
+			.finally(() => {
+				if (this.deliveryDispatches.get(request.id) !== dispatchToken) return;
+				this.deliveryDispatches.delete(request.id);
+				if (this.lifecycleGeneration !== dispatchGeneration) this.releaseDeliveryClaim(request.id);
+			});
+	}
+
+	private async processRequestFile(
+		ctx: ExtensionContext,
+		pollGeneration: number,
+		now: number,
+		channelDir: string,
+		file: string,
+	): Promise<boolean> {
+		let parsedRequest = parseRequestFile(file, channelDir);
+		if (!parsedRequest) return true;
+		let request = parsedRequest.request;
+		if (!request) {
+			removeRequestFile(file, parsedRequest.snapshot);
+			return true;
+		}
+		const requestId = request.id;
+		if (this.deliveryDispatches.has(requestId) || !this.ensureDeliveryClaim(file, requestId)) return true;
+		// Re-read under the cross-process claim. The request may have changed since the directory scan.
+		parsedRequest = parseRequestFile(file, channelDir);
+		request = parsedRequest?.request;
+		if (!request) {
+			if (parsedRequest) removeRequestFile(file, parsedRequest.snapshot);
+			this.releaseDeliveryClaim(requestId);
+			return true;
+		}
+		const lifecycle = requestLifecycle(request, this.state, ctx, now);
+		if (lifecycle === "wrong-session") {
+			this.releaseDeliveryClaim(request.id);
+			return true;
+		}
+		if (lifecycle !== "pending") {
+			cleanupRequestLifecycle(request, lifecycle);
+			this.releaseDeliveryClaim(request.id);
+			return true;
+		}
+		let deliveryState = readRequestDeliveryState(request.requestFile, request.id);
+		if (
+			deliveryState &&
+			deliveryState.acceptedAt === undefined &&
+			now - deliveryState.lastAttemptAt < DELIVERY_RETRY_GRACE_MS
+		) {
+			return true;
+		}
+		if (deliveryState?.acceptedAt === undefined && !(await this.restorePersistedRequestIds(ctx, pollGeneration))) {
+			return false;
+		}
+		if (this.persistedRequestIds.has(request.id) && deliveryState?.acceptedAt === undefined) {
+			deliveryState = {
+				version: 2,
+				requestId: request.id,
+				lastAttemptAt: deliveryState?.lastAttemptAt ?? now,
+				acceptedAt: now,
+			};
+			writeRequestDeliveryState(request.requestFile, deliveryState);
+		}
+		if (deliveryState?.acceptedAt !== undefined) this.retainAcceptedRequest(request);
+		else this.dispatchRequest(ctx, request, file, now);
+		return true;
+	}
+
+	private async poll(): Promise<void> {
+		if (this.pollInFlight) return;
+		this.pollInFlight = true;
+		try {
+			const ctx = this.state.lastUiContext;
+			if (!ctx) return;
+			const pollGeneration = this.lifecycleGeneration;
+			refreshPendingRequests(this.pending, this.state, ctx);
+			this.releaseMissingDeliveryClaims();
 			const now = Date.now();
-			const requestFiles = await scanRequestFiles();
-			if (!isPollCurrent()) {
-				resetChannelScan();
+			const requestFiles = await this.scanRequestFiles();
+			if (!this.isPollCurrent(ctx, pollGeneration)) {
+				this.resetChannelScan();
 				return;
 			}
 			for (const { channelDir, file } of requestFiles) {
-				if (!isPollCurrent()) return;
+				if (!this.isPollCurrent(ctx, pollGeneration)) return;
 				try {
-					let parsedRequest = parseRequestFile(file, channelDir);
-					if (!parsedRequest) continue;
-					let request = parsedRequest.request;
-					if (!request) {
-						removeRequestFile(file, parsedRequest.snapshot);
-						continue;
-					}
-					const requestId = request.id;
-					if (deliveryDispatches.has(requestId)) continue;
-					let claim = deliveryClaims.get(requestId);
-					if (!claim) {
-						claim = acquireDeliveryClaim(path.dirname(file), requestDeliveryClaimName(requestId));
-						if (!claim) continue;
-						deliveryClaims.set(requestId, claim);
-						deliveryClaimFiles.set(requestId, file);
-					}
-					// Re-read under the cross-process claim. The request may have been
-					// replied to, expired, or replaced since the directory scan.
-					parsedRequest = parseRequestFile(file, channelDir);
-					request = parsedRequest?.request;
-					if (!request) {
-						if (parsedRequest) removeRequestFile(file, parsedRequest.snapshot);
-						releaseDeliveryClaim(requestId);
-						continue;
-					}
-					const lifecycle = requestLifecycle(request, state, ctx, now);
-					if (lifecycle === "wrong-session") {
-						releaseDeliveryClaim(request.id);
-						continue;
-					}
-					if (lifecycle !== "pending") {
-						cleanupRequestLifecycle(request, lifecycle);
-						releaseDeliveryClaim(request.id);
-						continue;
-					}
-					let deliveryState = readRequestDeliveryState(request.requestFile, request.id);
-					if (
-						deliveryState &&
-						deliveryState.acceptedAt === undefined &&
-						now - deliveryState.lastAttemptAt < DELIVERY_RETRY_GRACE_MS
-					) {
-						continue;
-					}
-					if (deliveryState?.acceptedAt === undefined && persistedIndexGeneration !== pollGeneration) {
-						const restored = await persistedSupervisorRequestIds(ctx);
-						if (!isPollCurrent()) return;
-						persistedRequestIds.clear();
-						for (const requestId of restored) persistedRequestIds.add(requestId);
-						persistedIndexGeneration = pollGeneration;
-					}
-					if (persistedRequestIds.has(request.id) && deliveryState?.acceptedAt === undefined) {
-						deliveryState = {
-							version: 2,
-							requestId: request.id,
-							lastAttemptAt: deliveryState?.lastAttemptAt ?? now,
-							acceptedAt: now,
-						};
-						writeRequestDeliveryState(request.requestFile, deliveryState);
-					}
-					if (deliveryState?.acceptedAt !== undefined) {
-						if (request.expectsReply) {
-							// The delivery claim is also the durable reply-owner claim. Keep it
-							// until this host replies, disposes, or the request expires so a
-							// second Pi host cannot become a concurrent responder.
-							pending.set(request.id, request);
-							markForegroundSupervisorAttention(request, state);
-						} else {
-							removeRequestFile(request.requestFile, request.requestSnapshot);
-							releaseDeliveryClaim(request.id);
-						}
-						continue;
-					}
-					// Context preparation introduces an async gap, so hold one in-memory
-					// dispatch per durable request. The attempt is still not accepted until
-					// the request id appears in the canonical session file or active
-					// SessionManager; a Host crash before append therefore remains retryable.
-					writeRequestDeliveryState(request.requestFile, {
-						version: 2,
-						requestId: request.id,
-						lastAttemptAt: now,
-					});
-					const dispatchGeneration = lifecycleGeneration;
-					const deliveredRequest = request;
-					const dispatchToken = {};
-					deliveryDispatches.set(request.id, dispatchToken);
-					const dispatchIsCurrent = (): boolean =>
-						lifecycleGeneration === dispatchGeneration &&
-						state.lastUiContext === ctx &&
-						deliveryDispatches.get(deliveredRequest.id) === dispatchToken &&
-						deliveryClaims.has(deliveredRequest.id);
-					const acceptDelivery = (): void => {
-						if (!dispatchIsCurrent()) return;
-						persistedRequestIds.add(deliveredRequest.id);
-						writeRequestDeliveryState(deliveredRequest.requestFile, {
-							version: 2,
-							requestId: deliveredRequest.id,
-							lastAttemptAt: now,
-							acceptedAt: Date.now(),
-						});
-						if (!deliveredRequest.expectsReply) return;
-						pending.set(deliveredRequest.id, deliveredRequest);
-						markForegroundSupervisorAttention(deliveredRequest, state);
-						try {
-							// SAFETY: ExtensionAPI owns the optional typed event bus used by this Suite integration.
-							(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
-								requestId: deliveredRequest.id,
-								runId: deliveredRequest.runId,
-								agent: deliveredRequest.agent,
-								childIndex: deliveredRequest.childIndex,
-							});
-						} catch (error) {
-							reportAgentDiagnostic(
-								`Supervisor detach observer failed for request '${deliveredRequest.id}':`,
-								error,
-							);
-						}
-					};
-					void sendSuiteAgentMessage(
-						pi,
-						withAgentWorkOrigin(
-							{
-								customType: "subagent_supervisor_request",
-								content: requestVisibleText(request),
-								display: true,
-								details: {
-									id: request.id,
-									reason: request.reason,
-									expectsReply: request.expectsReply,
-									runId: request.runId,
-									agent: request.agent,
-									childIndex: request.childIndex,
-								},
-							},
-							"automatic",
-						),
-						{ triggerTurn: true },
-						dispatchIsCurrent,
-						acceptDelivery,
-					)
-						.catch((error) => {
-							reportAgentDiagnostic(
-								`Failed to deliver supervisor request '${file}'; retaining it for retry:`,
-								error,
-							);
-						})
-						.finally(() => {
-							if (deliveryDispatches.get(deliveredRequest.id) === dispatchToken) {
-								deliveryDispatches.delete(deliveredRequest.id);
-								if (lifecycleGeneration !== dispatchGeneration) releaseDeliveryClaim(deliveredRequest.id);
-							}
-						});
+					if (!(await this.processRequestFile(ctx, pollGeneration, now, channelDir, file))) return;
 				} catch (error) {
 					reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
 				}
@@ -1579,42 +683,50 @@ export function createNativeSupervisorChannel(
 		} catch (error) {
 			reportAgentDiagnostic("Native supervisor channel poll failed; the next interval will retry:", error);
 		} finally {
-			pollInFlight = false;
+			this.pollInFlight = false;
 		}
-	};
+	}
 
+	async start(): Promise<void> {
+		if (this.poller) return;
+		this.lifecycleGeneration += 1;
+		this.registerPrimaryParentTool();
+		this.poller = setInterval(() => void this.poll(), CHANNEL_POLL_MS);
+		this.poller.unref?.();
+		await this.poll();
+	}
+
+	private stop(): void {
+		this.lifecycleGeneration += 1;
+		this.persistedIndexGeneration = -1;
+		this.persistedRequestIds.clear();
+		if (this.poller) clearInterval(this.poller);
+		this.poller = undefined;
+		this.resetChannelScan();
+		this.pending.clear();
+		// In-flight dispatches retain their claims until their stale completion; idle claims are released now.
+		this.releaseIdleDeliveryClaims();
+	}
+
+	pause(): void {
+		this.stop();
+	}
+
+	dispose(): void {
+		this.stop();
+	}
+}
+
+export function createNativeSupervisorChannel(
+	pi: ExtensionAPI,
+	state: SubagentState,
+	options: NativeSupervisorChannelOptions = {},
+) {
+	const parent = new NativeSupervisorParent(pi, state, options);
 	return {
-		start: async () => {
-			if (poller) return;
-			lifecycleGeneration += 1;
-			registerPrimaryParentTool();
-			poller = setInterval(() => void poll(), CHANNEL_POLL_MS);
-			poller.unref?.();
-			await poll();
-		},
-		pause: () => {
-			lifecycleGeneration += 1;
-			persistedIndexGeneration = -1;
-			persistedRequestIds.clear();
-			if (poller) clearInterval(poller);
-			poller = undefined;
-			resetChannelScan();
-			pending.clear();
-			// A paused channel no longer represents the active physical session.
-			// Retaining reply-owner claims here would strand the child request until
-			// this Host exits, preventing another live Host from taking ownership.
-			releaseIdleDeliveryClaims();
-		},
-		dispose: () => {
-			lifecycleGeneration += 1;
-			persistedIndexGeneration = -1;
-			persistedRequestIds.clear();
-			if (poller) clearInterval(poller);
-			poller = undefined;
-			resetChannelScan();
-			pending.clear();
-			releaseIdleDeliveryClaims();
-		},
-		pending,
+		start: () => parent.start(),
+		pause: () => parent.pause(),
+		dispose: () => parent.dispose(),
+		pending: parent.pending,
 	};
 }
