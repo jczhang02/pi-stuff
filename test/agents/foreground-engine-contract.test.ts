@@ -46,9 +46,9 @@ import {
 	SUBAGENT_PARENT_SESSION_ENV,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import {
-	observeForegroundRuntimeRuns,
-	recoverForegroundRuntimeRuns,
-	refreshForegroundRuntimeRun,
+	observeForegroundRuntimeRunsAsync,
+	recoverForegroundRuntimeRunsAsync,
+	refreshForegroundRuntimeRunAsync,
 	replayForegroundRuns,
 } from "../../packages/pi-stuff/src/subagents/src/session/foreground-replay.js";
 import { resolveCurrentSessionId } from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.js";
@@ -2330,7 +2330,7 @@ describe("reduced foreground Agent engine", () => {
 		const sessionId = status.sessionId;
 		if (!sessionId) throw new Error("Expected persisted foreground session identity");
 		const runtimeRoot = path.dirname(config.asyncDir);
-		const recovered = recoverForegroundRuntimeRuns(runtimeRoot, {
+		const recovered = await recoverForegroundRuntimeRunsAsync(runtimeRoot, {
 			sessionId,
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
@@ -2420,7 +2420,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(replayForegroundRuns([entry({ ...base, sessionFile: "/tmp/bad\npath" })], "session").size).toBe(0);
 	});
 
-	test("cold runtime replay skips a malformed newest run and still restores a healthy sibling", () => {
+	test("cold runtime replay skips a malformed newest run and still restores a healthy sibling", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-runtime-replay-"));
 		temporaryDirectories.push(root);
 		const sessionId = "/sessions/current.jsonl";
@@ -2456,7 +2456,7 @@ describe("reduced foreground Agent engine", () => {
 		const now = new Date();
 		fs.utimesSync(path.join(root, corruptId), now, new Date(now.getTime() + 1_000));
 
-		const recovered = recoverForegroundRuntimeRuns(root, {
+		const recovered = await recoverForegroundRuntimeRunsAsync(root, {
 			sessionId,
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
@@ -2469,7 +2469,7 @@ describe("reduced foreground Agent engine", () => {
 		});
 	});
 
-	test("observation-only startup isolates disappearing and corrupt foreground siblings", () => {
+	test("observation-only startup isolates disappearing and corrupt foreground siblings", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-runtime-observe-"));
 		temporaryDirectories.push(root);
 		const sessionId = "/sessions/current.jsonl";
@@ -2492,25 +2492,19 @@ describe("reduced foreground Agent engine", () => {
 			}),
 		);
 		fs.writeFileSync(path.join(root, corruptId, "status.json"), "{not-json");
+		fs.rmSync(path.join(root, disappearingId), { recursive: true });
 
-		const observed = observeForegroundRuntimeRuns(
+		const observed = await observeForegroundRuntimeRunsAsync(
 			root,
 			{ sessionId, governorSessionId: sessionId, legacyRunIds: new Set() },
-			{
-				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-				lstat: ((target: fs.PathLike) => {
-					if (path.basename(String(target)) === disappearingId)
-						throw Object.assign(new Error("disappeared"), { code: "ENOENT" });
-					return fs.lstatSync(target);
-				}) as typeof fs.lstatSync,
-			},
+			[healthyId, disappearingId, corruptId].map((runId) => path.join(root, runId)),
 		);
 
 		expect([...observed.keys()]).toEqual([healthyId]);
 		expect(observed.get(healthyId)?.children[0]).toMatchObject({ status: "completed", task: "Inspect" });
 	});
 
-	test("cold runtime replay durably repairs a terminal completion left ahead of running status", () => {
+	test("cold runtime replay durably repairs a terminal completion left ahead of running status", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-completion-repair-"));
 		temporaryDirectories.push(root);
 		const runId = "cccccccccccc";
@@ -2541,7 +2535,7 @@ describe("reduced foreground Agent engine", () => {
 			}),
 		);
 
-		const recovered = recoverForegroundRuntimeRuns(root, {
+		const recovered = await recoverForegroundRuntimeRunsAsync(root, {
 			sessionId,
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
@@ -2557,7 +2551,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(persisted.steps?.[0]?.status).toBe("complete");
 	});
 
-	test("invalid completion cannot pin a foreground run whose owner is proven dead", () => {
+	test("invalid completion cannot pin a foreground run whose owner is proven dead", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-invalid-completion-"));
 		temporaryDirectories.push(root);
 		const runId = "dddddddddddd";
@@ -2582,7 +2576,7 @@ describe("reduced foreground Agent engine", () => {
 		initializeWriterProcessRegistry(asyncDir, runId, process.pid, 1);
 		fs.writeFileSync(path.join(asyncDir, "completion.json"), "{not-json", { mode: 0o600 });
 
-		const recovered = recoverForegroundRuntimeRuns(root, {
+		const recovered = await recoverForegroundRuntimeRunsAsync(root, {
 			sessionId,
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
@@ -2598,7 +2592,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(persisted.steps?.[0]).toMatchObject({ status: "failed", agentStatus: "crashed" });
 	});
 
-	test("advances cold foreground orphan reaping until TERM-resistant writers are absent", () => {
+	test("advances cold foreground orphan reaping until TERM-resistant writers are absent", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-reap-retry-"));
 		temporaryDirectories.push(root);
 		const runId = "abababababab";
@@ -2634,9 +2628,9 @@ describe("reduced foreground Agent engine", () => {
 			return passes === 1 ? { remaining: 1, terminated: 1 } : { remaining: 0, terminated: 1 };
 		};
 
-		refreshForegroundRuntimeRun(run, { terminateWriters });
+		await refreshForegroundRuntimeRunAsync(run, { terminateWriters });
 		expect(run.children[0]?.status).toBe("detached");
-		refreshForegroundRuntimeRun(run, { terminateWriters });
+		await refreshForegroundRuntimeRunAsync(run, { terminateWriters });
 
 		expect(passes).toBe(2);
 		expect(run.children[0]).toMatchObject({ status: "failed", crashed: true });
@@ -2646,7 +2640,7 @@ describe("reduced foreground Agent engine", () => {
 		});
 	});
 
-	test("invalid completion does not fail a foreground run without dead-owner proof", () => {
+	test("invalid completion does not fail a foreground run without dead-owner proof", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-unknown-owner-"));
 		temporaryDirectories.push(root);
 		const runId = "eeeeeeeeeeee";
@@ -2672,7 +2666,7 @@ describe("reduced foreground Agent engine", () => {
 			{ mode: 0o600 },
 		);
 
-		const recovered = recoverForegroundRuntimeRuns(root, {
+		const recovered = await recoverForegroundRuntimeRunsAsync(root, {
 			sessionId,
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),

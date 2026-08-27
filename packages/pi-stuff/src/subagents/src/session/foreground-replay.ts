@@ -3,18 +3,17 @@ import * as path from "node:path";
 import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
-import { readForegroundOwnerExit, readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
+import { readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
 import { parseSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
 import { resolvePersistedNestedRoute, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { mapConcurrent } from "../runs/shared/parallel-utils.ts";
-import { writePrivateAtomicJson, writePrivateAtomicJsonAsync } from "../shared/atomic-json.ts";
-import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
-import { readProcessStartIdentity, readProcessStartIdentityAsync } from "../shared/process-identity.ts";
+import { writePrivateAtomicJsonAsync } from "../shared/atomic-json.ts";
+import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
+import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../shared/session-identity.ts";
-import { tryAcquireStatusMutationClaim, tryAcquireStatusMutationClaimAsync } from "../shared/status-mutation.ts";
+import { tryAcquireStatusMutationClaimAsync } from "../shared/status-mutation.ts";
 import type { AgentContextUsage, AsyncStatus, ForegroundResumeChild, ForegroundResumeRun } from "../shared/types.ts";
-import { readStatus, readStatusAsync } from "../shared/utils.ts";
+import { readStatusAsync } from "../shared/utils.ts";
 
 const MAX_REPLAYED_FOREGROUND_RUNS = 200;
 const MAX_REPLAYED_CHILDREN = 20;
@@ -230,20 +229,6 @@ function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
 	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
 }
 
-function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
-	const pid = status.pid;
-	if (!isRuntimeNumber(pid) || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
-		return "unknown";
-	const current = readProcessStartIdentity(pid);
-	if (current) return current === status.processStartIdentity ? "alive" : "dead";
-	try {
-		process.kill(pid, 0);
-		return "unknown";
-	} catch (error) {
-		return hasErrorCode(error, "ESRCH") ? "dead" : "unknown";
-	}
-}
-
 async function ownerLivenessAsync(status: AsyncStatus): Promise<"alive" | "dead" | "unknown"> {
 	const pid = status.pid;
 	if (!isRuntimeNumber(pid) || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
@@ -401,15 +386,6 @@ function runFromStatus(status: AsyncStatus, asyncDir: string): ForegroundResumeR
 	return run;
 }
 
-function applyCompletionToStatus(status: AsyncStatus, completionPath: string): AsyncStatus | undefined {
-	try {
-		const completion = record(parseJsonValue(readBoundedOwnedFile(completionPath, MAX_FOREGROUND_COMPLETION_BYTES)));
-		return applyCompletionValue(status, completion, completionPath);
-	} catch {
-		return undefined;
-	}
-}
-
 async function applyCompletionToStatusAsync(
 	status: AsyncStatus,
 	completionPath: string,
@@ -499,49 +475,6 @@ function applyCompletionValue(
 	return runFromStatus(merged, path.dirname(completionPath)) ? merged : undefined;
 }
 
-function recoverCrashedForegroundStatus(
-	asyncDir: string,
-	status: AsyncStatus,
-	terminateWriters: typeof terminateOrphanWriterProcesses = terminateOrphanWriterProcesses,
-): AsyncStatus {
-	if (status.state !== "running" && status.state !== "queued") return status;
-	const semanticOwnerExit = readForegroundOwnerExit(asyncDir, status.runId);
-	if (!semanticOwnerExit && ownerLiveness(status) !== "dead") return status;
-	const writers = terminateWriters(asyncDir);
-	if (writers.remaining !== 0) return status;
-	const endedAt = Date.now();
-	const failure = semanticOwnerExit?.error ?? FOREGROUND_OWNER_CRASH;
-	const recovered: AsyncStatus = {
-		...status,
-		state: "failed",
-		error: failure,
-		endedAt,
-		lastUpdate: endedAt,
-		activityState: undefined,
-		currentTool: undefined,
-		currentToolStartedAt: undefined,
-		currentPath: undefined,
-		steps: status.steps?.map((step) =>
-			step.status === "running" || step.status === "pending"
-				? {
-						...step,
-						status: "failed" as const,
-						agentStatus: "crashed" as const,
-						exitCode: 1,
-						error: failure,
-						endedAt,
-						activityState: undefined,
-						currentTool: undefined,
-						currentToolStartedAt: undefined,
-						currentPath: undefined,
-					}
-				: step,
-		),
-	};
-	writePrivateAtomicJson(path.join(asyncDir, "status.json"), recovered);
-	return recovered;
-}
-
 async function recoverCrashedForegroundStatusAsync(
 	asyncDir: string,
 	status: AsyncStatus,
@@ -590,41 +523,10 @@ async function recoverCrashedForegroundStatusAsync(
  * step. The tracker calls this repeatedly so an orphan that ignores TERM does
  * not remain detached forever after the one session-start scan.
  */
-export function refreshForegroundRuntimeRun(
+export async function refreshForegroundRuntimeRunAsync(
 	run: ForegroundResumeRun,
 	options: { readonly terminateWriters?: typeof terminateOrphanWriterProcesses } = {},
-): boolean {
-	if (!run.asyncDir || path.basename(run.asyncDir) !== run.runId) return false;
-	const claim = tryAcquireStatusMutationClaim(run.asyncDir);
-	if (!claim) return false;
-	try {
-		let status = readStatus(run.asyncDir);
-		if (!status || status.runId !== run.runId || !runFromStatus(status, run.asyncDir)) return false;
-		const previousState = status.state;
-		const completed = applyCompletionToStatus(status, path.join(run.asyncDir, "completion.json"));
-		if (completed) {
-			status = completed;
-			if (
-				(previousState === "running" || previousState === "queued") &&
-				status.state !== "running" &&
-				status.state !== "queued"
-			) {
-				writePrivateAtomicJson(path.join(run.asyncDir, "status.json"), status);
-			}
-		} else {
-			status = recoverCrashedForegroundStatus(run.asyncDir, status, options.terminateWriters);
-		}
-		const refreshed = runFromStatus(status, run.asyncDir);
-		if (!refreshed) return false;
-		const normalizedSessionId = run.sessionId;
-		Object.assign(run, refreshed, normalizedSessionId ? { sessionId: normalizedSessionId } : {});
-		return previousState !== status.state;
-	} finally {
-		claim.release();
-	}
-}
-
-async function refreshForegroundRuntimeRunAsync(run: ForegroundResumeRun): Promise<boolean> {
+): Promise<boolean> {
 	if (!run.asyncDir || path.basename(run.asyncDir) !== run.runId) return false;
 	const claim = await tryAcquireStatusMutationClaimAsync(run.asyncDir);
 	if (!claim) return false;
@@ -642,7 +544,7 @@ async function refreshForegroundRuntimeRunAsync(run: ForegroundResumeRun): Promi
 			)
 				await writePrivateAtomicJsonAsync(path.join(run.asyncDir, "status.json"), status);
 		} else {
-			status = await recoverCrashedForegroundStatusAsync(run.asyncDir, status);
+			status = await recoverCrashedForegroundStatusAsync(run.asyncDir, status, options.terminateWriters);
 		}
 		const refreshed = runFromStatus(status, run.asyncDir);
 		if (!refreshed) return false;
@@ -652,150 +554,6 @@ async function refreshForegroundRuntimeRunAsync(run: ForegroundResumeRun): Promi
 	} finally {
 		await claim.release();
 	}
-}
-
-/** Recover current-session foreground lifecycle left outside the session log by a Host crash. */
-export function recoverForegroundRuntimeRuns(
-	rootDirectory: string,
-	sessionScope: SessionCompatibilityScope,
-): Map<string, ForegroundResumeRun> {
-	let entries: fs.Dirent[];
-	try {
-		entries = fs.readdirSync(rootDirectory, { withFileTypes: true });
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return new Map();
-		throw error;
-	}
-	const candidates = entries
-		.filter((entry) => entry.isDirectory() && /^[a-f0-9]{12}$/u.test(entry.name))
-		.map((entry) => {
-			const asyncDir = path.join(rootDirectory, entry.name);
-			try {
-				const stat = fs.lstatSync(asyncDir);
-				return stat.isDirectory() && !stat.isSymbolicLink() ? { asyncDir, mtimeMs: stat.mtimeMs } : undefined;
-			} catch {
-				return undefined;
-			}
-		})
-		.filter((entry): entry is { asyncDir: string; mtimeMs: number } => Boolean(entry))
-		.sort((left, right) => right.mtimeMs - left.mtimeMs);
-	const runs = new Map<string, ForegroundResumeRun>();
-	for (const { asyncDir } of candidates) {
-		try {
-			let status = readStatus(asyncDir);
-			if (
-				!status ||
-				!sessionArtifactMatches(sessionScope, status.sessionId, status.runId) ||
-				status.runId !== path.basename(asyncDir)
-			)
-				continue;
-			// Validate and sanitize before any completion merge, liveness inspection,
-			// process mutation, or projection can consume repository-controlled bytes.
-			if (!runFromStatus(status, asyncDir)) continue;
-			const statusClaim = tryAcquireStatusMutationClaim(asyncDir);
-			if (!statusClaim) continue;
-			try {
-				// Re-read only after acquiring the shared terminal mutation claim. A
-				// nested projector may have attached children and retired its route
-				// since the directory candidate was first inspected.
-				status = readStatus(asyncDir);
-				if (!status || !runFromStatus(status, asyncDir)) continue;
-				const previousState = status.state;
-				const completed = applyCompletionToStatus(status, path.join(asyncDir, "completion.json"));
-				if (completed) {
-					status = completed;
-					if (
-						(previousState === "running" || previousState === "queued") &&
-						status.state !== "running" &&
-						status.state !== "queued"
-					) {
-						try {
-							writePrivateAtomicJson(path.join(asyncDir, "status.json"), status);
-						} catch (error) {
-							reportAgentDiagnostic(
-								`Failed to persist recovered foreground terminal status for '${status.runId}':`,
-								error,
-							);
-						}
-					}
-				} else {
-					// A corrupt, oversized, foreign, or concurrently replaced completion
-					// is not terminal evidence. Continue through the same owner/writer
-					// recovery path as a missing completion instead of pinning the run.
-					status = recoverCrashedForegroundStatus(asyncDir, status);
-				}
-			} finally {
-				statusClaim.release();
-			}
-			const run = runFromStatus(status, asyncDir);
-			if (run) runs.set(run.runId, { ...run, sessionId: sessionScope.sessionId });
-		} catch {
-			// One corrupt runtime directory cannot prevent healthy sibling recovery.
-			continue;
-		}
-		if (runs.size >= MAX_REPLAYED_FOREGROUND_RUNS) break;
-	}
-	return runs;
-}
-
-/**
- * Project retained foreground runtime state without locks, writes, or process
- * signals. Session startup uses this observation-only lane; explicit Agent
- * interaction may later call the recovering variant above.
- */
-export function observeForegroundRuntimeRuns(
-	rootDirectory: string,
-	sessionScope: SessionCompatibilityScope,
-	deps: {
-		readonly lstat?: typeof fs.lstatSync;
-		readonly readRunStatus?: typeof readStatus;
-	} = {},
-): Map<string, ForegroundResumeRun> {
-	const lstat = deps.lstat ?? fs.lstatSync;
-	const readRunStatus = deps.readRunStatus ?? readStatus;
-	let entries: fs.Dirent[];
-	try {
-		entries = fs.readdirSync(rootDirectory, { withFileTypes: true });
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return new Map();
-		throw error;
-	}
-	const candidates = entries
-		.filter((entry) => entry.isDirectory() && /^[a-f0-9]{12}$/u.test(entry.name))
-		.map((entry) => {
-			const asyncDir = path.join(rootDirectory, entry.name);
-			try {
-				const stat = lstat(asyncDir);
-				return stat.isDirectory() && !stat.isSymbolicLink() ? { asyncDir, mtimeMs: stat.mtimeMs } : undefined;
-			} catch {
-				// A candidate can disappear between readdir and lstat. Healthy siblings
-				// remain observable and a later activation can retry the missing run.
-				return undefined;
-			}
-		})
-		.filter((entry): entry is { asyncDir: string; mtimeMs: number } => Boolean(entry))
-		.sort((left, right) => right.mtimeMs - left.mtimeMs);
-	const runs = new Map<string, ForegroundResumeRun>();
-	for (const { asyncDir } of candidates) {
-		try {
-			const status = readRunStatus(asyncDir);
-			if (
-				!status ||
-				!sessionArtifactMatches(sessionScope, status.sessionId, status.runId) ||
-				status.runId !== path.basename(asyncDir)
-			) {
-				continue;
-			}
-			const run = runFromStatus(status, asyncDir);
-			if (run) runs.set(run.runId, { ...run, sessionId: sessionScope.sessionId });
-		} catch {
-			// Observation-only startup is best effort per candidate. A corrupt,
-			// oversized, or concurrently removed status cannot hide healthy siblings.
-			continue;
-		}
-		if (runs.size >= MAX_REPLAYED_FOREGROUND_RUNS) break;
-	}
-	return runs;
 }
 
 /** Async startup projection; disk remains recovery state and never blocks the Host event loop. */
