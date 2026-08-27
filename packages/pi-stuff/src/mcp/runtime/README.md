@@ -9,3 +9,6 @@ configuration, transports, discovery, OAuth, lifecycle, output guarding, and pro
 [`UPSTREAM_README.md`](./UPSTREAM_README.md) preserves the source project's documentation for maintenance reference;
 its installation instructions do not apply to Pi Stuff. Direct Tools, JavaScript batching, prompts, Apps, sampling,
 and elicitation are intentionally absent rather than retained behind flags.
+
+`mcp-setup-panel.ts` owns setup interaction, writes, and lifecycle state. `mcp-setup-panel-view.ts` renders immutable
+snapshots and exact write previews without mutating that state.
