@@ -175,10 +175,6 @@ describe("background result watcher", () => {
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			fs: {
 				existsSync: fs.existsSync,
-				lstatSync: fs.lstatSync,
-				readFileSync: fs.readFileSync,
-				unlinkSync: fs.unlinkSync,
-				readdirSync: fs.readdirSync,
 				realpathSync: fs.realpathSync,
 				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				watch: (() => inertWatcher) as never,
@@ -193,7 +189,6 @@ describe("background result watcher", () => {
 					return true;
 				},
 			},
-			safetyScanIntervalMs: 60_000,
 		});
 
 		watcher.startResultWatcher();
@@ -261,10 +256,6 @@ describe("background result watcher", () => {
 			asyncDirRoot,
 			fs: {
 				existsSync: fs.existsSync,
-				lstatSync: fs.lstatSync,
-				readFileSync: fs.readFileSync,
-				unlinkSync: fs.unlinkSync,
-				readdirSync: fs.readdirSync,
 				realpathSync: fs.realpathSync,
 				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				watch: (() => inertWatcher) as never,
@@ -279,7 +270,6 @@ describe("background result watcher", () => {
 					return true;
 				},
 			},
-			safetyScanIntervalMs: 60_000,
 		});
 
 		watcher.startResultWatcher();

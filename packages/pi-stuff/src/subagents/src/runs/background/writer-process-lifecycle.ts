@@ -12,7 +12,14 @@ import {
 	runtimeErrorCode,
 } from "../../../../shared/runtime-type.js";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import {
+	identityBoundProcessLiveness,
+	type ProcessStartIdentityPollOptions,
+	pollProcessStartIdentity,
+	probeProcessLiveness,
+	processExists,
+	readProcessStartIdentity,
+} from "../../shared/process-identity.ts";
 import { getSubagentDepthEnv } from "../../shared/types.ts";
 import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
@@ -154,47 +161,18 @@ export function readWriterSupervisorDisposition(
 
 function writerProcessGroupAlive(pid: number): boolean | undefined {
 	if (process.platform === "win32") return false;
-	try {
-		process.kill(-pid, 0);
-		return true;
-	} catch (error) {
-		const code = runtimeErrorCode(error);
-		if (code === "ESRCH") return false;
-		return undefined;
-	}
+	return probeProcessLiveness(-pid);
 }
 
 function ownedWriterProcessGroupAlive(pid: number, expectedProcessStartIdentity?: string): boolean | undefined {
-	const groupState = writerProcessGroupAlive(pid);
-	if (groupState !== true) return groupState;
-	if (!expectedProcessStartIdentity) return undefined;
-	const currentIdentity = readProcessStartIdentity(pid);
-	if (currentIdentity) return currentIdentity === expectedProcessStartIdentity;
-	return undefined;
+	return identityBoundProcessLiveness(pid, expectedProcessStartIdentity, writerProcessGroupAlive(pid));
 }
 
 export async function captureWriterProcessStartIdentity(
 	pid: number,
-	options: {
-		readonly read?: (pid: number) => string | undefined;
-		readonly timeoutMs?: number;
-		readonly intervalMs?: number;
-	} = {},
+	options: ProcessStartIdentityPollOptions = {},
 ): Promise<string | undefined> {
-	const read = options.read ?? readProcessStartIdentity;
-	const deadline = Date.now() + (options.timeoutMs ?? 250);
-	do {
-		const identity = read(pid);
-		if (identity) return identity;
-		try {
-			process.kill(pid, 0);
-		} catch (error) {
-			if (runtimeErrorCode(error) !== "EPERM") return undefined;
-		}
-		if (Date.now() >= deadline) return undefined;
-		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
-	} while (Date.now() <= deadline);
-	return undefined;
+	return pollProcessStartIdentity(pid, processExists, options);
 }
 
 export async function closeWriterProcessGroup(pid: number, expectedProcessStartIdentity?: string): Promise<boolean> {

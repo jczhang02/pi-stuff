@@ -151,10 +151,6 @@ interface AsyncRunListOptions {
 	preselectRecent?: boolean;
 }
 
-function isAsyncRunDir(root: string, entry: string): boolean {
-	return resolveTargetedAsyncRun(root, entry).kind === "exact";
-}
-
 type TargetedAsyncRunResolution = { kind: "exact"; id: string } | { kind: "scan" } | { kind: "reject" };
 
 /**
@@ -405,7 +401,9 @@ function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
 function listAsyncRunEntries(asyncDirRoot: string, options: AsyncRunListOptions): string[] {
 	try {
 		if (options.runId === undefined)
-			return fs.readdirSync(asyncDirRoot).filter((entry) => isAsyncRunDir(asyncDirRoot, entry));
+			return fs
+				.readdirSync(asyncDirRoot)
+				.filter((entry) => resolveTargetedAsyncRun(asyncDirRoot, entry).kind === "exact");
 		const { runId } = options;
 		const resolution = resolveTargetedAsyncRun(
 			asyncDirRoot,

@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { assertPrivateDirectory, errnoCode, validateOwnedRegularFile } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import { type ProcessKillFn, probeProcessLiveness, readProcessStartIdentity } from "../../shared/process-identity.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
 import {
 	type AsyncParallelGroupStatus,
@@ -32,8 +32,6 @@ import { terminateOrphanWriterProcesses } from "./writer-process-registry.ts";
 
 export type PidLiveness = "alive" | "dead" | "unknown";
 
-type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
-
 interface StartedRunMetadata {
 	runId: string;
 	pid?: number;
@@ -48,7 +46,7 @@ interface StartedRunMetadata {
 
 interface ReconcileAsyncRunOptions {
 	resultsDir?: string | undefined;
-	kill?: KillFn | undefined;
+	kill?: ProcessKillFn | undefined;
 	now?: (() => number) | undefined;
 	startedRun?: StartedRunMetadata;
 	missingStatusGraceMs?: number;
@@ -176,29 +174,25 @@ export function repairTerminalStatusFromResult(
 		) {
 			return undefined;
 		}
+		let proof: ReturnType<typeof readProcessTerminal>;
 		if (status.lifecycleArtifactVersion === 3) {
-			const proof = readProcessTerminal(asyncDir, {
+			proof = readProcessTerminal(asyncDir, {
 				runId,
 				runnerProcessInstanceId: status.processTerminal?.runnerProcessInstanceId,
 			});
 			if (proof?.state !== "observed") return status;
-			if (status.state !== "running" && status.state !== "queued") {
-				if (status.processTerminal?.state === "observed") return status;
-				const finalized = { ...status, processTerminal: proof };
-				writeAtomicJson(path.join(asyncDir, "status.json"), finalized);
-				return finalized;
-			}
-			const terminalStatus = terminalStatusFromResult(status, resultPath, runId, now, resultContent);
-			if (!terminalStatus) return undefined;
-			const finalized = { ...terminalStatus, processTerminal: proof };
+		}
+		if (status.state !== "running" && status.state !== "queued") {
+			if (!proof || status.processTerminal?.state === "observed") return status;
+			const finalized = { ...status, processTerminal: proof };
 			writeAtomicJson(path.join(asyncDir, "status.json"), finalized);
 			return finalized;
 		}
-		if (status.state !== "running" && status.state !== "queued") return status;
 		const terminalStatus = terminalStatusFromResult(status, resultPath, runId, now, resultContent);
 		if (!terminalStatus) return undefined;
-		writeAtomicJson(path.join(asyncDir, "status.json"), terminalStatus);
-		return terminalStatus;
+		const finalized = proof ? { ...terminalStatus, processTerminal: proof } : terminalStatus;
+		writeAtomicJson(path.join(asyncDir, "status.json"), finalized);
+		return finalized;
 	} finally {
 		claim.release();
 	}
@@ -397,16 +391,9 @@ export function reconcileNestedAsyncDescendants(route: NestedRoute, options: Rec
 	}
 }
 
-export function checkPidLiveness(pid: number, kill: KillFn = process.kill): PidLiveness {
-	try {
-		kill(pid, 0);
-		return "alive";
-	} catch (error) {
-		const code = errnoCode(error);
-		if (code === "ESRCH") return "dead";
-		if (code === "EPERM") return "unknown";
-		return "unknown";
-	}
+export function checkPidLiveness(pid: number, kill: ProcessKillFn = process.kill): PidLiveness {
+	const state = probeProcessLiveness(pid, kill);
+	return state === true ? "alive" : state === false ? "dead" : "unknown";
 }
 
 export function reconcileAsyncRun(asyncDir: string, options: ReconcileAsyncRunOptions = {}): ReconcileAsyncRunResult {

@@ -287,7 +287,6 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createWatcher: ({ notifier, pi, state }) =>
 		createResultWatcher(pi, state, RESULTS_DIR, 10 * 60 * 1_000, {
 			notifier,
-			deliverIntercomResults: true,
 		}),
 	discoverAgents,
 	ensureDirectory: ensureAccessibleDir,

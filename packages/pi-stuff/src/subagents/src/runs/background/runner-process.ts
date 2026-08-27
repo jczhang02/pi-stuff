@@ -10,7 +10,12 @@ import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../s
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { ensurePrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import {
+	type ProcessStartIdentityPollOptions,
+	pollProcessStartIdentity,
+	processExists,
+	readProcessStartIdentity,
+} from "../../shared/process-identity.ts";
 import {
 	getAsyncConfigPath,
 	type ProcessTerminalV1,
@@ -173,12 +178,7 @@ function runnerIsAlive(pid: number): boolean {
 			// Fall through to kill(0), which also handles non-/proc environments.
 		}
 	}
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return errnoCode(error) === "EPERM";
-	}
+	return processExists(pid);
 }
 
 function runnerIdentityState(pid: number, expectedProcessStartIdentity: string): boolean | undefined {
@@ -189,21 +189,9 @@ function runnerIdentityState(pid: number, expectedProcessStartIdentity: string):
 
 export async function acquireRunnerProcessStartIdentity(
 	pid: number,
-	options: {
-		readonly read?: (pid: number) => string | undefined;
-		readonly timeoutMs?: number;
-		readonly intervalMs?: number;
-	} = {},
+	options: ProcessStartIdentityPollOptions = {},
 ): Promise<string | undefined> {
-	const read = options.read ?? readProcessStartIdentity;
-	const deadline = Date.now() + (options.timeoutMs ?? 250);
-	do {
-		const identity = read(pid);
-		if (identity) return identity;
-		if (!runnerIsAlive(pid) || Date.now() >= deadline) return undefined;
-		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
-	} while (Date.now() <= deadline);
-	return undefined;
+	return pollProcessStartIdentity(pid, runnerIsAlive, options);
 }
 
 async function terminateExactSpawnedRunner(proc: ReturnType<typeof spawn>): Promise<boolean> {

@@ -143,7 +143,9 @@ export function isOwnedFileChangedDuringReadError(cause: unknown): boolean {
 	return false;
 }
 
-function sameFileVersion(before: fs.Stats, after: fs.Stats): boolean {
+export type FileVersion = Pick<fs.Stats, "ctimeMs" | "dev" | "ino" | "mtimeMs" | "size">;
+
+export function sameFileVersion(before: FileVersion, after: FileVersion): boolean {
 	return (
 		before.dev === after.dev &&
 		before.ino === after.ino &&

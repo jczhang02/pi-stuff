@@ -1,7 +1,6 @@
 /** Project one Agent writer's bounded protocol streams into background-run state. */
 
-import type { JsonValue } from "../../../../shared/json-value.js";
-import { parseJsonValue } from "../../../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { appendArtifactJsonl } from "../../shared/artifacts.ts";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";

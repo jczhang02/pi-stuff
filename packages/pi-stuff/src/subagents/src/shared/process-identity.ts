@@ -1,5 +1,14 @@
 import { execFile, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import { runtimeErrorCode } from "../../../shared/runtime-type.js";
+
+export type ProcessKillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
+
+export interface ProcessStartIdentityPollOptions {
+	readonly read?: (pid: number) => string | undefined;
+	readonly timeoutMs?: number;
+	readonly intervalMs?: number;
+}
 
 export interface ProcessIdentityGroupSnapshot {
 	readonly processStartIdentity: string;
@@ -75,6 +84,52 @@ export async function readProcessStartIdentityAsync(pid: number): Promise<string
 			},
 		);
 	});
+}
+
+export function probeProcessLiveness(pid: number, kill: ProcessKillFn = process.kill): boolean | undefined {
+	try {
+		kill(pid, 0);
+		return true;
+	} catch (error) {
+		return runtimeErrorCode(error) === "ESRCH" ? false : undefined;
+	}
+}
+
+/** Treat permission denial as evidence that the process exists. */
+export function processExists(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return runtimeErrorCode(error) === "EPERM";
+	}
+}
+
+export function identityBoundProcessLiveness(
+	pid: number,
+	expectedIdentity: string | undefined,
+	liveness: boolean | undefined,
+): boolean | undefined {
+	if (liveness !== true) return liveness;
+	if (!expectedIdentity) return undefined;
+	const currentIdentity = readProcessStartIdentity(pid);
+	return currentIdentity ? currentIdentity === expectedIdentity : undefined;
+}
+
+export async function pollProcessStartIdentity(
+	pid: number,
+	isAlive: (pid: number) => boolean,
+	options: ProcessStartIdentityPollOptions = {},
+): Promise<string | undefined> {
+	const read = options.read ?? readProcessStartIdentity;
+	const deadline = Date.now() + (options.timeoutMs ?? 250);
+	do {
+		const identity = read(pid);
+		if (identity) return identity;
+		if (!isAlive(pid) || Date.now() >= deadline) return undefined;
+		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
+	} while (Date.now() <= deadline);
+	return undefined;
 }
 
 function parseLinuxProcessIdentity(stat: string): ProcessIdentityGroupSnapshot | undefined {

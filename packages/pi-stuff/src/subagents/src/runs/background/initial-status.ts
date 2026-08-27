@@ -1,7 +1,6 @@
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
-import type { AsyncStatus } from "../../shared/types.ts";
-import { SUBAGENT_LIFECYCLE_ARTIFACT_VERSION } from "../../shared/types.ts";
-import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import { type AsyncStatus, SUBAGENT_LIFECYCLE_ARTIFACT_VERSION } from "../../shared/types.ts";
+import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 import { initialToolBudgetState } from "../shared/tool-budget.ts";
 import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import { createSteeringStatus } from "./steering.ts";
@@ -18,10 +17,6 @@ export type BackgroundRunnerStatus = AsyncStatus & {
 	lastUpdate: number;
 	artifactsDir?: string;
 };
-
-function tasks(work: BackgroundRunnerConfig["work"]): RunnerAgentTask[] {
-	return work.mode === "single" ? [work.task] : work.group.tasks;
-}
 
 /**
  * Build the first durable status for a detached runner. The launcher can call
@@ -44,7 +39,7 @@ export function createInitialStatus(
 		pid: runnerPid,
 		cwd: config.cwd,
 		steering: createSteeringStatus(),
-		steps: tasks(config.work).map((task) => {
+		steps: (config.work.mode === "single" ? [config.work.task] : config.work.group.tasks).map((task) => {
 			const step: BackgroundRunnerStatusStep = {
 				agent: task.agent,
 				cwd: task.cwd,

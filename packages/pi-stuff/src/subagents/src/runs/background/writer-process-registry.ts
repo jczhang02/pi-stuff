@@ -14,7 +14,10 @@ import {
 	readBoundedOwnedFileSnapshotAsync,
 } from "../../shared/private-directory.ts";
 import {
+	identityBoundProcessLiveness,
 	type ProcessIdentityGroupSnapshot,
+	type ProcessKillFn,
+	probeProcessLiveness,
 	readProcessIdentityGroupSnapshot,
 	readProcessStartIdentity,
 	readProcessStartIdentityAsync,
@@ -53,8 +56,6 @@ interface WriterProcessRegistry {
 	updatedAt: number;
 	writers: Record<string, PersistedWriterState>;
 }
-
-type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
 export function writerProcessRegistryPath(asyncDir: string): string {
 	return path.join(asyncDir, WRITER_PROCESS_REGISTRY_FILE);
@@ -108,7 +109,10 @@ export function updateWriterProcessRegistry(asyncDir: string, index: number, sta
 }
 
 /** `true`/`undefined` retain the governor lease; only explicit `false` permits reclamation. */
-export function inspectWriterProcessLiveness(asyncDir: string, kill: KillFn = process.kill): boolean | undefined {
+export function inspectWriterProcessLiveness(
+	asyncDir: string,
+	kill: ProcessKillFn = process.kill,
+): boolean | undefined {
 	const registryPath = writerProcessRegistryPath(asyncDir);
 	if (!fs.existsSync(registryPath)) return undefined;
 	const registry = readWriterProcessRegistry(asyncDir);
@@ -129,7 +133,7 @@ export function inspectWriterProcessLiveness(asyncDir: string, kill: KillFn = pr
 			if (groupState === undefined) unknown = true;
 			continue;
 		}
-		const state = processLiveness(writer.pid, kill);
+		const state = probeProcessLiveness(writer.pid, kill);
 		if (state === false) continue;
 		if (state === undefined) unknown = true;
 		else {
@@ -145,7 +149,7 @@ export function inspectWriterProcessLiveness(asyncDir: string, kill: KillFn = pr
 /** Host-side liveness inspection without synchronous runtime-file or process-identity reads. */
 export async function inspectWriterProcessLivenessAsync(
 	asyncDir: string,
-	kill: KillFn = process.kill,
+	kill: ProcessKillFn = process.kill,
 ): Promise<boolean | undefined> {
 	const registry = await readWriterProcessRegistryAsync(asyncDir);
 	if (!registry) return undefined;
@@ -158,8 +162,8 @@ export async function inspectWriterProcessLivenessAsync(
 		if (writer.state !== "running" || writer.pid === undefined) continue;
 		const alive =
 			registry.writerProcessGroup === "writer-pid-v1"
-				? processGroupLiveness(writer.pid, kill)
-				: processLiveness(writer.pid, kill);
+				? probeProcessLiveness(-writer.pid, kill)
+				: probeProcessLiveness(writer.pid, kill);
 		if (alive === false) continue;
 		if (alive === undefined || !writer.processStartIdentity) {
 			unknown = true;
@@ -177,7 +181,7 @@ export async function inspectWriterProcessLivenessAsync(
 export function inspectWriterChildProcessLiveness(
 	asyncDir: string,
 	index: number,
-	kill: KillFn = process.kill,
+	kill: ProcessKillFn = process.kill,
 ): boolean | undefined {
 	const registry = readWriterProcessRegistry(asyncDir);
 	if (!registry) return undefined;
@@ -186,7 +190,7 @@ export function inspectWriterChildProcessLiveness(
 	if (writer.state === "spawning") return registry.writerStartupGate !== "parent-pipe-v1";
 	if (writer.pid === undefined) return undefined;
 	if (registry.writerProcessGroup === "writer-pid-v1") return ownedWriterGroupLiveness(asyncDir, writer, kill);
-	const alive = processLiveness(writer.pid, kill);
+	const alive = probeProcessLiveness(writer.pid, kill);
 	if (alive !== true) return alive;
 	const identity = readProcessStartIdentity(writer.pid);
 	if (writer.processStartIdentity && identity) return writer.processStartIdentity === identity;
@@ -194,7 +198,7 @@ export function inspectWriterChildProcessLiveness(
 }
 
 /** Kill writers orphaned by a dead runner. Unknown/unconfirmable writers remain recorded and counted. */
-export function terminateOrphanWriterProcesses(asyncDir: string, kill: KillFn = process.kill, now = Date.now()) {
+export function terminateOrphanWriterProcesses(asyncDir: string, kill: ProcessKillFn = process.kill, now = Date.now()) {
 	const registryPath = writerProcessRegistryPath(asyncDir);
 	if (!fs.existsSync(registryPath)) return { remaining: 1, terminated: 0 };
 	const registry = readWriterProcessRegistry(asyncDir);
@@ -236,7 +240,7 @@ export function terminateOrphanWriterProcesses(asyncDir: string, kill: KillFn = 
 		}
 		try {
 			if (groupOwned) {
-				const leaderLiveness = processLiveness(writer.pid, kill);
+				const leaderLiveness = probeProcessLiveness(writer.pid, kill);
 				const leaderIdentity = readProcessStartIdentity(writer.pid);
 				if (leaderLiveness === true) {
 					if (!writer.processStartIdentity || leaderIdentity !== writer.processStartIdentity) {
@@ -315,7 +319,7 @@ export function terminateOrphanWriterProcesses(asyncDir: string, kill: KillFn = 
 export async function reapOrphanWriterProcesses(
 	asyncDir: string,
 	options: {
-		readonly kill?: KillFn;
+		readonly kill?: ProcessKillFn;
 		readonly timeoutMs?: number;
 		readonly pollIntervalMs?: number;
 	} = {},
@@ -448,27 +452,17 @@ function positiveInteger(value: JsonValue | undefined): value is number {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
-function processLiveness(pid: number, kill: KillFn): boolean | undefined {
-	try {
-		kill(pid, 0);
-		return true;
-	} catch (error) {
-		if (errorCode(error) === "ESRCH") return false;
-		return undefined;
-	}
-}
-
-function processGroupLiveness(leaderPid: number, kill: KillFn): boolean | undefined {
-	return processLiveness(-leaderPid, kill);
-}
-
 /**
  * Prove that a live process group still belongs to the recorded writer before
  * it can influence lease retention or receive a signal.
  */
-function ownedWriterGroupLiveness(asyncDir: string, writer: PersistedWriterState, kill: KillFn): boolean | undefined {
+function ownedWriterGroupLiveness(
+	asyncDir: string,
+	writer: PersistedWriterState,
+	kill: ProcessKillFn,
+): boolean | undefined {
 	if (writer.state !== "running" || !writer.pid) return false;
-	const groupState = processGroupLiveness(writer.pid, kill);
+	const groupState = probeProcessLiveness(-writer.pid, kill);
 	if (groupState !== true) return groupState;
 	if (!writer.processStartIdentity) return undefined;
 	const currentIdentity = readProcessStartIdentity(writer.pid);
@@ -481,13 +475,9 @@ function ownedWriterGroupLiveness(asyncDir: string, writer: PersistedWriterState
 	return undefined;
 }
 
-function ownedLegacyWriterLiveness(writer: PersistedWriterState, kill: KillFn): boolean | undefined {
+function ownedLegacyWriterLiveness(writer: PersistedWriterState, kill: ProcessKillFn): boolean | undefined {
 	if (writer.state !== "running" || !writer.pid) return false;
-	const alive = processLiveness(writer.pid, kill);
-	if (alive !== true) return alive;
-	if (!writer.processStartIdentity) return undefined;
-	const currentIdentity = readProcessStartIdentity(writer.pid);
-	return currentIdentity ? currentIdentity === writer.processStartIdentity : undefined;
+	return identityBoundProcessLiveness(writer.pid, writer.processStartIdentity, probeProcessLiveness(writer.pid, kill));
 }
 
 function supportsProcessStartIdentity(): boolean {

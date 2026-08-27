@@ -26,12 +26,13 @@ import {
 	readBoundedOwnedFileSnapshot,
 	removeOwnedFileSnapshot,
 } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import { probeProcessLiveness, readProcessStartIdentity } from "../../shared/process-identity.ts";
 import { POLL_INTERVAL_MS } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
 import {
 	consumeSteerCapabilities,
 	controlInboxDir,
+	isValidChildIndex,
 	MAX_CONTROL_RECORD_BYTES,
 	MAX_STEER_REQUEST_ID_LENGTH,
 	parseSteerAck,
@@ -131,10 +132,7 @@ export function requestAsyncStop(
 	payload: Omit<StopRequest, "type" | "id"> = {},
 	deps: { now?: () => number; randomId?: () => string } = {},
 ): string {
-	if (
-		payload.targetIndex !== undefined &&
-		(!Number.isInteger(payload.targetIndex) || payload.targetIndex < 0 || payload.targetIndex > 1_000_000)
-	) {
+	if (payload.targetIndex !== undefined && !isValidChildIndex(payload.targetIndex)) {
 		throw new Error("stop targetIndex must be an integer between 0 and 1000000.");
 	}
 	const ts = payload.ts ?? deps.now?.() ?? Date.now();
@@ -233,12 +231,7 @@ function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRec
 	if (claim.ownerPid === process.pid && claim.ownerIdentity === "pid-only") return true;
 	const currentIdentity = readProcessStartIdentity(claim.ownerPid);
 	if (currentIdentity) return currentIdentity !== claim.ownerIdentity || claim.ownerPid === process.pid;
-	try {
-		process.kill(claim.ownerPid, 0);
-		return false;
-	} catch (error) {
-		return errnoCode(error) === "ESRCH";
-	}
+	return probeProcessLiveness(claim.ownerPid) === false;
 }
 
 function claimControlRecord(target: string, consumerId: string): ClaimedControlRecord | undefined {
@@ -472,8 +465,7 @@ function parseStopRequest(raw: JsonValue): StopRequest | undefined {
 		(parsed.ts !== undefined && (!Number.isFinite(parsed.ts) || parsed.ts <= 0)) ||
 		(parsed.source !== undefined && !isRuntimeString(parsed.source)) ||
 		(parsed.reason !== undefined && !isRuntimeString(parsed.reason)) ||
-		(parsed.targetIndex !== undefined &&
-			(!Number.isInteger(parsed.targetIndex) || parsed.targetIndex < 0 || parsed.targetIndex > 1_000_000))
+		(parsed.targetIndex !== undefined && !isValidChildIndex(parsed.targetIndex))
 	) {
 		return undefined;
 	}

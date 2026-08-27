@@ -109,8 +109,11 @@ export function steerAckPathFromDir(dir: string, requestId: string): string {
 }
 
 function assertChildIndex(index: number): void {
-	if (!Number.isInteger(index) || index < 0 || index > 1_000_000)
-		throw new Error("steer child index must be a non-negative integer.");
+	if (!isValidChildIndex(index)) throw new Error("steer child index must be a non-negative integer.");
+}
+
+export function isValidChildIndex(index: JsonValue | undefined): index is number {
+	return isRuntimeNumber(index) && Number.isInteger(index) && index >= 0 && index <= 1_000_000;
 }
 
 function steerRequestFileName(request: SteerRequest): string {
@@ -129,14 +132,13 @@ function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequ
 		isRuntimeString(request.message) &&
 		Boolean(request.message.trim()) &&
 		Buffer.byteLength(request.message, "utf8") <= MAX_STEER_MESSAGE_BYTES &&
-		(request.targetIndex === undefined ||
-			(Number.isInteger(request.targetIndex) && request.targetIndex >= 0 && request.targetIndex <= 1_000_000)) &&
+		(request.targetIndex === undefined || isValidChildIndex(request.targetIndex)) &&
 		(request.targetIndexes === undefined ||
 			(request.targetIndex === undefined &&
 				Array.isArray(request.targetIndexes) &&
 				request.targetIndexes.length > 0 &&
 				request.targetIndexes.length <= MAX_BACKGROUND_TASKS &&
-				request.targetIndexes.every((index) => Number.isInteger(index) && index >= 0 && index <= 1_000_000) &&
+				request.targetIndexes.every(isValidChildIndex) &&
 				new Set(request.targetIndexes).size === request.targetIndexes.length)) &&
 		(request.parentRunOrigin === undefined ||
 			request.parentRunOrigin === "automatic" ||
@@ -217,10 +219,7 @@ export function requestAsyncSteer(
 	if (!message) throw new Error("steer message must not be empty.");
 	if (Buffer.byteLength(message, "utf8") > MAX_STEER_MESSAGE_BYTES)
 		throw new Error(`steer message exceeds ${MAX_STEER_MESSAGE_BYTES} UTF-8 bytes.`);
-	if (
-		payload.targetIndex !== undefined &&
-		(!Number.isInteger(payload.targetIndex) || payload.targetIndex < 0 || payload.targetIndex > 1_000_000)
-	) {
+	if (payload.targetIndex !== undefined && !isValidChildIndex(payload.targetIndex)) {
 		throw new Error("steer targetIndex must be an integer between 0 and 1000000.");
 	}
 	if (
@@ -229,7 +228,7 @@ export function requestAsyncSteer(
 			payload.targetIndex !== undefined ||
 			payload.targetIndexes.length === 0 ||
 			payload.targetIndexes.length > MAX_BACKGROUND_TASKS ||
-			payload.targetIndexes.some((index) => !Number.isInteger(index) || index < 0 || index > 1_000_000) ||
+			!payload.targetIndexes.every(isValidChildIndex) ||
 			new Set(payload.targetIndexes).size !== payload.targetIndexes.length)
 	) {
 		throw new Error(
@@ -273,7 +272,7 @@ function parseSteerCapability(raw: JsonValue): SteerCapability | undefined {
 	const input = raw as Partial<SteerCapability>;
 	if (input.type !== "steer-capability" || input.protocolVersion !== 1) return undefined;
 	const { index, pid, readyAt } = input;
-	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
+	if (!isValidChildIndex(index)) return undefined;
 	if (!isRuntimeNumber(pid) || !Number.isInteger(pid) || pid <= 0) return undefined;
 	if (!isRuntimeNumber(readyAt) || !Number.isFinite(readyAt) || readyAt <= 0 || !isRuntimeBoolean(input.supported))
 		return undefined;
@@ -293,7 +292,7 @@ export function parseSteerAck(raw: JsonValue): SteerAck | undefined {
 	)
 		return undefined;
 	const { index, ts } = input;
-	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
+	if (!isValidChildIndex(index)) return undefined;
 	if (!isRuntimeNumber(ts) || !Number.isFinite(ts) || ts <= 0) return undefined;
 	if (input.state !== "delivered" && input.state !== "failed") return undefined;
 	if (!isRuntimeString(input.message) || !input.message.trim() || input.message.length > 1000) return undefined;
