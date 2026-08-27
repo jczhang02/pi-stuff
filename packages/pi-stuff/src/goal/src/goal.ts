@@ -1,10 +1,9 @@
-import { type ContextEvent, defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
-import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { registerSuiteOwnedTool } from "../../tool-display/contract.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { currentTokenTotal } from "./accounting.js";
 import { completeGoalArguments, parseCommand } from "./command.js";
 import { GoalCommandController } from "./commands.js";
@@ -19,16 +18,12 @@ import {
 	blocksStaleGoalToolCalls,
 	findFinalAssistantMessage,
 	formatError,
-	GOAL_BLOCKED_TOOL,
-	GOAL_COMPLETE_TOOL,
 	GOAL_CONTEXT_MESSAGE_TYPE,
 	GOAL_PROMPT_MESSAGE_TYPE,
 	type GoalCompactionEvent,
 	type GoalRunOrigin,
 	GoalRuntime,
-	goalIdRejectionReason,
 	incrementGoal,
-	isContradictoryCompletionSummary,
 	isExternallyBlockedGoalInterruption,
 	isGoalContextOverflow,
 	isRetryableGoalInterruption,
@@ -38,25 +33,13 @@ import {
 	transitionGoal,
 	truncateNotification,
 } from "./runtime.js";
-import {
-	blockerReportRejectionReason,
-	completionEvidenceRejectionReason,
-	hasAssistantToolCall,
-	recordGoalBlockerAttempt,
-} from "./safety.js";
+import { hasAssistantToolCall } from "./safety.js";
 import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked, withGoalSettingsLock } from "./settings.js";
-import {
-	GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA,
-	type GoalBlockedDetails,
-	type GoalCompleteDetails,
-	goalBlockedPresentation,
-	goalCompletePresentation,
-	MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-} from "./tool-contract.js";
+import { registerGoalTerminalTools } from "./terminal-tools.js";
 
-// goal.ts remains the Pi-facing composition root despite its size because tool contracts and
-// lifecycle-event registration share order-sensitive wiring. Per-session mechanisms live in
-// runtime.ts, while user-command transitions live in commands.ts; each factory stays isolated.
+// goal.ts remains the Pi-facing composition root because lifecycle-event registration is
+// order-sensitive. Terminal Tool execution, per-session mechanisms, and command transitions
+// live behind their owning seams; each factory stays isolated.
 
 interface GoalOptions {
 	settingsPath?: string;
@@ -66,9 +49,6 @@ const BUN_RUNTIME = process.versions["bun"] !== undefined;
 
 const EXPERIMENTAL_GOALS_WARNING =
 	"Experimental ordered goals are enabled for pi-goal. Queue behavior and persisted state may change.";
-const MAX_BLOCKER_REASON_LENGTH = 1_000;
-const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
-const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
 const MESSAGE_ENVELOPE_SCHEMA = Type.Object(
 	{
 		content: Type.Optional(Type.Unknown()),
@@ -126,8 +106,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const recordAutomaticRunProgress = runtime.recordAutomaticRunProgress.bind(runtime);
 	const enforceAutomaticTurnLimit = runtime.enforceAutomaticTurnLimit.bind(runtime);
 	const enforceNoProgressLimit = runtime.enforceNoProgressLimit.bind(runtime);
-	const clearActiveGoal = runtime.clearActiveGoal.bind(runtime);
-	const showCompletionStatus = runtime.showCompletionStatus.bind(runtime);
 	const restoreGoalToolsHiddenByPolicy = runtime.restoreGoalToolsHiddenByPolicy.bind(runtime);
 	const sendOwnedGoalPrompt = (
 		_pi: ExtensionAPI,
@@ -183,350 +161,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		await dispatchContinuationIfSettled(pending.ctx);
 	};
 
-	const goalCompleteTool = defineTool({
-		name: GOAL_COMPLETE_TOOL,
-		label: "Goal Complete",
-		description:
-			"Mark the active /goal as complete after all required work is done and verified, using the current goal_id stale-turn guard. Do not use for partial progress, blockers, failing, or unverified work.",
-		promptSnippet:
-			"Mark the active /goal as complete after fully finishing and verifying it, with the current goal_id",
-		promptGuidelines: [
-			"When a /goal is active, keep working until the goal is complete; do not stop with only a plan or partial progress.",
-			"Before calling goal_complete, audit the active goal requirement by requirement against the current files, command output, tests, or external state.",
-			"Pass the exact goal_id shown in the current /goal prompt; never reuse a goal_id from an older, stopped, replaced, or cleared turn.",
-			"Call goal_complete only after the requested goal is fully implemented, verified, and no known required work remains; otherwise keep working.",
-		],
-		parameters: Type.Object({
-			goal_id: Type.String({
-				description:
-					"The exact goal_id shown in the current active /goal prompt. Used only to reject stale completion calls from older turns.",
-			}),
-			summary: Type.String({
-				minLength: 1,
-				maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-				description:
-					"State what was completed and what evidence verified it. Do not use this tool to report partial progress, blockers, failures, or remaining work.",
-			}),
-			evidence: Type.Array(
-				Type.Object({
-					requirement: Type.String({
-						minLength: 1,
-						maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-						description: "One concrete requirement from the active goal, in the language of the objective.",
-					}),
-					proof: Type.String({
-						minLength: 1,
-						maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-						description:
-							"The observed verification result, including an exact output or value, command exit status, file path, test count, URL response, or hash. Any language is accepted.",
-					}),
-				}),
-				{
-					minItems: 1,
-					maxItems: MAX_COMPLETION_EVIDENCE_ITEMS,
-					description:
-						"Requirement-by-requirement concrete proof from current files, commands, tests, outputs, or external state.",
-				},
-			),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const completedGoal = runtime.activeGoal;
-			const goal = completedGoal?.text ?? "unknown goal";
-			const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
-			const summary = isRuntimeString(params.summary) ? params.summary.trim() : "";
-			const evidence = Array.isArray(params.evidence)
-				? params.evidence.map((item) => {
-						if (!Check(GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA, item)) {
-							return { proof: "", requirement: "" };
-						}
-						return {
-							requirement: item.requirement.trim(),
-							proof: item.proof.trim(),
-						};
-					})
-				: [];
-
-			if (!completedGoal) {
-				const rejection = "Goal completion rejected: no active goal.";
-				ctx.ui.notify(rejection, "warning");
-
-				return {
-					content: [{ type: "text", text: rejection }],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				};
-			}
-			const completingDuringBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
-			if (!runtime.canRecordGoalUsage() && !completingDuringBudgetWrapUp) {
-				const rejection = "Goal completion rejected: current run does not own the active goal.";
-				ctx.ui.notify(rejection, "warning");
-				return {
-					content: [{ type: "text", text: rejection }],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				};
-			}
-			if (hasPendingSkipForGoal(completedGoal.id)) {
-				updateGoalUsage(completedGoal, ctx);
-				persistGoal(completedGoal);
-				updateStatus(ctx, completedGoal);
-				clearBudgetWrapUp();
-				const rejection = "Goal completion rejected: goal is queued to be skipped.";
-				ctx.ui.notify(rejection, "warning");
-				return {
-					content: [{ type: "text", text: rejection }],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-					terminate: true,
-				};
-			}
-			const staleGoalRejection = goalIdRejectionReason(completedGoal, requestedGoalId);
-			if (staleGoalRejection) {
-				const rejection = `Goal completion rejected: ${staleGoalRejection}.`;
-				ctx.ui.notify(rejection, "warning");
-				if (completingDuringBudgetWrapUp) {
-					updateGoalUsage(completedGoal, ctx);
-					persistGoal(completedGoal);
-					updateStatus(ctx, completedGoal);
-					clearBudgetWrapUp();
-				}
-
-				const result = {
-					content: [{ type: "text" as const, text: rejection }],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				};
-				return completingDuringBudgetWrapUp ? { ...result, terminate: true as const } : result;
-			}
-			if (completedGoal.status !== "active" && !completingDuringBudgetWrapUp) {
-				const rejection = `Goal completion rejected: goal is ${completedGoal.status}, not active.`;
-				ctx.ui.notify(rejection, "warning");
-
-				return {
-					content: [{ type: "text", text: rejection }],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				};
-			}
-
-			const rejectionReason = !summary
-				? "summary is empty"
-				: summary.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH
-					? "summary is too long"
-					: isContradictoryCompletionSummary(summary)
-						? "summary says the goal is not complete"
-						: evidence.length > MAX_COMPLETION_EVIDENCE_ITEMS
-							? "too many completion evidence entries"
-							: evidence.some(
-										(item) =>
-											item.requirement.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH ||
-											item.proof.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-									)
-								? "completion evidence is too long"
-								: completionEvidenceRejectionReason(summary, evidence);
-			if (rejectionReason) {
-				updateGoalUsage(completedGoal, ctx);
-				persistGoal(completedGoal);
-				updateStatus(ctx, completedGoal);
-				const rejection = `Goal completion rejected: ${rejectionReason}.`;
-				ctx.ui.notify(rejection, "warning");
-				if (completingDuringBudgetWrapUp) clearBudgetWrapUp();
-
-				const result = {
-					content: [
-						{
-							type: "text" as const,
-							text: rejection,
-						},
-					],
-					details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				};
-				return completingDuringBudgetWrapUp ? { ...result, terminate: true as const } : result;
-			}
-
-			runtime.activeGoal = transitionGoal(completedGoal, "complete");
-			runtime.setCompletionSummary(runtime.activeGoal.id, summary);
-			updateGoalUsage(runtime.activeGoal, ctx);
-			if (runtime.pendingQueueAction?.kind === "prioritize") {
-				persistGoal(runtime.activeGoal);
-				runtime.publishPresentationStatus(runtime.activeGoal);
-				return {
-					content: [{ type: "text", text: `Goal complete: ${summary}` }],
-					details: {
-						goal,
-						goal_id: requestedGoalId,
-						summary,
-						evidence,
-					} satisfies GoalCompleteDetails,
-					terminate: true,
-				};
-			}
-			if (runtime.queuedGoals.length > 0) {
-				runtime.pendingQueueAction = {
-					kind: "advance",
-					goalId: runtime.activeGoal.id,
-					reason: "complete",
-					completedText: goal,
-				};
-				persistGoal(runtime.activeGoal);
-				runtime.publishPresentationStatus(runtime.activeGoal);
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Goal complete: ${summary}\nNext goal queued: ${runtime.queuedGoals[0]?.text}`,
-						},
-					],
-					details: {
-						goal,
-						goal_id: requestedGoalId,
-						summary,
-						evidence,
-					} satisfies GoalCompleteDetails,
-					terminate: true,
-				};
-			}
-			const completedTimeUsedSeconds = runtime.activeGoal.timeUsedSeconds;
-			persistGoal(runtime.activeGoal);
-
-			runtime.publishPresentationStatus(runtime.activeGoal);
-			await clearActiveGoal(ctx);
-			showCompletionStatus(ctx, completedTimeUsedSeconds);
-
-			return {
-				content: [{ type: "text", text: `Goal complete: ${summary}` }],
-				details: { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails,
-				terminate: true,
-			};
-		},
-	});
-
-	const goalBlockedTool = defineTool({
-		name: GOAL_BLOCKED_TOOL,
-		label: "Goal Blocked",
-		description:
-			"Report a true external blocker on each consecutive Goal turn. The runtime stops the active /goal only after three distinct failed actions establish the same blocker and required user or external action. Do not use for ordinary clarification, uncertainty, or recoverable failures.",
-		promptSnippet:
-			"Report a true external blocker each turn; the runtime stops only after the same blocker passes a three-turn audit",
-		promptGuidelines: [
-			"For a true impasse, call goal_blocked on each consecutive Goal turn with the same stable reason, a distinct attempted action, and its concrete observed failure. The first two reports only record audit progress; continue trying reasonable alternatives afterward.",
-			"The runtime, not repeated_turns alone, verifies that the same blocker was reported on at least three consecutive Goal turns before stopping the Goal.",
-			"After a blocked goal is resumed, start a fresh three-turn blocker audit before using goal_blocked again.",
-			"Do not use goal_blocked for ordinary clarification, incomplete work, uncertainty, difficult tasks, or recoverable tool/provider failures.",
-			"Pass goal_blocked the exact current goal_id; never reuse a goal_id from an older, stopped, replaced, or cleared goal turn.",
-		],
-		parameters: Type.Object({
-			goal_id: Type.String({
-				description: "The exact goal_id shown in the current active /goal prompt.",
-			}),
-			reason: Type.String({
-				minLength: 1,
-				maxLength: MAX_BLOCKER_REASON_LENGTH,
-				description: "The specific user or external action required to unblock the goal.",
-			}),
-			attempt: Type.String({
-				minLength: 1,
-				maxLength: MAX_BLOCKER_EVIDENCE_LENGTH,
-				description: "The concrete action tried during this Goal turn; it must differ from earlier audit turns.",
-			}),
-			evidence: Type.String({
-				minLength: 1,
-				maxLength: MAX_BLOCKER_EVIDENCE_LENGTH,
-				description: "The concrete observed failure produced by this turn's attempted action.",
-			}),
-			repeated_turns: Type.Integer({
-				minimum: 1,
-				description:
-					"Your count of consecutive Goal turns spent trying to resolve this same blocker. The runtime independently records and verifies the count.",
-			}),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const blockedGoal = runtime.activeGoal;
-			const goal = blockedGoal?.text ?? "unknown goal";
-			const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
-			const reason = isRuntimeString(params.reason) ? params.reason.trim() : "";
-			const attemptedAction = isRuntimeString(params.attempt) ? params.attempt.trim() : "";
-			const evidence = isRuntimeString(params.evidence) ? params.evidence.trim() : "";
-			const repeatedTurns = isRuntimeNumber(params.repeated_turns) ? params.repeated_turns : Number.NaN;
-			const reject = (rejectionReason: string, terminate = false) => {
-				const rejection = `goal_blocked rejected: ${rejectionReason}.`;
-				ctx.ui.notify(rejection, "warning");
-				const result = {
-					content: [{ type: "text" as const, text: rejection }],
-					details: {
-						goal,
-						goal_id: requestedGoalId,
-						reason: reason.slice(0, MAX_BLOCKER_REASON_LENGTH),
-						attempt: attemptedAction.slice(0, MAX_BLOCKER_EVIDENCE_LENGTH),
-						evidence: evidence.slice(0, MAX_BLOCKER_EVIDENCE_LENGTH),
-						repeated_turns: Number.isFinite(repeatedTurns) ? repeatedTurns : 0,
-					} satisfies GoalBlockedDetails,
-				};
-				return terminate ? { ...result, terminate: true as const } : result;
-			};
-
-			if (!blockedGoal) return reject("no active goal");
-			if (!runtime.canRecordGoalUsage()) {
-				return reject("current run does not own the active goal");
-			}
-			if (hasPendingSkipForGoal(blockedGoal.id)) {
-				updateGoalUsage(blockedGoal, ctx);
-				persistGoal(blockedGoal);
-				updateStatus(ctx, blockedGoal);
-				clearBudgetWrapUp();
-				return reject("goal is queued to be skipped", true);
-			}
-			const staleGoalRejection = goalIdRejectionReason(blockedGoal, requestedGoalId);
-			if (staleGoalRejection) return reject(staleGoalRejection);
-			if (blockedGoal.status !== "active") {
-				return reject(`goal is ${blockedGoal.status}, not active`);
-			}
-			if (!reason) return reject("reason is empty");
-			if (reason.length > MAX_BLOCKER_REASON_LENGTH) return reject("reason is too long");
-			if (!attemptedAction) return reject("attempt is empty");
-			if (attemptedAction.length > MAX_BLOCKER_EVIDENCE_LENGTH) return reject("attempt is too long");
-			if (!evidence) return reject("evidence is empty");
-			if (evidence.length > MAX_BLOCKER_EVIDENCE_LENGTH) return reject("evidence is too long");
-			if (!Number.isInteger(repeatedTurns)) return reject("repeated_turns must be a whole number");
-			if (repeatedTurns < 1) return reject("repeated_turns must be at least 1");
-			const blockerRejection = blockerReportRejectionReason(blockedGoal, reason, attemptedAction, evidence);
-			if (blockerRejection) return reject(blockerRejection);
-
-			blockedGoal.blockerAudit = recordGoalBlockerAttempt(blockedGoal, reason, attemptedAction, evidence);
-			persistGoal(blockedGoal);
-			updateStatus(ctx, blockedGoal);
-			if (blockedGoal.blockerAudit.consecutiveTurns < 3) {
-				return reject(
-					`blocker audit recorded for ${blockedGoal.blockerAudit.consecutiveTurns}/3 consecutive Goal turns; keep working and report the same stable blocker on a later Goal turn only if it persists`,
-				);
-			}
-			if (repeatedTurns < 3) {
-				return reject("repeated_turns must acknowledge at least 3 consecutive Goal turns");
-			}
-
-			updateGoalUsage(blockedGoal, ctx);
-			cancelContinuationWork();
-			clearBudgetWrapUp();
-			clearGoalRecoveryForGoal(blockedGoal.id);
-			blockStaleGoalToolCalls();
-			runtime.activeGoal = transitionGoal(blockedGoal, "blocked");
-			runtime.setTerminalReason(runtime.activeGoal.id, reason);
-			persistGoal(runtime.activeGoal);
-			updateStatus(ctx, runtime.activeGoal);
-			ctx.ui.notify(`Goal blocked: ${truncateNotification(reason)}`, "warning");
-
-			return {
-				content: [{ type: "text", text: `Goal blocked: ${reason}` }],
-				details: {
-					goal,
-					goal_id: requestedGoalId,
-					reason,
-					attempt: attemptedAction,
-					evidence,
-					repeated_turns: repeatedTurns,
-				} satisfies GoalBlockedDetails,
-				terminate: true,
-			};
-		},
-	});
-
-	registerSuiteOwnedTool(pi, goalCompleteTool, goalCompletePresentation());
-	registerSuiteOwnedTool(pi, goalBlockedTool, goalBlockedPresentation());
+	registerGoalTerminalTools(pi, runtime);
 	// Do not touch the active tool set during factory registration: ExtensionAPI
 	// actions are unbound until the session binds the runtime. session_start applies
 	// baseline visibility once actions work; later hooks only enforce goal safety.
@@ -1277,14 +912,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		const activeGoalId = runtime.activeGoal?.status === "active" ? runtime.activeGoal.id : undefined;
 		runtime.beginAgentRun(activeGoalId ?? null, activeGoalId ? origin : undefined);
 		if (resetSafetyEpoch && activeGoalId) runtime.resetActiveSafetyEpoch(ctx);
-	}
-
-	function hasPendingSkipForGoal(goalId: string) {
-		return (
-			runtime.pendingQueueAction?.kind === "advance" &&
-			runtime.pendingQueueAction.reason === "skip" &&
-			runtime.pendingQueueAction.goalId === goalId
-		);
 	}
 
 	function stopGoalAfterAgentEnd(
