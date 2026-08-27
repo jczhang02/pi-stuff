@@ -51,12 +51,6 @@ export interface WorktreeCleanupReport {
 	errors?: string[];
 }
 
-interface WorktreeTaskCwdConflict {
-	index: number;
-	agent: string;
-	cwd: string;
-}
-
 interface WorktreeSetupHookConfig {
 	hookPath: string;
 	timeoutMs?: number;
@@ -135,34 +129,6 @@ function resolveRepoState(cwd: string): RepoState {
 	return { toplevel, cwdRelative, baseCommit };
 }
 
-function normalizeComparableCwd(cwd: string): string {
-	const resolved = path.resolve(cwd);
-	try {
-		return fs.realpathSync(resolved);
-	} catch {
-		// Use the unresolved absolute path when realpath resolution is unavailable.
-		return resolved;
-	}
-}
-
-export function findWorktreeTaskCwdConflict(
-	tasks: ReadonlyArray<{ agent: string; cwd?: string }>,
-	sharedCwd: string,
-): WorktreeTaskCwdConflict | undefined {
-	const normalizedSharedCwd = normalizeComparableCwd(sharedCwd);
-	for (const [index, task] of tasks.entries()) {
-		if (!task.cwd) continue;
-		const taskCwd = path.isAbsolute(task.cwd) ? task.cwd : path.resolve(sharedCwd, task.cwd);
-		if (normalizeComparableCwd(taskCwd) === normalizedSharedCwd) continue;
-		return { index, agent: task.agent, cwd: task.cwd };
-	}
-	return undefined;
-}
-
-export function formatWorktreeTaskCwdConflict(conflict: WorktreeTaskCwdConflict, sharedCwd: string): string {
-	return `worktree isolation uses the shared cwd (${sharedCwd}); task ${conflict.index + 1} (${conflict.agent}) sets cwd to ${conflict.cwd}. Remove task-level cwd overrides or disable worktree.`;
-}
-
 function safePatchAgentName(agent: string): string {
 	return agent.replace(/[^\w.-]/g, "_");
 }
@@ -201,13 +167,6 @@ function resolveRepoCwdRelative(cwd: string): string {
 	const rawPrefix = runGitChecked(cwd, ["rev-parse", "--show-prefix"]).trim();
 	const normalizedPrefix = rawPrefix ? path.normalize(rawPrefix.replace(/[\\/]+$/, "")) : "";
 	return normalizedPrefix === "." ? "" : normalizedPrefix;
-}
-
-export function resolveExpectedWorktreeAgentCwd(cwd: string, runId: string, index: number, baseDir?: string): string {
-	const cwdRelative = resolveRepoCwdRelative(cwd);
-	const repoRoot = runGitChecked(cwd, ["rev-parse", "--show-toplevel"]).trim();
-	const worktreePath = buildWorktreePath(resolveWorktreeBaseDir(baseDir, repoRoot), runId, index);
-	return cwdRelative ? path.join(worktreePath, cwdRelative) : worktreePath;
 }
 
 function linkNodeModulesIfPresent(toplevel: string, worktreePath: string): boolean {

@@ -3,15 +3,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assertPrivateDirectory } from "../../shared/private-directory.ts";
 import {
-	ASYNC_DIR,
-	type AsyncJobState,
 	type AsyncStatus,
 	type NestedRunSummary,
 	type NestedStepSummary,
 	RESULTS_DIR,
 	type SubagentRunMode,
 	type SubagentState,
-	TEMP_ROOT_DIR,
 } from "../../shared/types.ts";
 import { sanitizeProcessTerminal } from "../background/process-terminal.ts";
 import * as nestedEventModel from "./nested-events-model.ts";
@@ -94,13 +91,6 @@ export function writeNestedEvent(
 	const sanitized = nestedEventModel.parseRecord(JSON.stringify(record), route);
 	if (!sanitized) throw new Error("Nested event record failed validation.");
 	writeRouteRecord(route.eventSink, sanitized.ts, sanitized);
-}
-
-export function updateAsyncJobNestedProjection(job: AsyncJobState): void {
-	if (!job.nestedRoute) return;
-	const registry = nestedRegistry.projectNestedEvents(job.nestedRoute);
-	job.nestedChildren = registry.children;
-	nestedEventModel.attachRootChildrenToSteps(job.asyncId, job.steps, registry.children);
 }
 
 export function updateForegroundNestedProjection(
@@ -220,26 +210,6 @@ export function nestedSummaryFromAsyncStatus(
 	}
 	// SAFETY: the required nested address and state fields are assigned from canonical status and fallback inputs.
 	return summary as NestedRunSummary;
-}
-
-export interface NestedArtifactEnvironment {
-	readonly PI_SUBAGENT_NESTED_PARENT_RUN_ID: string;
-	readonly PI_SUBAGENT_NESTED_ROOT_RUN_ID: string;
-}
-
-export function nestedArtifactEnv(rootRunId: string, parentRunId: string): NestedArtifactEnvironment {
-	return {
-		PI_SUBAGENT_NESTED_ROOT_RUN_ID: rootRunId,
-		PI_SUBAGENT_NESTED_PARENT_RUN_ID: parentRunId,
-	};
-}
-
-export function isTopLevelAsyncDir(asyncDir: string): boolean {
-	const resolved = path.resolve(asyncDir);
-	return (
-		nestedRoute.containedPath(ASYNC_DIR, resolved) &&
-		!nestedRoute.containedPath(path.join(TEMP_ROOT_DIR, "nested-subagent-runs"), resolved)
-	);
 }
 
 export function nestedResultsPath(rootRunId: string, id: string): string {

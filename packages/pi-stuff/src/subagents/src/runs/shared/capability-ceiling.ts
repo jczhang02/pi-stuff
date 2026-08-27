@@ -3,7 +3,6 @@ import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js
 import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const SUBAGENT_CAPABILITY_CEILING_VERSION = 1 as const;
-export const SUBAGENT_CAPABILITY_CEILING_REGISTRY_KEY = "pi-subagents.capability-ceiling.v1";
 export const SUBAGENT_CAPABILITY_CEILING_ENV = "PI_SUBAGENT_CAPABILITY_CEILING_V1";
 
 export type SubagentCapabilityCeiling =
@@ -27,32 +26,6 @@ export interface SubagentCapabilityAudit {
 	removedExtensionCount: number;
 	requestedMcpToolCount: number;
 	effectiveMcpTools: string[];
-}
-
-export interface RegisterSubagentCapabilityCeilingOptions {
-	sessionId: string;
-	source: string;
-	ceiling: SubagentCapabilityCeiling;
-}
-
-export interface SubagentCapabilityCeilingHandle {
-	update(ceiling: SubagentCapabilityCeiling): void;
-	dispose(): void;
-}
-
-type Registration = { source: string; ceiling: ResolvedSubagentCapabilityCeiling };
-type Registry = Map<string, Map<symbol, Registration>>;
-
-function registry(): Registry {
-	const key = Symbol.for(SUBAGENT_CAPABILITY_CEILING_REGISTRY_KEY);
-	const existing = Object.getOwnPropertyDescriptor(globalThis, key)?.value;
-	if (existing instanceof Map) {
-		// SAFETY: this package-owned symbol slot is initialized below only with the nested capability Registry.
-		return existing as Registry;
-	}
-	const created: Registry = new Map();
-	Object.defineProperty(globalThis, key, { configurable: true, value: created, writable: true });
-	return created;
 }
 
 function hasControlCharacter(value: string): boolean {
@@ -132,42 +105,6 @@ export function parseSubagentCapabilityCeiling<Value>(
 	return normalized;
 }
 
-export function registerSubagentCapabilityCeiling(
-	options: RegisterSubagentCapabilityCeilingOptions,
-): SubagentCapabilityCeilingHandle {
-	const sessionId = validateText(options.sessionId, "sessionId");
-	const source = validateText(options.source, "source");
-	let normalized = normalizeCeiling(options.ceiling);
-	const token = Symbol(source);
-	const store = registry();
-	let registrations = store.get(sessionId);
-	if (!registrations) {
-		registrations = new Map();
-		store.set(sessionId, registrations);
-	}
-	const setRegistration = () => {
-		normalized = normalizeCeiling(normalized);
-		normalized.sources = [source];
-		registrations.set(token, { source, ceiling: normalized });
-	};
-	setRegistration();
-	let disposed = false;
-	return {
-		update(ceiling) {
-			if (disposed) throw new Error("Cannot update a disposed capability ceiling handle.");
-			normalized = normalizeCeiling(ceiling);
-			normalized.sources = [source];
-			registrations.set(token, { source, ceiling: normalized });
-		},
-		dispose() {
-			if (disposed) return;
-			disposed = true;
-			registrations.delete(token);
-			if (registrations.size === 0) store.delete(sessionId);
-		},
-	};
-}
-
 export function intersectSubagentCapabilityCeilings(
 	...ceilings: Array<ResolvedSubagentCapabilityCeiling | undefined>
 ): ResolvedSubagentCapabilityCeiling | undefined {
@@ -190,25 +127,10 @@ export function intersectSubagentCapabilityCeilings(
 	return intersection;
 }
 
-export function resolveSubagentCapabilityCeiling(
-	sessionId: string | undefined,
-	inherited?: ResolvedSubagentCapabilityCeiling,
-): ResolvedSubagentCapabilityCeiling | undefined {
-	const active: ResolvedSubagentCapabilityCeiling[] = [];
-	if (sessionId) {
-		const registrations = registry().get(sessionId);
-		if (registrations) active.push(...Array.from(registrations.values(), ({ ceiling }) => ceiling));
-	}
-	return intersectSubagentCapabilityCeilings(inherited, ...active);
-}
-
 export function resolveCurrentSubagentCapabilityCeiling(
-	sessionId: string | undefined,
+	_sessionId?: string,
 ): ResolvedSubagentCapabilityCeiling | undefined {
-	return resolveSubagentCapabilityCeiling(
-		sessionId,
-		decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
-	);
+	return decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]);
 }
 
 export function encodeSubagentCapabilityCeiling(

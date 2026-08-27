@@ -750,24 +750,3 @@ export function normalizeSkillInput(input: string | string[] | boolean | undefin
 		),
 	];
 }
-
-export function discoverAvailableSkills(cwd: string): Array<{
-	name: string;
-	source: SkillSource;
-	description?: string;
-}> {
-	const skills = getCachedSkills(cwd);
-	return skills
-		.filter((s) => s.name !== SUBAGENT_ORCHESTRATION_SKILL)
-		.map((s) =>
-			s.description === undefined
-				? { name: s.name, source: s.source }
-				: { name: s.name, source: s.source, description: s.description },
-		)
-		.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function clearSkillCache(): void {
-	skillCache.clear();
-	loadSkillsCache = null;
-}

@@ -2,9 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { formatDuration, formatModelThinking, formatTokens, shortenPath } from "../../shared/formatters.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
-import { formatActivityLabel, formatParallelOutcome } from "../../shared/status-format.ts";
 import type {
 	ActivityState,
 	AgentContextUsage,
@@ -21,12 +19,7 @@ import type {
 } from "../../shared/types.ts";
 import { getErrorMessage, isNotFoundError, pickFields, readStatus } from "../../shared/utils.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
-import {
-	type ContextMode,
-	type ContextSummary,
-	contextModeLabel,
-	summarizeContextModes,
-} from "../shared/context-mode.ts";
+import { type ContextMode, type ContextSummary, summarizeContextModes } from "../shared/context-mode.ts";
 import {
 	attachRootChildrenToSteps,
 	buildNestedRouteIndex,
@@ -35,7 +28,6 @@ import {
 	readNestedRegistry,
 	resolvePersistedNestedRoute,
 } from "../shared/nested-events.ts";
-import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { sanitizeSummary } from "../shared/nested-summary.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 import { readProcessTerminal, sanitizeProcessTerminal } from "./process-terminal.ts";
@@ -370,10 +362,6 @@ function statusToSummary(
 	return summary;
 }
 
-export function summarizeAsyncStatus(asyncDir: string, status: AsyncStatus): AsyncRunSummary {
-	return statusToSummary(asyncDir, status);
-}
-
 function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
 	const rank = (state: AsyncRunSummary["state"]): number => {
 		switch (state) {
@@ -520,115 +508,4 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 
 	const sorted = sortRuns(runs);
 	return options.limit !== undefined ? sorted.slice(0, options.limit) : sorted;
-}
-
-function formatActivityFacts(input: {
-	activityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	toolCount?: number;
-	steering?: SteeringStatus;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-}): string | undefined {
-	const facts: string[] = [];
-	if (input.currentTool && input.currentToolStartedAt !== undefined)
-		facts.push(`tool ${input.currentTool} ${formatDuration(Math.max(0, Date.now() - input.currentToolStartedAt))}`);
-	else if (input.currentTool) facts.push(`tool ${input.currentTool}`);
-	if (input.currentPath) facts.push(shortenPath(input.currentPath));
-	if (input.turnCount !== undefined) facts.push(`${input.turnCount} turns`);
-	if (input.turnBudgetExceeded && input.turnBudget)
-		facts.push(
-			`turn budget exceeded ${input.turnBudget.turnCount}/${input.turnBudget.maxTurns}+${input.turnBudget.graceTurns}`,
-		);
-	else if (input.turnBudget?.outcome === "termination-deferred")
-		facts.push(
-			`turn-budget termination deferred ${input.turnBudget.turnCount}/${input.turnBudget.maxTurns}+${input.turnBudget.graceTurns}`,
-		);
-	else if (input.wrapUpRequested && input.turnBudget)
-		facts.push(`wrap-up requested ${input.turnBudget.turnCount}/${input.turnBudget.maxTurns}`);
-	else if (input.turnBudget)
-		facts.push(
-			`turn budget ${input.turnBudget.turnCount}/${input.turnBudget.maxTurns}+${input.turnBudget.graceTurns}`,
-		);
-	if (input.toolCount !== undefined) facts.push(`${input.toolCount} tools`);
-	if (input.steering)
-		facts.push(
-			`steering ${input.steering.scheduled} scheduled, ${input.steering.pending} pending, ${input.steering.delivered} delivered, ${input.steering.failed} failed, ${input.steering.recovered} recovered`,
-		);
-	const activity = formatActivityLabel(input.lastActivityAt, input.activityState);
-	return activity || facts.length ? [activity, ...facts].filter(Boolean).join(" | ") : undefined;
-}
-
-function formatStepLine(step: AsyncRunStepSummary): string {
-	const display = step.label ? `${step.label} (${step.agent})` : step.agent;
-	const context = contextModeLabel(step.context);
-	const phase = step.phase ? `[${step.phase}] ` : "";
-	const parts = [`${step.index + 1}. ${phase}${display}${context ? ` ${context}` : ""}`, step.status];
-	const activity = formatActivityFacts(step);
-	if (activity) parts.push(activity);
-	const modelThinking = formatModelThinking(step.model, step.thinking);
-	if (modelThinking) parts.push(modelThinking);
-	if (step.durationMs !== undefined) parts.push(formatDuration(step.durationMs));
-	if (step.tokens) parts.push(`${formatTokens(step.tokens.total)} tok`);
-	return parts.join(" | ");
-}
-
-export function formatAsyncRunOutputPath(run: Pick<AsyncRunSummary, "asyncDir" | "outputFile">): string | undefined {
-	if (!run.outputFile) return undefined;
-	return path.isAbsolute(run.outputFile) ? run.outputFile : path.join(run.asyncDir, run.outputFile);
-}
-
-export function formatAsyncRunProgressLabel(
-	run: Pick<AsyncRunSummary, "mode" | "state" | "currentStep" | "parallelGroups" | "steps">,
-): string {
-	const stepCount = run.steps.length || 1;
-	const groups = run.mode === "parallel" ? normalizeParallelGroups(run.parallelGroups, run.steps.length) : [];
-	const currentStep = run.currentStep;
-	const activeGroup =
-		currentStep !== undefined
-			? groups.find((group) => currentStep >= group.start && currentStep < group.start + group.count)
-			: undefined;
-	if (activeGroup) {
-		const groupSteps = run.steps.slice(activeGroup.start, activeGroup.start + activeGroup.count);
-		return formatParallelOutcome(groupSteps, activeGroup.count, { showRunning: run.state === "running" });
-	}
-	if (run.mode === "parallel")
-		return formatParallelOutcome(run.steps, stepCount, { showRunning: run.state === "running" });
-	return currentStep !== undefined ? `step ${currentStep + 1}/${stepCount}` : `steps ${stepCount}`;
-}
-
-function formatRunHeader(run: AsyncRunSummary): string {
-	const stepLabel = formatAsyncRunProgressLabel(run);
-	const cwd = run.cwd ? shortenPath(run.cwd) : shortenPath(run.asyncDir);
-	const activity = formatActivityFacts(run);
-	const context = contextModeLabel(run.context);
-	return `${run.id} | ${run.state}${activity ? ` | ${activity}` : ""} | ${run.mode}${context ? ` ${context}` : ""} | ${stepLabel} | ${cwd}`;
-}
-
-export function formatAsyncRunList(runs: AsyncRunSummary[], heading = "Active async runs"): string {
-	if (runs.length === 0) return `No ${heading.toLowerCase()}.`;
-
-	const lines = [`${heading}: ${runs.length}`, ""];
-	for (const run of runs) {
-		lines.push(`- ${formatRunHeader(run)}`);
-		for (const step of run.steps) {
-			lines.push(`  ${formatStepLine(step)}`);
-			lines.push(...formatNestedRunStatusLines(step.children, { indent: "    ", maxLines: 12 }));
-		}
-		const attached = new Set(run.steps.flatMap((step) => step.children?.map((child) => child.id) ?? []));
-		const unattached = run.nestedChildren?.filter((child) => !attached.has(child.id)) ?? [];
-		lines.push(...formatNestedRunStatusLines(unattached, { indent: "  ", maxLines: 12 }));
-		if (run.error) lines.push(`  Error: ${run.error}`);
-		for (const warning of run.nestedWarnings ?? []) lines.push(`  Warning: ${warning}`);
-		const outputPath = formatAsyncRunOutputPath(run);
-		if (outputPath) lines.push(`  output: ${shortenPath(outputPath)}`);
-		if (run.sessionFile) lines.push(`  session: ${shortenPath(run.sessionFile)}`);
-		lines.push("");
-	}
-	return lines.join("\n").trimEnd();
 }

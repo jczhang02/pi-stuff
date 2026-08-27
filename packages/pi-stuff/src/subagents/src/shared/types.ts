@@ -302,7 +302,6 @@ export interface ErrorInfo {
 export type IntercomEventBus = Pick<ExtensionAPI["events"], "emit" | "on">;
 
 export const INTERCOM_DETACH_REQUEST_EVENT = "pi-intercom:detach-request";
-export const INTERCOM_DETACH_RESPONSE_EVENT = "pi-intercom:detach-response";
 export const SUBAGENT_ASYNC_STARTED_EVENT = "subagent:async-started";
 export const SUBAGENT_ASYNC_STATUS_EVENT = "subagent:async-status";
 export const SUBAGENT_ASYNC_COMPLETE_EVENT = "subagent:async-complete";
@@ -329,11 +328,6 @@ export interface ExtensionConfig {
 // ============================================================================
 // Constants
 // ============================================================================
-
-export const DEFAULT_MAX_OUTPUT: Required<MaxOutputConfig> = {
-	bytes: 200 * 1024,
-	lines: 5000,
-};
 
 export const DEFAULT_ARTIFACT_CONFIG: ArtifactConfig = {
 	enabled: true,
@@ -393,8 +387,6 @@ export function resolveTempScopeId(options?: {
 	return "shared";
 }
 
-const MAX_PARALLEL = 8;
-export const MAX_CONCURRENCY = 4;
 type NumericConfigInput = number | string | undefined;
 export function resolveTempRootDir(options?: {
 	env?: NodeJS.ProcessEnv;
@@ -423,30 +415,12 @@ export const ASYNC_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-runs");
 export const TEMP_ARTIFACTS_DIR = path.join(TEMP_ROOT_DIR, "artifacts");
 export const POLL_INTERVAL_MS = 250;
 export const DEFAULT_SUBAGENT_MAX_DEPTH = 3;
-export const SUBAGENT_ACTIONS = ["status", "resume", "steer", "stop"] as const;
 
 export const DEFAULT_FORK_PREAMBLE =
 	"You are a delegated subagent running from a fork of the parent session. " +
 	"Treat the inherited conversation as reference-only context, not a live thread to continue. " +
 	"Do not continue or answer prior messages as if they are waiting for a reply. " +
 	"Your sole job is to execute the task below and return a focused result for that task using your tools.";
-
-function normalizeTopLevelParallelValue(value: NumericConfigInput): number | undefined {
-	const parsed = isRuntimeNumber(value) ? value : isRuntimeString(value) ? Number(value) : NaN;
-	if (!Number.isInteger(parsed) || parsed < 1) return undefined;
-	return parsed;
-}
-
-export function resolveTopLevelParallelMaxTasks(value: NumericConfigInput): number {
-	return normalizeTopLevelParallelValue(value) ?? MAX_PARALLEL;
-}
-
-export function resolveTopLevelParallelConcurrency(
-	override: NumericConfigInput,
-	configValue: NumericConfigInput,
-): number {
-	return normalizeTopLevelParallelValue(override) ?? normalizeTopLevelParallelValue(configValue) ?? MAX_CONCURRENCY;
-}
 
 export function getAsyncConfigPath(suffix: string): string {
 	return path.join(TEMP_ROOT_DIR, `async-cfg-${suffix}.json`);
@@ -511,16 +485,4 @@ export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = 
 				DEFAULT_SUBAGENT_MAX_DEPTH,
 		),
 	};
-}
-
-export function normalizeMaxSubagentSpawnsPerSession(value: NumericConfigInput): number | undefined {
-	const normalized = normalizeNonNegativeInteger(value);
-	return normalized !== undefined && normalized >= 1 ? normalized : undefined;
-}
-
-export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): number {
-	const envMaxSpawns = normalizeMaxSubagentSpawnsPerSession(process.env["PI_SUBAGENT_MAX_SPAWNS_PER_SESSION"]);
-	if (envMaxSpawns !== undefined) return envMaxSpawns;
-	const configuredMaxSpawns = normalizeMaxSubagentSpawnsPerSession(configMaxSpawns);
-	return configuredMaxSpawns ?? 200;
 }

@@ -7,27 +7,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
-import { isJsonInputValue, type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import type { ToolArguments } from "../../../tool-display/activity.js";
 import { boundTerminalLine } from "../../../tool-display/index.js";
-import { formatToolCall } from "./formatters.ts";
 import {
 	assertPrivateDirectory,
 	readBoundedOwnedFileSnapshot,
 	readBoundedOwnedFileSnapshotAsync,
 } from "./private-directory.ts";
-import type {
-	AgentProgress,
-	AsyncStatus,
-	Details,
-	DisplayItem,
-	ErrorInfo,
-	NestedRunSummary,
-	SingleResult,
-	ToolCallSummary,
-	Usage,
-} from "./types.ts";
+import type { AsyncStatus, ErrorInfo, SingleResult } from "./types.ts";
 
 // ============================================================================
 // File System Utilities
@@ -288,23 +277,6 @@ export async function readStatusAsync(asyncDir: string): Promise<AsyncStatus | n
 }
 
 /**
- * Get human-readable last activity time for a file
- */
-export function getLastActivity(outputFile: string | undefined): string {
-	if (!outputFile) return "";
-	try {
-		const stat = fs.statSync(outputFile);
-		const ago = Date.now() - stat.mtimeMs;
-		if (ago < 1000) return "active now";
-		if (ago < 60000) return `active ${Math.floor(ago / 1000)}s ago`;
-		return `active ${Math.floor(ago / 60000)}m ago`;
-	} catch {
-		// Last-activity text is best effort; missing files should simply omit the hint.
-		return "";
-	}
-}
-
-/**
  * Find the latest session file in a directory
  */
 export function findLatestSessionFile(sessionDir: string | undefined): string | undefined {
@@ -384,186 +356,11 @@ export function getSingleResultOutput(result: Pick<SingleResult, "finalOutput" |
 	return result.finalOutput ?? getFinalOutput(result.messages ?? []);
 }
 
-/**
- * Extract display items (text and tool calls) from messages
- */
-export function getDisplayItems(messages: Message[] | undefined): DisplayItem[] {
-	if (!messages || messages.length === 0) return [];
-	const items: DisplayItem[] = [];
-	for (const msg of messages) {
-		if (msg && isRuntimeObject(msg) && msg.role === "assistant" && Array.isArray(msg.content)) {
-			for (const part of msg.content) {
-				if (!part || !isRuntimeObject(part)) continue;
-				if (part.type === "text" && isRuntimeString(part.text)) items.push({ type: "text", text: part.text });
-				else if (
-					part.type === "toolCall" &&
-					isRuntimeString(part.name) &&
-					part.arguments !== null &&
-					isJsonInputValue(part.arguments) &&
-					isRuntimeObject(part.arguments) &&
-					!Array.isArray(part.arguments)
-				)
-					items.push({ type: "tool", name: part.name, args: part.arguments });
-			}
-		}
-	}
-	return items;
-}
-
-function compactCompletedProgress(progress: AgentProgress): AgentProgress {
-	if (progress.status === "running") return progress;
-	const compacted: AgentProgress = {
-		index: progress.index,
-		agent: progress.agent,
-		status: progress.status,
-		task: progress.task,
-		toolCount: progress.toolCount,
-		tokens: progress.tokens,
-		durationMs: progress.durationMs,
-		recentTools: [],
-		recentOutput: [],
-	};
-	if (progress.activityState !== undefined) compacted.activityState = progress.activityState;
-	if (progress.skills !== undefined) compacted.skills = progress.skills;
-	if (progress.error !== undefined) compacted.error = progress.error;
-	if (progress.failedTool !== undefined) compacted.failedTool = progress.failedTool;
-	return compacted;
-}
-
-function extractToolCallSummaries(messages: Message[] | undefined): ToolCallSummary[] {
-	if (!messages?.length) return [];
-	const summaries: ToolCallSummary[] = [];
-	for (const msg of messages) {
-		if (msg.role !== "assistant") continue;
-		for (const part of msg.content) {
-			if (part.type !== "toolCall") continue;
-			const args =
-				isJsonInputValue(part.arguments) &&
-				isRuntimeObject(part.arguments) &&
-				part.arguments !== null &&
-				!Array.isArray(part.arguments)
-					? part.arguments
-					: {};
-			summaries.push({
-				text: formatToolCall(part.name, args),
-				expandedText: formatToolCall(part.name, args, true),
-			});
-		}
-	}
-	return summaries;
-}
-
-export function sumResultsUsage(results: SingleResult[]): Usage {
-	const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
-	for (const result of results) {
-		usage.input += result.usage.input;
-		usage.output += result.usage.output;
-		usage.cacheRead += result.usage.cacheRead;
-		usage.cacheWrite += result.usage.cacheWrite;
-		usage.cost += result.usage.cost;
-		usage.turns += result.usage.turns;
-	}
-	return usage;
-}
-
-function addNestedCost(total: NonNullable<Details["totalCost"]>, children: NestedRunSummary[] | undefined): void {
-	for (const child of children ?? []) {
-		if (child.totalCost) {
-			total.inputTokens += child.totalCost.inputTokens;
-			total.outputTokens += child.totalCost.outputTokens;
-			total.costUsd += child.totalCost.costUsd;
-			continue;
-		}
-		addNestedCost(total, child.children);
-		for (const step of child.steps ?? []) addNestedCost(total, step.children);
-	}
-}
-
-/** Sum input tokens, output tokens, and cost across a set of SingleResults. */
-export function sumResultsCost(results: SingleResult[]): NonNullable<Details["totalCost"]> {
-	const total = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-	for (const result of results) {
-		total.inputTokens += result.usage.input;
-		total.outputTokens += result.usage.output;
-		total.costUsd += result.usage.cost;
-		addNestedCost(total, result.children);
-	}
-	return total;
-}
-
-export function compactForegroundResult(result: SingleResult): SingleResult {
-	if (result.progress?.status === "running") return result;
-	const toolCalls = result.toolCalls?.length ? result.toolCalls : extractToolCallSummaries(result.messages);
-	const compacted = { ...result };
-	delete compacted.messages;
-	delete compacted.progress;
-	delete compacted.toolCalls;
-	if (toolCalls.length) compacted.toolCalls = toolCalls;
-	return compacted;
-}
-
-export function compactForegroundDetails(details: Details): Details {
-	const compacted: Details = {
-		...details,
-		results: details.results.map(compactForegroundResult),
-	};
-	delete compacted.progress;
-	if (details.progress) compacted.progress = details.progress.map(compactCompletedProgress);
-	return compacted;
-}
-
-/**
- * Streaming counterparts to compactForegroundResult / compactCompletedProgress.
- *
- * The completed-compaction helpers above bail out while a child is still
- * `running`, so a long or deeply nested fan-out streams full, unbounded progress on
- * every tick. Pi serializes each streamed `tool_execution_update` as a single
- * child-stdout line, which the parent reads under `MAX_CHILD_PENDING_LINE_BYTES`;
- * an unbounded running snapshot can cross that cap and kill the child with
- * `protocol_output_limit`.
- *
- * These bound the STREAMED snapshot only. The final returned result keeps the full
- * live progress and message transcript, and every live-display consumer already
- * reads just the last few entries (`recentTools.slice(-3)`, `recentOutput.slice(-5)`).
- */
-export const MAX_STREAMED_RECENT_TOOLS = 32;
-export const MAX_STREAMED_TOOL_CALLS = 64;
 export const MAX_STREAMED_OUTPUT_LINE_CHARS = 2000;
-
-/** Keep only the most recent tool-history entries in a streamed snapshot. */
-export function boundStreamedRecentTools(recentTools: AgentProgress["recentTools"]): AgentProgress["recentTools"] {
-	return recentTools.slice(-MAX_STREAMED_RECENT_TOOLS).map((tool) => ({ ...tool }));
-}
 
 /** Cap per-line length of recent output so one long line can't inflate a snapshot. */
 export function boundStreamedRecentOutput(recentOutput: string[]): string[] {
 	return recentOutput.map((line) => boundTerminalLine(line, MAX_STREAMED_OUTPUT_LINE_CHARS, "… [truncated]"));
-}
-
-/**
- * Compact tool-call summaries for a streamed snapshot, standing in for the
- * unbounded `messages` transcript. Prefers an existing `toolCalls` summary, else
- * derives one from `messages`; bounded to the most recent calls.
- */
-export function boundStreamedToolCalls(
-	result: Pick<SingleResult, "toolCalls" | "messages">,
-): ToolCallSummary[] | undefined {
-	const summaries = result.toolCalls?.length ? result.toolCalls : extractToolCallSummaries(result.messages);
-	if (!summaries.length) return undefined;
-	return summaries.slice(-MAX_STREAMED_TOOL_CALLS).map((summary) => ({ ...summary }));
-}
-
-export function hasEmptyTerminalAssistantResponse(messages: Message[]): boolean {
-	const lastAssistant = messages.findLast(
-		(message) => message !== null && isRuntimeObject(message) && message.role === "assistant",
-	);
-	return (
-		lastAssistant !== undefined &&
-		lastAssistant.role === "assistant" &&
-		Array.isArray(lastAssistant.content) &&
-		lastAssistant.content.length === 0 &&
-		(!lastAssistant.usage || !isRuntimeObject(lastAssistant.usage) || lastAssistant.usage.output === 0)
-	);
 }
 
 /**

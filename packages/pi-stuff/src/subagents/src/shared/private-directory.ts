@@ -307,34 +307,6 @@ export interface OwnedFileTail {
 	readonly text: string;
 }
 
-/** Read a bounded tail from one opened, owner-controlled regular file. */
-export function readOwnedFileTail(filePath: string, maxBytes: number): OwnedFileTail {
-	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file tail limit must be non-negative.");
-	const fd = openOwnedRegularFile(filePath);
-	try {
-		const stat = fs.fstatSync(fd);
-		assertOwnedRegularFile(filePath, stat);
-		const start = Math.max(0, stat.size - Math.max(0, maxBytes));
-		const buffer = readExactFileVersion(fd, stat.size - start, filePath, start);
-		let text = buffer.toString("utf-8");
-		if (start > 0) {
-			const preceding = Buffer.alloc(1);
-			fs.readSync(fd, preceding, 0, 1, start - 1);
-			if (preceding[0] !== 0x0a) {
-				const newline = text.indexOf("\n");
-				text = newline === -1 ? "" : text.slice(newline + 1);
-			}
-		}
-		const after = fs.fstatSync(fd);
-		if (!sameFileVersion(stat, after)) {
-			throw new OwnedFileChangedDuringReadError(filePath);
-		}
-		return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size, text };
-	} finally {
-		fs.closeSync(fd);
-	}
-}
-
 /** Async counterpart for Host-side recovery and detail readers. */
 export async function readOwnedFileTailAsync(filePath: string, maxBytes: number): Promise<OwnedFileTail> {
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file tail limit must be non-negative.");

@@ -1,14 +1,7 @@
-import * as fs from "node:fs";
 import { createRequire } from "node:module";
-import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-	isJsonInputObject,
-	type JsonInputObject,
-	type JsonInputValue,
-	parseJsonValue,
-} from "../../../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeFunction,
@@ -20,15 +13,6 @@ import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../shared/utils.ts";
 
 export const STRUCTURED_OUTPUT_SCHEMA_ENV = "PI_SUBAGENT_STRUCTURED_OUTPUT_SCHEMA";
 export const STRUCTURED_OUTPUT_CAPTURE_ENV = "PI_SUBAGENT_STRUCTURED_OUTPUT_CAPTURE";
-export const MISSING_STRUCTURED_OUTPUT_CALL_ERROR =
-	"Missing structured_output call; this step has outputSchema and must finish by calling structured_output.";
-
-export interface StructuredOutputRuntime {
-	schema: JsonSchemaObject;
-	schemaPath: string;
-	outputPath: string;
-}
-
 const SCHEMA_MAP_KEYWORDS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] as const;
 const SCHEMA_SINGLE_KEYWORDS = [
 	"additionalItems",
@@ -175,17 +159,6 @@ export function assertJsonSchemaObject(
 	}
 }
 
-export function createStructuredOutputRuntime(schema: JsonSchemaObject, baseDir?: string): StructuredOutputRuntime {
-	assertJsonSchemaObject(schema);
-	const rootDir = baseDir ?? os.tmpdir();
-	fs.mkdirSync(rootDir, { recursive: true });
-	const dir = fs.mkdtempSync(path.join(rootDir, "pi-subagent-structured-"));
-	const schemaPath = path.join(dir, "schema.json");
-	const outputPath = path.join(dir, "output.json");
-	fs.writeFileSync(schemaPath, JSON.stringify(schema), { mode: 0o600 });
-	return { schema, schemaPath, outputPath };
-}
-
 export async function validateStructuredOutputValue(
 	schema: JsonSchemaObject,
 	value: JsonInputValue,
@@ -206,37 +179,4 @@ export async function validateStructuredOutputValue(
 		return `${pathText}: ${error.message}`;
 	});
 	return { status: "invalid", message: errors.join("; ") || "schema validation failed" };
-}
-
-export async function readStructuredOutput(
-	runtime: StructuredOutputRuntime,
-): Promise<{ value?: JsonInputValue; error?: string }> {
-	if (!fs.existsSync(runtime.outputPath)) {
-		return { error: MISSING_STRUCTURED_OUTPUT_CALL_ERROR };
-	}
-	let value: JsonInputValue;
-	try {
-		value = parseJsonValue(fs.readFileSync(runtime.outputPath, "utf-8"));
-	} catch (error) {
-		return { error: `Failed to read structured output: ${error instanceof Error ? error.message : String(error)}` };
-	}
-	try {
-		const validation = await validateStructuredOutputValue(runtime.schema, value);
-		if (validation.status === "invalid")
-			return { error: `Structured output validation failed: ${validation.message}` };
-	} catch (error) {
-		return {
-			error: `Failed to validate structured output: ${error instanceof Error ? error.message : String(error)}`,
-		};
-	}
-	return { value };
-}
-
-export function cleanupStructuredOutputRuntime(runtime: StructuredOutputRuntime | undefined): void {
-	if (!runtime) return;
-	try {
-		fs.rmSync(path.dirname(runtime.schemaPath), { recursive: true, force: true });
-	} catch {
-		// Best-effort temp cleanup.
-	}
 }

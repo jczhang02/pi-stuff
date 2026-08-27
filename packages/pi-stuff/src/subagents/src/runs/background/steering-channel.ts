@@ -171,14 +171,6 @@ export function writeSteerCapabilityAt(
 	return filePath;
 }
 
-export function writeSteerCapability(
-	asyncDir: string,
-	capability: Omit<SteerCapability, "type" | "protocolVersion">,
-): string {
-	prepareControlDirectory(asyncDir, steerCapabilitiesDir(asyncDir));
-	return writeSteerCapabilityAt(steerCapabilityPath(asyncDir, capability.index), capability);
-}
-
 export function writeSteerAckAt(filePath: string, ack: Omit<SteerAck, "type" | "protocolVersion">): string {
 	assertChildIndex(ack.index);
 	if (!/^[^\s]+$/.test(ack.requestId) || ack.requestId.length > 256)
@@ -310,16 +302,6 @@ export function parseSteerAck(raw: JsonValue): SteerAck | undefined {
 export function readSteerAckAt(filePath: string): SteerAck | undefined {
 	try {
 		return parseSteerAck(parseJsonValue(readBoundedOwnedFile(filePath, MAX_CONTROL_RECORD_BYTES)));
-	} catch {
-		return undefined;
-	}
-}
-
-export function readSteerCapability(asyncDir: string, index: number): SteerCapability | undefined {
-	try {
-		return parseSteerCapability(
-			parseJsonValue(readBoundedOwnedFile(steerCapabilityPath(asyncDir, index), MAX_CONTROL_RECORD_BYTES)),
-		);
 	} catch {
 		return undefined;
 	}

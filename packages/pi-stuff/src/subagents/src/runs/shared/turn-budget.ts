@@ -37,22 +37,6 @@ export function appendTurnBudgetSystemPrompt(systemPrompt: string, budget: Resol
 	return systemPrompt.trim() ? `${systemPrompt.trim()}\n\n${block}` : block;
 }
 
-export function turnBudgetSoftNote(budget: ResolvedTurnBudget, turnCount: number): string {
-	return `Turn budget wrap-up was requested after ${turnCount} assistant turn${turnCount === 1 ? "" : "s"} (soft limit ${budget.maxTurns}, grace ${budget.graceTurns}). Process-mode live steering is unavailable, so the child was warned at launch to wrap up by this budget. Output may be partial.`;
-}
-
-export function turnBudgetExceededMessage(budget: ResolvedTurnBudget, turnCount: number): string {
-	return `Subagent exceeded turn budget after ${turnCount} assistant turn${turnCount === 1 ? "" : "s"} (soft limit ${budget.maxTurns} + grace ${budget.graceTurns}).`;
-}
-
-export function turnBudgetDeferredNote(budget: ResolvedTurnBudget, turnCount: number): string {
-	return `Turn-budget termination was deferred at ${turnCount} assistant turn${turnCount === 1 ? "" : "s"} (soft limit ${budget.maxTurns} + grace ${budget.graceTurns}) because the assistant started tool work. The run ended before another safe assistant boundary; output may be partial.`;
-}
-
-export function formatTurnBudgetOutput(message: string, output: string): string {
-	return output.trim() ? `${message}\n\nPartial output before turn-budget abort:\n${output}` : message;
-}
-
 export function initialTurnBudgetState(budget: ResolvedTurnBudget): TurnBudgetState {
 	return { ...budget, outcome: "within-budget", turnCount: 0 };
 }
@@ -66,20 +50,6 @@ export function turnBudgetState(budget: ResolvedTurnBudget, turnCount: number, e
 	};
 	if (exceeded) state.exceededAtTurn = turnCount;
 	return state;
-}
-
-export function turnBudgetDeferredState(
-	budget: ResolvedTurnBudget,
-	turnCount: number,
-	terminationDeferredAtTurn = turnCount,
-): TurnBudgetState {
-	return {
-		...budget,
-		turnCount,
-		outcome: "termination-deferred",
-		wrapUpRequestedAtTurn: budget.maxTurns,
-		terminationDeferredAtTurn,
-	};
 }
 
 export function turnBudgetDecision(

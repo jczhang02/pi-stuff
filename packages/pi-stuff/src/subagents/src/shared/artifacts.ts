@@ -64,12 +64,8 @@ export interface ArtifactMaintenanceOptions {
 	readonly maxEntries?: number;
 }
 
-export function getProjectSubagentsDir(cwd: string): string {
-	return path.join(cwd, PROJECT_ARTIFACT_ROOT);
-}
-
 export function getProjectArtifactsDir(cwd: string): string {
-	return path.join(getProjectSubagentsDir(cwd), "artifacts");
+	return path.join(cwd, PROJECT_ARTIFACT_ROOT, "artifacts");
 }
 
 export function getArtifactsDir(

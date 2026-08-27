@@ -78,18 +78,3 @@ export function findModelInfo(
 	}
 	return matches.length === 1 ? matches[0] : undefined;
 }
-
-export function getSupportedThinkingLevels(model: ModelInfo | undefined): ThinkingLevel[] {
-	if (!model) return THINKING_LEVELS.filter((level) => level !== "max");
-	if (model.reasoning === false) return ["off"];
-
-	if (!model.thinkingLevelMap) return THINKING_LEVELS.filter((level) => level !== "max");
-
-	const levels = THINKING_LEVELS.filter((level) => {
-		const mapped = model.thinkingLevelMap?.[level];
-		if (mapped === null) return false;
-		if (level === "xhigh" || level === "max") return mapped !== undefined;
-		return true;
-	});
-	return levels;
-}

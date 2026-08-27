@@ -1,14 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { isRuntimeObject } from "../../../../shared/runtime-type.ts";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { isOwnedFileChangedDuringReadError } from "../../shared/private-directory.ts";
 import type {
 	AsyncStatus,
-	ResolvedToolBudget,
-	ResolvedTurnBudget,
 	SteerActionResult,
-	SteeringRecoveryDescriptor,
 	SteeringRequestStatus,
 	SteeringStatus,
 	SteeringTargetState,
@@ -192,106 +185,8 @@ export function steeringActionIsTerminal(result: SteerActionResult | undefined):
 	);
 }
 
-export function terminalSteeringNoticeState(
-	status: SteeringStatus,
-	requestId: string,
-): "failed" | "partial" | undefined {
-	const request = status.recent.find((candidate) => candidate.id === requestId);
-	if (!request || request.targets.some((target) => target.state === "routed" || target.state === "scheduled"))
-		return undefined;
-	const hasSuccess = request.targets.some((target) => target.state === "delivered" || target.state === "recovered");
-	const hasFailure = request.targets.some((target) => target.state === "failed" || target.state === "late");
-	if (hasSuccess && hasFailure) return "partial";
-	return hasFailure ? "failed" : undefined;
-}
-
-export function claimSteeringRecovery(
-	asyncDir: string,
-	input: { requestId: string; sourceRunId: string; committedAt: number },
-) {
-	const recoveryDir = path.join(asyncDir, "control", "steer-recovery");
-	fs.mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
-	const claimPath = path.join(recoveryDir, "claim.json");
-	let fd: number;
-	try {
-		fd = fs.openSync(claimPath, "wx", 0o600);
-	} catch (error) {
-		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "EEXIST") {
-			throw new Error("Another steering recovery is already committed for this source run.");
-		}
-		throw error;
-	}
-	let writeError: unknown;
-	try {
-		fs.writeFileSync(fd, JSON.stringify({ version: 1, ...input }, null, 2), "utf-8");
-		fs.fsyncSync(fd);
-	} catch (error) {
-		writeError = error;
-	} finally {
-		fs.closeSync(fd);
-	}
-	if (writeError !== undefined) {
-		fs.rmSync(claimPath, { force: true });
-		throw writeError;
-	}
-	const markerPath = path.join(recoveryDir, `${Buffer.from(input.requestId).toString("base64url")}.json`);
-	try {
-		writePrivateAtomicJson(markerPath, { version: 1, ...input });
-	} catch (error) {
-		fs.rmSync(claimPath, { force: true });
-		throw error;
-	}
-	return { claimPath, markerPath };
-}
-
 export function readSteeringStatus(asyncDir: string): SteeringStatus | undefined {
 	return readStatus(asyncDir)?.steering;
-}
-
-interface RemainingSteeringRecoveryLimits {
-	timeoutMs?: number;
-	absoluteDeadlineAt?: number;
-	turnBudget?: ResolvedTurnBudget;
-	toolBudget?: ResolvedToolBudget;
-}
-
-export function remainingSteeringRecoveryLimits(
-	descriptor: Pick<SteeringRecoveryDescriptor, "absoluteDeadlineAt" | "initialTurnBudget" | "initialToolBudget">,
-	status: Pick<AsyncStatus, "turnBudget" | "turnCount" | "toolBudget" | "toolCount">,
-	now = Date.now(),
-) {
-	const limits: RemainingSteeringRecoveryLimits = {};
-	if (descriptor.absoluteDeadlineAt !== undefined) {
-		const timeoutMs = descriptor.absoluteDeadlineAt - now;
-		if (timeoutMs <= 0) throw new Error("Source run has no remaining deadline budget; it remains paused.");
-		limits.timeoutMs = timeoutMs;
-		limits.absoluteDeadlineAt = descriptor.absoluteDeadlineAt;
-	}
-	if (descriptor.initialTurnBudget) {
-		const consumed = status.turnBudget?.turnCount ?? status.turnCount ?? 0;
-		const totalRemaining = descriptor.initialTurnBudget.maxTurns + descriptor.initialTurnBudget.graceTurns - consumed;
-		if (totalRemaining <= 0) throw new Error("Source run has no remaining turn budget; it remains paused.");
-		const softRemaining = Math.max(0, descriptor.initialTurnBudget.maxTurns - consumed);
-		limits.turnBudget =
-			softRemaining > 0
-				? { maxTurns: softRemaining, graceTurns: totalRemaining - softRemaining }
-				: { maxTurns: 1, graceTurns: totalRemaining - 1 };
-	}
-	if (descriptor.initialToolBudget) {
-		const consumed = status.toolBudget?.toolCount ?? status.toolCount ?? 0;
-		const hard = descriptor.initialToolBudget.hard - consumed;
-		if (hard <= 0) throw new Error("Source run has no remaining tool budget; it remains paused.");
-		const soft =
-			descriptor.initialToolBudget.soft === undefined ? undefined : descriptor.initialToolBudget.soft - consumed;
-		const optional: Pick<ResolvedToolBudget, "soft"> = {};
-		if (soft !== undefined && soft > 0 && soft < hard) optional.soft = soft;
-		limits.toolBudget = {
-			hard,
-			...optional,
-			block: descriptor.initialToolBudget.block,
-		};
-	}
-	return limits;
 }
 
 export async function waitForSteeringAction(
