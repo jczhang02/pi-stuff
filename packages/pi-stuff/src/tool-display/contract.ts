@@ -566,10 +566,6 @@ export class ToolUiRuntime {
 		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
-	hasActivityMetadata(name: string): boolean {
-		return this.activityPolicies.has(name);
-	}
-
 	markRendererAttached(name: string): void {
 		if (this.renderedToolNames.has(name)) return;
 		this.renderedToolNames.add(name);
@@ -587,22 +583,6 @@ export class ToolUiRuntime {
 
 	missingActivityRenderers(toolNames: readonly string[]): readonly string[] {
 		return toolNames.filter((name) => !this.renderedToolNames.has(name));
-	}
-
-	synchronizeRenderedTools(names: ReadonlySet<string>): void {
-		let changed = names.size !== this.renderedToolNames.size;
-		if (!changed) {
-			for (const name of names) {
-				if (!this.renderedToolNames.has(name)) {
-					changed = true;
-					break;
-				}
-			}
-		}
-		if (!changed) return;
-		this.renderedToolNames.clear();
-		for (const name of names) this.renderedToolNames.add(name);
-		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
 	missingActivityMetadata(toolNames: readonly string[]): readonly string[] {
