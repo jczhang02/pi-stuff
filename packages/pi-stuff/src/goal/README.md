@@ -44,10 +44,11 @@ model receives them and the session retains them, while the TUI and HTML convers
 user's command, Tool outcome, and final response.
 
 Internally, `goal.ts` is the single Pi lifecycle composition root: event order and per-factory closures remain together.
-The generation-guarded state machine stays in `runtime.ts`, command registration and transitions in `commands.ts`,
-compaction retry coordination in `compaction.ts`, automatic-run coordination in `run-protocol.ts`, terminal Tool
-execution in `terminal-tools.ts`, and its stateless schemas and presentation in `tool-contract.ts`. Splitting lifecycle
-handlers by event would duplicate continuation, stale-turn, persistence, and safety invariants.
+The generation-guarded state machine stays in `runtime.ts`, pure state and formatting policy in `policy.ts`, command
+registration and transitions in `commands.ts`, compaction retry coordination in `compaction.ts`, automatic-run
+coordination in `run-protocol.ts`, terminal Tool execution in `terminal-tools.ts`, and its stateless schemas and
+presentation in `tool-contract.ts`. Splitting lifecycle handlers by event would duplicate continuation, stale-turn,
+persistence, and safety invariants.
 
 ## Terminal tools
 

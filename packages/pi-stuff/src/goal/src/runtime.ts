@@ -1,17 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import {
-	checkpointGoalActiveTime,
-	formatDuration,
-	formatTokenCount,
-	type UsageContext,
-	updateGoalUsage,
-} from "./accounting.js";
+import { formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
 import { appendGoalPromptMarker, extractContinuationMarker, extractGoalPromptMarker } from "./markers.js";
 import {
@@ -22,9 +16,28 @@ import {
 	type SafetyPauseCause,
 	serializeGoalState,
 } from "./persistence.js";
+import { abortCurrentTurn, formatBudget, hasPendingMessages, type StatusContext, transitionGoal } from "./policy.js";
 import { buildContinuePrompt, type GoalStatus } from "./prompts.js";
 import { nextToolFreeRepeatState, resetGoalSafetyEpoch } from "./safety.js";
 
+export type { StatusContext } from "./policy.js";
+export {
+	abortCurrentTurn,
+	blocksStaleGoalToolCalls,
+	createGoal,
+	editedGoalStatus,
+	formatBudget,
+	formatStatus,
+	goalIdRejectionReason,
+	goalSummary,
+	hasPendingMessages,
+	incrementGoal,
+	isContradictoryCompletionSummary,
+	isResumableGoalStatus,
+	nextGoalInstance,
+	stoppedStatusLabel,
+	transitionGoal,
+} from "./policy.js";
 export { queueGoalSafetyReset, resetGoalSafetyEpoch } from "./safety.js";
 
 import { DEFAULT_GOAL_SETTINGS, type GoalSettings, type GoalSettingsLoadIssue } from "./settings.js";
@@ -56,20 +69,6 @@ export interface CompletedGoalRun {
 	goalId?: string | null | undefined;
 	origin?: GoalRunOrigin | undefined;
 	toolAttempted: boolean;
-}
-
-export interface StatusContext extends UsageContext {
-	cwd: string;
-	mode?: "tui" | "rpc" | "json" | "print";
-	ui: {
-		confirm: (title: string, message: string) => Promise<boolean>;
-		notify: (message: string, level?: "info" | "warning" | "error") => void;
-		theme?: Pick<Theme, "bold" | "fg">;
-	};
-	isIdle?: () => boolean;
-	hasPendingMessages?: () => boolean;
-	waitForIdle?: () => Promise<void>;
-	abort?: () => void;
 }
 
 export interface GoalToolVisibilitySnapshot {
@@ -170,11 +169,6 @@ export const GOAL_PROMPT_MESSAGE_TYPE = "pi-stuff-goal-prompt";
 export const GOAL_CONTEXT_MESSAGE_TYPE = "pi-stuff-goal-context";
 const BUDGET_WRAP_UP_PROMPT =
 	"The active /goal token budget is exhausted. Stop substantive work and do not call substantive tools. Summarize progress, verified results, remaining work, and blockers concisely. Treat completion as unproven. Do not call goal_complete unless authoritative, requirement-by-requirement evidence already proves every requirement is complete. Weak, indirect, or missing evidence is not enough. Budget exhaustion is not completion.";
-const CONTRADICTORY_COMPLETION_PATTERNS = [
-	/(?<!could\s)\bnot\s+(?:yet\s+)?(?:complete|completed|done|finished)\b/i,
-	/\bstill\s+(?:incomplete|failing|failing\s+tests?|fails?)\b/i,
-	/\btests?\s+(?:still\s+)?fail(?:ing)?\b/i,
-] as const;
 // One instance belongs to one extension factory. It owns all mutable session state
 // and the cross-cutting invariants used by command and lifecycle orchestration.
 // Keep this state machine cohesive despite its size: prompt ownership, continuation,
@@ -1081,148 +1075,6 @@ export class GoalRuntime {
 	}
 }
 
-export function createGoal(text: string, tokenBudget: number | undefined, baselineTokens: number): ActiveGoal {
-	const now = Date.now();
-	return {
-		id: randomUUID(),
-		text,
-		status: "active",
-		startedAt: now,
-		updatedAt: now,
-		iteration: 0,
-		tokenBudget,
-		tokensUsed: 0,
-		timeUsedSeconds: 0,
-		baselineTokens,
-		activeStartedAt: now,
-		automaticModelTurns: 0,
-		toolFreeRepeatCount: 0,
-	};
-}
-
-export function transitionGoal(goal: ActiveGoal, requestedStatus: GoalStatus): ActiveGoal {
-	const now = Date.now();
-	const status =
-		requestedStatus === "active" && goal.tokenBudget !== undefined && goal.tokensUsed >= goal.tokenBudget
-			? "budget_limited"
-			: requestedStatus;
-	const next = { ...goal, status, updatedAt: now };
-	checkpointGoalActiveTime(next, now, status === "active");
-	return next;
-}
-
-export function nextGoalInstance(goal: ActiveGoal): ActiveGoal {
-	return { ...goal, id: randomUUID(), updatedAt: Date.now() };
-}
-
-export function editedGoalStatus(status: GoalStatus): GoalStatus {
-	if (status === "paused" || status === "blocked" || status === "usage_limited") return status;
-	return "active";
-}
-
-export function incrementGoal(goal: ActiveGoal): ActiveGoal {
-	return { ...goal, iteration: goal.iteration + 1, updatedAt: Date.now() };
-}
-
-export function formatStatus(goal: ActiveGoal | undefined) {
-	if (!goal) return undefined;
-	if (goal.status === "complete") return "complete";
-	if (goal.status === "queued") return "queued";
-	if (goal.status === "paused") return "paused";
-	if (goal.status === "blocked") return "blocked";
-	if (goal.status === "usage_limited") return "usage";
-	if (goal.status === "budget_limited") return `budget ${formatBudget(goal)}`;
-	if (goal.tokenBudget !== undefined) return `active ${formatBudget(goal)}`;
-	return `active ${formatDuration(goal.timeUsedSeconds)}`;
-}
-
-export function formatBudget(goal: ActiveGoal) {
-	return `${formatTokenCount(goal.tokensUsed)}/${formatTokenCount(goal.tokenBudget ?? 0)}`;
-}
-
-export function goalSummary(
-	goal: ActiveGoal,
-	queuedGoals: readonly ActiveGoal[] = [],
-	experimentalGoals = false,
-	queueFrozen = false,
-	pendingAction?: PendingQueueAction,
-) {
-	const summary = [
-		`Goal: ${goal.text}`,
-		`Status: ${queueFrozen ? "queue off" : goal.status}`,
-		`Iteration: ${goal.iteration}`,
-		`Automatic model responses: ${goal.automaticModelTurns}`,
-		`Active elapsed: ${formatDuration(goal.timeUsedSeconds)}`,
-		`Tokens: ${goal.tokenBudget === undefined ? formatTokenCount(goal.tokensUsed) : formatBudget(goal)}`,
-	];
-	if (goal.safetyPauseCause) {
-		summary.push(
-			`Safety pause: ${goal.safetyPauseCause === "continuation_limit" ? "automatic response limit" : "no progress"}`,
-		);
-	}
-	if (experimentalGoals || queuedGoals.length > 0 || queueFrozen || pendingAction) {
-		const orderedGoals = [
-			`[${goal.status}] ${goal.text}`,
-			...(pendingAction?.kind === "prioritize" ? [`[pending] ${pendingAction.objective}`] : []),
-			...queuedGoals.map((queuedGoal) => `[${queuedGoal.status}] ${queuedGoal.text}`),
-		];
-		summary.push(
-			`Goals (${orderedGoals.length}):`,
-			...orderedGoals.map((queuedGoal, index) => `${index + 1}. ${queuedGoal}`),
-		);
-	}
-	if (pendingAction?.kind === "advance") {
-		summary.push(
-			`Pending queue action: ${pendingAction.reason === "complete" ? "complete" : "skip"} current goal when Pi settles.`,
-		);
-	}
-	if (queueFrozen) {
-		summary.push(
-			"Queue is frozen. Re-enable experimental.goals and run /reload, or use /goal clear.",
-			"Commands: /goal, /goal clear",
-		);
-	} else {
-		summary.push(`Commands: ${goalCommandHint(goal.status, experimentalGoals)}`);
-	}
-	return summary.join("\n");
-}
-
-export function hasPendingMessages(ctx: StatusContext) {
-	return ctx.hasPendingMessages?.() ?? false;
-}
-
-export function abortCurrentTurn(ctx: StatusContext) {
-	try {
-		ctx.abort?.();
-	} catch {
-		// Best effort: stale goal guards still prevent follow-on tool calls.
-	}
-}
-
-export function blocksStaleGoalToolCalls(status: GoalStatus) {
-	return status === "paused" || status === "blocked" || status === "usage_limited";
-}
-
-export function isResumableGoalStatus(status: GoalStatus) {
-	return blocksStaleGoalToolCalls(status) || status === "budget_limited";
-}
-
-export function stoppedStatusLabel(status: GoalStatus) {
-	if (status === "usage_limited") return "usage-limited";
-	if (status === "budget_limited") return "budget-limited";
-	return status;
-}
-
-export function isContradictoryCompletionSummary(summary: string) {
-	return CONTRADICTORY_COMPLETION_PATTERNS.some((pattern) => pattern.test(summary));
-}
-
-export function goalIdRejectionReason(goal: ActiveGoal, requestedGoalId: string) {
-	if (!requestedGoalId) return "missing goal_id";
-	if (requestedGoalId !== goal.id) return "goal_id does not match the active goal";
-	return undefined;
-}
-
 function inputFingerprint(prompt: string) {
 	return createHash("sha256").update(prompt, "utf8").digest("hex");
 }
@@ -1264,19 +1116,6 @@ function sendHiddenGoalPrompt(
 		{ deliverAs: "followUp", triggerTurn: true },
 		isCurrent,
 	);
-}
-
-function goalCommandHint(status: GoalStatus, experimentalGoals = false) {
-	const queueCommands = experimentalGoals
-		? ", /goal add <objective>, /goal prioritize <objective>, /goal drop-last, /goal skip"
-		: "";
-	if (status === "active") {
-		return `/goal edit <objective>, /goal pause, /goal clear${queueCommands}`;
-	}
-	if (isResumableGoalStatus(status)) {
-		return `/goal edit <objective>, /goal resume, /goal clear${queueCommands}`;
-	}
-	return `/goal edit <objective>, /goal clear${queueCommands}`;
 }
 
 function continuationMarker(goal: ActiveGoal) {
