@@ -259,7 +259,7 @@ function foregroundContent(results: readonly SingleResult[]): string {
 		.join("\n\n");
 }
 
-function firstText(result: AgentToolResult<Details>): string {
+export function agentResultText(result: AgentToolResult<Details>): string {
 	return result.content
 		.filter((entry): entry is Extract<(typeof result.content)[number], { type: "text" }> => entry.type === "text")
 		.map((entry) => entry.text)
@@ -286,7 +286,7 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 	if (childFailed) Object.assign(publicResult, { isError: true });
 	if (params.action) {
 		const text = bounded(
-			scanAgentReport(firstText(publicResult) || "Agent action finished.").text,
+			scanAgentReport(agentResultText(publicResult) || "Agent action finished.").text,
 			MAX_PARENT_RESULT_CHARS,
 		);
 		return { ...publicResult, content: [{ type: "text", text }] };
@@ -314,7 +314,7 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 		};
 	}
 	const text = bounded(
-		scanAgentReport(firstText(publicResult) || "Agent execution failed.").text,
+		scanAgentReport(agentResultText(publicResult) || "Agent execution failed.").text,
 		MAX_PARENT_RESULT_CHARS,
 	);
 	return { ...publicResult, content: [{ type: "text", text }] };

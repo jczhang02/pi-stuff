@@ -1,39 +1,21 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { projectCurrentContext } from "../../../context-management/index.js";
 import {
-	type AgentWorkOrigin,
 	type CommandDialogCoordinator,
 	getCommandDialogCoordinator,
 	readCurrentAgentWorkOrigin,
-	requestStatuslineGitRefreshAfterUserWork,
 } from "../../../conversation-ui/index.js";
-import {
-	isRuntimeBoolean,
-	isRuntimeFunction,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../shared/runtime-type.js";
-import { CachedToolRow, registerSuiteOwnedTool } from "../../../tool-display/index.js";
+import { isRuntimeFunction } from "../../../shared/runtime-type.js";
+import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
-import type { CompletionNotification } from "../runs/background/notify.ts";
 import { createResultWatcher } from "../runs/background/result-watcher.ts";
-import {
-	createSubagentExecutor,
-	deriveLaunchRunId,
-	resolveLegacyAgentParams,
-	resolveResumeTargetRunId,
-	type SubagentExecutionHooks,
-	type SubagentParamsLike,
-} from "../runs/foreground/subagent-executor.ts";
+import { createSubagentExecutor } from "../runs/foreground/subagent-executor.ts";
 import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
 import {
 	PI_STUFF_AGENT_PATH_ENV,
@@ -44,8 +26,6 @@ import {
 } from "../runs/shared/pi-args.ts";
 import {
 	type AgentExecutionCoordinatorPort,
-	type AgentExecutionInvocation,
-	AgentRuntimeBindingRejectedError,
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
@@ -73,7 +53,6 @@ import {
 	buildSessionCompatibilityScope,
 	buildSessionGovernorCompatibilityScope,
 	resolveCurrentSessionIdentity,
-	sessionArtifactMatches,
 } from "../shared/session-identity.ts";
 import {
 	ASYNC_DIR,
@@ -81,11 +60,6 @@ import {
 	type Details,
 	RESULTS_DIR,
 	SESSION_GOVERNOR_ROOT,
-	SUBAGENT_ASYNC_COMPLETE_EVENT,
-	SUBAGENT_ASYNC_STARTED_EVENT,
-	SUBAGENT_ASYNC_STATUS_EVENT,
-	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
-	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	type SubagentState,
 	TEMP_ROOT_DIR,
 } from "../shared/types.ts";
@@ -93,47 +67,25 @@ import { type AgentDialogOptions, openAgentDialog } from "../ui/agent-dialog.ts"
 import { AgentRoster, type AgentRosterOptions } from "../ui/agent-roster.ts";
 import { readAgentTranscript } from "../ui/agent-transcript.ts";
 import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
+import { type CompactCompletionNotifier, installCompletionHandling } from "./completion-handling.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
-import { routeLiveNestedAgentControl } from "./nested-control-router.ts";
+import { agentResultText, normalizePublicAgentParams, type PublicAgentParams } from "./product-executor.ts";
 import {
-	type AgentEngineResult,
-	normalizePublicAgentParams,
-	type PublicAgentParams,
-	projectEngineResult,
-	toEngineParams,
-} from "./product-executor.ts";
+	type ExecutePublicAgent,
+	type PublicAgentEngine,
+	type PublicAgentExecutionRuntime,
+	projectPublicAgentFailure,
+	runPublicAgent,
+} from "./public-agent-execution.ts";
+import { registerAgentRuntimeEvents } from "./runtime-events.ts";
 import { SubagentParams } from "./schemas.ts";
 import { type AgentToolRosterEntry, buildSubagentToolDescription } from "./tool-description.ts";
 
 export { loadConfig } from "./config.ts";
 
-// Retained only so sessions written by older Pi Stuff releases still render.
-const COMPLETION_MESSAGE_TYPE = "pi-stuff-agent-complete";
-const COMPLETION_ENTRY_TYPE = "pi-stuff-agent-outcome";
 const RUNTIME_MAINTENANCE_SUCCESS_INTERVAL_MS = 60 * 60 * 1_000;
 const RUNTIME_MAINTENANCE_FAILURE_RETRY_MS = 60 * 1_000;
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
-
-type CompletionOutcomeStatus = "completed" | "failed" | "stopped";
-
-interface CompletionOutcomeEntry {
-	readonly version: 1;
-	readonly key: string;
-	readonly count: number;
-	readonly status: CompletionOutcomeStatus;
-	readonly durationMs?: number;
-}
-
-interface RootExecutor {
-	execute(
-		id: string,
-		params: SubagentParamsLike,
-		signal: AbortSignal,
-		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
-		ctx: ExtensionContext,
-		hooks?: SubagentExecutionHooks,
-	): Promise<AgentToolResult<Details>>;
-}
 
 interface RootTracker {
 	ensureObserver(): void;
@@ -155,12 +107,6 @@ interface RootSupervisor {
 	dispose(): void;
 	pause?(): void;
 	start(): void | Promise<void>;
-}
-
-interface CompactCompletionNotifier {
-	deliver(result: CompletionNotification, signal?: AbortSignal): Promise<boolean>;
-	reset(entries: readonly SessionEntry[]): void;
-	dispose(): void;
 }
 
 interface RootExecutorInput {
@@ -185,16 +131,6 @@ interface AgentsRuntimeGlobal {
 	[RUNTIME_CLEANUP_KEY]?: () => void | Promise<void>;
 }
 
-interface CompletionStateProjection {
-	status?: string;
-	state?: string;
-	stopped?: boolean;
-	interrupted?: boolean;
-	success?: boolean;
-}
-
-type ExtensionEventHandler = Parameters<ExtensionAPI["events"]["on"]>[1];
-
 export type ExtensionRootRoster = Pick<
 	AgentRoster,
 	"createFooterTail" | "dispose" | "setContext" | "setFooterHosted" | "setSuppressed"
@@ -206,7 +142,7 @@ export interface ExtensionRootDependencies {
 	readonly codeModeProviderTools?: readonly string[];
 	readonly resolveCodeModeEnabled?: () => boolean;
 	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
-	readonly createExecutor: (input: RootExecutorInput) => RootExecutor;
+	readonly createExecutor: (input: RootExecutorInput) => PublicAgentEngine;
 	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
 	readonly prepareGovernorCompatibility: (
 		input: PrepareSessionGovernorCompatibilityInput,
@@ -351,178 +287,6 @@ function projectAgentRoster(agents: readonly AgentConfig[], cwd: string): AgentT
 		.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function projectCompletionState<Value>(value: Value): CompletionStateProjection {
-	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
-	const projection: CompletionStateProjection = {};
-	if ("status" in value && isRuntimeString(value.status)) projection.status = value.status;
-	if ("state" in value && isRuntimeString(value.state)) projection.state = value.state;
-	if ("stopped" in value && isRuntimeBoolean(value.stopped)) projection.stopped = value.stopped;
-	if ("interrupted" in value && isRuntimeBoolean(value.interrupted)) projection.interrupted = value.interrupted;
-	if ("success" in value && isRuntimeBoolean(value.success)) projection.success = value.success;
-	return projection;
-}
-
-function completionState(value: CompletionStateProjection, fallback: CompletionNotification): CompletionOutcomeStatus {
-	const explicitState = isRuntimeString(value.status)
-		? value.status
-		: isRuntimeString(value.state)
-			? value.state
-			: undefined;
-	if (
-		["cancelled", "detached", "paused", "stopped"].includes(explicitState ?? "") ||
-		value.stopped === true ||
-		value.interrupted === true
-	) {
-		return "stopped";
-	}
-	if (explicitState === "crashed" || explicitState === "failed") return "failed";
-	if (isRuntimeBoolean(value.success)) return value.success ? "completed" : "failed";
-	if (explicitState !== undefined) return "completed";
-	if (
-		["cancelled", "detached", "paused", "stopped"].includes(fallback.state ?? "") ||
-		fallback.stopped === true ||
-		fallback.interrupted === true
-	)
-		return "stopped";
-	if (fallback.state === "crashed" || fallback.state === "failed") return "failed";
-	const success = fallback.success;
-	return success === false ? "failed" : "completed";
-}
-
-function completionKey(result: CompletionNotification): string {
-	const identity = JSON.stringify([result.sessionId, result.id, result.runId, result.taskIndex, result.timestamp]);
-	return createHash("sha256").update(identity).digest("hex").slice(0, 24);
-}
-
-function completionDuration(result: CompletionNotification): number | undefined {
-	const duration = isRuntimeNumber(result.durationMs)
-		? result.durationMs
-		: isRuntimeNumber(result.startedAt) && isRuntimeNumber(result.endedAt)
-			? result.endedAt - result.startedAt
-			: undefined;
-	return duration !== undefined && Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : undefined;
-}
-
-function completionOutcome(result: CompletionNotification, key: string): CompletionOutcomeEntry {
-	const raw = projectCompletionState(result);
-	const children = result.results?.length ? result.results.map(projectCompletionState) : [raw];
-	const states = children.map((child) => completionState(child, result));
-	const status = states.includes("failed") ? "failed" : states.includes("stopped") ? "stopped" : "completed";
-	const durationMs = completionDuration(result);
-	let outcome: CompletionOutcomeEntry = {
-		version: 1,
-		key,
-		count: children.length,
-		status,
-	};
-	if (durationMs !== undefined) outcome = { ...outcome, durationMs };
-	return outcome;
-}
-
-function formatDuration(durationMs: number | undefined): string | undefined {
-	if (durationMs === undefined) return undefined;
-	const seconds = Math.max(1, Math.round(durationMs / 1_000));
-	if (seconds < 60) return `${String(seconds)}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainder = seconds % 60;
-	return remainder === 0 ? `${String(minutes)}m` : `${String(minutes)}m ${String(remainder)}s`;
-}
-
-function completionOutcomeText(data: CompletionOutcomeEntry): string {
-	const subject = data.count === 1 ? "Agent" : `${String(data.count)} Agents`;
-	const verb = data.status === "completed" ? "finished" : data.status;
-	return [`${subject} ${verb}`, formatDuration(data.durationMs), "inspect with /agents"].filter(Boolean).join(" · ");
-}
-
-function createCompactCompletionNotifier(
-	pi: Pick<ExtensionAPI, "appendEntry">,
-	state: Pick<SubagentState, "currentSessionId" | "currentSessionScope">,
-	coordinator: Pick<CommandDialogCoordinator, "whenIdle">,
-): CompactCompletionNotifier {
-	const delivered = new Set<string>();
-	let disposed = false;
-	return {
-		async deliver(result, signal) {
-			if (
-				disposed ||
-				result.intercomDelivered === true ||
-				!isRuntimeString(result.sessionId) ||
-				!sessionArtifactMatches(state.currentSessionScope, result.sessionId, result.runId ?? result.id)
-			) {
-				return result.intercomDelivered === true;
-			}
-			const key = completionKey(result);
-			if (delivered.has(key)) return true;
-			try {
-				await Promise.race([
-					coordinator.whenIdle(),
-					new Promise<void>((_, reject) => {
-						if (signal?.aborted) return reject(signal.reason ?? new Error("Completion delivery cancelled."));
-						signal?.addEventListener(
-							"abort",
-							() => reject(signal.reason ?? new Error("Completion delivery cancelled.")),
-							{ once: true },
-						);
-					}),
-				]);
-				const alreadyDelivered = delivered.has(key);
-				if (
-					signal?.aborted ||
-					disposed ||
-					!sessionArtifactMatches(state.currentSessionScope, result.sessionId, result.runId ?? result.id) ||
-					alreadyDelivered
-				)
-					return alreadyDelivered;
-				// Custom entries persist and render with the session but are excluded from
-				// model context, so completion cannot create an unsolicited main turn.
-				pi.appendEntry<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, completionOutcome(result, key));
-				delivered.add(key);
-				return true;
-			} catch {
-				return false;
-			}
-		},
-		reset(entries) {
-			delivered.clear();
-			for (const entry of entries) {
-				if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) continue;
-				const data = entry.data;
-				if (
-					isRuntimeObject(data) &&
-					data !== null &&
-					!Array.isArray(data) &&
-					"version" in data &&
-					data.version === 1 &&
-					"key" in data &&
-					isRuntimeString(data.key)
-				) {
-					delivered.add(data.key);
-				}
-			}
-		},
-		dispose() {
-			disposed = true;
-			delivered.clear();
-		},
-	};
-}
-
-function firstText(result: AgentToolResult<Details>): string {
-	return result.content
-		.filter(
-			(
-				entry: AgentToolResult<Details>["content"][number],
-			): entry is Extract<AgentToolResult<Details>["content"][number], { type: "text" }> => entry.type === "text",
-		)
-		.map((entry: Extract<AgentToolResult<Details>["content"][number], { type: "text" }>) => entry.text)
-		.join("\n")
-		.trim();
-}
-
-function resultIsError(result: AgentEngineResult): boolean {
-	return result.isError === true;
-}
-
 function hasLiveWork(state: SubagentState): boolean {
 	if (state.foregroundControls.size > 0) return true;
 	if (
@@ -586,7 +350,7 @@ export default function registerSubagentExtension(
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state, () => current.refresh());
 	const supervisor = deps.createSupervisor(pi, state);
-	const notifier = createCompactCompletionNotifier(pi, state, coordinator);
+	const notifier = installCompletionHandling(pi, state, coordinator);
 	const watcher = deps.createWatcher({ notifier, pi, state });
 	let active = true;
 	let watcherStarted = false;
@@ -603,14 +367,7 @@ export default function registerSubagentExtension(
 	let maintenanceInFlight = false;
 	let nextMaintenanceAt = 0;
 	let ephemeralSessionNonce = randomUUID();
-	let executePublicAgent!: (
-		id: string,
-		params: PublicAgentParams,
-		signal: AbortSignal,
-		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
-		ctx: ExtensionContext,
-		parentRunOrigin: AgentWorkOrigin,
-	) => Promise<AgentEngineResult>;
+	let executePublicAgent!: ExecutePublicAgent;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 	let recoverCurrentSessionHistory!: (ctx: ExtensionContext) => Promise<void>;
 	let agentRoster: AgentToolRosterEntry[] = [];
@@ -647,10 +404,10 @@ export default function registerSubagentExtension(
 			"user",
 		);
 		current.refresh();
+		const isError = result.isError === true;
 		return {
-			acknowledged: !resultIsError(result),
-			message:
-				firstText(result) || (resultIsError(result) ? "Agent request failed." : "Agent request acknowledged."),
+			acknowledged: !isError,
+			message: agentResultText(result) || (isError ? "Agent request failed." : "Agent request acknowledged."),
 		};
 	};
 
@@ -836,216 +593,29 @@ export default function registerSubagentExtension(
 		return recovery.promise;
 	};
 
-	const governorFailureResult = (params: PublicAgentParams, message: string): AgentEngineResult => ({
-		content: [{ type: "text", text: message }],
-		isError: true,
-		details: {
-			mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
-			results: [],
+	const publicAgentRuntime: PublicAgentExecutionRuntime = {
+		state,
+		governor: executionGovernor,
+		engine: executor,
+		rootState: () => {
+			const rootState = {
+				active,
+				sessionEpoch,
+				ephemeralSessionNonce,
+				compatibilityReady: governorCompatibilityReady,
+			};
+			return governorCompatibilityError === undefined
+				? rootState
+				: { ...rootState, compatibilityError: governorCompatibilityError };
 		},
-	});
-
-	executePublicAgent = async (id, params, signal, onUpdate, ctx, parentRunOrigin) => {
-		const requestedEpoch = sessionEpoch;
-		const requestedSessionId = state.currentSessionId;
-		await activateCurrentSessionRuntime(ctx);
-		if (!active || requestedEpoch !== sessionEpoch || state.currentSessionId !== requestedSessionId) {
-			return projectEngineResult(
-				params,
-				governorFailureResult(params, "Agent request cancelled because the parent session ended or changed."),
-			);
-		}
-		if ((!params.action || params.action === "resume") && !governorCompatibilityReady) {
-			await refreshGovernorCompatibility(ctx);
-			if (!active || requestedEpoch !== sessionEpoch || state.currentSessionId !== requestedSessionId) {
-				return projectEngineResult(
-					params,
-					governorFailureResult(params, "Agent request cancelled because the parent session ended or changed."),
-				);
-			}
-			if (!governorCompatibilityReady) {
-				return projectEngineResult(
-					params,
-					governorFailureResult(
-						params,
-						governorCompatibilityError ??
-							"Agent launches are paused because governor compatibility was not verified for this session.",
-					),
-				);
-			}
-		}
-		const launchIdentity = {
-			// The header id differentiates a newly-created session that intentionally
-			// reuses an old --session path without changing the persisted compatibility
-			// namespace used to cold-resume existing Agent artifacts.
-			sessionId: `${
-				state.currentSessionId ??
-				resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce).sessionId
-			}\0header:${ctx.sessionManager.getSessionId() ?? "unknown"}`,
-			ownerAgentPath: parseAgentOwnerPath(process.env[PI_STUFF_AGENT_PATH_ENV]),
-		};
-		const launchRunId = deriveLaunchRunId(id, launchIdentity);
-		const invocationEpoch = sessionEpoch;
-		const invocationSessionId = state.currentSessionId;
-		let targetParams = params;
-		if (params.action === "resume" || params.action === "steer" || params.action === "stop") {
-			try {
-				targetParams = resolveLegacyAgentParams(params, state);
-			} catch (error) {
-				return projectEngineResult(
-					params,
-					governorFailureResult(params, error instanceof Error ? error.message : String(error)),
-				);
-			}
-		}
-		const nestedControl = await routeLiveNestedAgentControl(targetParams, state, signal, { parentRunOrigin });
-		if (nestedControl) return projectEngineResult(params, nestedControl);
-		let resumeTargetRunId: string | undefined;
-		try {
-			resumeTargetRunId = resolveResumeTargetRunId(targetParams, state);
-		} catch (error) {
-			return projectEngineResult(
-				params,
-				governorFailureResult(params, error instanceof Error ? error.message : String(error)),
-			);
-		}
-		let prepareInput: Parameters<typeof executionGovernor.prepare>[0] = {
-			launchRunId,
-			params: targetParams,
-		};
-		if (resumeTargetRunId) prepareInput = { ...prepareInput, resumeTargetRunId };
-		const prepared = await executionGovernor.prepare(prepareInput);
-		if (!prepared.ok) return projectEngineResult(params, governorFailureResult(params, prepared.message));
-		const invocation: AgentExecutionInvocation | undefined = prepared.invocation;
-		if (!active || invocationEpoch !== sessionEpoch || state.currentSessionId !== invocationSessionId) {
-			if (invocation) {
-				try {
-					await executionGovernor.fail(invocation);
-				} catch (error) {
-					reportAgentDiagnostic("Failed to release a cancelled Agent launch reservation:", error);
-				}
-			}
-			return projectEngineResult(
-				params,
-				governorFailureResult(params, "Agent launch cancelled because the parent session ended or changed."),
-			);
-		}
-		let foregroundStarted = false;
-		try {
-			if (invocation) {
-				startRunRuntime({ createDirectories: true, primeExisting: true });
-			}
-			const engineParams = { ...toEngineParams(targetParams), launchRunId };
-			let hooks: SubagentExecutionHooks = { parentRunOrigin };
-			if (invocation && params.foreground === true) {
-				hooks = {
-					...hooks,
-					beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
-						await executionGovernor.observeAsyncStarted({
-							id: runId,
-							pid: process.pid,
-							asyncDir,
-							abortStart,
-						});
-						foregroundStarted = true;
-					},
-				};
-			}
-			const result = await executor.execute(
-				id,
-				engineParams,
-				signal,
-				onUpdate
-					? (update) => {
-							current.refresh();
-							onUpdate(projectEngineResult(params, update));
-						}
-					: undefined,
-				ctx,
-				hooks,
-			);
-			if (
-				invocation &&
-				(!active || invocationEpoch !== sessionEpoch || state.currentSessionId !== invocationSessionId)
-			) {
-				if (params.foreground === true && foregroundStarted) {
-					try {
-						// The foreground engine already ran under the original session's
-						// durable authority. Settle its real terminal/detached children even
-						// though the obsolete UI call now returns a session-ended message.
-						await executionGovernor.settle(invocation, result);
-					} catch (error) {
-						reportAgentDiagnostic("Failed to settle a session-changed foreground Agent result:", error);
-					}
-				} else {
-					const binding = result.details.lifecycleBinding;
-					let safeToRelease = !binding && !result.details.asyncId;
-					if (binding?.abortStart) {
-						try {
-							safeToRelease = binding.abortStart();
-						} catch (error) {
-							// A failed abort is not proof that the runner stopped. Keep the
-							// original session's durable governor authority fail-closed.
-							reportAgentDiagnostic("Failed to abort a session-changed Agent runtime:", error);
-							safeToRelease = false;
-						}
-					}
-					if (safeToRelease) {
-						try {
-							await executionGovernor.fail(invocation);
-						} catch (error) {
-							reportAgentDiagnostic("Failed to release a session-changed Agent reservation:", error);
-						}
-					} else {
-						try {
-							// The exact runner could not be proven stopped. Bind it to the
-							// original session ledger so later physical recovery retains authority.
-							await executionGovernor.settle(invocation, result);
-						} catch (error) {
-							reportAgentDiagnostic("Failed to retain a session-changed Agent runtime binding:", error);
-						}
-					}
-				}
-				return projectEngineResult(
-					params,
-					governorFailureResult(params, "Agent launch cancelled because the parent session ended or changed."),
-				);
-			}
-			if (invocation) {
-				try {
-					await executionGovernor.settle(invocation, result);
-				} catch (error) {
-					if (error instanceof AgentRuntimeBindingRejectedError) {
-						return projectEngineResult(params, governorFailureResult(params, error.message));
-					}
-					// The engine result may represent an already-running detached Agent.
-					// Never convert post-launch ledger failure into a start failure or
-					// release its lease; completion/reconciliation remains authoritative.
-					reportAgentDiagnostic(
-						"Failed to persist the launched Agent lease binding; retaining it for reconciliation:",
-						error,
-					);
-				}
-			}
-			return projectEngineResult(params, result);
-		} catch (error) {
-			if (invocation) {
-				try {
-					await executionGovernor.fail(invocation);
-				} catch (releaseError) {
-					reportAgentDiagnostic(
-						"Failed to release an Agent reservation after engine launch failure:",
-						releaseError,
-					);
-				}
-			}
-			throw error;
-		} finally {
-			scheduleRuntimeMaintenance();
-			current.refresh();
-		}
+		activate: activateCurrentSessionRuntime,
+		refreshCompatibility: refreshGovernorCompatibility,
+		startRunRuntime,
+		scheduleMaintenance: scheduleRuntimeMaintenance,
+		refresh: () => current.refresh(),
 	};
-
+	executePublicAgent = (id, params, signal, onUpdate, ctx, parentRunOrigin) =>
+		runPublicAgent(publicAgentRuntime, { id, params, signal, onUpdate, ctx, parentRunOrigin });
 	const tool: ToolDefinition<typeof SubagentParams, Details> = {
 		name: "subagent",
 		label: "Agent",
@@ -1060,10 +630,7 @@ export default function registerSubagentExtension(
 			try {
 				params = normalizePublicAgentParams(supplied);
 			} catch (error) {
-				return projectEngineResult(
-					supplied,
-					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
-				);
+				return projectPublicAgentFailure(supplied, error instanceof Error ? error.message : String(error));
 			}
 			return executePublicAgent(
 				id,
@@ -1090,97 +657,15 @@ export default function registerSubagentExtension(
 		description: "Inspect and control Agents in the current session",
 		handler: async (_args, ctx) => showAgents(ctx),
 	});
-	pi.registerMessageRenderer(COMPLETION_MESSAGE_TYPE, (message, _options, theme) => {
-		const content = isRuntimeString(message.content) ? message.content : "";
-		return new Text(theme.fg("text", content), 0, 0);
+	const disposeRuntimeEvents = registerAgentRuntimeEvents({
+		pi,
+		state,
+		governor: executionGovernor,
+		tracker,
+		isActive: () => active,
+		bindContext,
+		refresh: () => current.refresh(),
 	});
-	pi.registerEntryRenderer<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, (entry, _options, theme) => {
-		const data = entry.data;
-		if (data?.version !== 1) return undefined;
-		return new CachedToolRow(theme, {
-			active: false,
-			expandable: false,
-			hint: "",
-			kind: "activity",
-			outcome: data.status === "completed" ? "success" : data.status === "failed" ? "error" : "stopped",
-			summary: completionOutcomeText(data),
-		});
-	});
-
-	const eventUnsubscribes: Array<() => void> = [];
-	const onBus = (event: string, handler: ExtensionEventHandler): void => {
-		const unsubscribe = pi.events.on(event, handler);
-		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
-	};
-	const belongsToCurrentSession = <Data>(data: Data): boolean => {
-		if (!data || !isRuntimeObject(data) || data === null || Array.isArray(data)) return false;
-		const sessionId = "sessionId" in data ? data.sessionId : undefined;
-		const runId = "runId" in data ? data.runId : undefined;
-		const id = "id" in data ? data.id : undefined;
-		const artifactSessionId = isRuntimeString(sessionId) ? sessionId : undefined;
-		const artifactRunId = isRuntimeString(runId) ? runId : isRuntimeString(id) ? id : undefined;
-		return sessionArtifactMatches(state.currentSessionScope, artifactSessionId, artifactRunId);
-	};
-	const normalizeCurrentSessionEvent = <Event>(data: Event) =>
-		data && isRuntimeObject(data) && state.currentSessionId ? { ...data, sessionId: state.currentSessionId } : data;
-	onBus(SUBAGENT_ASYNC_STARTED_EVENT, (data) => {
-		if (!active || !belongsToCurrentSession(data)) return;
-		const normalized = normalizeCurrentSessionEvent(data);
-		void executionGovernor.observeAsyncStarted(normalized).catch((error) => {
-			reportAgentDiagnostic("Failed to bind Agent governor runtime identity:", error);
-		});
-		tracker.handleStarted(normalized);
-		current.refresh();
-	});
-	onBus(SUBAGENT_ASYNC_STATUS_EVENT, (data) => {
-		if (!active || !belongsToCurrentSession(data)) return;
-		tracker.handleStatus(normalizeCurrentSessionEvent(data));
-	});
-	onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, (data) => {
-		if (!active || !belongsToCurrentSession(data)) return;
-		const normalized = normalizeCurrentSessionEvent(data);
-		void executionGovernor.complete(normalized).catch((error) => {
-			reportAgentDiagnostic("Failed to release completed background Agent lease:", error);
-		});
-		tracker.handleComplete(normalized);
-		current.refresh();
-		if (
-			isRuntimeObject(normalized) &&
-			normalized !== null &&
-			!Array.isArray(normalized) &&
-			"parentRunOrigin" in normalized &&
-			normalized.parentRunOrigin === "user"
-		) {
-			requestStatuslineGitRefreshAfterUserWork(pi);
-		}
-	});
-	onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, (data) => {
-		if (!active || !belongsToCurrentSession(data)) return;
-		void executionGovernor.complete(normalizeCurrentSessionEvent(data)).catch((error) => {
-			reportAgentDiagnostic("Failed to release completed foreground Agent lease:", error);
-		});
-		// Foreground summaries already return through the active tool call. A
-		// completion message here would trigger a duplicate main-model turn.
-		current.refresh();
-	});
-	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, (data) => {
-		if (!active || !belongsToCurrentSession(data)) return;
-		tracker.handleProcessTerminal(normalizeCurrentSessionEvent(data));
-		void executionGovernor.reconcileDead().catch((error) => {
-			reportAgentDiagnostic("Failed to reconcile Agent leases after a runner terminal event:", error);
-		});
-	});
-
-	const refreshFromTool = (event: { toolName?: string }, ctx: ExtensionContext): void => {
-		if (!active || event.toolName !== "subagent") return;
-		bindContext(ctx);
-		current.refresh();
-	};
-	pi.on("tool_execution_start", refreshFromTool);
-	pi.on("tool_execution_update", refreshFromTool);
-	pi.on("tool_execution_end", refreshFromTool);
-	pi.on("tool_result", refreshFromTool);
-
 	pi.on("session_start", async (_event, ctx) => {
 		if (!active) return;
 		await previousCleanupPromise;
@@ -1253,13 +738,7 @@ export default function registerSubagentExtension(
 		maintenanceTimer = undefined;
 		watcher.stopResultWatcher();
 		watcherStarted = false;
-		for (const unsubscribe of eventUnsubscribes.splice(0)) {
-			try {
-				unsubscribe();
-			} catch {
-				// Event-bus teardown is best effort after the host has begun shutdown.
-			}
-		}
+		disposeRuntimeEvents();
 		tracker.resetJobs();
 		clearTimerMap(state);
 		state.resultFileCoalescer.clear();
