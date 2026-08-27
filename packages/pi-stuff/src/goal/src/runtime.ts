@@ -1,13 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
-import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
+import { sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
-import { appendGoalPromptMarker, extractContinuationMarker, extractGoalPromptMarker } from "./markers.js";
 import {
 	type ActiveGoal,
 	clearLegacyPersistedGoal,
@@ -17,7 +15,14 @@ import {
 	serializeGoalState,
 } from "./persistence.js";
 import { abortCurrentTurn, formatBudget, hasPendingMessages, type StatusContext, transitionGoal } from "./policy.js";
-import { buildContinuePrompt, type GoalStatus } from "./prompts.js";
+import {
+	type ContinuationTicket,
+	type GoalPromptDeliveryOptions,
+	GoalPromptOwnership,
+	type GoalRunOrigin,
+	sendHiddenGoalPrompt,
+} from "./prompt-ownership.js";
+import type { GoalStatus } from "./prompts.js";
 import { nextToolFreeRepeatState, resetGoalSafetyEpoch } from "./safety.js";
 
 export type { StatusContext } from "./policy.js";
@@ -38,16 +43,15 @@ export {
 	stoppedStatusLabel,
 	transitionGoal,
 } from "./policy.js";
+export {
+	type ContinuationTicket,
+	GOAL_PROMPT_MESSAGE_TYPE,
+	type GoalPromptDeliveryOptions,
+	type GoalRunOrigin,
+} from "./prompt-ownership.js";
 export { queueGoalSafetyReset, resetGoalSafetyEpoch } from "./safety.js";
 
 import { DEFAULT_GOAL_SETTINGS, type GoalSettings, type GoalSettingsLoadIssue } from "./settings.js";
-
-export interface ContinuationTicket {
-	goalId: string;
-	iteration: number;
-	marker: string;
-	prompt: string;
-}
 
 export interface BudgetWrapUp {
 	goalId: string;
@@ -55,8 +59,6 @@ export interface BudgetWrapUp {
 }
 
 type GoalRecoveryKind = "provider_retry" | "compaction_retry";
-
-export type GoalRunOrigin = "manual" | "automatic";
 
 export interface GoalRecovery {
 	goalId: string;
@@ -75,12 +77,6 @@ export interface GoalToolVisibilitySnapshot {
 	activeTools: string[];
 	goalToolsUnlocked: boolean;
 	goalToolsHiddenByPolicy: string[];
-}
-
-export interface GoalPromptDeliveryOptions {
-	readonly isCurrent?: () => boolean;
-	readonly resetSafetyEpoch?: boolean;
-	readonly userDriven?: boolean;
 }
 
 export interface GoalCompactionEvent {
@@ -151,31 +147,14 @@ export interface GoalSettingsRuntimeSnapshot {
 	toolVisibility: GoalToolVisibilitySnapshot;
 }
 
-interface PendingGoalPrompt {
-	goalId: string;
-	origin: GoalRunOrigin;
-	resetSafetyEpoch: boolean;
-}
-
-interface PendingNonGoalInput {
-	behavior: "idle" | "steer" | "followUp";
-	fingerprint: string;
-	origin: GoalRunOrigin;
-	resetSafetyEpoch: boolean;
-}
-
 const BUDGET_WRAP_UP_MESSAGE_TYPE = "goal-budget-wrap-up";
-export const GOAL_PROMPT_MESSAGE_TYPE = "pi-stuff-goal-prompt";
 export const GOAL_CONTEXT_MESSAGE_TYPE = "pi-stuff-goal-context";
 const BUDGET_WRAP_UP_PROMPT =
 	"The active /goal token budget is exhausted. Stop substantive work and do not call substantive tools. Summarize progress, verified results, remaining work, and blockers concisely. Treat completion as unproven. Do not call goal_complete unless authoritative, requirement-by-requirement evidence already proves every requirement is complete. Weak, indirect, or missing evidence is not enough. Budget exhaustion is not completion.";
 // One instance belongs to one extension factory. It owns all mutable session state
-// and the cross-cutting invariants used by command and lifecycle orchestration.
-// Keep this state machine cohesive despite its size: prompt ownership, continuation,
-// budget, safety, and tool-policy transitions share ordering-sensitive invariants.
-// Cohesion justification: Goal transitions, continuation ownership, queue state, and budget/retry
-// recovery share one generation-guarded runtime; separating them would duplicate stale-turn and
-// persistence invariants across modules.
+// and the ordering-sensitive invariants used by command and lifecycle orchestration.
+// Prompt correlation lives in GoalPromptOwnership; this runtime coordinates it with
+// queue, budget, safety, persistence, and tool-policy transitions.
 export class GoalRuntime {
 	settings: GoalSettings = DEFAULT_GOAL_SETTINGS;
 	settingsLoadIssue: GoalSettingsLoadIssue | undefined;
@@ -190,8 +169,6 @@ export class GoalRuntime {
 	queueFrozen = false;
 	queueFreezeAwaitingSettle = false;
 	completionStatusTimer: NodeJS.Timeout | undefined;
-	continuationIntent: ContinuationTicket | undefined;
-	continuationDelivery: ContinuationTicket | undefined;
 	goalRecovery: GoalRecovery | undefined;
 	budgetWrapUp: BudgetWrapUp | undefined;
 	/** `null` marks a run that must not be charged to the active goal. */
@@ -204,21 +181,31 @@ export class GoalRuntime {
 	goalToolsUnlocked = false;
 	/** Exact lazy goal tools this runtime removed and may restore on a mode change. */
 	goalToolsHiddenByPolicy = new Set<string>();
-	// Pi's delivery queues are not capped. These mirrors must retain every
-	// unresolved marker until delivery or an explicit lifecycle clear; evicting an
-	// older entry can silently transfer Goal ownership or safety policy.
-	pendingGoalPromptMarkers = new Map<string, PendingGoalPrompt>();
-	claimedGoalPromptMarkers = new Map<string, PendingGoalPrompt>();
-	cancelledContinuationMarkers = new Set<string>();
-	claimedContinuationMarkers = new Set<string>();
-	pendingNonGoalInputs: PendingNonGoalInput[] = [];
 	menuGeneration = 0;
 	menuController = new AbortController();
 
 	readonly pi: ExtensionAPI;
+	private readonly promptOwnership: GoalPromptOwnership;
 
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
+		this.promptOwnership = new GoalPromptOwnership(pi);
+	}
+
+	get continuationIntent() {
+		return this.promptOwnership.continuationIntent;
+	}
+
+	set continuationIntent(intent: ContinuationTicket | undefined) {
+		this.promptOwnership.continuationIntent = intent;
+	}
+
+	get continuationDelivery() {
+		return this.promptOwnership.continuationDelivery;
+	}
+
+	set continuationDelivery(delivery: ContinuationTicket | undefined) {
+		this.promptOwnership.continuationDelivery = delivery;
 	}
 
 	setGoalStateSink(sink: ((snapshot: GoalStateSnapshot) => void) | undefined) {
@@ -276,10 +263,6 @@ export class GoalRuntime {
 		);
 	}
 
-	hasActiveGoalRecovery() {
-		return Boolean(this.activeGoal && this.goalRecovery?.goalId === this.activeGoal.id);
-	}
-
 	beginAgentRun(goalId: string | null | undefined, origin: GoalRunOrigin | undefined) {
 		this.agentRunGoalId = goalId;
 		this.agentRunOrigin = origin;
@@ -328,26 +311,18 @@ export class GoalRuntime {
 	}
 
 	requestContinuation(goal: ActiveGoal) {
-		if (this.hasContinuationWorkForGoal(goal.id)) return false;
-		const marker = continuationMarker(goal);
-		this.continuationIntent = {
-			goalId: goal.id,
-			iteration: goal.iteration,
-			marker,
-			prompt: buildContinuePrompt(goal, marker),
-		};
-		return true;
+		return this.promptOwnership.requestContinuation(goal);
 	}
 
 	async dispatchContinuationIfSettled(ctx: StatusContext): Promise<boolean> {
-		const intent = this.continuationIntent;
+		const intent = this.promptOwnership.continuationIntent;
 		if (!intent) return false;
 		if (this.activeGoal?.status === "active" && !this.goalToolsAvailable()) {
 			this.pauseGoalForUnavailableTools(ctx);
 			return false;
 		}
 		if (!this.activeGoal || this.activeGoal.id !== intent.goalId || this.activeGoal.status !== "active") {
-			this.continuationIntent = undefined;
+			this.promptOwnership.continuationIntent = undefined;
 			return false;
 		}
 		if (this.enforceAutomaticTurnLimit(ctx, false) || this.enforceNoProgressLimit(ctx)) {
@@ -355,21 +330,21 @@ export class GoalRuntime {
 		}
 		if (ctx.isIdle?.() !== true || hasPendingMessages(ctx)) return false;
 
-		this.continuationIntent = undefined;
-		this.continuationDelivery = intent;
+		this.promptOwnership.continuationIntent = undefined;
+		this.promptOwnership.continuationDelivery = intent;
 		try {
 			const delivered = await sendHiddenGoalPrompt(this.pi, intent.prompt);
 			if (delivered) return true;
-			if (this.continuationDelivery?.marker === intent.marker) {
-				this.continuationDelivery = undefined;
+			if (this.promptOwnership.continuationDelivery?.marker === intent.marker) {
+				this.promptOwnership.continuationDelivery = undefined;
 			}
 			return false;
 		} catch (error) {
-			if (this.continuationDelivery?.marker === intent.marker) {
-				this.continuationDelivery = undefined;
+			if (this.promptOwnership.continuationDelivery?.marker === intent.marker) {
+				this.promptOwnership.continuationDelivery = undefined;
 			}
 			if (this.activeGoal?.id === intent.goalId && this.activeGoal.status === "active") {
-				this.continuationIntent = intent;
+				this.promptOwnership.continuationIntent = intent;
 			}
 			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
 			return false;
@@ -377,7 +352,7 @@ export class GoalRuntime {
 	}
 
 	hasContinuationWorkForGoal(goalId: string) {
-		return this.continuationIntent?.goalId === goalId || this.continuationDelivery?.goalId === goalId;
+		return this.promptOwnership.hasContinuationWorkForGoal(goalId);
 	}
 
 	updateStatus(_ctx: StatusContext, goal: ActiveGoal) {
@@ -625,9 +600,7 @@ export class GoalRuntime {
 
 	clearSettledSafetyTracking() {
 		this.guardAbortGoalId = undefined;
-		this.pendingNonGoalInputs = [];
-		this.claimedGoalPromptMarkers.clear();
-		this.claimedContinuationMarkers.clear();
+		this.promptOwnership.clearSettledClaims();
 		this.clearAgentRun();
 	}
 
@@ -645,16 +618,11 @@ export class GoalRuntime {
 	}
 
 	clearContinuationTracking() {
-		this.continuationIntent = undefined;
-		this.continuationDelivery = undefined;
-		this.cancelledContinuationMarkers.clear();
-		this.claimedContinuationMarkers.clear();
+		this.promptOwnership.clearContinuationTracking();
 	}
 
 	clearPendingGoalPrompts() {
-		this.pendingGoalPromptMarkers.clear();
-		this.claimedGoalPromptMarkers.clear();
-		this.pendingNonGoalInputs = [];
+		this.promptOwnership.clearPendingGoalPrompts();
 	}
 
 	async sendOwnedGoalPrompt(
@@ -663,72 +631,40 @@ export class GoalRuntime {
 		prompt: string,
 		options: GoalPromptDeliveryOptions = {},
 	) {
-		const { isCurrent, resetSafetyEpoch = true, userDriven = false } = options;
-		const ownsPrompt = () =>
-			this.activeGoal?.id === goalId && this.activeGoal.status === "active" && (isCurrent?.() ?? true);
-		const pending = this.rememberPendingGoalPrompt(
+		return this.promptOwnership.sendOwnedGoalPrompt(
+			ctx,
 			goalId,
 			prompt,
-			resetSafetyEpoch,
-			userDriven ? "manual" : "automatic",
+			options,
+			() => this.activeGoal?.id === goalId && this.activeGoal.status === "active",
 		);
-		const sent = await sendPrompt(this.pi, ctx, pending.prompt, userDriven, ownsPrompt);
-		if (!sent || !ownsPrompt()) {
-			this.pendingGoalPromptMarkers.delete(pending.marker);
-			return false;
-		}
-		return true;
 	}
 
 	cancelContinuationWork() {
-		if (this.continuationDelivery) {
-			this.rememberCancelledContinuationMarker(this.continuationDelivery.marker);
-		}
-		this.continuationIntent = undefined;
-		this.continuationDelivery = undefined;
+		this.promptOwnership.cancelContinuationWork();
 	}
 
 	consumeCancelledContinuationPrompt(prompt: string) {
-		const marker = extractContinuationMarker(prompt);
-		return marker ? this.cancelledContinuationMarkers.delete(marker) : false;
+		return this.promptOwnership.consumeCancelledContinuationPrompt(prompt);
 	}
 
 	hasPendingOwnedGoalPrompt(prompt: string) {
-		const marker = extractGoalPromptMarker(prompt);
-		return marker ? this.pendingGoalPromptMarkers.has(marker) : false;
+		return this.promptOwnership.hasPendingOwnedGoalPrompt(prompt);
 	}
 
 	hasOwnedPromptBoundary(prompt: string) {
-		const goalMarker = extractGoalPromptMarker(prompt);
-		if (
-			goalMarker &&
-			(this.pendingGoalPromptMarkers.has(goalMarker) || this.claimedGoalPromptMarkers.has(goalMarker))
-		) {
-			return true;
-		}
-		const continuationMarker = extractContinuationMarker(prompt);
-		return Boolean(
-			continuationMarker &&
-				(this.continuationDelivery?.marker === continuationMarker ||
-					this.claimedContinuationMarkers.has(continuationMarker)),
-		);
+		return this.promptOwnership.hasOwnedPromptBoundary(prompt);
 	}
 
 	consumeStaleOwnedGoalPrompt(prompt: string) {
-		const marker = extractGoalPromptMarker(prompt);
-		if (!marker) return false;
-		const pending = this.pendingGoalPromptMarkers.get(marker);
-		if (!pending) return false;
-		if (
-			!this.queueFrozen &&
-			!this.pendingQueueAction &&
-			this.activeGoal?.id === pending.goalId &&
-			this.activeGoal.status === "active"
-		) {
-			return false;
-		}
-		this.pendingGoalPromptMarkers.delete(marker);
-		return true;
+		return this.promptOwnership.consumeStaleOwnedGoalPrompt(
+			prompt,
+			(goalId) =>
+				!this.queueFrozen &&
+				!this.pendingQueueAction &&
+				this.activeGoal?.id === goalId &&
+				this.activeGoal.status === "active",
+		);
 	}
 
 	noteQueuedNonGoalInput(
@@ -737,19 +673,11 @@ export class GoalRuntime {
 		origin: GoalRunOrigin,
 		resetSafetyEpoch = origin === "manual",
 	) {
-		// A new idle prompt starts a new Host run. Any older mirror belongs to an
-		// input attempt that was handled or rejected before delivery.
-		if (behavior === "idle") this.pendingNonGoalInputs = [];
-		this.pendingNonGoalInputs.push({
-			behavior,
-			fingerprint: inputFingerprint(prompt),
-			origin,
-			resetSafetyEpoch,
-		});
+		this.promptOwnership.noteQueuedNonGoalInput(prompt, behavior, origin, resetSafetyEpoch);
 	}
 
 	discardQueuedNonGoalInputs(behaviors: readonly ("idle" | "steer" | "followUp")[]) {
-		this.pendingNonGoalInputs = this.pendingNonGoalInputs.filter((pending) => !behaviors.includes(pending.behavior));
+		this.promptOwnership.discardQueuedNonGoalInputs(behaviors);
 	}
 
 	consumeQueuedNonGoalInput(
@@ -757,62 +685,11 @@ export class GoalRuntime {
 		allowDeliveryFallback = true,
 		behaviors: readonly ("idle" | "steer" | "followUp")[] = ["steer", "followUp"],
 	) {
-		if (!isRuntimeString(prompt)) return undefined;
-		const fingerprint = inputFingerprint(prompt);
-		const candidates = this.pendingNonGoalInputs.filter((pending) => behaviors.includes(pending.behavior));
-		if (
-			new Set(candidates.map((pending) => pending.origin)).size > 1 ||
-			new Set(candidates.map((pending) => pending.resetSafetyEpoch)).size > 1
-		) {
-			// A separately loaded Extension can handle or transform after this Package's
-			// input handler. Mixed user/automatic mirrors cannot be correlated safely,
-			// even across steer/follow-up classes or an exact-text collision.
-			const behavior = (["steer", "followUp", "idle"] as const).find((candidate) =>
-				candidates.some((pending) => pending.behavior === candidate),
-			);
-			this.pendingNonGoalInputs = [];
-			return behavior ? { behavior, fingerprint, origin: "automatic" as const, resetSafetyEpoch: false } : undefined;
-		}
-		// Pi drains steers before follow-ups. Select that delivery class before
-		// comparing text: a Skill may expand one queued prompt into text that happens
-		// to equal a later prompt in the other class.
-		for (const behavior of ["steer", "followUp", "idle"] as const) {
-			if (!behaviors.includes(behavior)) continue;
-			const firstIndex = this.pendingNonGoalInputs.findIndex((pending) => pending.behavior === behavior);
-			if (firstIndex < 0) continue;
-			const exactIndex = this.pendingNonGoalInputs.findIndex(
-				(pending) => pending.behavior === behavior && pending.fingerprint === fingerprint,
-			);
-			if (exactIndex >= 0) return this.pendingNonGoalInputs.splice(exactIndex, 1)[0];
-			// An owned Goal/recovery boundary must not consume a transformed non-Goal
-			// input. It also must not skip a higher-priority steer to claim a follow-up.
-			if (!allowDeliveryFallback) return undefined;
-			return this.pendingNonGoalInputs.splice(firstIndex, 1)[0];
-		}
-		return undefined;
+		return this.promptOwnership.consumeQueuedNonGoalInput(prompt, allowDeliveryFallback, behaviors);
 	}
 
 	markContinuationStarted(prompt: string) {
-		const marker = extractContinuationMarker(prompt);
-		if (!marker) {
-			// A user, retry, or another extension started newer work. Cancel both an
-			// unsent intent and a delivery that may have lost the non-atomic idle race;
-			// the newer work's agent_end will record a fresh intent.
-			this.cancelContinuationWork();
-			return undefined;
-		}
-		if (this.continuationDelivery?.marker === marker) {
-			const goalId = this.continuationDelivery.goalId;
-			this.continuationDelivery = undefined;
-			this.rememberClaimedContinuationMarker(marker);
-			return goalId;
-		}
-		if (this.claimedContinuationMarkers.has(marker)) return marker.split(":", 1)[0];
-		// Marker syntax is not authority. User text or another Extension may contain
-		// a lookalike comment; only an exact outstanding or already-claimed ticket
-		// belongs to this Goal runtime.
-		this.cancelContinuationWork();
-		return undefined;
+		return this.promptOwnership.markContinuationStarted(prompt);
 	}
 
 	persistGoal(goal: ActiveGoal) {
@@ -958,18 +835,19 @@ export class GoalRuntime {
 	}
 
 	snapshotSettingsApplicationState(): GoalSettingsRuntimeSnapshot {
+		const promptState = this.promptOwnership.snapshot();
 		return {
 			settings: structuredClone(this.settings),
 			activeGoal: this.activeGoal ? structuredClone(this.activeGoal) : undefined,
 			queueFrozen: this.queueFrozen,
 			queueFreezeAwaitingSettle: this.queueFreezeAwaitingSettle,
-			continuationIntent: this.continuationIntent ? structuredClone(this.continuationIntent) : undefined,
-			continuationDelivery: this.continuationDelivery ? structuredClone(this.continuationDelivery) : undefined,
+			continuationIntent: promptState.continuationIntent,
+			continuationDelivery: promptState.continuationDelivery,
 			goalRecovery: this.goalRecovery ? structuredClone(this.goalRecovery) : undefined,
 			budgetWrapUp: this.budgetWrapUp ? structuredClone(this.budgetWrapUp) : undefined,
 			guardAbortGoalId: this.guardAbortGoalId,
 			staleGoalToolCallsBlocked: this.staleGoalToolCallsBlocked,
-			cancelledContinuationMarkers: [...this.cancelledContinuationMarkers],
+			cancelledContinuationMarkers: promptState.cancelledContinuationMarkers,
 			terminalDetails: this.terminalDetails ? structuredClone(this.terminalDetails) : undefined,
 			toolVisibility: this.snapshotGoalToolVisibility(),
 		};
@@ -980,15 +858,15 @@ export class GoalRuntime {
 		this.activeGoal = snapshot.activeGoal ? structuredClone(snapshot.activeGoal) : undefined;
 		this.queueFrozen = snapshot.queueFrozen;
 		this.queueFreezeAwaitingSettle = snapshot.queueFreezeAwaitingSettle;
-		this.continuationIntent = snapshot.continuationIntent ? structuredClone(snapshot.continuationIntent) : undefined;
-		this.continuationDelivery = snapshot.continuationDelivery
-			? structuredClone(snapshot.continuationDelivery)
-			: undefined;
+		this.promptOwnership.restore({
+			continuationIntent: snapshot.continuationIntent,
+			continuationDelivery: snapshot.continuationDelivery,
+			cancelledContinuationMarkers: snapshot.cancelledContinuationMarkers,
+		});
 		this.goalRecovery = snapshot.goalRecovery ? structuredClone(snapshot.goalRecovery) : undefined;
 		this.budgetWrapUp = snapshot.budgetWrapUp ? structuredClone(snapshot.budgetWrapUp) : undefined;
 		this.guardAbortGoalId = snapshot.guardAbortGoalId;
 		this.staleGoalToolCallsBlocked = snapshot.staleGoalToolCallsBlocked;
-		this.cancelledContinuationMarkers = new Set(snapshot.cancelledContinuationMarkers);
 		this.terminalDetails = snapshot.terminalDetails ? structuredClone(snapshot.terminalDetails) : undefined;
 		this.restoreGoalToolVisibility(snapshot.toolVisibility);
 	}
@@ -1040,86 +918,9 @@ export class GoalRuntime {
 		this.completionStatusTimer = undefined;
 	}
 
-	private rememberPendingGoalPrompt(goalId: string, prompt: string, resetSafetyEpoch: boolean, origin: GoalRunOrigin) {
-		const marker = randomUUID();
-		this.pendingGoalPromptMarkers.set(marker, { goalId, origin, resetSafetyEpoch });
-		return { marker, prompt: appendGoalPromptMarker(prompt, marker) };
-	}
-
-	private consumePendingGoalPrompt(prompt: string) {
-		const marker = extractGoalPromptMarker(prompt);
-		if (!marker) return undefined;
-		const pending = this.pendingGoalPromptMarkers.get(marker);
-		this.pendingGoalPromptMarkers.delete(marker);
-		if (pending) {
-			this.rememberClaimedGoalPromptMarker(marker, pending);
-			return pending;
-		}
-		return this.claimedGoalPromptMarkers.get(marker);
-	}
-
-	private rememberClaimedGoalPromptMarker(marker: string, pending: PendingGoalPrompt) {
-		this.claimedGoalPromptMarkers.set(marker, pending);
-	}
-
-	private rememberClaimedContinuationMarker(marker: string) {
-		this.claimedContinuationMarkers.add(marker);
-	}
-
 	consumeOwnedGoalPrompt(prompt: string) {
-		return this.consumePendingGoalPrompt(prompt);
+		return this.promptOwnership.consumeOwnedGoalPrompt(prompt);
 	}
-
-	private rememberCancelledContinuationMarker(marker: string) {
-		this.cancelledContinuationMarkers.add(marker);
-	}
-}
-
-function inputFingerprint(prompt: string) {
-	return createHash("sha256").update(prompt, "utf8").digest("hex");
-}
-
-async function sendPrompt(
-	pi: ExtensionAPI,
-	ctx: StatusContext,
-	prompt: string,
-	userDriven: boolean,
-	isCurrent?: () => boolean,
-) {
-	try {
-		return await sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent);
-	} catch (error) {
-		if (!isCurrent || isCurrent()) {
-			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
-		}
-		return false;
-	}
-}
-
-function sendHiddenGoalPrompt(
-	pi: ExtensionAPI,
-	prompt: string,
-	userDriven = false,
-	isCurrent: () => boolean = () => true,
-) {
-	const message = withAgentWorkOrigin(
-		{
-			customType: GOAL_PROMPT_MESSAGE_TYPE,
-			content: prompt,
-			display: false,
-		},
-		userDriven ? "user" : "automatic",
-	);
-	return sendSuiteAgentMessage(
-		pi,
-		userDriven ? withDirectUserActivation(message) : message,
-		{ deliverAs: "followUp", triggerTurn: true },
-		isCurrent,
-	);
-}
-
-function continuationMarker(goal: ActiveGoal) {
-	return `${goal.id}:${goal.iteration}:${randomUUID()}`;
 }
 
 export type { AssistantMessageLike } from "./errors.js";
