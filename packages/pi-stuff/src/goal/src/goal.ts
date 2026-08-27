@@ -2,12 +2,11 @@ import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
-import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
+import { whenSuiteSessionReady } from "../../conversation-ui/index.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { currentTokenTotal } from "./accounting.js";
-import { completeGoalArguments, parseCommand } from "./command.js";
-import { GoalCommandController } from "./commands.js";
-import { showGoalManager } from "./menu.js";
+import { GoalCommandController, registerGoalCommand } from "./commands.js";
+import { GoalCompactionCoordinator } from "./compaction.js";
 import { type ActiveGoal, loadGoalStateFromSession } from "./persistence.js";
 import { buildGoalPrompt, buildGoalSystemPrompt } from "./prompts.js";
 import { activateQueuedGoal } from "./queue.js";
@@ -20,7 +19,6 @@ import {
 	formatError,
 	GOAL_CONTEXT_MESSAGE_TYPE,
 	GOAL_PROMPT_MESSAGE_TYPE,
-	type GoalCompactionEvent,
 	type GoalRunOrigin,
 	GoalRuntime,
 	incrementGoal,
@@ -34,7 +32,7 @@ import {
 	truncateNotification,
 } from "./runtime.js";
 import { hasAssistantToolCall } from "./safety.js";
-import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked, withGoalSettingsLock } from "./settings.js";
+import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked } from "./settings.js";
 import { registerGoalTerminalTools } from "./terminal-tools.js";
 
 // goal.ts remains the Pi-facing composition root because lifecycle-event registration is
@@ -68,6 +66,7 @@ const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
 function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const runtime = new GoalRuntime(pi);
 	const commands = new GoalCommandController(runtime);
+	const compaction = new GoalCompactionCoordinator(runtime, commands);
 	const runController = new GoalRunController(runtime, commands);
 	let goalProjectionNeeded = false;
 	let turnActive = false;
@@ -88,25 +87,16 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const hideGoalToolsIfLocked = runtime.hideGoalToolsIfLocked.bind(runtime);
 	const goalToolsAvailable = runtime.goalToolsAvailable.bind(runtime);
 	const pauseGoalForUnavailableTools = runtime.pauseGoalForUnavailableTools.bind(runtime);
-	const isPiOwnedCompactionRetry = runtime.isPiOwnedCompactionRetry.bind(runtime);
 	const requestContinuation = runtime.requestContinuation.bind(runtime);
 	const dispatchContinuationIfSettled = runtime.dispatchContinuationIfSettled.bind(runtime);
-	const keepBudgetWrapUpMessage = runtime.keepBudgetWrapUpMessage.bind(runtime);
-	const isGoalToolName = runtime.isGoalToolName.bind(runtime);
-	const queueBudgetWrapUp = runtime.queueBudgetWrapUp.bind(runtime);
 	const clearGoalRecoveryForGoal = runtime.clearGoalRecoveryForGoal.bind(runtime);
 	const blockStaleGoalToolCalls = runtime.blockStaleGoalToolCalls.bind(runtime);
 	const cancelContinuationWork = runtime.cancelContinuationWork.bind(runtime);
 	const consumeCancelledContinuationPrompt = runtime.consumeCancelledContinuationPrompt.bind(runtime);
 	const consumeStaleOwnedGoalPrompt = runtime.consumeStaleOwnedGoalPrompt.bind(runtime);
 	const consumePendingGoalPrompt = runtime.consumeOwnedGoalPrompt.bind(runtime);
-	const markContinuationStarted = runtime.markContinuationStarted.bind(runtime);
-	const hasContinuationWorkForGoal = runtime.hasContinuationWorkForGoal.bind(runtime);
 	const recordAutomaticTurn = runtime.recordAutomaticTurn.bind(runtime);
-	const recordAutomaticRunProgress = runtime.recordAutomaticRunProgress.bind(runtime);
 	const enforceAutomaticTurnLimit = runtime.enforceAutomaticTurnLimit.bind(runtime);
-	const enforceNoProgressLimit = runtime.enforceNoProgressLimit.bind(runtime);
-	const restoreGoalToolsHiddenByPolicy = runtime.restoreGoalToolsHiddenByPolicy.bind(runtime);
 	const sendOwnedGoalPrompt = (
 		_pi: ExtensionAPI,
 		ctx: StatusContext,
@@ -115,136 +105,17 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		resetSafetyEpoch = true,
 	) => runtime.sendOwnedGoalPrompt(ctx, goalId, prompt, { resetSafetyEpoch });
 	const dispatchPendingQueueActionIfSettled = commands.dispatchPendingQueueActionIfSettled.bind(commands);
-	type PendingCompaction = {
-		readonly ctx: StatusContext;
-		readonly generation: number;
-		readonly goalId: string;
-		readonly sessionManager: StatusContext["sessionManager"];
-	};
-	let compactionGeneration = 0;
-	let compactionFailureTimer: ReturnType<typeof setTimeout> | undefined;
-	let pendingCompaction: PendingCompaction | undefined;
-
-	const clearPendingCompaction = (): void => {
-		compactionGeneration++;
-		pendingCompaction = undefined;
-		if (compactionFailureTimer !== undefined) clearTimeout(compactionFailureTimer);
-		compactionFailureTimer = undefined;
-	};
-	const armCompaction = (ctx: StatusContext, goalId: string): void => {
-		pendingCompaction = {
-			ctx,
-			generation: compactionGeneration,
-			goalId,
-			sessionManager: ctx.sessionManager,
-		};
-	};
-	const resumeAfterFailedCompaction = async (
-		pending: PendingCompaction,
-		event: GoalCompactionEvent,
-	): Promise<void> => {
-		try {
-			await pending.ctx.waitForIdle?.();
-		} catch {
-			// Fall through to the generation and live-idle checks below.
-		}
-		if (pending.generation !== compactionGeneration) return;
-		const activeGoal = runtime.activeGoal;
-		if (!activeGoal || activeGoal.id !== pending.goalId || activeGoal.status !== "active") return;
-		if (runtime.pendingQueueAction) {
-			await dispatchPendingQueueActionIfSettled(pending.ctx);
-			return;
-		}
-		if (isPiOwnedCompactionRetry(event, activeGoal.id)) return;
-		clearGoalRecoveryForGoal(activeGoal.id);
-		requestContinuation(activeGoal);
-		await dispatchContinuationIfSettled(pending.ctx);
-	};
-
 	registerGoalTerminalTools(pi, runtime);
 	// Do not touch the active tool set during factory registration: ExtensionAPI
 	// actions are unbound until the session binds the runtime. session_start applies
 	// baseline visibility once actions work; later hooks only enforce goal safety.
 
-	pi.registerCommand("goal", {
-		description: "Run a goal to completion: /goal [--tokens 100k] <goal_to_complete>",
-		getArgumentCompletions: (prefix) =>
-			completeGoalArguments(prefix, {
-				experimentalGoals: runtime.settings.experimental.goals,
-			}),
-		handler: async (args, ctx) => {
-			const result = parseCommand(args, {
-				experimentalGoals: runtime.settings.experimental.goals,
-			});
-			if (isRuntimeString(result)) {
-				ctx.ui.notify(result, "warning");
-				return;
-			}
-			if (result.kind === "show" && args.trim() === "") {
-				await showGoalManager(runtime, commands, ctx, async (menuCtx) => {
-					const { showGoalSettings } = await import("./settings-ui.js");
-					return showGoalSettings(runtime, menuCtx, {
-						settingsPath: options.settingsPath,
-						withLock: BUN_RUNTIME ? withGoalSettingsLock : undefined,
-						onQueueUnfrozen: async (settingsCtx) => {
-							await commands.resumeQueueAfterUnfreeze(settingsCtx);
-						},
-					});
-				});
-				return;
-			}
-			if (runtime.queueFrozen) {
-				if (result.kind === "show") commands.showGoal(ctx);
-				else if (result.kind === "clear") await commands.clearGoal(ctx);
-				else commands.notifyFrozenQueue(ctx);
-				return;
-			}
-			if (runtime.pendingQueueAction && result.kind !== "show" && result.kind !== "clear") {
-				ctx.ui.notify("A queued goal change is waiting for Pi to settle. Retry after it finishes.", "warning");
-				return;
-			}
-
-			try {
-				switch (result.kind) {
-					case "show":
-						commands.showGoal(ctx);
-						return;
-					case "pause":
-						commands.pauseGoal(ctx);
-						return;
-					case "resume":
-						await commands.resumeGoal(ctx);
-						return;
-					case "clear":
-						await commands.clearGoal(ctx);
-						return;
-					case "edit":
-						await commands.editGoal(result.objective ?? "", result.tokenBudget, ctx);
-						return;
-					case "add":
-						await commands.addGoal(result.objective ?? "", result.tokenBudget, ctx);
-						return;
-					case "prioritize":
-						await commands.prioritizeGoal(result.objective ?? "", result.tokenBudget, ctx);
-						return;
-					case "drop-last":
-						await commands.dropLastGoal(ctx);
-						return;
-					case "skip":
-						await commands.skipGoal(ctx);
-						return;
-					case "start":
-						await commands.startGoal(result.objective ?? "", result.tokenBudget, ctx);
-						return;
-				}
-			} finally {
-				if (runtime.activeGoal || runtime.queuedGoals.length > 0 || runtime.pendingQueueAction) {
-					goalProjectionNeeded = true;
-				}
-			}
+	registerGoalCommand(pi, runtime, commands, {
+		onProjectionNeeded: () => {
+			goalProjectionNeeded = true;
 		},
+		settingsPath: options.settingsPath,
 	});
-
 	pi.on("session_start", async (event, ctx) => {
 		goalProjectionNeeded = false;
 		turnActive = false;
@@ -283,7 +154,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			if (runtime.settings.toolVisibility === "always") {
 				if (runtime.goalToolsHiddenByPolicy.size > 0) {
 					try {
-						restoreGoalToolsHiddenByPolicy();
+						runtime.restoreGoalToolsHiddenByPolicy();
 					} catch (error) {
 						ctx.ui.notify(`Could not restore always-visible goal tools: ${formatError(error)}`, "error");
 					}
@@ -335,7 +206,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 				if (runtime.activeGoal.status === "active") {
 					updateGoalUsage(runtime.activeGoal, ctx);
 					if (limitActiveGoalForBudget(ctx, false)) return;
-					if (enforceAutomaticTurnLimit(ctx, false) || enforceNoProgressLimit(ctx)) return;
+					if (enforceAutomaticTurnLimit(ctx, false) || runtime.enforceNoProgressLimit(ctx)) return;
 				}
 				if (runtime.settings.toolVisibility === "after-first-goal") {
 					// Registered tools are already active on an unrestricted fresh runtime.
@@ -395,7 +266,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		goalProjectionNeeded = false;
 		turnActive = false;
-		clearPendingCompaction();
+		compaction.clear();
 		runController.unbindSession();
 		runtime.closeMenuSession();
 		if (runtime.activeGoal) {
@@ -421,79 +292,9 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		runtime.clearTerminalDetails();
 	});
 
-	pi.on("session_before_compact", (event, ctx) => {
-		clearPendingCompaction();
-		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
-		if (runtime.queueFrozen) return;
-		if (runtime.activeGoal?.status === "budget_limited") {
-			if (event.willRetry) return { cancel: true as const };
-			return;
-		}
-		if (runtime.activeGoal?.status !== "active") return;
-		if (!updateGoalUsage(runtime.activeGoal, ctx)) return;
-		cancelContinuationWork();
-		if (!suiteNativePreflight) armCompaction(ctx, runtime.activeGoal.id);
-		persistGoal(runtime.activeGoal);
-		updateStatus(ctx, runtime.activeGoal);
-		if (runtime.pendingQueueAction) return;
-		if (limitActiveGoalForBudget(ctx, false)) return { cancel: true as const };
-	});
-
-	pi.on("session_compact_failed", (event, ctx) => {
-		const pending = pendingCompaction;
-		if (!pending || ctx.sessionManager !== pending.sessionManager) return;
-		pendingCompaction = undefined;
-		if (compactionFailureTimer !== undefined) clearTimeout(compactionFailureTimer);
-		compactionFailureTimer = setTimeout(() => {
-			compactionFailureTimer = undefined;
-			void resumeAfterFailedCompaction(pending, event);
-		}, 0);
-	});
-
-	pi.on("session_compact", async (event, ctx) => {
-		clearPendingCompaction();
-		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
-		if (runtime.queueFrozen) return;
-		if (runtime.activeGoal?.status !== "active") {
-			clearGoalRecovery();
-			if (suiteNativePreflight) return;
-			if (runtime.pendingQueueAction) await dispatchPendingQueueActionIfSettled(ctx);
-			return;
-		}
-
-		const restoredState = loadGoalStateFromSession(ctx);
-		if (restoredState.goal?.id === runtime.activeGoal.id) {
-			runtime.activeGoal = restoredState.goal;
-			runtime.queuedGoals = restoredState.queue;
-			runtime.pendingQueueAction = restoredState.pendingAction;
-		}
-		const usageRecorded = updateGoalUsage(runtime.activeGoal, ctx);
-		if (usageRecorded) {
-			persistGoal(runtime.activeGoal);
-			updateStatus(ctx, runtime.activeGoal);
-		}
-		if (suiteNativePreflight) {
-			if (usageRecorded) limitActiveGoalForBudget(ctx, false);
-			clearGoalRecoveryForGoal(runtime.activeGoal.id);
-			return;
-		}
-		if (runtime.pendingQueueAction) {
-			await dispatchPendingQueueActionIfSettled(ctx);
-			return;
-		}
-		if (!usageRecorded) return;
-		if (limitActiveGoalForBudget(ctx, false)) return;
-
-		const wasPiRetry = isPiOwnedCompactionRetry(event, runtime.activeGoal.id);
-		if (wasPiRetry) return;
-		clearGoalRecoveryForGoal(runtime.activeGoal.id);
-		requestContinuation(runtime.activeGoal);
-		// Manual compaction does not emit agent_settled. This common dispatcher is
-		// therefore the narrow fallback; threshold compaction leaves the intent for
-		// agent_settled when Pi is still busy.
-		await dispatchContinuationIfSettled(ctx);
-	});
-
+	pi.on("session_before_compact", (event, ctx) => compaction.before(event, ctx));
+	pi.on("session_compact_failed", (event, ctx) => compaction.failed(event, ctx));
+	pi.on("session_compact", (event, ctx) => compaction.complete(event, ctx));
 	pi.on("input", (event) => {
 		if (event.source === "extension") {
 			if (consumeCancelledContinuationPrompt(event.text) || consumeStaleOwnedGoalPrompt(event.text)) {
@@ -586,7 +387,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		const latestGoalContextIndex = findLatestGoalContextIndex(event.messages);
 		const messages = event.messages.filter(
 			(message, index) =>
-				keepBudgetWrapUpMessage(message) && (!isGoalContextMessage(message) || index === latestGoalContextIndex),
+				runtime.keepBudgetWrapUpMessage(message) &&
+				(!isGoalContextMessage(message) || index === latestGoalContextIndex),
 		);
 		if (runtime.activeGoal?.status === "paused" && runtime.guardAbortGoalId === runtime.activeGoal.id) {
 			// A current custom follow-up clears the guard at message_start. Otherwise,
@@ -599,7 +401,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	pi.on("tool_call", (event, ctx) => {
 		runtime.markAgentToolAttempted();
 		if (runtime.queueFrozen) {
-			if (!isGoalToolName(event.toolName)) return;
+			if (!runtime.isGoalToolName(event.toolName)) return;
 			// Blocking alone feeds an error tool result back to the model. Abort too so
 			// stale Goal calls cannot loop while the experimental queue remains frozen.
 			abortCurrentTurn(ctx);
@@ -644,7 +446,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			runtime.budgetWrapUp?.goalId === runtime.activeGoal.id &&
 			!runtime.budgetWrapUp.delivered
 		) {
-			queueBudgetWrapUp(ctx, runtime.activeGoal);
+			runtime.queueBudgetWrapUp(ctx, runtime.activeGoal);
 			return;
 		}
 		if (runtime.activeGoal?.status !== "active") return;
@@ -690,7 +492,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		if (runtime.guardAbortGoalId) runtime.guardAbortGoalId = undefined;
 		const goalPrompt = consumePendingGoalPrompt(prompt);
 		const goalPromptGoalId = goalPrompt?.goalId;
-		const continuationGoalId = goalPromptGoalId ? undefined : markContinuationStarted(prompt);
+		const continuationGoalId = goalPromptGoalId ? undefined : runtime.markContinuationStarted(prompt);
 		const ownedPromptGoalId = goalPromptGoalId ?? continuationGoalId;
 		const activeBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
 		const runOrigin = continuationGoalId ? "automatic" : (goalPrompt?.origin ?? "automatic");
@@ -788,7 +590,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		}
 
 		const goalId = runtime.activeGoal.id;
-		const alreadyAwaitingContinuation = hasContinuationWorkForGoal(goalId);
+		const alreadyAwaitingContinuation = runtime.hasContinuationWorkForGoal(goalId);
 		const finalAssistant = findFinalAssistantMessage(event.messages);
 
 		if (!alreadyAwaitingContinuation) runtime.activeGoal = incrementGoal(runtime.activeGoal);
@@ -850,7 +652,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		}
 		if (
 			run.origin === "automatic" &&
-			recordAutomaticRunProgress(
+			runtime.recordAutomaticRunProgress(
 				ctx,
 				goalId,
 				event.messages,

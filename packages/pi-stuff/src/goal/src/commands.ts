@@ -1,7 +1,9 @@
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { TRANSCRIPT_MARKER } from "../../conversation-ui/transcript.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { checkpointGoalActiveTime, currentTokenTotal } from "./accounting.js";
-import { validateObjective } from "./command.js";
-import { safeGoalMenuText } from "./menu.js";
+import { completeGoalArguments, parseCommand, validateObjective } from "./command.js";
+import { safeGoalMenuText, showGoalManager } from "./menu.js";
 import type { ActiveGoal, PendingQueueAction } from "./persistence.js";
 import { buildGoalPrompt, buildObjectiveUpdatedPrompt, buildResumePrompt } from "./prompts.js";
 import {
@@ -30,6 +32,12 @@ import {
 	stoppedStatusLabel,
 	transitionGoal,
 } from "./runtime.js";
+import { withGoalSettingsLock } from "./settings.js";
+
+interface GoalCommandRegistrationOptions {
+	readonly onProjectionNeeded: () => void;
+	readonly settingsPath: string | undefined;
+}
 
 type GoalLifecycleAction = "replaced" | "resumed" | "started" | "updated";
 
@@ -49,6 +57,96 @@ function notifyGoalLifecycle(ctx: StatusContext, action: GoalLifecycleAction, ob
 		}${theme.fg("dim", " · ")}${theme.fg("text", objective)}`,
 		"info",
 	);
+}
+
+export function registerGoalCommand(
+	pi: ExtensionAPI,
+	runtime: GoalRuntime,
+	commands: GoalCommandController,
+	options: GoalCommandRegistrationOptions,
+): void {
+	pi.registerCommand("goal", {
+		description: "Run a goal to completion: /goal [--tokens 100k] <goal_to_complete>",
+		getArgumentCompletions: (prefix) =>
+			completeGoalArguments(prefix, { experimentalGoals: runtime.settings.experimental.goals }),
+		handler: (args, ctx) => dispatchGoalCommand(args, ctx, runtime, commands, options),
+	});
+}
+
+async function dispatchGoalCommand(
+	args: string,
+	ctx: ExtensionCommandContext,
+	runtime: GoalRuntime,
+	commands: GoalCommandController,
+	options: GoalCommandRegistrationOptions,
+): Promise<void> {
+	const result = parseCommand(args, { experimentalGoals: runtime.settings.experimental.goals });
+	if (isRuntimeString(result)) {
+		ctx.ui.notify(result, "warning");
+		return;
+	}
+	if (result.kind === "show" && args.trim() === "") {
+		await showGoalManager(runtime, commands, ctx, async (menuCtx) => {
+			const { showGoalSettings } = await import("./settings-ui.js");
+			return showGoalSettings(runtime, menuCtx, {
+				settingsPath: options.settingsPath,
+				withLock: process.versions["bun"] !== undefined ? withGoalSettingsLock : undefined,
+				onQueueUnfrozen: async (settingsCtx) => {
+					await commands.resumeQueueAfterUnfreeze(settingsCtx);
+				},
+			});
+		});
+		return;
+	}
+	if (runtime.queueFrozen) {
+		if (result.kind === "show") commands.showGoal(ctx);
+		else if (result.kind === "clear") await commands.clearGoal(ctx);
+		else commands.notifyFrozenQueue(ctx);
+		return;
+	}
+	if (runtime.pendingQueueAction && result.kind !== "show" && result.kind !== "clear") {
+		ctx.ui.notify("A queued goal change is waiting for Pi to settle. Retry after it finishes.", "warning");
+		return;
+	}
+
+	try {
+		switch (result.kind) {
+			case "show":
+				commands.showGoal(ctx);
+				return;
+			case "pause":
+				commands.pauseGoal(ctx);
+				return;
+			case "resume":
+				await commands.resumeGoal(ctx);
+				return;
+			case "clear":
+				await commands.clearGoal(ctx);
+				return;
+			case "edit":
+				await commands.editGoal(result.objective ?? "", result.tokenBudget, ctx);
+				return;
+			case "add":
+				await commands.addGoal(result.objective ?? "", result.tokenBudget, ctx);
+				return;
+			case "prioritize":
+				await commands.prioritizeGoal(result.objective ?? "", result.tokenBudget, ctx);
+				return;
+			case "drop-last":
+				await commands.dropLastGoal(ctx);
+				return;
+			case "skip":
+				await commands.skipGoal(ctx);
+				return;
+			case "start":
+				await commands.startGoal(result.objective ?? "", result.tokenBudget, ctx);
+				return;
+		}
+	} finally {
+		if (runtime.activeGoal || runtime.queuedGoals.length > 0 || runtime.pendingQueueAction) {
+			options.onProjectionNeeded();
+		}
+	}
 }
 
 // User-command mutations are kept separate from Pi event wiring. Every controller
