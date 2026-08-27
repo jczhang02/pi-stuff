@@ -23,6 +23,7 @@ import {
 } from "../runs/shared/pi-args.ts";
 import {
 	type AgentExecutionCoordinatorPort,
+	type AgentExecutionInvocation,
 	AgentRuntimeBindingRejectedError,
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
@@ -139,6 +140,299 @@ function createChildSafeState(): SubagentState {
 	};
 }
 
+type FanoutPreparation =
+	| { readonly ok: true; readonly launchRunId: string; readonly invocation?: AgentExecutionInvocation }
+	| { readonly ok: false; readonly message: string };
+
+class FanoutChildRuntime {
+	private readonly pi: ExtensionAPI;
+	private readonly registeredApis: WeakSet<ExtensionAPI>;
+	private readonly config: PiStuffAgentsConfig;
+	private readonly state: SubagentState;
+	private readonly executor: FanoutExecutor;
+	private readonly executionGovernor: AgentExecutionCoordinatorPort;
+	private readonly eventUnsubscribes: Array<() => void> = [];
+	private active = true;
+	private boundLaunchIdentity: { sessionId: string; ownerAgentPath: readonly string[] } | undefined;
+
+	constructor(pi: ExtensionAPI, deps: FanoutChildDependencies, registeredApis: WeakSet<ExtensionAPI>) {
+		this.pi = pi;
+		this.registeredApis = registeredApis;
+		this.config = deps.loadConfiguration();
+		this.state = createChildSafeState();
+		this.executor = deps.createExecutor({
+			config: this.config,
+			pi,
+			projectContext: projectCurrentContext,
+			state: this.state,
+		});
+		this.executionGovernor = deps.createGovernorCoordinator(this.config);
+	}
+
+	private bindExecutionGovernor(): string | undefined {
+		const parentSessionId = process.env[SUBAGENT_PARENT_SESSION_ENV]?.trim();
+		if (!parentSessionId) return "Cannot start an Agent because the child has no parent session identity.";
+		const physicalSessionId = process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV]?.trim();
+		if (!physicalSessionId) return "Cannot start an Agent because the child has no physical parent session identity.";
+		const rawOwnerPath = process.env[PI_STUFF_AGENT_PATH_ENV];
+		const rawComponents = rawOwnerPath?.split("›") ?? [];
+		const ownerAgentPath = parseAgentOwnerPath(rawOwnerPath);
+		const validOwnerPath =
+			rawComponents.length > 0 &&
+			rawComponents.length <= this.config.maxSubagentDepth &&
+			rawComponents.every((component) => component.trim().length > 0) &&
+			ownerAgentPath.length === rawComponents.length &&
+			ownerAgentPath.every((component) => {
+				const separator = component.lastIndexOf(":");
+				if (separator <= 0) return false;
+				const index = component.slice(separator + 1);
+				return /^\d+$/.test(index) && Number.isSafeInteger(Number(index)) && Number(index) <= 1_000_000;
+			});
+		if (!validOwnerPath) {
+			return "Cannot start an Agent because PI_STUFF_AGENT_PATH is missing or invalid for this child.";
+		}
+		this.executionGovernor.bindSession({ sessionId: parentSessionId, ownerAgentPath });
+		this.boundLaunchIdentity = { sessionId: physicalSessionId, ownerAgentPath };
+		return undefined;
+	}
+
+	private failureResult(params: PublicAgentParams, message: string): AgentToolResult<Details> {
+		const result: AgentToolFailureResult = {
+			content: [{ type: "text", text: message }],
+			isError: true,
+			details: {
+				mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
+				results: [],
+			},
+		};
+		return result;
+	}
+
+	private projectFailure(params: PublicAgentParams, message: string): AgentToolResult<Details> {
+		return projectEngineResult(params, this.failureResult(params, message));
+	}
+
+	private async prepareLaunch(id: string, params: PublicAgentParams): Promise<FanoutPreparation> {
+		const bindingError = this.bindExecutionGovernor();
+		if (bindingError) return { ok: false, message: bindingError };
+		const identity = this.boundLaunchIdentity;
+		if (!identity) return { ok: false, message: "Nested Agent governor is not bound." };
+		const launchRunId = deriveLaunchRunId(id, identity);
+		let resumeTargetRunId: string | undefined;
+		try {
+			resumeTargetRunId = resolveResumeTargetRunId(params, this.state);
+		} catch (error) {
+			return { ok: false, message: error instanceof Error ? error.message : String(error) };
+		}
+		const prepareInput = { launchRunId, params } satisfies AgentPrepareInput;
+		if (resumeTargetRunId) Object.assign(prepareInput, { resumeTargetRunId });
+		const prepared = await this.executionGovernor.prepare(prepareInput);
+		if (!prepared.ok) return prepared;
+		return prepared.invocation
+			? { ok: true, launchRunId, invocation: prepared.invocation }
+			: { ok: true, launchRunId };
+	}
+
+	private async failInvocation(invocation: AgentExecutionInvocation, diagnostic: string): Promise<void> {
+		try {
+			await this.executionGovernor.fail(invocation);
+		} catch (error) {
+			reportAgentDiagnostic(diagnostic, error);
+		}
+	}
+
+	private async settleSessionEnded(
+		invocation: AgentExecutionInvocation,
+		result: AgentToolResult<Details>,
+		foregroundStarted: boolean,
+	): Promise<void> {
+		if (foregroundStarted) {
+			try {
+				await this.executionGovernor.settle(invocation, result);
+			} catch (error) {
+				reportAgentDiagnostic("Failed to settle a session-ended nested foreground Agent result:", error);
+			}
+			return;
+		}
+		const binding = result.details.lifecycleBinding;
+		let safeToRelease = !binding && !result.details.asyncId;
+		if (binding?.abortStart) {
+			try {
+				safeToRelease = binding.abortStart();
+			} catch (error) {
+				// Failed control transport cannot prove the runner stopped; retain authority fail-closed.
+				reportAgentDiagnostic("Failed to abort a session-ended nested Agent runtime:", error);
+				safeToRelease = false;
+			}
+		}
+		if (safeToRelease) {
+			await this.failInvocation(invocation, "Failed to release a session-ended nested Agent reservation:");
+			return;
+		}
+		try {
+			await this.executionGovernor.settle(invocation, result);
+		} catch (error) {
+			reportAgentDiagnostic("Failed to retain a session-ended nested Agent runtime binding:", error);
+		}
+	}
+
+	private async settleInvocation(
+		invocation: AgentExecutionInvocation,
+		result: AgentToolResult<Details>,
+	): Promise<string | undefined> {
+		try {
+			await this.executionGovernor.settle(invocation, result);
+		} catch (error) {
+			if (error instanceof AgentRuntimeBindingRejectedError) return error.message;
+			reportAgentDiagnostic(
+				"Failed to persist the launched nested Agent lease binding; retaining it for reconciliation:",
+				error,
+			);
+		}
+		return undefined;
+	}
+
+	private async execute(
+		id: string,
+		rawParams: PublicAgentParams,
+		signal: AbortSignal | undefined,
+		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
+		ctx: ExtensionContext,
+	): Promise<AgentToolResult<Details>> {
+		const forbiddenField = ["action", "id", "index", "message", "foreground"].find((field) =>
+			Object.hasOwn(rawParams, field),
+		);
+		if (forbiddenField) {
+			const params = { ...rawParams, foreground: true };
+			return this.projectFailure(
+				params,
+				`Nested Agent calls are launch-only; field '${forbiddenField}' is unavailable.`,
+			);
+		}
+		let params: PublicAgentParams;
+		try {
+			params = normalizePublicAgentParams({ ...rawParams, foreground: true });
+		} catch (error) {
+			const supplied = { ...rawParams, foreground: true };
+			return this.projectFailure(supplied, error instanceof Error ? error.message : String(error));
+		}
+		const prepared = await this.prepareLaunch(id, params);
+		if (!prepared.ok) return this.projectFailure(params, prepared.message);
+		const invocation = prepared.invocation;
+		if (!this.active) {
+			if (invocation)
+				await this.failInvocation(invocation, "Failed to release a cancelled nested Agent launch reservation:");
+			return this.projectFailure(params, "Nested Agent launch cancelled because the parent session ended.");
+		}
+		let foregroundStarted = false;
+		try {
+			const result = await this.executor.execute(
+				id,
+				{ ...toEngineParams(params), launchRunId: prepared.launchRunId },
+				signal ?? new AbortController().signal,
+				onUpdate ? (update) => onUpdate(projectEngineResult(params, update)) : undefined,
+				ctx,
+				invocation
+					? {
+							beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
+								await this.executionGovernor.observeAsyncStarted({
+									id: runId,
+									pid: process.pid,
+									asyncDir,
+									abortStart,
+								});
+								foregroundStarted = true;
+							},
+						}
+					: undefined,
+			);
+			if (!this.active && invocation) {
+				await this.settleSessionEnded(invocation, result, foregroundStarted);
+				return this.projectFailure(params, "Nested Agent launch cancelled because the parent session ended.");
+			}
+			if (invocation) {
+				const settlementError = await this.settleInvocation(invocation, result);
+				if (settlementError) return this.projectFailure(params, settlementError);
+			}
+			return projectEngineResult(params, result);
+		} catch (error) {
+			if (invocation) {
+				await this.failInvocation(
+					invocation,
+					"Failed to release a nested Agent reservation after engine launch failure:",
+				);
+			}
+			throw error;
+		}
+	}
+
+	private toolDefinition(): ToolDefinition<typeof FanoutChildSubagentParams, Details> {
+		return {
+			name: "subagent",
+			label: "Agent",
+			description: buildFanoutChildSubagentToolDescription(),
+			parameters: FanoutChildSubagentParams,
+			execute: (id, rawParams, signal, onUpdate, ctx) => {
+				// SAFETY: FanoutChildSubagentParams is an explicit launch-only subset of PublicAgentParams.
+				return this.execute(id, rawParams as PublicAgentParams, signal, onUpdate, ctx);
+			},
+		};
+	}
+
+	private onBus(event: string, handler: (data: ExtensionEventPayload) => void): void {
+		const unsubscribe = this.pi.events.on(event, handler);
+		if (isRuntimeFunction(unsubscribe)) this.eventUnsubscribes.push(unsubscribe);
+	}
+
+	private disposeComposition(): void {
+		for (const unsubscribe of this.eventUnsubscribes.splice(0)) {
+			try {
+				unsubscribe();
+			} catch (error) {
+				reportAgentDiagnostic("Failed to unsubscribe a nested Agent event handler:", error);
+			}
+		}
+		try {
+			this.executionGovernor.dispose();
+		} catch (error) {
+			reportAgentDiagnostic("Failed to dispose the nested Agent execution governor:", error);
+		}
+	}
+
+	register(): void {
+		try {
+			const complete = (data: ExtensionEventPayload): void => {
+				if (!this.active) return;
+				void this.executionGovernor.complete(data).catch((error) => {
+					reportAgentDiagnostic("Failed to release completed nested Agent lease:", error);
+				});
+			};
+			this.onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, complete);
+			this.onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, complete);
+			this.onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
+				if (!this.active) return;
+				void this.executionGovernor.reconcileDead().catch((error) => {
+					reportAgentDiagnostic("Failed to reconcile nested Agent leases after runner exit:", error);
+				});
+			});
+			this.pi.on("session_shutdown", () => {
+				if (!this.active) return;
+				this.active = false;
+				this.registeredApis.delete(this.pi);
+				this.disposeComposition();
+			});
+			// Register the public Tool last so earlier initialization failures can retry cleanly.
+			registerSuiteOwnedTool(this.pi, this.toolDefinition(), createAgentToolPresentation());
+			this.registeredApis.add(this.pi);
+		} catch (error) {
+			this.active = false;
+			this.disposeComposition();
+			this.registeredApis.delete(this.pi);
+			throw error;
+		}
+	}
+}
+
 export default function registerFanoutChildSubagentExtension(
 	pi: ExtensionAPI,
 	overrides: Partial<FanoutChildDependencies> = {},
@@ -154,266 +448,5 @@ export default function registerFanoutChildSubagentExtension(
 			: new WeakSet<ExtensionAPI>();
 	globalStore.__piSubagentFanoutChildRegisteredApis = registeredApis;
 	if (registeredApis.has(pi)) return;
-
-	const config = deps.loadConfiguration();
-	const state = createChildSafeState();
-	const executor = deps.createExecutor({ config, pi, projectContext: projectCurrentContext, state });
-	const executionGovernor = deps.createGovernorCoordinator(config);
-	let active = true;
-	let boundLaunchIdentity: { sessionId: string; ownerAgentPath: readonly string[] } | undefined;
-
-	const bindExecutionGovernor = (): string | undefined => {
-		const parentSessionId = process.env[SUBAGENT_PARENT_SESSION_ENV]?.trim();
-		if (!parentSessionId) return "Cannot start an Agent because the child has no parent session identity.";
-		const physicalSessionId = process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV]?.trim();
-		if (!physicalSessionId) return "Cannot start an Agent because the child has no physical parent session identity.";
-		const rawOwnerPath = process.env[PI_STUFF_AGENT_PATH_ENV];
-		const rawComponents = rawOwnerPath?.split("›") ?? [];
-		const ownerAgentPath = parseAgentOwnerPath(rawOwnerPath);
-		const validOwnerPath =
-			rawComponents.length > 0 &&
-			rawComponents.length <= config.maxSubagentDepth &&
-			rawComponents.every((component) => component.trim().length > 0) &&
-			ownerAgentPath.length === rawComponents.length &&
-			ownerAgentPath.every((component) => {
-				const separator = component.lastIndexOf(":");
-				if (separator <= 0) return false;
-				const index = component.slice(separator + 1);
-				return /^\d+$/.test(index) && Number.isSafeInteger(Number(index)) && Number(index) <= 1_000_000;
-			});
-		if (!validOwnerPath) {
-			return "Cannot start an Agent because PI_STUFF_AGENT_PATH is missing or invalid for this child.";
-		}
-		executionGovernor.bindSession({
-			sessionId: parentSessionId,
-			ownerAgentPath,
-		});
-		boundLaunchIdentity = { sessionId: physicalSessionId, ownerAgentPath };
-		return undefined;
-	};
-
-	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> => {
-		const result: AgentToolFailureResult = {
-			content: [{ type: "text", text: message }],
-			isError: true,
-			details: {
-				mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
-				results: [],
-			},
-		};
-		return result;
-	};
-
-	const tool: ToolDefinition<typeof FanoutChildSubagentParams, Details> = {
-		name: "subagent",
-		label: "Agent",
-		description: buildFanoutChildSubagentToolDescription(),
-		parameters: FanoutChildSubagentParams,
-		async execute(id, rawParams, signal, onUpdate, ctx) {
-			// SAFETY: FanoutChildSubagentParams is an explicit launch-only subset of PublicAgentParams.
-			const publicParams = rawParams as PublicAgentParams;
-			const forbiddenField = ["action", "id", "index", "message", "foreground"].find((field) =>
-				Object.hasOwn(rawParams, field),
-			);
-			if (forbiddenField) {
-				const params = { ...publicParams, foreground: true };
-				return projectEngineResult(
-					params,
-					governorFailureResult(
-						params,
-						`Nested Agent calls are launch-only; field '${forbiddenField}' is unavailable.`,
-					),
-				);
-			}
-			// A fanout owner must not finish while work it owns is still detached.
-			// Nested Agent calls therefore execute in the owner foreground and are
-			// collected before the parent writer can report terminal success.
-			let params: PublicAgentParams;
-			try {
-				params = normalizePublicAgentParams({ ...publicParams, foreground: true });
-			} catch (error) {
-				const supplied = { ...publicParams, foreground: true };
-				return projectEngineResult(
-					supplied,
-					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
-				);
-			}
-			const bindingError = bindExecutionGovernor();
-			if (bindingError) return projectEngineResult(params, governorFailureResult(params, bindingError));
-			if (!boundLaunchIdentity) {
-				return projectEngineResult(params, governorFailureResult(params, "Nested Agent governor is not bound."));
-			}
-			const launchRunId = deriveLaunchRunId(id, boundLaunchIdentity);
-			let resumeTargetRunId: string | undefined;
-			let foregroundStarted = false;
-			try {
-				resumeTargetRunId = resolveResumeTargetRunId(params, state);
-			} catch (error) {
-				return projectEngineResult(
-					params,
-					governorFailureResult(params, error instanceof Error ? error.message : String(error)),
-				);
-			}
-			const prepareInput = {
-				launchRunId,
-				params,
-			} satisfies AgentPrepareInput;
-			if (resumeTargetRunId) Object.assign(prepareInput, { resumeTargetRunId });
-			const prepared = await executionGovernor.prepare(prepareInput);
-			if (!prepared.ok) return projectEngineResult(params, governorFailureResult(params, prepared.message));
-			if (!active) {
-				if (prepared.invocation) {
-					try {
-						await executionGovernor.fail(prepared.invocation);
-					} catch (error) {
-						reportAgentDiagnostic("Failed to release a cancelled nested Agent launch reservation:", error);
-					}
-				}
-				return projectEngineResult(
-					params,
-					governorFailureResult(params, "Nested Agent launch cancelled because the parent session ended."),
-				);
-			}
-			try {
-				const result = await executor.execute(
-					id,
-					{ ...toEngineParams(params), launchRunId },
-					signal ?? new AbortController().signal,
-					onUpdate ? (update) => onUpdate(projectEngineResult(params, update)) : undefined,
-					ctx,
-					prepared.invocation
-						? {
-								beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
-									await executionGovernor.observeAsyncStarted({
-										id: runId,
-										pid: process.pid,
-										asyncDir,
-										abortStart,
-									});
-									foregroundStarted = true;
-								},
-							}
-						: undefined,
-				);
-				if (!active && prepared.invocation) {
-					if (foregroundStarted) {
-						try {
-							await executionGovernor.settle(prepared.invocation, result);
-						} catch (error) {
-							reportAgentDiagnostic("Failed to settle a session-ended nested foreground Agent result:", error);
-						}
-					} else {
-						const binding = result.details.lifecycleBinding;
-						let safeToRelease = !binding && !result.details.asyncId;
-						if (binding?.abortStart) {
-							try {
-								safeToRelease = binding.abortStart();
-							} catch (error) {
-								// Failed control transport cannot prove the runner stopped.
-								// Retain the parent session's governor authority fail-closed.
-								reportAgentDiagnostic("Failed to abort a session-ended nested Agent runtime:", error);
-								safeToRelease = false;
-							}
-						}
-						if (safeToRelease) {
-							try {
-								await executionGovernor.fail(prepared.invocation);
-							} catch (error) {
-								reportAgentDiagnostic("Failed to release a session-ended nested Agent reservation:", error);
-							}
-						} else {
-							try {
-								await executionGovernor.settle(prepared.invocation, result);
-							} catch (error) {
-								reportAgentDiagnostic("Failed to retain a session-ended nested Agent runtime binding:", error);
-							}
-						}
-					}
-					return projectEngineResult(
-						params,
-						governorFailureResult(params, "Nested Agent launch cancelled because the parent session ended."),
-					);
-				}
-				if (prepared.invocation) {
-					try {
-						await executionGovernor.settle(prepared.invocation, result);
-					} catch (error) {
-						if (error instanceof AgentRuntimeBindingRejectedError) {
-							return projectEngineResult(params, governorFailureResult(params, error.message));
-						}
-						reportAgentDiagnostic(
-							"Failed to persist the launched nested Agent lease binding; retaining it for reconciliation:",
-							error,
-						);
-					}
-				}
-				return projectEngineResult(params, result);
-			} catch (error) {
-				if (prepared.invocation) {
-					try {
-						await executionGovernor.fail(prepared.invocation);
-					} catch (releaseError) {
-						reportAgentDiagnostic(
-							"Failed to release a nested Agent reservation after engine launch failure:",
-							releaseError,
-						);
-					}
-				}
-				throw error;
-			}
-		},
-	};
-
-	const eventUnsubscribes: Array<() => void> = [];
-	const onBus = (event: string, handler: (data: ExtensionEventPayload) => void): void => {
-		const unsubscribe = pi.events.on(event, handler);
-		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
-	};
-	const disposeComposition = (): void => {
-		for (const unsubscribe of eventUnsubscribes.splice(0)) {
-			try {
-				unsubscribe();
-			} catch (error) {
-				reportAgentDiagnostic("Failed to unsubscribe a nested Agent event handler:", error);
-			}
-		}
-		try {
-			executionGovernor.dispose();
-		} catch (error) {
-			reportAgentDiagnostic("Failed to dispose the nested Agent execution governor:", error);
-		}
-	};
-	try {
-		const complete = (data: ExtensionEventPayload): void => {
-			if (!active) return;
-			void executionGovernor.complete(data).catch((error) => {
-				reportAgentDiagnostic("Failed to release completed nested Agent lease:", error);
-			});
-		};
-		onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, complete);
-		onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, complete);
-		onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
-			if (!active) return;
-			void executionGovernor.reconcileDead().catch((error) => {
-				reportAgentDiagnostic("Failed to reconcile nested Agent leases after runner exit:", error);
-			});
-		});
-
-		pi.on("session_shutdown", () => {
-			if (!active) return;
-			active = false;
-			registeredApis.delete(pi);
-			disposeComposition();
-		});
-
-		// Register the public tool last. If any earlier initialization step fails,
-		// the inert handlers are rolled back and the same API can retry cleanly.
-		registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
-		registeredApis.add(pi);
-	} catch (error) {
-		active = false;
-		disposeComposition();
-		registeredApis.delete(pi);
-		throw error;
-	}
+	new FanoutChildRuntime(pi, deps, registeredApis).register();
 }
