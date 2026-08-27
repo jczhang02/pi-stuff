@@ -14,7 +14,16 @@ import {
 	type SafetyPauseCause,
 	serializeGoalState,
 } from "./persistence.js";
-import { abortCurrentTurn, formatBudget, hasPendingMessages, type StatusContext, transitionGoal } from "./policy.js";
+import {
+	abortCurrentTurn,
+	buildGoalStateSnapshot,
+	formatBudget,
+	type GoalStateSnapshot,
+	hasPendingMessages,
+	isTerminalGoalStatus,
+	type StatusContext,
+	transitionGoal,
+} from "./policy.js";
 import {
 	type ContinuationTicket,
 	type GoalPromptDeliveryOptions,
@@ -22,8 +31,8 @@ import {
 	type GoalRunOrigin,
 	sendHiddenGoalPrompt,
 } from "./prompt-ownership.js";
-import type { GoalStatus } from "./prompts.js";
 import { nextToolFreeRepeatState, resetGoalSafetyEpoch } from "./safety.js";
+import { GoalToolPolicy, type GoalToolVisibilitySnapshot } from "./tool-policy.js";
 
 export type { StatusContext } from "./policy.js";
 export {
@@ -33,12 +42,15 @@ export {
 	editedGoalStatus,
 	formatBudget,
 	formatStatus,
+	type GoalStateSnapshot,
+	type GoalStateSnapshotStatus,
 	goalIdRejectionReason,
 	goalSummary,
 	hasPendingMessages,
 	incrementGoal,
 	isContradictoryCompletionSummary,
 	isResumableGoalStatus,
+	isTerminalGoalStatus,
 	nextGoalInstance,
 	stoppedStatusLabel,
 	transitionGoal,
@@ -50,6 +62,11 @@ export {
 	type GoalRunOrigin,
 } from "./prompt-ownership.js";
 export { queueGoalSafetyReset, resetGoalSafetyEpoch } from "./safety.js";
+export {
+	GOAL_BLOCKED_TOOL,
+	GOAL_COMPLETE_TOOL,
+	type GoalToolVisibilitySnapshot,
+} from "./tool-policy.js";
 
 import { DEFAULT_GOAL_SETTINGS, type GoalSettings, type GoalSettingsLoadIssue } from "./settings.js";
 
@@ -73,12 +90,6 @@ export interface CompletedGoalRun {
 	toolAttempted: boolean;
 }
 
-export interface GoalToolVisibilitySnapshot {
-	activeTools: string[];
-	goalToolsUnlocked: boolean;
-	goalToolsHiddenByPolicy: string[];
-}
-
 export interface GoalCompactionEvent {
 	readonly reason?: "manual" | "overflow" | "threshold";
 	readonly willRetry?: boolean;
@@ -92,38 +103,7 @@ interface GoalMessageCandidate {
 }
 
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
-export const GOAL_COMPLETE_TOOL = "goal_complete";
-export const GOAL_BLOCKED_TOOL = "goal_blocked";
 export const EMERGENCY_AUTOMATIC_TURN_LIMIT = 10_000;
-const GOAL_TOOL_NAMES = [GOAL_COMPLETE_TOOL, GOAL_BLOCKED_TOOL] as const;
-
-/** Canonical Goal state passed to the in-process managed-run publisher. */
-export type GoalStateSnapshotStatus = GoalStatus | "cleared";
-
-export interface GoalStateSnapshot {
-	goalId: string;
-	status: GoalStateSnapshotStatus;
-	summary?: string;
-	reason?: string;
-}
-
-/** Terminal statuses for Goal persistence and managed-run lifecycle publication. */
-export function isTerminalGoalStatus(status: GoalStateSnapshotStatus): boolean {
-	return status !== "active" && status !== "queued";
-}
-
-function buildGoalStateSnapshot(
-	goal: ActiveGoal,
-	summary: string | undefined,
-	reason: string | undefined,
-): GoalStateSnapshot {
-	const snapshot: GoalStateSnapshot = { goalId: goal.id, status: goal.status };
-	if (goal.status === "complete" && summary) snapshot.summary = summary;
-	else if (goal.status !== "complete" && isTerminalGoalStatus(goal.status) && reason) {
-		snapshot.reason = reason;
-	}
-	return snapshot;
-}
 
 interface GoalTerminalDetails {
 	goalId: string;
@@ -155,7 +135,7 @@ const BUDGET_WRAP_UP_PROMPT =
 // and the ordering-sensitive invariants used by command and lifecycle orchestration.
 // Prompt correlation lives in GoalPromptOwnership; this runtime coordinates it with
 // queue, budget, safety, persistence, and tool-policy transitions.
-export class GoalRuntime {
+export class GoalRuntime extends GoalToolPolicy {
 	settings: GoalSettings = DEFAULT_GOAL_SETTINGS;
 	settingsLoadIssue: GoalSettingsLoadIssue | undefined;
 	activeGoal: ActiveGoal | undefined;
@@ -177,35 +157,14 @@ export class GoalRuntime {
 	agentRunToolAttempted = false;
 	guardAbortGoalId: string | undefined;
 	staleGoalToolCallsBlocked = false;
-	/** Once true, goal tools stay in the active set for this runtime (prompt-cache stable). */
-	goalToolsUnlocked = false;
-	/** Exact lazy goal tools this runtime removed and may restore on a mode change. */
-	goalToolsHiddenByPolicy = new Set<string>();
 	menuGeneration = 0;
 	menuController = new AbortController();
 
-	readonly pi: ExtensionAPI;
 	private readonly promptOwnership: GoalPromptOwnership;
 
 	constructor(pi: ExtensionAPI) {
-		this.pi = pi;
+		super(pi);
 		this.promptOwnership = new GoalPromptOwnership(pi);
-	}
-
-	get continuationIntent() {
-		return this.promptOwnership.continuationIntent;
-	}
-
-	set continuationIntent(intent: ContinuationTicket | undefined) {
-		this.promptOwnership.continuationIntent = intent;
-	}
-
-	get continuationDelivery() {
-		return this.promptOwnership.continuationDelivery;
-	}
-
-	set continuationDelivery(delivery: ContinuationTicket | undefined) {
-		this.promptOwnership.continuationDelivery = delivery;
 	}
 
 	setGoalStateSink(sink: ((snapshot: GoalStateSnapshot) => void) | undefined) {
@@ -385,10 +344,6 @@ export class GoalRuntime {
 
 	clearStaleGoalToolCallBlock() {
 		this.staleGoalToolCallsBlocked = false;
-	}
-
-	clearGoalRecovery() {
-		this.goalRecovery = undefined;
 	}
 
 	clearBudgetWrapUp() {
@@ -732,7 +687,7 @@ export class GoalRuntime {
 	async clearActiveGoal(ctx: StatusContext, reason = "goal cleared"): Promise<void> {
 		const clearedGoal = this.activeGoal;
 		this.cancelContinuationWork();
-		this.clearGoalRecovery();
+		this.goalRecovery = undefined;
 		this.clearBudgetWrapUp();
 		this.clearStaleGoalToolCallBlock();
 		this.activeGoal = undefined;
@@ -746,92 +701,8 @@ export class GoalRuntime {
 		// churn within the same runtime.
 	}
 
-	isGoalToolName(name: string) {
-		return GOAL_TOOL_NAMES.some((toolName) => toolName === name);
-	}
-
-	goalToolsAvailable() {
-		const active = new Set(this.pi.getActiveTools());
-		return GOAL_TOOL_NAMES.every((name) => active.has(name));
-	}
-
-	hideGoalToolsIfLocked() {
-		if (this.goalToolsUnlocked) return;
-		const active = this.pi.getActiveTools();
-		const hidden = active.filter((name) => this.isGoalToolName(name));
-		if (hidden.length === 0) return;
-		this.pi.setActiveTools(active.filter((name) => !this.isGoalToolName(name)));
-		for (const name of hidden) this.goalToolsHiddenByPolicy.add(name);
-	}
-
-	restoreGoalToolsHiddenByPolicy() {
-		const activeBeforeRestore = this.pi.getActiveTools();
-		const activeSet = new Set(activeBeforeRestore);
-		const missingOwnedTools = [...this.goalToolsHiddenByPolicy].filter((name) => !activeSet.has(name));
-		if (missingOwnedTools.length === 0) {
-			this.goalToolsHiddenByPolicy.clear();
-			return;
-		}
-		try {
-			this.pi.setActiveTools([...activeBeforeRestore, ...missingOwnedTools]);
-			const restored = new Set(this.pi.getActiveTools());
-			if (missingOwnedTools.some((name) => !restored.has(name))) {
-				throw new Error("the active tool policy rejected a previously hidden goal tool");
-			}
-			this.goalToolsHiddenByPolicy.clear();
-		} catch (error) {
-			this.pi.setActiveTools(activeBeforeRestore);
-			throw error;
-		}
-	}
-
-	assertGoalToolsAvailable() {
-		if (this.goalToolsAvailable()) return;
-		throw new Error(
-			"goal_complete and goal_blocked are unavailable; include them in the active tool allowlist or leave the restrictive tool mode first.",
-		);
-	}
-
-	ensureGoalToolsVisible() {
-		const active = this.pi.getActiveTools();
-		const activeSet = new Set(active);
-		const missing = GOAL_TOOL_NAMES.filter((name) => !activeSet.has(name));
-		if (missing.length > 0) this.pi.setActiveTools([...active, ...missing]);
-		this.assertGoalToolsAvailable();
-	}
-
 	prepareGoalToolsForActivation(ctx: StatusContext) {
-		if (this.settings.toolVisibility === "after-first-goal") {
-			if (!this.goalToolsAvailable() && ctx.isIdle?.() !== true) {
-				throw new Error("wait until Pi is idle before revealing the goal tools");
-			}
-			this.revealGoalTools();
-			return;
-		}
-		this.assertGoalToolsAvailable();
-	}
-
-	/** Mark lazy tools permanently desired for this runtime and make them active now. */
-	revealGoalTools() {
-		const activeBeforeReveal = this.pi.getActiveTools();
-		const wasUnlocked = this.goalToolsUnlocked;
-		try {
-			this.ensureGoalToolsVisible();
-			this.goalToolsUnlocked = true;
-			this.goalToolsHiddenByPolicy.clear();
-		} catch (error) {
-			this.pi.setActiveTools(activeBeforeReveal);
-			this.goalToolsUnlocked = wasUnlocked;
-			throw error;
-		}
-	}
-
-	snapshotGoalToolVisibility(): GoalToolVisibilitySnapshot {
-		return {
-			activeTools: this.pi.getActiveTools(),
-			goalToolsUnlocked: this.goalToolsUnlocked,
-			goalToolsHiddenByPolicy: [...this.goalToolsHiddenByPolicy],
-		};
+		this.prepareGoalToolsForVisibility(this.settings.toolVisibility, ctx);
 	}
 
 	snapshotSettingsApplicationState(): GoalSettingsRuntimeSnapshot {
@@ -869,15 +740,6 @@ export class GoalRuntime {
 		this.staleGoalToolCallsBlocked = snapshot.staleGoalToolCallsBlocked;
 		this.terminalDetails = snapshot.terminalDetails ? structuredClone(snapshot.terminalDetails) : undefined;
 		this.restoreGoalToolVisibility(snapshot.toolVisibility);
-	}
-
-	restoreGoalToolVisibility(snapshot: GoalToolVisibilitySnapshot) {
-		this.pi.setActiveTools(snapshot.activeTools);
-		this.goalToolsUnlocked = snapshot.goalToolsUnlocked;
-		this.goalToolsHiddenByPolicy.clear();
-		for (const name of snapshot.goalToolsHiddenByPolicy) {
-			this.goalToolsHiddenByPolicy.add(name);
-		}
 	}
 
 	pauseGoalForUnavailableTools(ctx: StatusContext, abortTurn = true, recordUsage = true) {

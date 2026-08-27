@@ -47,8 +47,9 @@ Internally, `goal.ts` is the single Pi lifecycle composition root: event order a
 The generation-guarded state machine stays in `runtime.ts`, pure state and formatting policy in `policy.ts`, command
 registration and transitions in `commands.ts`, queued-prompt correlation in `prompt-ownership.ts`, compaction retry
 coordination in `compaction.ts`, automatic-run coordination in `run-protocol.ts`, terminal Tool execution in
-`terminal-tools.ts`, and its stateless schemas and presentation in `tool-contract.ts`. Splitting lifecycle handlers by
-event would duplicate continuation, stale-turn, persistence, and safety invariants.
+`terminal-tools.ts`, Host tool visibility ownership in `tool-policy.ts`, and stateless Tool schemas and presentation in
+`tool-contract.ts`. Splitting lifecycle handlers by event would duplicate continuation, stale-turn, persistence, and
+safety invariants.
 
 ## Terminal tools
 

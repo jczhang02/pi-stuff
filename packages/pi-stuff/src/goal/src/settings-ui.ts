@@ -474,7 +474,7 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 	if (!shouldFreeze) return;
 
 	runtime.cancelContinuationWork();
-	runtime.clearGoalRecovery();
+	runtime.goalRecovery = undefined;
 	runtime.clearBudgetWrapUp();
 	if (goalOwnedRun) {
 		runtime.blockStaleGoalToolCalls();

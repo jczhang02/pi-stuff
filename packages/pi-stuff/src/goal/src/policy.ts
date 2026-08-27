@@ -18,6 +18,34 @@ export interface StatusContext extends UsageContext {
 	abort?: () => void;
 }
 
+/** Canonical Goal state passed to the in-process managed-run publisher. */
+export type GoalStateSnapshotStatus = GoalStatus | "cleared";
+
+export interface GoalStateSnapshot {
+	goalId: string;
+	status: GoalStateSnapshotStatus;
+	summary?: string;
+	reason?: string;
+}
+
+/** Terminal statuses for Goal persistence and managed-run lifecycle publication. */
+export function isTerminalGoalStatus(status: GoalStateSnapshotStatus): boolean {
+	return status !== "active" && status !== "queued";
+}
+
+export function buildGoalStateSnapshot(
+	goal: ActiveGoal,
+	summary: string | undefined,
+	reason: string | undefined,
+): GoalStateSnapshot {
+	const snapshot: GoalStateSnapshot = { goalId: goal.id, status: goal.status };
+	if (goal.status === "complete" && summary) snapshot.summary = summary;
+	else if (goal.status !== "complete" && isTerminalGoalStatus(goal.status) && reason) {
+		snapshot.reason = reason;
+	}
+	return snapshot;
+}
+
 const CONTRADICTORY_COMPLETION_PATTERNS = [
 	/(?<!could\s)\bnot\s+(?:yet\s+)?(?:complete|completed|done|finished)\b/i,
 	/\bstill\s+(?:incomplete|failing|failing\s+tests?|fails?)\b/i,

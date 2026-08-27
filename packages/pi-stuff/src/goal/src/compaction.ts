@@ -65,7 +65,7 @@ export class GoalCompactionCoordinator {
 		const suiteNativePreflight = isSuiteNativeCompactionPreflight(ctx);
 		if (this.runtime.queueFrozen) return;
 		if (this.runtime.activeGoal?.status !== "active") {
-			this.runtime.clearGoalRecovery();
+			this.runtime.goalRecovery = undefined;
 			if (!suiteNativePreflight && this.runtime.pendingQueueAction) {
 				await this.commands.dispatchPendingQueueActionIfSettled(ctx);
 			}

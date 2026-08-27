@@ -214,7 +214,7 @@ export class GoalCommandController {
 		}
 
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
 		this.runtime.queuedGoals = [];
@@ -333,7 +333,7 @@ export class GoalCommandController {
 		}
 		if (currentGoal.status === "active") this.runtime.recordGoalUsage(currentGoal, ctx);
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
 		this.runtime.pendingQueueAction = {
@@ -402,7 +402,7 @@ export class GoalCommandController {
 		const reason = pending.reason;
 		this.runtime.pendingQueueAction = undefined;
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
 		const next = skipQueuedGoal(this.runtime.queuedGoals);
@@ -518,7 +518,7 @@ export class GoalCommandController {
 		const stoppedGoal = this.runtime.activeGoal;
 		const stoppedStatus = stoppedGoal.status;
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
 		this.runtime.activeGoal = queueGoalSafetyReset(
@@ -556,7 +556,7 @@ export class GoalCommandController {
 		if (!this.runtime.activeGoal) {
 			ctx.ui.notify("No active goal.", "info");
 			this.runtime.cancelContinuationWork();
-			this.runtime.clearGoalRecovery();
+			this.runtime.goalRecovery = undefined;
 			this.runtime.clearBudgetWrapUp();
 			this.runtime.clearStaleGoalToolCallBlock();
 			await this.runtime.clearPersistedGoal(ctx.cwd);
@@ -583,7 +583,7 @@ export class GoalCommandController {
 		this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx);
 		const previousGoal = { ...this.runtime.activeGoal };
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		const previousStatus = this.runtime.activeGoal.status;
 		const rotatedGoal = nextGoalInstance(this.runtime.activeGoal);
@@ -731,7 +731,7 @@ export class GoalCommandController {
 		}
 
 		this.runtime.cancelContinuationWork();
-		this.runtime.clearGoalRecovery();
+		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
 		const prioritized = createGoal(objective, tokenBudget, currentTokenTotal(ctx));

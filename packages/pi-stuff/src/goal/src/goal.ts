@@ -77,7 +77,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const clearCompletionStatusTimer = runtime.clearCompletionStatusTimer.bind(runtime);
 	const clearContinuationTracking = runtime.clearContinuationTracking.bind(runtime);
 	const clearPendingGoalPrompts = runtime.clearPendingGoalPrompts.bind(runtime);
-	const clearGoalRecovery = runtime.clearGoalRecovery.bind(runtime);
 	const clearBudgetWrapUp = runtime.clearBudgetWrapUp.bind(runtime);
 	const clearStaleGoalToolCallBlock = runtime.clearStaleGoalToolCallBlock.bind(runtime);
 	const persistGoal = runtime.persistGoal.bind(runtime);
@@ -128,7 +127,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			clearPendingGoalPrompts();
 			runtime.clearAgentRun();
 			runtime.guardAbortGoalId = undefined;
-			clearGoalRecovery();
+			runtime.goalRecovery = undefined;
 			clearBudgetWrapUp();
 			clearStaleGoalToolCallBlock();
 			runtime.queuedGoals = [];
@@ -279,7 +278,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		clearPendingGoalPrompts();
 		runtime.clearAgentRun();
 		runtime.guardAbortGoalId = undefined;
-		clearGoalRecovery();
+		runtime.goalRecovery = undefined;
 		clearBudgetWrapUp();
 		clearStaleGoalToolCallBlock();
 		runtime.activeGoal = undefined;
@@ -485,7 +484,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		// Pi-owned retry/compaction recovery re-enters through agent_start without a
 		// fresh prompt boundary. Reaching beginPromptRun is therefore authority that
 		// a different accepted run superseded any stale recovery ticket.
-		clearGoalRecovery();
+		runtime.goalRecovery = undefined;
 		// Pi-owned retries emit agent_start directly. Reaching a normal prompt
 		// boundary means cleanup no longer owns the next run, so the hard-cap guard
 		// must not abort it.
@@ -691,7 +690,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	function prepareNonGoalDelivery(ctx: StatusContext, resetSafetyEpoch: boolean) {
-		clearGoalRecovery();
+		runtime.goalRecovery = undefined;
 		runtime.guardAbortGoalId = undefined;
 		clearStaleGoalToolCallBlock();
 		if (resetSafetyEpoch) clearBudgetWrapUp();
@@ -707,7 +706,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	}
 
 	function beginNonGoalFollowUp(ctx: StatusContext, origin: GoalRunOrigin, resetSafetyEpoch: boolean) {
-		clearGoalRecovery();
+		runtime.goalRecovery = undefined;
 		runtime.guardAbortGoalId = undefined;
 		clearStaleGoalToolCallBlock();
 		if (resetSafetyEpoch) clearBudgetWrapUp();
