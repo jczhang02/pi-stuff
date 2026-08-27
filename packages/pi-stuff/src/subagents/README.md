@@ -18,7 +18,10 @@ user definitions, and user definitions override Package definitions.
 The detached launch composition stays in `async-execution.ts`, with single/parallel runner projection in
 `runner-work.ts` and model/Skill/Tool launch-contract resolution in `resolved-task.ts`. `subagent-runner.ts` remains
 the child-process and terminal-lifecycle owner; `fallback-session.ts` only freezes and restores a fork between eligible
-model attempts.
+model attempts. `shared/acceptance.ts` owns acceptance evidence; `nested-contract.ts`, `run-result.ts`,
+`async-contract.ts`, and `process-terminal.ts` own their corresponding cross-process contracts;
+`runtime/runtime-state.ts` owns in-memory foreground and Extension state. `shared/types.ts` retains common configuration
+and the compatibility type facade.
 
 ## Everyday behavior
 

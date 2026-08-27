@@ -10,14 +10,7 @@ import {
 import { writeAtomicJson, writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { assertPrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
-import {
-	type AsyncStatus,
-	type CanonicalSessionTerminalV1,
-	type ProcessInstanceExitV1,
-	type ProcessTerminalReason,
-	type ProcessTerminalV1,
-	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
-} from "../../shared/types.ts";
+import { type AsyncStatus, SUBAGENT_LIFECYCLE_ARTIFACT_VERSION } from "../../shared/types.ts";
 import { getErrorMessage as errorMessage, readStatus } from "../../shared/utils.ts";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { canonicalSessionId, inspectSessionLease } from "../shared/session-lease.ts";
@@ -28,6 +21,66 @@ const MAX_PROCESS_TERMINAL_PROOF_BYTES = 8 * 1024 * 1024;
 const MAX_PROCESS_TERMINAL_CHILDREN = 20;
 const MAX_WRITER_INSTANCES_PER_CHILD = MAX_MODEL_CANDIDATES_PER_CHILD;
 const MAX_PROCESS_TERMINAL_INSTANCES = 1 + MAX_PROCESS_TERMINAL_CHILDREN * MAX_WRITER_INSTANCES_PER_CHILD;
+
+export type ProcessTerminalReason =
+	| "observer-unavailable"
+	| "runner-candidate-missing"
+	| "runner-instance-mismatch"
+	| "writer-close-unverified"
+	| "canonical-session-unavailable"
+	| "canonical-session-lease-active"
+	| "canonical-session-release-unverified"
+	| "proof-write-failed"
+	| "stale-repair";
+
+export interface RunnerProcessInstanceExitV1 {
+	processInstanceId: string;
+	kind: "runner";
+	closeObservedAt: number;
+	exitCode: number | null;
+	signal: string | null;
+}
+
+export interface PiWriterProcessInstanceExitV1 {
+	processInstanceId: string;
+	kind: "pi-writer";
+	attempt: number;
+	closeObservedAt: number;
+	exitCode: number | null;
+	signal: string | null;
+	terminationOrigin?: "external" | "manager-final-drain" | "manager-request";
+}
+
+export type ProcessInstanceExitV1 = RunnerProcessInstanceExitV1 | PiWriterProcessInstanceExitV1;
+
+export interface CanonicalSessionTerminalV1 {
+	canonicalSessionId: string;
+	leaseDisposition: "released" | "not-held";
+	freeAtObservation: true;
+	canonicalSessionLeaseReleased?: true;
+}
+
+interface ProcessTerminalBaseV1 {
+	version: 1;
+	runId: string;
+	childIndex?: number;
+	runnerProcessInstanceId: string;
+	resumeDisposition?: "resumable" | "non-resumable" | "unavailable";
+}
+
+export type ProcessTerminalV1 =
+	| (ProcessTerminalBaseV1 & { state: "pending" | "not-started" })
+	| (ProcessTerminalBaseV1 & {
+			state: "observed";
+			observedAt: number;
+			instances: ProcessInstanceExitV1[];
+			canonicalSession?: CanonicalSessionTerminalV1;
+	  })
+	| (ProcessTerminalBaseV1 & {
+			state: "unknown";
+			reason: ProcessTerminalReason;
+			diagnostic?: string;
+	  });
 
 export interface ProcessTerminalCandidate {
 	version: 1;
