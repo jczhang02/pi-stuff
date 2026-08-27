@@ -14,6 +14,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../packages/pi-stuff/src/shared/runtime-type.js";
 
 type ActivityState = "completed" | "running";
 type ActivityVariant = "claude" | "hybrid" | "tintin";
@@ -298,47 +300,47 @@ function readActivityDetails(ctx: ExtensionContext): ActivityDetails | undefined
 	return latest;
 }
 
-function parseActivityDetails(value: unknown): ActivityDetails | undefined {
-	if (!isRecord(value)) return undefined;
-	if (!isActivityVariant(value.variant) || !isActivityState(value.state)) return undefined;
-	if (!Array.isArray(value.agents) || !value.agents.every(isActivityAgent)) return undefined;
-	return value as unknown as ActivityDetails;
+function parseActivityDetails<Value>(value: Value): ActivityDetails | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	if (!isActivityVariant(value["variant"]) || !isActivityState(value["state"])) return undefined;
+	const agents = value["agents"];
+	if (!Array.isArray(agents) || !agents.every(isActivityAgent)) return undefined;
+	return { agents, state: value["state"], variant: value["variant"] };
 }
 
-function isActivityAgent(value: unknown): value is ActivityAgent {
+function isActivityAgent<Value>(value: Value): value is Value & ActivityAgent {
 	return (
-		isRecord(value) &&
-		typeof value.action === "string" &&
-		typeof value.elapsed === "string" &&
-		typeof value.id === "string" &&
-		typeof value.maxTurns === "number" &&
-		typeof value.result === "string" &&
-		(value.status === "completed" || value.status === "queued" || value.status === "running") &&
-		typeof value.task === "string" &&
-		typeof value.tokens === "string" &&
-		typeof value.toolUses === "number" &&
-		typeof value.turns === "number" &&
-		typeof value.type === "string"
+		isJsonInputObject(value) &&
+		isRuntimeString(value["action"]) &&
+		isRuntimeString(value["elapsed"]) &&
+		isRuntimeString(value["id"]) &&
+		isRuntimeNumber(value["maxTurns"]) &&
+		isRuntimeString(value["result"]) &&
+		(value["status"] === "completed" || value["status"] === "queued" || value["status"] === "running") &&
+		isRuntimeString(value["task"]) &&
+		isRuntimeString(value["tokens"]) &&
+		isRuntimeNumber(value["toolUses"]) &&
+		isRuntimeNumber(value["turns"]) &&
+		isRuntimeString(value["type"])
 	);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function isActivityVariant(value: unknown): value is ActivityVariant {
+function isActivityVariant<Value>(value: Value): value is Value & ActivityVariant {
 	return value === "claude" || value === "tintin" || value === "hybrid";
 }
 
-function isActivityState(value: unknown): value is ActivityState {
+function isActivityState<Value>(value: Value): value is Value & ActivityState {
 	return value === "running" || value === "completed";
 }
 
 class AgentActivityWidget implements Component {
-	constructor(
-		private readonly details: ActivityDetails,
-		private readonly theme: Theme,
-	) {}
+	private readonly details: ActivityDetails;
+	private readonly theme: Theme;
+
+	constructor(details: ActivityDetails, theme: Theme) {
+		this.details = details;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		const lines =
@@ -352,10 +354,13 @@ class AgentActivityWidget implements Component {
 }
 
 class FleetListWidget implements Component {
-	constructor(
-		private readonly details: ActivityDetails,
-		private readonly theme: Theme,
-	) {}
+	private readonly details: ActivityDetails;
+	private readonly theme: Theme;
+
+	constructor(details: ActivityDetails, theme: Theme) {
+		this.details = details;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		return renderFleetList(this.details, this.theme).map((line) => truncateToWidth(line, Math.max(1, width)));

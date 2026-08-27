@@ -36,6 +36,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
 import {
 	createWorkAgentLifecycleState,
 	type LifecycleAgent,
@@ -178,13 +179,9 @@ function readLifecycleFixtureDetails(ctx: ExtensionContext): LifecycleFixtureDet
 	return latest;
 }
 
-function parseLifecycleFixtureDetails(value: unknown): LifecycleFixtureDetails | undefined {
-	if (!hasFixtureProperty(value) || value.fixture !== "agent-lifecycle") return undefined;
+function parseLifecycleFixtureDetails<Value>(value: Value): LifecycleFixtureDetails | undefined {
+	if (!isJsonInputObject(value) || value["fixture"] !== "agent-lifecycle") return undefined;
 	return { fixture: "agent-lifecycle" };
-}
-
-function hasFixtureProperty(value: unknown): value is { fixture: unknown } {
-	return typeof value === "object" && value !== null && "fixture" in value;
 }
 
 class WorkAgentLifecycleRuntime {
@@ -309,13 +306,11 @@ class WorkAgentLifecycleRuntime {
 }
 
 class LifecycleEditor extends CustomEditor {
-	constructor(
-		tui: TUI,
-		theme: EditorTheme,
-		keybindings: KeybindingsManager,
-		private readonly runtime: WorkAgentLifecycleRuntime,
-	) {
+	private readonly runtime: WorkAgentLifecycleRuntime;
+
+	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, runtime: WorkAgentLifecycleRuntime) {
 		super(tui, theme, keybindings);
+		this.runtime = runtime;
 	}
 
 	override handleInput(data: string): void {
@@ -325,10 +320,13 @@ class LifecycleEditor extends CustomEditor {
 }
 
 class WorkChromeWidget implements Component {
-	constructor(
-		private readonly runtime: WorkAgentLifecycleRuntime,
-		private readonly theme: Theme,
-	) {}
+	private readonly runtime: WorkAgentLifecycleRuntime;
+	private readonly theme: Theme;
+
+	constructor(runtime: WorkAgentLifecycleRuntime, theme: Theme) {
+		this.runtime = runtime;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		const lines: string[] = [];
@@ -348,10 +346,13 @@ class WorkChromeWidget implements Component {
 }
 
 class AgentRosterWidget implements Component {
-	constructor(
-		private readonly runtime: WorkAgentLifecycleRuntime,
-		private readonly theme: Theme,
-	) {}
+	private readonly runtime: WorkAgentLifecycleRuntime;
+	private readonly theme: Theme;
+
+	constructor(runtime: WorkAgentLifecycleRuntime, theme: Theme) {
+		this.runtime = runtime;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		const state = this.runtime.getState();
@@ -379,11 +380,15 @@ class AgentRosterWidget implements Component {
 }
 
 class WorkCommandSurface implements Component {
-	constructor(
-		private readonly runtime: WorkAgentLifecycleRuntime,
-		private readonly theme: Theme,
-		private readonly done: () => void,
-	) {}
+	private readonly runtime: WorkAgentLifecycleRuntime;
+	private readonly theme: Theme;
+	private readonly done: () => void;
+
+	constructor(runtime: WorkAgentLifecycleRuntime, theme: Theme, done: () => void) {
+		this.runtime = runtime;
+		this.theme = theme;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		const surface = this.runtime.getState().surface;

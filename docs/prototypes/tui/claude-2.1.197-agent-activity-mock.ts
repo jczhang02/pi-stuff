@@ -1,20 +1,14 @@
 /** Local Anthropic Messages fixture for black-box Claude Code 2.1.197 UI capture. */
 
 import { appendFile, writeFile } from "node:fs/promises";
-
-interface MessageBlock {
-	type?: string;
-	text?: string;
-}
-
-interface Message {
-	content?: MessageBlock[] | string;
-}
-
-interface MessagesRequest {
-	messages?: Message[];
-	model?: string;
-}
+import {
+	type AnthropicMessage,
+	type AnthropicMessagesRequest,
+	anthropicMessageBlocks,
+	anthropicEvent as event,
+	extractAnthropicText,
+	parseAnthropicMessagesRequest,
+} from "./anthropic-mock.js";
 
 const readyFile = process.argv[2];
 const eventLog = process.argv[3];
@@ -23,6 +17,8 @@ const childDelayMilliseconds = Number(process.argv[4] ?? "12000");
 if (!readyFile || !eventLog || !Number.isFinite(childDelayMilliseconds) || childDelayMilliseconds < 1_000) {
 	throw new Error("Usage: bun claude-2.1.197-agent-activity-mock.ts <ready-file> <event-log> [child-delay-ms]");
 }
+const readyPath = readyFile;
+const eventLogPath = eventLog;
 
 let identifier = 0;
 
@@ -31,26 +27,11 @@ function nextIdentifier(prefix: string): string {
 	return `${prefix}_pi_stuff_${identifier.toString().padStart(4, "0")}`;
 }
 
-function extractText(messages: Message[]): string {
-	return messages
-		.flatMap((message) => {
-			if (typeof message.content === "string") return [message.content];
-			return (message.content ?? []).filter((block) => block.type === "text").map((block) => block.text ?? "");
-		})
-		.join("\n");
+function hasToolResults(messages: readonly AnthropicMessage[]): boolean {
+	return anthropicMessageBlocks(messages).some((block) => block.type === "tool_result");
 }
 
-function hasToolResults(messages: Message[]): boolean {
-	return messages.some(
-		(message) => Array.isArray(message.content) && message.content.some((block) => block.type === "tool_result"),
-	);
-}
-
-function event(name: string, payload: unknown): string {
-	return `event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`;
-}
-
-function messageStart(request: MessagesRequest): string {
+function messageStart(request: AnthropicMessagesRequest): string {
 	return event("message_start", {
 		type: "message_start",
 		message: {
@@ -91,7 +72,7 @@ function sse(body: string): Response {
 	});
 }
 
-function textResponse(request: MessagesRequest, text: string): Response {
+function textResponse(request: AnthropicMessagesRequest, text: string): Response {
 	const body =
 		messageStart(request) +
 		event("content_block_start", {
@@ -109,7 +90,7 @@ function textResponse(request: MessagesRequest, text: string): Response {
 	return sse(body);
 }
 
-function parallelAgentResponse(request: MessagesRequest): Response {
+function parallelAgentResponse(request: AnthropicMessagesRequest): Response {
 	const calls = [
 		{
 			description: "Inspect Claude activity UI",
@@ -149,7 +130,7 @@ function parallelAgentResponse(request: MessagesRequest): Response {
 }
 
 async function record(kind: string): Promise<void> {
-	await appendFile(eventLog, `${JSON.stringify({ kind, timestamp: Date.now() })}\n`);
+	await appendFile(eventLogPath, `${JSON.stringify({ kind, timestamp: Date.now() })}\n`);
 }
 
 const server = Bun.serve({
@@ -163,9 +144,9 @@ const server = Bun.serve({
 		}
 		if (url.pathname !== "/v1/messages") return new Response("Not found", { status: 404 });
 
-		const payload = (await request.json()) as MessagesRequest;
+		const payload = parseAnthropicMessagesRequest(await request.json());
 		const messages = payload.messages ?? [];
-		const text = extractText(messages);
+		const text = extractAnthropicText(messages);
 
 		if (text.includes("Inspect Claude activity states") && !hasToolResults(messages)) {
 			await record("explorer-child");
@@ -191,4 +172,4 @@ const server = Bun.serve({
 	},
 });
 
-await writeFile(readyFile, `${server.port}\n`);
+await writeFile(readyPath, `${server.port}\n`);

@@ -11,6 +11,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../packages/pi-stuff/src/shared/runtime-type.js";
 
 type WorkState = "blocked" | "running";
 type WorkVariant = "checklist" | "ondemand" | "strip";
@@ -142,45 +144,45 @@ function readWorkDetails(ctx: ExtensionContext): WorkDetails | undefined {
 	return latest;
 }
 
-function parseWorkDetails(value: unknown): WorkDetails | undefined {
-	if (!isRecord(value) || !isWorkVariant(value.variant) || !isWorkState(value.state)) return undefined;
-	if (!Array.isArray(value.tasks) || !value.tasks.every(isWorkTask)) return undefined;
-	if (!Array.isArray(value.agents) || !value.agents.every(isWorkAgent)) return undefined;
-	return value as unknown as WorkDetails;
+function parseWorkDetails<Value>(value: Value): WorkDetails | undefined {
+	if (!isJsonInputObject(value) || !isWorkVariant(value["variant"]) || !isWorkState(value["state"])) {
+		return undefined;
+	}
+	const tasks = value["tasks"];
+	const agents = value["agents"];
+	if (!Array.isArray(tasks) || !tasks.every(isWorkTask)) return undefined;
+	if (!Array.isArray(agents) || !agents.every(isWorkAgent)) return undefined;
+	return { agents, state: value["state"], tasks, variant: value["variant"] };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function isWorkVariant(value: unknown): value is WorkVariant {
+function isWorkVariant<Value>(value: Value): value is Value & WorkVariant {
 	return value === "checklist" || value === "strip" || value === "ondemand";
 }
 
-function isWorkState(value: unknown): value is WorkState {
+function isWorkState<Value>(value: Value): value is Value & WorkState {
 	return value === "running" || value === "blocked";
 }
 
-function isWorkTask(value: unknown): value is WorkTask {
+function isWorkTask<Value>(value: Value): value is Value & WorkTask {
 	return (
-		isRecord(value) &&
-		typeof value.id === "number" &&
-		typeof value.subject === "string" &&
-		typeof value.activeForm === "string" &&
-		(value.status === "pending" ||
-			value.status === "in_progress" ||
-			value.status === "completed" ||
-			value.status === "needs_input")
+		isJsonInputObject(value) &&
+		isRuntimeNumber(value["id"]) &&
+		isRuntimeString(value["subject"]) &&
+		isRuntimeString(value["activeForm"]) &&
+		(value["status"] === "pending" ||
+			value["status"] === "in_progress" ||
+			value["status"] === "completed" ||
+			value["status"] === "needs_input")
 	);
 }
 
-function isWorkAgent(value: unknown): value is WorkAgent {
+function isWorkAgent<Value>(value: Value): value is Value & WorkAgent {
 	return (
-		isRecord(value) &&
-		typeof value.name === "string" &&
-		typeof value.task === "string" &&
-		typeof value.state === "string" &&
-		(value.status === "running" || value.status === "completed" || value.status === "waiting")
+		isJsonInputObject(value) &&
+		isRuntimeString(value["name"]) &&
+		isRuntimeString(value["task"]) &&
+		isRuntimeString(value["state"]) &&
+		(value["status"] === "running" || value["status"] === "completed" || value["status"] === "waiting")
 	);
 }
 
@@ -304,7 +306,11 @@ function joinColumns(left: string, right: string, width: number): string {
 }
 
 class RenderComponent implements Component {
-	constructor(private readonly renderLines: (width: number) => string[]) {}
+	private readonly renderLines: (width: number) => string[];
+
+	constructor(renderLines: (width: number) => string[]) {
+		this.renderLines = renderLines;
+	}
 
 	render(width: number): string[] {
 		return this.renderLines(width);

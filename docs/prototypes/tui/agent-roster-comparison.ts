@@ -11,6 +11,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../packages/pi-stuff/src/shared/runtime-type.js";
 
 type RosterState = "completed" | "running";
 type RosterVariant = "grouped" | "rail" | "vertical";
@@ -156,38 +158,35 @@ function readRosterDetails(ctx: ExtensionContext): RosterDetails | undefined {
 	return latest;
 }
 
-function parseRosterDetails(value: unknown): RosterDetails | undefined {
-	if (!isRecord(value)) return undefined;
-	if (!isRosterVariant(value.variant) || !isRosterState(value.state)) return undefined;
-	if (!Array.isArray(value.agents) || !value.agents.every(isRosterAgent)) return undefined;
-	return value as unknown as RosterDetails;
+function parseRosterDetails<Value>(value: Value): RosterDetails | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	if (!isRosterVariant(value["variant"]) || !isRosterState(value["state"])) return undefined;
+	const agents = value["agents"];
+	if (!Array.isArray(agents) || !agents.every(isRosterAgent)) return undefined;
+	return { agents, state: value["state"], variant: value["variant"] };
 }
 
-function isRosterAgent(value: unknown): value is RosterAgent {
+function isRosterAgent<Value>(value: Value): value is Value & RosterAgent {
 	return (
-		isRecord(value) &&
-		typeof value.action === "string" &&
-		typeof value.elapsed === "string" &&
-		typeof value.group === "string" &&
-		typeof value.id === "string" &&
-		typeof value.name === "string" &&
-		typeof value.result === "string" &&
-		(value.status === "completed" || value.status === "queued" || value.status === "running") &&
-		typeof value.task === "string" &&
-		typeof value.tokens === "string" &&
-		typeof value.toolUses === "number"
+		isJsonInputObject(value) &&
+		isRuntimeString(value["action"]) &&
+		isRuntimeString(value["elapsed"]) &&
+		isRuntimeString(value["group"]) &&
+		isRuntimeString(value["id"]) &&
+		isRuntimeString(value["name"]) &&
+		isRuntimeString(value["result"]) &&
+		(value["status"] === "completed" || value["status"] === "queued" || value["status"] === "running") &&
+		isRuntimeString(value["task"]) &&
+		isRuntimeString(value["tokens"]) &&
+		isRuntimeNumber(value["toolUses"])
 	);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function isRosterVariant(value: unknown): value is RosterVariant {
+function isRosterVariant<Value>(value: Value): value is Value & RosterVariant {
 	return value === "vertical" || value === "grouped" || value === "rail";
 }
 
-function isRosterState(value: unknown): value is RosterState {
+function isRosterState<Value>(value: Value): value is Value & RosterState {
 	return value === "running" || value === "completed";
 }
 
@@ -216,12 +215,15 @@ function detailStateText(agent: RosterAgent, theme: Theme): string {
 }
 
 class AgentRosterRuntime {
+	private readonly details: RosterDetails;
 	private detailOpen = false;
 	private navigationMode = false;
 	private requestRender: () => void = () => {};
 	private selectedIndex = 0;
 
-	constructor(private readonly details: RosterDetails) {}
+	constructor(details: RosterDetails) {
+		this.details = details;
+	}
 
 	install(ctx: ExtensionContext): void {
 		this.installWidget(ctx);
@@ -324,11 +326,15 @@ class AgentRosterRuntime {
 }
 
 class AgentRosterWidget implements Component {
-	constructor(
-		private readonly details: RosterDetails,
-		private readonly runtime: AgentRosterRuntime,
-		private readonly theme: Theme,
-	) {}
+	private readonly details: RosterDetails;
+	private readonly runtime: AgentRosterRuntime;
+	private readonly theme: Theme;
+
+	constructor(details: RosterDetails, runtime: AgentRosterRuntime, theme: Theme) {
+		this.details = details;
+		this.runtime = runtime;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, width);
@@ -418,12 +424,17 @@ class AgentRosterWidget implements Component {
 }
 
 class AgentDetailSurface implements Component {
-	constructor(
-		private readonly agent: RosterAgent,
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly done: () => void,
-	) {}
+	private readonly agent: RosterAgent;
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly done: () => void;
+
+	constructor(agent: RosterAgent, theme: Theme, requestRender: () => void, done: () => void) {
+		this.agent = agent;
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {

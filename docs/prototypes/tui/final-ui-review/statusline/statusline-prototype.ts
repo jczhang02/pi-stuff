@@ -4,24 +4,14 @@
  * written from the visible-behavior brief without consulting old JC code.
  */
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	CustomEditor,
 	type ExtensionAPI,
 	type ExtensionContext,
-	type KeybindingsManager,
 	type ReadonlyFooterDataProvider,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import {
-	type Component,
-	type EditorTheme,
-	Key,
-	type TUI,
-	truncateToWidth,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import { type Component, Key, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const PROVIDER = "statusline-fixture";
 const METERED_MODEL = "sonnet-4.5-metered";
@@ -35,20 +25,20 @@ function formatCount(value: number): string {
 }
 
 function formatThinking(level: string): string {
-	const labels: Record<string, string> = {
-		off: "off",
-		minimal: "min",
-		low: "low",
-		medium: "med",
-		high: "high",
-		xhigh: "xhigh",
-		max: "max",
-	};
-	return labels[level] ?? level;
+	const labels = new Map([
+		["off", "off"],
+		["minimal", "min"],
+		["low", "low"],
+		["medium", "med"],
+		["high", "high"],
+		["xhigh", "xhigh"],
+		["max", "max"],
+	]);
+	return labels.get(level) ?? level;
 }
 
 function abbreviateCwd(cwd: string): string {
-	const home = process.env.HOME;
+	const home = process.env["HOME"];
 	const homeRelative = home && (cwd === home || cwd.startsWith(`${home}/`)) ? `~${cwd.slice(home.length)}` : cwd;
 	const pieces = homeRelative.split("/");
 	if (pieces.length <= 2) return homeRelative;
@@ -61,24 +51,23 @@ function latestPrompt(ctx: ExtensionContext): string | undefined {
 		const entry = branch[index];
 		if (entry?.type !== "message" || entry.message.role !== "user") continue;
 		const content = entry.message.content;
-		const text =
-			typeof content === "string"
-				? content
-				: content
-						.filter((part): part is { type: "text"; text: string } => part.type === "text")
-						.map((part) => part.text)
-						.join(" ");
+		const text = Array.isArray(content)
+			? content
+					.filter((part): part is { type: "text"; text: string } => part.type === "text")
+					.map((part) => part.text)
+					.join(" ")
+			: content;
 		return text.replace(/\s+/g, " ").trim() || undefined;
 	}
 	return undefined;
 }
 
-function usageTotals(ctx: ExtensionContext): { cacheRead: number; cost: number } {
+function usageTotals(ctx: ExtensionContext) {
 	let cacheRead = 0;
 	let cost = 0;
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const message = entry.message as AssistantMessage;
+		const message = entry.message;
 		cacheRead += message.usage.cacheRead;
 		cost += message.usage.cost.total;
 	}
@@ -135,13 +124,25 @@ function renderStatusline(
 }
 
 class StatuslineFooter implements Component {
+	private readonly theme: Theme;
+	private readonly ctx: ExtensionContext;
+	private readonly pi: ExtensionAPI;
+	private readonly footerData: ReadonlyFooterDataProvider;
+	private readonly shouldHide: () => boolean;
+
 	constructor(
-		private readonly theme: Theme,
-		private readonly ctx: ExtensionContext,
-		private readonly pi: ExtensionAPI,
-		private readonly footerData: ReadonlyFooterDataProvider,
-		private readonly shouldHide: () => boolean,
-	) {}
+		theme: Theme,
+		ctx: ExtensionContext,
+		pi: ExtensionAPI,
+		footerData: ReadonlyFooterDataProvider,
+		shouldHide: () => boolean,
+	) {
+		this.theme = theme;
+		this.ctx = ctx;
+		this.pi = pi;
+		this.footerData = footerData;
+		this.shouldHide = shouldHide;
+	}
 
 	invalidate(): void {}
 
@@ -191,15 +192,12 @@ export default function registerStatuslinePrototype(pi: ExtensionAPI): void {
 		ctx.ui.setStatus("mcp", "mcp:2");
 		ctx.ui.setStatus("loadout", "load:full");
 
-		class StatuslinePrototypeEditor extends CustomEditor {
-			constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
-				super(tui, theme, keybindings);
-				activeEditor = this;
-				activeTui = tui;
-			}
-		}
-
-		ctx.ui.setEditorComponent((tui, theme, keybindings) => new StatuslinePrototypeEditor(tui, theme, keybindings));
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+			const editor = new CustomEditor(tui, theme, keybindings);
+			activeEditor = editor;
+			activeTui = tui;
+			return editor;
+		});
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			activeTui = tui;
 			return new StatuslineFooter(

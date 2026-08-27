@@ -27,14 +27,14 @@ interface FixtureDetails {
 	variant: ActivityVariant;
 }
 
-const SESSION_IDS: Record<`${ActivityVariant}-${ActivityState}`, string> = {
+const SESSION_IDS = {
 	"claude-running": "44444444-4444-4444-8444-444444444441",
 	"claude-completed": "44444444-4444-4444-8444-444444444442",
 	"tintin-running": "44444444-4444-4444-8444-444444444443",
 	"tintin-completed": "44444444-4444-4444-8444-444444444444",
 	"hybrid-running": "44444444-4444-4444-8444-444444444445",
 	"hybrid-completed": "44444444-4444-4444-8444-444444444446",
-};
+} satisfies Record<`${ActivityVariant}-${ActivityState}`, string>;
 
 const ZERO_USAGE = {
 	input: 0,

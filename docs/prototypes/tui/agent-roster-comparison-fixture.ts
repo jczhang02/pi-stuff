@@ -20,14 +20,14 @@ interface FixtureAgent {
 	toolUses: number;
 }
 
-const SESSION_IDS: Record<`${RosterVariant}-${RosterState}`, string> = {
+const SESSION_IDS = {
 	"vertical-running": "55555555-5555-4555-8555-555555555551",
 	"vertical-completed": "55555555-5555-4555-8555-555555555552",
 	"grouped-running": "55555555-5555-4555-8555-555555555553",
 	"grouped-completed": "55555555-5555-4555-8555-555555555554",
 	"rail-running": "55555555-5555-4555-8555-555555555555",
 	"rail-completed": "55555555-5555-4555-8555-555555555556",
-};
+} satisfies Record<`${RosterVariant}-${RosterState}`, string>;
 
 const ZERO_USAGE = {
 	input: 0,

@@ -70,12 +70,15 @@ class AgentsHubReference implements Component {
 	private selectedMenuItem = 0;
 	private selectedScope = 0;
 	private selectedAgent = CODE_REVIEWER;
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly done: () => void;
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly done: () => void,
-	) {}
+	constructor(theme: Theme, requestRender: () => void, done: () => void) {
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
@@ -156,6 +159,8 @@ class AgentsHubReference implements Component {
 
 		return lines.map((line) => truncateToWidth(line, renderWidth));
 	}
+
+	invalidate(): void {}
 
 	private handleCreateScopeInput(data: string): void {
 		if (matchesKey(data, "up")) {

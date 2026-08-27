@@ -19,16 +19,16 @@ interface ToolOperation {
 const GROUP_ID = "tool-ui-investigation";
 const GROUP_LABEL = "Investigated tool UI · read 2 sources · 12 matches in 5 files";
 const GROUP_SIZE = 3;
-const SESSION_IDS: Record<FixtureVariant, string> = {
+const SESSION_IDS = {
 	individual: "33333333-3333-4333-8333-333333333331",
 	grouped: "33333333-3333-4333-8333-333333333332",
 	bounded: "33333333-3333-4333-8333-333333333333",
-};
-const VARIANT_TIMESTAMP_OFFSETS: Record<FixtureVariant, number> = {
+} satisfies Record<FixtureVariant, string>;
+const VARIANT_TIMESTAMP_OFFSETS = {
 	individual: 0,
 	grouped: 20,
 	bounded: 40,
-};
+} satisfies Record<FixtureVariant, number>;
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -191,11 +191,11 @@ for (const [index, operation] of OPERATIONS.entries()) {
 										summary,
 									})),
 								}
-							: {}),
+							: undefined),
 						groupPosition: index,
 						groupSize: GROUP_SIZE,
 					}
-				: {}),
+				: undefined),
 		},
 		isError: false,
 		timestamp: baseTimestamp + 2_000 + index * 1_000,

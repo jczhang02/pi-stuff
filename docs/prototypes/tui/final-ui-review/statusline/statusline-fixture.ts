@@ -31,7 +31,7 @@ const timestamp = Date.UTC(2026, 7, 3, 8, 0, 0);
 
 session.appendMessage({
 	role: "user",
-	content: prompts[fixtureKind as keyof typeof prompts],
+	content: prompts[fixtureKind === "short" ? "short" : "overflow"],
 	timestamp,
 });
 session.appendMessage({

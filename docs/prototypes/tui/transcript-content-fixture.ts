@@ -22,6 +22,7 @@ const ZERO_USAGE = {
 	},
 };
 
+// SAFETY: the guard below accepts exactly the two FixtureState values before use.
 const state = process.argv[2] as FixtureState | undefined;
 const outputDirectoryArgument = process.argv[3];
 

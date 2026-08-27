@@ -22,21 +22,25 @@ const DEFAULTS = {
 type SettingId = keyof typeof DEFAULTS;
 type BooleanText = "false" | "true";
 
-const LABELS: Record<SettingId, string> = {
+const LABELS = {
 	statusline: "Statusline",
 	welcomeHeader: "Welcome header",
 	inputHighlighting: "Input highlighting",
 	inlineSlashAutocomplete: "Inline slash autocomplete",
 	toolRunningTimer: "Tool running timer",
-};
+} satisfies Record<SettingId, string>;
 
-const DESCRIPTIONS: Record<SettingId, string> = {
+const DESCRIPTIONS = {
 	statusline: "Show session and context information below the editor",
 	welcomeHeader: "Show startup context summary (applies next launch)",
 	inputHighlighting: "Highlight recognized commands and skills while typing",
 	inlineSlashAutocomplete: "Suggest real commands and skills after slash text anywhere in the input",
 	toolRunningTimer: "Show elapsed time while long-running tools work",
-};
+} satisfies Record<SettingId, string>;
+
+function isSettingId(value: string): value is SettingId {
+	return value in DEFAULTS;
+}
 
 class EmptyComponent implements Component {
 	invalidate(): void {}
@@ -47,16 +51,20 @@ class EmptyComponent implements Component {
 }
 
 class UiSettingsPrototype implements Component {
+	// SAFETY: DEFAULTS is the closed source whose keys and values are exactly SettingId and BooleanText.
 	private readonly values = new Map<SettingId, BooleanText>(
 		Object.entries(DEFAULTS) as Array<[SettingId, BooleanText]>,
 	);
 	private readonly settingsList: SettingsList;
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly close: () => void;
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly close: () => void,
-	) {
+	constructor(theme: Theme, requestRender: () => void, close: () => void) {
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.close = close;
+		// SAFETY: DEFAULTS is the closed source; every runtime key is a SettingId.
 		const items = (Object.keys(DEFAULTS) as SettingId[]).map<SettingItem>((id) => ({
 			id,
 			label: LABELS[id],
@@ -70,8 +78,8 @@ class UiSettingsPrototype implements Component {
 			5,
 			getSettingsListTheme(),
 			(id, value) => {
-				if (id in DEFAULTS && (value === "true" || value === "false")) {
-					this.values.set(id as SettingId, value);
+				if (isSettingId(id) && (value === "true" || value === "false")) {
+					this.values.set(id, value);
 				}
 				this.requestRender();
 			},

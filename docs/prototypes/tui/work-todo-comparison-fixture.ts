@@ -29,14 +29,14 @@ const state = stateArgument;
 const outputDirectory = resolve(outputDirectoryArgument);
 await mkdir(outputDirectory, { recursive: true });
 
-const SESSION_IDS: Record<`${WorkVariant}-${WorkState}`, string> = {
+const SESSION_IDS = {
 	"checklist-running": "66666666-6666-4666-8666-666666666661",
 	"checklist-blocked": "66666666-6666-4666-8666-666666666662",
 	"strip-running": "66666666-6666-4666-8666-666666666663",
 	"strip-blocked": "66666666-6666-4666-8666-666666666664",
 	"ondemand-running": "66666666-6666-4666-8666-666666666665",
 	"ondemand-blocked": "66666666-6666-4666-8666-666666666666",
-};
+} satisfies Record<`${WorkVariant}-${WorkState}`, string>;
 
 const ZERO_USAGE = {
 	input: 0,

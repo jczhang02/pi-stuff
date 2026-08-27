@@ -85,17 +85,18 @@ class Phase1BtwSurface implements Component {
 	private readonly loader: Loader;
 	private readonly markdown: Markdown;
 	private readonly timer: ReturnType<typeof setTimeout> | undefined;
+	private readonly theme: Theme;
+	private readonly tui: TUI;
+	private readonly close: () => void;
 	private selectedIndex: number;
 	private mode: PrototypeMode;
 	private feedback: string | undefined;
 	private scrollTop = 0;
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly tui: TUI,
-		mode: PrototypeMode,
-		private readonly close: () => void,
-	) {
+	constructor(theme: Theme, tui: TUI, mode: PrototypeMode, close: () => void) {
+		this.theme = theme;
+		this.tui = tui;
+		this.close = close;
 		this.mode = mode;
 		this.selectedIndex = mode === "history" ? HISTORY.length - 1 : 0;
 		this.markdown = new Markdown("", 0, 0, markdownTheme(theme));
@@ -181,6 +182,7 @@ class Phase1BtwSurface implements Component {
 		} else {
 			this.markdown.setText(selected.answer);
 			const rendered = this.markdown.render(Math.max(1, width - 4));
+			// SAFETY: Pi's TUI terminal supplies the optional rows field used only for viewport sizing.
 			const terminalRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
 			const reservedRows = this.mode === "history" ? HISTORY.length + 5 : 6;
 			const viewport = Math.max(4, terminalRows - reservedRows);

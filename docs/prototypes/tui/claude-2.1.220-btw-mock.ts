@@ -7,22 +7,13 @@
  */
 
 import { appendFile, writeFile } from "node:fs/promises";
-
-interface MessageBlock {
-	type?: string;
-	text?: string;
-}
-
-interface Message {
-	content?: MessageBlock[] | string;
-}
-
-interface MessagesRequest {
-	messages?: Message[];
-	model?: string;
-	stream?: boolean;
-	tools?: Array<{ name?: string }>;
-}
+import type { JsonInputValue } from "../../../packages/pi-stuff/src/shared/json-value.js";
+import {
+	type AnthropicMessagesRequest,
+	anthropicEvent as event,
+	extractAnthropicText,
+	parseAnthropicMessagesRequest,
+} from "./anthropic-mock.js";
 
 const readyFile = process.argv[2];
 const eventLog = process.argv[3];
@@ -39,6 +30,8 @@ if (
 ) {
 	throw new Error("Usage: bun claude-2.1.220-btw-mock.ts <ready-file> <event-log> [main-delay-ms] [side-delay-ms]");
 }
+const readyPath = readyFile;
+const eventLogPath = eventLog;
 
 let identifier = 0;
 
@@ -47,11 +40,7 @@ function nextIdentifier(prefix: string): string {
 	return `${prefix}_pi_stuff_btw_${identifier.toString().padStart(4, "0")}`;
 }
 
-function event(name: string, payload: unknown): string {
-	return `event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`;
-}
-
-function messageStart(request: MessagesRequest): string {
+function messageStart(request: AnthropicMessagesRequest): string {
 	return event("message_start", {
 		type: "message_start",
 		message: {
@@ -82,7 +71,7 @@ function messageEnd(outputTokens: number): string {
 	);
 }
 
-function textResponse(request: MessagesRequest, responseText: string): Response {
+function textResponse(request: AnthropicMessagesRequest, responseText: string): Response {
 	const body =
 		messageStart(request) +
 		event("content_block_start", {
@@ -107,17 +96,8 @@ function textResponse(request: MessagesRequest, responseText: string): Response 
 	});
 }
 
-function extractText(messages: Message[]): string {
-	return messages
-		.flatMap((message) => {
-			if (typeof message.content === "string") return [message.content];
-			return (message.content ?? []).filter((block) => block.type === "text").map((block) => block.text ?? "");
-		})
-		.join("\n");
-}
-
-async function record(kind: string, payload: unknown = {}): Promise<void> {
-	await appendFile(eventLog, `${JSON.stringify({ kind, payload, timestamp: Date.now() })}\n`);
+async function record(kind: string, payload: JsonInputValue = {}): Promise<void> {
+	await appendFile(eventLogPath, `${JSON.stringify({ kind, payload, timestamp: Date.now() })}\n`);
 }
 
 const server = Bun.serve({
@@ -131,8 +111,8 @@ const server = Bun.serve({
 		}
 		if (url.pathname !== "/v1/messages") return new Response("Not found", { status: 404 });
 
-		const request = (await incomingRequest.json()) as MessagesRequest;
-		const requestText = extractText(request.messages ?? []);
+		const request = parseAnthropicMessagesRequest(await incomingRequest.json());
+		const requestText = extractAnthropicText(request.messages ?? []);
 		const requestToolSchemas = (request.tools ?? []).map((tool) => tool.name);
 		const requestFacts = { stream: request.stream, requestToolSchemas };
 
@@ -165,4 +145,4 @@ const server = Bun.serve({
 	},
 });
 
-await writeFile(readyFile, `${server.port}\n`);
+await writeFile(readyPath, `${server.port}\n`);

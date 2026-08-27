@@ -16,6 +16,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type TranscriptVariant = "individual" | "grouped" | "bounded";
@@ -44,17 +46,17 @@ interface PrototypeToolDetails {
 const TOOL_NAME = "prototype_tool_action";
 const REPRESENTATIVE_CHILDREN = 2;
 
-const ACTION_LABELS: Record<ToolAction, string> = {
+const ACTION_LABELS = {
 	read: "Read",
 	search: "Search",
 	test: "Test",
-};
+} satisfies Record<ToolAction, string>;
 
-const VARIANT_LABELS: Record<TranscriptVariant, string> = {
+const VARIANT_LABELS = {
 	individual: "A · Individual rows",
 	grouped: "B · Exploration summary",
 	bounded: "C · Bounded group",
-};
+} satisfies Record<TranscriptVariant, string>;
 
 const PARAMETERS = Type.Object({
 	variant: Type.Union([Type.Literal("individual"), Type.Literal("grouped"), Type.Literal("bounded")]),
@@ -298,58 +300,78 @@ function fallbackItemsFor(args: string): PrototypeToolDetails[] {
 	return FALLBACK_ITEMS.map((item) => ({ ...item, variant }));
 }
 
-function parsePrototypeDetails(value: unknown): PrototypeToolDetails | undefined {
-	if (!isRecord(value)) return undefined;
-	if (!isTranscriptVariant(value.variant)) return undefined;
-	if (!isToolAction(value.action)) return undefined;
-	if (typeof value.itemId !== "string") return undefined;
-	if (typeof value.target !== "string") return undefined;
-	if (typeof value.summary !== "string") return undefined;
-	if (!Array.isArray(value.detailLines) || !value.detailLines.every((line) => typeof line === "string")) {
-		return undefined;
-	}
+function parsePrototypeDetails<Value>(value: Value): PrototypeToolDetails | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	if (!isTranscriptVariant(value["variant"])) return undefined;
+	if (!isToolAction(value["action"])) return undefined;
+	if (!isRuntimeString(value["itemId"]) || !isRuntimeString(value["target"]) || !isRuntimeString(value["summary"]))
+		return;
+	const detailLines = value["detailLines"];
+	if (!Array.isArray(detailLines) || !detailLines.every(isRuntimeString)) return undefined;
 	if (
-		value.groupChildren !== undefined &&
-		(!Array.isArray(value.groupChildren) || !value.groupChildren.every(isGroupChildSummary))
+		value["groupChildren"] !== undefined &&
+		(!Array.isArray(value["groupChildren"]) || !value["groupChildren"].every(isGroupChildSummary))
 	) {
 		return undefined;
 	}
-
-	return value as unknown as PrototypeToolDetails;
+	if (value["groupId"] !== undefined && !isRuntimeString(value["groupId"])) return undefined;
+	if (value["groupLabel"] !== undefined && !isRuntimeString(value["groupLabel"])) return undefined;
+	if (value["groupPosition"] !== undefined && !isRuntimeNumber(value["groupPosition"])) return undefined;
+	if (value["groupSize"] !== undefined && !isRuntimeNumber(value["groupSize"])) return undefined;
+	const details: PrototypeToolDetails = {
+		action: value["action"],
+		detailLines,
+		itemId: value["itemId"],
+		summary: value["summary"],
+		target: value["target"],
+		variant: value["variant"],
+	};
+	if (value["groupChildren"]) details.groupChildren = value["groupChildren"];
+	if (value["groupId"]) details.groupId = value["groupId"];
+	if (value["groupLabel"]) details.groupLabel = value["groupLabel"];
+	if (value["groupPosition"] !== undefined) details.groupPosition = value["groupPosition"];
+	if (value["groupSize"] !== undefined) details.groupSize = value["groupSize"];
+	return details;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function isTranscriptVariant(value: unknown): value is TranscriptVariant {
+function isTranscriptVariant<Value>(value: Value): value is Value & TranscriptVariant {
 	return value === "individual" || value === "grouped" || value === "bounded";
 }
 
-function isToolAction(value: unknown): value is ToolAction {
+function isToolAction<Value>(value: Value): value is Value & ToolAction {
 	return value === "read" || value === "search" || value === "test";
 }
 
-function isGroupChildSummary(value: unknown): value is GroupChildSummary {
+function isGroupChildSummary<Value>(value: Value): value is Value & GroupChildSummary {
 	return (
-		isRecord(value) &&
-		isToolAction(value.action) &&
-		typeof value.target === "string" &&
-		typeof value.summary === "string"
+		isJsonInputObject(value) &&
+		isToolAction(value["action"]) &&
+		isRuntimeString(value["target"]) &&
+		isRuntimeString(value["summary"])
 	);
 }
 
 class ToolDetailsSurface implements Component {
+	private readonly items: PrototypeToolDetails[];
+	private readonly theme: Theme;
+	private readonly terminalRows: number;
+	private readonly requestRender: () => void;
+	private readonly done: () => void;
 	private selectedItem: number;
 	private scrollOffset = 0;
 
 	constructor(
-		private readonly items: PrototypeToolDetails[],
-		private readonly theme: Theme,
-		private readonly terminalRows: number,
-		private readonly requestRender: () => void,
-		private readonly done: () => void,
+		items: PrototypeToolDetails[],
+		theme: Theme,
+		terminalRows: number,
+		requestRender: () => void,
+		done: () => void,
 	) {
+		this.items = items;
+		this.theme = theme;
+		this.terminalRows = terminalRows;
+		this.requestRender = requestRender;
+		this.done = done;
 		this.selectedItem = Math.max(0, items.length - 1);
 	}
 

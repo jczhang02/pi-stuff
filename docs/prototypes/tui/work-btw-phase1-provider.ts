@@ -39,7 +39,7 @@ function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index--) {
 		const message = context.messages[index];
 		if (message?.role !== "user") continue;
-		if (typeof message.content === "string") return message.content;
+		if (!Array.isArray(message.content)) return message.content;
 		return message.content
 			.filter((part): part is { type: "text"; text: string } => part.type === "text")
 			.map((part) => part.text)

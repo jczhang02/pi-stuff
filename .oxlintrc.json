@@ -21,7 +21,6 @@
 		".worktrees/**",
 		"coverage/**",
 		"dist/**",
-		"docs/prototypes/**",
 		"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js"
 	],
 	"jsPlugins": [

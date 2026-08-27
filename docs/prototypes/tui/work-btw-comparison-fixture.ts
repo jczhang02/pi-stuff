@@ -17,11 +17,11 @@ const variant = variantArgument;
 const outputDirectory = resolve(outputDirectoryArgument);
 await mkdir(outputDirectory, { recursive: true });
 
-const SESSION_IDS: Record<BtwVariant, string> = {
+const SESSION_IDS = {
 	claude: "77777777-7777-4777-8777-777777777771",
 	ephemeral: "77777777-7777-4777-8777-777777777772",
 	mailbox: "77777777-7777-4777-8777-777777777773",
-};
+} satisfies Record<BtwVariant, string>;
 
 const ZERO_USAGE = {
 	input: 0,

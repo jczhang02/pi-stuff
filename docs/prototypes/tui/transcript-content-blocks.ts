@@ -65,6 +65,7 @@ export default function registerTranscriptContentBlocks(pi: ExtensionAPI): void 
 
 		renderResult(result, { expanded, isPartial }, theme, context) {
 			const text = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+			// SAFETY: this fixture Tool returns PrototypeInspectDetails; undefined remains valid for partial Host results.
 			const details = result.details as PrototypeInspectDetails | undefined;
 
 			if (isPartial) {

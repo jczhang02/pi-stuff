@@ -12,6 +12,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { isJsonInputObject } from "../../../packages/pi-stuff/src/shared/json-value.js";
 import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type BtwVariant = "claude" | "ephemeral" | "mailbox";
@@ -161,24 +162,23 @@ function readBtwDetails(ctx: ExtensionContext): BtwDetails | undefined {
 	return latest;
 }
 
-function parseBtwDetails(value: unknown): BtwDetails | undefined {
-	if (!isRecord(value) || !isBtwVariant(value.variant)) return undefined;
-	return { variant: value.variant };
+function parseBtwDetails<Value>(value: Value): BtwDetails | undefined {
+	if (!isJsonInputObject(value) || !isBtwVariant(value["variant"])) return undefined;
+	return { variant: value["variant"] };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function isBtwVariant(value: unknown): value is BtwVariant {
+function isBtwVariant<Value>(value: Value): value is Value & BtwVariant {
 	return value === "claude" || value === "ephemeral" || value === "mailbox";
 }
 
 class BtwPrototypeRuntime {
 	private dialogOpen = false;
 	private mailboxQuestion: string | undefined;
+	private readonly variant: BtwVariant;
 
-	constructor(private readonly variant: BtwVariant) {}
+	constructor(variant: BtwVariant) {
+		this.variant = variant;
+	}
 
 	installChrome(ctx: ExtensionContext): void {
 		ctx.ui.setWidget(
@@ -301,7 +301,11 @@ function divider(theme: Theme, width: number): string {
 }
 
 class StaticLinesComponent implements Component {
-	constructor(private readonly renderLines: (width: number) => string[]) {}
+	private readonly renderLines: (width: number) => string[];
+
+	constructor(renderLines: (width: number) => string[]) {
+		this.renderLines = renderLines;
+	}
 
 	render(width: number): string[] {
 		return this.renderLines(width);
@@ -312,12 +316,15 @@ class StaticLinesComponent implements Component {
 
 class ClaudeExchangeSurface implements Component {
 	private historyVisible = false;
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly done: (outcome: DialogOutcome) => void;
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly done: (outcome: DialogOutcome) => void,
-	) {}
+	constructor(theme: Theme, requestRender: () => void, done: (outcome: DialogOutcome) => void) {
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
@@ -378,6 +385,9 @@ class ClaudeExchangeSurface implements Component {
 class EphemeralThreadSurface implements Component {
 	private actionFocused = false;
 	private composer = "";
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly done: (outcome: DialogOutcome) => void;
 	private readonly messages = [
 		{ role: "You", text: "Why keep these captures model-free?" },
 		{ role: "BTW", text: "So every frame is deterministic and reviewable." },
@@ -385,11 +395,11 @@ class EphemeralThreadSurface implements Component {
 		{ role: "BTW", text: "No. The main draft is preserved and restored." },
 	];
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly done: (outcome: DialogOutcome) => void,
-	) {}
+	constructor(theme: Theme, requestRender: () => void, done: (outcome: DialogOutcome) => void) {
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
@@ -458,12 +468,15 @@ class EphemeralThreadSurface implements Component {
 
 class MailboxComposeSurface implements Component {
 	private question = "";
+	private readonly theme: Theme;
+	private readonly requestRender: () => void;
+	private readonly done: (outcome: DialogOutcome) => void;
 
-	constructor(
-		private readonly theme: Theme,
-		private readonly requestRender: () => void,
-		private readonly done: (outcome: DialogOutcome) => void,
-	) {}
+	constructor(theme: Theme, requestRender: () => void, done: (outcome: DialogOutcome) => void) {
+		this.theme = theme;
+		this.requestRender = requestRender;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
@@ -506,11 +519,15 @@ class MailboxComposeSurface implements Component {
 }
 
 class DetachedMailboxSurface implements Component {
-	constructor(
-		private readonly question: string,
-		private readonly theme: Theme,
-		private readonly done: (outcome: DialogOutcome) => void,
-	) {}
+	private readonly question: string;
+	private readonly theme: Theme;
+	private readonly done: (outcome: DialogOutcome) => void;
+
+	constructor(question: string, theme: Theme, done: (outcome: DialogOutcome) => void) {
+		this.question = question;
+		this.theme = theme;
+		this.done = done;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) this.done({ kind: "close" });
