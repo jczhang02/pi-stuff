@@ -1,12 +1,5 @@
-import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import {
-	inspectWriterChildProcessLiveness,
-	inspectWriterProcessLiveness,
-	terminateOrphanWriterProcesses,
-} from "../runs/background/writer-process-registry.ts";
-import { readForegroundOwnerExit } from "../runs/foreground/owner-exit.ts";
+import { isRuntimeFunction, isRuntimeString } from "../../../shared/runtime-type.js";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
-import { readStatus } from "../shared/utils.ts";
 import {
 	AgentExecutionGovernor,
 	type AgentExecutionReservation,
@@ -19,6 +12,17 @@ import {
 	type ReserveAgentSpawnInput,
 } from "./agent-execution-governor.ts";
 import {
+	explicitProcessPidState,
+	nonNegativeSafeInteger,
+	optionalPositiveSafeInteger,
+	optionalText,
+	parseAgentOwnerPath,
+	record,
+	requiredText,
+	runtimeCompletionAddresses,
+} from "./agent-runtime-event.ts";
+import { createRuntimeProcessState, type RuntimeProcessState } from "./agent-runtime-liveness.ts";
+import {
 	type AgentGovernorLease,
 	type RebindAgentRuntimeRequest,
 	SessionAgentGovernor,
@@ -26,6 +30,8 @@ import {
 	type SessionGovernorRebindResult,
 	type SessionGovernorSnapshot,
 } from "./session-governor.ts";
+
+export { explicitProcessPidState, parseAgentOwnerPath, runtimeCompletionAddresses };
 
 export interface AgentExecutionGovernorPort {
 	reserveSpawn(input: ReserveAgentSpawnInput): Promise<AgentExecutionReservationResult>;
@@ -122,21 +128,6 @@ interface AsyncStart {
 	abortStart?: () => boolean;
 }
 
-interface AgentRuntimeEventRecord {
-	readonly abortStart?: unknown;
-	readonly acknowledgeStart?: unknown;
-	readonly asyncDir?: unknown;
-	readonly code?: unknown;
-	readonly detached?: unknown;
-	readonly id?: unknown;
-	readonly index?: unknown;
-	readonly pid?: unknown;
-	readonly processStartIdentity?: unknown;
-	readonly results?: unknown;
-	readonly runId?: unknown;
-	readonly taskIndex?: unknown;
-}
-
 export class AgentRuntimeBindingRejectedError extends Error {
 	readonly code = "agent_runtime_binding_rejected";
 
@@ -195,11 +186,8 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	private readonly active = new Map<string, BoundInvocation>();
 	private readonly asyncStarts = new Map<string, AsyncStart>();
 	private readonly createSession: AgentExecutionCoordinatorOptions["createSession"];
-	private readonly isPidAlive: (pid: number) => boolean | undefined;
 	private readonly readProcessStartIdentity: (pid: number) => string | undefined;
-	private readonly readSystemBootIdentity: () => string | undefined;
-	private systemBootIdentity: string | undefined;
-	private systemBootIdentityRead = false;
+	private readonly runtimeProcessState: RuntimeProcessState;
 	private readonly invocationRecords = new WeakMap<AgentExecutionInvocation, BoundInvocation>();
 	private readonly pendingCompletions = new Map<string, PendingCompletion>();
 	private readonly pendingSettlements = new Set<PendingSettlement>();
@@ -209,9 +197,12 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 
 	constructor(options: AgentExecutionCoordinatorOptions) {
 		this.createSession = options.createSession;
-		this.isPidAlive = options.isPidAlive ?? explicitProcessPidState;
 		this.readProcessStartIdentity = options.readProcessStartIdentity ?? readProcessStartIdentity;
-		this.readSystemBootIdentity = options.readSystemBootIdentity ?? readSystemBootIdentity;
+		this.runtimeProcessState = createRuntimeProcessState({
+			isPidAlive: options.isPidAlive ?? explicitProcessPidState,
+			readProcessStartIdentity: this.readProcessStartIdentity,
+			readSystemBootIdentity: options.readSystemBootIdentity ?? readSystemBootIdentity,
+		});
 	}
 
 	bindSession(identity: AgentExecutionSessionIdentity): void {
@@ -240,7 +231,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 			// A nested background completion may outlive the fanout Host that
 			// launched it. Reclaim only OS-proven dead leases before enforcing the
 			// next capacity reservation, so sequential work cannot exhaust running.
-			await session.reconcile((pid, lease) => this.runtimeProcessState(pid, lease));
+			await session.reconcile(this.runtimeProcessState);
 		} catch (error) {
 			return {
 				ok: false,
@@ -460,14 +451,14 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 
 	async reconcileDead(): Promise<void> {
 		if (!this.boundIdentity) return;
-		await this.session().reconcile((pid, lease) => this.runtimeProcessState(pid, lease));
+		await this.session().reconcile(this.runtimeProcessState);
 	}
 
 	async reconcileExisting(): Promise<void> {
 		if (!this.boundIdentity) return;
 		const session = this.session();
 		if (session.hasLedger && !(await session.hasLedger())) return;
-		await session.reconcile((pid, lease) => this.runtimeProcessState(pid, lease));
+		await session.reconcile(this.runtimeProcessState);
 	}
 
 	async inspectExistingRuntimeLeases(): Promise<readonly AgentGovernorLease[]> {
@@ -508,7 +499,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 					// and inspect only the provisional Pi Host lease. Reconcile once more
 					// after the durable pid/directory mapping exists so an already-dead
 					// runner is reclaimed without waiting for another launch or reload.
-					await pending.session.reconcile((pid, lease) => this.runtimeProcessState(pid, lease));
+					await pending.session.reconcile(this.runtimeProcessState);
 				}
 			} catch (error) {
 				if (!(error instanceof AgentRuntimeBindingRejectedError)) throw error;
@@ -731,85 +722,6 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		// session authority. A late engine result after session switch/dispose must
 		// still finish that old ledger instead of leaking a running lease.
 	}
-
-	private runtimeProcessState(pid: number, lease: AgentGovernorLease): boolean | undefined {
-		const systemBootIdentity = lease.systemBootIdentity === undefined ? undefined : this.currentSystemBootIdentity();
-		if (
-			lease.systemBootIdentity !== undefined &&
-			systemBootIdentity !== undefined &&
-			lease.systemBootIdentity !== systemBootIdentity
-		) {
-			return false;
-		}
-		if (lease.asyncDir && readForegroundOwnerExit(lease.asyncDir, lease.runtimeRunId)) {
-			try {
-				// A foreground execution frame lives inside the long-running Pi Host.
-				// Its durable owner-exit marker supersedes that Host PID: only the
-				// exact child writer registry may keep this lease alive now.
-				terminateOrphanWriterProcesses(lease.asyncDir);
-				return inspectWriterChildProcessLiveness(lease.asyncDir, lease.childIndex);
-			} catch {
-				return undefined;
-			}
-		}
-		let runnerState = this.isPidAlive(pid);
-		if (runnerState === true) {
-			const currentIdentity = this.readProcessStartIdentity(pid);
-			runnerState =
-				lease.processStartIdentity === undefined || currentIdentity === undefined
-					? undefined
-					: lease.processStartIdentity === currentIdentity;
-		}
-		if (lease.asyncDir) {
-			let status: ReturnType<typeof readStatus>;
-			try {
-				status = readStatus(lease.asyncDir);
-			} catch {
-				// Status is semantic evidence, not process-liveness authority. If
-				// the runner is OS-proven dead, the authenticated writer registry can
-				// still prove that no process remains and release capacity. Unknown
-				// runner/writer identity remains fail-closed.
-				if (runnerState !== false) return undefined;
-				terminateOrphanWriterProcesses(lease.asyncDir);
-				return inspectWriterProcessLiveness(lease.asyncDir);
-			}
-			const step = status?.steps?.[lease.childIndex];
-			if (
-				status?.runId === lease.runtimeRunId &&
-				step &&
-				(step.status === "complete" ||
-					step.status === "completed" ||
-					step.status === "failed" ||
-					step.status === "paused" ||
-					step.status === "stopped")
-			) {
-				let writerState = inspectWriterChildProcessLiveness(lease.asyncDir, lease.childIndex);
-				if (
-					writerState !== false &&
-					(runnerState === false ||
-						status.state === "complete" ||
-						status.state === "failed" ||
-						status.state === "paused" ||
-						status.state === "stopped")
-				) {
-					terminateOrphanWriterProcesses(lease.asyncDir);
-					writerState = inspectWriterChildProcessLiveness(lease.asyncDir, lease.childIndex);
-				}
-				return writerState;
-			}
-		}
-		if (runnerState !== false || !lease.asyncDir) return runnerState;
-		terminateOrphanWriterProcesses(lease.asyncDir);
-		return inspectWriterProcessLiveness(lease.asyncDir);
-	}
-
-	private currentSystemBootIdentity(): string | undefined {
-		if (!this.systemBootIdentityRead) {
-			this.systemBootIdentity = safeReadBootIdentity(this.readSystemBootIdentity);
-			this.systemBootIdentityRead = true;
-		}
-		return this.systemBootIdentity;
-	}
 }
 
 export interface DurableAgentExecutionCoordinatorOptions {
@@ -845,57 +757,6 @@ export function createDurableAgentExecutionCoordinator(
 			};
 		},
 	});
-}
-
-function safeReadBootIdentity(readIdentity: () => string | undefined): string | undefined {
-	try {
-		return readIdentity();
-	} catch {
-		return undefined;
-	}
-}
-
-export function runtimeCompletionAddresses<Event>(event: Event): AgentRuntimeCompletionEvent[] {
-	const value = record(event);
-	const runtimeRunId = optionalText(value.runId) ?? optionalText(value.id);
-	if (!runtimeRunId) return [];
-	const results = Array.isArray(value.results) ? value.results : undefined;
-	const indexes = results?.length
-		? results.map((child, fallbackIndex) => completionChildIndex(record(child), fallbackIndex))
-		: [completionChildIndex(value, 0)];
-	const unique = new Set<number>();
-	const addresses: AgentRuntimeCompletionEvent[] = [];
-	for (const childIndex of indexes) {
-		if (unique.has(childIndex)) continue;
-		unique.add(childIndex);
-		addresses.push({ runtimeRunId, childIndex });
-	}
-	return addresses;
-}
-
-export function parseAgentOwnerPath(value: string | undefined): string[] {
-	if (!value?.trim()) return [];
-	return value
-		.split("›")
-		.map((component) => component.trim())
-		.filter((component) => component.length > 0);
-}
-
-/** Returns false only for an OS-confirmed missing process; permission and unknown failures remain undecided. */
-export function explicitProcessPidState(pid: number): boolean | undefined {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		const code = record(error).code;
-		if (code === "ESRCH") return false;
-		return undefined;
-	}
-}
-
-function completionChildIndex(value: AgentRuntimeEventRecord, fallback: number): number {
-	const candidate = value.taskIndex ?? value.index;
-	return optionalNonNegativeSafeInteger(candidate) ?? fallback;
 }
 
 function completionKey(address: AgentRuntimeCompletionEvent, generation: number): string {
@@ -936,34 +797,4 @@ function classifyStartupFailure(
 
 function samePath(left: readonly string[], right: readonly string[]): boolean {
 	return left.length === right.length && left.every((component, index) => component === right[index]);
-}
-
-function record<Value>(value: Value): AgentRuntimeEventRecord {
-	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
-	// SAFETY: lifecycle consumers read only the declared raw fields and validate them before use.
-	return value as Value & AgentRuntimeEventRecord;
-}
-
-function optionalText<Value>(value: Value): string | undefined {
-	return isRuntimeString(value) && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function requiredText(name: string, value: string): string {
-	const resolved = optionalText(value);
-	if (!resolved) throw new TypeError(`${name} must be a non-empty string.`);
-	return resolved;
-}
-
-function optionalPositiveSafeInteger<Value>(value: Value): number | undefined {
-	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
-}
-
-function optionalNonNegativeSafeInteger<Value>(value: Value): number | undefined {
-	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-}
-
-function nonNegativeSafeInteger(name: string, value: number): number {
-	const resolved = optionalNonNegativeSafeInteger(value);
-	if (resolved === undefined) throw new TypeError(`${name} must be a non-negative safe integer.`);
-	return resolved;
 }

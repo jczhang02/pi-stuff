@@ -28,7 +28,8 @@ the existing runner engines. `foreground-run-claim.ts`, `foreground-projection.t
 separately own private directory proof, current/nested state projection, and execution settlement.
 `runtime/session-governor.ts` owns Agent lifecycle operations plus the stable public facade;
 `runtime/session-governor-spawn.ts` owns spawn admission and staging, while `runtime/session-governor-ledger.ts` owns
-the durable contracts, validation, lock, and atomic ledger storage.
+the durable contracts, validation, lock, and atomic ledger storage. `runtime/agent-runtime-event.ts` validates raw
+lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed process and writer-registry proof.
 
 ## Everyday behavior
 
