@@ -11,9 +11,7 @@ import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.
 import type { JsonInputObject } from "../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { xdgRuntimeHome, xdgStateHome } from "../../../xdg/index.js";
-import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
-import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import type { SessionCompatibilityScope } from "./session-identity.ts";
 
 // ============================================================================
@@ -26,8 +24,6 @@ export interface MaxOutputConfig {
 }
 
 export type OutputMode = "inline" | "file-only";
-
-export type AcceptanceRole = "read-only" | "writer";
 
 export interface JsonSchemaObject extends JsonInputObject {}
 
@@ -198,7 +194,6 @@ export interface EffectsProjection {
 export const SUBAGENT_LIFECYCLE_ARTIFACT_VERSION = 3;
 export type SubagentLifecycleArtifactVersion = typeof SUBAGENT_LIFECYCLE_ARTIFACT_VERSION;
 
-export type ProcessTerminalState = "pending" | "observed" | "unknown" | "not-started";
 export type ProcessTerminalReason =
 	| "observer-unavailable"
 	| "runner-candidate-missing"
@@ -1366,72 +1361,6 @@ export const SUBAGENT_STEERING_NOTICE_EVENT = "subagent:steering-notice";
 export const SUBAGENT_RESULT_INTERCOM_EVENT = "subagent:result-intercom";
 export const SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT = "subagent:result-intercom-delivery";
 
-// ============================================================================
-// Execution Options
-// ============================================================================
-
-export interface RunSyncOptions {
-	/** Session id of the direct parent session for supervisor routing. */
-	parentSessionId?: string;
-	/** Resolved launch context for this child. */
-	context?: "fresh" | "fork";
-	cwd?: string;
-	signal?: AbortSignal;
-	interruptSignal?: AbortSignal;
-	timeoutMs?: number;
-	deadlineAt?: number;
-	turnBudget?: ResolvedTurnBudget;
-	/** Enforce maxTurns + graceTurns as a hard model-turn boundary. */
-	enforceHardTurnLimit?: boolean;
-	toolBudget?: ResolvedToolBudget;
-	allowZeroToolBudget?: boolean;
-	allowIntercomDetach?: boolean;
-	intercomEvents?: IntercomEventBus;
-	onUpdate?: (r: import("@earendil-works/pi-agent-core").AgentToolResult<Details>) => void;
-	onControlEvent?: (event: ControlEvent) => void;
-	onDetachedExit?: (result: SingleResult) => void;
-	controlConfig?: ResolvedControlConfig;
-	intercomSessionName?: string;
-	orchestratorIntercomTarget?: string;
-	maxOutput?: MaxOutputConfig;
-	artifactsDir?: string;
-	artifactConfig?: ArtifactConfig;
-	runId: string;
-	index?: number;
-	sessionDir?: string;
-	sessionFile?: string;
-	outputPath?: string;
-	outputMode?: OutputMode;
-	maxSubagentDepth?: number;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	nestedRoute?: NestedRouteInfo;
-	/** Override the agent's default model (format: "provider/id" or just "id") */
-	modelOverride?: string;
-	/** Override the agent's default thinking level for this run */
-	thinkingOverride?: AgentConfig["thinking"];
-	/** Registry models available for heuristic bare-model resolution */
-	availableModels?: Array<{ provider: string; id: string; fullId: string }>;
-	/** Current parent-session provider to prefer for ambiguous bare model ids */
-	preferredModelProvider?: string;
-	/** Optional subagent model-scope enforcement for fallback candidates */
-	modelScope?: ModelScopeConfig;
-	/** Skills to make available (overrides agent default if provided) */
-	skills?: string[];
-	structuredOutput?: {
-		schema: JsonSchemaObject;
-		schemaPath: string;
-		outputPath: string;
-	};
-	agentContract?: AgentContract;
-	acceptance?: AcceptanceInput;
-	acceptanceContext?: {
-		mode?: SubagentRunMode;
-		async?: boolean;
-		dynamic?: boolean;
-		dynamicGroup?: boolean;
-	};
-}
-
 /** Internal inputs read by the owned Agent executor; there is no private settings surface. */
 export interface ExtensionConfig {
 	defaultSessionDir?: string;
@@ -1539,13 +1468,6 @@ export const LEGACY_SESSION_GOVERNOR_ROOT = path.join(TEMP_ROOT_DIR, "session-go
 export const RESULTS_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-results");
 export const ASYNC_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-runs");
 export const TEMP_ARTIFACTS_DIR = path.join(TEMP_ROOT_DIR, "artifacts");
-export const SLASH_RESULT_TYPE = "subagent-slash-result";
-export const SLASH_TEXT_RESULT_TYPE = "subagent-slash-text-result";
-export const SLASH_SUBAGENT_REQUEST_EVENT = "subagent:slash:request";
-export const SLASH_SUBAGENT_STARTED_EVENT = "subagent:slash:started";
-export const SLASH_SUBAGENT_RESPONSE_EVENT = "subagent:slash:response";
-export const SLASH_SUBAGENT_UPDATE_EVENT = "subagent:slash:update";
-export const SLASH_SUBAGENT_CANCEL_EVENT = "subagent:slash:cancel";
 export const POLL_INTERVAL_MS = 250;
 export const DEFAULT_SUBAGENT_MAX_DEPTH = 3;
 export const SUBAGENT_ACTIONS = ["status", "resume", "steer", "stop"] as const;
@@ -1648,58 +1570,4 @@ export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): nu
 	if (envMaxSpawns !== undefined) return envMaxSpawns;
 	const configuredMaxSpawns = normalizeMaxSubagentSpawnsPerSession(configMaxSpawns);
 	return configuredMaxSpawns ?? 200;
-}
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes}B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-export function truncateOutput(
-	output: string,
-	config: Required<MaxOutputConfig>,
-	artifactPath?: string,
-): TruncationResult {
-	const lines = output.split("\n");
-	const bytes = Buffer.byteLength(output, "utf-8");
-
-	if (bytes <= config.bytes && lines.length <= config.lines) {
-		return { text: output, truncated: false };
-	}
-
-	let truncatedLines = lines;
-	if (lines.length > config.lines) {
-		truncatedLines = lines.slice(0, config.lines);
-	}
-
-	let result = truncatedLines.join("\n");
-	if (Buffer.byteLength(result, "utf-8") > config.bytes) {
-		let low = 0;
-		let high = result.length;
-		while (low < high) {
-			const mid = Math.floor((low + high + 1) / 2);
-			if (Buffer.byteLength(result.slice(0, mid), "utf-8") <= config.bytes) {
-				low = mid;
-			} else {
-				high = mid - 1;
-			}
-		}
-		result = result.slice(0, low);
-	}
-
-	const keptLines = result.split("\n").length;
-	const marker = `[TRUNCATED: showing first ${keptLines} of ${lines.length} lines, ${formatBytes(Buffer.byteLength(result))} of ${formatBytes(bytes)}${artifactPath ? ` - full output at ${artifactPath}` : ""}]\n`;
-
-	return {
-		text: marker + result,
-		truncated: true,
-		originalBytes: bytes,
-		originalLines: lines.length,
-		artifactPath,
-	};
 }
