@@ -264,7 +264,9 @@ export class RootSessionRuntime {
 	async startSession(ctx: ExtensionContext): Promise<void> {
 		if (!this.active) return;
 		await this.input.previousCleanup;
+		if (!this.active) return;
 		this.resetSessionRuntime();
+		const epoch = this.sessionEpoch;
 		const state = this.input.state;
 		state.baseCwd = ctx.cwd;
 		this.ephemeralSessionNonce = randomUUID();
@@ -275,7 +277,8 @@ export class RootSessionRuntime {
 			? ctx.sessionManager.getBranch()
 			: ctx.sessionManager.getEntries();
 		this.input.notifier.reset(entries);
-		state.currentSessionScope = buildSessionCompatibilityScope(identity, entries);
+		const sessionScope = buildSessionCompatibilityScope(identity, entries);
+		state.currentSessionScope = sessionScope;
 		this.governorCompatibilityScope = buildSessionGovernorCompatibilityScope(identity, entries);
 		state.foregroundRuns = state.currentSessionId ? replayForegroundRuns(entries, state.currentSessionId) : new Map();
 		state.parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
@@ -288,7 +291,13 @@ export class RootSessionRuntime {
 		};
 		this.input.bindContext(ctx);
 		this.bindExecutionGovernor(ctx);
-		await this.restoreSessionRuns();
+		try {
+			await this.restoreSessionRuns(epoch, sessionScope);
+		} catch (error) {
+			if (this.active && epoch === this.sessionEpoch) throw error;
+			return;
+		}
+		if (!this.active || epoch !== this.sessionEpoch) return;
 		this.input.refresh();
 	}
 
@@ -353,8 +362,12 @@ export class RootSessionRuntime {
 		this.governorCompatibilityError = undefined;
 	}
 
-	private async restoreSessionRuns(): Promise<void> {
+	private async restoreSessionRuns(
+		epoch: number,
+		sessionScope: ReturnType<typeof buildSessionCompatibilityScope>,
+	): Promise<void> {
 		const leases = (await this.input.governor.inspectExistingRuntimeLeases?.()) ?? [];
+		if (!this.active || epoch !== this.sessionEpoch) return;
 		const foregroundRoot = path.resolve(path.join(TEMP_ROOT_DIR, "foreground-runs"));
 		const backgroundRoot = path.resolve(ASYNC_DIR);
 		const foregroundDirectories: string[] = [];
@@ -365,17 +378,14 @@ export class RootSessionRuntime {
 			if (path.dirname(directory) === foregroundRoot) foregroundDirectories.push(directory);
 			else if (path.dirname(directory) === backgroundRoot) backgroundDirectories.push(directory);
 		}
+		const recoveredForeground = await recoverForegroundRuntimeRunsAsync(
+			path.join(TEMP_ROOT_DIR, "foreground-runs"),
+			sessionScope,
+			foregroundDirectories,
+		);
+		if (!this.active || epoch !== this.sessionEpoch) return;
 		const state = this.input.state;
-		if (state.currentSessionScope) {
-			state.foregroundRuns = mergeForegroundRuns(
-				state.foregroundRuns ?? new Map(),
-				await recoverForegroundRuntimeRunsAsync(
-					path.join(TEMP_ROOT_DIR, "foreground-runs"),
-					state.currentSessionScope,
-					foregroundDirectories,
-				),
-			);
-		}
+		state.foregroundRuns = mergeForegroundRuns(state.foregroundRuns ?? new Map(), recoveredForeground);
 		await this.input.tracker.restoreActiveJobs(backgroundDirectories);
 	}
 }

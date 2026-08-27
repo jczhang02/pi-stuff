@@ -202,6 +202,7 @@ interface RootHarness {
 		pollers: number;
 		reset: number;
 		restored: number;
+		restoredSessions: string[];
 		started: number;
 	};
 	readonly watcher: { primes: number; starts: number; stops: number };
@@ -272,7 +273,9 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 	// SAFETY: this test controls the value and supplies every SubagentState member exercised by this case.
 	const state = { value: undefined as SubagentState | undefined };
 	const supervisor = { disposed: 0, started: 0 };
-	const tracker = { completed: 0, pollers: 0, reset: 0, restored: 0, started: 0 };
+	let trackerGeneration = 0;
+	const restoredSessions: string[] = [];
+	const tracker = { completed: 0, pollers: 0, reset: 0, restored: 0, restoredSessions, started: 0 };
 	const watcher = { primes: 0, starts: 0, stops: 0 };
 
 	// SAFETY: this test controls the value and supplies every CommandDialogCoordinator member exercised by this case.
@@ -443,15 +446,20 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				tracker.completed += 1;
 			},
 			resetJobs: () => {
+				trackerGeneration += 1;
 				tracker.reset += 1;
 				rootState.asyncJobs.clear();
 				rootState.recentAgentJobs?.clear();
 			},
 			restoreActiveJobs: async (asyncDirectories?: readonly string[]) => {
 				if (asyncDirectories !== undefined && asyncDirectories.length === 0) return;
+				const generation = trackerGeneration;
+				const sessionId = rootState.currentSessionId;
 				tracker.restored += 1;
 				await options.restoreGate;
 				if (options.restoreFailure) throw Object.assign(new Error("injected restore EIO"), { code: "EIO" });
+				if (generation !== trackerGeneration || rootState.currentSessionId !== sessionId) return;
+				if (sessionId) tracker.restoredSessions.push(sessionId);
 				if (!options.restoreActive) return;
 				const job: AsyncJobState = {
 					asyncId: "restored",
@@ -461,7 +469,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 					startedAt: 1,
 					updatedAt: 1,
 				};
-				if (rootState.currentSessionId) job.sessionId = rootState.currentSessionId;
+				if (sessionId) job.sessionId = sessionId;
 				rootState.asyncJobs.set("restored", job);
 			},
 		}),
@@ -1153,6 +1161,29 @@ describe("Agents extension composition root", () => {
 
 		releaseRestore();
 		expect(await startup).toBe("ready");
+	});
+
+	test("does not let stale session recovery refresh the replacement session", async () => {
+		const restoreGate = Promise.withResolvers<void>();
+		const root = createHarness({ restoreActive: true, restoreGate: restoreGate.promise });
+		const headerA = context([], { sessionFile: "/sessions/recovery-a.jsonl", sessionId: "recovery-a" });
+		const headerB = context([], { sessionFile: "/sessions/recovery-b.jsonl", sessionId: "recovery-b" });
+		const startingA = root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		while (root.tracker.restored < 1) await Bun.sleep(1);
+		const startingB = root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		while (root.tracker.restored < 2) await Bun.sleep(1);
+		const replacementSessionId = currentSessionId(root);
+		const refreshesBeforeRecovery = root.current.refreshes;
+
+		restoreGate.resolve();
+		await Promise.all([startingA, startingB]);
+
+		expect(currentSessionId(root)).toBe(replacementSessionId);
+		expect(root.tracker.restoredSessions).toEqual([replacementSessionId]);
+		expect([...(root.state.value?.asyncJobs.values() ?? [])].map((job) => job.sessionId)).toEqual([
+			replacementSessionId,
+		]);
+		expect(root.current.refreshes - refreshesBeforeRecovery).toBe(1);
 	});
 
 	test("isolates reused session paths by header identity while preserving ordinary reload continuity", async () => {
