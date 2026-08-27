@@ -11,7 +11,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { classifyBashActivity, singleActivity } from "./activity.js";
-import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "./contract.js";
+import type { SuiteToolRegistrationHost } from "./contract.js";
+import { registerSuiteOwnedTool } from "./registration.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./tool-text.js";
 
 const PROGRAMMATIC_READ = { replay: "record" } as const;

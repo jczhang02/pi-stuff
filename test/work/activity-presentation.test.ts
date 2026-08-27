@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
-import {
-	createSuiteToolRegistrationTracker,
-	getToolUiRuntime,
-} from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createSuiteToolRegistrationTracker } from "../../packages/pi-stuff/src/tool-display/registration.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 function registeredBash() {

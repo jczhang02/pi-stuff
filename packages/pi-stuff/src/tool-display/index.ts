@@ -10,7 +10,8 @@ import {
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
-import { installToolUiRuntime, registerHistoricalSuiteToolDefinitions } from "./contract.js";
+import { installToolUiRuntime } from "./contract.js";
+import { registerHistoricalSuiteToolDefinitions } from "./registration.js";
 import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
 import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
@@ -79,15 +80,7 @@ export {
 } from "./activity.js";
 export { BASH_CODE_MODE_CONTRACT } from "./builtin-tools.js";
 export {
-	assertSuiteToolActivityCoverage,
-	configureSuiteToolReplay,
-	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
-	registerHistoricalSuiteToolDefinitions,
-	registerSuiteOwnedTool,
-	registerSuiteToolActivityMetadata,
-	registerSuiteToolEnvelope,
-	registerSuiteToolEnvelopeCompanion,
 	type SuiteToolCatalogEntry,
 	type SuiteToolCodeModeContract,
 	type SuiteToolCodeModeExecutionEndStatus,
@@ -109,6 +102,16 @@ export {
 	ToolUiRuntime,
 	type ToolUiRuntimeHost,
 } from "./contract.js";
+export {
+	assertSuiteToolActivityCoverage,
+	configureSuiteToolReplay,
+	createSuiteToolRegistrationTracker,
+	registerHistoricalSuiteToolDefinitions,
+	registerSuiteOwnedTool,
+	registerSuiteToolActivityMetadata,
+	registerSuiteToolEnvelope,
+	registerSuiteToolEnvelopeCompanion,
+} from "./registration.js";
 export { CachedToolRow } from "./render.js";
 export {
 	boundTerminalLine,

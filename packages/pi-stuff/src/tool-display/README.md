@@ -7,6 +7,8 @@ render slots. Tool schemas, prompt metadata, execution, result content, lifecycl
 unchanged. Pi 0.84.3's PowerShell Tool remains entirely Host-rendered; Pi Stuff recognizes its `powershell` name only
 for reload/resume membership. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`;
 unknown third-party Tools keep their native renderer and form a display boundary.
+`registration.ts` owns Suite Tool decoration, Activity coverage, envelope registration, and historical replay binding;
+`ToolUiRuntime` remains the single live transcript projection owner.
 
 ## Daily use
 

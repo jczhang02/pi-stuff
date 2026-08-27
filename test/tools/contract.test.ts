@@ -19,19 +19,21 @@ import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
-	assertSuiteToolActivityCoverage,
-	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
 	installToolUiRuntime,
-	registerSuiteOwnedTool,
-	registerSuiteToolEnvelope,
-	registerSuiteToolEnvelopeCompanion,
 	type SuiteToolCodeModeContract,
 	type SuiteToolEnvelopeOperation,
 	type SuiteToolTrackerHost,
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import {
+	assertSuiteToolActivityCoverage,
+	createSuiteToolRegistrationTracker,
+	registerSuiteOwnedTool,
+	registerSuiteToolEnvelope,
+	registerSuiteToolEnvelopeCompanion,
+} from "../../packages/pi-stuff/src/tool-display/registration.js";
 import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
 import { ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 

@@ -3,12 +3,8 @@ import { Type } from "typebox";
 import type { JsonInputObject, JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolArguments } from "../tool-display/activity.js";
-import {
-	registerSuiteToolEnvelope,
-	registerSuiteToolEnvelopeCompanion,
-	type SuiteToolEnvelopeOperation,
-	type SuiteToolPresentation,
-} from "../tool-display/contract.js";
+import type { SuiteToolEnvelopeOperation, SuiteToolPresentation } from "../tool-display/contract.js";
+import { registerSuiteToolEnvelope, registerSuiteToolEnvelopeCompanion } from "../tool-display/registration.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { CODE_MODE_TOOL_NAME, CodeModeControls, type CodeModeHost, type PiStuffCodeModeOptions } from "./controls.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE, sanitizeCodeModeContent } from "./image-content.js";

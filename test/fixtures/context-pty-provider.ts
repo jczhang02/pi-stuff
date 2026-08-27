@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
-import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/registration.js";
 
 const PROVIDER = "pi-stuff-context-pty";
 const MODEL = "fixture-model";

@@ -2,7 +2,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { registerSuiteOwnedTool } from "../../tool-display/contract.js";
+import { registerSuiteOwnedTool } from "../../tool-display/registration.js";
 import {
 	GOAL_BLOCKED_TOOL,
 	GOAL_COMPLETE_TOOL,
