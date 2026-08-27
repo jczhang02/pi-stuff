@@ -409,6 +409,87 @@ export function sanitizeBenchmarkSearchQuery(query: string, project: string): st
 function safeAnswer(value: string): string {
 	return /^[0-9A-Z_]{1,32}$/u.test(value) ? value : "<nonconforming>";
 }
+
+async function completedCase(
+	arm: Arm,
+	code: string,
+	repetition: number,
+	paths: CasePaths,
+	expectedHash: string,
+	first: ProcessResult,
+	resumed: ProcessResult,
+	analysis: SessionAnalysis,
+): Promise<ImageBenchmarkCase> {
+	const observed = await observations(paths.log);
+	const imagePhase = observed.filter((item) => item.phase === "image");
+	const resumePhase = observed.filter((item) => item.phase === "resume");
+	const expectedToolSurface = (item: ProviderObservation) =>
+		JSON.stringify(item.toolNames) === JSON.stringify(["codemode", "tool_search"]);
+	const imageProviderEvidence = imagePhase.flatMap((item) => item.images);
+	const resumeProviderEvidence = resumePhase.flatMap((item) => item.images);
+	const transferExact =
+		imageProviderEvidence.some((item) => item.valid && item.sha256 === expectedHash) &&
+		imageProviderEvidence.every((item) => item.valid);
+	const persistedHashes = analysis.imageBlocks.map((item) => sha256(Buffer.from(item.data, "base64")));
+	const imagePersistedOnce =
+		analysis.imageBlocks.length === 1 &&
+		persistedHashes[0] === expectedHash &&
+		analysis.imageBlocks[0]?.mimeType === "image/png";
+	await assertDecodableSupportedCodeModeImages(
+		analysis.imageBlocks.map((item) => ({ type: "image" as const, data: item.data, mimeType: item.mimeType })),
+	);
+	const toolChoice =
+		analysis.nestedTools.includes("view_image") &&
+		!analysis.nestedTools.includes("read") &&
+		!analysis.nestedTools.includes("bash") &&
+		!analysis.explicitImageHelper;
+	const rawAnswer = lastLine(first.stdout);
+	const understood = first.exitCode === 0 && !first.timedOut && rawAnswer === code;
+	const sessionSafe =
+		imagePersistedOnce &&
+		resumed.exitCode === 0 &&
+		!resumed.timedOut &&
+		lastLine(resumed.stdout) === "SESSION_SAFE" &&
+		resumeProviderEvidence.some((item) => item.valid && item.sha256 === expectedHash) &&
+		resumeProviderEvidence.every((item) => item.valid);
+	const instrumentationValid =
+		imagePhase.length >= 2 &&
+		resumePhase.length >= 1 &&
+		observed.every((item) => item.nodes > 0 && item.payloadSha256.length === 64 && expectedToolSurface(item)) &&
+		imagePhase.every((item) => item.codeModeDefinitionCharacters > 0) &&
+		resumePhase.every((item) => item.codeModeDefinitionCharacters > 0);
+	const providerToolDefinitionCharacters = Math.max(
+		0,
+		...observed.map((item) => item.providerToolDefinitionCharacters),
+	);
+	const endToEnd =
+		instrumentationValid && toolChoice && transferExact && understood && sessionSafe && analysis.codeModeErrors === 0;
+	return {
+		answer: safeAnswer(rawAnswer),
+		arm,
+		code,
+		codeModeErrors: analysis.codeModeErrors,
+		endToEnd,
+		explicitImageHelper: analysis.explicitImageHelper,
+		firstExit: first.exitCode,
+		imagePersistedOnce,
+		instrumentationValid,
+		nestedTools: analysis.nestedTools,
+		providerEvidence: observed,
+		providerRequests: observed.length,
+		providerToolDefinitionCharacters,
+		repetition,
+		resumeExit: resumed.exitCode,
+		searchQueries: analysis.searchQueries.map((query) => sanitizeBenchmarkSearchQuery(query, paths.project)),
+		sessionImageCount: analysis.imageBlocks.length,
+		sessionSafe,
+		timedOut: first.timedOut || resumed.timedOut,
+		toolChoice,
+		transferExact,
+		understood,
+	};
+}
+
 async function runCase(
 	benchmarkRoot: string,
 	arm: Arm,
@@ -473,79 +554,7 @@ async function runCase(
 				cleanEnvironment(process.env, paths, "resume"),
 			);
 		}
-		const observed = await observations(paths["log"]);
-		const imagePhase = observed.filter((item) => item.phase === "image");
-		const resumePhase = observed.filter((item) => item.phase === "resume");
-		const expectedToolSurface = (item: ProviderObservation) =>
-			JSON.stringify(item.toolNames) === JSON.stringify(["codemode", "tool_search"]);
-		const imageProviderEvidence = imagePhase.flatMap((item) => item.images);
-		const resumeProviderEvidence = resumePhase.flatMap((item) => item.images);
-		const transferExact =
-			imageProviderEvidence.some((item) => item.valid && item.sha256 === expectedHash) &&
-			imageProviderEvidence.every((item) => item.valid);
-		const persistedHashes = analysis.imageBlocks.map((item) => sha256(Buffer.from(item.data, "base64")));
-		const imagePersistedOnce =
-			analysis.imageBlocks.length === 1 &&
-			persistedHashes[0] === expectedHash &&
-			analysis.imageBlocks[0]?.mimeType === "image/png";
-		await assertDecodableSupportedCodeModeImages(
-			analysis.imageBlocks.map((item) => ({ type: "image" as const, data: item.data, mimeType: item.mimeType })),
-		);
-		const toolChoice =
-			analysis.nestedTools.includes("view_image") &&
-			!analysis.nestedTools.includes("read") &&
-			!analysis.nestedTools.includes("bash") &&
-			!analysis.explicitImageHelper;
-		const rawAnswer = lastLine(first.stdout);
-		const understood = first.exitCode === 0 && !first.timedOut && rawAnswer === code;
-		const sessionSafe =
-			imagePersistedOnce &&
-			resumed.exitCode === 0 &&
-			!resumed.timedOut &&
-			lastLine(resumed.stdout) === "SESSION_SAFE" &&
-			resumeProviderEvidence.some((item) => item.valid && item.sha256 === expectedHash) &&
-			resumeProviderEvidence.every((item) => item.valid);
-		const instrumentationValid =
-			imagePhase.length >= 2 &&
-			resumePhase.length >= 1 &&
-			observed.every((item) => item.nodes > 0 && item.payloadSha256.length === 64 && expectedToolSurface(item)) &&
-			imagePhase.every((item) => item.codeModeDefinitionCharacters > 0) &&
-			resumePhase.every((item) => item.codeModeDefinitionCharacters > 0);
-		const providerToolDefinitionCharacters = Math.max(
-			0,
-			...observed.map((item) => item.providerToolDefinitionCharacters),
-		);
-		const endToEnd =
-			instrumentationValid &&
-			toolChoice &&
-			transferExact &&
-			understood &&
-			sessionSafe &&
-			analysis.codeModeErrors === 0;
-		return {
-			answer: safeAnswer(rawAnswer),
-			arm,
-			code,
-			codeModeErrors: analysis.codeModeErrors,
-			endToEnd,
-			explicitImageHelper: analysis.explicitImageHelper,
-			firstExit: first.exitCode,
-			imagePersistedOnce,
-			instrumentationValid,
-			nestedTools: analysis.nestedTools,
-			providerEvidence: observed,
-			providerRequests: observed.length,
-			providerToolDefinitionCharacters,
-			repetition,
-			resumeExit: resumed.exitCode,
-			searchQueries: analysis.searchQueries.map((query) => sanitizeBenchmarkSearchQuery(query, paths.project)),
-			sessionImageCount: analysis.imageBlocks.length,
-			sessionSafe,
-			timedOut: first.timedOut || resumed.timedOut,
-			toolChoice,
-			transferExact,
-			understood,
-		};
+		return await completedCase(arm, code, repetition, paths, expectedHash, first, resumed, analysis);
 	} catch {
 		const observed = await observations(paths.log).catch(() => []);
 		return {
