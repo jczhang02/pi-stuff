@@ -104,10 +104,10 @@ import {
 	resolveInheritedNestedRouteFromEnv,
 	resolveNestedParentAddressFromEnv,
 	retireUnusedNestedRoute,
-	sanitizeSummary,
 	updateForegroundNestedProjection,
 	writeNestedEvent,
 } from "../shared/nested-events.ts";
+import { sanitizeSummary } from "../shared/nested-summary.ts";
 import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import {
 	resolvePiLaunchToolPlan,

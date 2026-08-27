@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { readAsyncRecoveryDescriptor } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-resume.js";
-import { sanitizeSummary } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
+import { sanitizeSummary } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-summary.js";
 
 const temporaryDirectories: string[] = [];
 

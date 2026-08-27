@@ -14,14 +14,8 @@ import {
 	parseSubagentCapabilityCeiling,
 	type ResolvedSubagentCapabilityCeiling,
 } from "../shared/capability-ceiling.ts";
-import {
-	attachRootChildrenToSteps,
-	nestedWorkIncludesUser,
-	sanitizeCost,
-	sanitizeSummary,
-	sanitizeToolBudget,
-	sanitizeTurnBudget,
-} from "../shared/nested-events.ts";
+import { attachRootChildrenToSteps, nestedWorkIncludesUser } from "../shared/nested-events.ts";
+import { sanitizeCost, sanitizeSummary, sanitizeToolBudget, sanitizeTurnBudget } from "../shared/nested-summary.ts";
 import type { BackgroundTaskResult } from "../shared/parallel-utils.ts";
 import type { CompletionNotification } from "./notify.ts";
 import type { BackgroundCompletion } from "./runner-state.ts";

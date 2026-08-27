@@ -1,7 +1,8 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
-import { resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
+import { resolveNestedAsyncDir } from "../runs/shared/nested-events.ts";
+import { sanitizeSummary } from "../runs/shared/nested-summary.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
 import type { AgentContextUsage, SubagentState } from "../shared/types.ts";
 

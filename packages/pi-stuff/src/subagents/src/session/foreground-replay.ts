@@ -5,7 +5,8 @@ import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shar
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
 import { readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
 import { parseSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
-import { resolvePersistedNestedRoute, sanitizeSummary } from "../runs/shared/nested-events.ts";
+import { resolvePersistedNestedRoute } from "../runs/shared/nested-events.ts";
+import { sanitizeSummary } from "../runs/shared/nested-summary.ts";
 import { mapConcurrent } from "../runs/shared/parallel-utils.ts";
 import { writePrivateAtomicJsonAsync } from "../shared/atomic-json.ts";
 import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";

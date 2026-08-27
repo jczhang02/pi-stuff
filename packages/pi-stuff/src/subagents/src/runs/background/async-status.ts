@@ -34,9 +34,9 @@ import {
 	projectNestedEvents,
 	readNestedRegistry,
 	resolvePersistedNestedRoute,
-	sanitizeSummary,
 } from "../shared/nested-events.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
+import { sanitizeSummary } from "../shared/nested-summary.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 import { readProcessTerminal, sanitizeProcessTerminal } from "./process-terminal.ts";
 import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-reconciler.ts";
