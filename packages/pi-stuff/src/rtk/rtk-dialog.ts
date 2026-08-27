@@ -37,6 +37,13 @@ function sectionHeading(theme: CommandDialogViewContext["theme"], value: string)
 	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(value)}`;
 }
 
+const RUNTIME_STYLES = {
+	drifted: { color: "warning", glyph: "!" },
+	ready: { color: "success", glyph: "✓" },
+	unavailable: { color: "error", glyph: "×" },
+	unchecked: { color: "muted", glyph: "○" },
+} as const;
+
 /** Keep the executable identity useful without letting a package-manager path consume the dialog. */
 export function compactRtkBinaryPath(value: string, maximumWidth: number): string {
 	const width = Math.max(1, Math.floor(maximumWidth));
@@ -108,22 +115,7 @@ class RtkDialogComponent implements CommandDialogComponent {
 		const runtime = this.options.runtime.snapshot();
 		const settings = this.options.settings.get();
 		const stats = this.options.projection.stats();
-		const runtimeColor =
-			runtime.state === "ready"
-				? "success"
-				: runtime.state === "unchecked"
-					? "muted"
-					: runtime.state === "drifted"
-						? "warning"
-						: "error";
-		const runtimeGlyph =
-			runtime.state === "ready"
-				? "✓"
-				: runtime.state === "unchecked"
-					? "○"
-					: runtime.state === "drifted"
-						? "!"
-						: "×";
+		const { color: runtimeColor, glyph: runtimeGlyph } = RUNTIME_STYLES[runtime.state];
 		const techniques = Object.entries(stats.techniques)
 			.sort(([left], [right]) => left.localeCompare(right))
 			.map(([name, count]) => `${name} ${String(count)}`)
