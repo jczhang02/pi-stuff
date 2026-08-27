@@ -21,7 +21,11 @@ the child-process and terminal-lifecycle owner; `fallback-session.ts` only freez
 model attempts. `shared/acceptance.ts` owns acceptance evidence; `nested-contract.ts`, `run-result.ts`,
 `async-contract.ts`, and `process-terminal.ts` own their corresponding cross-process contracts;
 `runtime/runtime-state.ts` owns in-memory foreground and Extension state. `shared/types.ts` retains common configuration
-and the compatibility type facade.
+and the compatibility type facade. Within foreground execution, `executor-contract.ts` defines the private composition
+contract. `launch-preparation.ts` owns one launch-admission transaction across inputs and budgets, context/model
+capacity, fork-session selection, and session-root/nested-route setup; `launch-builders.ts` maps its admitted plan to
+the existing runner engines. `foreground-run-claim.ts`, `foreground-projection.ts`, and `foreground-lifecycle.ts`
+separately own private directory proof, current/nested state projection, and execution settlement.
 
 ## Everyday behavior
 
