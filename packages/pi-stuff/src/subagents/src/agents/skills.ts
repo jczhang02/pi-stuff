@@ -462,8 +462,6 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		entries.push(entry);
 	};
 
-	const shouldSkipDirectory = (name: string) => name.startsWith(".") || name === "node_modules";
-
 	const markDirectoryVisited = (dirPath: string, sourceHint?: SkillSource): boolean => {
 		let resolvedDir: string;
 		try {
@@ -478,42 +476,39 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		return true;
 	};
 
-	const walkSkillDirectories = (dirPath: string, sourceHint?: SkillSource) => {
-		if (!markDirectoryVisited(dirPath, sourceHint)) return;
-
+	const scanSkillDirectory = (dirPath: string, sourceHint: SkillSource, includeLooseMarkdown: boolean) => {
 		const skillFile = path.join(dirPath, "SKILL.md");
 		if (fs.existsSync(skillFile)) {
+			if (!includeLooseMarkdown && !markDirectoryVisited(dirPath, sourceHint)) return;
 			pushEntry(path.basename(dirPath), skillFile, sourceHint);
 			return;
 		}
-
+		if (!markDirectoryVisited(dirPath, sourceHint) && !includeLooseMarkdown) return;
 		let entriesInDir: fs.Dirent[];
 		try {
 			entriesInDir = fs.readdirSync(dirPath, { withFileTypes: true });
 		} catch {
 			return;
 		}
-
 		for (const entry of entriesInDir) {
-			if (shouldSkipDirectory(entry.name)) continue;
-			if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-
+			if (entry.name.startsWith(".")) continue;
 			const entryPath = path.join(dirPath, entry.name);
-			let stat: fs.Stats;
-			try {
-				stat = fs.statSync(entryPath);
-			} catch {
+			if (entry.isDirectory() || entry.isSymbolicLink()) {
+				if (entry.name === "node_modules") continue;
+				try {
+					if (fs.statSync(entryPath).isDirectory()) scanSkillDirectory(entryPath, sourceHint, false);
+				} catch {
+					// Ignore disappearing or unreadable search paths.
+				}
 				continue;
 			}
-			if (stat.isDirectory()) {
-				walkSkillDirectories(entryPath, sourceHint);
+			if (includeLooseMarkdown && entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+				pushEntry(path.basename(entry.name, path.extname(entry.name)), entryPath, sourceHint);
 			}
 		}
 	};
 
 	for (const skillPath of skillPaths) {
-		if (!fs.existsSync(skillPath.path)) continue;
-
 		let stat: fs.Stats;
 		try {
 			stat = fs.statSync(skillPath.path);
@@ -533,40 +528,7 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		}
 
 		if (!stat.isDirectory()) continue;
-
-		const rootSkillFile = path.join(skillPath.path, "SKILL.md");
-		if (fs.existsSync(rootSkillFile)) {
-			pushEntry(path.basename(skillPath.path), rootSkillFile, skillPath.source);
-			continue;
-		}
-
-		markDirectoryVisited(skillPath.path, skillPath.source);
-
-		let childEntries: fs.Dirent[];
-		try {
-			childEntries = fs.readdirSync(skillPath.path, { withFileTypes: true });
-		} catch {
-			continue;
-		}
-
-		for (const child of childEntries) {
-			if (child.name.startsWith(".")) continue;
-			const childPath = path.join(skillPath.path, child.name);
-			if (child.isDirectory() || child.isSymbolicLink()) {
-				if (shouldSkipDirectory(child.name)) continue;
-				let childStat: fs.Stats;
-				try {
-					childStat = fs.statSync(childPath);
-				} catch {
-					continue;
-				}
-				if (childStat.isDirectory()) walkSkillDirectories(childPath, skillPath.source);
-				continue;
-			}
-			if (child.isFile() && child.name.toLowerCase().endsWith(".md")) {
-				pushEntry(path.basename(child.name, path.extname(child.name)), childPath, skillPath.source);
-			}
-		}
+		scanSkillDirectory(skillPath.path, skillPath.source, true);
 	}
 
 	return entries;
