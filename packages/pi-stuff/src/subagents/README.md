@@ -26,6 +26,9 @@ contract. `launch-preparation.ts` owns one launch-admission transaction across i
 capacity, fork-session selection, and session-root/nested-route setup; `launch-builders.ts` maps its admitted plan to
 the existing runner engines. `foreground-run-claim.ts`, `foreground-projection.ts`, and `foreground-lifecycle.ts`
 separately own private directory proof, current/nested state projection, and execution settlement.
+`runtime/session-governor.ts` owns Agent lifecycle operations plus the stable public facade;
+`runtime/session-governor-spawn.ts` owns spawn admission and staging, while `runtime/session-governor-ledger.ts` owns
+the durable contracts, validation, lock, and atomic ledger storage.
 
 ## Everyday behavior
 
