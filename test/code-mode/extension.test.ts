@@ -385,7 +385,7 @@ test("successful pure-JavaScript Code Mode executions stay out of live and repla
 	expect(runtime.toolActivityDetail("live-output", "formatted")).toBeUndefined();
 });
 
-test("Code Mode follows trusted project settings, persists explicit toggles, and rolls back failed writes", async () => {
+test("Code Mode preserves failed reloads and rolls back failed setting writes", async () => {
 	const previousAgentDir = process.env["PI_CODING_AGENT_DIR"];
 	const previousDefault = process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 	const previousFrozen = process.env["PI_STUFF_CODE_MODE_FROZEN"];
@@ -411,12 +411,21 @@ test("Code Mode follows trusted project settings, persists explicit toggles, and
 		const loaded = loadExtension(surface);
 		await sessionStart(loaded.events, context(first));
 		expect(enabled).toBe(true);
+		const command = loaded.commands.get("codemode");
+		if (!command) throw new Error("missing /codemode command");
+		const agentDir = process.env["PI_CODING_AGENT_DIR"];
+		if (!agentDir) throw new Error("missing Agent directory");
+		await writeCodeModeProjectEnabled(first, false);
+		await writeFile(join(agentDir, "pi-stuff.json"), '{"codeMode":{"enabled":"invalid"}}\n');
+		await expect(sessionStart(loaded.events, context(first))).rejects.toThrow('"enabled" must be a boolean');
+		await writeFile(join(agentDir, "pi-stuff.json"), "{}\n");
+		await command.handler("global on", context(first));
+		expect(enabled).toBe(true);
+		await Promise.all([writeCodeModeProjectEnabled(first, true), writeFile(join(agentDir, "pi-stuff.json"), "{}\n")]);
 		await sessionStart(loaded.events, context(second));
 		expect(enabled).toBe(false);
 
 		const secondContext = context(second);
-		const command = loaded.commands.get("codemode");
-		if (!command) throw new Error("missing /codemode command");
 		await command.handler("on", secondContext);
 		expect(enabled).toBe(true);
 		expect(await readCodeModeProjectEnabled(second)).toBe(true);
