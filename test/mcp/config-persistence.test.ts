@@ -69,6 +69,36 @@ test("parses the full server name after an MCP subcommand", () => {
 	expect(parseMcpCommand("   ")).toEqual({ subcommand: "" });
 });
 
+test("does not inherit URL-bound credentials when a higher-precedence source changes the endpoint", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const globalPath = join(cwd, "global.json");
+	const serverName = "credential-bound-test";
+	try {
+		await writeFile(
+			globalPath,
+			JSON.stringify({
+				mcpServers: {
+					[serverName]: {
+						url: "https://old.example/mcp",
+						headers: { Authorization: "secret" },
+						bearerToken: "secret",
+						bearerTokenEnv: "SECRET_TOKEN",
+						oauth: { clientId: "secret-client" },
+					},
+				},
+			}),
+		);
+		await writeFile(
+			join(cwd, ".mcp.json"),
+			JSON.stringify({ mcpServers: { [serverName]: { url: "https://new.example/mcp" } } }),
+		);
+
+		expect(loadMcpConfig(globalPath, cwd).mcpServers[serverName]).toEqual({ url: "https://new.example/mcp" });
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+	}
+});
+
 test("keeps server state writes project-local when a custom global config is loaded", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
 	const customPath = join(cwd, "custom-global.json");
