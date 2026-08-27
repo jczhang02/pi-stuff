@@ -13,6 +13,9 @@ source project's documentation for maintenance reference; its installation instr
 or stored-content handler. The parent `tool-contracts.ts` owns the shared bounded schemas; this private runtime owns
 execution, storage, and Session restoration only.
 
+`rsc-extract.ts` separates flight-chunk parsing from the cycle-safe node traversal that renders referenced content and
+Markdown tables.
+
 `gemini-search.ts` owns one typed provider registry and the routing policy built from it. Each provider is declared
 once with its dispatch, availability, label, and automatic-routing metadata. Gemini API and browser transports remain
 inside `gemini-api.ts` and `gemini-web.ts`; extraction providers keep their separate content contract. Every provider
