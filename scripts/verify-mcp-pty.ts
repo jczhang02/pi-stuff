@@ -102,8 +102,7 @@ function seedResumeTarget(sessionDirectory: string, cwd: string): string {
 	return sessionFile;
 }
 
-function expectProgram(): string {
-	return `
+const EXPECT_PROGRAM = `
 set timeout 25
 
 proc must_expect {pattern} {
@@ -305,10 +304,8 @@ expect {
     }
 }
 `;
-}
 
-function noobExpectProgram(): string {
-	return `
+const NOOB_EXPECT_PROGRAM = `
 set timeout 25
 
 proc must_expect {pattern} {
@@ -418,7 +415,6 @@ expect {
     }
 }
 `;
-}
 
 function stripTerminalControls(output: string): string {
 	let visible = "";
@@ -499,14 +495,12 @@ function runExpect(program: string, cwd: string, env: Record<string, string | un
 	return output;
 }
 
-export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<void> {
-	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-pty-"));
-	const config = join(temporaryDirectory, "agent");
-	const home = join(temporaryDirectory, "home");
-	const xdgCache = join(temporaryDirectory, "xdg-cache");
-	const xdgConfig = join(temporaryDirectory, "xdg-config");
-	const xdgState = join(temporaryDirectory, "xdg-state");
-	const noobCases = SETUP_THEMES.map((theme) => ({
+async function verifyNoobSetup(
+	temporaryDirectory: string,
+	commonEnv: NodeJS.ProcessEnv,
+	columns: number,
+): Promise<void> {
+	const cases = SETUP_THEMES.map((theme) => ({
 		...theme,
 		config: join(temporaryDirectory, `noob-${theme.name}-agent`),
 		home: join(temporaryDirectory, `noob-${theme.name}-home`),
@@ -516,6 +510,138 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		xdgConfig: join(temporaryDirectory, `noob-${theme.name}-xdg-config`),
 		xdgState: join(temporaryDirectory, `noob-${theme.name}-xdg-state`),
 	}));
+	await Promise.all(
+		cases.flatMap((noobCase) => [
+			mkdir(noobCase.config),
+			mkdir(noobCase.home),
+			mkdir(noobCase.xdgCache),
+			mkdir(noobCase.xdgConfig),
+			mkdir(noobCase.xdgState),
+			mkdir(noobCase.project),
+			mkdir(noobCase.sessions),
+		]),
+	);
+	for (const noobCase of cases) {
+		await writeFile(
+			join(noobCase.config, "settings.json"),
+			`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: noobCase.name }, null, "\t")}\n`,
+		);
+		const freshConfig = join(noobCase.project, ".mcp.json");
+		const noobOutput = runExpect(NOOB_EXPECT_PROGRAM, noobCase.project, {
+			...commonEnv,
+			HOME: noobCase.home,
+			PI_CODING_AGENT_DIR: noobCase.config,
+			PI_STUFF_MCP_PTY_FRESH_CONFIG: freshConfig,
+			PI_STUFF_MCP_PTY_RESUME_TARGET: join(noobCase.sessions, "unused.jsonl"),
+			PI_STUFF_MCP_PTY_SESSIONS: noobCase.sessions,
+			PI_STUFF_MCP_PTY_SESSION_ID: `mcp-noob-${noobCase.name}`,
+			XDG_CACHE_HOME: noobCase.xdgCache,
+			XDG_CONFIG_HOME: noobCase.xdgConfig,
+			XDG_STATE_HOME: noobCase.xdgState,
+		});
+		const setupOutput = outputBetweenMarkers(noobOutput, SETUP_FRAME_START, SETUP_FRAME_END);
+		const visible = stripTerminalControls(setupOutput);
+		if (!setupOutput.includes(noobCase.accent)) {
+			fail(`MCP setup did not render the ${noobCase.name} semantic accent`);
+		}
+		if (!visible.includes("Write and reload")) fail("fresh-state flow never exposed the confirmed write action");
+		for (const width of [columns, NARROW_COLUMNS]) {
+			if (!visible.includes("━".repeat(width))) {
+				fail(`MCP setup did not render a ${String(width)}-column divider`);
+			}
+		}
+		const freshDocument = JSON.parse(await readFile(freshConfig, "utf8"));
+		if (
+			!Check(MCP_CONFIG_SCHEMA, freshDocument) ||
+			!freshDocument.mcpServers ||
+			!isRuntimeObject(freshDocument.mcpServers) ||
+			Array.isArray(freshDocument.mcpServers)
+		) {
+			fail("fresh-state setup did not write a valid MCP server map");
+		}
+		if (freshDocument.mcpServers["context7"]?.url !== "https://mcp.context7.com/mcp") {
+			fail("fresh-state setup did not persist the selected Context7 server");
+		}
+	}
+}
+
+async function verifyMcpEvidence(
+	output: string,
+	columns: number,
+	override: string,
+	marker: string,
+	httpLog: string,
+): Promise<void> {
+	const visible = stripTerminalControls(output);
+	for (const required of [
+		"2/3 connected",
+		"local",
+		"remote",
+		"2 tools",
+		"DRAFT_AFTER_MCP",
+		"MCP_TOOL_CALL_DONE",
+		"MCP local:local_echo · done",
+		"MCP_RESUME_PROBE_DONE",
+	]) {
+		if (!visible.includes(required)) {
+			const toolFailure = /MCP_TOOL_CALL_BAD_RESULT[^\n]*/u.exec(visible)?.[0];
+			fail(`terminal output is missing ${required}${toolFailure ? `: ${toolFailure}` : ""}`);
+		}
+	}
+	const resumeBoundary = output.indexOf(RESUME_FIRST_FRAME_BOUNDARY);
+	if (resumeBoundary < 0) fail("did not capture the first resumed MCP frame boundary");
+	const firstResumeFrame = stripTerminalControls(output.slice(0, resumeBoundary));
+	if (!firstResumeFrame.includes("MCP local:local_resume_echo · done")) {
+		fail("first resumed frame did not contain the standalone MCP Tool row");
+	}
+	if (firstResumeFrame.includes(RESUME_RAW_MARKER)) {
+		fail("first resumed frame exposed the raw historical MCP Tool result");
+	}
+	for (const width of [columns, NARROW_COLUMNS]) {
+		if (!visible.includes("━".repeat(width))) fail(`Command Dialog did not render a ${String(width)}-column divider`);
+	}
+	if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
+	if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
+	const overrideDocument = JSON.parse(await readFile(override, "utf8"));
+	if (!Check(MCP_CONFIG_SCHEMA, overrideDocument)) fail("project MCP override is malformed");
+	if (overrideDocument.mcpServers && Object.hasOwn(overrideDocument.mcpServers, "broken")) {
+		fail("re-enabling the server left a stale disabled override");
+	}
+	if (overrideDocument.mcpServers?.["local"]?.lifecycle !== "keep-alive") {
+		fail("automatic connection choice was not persisted in the project MCP override");
+	}
+
+	await access(marker);
+	const markerLines = (await readFile(marker, "utf8")).trim().split("\n");
+	const pid = Number(markerLines[0]);
+	if (!Number.isSafeInteger(pid) || pid <= 0) fail("stdio fixture did not record a valid process id");
+	if (await processExists(pid)) fail(`stdio fixture process ${String(pid)} survived Pi shutdown`);
+	if (!markerLines.some((line) => line.startsWith("exit:"))) fail("stdio fixture did not observe graceful shutdown");
+	if (!markerLines.includes("call:MCP_STDIO_ECHO_OK")) fail("stdio fixture did not receive the real MCP Tool call");
+	const httpMethods = (await readFile(httpLog, "utf8"))
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(HTTP_LOG_SCHEMA, record)) fail("HTTP fixture log contains a malformed record");
+			return record.method;
+		});
+	if (!httpMethods.includes("initialize") || !httpMethods.includes("tools/list")) {
+		fail("Streamable HTTP fixture did not complete initialize and Tool discovery");
+	}
+	if (!httpMethods.includes("HTTP DELETE")) {
+		fail(`Streamable HTTP fixture did not observe graceful session termination: ${JSON.stringify(httpMethods)}`);
+	}
+}
+
+export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<void> {
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-pty-"));
+	const config = join(temporaryDirectory, "agent");
+	const home = join(temporaryDirectory, "home");
+	const xdgCache = join(temporaryDirectory, "xdg-cache");
+	const xdgConfig = join(temporaryDirectory, "xdg-config");
+	const xdgState = join(temporaryDirectory, "xdg-state");
 	const project = join(temporaryDirectory, "project");
 	const sessions = join(temporaryDirectory, "sessions");
 	const marker = join(temporaryDirectory, "stdio-marker.txt");
@@ -530,15 +656,6 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		mkdir(xdgCache),
 		mkdir(xdgConfig),
 		mkdir(xdgState),
-		...noobCases.flatMap((noobCase) => [
-			mkdir(noobCase.config),
-			mkdir(noobCase.home),
-			mkdir(noobCase.xdgCache),
-			mkdir(noobCase.xdgConfig),
-			mkdir(noobCase.xdgState),
-			mkdir(noobCase.project),
-			mkdir(noobCase.sessions),
-		]),
 		mkdir(project),
 		mkdir(sessions),
 	]);
@@ -578,50 +695,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			XDG_CONFIG_HOME: xdgConfig,
 			XDG_STATE_HOME: xdgState,
 		};
-		for (const noobCase of noobCases) {
-			await writeFile(
-				join(noobCase.config, "settings.json"),
-				`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: noobCase.name }, null, "\t")}\n`,
-			);
-			const freshConfig = join(noobCase.project, ".mcp.json");
-			const noobOutput = runExpect(noobExpectProgram(), noobCase.project, {
-				...commonEnv,
-				HOME: noobCase.home,
-				PI_CODING_AGENT_DIR: noobCase.config,
-				PI_STUFF_MCP_PTY_FRESH_CONFIG: freshConfig,
-				PI_STUFF_MCP_PTY_RESUME_TARGET: join(noobCase.sessions, "unused.jsonl"),
-				PI_STUFF_MCP_PTY_SESSIONS: noobCase.sessions,
-				PI_STUFF_MCP_PTY_SESSION_ID: `mcp-noob-${noobCase.name}`,
-				XDG_CACHE_HOME: noobCase.xdgCache,
-				XDG_CONFIG_HOME: noobCase.xdgConfig,
-				XDG_STATE_HOME: noobCase.xdgState,
-			});
-			const setupOutput = outputBetweenMarkers(noobOutput, SETUP_FRAME_START, SETUP_FRAME_END);
-			const noobVisible = stripTerminalControls(setupOutput);
-			if (!setupOutput.includes(noobCase.accent)) {
-				fail(`MCP setup did not render the ${noobCase.name} semantic accent`);
-			}
-			if (!noobVisible.includes("Write and reload")) {
-				fail("fresh-state flow never exposed the confirmed write action");
-			}
-			for (const width of [columns, NARROW_COLUMNS]) {
-				if (!noobVisible.includes("━".repeat(width))) {
-					fail(`MCP setup did not render a ${String(width)}-column divider`);
-				}
-			}
-			const freshDocument = JSON.parse(await readFile(freshConfig, "utf8"));
-			if (
-				!Check(MCP_CONFIG_SCHEMA, freshDocument) ||
-				!freshDocument.mcpServers ||
-				!isRuntimeObject(freshDocument.mcpServers) ||
-				Array.isArray(freshDocument.mcpServers)
-			) {
-				fail("fresh-state setup did not write a valid MCP server map");
-			}
-			if (freshDocument.mcpServers["context7"]?.url !== "https://mcp.context7.com/mcp") {
-				fail("fresh-state setup did not persist the selected Context7 server");
-			}
-		}
+		await verifyNoobSetup(temporaryDirectory, commonEnv, columns);
 		await writeFile(
 			join(config, "settings.json"),
 			`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: "catppuccin-mocha" }, null, "\t")}\n`,
@@ -652,7 +726,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			)}\n`,
 		);
 		const resumeTarget = seedResumeTarget(sessions, project);
-		const output = runExpect(expectProgram(), project, {
+		const output = runExpect(EXPECT_PROGRAM, project, {
 			...commonEnv,
 			PI_STUFF_MCP_PTY_MARKER: marker,
 			PI_STUFF_MCP_PTY_HTTP_LOG: httpLog,
@@ -662,71 +736,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			PI_STUFF_MCP_PTY_SESSION_ID: "mcp-source-session",
 		});
 
-		const visible = stripTerminalControls(output);
-		for (const required of [
-			"2/3 connected",
-			"local",
-			"remote",
-			"2 tools",
-			"DRAFT_AFTER_MCP",
-			"MCP_TOOL_CALL_DONE",
-			"MCP local:local_echo · done",
-			"MCP_RESUME_PROBE_DONE",
-		]) {
-			if (!visible.includes(required)) {
-				const toolFailure = /MCP_TOOL_CALL_BAD_RESULT[^\n]*/u.exec(visible)?.[0];
-				fail(`terminal output is missing ${required}${toolFailure ? `: ${toolFailure}` : ""}`);
-			}
-		}
-		const resumeBoundary = output.indexOf(RESUME_FIRST_FRAME_BOUNDARY);
-		if (resumeBoundary < 0) fail("did not capture the first resumed MCP frame boundary");
-		const firstResumeFrame = stripTerminalControls(output.slice(0, resumeBoundary));
-		if (!firstResumeFrame.includes("MCP local:local_resume_echo · done")) {
-			fail("first resumed frame did not contain the standalone MCP Tool row");
-		}
-		if (firstResumeFrame.includes(RESUME_RAW_MARKER)) {
-			fail("first resumed frame exposed the raw historical MCP Tool result");
-		}
-		for (const width of [columns, NARROW_COLUMNS]) {
-			if (!visible.includes("━".repeat(width)))
-				fail(`Command Dialog did not render a ${String(width)}-column divider`);
-		}
-		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
-		if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
-		const overrideDocument = JSON.parse(await readFile(override, "utf8"));
-		if (!Check(MCP_CONFIG_SCHEMA, overrideDocument)) fail("project MCP override is malformed");
-		if (overrideDocument.mcpServers && Object.hasOwn(overrideDocument.mcpServers, "broken")) {
-			fail("re-enabling the server left a stale disabled override");
-		}
-		if (overrideDocument.mcpServers?.["local"]?.lifecycle !== "keep-alive") {
-			fail("automatic connection choice was not persisted in the project MCP override");
-		}
-
-		await access(marker);
-		const markerLines = (await readFile(marker, "utf8")).trim().split("\n");
-		const pid = Number(markerLines[0]);
-		if (!Number.isSafeInteger(pid) || pid <= 0) fail("stdio fixture did not record a valid process id");
-		if (await processExists(pid)) fail(`stdio fixture process ${String(pid)} survived Pi shutdown`);
-		if (!markerLines.some((line) => line.startsWith("exit:")))
-			fail("stdio fixture did not observe graceful shutdown");
-		if (!markerLines.includes("call:MCP_STDIO_ECHO_OK")) {
-			fail("stdio fixture did not receive the real MCP Tool call");
-		}
-		const httpMethods = (await readFile(httpLog, "utf8"))
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => {
-				const record = JSON.parse(line);
-				if (!Check(HTTP_LOG_SCHEMA, record)) fail("HTTP fixture log contains a malformed record");
-				return record.method;
-			});
-		if (!httpMethods.includes("initialize") || !httpMethods.includes("tools/list")) {
-			fail("Streamable HTTP fixture did not complete initialize and Tool discovery");
-		}
-		if (!httpMethods.includes("HTTP DELETE")) {
-			fail(`Streamable HTTP fixture did not observe graceful session termination: ${JSON.stringify(httpMethods)}`);
-		}
+		await verifyMcpEvidence(output, columns, override, marker, httpLog);
 	} finally {
 		if (httpChild) {
 			httpChild.kill("SIGTERM");
