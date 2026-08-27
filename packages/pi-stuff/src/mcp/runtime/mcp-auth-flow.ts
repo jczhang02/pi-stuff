@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import open from "open";
-import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { abortable, throwIfAborted } from "./abort.ts";
 import { logger } from "./logger.ts";
 import {
@@ -29,6 +29,14 @@ import {
 	type StoredTokens,
 } from "./mcp-auth.ts";
 import {
+	type AuthDiscovery,
+	type AuthorizationCodeInput,
+	applyConfiguredScope,
+	extractOAuthConfig,
+	parseAuthorizationRedirectInput,
+	parseOAuthRedirectUri,
+} from "./mcp-auth-config.ts";
+import {
 	cancelPendingCallback,
 	ensureCallbackServer,
 	releaseCallbackServer,
@@ -38,7 +46,15 @@ import {
 import { type McpOAuthConfig, McpOAuthProvider } from "./mcp-oauth-provider.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { isServerDisabled, type ServerEntry } from "./types.ts";
-import { formatTerminalError, interpolateEnvRecord, interpolateEnvVars } from "./utils.ts";
+import { formatTerminalError, interpolateEnvRecord } from "./utils.ts";
+
+export {
+	type AuthorizationCodeInput,
+	extractOAuthConfig,
+	parseAuthorizationCodeInput,
+	parseAuthorizationRedirectInput,
+	supportsOAuth,
+} from "./mcp-auth-config.ts";
 
 /** Auth status for a server */
 export type AuthStatus = "authenticated" | "expired" | "not_authenticated";
@@ -52,21 +68,6 @@ export interface AuthenticateOptions {
 	authStorageOptions?: AuthStorageOptions;
 	signal?: AbortSignal;
 	runtime?: McpOAuthRuntime;
-}
-
-type AuthDiscovery = {
-	resourceMetadataUrl?: URL;
-	scope?: string;
-};
-
-type OAuthRedirect = {
-	port: number;
-	callbackHost: string;
-	callbackPath: string;
-};
-
-function applyConfiguredScope(discovery: AuthDiscovery, config: McpOAuthConfig): AuthDiscovery {
-	return config.scope !== undefined ? { ...discovery, scope: config.scope } : discovery;
 }
 
 type PendingAuth = {
@@ -151,76 +152,6 @@ function generateState(): string {
 		.join("");
 }
 
-/**
- * Extract OAuth configuration from a ServerEntry.
- */
-export function extractOAuthConfig(definition: ServerEntry): McpOAuthConfig {
-	if (definition.oauth === false) {
-		return {};
-	}
-
-	const config: McpOAuthConfig = {};
-	if (definition.oauth?.grantType !== undefined) config.grantType = definition.oauth.grantType;
-	if (definition.oauth?.clientId !== undefined) {
-		if (!isRuntimeString(definition.oauth.clientId)) throw new Error("OAuth clientId must be a string");
-		config.clientId = interpolateEnvVars(definition.oauth.clientId);
-	}
-	if (definition.oauth?.clientSecret !== undefined) {
-		if (!isRuntimeString(definition.oauth.clientSecret)) throw new Error("OAuth clientSecret must be a string");
-		// Preserve command expressions for the provider; interpolation remains eager for ordinary values.
-		config.clientSecret = definition.oauth.clientSecret.startsWith("!")
-			? definition.oauth.clientSecret
-			: interpolateEnvVars(definition.oauth.clientSecret);
-	}
-	if (definition.oauth?.scope !== undefined) {
-		if (!isRuntimeString(definition.oauth.scope)) throw new Error("OAuth scope must be a string");
-		config.scope = interpolateEnvVars(definition.oauth.scope);
-	}
-	if (definition.oauth?.authorizationParams !== undefined) {
-		const params = definition.oauth.authorizationParams;
-		if (!params || !isRuntimeObject(params) || Array.isArray(params)) {
-			throw new Error("OAuth authorizationParams must be an object");
-		}
-		config.authorizationParams = {};
-		for (const [key, value] of Object.entries(params)) {
-			if (!key) throw new Error("OAuth authorizationParams keys must not be empty");
-			if (!isRuntimeString(value)) throw new Error(`OAuth authorizationParams.${key} must be a string`);
-			config.authorizationParams[key] = interpolateEnvVars(value);
-		}
-	}
-	if (definition.oauth?.redirectUri !== undefined) {
-		if (!isRuntimeString(definition.oauth.redirectUri)) {
-			throw new Error("OAuth redirectUri must be a string");
-		}
-		const redirectUri = interpolateEnvVars(definition.oauth.redirectUri).trim();
-		if (!redirectUri) {
-			throw new Error("OAuth redirectUri must not be empty");
-		}
-		config.redirectUri = redirectUri;
-	}
-	if (definition.oauth?.clientName !== undefined) {
-		if (!isRuntimeString(definition.oauth.clientName)) {
-			throw new Error("OAuth clientName must be a string");
-		}
-		const clientName = interpolateEnvVars(definition.oauth.clientName).trim();
-		if (!clientName) {
-			throw new Error("OAuth clientName must not be empty");
-		}
-		config.clientName = clientName;
-	}
-	if (definition.oauth?.clientUri !== undefined) {
-		if (!isRuntimeString(definition.oauth.clientUri)) {
-			throw new Error("OAuth clientUri must be a string");
-		}
-		const clientUri = interpolateEnvVars(definition.oauth.clientUri).trim();
-		if (!clientUri) {
-			throw new Error("OAuth clientUri must not be empty");
-		}
-		config.clientUri = clientUri;
-	}
-	return config;
-}
-
 async function probeAuthDiscovery(
 	serverUrl: string,
 	definition?: ServerEntry,
@@ -271,120 +202,61 @@ async function probeAuthDiscovery(
 	}
 }
 
-function parseOAuthRedirectUri(redirectUri: string): OAuthRedirect {
-	let url: URL;
+type AuthStartContext = {
+	serverName: string;
+	serverUrl: string;
+	definition: ServerEntry | undefined;
+	config: McpOAuthConfig;
+	authStorageOptions: AuthStorageOptions;
+	runtime: McpOAuthRuntime;
+	runtimeState: RuntimeState;
+	signal: AbortSignal;
+	generation: number;
+};
+
+async function startClientCredentialsAuth(context: AuthStartContext): Promise<{ authorizationUrl: string }> {
+	const { serverName, serverUrl, definition, config, authStorageOptions, runtime, signal } = context;
+	const storedAuth = await getAuthForUrl(serverName, serverUrl, authStorageOptions);
+	if (storedAuth?.clientInfo && !storedAuth.tokens && !config.clientId) {
+		clearClientInfo(serverName, authStorageOptions);
+		clearCodeVerifier(serverName, authStorageOptions);
+		await clearOAuthState(serverName, authStorageOptions);
+	}
+
+	const authProvider = new McpOAuthProvider(
+		serverName,
+		serverUrl,
+		config,
+		{
+			onRedirect: async () => {
+				throw new Error("Browser redirect is not used for client_credentials flow");
+			},
+		},
+		authStorageOptions,
+		runtime.signal,
+	);
 	try {
-		url = new URL(redirectUri);
-	} catch (error) {
-		throw new Error(`Invalid OAuth redirectUri: ${redirectUri}`, { cause: error });
+		const discovery = applyConfiguredScope(await probeAuthDiscovery(serverUrl, definition, signal), config);
+		throwIfAborted(signal);
+		const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
+		throwIfAborted(signal);
+		if (result !== "AUTHORIZED") throw new UnauthorizedError("Failed to authorize");
+		return { authorizationUrl: "" };
+	} finally {
+		authProvider.deactivate();
 	}
-
-	const hostname = url.hostname.toLowerCase();
-	const isLocalhost =
-		hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
-	if (url.protocol !== "http:" || !isLocalhost) {
-		throw new Error("OAuth redirectUri must be an http:// localhost or loopback URI");
-	}
-
-	if (url.username || url.password) {
-		throw new Error("OAuth redirectUri must not include username or password");
-	}
-
-	if (url.hash) {
-		throw new Error("OAuth redirectUri must not include a fragment");
-	}
-
-	if (!url.port) {
-		throw new Error("OAuth redirectUri must include an explicit numeric port");
-	}
-
-	const port = Number.parseInt(url.port, 10);
-	if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-		throw new Error("OAuth redirectUri must include an explicit numeric port");
-	}
-
-	const callbackHost = hostname === "[::1]" ? "::1" : hostname;
-	return { port, callbackHost, callbackPath: url.pathname };
 }
 
-/**
- * Start OAuth authentication flow for a server.
- * Returns the authorization URL when browser authorization is required.
- */
-export async function startAuth(
-	serverName: string,
-	serverUrl: string,
-	definition?: ServerEntry,
-	options: AuthenticateOptions = {},
-): Promise<{ authorizationUrl: string }> {
-	if (isServerDisabled(definition)) throw new Error(`MCP server "${serverName}" is disabled`);
-	const runtime = getRuntime(options);
-	const runtimeState = getRuntimeState(runtime);
-	const config = definition ? extractOAuthConfig(definition) : {};
-	const authStorageOptions = options.authStorageOptions ?? {};
-	const signal = combineAbortSignals(runtime.signal, options.signal);
-	const generation = runtimeState.generation;
-	throwIfAborted(signal);
-
-	if (config.grantType === "client_credentials") {
-		const storedAuth = await getAuthForUrl(serverName, serverUrl, authStorageOptions);
-		if (storedAuth?.clientInfo && !storedAuth.tokens && !config.clientId) {
-			clearClientInfo(serverName, authStorageOptions);
-			clearCodeVerifier(serverName, authStorageOptions);
-			await clearOAuthState(serverName, authStorageOptions);
-		}
-
-		const authProvider = new McpOAuthProvider(
-			serverName,
-			serverUrl,
-			config,
-			{
-				onRedirect: async () => {
-					throw new Error("Browser redirect is not used for client_credentials flow");
-				},
-			},
-			authStorageOptions,
-			runtime.signal,
-		);
-		try {
-			const discovery = applyConfiguredScope(await probeAuthDiscovery(serverUrl, definition, signal), config);
-			throwIfAborted(signal);
-			const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
-			throwIfAborted(signal);
-			if (result !== "AUTHORIZED") {
-				throw new UnauthorizedError("Failed to authorize");
-			}
-			return { authorizationUrl: "" };
-		} finally {
-			authProvider.deactivate();
-		}
-	}
-
-	const existingPendingAuth = runtimeState.pendingAuths.get(getPendingAuthKey(serverName, authStorageOptions));
-	if (existingPendingAuth?.serverUrl === serverUrl) {
-		return { authorizationUrl: existingPendingAuth.authorizationUrl };
-	}
-
+async function reserveOAuthCallback(context: AuthStartContext, oauthState: string): Promise<void> {
+	const { serverName, config, authStorageOptions, signal } = context;
 	const redirectCallback = config.redirectUri !== undefined ? parseOAuthRedirectUri(config.redirectUri) : undefined;
-	const oauthState = generateState();
-
 	try {
-		const callbackServerOptions =
-			redirectCallback === undefined
-				? {
-						strictPort: Boolean(config.clientId) || config.redirectUri !== undefined,
-						oauthState,
-						reserveState: true,
-					}
-				: {
-						strictPort: Boolean(config.clientId) || config.redirectUri !== undefined,
-						oauthState,
-						reserveState: true,
-						port: redirectCallback.port,
-						callbackHost: redirectCallback.callbackHost,
-						callbackPath: redirectCallback.callbackPath,
-					};
-		await ensureCallbackServer(callbackServerOptions);
+		await ensureCallbackServer({
+			strictPort: Boolean(config.clientId) || config.redirectUri !== undefined,
+			oauthState,
+			reserveState: true,
+			...redirectCallback,
+		});
 		throwIfAborted(signal);
 	} catch (error) {
 		releaseCallbackServer(oauthState);
@@ -395,7 +267,18 @@ export async function startAuth(
 		}
 		throw error;
 	}
+}
 
+async function startInteractiveAuth(context: AuthStartContext): Promise<{ authorizationUrl: string }> {
+	const { serverName, serverUrl, definition, config, authStorageOptions, runtime, runtimeState, signal, generation } =
+		context;
+	const existingPendingAuth = runtimeState.pendingAuths.get(getPendingAuthKey(serverName, authStorageOptions));
+	if (existingPendingAuth?.serverUrl === serverUrl) {
+		return { authorizationUrl: existingPendingAuth.authorizationUrl };
+	}
+
+	const oauthState = generateState();
+	await reserveOAuthCallback(context, oauthState);
 	let capturedUrl: URL | undefined;
 	const authProvider = new McpOAuthProvider(
 		serverName,
@@ -430,7 +313,6 @@ export async function startAuth(
 		}
 
 		throwIfAborted(signal);
-
 		const discovery = applyConfiguredScope(await probeAuthDiscovery(serverUrl, definition, signal), config);
 		throwIfAborted(signal);
 		const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
@@ -441,25 +323,18 @@ export async function startAuth(
 			await clearOAuthState(serverName, authStorageOptions);
 			return { authorizationUrl: "" };
 		}
-		if (!capturedUrl) {
-			throw new UnauthorizedError("OAuth authorization URL was not provided");
-		}
+		if (!capturedUrl) throw new UnauthorizedError("OAuth authorization URL was not provided");
+
+		const authorizationUrl = capturedUrl.toString();
 		await setPendingAuth(
 			runtime,
 			serverName,
-			{
-				serverName,
-				authProvider,
-				serverUrl,
-				authorizationUrl: capturedUrl.toString(),
-				discovery,
-				authStorageOptions,
-			},
+			{ serverName, authProvider, serverUrl, authorizationUrl, discovery, authStorageOptions },
 			oauthState,
 			signal,
 			generation,
 		);
-		return { authorizationUrl: capturedUrl.toString() };
+		return { authorizationUrl };
 	} catch (error) {
 		authProvider.deactivate();
 		try {
@@ -469,6 +344,33 @@ export async function startAuth(
 		}
 		throw error;
 	}
+}
+
+/** Start OAuth authentication and return the browser URL when interaction is required. */
+export async function startAuth(
+	serverName: string,
+	serverUrl: string,
+	definition?: ServerEntry,
+	options: AuthenticateOptions = {},
+): Promise<{ authorizationUrl: string }> {
+	if (isServerDisabled(definition)) throw new Error(`MCP server "${serverName}" is disabled`);
+	const runtime = getRuntime(options);
+	const runtimeState = getRuntimeState(runtime);
+	const context: AuthStartContext = {
+		serverName,
+		serverUrl,
+		definition,
+		config: definition ? extractOAuthConfig(definition) : {},
+		authStorageOptions: options.authStorageOptions ?? {},
+		runtime,
+		runtimeState,
+		signal: combineAbortSignals(runtime.signal, options.signal),
+		generation: runtimeState.generation,
+	};
+	throwIfAborted(context.signal);
+	return context.config.grantType === "client_credentials"
+		? startClientCredentialsAuth(context)
+		: startInteractiveAuth(context);
 }
 
 async function setPendingAuth(
@@ -529,82 +431,6 @@ async function clearPendingAuth(
 			await clearOAuthState(serverName, authStorageOptions);
 		}
 	}
-}
-
-function getSearchParamsFromInput(input: string): URLSearchParams | undefined {
-	try {
-		const url = new URL(input);
-		const params = new URLSearchParams(url.search);
-		if (url.hash) {
-			const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-			const hashParams = new URLSearchParams(hash);
-			for (const [key, value] of hashParams) {
-				if (!params.has(key)) params.set(key, value);
-			}
-		}
-		return params;
-	} catch {
-		const query = input.includes("?") ? input.slice(input.indexOf("?") + 1) : input;
-		const params = new URLSearchParams(query.startsWith("#") ? query.slice(1) : query);
-		return params.has("code") || params.has("state") || params.has("error") ? params : undefined;
-	}
-}
-
-/** Authorization code plus the optional RFC 9207 `iss` callback parameter. */
-export interface AuthorizationCodeInput {
-	code: string;
-	iss?: string;
-}
-
-/**
- * Extract an OAuth authorization code (and the RFC 9207 `iss` parameter, when
- * present) from either a raw code, a query string, or the full localhost
- * redirect URL copied from the browser address bar.
- */
-export function parseAuthorizationRedirectInput(input: string, expectedState?: string): AuthorizationCodeInput {
-	const trimmed = input.trim();
-	if (!trimmed) {
-		throw new Error("Authorization code or redirect URL is required");
-	}
-
-	const params = getSearchParamsFromInput(trimmed);
-	if (params) {
-		const error = params.get("error");
-		if (error) {
-			const description = params.get("error_description");
-			throw new Error(description ? `${error}: ${description}` : error);
-		}
-
-		const state = params.get("state");
-		if (expectedState && !state) {
-			throw new Error("OAuth state missing from redirect URL");
-		}
-		if (expectedState && state !== expectedState) {
-			throw new Error("OAuth state mismatch - potential CSRF attack");
-		}
-
-		const code = params.get("code");
-		if (code) {
-			const iss = params.get("iss");
-			const result: AuthorizationCodeInput = { code };
-			if (iss !== null) result.iss = iss;
-			return result;
-		}
-	}
-
-	if (/^[A-Za-z0-9._~+/=-]+$/.test(trimmed)) {
-		return { code: trimmed };
-	}
-
-	throw new Error("Could not find an OAuth authorization code in the provided input");
-}
-
-/**
- * Extract an OAuth authorization code from either a raw code, a query string,
- * or the full localhost redirect URL copied from the browser address bar.
- */
-export function parseAuthorizationCodeInput(input: string, expectedState?: string): string {
-	return parseAuthorizationRedirectInput(input, expectedState).code;
 }
 
 /**
@@ -925,29 +751,6 @@ export async function removeAuth(serverName: string, options: AuthenticateOption
 	await clearOAuthState(serverName, authStorageOptions);
 	throwIfAborted(signal);
 	logger.info(`MCP Auth: Removed credentials for ${serverName}`, { server: serverName });
-}
-
-/**
- * Check if OAuth is supported for a server configuration.
- * OAuth is supported for HTTP servers unless explicitly disabled.
- *
- * @param definition - The server definition
- * @returns True if OAuth is supported
- */
-export function supportsOAuth(definition: ServerEntry): boolean {
-	// OAuth requires a URL
-	if (!definition.url) return false;
-
-	// Explicitly disabled via auth: false or oauth: false
-	if (definition.auth === false) return false;
-	if (definition.oauth === false) return false;
-	if (definition.auth === "oauth") return true;
-
-	// Configured custom headers take precedence over implicit OAuth auto-detection.
-	if (definition.headers && Object.keys(definition.headers).length > 0) return false;
-
-	// OAuth is enabled when auth is not specified (auto-detect)
-	return definition.auth === undefined;
 }
 
 /**
