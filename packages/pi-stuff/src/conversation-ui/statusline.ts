@@ -8,7 +8,13 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
-import { getHostSharedResource } from "./host-resource.js";
+import type {
+	CodexStatusSnapshot,
+	CodexStatusSource,
+	GoalStatus,
+	GoalStatusSnapshot,
+	GoalStatusSource,
+} from "./statusline-channels.js";
 import type { GitChangeCounts, GitChangeCountsSource } from "./statusline-git.js";
 import {
 	type PromptPreview,
@@ -20,6 +26,7 @@ import {
 } from "./statusline-session.js";
 import { sanitizeOneLine } from "./terminal-text.js";
 
+export * from "./statusline-channels.js";
 export type { GitChangeCounts } from "./statusline-git.js";
 export { GitStatusSource, parseGitStatusPorcelain } from "./statusline-git.js";
 
@@ -77,189 +84,6 @@ const STATUSLINE_ICONS: StatuslineIcons = {
 export interface BooleanValueSource {
 	get(): boolean;
 	subscribe(listener: () => void): () => void;
-}
-
-export interface CodexStatusSnapshot {
-	readonly fastEnabled: boolean;
-	readonly weeklyRemainingPercent?: number;
-}
-
-export interface CodexStatusSource {
-	getSnapshot(): CodexStatusSnapshot;
-	subscribe(listener: () => void): () => void;
-}
-
-export interface CodexStatusChannel {
-	readonly source: CodexStatusSource;
-	clear(): void;
-	publish(snapshot: CodexStatusSnapshot): void;
-}
-
-export type GoalStatus = "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete";
-
-export interface GoalStatusSnapshot {
-	readonly activeStartedAt?: number;
-	readonly status: GoalStatus;
-	readonly timeUsedSeconds: number;
-	readonly tokenBudget?: number;
-	readonly tokensUsed: number;
-}
-
-export interface GoalStatusSource {
-	getSnapshot(): GoalStatusSnapshot | undefined;
-	subscribe(listener: () => void): () => void;
-}
-
-export interface GoalStatusChannel {
-	readonly source: GoalStatusSource;
-	clear(): void;
-	publish(snapshot: GoalStatusSnapshot): void;
-}
-
-const CODEX_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/codex-status-channels/v1");
-const GOAL_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/goal-status-channels/v1");
-const CODEX_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/codex-status-discovery/v1";
-const GOAL_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/goal-status-discovery/v1";
-
-type StatusChannelHost = Pick<ExtensionAPI, "events"> & Partial<Pick<ExtensionAPI, "on">>;
-
-function registerStatusChannelCleanup(pi: StatusChannelHost, cleanup: () => void): void {
-	pi.on?.("session_shutdown", cleanup);
-}
-
-class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource {
-	private readonly listeners = new Set<() => void>();
-	private snapshot: CodexStatusSnapshot = { fastEnabled: false };
-	readonly source: CodexStatusSource = this;
-
-	clear(): void {
-		this.setSnapshot({ fastEnabled: false });
-	}
-
-	getSnapshot(): CodexStatusSnapshot {
-		return this.snapshot;
-	}
-
-	publish(snapshot: CodexStatusSnapshot): void {
-		const next: CodexStatusSnapshot = {
-			fastEnabled: snapshot.fastEnabled === true,
-		};
-		if (isRuntimeNumber(snapshot.weeklyRemainingPercent) && Number.isFinite(snapshot.weeklyRemainingPercent)) {
-			Object.assign(next, { weeklyRemainingPercent: snapshot.weeklyRemainingPercent });
-		}
-		this.setSnapshot(next);
-	}
-
-	subscribe(listener: () => void): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	private setSnapshot(next: CodexStatusSnapshot): void {
-		if (
-			this.snapshot.fastEnabled === next.fastEnabled &&
-			this.snapshot.weeklyRemainingPercent === next.weeklyRemainingPercent
-		) {
-			return;
-		}
-		this.snapshot = next;
-		for (const listener of this.listeners) callObserver(listener);
-	}
-}
-
-function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChannel> {
-	// SAFETY: this package is the sole writer of the symbol-owned slot and stores only the declared WeakMap.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], CodexStatusChannel> | undefined;
-	};
-	root[CODEX_STATUS_CHANNELS] ??= new WeakMap();
-	return root[CODEX_STATUS_CHANNELS];
-}
-
-/** Share one late-bindable Codex presentation channel across Capability copies. */
-export function getCodexStatusChannel(pi: StatusChannelHost): CodexStatusChannel {
-	const channels = codexStatusChannels();
-	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
-	const sharedChannels = channels as WeakMap<object, CodexStatusChannel>;
-	return getHostSharedResource(
-		pi.events,
-		sharedChannels,
-		CODEX_STATUS_DISCOVERY_EVENT,
-		() => new SharedCodexStatusChannel(),
-		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
-	);
-}
-
-class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
-	private readonly listeners = new Set<() => void>();
-	private snapshot: GoalStatusSnapshot | undefined;
-	readonly source: GoalStatusSource = this;
-
-	clear(): void {
-		this.setSnapshot(undefined);
-	}
-
-	getSnapshot(): GoalStatusSnapshot | undefined {
-		return this.snapshot;
-	}
-
-	publish(snapshot: GoalStatusSnapshot): void {
-		if (!isGoalStatus(snapshot.status)) return;
-		const tokensUsed = finiteNonNegative(snapshot.tokensUsed);
-		const timeUsedSeconds = finiteNonNegative(snapshot.timeUsedSeconds);
-		const tokenBudget = finitePositive(snapshot.tokenBudget);
-		const next: GoalStatusSnapshot = {
-			status: snapshot.status,
-			timeUsedSeconds,
-			tokensUsed,
-		};
-		const activeStartedAt = snapshot.status === "active" ? finitePositive(snapshot.activeStartedAt) : undefined;
-		if (activeStartedAt !== undefined) Object.assign(next, { activeStartedAt });
-		if (tokenBudget !== undefined) Object.assign(next, { tokenBudget });
-		this.setSnapshot(next);
-	}
-
-	subscribe(listener: () => void): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	private setSnapshot(next: GoalStatusSnapshot | undefined): void {
-		if (
-			this.snapshot?.activeStartedAt === next?.activeStartedAt &&
-			this.snapshot?.status === next?.status &&
-			this.snapshot?.timeUsedSeconds === next?.timeUsedSeconds &&
-			this.snapshot?.tokensUsed === next?.tokensUsed &&
-			this.snapshot?.tokenBudget === next?.tokenBudget
-		) {
-			return;
-		}
-		this.snapshot = next;
-		for (const listener of this.listeners) callObserver(listener);
-	}
-}
-
-function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel> {
-	// SAFETY: this package is the sole writer of the symbol-owned slot and stores only the declared WeakMap.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], GoalStatusChannel> | undefined;
-	};
-	root[GOAL_STATUS_CHANNELS] ??= new WeakMap();
-	return root[GOAL_STATUS_CHANNELS];
-}
-
-/** Share one observation-only Goal presentation channel across Capability copies. */
-export function getGoalStatusChannel(pi: StatusChannelHost): GoalStatusChannel {
-	const channels = goalStatusChannels();
-	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
-	const sharedChannels = channels as WeakMap<object, GoalStatusChannel>;
-	return getHostSharedResource(
-		pi.events,
-		sharedChannels,
-		GOAL_STATUS_DISCOVERY_EVENT,
-		() => new SharedGoalStatusChannel(),
-		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
-	);
 }
 
 export type StatuslineDensity = "auto" | "full" | "compact";
@@ -774,18 +598,6 @@ function formatGoalElapsed(snapshot: GoalStatusSnapshot): string {
 	if (minutes < 60) return `${String(minutes)}m`;
 	const hours = Math.floor(minutes / 60);
 	return `${String(hours)}h${String(minutes % 60)}m`;
-}
-
-function finiteNonNegative(value: number): number {
-	return Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-function finitePositive(value: number | undefined): number | undefined {
-	return isRuntimeNumber(value) && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-function isGoalStatus(value: string): value is GoalStatus {
-	return ["active", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(String(value));
 }
 
 function renderStatusRow(
