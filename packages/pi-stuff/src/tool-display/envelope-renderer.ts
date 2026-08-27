@@ -22,15 +22,10 @@ import {
 	formattedResultLines,
 	terminalSummary,
 } from "./registered-tool-renderer.js";
-import {
-	CachedToolRow,
-	capDetailLines,
-	classifyTerminalState,
-	EmptyToolComponent,
-	oneLine,
-	sanitizeTerminalText,
-} from "./render.js";
+import { CachedToolRow, EmptyToolComponent } from "./render.js";
+import { sanitizeTerminalText } from "./terminal.js";
 import { stripToolControlMetadata } from "./tool-invocation.js";
+import { capDetailLines, classifyTerminalState, oneLine } from "./tool-text.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 interface EnvelopeChildRenderer {

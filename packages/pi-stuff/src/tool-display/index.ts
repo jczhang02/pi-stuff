@@ -109,7 +109,7 @@ export {
 	ToolUiRuntime,
 	type ToolUiRuntimeHost,
 } from "./contract.js";
-export { CachedToolRow, formatElapsed } from "./render.js";
+export { CachedToolRow } from "./render.js";
 export {
 	boundTerminalLine,
 	boundTerminalText,
@@ -117,6 +117,7 @@ export {
 	graphemePrefix,
 	sanitizeTerminalText,
 } from "./terminal.js";
+export { formatElapsed } from "./tool-text.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<ToolLifecycleState>(

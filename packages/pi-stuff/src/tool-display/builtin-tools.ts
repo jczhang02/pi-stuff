@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { classifyBashActivity, singleActivity } from "./activity.js";
 import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "./contract.js";
-import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
+import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./tool-text.js";
 
 const PROGRAMMATIC_READ = { replay: "record" } as const;
 export const BASH_CODE_MODE_CONTRACT = { replay: "never" } as const;

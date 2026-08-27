@@ -24,7 +24,9 @@ import {
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import type { ToolActivityView, ToolUiRuntime } from "./contract.js";
-import { oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
+import { toolStateGlyph } from "./render.js";
+import { sanitizeTerminalText } from "./terminal.js";
+import { oneLine } from "./tool-text.js";
 
 type ToolDialogMode = "detail" | "list";
 type ToolDetailRepresentation = "formatted" | "raw";

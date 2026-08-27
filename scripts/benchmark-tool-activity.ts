@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { planRetrievalGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
 import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
-import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/render.js";
+import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/tool-text.js";
 
 const CALLS = 20_000;
 const CALLS_PER_ROUND = 10;

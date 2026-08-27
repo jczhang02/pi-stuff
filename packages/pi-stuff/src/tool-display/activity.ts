@@ -2,8 +2,8 @@ import type { ToolCall } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityState } from "./activity-store.js";
-import { oneLine } from "./render.js";
 import { boundTerminalLine, compactTerminalPath } from "./terminal.js";
+import { oneLine } from "./tool-text.js";
 
 const ACTIVITY_TARGET_MAX_WIDTH = 160;
 const BASH_EVIDENCE_TEXT_LIMIT = 64 * 1024;

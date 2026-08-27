@@ -26,16 +26,9 @@ import type {
 } from "./contract.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
 import { SUITE_ACTIVITY_RENDERER, type SuiteActivityRendererMarker } from "./registration-tracker.js";
-import {
-	buildToolResultLines,
-	CachedToolRow,
-	capDetailLines,
-	classifyTerminalState,
-	EmptyToolComponent,
-	oneLine,
-	sanitizeTerminalText,
-	type ToolRowModel,
-} from "./render.js";
+import { CachedToolRow, EmptyToolComponent, type ToolRowModel } from "./render.js";
+import { sanitizeTerminalText } from "./terminal.js";
+import { buildToolResultLines, capDetailLines, classifyTerminalState, oneLine } from "./tool-text.js";
 
 export function formattedResultLines(result: AgentToolResult<unknown>, summary: ToolSummaryProjection): string[] {
 	const lines = buildToolResultLines(result);

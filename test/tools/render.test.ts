@@ -2,23 +2,19 @@ import { describe, expect, test } from "bun:test";
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { ToolActivityStore } from "../../packages/pi-stuff/src/tool-display/activity-store.js";
+import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
+import { sanitizeTerminalText } from "../../packages/pi-stuff/src/tool-display/terminal.js";
 import {
-	buildToolDetailLines,
-	CachedToolRow,
+	buildRawToolDetailLines,
+	buildToolResultLines,
 	capDetailLines,
 	classifyTerminalState,
 	describeBuiltinTarget,
 	oneLine,
-	sanitizeTerminalText,
 	summarizeBuiltin,
-} from "../../packages/pi-stuff/src/tool-display/render.js";
+} from "../../packages/pi-stuff/src/tool-display/tool-text.js";
 
 type ToolResultDetails = AgentToolResult<unknown>["details"];
-
-interface HugeArguments {
-	command: string;
-	late?: string;
-}
 
 // SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
@@ -751,7 +747,7 @@ describe("terminal-safe Tool rendering", () => {
 
 	test("bounds work and retained previews for multi-megabyte arguments and results", () => {
 		let lateGetterReads = 0;
-		const hugeArguments: HugeArguments = { command: "x".repeat(8 * 1024 * 1024) };
+		const hugeArguments = { command: "x".repeat(8 * 1024 * 1024) };
 		Object.defineProperty(hugeArguments, "late", {
 			enumerable: true,
 			get: () => {
@@ -759,15 +755,17 @@ describe("terminal-safe Tool rendering", () => {
 				return "should not be visited after the cap";
 			},
 		});
-		const argumentDetails = buildToolDetailLines(hugeArguments, result("ok"));
-		const resultDetails = buildToolDetailLines({}, result("y".repeat(8 * 1024 * 1024)));
-		const unicodeDetails = buildToolDetailLines({ value: "👩‍💻".repeat(10_000) }, result("ok"));
+		const details = [
+			buildRawToolDetailLines("call", "tool", hugeArguments, result("ok")),
+			buildToolResultLines(result("y".repeat(8 * 1024 * 1024))),
+			buildRawToolDetailLines("call", "tool", { value: "👩‍💻".repeat(10_000) }, result("ok")),
+		];
 
-		for (const details of [argumentDetails, resultDetails, unicodeDetails]) {
-			expect(details.length).toBeLessThanOrEqual(240);
-			expect(Buffer.byteLength(details.join("\n"))).toBeLessThanOrEqual(24 * 1024);
-			expect(details.at(-1)).toContain("detail capped");
-			expect(details.every(isWellFormed)).toBeTrue();
+		for (const detail of details) {
+			expect(detail.length).toBeLessThanOrEqual(240);
+			expect(Buffer.byteLength(detail.join("\n"))).toBeLessThanOrEqual(24 * 1024);
+			expect(detail.at(-1)).toContain("detail capped");
+			expect(detail.every(isWellFormed)).toBeTrue();
 		}
 		expect(lateGetterReads).toBe(0);
 		expect(Buffer.byteLength(describeBuiltinTarget("bash", hugeArguments))).toBeLessThanOrEqual(4 * 1024);

@@ -16,7 +16,7 @@ import {
 	type ToolArguments,
 } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
-import { classifyTerminalState } from "./render.js";
+import { classifyTerminalState } from "./tool-text.js";
 import { isRecordValue } from "./tool-value.js";
 
 const ERROR_RESULT_SCHEMA = Type.Object({ isError: Type.Literal(true) }, { additionalProperties: true });

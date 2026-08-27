@@ -62,19 +62,21 @@ import {
 } from "./registration-tracker.js";
 import {
 	type BashOperationRowModel,
-	buildRawToolDetailLines,
-	buildToolResultLines,
 	type CachedToolRow,
-	capDetailLines,
 	EmptyToolComponent,
-	formatElapsed,
-	oneLine,
 	type RetrievalGroupRowModel,
-	sanitizeTerminalText,
-	summarizeBuiltin,
 	type ToolRowModel,
 } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
+import { sanitizeTerminalText } from "./terminal.js";
+import {
+	buildRawToolDetailLines,
+	buildToolResultLines,
+	capDetailLines,
+	formatElapsed,
+	oneLine,
+	summarizeBuiltin,
+} from "./tool-text.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 export {
