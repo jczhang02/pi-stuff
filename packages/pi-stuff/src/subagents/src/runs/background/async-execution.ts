@@ -8,7 +8,7 @@ import { isRuntimeObject } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
-import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { ensurePrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
 	type ArtifactConfig,
@@ -24,6 +24,7 @@ import {
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	TEMP_ROOT_DIR,
 } from "../../shared/types.ts";
+import { getErrorMessage } from "../../shared/utils.ts";
 import {
 	type ResolvedSubagentCapabilityCeiling,
 	resolveCurrentSubagentCapabilityCeiling,
@@ -242,7 +243,7 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 		try {
 			fs.mkdirSync(asyncDir, { mode: 0o700 });
 		} catch (error) {
-			if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "EEXIST") {
+			if (errnoCode(error) === "EEXIST") {
 				throw new Error(
 					`Background Agent runtime '${asyncDir}' already exists; refusing to overwrite retained lifecycle evidence.`,
 				);
@@ -454,6 +455,24 @@ export function persistRecoveries(asyncDir: string, recoveries: BackgroundRecove
 	});
 }
 
+function persistRecoveriesOrError(
+	mode: "single" | "parallel",
+	id: string,
+	location: BackgroundRunDirectoryClaim,
+	recoveries: BackgroundRecoveryDescriptor[],
+): AsyncExecutionResult | undefined {
+	try {
+		persistRecoveries(location.asyncDir, recoveries);
+	} catch (error) {
+		location.cleanup();
+		return formatAsyncStartError(
+			mode,
+			`Failed to persist background recovery data for '${id}': ${getErrorMessage(error)}`,
+		);
+	}
+	return undefined;
+}
+
 interface PreparedAsyncLaunch {
 	id: string;
 	params: AsyncParallelParams | AsyncSingleParams;
@@ -644,17 +663,8 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		throw new Error("Parallel background builder returned single work.");
 	}
 	const parallelWork = built.work;
-	try {
-		persistRecoveries(location.asyncDir, built.recoveries);
-	} catch (error) {
-		location.cleanup();
-		return formatAsyncStartError(
-			"parallel",
-			`Failed to persist background recovery data for '${id}': ${
-				error instanceof Error ? error.message : String(error)
-			}`,
-		);
-	}
+	const recoveryError = persistRecoveriesOrError("parallel", id, location, built.recoveries);
+	if (recoveryError) return recoveryError;
 	return executePreparedAsync({
 		id,
 		params,
@@ -696,17 +706,8 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		location.cleanup();
 		return formatAsyncStartError("single", built.error);
 	}
-	try {
-		persistRecoveries(location.asyncDir, [built.recovery]);
-	} catch (error) {
-		location.cleanup();
-		return formatAsyncStartError(
-			"single",
-			`Failed to persist background recovery data for '${id}': ${
-				error instanceof Error ? error.message : String(error)
-			}`,
-		);
-	}
+	const recoveryError = persistRecoveriesOrError("single", id, location, [built.recovery]);
+	if (recoveryError) return recoveryError;
 	return executePreparedAsync({
 		id,
 		params,

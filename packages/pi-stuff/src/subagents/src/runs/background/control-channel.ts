@@ -17,28 +17,34 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isRuntimeBoolean,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
-	assertPrivateDirectory,
-	ensurePrivateDirectory,
-	ensurePrivateDirectoryWithin,
+	errnoCode,
 	type OwnedFileSnapshot,
-	readBoundedOwnedFile,
 	readBoundedOwnedFileSnapshot,
 	removeOwnedFileSnapshot,
 } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import { POLL_INTERVAL_MS } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
-import { MAX_BACKGROUND_TASKS } from "../shared/parallel-utils.ts";
+import {
+	consumeSteerCapabilities,
+	controlInboxDir,
+	MAX_CONTROL_RECORD_BYTES,
+	MAX_STEER_REQUEST_ID_LENGTH,
+	parseSteerAck,
+	parseSteerRequest,
+	prepareControlDirectory,
+	STEER_ACKS_DIR,
+	type SteerAck,
+	type SteerCapability,
+	type SteerRequest,
+	steerRequestsDir,
+} from "./steering-channel.ts";
+
+export * from "./steering-channel.ts";
 
 /**
  * Opportunistic fast-path interrupt signal. On Unix `SIGUSR2` is trapped by the
@@ -46,7 +52,6 @@ import { MAX_BACKGROUND_TASKS } from "../shared/parallel-utils.ts";
  * cross-process and throws `ENOSYS`, so the file inbox below is the real channel.
  */
 export const INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
-const MAX_CONTROL_RECORD_BYTES = 64 * 1024;
 const CONTROL_INFLIGHT_SEPARATOR = ".pi-stuff-inflight.";
 const activeControlConsumers = new Set<string>();
 
@@ -57,19 +62,15 @@ export type ControlChannelFs = Pick<
 export type ControlChannelTimers = { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
 type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
-export interface InterruptRequest {
-	type: "interrupt";
+type SingletonRequest<Type extends "interrupt" | "timeout"> = {
+	type: Type;
 	ts?: number;
 	source?: string;
 	reason?: string;
-}
+};
 
-export interface TimeoutRequest {
-	type: "timeout";
-	ts?: number;
-	source?: string;
-	reason?: string;
-}
+export type InterruptRequest = SingletonRequest<"interrupt">;
+export type TimeoutRequest = SingletonRequest<"timeout">;
 
 export interface StopRequest {
 	type: "stop";
@@ -79,51 +80,7 @@ export interface StopRequest {
 	reason?: string;
 	targetIndex?: number;
 }
-
-export interface SteerRequest {
-	type: "steer";
-	id: string;
-	ts: number;
-	message: string;
-	/** Monotonic user takeover attribution for the owning background run. */
-	parentRunOrigin?: AgentWorkOrigin;
-	targetIndex?: number;
-	targetIndexes?: number[];
-	source?: string;
-}
-
-export interface SteerCapability {
-	type: "steer-capability";
-	protocolVersion: 1;
-	index: number;
-	pid: number;
-	readyAt: number;
-	supported: boolean;
-}
-
-export interface SteerAck {
-	type: "steer-ack";
-	protocolVersion: 1;
-	requestId: string;
-	index: number;
-	ts: number;
-	state: "delivered" | "failed";
-	message: string;
-}
-
-const STEER_REQUESTS_DIR = "steer-requests";
 const STOP_REQUESTS_DIR = "stop-requests";
-const STEER_TARGETS_DIR = "steer-targets";
-const STEER_CAPABILITIES_DIR = "steer-capabilities";
-const STEER_ACKS_DIR = "steer-acks";
-const STEER_INBOX_CLOSED_FILE = "steer-inbox-closed.json";
-const MAX_STEER_MESSAGE_BYTES = 128 * 1024;
-const MAX_STEER_REQUEST_ID_LENGTH = 256;
-
-/** Control inbox directory inside an async run dir. */
-export function controlInboxDir(asyncDir: string): string {
-	return path.join(asyncDir, "control");
-}
 
 /** Path of the portable interrupt request file. */
 export function interruptRequestPath(asyncDir: string): string {
@@ -145,145 +102,6 @@ export function stopRequestsDir(asyncDir: string): string {
 	return path.join(controlInboxDir(asyncDir), STOP_REQUESTS_DIR);
 }
 
-/** Directory of parent-to-runner steering requests. */
-export function steerRequestsDir(asyncDir: string): string {
-	return path.join(controlInboxDir(asyncDir), STEER_REQUESTS_DIR);
-}
-
-export function steerInboxClosedPath(asyncDir: string): string {
-	return path.join(controlInboxDir(asyncDir), STEER_INBOX_CLOSED_FILE);
-}
-
-export function closeSteerInbox(asyncDir: string, state: string): void {
-	prepareControlDirectory(asyncDir, controlInboxDir(asyncDir));
-	writePrivateAtomicJson(steerInboxClosedPath(asyncDir), { version: 1, closedAt: Date.now(), state });
-}
-
-/** Per-child inbox consumed by the child prompt runtime inside the Pi process. */
-export function stepSteerInboxDir(asyncDir: string, index: number): string {
-	assertChildIndex(index);
-	return path.join(controlInboxDir(asyncDir), STEER_TARGETS_DIR, String(index));
-}
-
-export function steerCapabilitiesDir(asyncDir: string): string {
-	return path.join(controlInboxDir(asyncDir), STEER_CAPABILITIES_DIR);
-}
-
-export function steerCapabilityPath(asyncDir: string, index: number): string {
-	assertChildIndex(index);
-	return path.join(steerCapabilitiesDir(asyncDir), `${index}.json`);
-}
-
-export function steerAcksDir(asyncDir: string, index: number): string {
-	assertChildIndex(index);
-	return path.join(controlInboxDir(asyncDir), STEER_ACKS_DIR, String(index));
-}
-
-function steerAckFileName(requestId: string): string {
-	return `${Buffer.from(requestId).toString("base64url")}.json`;
-}
-
-export function steerAckPathFromDir(dir: string, requestId: string): string {
-	if (!/^[^\s]+$/.test(requestId) || requestId.length > 256)
-		throw new Error("steer acknowledgment requestId is invalid.");
-	return path.join(dir, steerAckFileName(requestId));
-}
-
-function assertChildIndex(index: number): void {
-	if (!Number.isInteger(index) || index < 0 || index > 1_000_000)
-		throw new Error("steer child index must be a non-negative integer.");
-}
-
-function steerRequestFileName(request: SteerRequest): string {
-	return `${String(request.ts).padStart(13, "0")}-${Buffer.from(request.id).toString("base64url")}.json`;
-}
-
-function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequest {
-	return (
-		request.type === "steer" &&
-		isRuntimeString(request.id) &&
-		/^[^\s]+$/.test(request.id) &&
-		request.id.length <= MAX_STEER_REQUEST_ID_LENGTH &&
-		isRuntimeNumber(request.ts) &&
-		Number.isFinite(request.ts) &&
-		request.ts > 0 &&
-		isRuntimeString(request.message) &&
-		Boolean(request.message.trim()) &&
-		Buffer.byteLength(request.message, "utf8") <= MAX_STEER_MESSAGE_BYTES &&
-		(request.targetIndex === undefined ||
-			(Number.isInteger(request.targetIndex) && request.targetIndex >= 0 && request.targetIndex <= 1_000_000)) &&
-		(request.targetIndexes === undefined ||
-			(request.targetIndex === undefined &&
-				Array.isArray(request.targetIndexes) &&
-				request.targetIndexes.length > 0 &&
-				request.targetIndexes.length <= MAX_BACKGROUND_TASKS &&
-				request.targetIndexes.every((index) => Number.isInteger(index) && index >= 0 && index <= 1_000_000) &&
-				new Set(request.targetIndexes).size === request.targetIndexes.length)) &&
-		(request.parentRunOrigin === undefined ||
-			request.parentRunOrigin === "automatic" ||
-			request.parentRunOrigin === "user") &&
-		(request.source === undefined ||
-			(isRuntimeString(request.source) && Boolean(request.source.trim()) && request.source.length <= 256))
-	);
-}
-
-export function writeSteerRequestToDir(dir: string, request: SteerRequest): string {
-	if (!validSteerRequest(request)) throw new Error("steer request is malformed or exceeds transport limits.");
-	ensurePrivateDirectory(dir);
-	const requestPath = path.join(dir, steerRequestFileName(request));
-	writePrivateAtomicJson(requestPath, request);
-	return requestPath;
-}
-
-export function writeSteerCapabilityAt(
-	filePath: string,
-	capability: Omit<SteerCapability, "type" | "protocolVersion">,
-): string {
-	assertChildIndex(capability.index);
-	if (!Number.isInteger(capability.pid) || capability.pid <= 0)
-		throw new Error("steer capability pid must be a positive integer.");
-	if (!Number.isFinite(capability.readyAt) || capability.readyAt <= 0)
-		throw new Error("steer capability readyAt must be a finite timestamp.");
-	const record: SteerCapability = { type: "steer-capability", protocolVersion: 1, ...capability };
-	ensurePrivateDirectory(path.dirname(filePath));
-	writePrivateAtomicJson(filePath, record);
-	return filePath;
-}
-
-export function writeSteerCapability(
-	asyncDir: string,
-	capability: Omit<SteerCapability, "type" | "protocolVersion">,
-): string {
-	prepareControlDirectory(asyncDir, steerCapabilitiesDir(asyncDir));
-	return writeSteerCapabilityAt(steerCapabilityPath(asyncDir, capability.index), capability);
-}
-
-export function writeSteerAckAt(filePath: string, ack: Omit<SteerAck, "type" | "protocolVersion">): string {
-	assertChildIndex(ack.index);
-	if (!/^[^\s]+$/.test(ack.requestId) || ack.requestId.length > 256)
-		throw new Error("steer acknowledgment requestId is invalid.");
-	if (!Number.isFinite(ack.ts) || ack.ts <= 0) throw new Error("steer acknowledgment ts must be a finite timestamp.");
-	if (!ack.message.trim() || ack.message.length > 1000) throw new Error("steer acknowledgment message is invalid.");
-	const record: SteerAck = { type: "steer-ack", protocolVersion: 1, ...ack, message: ack.message.trim() };
-	ensurePrivateDirectory(path.dirname(filePath));
-	writePrivateAtomicJson(filePath, record);
-	return filePath;
-}
-
-export function writeSteerAck(asyncDir: string, ack: Omit<SteerAck, "type" | "protocolVersion">): string {
-	prepareControlDirectory(asyncDir, steerAcksDir(asyncDir, ack.index));
-	return writeSteerAckAt(path.join(steerAcksDir(asyncDir, ack.index), steerAckFileName(ack.requestId)), ack);
-}
-
-function prepareControlDirectory(asyncDir: string, directory: string): void {
-	assertPrivateDirectory(asyncDir);
-	ensurePrivateDirectoryWithin(asyncDir, directory);
-}
-
-/**
- * Parent side: drop a portable interrupt request the runner's inbox watcher will
- * pick up regardless of OS. Written atomically (temp + rename), dir auto-created.
- */
 export function requestAsyncInterrupt(
 	asyncDir: string,
 	payload: Omit<InterruptRequest, "type"> = {},
@@ -335,165 +153,6 @@ export function requestAsyncStop(
 	return requestPath;
 }
 
-export function requestAsyncSteer(
-	asyncDir: string,
-	payload: {
-		message: string;
-		parentRunOrigin?: AgentWorkOrigin;
-		targetIndex?: number;
-		targetIndexes?: number[];
-		source?: string;
-		id?: string;
-		ts?: number;
-	},
-	deps: { now?: () => number; randomId?: () => string } = {},
-): string {
-	prepareControlDirectory(asyncDir, steerRequestsDir(asyncDir));
-	const message = payload.message.trim();
-	if (!message) throw new Error("steer message must not be empty.");
-	if (Buffer.byteLength(message, "utf8") > MAX_STEER_MESSAGE_BYTES)
-		throw new Error(`steer message exceeds ${MAX_STEER_MESSAGE_BYTES} UTF-8 bytes.`);
-	if (
-		payload.targetIndex !== undefined &&
-		(!Number.isInteger(payload.targetIndex) || payload.targetIndex < 0 || payload.targetIndex > 1_000_000)
-	) {
-		throw new Error("steer targetIndex must be an integer between 0 and 1000000.");
-	}
-	if (
-		payload.targetIndexes !== undefined &&
-		(!Array.isArray(payload.targetIndexes) ||
-			payload.targetIndex !== undefined ||
-			payload.targetIndexes.length === 0 ||
-			payload.targetIndexes.length > MAX_BACKGROUND_TASKS ||
-			payload.targetIndexes.some((index) => !Number.isInteger(index) || index < 0 || index > 1_000_000) ||
-			new Set(payload.targetIndexes).size !== payload.targetIndexes.length)
-	) {
-		throw new Error(
-			`steer targetIndexes must contain 1-${String(MAX_BACKGROUND_TASKS)} unique non-negative integers and cannot be combined with targetIndex.`,
-		);
-	}
-	const closedPath = steerInboxClosedPath(asyncDir);
-	if (fs.existsSync(closedPath)) throw new Error("Async run no longer accepts steering requests.");
-	const request: SteerRequest = {
-		type: "steer",
-		id: payload.id ?? deps.randomId?.() ?? randomUUID(),
-		ts: payload.ts ?? deps.now?.() ?? Date.now(),
-		message,
-	};
-	if (payload.parentRunOrigin) request.parentRunOrigin = payload.parentRunOrigin;
-	if (payload.targetIndex !== undefined) request.targetIndex = payload.targetIndex;
-	if (payload.targetIndexes !== undefined) request.targetIndexes = [...payload.targetIndexes];
-	if (payload.source) request.source = payload.source;
-	const requestPath = writeSteerRequestToDir(steerRequestsDir(asyncDir), request);
-	if (fs.existsSync(closedPath)) {
-		fs.rmSync(requestPath, { force: true });
-		throw new Error("Async run stopped accepting steering before the request was committed.");
-	}
-	return requestPath;
-}
-
-export function enqueueStepSteer(asyncDir: string, index: number, request: SteerRequest): string {
-	assertChildIndex(index);
-	prepareControlDirectory(asyncDir, stepSteerInboxDir(asyncDir, index));
-	const { targetIndexes: _targetIndexes, ...singleTargetRequest } = request;
-	return writeSteerRequestToDir(stepSteerInboxDir(asyncDir, index), {
-		...singleTargetRequest,
-		targetIndex: index,
-		type: "steer",
-	});
-}
-
-function parseSteerCapability(raw: JsonValue): SteerCapability | undefined {
-	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
-	// SAFETY: the JSON object check establishes the field container; every protocol field is validated below.
-	const input = raw as Partial<SteerCapability>;
-	if (input.type !== "steer-capability" || input.protocolVersion !== 1) return undefined;
-	const { index, pid, readyAt } = input;
-	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
-	if (!isRuntimeNumber(pid) || !Number.isInteger(pid) || pid <= 0) return undefined;
-	if (!isRuntimeNumber(readyAt) || !Number.isFinite(readyAt) || readyAt <= 0 || !isRuntimeBoolean(input.supported))
-		return undefined;
-	return { type: "steer-capability", protocolVersion: 1, index, pid, readyAt, supported: input.supported };
-}
-
-function parseSteerAck(raw: JsonValue): SteerAck | undefined {
-	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
-	// SAFETY: the JSON object check establishes the field container; every protocol field is validated below.
-	const input = raw as Partial<SteerAck>;
-	if (
-		input.type !== "steer-ack" ||
-		input.protocolVersion !== 1 ||
-		!isRuntimeString(input.requestId) ||
-		!/^[^\s]+$/.test(input.requestId) ||
-		input.requestId.length > 256
-	)
-		return undefined;
-	const { index, ts } = input;
-	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
-	if (!isRuntimeNumber(ts) || !Number.isFinite(ts) || ts <= 0) return undefined;
-	if (input.state !== "delivered" && input.state !== "failed") return undefined;
-	if (!isRuntimeString(input.message) || !input.message.trim() || input.message.length > 1000) return undefined;
-	return {
-		type: "steer-ack",
-		protocolVersion: 1,
-		requestId: input.requestId,
-		index,
-		ts,
-		state: input.state,
-		message: input.message.trim(),
-	};
-}
-
-export function readSteerAckAt(filePath: string): SteerAck | undefined {
-	try {
-		return parseSteerAck(parseJsonValue(readBoundedOwnedFile(filePath, MAX_CONTROL_RECORD_BYTES)));
-	} catch {
-		return undefined;
-	}
-}
-
-export function readSteerCapability(asyncDir: string, index: number): SteerCapability | undefined {
-	try {
-		return parseSteerCapability(
-			parseJsonValue(readBoundedOwnedFile(steerCapabilityPath(asyncDir, index), MAX_CONTROL_RECORD_BYTES)),
-		);
-	} catch {
-		return undefined;
-	}
-}
-
-export function consumeSteerCapabilities(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "readdirSync" | "readFileSync"> = fs,
-): SteerCapability[] {
-	const dir = steerCapabilitiesDir(asyncDir);
-	if (!fsImpl.existsSync(dir)) return [];
-	const capabilities: SteerCapability[] = [];
-	for (const entry of fsImpl
-		.readdirSync(dir)
-		.filter((name) => /^\d+\.json$/.test(name))
-		.sort()) {
-		try {
-			const target = path.join(dir, entry);
-			const text =
-				fsImpl === fs
-					? readBoundedOwnedFile(target, MAX_CONTROL_RECORD_BYTES)
-					: fsImpl.readFileSync(target, "utf-8");
-			const capability = parseSteerCapability(parseJsonValue(text));
-			if (capability) capabilities.push(capability);
-		} catch {
-			// A partially written or malformed capability is ignored until a valid one arrives.
-		}
-	}
-	return capabilities;
-}
-
-/**
- * Read a durable inbox record, then use a non-forcing unlink as the ownership
- * claim. A transient read/unlink failure leaves the record for a later poll;
- * concurrent consumers can both read it, but only the one whose unlink succeeds
- * is allowed to invoke the callback.
- */
 function consumeJsonRecord<T>(
 	target: string,
 	parse: (raw: JsonValue) => T | undefined,
@@ -569,10 +228,6 @@ function parseClaimedControlRecord(
 	return { claimedPath: path.join(directory, entry), originalName, ownerPid, ownerIdentity, consumerId };
 }
 
-function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
-	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
-}
-
 function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRecord>): boolean {
 	if (!claim || activeControlConsumers.has(claim.consumerId)) return false;
 	if (claim.ownerPid === process.pid && claim.ownerIdentity === "pid-only") return true;
@@ -582,7 +237,7 @@ function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRec
 		process.kill(claim.ownerPid, 0);
 		return false;
 	} catch (error) {
-		return hasErrorCode(error, "ESRCH");
+		return errnoCode(error) === "ESRCH";
 	}
 }
 
@@ -666,18 +321,14 @@ function processDurableControlRecords<T>(input: {
 	}
 }
 
-function parseInterruptRequest(raw: JsonValue): InterruptRequest | undefined {
+function parseSingletonRequest<Type extends "interrupt" | "timeout">(
+	raw: JsonValue,
+	type: Type,
+): SingletonRequest<Type> | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	// SAFETY: the JSON object check establishes the legacy request container; the discriminator is checked next.
-	const request = raw as Partial<InterruptRequest>;
-	return request.type === "interrupt" ? { ...request, type: "interrupt" } : undefined;
-}
-
-function parseTimeoutRequest(raw: JsonValue): TimeoutRequest | undefined {
-	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
-	// SAFETY: the JSON object check establishes the legacy request container; the discriminator is checked next.
-	const request = raw as Partial<TimeoutRequest>;
-	return request.type === "timeout" ? { ...request, type: "timeout" } : undefined;
+	const request = raw as Partial<SingletonRequest<Type>>;
+	return request.type === type ? { ...request, type } : undefined;
 }
 
 export function processSteerRequestsFromDir(
@@ -751,24 +402,6 @@ export function consumeSteerAcks(
 	return acks;
 }
 
-function parseSteerRequest(raw: JsonValue): SteerRequest | undefined {
-	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
-	// SAFETY: the JSON object check establishes the field container; validSteerRequest validates the full protocol.
-	const input = raw as Partial<SteerRequest>;
-	if (!validSteerRequest(input)) return undefined;
-	const request: SteerRequest = {
-		type: "steer",
-		id: input.id.trim(),
-		ts: input.ts,
-		message: input.message.trim(),
-	};
-	if (input.parentRunOrigin) request.parentRunOrigin = input.parentRunOrigin;
-	if (input.targetIndex !== undefined) request.targetIndex = input.targetIndex;
-	if (input.targetIndexes !== undefined) request.targetIndexes = [...input.targetIndexes];
-	if (isRuntimeString(input.source) && input.source.trim()) request.source = input.source;
-	return request;
-}
-
 export function consumeSteerRequestsFromDir(
 	dir: string,
 	fsImpl: Pick<typeof fs, "existsSync" | "rmSync" | "readdirSync" | "readFileSync"> = fs,
@@ -804,33 +437,29 @@ export function consumeSteerRequests(
  * Runner side: consume a pending interrupt request. Idempotent — removes the file
  * so each distinct request fires exactly once. Returns whether one was pending.
  */
-export function consumeInterruptRequest(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs,
-): boolean {
-	const requestPath = interruptRequestPath(asyncDir);
+function consumeSingletonRequest(requestPath: string, fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs): boolean {
 	if (!fsImpl.existsSync(requestPath)) return false;
 	try {
 		fsImpl.rmSync(requestPath);
+		return true;
 	} catch {
 		// A concurrent consumer or transient I/O failure owns the retry.
 		return false;
 	}
-	return true;
+}
+
+export function consumeInterruptRequest(
+	asyncDir: string,
+	fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs,
+): boolean {
+	return consumeSingletonRequest(interruptRequestPath(asyncDir), fsImpl);
 }
 
 export function consumeTimeoutRequest(
 	asyncDir: string,
 	fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs,
 ): boolean {
-	const requestPath = timeoutRequestPath(asyncDir);
-	if (!fsImpl.existsSync(requestPath)) return false;
-	try {
-		fsImpl.rmSync(requestPath);
-	} catch {
-		return false;
-	}
-	return true;
+	return consumeSingletonRequest(timeoutRequestPath(asyncDir), fsImpl);
 }
 
 function parseStopRequest(raw: JsonValue): StopRequest | undefined {
@@ -914,23 +543,22 @@ function processStopRequests(
 	});
 }
 
-function processSingletonRequest<T>(input: {
-	readonly target: string;
-	readonly parse: (raw: JsonValue) => T | undefined;
-	readonly callback: (request: T) => void;
-	readonly kind: "interrupt" | "timeout";
-	readonly afterClaim?: ((kind: string, claimedPath: string) => void) | undefined;
-}): void {
-	const name = path.basename(input.target);
+function processSingletonRequest<Type extends "interrupt" | "timeout">(
+	target: string,
+	type: Type,
+	callback: () => void,
+	afterClaim?: (kind: string, claimedPath: string) => void,
+): void {
+	const name = path.basename(target);
 	processDurableControlRecords({
-		directories: [{ path: path.dirname(input.target), accepts: (entry) => entry === name }],
-		parse: input.parse,
-		callback: (request) => {
-			input.callback(request);
+		directories: [{ path: path.dirname(target), accepts: (entry) => entry === name }],
+		parse: (raw) => parseSingletonRequest(raw, type),
+		callback: () => {
+			callback();
 			return undefined;
 		},
-		kind: input.kind,
-		afterClaim: input.afterClaim,
+		kind: type,
+		afterClaim,
 	});
 }
 
@@ -955,7 +583,7 @@ export function deliverInterruptRequest(input: {
 		try {
 			(input.kill ?? process.kill)(input.pid, input.signal ?? INTERRUPT_SIGNAL);
 		} catch (error) {
-			if (hasErrorCode(error, "ENOSYS")) {
+			if (errnoCode(error) === "ENOSYS") {
 				// File inbox is authoritative when custom cross-process signals are unavailable.
 				return;
 			}
@@ -1050,20 +678,18 @@ export function watchAsyncControlInbox(
 		try {
 			if (fsImpl === fs) {
 				processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
-				processSingletonRequest({
-					target: timeoutRequestPath(asyncDir),
-					parse: parseTimeoutRequest,
-					callback: () => opts.onTimeout?.(),
-					kind: "timeout",
-					afterClaim: opts.afterControlClaim,
-				});
-				processSingletonRequest({
-					target: interruptRequestPath(asyncDir),
-					parse: parseInterruptRequest,
-					callback: () => opts.onInterrupt(),
-					kind: "interrupt",
-					afterClaim: opts.afterControlClaim,
-				});
+				processSingletonRequest(
+					timeoutRequestPath(asyncDir),
+					"timeout",
+					() => opts.onTimeout?.(),
+					opts.afterControlClaim,
+				);
+				processSingletonRequest(
+					interruptRequestPath(asyncDir),
+					"interrupt",
+					() => opts.onInterrupt(),
+					opts.afterControlClaim,
+				);
 				processSteerRequestsFromDir(
 					steerRequestsDir(asyncDir),
 					(request) => {

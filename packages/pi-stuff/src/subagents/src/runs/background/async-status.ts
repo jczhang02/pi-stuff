@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { formatDuration, formatModelThinking, formatTokens, shortenPath } from "../../shared/formatters.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
@@ -19,7 +19,7 @@ import type {
 	TokenUsage,
 	TurnBudgetState,
 } from "../../shared/types.ts";
-import { readStatus } from "../../shared/utils.ts";
+import { getErrorMessage, isNotFoundError, readStatus } from "../../shared/utils.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
 import {
 	type ContextMode,
@@ -149,14 +149,6 @@ interface AsyncRunListOptions {
 	runId?: string;
 	/** Order lightweight status candidates newest-first and stop after limit matches. */
 	preselectRecent?: boolean;
-}
-
-function getErrorMessage(cause: unknown): string {
-	return cause instanceof Error ? cause.message : String(cause);
-}
-
-function isNotFoundError(cause: unknown): boolean {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
 function isAsyncRunDir(root: string, entry: string): boolean {

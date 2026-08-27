@@ -37,3 +37,17 @@ export interface CompletionNotification {
 	results?: unknown[];
 	nestedChildren?: unknown[];
 }
+
+export async function deliverNotificationWithAbort(
+	notifier: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> },
+	completion: CompletionNotification,
+	signal: AbortSignal,
+): Promise<boolean> {
+	if (signal.aborted) return false;
+	return Promise.race([
+		notifier.deliver(completion, signal),
+		new Promise<boolean>((resolve) => {
+			signal.addEventListener("abort", () => resolve(false), { once: true });
+		}),
+	]);
+}

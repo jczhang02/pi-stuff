@@ -2,6 +2,7 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
@@ -12,7 +13,35 @@ import {
 } from "../../../../shared/runtime-type.js";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import { getSubagentDepthEnv } from "../../shared/types.ts";
 import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
+import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
+
+export const BACKGROUND_RUNNER_SENTINEL_ENV = "PI_STUFF_BACKGROUND_RUNNER";
+export const BACKGROUND_RUNNER_CONFIG_ENV = "PI_STUFF_BACKGROUND_RUNNER_CONFIG";
+
+/** Runner identity must never leak into a Pi writer process. */
+export function ponytailWriterEnvironmentOverrides(mode: BackgroundRunnerConfig["ponytailMode"]) {
+	return { [PONYTAIL_CHILD_MODE_ENV]: mode };
+}
+
+export function buildWriterProcessEnv(
+	parentEnv: NodeJS.ProcessEnv,
+	overrides: Record<string, string | undefined>,
+	maxSubagentDepth?: number,
+): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {
+		...parentEnv,
+		...overrides,
+		...getSubagentDepthEnv(maxSubagentDepth, parentEnv),
+	};
+	for (const [name, value] of Object.entries(overrides)) {
+		if (value === undefined) delete env[name];
+	}
+	delete env[BACKGROUND_RUNNER_SENTINEL_ENV];
+	delete env[BACKGROUND_RUNNER_CONFIG_ENV];
+	return env;
+}
 
 interface WriterSupervisorEnvelope {
 	command: string;

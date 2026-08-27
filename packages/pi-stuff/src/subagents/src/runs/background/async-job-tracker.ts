@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { readOwnedFileTailAsync } from "../../shared/private-directory.ts";
+import { errnoCode, readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
 	type AsyncJobState,
@@ -19,10 +19,11 @@ import {
 	SUBAGENT_STEERING_NOTICE_EVENT,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { readStatusAsync } from "../../shared/utils.ts";
+import { isTerminalAsyncState as isTerminalJobStatus, readStatusAsync } from "../../shared/utils.ts";
 import { hasLiveNestedDescendants } from "../shared/nested-events.ts";
 import { mapConcurrent } from "../shared/parallel-utils.ts";
 import { formatControlNoticeMessage } from "../shared/subagent-control.ts";
+import { readNewAsyncControlEvents } from "./async-control-events.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 
 interface AsyncJobTrackerOptions {
@@ -34,9 +35,6 @@ interface AsyncJobTrackerOptions {
 	watchRun?: typeof fs.watch;
 }
 
-const CONTROL_EVENT_READ_CHUNK_BYTES = 64 * 1024;
-const MAX_CONTROL_EVENT_LINE_BYTES = 1024 * 1024;
-const CONTROL_EVENT_SCAN_WINDOW_BYTES = 2 * 1024 * 1024;
 const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
 const MAX_RECENT_AGENT_JOBS = 200;
 const RESTORE_READ_CONCURRENCY = 8;
@@ -64,10 +62,6 @@ function record<Value>(value: Value): TrackerEventRecord {
 	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
 	// SAFETY: consumers read only the declared raw fields and validate them before dispatch.
 	return value as Value & TrackerEventRecord;
-}
-
-function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
-	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
 }
 
 function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
@@ -121,10 +115,6 @@ async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStat
 		}
 	});
 	return changed ? { ...status, steps } : status;
-}
-
-function isTerminalJobStatus(status: AsyncJobState["status"]): boolean {
-	return status === "complete" || status === "failed" || status === "paused" || status === "stopped";
 }
 
 function physicalTerminalPending(job: AsyncJobState): boolean {
@@ -405,85 +395,6 @@ export function createAsyncJobTracker(
 		return true;
 	};
 
-	const emitNewControlEvents = async (job: AsyncJobState): Promise<{ changed: boolean; more: boolean }> => {
-		const eventsPath = path.join(job.asyncDir, "events.jsonl");
-		const noFollow = isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
-		let handle: fs.promises.FileHandle;
-		try {
-			handle = await fs.promises.open(eventsPath, fs.constants.O_RDONLY | noFollow);
-		} catch (error) {
-			if (hasErrorCode(error, "ENOENT")) {
-				if (job.controlEventCursorPending) {
-					job.controlEventCursor = 0;
-					job.controlEventCursorPending = false;
-				}
-				return { changed: false, more: false };
-			}
-			reportAgentDiagnostic(`Failed to open async control events for '${job.asyncDir}':`, error);
-			return { changed: false, more: false };
-		}
-		let changed = false;
-		let more = false;
-		try {
-			const stat = await handle.stat();
-			const currentUid = process.getuid?.();
-			if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid))
-				return { changed: false, more: false };
-			if (job.controlEventCursorPending) {
-				job.controlEventCursor = stat.size;
-				job.controlEventCursorPending = false;
-				return { changed: false, more: false };
-			}
-			const savedCursor = job.controlEventCursor;
-			let cursor = stat.size < (savedCursor ?? 0) ? 0 : (savedCursor ?? 0);
-			const startedFromTail = savedCursor === undefined && stat.size > CONTROL_EVENT_SCAN_WINDOW_BYTES;
-			if (startedFromTail) cursor = stat.size - CONTROL_EVENT_SCAN_WINDOW_BYTES;
-			if (stat.size <= cursor) return { changed: false, more: false };
-			const scanEnd = Math.min(stat.size, cursor + CONTROL_EVENT_SCAN_WINDOW_BYTES);
-			const buffer = Buffer.alloc(scanEnd - cursor);
-			let offset = 0;
-			while (offset < buffer.length) {
-				const toRead = Math.min(CONTROL_EVENT_READ_CHUNK_BYTES, buffer.length - offset);
-				const { bytesRead } = await handle.read(buffer, offset, toRead, cursor + offset);
-				if (bytesRead === 0) break;
-				offset += bytesRead;
-			}
-			const observed = offset === buffer.length ? buffer : buffer.subarray(0, offset);
-			let lineStart = 0;
-			let committedCursor = cursor;
-			if (startedFromTail) {
-				const newline = observed.indexOf(0x0a);
-				if (newline === -1) {
-					job.controlEventCursor = cursor + observed.length;
-					return { changed: false, more: job.controlEventCursor < stat.size };
-				}
-				lineStart = newline + 1;
-				committedCursor = cursor + lineStart;
-			}
-			for (let index = lineStart; index < observed.length; index += 1) {
-				if (observed[index] !== 0x0a) continue;
-				const line = observed.subarray(lineStart, index);
-				if (line.length <= MAX_CONTROL_EVENT_LINE_BYTES) {
-					changed = handleControlLine(job, line.toString("utf-8")) || changed;
-				}
-				lineStart = index + 1;
-				committedCursor = cursor + lineStart;
-				job.controlEventCursor = committedCursor;
-			}
-			if (observed.length - lineStart > MAX_CONTROL_EVENT_LINE_BYTES) {
-				job.controlEventCursor = cursor + observed.length;
-			} else if (committedCursor > cursor) {
-				job.controlEventCursor = committedCursor;
-			}
-			more = (job.controlEventCursor ?? 0) < stat.size;
-		} catch (error) {
-			reportAgentDiagnostic(`Failed to read async control events for '${job.asyncDir}':`, error);
-		} finally {
-			await handle.close();
-		}
-		return { changed, more };
-	};
-
 	type ObservationKind = { status?: boolean; control?: boolean };
 	const observeJob = async (job: AsyncJobState, kind: ObservationKind): Promise<void> => {
 		const observation = observations.get(job.asyncId) ?? { running: false, status: false, control: false };
@@ -501,7 +412,7 @@ export function createAsyncJobTracker(
 				observation.status = false;
 				observation.control = false;
 				if (readControl) {
-					const control = await emitNewControlEvents(job);
+					const control = await readNewAsyncControlEvents(job, (line) => handleControlLine(job, line));
 					changed ||= control.changed;
 					observation.control ||= control.more;
 				}
@@ -766,7 +677,7 @@ export function createAsyncJobTracker(
 				try {
 					entries = await fs.promises.readdir(asyncDirRoot, { withFileTypes: true });
 				} catch (error) {
-					if (hasErrorCode(error, "ENOENT")) {
+					if (errnoCode(error) === "ENOENT") {
 						if (trackerGeneration === generation && state.currentSessionId === sessionId) {
 							restoredGeneration = generation;
 						}

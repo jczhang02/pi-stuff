@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
+import { runtimeErrorCode as errorCode, isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
@@ -21,10 +21,6 @@ const FALLBACK_ORPHANS_PER_SWEEP = 64;
 const LINUX_O_TMPFILE = 0o20000000;
 const O_NOFOLLOW =
 	"O_NOFOLLOW" in fs.constants && isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
-
-function errorCode<Value>(cause: Value): string | undefined {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause ? String(cause.code) : undefined;
-}
 
 interface SessionFallbackSnapshot {
 	restore(): void;

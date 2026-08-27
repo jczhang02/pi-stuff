@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import {
+	runtimeErrorCode as errorCode,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
 	assertPrivateDirectory,
@@ -539,8 +544,4 @@ export function readAuthenticatedGroupMember(
 
 function safeProofFileName(value: string): string | undefined {
 	return /^[A-Za-z0-9._-]{1,256}$/u.test(value) && value !== "." && value !== ".." ? value : undefined;
-}
-
-function errorCode<Cause>(cause: Cause): string | undefined {
-	return cause && isRuntimeObject(cause) && "code" in cause ? String(cause.code) : undefined;
 }

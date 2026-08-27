@@ -9,7 +9,7 @@ import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { ensurePrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
 	getAsyncConfigPath,
@@ -177,7 +177,7 @@ function runnerIsAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return isRuntimeObject(error) && error !== null && "code" in error && error.code === "EPERM";
+		return errnoCode(error) === "EPERM";
 	}
 }
 
@@ -309,7 +309,7 @@ export function finalizeSpawnedRunnerClose(input: {
 					event.parentStepIndex = input.launchConfig.nestedSelf.parentStepIndex;
 				writeNestedEvent(input.launchConfig.nestedRoute, event);
 			} catch (error) {
-				if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") {
+				if (errnoCode(error) !== "ENOENT") {
 					reportAgentDiagnostic("Failed to emit final nested Agent state:", error);
 				}
 			}

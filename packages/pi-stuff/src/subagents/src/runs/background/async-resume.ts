@@ -1,39 +1,27 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isRuntimeBoolean,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../../shared/runtime-type.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { readBoundedOwnedFile, validateOwnedRegularFile } from "../../shared/private-directory.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
-import {
-	type ArtifactConfig,
-	ASYNC_DIR,
-	type AsyncStatus,
-	RESULTS_DIR,
-	type ResolvedControlConfig,
-} from "../../shared/types.ts";
-import { readStatus } from "../../shared/utils.ts";
+import { ASYNC_DIR, type AsyncStatus, RESULTS_DIR } from "../../shared/types.ts";
+import { getErrorMessage, isNotFoundError, readStatus } from "../../shared/utils.ts";
 import {
 	intersectSubagentCapabilityCeilings,
 	parseSubagentCapabilityCeiling,
 	type ResolvedSubagentCapabilityCeiling,
 } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
-import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
-import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
-import type { BackgroundRecoveryDescriptor } from "./async-execution.ts";
+import { type AsyncRecoveryDescriptor, readAsyncRecoveryDescriptor } from "./recovery-descriptor.ts";
+import { type AsyncResultFile, MAX_ASYNC_RESULT_BYTES, parseAsyncResultFile } from "./result-file.ts";
 import { reconcileAsyncRun } from "./stale-run-reconciler.ts";
 
-export type LegacyRecoveryDescriptor = Omit<BackgroundRecoveryDescriptor, "version" | "childIndex" | "context"> & {
-	version: 1;
-};
-export type AsyncRecoveryDescriptor = LegacyRecoveryDescriptor | BackgroundRecoveryDescriptor;
+export {
+	type AsyncRecoveryDescriptor,
+	type LegacyRecoveryDescriptor,
+	readAsyncRecoveryDescriptor,
+} from "./recovery-descriptor.ts";
 
 export interface AsyncResumeParams {
 	id?: string;
@@ -55,9 +43,6 @@ export interface AsyncResumeOptions {
 	sessionScope?: SessionCompatibilityScope;
 }
 
-const MAX_RECOVERY_DESCRIPTOR_BYTES = 2 * 1024 * 1024;
-const MAX_ASYNC_RESULT_BYTES = 32 * 1024 * 1024;
-
 export type AsyncResumeTarget = {
 	kind: "live" | "revive";
 	runId: string;
@@ -75,153 +60,10 @@ export type AsyncResumeTarget = {
 	launchContractDigest?: string | undefined;
 };
 
-interface AsyncResultFile {
-	id?: string | undefined;
-	runId?: string | undefined;
-	agent?: string | undefined;
-	mode?: string | undefined;
-	state?: string | undefined;
-	success?: boolean | undefined;
-	cwd?: string | undefined;
-	sessionId?: string | undefined;
-	sessionFile?: string | undefined;
-	model?: string | undefined;
-	thinking?: string | undefined;
-	launchContractDigest?: string | undefined;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
-	results?:
-		| Array<{
-				agent?: string | undefined;
-				success?: boolean | undefined;
-				state?: string | undefined;
-				interrupted?: boolean | undefined;
-				stopped?: boolean | undefined;
-				sessionFile?: string | undefined;
-				intercomTarget?: string | undefined;
-				model?: string | undefined;
-				thinking?: string | undefined;
-				launchContractDigest?: string | undefined;
-				capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
-		  }>
-		| undefined;
-}
-
 export interface AsyncRunLocation {
 	asyncDir: string | null;
 	resultPath: string | null;
 	resolvedId?: string;
-}
-
-function getErrorMessage(cause: unknown): string {
-	return cause instanceof Error ? cause.message : String(cause);
-}
-
-function ensureObject(value: JsonValue, source: string): JsonObject {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
-		throw new Error(`Async result file '${source}' must contain a JSON object.`);
-	}
-	return value;
-}
-
-function validateOptionalString(
-	value: JsonObject,
-	field: string,
-	source: string,
-	displayField = field,
-): string | undefined {
-	const fieldValue = value[field];
-	if (fieldValue === undefined) return undefined;
-	if (!isRuntimeString(fieldValue))
-		throw new Error(`Invalid async result file '${source}': ${displayField} must be a string.`);
-	return fieldValue;
-}
-
-function validateResultFile(value: JsonValue, resultPath: string): AsyncResultFile {
-	const data = ensureObject(value, resultPath);
-	const resultsValue = data["results"];
-	let results: AsyncResultFile["results"];
-	if (resultsValue !== undefined) {
-		if (!Array.isArray(resultsValue))
-			throw new Error(`Invalid async result file '${resultPath}': results must be an array.`);
-		results = resultsValue.map((entry, index) => {
-			const child = ensureObject(entry, `${resultPath} results[${index}]`);
-			const agent = validateOptionalString(child, "agent", resultPath, `results[${index}].agent`);
-			const sessionFile = validateOptionalString(child, "sessionFile", resultPath, `results[${index}].sessionFile`);
-			const intercomTarget = validateOptionalString(
-				child,
-				"intercomTarget",
-				resultPath,
-				`results[${index}].intercomTarget`,
-			);
-			const model = validateOptionalString(child, "model", resultPath, `results[${index}].model`);
-			const thinking = validateOptionalString(child, "thinking", resultPath, `results[${index}].thinking`);
-			const launchContractDigest = validateOptionalString(
-				child,
-				"launchContractDigest",
-				resultPath,
-				`results[${index}].launchContractDigest`,
-			);
-			const capabilityCeiling =
-				child["capabilityCeiling"] === undefined
-					? undefined
-					: parseSubagentCapabilityCeiling(
-							child["capabilityCeiling"],
-							`async result file '${resultPath}' results[${index}].capabilityCeiling`,
-						);
-			const success = child["success"];
-			if (success !== undefined && !isRuntimeBoolean(success))
-				throw new Error(`Invalid async result file '${resultPath}': results[${index}].success must be a boolean.`);
-			const interrupted = child["interrupted"];
-			if (interrupted !== undefined && !isRuntimeBoolean(interrupted)) {
-				throw new Error(
-					`Invalid async result file '${resultPath}': results[${index}].interrupted must be a boolean.`,
-				);
-			}
-			const stopped = child["stopped"];
-			if (stopped !== undefined && !isRuntimeBoolean(stopped)) {
-				throw new Error(`Invalid async result file '${resultPath}': results[${index}].stopped must be a boolean.`);
-			}
-			const result: NonNullable<AsyncResultFile["results"]>[number] = {
-				agent,
-				state: validateOptionalString(child, "state", resultPath, `results[${index}].state`),
-				sessionFile,
-				intercomTarget,
-				model,
-				thinking,
-				launchContractDigest,
-			};
-			if (capabilityCeiling) result.capabilityCeiling = capabilityCeiling;
-			if (isRuntimeBoolean(success)) result.success = success;
-			if (isRuntimeBoolean(interrupted)) result.interrupted = interrupted;
-			if (isRuntimeBoolean(stopped)) result.stopped = stopped;
-			return result;
-		});
-	}
-	const success = data["success"];
-	if (success !== undefined && !isRuntimeBoolean(success))
-		throw new Error(`Invalid async result file '${resultPath}': success must be a boolean.`);
-	const result: AsyncResultFile = {
-		id: validateOptionalString(data, "id", resultPath),
-		runId: validateOptionalString(data, "runId", resultPath),
-		agent: validateOptionalString(data, "agent", resultPath),
-		mode: validateOptionalString(data, "mode", resultPath),
-		state: validateOptionalString(data, "state", resultPath),
-		cwd: validateOptionalString(data, "cwd", resultPath),
-		sessionId: validateOptionalString(data, "sessionId", resultPath),
-		sessionFile: validateOptionalString(data, "sessionFile", resultPath),
-		model: validateOptionalString(data, "model", resultPath),
-		thinking: validateOptionalString(data, "thinking", resultPath),
-		launchContractDigest: validateOptionalString(data, "launchContractDigest", resultPath),
-	};
-	if (data["capabilityCeiling"] !== undefined) {
-		result.capabilityCeiling = parseSubagentCapabilityCeiling(
-			data["capabilityCeiling"],
-			`async result file '${resultPath}' capabilityCeiling`,
-		);
-	}
-	if (isRuntimeBoolean(success)) result.success = success;
-	if (results) result.results = results;
-	return result;
 }
 
 function readResultFile(resultPath: string): AsyncResultFile {
@@ -234,7 +76,7 @@ function readResultFile(resultPath: string): AsyncResultFile {
 		});
 	}
 	try {
-		return validateResultFile(parseJsonValue(raw), resultPath);
+		return parseAsyncResultFile(parseJsonValue(raw), resultPath);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			throw new Error(`Failed to parse async result file '${resultPath}': ${getErrorMessage(error)}`, {
@@ -260,10 +102,6 @@ function assertInsideRoot(root: string, target: string, label: string): void {
 	const relative = path.relative(rootPath, targetPath);
 	if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
 	throw new Error(`${label} must be inside ${rootPath}.`);
-}
-
-function isNotFoundError(cause: unknown): boolean {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
 function isSafeDirectEntry(root: string, target: string, kind: "directory" | "file"): boolean {
@@ -452,660 +290,6 @@ function validateStatusForResume(status: AsyncStatus | null, source: string): vo
 	}
 }
 
-function parseRecoveryJson(descriptorPath: string): JsonValue {
-	try {
-		return parseJsonValue(readBoundedOwnedFile(descriptorPath, MAX_RECOVERY_DESCRIPTOR_BYTES));
-	} catch (error) {
-		throw new Error(`Failed to parse async recovery descriptor '${descriptorPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
-	}
-}
-
-function recoveryStringArray(
-	value: JsonValue | undefined,
-	field: string,
-	descriptorPath: string,
-): string[] | undefined {
-	if (value === undefined) return undefined;
-	if (!Array.isArray(value) || value.some((entry) => !isRuntimeString(entry) || !entry.trim())) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': ${field} must contain non-empty strings.`,
-		);
-	}
-	return value.flatMap((entry) => (isRuntimeString(entry) ? [entry] : []));
-}
-
-function recoveryNonemptyString(
-	value: JsonValue | undefined,
-	field: string,
-	descriptorPath: string,
-): string | undefined {
-	if (value === undefined) return undefined;
-	if (!isRuntimeString(value) || !value.trim()) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a non-empty string.`);
-	}
-	return value;
-}
-
-function requiredRecoveryString(value: JsonValue | undefined, field: string, descriptorPath: string): string {
-	const parsed = recoveryNonemptyString(value, field, descriptorPath);
-	if (parsed === undefined) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a non-empty string.`);
-	}
-	return parsed;
-}
-
-function requiredRecoveryBoolean(value: JsonValue | undefined, field: string, descriptorPath: string): boolean {
-	if (!isRuntimeBoolean(value)) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a boolean.`);
-	}
-	return value;
-}
-
-function recoveryInteger(value: JsonValue | undefined, field: string, descriptorPath: string, minimum: number): number {
-	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value < minimum) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a ${minimum === 0 ? "non-negative" : "positive"} integer.`,
-		);
-	}
-	return value;
-}
-
-function validateV2RecoveryDescriptor(value: JsonValue, descriptorPath: string): BackgroundRecoveryDescriptor {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': expected an object.`);
-	}
-	const parsed = value;
-	const allowedFields = new Set([
-		"version",
-		"sourceRunId",
-		"childIndex",
-		"launchContractDigest",
-		"agent",
-		"context",
-		"sessionFile",
-		"cwd",
-		"model",
-		"fallbackModels",
-		"thinking",
-		"tools",
-		"extensions",
-		"subagentOnlyExtensions",
-		"mcpDirectTools",
-		"systemPrompt",
-		"systemPromptMode",
-		"inheritProjectContext",
-		"inheritSkills",
-		"skills",
-		"skillPath",
-		"agentFilePath",
-		"controlConfig",
-		"absoluteDeadlineAt",
-		"initialTurnBudget",
-		"initialToolBudget",
-		"maxSubagentDepth",
-		"capabilityCeiling",
-		"sessionDir",
-		"artifactsDir",
-		"artifactConfig",
-	]);
-	for (const field of Object.keys(parsed)) {
-		if (!allowedFields.has(field)) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': unknown field '${field}'.`);
-		}
-	}
-	if (parsed["version"] !== 2) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': version must be 2.`);
-	}
-	const sourceRunId = requiredRecoveryString(parsed["sourceRunId"], "sourceRunId", descriptorPath);
-	const agent = requiredRecoveryString(parsed["agent"], "agent", descriptorPath);
-	const cwd = requiredRecoveryString(parsed["cwd"], "cwd", descriptorPath);
-	const childIndex = recoveryInteger(parsed["childIndex"], "childIndex", descriptorPath, 0);
-	const context = parsed["context"];
-	if (context !== undefined && context !== "fresh" && context !== "fork") {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': context must be fresh or fork.`);
-	}
-	const systemPromptMode = parsed["systemPromptMode"];
-	if (systemPromptMode !== "append" && systemPromptMode !== "replace") {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPromptMode is invalid.`);
-	}
-	const inheritProjectContext = requiredRecoveryBoolean(
-		parsed["inheritProjectContext"],
-		"inheritProjectContext",
-		descriptorPath,
-	);
-	const inheritSkills = requiredRecoveryBoolean(parsed["inheritSkills"], "inheritSkills", descriptorPath);
-	const maxSubagentDepth = recoveryInteger(parsed["maxSubagentDepth"], "maxSubagentDepth", descriptorPath, 0);
-	const fallbackModels = recoveryStringArray(parsed["fallbackModels"], "fallbackModels", descriptorPath);
-	const tools = recoveryStringArray(parsed["tools"], "tools", descriptorPath);
-	const extensions = recoveryStringArray(parsed["extensions"], "extensions", descriptorPath);
-	const subagentOnlyExtensions = recoveryStringArray(
-		parsed["subagentOnlyExtensions"],
-		"subagentOnlyExtensions",
-		descriptorPath,
-	);
-	const mcpDirectTools = recoveryStringArray(parsed["mcpDirectTools"], "mcpDirectTools", descriptorPath);
-	const skills = recoveryStringArray(parsed["skills"], "skills", descriptorPath);
-	const skillPath = recoveryStringArray(parsed["skillPath"], "skillPath", descriptorPath);
-	if (fallbackModels && fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': fallbackModels must contain fewer than ${MAX_MODEL_CANDIDATES_PER_CHILD} entries.`,
-		);
-	}
-	const systemPrompt = parsed["systemPrompt"];
-	if (systemPrompt !== undefined && !isRuntimeString(systemPrompt)) {
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPrompt must be a string.`);
-	}
-	const launchContractDigest = recoveryNonemptyString(
-		parsed["launchContractDigest"],
-		"launchContractDigest",
-		descriptorPath,
-	);
-	const sessionFile = recoveryNonemptyString(parsed["sessionFile"], "sessionFile", descriptorPath);
-	const model = recoveryNonemptyString(parsed["model"], "model", descriptorPath);
-	const thinking = recoveryNonemptyString(parsed["thinking"], "thinking", descriptorPath);
-	const agentFilePath = recoveryNonemptyString(parsed["agentFilePath"], "agentFilePath", descriptorPath);
-	const sessionDir = recoveryNonemptyString(parsed["sessionDir"], "sessionDir", descriptorPath);
-	const artifactsDir = recoveryNonemptyString(parsed["artifactsDir"], "artifactsDir", descriptorPath);
-	const absoluteDeadlineAt = parsed["absoluteDeadlineAt"];
-	if (
-		absoluteDeadlineAt !== undefined &&
-		(!isRuntimeNumber(absoluteDeadlineAt) || !Number.isFinite(absoluteDeadlineAt) || absoluteDeadlineAt <= 0)
-	) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': absoluteDeadlineAt must be a positive timestamp.`,
-		);
-	}
-	let initialTurnBudget: BackgroundRecoveryDescriptor["initialTurnBudget"];
-	if (parsed["initialTurnBudget"] !== undefined) {
-		const result = resolveTurnBudgetConfig(parsed["initialTurnBudget"], "recoveryDescriptor.initialTurnBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-		initialTurnBudget = result.turnBudget;
-	}
-	let initialToolBudget: BackgroundRecoveryDescriptor["initialToolBudget"];
-	if (parsed["initialToolBudget"] !== undefined) {
-		const result = validateToolBudgetConfig(parsed["initialToolBudget"], "recoveryDescriptor.initialToolBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-		initialToolBudget = result.budget;
-	}
-	let capabilityCeiling: ResolvedSubagentCapabilityCeiling | undefined;
-	if (parsed["capabilityCeiling"] !== undefined) {
-		capabilityCeiling = parseSubagentCapabilityCeiling(
-			parsed["capabilityCeiling"],
-			`async recovery descriptor '${descriptorPath}' capabilityCeiling`,
-		);
-	}
-	let artifactConfig: ArtifactConfig | undefined;
-	if (parsed["artifactConfig"] !== undefined) {
-		if (
-			!parsed["artifactConfig"] ||
-			!isRuntimeObject(parsed["artifactConfig"]) ||
-			Array.isArray(parsed["artifactConfig"])
-		) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': artifactConfig must be an object.`);
-		}
-		const artifact = parsed["artifactConfig"];
-		const allowedArtifactFields = new Set([
-			"enabled",
-			"dir",
-			"includeInput",
-			"includeOutput",
-			"includeJsonl",
-			"includeTranscript",
-			"includeMetadata",
-			"cleanupDays",
-		]);
-		const unknownArtifactField = Object.keys(artifact).find((field) => !allowedArtifactFields.has(field));
-		if (unknownArtifactField) {
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': unknown artifactConfig field '${unknownArtifactField}'.`,
-			);
-		}
-		const artifactEnabled = requiredRecoveryBoolean(artifact["enabled"], "artifactConfig.enabled", descriptorPath);
-		const includeInput = requiredRecoveryBoolean(
-			artifact["includeInput"],
-			"artifactConfig.includeInput",
-			descriptorPath,
-		);
-		const includeOutput = requiredRecoveryBoolean(
-			artifact["includeOutput"],
-			"artifactConfig.includeOutput",
-			descriptorPath,
-		);
-		const includeJsonl = requiredRecoveryBoolean(
-			artifact["includeJsonl"],
-			"artifactConfig.includeJsonl",
-			descriptorPath,
-		);
-		const includeMetadata = requiredRecoveryBoolean(
-			artifact["includeMetadata"],
-			"artifactConfig.includeMetadata",
-			descriptorPath,
-		);
-		if (artifact["includeTranscript"] !== undefined && !isRuntimeBoolean(artifact["includeTranscript"])) {
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.includeTranscript must be a boolean.`,
-			);
-		}
-		if (
-			artifact["dir"] !== undefined &&
-			artifact["dir"] !== "project" &&
-			artifact["dir"] !== "session" &&
-			artifact["dir"] !== "temp"
-		) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.dir is invalid.`);
-		}
-		const cleanupDays = recoveryInteger(artifact["cleanupDays"], "artifactConfig.cleanupDays", descriptorPath, 0);
-		artifactConfig = {
-			cleanupDays,
-			enabled: artifactEnabled,
-			includeInput,
-			includeJsonl,
-			includeMetadata,
-			includeOutput,
-		};
-		if (artifact["dir"]) artifactConfig.dir = artifact["dir"];
-		if (artifact["includeTranscript"] !== undefined) artifactConfig.includeTranscript = artifact["includeTranscript"];
-	}
-	let controlConfig: ResolvedControlConfig | undefined;
-	if (parsed["controlConfig"] !== undefined) {
-		if (
-			!parsed["controlConfig"] ||
-			!isRuntimeObject(parsed["controlConfig"]) ||
-			Array.isArray(parsed["controlConfig"])
-		) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': controlConfig must be an object.`);
-		}
-		const control = parsed["controlConfig"];
-		const allowedControlFields = new Set([
-			"enabled",
-			"needsAttentionAfterMs",
-			"activeNoticeAfterMs",
-			"activeNoticeAfterTurns",
-			"activeNoticeAfterTokens",
-			"failedToolAttemptsBeforeAttention",
-			"notifyOn",
-			"notifyChannels",
-		]);
-		const unknownControlField = Object.keys(control).find((field) => !allowedControlFields.has(field));
-		if (unknownControlField) {
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': unknown controlConfig field '${unknownControlField}'.`,
-			);
-		}
-		const controlEnabled = requiredRecoveryBoolean(control["enabled"], "controlConfig.enabled", descriptorPath);
-		const needsAttentionAfterMs = recoveryInteger(
-			control["needsAttentionAfterMs"],
-			"controlConfig.needsAttentionAfterMs",
-			descriptorPath,
-			1,
-		);
-		const activeNoticeAfterMs = recoveryInteger(
-			control["activeNoticeAfterMs"],
-			"controlConfig.activeNoticeAfterMs",
-			descriptorPath,
-			1,
-		);
-		const failedToolAttemptsBeforeAttention = recoveryInteger(
-			control["failedToolAttemptsBeforeAttention"],
-			"controlConfig.failedToolAttemptsBeforeAttention",
-			descriptorPath,
-			1,
-		);
-		const activeNoticeAfterTurns =
-			control["activeNoticeAfterTurns"] === undefined
-				? undefined
-				: recoveryInteger(
-						control["activeNoticeAfterTurns"],
-						"controlConfig.activeNoticeAfterTurns",
-						descriptorPath,
-						1,
-					);
-		const activeNoticeAfterTokens =
-			control["activeNoticeAfterTokens"] === undefined
-				? undefined
-				: recoveryInteger(
-						control["activeNoticeAfterTokens"],
-						"controlConfig.activeNoticeAfterTokens",
-						descriptorPath,
-						1,
-					);
-		if (
-			!Array.isArray(control["notifyOn"]) ||
-			control["notifyOn"].some((item) => item !== "active_long_running" && item !== "needs_attention")
-		) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': controlConfig.notifyOn is invalid.`);
-		}
-		if (
-			!Array.isArray(control["notifyChannels"]) ||
-			control["notifyChannels"].some((item) => item !== "event" && item !== "async" && item !== "intercom")
-		) {
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': controlConfig.notifyChannels is invalid.`,
-			);
-		}
-		const notifyOn: ResolvedControlConfig["notifyOn"] = [];
-		for (const item of control["notifyOn"]) {
-			if (item === "active_long_running" || item === "needs_attention") notifyOn.push(item);
-		}
-		const notifyChannels: ResolvedControlConfig["notifyChannels"] = [];
-		for (const item of control["notifyChannels"]) {
-			if (item === "event" || item === "async" || item === "intercom") notifyChannels.push(item);
-		}
-		const resolvedControl: ResolvedControlConfig = {
-			activeNoticeAfterMs,
-			enabled: controlEnabled,
-			failedToolAttemptsBeforeAttention,
-			needsAttentionAfterMs,
-			notifyChannels,
-			notifyOn,
-		};
-		if (activeNoticeAfterTurns !== undefined) resolvedControl.activeNoticeAfterTurns = activeNoticeAfterTurns;
-		if (activeNoticeAfterTokens !== undefined) resolvedControl.activeNoticeAfterTokens = activeNoticeAfterTokens;
-		controlConfig = resolvedControl;
-	}
-	const descriptor: BackgroundRecoveryDescriptor = {
-		agent,
-		childIndex,
-		cwd,
-		inheritProjectContext,
-		inheritSkills,
-		maxSubagentDepth,
-		sourceRunId,
-		systemPromptMode,
-		version: 2,
-	};
-	if (launchContractDigest) descriptor.launchContractDigest = launchContractDigest;
-	if (context) descriptor.context = context;
-	if (sessionFile) descriptor.sessionFile = sessionFile;
-	if (model) descriptor.model = model;
-	if (fallbackModels) descriptor.fallbackModels = fallbackModels;
-	if (thinking) descriptor.thinking = thinking;
-	if (tools) descriptor.tools = tools;
-	if (extensions) descriptor.extensions = extensions;
-	if (subagentOnlyExtensions) descriptor.subagentOnlyExtensions = subagentOnlyExtensions;
-	if (mcpDirectTools) descriptor.mcpDirectTools = mcpDirectTools;
-	if (systemPrompt !== undefined) descriptor.systemPrompt = systemPrompt;
-	if (skills) descriptor.skills = skills;
-	if (skillPath) descriptor.skillPath = skillPath;
-	if (agentFilePath) descriptor.agentFilePath = agentFilePath;
-	if (controlConfig) descriptor.controlConfig = controlConfig;
-	if (absoluteDeadlineAt !== undefined) descriptor.absoluteDeadlineAt = absoluteDeadlineAt;
-	if (initialTurnBudget) descriptor.initialTurnBudget = initialTurnBudget;
-	if (initialToolBudget) descriptor.initialToolBudget = initialToolBudget;
-	if (capabilityCeiling) descriptor.capabilityCeiling = capabilityCeiling;
-	if (sessionDir) descriptor.sessionDir = sessionDir;
-	if (artifactsDir) descriptor.artifactsDir = artifactsDir;
-	if (artifactConfig) descriptor.artifactConfig = artifactConfig;
-	return descriptor;
-}
-
-export function readAsyncRecoveryDescriptor(
-	asyncDir: string | undefined,
-	childIndex?: number,
-): AsyncRecoveryDescriptor | undefined {
-	if (!asyncDir) return undefined;
-	const collectionPath = path.join(asyncDir, "recovery-descriptors.json");
-	let descriptorPath = path.join(asyncDir, "recovery-descriptor.json");
-	let value: JsonValue | undefined;
-	if (fs.existsSync(collectionPath)) {
-		const collection = parseRecoveryJson(collectionPath);
-		if (!collection || !isRuntimeObject(collection) || Array.isArray(collection)) {
-			throw new Error(`Invalid async recovery descriptor '${collectionPath}': expected an object.`);
-		}
-		const wrapper = collection;
-		if (wrapper["version"] !== 2 || !Array.isArray(wrapper["children"])) {
-			throw new Error(
-				`Invalid async recovery descriptor '${collectionPath}': expected version 2 with a children array.`,
-			);
-		}
-		for (const field of Object.keys(wrapper)) {
-			if (field !== "version" && field !== "children") {
-				throw new Error(`Invalid async recovery descriptor '${collectionPath}': unknown field '${field}'.`);
-			}
-		}
-		if (childIndex === undefined) {
-			if (wrapper["children"].length !== 1) return undefined;
-			value = wrapper["children"][0];
-		} else {
-			value = wrapper["children"].find((child) => {
-				if (!child || !isRuntimeObject(child) || Array.isArray(child)) return false;
-				return child["childIndex"] === childIndex;
-			});
-			if (value === undefined) {
-				throw new Error(`Invalid async recovery descriptor '${collectionPath}': child ${childIndex} is missing.`);
-			}
-		}
-		descriptorPath = `${collectionPath} children[${childIndex ?? 0}]`;
-	} else {
-		if (!fs.existsSync(descriptorPath)) return undefined;
-		value = parseRecoveryJson(descriptorPath);
-	}
-	if (!value || !isRuntimeObject(value) || Array.isArray(value))
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': expected an object.`);
-	const parsed = value;
-	if (parsed["version"] === 2) {
-		const descriptor = validateV2RecoveryDescriptor(parsed, descriptorPath);
-		if (childIndex !== undefined && descriptor.childIndex !== childIndex) {
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': expected childIndex ${childIndex}.`);
-		}
-		return descriptor;
-	}
-	const allowedFields = new Set([
-		"version",
-		"launchContractDigest",
-		"sourceRunId",
-		"agentContract",
-		"agent",
-		"sessionFile",
-		"cwd",
-		"model",
-		"fallbackModels",
-		"thinking",
-		"tools",
-		"extensions",
-		"subagentOnlyExtensions",
-		"mcpDirectTools",
-		"systemPrompt",
-		"systemPromptMode",
-		"inheritProjectContext",
-		"inheritSkills",
-		"skills",
-		"skillPath",
-		"agentFilePath",
-		"completionGuard",
-		"outputPath",
-		"outputMode",
-		"structuredOutputSchema",
-		"acceptance",
-		"sessionDir",
-		"artifactConfig",
-		"artifactsDir",
-		"maxOutput",
-		"controlConfig",
-		"absoluteDeadlineAt",
-		"initialTurnBudget",
-		"initialToolBudget",
-		"maxSubagentDepth",
-		"capabilityCeiling",
-	]);
-	for (const field of Object.keys(parsed)) {
-		if (!allowedFields.has(field))
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': unknown field '${field}'.`);
-	}
-	const requiredStrings = ["sourceRunId", "agent", "cwd", "systemPromptMode"] as const;
-	for (const field of requiredStrings) {
-		const item = parsed[field];
-		if (!isRuntimeString(item) || !item.trim())
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a non-empty string.`);
-	}
-	if (parsed["version"] !== 1)
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': version must be 1.`);
-	const capabilityCeiling =
-		parsed["capabilityCeiling"] === undefined
-			? undefined
-			: parseSubagentCapabilityCeiling(
-					parsed["capabilityCeiling"],
-					`async recovery descriptor '${descriptorPath}' capabilityCeiling`,
-				);
-	const rawSystemPromptMode = parsed["systemPromptMode"];
-	if (rawSystemPromptMode !== "append" && rawSystemPromptMode !== "replace")
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPromptMode is invalid.`);
-	const systemPromptMode: LegacyRecoveryDescriptor["systemPromptMode"] = rawSystemPromptMode;
-	for (const field of ["inheritProjectContext", "inheritSkills"] as const) {
-		if (!isRuntimeBoolean(parsed[field]))
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a boolean.`);
-	}
-	if (
-		!isRuntimeNumber(parsed["maxSubagentDepth"]) ||
-		!Number.isInteger(parsed["maxSubagentDepth"]) ||
-		parsed["maxSubagentDepth"] < 0
-	)
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': maxSubagentDepth must be a non-negative integer.`,
-		);
-	for (const field of [
-		"fallbackModels",
-		"tools",
-		"extensions",
-		"subagentOnlyExtensions",
-		"mcpDirectTools",
-		"skills",
-		"skillPath",
-	] as const) {
-		const item = parsed[field];
-		if (
-			item !== undefined &&
-			(!Array.isArray(item) || item.some((entry) => !isRuntimeString(entry) || !entry.trim()))
-		)
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': ${field} must contain non-empty strings.`,
-			);
-	}
-	if (Array.isArray(parsed["fallbackModels"]) && parsed["fallbackModels"].length >= MAX_MODEL_CANDIDATES_PER_CHILD) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': fallbackModels must contain fewer than ${MAX_MODEL_CANDIDATES_PER_CHILD} entries.`,
-		);
-	}
-	if (parsed["systemPrompt"] !== undefined && !isRuntimeString(parsed["systemPrompt"]))
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPrompt must be a string.`);
-	for (const field of [
-		"launchContractDigest",
-		"sessionFile",
-		"model",
-		"thinking",
-		"agentFilePath",
-		"sessionDir",
-		"artifactsDir",
-	] as const) {
-		const item = parsed[field];
-		if (item !== undefined && (!isRuntimeString(item) || !item.trim()))
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a non-empty string.`);
-	}
-	const absoluteDeadlineAt = parsed["absoluteDeadlineAt"];
-	if (
-		absoluteDeadlineAt !== undefined &&
-		(!isRuntimeNumber(absoluteDeadlineAt) || !Number.isFinite(absoluteDeadlineAt) || absoluteDeadlineAt <= 0)
-	)
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': absoluteDeadlineAt must be a positive timestamp.`,
-		);
-	if (parsed["initialTurnBudget"] !== undefined) {
-		const result = resolveTurnBudgetConfig(parsed["initialTurnBudget"], "recoveryDescriptor.initialTurnBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-	}
-	if (parsed["initialToolBudget"] !== undefined) {
-		const result = validateToolBudgetConfig(parsed["initialToolBudget"], "recoveryDescriptor.initialToolBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-	}
-	if (parsed["artifactConfig"] !== undefined) {
-		if (
-			!parsed["artifactConfig"] ||
-			!isRuntimeObject(parsed["artifactConfig"]) ||
-			Array.isArray(parsed["artifactConfig"])
-		)
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': artifactConfig must be an object.`);
-		const artifact = parsed["artifactConfig"];
-		for (const field of ["enabled", "includeInput", "includeOutput", "includeJsonl", "includeMetadata"] as const) {
-			if (!isRuntimeBoolean(artifact[field]))
-				throw new Error(
-					`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.${field} must be a boolean.`,
-				);
-		}
-		if (artifact["includeTranscript"] !== undefined && !isRuntimeBoolean(artifact["includeTranscript"]))
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.includeTranscript must be a boolean.`,
-			);
-		if (
-			!isRuntimeNumber(artifact["cleanupDays"]) ||
-			!Number.isInteger(artifact["cleanupDays"]) ||
-			artifact["cleanupDays"] < 0
-		)
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.cleanupDays must be a non-negative integer.`,
-			);
-	}
-	if (parsed["controlConfig"] !== undefined) {
-		if (
-			!parsed["controlConfig"] ||
-			!isRuntimeObject(parsed["controlConfig"]) ||
-			Array.isArray(parsed["controlConfig"])
-		)
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': controlConfig must be an object.`);
-		const control = parsed["controlConfig"];
-		if (!isRuntimeBoolean(control["enabled"]))
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': controlConfig.enabled must be a boolean.`,
-			);
-		for (const field of [
-			"needsAttentionAfterMs",
-			"activeNoticeAfterMs",
-			"failedToolAttemptsBeforeAttention",
-		] as const) {
-			const item = control[field];
-			if (!isRuntimeNumber(item) || !Number.isInteger(item) || item < 1)
-				throw new Error(
-					`Invalid async recovery descriptor '${descriptorPath}': controlConfig.${field} must be a positive integer.`,
-				);
-		}
-		for (const field of ["activeNoticeAfterTurns", "activeNoticeAfterTokens"] as const) {
-			const item = control[field];
-			if (item !== undefined && (!isRuntimeNumber(item) || !Number.isInteger(item) || item < 1))
-				throw new Error(
-					`Invalid async recovery descriptor '${descriptorPath}': controlConfig.${field} must be a positive integer.`,
-				);
-		}
-		if (
-			!Array.isArray(control["notifyOn"]) ||
-			control["notifyOn"].some((item) => item !== "active_long_running" && item !== "needs_attention")
-		)
-			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': controlConfig.notifyOn is invalid.`);
-		if (
-			!Array.isArray(control["notifyChannels"]) ||
-			control["notifyChannels"].some((item) => item !== "event" && item !== "async" && item !== "intercom")
-		)
-			throw new Error(
-				`Invalid async recovery descriptor '${descriptorPath}': controlConfig.notifyChannels is invalid.`,
-			);
-	}
-	const descriptor = Object.assign({}, parsed, {
-		version: 1 as const,
-		sourceRunId: requiredRecoveryString(parsed["sourceRunId"], "sourceRunId", descriptorPath),
-		agent: requiredRecoveryString(parsed["agent"], "agent", descriptorPath),
-		cwd: requiredRecoveryString(parsed["cwd"], "cwd", descriptorPath),
-		systemPromptMode,
-		inheritProjectContext: requiredRecoveryBoolean(
-			parsed["inheritProjectContext"],
-			"inheritProjectContext",
-			descriptorPath,
-		),
-		inheritSkills: requiredRecoveryBoolean(parsed["inheritSkills"], "inheritSkills", descriptorPath),
-		maxSubagentDepth: recoveryInteger(parsed["maxSubagentDepth"], "maxSubagentDepth", descriptorPath, 0),
-	});
-	return capabilityCeiling ? Object.assign(descriptor, { capabilityCeiling }) : descriptor;
-}
-
 function validateResumeSessionFile(runId: string, sessionFile: string): string {
 	if (path.extname(sessionFile) !== ".jsonl")
 		throw new Error(`Async run '${runId}' session file must be a .jsonl file: ${sessionFile}`);
@@ -1121,18 +305,9 @@ function validateResumeSessionFile(runId: string, sessionFile: string): string {
 	}
 }
 
-function readResumeStatus(asyncDir: string): AsyncStatus | null {
-	return readStatus(asyncDir);
-}
-
-export function resolveAsyncResumeTarget(
-	params: AsyncResumeParams,
-	deps: AsyncResumeDeps = {},
-	options: AsyncResumeOptions = {},
-): AsyncResumeTarget {
+function readResumeRecords(params: AsyncResumeParams, deps: AsyncResumeDeps, options: AsyncResumeOptions) {
 	const asyncDirRoot = deps.asyncDirRoot ?? ASYNC_DIR;
 	const resultsDir = deps.resultsDir ?? RESULTS_DIR;
-	const requireSessionFile = options.requireSessionFile ?? true;
 	const location = resolveAsyncRunLocation(params, asyncDirRoot, resultsDir);
 	if (!location.asyncDir && !location.resultPath) {
 		throw new Error("Async run not found. Provide id or dir.");
@@ -1140,7 +315,7 @@ export function resolveAsyncResumeTarget(
 
 	// Establish immutable session ownership from safe, read-only records before
 	// stale reconciliation is allowed to signal a process or rewrite status.
-	const storedStatus = location.asyncDir ? readResumeStatus(location.asyncDir) : null;
+	const storedStatus = location.asyncDir ? readStatus(location.asyncDir) : null;
 	const result = location.resultPath ? readResultFile(location.resultPath) : undefined;
 	const expectedRunId =
 		location.resolvedId ??
@@ -1187,98 +362,72 @@ export function resolveAsyncResumeTarget(
 	const statusSteps = status?.steps ?? [];
 	const resultSteps = result?.results ?? [];
 	const stepCount = statusSteps.length || resultSteps.length || (result?.agent ? 1 : 0);
-	const requestedIndex = params.index;
-	if (requestedIndex !== undefined && !Number.isInteger(requestedIndex))
-		throw new Error(`Async run '${runId}' index must be an integer.`);
-	const terminalStepStatuses = new Set(["complete", "completed", "failed", "paused"]);
+	return { location, status, result, recoveryDescriptor, runId, state, statusSteps, resultSteps, stepCount };
+}
 
-	if (state === "running") {
-		if (requestedIndex !== undefined) {
-			if (requestedIndex < 0 || requestedIndex >= stepCount)
-				throw new Error(`Async run '${runId}' has ${stepCount} children. Index ${requestedIndex} is out of range.`);
-			const selectedStep = statusSteps[requestedIndex];
-			if (selectedStep?.status === "running") {
-				const capabilityCeiling = intersectSubagentCapabilityCeilings(
-					status?.capabilityCeiling,
-					selectedStep.capabilityCeiling,
-				);
-				const target: AsyncResumeTarget = {
-					kind: "live",
-					runId,
-					asyncDir: location.asyncDir ?? undefined,
-					state,
-					agent: selectedStep.agent,
-					index: requestedIndex,
-					cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
-					sessionFile: selectedStep.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
-					model: selectedStep.model,
-					thinking: selectedStep.thinking,
-					launchContractDigest:
-						selectedStep.launchContractDigest ??
-						result?.results?.[requestedIndex]?.launchContractDigest ??
-						result?.launchContractDigest ??
-						recoveryDescriptor?.launchContractDigest,
-				};
-				if (recoveryDescriptor?.version === 2 && recoveryDescriptor.context) {
-					target.context = recoveryDescriptor.context;
-				}
-				if (capabilityCeiling) target.capabilityCeiling = capabilityCeiling;
-				if (recoveryDescriptor) target.recoveryDescriptor = recoveryDescriptor;
-				return target;
-			}
-			if (selectedStep?.status === "pending")
-				throw new Error(
-					`Async run '${runId}' child ${requestedIndex} is pending and has not started yet. Wait for it to run or complete before resuming.`,
-				);
-			if (selectedStep && !terminalStepStatuses.has(selectedStep.status))
-				throw new Error(
-					`Async run '${runId}' child ${requestedIndex} is ${selectedStep.status} and cannot be revived yet.`,
-				);
-		} else {
-			const running = statusSteps
-				.map((step, index) => ({ step, index }))
-				.filter(({ step }) => step.status === "running");
-			const selected = running.length === 1 ? running[0] : undefined;
-			if (!selected) {
-				throw new Error(
-					`Async run '${runId}' has ${running.length} running children. Provide index to choose one.`,
-				);
-			}
-			const capabilityCeiling = intersectSubagentCapabilityCeilings(
-				status?.capabilityCeiling,
-				selected.step.capabilityCeiling,
-			);
-			const target: AsyncResumeTarget = {
-				kind: "live",
-				runId,
-				asyncDir: location.asyncDir ?? undefined,
-				state,
-				agent: selected.step.agent,
-				index: selected.index,
-				cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
-				sessionFile: selected.step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
-				model: selected.step.model,
-				thinking: selected.step.thinking,
-				launchContractDigest:
-					selected.step.launchContractDigest ??
-					result?.results?.[selected.index]?.launchContractDigest ??
-					result?.launchContractDigest ??
-					recoveryDescriptor?.launchContractDigest,
-			};
-			if (recoveryDescriptor?.version === 2 && recoveryDescriptor.context) {
-				target.context = recoveryDescriptor.context;
-			}
-			if (capabilityCeiling) target.capabilityCeiling = capabilityCeiling;
-			if (recoveryDescriptor) target.recoveryDescriptor = recoveryDescriptor;
-			return target;
+type ResumeRecords = ReturnType<typeof readResumeRecords>;
+
+function liveResumeTarget(records: ResumeRecords, requestedIndex: number | undefined): AsyncResumeTarget | undefined {
+	const { location, status, result, recoveryDescriptor, runId, state, statusSteps, stepCount } = records;
+	const liveTarget = (step: (typeof statusSteps)[number], index: number): AsyncResumeTarget => {
+		const target: AsyncResumeTarget = {
+			kind: "live",
+			runId,
+			asyncDir: location.asyncDir ?? undefined,
+			state,
+			agent: step.agent,
+			index,
+			cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
+			sessionFile: step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
+			model: step.model,
+			thinking: step.thinking,
+			launchContractDigest:
+				step.launchContractDigest ??
+				result?.results?.[index]?.launchContractDigest ??
+				result?.launchContractDigest ??
+				recoveryDescriptor?.launchContractDigest,
+		};
+		if (recoveryDescriptor?.version === 2 && recoveryDescriptor.context) {
+			target.context = recoveryDescriptor.context;
 		}
-	}
+		const ceiling = intersectSubagentCapabilityCeilings(status?.capabilityCeiling, step.capabilityCeiling);
+		if (ceiling) target.capabilityCeiling = ceiling;
+		if (recoveryDescriptor) target.recoveryDescriptor = recoveryDescriptor;
+		return target;
+	};
 
+	if (requestedIndex !== undefined) {
+		if (requestedIndex < 0 || requestedIndex >= stepCount)
+			throw new Error(`Async run '${runId}' has ${stepCount} children. Index ${requestedIndex} is out of range.`);
+		const selectedStep = statusSteps[requestedIndex];
+		if (selectedStep?.status === "running") return liveTarget(selectedStep, requestedIndex);
+		if (selectedStep?.status === "pending")
+			throw new Error(
+				`Async run '${runId}' child ${requestedIndex} is pending and has not started yet. Wait for it to run or complete before resuming.`,
+			);
+		if (selectedStep && !new Set(["complete", "completed", "failed", "paused"]).has(selectedStep.status))
+			throw new Error(
+				`Async run '${runId}' child ${requestedIndex} is ${selectedStep.status} and cannot be revived yet.`,
+			);
+		return undefined;
+	}
+	const running = statusSteps.map((step, index) => ({ step, index })).filter(({ step }) => step.status === "running");
+	const selected = running.length === 1 ? running[0] : undefined;
+	if (!selected)
+		throw new Error(`Async run '${runId}' has ${running.length} running children. Provide index to choose one.`);
+	return liveTarget(selected.step, selected.index);
+}
+
+function revivedResumeTarget(
+	records: ResumeRecords,
+	requestedIndex: number | undefined,
+	requireSessionFile: boolean,
+): AsyncResumeTarget {
+	const { location, status, result, recoveryDescriptor, runId, state, statusSteps, resultSteps, stepCount } = records;
 	if (stepCount > 1 && requestedIndex === undefined) {
 		throw new Error(`Async run '${runId}' has ${stepCount} children. Provide index to choose one.`);
 	}
 	const index = requestedIndex ?? 0;
-	if (!Number.isInteger(index)) throw new Error(`Async run '${runId}' index must be an integer.`);
 	if (index < 0 || index >= stepCount)
 		throw new Error(`Async run '${runId}' has ${stepCount} children. Index ${index} is out of range.`);
 	const selectedStopped =
@@ -1336,6 +485,19 @@ export function resolveAsyncResumeTarget(
 	if (capabilityCeiling) target.capabilityCeiling = capabilityCeiling;
 	if (recoveryDescriptor) target.recoveryDescriptor = recoveryDescriptor;
 	return target;
+}
+
+export function resolveAsyncResumeTarget(
+	params: AsyncResumeParams,
+	deps: AsyncResumeDeps = {},
+	options: AsyncResumeOptions = {},
+): AsyncResumeTarget {
+	const records = readResumeRecords(params, deps, options);
+	const requestedIndex = params.index;
+	if (requestedIndex !== undefined && !Number.isInteger(requestedIndex))
+		throw new Error(`Async run '${records.runId}' index must be an integer.`);
+	const liveTarget = records.state === "running" ? liveResumeTarget(records, requestedIndex) : undefined;
+	return liveTarget ?? revivedResumeTarget(records, requestedIndex, options.requireSessionFile ?? true);
 }
 
 export function applySteeringRecoveryAgentConfig(

@@ -1,13 +1,7 @@
-import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isRuntimeBoolean,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../../shared/runtime-type.js";
+import { type JsonObject, parseJsonValue } from "../../../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import {
 	attachNestedChildrenToResultChildren,
 	buildSubagentResultIntercomPayload,
@@ -15,11 +9,11 @@ import {
 	deliverSubagentResultIntercomEvent,
 	resolveSubagentResultStatus,
 } from "../../intercom/result-intercom.ts";
-import { writePrivateAtomicJsonAsync } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
+import { type DurableClaim, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
 import { createFileCoalescer } from "../../shared/file-coalescer.ts";
 import {
+	errnoCode,
 	type OwnedFileSnapshot,
 	readBoundedOwnedFileSnapshotAsync,
 	removeOwnedFileSnapshotAsync,
@@ -29,22 +23,37 @@ import {
 	ASYNC_DIR,
 	type AsyncStatus,
 	type IntercomEventBus,
-	type NestedRunSummary,
 	RESULTS_DIR,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	type SubagentResultIntercomChild,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { readStatusAsync, resolveWatchPath } from "../../shared/utils.ts";
+import { isNotFoundError as isNotFound, readStatusAsync, resolveWatchPath } from "../../shared/utils.ts";
 import {
 	nestedWorkIncludesUser,
 	projectNestedEventsAuthoritatively,
 	projectNestedRegistryForRootAuthoritatively,
-	sanitizeSummary,
 } from "../shared/nested-events.ts";
-import type { BackgroundTaskResult } from "../shared/parallel-utils.ts";
-import { buildCompletionKey, markSeenWithTtl } from "./completion-dedupe.ts";
-import type { CompletionNotification } from "./notify.ts";
+import {
+	buildCompletionKey,
+	deliveryClaimName,
+	markSeenWithTtl,
+	type ResultDeliveryState,
+	readDeliveryState,
+	removeDeliveryArtifacts,
+	resultDigest,
+	stableDeliveryId,
+	writeDeliveryState,
+} from "./completion-dedupe.ts";
+import { type CompletionNotification, deliverNotificationWithAbort } from "./notify.ts";
+import {
+	COMPLETION_FIELDS,
+	pickFields,
+	RESULT_CHILD_FIELDS,
+	type ResultFileChild,
+	type ResultFileData,
+	sanitizeNestedResultChildren,
+} from "./result-file.ts";
 import { repairTerminalStatusFromResult } from "./stale-run-reconciler.ts";
 
 const WATCHER_RESTART_DELAY_MS = 3000;
@@ -66,21 +75,9 @@ export type ResultWatcherState = Pick<
 	| "watcherRestartTimer"
 >;
 const MAX_RESULT_FILE_BYTES = 32 * 1024 * 1024;
-const MAX_DELIVERY_STATE_BYTES = 16 * 1024;
 const MAX_IGNORED_RESULT_FINGERPRINTS = 5_000;
 
 type ResultFingerprint = Pick<OwnedFileSnapshot, "ctimeMs" | "dev" | "ino" | "mtimeMs" | "size">;
-
-interface ResultDeliveryState {
-	readonly version: 1;
-	readonly completionKey: string;
-	readonly resultDigest: string;
-	readonly intercomComplete: boolean;
-	readonly intercomDelivered: boolean;
-	readonly notificationAccepted: boolean;
-	readonly completionEmitted: boolean;
-	readonly updatedAt: number;
-}
 
 type ResultWatcherFs = Pick<
 	typeof fs,
@@ -110,207 +107,14 @@ type ResultWatcherDeps = {
 	projectNestedRegistry?: typeof projectNestedRegistryForRootAuthoritatively;
 };
 
-type ResultFileChild = Partial<BackgroundTaskResult> & {
-	state?: string;
-	children?: JsonValue;
-};
-
-type ResultFileData = CompletionNotification & {
-	runId?: string;
-	mode?: string;
-	results?: ResultFileChild[];
-	nestedChildren?: JsonValue;
-	asyncDir?: string;
-	intercomTarget?: string;
-};
-
-const COMPLETION_FIELDS = [
-	"source",
-	"parentRunOrigin",
-	"agent",
-	"success",
-	"summary",
-	"exitCode",
-	"state",
-	"timestamp",
-	"durationMs",
-	"cwd",
-	"sessionFile",
-	"taskIndex",
-	"totalTasks",
-	"sessionId",
-	"stopped",
-	"timedOut",
-	"interrupted",
-	"startedAt",
-	"endedAt",
-	"asyncDir",
-	"worktree",
-	"launchContractDigest",
-	"capabilityCeiling",
-] as const;
-
-const RESULT_CHILD_FIELDS = [
-	"context",
-	"output",
-	"success",
-	"exitCode",
-	"error",
-	"interrupted",
-	"timedOut",
-	"stopped",
-	"turnBudget",
-	"turnBudgetExceeded",
-	"wrapUpRequested",
-	"toolBudget",
-	"toolBudgetBlocked",
-	"sessionFile",
-	"intercomTarget",
-	"model",
-	"thinking",
-	"attemptedModels",
-	"modelAttempts",
-	"totalCost",
-	"artifactPaths",
-	"transcriptPath",
-	"transcriptError",
-	"launchContractDigest",
-	"capabilityCeiling",
-	"capabilityAudit",
-	"writerProcesses",
-	"writerAttemptCount",
-] as const;
-
-function pickFields<Source extends object, Key extends keyof Source>(
-	source: Source,
-	fields: readonly Key[],
-): Partial<Pick<Source, Key>> {
-	const picked: Partial<Pick<Source, Key>> = {};
-	for (const field of fields) {
-		if (source[field] !== undefined) picked[field] = source[field];
-	}
-	return picked;
-}
-
 function resultFileFromWatchEntry(fileName: string): string | undefined {
 	if (fileName.endsWith(".json")) return fileName;
 	return /^\.([^/\\]+\.json)\.\d+\.\d+\.[a-z0-9]+\.tmp$/i.exec(fileName)?.[1];
 }
 
-function sanitizeNestedResultChildren(
-	value: JsonValue | undefined,
-	resultPath: string,
-	label: string,
-): NestedRunSummary[] | undefined {
-	if (value === undefined) return undefined;
-	if (!Array.isArray(value)) {
-		reportAgentDiagnostic(
-			`Ignoring invalid nested children in subagent result file '${resultPath}' at ${label}: expected an array.`,
-		);
-		return undefined;
-	}
-	const children = value
-		.map((child) => sanitizeSummary(child))
-		.filter((child): child is NestedRunSummary => Boolean(child));
-	if (children.length !== value.length) {
-		reportAgentDiagnostic(
-			`Ignoring ${value.length - children.length} invalid nested child record(s) in subagent result file '${resultPath}' at ${label}.`,
-		);
-	}
-	return children.length ? children : undefined;
-}
-
-function errorCode<Cause>(cause: Cause): string | undefined {
-	return isRuntimeObject(cause) && cause !== null && "code" in cause && isRuntimeString(cause.code)
-		? cause.code
-		: undefined;
-}
-
-function isNotFound(cause: unknown): boolean {
-	return errorCode(cause) === "ENOENT";
-}
-
 function shouldPoll(cause: unknown): boolean {
-	const code = errorCode(cause);
+	const code = errnoCode(cause);
 	return code === "EMFILE" || code === "ENOSPC";
-}
-
-function deliveryStatePath(resultsDir: string, file: string): string {
-	return path.join(resultsDir, `.${file}.delivery-state`);
-}
-
-function deliveryClaimName(file: string): string {
-	return shardedDurableClaimName("result-delivery", file);
-}
-
-function stableDeliveryId(completionKey: string): string {
-	return `pi-stuff-result-${createHash("sha256").update(completionKey).digest("hex").slice(0, 32)}`;
-}
-
-function resultDigest(raw: string): string {
-	return createHash("sha256").update(raw).digest("hex");
-}
-
-function isResultDeliveryState(value: JsonValue): value is JsonObject & ResultDeliveryState {
-	return (
-		isRuntimeObject(value) &&
-		value !== null &&
-		!Array.isArray(value) &&
-		value["version"] === 1 &&
-		isRuntimeString(value["completionKey"]) &&
-		isRuntimeString(value["resultDigest"]) &&
-		isRuntimeBoolean(value["intercomComplete"]) &&
-		isRuntimeBoolean(value["intercomDelivered"]) &&
-		isRuntimeBoolean(value["notificationAccepted"]) &&
-		isRuntimeBoolean(value["completionEmitted"]) &&
-		isRuntimeNumber(value["updatedAt"]) &&
-		Number.isFinite(value["updatedAt"])
-	);
-}
-
-async function readDeliveryState(
-	resultsDir: string,
-	file: string,
-	completionKey: string,
-	digest: string,
-): Promise<ResultDeliveryState | undefined> {
-	try {
-		const value = parseJsonValue(
-			(await readBoundedOwnedFileSnapshotAsync(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES)).text,
-		);
-		if (!isResultDeliveryState(value) || value.completionKey !== completionKey || value.resultDigest !== digest)
-			return undefined;
-		return value;
-	} catch (error) {
-		if (isNotFound(error)) return undefined;
-		return undefined;
-	}
-}
-
-async function writeDeliveryState(resultsDir: string, file: string, state: ResultDeliveryState): Promise<void> {
-	await writePrivateAtomicJsonAsync(deliveryStatePath(resultsDir, file), state);
-}
-
-async function removeDeliveryArtifacts(resultsDir: string, file: string): Promise<void> {
-	try {
-		await fs.promises.unlink(deliveryStatePath(resultsDir, file));
-	} catch (error) {
-		if (!isNotFound(error)) throw error;
-	}
-}
-
-async function deliverNotificationWithAbort(
-	notifier: NonNullable<ResultWatcherDeps["notifier"]>,
-	completion: CompletionNotification,
-	signal: AbortSignal,
-): Promise<boolean> {
-	if (signal.aborted) return false;
-	return Promise.race([
-		notifier.deliver(completion, signal),
-		new Promise<boolean>((resolve) => {
-			signal.addEventListener("abort", () => resolve(false), { once: true });
-		}),
-	]);
 }
 
 /**
@@ -885,7 +689,7 @@ export function createResultWatcher(
 		safetyScanTimer = undefined;
 		if (state.watcherRestartTimer) return true;
 		reportAgentDiagnostic(
-			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(cause) ?? "unknown error"}).`,
+			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errnoCode(cause) ?? "unknown error"}).`,
 		);
 		primeExistingResults();
 		state.watcherRestartTimer = timers.setInterval(primeExistingResults, pollIntervalMs);

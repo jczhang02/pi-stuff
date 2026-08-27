@@ -8,7 +8,7 @@ import {
 	isRuntimeString,
 } from "../../../../shared/runtime-type.js";
 import { writeAtomicJson, writePrivateAtomicJson } from "../../shared/atomic-json.ts";
-import { assertPrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { assertPrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
 import {
 	type AsyncStatus,
@@ -18,7 +18,7 @@ import {
 	type ProcessTerminalV1,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 } from "../../shared/types.ts";
-import { readStatus } from "../../shared/utils.ts";
+import { getErrorMessage as errorMessage, readStatus } from "../../shared/utils.ts";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { canonicalSessionId, inspectSessionLease } from "../shared/session-lease.ts";
 import { inspectWriterProcessLiveness } from "./writer-process-registry.ts";
@@ -116,14 +116,6 @@ export function processTerminalPath(asyncDir: string): string {
 	return path.join(asyncDir, "process-terminal.json");
 }
 
-function errorMessage(cause: unknown): string {
-	return cause instanceof Error ? cause.message : String(cause);
-}
-
-function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
-	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
-}
-
 export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalCandidate | undefined {
 	try {
 		assertPrivateDirectory(asyncDir);
@@ -192,7 +184,7 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 		}
 		return candidate;
 	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return undefined;
+		if (errnoCode(error) === "ENOENT") return undefined;
 		return undefined;
 	}
 }
@@ -342,7 +334,7 @@ export function readProcessTerminal(
 		validateProof(raw, asyncDir, fallback);
 		return raw;
 	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return undefined;
+		if (errnoCode(error) === "ENOENT") return undefined;
 		return unknownProof(
 			fallback?.runId ?? path.basename(asyncDir),
 			fallback?.runnerProcessInstanceId ?? "unknown",

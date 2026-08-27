@@ -138,7 +138,7 @@ const statusCache = new Map<
 >();
 export const MAX_ASYNC_STATUS_FILE_BYTES = 8 * 1024 * 1024;
 
-function getErrorMessage(cause: unknown): string {
+export function getErrorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
@@ -147,7 +147,11 @@ export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): 
 	return path.isAbsolute(childCwd) ? childCwd : path.resolve(baseCwd, childCwd);
 }
 
-function isNotFoundError<Cause>(cause: Cause): boolean {
+export function isTerminalAsyncState(state: AsyncStatus["state"]): boolean {
+	return state === "complete" || state === "failed" || state === "paused" || state === "stopped";
+}
+
+export function isNotFoundError<Cause>(cause: Cause): boolean {
 	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
@@ -294,20 +298,21 @@ export function getLastActivity(outputFile: string | undefined): string {
 /**
  * Find the latest session file in a directory
  */
-export function findLatestSessionFile(sessionDir: string): string | null {
-	if (!fs.existsSync(sessionDir)) return null;
-	const files = fs
-		.readdirSync(sessionDir)
-		.filter((f) => f.endsWith(".jsonl"))
-		.map((f) => {
-			const filePath = path.join(sessionDir, f);
-			return {
-				path: filePath,
-				mtime: fs.statSync(filePath).mtimeMs,
-			};
-		})
-		.sort((a, b) => b.mtime - a.mtime);
-	return files[0]?.path ?? null;
+export function findLatestSessionFile(sessionDir: string | undefined): string | undefined {
+	if (!sessionDir || !fs.existsSync(sessionDir)) return undefined;
+	try {
+		const files = fs
+			.readdirSync(sessionDir)
+			.filter((f) => f.endsWith(".jsonl"))
+			.map((f) => {
+				const filePath = path.join(sessionDir, f);
+				return { path: filePath, mtime: fs.statSync(filePath).mtimeMs };
+			})
+			.sort((a, b) => b.mtime - a.mtime);
+		return files[0]?.path;
+	} catch {
+		return undefined;
+	}
 }
 
 // ============================================================================

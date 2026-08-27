@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 
-function errnoCode<Value>(cause: Value): string | undefined {
+export function errnoCode<Value>(cause: Value): string | undefined {
 	if (!isRuntimeObject(cause) || cause === null || !("code" in cause)) return undefined;
 	return isRuntimeString(cause.code) ? cause.code : undefined;
 }
@@ -367,11 +367,13 @@ export async function readOwnedFileTailAsync(filePath: string, maxBytes: number)
 }
 
 /** Validate an owner-controlled regular file and return its absolute path. */
-export function validateOwnedRegularFile(filePath: string): string {
+export function validateOwnedRegularFile(filePath: string, maxBytes?: number): string {
 	const resolved = path.resolve(filePath);
-	const fd = openOwnedRegularFile(filePath);
+	if (fs.lstatSync(filePath).isSymbolicLink())
+		throw new Error(`Agent runtime file '${filePath}' must not be a symbolic link.`);
+	const fd = openOwnedRegularFile(filePath, maxBytes);
 	try {
-		assertOwnedRegularFile(filePath, fs.fstatSync(fd));
+		assertOwnedRegularFile(filePath, fs.fstatSync(fd), maxBytes);
 	} finally {
 		fs.closeSync(fd);
 	}
