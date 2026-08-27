@@ -1,92 +1,33 @@
-import { basename } from "node:path";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 	ReadonlyFooterDataProvider,
 	Theme,
-	ThemeColor,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { isRuntimeNumber } from "../shared/runtime-type.js";
+import type { Component } from "@earendil-works/pi-tui";
 import type {
 	CodexStatusSnapshot,
 	CodexStatusSource,
-	GoalStatus,
 	GoalStatusSnapshot,
 	GoalStatusSource,
 } from "./statusline-channels.js";
-import type { GitChangeCounts, GitChangeCountsSource } from "./statusline-git.js";
-import {
-	type PromptPreview,
-	readSkillAliases,
-	type SessionStatusSnapshot,
-	SessionStatusSource,
-	type StatuslineSessionManager,
-	type UsageTotals,
-} from "./statusline-session.js";
+import type { GitChangeCountsSource } from "./statusline-git.js";
+import { renderStatusline, type StatuslineContextUsage, type StatuslineDensity } from "./statusline-render.js";
+import { readSkillAliases, SessionStatusSource, type StatuslineSessionManager } from "./statusline-session.js";
 import { sanitizeOneLine } from "./terminal-text.js";
 
 export * from "./statusline-channels.js";
 export type { GitChangeCounts } from "./statusline-git.js";
 export { GitStatusSource, parseGitStatusPorcelain } from "./statusline-git.js";
+export type { StatuslineDensity } from "./statusline-render.js";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
 const GOAL_CLOCK_REFRESH_MS = 1_000;
-const MIN_TRUNCATED_PROMPT_WIDTH = 6;
-const STATUSLINE_SEPARATOR = " · ";
-
-interface StatuslineIcons {
-	readonly ahead: string;
-	readonly behind: string;
-	readonly branch: string;
-	readonly cache: string;
-	readonly conflict: string;
-	readonly context: string;
-	readonly cost: string;
-	readonly fast: string;
-	readonly folder: string;
-	readonly goalActive: string;
-	readonly goalAttention: string;
-	readonly goalComplete: string;
-	readonly goalPaused: string;
-	readonly model: string;
-	readonly prompt: string;
-	readonly staged: string;
-	readonly thinking: string;
-	readonly unstaged: string;
-	readonly untracked: string;
-	readonly weekly: string;
-}
-
-const STATUSLINE_ICONS: StatuslineIcons = {
-	ahead: "\uF431",
-	behind: "\uF433",
-	branch: "\uF418",
-	cache: "\u{F01BC}",
-	conflict: "\uF421",
-	context: "\u{F0328}",
-	cost: "\uF155",
-	fast: "\uF0E7",
-	folder: "\u{F024B}",
-	goalActive: "\uF111",
-	goalAttention: "\uF06A",
-	goalComplete: "\uF49E",
-	goalPaused: "\uF28B",
-	model: "\u{F167A}",
-	prompt: "\uF460",
-	staged: "\uF457",
-	thinking: "\uF0EB",
-	unstaged: "\u{F03EB}",
-	untracked: "\u{F0752}",
-	weekly: "\u{F029A}",
-};
 
 export interface BooleanValueSource {
 	get(): boolean;
 	subscribe(listener: () => void): () => void;
 }
-
-export type StatuslineDensity = "auto" | "full" | "compact";
 
 export interface StatuslinePreferences {
 	readonly density: StatuslineDensity;
@@ -215,23 +156,27 @@ export class StatuslineController {
 		const sessionStatus = this.getSessionStatusSource(ctx).get();
 		const branch = sanitizeOneLine(footerData.getGitBranch() ?? "");
 		const preferences = this.getPreferences();
-		const lines = renderStatusline(
-			this.pi,
-			ctx,
-			theme,
-			footerData,
+		const cwd = readRawCwd(ctx);
+		const model = ctx.model;
+		const usage = sessionStatus.usage;
+		return renderStatusline(theme, {
 			branch,
-			this.options.gitChanges?.get(readRawCwd(ctx), branch),
-			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
-			sessionStatus,
-			readCodexStatus(ctx, this.options.codexStatus),
-			readGoalStatus(this.options.goalStatus),
-			renderWidth,
-			preferences,
-		);
-		return lines.map((line) =>
-			visibleWidth(line) <= renderWidth ? line : truncateToWidth(line, renderWidth, theme.fg("dim", "…")),
-		);
+			codexStatus: readCodexStatus(ctx, this.options.codexStatus),
+			contextUsage: readContextUsage(ctx),
+			cwd,
+			density: preferences.density,
+			extensionStatuses: footerData.getExtensionStatuses(),
+			extensionStatusKeys: this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
+			gitChanges: this.options.gitChanges?.get(cwd, branch),
+			goalStatus: readGoalStatus(this.options.goalStatus),
+			latestPrompt: preferences.latestPrompt ? sessionStatus.latestPrompt : undefined,
+			model,
+			now: Date.now(),
+			showCost: model?.provider !== "openai-codex" && usage.cost > 0 && shouldShowCost(ctx),
+			thinkingLevel: model?.reasoning === false ? undefined : readThinkingLevel(this.pi, ctx),
+			usage,
+			width: renderWidth,
+		});
 	}
 
 	setSuppressed(suppressed: boolean): void {
@@ -336,361 +281,6 @@ class StatuslineFooter implements Component {
 	}
 }
 
-type StatusSegmentId =
-	| "model"
-	| "thinking"
-	| "fast"
-	| "cwd"
-	| "branch"
-	| "diff"
-	| "context"
-	| "cache"
-	| "cost"
-	| "codex"
-	| "goal"
-	| "extension";
-
-interface StatusSegment {
-	readonly compact: string;
-	readonly full: string;
-	readonly id: StatusSegmentId;
-	readonly minimum?: string;
-	readonly priority: number;
-}
-
-interface SegmentText {
-	readonly compact: string;
-	readonly full: string;
-}
-
-interface GoalStatusAppearance {
-	readonly color: ThemeColor;
-	readonly icon: string;
-	readonly label: string;
-}
-
-interface GitSegments {
-	branch?: SegmentText;
-	diff?: SegmentText;
-}
-
-function renderStatusline(
-	pi: StatuslineHost,
-	ctx: StatuslineContext,
-	theme: Theme,
-	footerData: ReadonlyFooterDataProvider,
-	branch: string,
-	gitChanges: GitChangeCounts | undefined,
-	extensionStatusKeys: readonly string[],
-	sessionStatus: SessionStatusSnapshot,
-	codexStatus: CodexStatusSnapshot | undefined,
-	goalStatus: GoalStatusSnapshot | undefined,
-	width: number,
-	preferences: StatuslinePreferences,
-): string[] {
-	const icons = STATUSLINE_ICONS;
-	const usage = sessionStatus.usage;
-	const segments: StatusSegment[] = [];
-	const modelName = displayModelIdentity(ctx);
-	const model = theme.fg("accent", withIcon(icons.model, modelName));
-	const compactModel = theme.fg("accent", withIcon(icons.model, displayCompactModelName(ctx)));
-	const minimumModel = theme.fg("accent", icons.model);
-	segments.push(statusSegment("model", 100, model, compactModel, minimumModel));
-	if (ctx.model?.reasoning !== false) {
-		const thinkingLevel = readThinkingLevel(pi, ctx);
-		const thinking = `${theme.fg(thinkingColor(thinkingLevel), icons.thinking)} ${theme.fg(
-			"muted",
-			formatThinking(thinkingLevel),
-		)}`;
-		segments.push(statusSegment("thinking", 65, thinking));
-	}
-	if (ctx.model?.provider === "openai-codex" && codexStatus?.fastEnabled === true) {
-		segments.push(statusSegment("fast", 55, theme.fg("warning", withIcon(icons.fast, "fast"))));
-	}
-	const cwd = readCwd(ctx);
-	const cwdText = basename(cwd) || cwd;
-	const cwdSegment = `${theme.fg("accent", icons.folder)} ${theme.fg("text", cwdText)}`;
-	segments.push(statusSegment("cwd", 95, cwdSegment));
-
-	const gitSegments = renderGitSegments(theme, icons, branch, gitChanges);
-	if (gitSegments.branch) {
-		segments.push(statusSegment("branch", 90, gitSegments.branch.full, gitSegments.branch.compact));
-	}
-	if (gitSegments.diff) segments.push(statusSegment("diff", 50, gitSegments.diff.full, gitSegments.diff.compact));
-
-	const statuses = footerData.getExtensionStatuses();
-	const contextSegment = renderContextSegment(ctx, theme, icons, statuses);
-	if (contextSegment) segments.push(statusSegment("context", 96, contextSegment.full, contextSegment.compact));
-	const cacheHitRate = formatCacheHitRate(usage);
-	if (cacheHitRate) {
-		const cache = `${theme.fg("muted", icons.cache)} ${theme.fg("text", cacheHitRate)}`;
-		segments.push(statusSegment("cache", 45, cache));
-	}
-	if (ctx.model?.provider === "openai-codex") {
-		const weekly = formatCodexWeekly(codexStatus);
-		if (weekly) {
-			const value = `${theme.fg("warning", icons.weekly)} ${theme.fg("text", weekly)}`;
-			segments.push(statusSegment("codex", 80, value));
-		}
-	} else if (usage.cost > 0 && shouldShowCost(ctx)) {
-		const cost = `${theme.fg("warning", icons.cost)} ${theme.fg("text", `$${usage.cost.toFixed(2)}`)}`;
-		segments.push(statusSegment("cost", 80, cost));
-	}
-	const goal = renderGoalSegment(theme, icons, goalStatus);
-	if (goal) segments.push(statusSegment("goal", 99, goal.full, goal.compact));
-
-	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
-	if (extensionStatusSegment) segments.push(statusSegment("extension", 35, extensionStatusSegment));
-
-	const status = renderStatusRow(segments, width, theme, preferences.density);
-	const prompt = preferences.latestPrompt
-		? renderPromptRow(sessionStatus.latestPrompt, width, theme, icons)
-		: undefined;
-	return [status, prompt].filter((line): line is string => line !== undefined && line.length > 0);
-}
-
-function statusSegment(
-	id: StatusSegmentId,
-	priority: number,
-	full: string,
-	compact = full,
-	minimum?: string,
-): StatusSegment {
-	const segment: StatusSegment = { compact, full, id, priority };
-	if (minimum) Object.assign(segment, { minimum });
-	return segment;
-}
-
-function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string, counts: GitChangeCounts | undefined) {
-	const ahead = counts?.ahead ?? 0;
-	const behind = counts?.behind ?? 0;
-	const conflicted = counts?.conflicted ?? 0;
-	const dirty = !!counts && (counts.staged > 0 || counts.unstaged > 0 || counts.untracked > 0 || conflicted > 0);
-	const branchColor: ThemeColor = conflicted > 0 ? "error" : dirty || behind > 0 ? "warning" : "success";
-	let branchSegment: SegmentText | undefined;
-	if (branch) {
-		const tracking = [
-			ahead > 0 ? theme.fg("success", `${icons.ahead}${String(ahead)}`) : "",
-			behind > 0 ? theme.fg("warning", `${icons.behind}${String(behind)}`) : "",
-		].filter(Boolean);
-		const fullBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", branch)}`;
-		const compactBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", middleTruncate(branch, 14))}`;
-		branchSegment = {
-			compact: [compactBranch, ...tracking].join(" "),
-			full: [fullBranch, ...tracking].join(" "),
-		};
-	}
-
-	const fullState: string[] = [];
-	if (conflicted > 0) fullState.push(theme.fg("error", `${icons.conflict}${String(conflicted)}`));
-	if (counts?.staged) fullState.push(theme.fg("success", `${icons.staged}${String(counts.staged)}`));
-	if (counts?.unstaged) fullState.push(theme.fg("warning", `${icons.unstaged}${String(counts.unstaged)}`));
-	if (counts?.untracked) fullState.push(theme.fg("muted", `${icons.untracked}${String(counts.untracked)}`));
-	const compactState: string[] = [];
-	if (conflicted > 0) compactState.push(theme.fg("error", `${icons.conflict}${compactCount(conflicted)}`));
-	const changed = (counts?.staged ?? 0) + (counts?.unstaged ?? 0) + (counts?.untracked ?? 0);
-	if (changed > 0) compactState.push(theme.fg("warning", `${icons.unstaged}${compactCount(changed)}`));
-	const diffSegment =
-		fullState.length > 0
-			? {
-					compact: compactState.join(" "),
-					full: fullState.join(" "),
-				}
-			: undefined;
-	const segments: GitSegments = {};
-	if (branchSegment) segments.branch = branchSegment;
-	if (diffSegment) segments.diff = diffSegment;
-	return segments;
-}
-
-function compactCount(value: number): string {
-	return value > 99 ? "99+" : String(value);
-}
-
-function renderContextSegment(
-	ctx: StatuslineContext,
-	theme: Theme,
-	icons: StatuslineIcons,
-	statuses: ReadonlyMap<string, string>,
-): SegmentText | undefined {
-	if (statuses.has("compact-policy")) return undefined;
-	let usage: ReturnType<StatuslineContext["getContextUsage"]>;
-	try {
-		usage = ctx.getContextUsage();
-	} catch {
-		return undefined;
-	}
-	const percent = usage?.percent;
-	const knownPercent = isRuntimeNumber(percent) && Number.isFinite(percent);
-	const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow;
-	const knownWindow = isRuntimeNumber(contextWindow) && Number.isFinite(contextWindow) && contextWindow > 0;
-	if (!knownPercent && !knownWindow) return undefined;
-	const boundedPercent = knownPercent ? Math.max(0, percent) : undefined;
-	const fullValue = boundedPercent === undefined ? "?" : `${boundedPercent.toFixed(1).replace(/\.0$/u, "")}%`;
-	const compactValue = boundedPercent === undefined ? "?" : `${String(Math.round(boundedPercent))}%`;
-	const color: ThemeColor =
-		boundedPercent === undefined ? "dim" : boundedPercent >= 90 ? "error" : boundedPercent >= 70 ? "warning" : "dim";
-	return {
-		compact: `${theme.fg(color, icons.context)} ${theme.fg("text", compactValue)}`,
-		full: `${theme.fg(color, icons.context)} ${theme.fg("text", fullValue)}`,
-	};
-}
-
-function renderExtensionStatusSegment(
-	theme: Theme,
-	statuses: ReadonlyMap<string, string>,
-	keys: readonly string[],
-): string | undefined {
-	const selected: string[] = [];
-	const seen = new Set<string>();
-	for (const key of keys) {
-		const status = sanitizeOneLine(statuses.get(key) ?? "");
-		if (!status || status.startsWith("[") || seen.has(status)) continue;
-		seen.add(status);
-		selected.push(status);
-	}
-	return selected.length > 0 ? theme.fg("muted", selected.join(" · ")) : undefined;
-}
-
-function renderGoalSegment(
-	theme: Theme,
-	icons: StatuslineIcons,
-	snapshot: GoalStatusSnapshot | undefined,
-): SegmentText | undefined {
-	if (!snapshot) return undefined;
-	const appearance = goalStatusAppearance(snapshot.status, icons);
-	const icon = theme.fg(appearance.color, appearance.icon);
-	const identity = `${icon} ${theme.fg("text", "goal")}`;
-	const budget =
-		snapshot.tokenBudget === undefined
-			? ""
-			: theme.fg("text", `${formatCompactTokens(snapshot.tokensUsed)}/${formatCompactTokens(snapshot.tokenBudget)}`);
-	const elapsed = theme.fg("muted", formatGoalElapsed(snapshot));
-	const full = [identity, appearance.label && theme.fg(appearance.color, appearance.label), budget, elapsed]
-		.filter(Boolean)
-		.join(" ");
-	return { compact: full, full };
-}
-
-function goalStatusAppearance(status: GoalStatus, icons: StatuslineIcons): GoalStatusAppearance {
-	if (status === "paused") return { color: "muted", icon: icons.goalPaused, label: "paused" };
-	if (status === "blocked") return { color: "warning", icon: icons.goalAttention, label: "blocked" };
-	if (status === "usage_limited") return { color: "warning", icon: icons.goalAttention, label: "usage" };
-	if (status === "budget_limited") return { color: "warning", icon: icons.goalAttention, label: "budget" };
-	if (status === "complete") return { color: "success", icon: icons.goalComplete, label: "complete" };
-	return { color: "accent", icon: icons.goalActive, label: "" };
-}
-
-function formatCompactTokens(value: number): string {
-	if (value < 1_000) return String(value);
-	if (value < 1_000_000) return `${Number((value / 1_000).toFixed(1))}k`;
-	return `${Number((value / 1_000_000).toFixed(1))}m`;
-}
-
-function formatGoalElapsed(snapshot: GoalStatusSnapshot): string {
-	const liveSeconds =
-		snapshot.status === "active" && snapshot.activeStartedAt !== undefined
-			? Math.max(0, Date.now() - snapshot.activeStartedAt) / 1_000
-			: 0;
-	const seconds = Math.floor(snapshot.timeUsedSeconds + liveSeconds);
-	if (seconds < 60) return `${String(seconds)}s`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${String(minutes)}m`;
-	const hours = Math.floor(minutes / 60);
-	return `${String(hours)}h${String(minutes % 60)}m`;
-}
-
-function renderStatusRow(
-	segments: readonly StatusSegment[],
-	width: number,
-	theme: Theme,
-	density: StatuslineDensity,
-): string {
-	const compactIds = new Set<StatusSegmentId>(["model", "thinking", "cwd", "branch", "context", "goal"]);
-	const eligible = density === "compact" ? segments.filter((segment) => compactIds.has(segment.id)) : segments;
-	if (eligible.length === 0 || width < 1) return "";
-	const join = (items: readonly { readonly id: StatusSegmentId; readonly text: string }[]): string =>
-		items
-			.map((item, index) => {
-				if (index === 0) return item.text;
-				const separator =
-					items[index - 1]?.id === "branch" && item.id === "diff" ? " " : theme.fg("dim", STATUSLINE_SEPARATOR);
-				return `${separator}${item.text}`;
-			})
-			.join("");
-	const full = join(eligible.map((segment) => ({ id: segment.id, text: segment.full })));
-	if (density !== "compact" && visibleWidth(full) <= width) return full;
-
-	const selected = eligible.map((segment) => ({
-		...segment,
-		text: density === "full" ? segment.full : segment.compact,
-	}));
-	const render = (): string => join(selected);
-	while (selected.length > 1 && visibleWidth(render()) > width) {
-		let removalIndex = 0;
-		for (let index = 1; index < selected.length; index += 1) {
-			if ((selected[index]?.priority ?? Number.POSITIVE_INFINITY) < (selected[removalIndex]?.priority ?? 0)) {
-				removalIndex = index;
-			}
-		}
-		selected.splice(removalIndex, 1);
-	}
-	const rendered = render();
-	if (visibleWidth(rendered) <= width) return rendered;
-	const minimum = selected[0]?.minimum;
-	return minimum && visibleWidth(minimum) <= width ? minimum : "";
-}
-
-function renderPromptRow(
-	prompt: PromptPreview | undefined,
-	width: number,
-	theme: Theme,
-	icons: StatuslineIcons,
-): string | undefined {
-	if (!prompt || width < 2) return undefined;
-	const promptText = prompt.text ?? "";
-	const fullBadge = formatSkillBadge(prompt.skills, false);
-	const compactBadge = formatSkillBadge(prompt.skills, true);
-	const prefix = `${theme.fg("muted", icons.prompt)} `;
-	const contentWidth = width - visibleWidth(prefix);
-	if (contentWidth < 1) return truncateToWidth(prefix, width, "");
-	const badge =
-		fullBadge !== compactBadge && visibleWidth(joinPromptAndBadge(promptText, fullBadge)) > contentWidth
-			? compactBadge
-			: fullBadge;
-	const content = fitPromptAndBadge(promptText, badge, contentWidth);
-	return `${prefix}${theme.fg("muted", content)}`;
-}
-
-function fitPromptAndBadge(prompt: string, badge: string, width: number): string {
-	if (!badge) return truncateToWidth(prompt, width, "…");
-	const badgeWidth = visibleWidth(badge);
-	if (badgeWidth >= width) return truncateToWidth(badge, width, "…");
-	const promptWidth = Math.max(0, width - badgeWidth - (prompt ? 1 : 0));
-	const fittedPrompt =
-		visibleWidth(prompt) <= promptWidth || promptWidth >= MIN_TRUNCATED_PROMPT_WIDTH
-			? truncateToWidth(prompt, promptWidth, "…")
-			: "";
-	return joinPromptAndBadge(fittedPrompt, badge);
-}
-
-function joinPromptAndBadge(prompt: string, badge: string): string {
-	return [prompt, badge].filter(Boolean).join(" ");
-}
-
-function formatSkillBadge(skills: readonly string[], compact: boolean): string {
-	if (skills.length === 0) return "";
-	if (skills.length === 1) return `[skill:${skills[0] ?? ""}]`;
-	return compact ? `[skills:${String(skills.length)}]` : `[skills:${skills.join(",")}]`;
-}
-
-function formatCacheHitRate(usage: UsageTotals): string | undefined {
-	const denominator = usage.input + usage.cacheRead + usage.cacheWrite;
-	if (!Number.isFinite(denominator) || denominator <= 0) return undefined;
-	const percent = (usage.cacheRead / denominator) * 100;
-	return `${percent.toFixed(1).replace(/\.0$/u, "")}%`;
-}
-
 function readCodexStatus(
 	ctx: StatuslineContext,
 	source: CodexStatusSource | undefined,
@@ -710,14 +300,6 @@ function readGoalStatus(source: GoalStatusSource | undefined): GoalStatusSnapsho
 	} catch {
 		return undefined;
 	}
-}
-
-function formatCodexWeekly(snapshot: CodexStatusSnapshot | undefined): string | undefined {
-	if (!snapshot) return undefined;
-	const weekly = snapshot.weeklyRemainingPercent;
-	return isRuntimeNumber(weekly) && Number.isFinite(weekly)
-		? `${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
-		: undefined;
 }
 
 function shouldShowCost(ctx: StatuslineContext): boolean {
@@ -745,77 +327,13 @@ function readThinkingLevel(pi: StatuslineHost, ctx: StatuslineContext): string {
 	}
 }
 
-function formatThinking(level: string): string {
-	interface ThinkingLabels {
-		readonly [level: string]: string;
+function readContextUsage(ctx: StatuslineContext): StatuslineContextUsage | null | undefined {
+	try {
+		return ctx.getContextUsage();
+	} catch {
+		return null;
 	}
-	const labels: ThinkingLabels = {
-		high: "high",
-		low: "low",
-		max: "max",
-		medium: "med",
-		minimal: "min",
-		off: "off",
-		xhigh: "xhigh",
-	};
-	return labels[level] ?? sanitizeOneLine(level);
 }
-
-function thinkingColor(level: string): ThemeColor {
-	interface ThinkingColors {
-		readonly [level: string]: ThemeColor;
-	}
-	const colors: ThinkingColors = {
-		high: "thinkingHigh",
-		low: "thinkingLow",
-		max: "thinkingMax",
-		medium: "thinkingMedium",
-		minimal: "thinkingMinimal",
-		off: "thinkingOff",
-		xhigh: "thinkingXhigh",
-	};
-	return colors[level] ?? "thinkingText";
-}
-
-function displayModelIdentity(ctx: StatuslineContext): string {
-	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
-	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
-	if (!provider || model.startsWith(`${provider}/`)) return model || "no-model";
-	return `${provider}/${model || "no-model"}`;
-}
-
-function displayCompactModelName(ctx: StatuslineContext): string {
-	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
-	return middleTruncate(model || "no-model", 11);
-}
-
-function middleTruncate(value: string, maximumWidth: number): string {
-	if (visibleWidth(value) <= maximumWidth) return value;
-	if (maximumWidth <= 1) return truncateToWidth(value, maximumWidth, "…");
-	const suffixWidth = Math.floor((maximumWidth - 1) / 2);
-	const prefixWidth = maximumWidth - suffixWidth - 1;
-	const prefix = truncateToWidth(value, prefixWidth, "");
-	return `${prefix}…${visibleSuffix(value, suffixWidth)}`;
-}
-
-function visibleSuffix(value: string, maximumWidth: number): string {
-	let suffix = "";
-	for (const character of [...value].reverse()) {
-		const candidate = `${character}${suffix}`;
-		if (visibleWidth(candidate) > maximumWidth) break;
-		suffix = candidate;
-	}
-	return suffix;
-}
-
-function withIcon(icon: string, text: string): string {
-	return icon ? `${icon} ${text}` : text;
-}
-
-function readCwd(ctx: StatuslineContext): string {
-	return sanitizeOneLine(readRawCwd(ctx)) || ".";
-}
-
 function readRawCwd(ctx: StatuslineContext): string {
 	try {
 		return ctx.sessionManager.getCwd() || ctx.cwd || ".";
