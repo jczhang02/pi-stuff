@@ -26,7 +26,12 @@ import { normalizeCode } from "./cloudflare/normalize.js";
 import { searchConnectors } from "./cloudflare/search.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { toolPath } from "./cloudflare/utils.js";
-import { assertValidSupportedCodeModeImages, INVALID_CODE_MODE_IMAGE_MESSAGE } from "./image-content.js";
+import {
+	assertDecodableSupportedCodeModeImages,
+	INVALID_CODE_MODE_IMAGE_MESSAGE,
+	InvalidCodeModeImageError,
+} from "./image-content.js";
+import { isCodeModeToolContent } from "./presentation.js";
 import type { SandboxToolExecutionContext, SuiteSandboxTool } from "./protocol.js";
 
 const INTERNAL_DESCRIBE_TOOL = "__pi_stuff_codemode_describe_v1";
@@ -300,12 +305,35 @@ export class SuiteCodeModeConnector {
 		const outcome = await this.registry.invoke(
 			context.onUpdate ? { ...invocation, onUpdate: context.onUpdate } : invocation,
 		);
+		let value: CodemodeValue;
 		try {
-			assertValidSupportedCodeModeImages(outcome.result.content);
-		} catch {
+			value = unwrapSuiteToolResult(name, outcome.result);
+			// SAFETY: Suite Tool results may carry these compatibility fields, which remain unknown until checked below.
+			const result = outcome.result as typeof outcome.result & {
+				readonly structuredContent?: unknown;
+				readonly toolResult?: unknown;
+			};
+			const imageContent: AgentToolResult<unknown>["content"][] = [];
+			for (const candidate of [result, result.structuredContent, result.toolResult]) {
+				if (!isRuntimeObject(candidate) || candidate === null || !("content" in candidate)) continue;
+				const content = candidate["content"];
+				if (!Array.isArray(content)) continue;
+				const containsImage = content.some(
+					(item) => isRuntimeObject(item) && item !== null && "type" in item && item.type === "image",
+				);
+				if (containsImage) {
+					if (!isCodeModeToolContent(content)) throw new InvalidCodeModeImageError();
+					if (!imageContent.includes(content)) imageContent.push(content);
+				}
+			}
+			for (const content of imageContent) await assertDecodableSupportedCodeModeImages(content);
+		} catch (error) {
+			if (!(error instanceof InvalidCodeModeImageError)) throw error;
 			const result = {
 				...outcome.result,
 				content: [{ type: "text" as const, text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+				structuredContent: undefined,
+				toolResult: undefined,
 			};
 			context.captureResult?.(result);
 			throw new SuiteToolInvocationError(INVALID_CODE_MODE_IMAGE_MESSAGE, result);
@@ -313,7 +341,7 @@ export class SuiteCodeModeConnector {
 		context.captureResult?.(outcome.result);
 		if (outcome.isError)
 			throw new SuiteToolInvocationError(toolErrorMessage(outcome.result, `${name} failed`), outcome.result);
-		return unwrapSuiteToolResult(name, outcome.result);
+		return value;
 	}
 }
 

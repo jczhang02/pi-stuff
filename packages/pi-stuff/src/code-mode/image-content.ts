@@ -100,19 +100,12 @@ export function codeModeImageFromDataUrl(value: string): ImageContent {
 	return image;
 }
 
-export function assertValidSupportedCodeModeImages(content: readonly ToolContent[number][]): void {
-	for (const item of content) {
-		if (item.type !== "image" || !supportedMimeType(item.mimeType)) continue;
-		if (!isValidCodeModeImage(item)) throw new InvalidCodeModeImageError();
-	}
-}
-
 export async function assertDecodableSupportedCodeModeImages(content: readonly ToolContent[number][]): Promise<void> {
 	const checked = new Set<string>();
 	for (const item of content) {
 		if (item.type !== "image") continue;
 		const mimeType = supportedMimeType(item.mimeType);
-		if (!mimeType) continue;
+		if (!mimeType) throw new InvalidCodeModeImageError();
 		const key = `${mimeType}\u0000${item.data}`;
 		if (checked.has(key)) continue;
 		checked.add(key);

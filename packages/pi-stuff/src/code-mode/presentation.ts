@@ -34,7 +34,7 @@ function isToolContentItem<Value>(value: Value): value is Value & ToolContentIte
 }
 
 export function isCodeModeToolContent<Value>(value: Value): value is Value & ToolContent {
-	return Array.isArray(value) && value.every(isToolContentItem);
+	return Array.isArray(value) && Array.from(value).every(isToolContentItem);
 }
 
 function isMediaContentIndexes<Value>(value: Value): value is Value & readonly (readonly number[])[] {
