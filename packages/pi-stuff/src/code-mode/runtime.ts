@@ -230,6 +230,54 @@ function boundedContent(items: readonly RuntimeContentItem[], fallback: string):
 	return output.length > 0 ? output : [{ type: "text", text: fallback }];
 }
 
+function runOutcome(
+	response: RuntimeResponse | undefined,
+	cause: unknown,
+	signal: AbortSignal | undefined,
+	controller: CodeModeExecutionController | undefined,
+	pending: readonly CodeModePendingAction[],
+	traces: ReadonlyMap<string, RuntimeToolTrace>,
+) {
+	const responseError = response?.kind === "result" ? response.errorText : undefined;
+	const thrownError = response ? undefined : cause instanceof Error ? cause.message : String(cause);
+	const error = controller?.incompleteError?.message ?? responseError ?? thrownError;
+	const invalidImage = cause instanceof InvalidCodeModeImageError;
+	const status: PiStuffCodeModeDetails["status"] = invalidImage
+		? "error"
+		: controller?.isPaused
+			? "paused"
+			: controller?.incompleteError
+				? "incomplete"
+				: response?.kind === "terminated" || (!response && wasCancelled(cause, signal))
+					? "cancelled"
+					: !response || responseError
+						? "error"
+						: "success";
+	if (status !== "success" && status !== "paused") {
+		settleRunningTraces(
+			traces,
+			status === "cancelled" ? "cancelled" : "error",
+			status === "cancelled"
+				? NESTED_CANCELLATION_TEXT
+				: ((response ? responseError : error) ?? "Code Mode execution failed"),
+		);
+	}
+	const settled = response ? undefined : settleController(controller, status, error);
+	const finalStatus = settled?.status ?? status;
+	const finalError = settled?.error ?? (status === "paused" && response ? undefined : error);
+	const content: AgentToolResult<unknown>["content"] =
+		finalStatus === "paused" && controller
+			? [{ type: "text", text: approvalMessage(controller.executionId, pending) }]
+			: response
+				? boundedContent(
+						response.contentItems,
+						finalError ??
+							(finalStatus === "cancelled" ? "Code Mode execution was cancelled" : CODE_MODE_NO_OUTPUT_MESSAGE),
+					)
+				: [{ type: "text", text: finalError ?? "Code Mode execution failed" }];
+	return { content, error: finalError, includeMedia: !invalidImage, settled, status: finalStatus };
+}
+
 type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
 
 function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage | undefined {
@@ -471,6 +519,12 @@ export class CodeModeRuntime {
 		const publish = (): void => {
 			onUpdate?.({ content: [], details: details("running") });
 		};
+		const recordResponse = (response: RuntimeResponse): void => {
+			cellId = response.cellId;
+			droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
+			mergeTraces(traces, operationIndexes, operations, response.traces);
+			publish();
+		};
 		const executorContext: ExecutorContext = {
 			cwd: context.cwd,
 			extensionContext: context,
@@ -488,6 +542,8 @@ export class CodeModeRuntime {
 				completeToolCall: controller.completeToolCall,
 			});
 		}
+		let outcome: ReturnType<typeof runOutcome>;
+		let media: ReturnType<typeof projectFinalMedia>;
 		try {
 			const runPass = async (): Promise<RuntimeResponse> => {
 				const executeOptions: CodeModeExecuteOptions = {
@@ -497,10 +553,7 @@ export class CodeModeRuntime {
 				};
 				if (signal) Object.assign(executeOptions, { signal });
 				let response = await this.executor.execute(executeOptions);
-				cellId = response.cellId;
-				droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-				mergeTraces(traces, operationIndexes, operations, response.traces);
-				publish();
+				recordResponse(response);
 				while (response.kind === "yielded") {
 					const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
 						context: executorContext,
@@ -508,10 +561,7 @@ export class CodeModeRuntime {
 					};
 					if (signal) Object.assign(waitOptions, { signal });
 					response = await this.executor.wait(response.cellId, waitOptions);
-					cellId = response.cellId;
-					droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-					mergeTraces(traces, operationIndexes, operations, response.traces);
-					publish();
+					recordResponse(response);
 				}
 				return response;
 			};
@@ -521,97 +571,34 @@ export class CodeModeRuntime {
 				try {
 					response = await runPass();
 					break;
-				} catch (error) {
-					if (error instanceof CodeModeHostLostError && attempt < HOST_RECOVERY_LIMIT && !signal?.aborted) {
+				} catch (cause) {
+					if (cause instanceof CodeModeHostLostError && attempt < HOST_RECOVERY_LIMIT && !signal?.aborted) {
 						if (controller) await this.connector.onPassEnd(controller.executionId, "error");
 						attempt += 1;
 						continue;
 					}
-					throw error;
+					throw cause;
 				}
 			}
-			const error = response.kind === "result" ? response.errorText : undefined;
-			let status: PiStuffCodeModeDetails["status"] = controller?.isPaused
-				? "paused"
-				: controller?.incompleteError
-					? "incomplete"
-					: response.kind === "terminated"
-						? "cancelled"
-						: error
-							? "error"
-							: "success";
-			if (status !== "success" && status !== "paused") {
-				settleRunningTraces(
-					traces,
-					status === "cancelled" ? "cancelled" : "error",
-					status === "cancelled" ? NESTED_CANCELLATION_TEXT : (error ?? "Code Mode execution failed"),
-				);
-			}
-			let finalError = status === "paused" ? undefined : (controller?.incompleteError?.message ?? error);
 			const pending = controller && this.ledger ? this.ledger.pending(context, controller.executionId) : [];
-			const finalContent =
-				status === "paused" && controller
-					? [{ type: "text" as const, text: approvalMessage(controller.executionId, pending) }]
-					: boundedContent(
-							response.contentItems,
-							finalError ??
-								(status === "cancelled" ? "Code Mode execution was cancelled" : CODE_MODE_NO_OUTPUT_MESSAGE),
-						);
-			const media = projectFinalMedia(traces, finalContent);
+			outcome = runOutcome(response, undefined, signal, controller, pending, traces);
+			media = projectFinalMedia(traces, outcome.content, outcome.includeMedia);
 			await assertDecodableSupportedCodeModeImages(media.content);
-			const settled = settleController(controller, status, finalError);
-			status = settled.status;
-			finalError = settled.error;
-			const finalDetails = details(status, finalError, media.operations);
-			captureCodeModeModelContent(finalDetails, media.content);
-			await settleConnectorLifecycle(this.connector, controller, status);
-			return {
-				content: media.content,
-				details: finalDetails,
-				...nestedResultControls(traces),
-			};
-		} catch (error) {
-			let message = controller?.incompleteError?.message ?? (error instanceof Error ? error.message : String(error));
-			let status: PiStuffCodeModeDetails["status"] =
-				error instanceof InvalidCodeModeImageError
-					? "error"
-					: controller?.isPaused
-						? "paused"
-						: controller?.incompleteError
-							? "incomplete"
-							: wasCancelled(error, signal)
-								? "cancelled"
-								: "error";
-			if (status !== "paused") {
-				settleRunningTraces(
-					traces,
-					status === "cancelled" ? "cancelled" : "error",
-					status === "cancelled" ? NESTED_CANCELLATION_TEXT : message,
-				);
-			}
-			const settled = settleController(controller, status, message);
-			status = settled.status;
-			message = settled.error ?? message;
+		} catch (cause) {
 			const pending = controller && this.ledger ? this.ledger.pending(context, controller.executionId) : [];
-			const media = projectFinalMedia(
-				traces,
-				[
-					{
-						type: "text",
-						text: status === "paused" && controller ? approvalMessage(controller.executionId, pending) : message,
-					},
-				],
-				!(error instanceof InvalidCodeModeImageError),
-			);
-			const finalDetails = details(status, message, media.operations);
-			captureCodeModeModelContent(finalDetails, media.content);
-			await settleConnectorLifecycle(this.connector, controller, status);
-			return {
-				content: media.content,
-				details: finalDetails,
-				...nestedResultControls(traces),
-			};
+			outcome = runOutcome(undefined, cause, signal, controller, pending, traces);
+			media = projectFinalMedia(traces, outcome.content, outcome.includeMedia);
 		}
+		const settled = outcome.settled ?? settleController(controller, outcome.status, outcome.error);
+		const finalError = settled.error ?? outcome.error;
+		const finalDetails = details(settled.status, finalError, media.operations);
+		captureCodeModeModelContent(finalDetails, media.content);
+		await settleConnectorLifecycle(this.connector, controller, settled.status);
+		return {
+			content: media.content,
+			details: finalDetails,
+			...nestedResultControls(traces),
+		};
 	}
 
 	shutdown(): Promise<void> {

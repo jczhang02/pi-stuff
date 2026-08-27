@@ -114,16 +114,7 @@ export class CodeModeHostClient {
 			tools,
 		);
 		let cellId: string | undefined;
-		const abort = (): void => {
-			const error = abortError();
-			try {
-				this.send({ id, type: "operation/cancel" });
-			} catch {
-				// Host teardown is already authoritative.
-			}
-			this.rejectOperation(id, error);
-			if (cellId) void this.terminate(cellId, options.context).catch(() => undefined);
-		};
+		const abort = (): void => this.cancelOperation(id, options.context, cellId);
 		options.signal?.addEventListener("abort", abort, { once: true });
 		try {
 			cellId = executionCellId(await started);
@@ -146,19 +137,7 @@ export class CodeModeHostClient {
 		throwIfAborted(options.signal);
 		this.delegateRuntime.updateCellContext(cellId, options.context);
 		const id = ++this.requestId;
-		const abort = (): void => {
-			const error = abortError();
-			try {
-				this.send({ id, type: "operation/cancel" });
-			} catch {
-				// Host teardown is already authoritative.
-			}
-			this.rejectOperation(id, error);
-			// Runtime.execute owns yielded cells internally; once the outer Pi Tool
-			// is aborted there is no model-facing wait handle left to reclaim this
-			// cell. Terminate it so nested Tools cannot continue after cancellation.
-			void this.terminate(cellId, options.context).catch(() => undefined);
-		};
+		const abort = (): void => this.cancelOperation(id, options.context, cellId);
 		options.signal?.addEventListener("abort", abort, { once: true });
 		try {
 			const value = await this.requestWithId(
@@ -191,6 +170,18 @@ export class CodeModeHostClient {
 		}
 		child.kill();
 		this.failAll(new Error("Code Mode host shut down"));
+	}
+
+	private cancelOperation(id: number, context: ExecutorContext, cellId?: string): void {
+		const error = abortError();
+		try {
+			this.send({ id, type: "operation/cancel" });
+		} catch {
+			// Host teardown is already authoritative.
+		}
+		this.rejectOperation(id, error);
+		// The outer Pi Tool has no model-facing wait handle after cancellation.
+		if (cellId) void this.terminate(cellId, context).catch(() => undefined);
 	}
 
 	private async terminate(cellId: string, context: ExecutorContext): Promise<void> {
