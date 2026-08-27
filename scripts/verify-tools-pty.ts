@@ -45,8 +45,7 @@ function parseRequestRecords(contents: string): RequestRecord[] {
 		});
 }
 
-function expectProgram(): string {
-	return `
+const EXPECT_PROGRAM = `
 set timeout 25
 
 proc must_expect {pattern} {
@@ -183,10 +182,8 @@ expect {
     }
 }
 `;
-}
 
-function activeParityExpectProgram(): string {
-	return `
+const ACTIVE_PARITY_EXPECT_PROGRAM = `
 set timeout 25
 
 proc must_expect {pattern} {
@@ -219,7 +216,6 @@ expect {
     }
 }
 `;
-}
 
 function fail(message: string): never {
 	throw new Error(`Tools PTY verification failed: ${message}`);
@@ -423,7 +419,7 @@ export async function verifyActiveToolParity(options: {
 			{ mode: 0o600 },
 		);
 		try {
-			const result = Bun.spawnSync(["expect", "-c", activeParityExpectProgram()], {
+			const result = Bun.spawnSync(["expect", "-c", ACTIVE_PARITY_EXPECT_PROGRAM], {
 				cwd: temporaryDirectory,
 				env: {
 					...process.env,
@@ -518,7 +514,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 	);
 
 	try {
-		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
+		const result = Bun.spawnSync(["expect", "-c", EXPECT_PROGRAM], {
 			cwd: temporaryDirectory,
 			env: {
 				...process.env,
