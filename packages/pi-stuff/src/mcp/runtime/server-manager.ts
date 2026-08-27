@@ -283,28 +283,13 @@ export class McpServerManager {
 		return fresh;
 	}
 
-	private async createConnection(
+	private async createTransport(
 		name: string,
 		definition: ServerDefinition,
+		requestOptions: RequestOptions | undefined,
 		signal?: AbortSignal,
-		requestSignal?: AbortSignal,
-	): Promise<ServerConnection> {
-		throwIfAborted(signal);
-		const client = this.createClient(name);
-
-		const tracingEnabled = isMcpTraceEnabled(definition, this.traceSettings);
-		let traceWriter = tracingEnabled ? this.traceWriter : undefined;
-		if (tracingEnabled && !traceWriter) {
-			traceWriter = createMcpTraceWriter(this.defaultCwd, this.traceSettings ?? {});
-			this.traceWriter = traceWriter;
-		}
-		const traceObserver: McpTraceObserver | undefined = traceWriter
-			? { record: (event) => traceWriter.write(event) }
-			: undefined;
-		const requestOptions = this.buildRequestOptions(definition, requestSignal);
-
-		let transport: Transport;
-		let terminateSession: (() => Promise<void>) | undefined;
+		traceObserver?: McpTraceObserver,
+	) {
 		let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 		const configuredTransports = [definition.command, definition.url, definition.socket].filter(
 			(value) => isRuntimeString(value) && value.length > 0,
@@ -313,10 +298,11 @@ export class McpServerManager {
 			throw new Error(`Server ${name} must configure exactly one of command, url, or socket`);
 		}
 
+		let transport: Transport;
+		let terminateSession: (() => Promise<void>) | undefined;
 		if (definition.command) {
 			let command = definition.command;
 			let args = definition.args ?? [];
-
 			if (command === "npx" || command === "npm") {
 				const resolved = await resolveNpxBinary(command, args, signal);
 				if (resolved) {
@@ -326,7 +312,6 @@ export class McpServerManager {
 				}
 			}
 			throwIfAborted(signal);
-
 			const cwd = resolveConfigPath(definition.cwd) ?? this.defaultCwd;
 			const stdioOptions: StdioServerParameters = {
 				command,
@@ -336,13 +321,10 @@ export class McpServerManager {
 			};
 			if (cwd !== undefined) stdioOptions.cwd = cwd;
 			const stdioTransport = new StdioClientTransport(stdioOptions);
-			// Keep non-debug child diagnostics available for connection failures without
-			// retaining an unbounded stream or changing the existing debug behavior.
-			if (stdioTransport.stderr) {
-				stdioTransport.stderr.on("data", (chunk: Buffer | string) => {
-					stderrTail = appendStderrTail(stderrTail, chunk);
-				});
-			}
+			// Retain only a bounded diagnostic tail without changing debug behavior.
+			stdioTransport.stderr?.on("data", (chunk: Buffer | string) => {
+				stderrTail = appendStderrTail(stderrTail, chunk);
+			});
 			transport = stdioTransport;
 		} else if (definition.url) {
 			transport = await createHttpTransport({
@@ -362,9 +344,42 @@ export class McpServerManager {
 		}
 
 		if (traceObserver) {
-			const traceTransportKindValue = traceTransportKind(definition, transport);
-			transport = wrapTransportWithMcpTrace(transport, name, traceTransportKindValue, traceObserver);
+			transport = wrapTransportWithMcpTrace(
+				transport,
+				name,
+				traceTransportKind(definition, transport),
+				traceObserver,
+			);
 		}
+		return { readStderrTail: () => stderrTail, terminateSession, transport };
+	}
+
+	private async createConnection(
+		name: string,
+		definition: ServerDefinition,
+		signal?: AbortSignal,
+		requestSignal?: AbortSignal,
+	): Promise<ServerConnection> {
+		throwIfAborted(signal);
+		const client = this.createClient(name);
+
+		const tracingEnabled = isMcpTraceEnabled(definition, this.traceSettings);
+		let traceWriter = tracingEnabled ? this.traceWriter : undefined;
+		if (tracingEnabled && !traceWriter) {
+			traceWriter = createMcpTraceWriter(this.defaultCwd, this.traceSettings ?? {});
+			this.traceWriter = traceWriter;
+		}
+		const traceObserver: McpTraceObserver | undefined = traceWriter
+			? { record: (event) => traceWriter.write(event) }
+			: undefined;
+		const requestOptions = this.buildRequestOptions(definition, requestSignal);
+		const { readStderrTail, terminateSession, transport } = await this.createTransport(
+			name,
+			definition,
+			requestOptions,
+			signal,
+			traceObserver,
+		);
 
 		throwIfAborted(signal);
 		try {
@@ -441,6 +456,7 @@ export class McpServerManager {
 				};
 			}
 
+			const stderrTail = readStderrTail();
 			if (stderrTail.length > 0) {
 				const stderrText = stderrTail.toString("utf8").trim();
 				const lines = stderrText
