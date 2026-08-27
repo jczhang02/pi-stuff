@@ -35,8 +35,10 @@ Tools, or Agent delegations, block Tools or Suite-authored messages, or decide
 whether Pi, Goal, or Agents should pause, stop, complete, or fail. Each owning
 Capability retains its own lifecycle policy.
 
-The Pi-facing lifecycle and activation owner remains `index.ts`; bounded native/Magic projection, frozen-branch
-selection, XML-safe truncation, and projection-budget fitting live in the stateless `projection.ts` seam.
+`index.ts` is the Pi-facing wiring and public facade; `runtime.ts` remains the one lifecycle and activation authority.
+`activity.ts` owns `/ctx`, persistent Context Activity, and Magic Tool presentation. `projection.ts` owns bounded
+native/Magic projection plus its cache and in-flight work, while `magic-runtime.ts` contains the Worker/Host adapter,
+event schemas, quiet Host proxy, and retryable module loader.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one
 temporary audited dependency patch so the engine resolves and preloads its installed `ai-tokenizer` in standalone Pi,

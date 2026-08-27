@@ -694,24 +694,32 @@ describe("Context capability lifecycle", () => {
 		const tools: ToolDefinition[] = [];
 		const api = apiFor(handlers, tools);
 		let reportFatal: ((cause: unknown) => void) | undefined;
+		let loads = 0;
 		await piStuffContext(api, {
-			loadMagicContext: async () => ({
-				default: async (magicApi: ExtensionAPI, onFatal?: (cause: unknown) => void) => {
-					reportFatal = onFatal;
-					magicApi.on("context", (event) => event);
-					magicApi.registerTool({
-						description: "Search Context",
-						execute: async () => ({ content: [{ type: "text", text: "result" }], details: undefined }),
-						label: "ctx_search",
-						name: "ctx_search",
-						parameters: Type.Object({ query: Type.String() }),
-					});
-				},
-			}),
+			loadMagicContext: async () => {
+				loads += 1;
+				if (loads > 1) throw new Error("replacement engine unavailable");
+				return {
+					default: async (magicApi: ExtensionAPI, onFatal?: (cause: unknown) => void) => {
+						reportFatal = onFatal;
+						magicApi.on("context", () => ({
+							messages: [taggedMessage("<session-history>cached before failure</session-history>")],
+						}));
+						magicApi.registerTool({
+							description: "Search Context",
+							execute: async () => ({ content: [{ type: "text", text: "result" }], details: undefined }),
+							label: "ctx_search",
+							name: "ctx_search",
+							parameters: Type.Object({ query: Type.String() }),
+						});
+					},
+				};
+			},
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		expect(getContextCapability(ctx).status().state).toBe("active");
+		expect((await projectCurrentContext("agent-fork", ctx)).source).toBe("magic-context");
 		expect(api.getActiveTools()).toContain("ctx_search");
 		expect(reportFatal).toBeDefined();
 
@@ -725,6 +733,10 @@ describe("Context capability lifecycle", () => {
 			error: "Context engine worker crashed",
 		});
 		expect(api.getActiveTools()).not.toContain("ctx_search");
+		const fallback = await projectCurrentContext("agent-fork", ctx);
+		expect(loads).toBe(2);
+		expect(fallback.source).toBe("native");
+		expect(fallback.text).not.toContain("cached before failure");
 	});
 
 	test("fails open during startup and retries on the next activation", async () => {
