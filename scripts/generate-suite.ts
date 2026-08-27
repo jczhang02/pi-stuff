@@ -74,25 +74,9 @@ function renderCapabilityImport(capability: CapabilityModule): string {
 	return `import ${identifier} from "${specifier}";`;
 }
 
-function renderSuiteRuntime(
-	capabilities: readonly CapabilityModule[],
-	toolNames: readonly string[],
-	optionalToolNames: readonly string[],
-	deferredToolNames: readonly string[],
-): string {
-	const hasSubagents = capabilities.includes("subagents");
-	const hasCodeMode = capabilities.includes("code-mode");
-	const sharesCodeModeState = hasSubagents && hasCodeMode;
-	const replayToolNames = [...toolNames, ...deferredToolNames, ...optionalToolNames];
-	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("tool-display")) {
-		throw new Error("A Suite Tool inventory requires the tool-display module");
-	}
-	if (hasCodeMode && toolNames.length === 0) {
-		throw new Error("The code-mode module requires a Suite Tool inventory");
-	}
-
+function renderRuntimeImports(capabilities: readonly CapabilityModule[], hasSubagents: boolean): string {
 	// Import order is presentation-only. Keep it deterministic for Biome while the
-	// capability list below preserves the installation order from suite.json.
+	// capability list preserves the installation order from suite.json.
 	const imports = [
 		...capabilities.map((capability) => ({ id: capability, source: renderCapabilityImport(capability) })),
 		{
@@ -123,43 +107,63 @@ function renderSuiteRuntime(
 	]
 		.sort((left, right) => left.id.localeCompare(right.id))
 		.map((entry) => entry.source);
-	const capabilityEntries = capabilities
+	return ['import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";', ...imports].join("\n");
+}
+
+function renderCapabilityDeclaration(capabilities: readonly CapabilityModule[], sharesCodeModeState: boolean): string {
+	const entries = capabilities
 		.filter((capability) => capability !== "code-mode")
 		.map((capability) => ({
 			id: capability,
 			install:
-				capability === "subagents"
-					? sharesCodeModeState
-						? "(pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES)"
-						: "(pi) => registerSuiteSubagents(pi, options)"
-					: CAPABILITY_MODULES[capability],
+				capability === "subagents" ? "(pi) => registerSuiteSubagents(pi, options)" : CAPABILITY_MODULES[capability],
 		}));
-	const importBlock = ['import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";', ...imports].join("\n");
-	const capabilityFunction = sharesCodeModeState
+	const declaration = sharesCodeModeState
 		? `function createCapabilities(
 	options: SuiteInstallationOptions,
 	resolveCodeModeEnabled: () => boolean,
 ): readonly CapabilityInstallation[] {`
 		: "function createCapabilities(options: SuiteInstallationOptions): readonly CapabilityInstallation[] {";
-	const capabilityDeclaration = `${capabilityFunction}
-	return [\n${capabilityEntries
+	return `${declaration}
+	return [\n${entries
 		.map((entry) =>
 			entry.id === "subagents" && sharesCodeModeState
 				? `\t\t{
-\t\t\tid: "subagents",
-\t\t\tinstall: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES),
-\t\t},`
+		\tid: "subagents",
+		\tinstall: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES),
+		},`
 				: entry.id === "goal"
 					? `\t\t{
-\t\t\tid: "goal",
-\t\t\tinstall: (pi) => {
-\t\t\t\tgoal(pi);
-\t\t\t},
-\t\t},`
+		\tid: "goal",
+		\tinstall: (pi) => {
+		\t\tgoal(pi);
+		\t},
+		},`
 					: `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`,
 		)
 		.join("\n")}\n\t];
 }`;
+}
+
+function renderSuiteRuntime(
+	capabilities: readonly CapabilityModule[],
+	toolNames: readonly string[],
+	optionalToolNames: readonly string[],
+	deferredToolNames: readonly string[],
+): string {
+	const hasSubagents = capabilities.includes("subagents");
+	const hasCodeMode = capabilities.includes("code-mode");
+	const sharesCodeModeState = hasSubagents && hasCodeMode;
+	const replayToolNames = [...toolNames, ...deferredToolNames, ...optionalToolNames];
+	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("tool-display")) {
+		throw new Error("A Suite Tool inventory requires the tool-display module");
+	}
+	if (hasCodeMode && toolNames.length === 0) {
+		throw new Error("The code-mode module requires a Suite Tool inventory");
+	}
+
+	const importBlock = renderRuntimeImports(capabilities, hasSubagents);
+	const capabilityDeclaration = renderCapabilityDeclaration(capabilities, sharesCodeModeState);
 	const coverageArguments = [
 		"pi",
 		"REQUIRED_SUITE_TOOL_NAMES",
