@@ -24,10 +24,10 @@ import { logger } from "./logger.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { createOAuthRuntime, shutdownOAuth } from "./mcp-auth-flow.ts";
 import { publishMcpStatusShutdown } from "./mcp-status.ts";
+import { executeCall } from "./proxy-call.ts";
 import {
 	executeAuthComplete,
 	executeAuthStart,
-	executeCall,
 	executeConnect,
 	executeDescribe,
 	executeInstructions,
