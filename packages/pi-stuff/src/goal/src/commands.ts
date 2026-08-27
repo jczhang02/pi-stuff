@@ -251,8 +251,7 @@ export class GoalCommandController {
 							this.runtime.clearStaleGoalToolCallBlock();
 						}
 					}
-					this.runtime.persistGoal(this.runtime.activeGoal);
-					this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+					this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 				} else {
 					await this.runtime.clearActiveGoal(ctx);
 				}
@@ -361,8 +360,7 @@ export class GoalCommandController {
 				checkpointGoalActiveTime(this.runtime.activeGoal, now, true);
 				this.runtime.activeGoal.updatedAt = now;
 			}
-			this.runtime.persistGoal(this.runtime.activeGoal);
-			this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		} else {
 			this.runtime.clearPresentationStatus();
 		}
@@ -419,8 +417,7 @@ export class GoalCommandController {
 			return true;
 		}
 
-		this.runtime.persistGoal(this.runtime.activeGoal);
-		this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		if (this.runtime.activeGoal.status !== "active") {
 			if (blocksStaleGoalToolCalls(this.runtime.activeGoal.status)) {
 				this.runtime.blockStaleGoalToolCalls();
@@ -437,8 +434,7 @@ export class GoalCommandController {
 		} catch (error) {
 			this.runtime.activeGoal = transitionGoal(this.runtime.activeGoal, "paused");
 			this.runtime.blockStaleGoalToolCalls();
-			this.runtime.persistGoal(this.runtime.activeGoal);
-			this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 			ctx.ui.notify(`Cannot start the next /goal: ${formatError(error)}`, "error");
 			return false;
 		}
@@ -450,8 +446,7 @@ export class GoalCommandController {
 		if (!sent && this.runtime.activeGoal?.id === activatedGoal.id) {
 			this.runtime.activeGoal = transitionGoal(activatedGoal, "paused");
 			this.runtime.blockStaleGoalToolCalls();
-			this.runtime.persistGoal(this.runtime.activeGoal);
-			this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 			ctx.ui.notify(`Next goal paused after prompt delivery failed: ${activatedGoal.text}`, "warning");
 			return false;
 		}
@@ -484,8 +479,7 @@ export class GoalCommandController {
 		this.runtime.blockStaleGoalToolCalls();
 		abortCurrentTurn(ctx);
 		this.runtime.activeGoal = transitionGoal(this.runtime.activeGoal, "paused");
-		this.runtime.persistGoal(this.runtime.activeGoal);
-		this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		ctx.ui.notify(`Goal paused: ${this.runtime.activeGoal.text}`, "info");
 	}
 
@@ -524,8 +518,7 @@ export class GoalCommandController {
 		this.runtime.activeGoal = queueGoalSafetyReset(
 			transitionGoal(nextGoalInstance(this.runtime.activeGoal), "active"),
 		);
-		this.runtime.persistGoal(this.runtime.activeGoal);
-		this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		if (this.runtime.activeGoal.status !== "active") {
 			ctx.ui.notify(`Goal token budget is still reached: ${formatBudget(this.runtime.activeGoal)}`, "warning");
 			return;
@@ -540,8 +533,7 @@ export class GoalCommandController {
 		if (!sent) {
 			if (this.runtime.activeGoal?.id === resumedGoal.id && this.runtime.activeGoal.status === "active") {
 				this.runtime.activeGoal = stoppedGoal;
-				this.runtime.persistGoal(this.runtime.activeGoal);
-				this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+				this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 				if (blocksStaleGoalToolCalls(this.runtime.activeGoal.status)) {
 					this.runtime.blockStaleGoalToolCalls();
 				}
@@ -610,8 +602,7 @@ export class GoalCommandController {
 			}
 		}
 		this.runtime.activeGoal = nextGoal;
-		this.runtime.persistGoal(this.runtime.activeGoal);
-		this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		const editedGoal = this.runtime.activeGoal;
 		if (!editedGoal) return;
 		if (editedGoal.status === "active") {
@@ -636,8 +627,7 @@ export class GoalCommandController {
 							this.runtime.clearStaleGoalToolCallBlock();
 						}
 					}
-					this.runtime.persistGoal(this.runtime.activeGoal);
-					this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+					this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 					if (goalToolVisibilityBeforeActivation) {
 						this.runtime.restoreGoalToolVisibility(goalToolVisibilityBeforeActivation);
 					}
@@ -661,8 +651,7 @@ export class GoalCommandController {
 		}
 		if (!this.runtime.queueFrozen) {
 			this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx);
-			this.runtime.persistGoal(this.runtime.activeGoal);
-			this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		}
 		this.reportGoalStatus(
 			ctx,
@@ -743,8 +732,7 @@ export class GoalCommandController {
 		this.runtime.queuedGoals = next.queue;
 		this.runtime.pendingQueueAction = undefined;
 		if (!this.runtime.activeGoal) return false;
-		this.runtime.persistGoal(this.runtime.activeGoal);
-		this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		const sent = await this.runtime.sendOwnedGoalPrompt(
 			ctx,
 			this.runtime.activeGoal.id,
@@ -765,8 +753,7 @@ export class GoalCommandController {
 					this.runtime.blockStaleGoalToolCalls();
 				}
 			}
-			this.runtime.persistGoal(this.runtime.activeGoal);
-			this.runtime.updateStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 			this.runtime.restoreGoalToolVisibility(visibilityBeforeActivation);
 			return false;
 		}

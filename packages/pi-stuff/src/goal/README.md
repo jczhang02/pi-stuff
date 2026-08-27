@@ -43,12 +43,13 @@ The full objective, completion guard, and continuation protocol are delivered as
 model receives them and the session retains them, while the TUI and HTML conversation export stay focused on the
 user's command, Tool outcome, and final response.
 
-Internally, `goal.ts` is the single Pi lifecycle composition root: event order and per-factory closures remain together.
+Internally, `goal.ts` is the single Pi lifecycle composition root: one per-factory owner wires ordered
+session, input, message, Tool, and Agent phases.
 The generation-guarded state machine stays in `runtime.ts`, pure state and formatting policy in `policy.ts`, command
 registration and transitions in `commands.ts`, queued-prompt correlation in `prompt-ownership.ts`, compaction retry
 coordination in `compaction.ts`, automatic-run coordination in `run-protocol.ts`, terminal Tool execution in
 `terminal-tools.ts`, Host tool visibility ownership in `tool-policy.ts`, and stateless Tool schemas and presentation in
-`tool-contract.ts`. Splitting lifecycle handlers by event would duplicate continuation, stale-turn, persistence, and
+`tool-contract.ts`. Splitting those phases across Modules would duplicate continuation, stale-turn, persistence, and
 safety invariants.
 
 ## Terminal tools

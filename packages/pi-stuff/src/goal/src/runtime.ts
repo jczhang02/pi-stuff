@@ -319,6 +319,11 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.publishPresentationStatus(goal);
 	}
 
+	persistGoalStatus(ctx: StatusContext, goal: ActiveGoal) {
+		this.persistGoal(goal);
+		this.updateStatus(ctx, goal);
+	}
+
 	publishPresentationStatus(goal: ActiveGoal | undefined) {
 		if (!goal || goal.status === "queued") {
 			this.clearPresentationStatus();
@@ -430,8 +435,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.clearBudgetWrapUp();
 		this.activeGoal = transitionGoal(goal, "budget_limited");
 		this.setTerminalReason(this.activeGoal.id, `token budget reached (${formatBudget(this.activeGoal)})`);
-		this.persistGoal(this.activeGoal);
-		this.updateStatus(ctx, this.activeGoal);
+		this.persistGoalStatus(ctx, this.activeGoal);
 		ctx.ui.notify(`Goal token budget reached: ${formatBudget(this.activeGoal)}`, "warning");
 		if (sendWrapUp) this.queueBudgetWrapUp(ctx, this.activeGoal);
 		return true;
@@ -443,8 +447,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		if (message?.role === "assistant" && message.stopReason === "aborted") return false;
 		goal.automaticModelTurns = Math.min(Number.MAX_SAFE_INTEGER, goal.automaticModelTurns + 1);
 		this.recordGoalUsage(goal, ctx);
-		this.persistGoal(goal);
-		this.updateStatus(ctx, goal);
+		this.persistGoalStatus(ctx, goal);
 		// Terminal errors need agent_end classification before a safety pause can
 		// choose between usage_limited, blocked, or retryable cleanup.
 		if (message?.role === "assistant" && message.stopReason === "error") return false;
@@ -462,8 +465,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		const next = nextToolFreeRepeatState(goal, messages, toolAttempted);
 		goal.toolFreeRepeatCount = next.toolFreeRepeatCount;
 		goal.lastToolFreeOutputFingerprint = next.lastToolFreeOutputFingerprint;
-		this.persistGoal(goal);
-		this.updateStatus(ctx, goal);
+		this.persistGoalStatus(ctx, goal);
 		const limit = this.settings.continuationLimits.noProgressTurns;
 		if (limit === null || goal.toolFreeRepeatCount < limit) return false;
 		return this.pauseGoalForSafety(ctx, "no_progress", false);
@@ -514,8 +516,7 @@ export class GoalRuntime extends GoalToolPolicy {
 			this.activeGoal.id,
 			`${cause} (${count}; ${formatTokenCount(this.activeGoal.tokensUsed)} tokens)`,
 		);
-		this.persistGoal(this.activeGoal);
-		this.updateStatus(ctx, this.activeGoal);
+		this.persistGoalStatus(ctx, this.activeGoal);
 		ctx.ui.notify(
 			`Goal paused: ${count}; ${formatTokenCount(this.activeGoal.tokensUsed)} cumulative tokens. Run /goal resume to continue.`,
 			"warning",
@@ -528,8 +529,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		if (goal?.status !== "active") return false;
 		this.activeGoal = resetGoalSafetyEpoch(goal);
 		this.reclassifyAgentRunAsManual();
-		this.persistGoal(this.activeGoal);
-		this.updateStatus(ctx, this.activeGoal);
+		this.persistGoalStatus(ctx, this.activeGoal);
 		return true;
 	}
 
@@ -543,8 +543,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.clearBudgetWrapUp();
 		const details = recovery.errorMessage ? `: ${truncateNotification(recovery.errorMessage)}` : "";
 		this.clearStaleGoalToolCallBlock();
-		this.persistGoal(goal);
-		this.updateStatus(ctx, goal);
+		this.persistGoalStatus(ctx, goal);
 		ctx.ui.notify(
 			`Goal provider retry was exhausted${details}. The Goal remains active and will continue from the next settled boundary.`,
 			"warning",
@@ -756,8 +755,7 @@ export class GoalRuntime extends GoalToolPolicy {
 			this.clearStaleGoalToolCallBlock();
 		}
 		this.activeGoal = transitionGoal(goal, "paused");
-		this.persistGoal(this.activeGoal);
-		this.updateStatus(ctx, this.activeGoal);
+		this.persistGoalStatus(ctx, this.activeGoal);
 		ctx.ui.notify(
 			"Goal tools are unavailable, so the active goal was paused. Restore the tools and run /goal resume.",
 			"warning",

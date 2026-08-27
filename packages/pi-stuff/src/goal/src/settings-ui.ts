@@ -3,7 +3,7 @@ import { type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-co
 import { checkpointGoalActiveTime } from "./accounting.js";
 import { abortCurrentTurn, EMERGENCY_AUTOMATIC_TURN_LIMIT, type GoalRuntime } from "./runtime.js";
 import { GOAL_SETTINGS_FILE, type GoalSettings, saveGoalSettings } from "./settings.js";
-import { defineMenu, runMenu } from "./suite-menu.js";
+import { defineMenu, type MenuDefinition, runMenu } from "./suite-menu.js";
 
 interface GoalSettingsUiOptions {
 	settingsPath?: string | undefined;
@@ -18,6 +18,175 @@ interface GoalSettingsApplyOptions {
 
 type LimitField = "automaticTurns" | "noProgressTurns";
 type LimitSelection = "unlimited" | "custom" | "off";
+type GoalSettingsScreen = "settings" | "automatic" | "no-progress" | "invalid";
+type GoalSettingsAction =
+	| "open-automatic"
+	| "open-no-progress"
+	| "choose-automatic"
+	| "choose-no-progress"
+	| "set-visibility"
+	| "set-queue"
+	| "set-rpc";
+type GoalSettingsMenuDefinition = MenuDefinition<undefined, GoalSettingsScreen, GoalSettingsAction>;
+
+function goalSettingsScreens(runtime: GoalRuntime, settingsPath: string): GoalSettingsMenuDefinition["screens"] {
+	return {
+		settings: () => ({
+			kind: "settings",
+			title: "Pi Goal Settings",
+			lines: [`User settings · ${safeTerminalText(settingsPath)}`],
+			items: [
+				{
+					id: "automaticTurns",
+					label: "Automatic work",
+					description: "Choose whether Goal can continue without a response-count cap.",
+					currentValue: formatAutomaticSettingValue(runtime.settings.continuationLimits.automaticTurns),
+					action: "open-automatic",
+				},
+				{
+					id: "noProgressTurns",
+					label: "No-progress guard",
+					description: "Pause after repeated or empty tool-free automatic runs.",
+					currentValue: formatNoProgressSettingValue(runtime.settings.continuationLimits.noProgressTurns),
+					action: "open-no-progress",
+				},
+				{
+					id: "toolVisibility",
+					label: "Goal tools",
+					description: "Keep terminal Goal tools visible, or reveal them after the first goal.",
+					currentValue: visibilityLabel(runtime.settings.toolVisibility),
+					values: ["Always", "After first goal"],
+					action: "set-visibility",
+				},
+				{
+					id: "experimentalGoals",
+					label: "Ordered goal queue",
+					description: "Enable experimental add, prioritize, skip, and drop-last workflows.",
+					currentValue: runtime.settings.experimental.goals ? "Experimental" : "Off",
+					values: ["Off", "Experimental"],
+					action: "set-queue",
+				},
+				{
+					id: "rpcEnabled",
+					label: "Managed run RPC",
+					description:
+						"Allow trusted installed extensions to start and cancel Goal runs; this is not an extension sandbox.",
+					currentValue: runtime.settings.rpc.enabled ? "On" : "Off",
+					values: ["Off", "On"],
+					action: "set-rpc",
+				},
+			],
+		}),
+		automatic: () => limitChoiceScreen(runtime, "automaticTurns", "choose-automatic"),
+		"no-progress": () => limitChoiceScreen(runtime, "noProgressTurns", "choose-no-progress"),
+		invalid: () => ({
+			kind: "detail",
+			title: "Pi Goal Settings · Read only",
+			lines: [
+				`Invalid settings file. Pi-goal is using built-in defaults. Fix ${safeTerminalText(settingsPath)} and run /reload. The file will not be overwritten.`,
+				`Automatic work: ${formatAutomaticWork(runtime.settings.continuationLimits.automaticTurns)}`,
+				`No-progress guard: ${formatNoProgressProtection(runtime.settings.continuationLimits.noProgressTurns)}`,
+				`Goal tools: ${visibilityLabel(runtime.settings.toolVisibility)}`,
+				`Ordered goal queue: ${runtime.settings.experimental.goals ? "Experimental" : "Off"}`,
+				`Managed run RPC: ${runtime.settings.rpc.enabled ? "On" : "Off"}`,
+			],
+			hint: "back",
+		}),
+	};
+}
+
+function goalSettingsActions(
+	runtime: GoalRuntime,
+	ctx: ExtensionCommandContext,
+	options: GoalSettingsUiOptions,
+	settingsPath: string,
+	previewGoalIds: Map<LimitField, string | null>,
+): GoalSettingsMenuDefinition["actions"] {
+	return {
+		"open-automatic": async () => {
+			previewGoalIds.set("automaticTurns", runtime.activeGoal?.id ?? null);
+			return { kind: "to", screen: "automatic" };
+		},
+		"open-no-progress": async () => {
+			previewGoalIds.set("noProgressTurns", runtime.activeGoal?.id ?? null);
+			return { kind: "to", screen: "no-progress" };
+		},
+		"choose-automatic": async ({ itemId }) =>
+			applyLimitChoice(
+				runtime,
+				ctx,
+				options,
+				settingsPath,
+				"automaticTurns",
+				itemId,
+				previewGoalIds.get("automaticTurns") ?? null,
+			),
+		"choose-no-progress": async ({ itemId }) =>
+			applyLimitChoice(
+				runtime,
+				ctx,
+				options,
+				settingsPath,
+				"noProgressTurns",
+				itemId,
+				previewGoalIds.get("noProgressTurns") ?? null,
+			),
+		"set-visibility": async ({ value }) => {
+			const nextVisibility = value === "Always" ? "always" : "after-first-goal";
+			if (nextVisibility === runtime.settings.toolVisibility) return { kind: "stay" };
+			try {
+				const next = {
+					...structuredClone(runtime.settings),
+					toolVisibility: nextVisibility,
+				} satisfies GoalSettings;
+				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+				ctx.ui.notify(`Goal tools: ${value}.`, "info");
+				return { kind: "stay" };
+			} catch (error) {
+				notifySettingsFailure(ctx, settingsPath, error);
+				return { kind: "rejected" };
+			}
+		},
+		"set-queue": async ({ value }) => {
+			const enabled = value === "Experimental";
+			if (enabled === runtime.settings.experimental.goals) return { kind: "stay" };
+			const next = await nextQueueSettings(runtime, ctx, enabled);
+			if (!next) return { kind: "rejected" };
+			const wasFrozen = runtime.queueFrozen;
+			try {
+				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+				if (wasFrozen && !runtime.queueFrozen) {
+					try {
+						await options.onQueueUnfrozen?.(ctx);
+					} catch (error) {
+						ctx.ui.notify(
+							`Goal queue enabled, but automatic resume failed: ${safeTerminalText(formatError(error))}. Reopen /goal to retry.`,
+							"warning",
+						);
+					}
+				}
+				ctx.ui.notify(`Ordered goal queue: ${enabled ? "Experimental" : "Off"}.`, "info");
+				return { kind: "stay" };
+			} catch (error) {
+				notifySettingsFailure(ctx, settingsPath, error);
+				return { kind: "rejected" };
+			}
+		},
+		"set-rpc": async ({ value }) => {
+			const enabled = value === "On";
+			if (enabled === runtime.settings.rpc.enabled) return { kind: "stay" };
+			try {
+				const next = { ...structuredClone(runtime.settings), rpc: { enabled } } satisfies GoalSettings;
+				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+				ctx.ui.notify(`Managed run RPC: ${enabled ? "On" : "Off"}.`, "info");
+				return { kind: "stay" };
+			} catch (error) {
+				notifySettingsFailure(ctx, settingsPath, error);
+				return { kind: "rejected" };
+			}
+		},
+	};
+}
 export async function showGoalSettings(
 	runtime: GoalRuntime,
 	ctx: ExtensionCommandContext,
@@ -31,167 +200,10 @@ export async function showGoalSettings(
 	const generation = runtime.menuGeneration;
 	const invalid = runtime.settingsLoadIssue?.kind === "invalid";
 	const previewGoalIds = new Map<LimitField, string | null>();
-	type Screen = "settings" | "automatic" | "no-progress" | "invalid";
-	type Action =
-		| "open-automatic"
-		| "open-no-progress"
-		| "choose-automatic"
-		| "choose-no-progress"
-		| "set-visibility"
-		| "set-queue"
-		| "set-rpc";
-	const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
+	const menu = defineMenu<undefined, GoalSettingsScreen, GoalSettingsAction, ExtensionCommandContext>({
 		start: invalid ? "invalid" : "settings",
-		screens: {
-			settings: () => ({
-				kind: "settings",
-				title: "Pi Goal Settings",
-				lines: [`User settings · ${safeTerminalText(settingsPath)}`],
-				items: [
-					{
-						id: "automaticTurns",
-						label: "Automatic work",
-						description: "Choose whether Goal can continue without a response-count cap.",
-						currentValue: formatAutomaticSettingValue(runtime.settings.continuationLimits.automaticTurns),
-						action: "open-automatic",
-					},
-					{
-						id: "noProgressTurns",
-						label: "No-progress guard",
-						description: "Pause after repeated or empty tool-free automatic runs.",
-						currentValue: formatNoProgressSettingValue(runtime.settings.continuationLimits.noProgressTurns),
-						action: "open-no-progress",
-					},
-					{
-						id: "toolVisibility",
-						label: "Goal tools",
-						description: "Keep terminal Goal tools visible, or reveal them after the first goal.",
-						currentValue: visibilityLabel(runtime.settings.toolVisibility),
-						values: ["Always", "After first goal"],
-						action: "set-visibility",
-					},
-					{
-						id: "experimentalGoals",
-						label: "Ordered goal queue",
-						description: "Enable experimental add, prioritize, skip, and drop-last workflows.",
-						currentValue: runtime.settings.experimental.goals ? "Experimental" : "Off",
-						values: ["Off", "Experimental"],
-						action: "set-queue",
-					},
-					{
-						id: "rpcEnabled",
-						label: "Managed run RPC",
-						description:
-							"Allow trusted installed extensions to start and cancel Goal runs; this is not an extension sandbox.",
-						currentValue: runtime.settings.rpc.enabled ? "On" : "Off",
-						values: ["Off", "On"],
-						action: "set-rpc",
-					},
-				],
-			}),
-			automatic: () => limitChoiceScreen(runtime, "automaticTurns", "choose-automatic"),
-			"no-progress": () => limitChoiceScreen(runtime, "noProgressTurns", "choose-no-progress"),
-			invalid: () => ({
-				kind: "detail",
-				title: "Pi Goal Settings · Read only",
-				lines: [
-					`Invalid settings file. Pi-goal is using built-in defaults. Fix ${safeTerminalText(settingsPath)} and run /reload. The file will not be overwritten.`,
-					`Automatic work: ${formatAutomaticWork(runtime.settings.continuationLimits.automaticTurns)}`,
-					`No-progress guard: ${formatNoProgressProtection(runtime.settings.continuationLimits.noProgressTurns)}`,
-					`Goal tools: ${visibilityLabel(runtime.settings.toolVisibility)}`,
-					`Ordered goal queue: ${runtime.settings.experimental.goals ? "Experimental" : "Off"}`,
-					`Managed run RPC: ${runtime.settings.rpc.enabled ? "On" : "Off"}`,
-				],
-				hint: "back",
-			}),
-		},
-		actions: {
-			"open-automatic": async () => {
-				previewGoalIds.set("automaticTurns", runtime.activeGoal?.id ?? null);
-				return { kind: "to", screen: "automatic" };
-			},
-			"open-no-progress": async () => {
-				previewGoalIds.set("noProgressTurns", runtime.activeGoal?.id ?? null);
-				return { kind: "to", screen: "no-progress" };
-			},
-			"choose-automatic": async ({ itemId }) =>
-				applyLimitChoice(
-					runtime,
-					ctx,
-					options,
-					settingsPath,
-					"automaticTurns",
-					itemId,
-					previewGoalIds.get("automaticTurns") ?? null,
-				),
-			"choose-no-progress": async ({ itemId }) =>
-				applyLimitChoice(
-					runtime,
-					ctx,
-					options,
-					settingsPath,
-					"noProgressTurns",
-					itemId,
-					previewGoalIds.get("noProgressTurns") ?? null,
-				),
-			"set-visibility": async ({ value }) => {
-				const nextVisibility = value === "Always" ? "always" : "after-first-goal";
-				if (nextVisibility === runtime.settings.toolVisibility) return { kind: "stay" };
-				try {
-					const next = {
-						...structuredClone(runtime.settings),
-						toolVisibility: nextVisibility,
-					} satisfies GoalSettings;
-					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
-					ctx.ui.notify(`Goal tools: ${value}.`, "info");
-					return { kind: "stay" };
-				} catch (error) {
-					notifySettingsFailure(ctx, settingsPath, error);
-					return { kind: "rejected" };
-				}
-			},
-			"set-queue": async ({ value }) => {
-				const enabled = value === "Experimental";
-				if (enabled === runtime.settings.experimental.goals) return { kind: "stay" };
-				const next = await nextQueueSettings(runtime, ctx, enabled);
-				if (!next) return { kind: "rejected" };
-				const wasFrozen = runtime.queueFrozen;
-				try {
-					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
-					if (wasFrozen && !runtime.queueFrozen) {
-						try {
-							await options.onQueueUnfrozen?.(ctx);
-						} catch (error) {
-							ctx.ui.notify(
-								`Goal queue enabled, but automatic resume failed: ${safeTerminalText(formatError(error))}. Reopen /goal to retry.`,
-								"warning",
-							);
-						}
-					}
-					ctx.ui.notify(`Ordered goal queue: ${enabled ? "Experimental" : "Off"}.`, "info");
-					return { kind: "stay" };
-				} catch (error) {
-					notifySettingsFailure(ctx, settingsPath, error);
-					return { kind: "rejected" };
-				}
-			},
-			"set-rpc": async ({ value }) => {
-				const enabled = value === "On";
-				if (enabled === runtime.settings.rpc.enabled) return { kind: "stay" };
-				try {
-					const next = {
-						...structuredClone(runtime.settings),
-						rpc: { enabled },
-					} satisfies GoalSettings;
-					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
-					ctx.ui.notify(`Managed run RPC: ${enabled ? "On" : "Off"}.`, "info");
-					return { kind: "stay" };
-				} catch (error) {
-					notifySettingsFailure(ctx, settingsPath, error);
-					return { kind: "rejected" };
-				}
-			},
-		},
+		screens: goalSettingsScreens(runtime, settingsPath),
+		actions: goalSettingsActions(runtime, ctx, options, settingsPath, previewGoalIds),
 	});
 	await runMenu(ctx, menu, {
 		getState: () => undefined,
@@ -468,8 +480,7 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 		}
 	}
 	runtime.queueFrozen = shouldFreeze;
-	if (runtime.activeGoal) runtime.persistGoal(runtime.activeGoal);
-	if (runtime.activeGoal) runtime.updateStatus(ctx, runtime.activeGoal);
+	if (runtime.activeGoal) runtime.persistGoalStatus(ctx, runtime.activeGoal);
 	else runtime.clearPresentationStatus();
 	if (!shouldFreeze) return;
 
@@ -487,8 +498,7 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 
 function restorePersistedRuntime(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 	if (runtime.activeGoal) {
-		runtime.persistGoal(runtime.activeGoal);
-		runtime.updateStatus(ctx, runtime.activeGoal);
+		runtime.persistGoalStatus(ctx, runtime.activeGoal);
 		return;
 	}
 	runtime.clearPresentationStatus();
