@@ -219,6 +219,9 @@ The module gives independently owned Capabilities one full-width, non-floating f
 each other. A `blocking` view preempts the active `normal` view inside the same Pi component; blocking requests run FIFO,
 then the exact normal component resumes.
 
+`command-dialog.ts` owns the coordinator, its queue, Footer composition, and Host restoration state. `index.ts` remains
+the Capability facade and lifecycle composition root.
+
 Bare `/ponytail` uses this surface as one control plane for Session mode, saved defaults, presentation preferences,
 and specialized Skills. Setting changes update the open Overview without Transcript notifications; launching a Skill
 closes the Dialog and uses Pi's native Skill expansion. Environment overrides remain effective and read-only while the

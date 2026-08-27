@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { CommandDialogCoordinatorImplementation } from "./command-dialog.js";
 import { DiagnosticNoticeController } from "./diagnostic-notice.js";
 import type { DiagnosticChannel } from "./diagnostics.js";
-import type { CommandDialogCoordinator, FooterFactory } from "./index.js";
 import { type InputEnhancementController, installInputEnhancementEditor } from "./input-enhancement.js";
 import type { UiSettingsStore } from "./settings.js";
 import {
@@ -21,10 +21,6 @@ export interface UiSessionPresentation {
 	refreshGit(): Promise<void>;
 	requestRender(force?: boolean): void;
 	updateContextFileCount(count: number | undefined): void;
-}
-
-interface UiSessionPresentationCoordinator extends CommandDialogCoordinator {
-	installFooter(ctx: ExtensionContext, factory: FooterFactory): void;
 }
 
 class StoreBooleanSource implements BooleanValueSource {
@@ -98,7 +94,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		pi: ExtensionAPI,
 		ctx: ExtensionContext,
 		store: UiSettingsStore,
-		coordinator: UiSessionPresentationCoordinator,
+		coordinator: CommandDialogCoordinatorImplementation,
 		diagnostics: DiagnosticChannel,
 	) {
 		this.pi = pi;
@@ -170,7 +166,7 @@ export function installUiSessionPresentation(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	store: UiSettingsStore,
-	coordinator: UiSessionPresentationCoordinator,
+	coordinator: CommandDialogCoordinatorImplementation,
 	diagnostics: DiagnosticChannel,
 ): UiSessionPresentation | undefined {
 	if (ctx.mode !== "tui") return undefined;

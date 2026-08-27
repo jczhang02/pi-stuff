@@ -1465,6 +1465,33 @@ describe("Command Dialog coordinator", () => {
 		unregister();
 	});
 
+	test("keeps shared chrome adapter registrations independent", async () => {
+		const api = createApiHarness();
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		const writes: boolean[] = [];
+		const chrome = { setSuppressed: (suppressed: boolean) => writes.push(suppressed) };
+		const unregisterTodo = coordinator.registerChrome("todo", chrome);
+		const unregisterAgents = coordinator.registerChrome("agents", chrome);
+		let viewContext: CommandDialogViewContext | undefined;
+		const shown = coordinator.show(ctx, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return new TestComponent("shared chrome");
+			},
+		});
+
+		expect(writes).toEqual([true, true]);
+		unregisterTodo();
+		unregisterAgents();
+		expect(writes).toEqual([true, true, false, false]);
+		if (!viewContext) throw new Error("Expected the command dialog to mount");
+		viewContext.close();
+		await shown;
+	});
+
 	test("does not restore an already submitted slash command when the caller opts out", async () => {
 		const api = createApiHarness();
 		await piStuffUi(api.api);
