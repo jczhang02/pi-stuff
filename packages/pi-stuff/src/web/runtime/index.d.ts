@@ -9,7 +9,5 @@ export type PiWebAccessHost = Pick<ExtensionAPI, "appendEntry" | "on" | "registe
 
 export function configureRuntimeSsrfDefaults(defaults?: RuntimeSsrfDefaults): void;
 
-export function createPiWebAccess(): (pi: PiWebAccessHost) => void;
-
 declare const piWebAccess: (pi: PiWebAccessHost) => void;
 export default piWebAccess;

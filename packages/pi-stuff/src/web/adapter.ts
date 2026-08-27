@@ -1,10 +1,11 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { type TSchema, Type } from "typebox";
+import type { TSchema } from "typebox";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
-import { createPiWebAccess, type PiWebAccessHost } from "./runtime/index.js";
+import piWebAccess, { type PiWebAccessHost } from "./runtime/index.js";
+import { WEB_CONTENT_PARAMETERS, WEB_FETCH_PARAMETERS, WEB_SEARCH_PARAMETERS } from "./tool-contracts.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
@@ -16,49 +17,6 @@ export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost;
 export interface WebAdapterOptions {
 	readonly fakeIpCompatibility?: Pick<FakeIpCompatibility, "prepare">;
 }
-
-const piWebAccess = createPiWebAccess();
-
-const WEB_SEARCH_PARAMETERS = Type.Object({
-	query: Type.Optional(Type.String({ maxLength: 1_000, minLength: 1 })),
-	queries: Type.Optional(Type.Array(Type.String({ maxLength: 1_000, minLength: 1 }), { maxItems: 4, minItems: 1 })),
-	numResults: Type.Optional(Type.Integer({ maximum: 20, minimum: 1 })),
-	recencyFilter: Type.Optional(
-		Type.Union([Type.Literal("day"), Type.Literal("week"), Type.Literal("month"), Type.Literal("year")]),
-	),
-	domainFilter: Type.Optional(Type.Array(Type.String({ maxLength: 253, minLength: 1 }), { maxItems: 20 })),
-	provider: Type.Optional(
-		Type.Union([
-			Type.String({ maxLength: 64, minLength: 1 }),
-			Type.Array(Type.String({ maxLength: 64, minLength: 1 }), { maxItems: 8, minItems: 1 }),
-		]),
-	),
-});
-
-const WEB_FETCH_PARAMETERS = Type.Object({
-	url: Type.Optional(Type.String({ maxLength: 8_192, minLength: 1 })),
-	urls: Type.Optional(Type.Array(Type.String({ maxLength: 8_192, minLength: 1 }), { maxItems: 10, minItems: 1 })),
-	mode: Type.Optional(Type.Union([Type.Literal("readable"), Type.Literal("raw")])),
-});
-
-const WEB_CONTENT_PARAMETERS = Type.Object({
-	responseId: Type.String({ maxLength: 256, minLength: 1 }),
-	query: Type.Optional(Type.String({ maxLength: 1_000, minLength: 1 })),
-	queryIndex: Type.Optional(Type.Integer({ maximum: 100, minimum: 0 })),
-	url: Type.Optional(Type.String({ maxLength: 8_192, minLength: 1 })),
-	urlIndex: Type.Optional(Type.Integer({ maximum: 100, minimum: 0 })),
-	offset: Type.Optional(Type.Integer({ minimum: 0 })),
-	limit: Type.Optional(Type.Integer({ maximum: 30_000, minimum: 1 })),
-	findText: Type.Optional(
-		Type.Union([
-			Type.String({ maxLength: 500, minLength: 1 }),
-			Type.Array(Type.String({ maxLength: 500, minLength: 1 }), { maxItems: 10, minItems: 1 }),
-		]),
-	),
-	findMode: Type.Optional(
-		Type.Union([Type.Literal("exact"), Type.Literal("case-insensitive"), Type.Literal("fuzzy")]),
-	),
-});
 
 function errorResult(error: string): AgentToolResult<unknown> {
 	return {

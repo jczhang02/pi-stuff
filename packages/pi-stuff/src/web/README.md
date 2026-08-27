@@ -16,7 +16,8 @@ explicit through the Tool call or the owned upstream configuration.
 
 All three Tools use Pi Stuff's shared one-row lifecycle renderer. Model-visible
 results, citations, cancellation, SSRF protection, redirects, extraction, and
-PDF handling remain owned by the pinned fork.
+PDF handling remain owned by the pinned fork. `tool-contracts.ts` is the single
+owner of their bounded model-facing schemas across the parent adapter and private runtime.
 
 Provider include/exclude values share one Suite-owned domain normalizer. It
 accepts URL-shaped host input, rejects literal IPs and single-label hosts, and

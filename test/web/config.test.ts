@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPiWebAccess, type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
+import piWebAccess, { type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
 import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
 
 const roots: string[] = [];
@@ -30,7 +30,7 @@ function installWeb(agentDirectory: string): string[] {
 			tools.push(tool.name);
 		},
 	};
-	createPiWebAccess()(host);
+	piWebAccess(host);
 	return tools;
 }
 
