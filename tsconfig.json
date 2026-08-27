@@ -10,7 +10,6 @@
 	"exclude": [
 		"node_modules",
 		".artifacts",
-		"packages/pi-stuff/src/suite-runtime.ts",
 		"packages/pi-stuff/src/subagents/**",
 		"packages/pi-stuff/src/rtk/**",
 		"test/agents-host.test.ts",

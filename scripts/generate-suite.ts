@@ -149,7 +149,14 @@ function renderSuiteRuntime(
 \t\t\tid: "subagents",
 \t\t\tinstall: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES),
 \t\t},`
-				: `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`,
+				: entry.id === "goal"
+					? `\t\t{
+\t\t\tid: "goal",
+\t\t\tinstall: (pi) => {
+\t\t\t\tgoal(pi);
+\t\t\t},
+\t\t},`
+					: `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`,
 		)
 		.join("\n")}\n\t];
 }`;

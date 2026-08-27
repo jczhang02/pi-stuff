@@ -62,7 +62,12 @@ function createCapabilities(
 		{ id: "tool-display", install: toolDisplay },
 		{ id: "rtk", install: rtk },
 		{ id: "codex", install: codex },
-		{ id: "goal", install: goal },
+		{
+			id: "goal",
+			install: (pi) => {
+				goal(pi);
+			},
+		},
 		{ id: "context-management", install: contextManagement },
 		{ id: "ponytail", install: ponytail },
 		{ id: "web", install: web },

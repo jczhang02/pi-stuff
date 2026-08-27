@@ -22,7 +22,7 @@ async function createRepository(): Promise<string> {
 	});
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
 		schemaVersion: 2,
-		capabilities: ["conversation-ui", "subagents", "btw"],
+		capabilities: ["conversation-ui", "goal", "subagents", "btw"],
 		tools: [],
 	});
 	return root;
@@ -50,12 +50,19 @@ describe("generateSuite", () => {
 		expect(generatedIndex).toContain('mode === "initial"');
 		expect(generatedIndex).toContain("importFreshSuiteRuntime(RUNTIME_PATH)");
 		expect(generatedRuntime).toContain('import conversationUi from "./conversation-ui/index.js";');
+		expect(generatedRuntime).toContain('import goal from "./goal/index.js";');
 		expect(generatedRuntime).toContain('import subagents from "./subagents/index.js";');
 		expect(generatedRuntime).toContain('import btw from "./btw/index.js";');
 		expect(generatedRuntime).toContain(
 			"return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath });",
 		);
 		expect(generatedRuntime).toContain('{ id: "conversation-ui", install: conversationUi },');
+		expect(generatedRuntime).toContain(`{
+			id: "goal",
+			install: (pi) => {
+				goal(pi);
+			},
+		}`);
 		expect(generatedRuntime).toContain('{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options) },');
 		expect(generatedRuntime).toContain('{ id: "btw", install: btw },');
 		expect(generatedRuntime).toContain("const suiteApi = installSuiteSessionReadiness(pi);");
