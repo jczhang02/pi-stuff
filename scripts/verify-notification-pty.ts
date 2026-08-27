@@ -208,14 +208,16 @@ class NotificationPtySession {
 	}
 }
 
-export async function verifyNotificationPty(options: NotificationPtyVerificationOptions): Promise<void> {
-	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-notification-pty-"));
+async function createNotificationSession(
+	options: NotificationPtyVerificationOptions,
+	temporaryDirectory: string,
+	rawLog: string,
+	columns: number,
+	rows: number,
+): Promise<NotificationPtySession> {
 	const agentDirectory = join(temporaryDirectory, "agent");
 	const projectDirectory = join(temporaryDirectory, "project");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
-	const rawLog = join(temporaryDirectory, "terminal.raw");
-	const columns = options.columns ?? 64;
-	const rows = options.rows ?? 28;
 	await Promise.all([
 		mkdir(agentDirectory, { recursive: true }),
 		mkdir(projectDirectory, { recursive: true }),
@@ -250,7 +252,7 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 			{ mode: 0o600 },
 		),
 	]);
-	const session = new NotificationPtySession(
+	return new NotificationPtySession(
 		projectDirectory,
 		{
 			...process.env,
@@ -270,85 +272,102 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 		},
 		rawLog,
 	);
+}
+
+async function verifyNotificationFlow(
+	session: NotificationPtySession,
+	rawLog: string,
+	columns: number,
+	rows: number,
+): Promise<void> {
+	await session.start(columns, rows);
+	await session.waitForText("notification-pty-model");
+	await session.sendPrompt("/notifications");
+	const settingsScreen = await session.waitForText("Response preview");
+	for (const label of [
+		"Completion alerts",
+		"Failure alerts",
+		"Delivery",
+		"Tmux notification",
+		"Also ring terminal bell",
+	]) {
+		if (!settingsScreen.includes(label)) fail(`Notification settings omitted ${JSON.stringify(label)}`);
+	}
+	if (settingsScreen.includes("Notification sound")) fail("Notification settings still use the misleading sound name");
+	session.sendKey("t");
+	let frames = await session.waitForFrameCount(1);
+	if (frames[0]?.title !== "Pi · Notification test" || frames[0]?.body !== "Notifications are working.") {
+		fail(`unexpected test frame: ${JSON.stringify(frames[0])}`);
+	}
+	session.sendKey("Escape");
+	await delay(100);
+
+	await session.sendPrompt("NOTIFY_SUCCESS");
+	await session.waitForText("NOTIFICATION_SUCCESS_DONE");
+	frames = await session.waitForFrameCount(2);
+	if (frames[1]?.title !== "Pi · project — Ready" || frames[1]?.body !== "NOTIFICATION_SUCCESS_DONE") {
+		fail(`unexpected completion frame: ${JSON.stringify(frames[1])}`);
+	}
+
+	await session.sendPrompt("NOTIFY_FAILURE");
+	await session.waitForText("NOTIFICATION_FAILURE_DONE");
+	frames = await session.waitForFrameCount(3);
+	if (frames[2]?.title !== "Pi · project — Needs attention" || frames[2]?.body !== "The run ended with an error.") {
+		fail(`unexpected failure frame: ${JSON.stringify(frames[2])}`);
+	}
+
+	await session.sendPrompt("NOTIFY_CHAOS_CANCEL");
+	await session.waitForText("NOTIFICATION_CHAOS_DONE");
+	await delay(100);
+	session.sendKey("x", "Escape");
+	await delay(GRACE_MS + 300);
+	if (notificationFrames(await readFile(rawLog, "utf8")).length !== 3)
+		fail("random terminal input did not cancel grace");
+	session.sendKey("C-c");
+
+	await session.sendPrompt("NOTIFY_RELOAD_CANCEL");
+	await session.waitForText("NOTIFICATION_RELOAD_DONE");
+	await delay(100);
+	await session.sendPrompt("/reload");
+	await session.waitForText("Reloaded keybindings, extensions");
+	await delay(GRACE_MS + 300);
+	if (notificationFrames(await readFile(rawLog, "utf8")).length !== 3) fail("reload did not cancel grace");
+
+	session.resize(48, 24);
+	await session.sendPrompt("NOTIFY_SUCCESS_NARROW");
+	await session.waitForText("NOTIFICATION_NARROW_DONE");
+	frames = await session.waitForFrameCount(4);
+	const narrowScreen = session.capture();
+	if (narrowScreen.includes("Pi · project — Ready") || narrowScreen.includes("Pi · project — Needs attention")) {
+		fail("notification was duplicated into the transcript or permanent UI");
+	}
+	if (narrowScreen.split("\n").some((line) => visibleWidth(line) > 48)) fail("notification broke narrow layout");
+
+	await session.sendPrompt("NOTIFY_ABORT");
+	await delay(250);
+	session.sendKey("C-c");
+	await delay(GRACE_MS + 500);
+	if (notificationFrames(await readFile(rawLog, "utf8")).length !== 4) fail("aborted work emitted a notification");
+
+	await session.sendPrompt("NOTIFY_SHUTDOWN_CANCEL");
+	await session.waitForText("NOTIFICATION_SHUTDOWN_DONE");
+	await delay(100);
+	session.sendKey("C-d");
+	await session.waitForExit();
+	await delay(GRACE_MS + 100);
+	if (notificationFrames(await readFile(rawLog, "utf8")).length !== 4) {
+		fail("shutdown emitted a stale notification");
+	}
+}
+
+export async function verifyNotificationPty(options: NotificationPtyVerificationOptions): Promise<void> {
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-notification-pty-"));
+	const rawLog = join(temporaryDirectory, "terminal.raw");
+	const columns = options.columns ?? 64;
+	const rows = options.rows ?? 28;
+	const session = await createNotificationSession(options, temporaryDirectory, rawLog, columns, rows);
 	try {
-		await session.start(columns, rows);
-		await session.waitForText("notification-pty-model");
-		await session.sendPrompt("/notifications");
-		const settingsScreen = await session.waitForText("Response preview");
-		for (const label of [
-			"Completion alerts",
-			"Failure alerts",
-			"Delivery",
-			"Tmux notification",
-			"Also ring terminal bell",
-		]) {
-			if (!settingsScreen.includes(label)) fail(`Notification settings omitted ${JSON.stringify(label)}`);
-		}
-		if (settingsScreen.includes("Notification sound"))
-			fail("Notification settings still use the misleading sound name");
-		session.sendKey("t");
-		let frames = await session.waitForFrameCount(1);
-		if (frames[0]?.title !== "Pi · Notification test" || frames[0]?.body !== "Notifications are working.") {
-			fail(`unexpected test frame: ${JSON.stringify(frames[0])}`);
-		}
-		session.sendKey("Escape");
-		await delay(100);
-
-		await session.sendPrompt("NOTIFY_SUCCESS");
-		await session.waitForText("NOTIFICATION_SUCCESS_DONE");
-		frames = await session.waitForFrameCount(2);
-		if (frames[1]?.title !== "Pi · project — Ready" || frames[1]?.body !== "NOTIFICATION_SUCCESS_DONE") {
-			fail(`unexpected completion frame: ${JSON.stringify(frames[1])}`);
-		}
-
-		await session.sendPrompt("NOTIFY_FAILURE");
-		await session.waitForText("NOTIFICATION_FAILURE_DONE");
-		frames = await session.waitForFrameCount(3);
-		if (frames[2]?.title !== "Pi · project — Needs attention" || frames[2]?.body !== "The run ended with an error.") {
-			fail(`unexpected failure frame: ${JSON.stringify(frames[2])}`);
-		}
-
-		await session.sendPrompt("NOTIFY_CHAOS_CANCEL");
-		await session.waitForText("NOTIFICATION_CHAOS_DONE");
-		await delay(100);
-		session.sendKey("x", "Escape");
-		await delay(GRACE_MS + 300);
-		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 3)
-			fail("random terminal input did not cancel grace");
-		session.sendKey("C-c");
-
-		await session.sendPrompt("NOTIFY_RELOAD_CANCEL");
-		await session.waitForText("NOTIFICATION_RELOAD_DONE");
-		await delay(100);
-		await session.sendPrompt("/reload");
-		await session.waitForText("Reloaded keybindings, extensions");
-		await delay(GRACE_MS + 300);
-		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 3) fail("reload did not cancel grace");
-
-		session.resize(48, 24);
-		await session.sendPrompt("NOTIFY_SUCCESS_NARROW");
-		await session.waitForText("NOTIFICATION_NARROW_DONE");
-		frames = await session.waitForFrameCount(4);
-		const narrowScreen = session.capture();
-		if (narrowScreen.includes("Pi · project — Ready") || narrowScreen.includes("Pi · project — Needs attention")) {
-			fail("notification was duplicated into the transcript or permanent UI");
-		}
-		if (narrowScreen.split("\n").some((line) => visibleWidth(line) > 48)) fail("notification broke narrow layout");
-
-		await session.sendPrompt("NOTIFY_ABORT");
-		await delay(250);
-		session.sendKey("C-c");
-		await delay(GRACE_MS + 500);
-		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 4) fail("aborted work emitted a notification");
-
-		await session.sendPrompt("NOTIFY_SHUTDOWN_CANCEL");
-		await session.waitForText("NOTIFICATION_SHUTDOWN_DONE");
-		await delay(100);
-		session.sendKey("C-d");
-		await session.waitForExit();
-		await delay(GRACE_MS + 100);
-		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 4)
-			fail("shutdown emitted a stale notification");
+		await verifyNotificationFlow(session, rawLog, columns, rows);
 	} finally {
 		session.stop();
 		await rm(temporaryDirectory, { force: true, recursive: true });
