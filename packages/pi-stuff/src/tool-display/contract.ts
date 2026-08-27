@@ -37,7 +37,8 @@ import {
 	terminalStateFromResult,
 	visibleActivityItems,
 } from "./activity-summary.js";
-import { decodeEnvelopeOperations, envelopeFallbackVisible, envelopeOperationResult } from "./envelope-renderer.js";
+import { ToolEnvelopeProjection } from "./envelope-projection.js";
+import { envelopeOperationResult } from "./envelope-renderer.js";
 import {
 	BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT,
 	BASH_OUTPUT_SOURCE_LIMIT,
@@ -174,7 +175,7 @@ export interface SuiteToolEnvelopeMediaPlacement {
 export type SuiteToolEnvelopeDetails = AgentToolResult<unknown>["details"];
 
 export type SuiteToolEnvelopeDecoder = (details: SuiteToolEnvelopeDetails) => readonly SuiteToolEnvelopeOperation[];
-type SuiteToolEnvelopeArgumentPreparer = (operation: SuiteToolEnvelopeOperation) => ToolArguments;
+export type SuiteToolEnvelopeArgumentPreparer = (operation: SuiteToolEnvelopeOperation) => ToolArguments;
 export type SuiteToolEnvelopeFallbackVisibility = (
 	args: ToolArguments,
 	result: AgentToolResult<unknown>,
@@ -360,11 +361,7 @@ export class ToolUiRuntime {
 		string,
 		(args: ToolArguments, result: AgentToolResult<unknown>) => boolean
 	>();
-	private readonly envelopeCalls = new Map<string, string>();
-	private readonly envelopeArgumentPreparers = new Map<string, SuiteToolEnvelopeArgumentPreparer>();
-	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
-	private readonly envelopeFallbackVisibility = new Map<string, SuiteToolEnvelopeFallbackVisibility>();
-	private readonly envelopeRawArguments = new Map<string, ToolArguments>();
+	private readonly envelopes = new ToolEnvelopeProjection();
 	private readonly groupHints = new Map<string, HintState>();
 	private readonly groupPulses = new Map<string, GroupPulseState>();
 	private groupPulseTimer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
@@ -529,11 +526,7 @@ export class ToolUiRuntime {
 		prepareArguments?: SuiteToolEnvelopeArgumentPreparer,
 		showFallback?: SuiteToolEnvelopeFallbackVisibility,
 	): void {
-		this.envelopeDecoders.set(name, decode);
-		if (prepareArguments) this.envelopeArgumentPreparers.set(name, prepareArguments);
-		else this.envelopeArgumentPreparers.delete(name);
-		if (showFallback) this.envelopeFallbackVisibility.set(name, showFallback);
-		else this.envelopeFallbackVisibility.delete(name);
+		this.envelopes.register(name, decode, prepareArguments, showFallback);
 		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
@@ -655,10 +648,7 @@ export class ToolUiRuntime {
 	}
 
 	observeEnvelopeResult(envelopeName: string, envelopeId: string, details: SuiteToolEnvelopeDetails): void {
-		for (const operation of this.decodeEnvelope(envelopeName, details)) {
-			const owner = this.envelopeCalls.get(operation.id);
-			if (owner && owner !== envelopeId) continue;
-			if (!owner) this.envelopeCalls.set(operation.id, envelopeId);
+		for (const operation of this.envelopes.claimOperations(envelopeName, envelopeId, details)) {
 			if (operation.state === "running" && operation.result) {
 				this.observeToolExecutionUpdate(operation.id, operation.result);
 			}
@@ -702,7 +692,7 @@ export class ToolUiRuntime {
 
 	resetProjection(messages: readonly unknown[]): void {
 		this.suspend();
-		this.envelopeCalls.clear();
+		this.envelopes.clearClaims();
 		this.groupHints.clear();
 		this.activities.clear();
 		this.pendingResults.clear();
@@ -722,7 +712,7 @@ export class ToolUiRuntime {
 
 	clear(): void {
 		this.suspend();
-		this.envelopeCalls.clear();
+		this.envelopes.clearClaims();
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.bindings.clear();
 		this.groups.clear();
@@ -985,7 +975,7 @@ export class ToolUiRuntime {
 		const activity = this.activities.get(toolCallId) ?? (member ? this.activityFromPlan(member) : undefined);
 		if (!activity) return undefined;
 		const args = member?.args ?? binding?.metadata.args ?? {};
-		const rawArgs = this.envelopeRawArguments.get(toolCallId) ?? args;
+		const rawArgs = this.envelopes.rawArgumentsFor(toolCallId) ?? args;
 		const name = member?.name ?? binding?.metadata.name ?? activity.name;
 		const result = member?.result ?? binding?.metadata.result ?? this.liveResults.get(toolCallId);
 		if (mode === "raw") {
@@ -1022,143 +1012,9 @@ export class ToolUiRuntime {
 		};
 	}
 
-	private decodeEnvelope(name: string, details: SuiteToolEnvelopeDetails): readonly SuiteToolEnvelopeOperation[] {
-		const decode = this.envelopeDecoders.get(name);
-		if (!decode) return [];
-		return decodeEnvelopeOperations(decode, details);
-	}
-
-	private prepareEnvelopeArguments(name: string, operation: SuiteToolEnvelopeOperation): ToolArguments {
-		const prepare = this.envelopeArgumentPreparers.get(name);
-		if (!prepare) return operation.args;
-		try {
-			return prepare(operation);
-		} catch {
-			return operation.args;
-		}
-	}
-
-	private showEnvelopeFallback(
-		name: string,
-		args: ToolArguments,
-		result: AgentToolResult<unknown>,
-		state: ToolActivityState,
-	): boolean {
-		return envelopeFallbackVisible(this.envelopeFallbackVisibility.get(name), args, result, state);
-	}
-
-	/** Project registered Tool envelopes into the ordinary calls and results they contain. */
 	projectMessages(messages: readonly unknown[]): readonly unknown[] {
-		if (this.envelopeDecoders.size === 0) return messages;
-		this.envelopeRawArguments.clear();
-		const envelopeCallsById = new Map<string, { readonly args: ToolArguments; readonly name: string }>();
-		for (const candidate of messages) {
-			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
-				continue;
-			}
-			for (const block of candidate["content"]) {
-				if (!isRecordValue(block) || block["type"] !== "toolCall") continue;
-				const id = block["id"];
-				const name = block["name"];
-				if (isRuntimeString(id) && isRuntimeString(name) && this.envelopeDecoders.has(name)) {
-					envelopeCallsById.set(id, {
-						args: isToolArguments(block["arguments"]) ? block["arguments"] : {},
-						name,
-					});
-				}
-			}
-		}
-		const projectionsById = new Map<
-			string,
-			{
-				readonly fallback: boolean;
-				readonly name: string;
-				readonly operations: readonly SuiteToolEnvelopeOperation[];
-			}
-		>();
-		for (const candidate of messages) {
-			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
-			const id = candidate["toolCallId"];
-			if (!isRuntimeString(id)) continue;
-			const envelope = envelopeCallsById.get(id);
-			if (!envelope) continue;
-			const content = Array.isArray(candidate["content"]) ? candidate["content"] : [];
-			const operations = this.decodeEnvelope(envelope.name, candidate["details"]);
-			const result: AgentToolResult<unknown> & { isError?: true } = {
-				// SAFETY: Pi tool-result messages own this content array; visibility never rewrites its blocks.
-				content: content as AgentToolResult<unknown>["content"],
-				details: candidate["details"],
-			};
-			if (candidate["isError"] === true) Object.assign(result, { isError: true as const });
-			const state: Exclude<ToolActivityState, "running"> = candidate["isError"] === true ? "error" : "success";
-			const ownsOuterOutcome =
-				operations.length === 0 ||
-				(candidate["isError"] === true &&
-					!operations.some((operation) => operation.state !== "running" && operation.state !== "success"));
-			projectionsById.set(id, {
-				fallback: ownsOuterOutcome && this.showEnvelopeFallback(envelope.name, envelope.args, result, state),
-				name: envelope.name,
-				operations,
-			});
-		}
-		const projected: unknown[] = [];
-		for (const candidate of messages) {
-			if (!isRecordValue(candidate)) {
-				projected.push(candidate);
-				continue;
-			}
-			if (candidate["role"] === "assistant" && Array.isArray(candidate["content"])) {
-				const content = candidate["content"].flatMap((block) => {
-					if (!isRecordValue(block) || block["type"] !== "toolCall") return [block];
-					const id = block["id"];
-					const name = block["name"];
-					if (!isRuntimeString(id) || !isRuntimeString(name) || !this.envelopeDecoders.has(name)) {
-						return [block];
-					}
-					const projection = projectionsById.get(id);
-					if (!projection) return [block];
-					const nested = projection.operations.map((operation) => {
-						this.envelopeRawArguments.set(operation.id, operation.args);
-						return {
-							arguments: this.prepareEnvelopeArguments(projection.name, operation),
-							id: operation.id,
-							name: operation.name,
-							type: "toolCall",
-						};
-					});
-					return projection.fallback ? [...nested, block] : nested;
-				});
-				projected.push({ ...candidate, content });
-				continue;
-			}
-			if (candidate["role"] === "toolResult") {
-				const id = candidate["toolCallId"];
-				const projection = isRuntimeString(id) ? projectionsById.get(id) : undefined;
-				if (!projection) {
-					projected.push(candidate);
-					continue;
-				}
-				for (const operation of projection.operations) {
-					const result = envelopeOperationResult(operation);
-					if (!result) continue;
-					const projectedResult = {
-						role: "toolResult",
-						toolCallId: operation.id,
-						toolName: operation.name,
-						content: result.content,
-						details: result.details,
-					};
-					if (result.isError === true) Object.assign(projectedResult, { isError: true });
-					projected.push(projectedResult);
-				}
-				if (projection.fallback) projected.push(candidate);
-				continue;
-			}
-			projected.push(candidate);
-		}
-		return projected;
+		return this.envelopes.projectMessages(messages);
 	}
-
 	private rebuildGroups(): void {
 		this.groups.clear();
 		this.groupSummaries.clear();
@@ -1205,7 +1061,7 @@ export class ToolUiRuntime {
 			const content = message.content;
 			if (!isRuntimeString(id) || !Array.isArray(content)) return;
 			const name = "toolName" in message ? message.toolName : undefined;
-			if (isRuntimeString(name) && this.envelopeDecoders.has(name)) {
+			if (isRuntimeString(name) && this.envelopes.has(name)) {
 				this.rebuildGroups();
 				return;
 			}
