@@ -28,7 +28,7 @@ import {
 	type SubagentResultIntercomChild,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { isNotFoundError as isNotFound, readStatusAsync, resolveWatchPath } from "../../shared/utils.ts";
+import { isNotFoundError as isNotFound, pickFields, readStatusAsync, resolveWatchPath } from "../../shared/utils.ts";
 import {
 	nestedWorkIncludesUser,
 	projectNestedEventsAuthoritatively,
@@ -48,7 +48,6 @@ import {
 import { type CompletionNotification, deliverNotificationWithAbort } from "./notify.ts";
 import {
 	COMPLETION_FIELDS,
-	pickFields,
 	RESULT_CHILD_FIELDS,
 	type ResultFileChild,
 	type ResultFileData,
@@ -168,14 +167,7 @@ export function createResultWatcher(
 
 	const currentFingerprint = async (resultPath: string): Promise<ResultFingerprint | undefined> => {
 		try {
-			const stat = await fs.promises.lstat(resultPath);
-			return {
-				ctimeMs: stat.ctimeMs,
-				dev: stat.dev,
-				ino: stat.ino,
-				mtimeMs: stat.mtimeMs,
-				size: stat.size,
-			};
+			return await fs.promises.lstat(resultPath);
 		} catch {
 			return undefined;
 		}
@@ -198,8 +190,7 @@ export function createResultWatcher(
 			return "invalid";
 		}
 		if (!isRuntimeString(data.asyncDir) || !data.asyncDir) return "valid";
-		const runId = fileRunId;
-		const expectedDir = path.join(path.resolve(asyncDirRoot), runId);
+		const expectedDir = path.join(path.resolve(asyncDirRoot), fileRunId);
 		if (path.resolve(data.asyncDir) !== expectedDir || path.dirname(expectedDir) !== path.resolve(asyncDirRoot)) {
 			return "invalid";
 		}
@@ -254,6 +245,29 @@ export function createResultWatcher(
 		const delay = statusRepairRetryDelay.get(file) ?? STATUS_REPAIR_RETRY_INITIAL_MS;
 		statusRepairRetryDelay.set(file, Math.min(STATUS_REPAIR_RETRY_MAX_MS, delay * 2));
 		scheduleResult(file, triggerTurn, delay);
+	};
+
+	const removeDeliveredResult = async (
+		file: string,
+		resultPath: string,
+		resultSnapshot: OwnedFileSnapshot,
+		completionKey: string,
+		triggerTurn: boolean,
+	): Promise<void> => {
+		try {
+			if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
+				scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+				return;
+			}
+			await removeDeliveryArtifacts(resultsDir, file);
+			deliveredPendingStatus.delete(completionKey);
+			statusRepairRetryDelay.delete(file);
+			statusRepairLastLog.delete(file);
+		} catch (error) {
+			if (isNotFound(error)) return;
+			reportAgentDiagnostic(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
+			scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+		}
 	};
 
 	const ensureTerminalStatus = (
@@ -429,24 +443,7 @@ export function createResultWatcher(
 					scheduleStatusRepair(file, triggerTurn);
 					return;
 				}
-				try {
-					if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
-						scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-						return;
-					}
-					await removeDeliveryArtifacts(resultsDir, file);
-					deliveredPendingStatus.delete(completionKey);
-					statusRepairRetryDelay.delete(file);
-					statusRepairLastLog.delete(file);
-				} catch (error) {
-					if (!isNotFound(error)) {
-						reportAgentDiagnostic(
-							`Failed to remove delivered subagent result '${resultPath}'; will retry:`,
-							error,
-						);
-						scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-					}
-				}
+				await removeDeliveredResult(file, resultPath, resultSnapshot, completionKey, triggerTurn);
 				return;
 			}
 
@@ -618,21 +615,7 @@ export function createResultWatcher(
 				scheduleStatusRepair(file, triggerTurn);
 				return;
 			}
-			try {
-				if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
-					scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-					return;
-				}
-				await removeDeliveryArtifacts(resultsDir, file);
-				deliveredPendingStatus.delete(completionKey);
-				statusRepairRetryDelay.delete(file);
-				statusRepairLastLog.delete(file);
-			} catch (error) {
-				if (!isNotFound(error)) {
-					reportAgentDiagnostic(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
-					scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-				}
-			}
+			await removeDeliveredResult(file, resultPath, resultSnapshot, completionKey, triggerTurn);
 		} catch (error) {
 			if (!isNotFound(error)) {
 				const now = Date.now();

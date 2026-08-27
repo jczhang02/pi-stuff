@@ -19,7 +19,7 @@ import type {
 	TokenUsage,
 	TurnBudgetState,
 } from "../../shared/types.ts";
-import { getErrorMessage, isNotFoundError, readStatus } from "../../shared/utils.ts";
+import { getErrorMessage, isNotFoundError, pickFields, readStatus } from "../../shared/utils.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
 import {
 	type ContextMode,
@@ -234,8 +234,6 @@ function summarizeAsyncStep(
 	step: AsyncJobStep,
 	index: number,
 ): AsyncRunStepSummary {
-	const stepActivityState = step.activityState;
-	const stepLastActivityAt = step.lastActivityAt;
 	const summary: AsyncRunStepSummary = {
 		index,
 		agent: step.agent,
@@ -248,16 +246,15 @@ function summarizeAsyncStep(
 	if (step.phase) summary.phase = step.phase;
 	if (step.outputName) summary.outputName = step.outputName;
 	if (step.structured) summary.structured = step.structured;
-	if (stepActivityState) summary.activityState = stepActivityState;
-	if (stepLastActivityAt) summary.lastActivityAt = stepLastActivityAt;
+	if (step.activityState) summary.activityState = step.activityState;
+	if (step.lastActivityAt) summary.lastActivityAt = step.lastActivityAt;
 	if (step.currentTool) summary.currentTool = step.currentTool;
 	if (step.currentToolArgs) summary.currentToolArgs = step.currentToolArgs;
 	if (step.currentToolStartedAt) summary.currentToolStartedAt = step.currentToolStartedAt;
 	if (step.currentPath) summary.currentPath = step.currentPath;
 	if (step.recentTools) summary.recentTools = step.recentTools.map((tool) => ({ ...tool }));
 	if (step.recentOutput) summary.recentOutput = [...step.recentOutput];
-	if (step.turnCount !== undefined) summary.turnCount = step.turnCount;
-	if (step.toolCount !== undefined) summary.toolCount = step.toolCount;
+	Object.assign(summary, pickFields(step, ["turnCount", "toolCount"]));
 	if (step.steering) summary.steering = step.steering;
 	if (step.durationMs !== undefined) summary.durationMs = step.durationMs;
 	if (step.tokens) summary.tokens = step.tokens;
@@ -271,11 +268,9 @@ function summarizeAsyncStep(
 	if (step.transcriptPath) summary.transcriptPath = step.transcriptPath;
 	if (step.transcriptError) summary.transcriptError = step.transcriptError;
 	if (step.error) summary.error = step.error;
-	if (step.timedOut !== undefined) summary.timedOut = step.timedOut;
-	if (step.stopped !== undefined) summary.stopped = step.stopped;
+	Object.assign(summary, pickFields(step, ["timedOut", "stopped"]));
 	if (step.turnBudget) summary.turnBudget = step.turnBudget;
-	if (step.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = step.turnBudgetExceeded;
-	if (step.wrapUpRequested !== undefined) summary.wrapUpRequested = step.wrapUpRequested;
+	Object.assign(summary, pickFields(step, ["turnBudgetExceeded", "wrapUpRequested"]));
 	if (step.acceptance) summary.acceptance = step.acceptance;
 	if (step.agentContract) summary.agentContract = step.agentContract;
 	if (step.launchContractDigest) summary.launchContractDigest = step.launchContractDigest;
@@ -354,26 +349,15 @@ function statusToSummary(
 	};
 	if (activityState !== undefined) summary.activityState = activityState;
 	if (lastActivityAt !== undefined) summary.lastActivityAt = lastActivityAt;
-	if (status.currentTool !== undefined) summary.currentTool = status.currentTool;
-	if (status.currentToolStartedAt !== undefined) summary.currentToolStartedAt = status.currentToolStartedAt;
-	if (status.currentPath !== undefined) summary.currentPath = status.currentPath;
-	if (status.turnCount !== undefined) summary.turnCount = status.turnCount;
-	if (status.toolCount !== undefined) summary.toolCount = status.toolCount;
-	if (status.steering !== undefined) summary.steering = status.steering;
-	if (status.cwd !== undefined) summary.cwd = status.cwd;
-	if (status.lastUpdate !== undefined) summary.lastUpdate = status.lastUpdate;
-	if (status.endedAt !== undefined) summary.endedAt = status.endedAt;
-	if (status.currentStep !== undefined) summary.currentStep = status.currentStep;
+	Object.assign(summary, pickFields(status, ["currentTool", "currentToolStartedAt", "currentPath"]));
+	Object.assign(summary, pickFields(status, ["turnCount", "toolCount", "steering", "cwd"]));
+	Object.assign(summary, pickFields(status, ["lastUpdate", "endedAt", "currentStep"]));
 	if (status.sessionId) summary.sessionId = status.sessionId;
 	if (status.error) summary.error = status.error;
 	if (context) summary.context = context;
-	if (status.timeoutMs !== undefined) summary.timeoutMs = status.timeoutMs;
-	if (status.deadlineAt !== undefined) summary.deadlineAt = status.deadlineAt;
-	if (status.timedOut !== undefined) summary.timedOut = status.timedOut;
-	if (status.stopped !== undefined) summary.stopped = status.stopped;
+	Object.assign(summary, pickFields(status, ["timeoutMs", "deadlineAt", "timedOut", "stopped"]));
 	if (status.turnBudget) summary.turnBudget = status.turnBudget;
-	if (status.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = status.turnBudgetExceeded;
-	if (status.wrapUpRequested !== undefined) summary.wrapUpRequested = status.wrapUpRequested;
+	Object.assign(summary, pickFields(status, ["turnBudgetExceeded", "wrapUpRequested"]));
 	if (parallelGroups.length) summary.parallelGroups = parallelGroups;
 	if (nestedRoute) summary.nestedRoute = nestedRoute;
 	if (nestedChildren.length) summary.nestedChildren = nestedChildren;
@@ -402,9 +386,7 @@ function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
 			case "queued":
 				return 1;
 			case "failed":
-				return 2;
 			case "stopped":
-				return 2;
 			case "paused":
 				return 2;
 			case "complete":

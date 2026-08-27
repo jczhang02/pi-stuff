@@ -151,6 +151,15 @@ export function isTerminalAsyncState(state: AsyncStatus["state"]): boolean {
 	return state === "complete" || state === "failed" || state === "paused" || state === "stopped";
 }
 
+export function pickFields<Source extends object, Key extends keyof Source>(
+	source: Source,
+	fields: readonly Key[],
+): Partial<Pick<Source, Key>> {
+	const picked: Partial<Pick<Source, Key>> = {};
+	for (const field of fields) if (source[field] !== undefined) picked[field] = source[field];
+	return picked;
+}
+
 export function isNotFoundError<Cause>(cause: Cause): boolean {
 	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { isFiniteRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { errnoCode, readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
@@ -34,6 +34,25 @@ interface AsyncJobTrackerOptions {
 	readRunStatus?: (asyncDir: string) => Promise<AsyncStatus | null> | AsyncStatus | null;
 	watchRun?: typeof fs.watch;
 }
+
+interface JobObservation {
+	running: boolean;
+	status: boolean;
+	control: boolean;
+	watcher?: fs.FSWatcher;
+	fallbackTimer?: ReturnType<typeof setInterval>;
+	statusFallbackTimer?: ReturnType<typeof setTimeout>;
+	retryTimer?: ReturnType<typeof setTimeout>;
+	lastIpcStatusAt?: number;
+}
+
+interface RestoreInFlight {
+	readonly controller: AbortController;
+	readonly generation: number;
+	promise: Promise<void>;
+}
+
+type ObservationKind = { status?: boolean; control?: boolean };
 
 const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
 const MAX_RECENT_AGENT_JOBS = 200;
@@ -117,10 +136,6 @@ async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStat
 	return changed ? { ...status, steps } : status;
 }
 
-function physicalTerminalPending(job: AsyncJobState): boolean {
-	return job.processTerminal !== undefined && job.processTerminal.state !== "observed";
-}
-
 function rememberRecentAgentJob(state: SubagentState, job: AsyncJobState): void {
 	state.recentAgentJobs ??= new Map();
 	state.recentAgentJobs.set(job.asyncId, job);
@@ -136,100 +151,114 @@ function contextSummary(steps: NonNullable<AsyncStatus["steps"]>): AsyncJobState
 	return contexts.values().next().value;
 }
 
-export function createAsyncJobTracker(
-	pi: Pick<ExtensionAPI, "events">,
-	state: SubagentState,
-	asyncDirRoot: string,
-	options: AsyncJobTrackerOptions = {},
-) {
-	const completionRetentionMs = options.completionRetentionMs ?? 10_000;
-	const fallbackIntervalMs = options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS);
-	const readRunStatus = options.readRunStatus ?? readStatusAsync;
-	const watchRun = options.watchRun ?? fs.watch;
-	const steeringNoticeSeen = new Map<string, number>();
-	const watchers = new Map<string, fs.FSWatcher>();
-	const fallbackTimers = new Map<string, ReturnType<typeof setInterval>>();
-	const statusFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	const observations = new Map<
-		string,
-		{ running: boolean; status: boolean; control: boolean; retryTimer?: ReturnType<typeof setTimeout> }
-	>();
-	const lastIpcStatusAt = new Map<string, number>();
-	let trackerGeneration = 0;
-	let refreshScheduled = false;
-	let restoreInFlight:
-		| { readonly controller: AbortController; readonly generation: number; promise: Promise<void> }
-		| undefined;
-	let restoredGeneration = -1;
+class AsyncJobTracker {
+	private readonly pi: Pick<ExtensionAPI, "events">;
+	private readonly state: SubagentState;
+	private readonly asyncDirRoot: string;
+	private readonly completionRetentionMs: number;
+	private readonly fallbackIntervalMs: number;
+	private readonly onRefresh: (() => void) | undefined;
+	private readonly readRunStatus: NonNullable<AsyncJobTrackerOptions["readRunStatus"]>;
+	private readonly watchRun: typeof fs.watch;
+	private readonly steeringNoticeSeen = new Map<string, number>();
+	private readonly observations = new Map<string, JobObservation>();
+	private trackerGeneration = 0;
+	private refreshScheduled = false;
+	private restoreInFlight: RestoreInFlight | undefined;
+	private restoredGeneration = -1;
 
-	const normalizeAcceptedSessionId = <SessionId, RunId>(sessionId: SessionId, runId: RunId): string | undefined => {
+	constructor(
+		pi: Pick<ExtensionAPI, "events">,
+		state: SubagentState,
+		asyncDirRoot: string,
+		options: AsyncJobTrackerOptions,
+	) {
+		this.pi = pi;
+		this.state = state;
+		this.asyncDirRoot = asyncDirRoot;
+		this.completionRetentionMs = options.completionRetentionMs ?? 10_000;
+		this.fallbackIntervalMs = options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS);
+		this.onRefresh = options.onRefresh;
+		this.readRunStatus = options.readRunStatus ?? readStatusAsync;
+		this.watchRun = options.watchRun ?? fs.watch;
+	}
+
+	private observationFor(asyncId: string): JobObservation {
+		const observation = this.observations.get(asyncId) ?? { running: false, status: false, control: false };
+		this.observations.set(asyncId, observation);
+		return observation;
+	}
+
+	private normalizeAcceptedSessionId<SessionId, RunId>(sessionId: SessionId, runId: RunId): string | undefined {
+		const { state } = this;
 		if (!state.currentSessionId || !isRuntimeString(sessionId)) return undefined;
 		if (sessionId === state.currentSessionId) return state.currentSessionId;
 		const artifactRunId = isRuntimeString(runId) ? runId : undefined;
 		return state.currentSessionScope && sessionArtifactMatches(state.currentSessionScope, sessionId, artifactRunId)
 			? state.currentSessionId
 			: undefined;
-	};
-	const emitLifecycleEvent = <Payload extends object>(event: string, payload: Payload): void => {
+	}
+
+	private emitLifecycleEvent<Payload extends object>(event: string, payload: Payload): void {
 		try {
-			pi.events.emit(event, payload);
+			this.pi.events.emit(event, payload);
 		} catch (error) {
 			reportAgentDiagnostic(`Agent lifecycle observer '${event}' failed:`, error);
 		}
-	};
-	const scheduleRefresh = (): void => {
-		if (refreshScheduled) return;
-		refreshScheduled = true;
+	}
+
+	private scheduleRefresh(): void {
+		if (this.refreshScheduled) return;
+		this.refreshScheduled = true;
 		queueMicrotask(() => {
-			refreshScheduled = false;
-			options.onRefresh?.();
+			this.refreshScheduled = false;
+			this.onRefresh?.();
 		});
-	};
-	const cancelCleanup = (asyncId: string): void => {
-		const timer = state.cleanupTimers.get(asyncId);
+	}
+
+	private cancelCleanup(asyncId: string): void {
+		const timer = this.state.cleanupTimers.get(asyncId);
 		if (!timer) return;
 		clearTimeout(timer);
-		state.cleanupTimers.delete(asyncId);
-	};
-	const stopObservation = (asyncId: string): void => {
-		watchers.get(asyncId)?.close();
-		watchers.delete(asyncId);
-		const fallback = fallbackTimers.get(asyncId);
-		if (fallback) clearInterval(fallback);
-		fallbackTimers.delete(asyncId);
-		const statusFallback = statusFallbackTimers.get(asyncId);
-		if (statusFallback) clearTimeout(statusFallback);
-		statusFallbackTimers.delete(asyncId);
-		const observation = observations.get(asyncId);
+		this.state.cleanupTimers.delete(asyncId);
+	}
+
+	private stopObservation(asyncId: string): void {
+		const observation = this.observations.get(asyncId);
+		observation?.watcher?.close();
+		if (observation?.fallbackTimer) clearInterval(observation.fallbackTimer);
+		if (observation?.statusFallbackTimer) clearTimeout(observation.statusFallbackTimer);
 		if (observation?.retryTimer) clearTimeout(observation.retryTimer);
-		observations.delete(asyncId);
-		lastIpcStatusAt.delete(asyncId);
-	};
-	const scheduleCleanup = (job: AsyncJobState): void => {
-		cancelCleanup(job.asyncId);
-		const expectedGeneration = trackerGeneration;
+		this.observations.delete(asyncId);
+	}
+
+	private scheduleCleanup(job: AsyncJobState): void {
+		this.cancelCleanup(job.asyncId);
+		const expectedGeneration = this.trackerGeneration;
 		const timer = setTimeout(() => {
-			if (state.cleanupTimers.get(job.asyncId) !== timer) return;
-			state.cleanupTimers.delete(job.asyncId);
-			if (trackerGeneration !== expectedGeneration || state.asyncJobs.get(job.asyncId) !== job) return;
-			stopObservation(job.asyncId);
-			state.asyncJobs.delete(job.asyncId);
-			scheduleRefresh();
-		}, completionRetentionMs);
+			if (this.state.cleanupTimers.get(job.asyncId) !== timer) return;
+			this.state.cleanupTimers.delete(job.asyncId);
+			if (this.trackerGeneration !== expectedGeneration || this.state.asyncJobs.get(job.asyncId) !== job) return;
+			this.stopObservation(job.asyncId);
+			this.state.asyncJobs.delete(job.asyncId);
+			this.scheduleRefresh();
+		}, this.completionRetentionMs);
 		timer.unref?.();
-		state.cleanupTimers.set(job.asyncId, timer);
-	};
-	const maybeScheduleCleanup = (job: AsyncJobState): void => {
+		this.state.cleanupTimers.set(job.asyncId, timer);
+	}
+
+	private maybeScheduleCleanup(job: AsyncJobState): void {
 		if (
 			!isTerminalJobStatus(job.status) ||
-			physicalTerminalPending(job) ||
+			(job.processTerminal !== undefined && job.processTerminal.state !== "observed") ||
 			hasLiveNestedDescendants(job.nestedChildren)
 		)
 			return;
-		if (!state.cleanupTimers.has(job.asyncId)) scheduleCleanup(job);
-	};
+		if (!this.state.cleanupTimers.has(job.asyncId)) this.scheduleCleanup(job);
+	}
 
-	const applyStatus = (job: AsyncJobState, status: AsyncStatus): void => {
+	private applyStatus(job: AsyncJobState, status: AsyncStatus): void {
+		const { state } = this;
 		const previousStatus = job.status;
 		const preserveTerminalState = isTerminalJobStatus(previousStatus) && !isTerminalJobStatus(status.state);
 		if (!preserveTerminalState) job.status = status.state;
@@ -294,18 +323,18 @@ export function createAsyncJobTracker(
 		job.sessionFile = status.sessionFile ?? job.sessionFile;
 		if (isTerminalJobStatus(job.status)) {
 			rememberRecentAgentJob(state, job);
-			maybeScheduleCleanup(job);
+			this.maybeScheduleCleanup(job);
 		} else {
-			cancelCleanup(job.asyncId);
+			this.cancelCleanup(job.asyncId);
 		}
-	};
+	}
 
-	const jobFromStatus = (
+	private jobFromStatus(
 		asyncDir: string,
 		status: AsyncStatus,
 		sessionId: string | undefined,
 		restored: boolean,
-	): AsyncJobState => {
+	): AsyncJobState {
 		const job: AsyncJobState = {
 			asyncId: status.runId,
 			asyncDir,
@@ -316,11 +345,13 @@ export function createAsyncJobTracker(
 			...(restored ? { controlEventCursorPending: true } : { controlEventCursor: 0 }),
 		};
 		if (sessionId) job.sessionId = sessionId;
-		applyStatus(job, status);
+		this.applyStatus(job, status);
 		return job;
-	};
+	}
 
-	const handleControlLine = (job: AsyncJobState, line: string): boolean => {
+	private handleControlLine(job: AsyncJobState, line: string): boolean {
+		const { state } = this;
+		const steeringNoticeSeen = this.steeringNoticeSeen;
 		if (!line.trim()) return false;
 		let parsed: TrackerEventRecord;
 		try {
@@ -339,7 +370,7 @@ export function createAsyncJobTracker(
 				!isRuntimeString(notice.message)
 			)
 				return false;
-			const normalizedSessionId = normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
+			const normalizedSessionId = this.normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
 			if (state.currentSessionId && !normalizedSessionId) return false;
 			const key = `${notice.runId}:${notice.requestId}:${notice.state}`;
 			if (steeringNoticeSeen.has(key)) return false;
@@ -357,7 +388,7 @@ export function createAsyncJobTracker(
 				noticeText: notice.message,
 			};
 			if (normalizedSessionId) Object.assign(payload, { currentSessionId: normalizedSessionId });
-			emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, payload);
+			this.emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, payload);
 			return true;
 		}
 		if (parsed.type !== "subagent.control") return false;
@@ -379,31 +410,29 @@ export function createAsyncJobTracker(
 				controlRecord.noticeText ??
 				formatControlNoticeMessage(controlRecord.event, controlRecord.childIntercomTarget),
 		};
-		if (controlRecord.channels.includes("event")) emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
+		if (controlRecord.channels.includes("event")) this.emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
 		if (
 			controlRecord.event.type !== "active_long_running" &&
 			controlRecord.channels.includes("intercom") &&
 			controlRecord.intercom?.to &&
 			controlRecord.intercom.message
 		) {
-			emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
+			this.emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
 				...payload,
 				to: controlRecord.intercom.to,
 				message: controlRecord.intercom.message,
 			});
 		}
 		return true;
-	};
+	}
 
-	type ObservationKind = { status?: boolean; control?: boolean };
-	const observeJob = async (job: AsyncJobState, kind: ObservationKind): Promise<void> => {
-		const observation = observations.get(job.asyncId) ?? { running: false, status: false, control: false };
+	private async observeJob(job: AsyncJobState, kind: ObservationKind): Promise<void> {
+		const observation = this.observationFor(job.asyncId);
 		observation.status ||= kind.status === true;
 		observation.control ||= kind.control === true;
-		observations.set(job.asyncId, observation);
 		if (observation.running) return;
 		observation.running = true;
-		const expectedGeneration = trackerGeneration;
+		const expectedGeneration = this.trackerGeneration;
 		let changed = false;
 		try {
 			do {
@@ -412,30 +441,30 @@ export function createAsyncJobTracker(
 				observation.status = false;
 				observation.control = false;
 				if (readControl) {
-					const control = await readNewAsyncControlEvents(job, (line) => handleControlLine(job, line));
+					const control = await readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
 					changed ||= control.changed;
 					observation.control ||= control.more;
 				}
 				if (readStatus) {
-					const observedStatus = await readRunStatus(job.asyncDir);
+					const observedStatus = await this.readRunStatus(job.asyncDir);
 					const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
 					if (
 						status &&
 						status.runId === job.asyncId &&
-						trackerGeneration === expectedGeneration &&
-						state.asyncJobs.get(job.asyncId) === job
+						this.trackerGeneration === expectedGeneration &&
+						this.state.asyncJobs.get(job.asyncId) === job
 					) {
-						applyStatus(job, status);
+						this.applyStatus(job, status);
 						changed = true;
 					}
 				}
 			} while (
-				trackerGeneration === expectedGeneration &&
-				state.asyncJobs.get(job.asyncId) === job &&
+				this.trackerGeneration === expectedGeneration &&
+				this.state.asyncJobs.get(job.asyncId) === job &&
 				(observation.status || observation.control)
 			);
 		} catch (error) {
-			if (trackerGeneration === expectedGeneration && state.asyncJobs.get(job.asyncId) === job) {
+			if (this.trackerGeneration === expectedGeneration && this.state.asyncJobs.get(job.asyncId) === job) {
 				reportAgentDiagnostic(
 					`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
 					error,
@@ -443,73 +472,87 @@ export function createAsyncJobTracker(
 				if (!observation.retryTimer) {
 					observation.retryTimer = setTimeout(() => {
 						delete observation.retryTimer;
-						void observeJob(job, { status: true, control: true });
-					}, fallbackIntervalMs);
+						void this.observeJob(job, { status: true, control: true });
+					}, this.fallbackIntervalMs);
 					observation.retryTimer.unref?.();
 				}
 			}
 		} finally {
 			observation.running = false;
-			if (changed && trackerGeneration === expectedGeneration && state.asyncJobs.get(job.asyncId) === job) {
-				scheduleRefresh();
+			if (
+				changed &&
+				this.trackerGeneration === expectedGeneration &&
+				this.state.asyncJobs.get(job.asyncId) === job
+			) {
+				this.scheduleRefresh();
 			}
 		}
-	};
+	}
 
-	const startFallbackObserver = (job: AsyncJobState, cause: unknown): void => {
-		watchers.get(job.asyncId)?.close();
-		watchers.delete(job.asyncId);
-		if (fallbackTimers.has(job.asyncId)) return;
+	private startFallbackObserver(job: AsyncJobState, cause: unknown): void {
+		const observation = this.observationFor(job.asyncId);
+		observation.watcher?.close();
+		delete observation.watcher;
+		if (observation.fallbackTimer) return;
 		reportAgentDiagnostic(
 			`Agent status observation for '${job.asyncId}' fell back to asynchronous reconciliation:`,
 			cause,
 		);
-		const timer = setInterval(() => void observeJob(job, { status: true, control: true }), fallbackIntervalMs);
+		const timer = setInterval(
+			() => void this.observeJob(job, { status: true, control: true }),
+			this.fallbackIntervalMs,
+		);
 		timer.unref?.();
-		fallbackTimers.set(job.asyncId, timer);
-	};
-	const scheduleStatusWatchFallback = (job: AsyncJobState): void => {
-		if (statusFallbackTimers.has(job.asyncId)) return;
+		observation.fallbackTimer = timer;
+	}
+
+	private scheduleStatusWatchFallback(job: AsyncJobState): void {
+		const observation = this.observationFor(job.asyncId);
+		if (observation.statusFallbackTimer) return;
 		const timer = setTimeout(() => {
-			statusFallbackTimers.delete(job.asyncId);
-			if (Date.now() - (lastIpcStatusAt.get(job.asyncId) ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
-			void observeJob(job, { status: true });
+			delete observation.statusFallbackTimer;
+			if (Date.now() - (observation.lastIpcStatusAt ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
+			void this.observeJob(job, { status: true });
 		}, STATUS_WATCH_FALLBACK_DELAY_MS);
 		timer.unref?.();
-		statusFallbackTimers.set(job.asyncId, timer);
-	};
-	const ensureJobObserver = (job: AsyncJobState): void => {
-		if (watchers.has(job.asyncId) || fallbackTimers.has(job.asyncId)) return;
+		observation.statusFallbackTimer = timer;
+	}
+
+	private ensureJobObserver(job: AsyncJobState): void {
+		const observation = this.observationFor(job.asyncId);
+		if (observation.watcher || observation.fallbackTimer) return;
 		try {
-			const watcher = watchRun(job.asyncDir, (_event, filename) => {
-				if (state.asyncJobs.get(job.asyncId) !== job) return;
+			const watcher = this.watchRun(job.asyncDir, (_event, filename) => {
+				if (this.state.asyncJobs.get(job.asyncId) !== job) return;
 				const name = filename?.toString();
-				if (!name || name === "events.jsonl") void observeJob(job, { control: true });
+				if (!name || name === "events.jsonl") void this.observeJob(job, { control: true });
 				if (!name || name === "status.json" || name === "process-terminal.json") {
-					scheduleStatusWatchFallback(job);
+					this.scheduleStatusWatchFallback(job);
 				}
 			});
-			watcher.on("error", (error) => startFallbackObserver(job, error));
+			watcher.on("error", (error) => this.startFallbackObserver(job, error));
 			watcher.unref?.();
-			watchers.set(job.asyncId, watcher);
+			observation.watcher = watcher;
 		} catch (error) {
-			startFallbackObserver(job, error);
+			this.startFallbackObserver(job, error);
 		}
-	};
-	const ensureObserver = (): void => {
-		for (const job of state.asyncJobs.values()) ensureJobObserver(job);
+	}
+
+	readonly ensureObserver = (): void => {
+		for (const job of this.state.asyncJobs.values()) this.ensureJobObserver(job);
 	};
 
-	const handleStarted = <Data>(data: Data): void => {
+	readonly handleStarted = <Data>(data: Data): void => {
+		const { state } = this;
 		if (!isRuntimeObject(data) || data === null || Array.isArray(data)) return;
 		// SAFETY: this callback is bound to the Suite-owned async-started event; id is checked before state mutation.
 		const info = data as AsyncStartedEvent;
 		if (!info.id) return;
-		const normalizedSessionId = normalizeAcceptedSessionId(info.sessionId, info.id);
+		const normalizedSessionId = this.normalizeAcceptedSessionId(info.sessionId, info.id);
 		if (state.currentSessionId && !normalizedSessionId) return;
-		cancelCleanup(info.id);
+		this.cancelCleanup(info.id);
 		const now = Date.now();
-		const asyncDir = info.asyncDir ?? path.join(asyncDirRoot, info.id);
+		const asyncDir = info.asyncDir ?? path.join(this.asyncDirRoot, info.id);
 		const rawAgents = info.agents?.length ? info.agents : info.agent ? [info.agent] : undefined;
 		const validParallelGroups = normalizeParallelGroups(info.parallelGroups, rawAgents?.length ?? 0);
 		const firstGroup = validParallelGroups.find((group) => group.start === 0);
@@ -530,7 +573,7 @@ export function createAsyncJobTracker(
 		};
 		job.asyncDir = asyncDir;
 		job.cwd = isRuntimeString(info.cwd) ? path.resolve(info.cwd) : job.cwd;
-		job.pid = isRuntimeNumber(info.pid) ? info.pid : job.pid;
+		job.pid = isFiniteRuntimeNumber(info.pid) ? info.pid : job.pid;
 		job.sessionId = normalizedSessionId ?? job.sessionId;
 		job.description = info.description ?? info.goal ?? info.task ?? job.description;
 		job.descriptions = info.descriptions ?? job.descriptions;
@@ -546,12 +589,13 @@ export function createAsyncJobTracker(
 		job.turnBudget = info.turnBudget ?? job.turnBudget;
 		state.asyncJobs.set(info.id, job);
 		rememberRecentAgentJob(state, job);
-		ensureJobObserver(job);
-		void observeJob(job, { status: true, control: true });
-		scheduleRefresh();
+		this.ensureJobObserver(job);
+		void this.observeJob(job, { status: true, control: true });
+		this.scheduleRefresh();
 	};
 
-	const handleStatus = <Data>(data: Data): void => {
+	readonly handleStatus = <Data>(data: Data): void => {
+		const { state } = this;
 		if (!data || !isRuntimeObject(data) || Array.isArray(data)) return;
 		// SAFETY: this callback is bound to the Suite-owned status event; envelope fields are checked below.
 		const update = data as { id?: unknown; asyncDir?: unknown; sessionId?: unknown; status?: unknown };
@@ -565,23 +609,24 @@ export function createAsyncJobTracker(
 		// SAFETY: the status event producer emits AsyncStatus and the run/directory identities are checked immediately after.
 		const status = update.status as AsyncStatus;
 		if (status.runId !== update.id || path.basename(update.asyncDir) !== update.id) return;
-		const normalizedSessionId = normalizeAcceptedSessionId(update.sessionId ?? status.sessionId, update.id);
+		const normalizedSessionId = this.normalizeAcceptedSessionId(update.sessionId ?? status.sessionId, update.id);
 		if (state.currentSessionId && !normalizedSessionId) return;
 		let job = state.asyncJobs.get(update.id);
 		if (!job) {
-			job = jobFromStatus(update.asyncDir, status, normalizedSessionId, false);
+			job = this.jobFromStatus(update.asyncDir, status, normalizedSessionId, false);
 			state.asyncJobs.set(update.id, job);
 		} else {
 			if (path.resolve(update.asyncDir) !== path.resolve(job.asyncDir)) return;
-			applyStatus(job, status);
+			this.applyStatus(job, status);
 		}
-		lastIpcStatusAt.set(update.id, Date.now());
+		this.observationFor(update.id).lastIpcStatusAt = Date.now();
 		rememberRecentAgentJob(state, job);
-		ensureJobObserver(job);
-		scheduleRefresh();
+		this.ensureJobObserver(job);
+		this.scheduleRefresh();
 	};
 
-	const handleComplete = <Data>(data: Data): void => {
+	readonly handleComplete = <Data>(data: Data): void => {
+		const { state } = this;
 		if (!isRuntimeObject(data) || data === null || Array.isArray(data)) return;
 		// SAFETY: this callback is bound to the Suite-owned completion event; id gates all state mutation.
 		const result = data as {
@@ -593,37 +638,36 @@ export function createAsyncJobTracker(
 			stopped?: boolean;
 		};
 		if (!result.id) return;
-		if (state.currentSessionId && !normalizeAcceptedSessionId(result.sessionId, result.id)) return;
+		if (state.currentSessionId && !this.normalizeAcceptedSessionId(result.sessionId, result.id)) return;
 		const job = state.asyncJobs.get(result.id);
 		if (!job) return;
 		job.status = result.state ?? (result.success ? "complete" : "failed");
 		job.stopped = result.stopped ?? job.stopped;
 		job.updatedAt = Date.now();
 		if (result.asyncDir && result.asyncDir !== job.asyncDir) {
-			stopObservation(job.asyncId);
+			this.stopObservation(job.asyncId);
 			job.asyncDir = result.asyncDir;
-			ensureJobObserver(job);
+			this.ensureJobObserver(job);
 		}
 		rememberRecentAgentJob(state, job);
-		maybeScheduleCleanup(job);
-		void observeJob(job, { status: true, control: true });
-		scheduleRefresh();
+		this.maybeScheduleCleanup(job);
+		void this.observeJob(job, { status: true, control: true });
+		this.scheduleRefresh();
 	};
 
-	const handleProcessTerminal = <Data>(data: Data): void => {
+	readonly handleProcessTerminal = <Data>(data: Data): void => {
 		if (!data || !isRuntimeObject(data) || Array.isArray(data)) return;
 		// SAFETY: this callback is bound to the Suite-owned process-terminal event; proof identity fields are checked below.
 		const proof = data as Partial<ProcessTerminalV1> & { asyncDir?: unknown };
 		if (
 			!isRuntimeString(proof.runId) ||
 			proof.state !== "observed" ||
-			!isRuntimeNumber(proof.observedAt) ||
-			!Number.isFinite(proof.observedAt) ||
+			!isFiniteRuntimeNumber(proof.observedAt) ||
 			!isRuntimeString(proof.runnerProcessInstanceId) ||
 			!proof.runnerProcessInstanceId
 		)
 			return;
-		const job = state.asyncJobs.get(proof.runId);
+		const job = this.state.asyncJobs.get(proof.runId);
 		if (!job) return;
 		if (isRuntimeString(proof.asyncDir) && path.resolve(proof.asyncDir) !== path.resolve(job.asyncDir)) return;
 		if (
@@ -634,33 +678,32 @@ export function createAsyncJobTracker(
 		// SAFETY: the process-terminal producer emits the full discriminated proof and the observed variant's identity was checked above.
 		job.processTerminal = proof as ProcessTerminalV1;
 		job.updatedAt = Math.max(job.updatedAt ?? 0, proof.observedAt);
-		maybeScheduleCleanup(job);
-		void observeJob(job, { status: true, control: true });
-		scheduleRefresh();
+		this.maybeScheduleCleanup(job);
+		void this.observeJob(job, { status: true, control: true });
+		this.scheduleRefresh();
 	};
 
-	const resetJobs = (): void => {
-		trackerGeneration += 1;
-		for (const asyncId of new Set([...watchers.keys(), ...fallbackTimers.keys(), ...observations.keys()])) {
-			stopObservation(asyncId);
-		}
-		for (const timer of state.cleanupTimers.values()) clearTimeout(timer);
-		state.cleanupTimers.clear();
-		state.asyncJobs.clear();
-		state.recentAgentJobs?.clear();
-		state.foregroundControls?.clear();
-		state.lastForegroundControlId = null;
-		state.resultFileCoalescer.clear();
-		restoreInFlight?.controller.abort();
-		restoreInFlight = undefined;
-		restoredGeneration = -1;
+	readonly resetJobs = (): void => {
+		this.trackerGeneration += 1;
+		for (const asyncId of this.observations.keys()) this.stopObservation(asyncId);
+		for (const timer of this.state.cleanupTimers.values()) clearTimeout(timer);
+		this.state.cleanupTimers.clear();
+		this.state.asyncJobs.clear();
+		this.state.recentAgentJobs?.clear();
+		this.state.foregroundControls?.clear();
+		this.state.lastForegroundControlId = null;
+		this.state.resultFileCoalescer.clear();
+		this.restoreInFlight?.controller.abort();
+		this.restoreInFlight = undefined;
+		this.restoredGeneration = -1;
 	};
 
-	const restoreActiveJobs = (asyncDirectories?: readonly string[]): Promise<void> => {
+	readonly restoreActiveJobs = (asyncDirectories?: readonly string[]): Promise<void> => {
+		const { state } = this;
 		const targeted = asyncDirectories !== undefined;
-		if (!targeted && restoredGeneration === trackerGeneration) return Promise.resolve();
-		if (restoreInFlight?.generation === trackerGeneration) return restoreInFlight.promise;
-		const generation = trackerGeneration;
+		if (!targeted && this.restoredGeneration === this.trackerGeneration) return Promise.resolve();
+		if (this.restoreInFlight?.generation === this.trackerGeneration) return this.restoreInFlight.promise;
+		const generation = this.trackerGeneration;
 		const sessionId = state.currentSessionId;
 		if (!sessionId) return Promise.resolve();
 		const controller = new AbortController();
@@ -668,18 +711,18 @@ export function createAsyncJobTracker(
 		restore.promise = (async () => {
 			let directories: string[];
 			if (targeted) {
-				const root = path.resolve(asyncDirRoot);
+				const root = path.resolve(this.asyncDirRoot);
 				directories = [...new Set(asyncDirectories.map((directory) => path.resolve(directory)))].filter(
 					(directory) => path.dirname(directory) === root,
 				);
 			} else {
 				let entries: fs.Dirent[];
 				try {
-					entries = await fs.promises.readdir(asyncDirRoot, { withFileTypes: true });
+					entries = await fs.promises.readdir(this.asyncDirRoot, { withFileTypes: true });
 				} catch (error) {
 					if (errnoCode(error) === "ENOENT") {
-						if (trackerGeneration === generation && state.currentSessionId === sessionId) {
-							restoredGeneration = generation;
+						if (this.trackerGeneration === generation && state.currentSessionId === sessionId) {
+							this.restoredGeneration = generation;
 						}
 						return;
 					}
@@ -687,15 +730,15 @@ export function createAsyncJobTracker(
 				}
 				directories = entries
 					.filter((entry) => entry.isDirectory() && entry.name !== "." && entry.name !== "..")
-					.map((entry) => path.join(asyncDirRoot, entry.name));
+					.map((entry) => path.join(this.asyncDirRoot, entry.name));
 			}
 			const statuses = await mapConcurrent(directories, RESTORE_READ_CONCURRENCY, async (asyncDir) => {
 				if (controller.signal.aborted) return undefined;
 				try {
-					const observedStatus = await readRunStatus(asyncDir);
+					const observedStatus = await this.readRunStatus(asyncDir);
 					if (!observedStatus || controller.signal.aborted) return undefined;
 					const status = await recoverLegacyFinalReports(observedStatus);
-					const normalized = normalizeAcceptedSessionId(status.sessionId, status.runId);
+					const normalized = this.normalizeAcceptedSessionId(status.sessionId, status.runId);
 					return normalized ? { asyncDir, status, sessionId: normalized } : undefined;
 				} catch (error) {
 					reportAgentDiagnostic(
@@ -705,7 +748,7 @@ export function createAsyncJobTracker(
 					return undefined;
 				}
 			});
-			if (controller.signal.aborted || trackerGeneration !== generation || state.currentSessionId !== sessionId)
+			if (controller.signal.aborted || this.trackerGeneration !== generation || state.currentSessionId !== sessionId)
 				return;
 			const observed = statuses.filter((value) => value !== undefined);
 			const active = observed.filter(({ status }) => status.state === "queued" || status.state === "running");
@@ -719,8 +762,8 @@ export function createAsyncJobTracker(
 				.slice(0, MAX_RECENT_AGENT_JOBS);
 			for (const { asyncDir, status, sessionId: normalized } of [...active, ...terminal]) {
 				const existing = state.asyncJobs.get(status.runId);
-				const job = existing ?? jobFromStatus(asyncDir, status, normalized, true);
-				if (existing) applyStatus(existing, status);
+				const job = existing ?? this.jobFromStatus(asyncDir, status, normalized, true);
+				if (existing) this.applyStatus(existing, status);
 				rememberRecentAgentJob(state, job);
 				if (
 					status.state === "queued" ||
@@ -728,26 +771,25 @@ export function createAsyncJobTracker(
 					(status.processTerminal !== undefined && status.processTerminal.state !== "observed")
 				) {
 					state.asyncJobs.set(status.runId, job);
-					ensureJobObserver(job);
-					void observeJob(job, { control: true });
+					this.ensureJobObserver(job);
+					void this.observeJob(job, { control: true });
 				}
 			}
-			scheduleRefresh();
-			if (!targeted) restoredGeneration = generation;
+			this.scheduleRefresh();
+			if (!targeted) this.restoredGeneration = generation;
 		})().finally(() => {
-			if (restoreInFlight === restore) restoreInFlight = undefined;
+			if (this.restoreInFlight === restore) this.restoreInFlight = undefined;
 		});
-		restoreInFlight = restore;
+		this.restoreInFlight = restore;
 		return restore.promise;
 	};
+}
 
-	return {
-		ensureObserver,
-		handleComplete,
-		handleProcessTerminal,
-		handleStarted,
-		handleStatus,
-		resetJobs,
-		restoreActiveJobs,
-	};
+export function createAsyncJobTracker(
+	pi: Pick<ExtensionAPI, "events">,
+	state: SubagentState,
+	asyncDirRoot: string,
+	options: AsyncJobTrackerOptions = {},
+) {
+	return new AsyncJobTracker(pi, state, asyncDirRoot, options);
 }

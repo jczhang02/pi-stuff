@@ -283,18 +283,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	prepareGovernorCompatibility: prepareSessionGovernorCompatibility,
 	createRoster: (current, options) => new AgentRoster(current, options),
 	createSupervisor: (pi, state) => createNativeSupervisorChannel(pi, state),
-	createTracker: (pi, state, onRefresh) => {
-		const tracker = createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh });
-		return {
-			ensureObserver: tracker.ensureObserver,
-			handleComplete: tracker.handleComplete,
-			handleProcessTerminal: tracker.handleProcessTerminal,
-			handleStarted: tracker.handleStarted,
-			handleStatus: tracker.handleStatus,
-			resetJobs: () => tracker.resetJobs(),
-			restoreActiveJobs: () => tracker.restoreActiveJobs(),
-		};
-	},
+	createTracker: (pi, state, onRefresh) => createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh }),
 	createWatcher: ({ notifier, pi, state }) =>
 		createResultWatcher(pi, state, RESULTS_DIR, 10 * 60 * 1_000, {
 			notifier,

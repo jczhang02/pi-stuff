@@ -119,17 +119,6 @@ export const RESULT_CHILD_FIELDS = [
 	"writerAttemptCount",
 ] as const;
 
-export function pickFields<Source extends object, Key extends keyof Source>(
-	source: Source,
-	fields: readonly Key[],
-): Partial<Pick<Source, Key>> {
-	const picked: Partial<Pick<Source, Key>> = {};
-	for (const field of fields) {
-		if (source[field] !== undefined) picked[field] = source[field];
-	}
-	return picked;
-}
-
 export function sanitizeNestedResultChildren(
 	value: JsonValue | undefined,
 	resultPath: string,
