@@ -18,11 +18,8 @@ import {
 test("pause aborts the current turn, blocks stale tools, and persists paused state", async () => {
 	let pauseAborts = 0;
 	const paused = await startGoalForTest({ abort: () => pauseAborts++ });
-	await paused.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		paused.ctx,
-	);
-	await paused.mock.events.get("agent_settled")?.[0]?.({}, paused.ctx);
+	await paused.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, paused.ctx);
+	await paused.mock.callEvent("agent_settled", {}, paused.ctx);
 	const staleContinuation = paused.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, /pi-goal-continuation/);
 
@@ -31,25 +28,21 @@ test("pause aborts the current turn, blocks stale tools, and persists paused sta
 	assert.equal(pauseAborts, 1);
 	assert.equal(lastGoalStatus(paused.mock), "paused");
 	assert.equal(goalStatusSnapshot(paused.mock.pi)?.status, "paused");
-	assert.deepEqual(
-		paused.mock.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, paused.ctx),
-		{ action: "handled" },
-	);
-	assert.deepEqual(
-		paused.mock.events.get("tool_call")?.[0]?.({ toolName: "bash", toolCallId: "t1", input: {} }, paused.ctx),
-		{ block: true, reason: STALE_GOAL_TOOL_REASON },
-	);
+	assert.deepEqual(paused.mock.callEvent("input", { source: "extension", text: staleContinuation }, paused.ctx), {
+		action: "handled",
+	});
+	assert.deepEqual(paused.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "t1", input: {} }, paused.ctx), {
+		block: true,
+		reason: STALE_GOAL_TOOL_REASON,
+	});
 });
 
 test("clear removes goal state without aborting or blocking stale tools", async () => {
 	let clearAborts = 0;
 	const cleared = await startGoalForTest({ abort: () => clearAborts++ });
 	const beforeClearGoal = requireLastGoal(cleared.mock);
-	await cleared.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		cleared.ctx,
-	);
-	await cleared.mock.events.get("agent_settled")?.[0]?.({}, cleared.ctx);
+	await cleared.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, cleared.ctx);
+	await cleared.mock.callEvent("agent_settled", {}, cleared.ctx);
 	const staleContinuation = cleared.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, /pi-goal-continuation/);
 
@@ -58,12 +51,11 @@ test("clear removes goal state without aborting or blocking stale tools", async 
 	assert.equal(clearAborts, 0);
 	assert.equal(lastGoalStatus(cleared.mock), null);
 	assert.equal(goalStatusSnapshot(cleared.mock.pi), undefined);
-	assert.deepEqual(
-		cleared.mock.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, cleared.ctx),
-		{ action: "handled" },
-	);
+	assert.deepEqual(cleared.mock.callEvent("input", { source: "extension", text: staleContinuation }, cleared.ctx), {
+		action: "handled",
+	});
 	assert.equal(
-		cleared.mock.events.get("tool_call")?.[0]?.({ toolName: "edit", toolCallId: "t-clear", input: {} }, cleared.ctx),
+		cleared.mock.callEvent("tool_call", { toolName: "edit", toolCallId: "t-clear", input: {} }, cleared.ctx),
 		undefined,
 	);
 
@@ -83,17 +75,14 @@ test("clear removes goal state without aborting or blocking stale tools", async 
 test("clear releases stale tool-call block from a paused goal", async () => {
 	let pauseAborts = 0;
 	const paused = await startGoalForTest({ abort: () => pauseAborts++ });
-	await paused.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		paused.ctx,
-	);
+	await paused.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, paused.ctx);
 
 	await paused.mock.commands.get("goal")?.handler("pause", paused.ctx);
 
 	assert.equal(pauseAborts, 1);
 	assert.equal(lastGoalStatus(paused.mock), "paused");
 	assert.deepEqual(
-		paused.mock.events.get("tool_call")?.[0]?.({ toolName: "bash", toolCallId: "t-paused", input: {} }, paused.ctx),
+		paused.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "t-paused", input: {} }, paused.ctx),
 		{ block: true, reason: STALE_GOAL_TOOL_REASON },
 	);
 
@@ -102,10 +91,7 @@ test("clear releases stale tool-call block from a paused goal", async () => {
 	assert.equal(lastGoalStatus(paused.mock), null);
 	assert.equal(goalStatusSnapshot(paused.mock.pi), undefined);
 	assert.equal(
-		paused.mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "bash", toolCallId: "t-after-clear", input: {} },
-			paused.ctx,
-		),
+		paused.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "t-after-clear", input: {} }, paused.ctx),
 		undefined,
 	);
 });
@@ -115,10 +101,7 @@ test("state changes between agent_end and agent_settled cancel stale continuatio
 		let aborts = 0;
 		const changed = await startGoalForTest({ abort: () => aborts++ });
 		const originalGoal = requireLastGoal(changed.mock);
-		await changed.mock.events.get("agent_end")?.[0]?.(
-			{ messages: [{ role: "assistant", stopReason: "stop" }] },
-			changed.ctx,
-		);
+		await changed.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, changed.ctx);
 
 		if (action === "pause" || action === "clear") {
 			await changed.mock.commands.get("goal")?.handler(action, changed.ctx);
@@ -135,7 +118,7 @@ test("state changes between agent_end and agent_settled cancel stale continuatio
 		}
 
 		const messagesBeforeSettled = changed.mock.sentUserMessages.length;
-		await changed.mock.events.get("agent_settled")?.[0]?.({}, changed.ctx);
+		await changed.mock.callEvent("agent_settled", {}, changed.ctx);
 		assert.equal(
 			changed.mock.sentUserMessages.length,
 			messagesBeforeSettled,
@@ -148,10 +131,11 @@ test("tool_execution_end pauses a goal before another turn when terminal tools d
 	let aborts = 0;
 	const active = await startGoalForTest({ abort: () => aborts++ });
 	const kickoffPrompt = active.mock.sentUserMessages.at(-1)?.text ?? "";
-	active.mock.events.get("before_agent_start")?.[0]?.({ prompt: kickoffPrompt, systemPrompt: "base" }, active.ctx);
+	active.mock.callEvent("before_agent_start", { prompt: kickoffPrompt, systemPrompt: "base" }, active.ctx);
 	active.mock.rawPi.setActiveTools(["read", "bash"]);
 
-	active.mock.events.get("tool_execution_end")?.[0]?.(
+	active.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "restricted-tool", toolName: "read", result: {}, isError: false },
 		active.ctx,
 	);
@@ -159,7 +143,7 @@ test("tool_execution_end pauses a goal before another turn when terminal tools d
 	assert.equal(lastGoalStatus(active.mock), "paused");
 	assert.equal(aborts, 1);
 	assert.deepEqual(
-		active.mock.events.get("tool_call")?.[0]?.({ toolName: "read", toolCallId: "next-tool", input: {} }, active.ctx),
+		active.mock.callEvent("tool_call", { toolName: "read", toolCallId: "next-tool", input: {} }, active.ctx),
 		{ block: true, reason: STALE_GOAL_TOOL_REASON },
 	);
 });
@@ -206,10 +190,11 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 	assert.match(String(wrapUpMessage.content), /budget exhaustion.*not completion/i);
 	assert.ok(String(wrapUpMessage.content).length < 1_000);
 
-	await budgeted.mock.events.get("agent_settled")?.[0]?.({}, budgeted.ctx);
+	await budgeted.mock.callEvent("agent_settled", {}, budgeted.ctx);
 	assert.equal(budgeted.mock.sentUserMessages.length, 1);
 	assert.deepEqual(
-		budgeted.mock.events.get("tool_call")?.[0]?.(
+		budgeted.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "substantive-after-budget", input: {} },
 			budgeted.ctx,
 		),
@@ -220,7 +205,8 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 	);
 	assert.equal(aborts, 1);
 	assert.equal(
-		budgeted.mock.events.get("tool_call")?.[0]?.(
+		budgeted.mock.callEvent(
+			"tool_call",
 			{ toolName: "goal_complete", toolCallId: "complete-after-budget", input: {} },
 			budgeted.ctx,
 		),
@@ -246,7 +232,8 @@ test("rejected completion closes a budget wrap-up without another model call", a
 	);
 	const goalId = requireLastGoal(budgeted.mock).id;
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
@@ -280,7 +267,8 @@ test("stale completion also closes a budget wrap-up after recording final usage"
 	);
 	const goalId = requireLastGoal(budgeted.mock).id;
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
@@ -348,7 +336,8 @@ test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite prepar
 	const unregister = registerSuiteAgentMessagePreparation(budgeted.mock.pi, { prepare: () => preparation });
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
 
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
@@ -370,14 +359,12 @@ test("budget wrap-up permission closes at agent_end and stale context is filtere
 	);
 	const goalId = requireLastGoal(budgeted.mock).id;
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		budgeted.ctx,
-	);
+	await budgeted.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, budgeted.ctx);
 
 	const rejected = await requireGoalTool(budgeted.mock, "goal_complete").execute(
 		"late-completion",
@@ -390,7 +377,8 @@ test("budget wrap-up permission closes at agent_end and stale context is filtere
 	assert.equal(rejected.terminate, undefined);
 
 	// SAFETY: the Goal context hook owns this result and returns only its optional filtered messages projection.
-	const contextResult = budgeted.mock.events.get("context")?.[0]?.(
+	const contextResult = budgeted.mock.callEvent(
+		"context",
 		{
 			messages: [
 				{ role: "user", content: "keep" },
@@ -409,33 +397,30 @@ test("budget wrap-up does not consume a pending transformed follow-up", async ()
 		"--tokens 10 finish",
 	);
 	const goalId = requireLastGoal(budgeted.mock).id;
-	budgeted.mock.events.get("input")?.[0]?.(
+	budgeted.mock.callEvent(
+		"input",
 		{ source: "interactive", text: "/skill:review", streamingBehavior: "followUp" },
 		budgeted.ctx,
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
 
-	budgeted.mock.events.get("before_agent_start")?.[0]?.(
-		{ prompt: "budget wrap-up", systemPrompt: "base" },
-		budgeted.ctx,
-	);
+	budgeted.mock.callEvent("before_agent_start", { prompt: "budget wrap-up", systemPrompt: "base" }, budgeted.ctx);
 
 	assert.deepEqual(
-		budgeted.mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "read", toolCallId: "wrap-up-read", input: {} },
-			budgeted.ctx,
-		),
+		budgeted.mock.callEvent("tool_call", { toolName: "read", toolCallId: "wrap-up-read", input: {} }, budgeted.ctx),
 		{
 			block: true,
 			reason: "Goal token budget is exhausted; only goal_complete is allowed during wrap-up.",
 		},
 	);
 	assert.equal(
-		budgeted.mock.events.get("tool_call")?.[0]?.(
+		budgeted.mock.callEvent(
+			"tool_call",
 			{ toolName: "goal_complete", toolCallId: "wrap-up-complete", input: {} },
 			budgeted.ctx,
 		),
@@ -458,7 +443,8 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 		"--tokens 10 finish",
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("tool_execution_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
@@ -467,21 +453,16 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 	assert.ok(isRuntimeObject(queuedWrapUp) && queuedWrapUp !== null && !Array.isArray(queuedWrapUp));
 	const wrapUpMessage = { role: "custom", ...queuedWrapUp };
 
-	budgeted.mock.events.get("before_agent_start")?.[0]?.(
-		{ prompt: "budget wrap-up", systemPrompt: "base" },
-		budgeted.ctx,
-	);
-	budgeted.mock.events.get("message_start")?.[0]?.({ message: wrapUpMessage }, budgeted.ctx);
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
+	budgeted.mock.callEvent("before_agent_start", { prompt: "budget wrap-up", systemPrompt: "base" }, budgeted.ctx);
+	budgeted.mock.callEvent("message_start", { message: wrapUpMessage }, budgeted.ctx);
+	await budgeted.mock.callEvent(
+		"agent_end",
 		{ messages: [wrapUpMessage, { role: "assistant", stopReason: "stop", content: [] }] },
 		budgeted.ctx,
 	);
 
 	assert.equal(
-		budgeted.mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "read", toolCallId: "after-wrap-up", input: {} },
-			budgeted.ctx,
-		),
+		budgeted.mock.callEvent("tool_call", { toolName: "read", toolCallId: "after-wrap-up", input: {} }, budgeted.ctx),
 		undefined,
 	);
 });
@@ -494,7 +475,8 @@ test("compaction cancels before retry when persisted usage has exhausted the bud
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
 
-	const result = await budgeted.mock.events.get("session_before_compact")?.[0]?.(
+	const result = await budgeted.mock.callEvent(
+		"session_before_compact",
 		{ reason: "overflow", willRetry: true },
 		budgeted.ctx,
 	);
@@ -503,8 +485,8 @@ test("compaction cancels before retry when persisted usage has exhausted the bud
 	assert.equal(budgeted.mock.sentMessages.length, 0);
 	assert.equal(budgeted.mock.sentUserMessages.length, 1);
 
-	await budgeted.mock.events.get("session_compact")?.[0]?.({ reason: "overflow", willRetry: true }, budgeted.ctx);
-	await budgeted.mock.events.get("agent_settled")?.[0]?.({}, budgeted.ctx);
+	await budgeted.mock.callEvent("session_compact", { reason: "overflow", willRetry: true }, budgeted.ctx);
+	await budgeted.mock.callEvent("agent_settled", {}, budgeted.ctx);
 	assert.equal(budgeted.mock.sentUserMessages.length, 1);
 });
 
@@ -515,10 +497,7 @@ test("budget edits require an actual increase before reactivating and rotate sta
 		"--tokens 10 finish",
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 10 }));
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		budgeted.ctx,
-	);
+	await budgeted.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, budgeted.ctx);
 	const exhaustedGoal = requireLastGoal(budgeted.mock);
 	assert.equal(exhaustedGoal.status, "budget_limited");
 
@@ -553,10 +532,7 @@ test("failed budget-increase edit delivery restores the limited goal and stale i
 		"--tokens 10 original objective",
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 10 }));
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		budgeted.ctx,
-	);
+	await budgeted.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, budgeted.ctx);
 	const limited = requireLastGoal(budgeted.mock);
 	budgeted.mock.rawPi.sendUserMessage = () => {
 		throw new Error("edit delivery failed");
@@ -589,13 +565,10 @@ test("budget exhaustion between agent_end and agent_settled cancels continuation
 		type: "message",
 		message: { role: "assistant", usage: { input: 1, output: 0 } },
 	});
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		budgeted.ctx,
-	);
+	await budgeted.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, budgeted.ctx);
 	assert.equal(lastGoalStatus(budgeted.mock), "budget_limited");
 	assert.equal(budgeted.mock.sentMessages.length, 0);
 
-	await budgeted.mock.events.get("agent_settled")?.[0]?.({}, budgeted.ctx);
+	await budgeted.mock.callEvent("agent_settled", {}, budgeted.ctx);
 	assert.equal(budgeted.mock.sentUserMessages.length, 1);
 });

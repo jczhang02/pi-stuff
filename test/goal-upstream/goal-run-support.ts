@@ -77,7 +77,7 @@ export function registerGoal(mock: ReturnType<typeof createMockPi>, settingsPath
 }
 
 export function bindSession(mock: ReturnType<typeof createMockPi>, context = createMockContext()) {
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	return context;
 }
 

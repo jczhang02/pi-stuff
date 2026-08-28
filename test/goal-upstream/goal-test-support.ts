@@ -275,7 +275,7 @@ export function restoreStoredGoalForTest(
 		...contextOverrides,
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	return { mock, ...context, sessionGoal };
 }
 
@@ -287,7 +287,7 @@ export async function startGoalForTest(
 	const mock = createMockPi();
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext(overrides);
-	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 	await mock.commands.get("goal")?.handler(command, context.ctx);
 	return { mock, ...context };
 }

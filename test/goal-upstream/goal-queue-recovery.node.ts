@@ -70,10 +70,7 @@ test("a pending busy skip consumes an accepted owned prompt before advancement",
 	await harness.command("add next head");
 	await harness.command("skip");
 
-	const result = await harness.mock.events.get("input")?.[0]?.(
-		{ source: "extension", text: ownedPrompt },
-		harness.ctx,
-	);
+	const result = await harness.mock.callEvent("input", { source: "extension", text: ownedPrompt }, harness.ctx);
 	assert.deepEqual(result, { action: "handled" });
 	assert.equal(aborts, 0);
 });
@@ -236,7 +233,8 @@ test("finalized priority dispatches from idle manual compaction", async () => {
 	});
 	await harness.command("old head");
 	await harness.command("prioritize urgent head");
-	await harness.mock.events.get("before_agent_start")?.[0]?.(
+	await harness.mock.callEvent(
+		"before_agent_start",
 		{ prompt: "unrelated user work", systemPrompt: "base" },
 		harness.ctx,
 	);
@@ -248,7 +246,7 @@ test("finalized priority dispatches from idle manual compaction", async () => {
 	});
 
 	idle = true;
-	await harness.mock.events.get("session_compact")?.[0]?.({ reason: "manual", willRetry: false }, harness.ctx);
+	await harness.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, harness.ctx);
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text, status, tokensUsed }) => ({ text, status, tokensUsed })),
 		[
@@ -272,12 +270,13 @@ test("manual compaction dispatches pending priority before old-head budget limit
 	const state = lastState(harness.mock);
 	branch.push(assistantUsageEntry(12), { type: "custom", customType: "goal-state", data: state });
 	idle = true;
-	const beforeCompact = await harness.mock.events.get("session_before_compact")?.[0]?.(
+	const beforeCompact = await harness.mock.callEvent(
+		"session_before_compact",
 		{ reason: "manual", willRetry: false },
 		harness.ctx,
 	);
 	assert.equal(beforeCompact, undefined);
-	await harness.mock.events.get("session_compact")?.[0]?.({ reason: "manual", willRetry: false }, harness.ctx);
+	await harness.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, harness.ctx);
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text, status }) => ({ text, status })),
 		[
@@ -296,7 +295,8 @@ test("retry and compaction lifecycle snapshots preserve the queued tail", async 
 	});
 	await harness.command("head");
 	await harness.command("add tail");
-	await harness.mock.events.get("agent_end")?.[0]?.(
+	await harness.mock.callEvent(
+		"agent_end",
 		{
 			messages: [{ role: "assistant", stopReason: "error", errorMessage: "rate limit; please retry" }],
 		},
@@ -312,7 +312,7 @@ test("retry and compaction lifecycle snapshots preserve the queued tail", async 
 
 	const state = lastState(harness.mock);
 	branch.push({ type: "custom", customType: "goal-state", data: state });
-	await harness.mock.events.get("session_compact")?.[0]?.({ reason: "manual", willRetry: false }, harness.ctx);
+	await harness.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, harness.ctx);
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text }) => text),
 		["head", "tail"],
@@ -327,7 +327,7 @@ test("budget limiting the head preserves the queued tail", async () => {
 	await harness.command("--tokens 10 budgeted head");
 	await harness.command("add later goal");
 	branch.push(assistantUsageEntry(12));
-	await harness.mock.events.get("tool_execution_end")?.[0]?.({}, harness.ctx);
+	await harness.mock.callEvent("tool_execution_end", {}, harness.ctx);
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text, status }) => ({ text, status })),
 		[

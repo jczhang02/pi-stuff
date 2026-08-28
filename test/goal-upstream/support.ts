@@ -275,6 +275,9 @@ export function createMockPi(options: MockPiOptions = {}) {
 		flags,
 		events,
 		emitHostEvent,
+		callEvent(name: string, ...args: unknown[]) {
+			return events.get(name)?.[0]?.(...args);
+		},
 		eventBus,
 		tools,
 		providers,

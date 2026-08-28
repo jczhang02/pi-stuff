@@ -42,7 +42,7 @@ export async function createHarness(overrides: MockContextOverrides = {}, enable
 	const runtime = goal(mock.pi, { settingsPath: enabled ? enabledSettingsPath : disabledSettingsPath });
 	runtimeByPi.set(mock.pi, runtime);
 	const context = createMockContext(overrides);
-	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 	return {
 		mock,
 		...context,
@@ -51,7 +51,7 @@ export async function createHarness(overrides: MockContextOverrides = {}, enable
 }
 
 export async function settled(harness: Awaited<ReturnType<typeof createHarness>>) {
-	await harness.mock.events.get("agent_settled")?.[0]?.({}, harness.ctx);
+	await harness.mock.callEvent("agent_settled", {}, harness.ctx);
 }
 
 export function completionTool(mock: ReturnType<typeof createMockPi>) {

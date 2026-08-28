@@ -50,7 +50,8 @@ test("resume safely reactivates every resumable stopped status and rotates goal_
 		assert.equal(restored.mock.sentUserMessages.length, 1);
 		assert.match(restored.mock.sentUserMessages[0]?.text ?? "", /explicitly resumed/i);
 		assert.equal(
-			restored.mock.events.get("tool_call")?.[0]?.(
+			restored.mock.callEvent(
+				"tool_call",
 				{ toolName: "bash", toolCallId: `tool-after-${status}`, input: {} },
 				restored.ctx,
 			),
@@ -69,7 +70,8 @@ test("safety epochs reset on successful resume and active edit", async () => {
 	const resumed = restoreGoalForTest("paused", safety);
 	await resumed.mock.commands.get("goal")?.handler("resume", resumed.ctx);
 	assert.deepEqual(pickSafetyState(requireLastGoal(resumed.mock)), safety);
-	resumed.mock.events.get("before_agent_start")?.[0]?.(
+	resumed.mock.callEvent(
+		"before_agent_start",
 		{ prompt: resumed.mock.sentUserMessages.at(-1)?.text ?? "", systemPrompt: "base" },
 		resumed.ctx,
 	);
@@ -93,7 +95,8 @@ test("safety epochs reset on successful resume and active edit", async () => {
 		lastToolFreeOutputFingerprint: "b".repeat(64),
 		safetyPauseCause: undefined,
 	});
-	edited.mock.events.get("before_agent_start")?.[0]?.(
+	edited.mock.callEvent(
+		"before_agent_start",
 		{ prompt: edited.mock.sentUserMessages.at(-1)?.text ?? "", systemPrompt: "base" },
 		edited.ctx,
 	);
@@ -158,7 +161,7 @@ test("stopped input and failed resume preserve the exact safety epoch", async ()
 		safetyPauseCause: "continuation_limit" as const,
 	};
 	const restored = restoreGoalForTest("paused", safety);
-	restored.mock.events.get("input")?.[0]?.({ source: "interactive", text: "what happened?" }, restored.ctx);
+	restored.mock.callEvent("input", { source: "interactive", text: "what happened?" }, restored.ctx);
 	assert.deepEqual(pickSafetyState(requireLastGoal(restored.mock)), safety);
 
 	restored.mock.rawPi.sendUserMessage = () => {
@@ -171,32 +174,37 @@ test("stopped input and failed resume preserve the exact safety epoch", async ()
 
 test("direct active input resets safety and reclassifies an in-flight automatic run", async () => {
 	const active = await startGoalForTest({}, "finish", LOW_LIMITS_SETTINGS_PATH);
-	await active.mock.events.get("agent_end")?.[0]?.(
+	await active.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		active.ctx,
 	);
-	await active.mock.events.get("agent_settled")?.[0]?.({}, active.ctx);
+	await active.mock.callEvent("agent_settled", {}, active.ctx);
 	const continuation = active.mock.sentUserMessages.at(-1)?.text ?? "";
-	active.mock.events.get("before_agent_start")?.[0]?.({ prompt: continuation, systemPrompt: "base" }, active.ctx);
-	active.mock.events.get("turn_end")?.[0]?.(
+	active.mock.callEvent("before_agent_start", { prompt: continuation, systemPrompt: "base" }, active.ctx);
+	active.mock.callEvent(
+		"turn_end",
 		{ message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] },
 		active.ctx,
 	);
 	assert.equal(requireLastGoal(active.mock).automaticModelTurns, 1);
-	active.mock.events.get("input")?.[0]?.({ source: "extension", text: "unrelated extension input" }, active.ctx);
+	active.mock.callEvent("input", { source: "extension", text: "unrelated extension input" }, active.ctx);
 	assert.equal(requireLastGoal(active.mock).automaticModelTurns, 1);
 
-	active.mock.events.get("input")?.[0]?.({ source: "interactive", text: "new evidence" }, active.ctx);
-	active.mock.events.get("turn_start")?.[0]?.({}, active.ctx);
-	active.mock.events.get("message_start")?.[0]?.(
+	active.mock.callEvent("input", { source: "interactive", text: "new evidence" }, active.ctx);
+	active.mock.callEvent("turn_start", {}, active.ctx);
+	active.mock.callEvent(
+		"message_start",
 		{ message: { role: "user", content: [{ type: "text", text: "new evidence" }] } },
 		active.ctx,
 	);
-	active.mock.events.get("turn_end")?.[0]?.(
+	active.mock.callEvent(
+		"turn_end",
 		{ message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] },
 		active.ctx,
 	);
-	await active.mock.events.get("agent_end")?.[0]?.(
+	await active.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		active.ctx,
 	);
@@ -211,7 +219,7 @@ test("historical user attribution does not reset Goal safety without a direct ac
 	goal.automaticModelTurns = 2;
 	goal.toolFreeRepeatCount = 2;
 	goal.lastToolFreeOutputFingerprint = "d".repeat(64);
-	active.mock.events.get("turn_start")?.[0]?.({}, active.ctx);
+	active.mock.callEvent("turn_start", {}, active.ctx);
 
 	const delayedCompletion = withAgentWorkOrigin(
 		{
@@ -221,14 +229,14 @@ test("historical user attribution does not reset Goal safety without a direct ac
 		},
 		"user",
 	);
-	active.mock.events.get("message_start")?.[0]?.({ message: delayedCompletion }, active.ctx);
+	active.mock.callEvent("message_start", { message: delayedCompletion }, active.ctx);
 	assert.equal(requireLastGoal(active.mock).automaticModelTurns, 2);
 	assert.equal(requireLastGoal(active.mock).toolFreeRepeatCount, 2);
 
 	const directAction = withDirectUserActivation(
 		withAgentWorkOrigin({ role: "custom", customType: "mcp-user-prompt", content: "Explicit user action" }, "user"),
 	);
-	active.mock.events.get("message_start")?.[0]?.({ message: directAction }, active.ctx);
+	active.mock.callEvent("message_start", { message: directAction }, active.ctx);
 	assert.equal(requireLastGoal(active.mock).automaticModelTurns, 0);
 	assert.equal(requireLastGoal(active.mock).toolFreeRepeatCount, 0);
 });
@@ -241,7 +249,7 @@ test("busy active edit claims ownership and resets safety only when its queued r
 		LOW_LIMITS_SETTINGS_PATH,
 	);
 	const kickoff = edited.mock.sentUserMessages.at(-1)?.text ?? "";
-	edited.mock.events.get("before_agent_start")?.[0]?.({ prompt: kickoff, systemPrompt: "base" }, edited.ctx);
+	edited.mock.callEvent("before_agent_start", { prompt: kickoff, systemPrompt: "base" }, edited.ctx);
 	const previous = requireLastGoal(edited.mock);
 	previous.automaticModelTurns = 2;
 	previous.toolFreeRepeatCount = 2;
@@ -252,14 +260,15 @@ test("busy active edit claims ownership and resets safety only when its queued r
 	assert.notEqual(candidate.id, previous.id);
 	assert.equal(candidate.automaticModelTurns, 2);
 	const editPrompt = edited.mock.sentUserMessages.at(-1)?.text ?? "";
-	edited.mock.events.get("input")?.[0]?.({ source: "extension", text: editPrompt }, edited.ctx);
+	edited.mock.callEvent("input", { source: "extension", text: editPrompt }, edited.ctx);
 	assert.equal(requireLastGoal(edited.mock).automaticModelTurns, 2);
 	assert.equal(requireLastGoal(edited.mock).toolFreeRepeatCount, 2);
 	branch.push(assistantUsageEntry({ totalTokens: 20 }));
-	await edited.mock.events.get("tool_execution_end")?.[0]?.({}, edited.ctx);
+	await edited.mock.callEvent("tool_execution_end", {}, edited.ctx);
 	assert.equal(requireLastGoal(edited.mock).tokensUsed, 0);
 
-	edited.mock.events.get("message_start")?.[0]?.(
+	edited.mock.callEvent(
+		"message_start",
 		{ message: { role: "user", content: [{ type: "text", text: editPrompt }] } },
 		edited.ctx,
 	);
@@ -267,11 +276,12 @@ test("busy active edit claims ownership and resets safety only when its queued r
 	assert.equal(requireLastGoal(edited.mock).toolFreeRepeatCount, 0);
 	assert.equal(requireLastGoal(edited.mock).baselineTokens, 120);
 
-	await edited.mock.events.get("agent_end")?.[0]?.(
+	await edited.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		edited.ctx,
 	);
-	await edited.mock.events.get("agent_settled")?.[0]?.({}, edited.ctx);
+	await edited.mock.callEvent("agent_settled", {}, edited.ctx);
 	assert.equal(lastGoalStatus(edited.mock), "active");
 	assert.equal(edited.mock.sentUserMessages.length, 3);
 });
@@ -310,7 +320,8 @@ test("failed resume delivery restores the stopped state and original goal_id", a
 	assert.equal(restored.mock.sentUserMessages.length, 0);
 	assert.match(restored.notifications.at(-1)?.message ?? "", /runtime became busy/i);
 	assert.deepEqual(
-		restored.mock.events.get("tool_call")?.[0]?.(
+		restored.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "stale-after-failed-resume", input: {} },
 			restored.ctx,
 		),
@@ -360,7 +371,7 @@ test("failed start delivery clears a new goal and restores a replaced stopped go
 	const freshMock = createMockPi();
 	registerGoal(freshMock.pi);
 	const freshContext = createMockContext();
-	freshMock.events.get("session_start")?.[0]?.({}, freshContext.ctx);
+	freshMock.callEvent("session_start", {}, freshContext.ctx);
 	freshMock.rawPi.sendUserMessage = () => {
 		throw new Error("start delivery failed");
 	};
@@ -403,7 +414,8 @@ test("failed start delivery clears a new goal and restores a replaced stopped go
 	assert.equal(restored.text, original.text);
 	assert.equal(restored.status, "paused");
 	assert.deepEqual(
-		replacement.mock.events.get("tool_call")?.[0]?.(
+		replacement.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "stale-after-replacement-failure", input: {} },
 			replacement.ctx,
 		),
@@ -426,7 +438,8 @@ test("failed active edit delivery restores and pauses the prior goal", async () 
 	assert.equal(restored.status, "paused");
 	assert.equal(aborts, 1);
 	assert.deepEqual(
-		edited.mock.events.get("tool_call")?.[0]?.(
+		edited.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "stale-after-edit-failure", input: {} },
 			edited.ctx,
 		),
@@ -446,7 +459,8 @@ test("editing paused, blocked, or usage-limited goals preserves their stopped st
 		assert.notEqual(edited.id, oldId);
 		assert.equal(restored.mock.sentUserMessages.length, 0);
 		assert.deepEqual(
-			restored.mock.events.get("tool_call")?.[0]?.(
+			restored.mock.callEvent(
+				"tool_call",
 				{ toolName: "bash", toolCallId: `stale-after-edit-${status}`, input: {} },
 				restored.ctx,
 			),

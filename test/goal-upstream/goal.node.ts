@@ -46,7 +46,7 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 	}
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	// Default settings keep goal tools active for a stable schema.
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 	// SAFETY: Goal owns this registered schema, and the test reads only the completion fields declared by that Tool.
@@ -95,7 +95,7 @@ test("goal command attributes its hidden Agent prompt to the user", async () => 
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	registerGoal(mock.pi);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	assert.equal(readAgentWorkOrigin(mock.sentHiddenGoalMessages.at(-1)?.message as { details?: unknown }), "user");
@@ -141,7 +141,7 @@ test("bare goal is menu-first in TUI, observable in RPC, and rejects headless mo
 			return undefined;
 		},
 	});
-	mock.events.get("session_start")?.[0]?.({}, tui.ctx);
+	mock.callEvent("session_start", {}, tui.ctx);
 
 	await mock.commands.get("goal")?.handler("", tui.ctx);
 	assert.equal(selections.length, 1);
@@ -191,8 +191,8 @@ test("session start uses defaults without materializing missing settings", () =>
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
 
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	assert.equal(existsSync(parent), false);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
@@ -224,12 +224,12 @@ test("session restore stays read-only until the next agent turn begins", async (
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
 
-	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 
 	assert.equal(mock.entries.length, 0, "opening a session must not append Goal state");
 	assert.equal(runtimeByPi.get(mock.pi)?.activeGoal?.id, restoredGoal.id);
 
-	await mock.events.get("before_agent_start")?.[0]?.({ prompt: "Continue the task." }, context.ctx);
+	await mock.callEvent("before_agent_start", { prompt: "Continue the task." }, context.ctx);
 
 	assert.equal(mock.entries.length, 1, "the first real turn must flush the restored Goal snapshot");
 	assert.equal(mock.entries[0]?.customType, "goal-state");
@@ -247,7 +247,7 @@ test("missing and invalid settings fall back to always-visible tools", () => {
 		});
 		registerGoalWithSettingsPath(mock.pi, settingsPath);
 		const context = createMockContext();
-		mock.events.get("session_start")?.[0]?.({}, context.ctx);
+		mock.callEvent("session_start", {}, context.ctx);
 
 		assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 		assert.equal(
@@ -270,7 +270,7 @@ test("invalid settings remain read-only in the Goal settings UI", async () => {
 			return selections.shift();
 		},
 	});
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	await mock.commands.get("goal")?.handler("", context.ctx);
 
@@ -286,7 +286,7 @@ test("after-first-goal hides tools until activation, then keeps them visible", a
 	});
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
@@ -308,7 +308,7 @@ test("after-first-goal hides tools until activation, then keeps them visible", a
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 
 	// Same-runtime empty session_start keeps the sticky unlock policy.
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 });
 
@@ -319,11 +319,11 @@ test("switching from locked lazy visibility to always restores tools hidden by p
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
 
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 });
@@ -336,10 +336,10 @@ test("always mode restores only the exact goal tools hidden by lazy mode", () =>
 	mock.rawPi.setActiveTools(["read", "goal_complete"]);
 	const context = createMockContext();
 
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read"]);
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "goal_complete"]);
 });
@@ -350,10 +350,10 @@ test("switching from always to lazy visibility locks a runtime without an unfini
 	const mock = createMockPi({ activeTools: ["read", "bash", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 });
@@ -364,19 +364,19 @@ test("failed always-mode restoration preserves the restrictive set and retries l
 	const mock = createMockPi({ activeTools: ["read", "bash", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
 
 	const originalSetActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
 	mock.rawPi.setActiveTools = (names: string[]) => {
 		originalSetActiveTools(names.filter((name) => name !== "goal_blocked"));
 	};
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 	assert.match(context.notifications.at(-1)?.message ?? "", /Could not restore.*goal tools/i);
 
 	mock.rawPi.setActiveTools = originalSetActiveTools;
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 });
 
@@ -417,20 +417,18 @@ test("lazy restore does not widen an earlier restrictive session-start policy", 
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
 
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 	assert.equal(lastGoalStatus(mock), "paused");
 	assert.equal(aborts, 0);
-	mock.events.get("input")?.[0]?.(
+	mock.callEvent(
+		"input",
 		{ source: "extension", text: "startup follow-up", streamingBehavior: undefined },
 		context.ctx,
 	);
 	assert.equal(
-		mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "read", toolCallId: "startup-extension-read", input: {} },
-			context.ctx,
-		),
+		mock.callEvent("tool_call", { toolName: "read", toolCallId: "startup-extension-read", input: {} }, context.ctx),
 		undefined,
 	);
 	assert.match(context.notifications.at(-1)?.message ?? "", /goal tools.*paused/i);

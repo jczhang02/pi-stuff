@@ -20,21 +20,18 @@ test("an active goal pauses without aborting an unrelated restrictive turn", asy
 	});
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext({ abort: () => aborts++ });
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
 	// Plan-mode style whole-set replacement drops goal tools and keeps unrelated ones.
 	mock.rawPi.setActiveTools(["read", "bash", "scrape"]);
-	const result = mock.events.get("before_agent_start")?.[0]?.(
-		{ prompt: "continue work", systemPrompt: "base" },
-		context.ctx,
-	);
+	const result = mock.callEvent("before_agent_start", { prompt: "continue work", systemPrompt: "base" }, context.ctx);
 	assert.equal(result, undefined);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "scrape"]);
 	assert.equal(lastGoalStatus(mock), "paused");
 	assert.equal(aborts, 0);
 	assert.equal(
-		mock.events.get("tool_call")?.[0]?.({ toolName: "read", toolCallId: "plan-read", input: {} }, context.ctx),
+		mock.callEvent("tool_call", { toolName: "read", toolCallId: "plan-read", input: {} }, context.ctx),
 		undefined,
 	);
 	assert.match(context.notifications.at(-1)?.message ?? "", /goal tools.*paused/i);
@@ -43,19 +40,13 @@ test("an active goal pauses without aborting an unrelated restrictive turn", asy
 test("missing goal tools abort an automatic continuation turn", async () => {
 	let aborts = 0;
 	const active = await startGoalForTest({ abort: () => aborts++ });
-	await active.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		active.ctx,
-	);
-	await active.mock.events.get("agent_settled")?.[0]?.({}, active.ctx);
+	await active.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, active.ctx);
+	await active.mock.callEvent("agent_settled", {}, active.ctx);
 	const continuationPrompt = active.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(continuationPrompt, /pi-goal-continuation:/);
 	active.mock.rawPi.setActiveTools(["read", "bash"]);
 
-	active.mock.events.get("before_agent_start")?.[0]?.(
-		{ prompt: continuationPrompt, systemPrompt: "base" },
-		active.ctx,
-	);
+	active.mock.callEvent("before_agent_start", { prompt: continuationPrompt, systemPrompt: "base" }, active.ctx);
 
 	assert.equal(lastGoalStatus(active.mock), "paused");
 	assert.equal(aborts, 1);
@@ -68,7 +59,8 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 		const kickoffPrompt = started.mock.sentUserMessages.at(-1)?.text ?? "";
 		started.mock.rawPi.setActiveTools(["read", "bash"]);
 
-		started.mock.events.get("before_agent_start")?.[0]?.(
+		started.mock.callEvent(
+			"before_agent_start",
 			{ prompt: `transformed by an earlier extension\n\n${kickoffPrompt}`, systemPrompt: "base" },
 			started.ctx,
 		);
@@ -84,7 +76,7 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 		const resumePrompt = resumed.mock.sentUserMessages.at(-1)?.text ?? "";
 		resumed.mock.rawPi.setActiveTools(["read", "bash"]);
 
-		resumed.mock.events.get("before_agent_start")?.[0]?.({ prompt: resumePrompt, systemPrompt: "base" }, resumed.ctx);
+		resumed.mock.callEvent("before_agent_start", { prompt: resumePrompt, systemPrompt: "base" }, resumed.ctx);
 
 		assert.equal(lastGoalStatus(resumed.mock), "paused");
 		assert.equal(aborts, 1);
@@ -97,7 +89,7 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 		const editPrompt = edited.mock.sentUserMessages.at(-1)?.text ?? "";
 		edited.mock.rawPi.setActiveTools(["read", "bash"]);
 
-		edited.mock.events.get("before_agent_start")?.[0]?.({ prompt: editPrompt, systemPrompt: "base" }, edited.ctx);
+		edited.mock.callEvent("before_agent_start", { prompt: editPrompt, systemPrompt: "base" }, edited.ctx);
 
 		assert.equal(lastGoalStatus(edited.mock), "paused");
 		assert.equal(aborts, 1);
@@ -110,10 +102,11 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 	});
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
-	const promptResult = mock.events.get("before_agent_start")?.[0]?.(
+	const promptResult = mock.callEvent(
+		"before_agent_start",
 		{ prompt: "continue work", systemPrompt: "base" },
 		context.ctx,
 	);
@@ -123,8 +116,8 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 		/Active \/goal/,
 	);
 	mock.rawPi.setActiveTools(["read", "bash"]);
-	mock.events.get("agent_end")?.[0]?.({ messages: [{ role: "assistant", stopReason: "stop" }] }, context.ctx);
-	mock.events.get("agent_settled")?.[0]?.({}, context.ctx);
+	mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, context.ctx);
+	mock.callEvent("agent_settled", {}, context.ctx);
 
 	assert.equal(lastGoalStatus(mock), "paused");
 	assert.equal(mock.sentUserMessages.length, 1);
@@ -137,11 +130,11 @@ test("after-first-goal does not fight another extension that exposes locked tool
 	});
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	mock.rawPi.setActiveTools(["read", "bash", "goal_complete", "goal_blocked", "scrape"]);
-	mock.events.get("before_agent_start")?.[0]?.({ prompt: "normal chat", systemPrompt: "base" }, context.ctx);
+	mock.callEvent("before_agent_start", { prompt: "normal chat", systemPrompt: "base" }, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked", "scrape"]);
 });
 
@@ -177,7 +170,7 @@ test("restored active goal applies budget limits before unavailable-tool pauses"
 			sessionManager: { getBranch: () => branch, getEntries: () => branch },
 		});
 
-		mock.events.get("session_start")?.[0]?.({}, context.ctx);
+		mock.callEvent("session_start", {}, context.ctx);
 
 		assert.equal(lastGoalStatus(mock), expectedStatus);
 		assert.equal(mock.sentUserMessages.length, 0);
@@ -189,7 +182,7 @@ test("always visibility respects a restrictive policy when starting a goal", asy
 	const mock = createMockPi();
 	registerGoal(mock.pi);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	mock.rawPi.setActiveTools(["read", "bash"]);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
@@ -204,7 +197,7 @@ test("after-first-goal does not widen a restrictive active turn", async () => {
 	const mock = createMockPi();
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext({ isIdle: () => false });
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
@@ -231,7 +224,7 @@ test("start fails without committing a goal when goal tools cannot become active
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	const originalSetActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
 	mock.rawPi.setActiveTools = (names: string[]) => {
@@ -250,7 +243,7 @@ test("failed first prompt delivery restores the locked tool set", async () => {
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 
 	const sendUserMessage = mock.rawPi.sendUserMessage.bind(mock.rawPi);
 	mock.rawPi.sendUserMessage = () => {
@@ -272,7 +265,7 @@ test("failed first prompt delivery preserves a preexisting external goal-tool se
 	});
 	registerGoal(mock.pi, "after-first-goal");
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	// Another extension exposes both terminal tools while pi-goal remains locked.
 	mock.rawPi.setActiveTools(["read", "goal_complete", "goal_blocked", "scrape"]);
 	mock.rawPi.sendUserMessage = () => {
@@ -337,7 +330,7 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 	registerGoal(mock.pi, "after-first-goal");
 	let aborts = 0;
 	const context = createMockContext({ abort: () => aborts++ });
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	const sentPrompts: string[] = [];
 	let rejectFirstSend: ((error: Error) => void) | undefined;
 	mock.rawPi.sendUserMessage = (prompt: string) => {
@@ -356,10 +349,10 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 	assert.equal(replacement.text, "replacement objective");
 	assert.equal(replacement.status, "active");
 
-	assert.deepEqual(mock.events.get("input")?.[0]?.({ source: "extension", text: sentPrompts[0] }, context.ctx), {
+	assert.deepEqual(mock.callEvent("input", { source: "extension", text: sentPrompts[0] }, context.ctx), {
 		action: "handled",
 	});
-	assert.equal(mock.events.get("input")?.[0]?.({ source: "extension", text: sentPrompts[1] }, context.ctx), undefined);
+	assert.equal(mock.callEvent("input", { source: "extension", text: sentPrompts[1] }, context.ctx), undefined);
 	assert.equal(aborts, 0);
 	assert.equal(requireLastGoal(mock).id, replacement.id);
 	assert.equal(requireLastGoal(mock).status, "active");
@@ -374,7 +367,7 @@ test("a cleared Goal cannot deliver a kickoff still awaiting Suite preparation",
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	registerGoal(mock.pi);
 	const context = createMockContext();
-	mock.events.get("session_start")?.[0]?.({}, context.ctx);
+	mock.callEvent("session_start", {}, context.ctx);
 	let releasePreparation = () => {};
 	const preparation = new Promise<void>((resolve) => {
 		releasePreparation = resolve;

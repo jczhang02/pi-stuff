@@ -21,7 +21,7 @@ test("parent and child goal tool unlock policies stay isolated", async () => {
 	const root = createMockPi({ activeTools: ["read", "bash"] });
 	registerGoal(root.pi, "after-first-goal");
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("parent objective", rootContext.ctx);
 	assert.deepEqual(root.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 
@@ -30,7 +30,7 @@ test("parent and child goal tool unlock policies stay isolated", async () => {
 	});
 	registerGoal(child.pi, "after-first-goal");
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	assert.deepEqual(child.rawPi.getActiveTools(), ["read", "bash"]);
 	assert.deepEqual(root.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 
@@ -47,7 +47,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 	const rootContext = createMockContext({
 		sessionManager: { getBranch: () => rootBranch, getEntries: () => rootBranch },
 	});
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("parent objective", rootContext.ctx);
 
 	const rootGoal = requireLastGoal(root);
@@ -64,7 +64,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 	const childContext = createMockContext({
 		sessionManager: { getBranch: () => [], getEntries: () => [] },
 	});
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 
 	// Empty-child startup must not claim the parent goal or append any snapshot of it.
 	assert.equal(lastGoalStatus(child), null);
@@ -112,13 +112,13 @@ test("independent goal instances keep distinct concurrent active goals", async (
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	await child.commands.get("goal")?.handler("child objective", childContext.ctx);
 
 	const rootGoal = requireLastGoal(root);
@@ -139,13 +139,13 @@ test("independent goal instances keep completion local", async () => {
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	await child.commands.get("goal")?.handler("child objective", childContext.ctx);
 
 	const rootGoal = requireLastGoal(root);
@@ -196,7 +196,7 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	const rootContext = createMockContext({
 		sessionManager: { getBranch: () => rootBranch, getEntries: () => rootBranch },
 	});
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 
 	const childBranch: unknown[] = [assistantUsageEntry({ totalTokens: 2 })];
@@ -205,7 +205,7 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	const childContext = createMockContext({
 		sessionManager: { getBranch: () => childBranch, getEntries: () => childBranch },
 	});
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	await child.commands.get("goal")?.handler("child objective", childContext.ctx);
 
 	const rootGoal = requireLastGoal(root);
@@ -213,7 +213,7 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	const rootEntriesBefore = root.entries.length;
 	const childEntriesBefore = child.entries.length;
 
-	root.events.get("tool_execution_end")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("tool_execution_end", {}, rootContext.ctx);
 	assert.equal(root.entries.length, rootEntriesBefore + 1);
 	assert.equal(child.entries.length, childEntriesBefore);
 	const rootUpdated = requireLastGoal(root);
@@ -223,7 +223,7 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	assert.equal(requireLastGoal(child).id, childGoal.id);
 	assert.equal(requireLastGoal(child).text, "child objective");
 
-	child.events.get("tool_execution_end")?.[0]?.({}, childContext.ctx);
+	child.callEvent("tool_execution_end", {}, childContext.ctx);
 	assert.equal(root.entries.length, rootEntriesBefore + 1);
 	assert.equal(child.entries.length, childEntriesBefore + 1);
 	const childUpdated = requireLastGoal(child);
@@ -240,7 +240,7 @@ test("goal_blocked ownership stays on the root instance after child start", asyn
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 	const rootGoal = requireLastGoal(root);
 	const rootBlocker = requireGoalTool(root, "goal_blocked");
@@ -250,7 +250,7 @@ test("goal_blocked ownership stays on the root instance after child start", asyn
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	assert.equal(lastGoalStatus(child), null);
 
 	const result = await rootBlocker.execute(
@@ -291,22 +291,19 @@ test("pending continuation and budget state survive later child startup", async 
 	const rootContext = createMockContext({
 		sessionManager: { getBranch: () => rootBranch, getEntries: () => rootBranch },
 	});
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("--tokens 1 root objective", rootContext.ctx);
 	const rootGoal = requireLastGoal(root);
 	const rootUserMessagesBefore = root.sentUserMessages.length;
 
 	// Record the parent continuation before the child starts. Child session_start must not
 	// clear an already-pending continuation or reroute its eventual delivery.
-	await root.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		rootContext.ctx,
-	);
+	await root.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, rootContext.ctx);
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
-	root.events.get("agent_settled")?.[0]?.({}, rootContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
+	root.callEvent("agent_settled", {}, rootContext.ctx);
 	assert.equal(root.sentUserMessages.length, rootUserMessagesBefore + 1);
 	const staleContinuation = root.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, new RegExp(`<!-- pi-goal-continuation:${rootGoal.id}:`));
@@ -315,7 +312,7 @@ test("pending continuation and budget state survive later child startup", async 
 	// Establish the parent budget wrap-up before another child starts. Its context marker
 	// must remain authorized by the parent runtime after that later child session_start.
 	rootBranch.push(assistantUsageEntry({ totalTokens: 5 }));
-	root.events.get("tool_execution_end")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("tool_execution_end", {}, rootContext.ctx);
 	assert.equal(lastGoalStatus(root), "budget_limited");
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const wrapUp = root.sentMessages.at(-1)?.message as {
@@ -328,22 +325,21 @@ test("pending continuation and budget state survive later child startup", async 
 	const laterChild = createMockPi();
 	registerGoal(laterChild.pi);
 	const laterChildContext = createMockContext();
-	laterChild.events.get("session_start")?.[0]?.({}, laterChildContext.ctx);
+	laterChild.callEvent("session_start", {}, laterChildContext.ctx);
 	const contextMessages = [
 		{ role: "custom", customType: wrapUp.customType, details: wrapUp.details },
 		{ role: "user", content: "continue" },
 	];
-	assert.equal(root.events.get("context")?.[0]?.({ messages: contextMessages }, rootContext.ctx), undefined);
+	assert.equal(root.callEvent("context", { messages: contextMessages }, rootContext.ctx), undefined);
 	assert.equal(child.sentMessages.length, 0);
 	assert.equal(laterChild.sentMessages.length, 0);
 	assert.equal(lastGoalStatus(child), null);
 	assert.equal(lastGoalStatus(laterChild), null);
-	assert.deepEqual(
-		root.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, rootContext.ctx),
-		{ action: "handled" },
-	);
+	assert.deepEqual(root.callEvent("input", { source: "extension", text: staleContinuation }, rootContext.ctx), {
+		action: "handled",
+	});
 	assert.equal(
-		laterChild.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, laterChildContext.ctx),
+		laterChild.callEvent("input", { source: "extension", text: staleContinuation }, laterChildContext.ctx),
 		undefined,
 	);
 
@@ -356,24 +352,21 @@ test("stale tool guard survives later child startup", async () => {
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 	await root.commands.get("goal")?.handler("pause", rootContext.ctx);
 
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	const rootToolCall = root.events.get("tool_call")?.[0];
 	assert.deepEqual(rootToolCall?.({ toolName: "bash", toolCallId: "root-stale", input: {} }, rootContext.ctx), {
 		block: true,
 		reason: STALE_GOAL_TOOL_REASON,
 	});
 	assert.equal(
-		child.events.get("tool_call")?.[0]?.(
-			{ toolName: "bash", toolCallId: "child-fresh", input: {} },
-			childContext.ctx,
-		),
+		child.callEvent("tool_call", { toolName: "bash", toolCallId: "child-fresh", input: {} }, childContext.ctx),
 		undefined,
 	);
 
@@ -391,12 +384,13 @@ test("pending compaction recovery survives later child startup", async () => {
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 	requireLastGoal(root);
 	const rootUserMessagesBefore = root.sentUserMessages.length;
 
-	await root.events.get("agent_end")?.[0]?.(
+	await root.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -412,15 +406,16 @@ test("pending compaction recovery survives later child startup", async () => {
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
-	root.events.get("session_before_compact")?.[0]?.({}, rootContext.ctx);
-	await root.events.get("session_compact")?.[0]?.({}, rootContext.ctx);
-	root.events.get("agent_start")?.[0]?.({}, rootContext.ctx);
-	await root.events.get("agent_end")?.[0]?.(
+	child.callEvent("session_start", {}, childContext.ctx);
+	root.callEvent("session_before_compact", {}, rootContext.ctx);
+	await root.callEvent("session_compact", {}, rootContext.ctx);
+	root.callEvent("agent_start", {}, rootContext.ctx);
+	await root.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		rootContext.ctx,
 	);
-	await root.events.get("agent_settled")?.[0]?.({}, rootContext.ctx);
+	await root.callEvent("agent_settled", {}, rootContext.ctx);
 	assert.equal(root.sentUserMessages.length, rootUserMessagesBefore + 1);
 	assert.equal(child.sentUserMessages.length, 0);
 	assert.equal(lastGoalStatus(root), "active");
@@ -435,7 +430,7 @@ test("completion status timer survives later child startup", async (t) => {
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 	const rootGoal = requireLastGoal(root);
 	await requireGoalTool(root, "goal_complete").execute(
@@ -450,7 +445,7 @@ test("completion status timer survives later child startup", async (t) => {
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	t.mock.timers.tick(8_000);
 	assert.equal(goalStatusSnapshot(root.pi), undefined);
 	assert.equal(goalStatusSnapshot(child.pi), undefined);
@@ -463,7 +458,7 @@ test("child shutdown does not clear the parent goal", async () => {
 	const root = createMockPi();
 	registerGoal(root.pi);
 	const rootContext = createMockContext();
-	root.events.get("session_start")?.[0]?.({}, rootContext.ctx);
+	root.callEvent("session_start", {}, rootContext.ctx);
 	await root.commands.get("goal")?.handler("root objective", rootContext.ctx);
 	const rootGoal = requireLastGoal(root);
 	const rootEntriesBeforeChild = root.entries.length;
@@ -471,7 +466,7 @@ test("child shutdown does not clear the parent goal", async () => {
 	const child = createMockPi();
 	registerGoal(child.pi);
 	const childContext = createMockContext();
-	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
+	child.callEvent("session_start", {}, childContext.ctx);
 	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 
 	assert.equal(requireLastGoal(root).id, rootGoal.id);

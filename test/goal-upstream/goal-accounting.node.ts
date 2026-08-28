@@ -273,7 +273,7 @@ test("active idle Goal automatically continues after reload", async () => {
 		hasPendingMessages: () => false,
 	});
 	assert.equal(restored.mock.sentUserMessages.length, 0);
-	await restored.mock.events.get("session_start")?.[0]?.({ reason: "reload" }, restored.ctx);
+	await restored.mock.callEvent("session_start", { reason: "reload" }, restored.ctx);
 	assert.equal(restored.mock.sentUserMessages.length, 1);
 	assert.match(restored.mock.sentUserMessages[0]?.text ?? "", /pi-goal-continuation:/);
 	assertPromptHasGoalId(restored.mock.sentUserMessages[0]?.text ?? "", sessionGoal.id);

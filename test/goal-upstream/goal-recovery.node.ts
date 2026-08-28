@@ -87,19 +87,19 @@ test("agent_end maps abort, quota failure, and terminal error to distinct stoppe
 	] as const) {
 		let aborts = 0;
 		const stopped = await startGoalForTest({ abort: () => aborts++ });
-		await stopped.mock.events.get("agent_end")?.[0]?.({ messages: [assistant] }, stopped.ctx);
+		await stopped.mock.callEvent("agent_end", { messages: [assistant] }, stopped.ctx);
 
 		assert.equal(lastGoalStatus(stopped.mock), status);
 		assert.equal(aborts, 1);
 		assert.match(stopped.notifications.at(-1)?.message ?? "", notification);
-		await stopped.mock.events.get("agent_settled")?.[0]?.({}, stopped.ctx);
+		await stopped.mock.callEvent("agent_settled", {}, stopped.ctx);
 		assert.equal(stopped.mock.sentUserMessages.length, 1);
 		const staleToolCall = stopped.mock.events.get("tool_call")?.[0];
 		assert.deepEqual(staleToolCall?.({ toolName: "bash", toolCallId: `stale-${status}`, input: {} }, stopped.ctx), {
 			block: true,
 			reason: STALE_GOAL_TOOL_REASON,
 		});
-		stopped.mock.events.get("input")?.[0]?.({ source: "extension", text: "unrelated extension work" }, stopped.ctx);
+		stopped.mock.callEvent("input", { source: "extension", text: "unrelated extension work" }, stopped.ctx);
 		assert.deepEqual(
 			staleToolCall?.({ toolName: "bash", toolCallId: `still-stale-${status}`, input: {} }, stopped.ctx),
 			{ block: true, reason: STALE_GOAL_TOOL_REASON },
@@ -121,7 +121,8 @@ test("terminal agent errors take precedence over missing goal tools", async () =
 		const stopped = await startGoalForTest();
 		stopped.mock.rawPi.setActiveTools(["read", "bash"]);
 
-		await stopped.mock.events.get("agent_end")?.[0]?.(
+		await stopped.mock.callEvent(
+			"agent_end",
 			{ messages: [{ role: "assistant", stopReason: "error", errorMessage }] },
 			stopped.ctx,
 		);
@@ -159,19 +160,21 @@ test("agent_end keeps retryable interruptions active after Pi exhausts its own r
 		["opaque", "Opaque provider failure code ZETA without a classifier hint"],
 	] as const) {
 		const retryable = await startGoalForTest();
-		await retryable.mock.events.get("agent_end")?.[0]?.(
+		await retryable.mock.callEvent(
+			"agent_end",
 			{ messages: [{ role: "assistant", stopReason: "error", errorMessage }] },
 			retryable.ctx,
 		);
 		assert.equal(lastGoalStatus(retryable.mock), "active");
 		assert.equal(
-			retryable.mock.events.get("tool_call")?.[0]?.(
+			retryable.mock.callEvent(
+				"tool_call",
 				{ toolName: "bash", toolCallId: `${name}-retry-tool`, input: {} },
 				retryable.ctx,
 			),
 			undefined,
 		);
-		await retryable.mock.events.get("agent_settled")?.[0]?.({}, retryable.ctx);
+		await retryable.mock.callEvent("agent_settled", {}, retryable.ctx);
 		assert.equal(retryable.mock.sentUserMessages.length, 2);
 		assert.equal(lastGoalStatus(retryable.mock), "active");
 	}
@@ -180,7 +183,8 @@ test("agent_end keeps retryable interruptions active after Pi exhausts its own r
 test("agent_end stops usage-limited interruptions and blocks stale tools", async () => {
 	let aborts = 0;
 	const nonRetryable = await startGoalForTest({ abort: () => aborts++ });
-	await nonRetryable.mock.events.get("agent_end")?.[0]?.(
+	await nonRetryable.mock.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -195,27 +199,26 @@ test("agent_end stops usage-limited interruptions and blocks stale tools", async
 
 	assert.equal(aborts, 1);
 	assert.equal(lastGoalStatus(nonRetryable.mock), "usage_limited");
-	await nonRetryable.mock.events.get("agent_settled")?.[0]?.({}, nonRetryable.ctx);
+	await nonRetryable.mock.callEvent("agent_settled", {}, nonRetryable.ctx);
 	assert.equal(nonRetryable.mock.sentUserMessages.length, 1);
 	assert.deepEqual(
-		nonRetryable.mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "bash", toolCallId: "t1", input: {} },
-			nonRetryable.ctx,
-		),
+		nonRetryable.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "t1", input: {} }, nonRetryable.ctx),
 		{ block: true, reason: STALE_GOAL_TOOL_REASON },
 	);
 });
 
 test("automatic ownership survives agent_start retry without before_agent_start", async () => {
 	const retried = await startGoalForTest({}, "finish", LOW_LIMITS_SETTINGS_PATH);
-	await retried.mock.events.get("agent_end")?.[0]?.(
+	await retried.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		retried.ctx,
 	);
-	await retried.mock.events.get("agent_settled")?.[0]?.({}, retried.ctx);
+	await retried.mock.callEvent("agent_settled", {}, retried.ctx);
 	const continuation = retried.mock.sentUserMessages.at(-1)?.text ?? "";
-	retried.mock.events.get("before_agent_start")?.[0]?.({ prompt: continuation, systemPrompt: "base" }, retried.ctx);
-	retried.mock.events.get("turn_end")?.[0]?.(
+	retried.mock.callEvent("before_agent_start", { prompt: continuation, systemPrompt: "base" }, retried.ctx);
+	retried.mock.callEvent(
+		"turn_end",
 		{
 			message: {
 				role: "assistant",
@@ -227,7 +230,8 @@ test("automatic ownership survives agent_start retry without before_agent_start"
 		},
 		retried.ctx,
 	);
-	await retried.mock.events.get("agent_end")?.[0]?.(
+	await retried.mock.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -242,16 +246,18 @@ test("automatic ownership survives agent_start retry without before_agent_start"
 	);
 	assert.equal(requireLastGoal(retried.mock).automaticModelTurns, 1);
 
-	retried.mock.events.get("agent_start")?.[0]?.({}, retried.ctx);
-	retried.mock.events.get("turn_end")?.[0]?.(
+	retried.mock.callEvent("agent_start", {}, retried.ctx);
+	retried.mock.callEvent(
+		"turn_end",
 		{ message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] },
 		retried.ctx,
 	);
-	await retried.mock.events.get("agent_end")?.[0]?.(
+	await retried.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 		retried.ctx,
 	);
-	await retried.mock.events.get("agent_settled")?.[0]?.({}, retried.ctx);
+	await retried.mock.callEvent("agent_settled", {}, retried.ctx);
 
 	assert.equal(lastGoalStatus(retried.mock), "active");
 	assert.equal(requireLastGoal(retried.mock).automaticModelTurns, 2);
@@ -259,7 +265,8 @@ test("automatic ownership survives agent_start retry without before_agent_start"
 
 test("stale exhausted recovery cannot block a replacement goal", async () => {
 	const replaced = await startGoalForTest();
-	await replaced.mock.events.get("agent_end")?.[0]?.(
+	await replaced.mock.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -276,7 +283,7 @@ test("stale exhausted recovery cannot block a replacement goal", async () => {
 	const replacement = requireLastGoal(replaced.mock);
 	assert.notEqual(replacement.id, oldGoal.id);
 
-	await replaced.mock.events.get("agent_settled")?.[0]?.({}, replaced.ctx);
+	await replaced.mock.callEvent("agent_settled", {}, replaced.ctx);
 	assert.equal(requireLastGoal(replaced.mock).id, replacement.id);
 	assert.equal(lastGoalStatus(replaced.mock), "active");
 });
@@ -288,7 +295,8 @@ test("an exhausted goal does not remain active for a retryable provider error", 
 		"--tokens 10 finish",
 	);
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
-	await budgeted.mock.events.get("agent_end")?.[0]?.(
+	await budgeted.mock.callEvent(
+		"agent_end",
 		{
 			messages: [{ role: "assistant", stopReason: "error", errorMessage: "WebSocket closed 1000" }],
 		},
@@ -298,13 +306,10 @@ test("an exhausted goal does not remain active for a retryable provider error", 
 	assert.equal(lastGoalStatus(budgeted.mock), "budget_limited");
 	assert.equal(budgeted.mock.sentMessages.length, 0);
 	assert.deepEqual(
-		await budgeted.mock.events.get("session_before_compact")?.[0]?.(
-			{ reason: "overflow", willRetry: true },
-			budgeted.ctx,
-		),
+		await budgeted.mock.callEvent("session_before_compact", { reason: "overflow", willRetry: true }, budgeted.ctx),
 		{ cancel: true },
 	);
-	await budgeted.mock.events.get("agent_settled")?.[0]?.({}, budgeted.ctx);
+	await budgeted.mock.callEvent("agent_settled", {}, budgeted.ctx);
 	assert.equal(budgeted.mock.sentUserMessages.length, 1);
 });
 
@@ -315,7 +320,8 @@ test("agent_end keeps Codex retry-hinted errors active without stale tool blocki
 		"Codex error: An error occurred while processing your request. You can retry your request.\n\n[codex-generic-retry] provider returned error; treating Codex retryable backend failure as retryable.";
 
 	assert.equal(isRetryableGoalInterruption({ role: "assistant", stopReason: "error", errorMessage }), true);
-	await retryable.mock.events.get("agent_end")?.[0]?.(
+	await retryable.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "error", errorMessage }] },
 		retryable.ctx,
 	);
@@ -323,7 +329,8 @@ test("agent_end keeps Codex retry-hinted errors active without stale tool blocki
 	assert.equal(aborts, 0);
 	assert.equal(lastGoalStatus(retryable.mock), "active");
 	assert.equal(
-		retryable.mock.events.get("tool_call")?.[0]?.(
+		retryable.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "codex-retry-tool", input: {} },
 			retryable.ctx,
 		),
@@ -335,7 +342,8 @@ test("overflow compaction retry keeps the goal active and does not block retry t
 	let aborts = 0;
 	const overflow = await startGoalForTest({ abort: () => aborts++ });
 
-	await overflow.mock.events.get("agent_end")?.[0]?.(
+	await overflow.mock.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -352,31 +360,30 @@ test("overflow compaction retry keeps the goal active and does not block retry t
 	assert.equal(lastGoalStatus(overflow.mock), "active");
 	assert.equal(overflow.mock.sentUserMessages.length, 1);
 	assert.equal(
-		overflow.mock.events.get("tool_call")?.[0]?.(
-			{ toolName: "read", toolCallId: "retry-tool", input: {} },
-			overflow.ctx,
-		),
+		overflow.mock.callEvent("tool_call", { toolName: "read", toolCallId: "retry-tool", input: {} }, overflow.ctx),
 		undefined,
 	);
 
-	overflow.mock.events.get("session_before_compact")?.[0]?.({}, overflow.ctx);
-	await overflow.mock.events.get("session_compact")?.[0]?.({}, overflow.ctx);
+	overflow.mock.callEvent("session_before_compact", {}, overflow.ctx);
+	await overflow.mock.callEvent("session_compact", {}, overflow.ctx);
 	assert.equal(lastGoalStatus(overflow.mock), "active");
 
 	// Pi retries through agent.continue(), which emits agent_start but not before_agent_start.
-	overflow.mock.events.get("agent_start")?.[0]?.({}, overflow.ctx);
-	await overflow.mock.events.get("agent_end")?.[0]?.(
+	overflow.mock.callEvent("agent_start", {}, overflow.ctx);
+	await overflow.mock.callEvent(
+		"agent_end",
 		{
 			messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "recovered" }] }],
 		},
 		overflow.ctx,
 	);
-	await overflow.mock.events.get("agent_settled")?.[0]?.({}, overflow.ctx);
+	await overflow.mock.callEvent("agent_settled", {}, overflow.ctx);
 
 	assert.equal(lastGoalStatus(overflow.mock), "active");
 	assert.equal(overflow.mock.sentUserMessages.length, 2);
 	assert.equal(
-		overflow.mock.events.get("tool_call")?.[0]?.(
+		overflow.mock.callEvent(
+			"tool_call",
 			{ toolName: "bash", toolCallId: "post-compact-retry-tool", input: {} },
 			overflow.ctx,
 		),
@@ -387,9 +394,9 @@ test("overflow compaction retry keeps the goal active and does not block retry t
 test("compaction with willRetry true does not enqueue a goal continuation", async () => {
 	const retrying = await startGoalForTest();
 
-	retrying.mock.events.get("session_before_compact")?.[0]?.({ reason: "overflow", willRetry: true }, retrying.ctx);
-	await retrying.mock.events.get("session_compact")?.[0]?.({ reason: "overflow", willRetry: true }, retrying.ctx);
-	await retrying.mock.events.get("agent_settled")?.[0]?.({}, retrying.ctx);
+	retrying.mock.callEvent("session_before_compact", { reason: "overflow", willRetry: true }, retrying.ctx);
+	await retrying.mock.callEvent("session_compact", { reason: "overflow", willRetry: true }, retrying.ctx);
+	await retrying.mock.callEvent("agent_settled", {}, retrying.ctx);
 
 	assert.equal(lastGoalStatus(retrying.mock), "active");
 	assert.equal(retrying.mock.sentUserMessages.length, 1);
@@ -398,36 +405,37 @@ test("compaction with willRetry true does not enqueue a goal continuation", asyn
 test("manual compaction cancels stale continuation and sends one fresh continuation", async () => {
 	let idle = true;
 	const compacted = await startGoalForTest({ isIdle: () => idle });
-	await compacted.mock.events.get("agent_end")?.[0]?.(
+	await compacted.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop" }] },
 		compacted.ctx,
 	);
-	await compacted.mock.events.get("agent_settled")?.[0]?.({}, compacted.ctx);
+	await compacted.mock.callEvent("agent_settled", {}, compacted.ctx);
 	const staleContinuation = compacted.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, /pi-goal-continuation/);
 
-	compacted.mock.events.get("session_before_compact")?.[0]?.({ reason: "threshold", willRetry: false }, compacted.ctx);
+	compacted.mock.callEvent("session_before_compact", { reason: "threshold", willRetry: false }, compacted.ctx);
 	assert.deepEqual(
-		compacted.mock.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, compacted.ctx),
+		compacted.mock.callEvent("input", { source: "extension", text: staleContinuation }, compacted.ctx),
 		{ action: "handled" },
 	);
 
 	idle = false;
-	await compacted.mock.events.get("session_compact")?.[0]?.({ reason: "threshold", willRetry: false }, compacted.ctx);
+	await compacted.mock.callEvent("session_compact", { reason: "threshold", willRetry: false }, compacted.ctx);
 	assert.equal(compacted.mock.sentUserMessages.length, 2);
 
 	idle = true;
-	await compacted.mock.events.get("agent_settled")?.[0]?.({}, compacted.ctx);
+	await compacted.mock.callEvent("agent_settled", {}, compacted.ctx);
 	const freshContinuation = compacted.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 	assert.match(freshContinuation, /pi-goal-continuation/);
 	assert.notEqual(freshContinuation, staleContinuation);
 	assert.equal(
-		compacted.mock.events.get("input")?.[0]?.({ source: "extension", text: freshContinuation }, compacted.ctx),
+		compacted.mock.callEvent("input", { source: "extension", text: freshContinuation }, compacted.ctx),
 		undefined,
 	);
 
-	await compacted.mock.events.get("session_compact")?.[0]?.({ reason: "threshold", willRetry: false }, compacted.ctx);
+	await compacted.mock.callEvent("session_compact", { reason: "threshold", willRetry: false }, compacted.ctx);
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 });
 
@@ -457,17 +465,18 @@ test("native compaction failure replaces a stale Goal continuation exactly once"
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	assert.equal(compacted.mock.sentUserMessages.length, 1);
 
-	await compacted.mock.events.get("agent_end")?.[0]?.(
+	await compacted.mock.callEvent(
+		"agent_end",
 		{ messages: [{ role: "assistant", stopReason: "stop" }] },
 		compacted.ctx,
 	);
-	await compacted.mock.events.get("agent_settled")?.[0]?.({}, compacted.ctx);
+	await compacted.mock.callEvent("agent_settled", {}, compacted.ctx);
 	const staleContinuation = compacted.mock.sentUserMessages.at(-1)?.text ?? "";
 	assert.match(staleContinuation, /pi-goal-continuation/);
 
-	compacted.mock.events.get("session_before_compact")?.[0]?.({ reason: "threshold", willRetry: true }, compacted.ctx);
+	compacted.mock.callEvent("session_before_compact", { reason: "threshold", willRetry: true }, compacted.ctx);
 	assert.deepEqual(
-		compacted.mock.events.get("input")?.[0]?.({ source: "extension", text: staleContinuation }, compacted.ctx),
+		compacted.mock.callEvent("input", { source: "extension", text: staleContinuation }, compacted.ctx),
 		{ action: "handled" },
 	);
 
@@ -499,26 +508,24 @@ test("stale goal tool calls are blocked after pause until a fresh non-goal promp
 		reason: STALE_GOAL_TOOL_REASON,
 	});
 
-	paused.mock.events.get("input")?.[0]?.({ source: "extension", text: "unrelated extension message" }, paused.ctx);
+	paused.mock.callEvent("input", { source: "extension", text: "unrelated extension message" }, paused.ctx);
 	assert.deepEqual(pauseToolCall?.({ toolName: "bash", toolCallId: "t2", input: {} }, paused.ctx), {
 		block: true,
 		reason: STALE_GOAL_TOOL_REASON,
 	});
 
-	paused.mock.events.get("input")?.[0]?.(
-		{ source: "interactive", text: "/goal edit revised paused objective" },
-		paused.ctx,
-	);
+	paused.mock.callEvent("input", { source: "interactive", text: "/goal edit revised paused objective" }, paused.ctx);
 	assert.deepEqual(pauseToolCall?.({ toolName: "bash", toolCallId: "t3", input: {} }, paused.ctx), {
 		block: true,
 		reason: STALE_GOAL_TOOL_REASON,
 	});
 
-	paused.mock.events.get("input")?.[0]?.({ source: "interactive", text: "what happened?" }, paused.ctx);
-	paused.mock.events.get("before_agent_start")?.[0]?.({ prompt: "what happened?", systemPrompt: "base" }, paused.ctx);
-	paused.mock.events.get("agent_start")?.[0]?.({}, paused.ctx);
-	paused.mock.events.get("turn_start")?.[0]?.({}, paused.ctx);
-	paused.mock.events.get("message_start")?.[0]?.(
+	paused.mock.callEvent("input", { source: "interactive", text: "what happened?" }, paused.ctx);
+	paused.mock.callEvent("before_agent_start", { prompt: "what happened?", systemPrompt: "base" }, paused.ctx);
+	paused.mock.callEvent("agent_start", {}, paused.ctx);
+	paused.mock.callEvent("turn_start", {}, paused.ctx);
+	paused.mock.callEvent(
+		"message_start",
 		{ message: { role: "user", content: [{ type: "text", text: "what happened?" }] } },
 		paused.ctx,
 	);

@@ -501,7 +501,8 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 	const usageEvents = observeRun(usageMock, "usage-run");
 	startRun(usageMock, "usage-run");
 	await flush();
-	usageMock.events.get("agent_end")?.[0]?.(
+	usageMock.callEvent(
+		"agent_end",
 		{
 			messages: [
 				{
@@ -533,7 +534,8 @@ test("budget exhaustion emits the budget-limited terminal state", async () => {
 	await flush();
 	branch.push(assistantUsageEntry(12));
 
-	await mock.events.get("tool_execution_end")?.[0]?.(
+	await mock.callEvent(
+		"tool_execution_end",
 		{ toolCallId: "budget-tool", toolName: "bash", result: {}, isError: false },
 		context.ctx,
 	);

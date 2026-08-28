@@ -168,7 +168,7 @@ test("session replacement invalidates old run ownership and terminal details", a
 	const secondContext = createMockContext({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
-	mock.events.get("session_start")?.[0]?.({}, secondContext.ctx);
+	mock.callEvent("session_start", {}, secondContext.ctx);
 	const staleEvents = observeRun(mock, "old-run");
 	cancelRun(mock, "old-run");
 	await flush();

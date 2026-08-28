@@ -121,10 +121,7 @@ test("goal_complete advances only after the finishing run settles", async () => 
 		],
 	);
 
-	await harness.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "toolUse" }] },
-		harness.ctx,
-	);
+	await harness.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "toolUse" }] }, harness.ctx);
 	assert.equal(stateGoals(harness.mock)[0]?.status, "complete");
 	await settled(harness);
 	assert.deepEqual(
@@ -162,8 +159,8 @@ test("automatic queue advance preserves a shelved goal safety epoch", async () =
 	assert.equal(activated?.lastToolFreeOutputFingerprint, "a".repeat(64));
 
 	const prompt = harness.mock.sentUserMessages.at(-1)?.text ?? "";
-	harness.mock.events.get("input")?.[0]?.({ source: "extension", text: prompt }, harness.ctx);
-	harness.mock.events.get("before_agent_start")?.[0]?.({ prompt, systemPrompt: "base" }, harness.ctx);
+	harness.mock.callEvent("input", { source: "extension", text: prompt }, harness.ctx);
+	harness.mock.callEvent("before_agent_start", { prompt, systemPrompt: "base" }, harness.ctx);
 	const started = stateGoals(harness.mock)[0];
 	assert.equal(started?.automaticModelTurns, 7);
 	assert.equal(started?.toolFreeRepeatCount, 2);
