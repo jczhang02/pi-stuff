@@ -28,6 +28,8 @@ restore scans. `fallback-session.ts` only freezes and restores a fork between el
 `async-contract.ts`, and `process-terminal.ts` own their corresponding cross-process contracts;
 `runs/shared/subagent-prompt-runtime.ts` owns child prompt/provider composition, while
 `runs/shared/steering-inbox.ts` owns durable steering delivery and acknowledgement state;
+`runs/shared/nested-registry.ts` owns nested route resolution, `nested-registry-store.ts` owns bounded registry reads
+and caching, and `nested-registry-projection.ts` owns serialized event projection and route settlement;
 `runtime/runtime-state.ts` owns in-memory foreground and Extension state. `shared/types.ts` retains common configuration
 and the compatibility type facade. Within foreground execution, `executor-contract.ts` defines the private composition
 contract. `launch-preparation.ts` owns one launch-admission transaction across inputs, budgets, fork-session selection,
