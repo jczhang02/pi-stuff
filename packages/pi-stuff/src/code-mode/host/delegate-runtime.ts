@@ -161,6 +161,7 @@ export class CodeModeDelegateRuntime {
 		try {
 			input = decodeTransportValue(invocation.input);
 			plan = tool.ledger === "bypass" ? undefined : context.beginToolCall?.(name, input);
+			if (hidden) this.traces.reserve(cellId);
 			trace = hidden
 				? { id: plan?.id ?? invocation.runtime_tool_call_id, input, name, status: "running" }
 				: this.traces.start(cellId, plan?.id ?? invocation.runtime_tool_call_id, name, input, plan);

@@ -25,24 +25,33 @@ function cloneTrace(trace: RuntimeToolTrace): RuntimeToolTrace {
 }
 
 export class CodeModeTraceStore {
+	private readonly operationCounts = new Map<string, number>();
 	private readonly traces = new Map<string, RuntimeToolTrace[]>();
 
 	clear(): void {
+		this.operationCounts.clear();
 		this.traces.clear();
 	}
 
 	delete(cellId: string): void {
+		this.operationCounts.delete(cellId);
 		this.traces.delete(cellId);
+	}
+
+	reserve(cellId: string): void {
+		const count = this.operationCounts.get(cellId) ?? 0;
+		if (count >= MAX_OPERATION_COUNT) {
+			throw new Error(`Code Mode supports at most ${String(MAX_OPERATION_COUNT)} nested Tool calls per execution`);
+		}
+		this.operationCounts.set(cellId, count + 1);
 	}
 
 	start(cellId: string, id: string, name: string, input: CodemodeValue, plan?: RuntimeToolCallPlan): RuntimeToolTrace {
 		const traces = this.traces.get(cellId) ?? [];
-		if (traces.length >= MAX_OPERATION_COUNT) {
-			throw new Error(`Code Mode supports at most ${String(MAX_OPERATION_COUNT)} nested Tool calls per execution`);
-		}
 		if (traces.some((trace) => trace.id === id)) {
 			throw new Error(`Duplicate Code Mode nested Tool call ID: ${id}`);
 		}
+		this.reserve(cellId);
 		const trace: RuntimeToolTrace = {
 			id,
 			input,

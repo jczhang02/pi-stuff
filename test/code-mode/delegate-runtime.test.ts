@@ -333,3 +333,52 @@ test("an unserializable Tool result settles as an error before durable success",
 	]);
 	runtime.clear();
 });
+
+test("hidden nested Tools count against the per-execution safety bound", async () => {
+	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
+	let invocations = 0;
+	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-hidden-limit",
+		{ cwd: "/project" },
+		new Map([
+			[
+				"hidden",
+				{
+					description: "hidden fixture",
+					inputSchema: Type.Object({}),
+					invoke: async () => {
+						invocations += 1;
+						return true;
+					},
+					name: "hidden",
+					presentation: "hidden",
+					usage: "tools.hidden({})",
+				},
+			],
+		]),
+	);
+	for (let index = 1; index <= 769; index += 1) {
+		runtime.handleRequest({
+			id: index,
+			request: {
+				invocation: {
+					cell_id: "cell-hidden-limit",
+					input: {},
+					runtime_tool_call_id: `hidden-${String(index)}`,
+					tool_name: { name: "hidden" },
+				},
+				type: "tool/invoke",
+			},
+		});
+	}
+	for (let attempt = 0; attempt < 20 && responses.length < 769; attempt += 1) await Bun.sleep(1);
+
+	expect(invocations).toBe(768);
+	expect(responses).toHaveLength(769);
+	expect(responses.find((response) => response.id === 769)?.result).toEqual({
+		message: "Code Mode supports at most 768 nested Tool calls per execution",
+		status: "error",
+	});
+	runtime.clear();
+});
