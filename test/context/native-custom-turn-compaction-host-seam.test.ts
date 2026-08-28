@@ -61,7 +61,7 @@ function contextText(context: Context): string {
 		.join("\n");
 }
 
-test("native Pi compacts a cold near-limit session before a Suite custom trigger turn", async () => {
+async function createColdCompactionFixture() {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-native-custom-compaction-"));
 	temporaryRoots.push(root);
 	const agentDir = join(root, "agent");
@@ -120,8 +120,18 @@ test("native Pi compacts a cold near-limit session before a Suite custom trigger
 	seeded.appendMessage(assistantMessage(provider, modelId, "Recent tail completed.", 3500));
 	const sessionFile = seeded.getSessionFile();
 	if (!sessionFile) throw new Error("Expected the cold-session fixture to persist");
-	const reopened = SessionManager.open(sessionFile, sessionDir);
+	return {
+		agentDir,
+		cwd,
+		faux,
+		model,
+		modelRuntime,
+		reopened: SessionManager.open(sessionFile, sessionDir),
+	};
+}
 
+async function createNativeCompactionSession(fixture: Awaited<ReturnType<typeof createColdCompactionFixture>>) {
+	const { agentDir, cwd, model, modelRuntime, reopened } = fixture;
 	let extensionApi: ExtensionAPI | undefined;
 	let extensionContextState: ContextStatusSnapshot | undefined;
 	let magicFactories = 0;
@@ -171,6 +181,18 @@ test("native Pi compacts a cold near-limit session before a Suite custom trigger
 		sessionStartEvent: { type: "session_start", reason: "resume" },
 		settingsManager,
 	});
+	return {
+		created,
+		extensionApi,
+		extensionContextState: () => extensionContextState,
+		magicFactories: () => magicFactories,
+	};
+}
+
+test("native Pi compacts a cold near-limit session before a Suite custom trigger turn", async () => {
+	const fixture = await createColdCompactionFixture();
+	const { created, extensionApi, extensionContextState, magicFactories } =
+		await createNativeCompactionSession(fixture);
 	sessions.push(created.session);
 	expect(created.extensionsResult.errors).toEqual([]);
 	await created.session.bindExtensions({ shutdownHandler: async () => {} });
@@ -193,7 +215,7 @@ test("native Pi compacts a cold near-limit session before a Suite custom trigger
 		expect(contextText(context)).toContain("COLD_RELOAD_NATIVE_SUMMARY");
 		return fauxAssistantMessage("Recovered after native compaction");
 	};
-	faux.setResponses([respond, respond, respond, respond]);
+	fixture.faux.setResponses([respond, respond, respond, respond]);
 	const compactionReasons: string[] = [];
 	created.session.subscribe((event) => {
 		if (event.type === "compaction_start") compactionReasons.push(event.reason);
@@ -210,8 +232,8 @@ test("native Pi compacts a cold near-limit session before a Suite custom trigger
 	);
 	await created.session.waitForIdle();
 
-	expect(magicFactories).toBe(0);
-	expect(extensionContextState).toEqual({ state: "dormant", engine: "native" });
+	expect(magicFactories()).toBe(0);
+	expect(extensionContextState()).toEqual({ state: "dormant", engine: "native" });
 	expect(requests).toEqual(["summary", "summary", "retry"]);
 	// Pi's public ExtensionContext exposes only manual compact(), so Pi Stuff
 	// performs the threshold-equivalent preflight through that callback API.

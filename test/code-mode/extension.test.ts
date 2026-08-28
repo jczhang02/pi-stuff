@@ -160,144 +160,145 @@ test("the outer Tool result boundary replaces malformed images before Session pe
 	});
 });
 
+const noOutput = "Code completed with no output; use text(...) to return a value";
+const operation = {
+	args: { path: "a.ts" },
+	id: "nested-read",
+	name: "read",
+	result: { content: [{ type: "text" as const, text: "file contents" }], details: {} },
+	state: "success" as const,
+};
+const nestedError = {
+	...operation,
+	id: "nested-error",
+	result: { content: [{ type: "text" as const, text: "read failed" }], details: {}, isError: true },
+	state: "error" as const,
+};
+const cases = [
+	{
+		code: "await yield_control()",
+		content: [{ type: "text" as const, text: "continued" }],
+		expected: [],
+		id: "bare-control",
+		operations: [],
+	},
+	{
+		code: 'await yield_control(); text("继续等待。")',
+		content: [{ type: "text" as const, text: "继续等待。" }],
+		expected: [],
+		id: "literal-control",
+		operations: [],
+	},
+	{
+		code: 'async () => { await yield_control(); text("waiting"); }',
+		content: [{ type: "text" as const, text: "waiting" }],
+		expected: [],
+		id: "wrapped-control",
+		operations: [],
+	},
+	{
+		code: "async () => await yield_control()",
+		content: [{ type: "text" as const, text: "waiting" }],
+		expected: [],
+		id: "expression-control",
+		operations: [],
+	},
+	{
+		code: "const total = 1 + 1",
+		content: [{ type: "text" as const, text: noOutput }],
+		expected: [],
+		id: "no-output",
+		operations: [],
+	},
+	{
+		code: 'await yield_control(); await tools.read({ path: "a.ts" })',
+		content: [{ type: "text" as const, text: noOutput }],
+		expected: ["read"],
+		id: "mixed-work",
+		operations: [operation],
+	},
+	{
+		code: 'text("2")',
+		content: [{ type: "text" as const, text: "2" }],
+		expected: [],
+		id: "meaningful-output",
+		operations: [],
+	},
+	{
+		code: "image(value)",
+		content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
+		expected: [],
+		id: "media-output",
+		operations: [],
+	},
+	{
+		code: "image(value)",
+		content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
+		expected: [],
+		id: "media-error",
+		isError: true,
+		operations: [],
+	},
+	{
+		code: 'text("yield_control() is only text")',
+		content: [{ type: "text" as const, text: "yield_control() is only text" }],
+		expected: [],
+		id: "yield-literal",
+		operations: [],
+	},
+	{
+		code: "await yield_control(1)",
+		content: [{ type: "text" as const, text: "argument result" }],
+		expected: [],
+		id: "control-argument",
+		operations: [],
+	},
+	{
+		code: 'const message = "waiting"; await yield_control(); text(message)',
+		content: [{ type: "text" as const, text: "waiting" }],
+		expected: [],
+		id: "dynamic-output",
+		operations: [],
+	},
+	{
+		code: "await yield_control(); await yield_control()",
+		content: [{ type: "text" as const, text: "two yields" }],
+		expected: [],
+		id: "repeated-control",
+		operations: [],
+	},
+	{
+		code: "if (",
+		content: [{ type: "text" as const, text: "parse failure evidence" }],
+		expected: ["codemode"],
+		id: "parse-failure",
+		isError: true,
+		operations: [],
+	},
+	{
+		code: "await yield_control()",
+		content: [{ type: "text" as const, text: "outer failure" }],
+		expected: ["codemode"],
+		id: "outer-error",
+		isError: true,
+		operations: [],
+	},
+	{
+		code: 'await yield_control(); await tools.read({ path: "a.ts" })',
+		content: [{ type: "text" as const, text: "outer failure" }],
+		expected: ["read"],
+		id: "nested-error",
+		isError: true,
+		operations: [nestedError],
+	},
+] as const;
+
 test("successful pure-JavaScript Code Mode executions stay out of live and replay Tool UI", () => {
 	const loaded = loadExtension({
 		disableEnvelope: () => {},
 		enableEnvelope: () => {},
 		isEnvelopeEnabled: () => true,
 	});
-	const noOutput = "Code completed with no output; use text(...) to return a value";
-	const operation = {
-		args: { path: "a.ts" },
-		id: "nested-read",
-		name: "read",
-		result: { content: [{ type: "text" as const, text: "file contents" }], details: {} },
-		state: "success" as const,
-	};
-	const nestedError = {
-		...operation,
-		id: "nested-error",
-		result: { content: [{ type: "text" as const, text: "read failed" }], details: {}, isError: true },
-		state: "error" as const,
-	};
-	const cases = [
-		{
-			code: "await yield_control()",
-			content: [{ type: "text" as const, text: "continued" }],
-			expected: [],
-			id: "bare-control",
-			operations: [],
-		},
-		{
-			code: 'await yield_control(); text("继续等待。")',
-			content: [{ type: "text" as const, text: "继续等待。" }],
-			expected: [],
-			id: "literal-control",
-			operations: [],
-		},
-		{
-			code: 'async () => { await yield_control(); text("waiting"); }',
-			content: [{ type: "text" as const, text: "waiting" }],
-			expected: [],
-			id: "wrapped-control",
-			operations: [],
-		},
-		{
-			code: "async () => await yield_control()",
-			content: [{ type: "text" as const, text: "waiting" }],
-			expected: [],
-			id: "expression-control",
-			operations: [],
-		},
-		{
-			code: "const total = 1 + 1",
-			content: [{ type: "text" as const, text: noOutput }],
-			expected: [],
-			id: "no-output",
-			operations: [],
-		},
-		{
-			code: 'await yield_control(); await tools.read({ path: "a.ts" })',
-			content: [{ type: "text" as const, text: noOutput }],
-			expected: ["read"],
-			id: "mixed-work",
-			operations: [operation],
-		},
-		{
-			code: 'text("2")',
-			content: [{ type: "text" as const, text: "2" }],
-			expected: [],
-			id: "meaningful-output",
-			operations: [],
-		},
-		{
-			code: "image(value)",
-			content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
-			expected: [],
-			id: "media-output",
-			operations: [],
-		},
-		{
-			code: "image(value)",
-			content: [{ type: "image" as const, data: "AA==", mimeType: "image/png" }],
-			expected: [],
-			id: "media-error",
-			isError: true,
-			operations: [],
-		},
-		{
-			code: 'text("yield_control() is only text")',
-			content: [{ type: "text" as const, text: "yield_control() is only text" }],
-			expected: [],
-			id: "yield-literal",
-			operations: [],
-		},
-		{
-			code: "await yield_control(1)",
-			content: [{ type: "text" as const, text: "argument result" }],
-			expected: [],
-			id: "control-argument",
-			operations: [],
-		},
-		{
-			code: 'const message = "waiting"; await yield_control(); text(message)',
-			content: [{ type: "text" as const, text: "waiting" }],
-			expected: [],
-			id: "dynamic-output",
-			operations: [],
-		},
-		{
-			code: "await yield_control(); await yield_control()",
-			content: [{ type: "text" as const, text: "two yields" }],
-			expected: [],
-			id: "repeated-control",
-			operations: [],
-		},
-		{
-			code: "if (",
-			content: [{ type: "text" as const, text: "parse failure evidence" }],
-			expected: ["codemode"],
-			id: "parse-failure",
-			isError: true,
-			operations: [],
-		},
-		{
-			code: "await yield_control()",
-			content: [{ type: "text" as const, text: "outer failure" }],
-			expected: ["codemode"],
-			id: "outer-error",
-			isError: true,
-			operations: [],
-		},
-		{
-			code: 'await yield_control(); await tools.read({ path: "a.ts" })',
-			content: [{ type: "text" as const, text: "outer failure" }],
-			expected: ["read"],
-			id: "nested-error",
-			isError: true,
-			operations: [nestedError],
-		},
-	] as const;
 	const runtime = getToolUiRuntime(loaded.api);
 	for (const scenario of cases) {
 		const details = { kind: "pi-stuff-code-mode", operations: scenario.operations, status: "success" };

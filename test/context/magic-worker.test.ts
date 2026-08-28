@@ -57,6 +57,13 @@ type WorkerHandler = (
 	| MagicContextEventMap[MagicContextEventName]["result"]
 	| Promise<MagicContextEventMap[MagicContextEventName]["result"]>;
 
+interface WorkerHarnessState {
+	branchReads: number;
+	entryReads: number;
+	currentBranch: SessionEntry[];
+	currentLeafId: string | null;
+}
+
 function requireHandler(handlers: Map<string, WorkerHandler[]>, name: string): WorkerHandler {
 	const handler = handlers.get(name)?.[0];
 	if (!handler) throw new Error(`Magic Context did not register '${name}'.`);
@@ -84,7 +91,7 @@ function messageEntry(id: string, message: AssistantMessage | UserMessage, paren
 	return { id, message, parentId, timestamp: new Date().toISOString(), type: "message" };
 }
 
-test("the isolated engine keeps ordinary turns incremental and event payloads clone-safe", async () => {
+async function createMagicWorkerHarness() {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-magic-worker-"));
 	const configDirectory = join(temporaryDirectory, "config", "cortexkit");
 	const dataDirectory = join(temporaryDirectory, "data");
@@ -122,10 +129,12 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 	const handlers = new Map<string, WorkerHandler[]>();
 	const registeredTools = new Set<string>();
 	const commands = new Set<string>();
-	let branchReads = 0;
-	let entryReads = 0;
-	let currentBranch: SessionEntry[] = [];
-	let currentLeafId: string | null = null;
+	const state: WorkerHarnessState = {
+		branchReads: 0,
+		entryReads: 0,
+		currentBranch: [],
+		currentLeafId: null,
+	};
 	const pi = createExtensionApi({
 		on: captureExtensionHandlers(handlers),
 		registerCommand: (name) => commands.add(name),
@@ -139,19 +148,40 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 			model: MODEL,
 			sessionManager: {
 				getBranch: () => {
-					branchReads += 1;
-					return currentBranch;
+					state.branchReads += 1;
+					return state.currentBranch;
 				},
 				getEntry: (entryId: string) => {
-					entryReads += 1;
-					return currentBranch.find((entry) => entry.id === entryId);
+					state.entryReads += 1;
+					return state.currentBranch.find((entry) => entry.id === entryId);
 				},
-				getLeafId: () => currentLeafId,
+				getLeafId: () => state.currentLeafId,
 				getSessionFile: () => undefined,
 				getSessionId: () => id,
 			},
 			thinkingLevel: "off",
 		});
+	return {
+		commands,
+		contextForSession,
+		handlers,
+		magicLog,
+		pi,
+		registeredTools,
+		state,
+		cleanup: async () => {
+			for (const [name, value] of Object.entries(originalEnvironment)) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+			await rm(temporaryDirectory, { force: true, recursive: true });
+		},
+	};
+}
+
+test("the isolated engine keeps ordinary turns incremental and event payloads clone-safe", async () => {
+	const harness = await createMagicWorkerHarness();
+	const { commands, contextForSession, handlers, magicLog, pi, registeredTools, state } = harness;
 	const context = contextForSession("worker-test-session");
 	try {
 		await magicContextWorkerFactory(pi);
@@ -167,7 +197,7 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 
 		const sessionStart: SessionStartEvent = { reason: "resume", type: "session_start" };
 		await requireHandler(handlers, "session_start")(sessionStart, context);
-		expect(branchReads).toBe(1);
+		expect(state.branchReads).toBe(1);
 
 		const beforeCompact: SessionBeforeCompactEvent = {
 			branchEntries: [],
@@ -188,7 +218,7 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		expect(await requireHandler(handlers, "session_before_compact")(beforeCompact, context)).toEqual({
 			cancel: true,
 		});
-		expect(branchReads).toBe(1);
+		expect(state.branchReads).toBe(1);
 
 		const taggedMessage = assistantMessage("§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		const projectedMessage = assistantMessage("WORKER_INCREMENTAL_INDEX_EVIDENCE");
@@ -196,31 +226,31 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		const messageEnd: MessageEndEvent = { message: taggedMessage, type: "message_end" };
 		const messageResult = await requireHandler(handlers, "message_end")(messageEnd, context);
 		expect(messageResult).toEqual({ message: projectedMessage });
-		currentLeafId = "worker-entry";
-		currentBranch = [messageEntry(currentLeafId, projectedMessage, null)];
+		state.currentLeafId = "worker-entry";
+		state.currentBranch = [messageEntry(state.currentLeafId, projectedMessage, null)];
 		await Bun.sleep(20);
-		expect(branchReads).toBe(1);
-		expect(entryReads).toBe(1);
+		expect(state.branchReads).toBe(1);
+		expect(state.entryReads).toBe(1);
 
 		const user = userMessage("WORKER_INCREMENTAL_USER_EVIDENCE");
-		currentLeafId = "worker-user-entry";
-		currentBranch = [...currentBranch, messageEntry(currentLeafId, user, "worker-entry")];
+		state.currentLeafId = "worker-user-entry";
+		state.currentBranch = [...state.currentBranch, messageEntry(state.currentLeafId, user, "worker-entry")];
 		const contextEvent: ContextEvent = { messages: [projectedMessage, user], type: "context" };
 		for (let turn = 0; turn < 2; turn += 1) {
 			await requireHandler(handlers, "context")(contextEvent, context);
 		}
-		expect(branchReads).toBe(1);
-		expect(entryReads).toBe(2);
+		expect(state.branchReads).toBe(1);
+		expect(state.entryReads).toBe(2);
 
 		const branchMessage = userMessage("WORKER_BRANCH_SWITCH_EVIDENCE");
-		currentLeafId = "worker-branch-entry";
-		currentBranch = [messageEntry(currentLeafId, branchMessage, null)];
+		state.currentLeafId = "worker-branch-entry";
+		state.currentBranch = [messageEntry(state.currentLeafId, branchMessage, null)];
 		const branchContextEvent: ContextEvent = { messages: [branchMessage], type: "context" };
 		for (let turn = 0; turn < 2; turn += 1) {
 			await requireHandler(handlers, "context")(branchContextEvent, context);
 		}
-		expect(branchReads).toBe(2);
-		expect(entryReads).toBe(3);
+		expect(state.branchReads).toBe(2);
+		expect(state.entryReads).toBe(3);
 
 		interface CyclicDetails {
 			self?: CyclicDetails;
@@ -242,22 +272,18 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 
 		const beforeSwitch: SessionBeforeSwitchEvent = { reason: "resume", type: "session_before_switch" };
 		await requireHandler(handlers, "session_before_switch")(beforeSwitch, context);
-		currentLeafId = null;
-		currentBranch = [];
+		state.currentLeafId = null;
+		state.currentBranch = [];
 		const secondContext = contextForSession("worker-second-session");
 		await requireHandler(handlers, "session_start")(sessionStart, secondContext);
-		expect(branchReads).toBe(3);
+		expect(state.branchReads).toBe(3);
 
 		const shutdown: SessionShutdownEvent = { reason: "quit", type: "session_shutdown" };
 		const shutdownHandler = requireHandler(handlers, "session_shutdown");
 		await shutdownHandler(shutdown, secondContext);
 		expect(await shutdownHandler(shutdown, secondContext)).toBeUndefined();
 	} finally {
-		for (const [name, value] of Object.entries(originalEnvironment)) {
-			if (value === undefined) delete process.env[name];
-			else process.env[name] = value;
-		}
-		await rm(temporaryDirectory, { force: true, recursive: true });
+		await harness.cleanup();
 	}
 });
 
