@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type Static, Type } from "typebox";
+import { Value } from "typebox/value";
 import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { supervisorChannelDir } from "../runs/shared/pi-args.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
@@ -28,76 +30,94 @@ const CHANNEL_METADATA_FILE = "channel.json";
 const CHANNEL_LIFECYCLE_CLAIM = "channel-lifecycle";
 const MAX_CHANNEL_METADATA_BYTES = 16 * 1024;
 const METADATALESS_CHANNEL_GRACE_MS = 60_000;
+const NONBLANK_STRING = Type.String({ pattern: "\\S" });
+const SAFE_INDEX = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+const SUPERVISOR_REPLY_SCHEMA = Type.Object(
+	{
+		type: Type.Literal("subagent.supervisor.reply"),
+		requestId: Type.String(),
+		createdAt: Type.Number(),
+		message: Type.String(),
+	},
+	{ additionalProperties: true },
+);
+const SUPERVISOR_REQUEST_SCHEMA = Type.Object(
+	{
+		type: Type.Literal("subagent.supervisor.request"),
+		id: Type.String({ pattern: "\\S", maxLength: 256 }),
+		createdAt: Type.Number({ exclusiveMinimum: 0 }),
+		expiresAt: Type.Optional(Type.Number()),
+		reason: Type.Union([
+			Type.Literal("need_decision"),
+			Type.Literal("interview_request"),
+			Type.Literal("progress_update"),
+		]),
+		message: Type.String({ minLength: 1 }),
+		expectsReply: Type.Boolean(),
+		orchestratorTarget: Type.Optional(Type.Unknown()),
+		orchestratorSessionId: Type.Optional(NONBLANK_STRING),
+		physicalSessionId: Type.Optional(Type.Unknown()),
+		runId: NONBLANK_STRING,
+		agent: NONBLANK_STRING,
+		childIndex: SAFE_INDEX,
+		childTarget: Type.Optional(Type.Unknown()),
+		interview: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: true },
+);
+const CHANNEL_METADATA_SCHEMA = Type.Object(
+	{
+		version: Type.Literal(1),
+		physicalSessionId: Type.String({ minLength: 1 }),
+		runId: Type.String({ minLength: 1 }),
+		agent: Type.String({ minLength: 1 }),
+		childIndex: SAFE_INDEX,
+		ownerPid: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+		ownerProcessStartIdentity: Type.Optional(Type.String({ minLength: 1 })),
+		updatedAt: Type.Number(),
+	},
+	{ additionalProperties: true },
+);
 
 export function requestDeliveryClaimName(requestId: string): string {
 	return `request-delivery-${createHash("sha256").update(requestId).digest("hex")}`;
 }
 
-export type SupervisorReason = "need_decision" | "interview_request" | "progress_update";
-
-export interface SupervisorRequest {
-	type: "subagent.supervisor.request";
-	id: string;
-	createdAt: number;
-	expiresAt?: number;
-	reason: SupervisorReason;
-	message: string;
-	expectsReply: boolean;
-	orchestratorTarget?: string;
-	orchestratorSessionId?: string;
-	physicalSessionId?: string;
-	runId: string;
-	agent: string;
-	childIndex: number;
+type PersistedSupervisorRequest = Static<typeof SUPERVISOR_REQUEST_SCHEMA>;
+export type SupervisorReason = PersistedSupervisorRequest["reason"];
+export type SupervisorRequest = Omit<
+	PersistedSupervisorRequest,
+	"childTarget" | "orchestratorTarget" | "physicalSessionId"
+> & {
 	childTarget?: string;
-	interview?: unknown;
-}
+	orchestratorTarget?: string;
+	physicalSessionId?: string;
+};
 
-export interface PendingSupervisorRequest extends SupervisorRequest {
+export type PendingSupervisorRequest = SupervisorRequest & {
 	protocolVersion: 1 | 2;
 	channelDir: string;
 	requestFile: string;
 	requestSnapshot: OwnedFileSnapshot;
-}
+};
 
 export interface SupervisorRequestFileRead {
 	readonly request?: PendingSupervisorRequest;
 	readonly snapshot: OwnedFileSnapshot;
 }
 
-export interface SupervisorReply {
-	type: "subagent.supervisor.reply";
-	requestId: string;
-	createdAt: number;
-	message: string;
-}
-
-export interface SupervisorChannelMetadata {
-	readonly version: 1;
-	readonly physicalSessionId: string;
-	readonly runId: string;
-	readonly agent: string;
-	readonly childIndex: number;
-	readonly ownerPid: number;
-	readonly ownerProcessStartIdentity?: string;
-	readonly updatedAt: number;
-}
+export type SupervisorReply = Static<typeof SUPERVISOR_REPLY_SCHEMA>;
+export type SupervisorChannelMetadata = Readonly<Static<typeof CHANNEL_METADATA_SCHEMA>>;
 
 export type SupervisorChannelIdentity = Pick<
 	SupervisorChannelMetadata,
 	"physicalSessionId" | "runId" | "agent" | "childIndex"
 >;
 
-type SupervisorChannelRecord = {
-	readonly [Field in
-		| keyof SupervisorRequest
-		| keyof SupervisorReply
-		| keyof SupervisorChannelMetadata
-		| "acceptedAt"
-		| "customType"
-		| "details"
-		| "lastAttemptAt"]?: JsonValue;
-};
+type SupervisorChannelField = keyof SupervisorRequest | keyof SupervisorReply | keyof SupervisorChannelMetadata;
+type SupervisorChannelRecord = Partial<
+	Record<SupervisorChannelField | "acceptedAt" | "customType" | "details" | "lastAttemptAt", JsonValue>
+>;
 
 export function supervisorChannelRecord<Value>(value: Value): SupervisorChannelRecord {
 	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
@@ -307,11 +327,8 @@ export async function waitForSupervisorReply(
 				throw error;
 			}
 			if (
-				parsed.type === "subagent.supervisor.reply" &&
+				Value.Check(SUPERVISOR_REPLY_SCHEMA, parsed) &&
 				parsed.requestId === requestId &&
-				isRuntimeNumber(parsed.createdAt) &&
-				Number.isFinite(parsed.createdAt) &&
-				isRuntimeString(parsed.message) &&
 				Buffer.byteLength(parsed.message, "utf-8") <= MAX_SUPERVISOR_MESSAGE_BYTES
 			) {
 				const reply: SupervisorReply = {
@@ -344,48 +361,21 @@ export function parseRequestFile(file: string, channelDir: string): SupervisorRe
 	}
 	try {
 		const parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
-		if (parsed.type !== "subagent.supervisor.request") return { snapshot };
-		if (!isRuntimeString(parsed.id) || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
-		if (
-			parsed.reason !== "need_decision" &&
-			parsed.reason !== "interview_request" &&
-			parsed.reason !== "progress_update"
-		)
-			return { snapshot };
+		if (!Value.Check(SUPERVISOR_REQUEST_SCHEMA, parsed)) return { snapshot };
+		if (!parsed.orchestratorSessionId) return { snapshot };
 		const physicalSessionId =
 			isRuntimeString(parsed.physicalSessionId) && parsed.physicalSessionId.trim()
 				? parsed.physicalSessionId
 				: undefined;
 		const protocolVersion = physicalSessionId ? 2 : 1;
 		if (
-			!isRuntimeString(parsed.message) ||
-			!parsed.message ||
-			Buffer.byteLength(parsed.message, "utf-8") > MAX_SUPERVISOR_MESSAGE_BYTES
-		)
-			return { snapshot };
-		if (
-			!isRuntimeNumber(parsed.createdAt) ||
-			!Number.isFinite(parsed.createdAt) ||
-			parsed.createdAt <= 0 ||
-			(parsed.expiresAt !== undefined &&
-				(!isRuntimeNumber(parsed.expiresAt) ||
-					!Number.isFinite(parsed.expiresAt) ||
-					parsed.expiresAt < parsed.createdAt)) ||
-			(protocolVersion === 2 && (!isRuntimeNumber(parsed.expiresAt) || !Number.isFinite(parsed.expiresAt))) ||
-			!isRuntimeBoolean(parsed.expectsReply) ||
+			Buffer.byteLength(parsed.message, "utf-8") > MAX_SUPERVISOR_MESSAGE_BYTES ||
+			(parsed.expiresAt !== undefined && parsed.expiresAt < parsed.createdAt) ||
+			(protocolVersion === 2 && parsed.expiresAt === undefined) ||
 			parsed.expectsReply !== (parsed.reason !== "progress_update") ||
-			!isRuntimeString(parsed.orchestratorSessionId) ||
-			!parsed.orchestratorSessionId.trim() ||
-			!isRuntimeString(parsed.runId) ||
-			!parsed.runId.trim() ||
-			!isRuntimeString(parsed.agent) ||
-			!parsed.agent.trim() ||
-			!isRuntimeNumber(parsed.childIndex) ||
-			!Number.isSafeInteger(parsed.childIndex) ||
-			(parsed.childIndex ?? -1) < 0
+			path.basename(file) !== `${safeSegment(parsed.id)}.json`
 		)
 			return { snapshot };
-		if (path.basename(file) !== `${safeSegment(parsed.id)}.json`) return { snapshot };
 		const expectedChannel = physicalSessionId
 			? resolveSupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex, physicalSessionId)
 			: resolveLegacySupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex);
@@ -485,37 +475,15 @@ async function metadataLessChannelSafeToCollect(channelDir: string, now: number)
 
 async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<SupervisorChannelMetadata | undefined> {
 	try {
-		const value = supervisorChannelRecord(
-			parseJsonValue(
-				(
-					await readBoundedOwnedFileSnapshotAsync(
-						path.join(channelDir, CHANNEL_METADATA_FILE),
-						MAX_CHANNEL_METADATA_BYTES,
-					)
-				).text,
-			),
+		const value = parseJsonValue(
+			(
+				await readBoundedOwnedFileSnapshotAsync(
+					path.join(channelDir, CHANNEL_METADATA_FILE),
+					MAX_CHANNEL_METADATA_BYTES,
+				)
+			).text,
 		);
-		if (
-			value.version !== 1 ||
-			!isRuntimeString(value.physicalSessionId) ||
-			!value.physicalSessionId ||
-			!isRuntimeString(value.runId) ||
-			!value.runId ||
-			!isRuntimeString(value.agent) ||
-			!value.agent ||
-			!isRuntimeNumber(value.childIndex) ||
-			!Number.isSafeInteger(value.childIndex) ||
-			value.childIndex < 0 ||
-			!isRuntimeNumber(value.ownerPid) ||
-			!Number.isSafeInteger(value.ownerPid) ||
-			value.ownerPid <= 0 ||
-			!isRuntimeNumber(value.updatedAt) ||
-			!Number.isFinite(value.updatedAt) ||
-			(value.ownerProcessStartIdentity !== undefined &&
-				(!isRuntimeString(value.ownerProcessStartIdentity) || !value.ownerProcessStartIdentity))
-		) {
-			return undefined;
-		}
+		if (!Value.Check(CHANNEL_METADATA_SCHEMA, value)) return undefined;
 		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
 		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
 		const metadata: SupervisorChannelMetadata = {
