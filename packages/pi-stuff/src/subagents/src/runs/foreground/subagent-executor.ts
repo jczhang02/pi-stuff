@@ -600,7 +600,7 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 			await attachContextProjection(prepared, ctx, deps.projectContext);
 			let result: AgentToolResult<Details>;
 			if (foreground) {
-				result = await launchForeground(prepared, ctx, deps, engines, signal, onUpdate, hooks, () => {
+				result = await launchForeground(prepared, deps, engines, signal, onUpdate, hooks, () => {
 					foregroundLifecycleOwnsRoute = true;
 				});
 				// A foreground adapter may return detached children after losing its
@@ -608,7 +608,7 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 				// runtime remains authoritative until the tracker terminalizes it.
 				foregroundLifecycleOwnsRoute = result.details.results.some((child) => child.detached === true);
 			} else {
-				result = await launchBackground(prepared, ctx, deps, engines, hooks);
+				result = await launchBackground(prepared, deps, engines, hooks);
 			}
 			backgroundOwnsRoute = !foreground && Boolean(result.details.asyncId);
 			return result;

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getPonytailMode } from "../../../../ponytail/state.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
@@ -27,7 +27,7 @@ import {
 } from "./executor-contract.ts";
 import { executeForegroundLifecycle, type PreparedForegroundConfig } from "./foreground-lifecycle.ts";
 import { claimForegroundRunDirectory } from "./foreground-run-claim.ts";
-import { taskInputs } from "./launch-model-planning.ts";
+import { resolvedTaskInput, taskInputs } from "./launch-model-planning.ts";
 
 function childTask(data: PreparedLaunch, task: TaskParam, index: number): string {
 	const taskText = data.context === "fork" ? wrapForkTask(task.task) : task.task;
@@ -37,37 +37,10 @@ function childTask(data: PreparedLaunch, task: TaskParam, index: number): string
 		: taskText;
 }
 
-function asyncContext(data: PreparedLaunch, ctx: ExtensionContext, pi: ExtensionAPI) {
-	return {
-		pi,
-		cwd: ctx.cwd,
-		currentSessionId: data.currentSessionId,
-		governorSessionId: data.governorSessionId,
-		physicalSessionId: data.currentSessionId,
-		parentSessionId: data.directParentSessionId,
-		currentModelProvider: data.parentModel?.provider,
-		currentModel: data.parentModel,
-		modelScope: data.modelScope,
-		interactive: ctx.hasUI,
-	};
-}
-
 function parallelInputs(data: PreparedLaunch): AsyncParallelTaskInput[] {
-	return (data.params.tasks ?? []).map((task, index) => {
-		const skill = normalizeSkillInput(task.skill);
-		const input: AsyncParallelTaskInput = {
-			agent: task.agent,
-			delegatedTask: task.task,
-			task: childTask(data, task, index),
-		};
-		if (task.description) input.description = task.description;
-		if (task.cwd) input.cwd = task.cwd;
-		if (task.model) input.model = task.model;
-		if (skill !== undefined) input.skill = skill;
-		if (task.turnBudget) input.turnBudget = task.turnBudget;
-		if (task.toolBudget) input.toolBudget = task.toolBudget;
-		return input;
-	});
+	return (data.params.tasks ?? []).map((task, index) =>
+		resolvedTaskInput(task, childTask(data, task, index), task.task),
+	);
 }
 
 function singleAgent(data: PreparedLaunch): AgentConfig {
@@ -89,9 +62,9 @@ export function ponytailLaunchSnapshot(pi: Pick<ExtensionAPI, "events">) {
 	return ponytailMode === undefined ? {} : { ponytailMode };
 }
 
-function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: ExecutorDeps) {
+function commonBuild(data: PreparedLaunch, deps: ExecutorDeps) {
 	return {
-		ctx: asyncContext(data, ctx, deps.pi),
+		ctx: data.executionContext,
 		...ponytailLaunchSnapshot(deps.pi),
 		codeModeEnabled: effectiveCodeModeEnabled(deps),
 		codeModeProviderTools: deps.codeModeProviderTools,
@@ -108,9 +81,56 @@ function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: Executor
 	};
 }
 
+function parallelBuild(data: PreparedLaunch, deps: ExecutorDeps, common = commonBuild(data, deps)) {
+	const tasks = parallelInputs(data);
+	return {
+		...common,
+		agents: data.agents,
+		tasks,
+		contextForAgent: () => data.context,
+		thinking: data.params.thinking,
+		thinkingOverridesByIndex: data.thinkingOverrides,
+		sessionFilesByIndex: data.sessionFiles,
+		modelCandidatesByIndex: data.modelCandidatesByIndex,
+		concurrency: tasks.length,
+		globalConcurrencyLimit: 20,
+		worktree: data.params.worktree === true,
+		maxSubagentDepth: resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth),
+	};
+}
+
+function singleBuild(data: PreparedLaunch, deps: ExecutorDeps, common = commonBuild(data, deps)) {
+	const name = data.params.agent;
+	const task = data.params.task;
+	if (!name || !task) return undefined;
+	const agent = singleAgent(data);
+	const skills = normalizeSkillInput(data.params.skill);
+	return {
+		...common,
+		agent: name,
+		description: data.params.description,
+		task: childTask(data, { agent: name, task }, 0),
+		agentConfig: agent,
+		context: data.context,
+		skills: skills === false ? [] : skills,
+		sessionFile: data.sessionFiles[0],
+		modelOverride: data.params.model,
+		modelCandidates: data.modelCandidatesByIndex[0],
+		thinkingOverride: data.thinkingOverrides[0] ?? data.params.thinking,
+		maxSubagentDepth: maxDepthFor(data, agent),
+	};
+}
+
+function buildRunnerWork(data: PreparedLaunch, deps: ExecutorDeps, common: ReturnType<typeof commonBuild>) {
+	if (data.mode === "parallel") return buildAsyncParallelRunnerWork(data.runId, parallelBuild(data, deps, common));
+	const input = singleBuild(data, deps, common);
+	return input
+		? buildAsyncSingleRunnerWork(data.runId, { ...input, delegatedTask: data.params.task })
+		: { error: "A single Agent launch requires agent and task." };
+}
+
 export async function launchBackground(
 	data: PreparedLaunch,
-	ctx: ExtensionContext,
 	deps: ExecutorDeps,
 	engines: ExecutorEngines,
 	hooks?: SubagentExecutionHooks,
@@ -121,25 +141,13 @@ export async function launchBackground(
 			"Background Agents are unavailable because the bundled TypeScript runner was not found.",
 		);
 	}
-	const common = commonBuild(data, ctx, deps);
 	if (data.mode === "parallel") {
-		const tasks = parallelInputs(data);
+		const built = parallelBuild(data, deps);
 		return await engines.backgroundParallel(data.runId, {
-			...common,
+			...built,
 			parentRunOrigin: hooks?.parentRunOrigin,
-			agents: data.agents,
-			tasks,
 			goal: data.params.tasks?.[0]?.description ?? data.params.tasks?.[0]?.task ?? "",
-			contextForAgent: () => data.context,
-			thinking: data.params.thinking,
-			thinkingOverridesByIndex: data.thinkingOverrides,
-			sessionFilesByIndex: data.sessionFiles,
-			modelCandidatesByIndex: data.modelCandidatesByIndex,
-			concurrency: tasks.length,
-			globalConcurrencyLimit: 20,
-			worktree: data.params.worktree === true,
 			sessionRoot: data.sessionRoot,
-			maxSubagentDepth: resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth),
 			worktreeSetupHook: deps.config.worktreeSetupHook,
 			worktreeSetupHookTimeoutMs: deps.config.worktreeSetupHookTimeoutMs,
 			worktreeBaseDir: deps.config.worktreeBaseDir,
@@ -148,26 +156,13 @@ export async function launchBackground(
 		});
 	}
 
-	const agent = singleAgent(data);
-	const task = data.params.task;
-	if (!task) return errorResult("single", "A single Agent launch requires task.");
-	const skills = normalizeSkillInput(data.params.skill);
+	const built = singleBuild(data, deps);
+	if (!built) return errorResult("single", "A single Agent launch requires agent and task.");
 	return await engines.backgroundSingle(data.runId, {
-		...common,
+		...built,
 		parentRunOrigin: hooks?.parentRunOrigin,
-		agent: agent.name,
-		description: data.params.description,
-		task: childTask(data, { agent: agent.name, task }, 0),
 		goal: data.params.description ?? data.params.task ?? "",
-		agentConfig: agent,
-		context: data.context,
-		skills: skills === false ? [] : skills,
 		sessionRoot: data.sessionRoot,
-		sessionFile: data.sessionFiles[0],
-		modelOverride: data.params.model,
-		modelCandidates: data.modelCandidatesByIndex[0],
-		thinkingOverride: data.thinkingOverrides[0] ?? data.params.thinking,
-		maxSubagentDepth: maxDepthFor(data, agent),
 		worktreeSetupHook: deps.config.worktreeSetupHook,
 		worktreeSetupHookTimeoutMs: deps.config.worktreeSetupHookTimeoutMs,
 		worktreeBaseDir: deps.config.worktreeBaseDir,
@@ -178,48 +173,10 @@ export async function launchBackground(
 
 function buildForegroundConfig(
 	data: PreparedLaunch,
-	ctx: ExtensionContext,
 	deps: ExecutorDeps,
 ): PreparedForegroundConfig | AgentToolResult<Details> {
-	const common = commonBuild(data, ctx, deps);
-	const singleName = data.params.agent;
-	const singleTask = data.params.task;
-	const built =
-		data.mode === "parallel"
-			? buildAsyncParallelRunnerWork(data.runId, {
-					...common,
-					agents: data.agents,
-					tasks: parallelInputs(data),
-					contextForAgent: () => data.context,
-					thinking: data.params.thinking,
-					thinkingOverridesByIndex: data.thinkingOverrides,
-					sessionFilesByIndex: data.sessionFiles,
-					modelCandidatesByIndex: data.modelCandidatesByIndex,
-					concurrency: data.params.tasks?.length ?? 1,
-					globalConcurrencyLimit: 20,
-					worktree: data.params.worktree === true,
-					maxSubagentDepth: resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth),
-				})
-			: !singleName || !singleTask
-				? { error: "A single Agent launch requires agent and task." }
-				: buildAsyncSingleRunnerWork(data.runId, {
-						...common,
-						agent: singleName,
-						description: data.params.description,
-						delegatedTask: singleTask,
-						task: childTask(data, { agent: singleName, task: singleTask }, 0),
-						agentConfig: singleAgent(data),
-						context: data.context,
-						skills: (() => {
-							const skills = normalizeSkillInput(data.params.skill);
-							return skills === false ? [] : skills;
-						})(),
-						sessionFile: data.sessionFiles[0],
-						modelOverride: data.params.model,
-						modelCandidates: data.modelCandidatesByIndex[0],
-						thinkingOverride: data.thinkingOverrides[0] ?? data.params.thinking,
-						maxSubagentDepth: maxDepthFor(data, singleAgent(data)),
-					});
+	const common = commonBuild(data, deps);
+	const built = buildRunnerWork(data, deps, common);
 	if ("error" in built) return errorResult(data.mode, built.error);
 
 	const directoryClaim = claimForegroundRunDirectory(data.runId, data.inheritedNestedRoute);
@@ -246,7 +203,7 @@ function buildForegroundConfig(
 		resultPath,
 		cwd: built.runnerCwd,
 		asyncDir,
-		sessionId: data.currentSessionId,
+		sessionId: data.executionContext.currentSessionId,
 		startedAt: Date.now(),
 		artifactConfig: data.artifactConfig,
 		nativeSupervisor: false,
@@ -271,7 +228,6 @@ function buildForegroundConfig(
 
 export async function launchForeground(
 	data: PreparedLaunch,
-	ctx: ExtensionContext,
 	deps: ExecutorDeps,
 	engines: ExecutorEngines,
 	signal: AbortSignal,
@@ -286,7 +242,7 @@ export async function launchForeground(
 			stopped: true,
 		});
 	}
-	const preparedConfig = buildForegroundConfig(data, ctx, deps);
+	const preparedConfig = buildForegroundConfig(data, deps);
 	if ("content" in preparedConfig) return preparedConfig;
 	return await executeForegroundLifecycle(
 		data,

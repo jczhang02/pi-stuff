@@ -184,7 +184,7 @@ export async function executeForegroundLifecycle(
 				timestamp: Date.now(),
 				cwd: data.effectiveCwd,
 				sessionFile: child.sessionFile,
-				sessionId: data.currentSessionId,
+				sessionId: data.executionContext.currentSessionId,
 				taskIndex: index,
 			});
 		} catch (error) {

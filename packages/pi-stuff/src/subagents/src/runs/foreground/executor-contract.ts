@@ -15,9 +15,9 @@ import type {
 	TurnBudgetConfig,
 } from "../../shared/types.ts";
 import type { executeAsyncParallel, executeAsyncSingle } from "../background/async-execution.ts";
+import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
-import type { ParentModel } from "../shared/model-fallback.ts";
 import type {
 	createNestedRoute,
 	resolveInheritedNestedRouteFromEnv,
@@ -134,13 +134,9 @@ export interface PreparedLaunch {
 	mode: "single" | "parallel";
 	effectiveCwd: string;
 	agents: AgentConfig[];
-	currentSessionId: string;
-	governorSessionId: string;
-	directParentSessionId?: string | undefined;
+	executionContext: AsyncExecutionContext;
 	parentSessionFile: string | null;
-	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
 	runId: string;
 	sessionRoot: string;
 	artifactConfig: ArtifactConfig;

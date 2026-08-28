@@ -12,6 +12,7 @@ import type {
 	SubagentState,
 } from "../../shared/types.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
+import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import {
 	nestedSummaryFromAsyncStatus,
@@ -33,7 +34,7 @@ export interface ForegroundTask {
 export interface ForegroundProjectionData {
 	readonly mode: "single" | "parallel";
 	readonly effectiveCwd: string;
-	readonly currentSessionId: string;
+	readonly executionContext: Pick<AsyncExecutionContext, "currentSessionId">;
 	readonly runId: string;
 	readonly context: ContextMode;
 	readonly nestedRoute: NestedRouteInfo;
@@ -75,7 +76,7 @@ export function createForegroundControl(
 	);
 	const control: ForegroundRunControl = {
 		runId: data.runId,
-		sessionId: data.currentSessionId,
+		sessionId: data.executionContext.currentSessionId,
 		mode: data.mode,
 		startedAt: now,
 		updatedAt: now,
@@ -234,7 +235,7 @@ export function rememberForegroundResult(
 		mode: data.mode,
 		cwd: data.effectiveCwd,
 		asyncDir,
-		sessionId: data.currentSessionId,
+		sessionId: data.executionContext.currentSessionId,
 		updatedAt,
 		children: result.details.results.map((child, index): ForegroundResumeChild => {
 			const rememberedChild: ForegroundResumeChild = {

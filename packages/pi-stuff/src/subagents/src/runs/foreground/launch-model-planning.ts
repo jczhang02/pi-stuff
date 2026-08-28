@@ -16,9 +16,10 @@ import { normalizeSkillInput } from "../../agents/skills.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { type ResolvedToolBudget, type ResolvedTurnBudget, wrapForkTask } from "../../shared/types.ts";
 import { type AsyncParallelTaskInput, buildResolvedTask } from "../background/async-execution.ts";
+import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
-import { buildModelCandidates, type ParentModel, resolveEffectiveSubagentModel } from "../shared/model-fallback.ts";
+import { buildModelCandidates, resolveEffectiveSubagentModel } from "../shared/model-fallback.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import type { PreparedLaunch, SubagentParamsLike, TaskParam } from "./executor-contract.ts";
@@ -199,21 +200,22 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 }
 
 function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: AgentConfig): string[] {
+	const { currentModel, modelScope } = data.executionContext;
+	const provider = currentModel?.provider;
 	const primary = resolveEffectiveSubagentModel(
 		task.model,
 		agent.model,
-		data.parentModel,
+		currentModel,
 		data.availableModels,
-		data.parentModel?.provider,
-		{ scope: data.modelScope },
+		provider,
+		{ scope: modelScope },
 	);
-	return buildModelCandidates(primary, agent.fallbackModels, data.availableModels, data.parentModel?.provider, {
-		scope: data.modelScope,
-	});
+	return buildModelCandidates(primary, agent.fallbackModels, data.availableModels, provider, { scope: modelScope });
 }
 
 export function projectionTokenBudget(data: PreparedLaunch): number {
 	let launchBudget = Number.POSITIVE_INFINITY;
+	const provider = data.executionContext.currentModel?.provider;
 	for (const [index, task] of taskInputs(data.params).entries()) {
 		if (data.context === "fork" && data.rawForkByIndex[index]) continue;
 		const agent = data.agents.find((candidate) => candidate.name === task.agent);
@@ -224,7 +226,7 @@ export function projectionTokenBudget(data: PreparedLaunch): number {
 			data.fixedInputTokensByIndex[index] ??
 			estimateTextTokens(task.task) + estimateTextTokens(agent.systemPrompt ?? "");
 		for (const candidate of candidates) {
-			const model = findModelInfo(candidate, data.availableModels, data.parentModel?.provider);
+			const model = findModelInfo(candidate, data.availableModels, provider);
 			if (!model?.contextWindow || !model.maxTokens) return 0;
 			const reserve = Math.floor(model.contextWindow * CHILD_RUNTIME_RESERVE_RATIO);
 			launchBudget = Math.min(launchBudget, model.contextWindow - model.maxTokens - reserve - knownTokens);
@@ -257,15 +259,10 @@ interface LaunchModelPlanInput {
 	params: SubagentParamsLike;
 	agents: readonly AgentConfig[];
 	ctx: ExtensionContext;
-	pi: ExtensionAPI;
+	executionContext: AsyncExecutionContext;
 	context: ContextMode;
 	effectiveCwd: string;
-	currentSessionId: string;
-	governorSessionId: string;
-	directParentSessionId?: string | undefined;
-	parentModel?: ParentModel | undefined;
 	availableModels: ModelInfo[];
-	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig | undefined;
 	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
 	configToolBudget?: ResolvedToolBudget | undefined;
@@ -287,35 +284,14 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 	const { input } = state;
 	const agent = input.agents.find((candidate) => candidate.name === task.agent);
 	if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
-	const normalizedSkill = normalizeSkillInput(task.skill);
-	const taskInput: AsyncParallelTaskInput = {
-		agent: task.agent,
-		task: input.context === "fork" ? wrapForkTask(task.task) : task.task,
-	};
-	if (task.description) taskInput.description = task.description;
-	if (task.cwd) taskInput.cwd = task.cwd;
-	if (task.model) taskInput.model = task.model;
-	if (normalizedSkill !== undefined) taskInput.skill = normalizedSkill;
-	if (task.turnBudget) taskInput.turnBudget = task.turnBudget;
-	if (task.toolBudget) taskInput.toolBudget = task.toolBudget;
+	const taskInput = resolvedTaskInput(task, input.context === "fork" ? wrapForkTask(task.task) : task.task);
 	const buildInput: Parameters<typeof buildResolvedTask>[0] = {
 		runId: input.runId,
 		index,
 		taskInput,
 		agent,
 		params: {
-			ctx: {
-				pi: input.pi,
-				cwd: input.ctx.cwd,
-				currentSessionId: input.currentSessionId,
-				governorSessionId: input.governorSessionId,
-				physicalSessionId: input.currentSessionId,
-				parentSessionId: input.directParentSessionId,
-				currentModelProvider: input.parentModel?.provider,
-				currentModel: input.parentModel,
-				modelScope: input.modelScope,
-				interactive: input.ctx.hasUI,
-			},
+			ctx: input.executionContext,
 			availableModels: input.availableModels,
 			cwd: input.effectiveCwd,
 			maxSubagentDepth: input.maxSubagentDepth,
@@ -329,7 +305,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 		context: input.context,
 		thinkingOverride: input.params.thinking,
 	};
-	if (normalizedSkill === false) buildInput.skills = [];
+	if (taskInput.skill === false) buildInput.skills = [];
 	const built = buildResolvedTask(buildInput);
 	if ("error" in built) throw new Error(built.error);
 	const candidates = built.task.modelCandidates ?? [];
@@ -341,14 +317,15 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 		estimateTextTokens(built.task.task) +
 		estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
 		replacementPromptEstimate.tokens +
-		childLaunchSurfaceTokens(input.pi, built.task);
+		childLaunchSurfaceTokens(input.executionContext.pi, built.task);
 	state.fixedInputTokensByIndex[index] = taskTokens;
 	if (input.context !== "fork") {
 		state.rawForkByIndex[index] = false;
 		return candidates.length > 0 ? candidates : undefined;
 	}
+	const provider = input.executionContext.currentModel?.provider;
 	const projectedCandidates = candidates.filter((candidate) => {
-		const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
+		const model = findModelInfo(candidate, input.availableModels, provider);
 		const capacity = model ? forkInputCapacity(model) : undefined;
 		return capacity !== undefined && taskTokens <= capacity;
 	});
@@ -357,7 +334,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 		candidates.length > 0 &&
 		projectedCandidates.length === candidates.length &&
 		candidates.every((candidate) => {
-			const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
+			const model = findModelInfo(candidate, input.availableModels, provider);
 			const capacity = model ? forkInputCapacity(model) : undefined;
 			return capacity !== undefined && state.forkTokens + taskTokens <= capacity;
 		});
@@ -371,7 +348,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 	}
 	const capacities = candidates
 		.map((candidate) => {
-			const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
+			const model = findModelInfo(candidate, input.availableModels, provider);
 			const capacity = model ? forkInputCapacity(model) : undefined;
 			return `${candidate}: ${capacity === undefined ? "limits unavailable" : `${approximateTokens(capacity)} input tokens`}`;
 		})
@@ -420,4 +397,21 @@ export function taskInputs(params: SubagentParamsLike): TaskParam[] {
 	if (params.turnBudget) task.turnBudget = params.turnBudget;
 	if (params.toolBudget) task.toolBudget = params.toolBudget;
 	return [task];
+}
+
+export function resolvedTaskInput(
+	task: TaskParam,
+	projectedTask: string,
+	delegatedTask?: string,
+): AsyncParallelTaskInput {
+	const input: AsyncParallelTaskInput = { agent: task.agent, task: projectedTask };
+	if (task.description) input.description = task.description;
+	if (delegatedTask) input.delegatedTask = delegatedTask;
+	if (task.cwd) input.cwd = task.cwd;
+	if (task.model) input.model = task.model;
+	const skill = normalizeSkillInput(task.skill);
+	if (skill !== undefined) input.skill = skill;
+	if (task.turnBudget) input.turnBudget = task.turnBudget;
+	if (task.toolBudget) input.toolBudget = task.toolBudget;
+	return input;
 }

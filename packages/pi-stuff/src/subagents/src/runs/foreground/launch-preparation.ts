@@ -16,6 +16,7 @@ import {
 	type Details,
 	resolveCurrentMaxSubagentDepth,
 } from "../../shared/types.ts";
+import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import { normalizeParentModel, type ParentModel } from "../shared/model-fallback.ts";
@@ -232,10 +233,20 @@ export async function prepareLaunch(
 	if (budgets.error) return errorResult(mode, budgets.error);
 
 	const parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
-	const directParentSessionId = ctx.sessionManager.getSessionId()?.trim() || undefined;
 	const runId = params.launchRunId ?? deriveLaunchRunId(id);
 	if (!/^[a-f0-9]{12}$/u.test(runId)) return errorResult(mode, "Invalid internal Agent launch identity.");
-	const governorSessionId = process.env[SUBAGENT_PARENT_SESSION_ENV]?.trim() || currentSessionId;
+	const executionContext: AsyncExecutionContext = {
+		pi: deps.pi,
+		cwd: ctx.cwd,
+		currentSessionId,
+		governorSessionId: process.env[SUBAGENT_PARENT_SESSION_ENV]?.trim() || currentSessionId,
+		physicalSessionId: currentSessionId,
+		parentSessionId: ctx.sessionManager.getSessionId()?.trim() || undefined,
+		currentModelProvider: parentModel?.provider,
+		currentModel: parentModel,
+		modelScope,
+		interactive: ctx.hasUI,
+	};
 	const artifactConfig: ArtifactConfig = {
 		...DEFAULT_ARTIFACT_CONFIG,
 		dir: deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
@@ -252,15 +263,10 @@ export async function prepareLaunch(
 			params,
 			agents,
 			ctx,
-			pi: deps.pi,
+			executionContext,
 			context,
 			effectiveCwd,
-			currentSessionId,
-			governorSessionId,
-			directParentSessionId,
-			parentModel,
 			availableModels: models,
-			modelScope,
 			turnBudget: budgets.turnBudget,
 			toolBudget: budgets.toolBudget,
 			configToolBudget: budgets.configToolBudget,
@@ -305,12 +311,9 @@ export async function prepareLaunch(
 		mode,
 		effectiveCwd,
 		agents,
-		currentSessionId,
-		governorSessionId,
+		executionContext,
 		parentSessionFile,
-		parentModel,
 		availableModels: models,
-		modelScope,
 		runId,
 		sessionRoot,
 		artifactConfig,
@@ -331,7 +334,6 @@ export async function prepareLaunch(
 		capabilityCeiling,
 		maxSubagentDepth,
 	};
-	if (directParentSessionId) prepared.directParentSessionId = directParentSessionId;
 	if (modelPlan.forkContextTokens !== undefined) prepared.forkContextTokens = modelPlan.forkContextTokens;
 	if (modelPlan.forkSourceMessages) prepared.forkSourceMessages = modelPlan.forkSourceMessages;
 	return prepared;
