@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../shared/runtime-type.js";
@@ -9,7 +8,7 @@ import {
 	type RetrievalGroupDisposition,
 	type ToolArguments,
 } from "./activity.js";
-import { assistantTerminalState, hashRetryValue, isIssueState, terminalStateFromResult } from "./activity-summary.js";
+import { assistantTerminalState, isIssueState, terminalStateFromResult } from "./activity-summary.js";
 import type { SuiteToolEnvelopeDetails } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { envelopeOperationResult } from "./envelope-renderer.js";
@@ -43,7 +42,6 @@ export class ToolGroupProjection {
 	private streamActive = false;
 	private readonly streamedProseIndexes = new Set<number>();
 	private readonly streamedThinkingIndexes = new Set<number>();
-	private readonly streamedToolCallSignatures = new Map<string, string>();
 	private tailForcedClosed = false;
 
 	constructor(
@@ -124,15 +122,9 @@ export class ToolGroupProjection {
 		this.closeOpenGroup();
 	}
 
-	observeAssistantProse(): void {
+	private observeAssistantProse(): void {
 		this.tailForcedClosed = true;
 		this.closeOpenGroup();
-	}
-
-	observeAssistantUpdate<Message>(message: Message): void {
-		if (!isRecordValue(message) || message.role !== "assistant" || !Array.isArray(message.content)) return;
-		this.beginStream();
-		this.applyAssistantContent(message.content, true, assistantTerminalState(message.stopReason));
 	}
 
 	observeAssistantEvent(event: AssistantMessageEvent): void {
@@ -153,8 +145,7 @@ export class ToolGroupProjection {
 		}
 		if (event.type !== "toolcall_end") return;
 		const { id, name, arguments: args } = event.toolCall;
-		if (!id || !name || !isToolArguments(args) || this.streamedToolCallSignatures.has(id)) return;
-		this.streamedToolCallSignatures.set(id, "complete");
+		if (!id || !name || !isToolArguments(args)) return;
 		this.appendToolCall({ args, id, name });
 	}
 
@@ -258,21 +249,19 @@ export class ToolGroupProjection {
 		this.streamActive = true;
 		this.streamedProseIndexes.clear();
 		this.streamedThinkingIndexes.clear();
-		this.streamedToolCallSignatures.clear();
 	}
 
 	private endStream(): void {
 		this.streamActive = false;
 		this.streamedProseIndexes.clear();
 		this.streamedThinkingIndexes.clear();
-		this.streamedToolCallSignatures.clear();
 	}
 
 	private applyMessage<Message>(message: Message): void {
 		if (!isRecordValue(message)) return;
 		const role = message.role;
 		if (role === "assistant" && Array.isArray(message.content)) {
-			this.applyAssistantContent(message.content, false, assistantTerminalState(message.stopReason));
+			this.applyAssistantContent(message.content, assistantTerminalState(message.stopReason));
 			return;
 		}
 		if (role === "toolResult") {
@@ -299,11 +288,7 @@ export class ToolGroupProjection {
 		}
 	}
 
-	private applyAssistantContent(
-		content: readonly unknown[],
-		streaming: boolean,
-		terminalState?: "cancelled" | "error",
-	): void {
+	private applyAssistantContent(content: readonly unknown[], terminalState?: "cancelled" | "error"): void {
 		for (let index = 0; index < content.length; index += 1) {
 			const block = content[index];
 			if (!isRecordValue(block)) continue;
@@ -313,27 +298,13 @@ export class ToolGroupProjection {
 				isRuntimeString(block.thinking) &&
 				block.thinking.trim()
 			) {
-				if (
-					streaming
-						? this.streamedThinkingIndexes.has(index)
-						: this.streamActive && this.streamedThinkingIndexes.has(index)
-				) {
-					continue;
-				}
-				this.streamedThinkingIndexes.add(index);
+				if (this.streamActive && this.streamedThinkingIndexes.has(index)) continue;
 				this.tailForcedClosed = true;
 				this.closeOpenGroup();
 				continue;
 			}
 			if (block.type === "text" && "text" in block && isRuntimeString(block.text) && block.text.trim()) {
-				if (
-					streaming
-						? this.streamedProseIndexes.has(index)
-						: this.streamActive && this.streamedProseIndexes.has(index)
-				) {
-					continue;
-				}
-				this.streamedProseIndexes.add(index);
+				if (this.streamActive && this.streamedProseIndexes.has(index)) continue;
 				this.tailForcedClosed = true;
 				this.closeOpenGroup();
 				continue;
@@ -343,21 +314,6 @@ export class ToolGroupProjection {
 			const name = block.name;
 			const args = block.arguments;
 			if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isToolArguments(args)) continue;
-			if (streaming && name === "bash") continue;
-			const trackedSnapshot = streaming || this.streamActive;
-			let signature = "";
-			if (trackedSnapshot) {
-				try {
-					const hash = createHash("sha256");
-					hashRetryValue(hash, [name, args, terminalState ?? ""]);
-					signature = hash.digest("base64url");
-				} catch {
-					signature = "invalid";
-				}
-			}
-			const previousSignature = trackedSnapshot ? this.streamedToolCallSignatures.get(id) : undefined;
-			if (trackedSnapshot && previousSignature === signature) continue;
-			if (trackedSnapshot) this.streamedToolCallSignatures.set(id, signature);
 			const member: PlannedToolActivityMember = { args, id, name };
 			if (terminalState) Object.assign(member, { terminalState });
 			this.appendToolCall(member);

@@ -499,14 +499,6 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 		this.groupProjection.endTurn();
 	}
 
-	observeAssistantProse(): void {
-		this.groupProjection.observeAssistantProse();
-	}
-
-	observeAssistantUpdate<Message>(message: Message): void {
-		this.groupProjection.observeAssistantUpdate(message);
-	}
-
 	observeAssistantEvent(event: AssistantMessageEvent): void {
 		this.groupProjection.observeAssistantEvent(event);
 	}

@@ -445,31 +445,6 @@ test("Tool results and hidden Custom Messages stay transparent while Thinking cl
 	expect(closed.summary).toContain("Read 1 file");
 });
 
-test("streaming Tool snapshots replace partial arguments and the final message wins", () => {
-	const harness = apiHarness();
-	const read = toolFromHarness(harness, "read", "read-file");
-	const runtime = getToolUiRuntime(harness.api);
-	const partial = assistant(
-		{ type: "toolCall", id: "r1", name: "read", arguments: { value: "" } },
-		{ type: "toolCall", id: "r2", name: "read", arguments: { value: "" } },
-	);
-	const complete = assistant(call("r1", "read", "a.ts"), call("r2", "read", "b.ts"));
-	runtime.startTurn();
-	runtime.observeAssistantUpdate(partial);
-	read.renderCall?.({ value: "a.ts" }, theme, renderContext({}, { value: "a.ts" }, { toolCallId: "r1" }));
-	read.renderCall?.({ value: "b.ts" }, theme, renderContext({}, { value: "b.ts" }, { toolCallId: "r2" }));
-	const renderedGroup = runtime.resolveGroup("r1");
-	if (!renderedGroup || renderedGroup === "ambiguous") throw new Error("rendered streamed group missing");
-	expect(renderedGroup.summary).toContain("Reading 2 files");
-	runtime.observeAssistantUpdate(complete);
-	runtime.indexMessage(complete);
-
-	const group = runtime.resolveGroup("r1");
-	if (!group || group === "ambiguous") throw new Error("streamed group missing");
-	expect(group.summary).toContain("Reading 2 files");
-	runtime.clear();
-});
-
 test("only the first visible update in a streamed Thinking run closes the Retrieval Group", () => {
 	const harness = apiHarness();
 	toolFromHarness(harness, "read", "read-file");
@@ -547,7 +522,13 @@ test("an aborted final assistant message settles an unexecuted streamed Tool cal
 	};
 
 	runtime.startTurn();
-	runtime.observeAssistantUpdate(pending);
+	runtime.observeAssistantEvent({
+		contentIndex: 0,
+		// SAFETY: this test double implements the exact Pi members exercised by this case.
+		partial: pending as never,
+		toolCall: { type: "toolCall", id: "r1", name: "read", arguments: { value: "a.ts" } },
+		type: "toolcall_end",
+	});
 	const component = read.renderCall?.(
 		{ value: "a.ts" },
 		theme,
@@ -556,7 +537,6 @@ test("an aborted final assistant message settles an unexecuted streamed Tool cal
 	if (!component) throw new Error("missing streamed call component");
 	expect(renderLines(component).join("\n")).toContain("Reading 1 file");
 
-	runtime.observeAssistantUpdate(aborted);
 	runtime.indexMessage(aborted);
 	runtime.endTurn();
 	const group = runtime.resolveGroup("r1");
