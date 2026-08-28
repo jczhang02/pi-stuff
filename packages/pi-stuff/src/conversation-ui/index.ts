@@ -12,6 +12,7 @@ import type { CommandDialogCoordinatorImplementation } from "./command-dialog.js
 import { getCommandDialogCoordinator } from "./command-dialog-registry.js";
 import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
+import { globalWeakMap } from "./global-registry.js";
 import { getHostSharedResource } from "./host-resource.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
 import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
@@ -146,15 +147,6 @@ interface UiLifecycleState {
 	activation?: symbol;
 }
 
-function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> {
-	// SAFETY: this package-owned symbol slot is initialized only with the UI lifecycle WeakMap.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], UiLifecycleState> | undefined;
-	};
-	root[UI_LIFECYCLE_STATES] ??= new WeakMap();
-	return root[UI_LIFECYCLE_STATES];
-}
-
 /** Observe a completed direct-user Agent run after the Host reaches a genuinely idle boundary. */
 export function listenForUserAgentRunSettled(
 	pi: Pick<ExtensionAPI, "events">,
@@ -186,17 +178,8 @@ const STATUSLINE_GIT_REFRESH_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/stat
 export const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 const UI_RENDER_REQUEST_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/render-request-listeners/v1");
 
-function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => void> {
-	// SAFETY: this package-owned symbol slot is initialized only with statusline refresh listeners.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
-	};
-	root[STATUSLINE_GIT_REFRESH_LISTENERS] ??= new WeakMap();
-	return root[STATUSLINE_GIT_REFRESH_LISTENERS];
-}
-
 function listenForStatuslineGitRefreshAfterUserWorkRequests(pi: ExtensionAPI, refresh: () => void): () => void {
-	const listeners = statuslineGitRefreshListeners();
+	const listeners = globalWeakMap<() => void>(STATUSLINE_GIT_REFRESH_LISTENERS);
 	listeners.get(pi.events)?.();
 
 	let active = true;
@@ -222,17 +205,8 @@ export function requestStatuslineGitRefreshAfterUserWork(pi: { readonly events?:
 	}
 }
 
-function uiRenderRequestListeners(): WeakMap<ExtensionAPI["events"], () => void> {
-	// SAFETY: this package-owned symbol slot is initialized only with UI render listeners.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
-	};
-	root[UI_RENDER_REQUEST_LISTENERS] ??= new WeakMap();
-	return root[UI_RENDER_REQUEST_LISTENERS];
-}
-
 function listenForUiRenderRequests(pi: ExtensionAPI, render: (force: boolean) => void): () => void {
-	const listeners = uiRenderRequestListeners();
+	const listeners = globalWeakMap<() => void>(UI_RENDER_REQUEST_LISTENERS);
 	listeners.get(pi.events)?.();
 
 	let active = true;
@@ -271,23 +245,13 @@ export function requestUiRender(pi: Pick<ExtensionAPI, "events">, force = false)
 	return request.handled;
 }
 
-function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCommandState> {
-	// SAFETY: this package-owned symbol slot is initialized only with UI settings command state.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingsCommandState> | undefined;
-	};
-	root[UI_SETTINGS_COMMAND_STATES] ??= new WeakMap();
-	return root[UI_SETTINGS_COMMAND_STATES];
-}
-
 /** Ensure every independently loadable Capability can contribute to one /ui list. */
 export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 	const coordinator = getCommandDialogCoordinator(pi);
-	const commandStates = uiSettingsCommandStates();
+	const commandStates = globalWeakMap<UiSettingsCommandState>(UI_SETTINGS_COMMAND_STATES);
 	const state = getHostSharedResource<UiSettingsCommandState>(
 		pi.events,
-		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
-		commandStates as WeakMap<object, UiSettingsCommandState>,
+		commandStates,
 		UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT,
 		() => ({ active: false }),
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
@@ -343,8 +307,7 @@ function registerDiagnosticsCommand(
 export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<UiLifecycleState>(
 		pi.events,
-		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
-		uiLifecycleStates() as WeakMap<object, UiLifecycleState>,
+		globalWeakMap<UiLifecycleState>(UI_LIFECYCLE_STATES),
 		UI_LIFECYCLE_DISCOVERY_EVENT,
 		() => ({ active: false }),
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },

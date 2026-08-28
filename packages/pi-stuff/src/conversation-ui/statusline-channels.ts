@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
+import { globalWeakMap } from "./global-registry.js";
 import { getHostSharedResource } from "./host-resource.js";
 
 export interface CodexStatusSnapshot {
@@ -127,24 +128,14 @@ function callObserver(observer: () => void): void {
 	}
 }
 
-function statusChannels<Channel extends object>(key: symbol): WeakMap<ExtensionAPI["events"], Channel> {
-	// SAFETY: this package is the sole writer of the symbol-owned slot and stores only the declared WeakMap.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], Channel> | undefined;
-	};
-	root[key] ??= new WeakMap();
-	return root[key];
-}
-
 function getStatusChannel<Channel extends object>(
 	pi: StatusChannelHost,
 	key: symbol,
 	discoveryEvent: string,
 	create: () => Channel,
 ): Channel {
-	const channels = statusChannels<Channel>(key);
-	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
-	return getHostSharedResource(pi.events, channels as WeakMap<object, Channel>, discoveryEvent, create, {
+	const channels = globalWeakMap<Channel>(key);
+	return getHostSharedResource(pi.events, channels, discoveryEvent, create, {
 		registerOwnerCleanup: (cleanup) => pi.on?.("session_shutdown", cleanup),
 	});
 }
