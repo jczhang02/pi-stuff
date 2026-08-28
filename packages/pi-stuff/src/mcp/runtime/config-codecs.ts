@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import stripJsonComments from "strip-json-comments";
+import { type TSchema, Type } from "typebox";
+import { Value } from "typebox/value";
 import {
 	isJsonInputObject,
 	isJsonInputValue,
@@ -10,7 +12,7 @@ import {
 	type JsonInputValue,
 	parseJsonValue,
 } from "../../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { xdgConfigHome } from "../../xdg/index.ts";
 import { logger } from "./logger.ts";
 import type { ImportKind, McpConfig, McpSettings, ServerEntry } from "./types.ts";
@@ -42,94 +44,71 @@ export function importKinds(): ImportKind[] {
 	return Object.keys(IMPORT_PATHS).filter(isImportKind);
 }
 
-function validateOptionalString(record: JsonInputObject, key: string, label: string): void {
-	const value = record[key];
-	if (value !== undefined && !isRuntimeString(value)) throw new TypeError(`${label}.${key} must be a string`);
+function optionalFields(schema: TSchema, fields: readonly string[]) {
+	return Object.fromEntries(fields.map((field) => [field, Type.Optional(schema)]));
 }
 
-function validateOptionalBoolean(record: JsonInputObject, key: string, label: string): void {
-	const value = record[key];
-	if (value !== undefined && !isRuntimeBoolean(value)) throw new TypeError(`${label}.${key} must be a boolean`);
+function literals(...values: Array<string | boolean>) {
+	return Type.Union(values.map((value) => Type.Literal(value)));
 }
 
-function validateOptionalNumber(record: JsonInputObject, key: string, label: string): void {
-	const value = record[key];
-	if (value !== undefined && (!isRuntimeNumber(value) || !Number.isFinite(value))) {
-		throw new TypeError(`${label}.${key} must be a finite number`);
-	}
-}
+const STRING_LIST_SCHEMA = Type.Array(Type.String());
+const STRING_RECORD_SCHEMA = Type.Record(Type.String(), Type.String());
+const APPROVE_TOOLS_SCHEMA = Type.Union([Type.Boolean(), STRING_LIST_SCHEMA]);
+const TOOL_PREFIX_SCHEMA = literals("server", "none", "short", "mcp");
+const OAUTH_SCHEMA = Type.Union([
+	Type.Literal(false),
+	Type.Object({
+		...optionalFields(Type.String(), ["clientId", "clientSecret", "scope", "redirectUri", "clientName", "clientUri"]),
+		authorizationParams: Type.Optional(STRING_RECORD_SCHEMA),
+		grantType: Type.Optional(literals("authorization_code", "client_credentials")),
+	}),
+]);
+const SERVER_ENTRY_SCHEMA = Type.Object({
+	...optionalFields(Type.String(), ["command", "socket", "cwd", "url", "bearerToken", "bearerTokenEnv"]),
+	...optionalFields(Type.Boolean(), ["exposeResources", "debug", "trace", "disabled"]),
+	...optionalFields(Type.Number(), ["idleTimeout", "requestTimeoutMs"]),
+	...optionalFields(STRING_LIST_SCHEMA, ["args", "includeTools", "excludeTools"]),
+	...optionalFields(STRING_RECORD_SCHEMA, ["env", "headers"]),
+	approveTools: Type.Optional(APPROVE_TOOLS_SCHEMA),
+	auth: Type.Optional(literals("oauth", "bearer", false)),
+	lifecycle: Type.Optional(literals("keep-alive", "lazy", "lazy-keep-alive", "eager")),
+	oauth: Type.Optional(OAUTH_SCHEMA),
+	toolPrefix: Type.Optional(TOOL_PREFIX_SCHEMA),
+});
+const MCP_SETTINGS_SCHEMA = Type.Object({
+	...optionalFields(Type.Boolean(), ["showStatusIcon", "autoAuth"]),
+	...optionalFields(Type.Number(), ["idleTimeout", "requestTimeoutMs"]),
+	...optionalFields(Type.String(), ["authRequiredMessage", "oauthDir"]),
+	approveTools: Type.Optional(APPROVE_TOOLS_SCHEMA),
+	hostConfigDiscovery: Type.Optional(literals("off", "prompt", "on")),
+	mcpFooterStatus: Type.Optional(literals("full", "compact", "off")),
+	outputGuard: Type.Optional(
+		Type.Union([
+			Type.Boolean(),
+			Type.Object(optionalFields(Type.Number(), ["maxBytes", "maxLines", "detailsMaxBytes"])),
+		]),
+	),
+	toolPrefix: Type.Optional(TOOL_PREFIX_SCHEMA),
+	trace: Type.Optional(
+		Type.Object({
+			...optionalFields(Type.Number(), ["maxBytes", "maxEvents"]),
+			enabled: Type.Optional(Type.Boolean()),
+			file: Type.Optional(Type.String()),
+		}),
+	),
+});
 
-function validateOptionalStringList(record: JsonInputObject, key: string, label: string): void {
-	const value = record[key];
-	if (value !== undefined && (!Array.isArray(value) || !value.every(isRuntimeString))) {
-		throw new TypeError(`${label}.${key} must be an array of strings`);
-	}
-}
-
-function validateOptionalStringRecord(record: JsonInputObject, key: string, label: string): void {
-	const value = record[key];
-	if (value === undefined) return;
-	if (!isJsonInputObject(value) || !Object.values(value).every(isRuntimeString)) {
-		throw new TypeError(`${label}.${key} must be an object of string values`);
-	}
+function assertSchema(schema: TSchema, value: JsonInputValue, label: string): void {
+	if (Value.Check(schema, value)) return;
+	const error = Value.Errors(schema, value)[0];
+	const field = error?.instancePath.slice(1).replaceAll("/", ".");
+	throw new TypeError(`${label}${field ? `.${field}` : ""} ${error?.message ?? "is invalid"}`);
 }
 
 function parseServerEntry(value: JsonInputValue, label: string): ServerEntry {
 	if (!isJsonInputObject(value)) throw new TypeError(`${label} must be an object`);
-	for (const key of ["command", "socket", "cwd", "url", "bearerToken", "bearerTokenEnv"]) {
-		validateOptionalString(value, key, label);
-	}
-	for (const key of ["exposeResources", "debug", "trace", "disabled"]) {
-		validateOptionalBoolean(value, key, label);
-	}
-	for (const key of ["idleTimeout", "requestTimeoutMs"]) validateOptionalNumber(value, key, label);
-	for (const key of ["args", "includeTools", "excludeTools"]) validateOptionalStringList(value, key, label);
-	for (const key of ["env", "headers"]) validateOptionalStringRecord(value, key, label);
-
-	if (
-		value["auth"] !== undefined &&
-		value["auth"] !== false &&
-		value["auth"] !== "oauth" &&
-		value["auth"] !== "bearer"
-	) {
-		throw new TypeError(`${label}.auth must be oauth, bearer, or false`);
-	}
-	if (
-		value["lifecycle"] !== undefined &&
-		(!isRuntimeString(value["lifecycle"]) ||
-			!["keep-alive", "lazy", "lazy-keep-alive", "eager"].includes(value["lifecycle"]))
-	) {
-		throw new TypeError(`${label}.lifecycle is unsupported`);
-	}
-	if (
-		value["toolPrefix"] !== undefined &&
-		(!isRuntimeString(value["toolPrefix"]) || !["server", "none", "short", "mcp"].includes(value["toolPrefix"]))
-	) {
-		throw new TypeError(`${label}.toolPrefix is unsupported`);
-	}
-	const approveTools = value["approveTools"];
-	if (
-		approveTools !== undefined &&
-		!isRuntimeBoolean(approveTools) &&
-		(!Array.isArray(approveTools) || !approveTools.every(isRuntimeString))
-	) {
-		throw new TypeError(`${label}.approveTools must be a boolean or an array of strings`);
-	}
-	if (value["oauth"] !== undefined && value["oauth"] !== false) {
-		if (!isJsonInputObject(value["oauth"])) throw new TypeError(`${label}.oauth must be an object or false`);
-		for (const key of ["clientId", "clientSecret", "scope", "redirectUri", "clientName", "clientUri"]) {
-			validateOptionalString(value["oauth"], key, `${label}.oauth`);
-		}
-		if (
-			value["oauth"]["grantType"] !== undefined &&
-			value["oauth"]["grantType"] !== "authorization_code" &&
-			value["oauth"]["grantType"] !== "client_credentials"
-		) {
-			throw new TypeError(`${label}.oauth.grantType is unsupported`);
-		}
-		validateOptionalStringRecord(value["oauth"], "authorizationParams", `${label}.oauth`);
-	}
-
+	assertSchema(SERVER_ENTRY_SCHEMA, value, label);
 	// SAFETY: every typed ServerEntry field is validated above; extra JSON fields remain inert compatibility data.
 	return value as ServerEntry;
 }
@@ -137,50 +116,7 @@ function parseServerEntry(value: JsonInputValue, label: string): ServerEntry {
 function parseMcpSettings(value: JsonInputValue): McpSettings | undefined {
 	if (value === undefined) return undefined;
 	if (!isJsonInputObject(value)) throw new TypeError("MCP config settings must be an object");
-	for (const key of ["showStatusIcon", "autoAuth"]) validateOptionalBoolean(value, key, "settings");
-	for (const key of ["idleTimeout", "requestTimeoutMs"]) validateOptionalNumber(value, key, "settings");
-	for (const key of ["authRequiredMessage", "oauthDir"]) validateOptionalString(value, key, "settings");
-	if (
-		value["toolPrefix"] !== undefined &&
-		(!isRuntimeString(value["toolPrefix"]) || !["server", "none", "short", "mcp"].includes(value["toolPrefix"]))
-	) {
-		throw new TypeError("settings.toolPrefix is unsupported");
-	}
-	if (
-		value["mcpFooterStatus"] !== undefined &&
-		(!isRuntimeString(value["mcpFooterStatus"]) || !["full", "compact", "off"].includes(value["mcpFooterStatus"]))
-	) {
-		throw new TypeError("settings.mcpFooterStatus is unsupported");
-	}
-	if (
-		value["hostConfigDiscovery"] !== undefined &&
-		(!isRuntimeString(value["hostConfigDiscovery"]) ||
-			!["off", "prompt", "on"].includes(value["hostConfigDiscovery"]))
-	) {
-		throw new TypeError("settings.hostConfigDiscovery is unsupported");
-	}
-	const approveTools = value["approveTools"];
-	if (
-		approveTools !== undefined &&
-		!isRuntimeBoolean(approveTools) &&
-		(!Array.isArray(approveTools) || !approveTools.every(isRuntimeString))
-	) {
-		throw new TypeError("settings.approveTools must be a boolean or an array of strings");
-	}
-	const outputGuard = value["outputGuard"];
-	if (outputGuard !== undefined && !isRuntimeBoolean(outputGuard)) {
-		if (!isJsonInputObject(outputGuard)) throw new TypeError("settings.outputGuard must be a boolean or an object");
-		for (const key of ["maxBytes", "maxLines", "detailsMaxBytes"])
-			validateOptionalNumber(outputGuard, key, "settings.outputGuard");
-	}
-	const trace = value["trace"];
-	if (trace !== undefined) {
-		if (!isJsonInputObject(trace)) throw new TypeError("settings.trace must be an object");
-		validateOptionalBoolean(trace, "enabled", "settings.trace");
-		validateOptionalString(trace, "file", "settings.trace");
-		for (const key of ["maxBytes", "maxEvents"]) validateOptionalNumber(trace, key, "settings.trace");
-	}
-
+	assertSchema(MCP_SETTINGS_SCHEMA, value, "settings");
 	// SAFETY: every McpSettings field and nested settings object is validated above.
 	return value as McpSettings;
 }
@@ -189,12 +125,7 @@ export function parseServerMap(value: JsonInputValue, label: string): ServerMap 
 	if (!isJsonInputObject(value)) throw new TypeError(`${label} must be an object`);
 	const servers: ServerMap = {};
 	for (const [name, entry] of Object.entries(value)) {
-		Object.defineProperty(servers, name, {
-			configurable: true,
-			enumerable: true,
-			value: parseServerEntry(entry, `${label}.${name}`),
-			writable: true,
-		});
+		setServer(servers, name, parseServerEntry(entry, `${label}.${name}`));
 	}
 	return servers;
 }
