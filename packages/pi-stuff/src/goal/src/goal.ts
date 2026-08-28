@@ -158,7 +158,7 @@ function restoreActiveGoalSession(
 		return;
 	}
 	if (!runtime.activeGoal) return;
-	runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	runtime.persistGoal(runtime.activeGoal);
 	if (startRestoredQueuedGoal) {
 		const restoredGoal = runtime.activeGoal;
 		return async () => {
@@ -170,7 +170,7 @@ function restoreActiveGoalSession(
 			if (!sent && runtime.activeGoal?.id === restoredGoal.id) {
 				runtime.activeGoal = transitionGoal(restoredGoal, "paused");
 				runtime.blockStaleGoalToolCalls();
-				runtime.persistGoalStatus(ctx, runtime.activeGoal);
+				runtime.persistGoal(runtime.activeGoal);
 			}
 		};
 	}
@@ -211,7 +211,7 @@ function restoreGoalSession(
 	}
 	if (runtime.pendingQueueAction) {
 		if (runtime.activeGoal) {
-			runtime.persistGoalStatus(ctx, runtime.activeGoal);
+			runtime.persistGoal(runtime.activeGoal);
 		} else runtime.clearPresentationStatus();
 		return async () => {
 			if (await whenSuiteSessionReady(pi, ctx)) await commands.dispatchPendingQueueActionIfSettled(ctx);
@@ -279,29 +279,15 @@ function registerGoalSessionHandlers(lifecycle: GoalLifecycle): void {
 	pi.on("session_compact", (event, ctx) => compaction.complete(event, ctx));
 }
 
-function prepareNonGoalDelivery(lifecycle: GoalLifecycle, ctx: StatusContext, resetSafetyEpoch: boolean): void {
-	const { runtime } = lifecycle;
-	runtime.goalRecovery = undefined;
-	runtime.guardAbortGoalId = undefined;
-	runtime.clearStaleGoalToolCallBlock();
-	if (resetSafetyEpoch) runtime.clearBudgetWrapUp();
-	if (resetSafetyEpoch) runtime.resetActiveSafetyEpoch(ctx);
-}
-
-function beginNonGoalFollowUp(
-	lifecycle: GoalLifecycle,
-	ctx: StatusContext,
-	origin: GoalRunOrigin,
-	resetSafetyEpoch: boolean,
-): void {
+function prepareNonGoalDelivery(lifecycle: GoalLifecycle, resetSafetyEpoch: boolean, origin?: GoalRunOrigin): void {
 	const { runtime } = lifecycle;
 	runtime.goalRecovery = undefined;
 	runtime.guardAbortGoalId = undefined;
 	runtime.clearStaleGoalToolCallBlock();
 	if (resetSafetyEpoch) runtime.clearBudgetWrapUp();
 	const activeGoalId = runtime.activeGoal?.status === "active" ? runtime.activeGoal.id : undefined;
-	runtime.beginAgentRun(activeGoalId ?? null, activeGoalId ? origin : undefined);
-	if (resetSafetyEpoch && activeGoalId) runtime.resetActiveSafetyEpoch(ctx);
+	if (origin) runtime.beginAgentRun(activeGoalId ?? null, activeGoalId ? origin : undefined);
+	if (resetSafetyEpoch) runtime.resetActiveSafetyEpoch();
 }
 
 function beginPromptRun(lifecycle: GoalLifecycle, prompt: string, ctx: StatusContext): ActiveGoal | undefined {
@@ -327,7 +313,7 @@ function beginPromptRun(lifecycle: GoalLifecycle, prompt: string, ctx: StatusCon
 			if (runtime.activeGoal?.status === "active") runtime.recordGoalUsage(runtime.activeGoal, ctx, false);
 			runtime.pendingQueueAction.displacedUsageFinalized = true;
 			if (runtime.activeGoal) {
-				runtime.persistGoalStatus(ctx, runtime.activeGoal);
+				runtime.persistGoal(runtime.activeGoal);
 			}
 		}
 		runtime.beginAgentRun(null, undefined);
@@ -359,7 +345,7 @@ function beginPromptRun(lifecycle: GoalLifecycle, prompt: string, ctx: StatusCon
 	}
 	if (goalPrompt?.resetSafetyEpoch && goalPromptGoalId === runtime.activeGoal.id) {
 		runtime.activeGoal = resetGoalSafetyEpoch(runtime.activeGoal);
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 	}
 	return runtime.activeGoal;
 }
@@ -407,7 +393,7 @@ function handleGoalMessageStart(lifecycle: GoalLifecycle, messageValue: GoalMess
 		if (message.customType === GOAL_CONTEXT_MESSAGE_TYPE || runtime.isActiveBudgetWrapUpMessage(message)) return;
 		if (!lifecycle.turnActive) return;
 		const origin = hasDirectUserActivation(message) ? "manual" : "automatic";
-		beginNonGoalFollowUp(lifecycle, ctx, origin, origin === "manual");
+		prepareNonGoalDelivery(lifecycle, origin === "manual", origin);
 		return;
 	}
 	if (message.role !== "user") return;
@@ -428,8 +414,8 @@ function handleGoalMessageStart(lifecycle: GoalLifecycle, messageValue: GoalMess
 	]);
 	if (!ownedPrompt) {
 		if (queued?.behavior === "followUp") {
-			beginNonGoalFollowUp(lifecycle, ctx, queued.origin, queued.resetSafetyEpoch);
-		} else if (queued) prepareNonGoalDelivery(lifecycle, ctx, queued.resetSafetyEpoch);
+			prepareNonGoalDelivery(lifecycle, queued.resetSafetyEpoch, queued.origin);
+		} else if (queued) prepareNonGoalDelivery(lifecycle, queued.resetSafetyEpoch);
 		return;
 	}
 	if (runtime.activeGoal?.id !== ownedPrompt.goalId || runtime.activeGoal.status !== "active") return;
@@ -438,7 +424,7 @@ function handleGoalMessageStart(lifecycle: GoalLifecycle, messageValue: GoalMess
 	}
 	runtime.beginAgentRun(ownedPrompt.goalId, ownedPrompt.origin);
 	if (ownedPrompt.resetSafetyEpoch) runtime.activeGoal = resetGoalSafetyEpoch(runtime.activeGoal);
-	runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	runtime.persistGoal(runtime.activeGoal);
 }
 
 function projectGoalContext(lifecycle: GoalLifecycle, event: ContextEvent, ctx: ExtensionContext) {
@@ -510,7 +496,7 @@ function registerGoalToolHandlers(lifecycle: GoalLifecycle): void {
 		}
 		if (runtime.activeGoal?.status !== "active") return;
 		if (!runtime.recordGoalUsage(runtime.activeGoal, ctx)) return;
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 		if (runtime.limitActiveGoalForBudget(ctx, true)) return;
 		if (!runtime.goalToolsAvailable()) runtime.pauseGoalForUnavailableTools(ctx);
 	});
@@ -547,7 +533,7 @@ function stopGoalAfterAgentEnd(
 		runtime.activeGoal.id,
 		assistant.errorMessage ?? `goal ${status} after agent interruption`,
 	);
-	runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	runtime.persistGoal(runtime.activeGoal);
 
 	const details = assistant.errorMessage ? ` (${truncateNotification(assistant.errorMessage)})` : "";
 	if (status === "paused") {
@@ -569,14 +555,14 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 	if (!runtime.activeGoal) return;
 	if (runtime.activeGoal.status === "budget_limited" && runtime.budgetWrapUp?.goalId === runtime.activeGoal.id) {
 		runtime.recordGoalUsage(runtime.activeGoal, ctx);
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 		runtime.clearBudgetWrapUp();
 		return;
 	}
 	if (runtime.activeGoal.status !== "active") return;
 	if (runtime.pendingQueueAction?.kind === "advance" && runtime.pendingQueueAction.goalId === runtime.activeGoal.id) {
 		runtime.recordGoalUsage(runtime.activeGoal, ctx);
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 		return;
 	}
 
@@ -606,7 +592,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 				errorMessage: finalAssistant.errorMessage,
 			};
 			runtime.prompts.cancelContinuationWork();
-			runtime.persistGoalStatus(ctx, runtime.activeGoal);
+			runtime.persistGoal(runtime.activeGoal);
 			return;
 		}
 		runtime.clearGoalRecoveryForGoal(goalId);
@@ -622,7 +608,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 			errorMessage: finalAssistant.errorMessage,
 		};
 		runtime.prompts.cancelContinuationWork();
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 		return;
 	}
 
@@ -642,7 +628,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 		)
 	)
 		return;
-	runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	runtime.persistGoal(runtime.activeGoal);
 	const currentGoal = runtime.activeGoal;
 	if (!currentGoal || currentGoal.id !== goalId || currentGoal.status !== "active") return;
 	if (runtime.pendingQueueAction?.kind === "prioritize") return;

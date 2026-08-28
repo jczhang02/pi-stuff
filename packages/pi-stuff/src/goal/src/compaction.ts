@@ -43,7 +43,7 @@ export class GoalCompactionCoordinator {
 		if (!this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx)) return;
 		this.runtime.prompts.cancelContinuationWork();
 		if (!suiteNativePreflight) this.arm(ctx, this.runtime.activeGoal.id);
-		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
+		this.runtime.persistGoal(this.runtime.activeGoal);
 		if (this.runtime.pendingQueueAction) return;
 		if (this.runtime.limitActiveGoalForBudget(ctx, false)) return { cancel: true };
 	}
@@ -79,7 +79,7 @@ export class GoalCompactionCoordinator {
 		}
 		const usageRecorded = this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx);
 		if (usageRecorded) {
-			this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
+			this.runtime.persistGoal(this.runtime.activeGoal);
 		}
 		if (suiteNativePreflight) {
 			if (usageRecorded) this.runtime.limitActiveGoalForBudget(ctx, false);

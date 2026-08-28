@@ -42,7 +42,6 @@ interface GoalMenuRuntimeView {
 	pi?: GoalRuntime["pi"];
 	recordGoalUsage?: GoalRuntime["recordGoalUsage"];
 	persistGoal?: GoalRuntime["persistGoal"];
-	updateStatus?: GoalRuntime["updateStatus"];
 }
 
 export interface GoalMenuState {
@@ -374,7 +373,6 @@ function refreshGoalMenuState(runtime: GoalMenuRuntimeView, ctx: ExtensionComman
 	if (!goal || runtime.queueFrozen) return;
 	runtime.recordGoalUsage?.(goal, ctx);
 	runtime.persistGoal?.(goal);
-	runtime.updateStatus?.(ctx, goal);
 }
 
 export function safeGoalMenuText(value: string, maxCharacters = 120) {

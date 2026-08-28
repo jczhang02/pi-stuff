@@ -360,7 +360,7 @@ export function applyGoalSettings(
 				rollbackErrors.push(rollbackError);
 			}
 			try {
-				restorePersistedRuntime(runtime, ctx);
+				restorePersistedRuntime(runtime);
 			} catch (rollbackError) {
 				rollbackErrors.push(rollbackError);
 			}
@@ -480,7 +480,7 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 		}
 	}
 	runtime.queueFrozen = shouldFreeze;
-	if (runtime.activeGoal) runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	if (runtime.activeGoal) runtime.persistGoal(runtime.activeGoal);
 	else runtime.clearPresentationStatus();
 	if (!shouldFreeze) return;
 
@@ -496,9 +496,9 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 	}
 }
 
-function restorePersistedRuntime(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
+function restorePersistedRuntime(runtime: GoalRuntime) {
 	if (runtime.activeGoal) {
-		runtime.persistGoalStatus(ctx, runtime.activeGoal);
+		runtime.persistGoal(runtime.activeGoal);
 		return;
 	}
 	runtime.clearPresentationStatus();

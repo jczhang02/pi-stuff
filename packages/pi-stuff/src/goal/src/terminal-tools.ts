@@ -127,7 +127,7 @@ async function executeGoalComplete(runtime: GoalRuntime, params: GoalCompletePar
 	}
 	if (hasPendingSkipForGoal(runtime, completedGoal.id)) {
 		runtime.recordGoalUsage(completedGoal, ctx);
-		runtime.persistGoalStatus(ctx, completedGoal);
+		runtime.persistGoal(completedGoal);
 		runtime.clearBudgetWrapUp();
 		return reject("goal is queued to be skipped", true);
 	}
@@ -135,7 +135,7 @@ async function executeGoalComplete(runtime: GoalRuntime, params: GoalCompletePar
 	if (staleGoalRejection) {
 		if (completingDuringBudgetWrapUp) {
 			runtime.recordGoalUsage(completedGoal, ctx);
-			runtime.persistGoalStatus(ctx, completedGoal);
+			runtime.persistGoal(completedGoal);
 			runtime.clearBudgetWrapUp();
 		}
 		return reject(staleGoalRejection, completingDuringBudgetWrapUp);
@@ -161,7 +161,7 @@ async function executeGoalComplete(runtime: GoalRuntime, params: GoalCompletePar
 						: completionEvidenceRejectionReason(summary, evidence);
 	if (rejectionReason) {
 		runtime.recordGoalUsage(completedGoal, ctx);
-		runtime.persistGoalStatus(ctx, completedGoal);
+		runtime.persistGoal(completedGoal);
 		if (completingDuringBudgetWrapUp) runtime.clearBudgetWrapUp();
 		return reject(rejectionReason, completingDuringBudgetWrapUp);
 	}
@@ -222,7 +222,7 @@ async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParam
 	if (!runtime.canRecordGoalUsage()) return reject("current run does not own the active goal");
 	if (hasPendingSkipForGoal(runtime, blockedGoal.id)) {
 		runtime.recordGoalUsage(blockedGoal, ctx);
-		runtime.persistGoalStatus(ctx, blockedGoal);
+		runtime.persistGoal(blockedGoal);
 		runtime.clearBudgetWrapUp();
 		return reject("goal is queued to be skipped", true);
 	}
@@ -241,7 +241,7 @@ async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParam
 	if (blockerRejection) return reject(blockerRejection);
 
 	blockedGoal.blockerAudit = recordGoalBlockerAttempt(blockedGoal, reason, attemptedAction, evidence);
-	runtime.persistGoalStatus(ctx, blockedGoal);
+	runtime.persistGoal(blockedGoal);
 	if (blockedGoal.blockerAudit.consecutiveTurns < 3) {
 		return reject(
 			`blocker audit recorded for ${blockedGoal.blockerAudit.consecutiveTurns}/3 consecutive Goal turns; keep working and report the same stable blocker on a later Goal turn only if it persists`,
@@ -256,7 +256,7 @@ async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParam
 	runtime.blockStaleGoalToolCalls();
 	runtime.activeGoal = transitionGoal(blockedGoal, "blocked");
 	runtime.setTerminalReason(runtime.activeGoal.id, reason);
-	runtime.persistGoalStatus(ctx, runtime.activeGoal);
+	runtime.persistGoal(runtime.activeGoal);
 	ctx.ui.notify(`Goal blocked: ${truncateNotification(reason)}`, "warning");
 	return {
 		content: [{ type: "text" as const, text: `Goal blocked: ${reason}` }],
