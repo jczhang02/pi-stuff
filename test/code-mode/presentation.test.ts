@@ -92,14 +92,39 @@ test("historical malformed Code Mode images are replaced only in provider contex
 	expect(direct.content).toEqual([badImage]);
 });
 
-test("normalized model content is restored without revalidating image payloads", () => {
-	let dataReads = 0;
+test("historical malformed normalized model content is replaced only in provider context", () => {
+	const badImage = {
+		data: `${Buffer.alloc(384, 1).toString("base64")}\n[Output truncated]`,
+		mimeType: "image/jpeg",
+		type: "image" as const,
+	};
+	const persisted = {
+		content: [],
+		details: {
+			kind: "pi-stuff-code-mode",
+			modelContent: [badImage],
+			operations: [],
+			status: "success",
+		},
+		isError: false,
+		role: "toolResult" as const,
+		timestamp: 1,
+		toolCallId: "normalized-bad-image",
+		toolName: "codemode",
+	};
+	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
+	const projected = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
+
+	expect(projected?.[0]).toMatchObject({
+		content: [{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }],
+	});
+	expect(persisted.details.modelContent).toEqual([badImage]);
+});
+
+test("valid normalized model content is restored without rewriting image payloads", () => {
 	const normalizedModelImage = {
 		type: "image" as const,
-		get data() {
-			dataReads += 1;
-			return normalizedImage.data;
-		},
+		data: normalizedImage.data,
 		mimeType: normalizedImage.mimeType,
 	};
 	const persisted = {
@@ -119,7 +144,6 @@ test("normalized model content is restored without revalidating image payloads",
 	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
 	const projected = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
 
-	expect(dataReads).toBe(1);
 	const projectedResult = projected?.[0];
 	expect(projectedResult?.role).toBe("toolResult");
 	if (projectedResult?.role !== "toolResult") throw new Error("Expected a projected Tool result.");
