@@ -1,6 +1,8 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { type JsonObject, type JsonSourceValue, type JsonValue, parseJsonValue } from "../shared/json-value.js";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { type Static, type TProperties, Type } from "typebox";
+import { Value } from "typebox/value";
+import { type JsonSourceValue, type JsonValue, parseJsonValue } from "../shared/json-value.js";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { unwrapSuiteToolResult } from "./connector.js";
@@ -28,56 +30,101 @@ export type CodeModeExecutionStatus = (typeof EXECUTION_STATUSES)[number];
 
 export type ReplayPolicy = "never" | "record" | "reexecute";
 
-type StoredValue = { readonly kind: "undefined" } | { readonly json: JsonValue; readonly kind: "json" };
-type Event<Kind extends string> = { readonly at: number; readonly kind: Kind; readonly schemaVersion: 1 };
-type ExecutionEvent<Kind extends string> = Event<Kind> & { readonly executionId: string };
-type CallEvent<Kind extends string> = ExecutionEvent<Kind> & { readonly callId: string };
+const NONEMPTY_STRING_SCHEMA = Type.String({ minLength: 1 });
+const JSON_VALUE_SCHEMA = Type.Unsafe<JsonValue>({});
+const STORED_VALUE_SCHEMA = Type.Union([
+	Type.Object({ kind: Type.Literal("undefined") }, { additionalProperties: false }),
+	Type.Object({ json: JSON_VALUE_SCHEMA, kind: Type.Literal("json") }, { additionalProperties: false }),
+]);
+const REPLAY_POLICY_SCHEMA = Type.Union([Type.Literal("never"), Type.Literal("record"), Type.Literal("reexecute")]);
+const EVENT_BASE_SCHEMA = { at: Type.Number(), schemaVersion: Type.Literal(SCHEMA_VERSION) };
 
-export type ExecutionStartedEvent = ExecutionEvent<"execution-started"> & {
-	readonly code: string;
-	readonly cwd?: string;
-	readonly outerToolCallId: string;
-};
+function eventSchema<const Kind extends string, const Properties extends TProperties>(
+	kind: Kind,
+	properties: Properties,
+) {
+	return Type.Object(
+		{ ...EVENT_BASE_SCHEMA, ...properties, kind: Type.Literal(kind) },
+		{ additionalProperties: false },
+	);
+}
 
-type CallOpenedEvent<Kind extends "call-pending" | "call-started"> = CallEvent<Kind> & {
-	readonly args: StoredValue;
-	readonly argsKey: string;
-	readonly attempt: number;
-	readonly name: string;
-	readonly replay: ReplayPolicy;
-	readonly sequence: number;
-};
+function executionEventSchema<const Kind extends string, const Properties extends TProperties>(
+	kind: Kind,
+	properties: Properties,
+) {
+	return eventSchema(kind, { executionId: NONEMPTY_STRING_SCHEMA, ...properties });
+}
 
-export type CallPendingEvent = CallOpenedEvent<"call-pending">;
-export type CallStartedEvent = CallOpenedEvent<"call-started"> & { readonly requiresApproval?: boolean };
-export type CallSettledEvent = CallEvent<"call-settled"> & {
-	readonly error?: string;
-	readonly result?: StoredValue;
-	readonly status: "error" | "success";
-	readonly value?: StoredValue;
-};
-export type CallCompensatedEvent = CallEvent<"call-compensated">;
-export type ExecutionSettledEvent = ExecutionEvent<"execution-settled"> & {
-	readonly attempt: number;
-	readonly error?: string;
-	readonly status: CodeModeExecutionStatus;
-};
-export type ExecutionPrunedEvent = ExecutionEvent<"execution-pruned">;
-export type ExecutionResumedEvent = ExecutionEvent<"execution-resumed"> & { readonly attempt: number };
-export type SnippetSavedEvent = Event<"snippet-saved"> & { readonly snippet: Snippet };
-export type SnippetDeletedEvent = Event<"snippet-deleted"> & { readonly name: string };
+function callEventSchema<const Kind extends string, const Properties extends TProperties>(
+	kind: Kind,
+	properties: Properties,
+) {
+	return executionEventSchema(kind, { callId: NONEMPTY_STRING_SCHEMA, ...properties });
+}
 
-export type LedgerEvent =
-	| CallCompensatedEvent
-	| CallPendingEvent
-	| CallSettledEvent
-	| CallStartedEvent
-	| ExecutionPrunedEvent
-	| ExecutionResumedEvent
-	| ExecutionSettledEvent
-	| ExecutionStartedEvent
-	| SnippetDeletedEvent
-	| SnippetSavedEvent;
+const CALL_OPENED_SCHEMA = {
+	args: STORED_VALUE_SCHEMA,
+	argsKey: Type.String(),
+	attempt: Type.Integer(),
+	name: NONEMPTY_STRING_SCHEMA,
+	replay: REPLAY_POLICY_SCHEMA,
+	requiresApproval: Type.Optional(Type.Boolean()),
+	sequence: Type.Integer(),
+};
+const LEDGER_EVENT_SCHEMA = Type.Union([
+	callEventSchema("call-compensated", {}),
+	callEventSchema("call-pending", CALL_OPENED_SCHEMA),
+	callEventSchema("call-settled", {
+		error: Type.Optional(Type.String()),
+		result: Type.Optional(STORED_VALUE_SCHEMA),
+		status: Type.Union([Type.Literal("error"), Type.Literal("success")]),
+		value: Type.Optional(STORED_VALUE_SCHEMA),
+	}),
+	callEventSchema("call-started", CALL_OPENED_SCHEMA),
+	executionEventSchema("execution-pruned", {}),
+	executionEventSchema("execution-resumed", { attempt: Type.Integer() }),
+	executionEventSchema("execution-settled", {
+		attempt: Type.Integer(),
+		error: Type.Optional(Type.String()),
+		status: Type.Unsafe<CodeModeExecutionStatus>({ enum: EXECUTION_STATUSES, type: "string" }),
+	}),
+	executionEventSchema("execution-started", {
+		code: Type.String(),
+		cwd: Type.Optional(Type.String()),
+		outerToolCallId: Type.String(),
+	}),
+	eventSchema("snippet-deleted", { name: Type.String() }),
+	eventSchema("snippet-saved", {
+		snippet: Type.Object(
+			{
+				code: Type.String(),
+				connectors: Type.Optional(Type.Array(Type.String())),
+				description: Type.String(),
+				inputSchema: Type.Optional(Type.Unknown()),
+				name: Type.String(),
+				savedAt: Type.Number(),
+			},
+			{ additionalProperties: false },
+		),
+	}),
+]);
+
+type StoredValue = Readonly<Static<typeof STORED_VALUE_SCHEMA>>;
+type SchemaLedgerEvent = Static<typeof LEDGER_EVENT_SCHEMA>;
+type SchemaEvent<Kind extends SchemaLedgerEvent["kind"]> = Readonly<Extract<SchemaLedgerEvent, { kind: Kind }>>;
+
+export type CallCompensatedEvent = SchemaEvent<"call-compensated">;
+export type CallPendingEvent = SchemaEvent<"call-pending">;
+export type CallSettledEvent = SchemaEvent<"call-settled">;
+export type CallStartedEvent = SchemaEvent<"call-started">;
+export type ExecutionPrunedEvent = SchemaEvent<"execution-pruned">;
+export type ExecutionResumedEvent = SchemaEvent<"execution-resumed">;
+export type ExecutionSettledEvent = SchemaEvent<"execution-settled">;
+export type ExecutionStartedEvent = SchemaEvent<"execution-started">;
+export type SnippetDeletedEvent = SchemaEvent<"snippet-deleted">;
+export type SnippetSavedEvent = SchemaEvent<"snippet-saved"> & { readonly snippet: Snippet };
+export type LedgerEvent = Readonly<SchemaLedgerEvent>;
 
 export interface CallState {
 	args: CodemodeValue;
@@ -139,30 +186,6 @@ export interface LedgerSnapshot {
 	totalExecutions: number;
 }
 
-function isRecord(value: JsonValue | undefined): value is JsonObject {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
-}
-
-function finiteNumber(value: JsonValue | undefined): number | undefined {
-	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
-}
-
-function integer(value: JsonValue | undefined): number | undefined {
-	return isRuntimeNumber(value) && Number.isInteger(value) ? value : undefined;
-}
-
-function nonemptyString(value: JsonValue | undefined): string | undefined {
-	return isRuntimeString(value) && value.length > 0 ? value : undefined;
-}
-
-function isReplayPolicy(value: JsonValue | undefined): value is ReplayPolicy {
-	return value === "never" || value === "record" || value === "reexecute";
-}
-
-function isExecutionStatus(value: JsonValue | undefined): value is CodeModeExecutionStatus {
-	return EXECUTION_STATUSES.some((status) => status === value);
-}
-
 export function durableValue<Value>(what: string, value: Value): StoredValue {
 	let serialized: string | undefined;
 	try {
@@ -196,191 +219,12 @@ function restoreValue(value: StoredValue | undefined): CodemodeValue {
 	return !value || value.kind === "undefined" ? undefined : parseForStorage(JSON.stringify(value.json));
 }
 
-function parseStoredValue(value: JsonValue | undefined): StoredValue | undefined {
-	if (!value || !isRecord(value)) return undefined;
-	if (value["kind"] === "undefined") return { kind: "undefined" };
-	const json = value["json"];
-	return value["kind"] === "json" && Object.hasOwn(value, "json") && json !== undefined
-		? { json, kind: "json" }
-		: undefined;
-}
-
-function sourceRecord(source: JsonSourceValue): JsonObject | undefined {
-	const value = parseJsonValue(JSON.stringify(source));
-	return isRecord(value) && value["schemaVersion"] === SCHEMA_VERSION && finiteNumber(value["at"]) !== undefined
-		? value
-		: undefined;
-}
-
-function callOpened(
-	value: JsonObject,
-	kind: "call-pending" | "call-started",
-	at: number,
-	executionId: string,
-): CallPendingEvent | CallStartedEvent | undefined {
-	const args = parseStoredValue(value["args"]);
-	const argsKey = value["argsKey"];
-	const attempt = integer(value["attempt"]);
-	const callId = nonemptyString(value["callId"]);
-	const name = nonemptyString(value["name"]);
-	const replay = value["replay"];
-	const requiresApproval = value["requiresApproval"];
-	const sequence = integer(value["sequence"]);
-	if (
-		!args ||
-		!isRuntimeString(argsKey) ||
-		attempt === undefined ||
-		!callId ||
-		!name ||
-		!isReplayPolicy(replay) ||
-		(requiresApproval !== undefined && !isRuntimeBoolean(requiresApproval)) ||
-		sequence === undefined
-	)
-		return undefined;
-	const common = {
-		args,
-		argsKey,
-		at,
-		attempt,
-		callId,
-		executionId,
-		name,
-		replay,
-		schemaVersion: 1 as const,
-		sequence,
-	};
-	if (kind === "call-pending") return { ...common, kind };
-	return requiresApproval === undefined ? { ...common, kind } : { ...common, kind, requiresApproval };
-}
-
-function callSettled(value: JsonObject, at: number, executionId: string): CallSettledEvent | undefined {
-	const callId = nonemptyString(value["callId"]);
-	const error = value["error"];
-	const result = parseStoredValue(value["result"]);
-	const status = value["status"];
-	const settledValue = parseStoredValue(value["value"]);
-	if (
-		!callId ||
-		(status !== "error" && status !== "success") ||
-		(error !== undefined && !isRuntimeString(error)) ||
-		(value["result"] !== undefined && !result) ||
-		(value["value"] !== undefined && !settledValue)
-	)
-		return undefined;
-	const event: CallSettledEvent = {
-		at,
-		callId,
-		executionId,
-		kind: "call-settled",
-		schemaVersion: SCHEMA_VERSION,
-		status,
-	};
-	if (error !== undefined) Object.assign(event, { error });
-	if (result !== undefined) Object.assign(event, { result });
-	if (settledValue !== undefined) Object.assign(event, { value: settledValue });
-	return event;
-}
-
-function executionSettled(value: JsonObject, at: number, executionId: string): ExecutionSettledEvent | undefined {
-	const attempt = integer(value["attempt"]);
-	const error = value["error"];
-	const status = value["status"];
-	if (attempt === undefined || !isExecutionStatus(status) || (error !== undefined && !isRuntimeString(error)))
-		return undefined;
-	const event: ExecutionSettledEvent = {
-		at,
-		attempt,
-		executionId,
-		kind: "execution-settled",
-		schemaVersion: SCHEMA_VERSION,
-		status,
-	};
-	if (error !== undefined) Object.assign(event, { error });
-	return event;
-}
-
-function snippetSaved(value: JsonObject, at: number): SnippetSavedEvent | undefined {
-	const source = value["snippet"];
-	if (!isRecord(source)) return undefined;
-	const code = source["code"];
-	const connectors = source["connectors"];
-	const description = source["description"];
-	const name = source["name"];
-	const savedAt = finiteNumber(source["savedAt"]);
-	if (
-		!isRuntimeString(code) ||
-		(connectors !== undefined && (!Array.isArray(connectors) || !connectors.every(isRuntimeString))) ||
-		!isRuntimeString(description) ||
-		!isRuntimeString(name) ||
-		savedAt === undefined
-	)
-		return undefined;
-	const snippet: Snippet = { code, description, name, savedAt };
-	if (connectors !== undefined) snippet.connectors = connectors;
-	if (Object.hasOwn(source, "inputSchema")) snippet.inputSchema = source["inputSchema"];
-	return { at, kind: "snippet-saved", schemaVersion: SCHEMA_VERSION, snippet };
-}
-
 export function eventFrom(source: JsonSourceValue): LedgerEvent | undefined {
-	const value = sourceRecord(source);
-	if (!value || !isRuntimeString(value["kind"])) return undefined;
-	const kind = value["kind"];
-	const at = finiteNumber(value["at"]);
-	if (at === undefined) return undefined;
-	if (kind === "snippet-saved") return snippetSaved(value, at);
-	if (kind === "snippet-deleted") {
-		const name = value["name"];
-		return isRuntimeString(name) ? { at, kind, name, schemaVersion: SCHEMA_VERSION } : undefined;
-	}
-	const executionId = nonemptyString(value["executionId"]);
-	if (!executionId) return undefined;
-	switch (kind) {
-		case "call-pending":
-			return callOpened(value, kind, at, executionId);
-		case "call-started":
-			return callOpened(value, kind, at, executionId);
-		case "call-settled":
-			return callSettled(value, at, executionId);
-		case "execution-settled":
-			return executionSettled(value, at, executionId);
-		case "execution-started": {
-			const code = value["code"];
-			const cwd = value["cwd"];
-			const outerToolCallId = value["outerToolCallId"];
-			if (
-				!isRuntimeString(code) ||
-				(cwd !== undefined && !isRuntimeString(cwd)) ||
-				!isRuntimeString(outerToolCallId)
-			)
-				return undefined;
-			const event: ExecutionStartedEvent = {
-				at,
-				code,
-				executionId,
-				kind: "execution-started",
-				outerToolCallId,
-				schemaVersion: SCHEMA_VERSION,
-			};
-			if (cwd !== undefined) Object.assign(event, { cwd });
-			return event;
-		}
-		case "call-compensated": {
-			const callId = nonemptyString(value["callId"]);
-			return callId
-				? { at, callId, executionId, kind: "call-compensated", schemaVersion: SCHEMA_VERSION }
-				: undefined;
-		}
-		case "execution-pruned":
-			return { at, executionId, kind, schemaVersion: SCHEMA_VERSION };
-		case "execution-resumed": {
-			const attempt = integer(value["attempt"]);
-			return attempt !== undefined
-				? { at, attempt, executionId, kind: "execution-resumed", schemaVersion: SCHEMA_VERSION }
-				: undefined;
-		}
-		default:
-			return undefined;
-	}
+	const value = parseJsonValue(JSON.stringify(source));
+	const cleaned = Value.Clean(LEDGER_EVENT_SCHEMA, structuredClone(value));
+	if (!Value.Check(LEDGER_EVENT_SCHEMA, cleaned)) return undefined;
+	// SAFETY: TypeBox validates every discriminated event member before the durable fold consumes it.
+	return cleaned as LedgerEvent;
 }
 
 export function createLedgerSnapshot(): LedgerSnapshot {
