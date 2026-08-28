@@ -19,8 +19,8 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 - Treat every tracked implementation, test, script, prototype, generated source, and repository quality tool as
   Repository-owned Source regardless of provenance. Source origin never permits a Biome, Oxlint/anti-slop, TypeScript,
   dependency-analysis, file-size, or maintainability exemption. Exclude only non-code machine state and artifacts.
-- Follow the size and reduction gates in `docs/code-quality.md`. File splitting must deepen an owning Module and reduce
-  concepts or state, not distribute the same complexity across mechanical fragments.
+- Follow the size gates and line-count evidence policy in `docs/code-quality.md`. File splitting must deepen an owning
+  Module and reduce concepts or state, not distribute the same complexity across mechanical fragments.
 - For material design choices, compare viable options and evidence before choosing the smallest adequate one. Explain
   unfamiliar terms and the result in plain language.
 - Make obvious, reversible repository-local decisions without asking. Ask one concise question in the conversation,

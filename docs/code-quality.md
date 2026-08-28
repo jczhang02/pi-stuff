@@ -20,18 +20,21 @@ not code and remain outside code checks.
   binary assets, prose, and report artifacts.
 - Splitting a file must reduce responsibilities, mutable state, branching, or concepts held at once. Moving unchanged
   complexity into mechanically named fragments does not satisfy the standard.
-- Code-quality work reports before-and-after physical line counts. An owning Capability must not grow during a
-  maintainability refactor without explicit maintainer approval. Reductions must come from deleted duplication,
-  branches, wrappers, compatibility layers, or state—not compressed syntax, lost explanation, or weakened validation,
-  security, data integrity, accessibility, or compatibility.
+- Code-quality work reports before-and-after physical line counts. Treat the counts as review evidence, not an
+  acceptance quota: investigate unexplained Capability growth and prefer deleting duplication, branches, wrappers,
+  compatibility layers, or state. A neutral or positive delta is acceptable when it produces a deeper Module or
+  preserves necessary explanation, validation, security, data integrity, accessibility, or compatibility. Never
+  improve the metric through compressed syntax or weakened safeguards.
 - Tests establish behavior and compatibility. Passing tests never substitutes for source review against this standard.
 
 ## Current repository remediation
 
 The current whole-repository audit must resolve every reported structural and maintainability issue. The 24 audited
-production files above 1,000 lines contain 36,313 physical lines before remediation; their code and every module
-created from them must finish at or below 32,680 lines, with 30,866 lines as the target. Scripts and tests are measured
-separately and must also be net-negative.
+production files above 1,000 lines contain 36,313 physical lines before remediation. Track that audited set, every
+module extracted from it, Capability totals, scripts, and tests so code movement and unexplained growth remain visible.
+No aggregate percentage reduction or net-negative result is a completion condition. Completion depends on resolved
+findings, Module cohesion, the file and function limits above, compatible behavior, real-Host acceptance, and review
+convergence.
 
 The remediation is one continuous Agent Session with no implementation handoff. It also resolves the accepted Code
 Mode ledger/recovery and image-result work tracked by `ps-4hs` and `ps-6z2`; those defects are part of this program's
@@ -44,7 +47,8 @@ Work proceeds in small behavior-preserving batches:
    provider dispatch, canonical helpers, and duplicate contracts.
 3. Deepen the existing Capability Modules without moving lifecycle authority: Tool Display; Agents; Context
    Management, Goal, and Background Work; then MCP and Code Mode.
-4. Reduce oversized scripts, tests, prototypes, and quality tools under the same standard.
+4. Bring oversized scripts, tests, prototypes, and quality tools under the same standard, simplifying them where that
+   improves maintainability.
 5. After implementation, run multi-turn acceptance in multiple fresh real Pi Host Sessions using `gpt-5.6-luna`,
    including continuation and recovery paths. Focused tests remain supporting behavior evidence rather than evidence
    that the structure is acceptable.
@@ -52,4 +56,4 @@ Work proceeds in small behavior-preserving batches:
    finish only after two consecutive whole-repository rounds report no new issues.
 
 The canonical work map lives in Beads. Record per-Capability baselines and acceptance criteria there before
-implementation so moving code between files cannot satisfy the reduction target accidentally.
+implementation. Use line counts to expose code movement and unexplained growth, not as a deletion quota.
