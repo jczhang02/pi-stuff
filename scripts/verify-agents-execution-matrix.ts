@@ -173,6 +173,39 @@ function peakChildConcurrency(records: readonly LogRecord[]): number {
 	return peak;
 }
 
+function verifyLongScenario(scenario: Scenario, records: readonly LogRecord[], mainResult: string): void {
+	if (!scenario.id.startsWith("long-")) return;
+	const longTurns = records.filter((record) => record.kind === "child-long-turn");
+	const longTools = records.filter((record) => record.kind === "child-long-tool");
+	const steers = records.filter((record) => record.kind === "child-long-steer");
+	if (longTools.length !== 8 || longTurns.length !== 9) {
+		fail(`long child expected 8 Tool rounds and 9 provider turns, received ${longTools.length}/${longTurns.length}`);
+	}
+	if (steers.length !== 1 || steers[0]?.round !== 4) {
+		fail(`long child expected one steering delivery after round 4, received ${JSON.stringify(steers)}`);
+	}
+	const projectedContinuation = longTurns.find(
+		(record) => isRuntimeNumber(record.round) && record.round >= 5 && record.sawProjection === true,
+	);
+	const steeredContinuation = longTurns.find(
+		(record) =>
+			isRuntimeNumber(record.round) &&
+			record.round >= 5 &&
+			record.sawProjection === true &&
+			record.sawSteering === true,
+	);
+	if (!projectedContinuation || !steeredContinuation) {
+		fail("long child did not continue after both bounded history projection and mid-run steering");
+	}
+	const finalTurn = longTurns.find((record) => record.round === 8);
+	if (finalTurn?.sawProjection !== true || finalTurn.sawSteering !== true) {
+		fail(`long child final turn lost projection or steering authority: ${JSON.stringify(finalTurn)}`);
+	}
+	if (!mainResult.includes("rounds=8:projection=true:steering=true")) {
+		fail(`long child did not return its stable completion evidence: ${mainResult}`);
+	}
+}
+
 function verifyScenario(scenario: Scenario, records: readonly LogRecord[], processResult: ProcessResult): void {
 	if (processResult.timedOut) fail(`${scenario.id} timed out\n${processResult.stderr}`);
 	if (processResult.exitCode !== 0) {
@@ -280,41 +313,9 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			`${scenario.id} parallel provider peak concurrency was ${peakChildConcurrency(records)}, expected at least 2`,
 		);
 	}
-	if (scenario.id.startsWith("long-")) {
-		const longTurns = records.filter((record) => record.kind === "child-long-turn");
-		const longTools = records.filter((record) => record.kind === "child-long-tool");
-		const steers = records.filter((record) => record.kind === "child-long-steer");
-		if (longTools.length !== 8 || longTurns.length !== 9) {
-			fail(
-				`long child expected 8 Tool rounds and 9 provider turns, received ${longTools.length}/${longTurns.length}`,
-			);
-		}
-		if (steers.length !== 1 || steers[0]?.round !== 4) {
-			fail(`long child expected one steering delivery after round 4, received ${JSON.stringify(steers)}`);
-		}
-		const projectedContinuation = longTurns.find(
-			(record) => isRuntimeNumber(record.round) && record.round >= 5 && record.sawProjection === true,
-		);
-		const steeredContinuation = longTurns.find(
-			(record) =>
-				isRuntimeNumber(record.round) &&
-				record.round >= 5 &&
-				record.sawProjection === true &&
-				record.sawSteering === true,
-		);
-		if (!projectedContinuation || !steeredContinuation) {
-			fail("long child did not continue after both bounded history projection and mid-run steering");
-		}
-		const finalTurn = longTurns.find((record) => record.round === 8);
-		if (finalTurn?.sawProjection !== true || finalTurn.sawSteering !== true) {
-			fail(`long child final turn lost projection or steering authority: ${JSON.stringify(finalTurn)}`);
-		}
-		if (!isRuntimeString(mainResult) || !mainResult.includes("rounds=8:projection=true:steering=true")) {
-			fail(`long child did not return its stable completion evidence: ${String(mainResult)}`);
-		}
-	}
-	if (scenario.codeMode && (!isRuntimeString(mainResult) || !mainResult.includes("MATRIX_CODE_CHILD_TOOLS_OK"))) {
-		fail(`${scenario.id} child could not use every resolved Agent Tool: ${String(mainResult)}`);
+	verifyLongScenario(scenario, records, mainResult);
+	if (scenario.codeMode && !mainResult.includes("MATRIX_CODE_CHILD_TOOLS_OK")) {
+		fail(`${scenario.id} child could not use every resolved Agent Tool: ${mainResult}`);
 	}
 }
 
