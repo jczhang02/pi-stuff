@@ -13,7 +13,7 @@ import {
 	type SsrfConfig,
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const KAGI_SEARCH_URL = "https://kagi.com/api/v0/search";
 const KAGI_EXTRACT_URL = "https://kagi.com/api/v1/extract";
@@ -140,16 +140,6 @@ function parseExtractResponse(value: JsonInputValue, requestedUrl: string): Extr
 	return null;
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) =>
-			result.snippet
-				? `${result.snippet}\nSource: ${result.title} (${result.url})`
-				: `Source: ${result.title} (${result.url})`,
-		)
-		.join("\n\n");
-}
-
 export function isKagiAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Kagi",
@@ -191,7 +181,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	const parsed = parseSearchResponse(rawData);
 	activityMonitor.logComplete(activityId, response.status);
 	const results = parsed.results.slice(0, numResults);
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchSources(results), results };
 	if (options.includeContent) {
 		const urls = new Set(results.map((result) => result.url));
 		const inlineContent = parsed.inlineContent.filter((content) => urls.has(content.url));

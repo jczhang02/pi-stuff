@@ -2,13 +2,14 @@ import { isJsonInputObject, type JsonInputValue, requireJsonInputValue } from ".
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as domainMatches,
-	normalizeProviderDomain as normalizeDomain,
+	type ProviderDomainFilters,
+	partitionProviderDomains,
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const SERPBASE_API_URL = "https://api.serpbase.dev/google/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -63,24 +64,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	return apiKey;
 }
 
-interface DomainFilters {
-	include: string[];
-	exclude: string[];
-}
-
-function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
-	const filters: DomainFilters = { include: [], exclude: [] };
-	if (!domainFilter?.length) return filters;
-	for (const raw of domainFilter) {
-		const domain = normalizeDomain(raw);
-		if (!domain) continue;
-		const target = raw.trim().startsWith("-") ? filters.exclude : filters.include;
-		if (!target.includes(domain)) target.push(domain);
-	}
-	return filters;
-}
-
-function passesDomainFilters(url: string, filters: DomainFilters): boolean {
+function passesDomainFilters(url: string, filters: ProviderDomainFilters): boolean {
 	if (filters.include.length === 0 && filters.exclude.length === 0) return true;
 	let hostname: string;
 	try {
@@ -93,7 +77,7 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 	return filters.include.some((domain) => domainMatches(hostname, domain));
 }
 
-function buildQuery(query: string, filters: DomainFilters): string {
+function buildQuery(query: string, filters: ProviderDomainFilters): string {
 	const parts = [query];
 	if (filters.include.length === 1) parts.push(`site:${filters.include[0]}`);
 	if (filters.include.length > 1) parts.push(`(${filters.include.map((domain) => `site:${domain}`).join(" OR ")})`);
@@ -130,16 +114,6 @@ function parseResponse(value: JsonInputValue): SerpBaseResponse {
 	return { organic_results: organicResults };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) =>
-			result.snippet
-				? `${result.snippet}\nSource: ${result.title} (${result.url})`
-				: `Source: ${result.title} (${result.url})`,
-		)
-		.join("\n\n");
-}
-
 export function isSerpBaseAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "SerpBase",
@@ -151,7 +125,7 @@ export function isSerpBaseAvailable(): boolean {
 export async function searchWithSerpBase(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults, 10);
-	const filters = parseDomainFilter(options.domainFilter);
+	const filters = partitionProviderDomains(options.domainFilter);
 	const url = new URL(SERPBASE_API_URL);
 	url.searchParams.set("q", buildQuery(query, filters));
 	// SerpBase's Google Search endpoint authenticates with an `api_key` query parameter.
@@ -200,5 +174,5 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		});
 		if (results.length >= numResults) break;
 	}
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchSources(results), results };
 }

@@ -7,7 +7,7 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
@@ -149,15 +149,6 @@ function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	});
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => {
-			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-			return `Source: ${result.title} (${result.url})`;
-		})
-		.join("\n\n");
-}
-
 export async function searchWithSearch1API(
 	query: string,
 	options: Search1APISearchOptions = {},
@@ -174,7 +165,7 @@ export async function searchWithSearch1API(
 			options.signal,
 		);
 		const results = mapSearchResults(data["results"]);
-		const response: SearchResponse = { answer: buildAnswer(results), results };
+		const response: SearchResponse = { answer: formatSearchSources(results), results };
 		if (options.includeContent) {
 			const inlineContent = mapInlineContent(data["results"]);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;

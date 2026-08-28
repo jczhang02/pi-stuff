@@ -13,7 +13,7 @@ import {
 	type SsrfConfig,
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const OLLAMA_SEARCH_URL = "https://ollama.com/api/web_search";
 const OLLAMA_FETCH_URL = "https://ollama.com/api/web_fetch";
@@ -96,16 +96,6 @@ function parseFetchResponse(value: JsonInputValue): OllamaFetchResponse {
 	return { title: value["title"], content: value["content"], links: value["links"] };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) =>
-			result.snippet
-				? `${result.snippet}\nSource: ${result.title} (${result.url})`
-				: `Source: ${result.title} (${result.url})`,
-		)
-		.join("\n\n");
-}
-
 export function isOllamaAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Ollama",
@@ -151,7 +141,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	const results = data.results
 		.slice(0, numResults)
 		.map((result) => ({ title: result.title, url: result.url, snippet: result.content }));
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchSources(results), results };
 	if (options.includeContent) {
 		const inlineContent: ExtractedContent[] = data.results
 			.slice(0, numResults)

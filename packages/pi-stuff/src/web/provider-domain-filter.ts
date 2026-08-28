@@ -1,5 +1,10 @@
 /** Provider-search domain normalization; intentionally distinct from SSRF host validation. */
 
+export interface ProviderDomainFilters {
+	exclude: string[];
+	include: string[];
+}
+
 export function normalizeProviderDomain(value: string): string | null {
 	let input = value.trim().toLowerCase();
 	if (!input) return null;
@@ -17,4 +22,15 @@ export function normalizeProviderDomain(value: string): string | null {
 
 export function hostMatchesProviderDomain(hostname: string, domain: string): boolean {
 	return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+export function partitionProviderDomains(values: readonly string[] | undefined): ProviderDomainFilters {
+	const filters: ProviderDomainFilters = { exclude: [], include: [] };
+	for (const raw of values ?? []) {
+		const domain = normalizeProviderDomain(raw);
+		if (!domain) continue;
+		const target = raw.trim().startsWith("-") ? filters.exclude : filters.include;
+		if (!target.includes(domain)) target.push(domain);
+	}
+	return filters;
 }

@@ -28,3 +28,15 @@ export function requestSignal(signal: AbortSignal | undefined, timeoutMs: number
 	const timeout = AbortSignal.timeout(timeoutMs);
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
+
+export function formatSearchSources(
+	results: readonly { readonly snippet?: string; readonly title: string; readonly url: string }[],
+): string {
+	return results
+		.map((result) =>
+			result.snippet
+				? `${result.snippet}\nSource: ${result.title} (${result.url})`
+				: `Source: ${result.title} (${result.url})`,
+		)
+		.join("\n\n");
+}

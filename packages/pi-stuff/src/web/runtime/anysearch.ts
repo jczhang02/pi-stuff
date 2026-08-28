@@ -6,7 +6,7 @@ import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, normalizeCount } from "./utils.ts";
+import { errorMessage, formatSearchSources, normalizeCount } from "./utils.ts";
 
 const ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search";
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -78,16 +78,6 @@ function parseResponse(value: JsonInputValue): AnySearchResponse {
 	return { code: 0, data: { results, metadata: data["metadata"] } };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) =>
-			result.snippet
-				? `${result.snippet}\nSource: ${result.title} (${result.url})`
-				: `Source: ${result.title} (${result.url})`,
-		)
-		.join("\n\n");
-}
-
 export function isAnySearchAvailable(): boolean {
 	return true;
 }
@@ -145,7 +135,7 @@ export async function searchWithAnySearch(
 		url: result.url,
 		snippet: result.snippet,
 	}));
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchSources(results), results };
 	if (options.includeContent) {
 		const inlineContent: ExtractedContent[] = data.data.results
 			.slice(0, numResults)

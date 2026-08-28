@@ -3,13 +3,14 @@ import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as domainMatches,
-	normalizeProviderDomain as normalizeDomain,
+	type ProviderDomainFilters,
+	partitionProviderDomains,
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -146,28 +147,11 @@ function requireSerpZone(): string {
 	);
 }
 
-interface DomainFilters {
-	include: string[];
-	exclude: string[];
-}
-
-function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
-	const filters: DomainFilters = { include: [], exclude: [] };
-	if (!domainFilter?.length) return filters;
-	for (const raw of domainFilter) {
-		const domain = normalizeDomain(raw);
-		if (!domain) continue;
-		const target = raw.trim().startsWith("-") ? filters.exclude : filters.include;
-		if (!target.includes(domain)) target.push(domain);
-	}
-	return filters;
-}
-
 // Bright Data has no domain parameter, but the engine behind it is Google, so the
 // filter is expressed the way Google expresses it: as `site:` operators inside
 // the query. That asks the engine for the right pages instead of discarding the
 // wrong ones locally — the difference SERPdive documents as a limitation.
-function buildSearchQuery(query: string, filters: DomainFilters): string {
+function buildSearchQuery(query: string, filters: ProviderDomainFilters): string {
 	const parts = [query];
 	if (filters.include.length === 1) {
 		parts.push(`site:${filters.include[0]}`);
@@ -196,7 +180,7 @@ function buildSerpUrl(searchQuery: string, numResults: number, recencyFilter: Se
 // `site:` narrows the SERP but does not guarantee it: Google still mixes in
 // related hosts, and an OR group is honoured loosely. The same filter is applied
 // again here so the contract holds on what is actually returned.
-function passesDomainFilters(url: string, filters: DomainFilters): boolean {
+function passesDomainFilters(url: string, filters: ProviderDomainFilters): boolean {
 	if (filters.include.length === 0 && filters.exclude.length === 0) return true;
 	let hostname: string;
 	try {
@@ -348,7 +332,7 @@ function parseSerpResponse(value: JsonInputValue, zone: string, apiKey: string |
 function mapResults(
 	organic: BrightDataOrganicResult[] | undefined,
 	numResults: number,
-	filters: DomainFilters,
+	filters: ProviderDomainFilters,
 ): SearchResponse["results"] {
 	if (!Array.isArray(organic)) return [];
 	const mapped: SearchResponse["results"] = [];
@@ -364,18 +348,6 @@ function mapResults(
 		if (mapped.length >= numResults) break;
 	}
 	return mapped;
-}
-
-// A SERP zone returns ranked links, never a synthesized answer, so one is
-// assembled from the sources — the same shape brave.ts and searxng.ts produce.
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) =>
-			result.snippet
-				? `${result.snippet}\nSource: ${result.title} (${result.url})`
-				: `Source: ${result.title} (${result.url})`,
-		)
-		.join("\n\n");
 }
 
 // Both halves are required: a token with no zone cannot make a request, and a
@@ -413,7 +385,7 @@ export async function searchWithBrightData(
 	const zone = requireSerpZone();
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
-	const filters = parseDomainFilter(options.domainFilter);
+	const filters = partitionProviderDomains(options.domainFilter);
 	const searchQuery = buildSearchQuery(query, filters);
 	const body: JsonInputObject = {
 		url: buildSerpUrl(searchQuery, numResults, options.recencyFilter),
@@ -488,5 +460,6 @@ export async function searchWithBrightData(
 
 	activityMonitor.logComplete(activityId, response.status);
 	const results = mapResults(data.organic, numResults, filters);
-	return { answer: buildAnswer(results), results };
+	// A SERP zone returns ranked links, so assemble the answer from its sources.
+	return { answer: formatSearchSources(results), results };
 }

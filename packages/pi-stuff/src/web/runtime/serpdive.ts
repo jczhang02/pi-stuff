@@ -3,14 +3,15 @@ import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	hostMatchesProviderDomain as domainMatches,
-	normalizeProviderDomain as normalizeDomain,
+	type ProviderDomainFilters,
+	partitionProviderDomains,
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -66,27 +67,10 @@ function resolveModel(): SerpdiveModel {
 	return value === "krill" || value === "mako" || value === "moby" ? value : DEFAULT_MODEL;
 }
 
-interface DomainFilters {
-	include: string[];
-	exclude: string[];
-}
-
-function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
-	const filters: DomainFilters = { include: [], exclude: [] };
-	if (!domainFilter?.length) return filters;
-	for (const raw of domainFilter) {
-		const domain = normalizeDomain(raw);
-		if (!domain) continue;
-		const target = raw.trim().startsWith("-") ? filters.exclude : filters.include;
-		if (!target.includes(domain)) target.push(domain);
-	}
-	return filters;
-}
-
 // SERPdive exposes no include/exclude domain parameter, so the filter is applied
 // here, on what came back. It can therefore only ever narrow a page of results —
 // it cannot ask the engine for more pages from a given domain.
-function passesDomainFilters(url: string, filters: DomainFilters): boolean {
+function passesDomainFilters(url: string, filters: ProviderDomainFilters): boolean {
 	if (filters.include.length === 0 && filters.exclude.length === 0) return true;
 	let hostname: string;
 	try {
@@ -115,7 +99,11 @@ function applyRecencyHint(query: string, recencyFilter: SearchOptions["recencyFi
 	return hint ? `${query} ${hint}` : query;
 }
 
-function mapResults(results: JsonInputValue, numResults: number, filters: DomainFilters): SearchResponse["results"] {
+function mapResults(
+	results: JsonInputValue,
+	numResults: number,
+	filters: ProviderDomainFilters,
+): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (const item of results) {
@@ -130,7 +118,7 @@ function mapResults(results: JsonInputValue, numResults: number, filters: Domain
 	return mapped;
 }
 
-function mapInlineContent(results: JsonInputValue, filters: DomainFilters): ExtractedContent[] {
+function mapInlineContent(results: JsonInputValue, filters: ProviderDomainFilters): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((item) => {
 		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !passesDomainFilters(item.url, filters)) return [];
@@ -152,12 +140,7 @@ function mapInlineContent(results: JsonInputValue, filters: DomainFilters): Extr
 // real answer and use it when it comes back.
 function buildAnswer(apiAnswer: JsonInputValue, results: SearchResponse["results"]): string {
 	if (isRuntimeString(apiAnswer) && apiAnswer.trim().length > 0) return apiAnswer;
-	return results
-		.map((result) => {
-			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-			return `Source: ${result.title} (${result.url})`;
-		})
-		.join("\n\n");
+	return formatSearchSources(results);
 }
 
 export function isSerpdiveAvailable(): boolean {
@@ -171,7 +154,7 @@ export function isSerpdiveAvailable(): boolean {
 export async function searchWithSerpdive(query: string, options: SerpdiveSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
-	const filters = parseDomainFilter(options.domainFilter);
+	const filters = partitionProviderDomains(options.domainFilter);
 	const model = resolveModel();
 	const body: JsonInputObject = {
 		query: applyRecencyHint(query, options.recencyFilter),

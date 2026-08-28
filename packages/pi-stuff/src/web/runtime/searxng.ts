@@ -9,7 +9,7 @@ import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -196,13 +196,8 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 		const answerParts = answers
 			.filter((answer): answer is string => isRuntimeString(answer) && answer.trim().length > 0)
 			.map((answer) => answer.trim());
-		answerParts.push(
-			...results.map((result) =>
-				result.snippet
-					? `${result.snippet}\nSource: ${result.title} (${result.url})`
-					: `Source: ${result.title} (${result.url})`,
-			),
-		);
+		const sources = formatSearchSources(results);
+		if (sources) answerParts.push(sources);
 		return { answer: answerParts.join("\n\n"), results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

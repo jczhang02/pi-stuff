@@ -4,7 +4,9 @@ import { join } from "node:path";
 import {
 	hostMatchesProviderDomain,
 	normalizeProviderDomain,
+	partitionProviderDomains,
 } from "../../packages/pi-stuff/src/web/provider-domain-filter.ts";
+import { formatSearchSources } from "../../packages/pi-stuff/src/web/runtime/utils.ts";
 
 const PROVIDER_CONSUMERS = [
 	"brave.ts",
@@ -39,6 +41,16 @@ describe("provider domain filters", () => {
 		expect(hostMatchesProviderDomain("example.com", "example.com")).toBe(true);
 		expect(hostMatchesProviderDomain("docs.example.com", "example.com")).toBe(true);
 		expect(hostMatchesProviderDomain("notexample.com", "example.com")).toBe(false);
+	});
+
+	test("partitions unique domains and formats provider source lists", () => {
+		expect(partitionProviderDomains(["docs.example.com", "-api.example.com", "docs.example.com"])).toEqual({
+			exclude: ["api.example.com"],
+			include: ["docs.example.com"],
+		});
+		expect(formatSearchSources([{ title: "Docs", url: "https://docs.example.com", snippet: "Reference" }])).toBe(
+			"Reference\nSource: Docs (https://docs.example.com)",
+		);
 	});
 
 	test("keeps one maintained domain-filter implementation across the absorbed providers", async () => {

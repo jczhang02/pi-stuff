@@ -8,7 +8,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
 const BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -156,14 +156,7 @@ export async function searchWithBrave(query: string, options: SearchOptions = {}
 			if (results.length >= numResults) break;
 		}
 
-		const answer = results
-			.map((result) => {
-				if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-				return `Source: ${result.title} (${result.url})`;
-			})
-			.join("\n\n");
-
-		return { answer, results };
+		return { answer: formatSearchSources(results), results };
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
 	}

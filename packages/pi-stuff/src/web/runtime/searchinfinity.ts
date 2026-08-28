@@ -6,7 +6,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -163,15 +163,6 @@ function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	});
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => {
-			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-			return `Source: ${result.title} (${result.url})`;
-		})
-		.join("\n\n");
-}
-
 export async function searchWithSearchinfinity(
 	query: string,
 	options: SearchinfinitySearchOptions = {},
@@ -182,7 +173,7 @@ export async function searchWithSearchinfinity(
 		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), options.signal);
 		const resultEnvelope = isJsonInputObject(data["Result"]) ? data["Result"] : undefined;
 		const results = mapSearchResults(resultEnvelope?.["WebResults"]);
-		const response: SearchResponse = { answer: buildAnswer(results), results };
+		const response: SearchResponse = { answer: formatSearchSources(results), results };
 		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (error) {
