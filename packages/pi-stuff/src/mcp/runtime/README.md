@@ -13,6 +13,8 @@ and elicitation are intentionally absent rather than retained behind flags.
 `implementation.ts` keeps one per-factory adapter state and wires ordered session, Command, and gateway Tool phases.
 `init.ts` owns state construction and startup projection; `server-manager.ts` alone owns connection identity and
 transport cleanup.
+`config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe loading, narrow writes, and
+its compatibility exports.
 
 `mcp-setup-panel.ts` owns setup interaction, writes, and lifecycle state. `mcp-setup-panel-view.ts` renders immutable
 snapshots and exact write previews without mutating that state.
