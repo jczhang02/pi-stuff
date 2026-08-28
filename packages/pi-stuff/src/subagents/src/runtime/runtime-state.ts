@@ -3,54 +3,34 @@
 import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AsyncJobState } from "../runs/background/async-contract.ts";
-import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { NestedRouteInfo, NestedRunSummary } from "../runs/shared/nested-contract.ts";
 import type { SessionCompatibilityScope } from "../shared/session-identity.ts";
 import type {
 	ActivityState,
 	AgentContextUsage,
 	ArtifactDirPreference,
-	ArtifactPaths,
+	SingleResult,
 	SubagentResultStatus,
 	SubagentRunMode,
 } from "../shared/types.ts";
 
-export interface ForegroundResumeChild {
+export type ForegroundResumeChild = Omit<Partial<SingleResult>, "task"> & {
 	agent: string;
 	index: number;
-	cwd?: string;
 	description?: string | undefined;
 	task?: string | undefined;
 	startedAt?: number;
-	context?: "fresh" | "fork";
-	sessionFile?: string;
-	model?: string;
-	thinking?: string;
 	status: SubagentResultStatus;
-	/** Explicit process proof projected by the shared foreground runner. */
-	crashed?: boolean;
 	activityState?: ActivityState | undefined;
 	lastActivityAt?: number;
 	currentTool?: string | undefined;
 	currentToolStartedAt?: number | undefined;
 	currentPath?: string | undefined;
 	turnCount?: number;
-	contextUsage?: AgentContextUsage;
 	toolCount?: number;
-	exitCode?: number;
-	error?: string;
-	finalOutput?: string;
 	savedOutputPath?: string;
-	artifactPaths?: ArtifactPaths;
-	transcriptPath?: string;
-	transcriptError?: string;
-	detachedReason?: string;
-	launchContractDigest?: string;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	capabilityAudit?: SubagentCapabilityAudit;
-	children?: NestedRunSummary[];
 	updatedAt?: number;
-}
+};
 
 export interface ForegroundResumeRun {
 	runId: string;
@@ -65,14 +45,11 @@ export interface ForegroundResumeRun {
 	children: ForegroundResumeChild[];
 }
 
-export interface ForegroundChildControl {
-	index: number;
-	agent: string;
+interface ForegroundActivity {
 	description?: string | undefined;
 	task?: string;
 	startedAt: number;
 	updatedAt: number;
-	status?: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
 	currentActivityState?: ActivityState | undefined;
 	lastActivityAt?: number | undefined;
 	currentTool?: string | undefined;
@@ -81,32 +58,24 @@ export interface ForegroundChildControl {
 	turnCount?: number | undefined;
 	contextUsage?: AgentContextUsage | undefined;
 	toolCount?: number | undefined;
+}
+
+export interface ForegroundChildControl extends ForegroundActivity {
+	index: number;
+	agent: string;
+	status?: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
 	interrupt?: () => boolean;
 }
 
-export interface ForegroundRunControl {
+export interface ForegroundRunControl extends ForegroundActivity {
 	runId: string;
 	/** Originating parent session; required for current-session projection. */
 	sessionId?: string;
 	mode: SubagentRunMode;
-	startedAt: number;
-	updatedAt: number;
 	/** Effective working directory used to resolve live transcript artifacts. */
 	cwd?: string;
 	currentAgent?: string;
 	currentIndex?: number;
-	/** Short caller-facing task/goal shown in Agent surfaces when available. */
-	description?: string;
-	/** Full execution task for the detail surface. */
-	task?: string;
-	currentActivityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	contextUsage?: AgentContextUsage;
-	toolCount?: number;
 	/** Independently tracked children for foreground parallel work and Agent inspection. */
 	activeChildren?: Map<number, ForegroundChildControl>;
 	nestedRoute?: NestedRouteInfo;

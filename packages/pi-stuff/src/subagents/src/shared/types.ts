@@ -178,14 +178,7 @@ export interface SteeringStatus {
 	recent: SteeringRequestStatus[];
 }
 
-export interface SteerActionTarget {
-	index: number;
-	state: SteeringTargetState;
-	deliveredAt?: number;
-	lateDeliveredAt?: number;
-	reason?: string;
-	replacementRunId?: string;
-}
+export type SteerActionTarget = Omit<SteeringTargetStatus, "routedAt" | "failedAt" | "recoveredAt">;
 
 export interface SteerActionResult {
 	requestId: string;

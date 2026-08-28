@@ -83,7 +83,7 @@ function taskPreview(task: string): string {
 		: `${task.slice(0, START_EVENT_TASK_PREVIEW_CODE_UNITS - 1)}…`;
 }
 
-interface AsyncParallelParams extends AsyncParallelRunnerWorkBuildParams {
+interface AsyncLaunchParams {
 	goal?: string | undefined;
 	artifactsDir?: string | undefined;
 	artifactConfig: ArtifactConfig;
@@ -97,20 +97,12 @@ interface AsyncParallelParams extends AsyncParallelRunnerWorkBuildParams {
 	timeoutMs?: number | undefined;
 }
 
-interface AsyncSingleParams extends AsyncSingleRunnerWorkBuildParams {
-	goal?: string | undefined;
-	artifactsDir?: string | undefined;
-	artifactConfig: ArtifactConfig;
-	sessionRoot?: string | undefined;
-	revivalLease?: SessionLeaseIntent | undefined;
-	worktreeSetupHook?: string | undefined;
-	worktreeSetupHookTimeoutMs?: number | undefined;
-	worktreeBaseDir?: string | undefined;
-	controlIntercomTarget?: string | undefined;
-	childIntercomTarget?: ((agent: string, index: number) => string | undefined) | undefined;
-	nestedRoute?: NestedRouteInfo | undefined;
-	timeoutMs?: number | undefined;
-}
+type AsyncParallelParams = AsyncParallelRunnerWorkBuildParams & AsyncLaunchParams;
+
+type AsyncSingleParams = AsyncSingleRunnerWorkBuildParams &
+	AsyncLaunchParams & {
+		revivalLease?: SessionLeaseIntent | undefined;
+	};
 
 interface AsyncExecutionResult {
 	content: Array<{ type: "text"; text: string }>;
