@@ -1,10 +1,11 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createAssistantMessage, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-work-monitor-matrix";
 const MODEL = "fixture-model";
@@ -38,27 +39,7 @@ const TITLES = {
 	timeout: "Matrix timeout",
 } satisfies Readonly<Record<Scenario, string>>;
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		api: "openai-completions",
-		content,
-		model: MODEL,
-		provider: PROVIDER,
-		role: "assistant",
-		stopReason,
-		timestamp: Date.now(),
-		usage: ZERO_USAGE,
-	};
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
 
 function textStream(text: string) {
 	const stream = createAssistantMessageEventStream();
@@ -210,22 +191,7 @@ function fixtureStream(context: Context) {
 }
 
 export default function workMonitorMatrixProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		api: "openai-completions",
-		apiKey: "fixture",
-		baseUrl: "https://fixture.invalid",
-		models: [
-			{
-				contextWindow: 200_000,
-				cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
-				id: MODEL,
-				input: ["text"],
-				maxTokens: 4_096,
-				name: "Pi Stuff Work Monitor matrix",
-				reasoning: false,
-			},
-		],
-		name: "Pi Stuff Work Monitor matrix",
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Work Monitor matrix", (_model, context) =>
+		fixtureStream(context),
+	);
 }

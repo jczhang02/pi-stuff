@@ -1,21 +1,13 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
 type Scenario = "blocker" | "compaction" | "normal" | "reload";
 
 let providerCalls = 0;
@@ -195,24 +187,9 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 			willRetry: event.willRetry,
 		});
 	});
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Goal lifecycle fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Goal lifecycle fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => response(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Goal lifecycle fixture", (_model, context) =>
+		response(context),
+	);
 
 	pi.registerCommand("goal-lifecycle-wait", {
 		description: "Wait for packed Goal lifecycle work to settle",

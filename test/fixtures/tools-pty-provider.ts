@@ -1,22 +1,14 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/index.js";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-tools-pty";
 const MODEL = "fixture-model";
 const LONG_READ_TARGET = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep/sample-工具.txt";
-
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 const TOOL_SEQUENCE = [
 	{ name: "read", arguments: { path: LONG_READ_TARGET } },
@@ -39,29 +31,8 @@ const TOOL_SEQUENCE = [
 	},
 ] as const;
 
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
-
-function textStream(text: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = message([], "pending");
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
-	return stream;
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
+const textStream = createTextStream(message);
 
 function toolCallStream(index: number) {
 	const stream = createAssistantMessageEventStream();
@@ -149,22 +120,7 @@ export default function toolsPtyProvider(pi: ExtensionAPI): void {
 			target: (args) => args.state,
 		},
 	);
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Tools PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Tools PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Tools PTY fixture", (_model, context) =>
+		fixtureStream(context),
+	);
 }

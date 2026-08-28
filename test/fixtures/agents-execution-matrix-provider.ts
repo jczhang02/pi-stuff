@@ -1,10 +1,11 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-agents-execution-matrix";
 const MODEL = "fixture-model";
@@ -20,15 +21,6 @@ const LONG_TOOL_RESULT = [
 const LONG_STEERING_AUTHORITY =
 	"MATRIX_LONG_STEERING_AUTHORITY: continue through every remaining Tool round and finish with the exact round count.";
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
 type ScenarioId =
 	| "single-fresh-foreground"
 	| "single-fresh-foreground-code-mode"
@@ -39,18 +31,7 @@ type ScenarioId =
 	| "long-fresh-foreground"
 	| "long-fork-foreground";
 
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
 
 function requiredEnvironment(name: string): string {
 	const value = process.env[name]?.trim();
@@ -114,16 +95,7 @@ function toolResultCount(context: Context, toolName: string): number {
 	return context.messages.filter((entry) => entry.role === "toolResult" && entry.toolName === toolName).length;
 }
 
-function textStream(text: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = message([], "pending");
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
-	return stream;
-}
+const textStream = createTextStream(message);
 
 function delayedTextStream(text: string, options?: SimpleStreamOptions) {
 	const stream = createAssistantMessageEventStream();
@@ -445,23 +417,11 @@ export default function agentsExecutionMatrixProvider(pi: ExtensionAPI): void {
 			};
 		},
 	});
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Agents execution matrix fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Agents execution matrix fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(pi, context, options),
-	});
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff Agents execution matrix fixture",
+		(_model, context, options) => fixtureStream(pi, context, options),
+	);
 }

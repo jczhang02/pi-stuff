@@ -1,8 +1,9 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-rtk-pty";
 const MODEL = "fixture-model";
@@ -12,38 +13,8 @@ const LONG_OUTPUT_COMMAND =
 	"printf '\\033[31mRAW_RTK_RESULT_MARKER\\033[0m\\n'; i=0; while [ \"$i\" -lt 1600 ]; do printf 'RAW_RTK_LONG_LINE_%04d\\n' \"$i\"; i=$((i + 1)); done";
 const executedCommands: string[] = [];
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
-
-function textStream(text: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = message([], "pending");
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
-	return stream;
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
+const textStream = createTextStream(message);
 
 function toolCallStream(id: string, command: string) {
 	const stream = createAssistantMessageEventStream();
@@ -99,22 +70,7 @@ export default function rtkPtyProvider(pi: ExtensionAPI): void {
 	pi.on("tool_call", (event) => {
 		if (isToolCallEventType("bash", event)) executedCommands.push(event.input.command);
 	});
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff RTK PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff RTK PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff RTK PTY fixture", (_model, context) =>
+		fixtureStream(context),
+	);
 }

@@ -1,21 +1,13 @@
-import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context, JsonValue } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/index.js";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-tools-grouping-pty";
 const MODEL = "fixture-model";
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
 interface FixtureCall {
 	readonly arguments: Record<string, JsonValue>;
 	readonly name: string;
@@ -101,43 +93,8 @@ const RETRIEVAL_ISSUE_CALLS: readonly FixtureCall[] = [
 	{ name: "read", arguments: { path: "input-工具.txt" } },
 ];
 
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
-
-function textStream(text: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = message([], "pending");
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({
-		type: "text_delta",
-		contentIndex: 0,
-		delta: text,
-		partial: pending,
-	});
-	stream.push({
-		type: "text_end",
-		contentIndex: 0,
-		content: text,
-		partial: pending,
-	});
-	stream.push({
-		type: "done",
-		reason: "stop",
-		message: message([{ type: "text", text }], "stop"),
-	});
-	return stream;
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
+const textStream = createTextStream(message);
 
 function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[], thinking = "") {
 	const stream = createAssistantMessageEventStream();
@@ -486,24 +443,14 @@ function registerRecoveryAndMediaTools(pi: ExtensionAPI): void {
 }
 
 function registerToolsGroupingProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Retrieval Group PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Retrieval Group PTY fixture",
-				reasoning: true,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff Retrieval Group PTY fixture",
+		(_model, context) => fixtureStream(context),
+		{ reasoning: true },
+	);
 }
 
 export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {

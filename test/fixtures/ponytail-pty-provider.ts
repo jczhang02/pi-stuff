@@ -5,21 +5,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-ponytail-pty";
 const MODEL = "ponytail-pty-model";
 const CONTRIBUTION_START = "<!-- pi-stuff:prompt-contribution:ponytail:start -->";
 const CONTRIBUTION_END = "<!-- pi-stuff:prompt-contribution:ponytail:end -->";
 const CATALOG_MARKER = "<name>ponytail</name>";
-
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 function appendRecord(record: Readonly<Record<string, JsonInputValue>>): void {
 	const path = process.env["PI_STUFF_PONYTAIL_PTY_LOG"];
@@ -71,23 +63,12 @@ function textStream(model: Model<Api>, text: string) {
 }
 
 export default function ponytailPtyProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Ponytail PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: MODEL,
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (model: Model<Api>, context: Context) => {
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff Ponytail PTY fixture",
+		(model, context) => {
 			const systemPrompt = isRuntimeString(context.systemPrompt) ? context.systemPrompt : "";
 			const ponytail = contribution(systemPrompt);
 			const lastUser = lastUserText(context);
@@ -103,7 +84,8 @@ export default function ponytailPtyProvider(pi: ExtensionAPI): void {
 			});
 			return textStream(model, `${lastUser}_DONE`);
 		},
-	});
+		{ modelName: MODEL },
+	);
 
 	pi.registerShortcut(Key.f12, {
 		description: "Open the production Ponytail control dialog",

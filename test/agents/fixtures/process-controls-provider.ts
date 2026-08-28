@@ -1,22 +1,14 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createAssistantMessage, registerFixtureProvider } from "../../fixtures/faux-provider.js";
 
 const PROVIDER = "pi-stuff-process-controls";
 const MODEL = "fixture-model";
 const CHILD_INDEX_ENV = "PI_SUBAGENT_CHILD_INDEX";
 export const PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH = import.meta.path;
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
 interface ProviderLogRecord {
 	readonly childIndex?: string;
 	readonly kind: "aborted" | "finished" | "request";
@@ -24,18 +16,7 @@ interface ProviderLogRecord {
 	readonly userText?: string;
 }
 
-function assistant(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
+const assistant = createAssistantMessage(PROVIDER, MODEL);
 
 function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
@@ -110,23 +91,7 @@ function streamFixture(context: Context, options?: SimpleStreamOptions) {
 }
 
 export default function registerProcessControlsProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff process controls fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff process controls fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			streamFixture(context, options),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff process controls fixture", (_model, context, options) =>
+		streamFixture(context, options),
+	);
 }

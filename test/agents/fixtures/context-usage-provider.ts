@@ -1,6 +1,7 @@
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerFixtureProvider } from "../../fixtures/faux-provider.js";
 
 const PROVIDER = "pi-stuff-context-usage";
 const MODEL = "fixture-model";
@@ -49,23 +50,7 @@ function streamFixture(_context: Context, _options?: SimpleStreamOptions) {
 }
 
 export default function registerContextUsageProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff context usage fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff context usage fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			streamFixture(context, options),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff context usage fixture", (_model, context, options) =>
+		streamFixture(context, options),
+	);
 }

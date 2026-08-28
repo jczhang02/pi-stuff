@@ -1,44 +1,15 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context, JsonValue } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-work-pty";
 const MODEL = "fixture-model";
 let requestNumber = 0;
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		api: "openai-completions",
-		content,
-		model: MODEL,
-		provider: PROVIDER,
-		role: "assistant",
-		stopReason,
-		timestamp: Date.now(),
-		usage: ZERO_USAGE,
-	};
-}
-
-function textStream(text: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = message([], "pending");
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
-	return stream;
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
+const textStream = createTextStream(message);
 
 function toolStream(name: string, id: string, arguments_: Record<string, JsonValue>) {
 	const stream = createAssistantMessageEventStream();
@@ -107,22 +78,7 @@ function fixtureStream(context: Context) {
 }
 
 export default function workPtyProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		api: "openai-completions",
-		apiKey: "fixture",
-		baseUrl: "https://fixture.invalid",
-		models: [
-			{
-				contextWindow: 200_000,
-				cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
-				id: MODEL,
-				input: ["text"],
-				maxTokens: 4_096,
-				name: "Pi Stuff Work PTY fixture",
-				reasoning: false,
-			},
-		],
-		name: "Pi Stuff Work PTY fixture",
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Work PTY fixture", (_model, context) =>
+		fixtureStream(context),
+	);
 }

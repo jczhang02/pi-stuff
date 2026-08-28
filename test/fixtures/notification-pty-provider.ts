@@ -1,19 +1,11 @@
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-notification-pty";
 const MODEL = "notification-pty-model";
-const ZERO_USAGE = {
-	cacheRead: 0,
-	cacheWrite: 0,
-	cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
-	input: 0,
-	output: 0,
-	totalTokens: 0,
-};
-
 function message(stopReason: AssistantMessage["stopReason"], text = "", errorMessage?: string): AssistantMessage {
 	const result: AssistantMessage = {
 		api: "openai-completions",
@@ -75,42 +67,25 @@ function delayedFailure(errorMessage: string) {
 }
 
 export default function notificationPtyProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		api: "openai-completions",
-		apiKey: "fixture",
-		baseUrl: "https://fixture.invalid",
-		models: [
-			{
-				contextWindow: 200_000,
-				cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
-				id: MODEL,
-				input: ["text"],
-				maxTokens: 4_096,
-				name: "Pi Stuff Notification PTY fixture",
-				reasoning: false,
-			},
-		],
-		name: "Pi Stuff Notification PTY fixture",
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
-			const prompt = lastUserText(context).trim();
-			if (prompt.includes("NOTIFY_FAILURE")) return delayedFailure("NOTIFICATION_FAILURE_DONE");
-			if (prompt.includes("NOTIFY_ABORT")) {
-				return delayedText("UNEXPECTED_ABORT_FINISH", options, 5_000);
-			}
-			interface NotificationResponses {
-				readonly [scenario: string]: string;
-			}
-			const responses: NotificationResponses = {
-				NOTIFY_CHAOS_CANCEL: "NOTIFICATION_CHAOS_DONE",
-				NOTIFY_RELOAD_CANCEL: "NOTIFICATION_RELOAD_DONE",
-				NOTIFY_SHUTDOWN_CANCEL: "NOTIFICATION_SHUTDOWN_DONE",
-				NOTIFY_SUCCESS: "NOTIFICATION_SUCCESS_DONE",
-				NOTIFY_SUCCESS_NARROW: "NOTIFICATION_NARROW_DONE",
-			};
-			const scenario = Object.keys(responses)
-				.sort((left, right) => right.length - left.length)
-				.find((candidate) => prompt.includes(candidate));
-			return delayedText((scenario && responses[scenario]) || `UNEXPECTED_NOTIFICATION_PROMPT:${prompt}`, options);
-		},
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Notification PTY fixture", (_model, context, options) => {
+		const prompt = lastUserText(context).trim();
+		if (prompt.includes("NOTIFY_FAILURE")) return delayedFailure("NOTIFICATION_FAILURE_DONE");
+		if (prompt.includes("NOTIFY_ABORT")) {
+			return delayedText("UNEXPECTED_ABORT_FINISH", options, 5_000);
+		}
+		interface NotificationResponses {
+			readonly [scenario: string]: string;
+		}
+		const responses: NotificationResponses = {
+			NOTIFY_CHAOS_CANCEL: "NOTIFICATION_CHAOS_DONE",
+			NOTIFY_RELOAD_CANCEL: "NOTIFICATION_RELOAD_DONE",
+			NOTIFY_SHUTDOWN_CANCEL: "NOTIFICATION_SHUTDOWN_DONE",
+			NOTIFY_SUCCESS: "NOTIFICATION_SUCCESS_DONE",
+			NOTIFY_SUCCESS_NARROW: "NOTIFICATION_NARROW_DONE",
+		};
+		const scenario = Object.keys(responses)
+			.sort((left, right) => right.length - left.length)
+			.find((candidate) => prompt.includes(candidate));
+		return delayedText((scenario && responses[scenario]) || `UNEXPECTED_NOTIFICATION_PROMPT:${prompt}`, options);
 	});
 }

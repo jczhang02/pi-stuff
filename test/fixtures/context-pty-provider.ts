@@ -1,24 +1,17 @@
 import { appendFileSync, writeFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, JsonValue } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/registration.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-context-pty";
 const MODEL = "fixture-model";
 const BULK_CONTEXT = "Historical Context evidence segment for real Magic Context compaction.\n".repeat(12_000);
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 const HIGH_USAGE = {
 	...ZERO_USAGE,
 	input: 190_000,
@@ -298,24 +291,9 @@ export default function contextPtyProvider(pi: ExtensionAPI): void {
 		},
 	);
 
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Context PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Context PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Context PTY fixture", (_model, context) =>
+		fixtureStream(context),
+	);
 
 	pi.on("session_start", (_event, ctx) => {
 		record({

@@ -1,32 +1,13 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessage, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-tools-resume-pty";
 const MODEL = "fixture-model";
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage: ZERO_USAGE,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
 
 function fixtureStream(context: Context) {
 	const logPath = process.env["PI_STUFF_TOOLS_RESUME_PTY_LOG"];
@@ -44,24 +25,9 @@ function fixtureStream(context: Context) {
 }
 
 export default function toolsResumePtyProvider(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Tools Resume PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Tools Resume PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Tools Resume PTY fixture", (_model, context) =>
+		fixtureStream(context),
+	);
 	pi.registerCommand("fixture-resume", {
 		description: "Resume the isolated Tool UI fixture session",
 		handler: async (_args, ctx) => {

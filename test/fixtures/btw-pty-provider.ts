@@ -1,23 +1,15 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-pty";
 const MODEL = "fixture-model";
 const LARGE_CONTEXT_CHARS = 2_000_000;
-
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 function message(text: string, stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -111,25 +103,9 @@ export default function btwPtyProvider(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(context, options),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff PTY fixture", (_model, context, options) =>
+		fixtureStream(context, options),
+	);
 
 	pi.registerShortcut(Key.f12, {
 		description: "Open the PTY draft-restoration fixture",

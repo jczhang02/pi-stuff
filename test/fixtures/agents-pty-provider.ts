@@ -1,9 +1,10 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, JsonValue, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createAssistantMessage, registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-agents-pty";
 const MODEL = "fixture-model";
@@ -14,14 +15,6 @@ const CHILD_RESULT_DELAY_MS = 15_000;
 const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 const SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
 
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 const CHILD_READ_USAGE = {
 	...ZERO_USAGE,
 	input: 73_000,
@@ -35,22 +28,7 @@ const CHILD_FINAL_USAGE = {
 	totalTokens: 80_000,
 };
 
-function message(
-	content: AssistantMessage["content"],
-	stopReason: AssistantMessage["stopReason"],
-	usage: AssistantMessage["usage"] = ZERO_USAGE,
-): AssistantMessage {
-	return {
-		role: "assistant",
-		content,
-		api: "openai-completions",
-		provider: PROVIDER,
-		model: MODEL,
-		usage,
-		stopReason,
-		timestamp: Date.now(),
-	};
-}
+const message = createAssistantMessage(PROVIDER, MODEL);
 
 function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index--) {
@@ -179,23 +157,7 @@ export default function agentsPtyProvider(pi: ExtensionAPI): void {
 	// The parent Host must be inherited without the supported emergency override;
 	// child processes keep the already-clean environment.
 	if (process.env[SUBAGENT_CHILD_ENV] !== "1") delete process.env[SUBAGENT_PI_BINARY_ENV];
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff Agents PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "Pi Stuff Agents PTY fixture",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(context, options),
-	});
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Agents PTY fixture", (_model, context, options) =>
+		fixtureStream(context, options),
+	);
 }

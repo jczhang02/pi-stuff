@@ -6,6 +6,7 @@ import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator, reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
@@ -57,15 +58,6 @@ export const TODO_PTY_PROMPT = "请建立四项执行清单";
 export const TODO_PTY_READY = "任务清单已建立。";
 export const TODO_PTY_SUBJECTS = ["梳理需求", "设计实现方案", "完成核心实现", "测试与验收"] as const;
 export const DIAGNOSTIC_PTY_SUMMARY = "Recovery metadata needs review 中文";
-
-const ZERO_USAGE = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-	totalTokens: 0,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 const deferredGoalCompletions = new Set<string>();
 
@@ -394,44 +386,27 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 }
 
 function registerUiPtyProviders(pi: ExtensionAPI): void {
-	pi.registerProvider(PROVIDER, {
-		name: "Pi Stuff UI PTY fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: MODEL,
-				reasoning: true,
-				input: ["text"],
-				cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(model, context, options),
-	});
-	pi.registerProvider(SUBSCRIPTION_PROVIDER, {
-		name: "Pi Stuff API-key subscription fixture",
-		baseUrl: "https://fixture.invalid",
-		apiKey: "fixture",
-		api: "openai-completions",
-		models: [
-			{
-				id: SUBSCRIPTION_MODEL,
-				name: SUBSCRIPTION_MODEL,
-				reasoning: true,
-				input: ["text"],
-				cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
-				contextWindow: 200_000,
-				maxTokens: 4_096,
-			},
-		],
-		streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(model, context, options),
-	});
+	const uiModel = {
+		cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+		modelName: MODEL,
+		reasoning: true,
+	};
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff UI PTY fixture",
+		(model, context, options) => fixtureStream(model, context, options),
+		uiModel,
+	);
+	registerFixtureProvider(
+		pi,
+		SUBSCRIPTION_PROVIDER,
+		SUBSCRIPTION_MODEL,
+		"Pi Stuff API-key subscription fixture",
+		(model, context, options) => fixtureStream(model, context, options),
+		{ ...uiModel, modelName: SUBSCRIPTION_MODEL },
+	);
 }
 
 function registerUiPtyShortcuts(pi: ExtensionAPI): void {

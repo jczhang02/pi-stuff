@@ -1,7 +1,8 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, estimateTokens } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-code-mode-fixture";
 const MODEL = "fixture";
@@ -11,38 +12,8 @@ const BENCHMARK_ENV = "PI_STUFF_CODE_MODE_FIXTURE_BENCHMARK";
 const HIDE_RESULT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_HIDE_RESULT";
 const LEGACY_SURFACE_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LEGACY_SURFACE";
 const SCENARIO_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SCENARIO";
-const ZERO_USAGE = {
-	cacheRead: 0,
-	cacheWrite: 0,
-	cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
-	input: 0,
-	output: 0,
-	totalTokens: 0,
-};
-
-function assistant(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
-	return {
-		api: "openai-completions",
-		content,
-		model: MODEL,
-		provider: PROVIDER,
-		role: "assistant",
-		stopReason,
-		timestamp: Date.now(),
-		usage: ZERO_USAGE,
-	};
-}
-
-function textStream(value: string) {
-	const stream = createAssistantMessageEventStream();
-	const pending = assistant([], "pending");
-	stream.push({ partial: pending, type: "start" });
-	stream.push({ contentIndex: 0, partial: pending, type: "text_start" });
-	stream.push({ contentIndex: 0, delta: value, partial: pending, type: "text_delta" });
-	stream.push({ content: value, contentIndex: 0, partial: pending, type: "text_end" });
-	stream.push({ message: assistant([{ text: value, type: "text" }], "stop"), reason: "stop", type: "done" });
-	return stream;
-}
+const assistant = createAssistantMessage(PROVIDER, MODEL);
+const textStream = createTextStream(assistant);
 
 function codeModeStream() {
 	const stream = createAssistantMessageEventStream();
@@ -240,23 +211,16 @@ export default function codeModeFixtureProvider(pi: ExtensionAPI): void {
 		pi.on("session_start", () => pi.setActiveTools(["codemode"]));
 		pi.on("before_agent_start", () => pi.setActiveTools(["codemode"]));
 	}
-	pi.registerProvider(PROVIDER, {
-		api: "openai-completions",
-		apiKey: "offline-fixture",
-		baseUrl: "https://fixture.invalid",
-		models: [
-			{
-				api: "openai-completions",
-				contextWindow: 400_000,
-				cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
-				id: MODEL,
-				input: ["text", "image"],
-				maxTokens: 4_096,
-				name: "Pi Stuff Code Mode fixture",
-				reasoning: false,
-			},
-		],
-		name: "Pi Stuff Code Mode fixture",
-		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
-	});
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff Code Mode fixture",
+		(_model, context) => fixtureStream(context),
+		{
+			apiKey: "offline-fixture",
+			contextWindow: 400_000,
+			input: ["text", "image"],
+		},
+	);
 }
