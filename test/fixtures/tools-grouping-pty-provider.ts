@@ -311,7 +311,7 @@ function fixtureStream(context: Context) {
 		: textStream("GROUP_SUCCESS_DONE");
 }
 
-export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
+function registerOutcomeTools(pi: ExtensionAPI): void {
 	pi.on("tool_result", async (event) => {
 		if (event.toolCallId === "group-slow-retrieval-1") {
 			await new Promise((resolve) => setTimeout(resolve, 3_200));
@@ -400,6 +400,9 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 			target: () => "error",
 		},
 	);
+}
+
+function registerRecoveryAndMediaTools(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
@@ -480,6 +483,9 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 			summarize: () => "padded",
 		},
 	);
+}
+
+function registerToolsGroupingProvider(pi: ExtensionAPI): void {
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Retrieval Group PTY fixture",
 		baseUrl: "https://fixture.invalid",
@@ -498,4 +504,10 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 		],
 		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
 	});
+}
+
+export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
+	registerOutcomeTools(pi);
+	registerRecoveryAndMediaTools(pi);
+	registerToolsGroupingProvider(pi);
 }

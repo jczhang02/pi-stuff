@@ -393,7 +393,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	return stream;
 }
 
-export default function uiPtyProvider(pi: ExtensionAPI): void {
+function registerUiPtyProviders(pi: ExtensionAPI): void {
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff UI PTY fixture",
 		baseUrl: "https://fixture.invalid",
@@ -432,7 +432,9 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 		streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
 			fixtureStream(model, context, options),
 	});
+}
 
+function registerUiPtyShortcuts(pi: ExtensionAPI): void {
 	pi.registerShortcut(Key.f8, {
 		description: "Submit the UI PTY User visualization fixture",
 		handler: async () => {
@@ -513,7 +515,9 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 			});
 		},
 	});
+}
 
+function registerUiPtySession(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		ctx.ui.setStatus("goal", "goal:UI");
 		ctx.ui.setStatus("mcp", "mcp:2");
@@ -528,4 +532,10 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 			themes: ctx.ui.getAllThemes().map((theme) => theme.name),
 		});
 	});
+}
+
+export default function uiPtyProvider(pi: ExtensionAPI): void {
+	registerUiPtyProviders(pi);
+	registerUiPtyShortcuts(pi);
+	registerUiPtySession(pi);
 }
