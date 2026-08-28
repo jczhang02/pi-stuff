@@ -52,7 +52,7 @@ export class CodexSettingsStore {
 				legacyPath: join(agentDirectory, SETTINGS_FILENAME),
 				acquireLock: acquireSettingsLock,
 				reportDiagnostic,
-				migrator: async (legacyPath) => {
+				legacyReader: async (legacyPath) => {
 					const raw: unknown = JSON.parse(await Bun.file(legacyPath).text());
 					return toRecord(normalizeSettings(raw));
 				},

@@ -12,7 +12,7 @@ import {
 	SettingsFormatError,
 	writeSettingsFile,
 } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
-import { acquireSettingsLock, migrateLegacyNamespace } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const roots: string[] = [];
 
@@ -169,7 +169,7 @@ test("NamespacedSettingsStore replace repairs an invalid namespace and preserves
 	});
 });
 
-test("NamespacedSettingsStore migrates a legacy file into the namespace on first load", async () => {
+test("NamespacedSettingsStore keeps a legacy fallback read-only until direct input", async () => {
 	const root = await dir();
 	const mergedPath = join(root, "pi-stuff.json");
 	const legacyPath = join(root, "pi-stuff-codex.json");
@@ -177,15 +177,18 @@ test("NamespacedSettingsStore migrates a legacy file into the namespace on first
 	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
 		path: mergedPath,
 		legacyPath,
-		migrator: async (source) => {
+		legacyReader: async (source) => {
 			const raw = JSON.parse(await readFile(source, "utf8"));
 			return { enabled: raw["fast"] === true, count: 1 };
 		},
 	});
 	expect(store.get()).toEqual({ enabled: true, count: 1 });
-	expect(await readNamespace(mergedPath, "codex")).toEqual({ enabled: true, count: 1 });
-	// The legacy file is lifted once and removed; no `.bak` is retained.
-	expect(await fileExists(legacyPath)).toBe(false);
+	expect(await readNamespace(mergedPath, "codex")).toBeUndefined();
+	expect(await fileExists(legacyPath)).toBe(true);
+
+	await store.replace({ enabled: false, count: 2 });
+	expect(await readNamespace(mergedPath, "codex")).toEqual({ enabled: false, count: 2 });
+	expect(await fileExists(legacyPath)).toBe(true);
 });
 
 test("NamespacedSettingsStore keeps the merged namespace authoritative over stale legacy settings", async () => {
@@ -197,44 +200,9 @@ test("NamespacedSettingsStore keeps the merged namespace authoritative over stal
 	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
 		path: mergedPath,
 		legacyPath,
-		migrator: async () => ({ enabled: true, count: 1 }),
+		legacyReader: async () => ({ enabled: true, count: 1 }),
 	});
 	expect(store.get()).toEqual({ enabled: false, count: 7 });
-	expect(await fileExists(legacyPath)).toBe(false);
-});
-
-test("migrateLegacyNamespace preserves siblings and removes the legacy file", async () => {
-	const root = await dir();
-	const mergedPath = join(root, "pi-stuff.json");
-	const legacyPath = join(root, "pi-stuff-tools.json");
-	await writeSettingsFile(mergedPath, { ui: { statusline: true } });
-	await Bun.write(legacyPath, "{}\n");
-	expect(
-		await migrateLegacyNamespace(mergedPath, "tools", legacyPath, { liveElapsed: false, schemaVersion: 1 }, "test"),
-	).toBe(true);
-	expect(await readSettingsFile(mergedPath)).toEqual({
-		ui: { statusline: true },
-		tools: { liveElapsed: false, schemaVersion: 1 },
-	});
-	expect(await fileExists(legacyPath)).toBe(false);
-});
-
-test("migrateLegacyNamespace preserves legacy data when the canonical namespace is invalid", async () => {
-	const root = await dir();
-	const mergedPath = join(root, "pi-stuff.json");
-	const legacyPath = join(root, "pi-stuff-tools.json");
-	await writeSettingsFile(mergedPath, { tools: { schemaVersion: 99 } });
-	await Bun.write(legacyPath, "{}\n");
-	expect(
-		await migrateLegacyNamespace(
-			mergedPath,
-			"tools",
-			legacyPath,
-			{ liveElapsed: false, schemaVersion: 1 },
-			"test",
-			() => false,
-		),
-	).toBe(false);
 	expect(await fileExists(legacyPath)).toBe(true);
 });
 

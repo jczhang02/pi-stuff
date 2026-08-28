@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mergeNamespaceRecord } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
@@ -29,6 +29,18 @@ test("rapid toggles coalesce to the final in-memory and on-disk value", async ()
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ tools: { liveElapsed: false, schemaVersion: 1 } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
 		expect((await readdir(directory)).sort()).toEqual(["settings.json", "settings.json.lock"]);
+	});
+});
+
+test("Tool settings startup reads the legacy file without migrating it", async () => {
+	await withTemporarySettings(async (path, directory) => {
+		const legacyPath = join(directory, "pi-stuff-tools.json");
+		const legacy = { liveElapsed: false, schemaVersion: 1 } as const;
+		await writeFile(legacyPath, JSON.stringify(legacy));
+
+		expect((await ToolUiSettingsStore.load(path)).get()).toEqual(legacy);
+		await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+		expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(legacy);
 	});
 });
 

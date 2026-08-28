@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
-import { mergedSettingsPath, readNamespace, type SettingsRecord } from "../shared/settings-io/index.js";
+import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-tools.json";
 const TOOLS_NAMESPACE = "tools";
@@ -44,13 +44,13 @@ function parseSettings(value: JsonInputValue): ToolUiSettings {
 	return { liveElapsed: value["liveElapsed"], schemaVersion: 1 };
 }
 
-/** Read the `tools` namespace from the merged file; missing returns defaults. */
-async function readSettings(path: string): Promise<ToolUiSettings> {
+/** Read the `tools` namespace; an absent namespace remains eligible for the legacy fallback. */
+async function readSettings(path: string): Promise<ToolUiSettings | undefined> {
 	try {
 		const namespace = await readNamespace(path, TOOLS_NAMESPACE);
-		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
+		return namespace === undefined ? undefined : parseSettings(namespace);
 	} catch (error) {
-		if (isRecord(error) && error["code"] === "ENOENT") return DEFAULT_SETTINGS;
+		if (isRecord(error) && error["code"] === "ENOENT") return undefined;
 		reportDiagnostic({
 			action: "/ui",
 			capability: "Tools",
@@ -66,9 +66,7 @@ async function readSettings(path: string): Promise<ToolUiSettings> {
 }
 
 /**
- * One-time lift of the legacy per-file `pi-stuff-tools.json` into the merged
- * `tools` namespace. Returns the parsed legacy value, or `undefined` when there
- * is no legacy file or the merged file already carries the namespace.
+ * Read the legacy per-file `pi-stuff-tools.json` without mutating it.
  */
 async function readLegacySettings(path: string): Promise<ToolUiSettings | undefined> {
 	const legacyPath = join(dirname(path), SETTINGS_FILE_NAME);
@@ -114,23 +112,8 @@ export class ToolUiSettingsStore {
 		writer: SettingsWriter = writeSettings,
 	): Promise<ToolUiSettingsStore> {
 		const value = await readSettings(path);
-		if (value === DEFAULT_SETTINGS) {
-			const legacy = await readLegacySettings(path);
-			if (
-				legacy &&
-				(await migrateLegacyToolSettings(
-					path,
-					TOOLS_NAMESPACE,
-					join(dirname(path), SETTINGS_FILE_NAME),
-					{ liveElapsed: legacy.liveElapsed, schemaVersion: 1 },
-					"Tools",
-					(value) => isValidSettings(value),
-				))
-			) {
-				return new ToolUiSettingsStore(path, legacy, writer);
-			}
-		}
-		return new ToolUiSettingsStore(path, await readSettings(path), writer);
+		const initial = value ?? (await readLegacySettings(path)) ?? DEFAULT_SETTINGS;
+		return new ToolUiSettingsStore(path, initial, writer);
 	}
 
 	static memory(value: ToolUiSettings = DEFAULT_SETTINGS): ToolUiSettingsStore {
@@ -222,26 +205,5 @@ export class ToolUiSettingsStore {
 
 	private sameSettings(left: ToolUiSettings, right: ToolUiSettings): boolean {
 		return left.liveElapsed === right.liveElapsed && left.schemaVersion === right.schemaVersion;
-	}
-}
-
-async function migrateLegacyToolSettings(
-	path: string,
-	namespace: string,
-	legacyPath: string,
-	legacy: SettingsRecord,
-	owner: string,
-	isExistingValid: (record: SettingsRecord) => boolean,
-): Promise<boolean> {
-	const { migrateLegacyNamespace } = await import("../shared/settings-io/lock.js");
-	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);
-}
-
-function isValidSettings(value: SettingsRecord): boolean {
-	try {
-		parseSettings(value);
-		return true;
-	} catch {
-		return false;
 	}
 }

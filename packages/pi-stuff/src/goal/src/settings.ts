@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -10,7 +10,7 @@ import {
 	type JsonInputValue,
 	parseJsonValue,
 } from "../../shared/json-value.js";
-import { mergeNamespaceRecordSync, readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
+import { readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
 
 export const GOAL_SETTINGS_FILE = "pi-stuff.json";
@@ -164,52 +164,33 @@ export async function withGoalSettingsLock<Value>(
 	return withSettingsLock(settingsPath, "Goal", operation);
 }
 
-export function readGoalSettingsLocked(
-	settingsPath = mergedSettingsPath(getAgentDir()),
-): Promise<GoalSettingsLoadResult> {
-	return withGoalSettingsLock(settingsPath, () => {
-		if (settingsPath === mergedSettingsPath(getAgentDir())) migrateLegacyGoalSettings(settingsPath);
-		return readGoalSettings(settingsPath);
-	});
-}
-
 export function readGoalSettings(settingsPath = mergedSettingsPath(getAgentDir())): GoalSettingsLoadResult {
-	let namespace: JsonInputValue;
 	try {
-		const file = readNamespaceSync(settingsPath, GOAL_NAMESPACE);
-		if (file === undefined) return { kind: "missing" };
-		namespace = file;
+		const namespace = readNamespaceSync(settingsPath, GOAL_NAMESPACE);
+		if (namespace !== undefined) return normalizeLoadedGoalSettings(namespace, settingsPath);
 	} catch (error: unknown) {
-		if (isNodeError(error) && error.code === "ENOENT") return { kind: "missing" };
-		return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
+		if (!isNodeError(error) || error.code !== "ENOENT") {
+			return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
+		}
 	}
 
+	const legacyPath = join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE);
+	try {
+		return normalizeLoadedGoalSettings(parseJsonValue(readFileSync(legacyPath, "utf8")), legacyPath);
+	} catch (error: unknown) {
+		if (isNodeError(error) && error.code === "ENOENT") return { kind: "missing" };
+		return { kind: "invalid", reason: `${legacyPath}: ${formatError(error)}` };
+	}
+}
+
+function normalizeLoadedGoalSettings(namespace: JsonInputValue, sourcePath: string): GoalSettingsLoadResult {
 	try {
 		const settings = normalizeGoalSettings(namespace);
 		return settings
 			? { kind: "loaded", settings }
-			: { kind: "invalid", reason: `${settingsPath}: invalid settings shape` };
+			: { kind: "invalid", reason: `${sourcePath}: invalid settings shape` };
 	} catch (error: unknown) {
-		return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
-	}
-}
-
-function migrateLegacyGoalSettings(settingsPath: string): void {
-	if (readNamespaceSync(settingsPath, GOAL_NAMESPACE) !== undefined) return;
-	const legacyPath = join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE);
-	if (!existsSync(legacyPath)) return;
-	const contents = readFileSync(legacyPath, "utf8");
-	const parsed = parseJsonValue(contents);
-	const normalized = normalizeGoalSettings(parsed);
-	if (normalized) {
-		mergeNamespaceRecordSync(settingsPath, GOAL_NAMESPACE, { ...normalized });
-		// The legacy file has been lifted into the merged namespace; remove it
-		// so the user is left with a single settings file (no .bak retained).
-		try {
-			unlinkSync(legacyPath);
-		} catch {
-			// Best-effort cleanup; the merged record is already authoritative.
-		}
+		return { kind: "invalid", reason: `${sourcePath}: ${formatError(error)}` };
 	}
 }
 

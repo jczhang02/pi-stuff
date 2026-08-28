@@ -8,7 +8,6 @@ import {
 	mergeNamespaceRecord,
 	readNamespace,
 	resolveSettingsLockPath,
-	type SettingsRecord,
 } from "../shared/settings-io/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -157,12 +156,12 @@ function parseSettings<Value>(value: Value): UiSettings {
 	throw new Error("expected schemaVersion 1, 2, or 3");
 }
 
-async function readSettings(path: string): Promise<UiSettings> {
+async function readSettings(path: string): Promise<UiSettings | undefined> {
 	try {
 		const namespace = await readNamespace(path, UI_NAMESPACE);
-		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
+		return namespace === undefined ? undefined : parseSettings(namespace);
 	} catch (error) {
-		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return DEFAULT_SETTINGS;
+		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return undefined;
 		reportDiagnostic({
 			action: "/ui",
 			capability: "UI",
@@ -181,7 +180,7 @@ async function writeSettings(path: string, settings: UiSettings): Promise<void> 
 	await mergeNamespaceRecord(path, UI_NAMESPACE, { ...settings });
 }
 
-/** One-time lift of the legacy `pi-stuff-ui.json` into the merged `ui` namespace. */
+/** Read the legacy `pi-stuff-ui.json` without mutating user configuration. */
 async function readLegacySettings(path: string): Promise<UiSettings | undefined> {
 	try {
 		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
@@ -216,11 +215,12 @@ async function persistSettingsChanges(
 	path: string,
 	lockPath: string,
 	changes: SettingsChanges,
+	fallback: UiSettings,
 	writer: SettingsWriter,
 ): Promise<UiSettings> {
 	const release = await acquireSettingsLock(lockPath);
 	try {
-		const current = await readSettings(path);
+		const current = (await readSettings(path)) ?? fallback;
 		const next = applySettingsChanges(current, changes);
 		if (!sameSettings(current, next)) await writer(path, next);
 		return next;
@@ -253,23 +253,8 @@ export class UiSettingsStore {
 		writer: SettingsWriter = writeSettings,
 	): Promise<UiSettingsStore> {
 		const value = await readSettings(path);
-		if (value === DEFAULT_SETTINGS) {
-			const legacy = await readLegacySettings(path);
-			if (
-				legacy &&
-				(await migrateLegacyUiSettings(
-					path,
-					UI_NAMESPACE,
-					join(dirname(path), SETTINGS_FILE_NAME),
-					{ ...legacy },
-					"UI",
-					(value) => isValidSettings(value),
-				))
-			) {
-				return new UiSettingsStore(path, resolveUiSettingsLockPath(path), legacy, writer);
-			}
-		}
-		return new UiSettingsStore(path, resolveUiSettingsLockPath(path), await readSettings(path), writer);
+		const initial = value ?? (await readLegacySettings(path)) ?? DEFAULT_SETTINGS;
+		return new UiSettingsStore(path, resolveUiSettingsLockPath(path), initial, writer);
 	}
 
 	static memory(value: UiSettings = DEFAULT_SETTINGS): UiSettingsStore {
@@ -307,7 +292,13 @@ export class UiSettingsStore {
 			const pending = this.pendingWrite;
 			this.pendingWrite = undefined;
 			try {
-				this.persistedValue = await persistSettingsChanges(this.path, this.lockPath, pending.changes, this.writer);
+				this.persistedValue = await persistSettingsChanges(
+					this.path,
+					this.lockPath,
+					pending.changes,
+					this.persistedValue,
+					this.writer,
+				);
 				this.reconcileValueWithPersisted();
 				for (const waiter of pending.waiters) waiter.resolve();
 			} catch (error) {
@@ -359,27 +350,6 @@ export class UiSettingsStore {
 
 	private reconcileValueWithPersisted(): void {
 		this.replaceValue(applySettingsChanges(this.persistedValue, this.pendingWrite?.changes));
-	}
-}
-
-async function migrateLegacyUiSettings(
-	path: string,
-	namespace: string,
-	legacyPath: string,
-	legacy: SettingsRecord,
-	owner: string,
-	isExistingValid: (record: SettingsRecord) => boolean,
-): Promise<boolean> {
-	const { migrateLegacyNamespace } = await import("../shared/settings-io/lock.js");
-	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);
-}
-
-function isValidSettings(value: SettingsRecord): boolean {
-	try {
-		parseSettings(value);
-		return true;
-	} catch {
-		return false;
 	}
 }
 

@@ -105,6 +105,21 @@ test("saveGoalSettings creates a complete document only on explicit save", async
 	assert.deepEqual(readdirSync(parent), ["pi-stuff.json"]);
 });
 
+test("startup reads legacy Goal settings without migrating them", async (t) => {
+	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-legacy-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	const settingsPath = join(directory, "pi-stuff.json");
+	const legacyPath = join(directory, "pi-goal.json");
+	writeFileSync(legacyPath, JSON.stringify({ toolVisibility: "after-first-goal" }));
+
+	assert.deepEqual(readGoalSettings(settingsPath), {
+		kind: "loaded",
+		settings: { ...DEFAULT_GOAL_SETTINGS, toolVisibility: "after-first-goal" },
+	});
+	assert.equal(existsSync(settingsPath), false);
+	assert.equal(existsSync(legacyPath), true);
+});
+
 test("saveGoalSettings atomically preserves unknown top-level and nested fields", async (t) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-save-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));

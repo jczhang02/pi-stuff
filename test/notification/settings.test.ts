@@ -172,7 +172,7 @@ test("legacy sound settings migrate in memory and persist only after direct inpu
 	});
 });
 
-test("the legacy Notification file is consolidated once", async () => {
+test("the legacy Notification file stays read-only until direct input", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
 	roots.push(root);
 	const path = join(root, "pi-stuff.json");
@@ -182,8 +182,12 @@ test("the legacy Notification file is consolidated once", async () => {
 	const store = await NotificationSettingsStore.load(path);
 
 	expect(store.get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
+	await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
+
+	await store.update({ responsePreview: true });
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-		notification: DEFAULT_NOTIFICATION_SETTINGS,
+		notification: { ...DEFAULT_NOTIFICATION_SETTINGS, responsePreview: true },
 	});
-	await expect(readFile(legacyPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
 });

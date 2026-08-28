@@ -4,11 +4,10 @@
  * Each Capability owns one namespace (top-level key) in `<agentDir>/pi-stuff.json`
  * and a `normalize` function that validates an arbitrary record into its
  * strongly-typed shape. The store handles whole-file locking, read/merge/write,
- * subscription, and one-time migration from a legacy per-Capability file so
+ * subscription, and read-only fallback to a legacy per-Capability file so
  * individual Capability modules stop duplicating this logic.
  */
 
-import { access, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file.js";
 import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
@@ -19,16 +18,13 @@ export type NamespaceLockAcquirer = (lockPath: string, owner: string) => Promise
 export type NamespaceNormalizer<T extends NamespaceRecord> = <Value>(value: Value) => T;
 
 /**
- * Lift a legacy per-Capability settings file into the merged namespace.
- *
- * Return the parsed legacy record so the store can seed the namespace and
- * persist it into the merged file on first load. Return `undefined` when there
- * is no legacy file to migrate.
+ * Read a legacy per-Capability settings file as a startup-only fallback.
+ * Return `undefined` when there is no valid legacy file.
  */
-export type NamespaceMigrator = (legacyPath: string) => Promise<NamespaceRecord | undefined>;
+export type NamespaceLegacyReader = (legacyPath: string) => Promise<NamespaceRecord | undefined>;
 
 export interface NamespaceStoreDiagnostic {
-	readonly action: "settings-load" | "settings-migration";
+	readonly action: "settings-load";
 	readonly capability: "pi-stuff";
 	readonly details: string;
 	readonly error: unknown;
@@ -45,10 +41,10 @@ export interface NamespaceStoreOptions {
 	readonly path?: string;
 	/** Override the writer for tests. */
 	readonly writer?: NamespaceWriter;
-	/** Legacy per-Capability file to lift into this namespace on first load. */
+	/** Legacy per-Capability file to read without mutating it. */
 	readonly legacyPath?: string;
-	/** Lift a legacy file into the namespace record. */
-	readonly migrator?: NamespaceMigrator;
+	/** Parse a legacy file as an in-memory fallback when the namespace is absent. */
+	readonly legacyReader?: NamespaceLegacyReader;
 	/**
 	 * Acquire the whole-file lock before persisting. Defaults to none, so the
 	 * store stays free of `bun:ffi`; Bun-based Capabilities inject the real
@@ -62,16 +58,14 @@ export interface NamespaceStoreOptions {
 /**
  * A single-Capability view over the merged settings file.
  *
- * Construction is lazy: `load()` reads the merged file (and migrates a legacy
- * file once if a migrator is supplied). Mutations go through `update()`,
- * `updateWith()`, or `replace()`, which acquire the whole-file lock and
- * merge the result back without touching sibling namespaces.
+ * Construction is lazy and read-only: `load()` reads the merged file, then a
+ * configured legacy fallback. Mutations go through `update()`, `updateWith()`,
+ * or `replace()`, which acquire the whole-file lock and merge the result back
+ * without touching sibling namespaces or the legacy file.
  */
 export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	private readonly listeners = new Set<(value: T) => void>();
 	private readonly lockPath: string;
-	private readonly migrator: NamespaceMigrator | undefined;
-	private readonly legacyPath: string | undefined;
 	private readonly namespace: string;
 	private readonly path: string;
 	private pending = Promise.resolve();
@@ -88,8 +82,6 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		lockPath: string,
 		value: T,
 		writer: NamespaceWriter,
-		legacyPath: string | undefined,
-		migrator: NamespaceMigrator | undefined,
 		acquireLock: NamespaceLockAcquirer | undefined,
 		reportDiagnostic: NamespaceDiagnosticReporter | undefined,
 		normalize: NamespaceNormalizer<T> | undefined,
@@ -100,8 +92,6 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		this.value = value;
 		this.persistedValue = value;
 		this.writer = writer;
-		this.legacyPath = legacyPath;
-		this.migrator = migrator;
 		this.acquireLock = acquireLock;
 		this.reportDiagnostic = reportDiagnostic;
 		this.normalize = normalize;
@@ -126,29 +116,16 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 			lockPath,
 			defaults,
 			writer,
-			options.legacyPath,
-			options.migrator,
 			options.acquireLock,
 			options.reportDiagnostic,
 			normalize,
 		);
-		await store.initialize(namespace, defaults);
+		await store.initialize(namespace, defaults, options.legacyPath, options.legacyReader);
 		return store;
 	}
 
 	static memory<T extends NamespaceRecord>(value: T): NamespacedSettingsStore<T> {
-		return new NamespacedSettingsStore<T>(
-			"",
-			"",
-			"",
-			value,
-			async () => undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-		);
+		return new NamespacedSettingsStore<T>("", "", "", value, async () => undefined, undefined, undefined, undefined);
 	}
 
 	get(): T {
@@ -192,80 +169,55 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		return this.value;
 	}
 
-	private async initialize(namespace: string, defaults: T): Promise<void> {
+	private async initialize(
+		namespace: string,
+		defaults: T,
+		legacyPath: string | undefined,
+		legacyReader: NamespaceLegacyReader | undefined,
+	): Promise<void> {
 		if (!this.path) return;
 		const normalize = this.normalize;
 		if (!normalize) return;
 		const existing = await this.readExisting(namespace);
-		if (!this.migrator || !this.legacyPath || !(await fileExists(this.legacyPath))) {
-			const value = existing === undefined ? defaults : this.normalizeInitial(existing, defaults);
+		if (existing.kind !== "missing" || !legacyReader || !legacyPath) {
+			const value = existing.kind === "loaded" ? this.normalizeInitial(existing.record, defaults) : defaults;
 			this.value = value;
 			this.persistedValue = value;
 			return;
 		}
 
-		const release = this.acquireLock ? await this.acquireLock(this.lockPath, "pi-stuff") : async () => {};
 		try {
-			const lockedExisting = await this.readExisting(namespace);
-			if (lockedExisting !== undefined) {
-				const value = normalize(lockedExisting);
-				this.value = value;
-				this.persistedValue = value;
-				await removeLegacyFile(this.legacyPath);
-				return;
-			}
-
-			let legacy: T | undefined;
-			try {
-				const lifted = await this.migrator(this.legacyPath);
-				if (lifted) legacy = normalize(lifted);
-			} catch (error) {
-				if (!isMissingFile(error)) {
-					this.reportDiagnostic?.({
-						action: "settings-migration",
-						capability: "pi-stuff",
-						details: this.legacyPath,
-						error,
-						key: "migration-failed",
-						severity: "warning",
-						summary: "Legacy settings could not be migrated; built-in defaults are active",
-						visibility: "notice",
-					});
-				}
-			}
-			const value = legacy ?? defaults;
+			const legacy = await legacyReader(legacyPath);
+			const value = legacy === undefined ? defaults : normalize(legacy);
 			this.value = value;
 			this.persistedValue = value;
-			if (legacy !== undefined) {
-				// Persist first; the legacy file stays authoritative if the write fails.
-				await this.writer(this.path, this.namespace, legacy);
-				await removeLegacyFile(this.legacyPath);
-			}
 		} catch (error) {
-			this.reportDiagnostic?.({
-				action: "settings-migration",
-				capability: "pi-stuff",
-				details: this.path,
-				error,
-				key: "migration-write-failed",
-				severity: "warning",
-				summary: "Legacy settings could not be consolidated; the legacy value remains active for this session",
-				visibility: "notice",
-			});
-		} finally {
-			await release();
+			if (!isMissingFile(error)) {
+				this.reportDiagnostic?.({
+					action: "settings-load",
+					capability: "pi-stuff",
+					details: legacyPath,
+					error,
+					key: "invalid-legacy-settings",
+					severity: "warning",
+					summary: "Legacy settings were invalid and built-in defaults are active",
+					visibility: "notice",
+				});
+			}
 		}
 	}
 
 	/**
 	 * Read the current namespace; a malformed merged file degrades to
 	 * defaults (with a diagnostic) instead of throwing, matching every legacy
-	 * per-Capability store's fail-closed contract. A missing file returns
-	 * `undefined`.
+	 * per-Capability store's fail-closed contract.
 	 */
-	private async readExisting(namespace: string): Promise<SettingsRecord | undefined> {
+	private async readExisting(
+		namespace: string,
+	): Promise<{ readonly kind: "invalid" | "missing" } | { readonly kind: "loaded"; readonly record: SettingsRecord }> {
 		try {
-			return await readNamespace(this.path, namespace);
+			const record = await readNamespace(this.path, namespace);
+			return record === undefined ? { kind: "missing" } : { kind: "loaded", record };
 		} catch (error) {
 			this.reportDiagnostic?.({
 				action: "settings-load",
@@ -277,7 +229,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 				summary: "Settings were invalid and built-in defaults are active",
 				visibility: "notice",
 			});
-			return undefined;
+			return { kind: "invalid" };
 		}
 	}
 
@@ -331,24 +283,6 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 				// Presentation observers cannot block persistence.
 			}
 		}
-	}
-}
-
-async function fileExists(path: string): Promise<boolean> {
-	try {
-		await access(path);
-		return true;
-	} catch (error) {
-		if (isMissingFile(error)) return false;
-		throw error;
-	}
-}
-
-async function removeLegacyFile(path: string): Promise<void> {
-	try {
-		await unlink(path);
-	} catch (error) {
-		if (!isMissingFile(error)) throw error;
 	}
 }
 

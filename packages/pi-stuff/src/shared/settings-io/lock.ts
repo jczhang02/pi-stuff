@@ -10,9 +10,9 @@
 import { dlopen, FFIType } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, unlink } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
-import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file.js";
+import { mergeNamespaceRecord, type SettingsRecord } from "./file.js";
 import { resolveSettingsLockPath } from "./paths.js";
 
 export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
@@ -96,33 +96,4 @@ export function mergeNamespaceRecordLocked(
 	owner: string,
 ): Promise<SettingsRecord> {
 	return withSettingsLock(path, owner, () => mergeNamespaceRecord(path, namespace, next));
-}
-
-/** Persist one valid legacy record, then remove its superseded file under the same lease. */
-export function migrateLegacyNamespace(
-	path: string,
-	namespace: string,
-	legacyPath: string,
-	legacy: SettingsRecord,
-	owner: string,
-	isExistingValid: (record: SettingsRecord) => boolean = () => true,
-): Promise<boolean> {
-	return withSettingsLock(path, owner, async () => {
-		const existing = await readNamespace(path, namespace);
-		if (existing === undefined) {
-			await mergeNamespaceRecord(path, namespace, legacy);
-			await removeLegacyFile(legacyPath);
-			return true;
-		}
-		if (isExistingValid(existing)) await removeLegacyFile(legacyPath);
-		return false;
-	});
-}
-
-async function removeLegacyFile(path: string): Promise<void> {
-	try {
-		await unlink(path);
-	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-	}
 }

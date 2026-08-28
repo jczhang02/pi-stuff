@@ -1,6 +1,8 @@
 ---
 status: accepted
-amended_by: 0013-unify-web-configuration
+amended_by:
+  - 0013-unify-web-configuration
+  - 0023-keep-suite-startup-configuration-read-only
 ---
 
 # Consolidate Pi Stuff settings into one merged JSON file
@@ -45,13 +47,13 @@ A new `packages/pi-stuff/src/shared/settings-io/` module owns all persistence co
   for Goal's hot-path load) plus `readNamespace`/`mergeNamespaceRecord` (and sync variants). Reads and writes use
   plain JSON (`JSON.parse` / `JSON.stringify`); the file is a plain `pi-stuff.json` with no comment support.
   Writers emit tab-indented JSON for deterministic machine output.
-- `lock.ts` — the `flock`-based exclusive lock and locked merge/migration helpers, factored from the legacy
+- `lock.ts` — the `flock`-based exclusive lock and locked merge helpers, factored from the legacy
   per-Capability locks. It imports `bun:ffi`, so it is **not** re-exported through the `index.js` barrel. Bun-based
   Capability writers import it directly; Goal reaches it only through a dynamic production adapter. This keeps
   `bun:ffi` out of Node-only module graphs; Capability modules included in Goal's upstream Node profile load it only
-  from Bun-only write and migration paths.
+  from Bun-only write paths.
 - `store.ts` — `NamespacedSettingsStore<T>`, an optional higher-level store (used by codex) that wires together the
-  namespace reader, writer, lock (injected, not statically imported), subscription, and one-time legacy migration.
+  namespace reader, writer, lock (injected, not statically imported), subscription, and read-only legacy fallback.
 
 ### Single-file lock
 
@@ -68,7 +70,10 @@ the reader is plain JSON as well (no comment tolerance).
 
 ### Legacy migration
 
-Each Capability that had a pre-existing per-file config performs a **one-time lift**: on first load, if the merged
+ADR 0023 supersedes the first-load behavior below. Current startup reads a valid legacy file only as an in-memory
+fallback and never writes, rewrites, or deletes user configuration.
+
+The original decision required each Capability with a pre-existing per-file config to perform a **one-time lift**: on first load, if the merged
 file has no entry for that namespace but the legacy file exists, the legacy content is parsed and seeded into the
 namespace, then persisted, and the legacy file is **deleted**. There is no `.bak` retention (per the project decision).
 
@@ -79,8 +84,8 @@ on-demand secret-resolution contract.
 
 ## Consequences
 
-- The Pi Stuff settings footprint in `~/.config/pi/` drops from six files to one (`pi-stuff.json`). Existing legacy
-  files are migrated transparently on first load and deleted afterward.
+- New settings persist in one `~/.config/pi/pi-stuff.json` document. Existing legacy files remain read-only fallbacks
+  until an explicit change creates the canonical namespace; they are not deleted automatically.
 - A Capability module no longer reimplements read/write/lock/atomic-rename; it calls into `shared/settings-io`.
   Adding a new Capability-owned setting adds a namespace, not a new file.
 - The whole file is one locked, atomically-replaced document. A write from one Capability briefly serializes behind

@@ -30,7 +30,7 @@ export {
 export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 export {
 	NamespacedSettingsStore,
-	type NamespaceMigrator,
+	type NamespaceLegacyReader,
 	type NamespaceRecord,
 	type NamespaceStoreOptions,
 	type NamespaceWriter,

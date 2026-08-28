@@ -68,6 +68,25 @@ test("UI settings default on without writing during startup and persist explicit
 	});
 });
 
+test("UI startup reads the legacy file without migrating it", async () => {
+	await withTemporarySettings(async (path) => {
+		const legacyPath = join(path, "..", "pi-stuff-ui.json");
+		const legacy = { ...DEFAULTS, statusline: false };
+		await writeFile(legacyPath, JSON.stringify(legacy));
+
+		const store = await UiSettingsStore.load(path);
+		expect(store.get()).toEqual(legacy);
+		expect(Bun.file(path).size).toBe(0);
+		expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(legacy);
+
+		await store.set("welcomeHeader", false);
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+			ui: { ...legacy, welcomeHeader: false },
+		});
+		expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(legacy);
+	});
+});
+
 test("complete schema v1 settings migrate in memory and persist as v3 only after an explicit change", async () => {
 	await withTemporarySettings(async (path) => {
 		const versionOne = {
@@ -185,6 +204,7 @@ test("concurrent stale-lock recovery admits only one settings writer", async () 
 test("invalid persisted UI settings fail quiet to the complete default", async () => {
 	await withTemporarySettings(async (path) => {
 		await writeFile(path, `${JSON.stringify({ ui: { schemaVersion: 1, statusline: false } })}\n`);
+		await writeFile(join(path, "..", "pi-stuff-ui.json"), JSON.stringify({ ...DEFAULTS, statusline: false }));
 		const diagnostics = new DiagnosticChannel();
 		activateDiagnosticChannel(diagnostics);
 		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);

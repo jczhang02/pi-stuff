@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { mergedSettingsPath, readNamespace, type SettingsRecord } from "../shared/settings-io/index.js";
-import { mergeNamespaceRecordLocked, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
+import { mergeNamespaceRecordLocked } from "../shared/settings-io/lock.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-rtk.json";
 const RTK_NAMESPACE = "rtk";
@@ -56,12 +56,12 @@ function toRecord(settings: RtkSettings): RtkSettings & SettingsRecord {
 	return { outputProjection: settings.outputProjection, rewriteCommands: settings.rewriteCommands, schemaVersion: 1 };
 }
 
-async function readSettings(path: string): Promise<RtkSettings> {
+async function readSettings(path: string): Promise<RtkSettings | undefined> {
 	try {
 		const namespace = await readNamespace(path, RTK_NAMESPACE);
-		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
+		return namespace === undefined ? undefined : parseSettings(namespace);
 	} catch (error) {
-		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return DEFAULT_SETTINGS;
+		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return undefined;
 		reportDiagnostic({
 			action: "/rtk settings",
 			capability: "RTK",
@@ -80,7 +80,7 @@ async function writeSettings(path: string, settings: RtkSettings): Promise<void>
 	await mergeNamespaceRecordLocked(path, RTK_NAMESPACE, toRecord(settings), "RTK");
 }
 
-/** One-time lift of the legacy `pi-stuff-rtk.json` into the merged `rtk` namespace. */
+/** Read the legacy `pi-stuff-rtk.json` without mutating user configuration. */
 async function readLegacySettings(path: string): Promise<RtkSettings | undefined> {
 	try {
 		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
@@ -120,23 +120,8 @@ export class RtkSettingsStore {
 		writer: SettingsWriter = writeSettings,
 	): Promise<RtkSettingsStore> {
 		const value = await readSettings(path);
-		if (value === DEFAULT_SETTINGS) {
-			const legacy = await readLegacySettings(path);
-			if (
-				legacy &&
-				(await migrateLegacyNamespace(
-					path,
-					RTK_NAMESPACE,
-					join(dirname(path), SETTINGS_FILE_NAME),
-					toRecord(legacy),
-					"RTK",
-					(value) => isValidSettings(value),
-				))
-			) {
-				return new RtkSettingsStore(path, legacy, writer);
-			}
-		}
-		return new RtkSettingsStore(path, await readSettings(path), writer);
+		const initial = value ?? (await readLegacySettings(path)) ?? DEFAULT_SETTINGS;
+		return new RtkSettingsStore(path, initial, writer);
 	}
 
 	static memory(value: RtkSettings = DEFAULT_SETTINGS): RtkSettingsStore {
@@ -228,14 +213,5 @@ export class RtkSettingsStore {
 				// Presentation observers cannot block an explicit settings write.
 			}
 		}
-	}
-}
-
-function isValidSettings<Value>(value: Value): boolean {
-	try {
-		parseSettings(value);
-		return true;
-	} catch {
-		return false;
 	}
 }

@@ -29,6 +29,22 @@ test("loading Codex settings has no startup write", async () => {
 	).resolves.toBe(false);
 });
 
+test("loading legacy Codex settings remains read-only", async () => {
+	const agentDir = await temporaryAgentDir();
+	await mkdir(agentDir, { recursive: true });
+	const legacyPath = join(agentDir, "pi-stuff-codex.json");
+	await writeFile(legacyPath, JSON.stringify({ fast: true }));
+
+	expect((await CodexSettingsStore.load(agentDir)).get()).toEqual({ fast: true });
+	expect(
+		access(mergedSettingsPath(agentDir)).then(
+			() => true,
+			() => false,
+		),
+	).resolves.toBe(false);
+	expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual({ fast: true });
+});
+
 test("Fast mode persists atomically with private permissions", async () => {
 	const agentDir = await temporaryAgentDir();
 	const settings = await CodexSettingsStore.load(agentDir);

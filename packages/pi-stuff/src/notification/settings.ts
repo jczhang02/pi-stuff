@@ -117,7 +117,7 @@ async function writeSettings(path: string, settings: NotificationSettings): Prom
 	await mergeNamespaceRecord(path, NOTIFICATION_NAMESPACE, toRecord(settings));
 }
 
-/** One-time lift of the legacy `pi-stuff-notification.json` into the merged `notification` namespace. */
+/** Read the legacy `pi-stuff-notification.json` without mutating user configuration. */
 async function readLegacySettings(path: string): Promise<NotificationSettings | undefined> {
 	try {
 		return parseSettings(parseJsonValue(await readFile(path, "utf8")));
@@ -163,7 +163,7 @@ export class NotificationSettingsStore {
 			{
 				acquireLock: acquireSettingsLock,
 				legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
-				migrator: async (legacyPath) => {
+				legacyReader: async (legacyPath) => {
 					const settings = await readLegacySettings(legacyPath);
 					return settings ? toRecord(settings) : undefined;
 				},

@@ -38,7 +38,7 @@ import {
 	truncateNotification,
 } from "./runtime.js";
 import { hasAssistantToolCall } from "./safety.js";
-import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked } from "./settings.js";
+import { DEFAULT_GOAL_SETTINGS, readGoalSettings } from "./settings.js";
 import { registerGoalTerminalTools } from "./terminal-tools.js";
 
 // goal.ts remains the Pi-facing composition root because lifecycle-event registration is
@@ -61,8 +61,6 @@ interface GoalLifecycle {
 }
 
 type StartupDispatch = () => Promise<void>;
-
-const BUN_RUNTIME = process.versions["bun"] !== undefined;
 
 const EXPERIMENTAL_GOALS_WARNING =
 	"Experimental ordered goals are enabled for pi-goal. Queue behavior and persisted state may change.";
@@ -107,7 +105,7 @@ function loadGoalSessionSettings(
 	lifecycle: GoalLifecycle,
 	ctx: ExtensionContext,
 	previousToolVisibility: GoalRuntime["settings"]["toolVisibility"],
-): Promise<void> | undefined {
+): void {
 	const { options, runtime } = lifecycle;
 	const apply = (result: ReturnType<typeof readGoalSettings>): void => {
 		runtime.settings = result.kind === "loaded" ? result.settings : DEFAULT_GOAL_SETTINGS;
@@ -129,7 +127,6 @@ function loadGoalSessionSettings(
 		}
 		runtime.goalToolsUnlocked = true;
 	};
-	if (BUN_RUNTIME) return readGoalSettingsLocked(options.settingsPath).then(apply);
 	apply(readGoalSettings(options.settingsPath));
 }
 
@@ -237,8 +234,7 @@ async function startGoalSession(
 	try {
 		const previousToolVisibility = runtime.settings.toolVisibility;
 		resetGoalSession(lifecycle);
-		const settingsLoad = loadGoalSessionSettings(lifecycle, ctx, previousToolVisibility);
-		if (settingsLoad) await settingsLoad;
+		loadGoalSessionSettings(lifecycle, ctx, previousToolVisibility);
 		dispatchAfterSuiteReady = restoreGoalSession(lifecycle, ctx, event.reason === "reload");
 	} finally {
 		runtime.endReadOnlySessionStart();
