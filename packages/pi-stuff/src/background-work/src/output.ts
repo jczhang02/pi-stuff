@@ -1,6 +1,9 @@
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared/terminal-text.js";
+
+export { sanitizeTerminalText };
 
 const OVERFLOW_MARKER = Buffer.from("\n[Pi Stuff stopped this task: output limit reached.]\n", "utf-8");
 
@@ -40,76 +43,6 @@ export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_L
 function formatTextTail(selected: Buffer, omitted: boolean): string {
 	const prefix = omitted ? "…[earlier output omitted]\n" : "";
 	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
-}
-
-export function sanitizeTerminalText(value: string): string {
-	let text = "";
-	let index = 0;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x1b) {
-			const introducer = value.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index = skipControlSequence(value, index + 2);
-				continue;
-			}
-			if (isStringControl(introducer)) {
-				index = skipControlString(value, index + 2);
-				continue;
-			}
-			index += 1;
-			while (index < value.length && value.charCodeAt(index) >= 0x20 && value.charCodeAt(index) <= 0x2f) {
-				index += 1;
-			}
-			if (index < value.length) index += 1;
-			continue;
-		}
-		if (code === 0x9b) {
-			index = skipControlSequence(value, index + 1);
-			continue;
-		}
-		if (isC1StringControl(code)) {
-			index = skipControlString(value, index + 1);
-			continue;
-		}
-		if (code !== 0x09 && code !== 0x0a && code !== 0x0d && (code < 0x20 || (code >= 0x7f && code <= 0x9f))) {
-			index += 1;
-			continue;
-		}
-		const point = value.codePointAt(index);
-		if (point === undefined) break;
-		text += String.fromCodePoint(point);
-		index += point > 0xffff ? 2 : 1;
-	}
-	return text;
-}
-
-function skipControlSequence(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index++);
-		if (code >= 0x40 && code <= 0x7e) break;
-	}
-	return index;
-}
-
-function skipControlString(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x07 || code === 0x9c) return index + 1;
-		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
-		index += 1;
-	}
-	return index;
-}
-
-function isStringControl(code: number): boolean {
-	return code === 0x5d || code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f;
-}
-
-function isC1StringControl(code: number): boolean {
-	return code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
 }
 
 export class BoundedOutputFile {

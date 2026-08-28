@@ -28,6 +28,7 @@ import {
 	renderCommandDialogKeyHelp,
 } from "../../../conversation-ui/index.js";
 import { isRuntimeString } from "../../../shared/runtime-type.js";
+import { sanitizeTerminalInput as stripTerminalControls } from "../../../shared/terminal-text.js";
 import type {
 	AgentControlAction,
 	AgentControlResult,
@@ -661,83 +662,6 @@ function pendingMessage(type: Exclude<AgentControlAction, { type: "inspect" }>["
 		case "stop":
 			return "Stopping… waiting for acknowledgement.";
 	}
-}
-
-function stripTerminalControls(value: string): string {
-	let result = "";
-	for (let index = 0; index < value.length; index += 1) {
-		const code = value.charCodeAt(index);
-		if (code === 27) {
-			const next = value.charCodeAt(index + 1);
-			if (next === 91) {
-				index += 2;
-				while (index < value.length && !isAnsiFinal(value.charCodeAt(index))) index += 1;
-				continue;
-			}
-			if (next === 93 || next === 80 || next === 88 || next === 94 || next === 95) {
-				index = skipStringControl(value, index + 2, next === 93);
-				continue;
-			}
-			index += 1;
-			continue;
-		}
-		if (code === 155) {
-			index += 1;
-			while (index < value.length && !isAnsiFinal(value.charCodeAt(index))) index += 1;
-			continue;
-		}
-		if (code === 157 || code === 144 || code === 152 || code === 158 || code === 159) {
-			index = skipC1StringControl(value, index + 1, code === 157);
-			continue;
-		}
-		if (code === 13) {
-			if (value.charCodeAt(index + 1) !== 10) result += "\n";
-			continue;
-		}
-		if (code === 10) {
-			result += "\n";
-			continue;
-		}
-		if (code === 9) {
-			result += "    ";
-			continue;
-		}
-		if (code < 32 || (code >= 127 && code <= 159) || isBidiControl(code)) continue;
-		result += value[index] ?? "";
-	}
-	return result;
-}
-
-function skipStringControl(value: string, start: number, allowBell: boolean): number {
-	for (let index = start; index < value.length; index += 1) {
-		const code = value.charCodeAt(index);
-		if (allowBell && code === 7) return index;
-		if (code === 27 && value.charCodeAt(index + 1) === 92) return index + 1;
-	}
-	return value.length;
-}
-
-function skipC1StringControl(value: string, start: number, allowBell: boolean): number {
-	for (let index = start; index < value.length; index += 1) {
-		const code = value.charCodeAt(index);
-		if ((allowBell && code === 7) || code === 156) return index;
-		if (code === 27 && value.charCodeAt(index + 1) === 92) return index + 1;
-	}
-	return value.length;
-}
-
-function isAnsiFinal(code: number): boolean {
-	return code >= 64 && code <= 126;
-}
-
-function isBidiControl(code: number): boolean {
-	return (
-		code === 1564 ||
-		code === 8206 ||
-		code === 8207 ||
-		(code >= 8234 && code <= 8238) ||
-		(code >= 8294 && code <= 8297)
-	);
 }
 
 function decodePrintable(data: string): string | undefined {

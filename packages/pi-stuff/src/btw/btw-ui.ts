@@ -24,6 +24,7 @@ import {
 	matchesCommandDialogHelp,
 	renderCommandDialogKeyHelp,
 } from "../conversation-ui/index.js";
+import { sanitizeTerminalProse as stripTerminalControls } from "../shared/terminal-text.js";
 import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 
 const GUTTER = "  ";
@@ -64,88 +65,6 @@ function successfulDisplay(exchange: BtwExchange): DisplayExchange {
 		contextTrimmed: exchange.contextTrimmed,
 		response: exchange.response,
 	};
-}
-
-function stripTerminalControls(text: string): string {
-	let result = "";
-	for (let index = 0; index < text.length; index += 1) {
-		const code = text.charCodeAt(index);
-		if (code === 0x1b) {
-			const introducer = text.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index = skipControlSequence(text, index + 2);
-				continue;
-			}
-			if (isStringControlIntroducer(introducer)) {
-				index = skipStringControl(text, index + 2, introducer === 0x5d);
-				continue;
-			}
-			index = skipEscapeSequence(text, index + 1);
-			continue;
-		}
-		if (code === 0x9b) {
-			index = skipControlSequence(text, index + 1);
-			continue;
-		}
-		if (isC1StringControlIntroducer(code)) {
-			index = skipStringControl(text, index + 1, code === 0x9d);
-			continue;
-		}
-		if (code === 0x0a || code === 0x09) {
-			result += text[index] ?? "";
-			continue;
-		}
-		if (isBidiControl(code) || code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-			result += " ";
-			continue;
-		}
-		result += text[index] ?? "";
-	}
-	return result;
-}
-
-function skipControlSequence(text: string, start: number): number {
-	for (let index = start; index < text.length; index += 1) {
-		const code = text.charCodeAt(index);
-		if (code >= 0x40 && code <= 0x7e) return index;
-	}
-	return text.length;
-}
-
-function skipStringControl(text: string, start: number, allowBell: boolean): number {
-	for (let index = start; index < text.length; index += 1) {
-		const code = text.charCodeAt(index);
-		if ((allowBell && code === 0x07) || code === 0x9c) return index;
-		if (code === 0x1b && text.charCodeAt(index + 1) === 0x5c) return index + 1;
-	}
-	return text.length;
-}
-
-function skipEscapeSequence(text: string, start: number): number {
-	let index = start;
-	while (index < text.length) {
-		const code = text.charCodeAt(index);
-		if (code < 0x20 || code > 0x2f) break;
-		index += 1;
-	}
-	return Math.min(index, text.length);
-}
-
-function isStringControlIntroducer(code: number): boolean {
-	return code === 0x5d || code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f;
-}
-
-function isC1StringControlIntroducer(code: number): boolean {
-	return code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
-}
-
-function isBidiControl(code: number): boolean {
-	return (
-		code === 0x061c ||
-		(code >= 0x200e && code <= 0x200f) ||
-		(code >= 0x202a && code <= 0x202e) ||
-		(code >= 0x2066 && code <= 0x2069)
-	);
 }
 
 function oneLine(text: string): string {

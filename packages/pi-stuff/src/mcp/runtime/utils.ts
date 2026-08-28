@@ -1,10 +1,11 @@
 import { exec } from "node:child_process";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { promisify, stripVTControlCharacters } from "node:util";
+import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { sanitizeTerminalText as sanitizeUntrustedTerminalText } from "../../shared/terminal-text.js";
 import type { McpConfig, ServerEntry } from "./types.ts";
 
 const execAsync = promisify(exec);
@@ -203,39 +204,8 @@ export function resolveBearerToken(
 	return definition.bearerTokenEnv ? process.env[definition.bearerTokenEnv] : undefined;
 }
 
-/** Remove OSC control strings, including payloads that have no terminator. */
-export function stripOscSequences(text: string): string {
-	let result = "";
-	let index = 0;
-	while (index < text.length) {
-		const isEscOsc = text.charCodeAt(index) === 0x1b && text[index + 1] === "]";
-		const isC1Osc = text.charCodeAt(index) === 0x9d;
-		if (!isEscOsc && !isC1Osc) {
-			result += text[index++];
-			continue;
-		}
-
-		index += isEscOsc ? 2 : 1;
-		while (index < text.length) {
-			const code = text.charCodeAt(index++);
-			if (code === 0x07 || code === 0x9c) break;
-			if (code === 0x1b && text[index] === "\\") {
-				index++;
-				break;
-			}
-		}
-	}
-	return result;
-}
-
 export function sanitizeTerminalText(text: string): string {
-	const plain = stripVTControlCharacters(stripOscSequences(text));
-	let withoutControls = "";
-	for (const char of plain) {
-		const code = char.charCodeAt(0);
-		withoutControls += code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? " " : char;
-	}
-	return withoutControls.replace(/\s+/g, " ").trim();
+	return sanitizeUntrustedTerminalText(text).replace(/\s+/gu, " ").trim();
 }
 
 export function formatTerminalError<Value>(error: Value): string {

@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
+import { isBidiControl, terminalControlEnd } from "../shared/terminal-text.js";
 import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
@@ -407,39 +408,6 @@ function escapeMarkdown(text: string): string {
 	return text.replace(MARKDOWN_PUNCTUATION, "\\$&");
 }
 
-function isBidiControl(code: number): boolean {
-	return (
-		code === 0x061c ||
-		code === 0x200b ||
-		code === 0x200e ||
-		code === 0x200f ||
-		(code >= 0x202a && code <= 0x202e) ||
-		(code >= 0x2066 && code <= 0x2069) ||
-		code === 0xfeff
-	);
-}
-
-function skipControlSequence(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		index += 1;
-		if (code >= 0x40 && code <= 0x7e) break;
-	}
-	return index;
-}
-
-function skipControlString(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x07 || code === 0x9c) return index + 1;
-		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
-		index += 1;
-	}
-	return index;
-}
-
 interface VisualizationFenceDetection {
 	found: boolean;
 }
@@ -451,48 +419,17 @@ function sanitizeMarkdown(value: string, fenceDetection?: VisualizationFenceDete
 	if (fenceDetection && startsVisualizationFence(value, 0)) fenceDetection.found = true;
 	while (index < value.length) {
 		const code = value.charCodeAt(index);
-		if (code === 0x1b) {
+		if (
+			code === 0x1b ||
+			code === 0x9b ||
+			code === 0x90 ||
+			code === 0x98 ||
+			code === 0x9d ||
+			code === 0x9e ||
+			code === 0x9f
+		) {
 			const controlStart = index;
-			const introducer = value.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index = skipControlSequence(value, index + 2);
-				segments.push(value.slice(segmentStart, controlStart));
-				segmentStart = index;
-				continue;
-			}
-			if (
-				introducer === 0x5d ||
-				introducer === 0x50 ||
-				introducer === 0x58 ||
-				introducer === 0x5e ||
-				introducer === 0x5f
-			) {
-				index = skipControlString(value, index + 2);
-				segments.push(value.slice(segmentStart, controlStart));
-				segmentStart = index;
-				continue;
-			}
-			index += 1;
-			while (index < value.length) {
-				const intermediate = value.charCodeAt(index);
-				if (intermediate < 0x20 || intermediate > 0x2f) break;
-				index += 1;
-			}
-			if (index < value.length) index += 1;
-			segments.push(value.slice(segmentStart, controlStart));
-			segmentStart = index;
-			continue;
-		}
-		if (code === 0x9b) {
-			const controlStart = index;
-			index = skipControlSequence(value, index + 1);
-			segments.push(value.slice(segmentStart, controlStart));
-			segmentStart = index;
-			continue;
-		}
-		if (code === 0x90 || code === 0x98 || code === 0x9d || code === 0x9e || code === 0x9f) {
-			const controlStart = index;
-			index = skipControlString(value, index + 1);
+			index = terminalControlEnd(value, index);
 			segments.push(value.slice(segmentStart, controlStart));
 			segmentStart = index;
 			continue;
