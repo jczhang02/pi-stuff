@@ -8,7 +8,6 @@ import type * as nestedEventModel from "./nested-events-model.ts";
 import {
 	AUTHORITATIVE_PROJECTION_TIMEOUT_MS,
 	type AuthoritativeNestedProjectionOptions,
-	projectNestedEvents,
 	projectNestedEventsAuthoritatively,
 } from "./nested-registry-projection.ts";
 import * as nestedRoute from "./nested-route.ts";
@@ -86,11 +85,6 @@ export function buildNestedRouteIndex(): Map<string, NestedRoute> {
 		if (route && !index.has(route.rootRunId)) index.set(route.rootRunId, route);
 	}
 	return index;
-}
-
-export function projectNestedRegistryForRoot(rootRunId: string): NestedRegistry | undefined {
-	const route = findNestedRouteForRootId(rootRunId);
-	return route ? projectNestedEvents(route) : undefined;
 }
 
 export async function projectNestedRegistryForRootAuthoritatively(
@@ -174,21 +168,6 @@ function collectMatchesFromRegistry(
 	}
 }
 
-export function findNestedRunMatchesById(
-	id: string,
-	options: { prefix?: boolean; scope?: NestedRunResolutionScope } = {},
-): NestedRunMatch[] {
-	nestedRoute.assertSafeNestedId("id", id);
-	const matches: NestedRunMatch[] = [];
-	for (const route of options.scope?.routes ?? listNestedRoutes()) {
-		try {
-			const registry = projectNestedEvents(route);
-			collectMatchesFromRegistry(matches, route, registry, id, options);
-		} catch {}
-	}
-	return matches;
-}
-
 /** Resolve a control target without treating another projector's live claim as an empty registry. */
 export async function findNestedRunMatchesByIdAuthoritatively(
 	id: string,
@@ -206,9 +185,4 @@ export async function findNestedRunMatchesByIdAuthoritatively(
 		collectMatchesFromRegistry(matches, route, registry, id, options);
 	}
 	return matches;
-}
-
-export function findNestedRunById(id: string): { rootRunId: string; run: NestedRunSummary } | undefined {
-	const match = findNestedRunMatchesById(id)[0];
-	return match ? { rootRunId: match.rootRunId, run: match.run } : undefined;
 }

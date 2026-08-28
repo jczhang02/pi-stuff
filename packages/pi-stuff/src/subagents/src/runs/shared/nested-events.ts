@@ -5,7 +5,6 @@ import { assertPrivateDirectory } from "../../shared/private-directory.ts";
 import {
 	type AsyncStatus,
 	type NestedRunSummary,
-	type NestedStepSummary,
 	RESULTS_DIR,
 	type SubagentRunMode,
 	type SubagentState,
@@ -15,7 +14,7 @@ import * as nestedEventModel from "./nested-events-model.ts";
 import type { NestedPathEntry } from "./nested-path.ts";
 import * as nestedRegistry from "./nested-registry.ts";
 import * as nestedRoute from "./nested-route.ts";
-import { MAX_STEPS, sanitizeSummary } from "./nested-summary.ts";
+import { sanitizeSummary } from "./nested-summary.ts";
 
 export type { NestedEventRecord, NestedRegistry, NestedRoute } from "./nested-events-model.ts";
 export {
@@ -35,12 +34,9 @@ export {
 	buildNestedRouteIndex,
 	finalizeNestedRouteRoot,
 	findNestedRouteForRootId,
-	findNestedRunById,
-	findNestedRunMatchesById,
 	findNestedRunMatchesByIdAuthoritatively,
 	projectNestedEvents,
 	projectNestedEventsAuthoritatively,
-	projectNestedRegistryForRoot,
 	projectNestedRegistryForRootAuthoritatively,
 	readNestedRegistry,
 	retireCompletedNestedRoute,
@@ -116,17 +112,8 @@ export function nestedSummaryFromAsyncStatus(
 	const runId = status.runId || fallback.id;
 	const fallbackPath: NestedPathEntry = { runId: fallback.parentRunId };
 	if (fallback.parentStepIndex !== undefined) fallbackPath.stepIndex = fallback.parentStepIndex;
-	const summary: Partial<NestedRunSummary> = { id: runId };
-	if (status.parentRunOrigin) summary.parentRunOrigin = status.parentRunOrigin;
-	summary.parentRunId = fallback.parentRunId;
-	if (fallback.parentStepIndex !== undefined) summary.parentStepIndex = fallback.parentStepIndex;
-	summary.depth = fallback.depth;
-	summary.path = fallback.path ?? [fallbackPath];
-	summary.asyncDir = asyncDir;
-	if (status.pid) summary.pid = status.pid;
-	if (status.sessionId) summary.sessionId = status.sessionId;
-	summary.mode = status.mode ?? fallback.mode;
-	summary.ownerState =
+	const source = `${asyncDir}/status.json`;
+	const ownerState =
 		status.state === "complete" ||
 		status.state === "failed" ||
 		status.state === "paused" ||
@@ -135,81 +122,41 @@ export function nestedSummaryFromAsyncStatus(
 			: status.pid
 				? "live"
 				: "unknown";
-	if (status.processTerminal) {
-		const processTerminal = sanitizeProcessTerminal(
-			status.processTerminal,
-			{ runId, runnerProcessInstanceId: status.processTerminal.runnerProcessInstanceId },
-			`${asyncDir}/status.json`,
-		);
-		if (processTerminal) summary.processTerminal = processTerminal;
-	}
-	if (status.capabilityCeiling) summary.capabilityCeiling = status.capabilityCeiling;
-	if (status.capabilityAudit) summary.capabilityAudit = status.capabilityAudit;
-	summary.state = status.state;
-	if (status.currentStep !== undefined) summary.currentStep = status.currentStep;
-	if (status.activityState) summary.activityState = status.activityState;
-	if (status.lastActivityAt !== undefined) summary.lastActivityAt = status.lastActivityAt;
-	if (status.currentTool) summary.currentTool = status.currentTool;
-	if (status.currentToolStartedAt !== undefined) summary.currentToolStartedAt = status.currentToolStartedAt;
-	if (status.currentPath) summary.currentPath = status.currentPath;
-	if (status.turnCount !== undefined) summary.turnCount = status.turnCount;
-	if (status.toolCount !== undefined) summary.toolCount = status.toolCount;
-	if (status.totalTokens) summary.totalTokens = status.totalTokens;
-	if (status.timeoutMs !== undefined) summary.timeoutMs = status.timeoutMs;
-	if (status.deadlineAt !== undefined) summary.deadlineAt = status.deadlineAt;
-	if (status.timedOut !== undefined) summary.timedOut = status.timedOut;
-	if (status.stopped !== undefined) summary.stopped = status.stopped;
-	if (status.turnBudget) summary.turnBudget = status.turnBudget;
-	if (status.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = status.turnBudgetExceeded;
-	if (status.wrapUpRequested !== undefined) summary.wrapUpRequested = status.wrapUpRequested;
-	if (status.error) summary.error = status.error;
-	summary.startedAt = status.startedAt ?? fallback.ts;
-	if (status.endedAt !== undefined) summary.endedAt = status.endedAt;
-	summary.lastUpdate = status.lastUpdate ?? fallback.ts;
-	if (status.sessionFile) summary.sessionFile = status.sessionFile;
-	if (status.steps?.length) {
-		summary.steps = status.steps
-			.map((step, index) => {
-				const projected: Partial<NestedStepSummary> = { agent: step.agent };
-				if (step.delegatedTask) projected.delegatedTask = step.delegatedTask;
-				if (step.task) projected.task = step.task;
-				if (step.label) projected.description = step.label;
-				projected.status = step.status;
-				if (step.sessionFile) projected.sessionFile = step.sessionFile;
-				if (step.transcriptPath) projected.transcriptPath = step.transcriptPath;
-				if (step.transcriptError) projected.transcriptError = step.transcriptError;
-				if (step.activityState) projected.activityState = step.activityState;
-				if (step.lastActivityAt !== undefined) projected.lastActivityAt = step.lastActivityAt;
-				if (step.currentTool) projected.currentTool = step.currentTool;
-				if (step.currentToolStartedAt !== undefined) projected.currentToolStartedAt = step.currentToolStartedAt;
-				if (step.currentPath) projected.currentPath = step.currentPath;
-				if (step.turnCount !== undefined) projected.turnCount = step.turnCount;
-				if (step.toolCount !== undefined) projected.toolCount = step.toolCount;
-				if (step.startedAt !== undefined) projected.startedAt = step.startedAt;
-				if (step.endedAt !== undefined) projected.endedAt = step.endedAt;
-				if (step.error) projected.error = step.error;
-				if (step.timedOut !== undefined) projected.timedOut = step.timedOut;
-				if (step.stopped !== undefined) projected.stopped = step.stopped;
-				if (step.turnBudget) projected.turnBudget = step.turnBudget;
-				if (step.turnBudgetExceeded !== undefined) projected.turnBudgetExceeded = step.turnBudgetExceeded;
-				if (step.wrapUpRequested !== undefined) projected.wrapUpRequested = step.wrapUpRequested;
-				if (step.processTerminal) {
-					const processTerminal = sanitizeProcessTerminal(
-						step.processTerminal,
-						{ runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
-						`${asyncDir}/status.json step ${index}`,
-					);
-					if (processTerminal) projected.processTerminal = processTerminal;
-				}
-				if (step.capabilityCeiling) projected.capabilityCeiling = step.capabilityCeiling;
-				if (step.capabilityAudit) projected.capabilityAudit = step.capabilityAudit;
-				// SAFETY: agent and status are copied from the canonical AsyncStatus step before returning the projection.
-				return projected as NestedStepSummary;
-			})
-			.slice(0, MAX_STEPS);
-	}
-	// SAFETY: the required nested address and state fields are assigned from canonical status and fallback inputs.
-	return summary as NestedRunSummary;
+	const processTerminal = status.processTerminal
+		? sanitizeProcessTerminal(
+				status.processTerminal,
+				{ runId, runnerProcessInstanceId: status.processTerminal.runnerProcessInstanceId },
+				source,
+			)
+		: undefined;
+	const steps = status.steps?.map((step, index) => ({
+		...step,
+		description: step.label,
+		processTerminal: step.processTerminal
+			? sanitizeProcessTerminal(
+					step.processTerminal,
+					{ runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
+					`${source} step ${index}`,
+				)
+			: undefined,
+	}));
+	const summary = sanitizeSummary({
+		...status,
+		id: runId,
+		parentRunId: fallback.parentRunId,
+		parentStepIndex: fallback.parentStepIndex,
+		depth: fallback.depth,
+		path: fallback.path ?? [fallbackPath],
+		asyncDir,
+		mode: status.mode ?? fallback.mode,
+		ownerState,
+		processTerminal,
+		startedAt: status.startedAt ?? fallback.ts,
+		lastUpdate: status.lastUpdate ?? fallback.ts,
+		steps,
+	});
+	if (!summary) throw new Error(`Invalid nested status projection for '${runId}'.`);
+	return summary;
 }
 
 export function nestedResultsPath(rootRunId: string, id: string): string {

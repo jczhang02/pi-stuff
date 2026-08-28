@@ -316,10 +316,6 @@ export function ensureCompatibilityImports(
 	});
 }
 
-export function buildStarterProjectConfig(): McpConfig {
-	return { mcpServers: {} };
-}
-
 export function previewStarterProjectConfig(cwd = process.cwd()): ConfigWritePreview {
 	const targetPath = getProjectConfigPath(cwd);
 	const nextRaw: JsonInputObject = { mcpServers: {} };
