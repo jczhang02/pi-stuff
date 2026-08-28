@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { setTimeout as delay } from "node:timers/promises";
 import {
 	type JsonInputObject,
 	type JsonSourceObject,
@@ -22,14 +24,6 @@ interface RpcWaiter {
 	readonly reject: (error: Error) => void;
 	readonly resolve: (event: JsonSourceObject) => void;
 	readonly timer: ReturnType<typeof setTimeout>;
-}
-
-export interface RpcClient {
-	readonly events: readonly JsonSourceObject[];
-	close(): Promise<void>;
-	command(payload: JsonInputObject, timeoutMs?: number): Promise<JsonSourceObject>;
-	promptAndSettle(message: string): Promise<void>;
-	stderr(): string;
 }
 
 function fail(message: string): never {
@@ -65,7 +59,7 @@ export function buildPonytailBenchmarkEnvironment(
 	return environment;
 }
 
-class RpcTransport implements RpcClient {
+export class PonytailBenchmarkRpc {
 	readonly events: JsonSourceObject[] = [];
 	private buffer = "";
 	private closePromise: Promise<void> | undefined;
@@ -218,22 +212,6 @@ class RpcTransport implements RpcClient {
 
 	private async signalAndWait(signal: NodeJS.Signals): Promise<void> {
 		this.child.kill(signal);
-		await new Promise<void>((resolvePromise) => {
-			const timer = setTimeout(resolvePromise, 5_000);
-			this.child.once("exit", () => {
-				clearTimeout(timer);
-				resolvePromise();
-			});
-		});
+		await Promise.race([once(this.child, "exit"), delay(5_000)]);
 	}
-}
-
-export function createPonytailBenchmarkRpc(
-	project: string,
-	sessions: string,
-	runtime: string,
-	temporary: string,
-	observerLog: string,
-): RpcClient {
-	return new RpcTransport(project, sessions, runtime, temporary, observerLog);
 }

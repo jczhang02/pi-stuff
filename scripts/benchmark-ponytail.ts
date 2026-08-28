@@ -18,8 +18,8 @@ import {
 	isRuntimeString,
 } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import {
-	createPonytailBenchmarkRpc,
 	PONYTAIL_BENCHMARK_MODEL as MODEL,
+	PonytailBenchmarkRpc,
 	PONYTAIL_BENCHMARK_PROVIDER as PROVIDER,
 } from "./benchmark-ponytail-rpc.js";
 import { CERTIFIED_PI_HOST_PROFILE } from "./pi-host-contract.js";
@@ -343,9 +343,6 @@ function productionMetrics(files: Readonly<Record<string, string>>): FileMetrics
 		structuralDeclarations: contents.reduce((sum, content) => sum + structures(content), 0),
 	};
 }
-function runtimeNumber(value: JsonSourceValue | undefined): number | undefined {
-	return isRuntimeNumber(value) ? value : undefined;
-}
 function nestedValue(record: JsonSourceValue | undefined, keys: readonly string[]): JsonSourceValue | undefined {
 	let current = record;
 	for (const key of keys) {
@@ -428,11 +425,11 @@ async function providerObservations(path: string): Promise<ProviderObservation[]
 				!value["toolNames"].every(isRuntimeString)
 			)
 				fail("observer emitted malformed data");
-			const contributionCharacters = runtimeNumber(value["contributionCharacters"]);
-			const markerCount = runtimeNumber(value["markerCount"]);
+			const contributionCharacters = value["contributionCharacters"];
+			const markerCount = value["markerCount"];
 			if (
-				contributionCharacters === undefined ||
-				markerCount === undefined ||
+				!isRuntimeNumber(contributionCharacters) ||
+				!isRuntimeNumber(markerCount) ||
 				!isRuntimeBoolean(value["hasModePolicy"]) ||
 				!isRuntimeBoolean(value["hasUpstreamLongForm"])
 			)
@@ -472,9 +469,6 @@ function promptBoundaryValid(mode: BenchmarkMode, observations: readonly Provide
 	);
 }
 
-function responseData(response: JsonSourceObject): JsonSourceValue | undefined {
-	return response["data"];
-}
 async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: number): Promise<BenchmarkCaseResult> {
 	const startedAt = Date.now();
 	const scenario = PONYTAIL_BENCHMARK_SCENARIOS.find((candidate) => candidate["id"] === run.scenario);
@@ -501,15 +495,15 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 	await writeFile(join(project, ".pi/code-mode.json"), '{"enabled":false}\n', { mode: 0o600 });
 	initializeBenchmarkInventory(project, inventory);
 	const before = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
-	const rpc = createPonytailBenchmarkRpc(project, sessions, runtime, temporary, observerLog);
+	const rpc = new PonytailBenchmarkRpc(project, sessions, runtime, temporary, observerLog);
 	try {
-		const state = responseData(await rpc.command({ type: "get_state" }));
-		const commandResponse = responseData(await rpc.command({ type: "get_commands" }));
+		const state = (await rpc.command({ type: "get_state" }))["data"];
+		const commandResponse = (await rpc.command({ type: "get_commands" }))["data"];
 		await rpc.command({ type: "prompt", message: `/ponytail ${run["mode"]}` });
 		await rpc.promptAndSettle(scenario.prompt);
-		const messages = responseData(await rpc.command({ type: "get_messages" }));
-		const entries = responseData(await rpc.command({ type: "get_entries" }));
-		const stats = responseData(await rpc.command({ type: "get_session_stats" }));
+		const messages = (await rpc.command({ type: "get_messages" }))["data"];
+		const entries = (await rpc.command({ type: "get_entries" }))["data"];
+		const stats = (await rpc.command({ type: "get_session_stats" }))["data"];
 		await rpc.close();
 		const after = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
 		const visibleTest = spawnSync("bun", ["test"], { cwd: project, encoding: "utf8", timeout: 60_000 });
@@ -537,8 +531,8 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 		const extensionErrors = rpc.events.filter(
 			(event) => isSourceObject(event) && event["type"] === "extension_error",
 		);
-		const totalTokens = runtimeNumber(nestedValue(stats, ["tokens", "total"]));
-		if (totalTokens === undefined) fail("Pi RPC returned malformed token statistics");
+		const totalTokens = nestedValue(stats, ["tokens", "total"]);
+		if (!isRuntimeNumber(totalTokens)) fail("Pi RPC returned malformed token statistics");
 		const source = Object.fromEntries(Object.entries(after).filter(([path]) => path.startsWith("src/")));
 		const valid =
 			visibleTest.status === 0 &&
