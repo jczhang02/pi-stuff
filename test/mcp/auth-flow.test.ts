@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { request } from "node:http";
 import {
 	getAuthForUrl,
 	getTestAuthSecretStoreEntries,
@@ -14,6 +15,11 @@ import {
 	supportsOAuth,
 } from "../../packages/pi-stuff/src/mcp/runtime/mcp-auth-config.js";
 import { getAuthSecretStore, isRevokedKeyringError } from "../../packages/pi-stuff/src/mcp/runtime/mcp-auth-keyring.js";
+import {
+	ensureCallbackServer,
+	stopCallbackServer,
+} from "../../packages/pi-stuff/src/mcp/runtime/mcp-callback-server.js";
+import { getOAuthCallbackPort } from "../../packages/pi-stuff/src/mcp/runtime/mcp-oauth-provider.js";
 
 interface CyclicCause {
 	cause?: CyclicCause;
@@ -81,6 +87,31 @@ test("validates OAuth configuration and authorization redirects at the trust bou
 	expect(supportsOAuth({ url: "https://mcp.example" })).toBe(true);
 	expect(supportsOAuth({ url: "https://mcp.example", headers: { Authorization: "Bearer token" } })).toBe(false);
 	expect(supportsOAuth({ url: "https://mcp.example", auth: "oauth", headers: { Authorization: "token" } })).toBe(true);
+});
+
+test("OAuth callback requests ignore a malformed Host header", async () => {
+	await ensureCallbackServer({ callbackHost: "127.0.0.1", callbackPath: "/callback" });
+	try {
+		const status = await new Promise<number | undefined>((resolve, reject) => {
+			const callbackRequest = request(
+				{
+					headers: { host: "[" },
+					host: "127.0.0.1",
+					path: "/not-callback",
+					port: getOAuthCallbackPort(),
+				},
+				(response) => {
+					response.resume();
+					response.on("end", () => resolve(response.statusCode));
+				},
+			);
+			callbackRequest.on("error", reject);
+			callbackRequest.end();
+		});
+		expect(status).toBe(404);
+	} finally {
+		await stopCallbackServer();
+	}
 });
 
 test("binds secure OAuth credentials to their server URL and detects chunk tampering", () => {

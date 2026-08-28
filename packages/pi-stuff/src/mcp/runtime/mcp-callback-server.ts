@@ -128,7 +128,14 @@ let callbackServerHost = DEFAULT_OAUTH_CALLBACK_HOST;
  * Handle incoming HTTP requests to the callback server.
  */
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
-	const url = new URL(req.url || "/", `http://${req.headers.host}`);
+	let url: URL;
+	try {
+		url = new URL(req.url || "/", "http://localhost");
+	} catch {
+		res.writeHead(400, { "Content-Type": "text/plain" });
+		res.end("Invalid request URL");
+		return;
+	}
 
 	// Only handle the callback path
 	if (url.pathname !== getOAuthCallbackPath()) {
