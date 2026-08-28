@@ -212,6 +212,7 @@ export class CodeModeDelegateRuntime {
 		let settlementAttempted = false;
 		try {
 			const value = await tool.invoke(input, nestedContext, controller.signal);
+			const transportValue = encodeTransportValue(value);
 			trace.result ??= resultFromValue(value);
 			trace.status = "done";
 			if (plan) {
@@ -221,7 +222,7 @@ export class CodeModeDelegateRuntime {
 			if (!hidden) this.traces.emit(cellId, trace, context);
 			const serializationError = this.respond(message.id, {
 				status: "ok",
-				value: { result: encodeTransportValue(value), type: "tool/result" },
+				value: { result: transportValue, type: "tool/result" },
 			});
 			if (serializationError) {
 				trace.status = "error";

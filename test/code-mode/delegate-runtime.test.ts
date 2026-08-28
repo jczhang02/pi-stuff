@@ -273,3 +273,63 @@ test("a failed durable success record is settled as an error instead of staying 
 	]);
 	runtime.clear();
 });
+
+test("an unserializable Tool result settles as an error before durable success", async () => {
+	const responses: unknown[] = [];
+	const settlements: string[] = [];
+	const cyclic: unknown[] = [];
+	cyclic.push(cyclic);
+	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-unserializable-result",
+		{
+			beginToolCall: () => ({
+				attempt: 0,
+				executionId: "cm-unserializable-result",
+				id: "cm-unserializable-result:0",
+				sequence: 0,
+			}),
+			completeToolCall: (_plan, settlement) => settlements.push(settlement.status),
+			cwd: "/project",
+		},
+		new Map([
+			[
+				"fixture",
+				{
+					description: "unserializable result fixture",
+					inputSchema: Type.Object({}),
+					// SAFETY: the malformed return intentionally exercises the runtime Tool-result boundary.
+					invoke: async () => cyclic as never,
+					name: "fixture",
+					usage: "tools.fixture({})",
+				},
+			],
+		]),
+	);
+	runtime.handleRequest({
+		id: 12,
+		request: {
+			invocation: {
+				cell_id: "cell-unserializable-result",
+				input: {},
+				runtime_tool_call_id: "nested-unserializable-result",
+				tool_name: { name: "fixture" },
+			},
+			type: "tool/invoke",
+		},
+	});
+	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
+
+	expect(settlements).toEqual(["error"]);
+	expect(responses).toEqual([
+		{
+			id: 12,
+			result: {
+				message: "Failed to serialize nested Tool result: Code Mode storage value is not serializable",
+				status: "error",
+			},
+			type: "delegate/response",
+		},
+	]);
+	runtime.clear();
+});
