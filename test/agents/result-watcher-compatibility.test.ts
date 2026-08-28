@@ -6,14 +6,15 @@ import {
 	cleanupResultWatcherFixtures,
 	createIntercomBus,
 	createResultWatcher,
+	createResultWatcherState,
 	fs,
 	type IntercomPayload,
 	LEGACY_COMPLETION_SCHEMA,
 	os,
 	path,
-	type ResultWatcherState,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	temporaryDirectories,
+	waitForResultWatcher,
 	writeTargetedResult,
 } from "./result-watcher-fixtures.js";
 
@@ -54,13 +55,7 @@ test("projects legacy result files onto the single/parallel completion contract"
 	);
 
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		notifier: {
@@ -73,7 +68,7 @@ test("projects legacy result files onto the single/parallel completion contract"
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 50 && delivered.length === 0; attempt++) await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0, 50);
 
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]).toMatchObject({
@@ -120,13 +115,7 @@ test("preserves completed and paused child truth in one grouped result", async (
 	);
 
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		notifier: {
@@ -139,7 +128,7 @@ test("preserves completed and paused child truth in one grouped result", async (
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 50 && delivered.length === 0; attempt++) await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0, 50);
 
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]?.results).toMatchObject([
@@ -163,13 +152,7 @@ test("does not let an old epoch release a restarted delivery attempt", async () 
 		reject: (cause?: unknown) => void;
 	}> = [];
 	let calls = 0;
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		notifier: {
@@ -184,11 +167,11 @@ test("does not let an old epoch release a restarted delivery attempt", async () 
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 100 && calls < 1; attempt += 1) await Bun.sleep(5);
+	await waitForResultWatcher(() => calls >= 1, 100, 5);
 	watcher.stopResultWatcher();
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 100 && calls < 2; attempt += 1) await Bun.sleep(5);
+	await waitForResultWatcher(() => calls >= 2, 100, 5);
 	expect(calls).toBe(2);
 
 	deliveries[0]?.resolve(true);
@@ -198,7 +181,7 @@ test("does not let an old epoch release a restarted delivery attempt", async () 
 	expect(calls).toBe(2);
 
 	deliveries[1]?.resolve(true);
-	for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt += 1) await Bun.sleep(5);
+	await waitForResultWatcher(() => !fs.existsSync(resultPath), 100, 5);
 	expect(fs.existsSync(resultPath)).toBe(false);
 	watcher.stopResultWatcher();
 });
@@ -251,13 +234,7 @@ test("restores nested user takeover attribution before emitting a cold completio
 
 	const emitted: CompletionNotification[] = [];
 	const notifications: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	const watcher = createResultWatcher(
 		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{
@@ -302,7 +279,7 @@ test("restores nested user takeover attribution before emitting a cold completio
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
-	for (let attempt = 0; attempt < 100 && emitted.length === 0; attempt += 1) await Bun.sleep(10);
+	await waitForResultWatcher(() => emitted.length > 0);
 
 	expect(notifications[0]?.parentRunOrigin).toBe("user");
 	expect(emitted[0]?.parentRunOrigin).toBe("user");
@@ -346,13 +323,7 @@ test("does not deliver an old-session result after an awaited nested projection"
 	const projectionRelease = Promise.withResolvers<void>();
 	const { bus, received } = createIntercomBus([true]);
 	const notifications: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 		notifier: {

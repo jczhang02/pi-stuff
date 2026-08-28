@@ -4,12 +4,13 @@ import {
 	cleanupResultWatcherFixtures,
 	createIntercomBus,
 	createResultWatcher,
+	createResultWatcherState,
 	fs,
 	os,
 	path,
-	type ResultWatcherState,
 	reconcileAsyncRun,
 	temporaryDirectories,
+	waitForResultWatcher,
 	writeTargetedResult,
 } from "./result-watcher-fixtures.js";
 
@@ -21,13 +22,7 @@ test("delivers a cold targeted result without waking the main model, then delete
 	const resultPath = writeTargetedResult(resultsDir, "cold-target");
 	const { bus, received } = createIntercomBus([true]);
 	const notifications: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 		notifier: {
@@ -40,7 +35,7 @@ test("delivers a cold targeted result without waking the main model, then delete
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
-	for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt += 1) await Bun.sleep(10);
+	await waitForResultWatcher(() => !fs.existsSync(resultPath));
 
 	expect(received).toHaveLength(1);
 	expect(received[0]).toMatchObject({ to: "parent-agent", runId: "cold-target" });
@@ -56,13 +51,7 @@ test("retains and retries a cold targeted result until target delivery is acknow
 	const resultPath = writeTargetedResult(resultsDir, "cold-retry");
 	const { bus, received } = createIntercomBus([false, true]);
 	const notifications: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 		notifier: {
@@ -75,11 +64,11 @@ test("retains and retries a cold targeted result until target delivery is acknow
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
-	for (let attempt = 0; attempt < 100 && received.length < 1; attempt += 1) await Bun.sleep(10);
+	await waitForResultWatcher(() => received.length >= 1);
 	expect(received).toHaveLength(1);
 	expect(fs.existsSync(resultPath)).toBe(true);
-	for (let attempt = 0; attempt < 100 && received.length < 2; attempt += 1) await Bun.sleep(10);
-	for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt += 1) await Bun.sleep(10);
+	await waitForResultWatcher(() => received.length >= 2);
+	await waitForResultWatcher(() => !fs.existsSync(resultPath));
 
 	expect(received).toHaveLength(2);
 	expect(received[0]?.requestId).toBe(received[1]?.requestId);
@@ -129,13 +118,7 @@ test("repairs terminal status before deleting an accepted result so reload canno
 	);
 
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		notifier: {
@@ -148,7 +131,7 @@ test("repairs terminal status before deleting an accepted result so reload canno
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt++) await Bun.sleep(10);
+	await waitForResultWatcher(() => !fs.existsSync(resultPath));
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]?.parentRunOrigin).toBe("user");
 	expect(fs.existsSync(resultPath)).toBe(false);
@@ -193,13 +176,7 @@ test("delivers a durable result once while missing status is repaired with bound
 		}),
 	);
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		notifier: {
@@ -212,7 +189,7 @@ test("delivers a durable result once while missing status is repaired with bound
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
-	for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt++) await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0);
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]?.triggerTurn).toBe(false);
 	expect(fs.existsSync(resultPath)).toBe(true);
@@ -233,7 +210,7 @@ test("delivers a durable result once while missing status is repaired with bound
 			steps: [{ agent: "writer", status: "complete", exitCode: 0 }],
 		}),
 	);
-	for (let attempt = 0; attempt < 300 && fs.existsSync(resultPath); attempt++) await Bun.sleep(10);
+	await waitForResultWatcher(() => !fs.existsSync(resultPath), 300);
 	expect(delivered).toHaveLength(1);
 	expect(fs.existsSync(resultPath)).toBe(false);
 	expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
@@ -261,13 +238,7 @@ test("recovers the final result name when fs.watch reports only its atomic temp 
 		unref: () => fakeWatcher,
 	};
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
@@ -295,9 +266,7 @@ test("recovers the final result name when fs.watch reports only its atomic temp 
 	watcher.startResultWatcher();
 	if (!watchListener) throw new Error("Expected fs.watch listener");
 	watchListener("rename", `.${resultFile}.321.123456.abc123.tmp`);
-	for (let attempt = 0; attempt < 50 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1) {
-		await Bun.sleep(10);
-	}
+	await waitForResultWatcher(() => delivered.length > 0 && !fs.existsSync(resultPath), 50);
 
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]).toMatchObject({ id: "atomic-result", sessionId: "root-session", triggerTurn: true });

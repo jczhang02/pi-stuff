@@ -3,12 +3,13 @@ import {
 	type CompletionNotification,
 	cleanupResultWatcherFixtures,
 	createResultWatcher,
+	createResultWatcherState,
 	fs,
 	os,
 	path,
-	type ResultWatcherState,
 	readBoundedOwnedFileSnapshot,
 	temporaryDirectories,
+	waitForResultWatcher,
 } from "./result-watcher-fixtures.js";
 
 afterEach(cleanupResultWatcherFixtures);
@@ -24,13 +25,7 @@ test("awaits result snapshots without blocking the host event loop", async () =>
 	const readStarted = Promise.withResolvers<void>();
 	const releaseRead = Promise.withResolvers<void>();
 	const delivered: CompletionNotification[] = [];
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		readResultSnapshot: async (target, maxBytes) => {
@@ -56,8 +51,7 @@ test("awaits result snapshots without blocking the host event loop", async () =>
 	await Bun.sleep(10);
 	expect(hostTimerFired).toBeTrue();
 	releaseRead.resolve();
-	for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
-		await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0 && !fs.existsSync(resultPath));
 
 	expect(delivered).toHaveLength(1);
 	expect(fs.existsSync(resultPath)).toBeFalse();
@@ -79,13 +73,7 @@ test("reads an unchanged foreign-session result once and revisits an atomic repl
 		on: () => inertWatcher,
 		unref: () => inertWatcher,
 	};
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		fs: {
@@ -127,8 +115,7 @@ test("reads an unchanged foreign-session result once and revisits an atomic repl
 	);
 	fs.renameSync(replacement, resultPath);
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
-		await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0 && !fs.existsSync(resultPath));
 
 	expect(reads).toBe(2);
 	expect(delivered).toHaveLength(1);
@@ -159,13 +146,7 @@ test("caches an unchanged invalid async binding and revisits an atomic replaceme
 	let reads = 0;
 	const delivered: CompletionNotification[] = [];
 	const inertWatcher = { close: () => {}, on: () => inertWatcher, unref: () => inertWatcher };
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		asyncDirRoot,
@@ -202,8 +183,7 @@ test("caches an unchanged invalid async binding and revisits an atomic replaceme
 	);
 	fs.renameSync(replacement, resultPath);
 	watcher.primeExistingResults();
-	for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
-		await Bun.sleep(10);
+	await waitForResultWatcher(() => delivered.length > 0 && !fs.existsSync(resultPath));
 
 	expect(reads).toBe(2);
 	expect(delivered).toHaveLength(1);
@@ -223,13 +203,7 @@ test("contains a durable result-claim release failure", async () => {
 	const onUnhandled = (cause: unknown) => unhandled.push(cause);
 	process.on("unhandledRejection", onUnhandled);
 	let releases = 0;
-	const state = {
-		completionSeen: new Map<string, number>(),
-		currentSessionId: "root-session",
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
-	} satisfies ResultWatcherState;
+	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 		acquireClaim: () => ({
@@ -245,7 +219,7 @@ test("contains a durable result-claim release failure", async () => {
 	try {
 		watcher.startResultWatcher();
 		watcher.primeExistingResults();
-		for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt += 1) await Bun.sleep(10);
+		await waitForResultWatcher(() => !fs.existsSync(resultPath));
 		await Bun.sleep(25);
 		expect(fs.existsSync(resultPath)).toBeFalse();
 		expect(releases).toBe(1);

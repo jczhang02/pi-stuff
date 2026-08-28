@@ -92,6 +92,24 @@ function writeTargetedResult(resultsDir: string, id: string): string {
 	return resultPath;
 }
 
+export function createResultWatcherState(currentSessionId = "root-session"): ResultWatcherState {
+	return {
+		completionSeen: new Map(),
+		currentSessionId,
+		resultFileCoalescer: { clear: () => {}, schedule: () => false },
+		watcher: null,
+		watcherRestartTimer: null,
+	};
+}
+
+export async function waitForResultWatcher(
+	predicate: () => boolean,
+	attempts = 100,
+	delayMilliseconds = 10,
+): Promise<void> {
+	for (let attempt = 0; attempt < attempts && !predicate(); attempt += 1) await Bun.sleep(delayMilliseconds);
+}
+
 export type { CompletionNotification, IntercomPayload, ResultWatcherState };
 export {
 	Check,
