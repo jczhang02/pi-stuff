@@ -61,12 +61,6 @@ type SessionHandler = (event: HarnessEvent, ctx: ExtensionContext) => object | u
 type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
 type ExtensionEventPayload = Parameters<ExtensionEventListener>[0];
 
-interface TestDeferred<Value> {
-	readonly promise: Promise<Value>;
-	reject(cause: unknown): void;
-	resolve(value: Value): void;
-}
-
 interface HostCall {
 	component: CommandDialogComponent | undefined;
 	doneCalls: number;
@@ -503,14 +497,8 @@ async function emitAgentTurn<Message extends HarnessMessage>(
 	);
 }
 
-function createDeferred<Value>(): TestDeferred<Value> {
-	let resolvePromise: (value: Value) => void = () => {};
-	let rejectPromise: (cause: unknown) => void = () => {};
-	const promise = new Promise<Value>((resolve, reject) => {
-		resolvePromise = resolve;
-		rejectPromise = reject;
-	});
-	return { promise, reject: rejectPromise, resolve: resolvePromise };
+function createDeferred<Value>() {
+	return Promise.withResolvers<Value>();
 }
 
 export type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext, ExtensionContext, FooterFactory };

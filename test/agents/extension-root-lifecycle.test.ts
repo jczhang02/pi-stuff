@@ -342,11 +342,8 @@ test("propagates targeted active-run recovery failure instead of loading a parti
 });
 
 test("finishes bounded active-run recovery before exposing the roster", async () => {
-	let releaseRestore = (): void => {};
-	const restoreGate = new Promise<void>((resolve) => {
-		releaseRestore = resolve;
-	});
-	const root = createHarness({ restoreGate });
+	const restoreGate = Promise.withResolvers<void>();
+	const root = createHarness({ restoreGate: restoreGate.promise });
 
 	const startup = root.api
 		.fire("session_start", { reason: "resume", type: "session_start" })
@@ -354,7 +351,7 @@ test("finishes bounded active-run recovery before exposing the roster", async ()
 	expect(await Promise.race([startup, Bun.sleep(50).then(() => "blocked" as const)])).toBe("blocked");
 	expect(root.tracker.restored).toBe(1);
 
-	releaseRestore();
+	restoreGate.resolve();
 	expect(await startup).toBe("ready");
 });
 

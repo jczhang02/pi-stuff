@@ -35,19 +35,13 @@ describe("safe fake-IP compatibility", () => {
 	});
 
 	test("coalesces concurrent detection and configures exactly once", async () => {
-		let releaseLookup: (() => void) | undefined;
-		const lookupStarted = new Promise<void>((resolve) => {
-			releaseLookup = resolve;
-		});
-		let continueLookup = (): void => undefined;
-		const continueLookupPromise = new Promise<void>((resolve) => {
-			continueLookup = resolve;
-		});
+		const { promise: lookupStarted, resolve: releaseLookup } = Promise.withResolvers<void>();
+		const { promise: continueLookupPromise, resolve: continueLookup } = Promise.withResolvers<void>();
 		const dns = resolver({ "docs.example": ["198.18.4.8"], "example.com": ["198.19.2.3"] });
 		const configured: string[][] = [];
 		const compatibility = new FakeIpCompatibility(
 			async (hostname) => {
-				releaseLookup?.();
+				releaseLookup();
 				await continueLookupPromise;
 				return dns.lookup(hostname);
 			},

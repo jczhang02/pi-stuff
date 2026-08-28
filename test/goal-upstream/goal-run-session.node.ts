@@ -92,11 +92,8 @@ test("shutdown cancels a queued terminal publication from the old session", asyn
 
 test("shutdown invalidates a start continuation still awaiting kickoff delivery", async () => {
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	let rejectKickoff!: (error: Error) => void;
-	mock.rawPi.sendUserMessage = () =>
-		new Promise<void>((_resolve, reject) => {
-			rejectKickoff = reject;
-		});
+	const kickoff = Promise.withResolvers<void>();
+	mock.rawPi.sendUserMessage = () => kickoff.promise;
 	registerGoal(mock);
 	const firstContext = bindSession(mock);
 	const events = observeRun(mock, "shutdown-pending");
@@ -107,7 +104,7 @@ test("shutdown invalidates a start continuation still awaiting kickoff delivery"
 	);
 
 	mock.emitHostEvent("session_shutdown", {}, firstContext.ctx);
-	rejectKickoff(new Error("late kickoff rejection"));
+	kickoff.reject(new Error("late kickoff rejection"));
 	await flush();
 
 	assert.deepEqual(

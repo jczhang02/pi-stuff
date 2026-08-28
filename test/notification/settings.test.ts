@@ -69,18 +69,12 @@ test("two failed queued updates restore the last durable settings", async () => 
 	roots.push(root);
 	const path = join(root, "notification.json");
 	let writes = 0;
-	let releaseFirstWrite: (() => void) | undefined;
-	let reportFirstWriteStarted: (() => void) | undefined;
-	const firstWriteStarted = new Promise<void>((resolve) => {
-		reportFirstWriteStarted = resolve;
-	});
-	const firstWriteRelease = new Promise<void>((resolve) => {
-		releaseFirstWrite = resolve;
-	});
+	const { promise: firstWriteStarted, resolve: reportFirstWriteStarted } = Promise.withResolvers<void>();
+	const { promise: firstWriteRelease, resolve: releaseFirstWrite } = Promise.withResolvers<void>();
 	const store = await NotificationSettingsStore.load(path, async () => {
 		writes += 1;
 		if (writes === 1) {
-			reportFirstWriteStarted?.();
+			reportFirstWriteStarted();
 			await firstWriteRelease;
 		}
 		throw new Error(`settings write ${String(writes)} failed`);
@@ -89,7 +83,7 @@ test("two failed queued updates restore the last durable settings", async () => 
 	const first = store.update({ enabled: false });
 	await firstWriteStarted;
 	const second = store.update({ terminalBell: true });
-	releaseFirstWrite?.();
+	releaseFirstWrite();
 	const results = await Promise.allSettled([first, second]);
 
 	expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);

@@ -207,14 +207,8 @@ test("does not open an output file when command authorization path resolution fa
 test("shutdown cancels and awaits a supervisor whose launch identity is still being captured", async () => {
 	const root = temporaryRoot();
 	const marker = join(root, "must-not-run");
-	let releaseIdentity!: () => void;
-	const identityGate = new Promise<void>((resolve) => {
-		releaseIdentity = resolve;
-	});
-	let identityCaptureStarted!: () => void;
-	const captureStarted = new Promise<void>((resolve) => {
-		identityCaptureStarted = resolve;
-	});
+	const { promise: identityGate, resolve: releaseIdentity } = Promise.withResolvers<void>();
+	const { promise: captureStarted, resolve: identityCaptureStarted } = Promise.withResolvers<void>();
 	let supervisorPid: number | undefined;
 	const storage = new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY });
 	const active = configuredRuntime(root, {
@@ -275,10 +269,7 @@ test("bounds shutdown when an external monitor ignores cancellation", async () =
 
 test("reserves the sixteenth activity slot before supervisor identity capture completes", async () => {
 	const root = temporaryRoot();
-	let releaseCaptures!: () => void;
-	const captureGate = new Promise<void>((resolve) => {
-		releaseCaptures = resolve;
-	});
+	const { promise: captureGate, resolve: releaseCaptures } = Promise.withResolvers<void>();
 	let captureCalls = 0;
 	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async (pid) => {
@@ -328,14 +319,8 @@ test("reserves the sixteenth activity slot before supervisor identity capture co
 
 test("queues a manual foreground detach while supervisor identity is still being captured", async () => {
 	const root = temporaryRoot();
-	let releaseCapture!: () => void;
-	const captureGate = new Promise<void>((resolve) => {
-		releaseCapture = resolve;
-	});
-	let captureStarted!: () => void;
-	const started = new Promise<void>((resolve) => {
-		captureStarted = resolve;
-	});
+	const { promise: captureGate, resolve: releaseCapture } = Promise.withResolvers<void>();
+	const { promise: started, resolve: captureStarted } = Promise.withResolvers<void>();
 	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async (pid) => {
 			captureStarted();

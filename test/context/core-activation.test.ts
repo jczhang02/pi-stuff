@@ -39,14 +39,8 @@ test("keeps automatic messages and Tools outside Context lifecycle policy", asyn
 		deliveries.push(options ?? {});
 	};
 	Reflect.set(api, "sendMessage", sendMessage);
-	let releaseActivation = (): void => {};
-	const activationGate = new Promise<void>((resolve) => {
-		releaseActivation = resolve;
-	});
-	let markActivationStarted = (): void => {};
-	const activationStarted = new Promise<void>((resolve) => {
-		markActivationStarted = resolve;
-	});
+	const { promise: activationGate, resolve: releaseActivation } = Promise.withResolvers<void>();
+	const { promise: activationStarted, resolve: markActivationStarted } = Promise.withResolvers<void>();
 	let preparations = 0;
 	await piStuffContext(api, {
 		loadMagicContext: async () => magicModule(),
@@ -326,14 +320,8 @@ test("retries a deferred automatic activation when direct input arrives concurre
 	const handlers: Handlers = new Map();
 	const preparations: boolean[] = [];
 	let factories = 0;
-	let releaseAutomatic: (() => void) | undefined;
-	let markAutomaticEntered: (() => void) | undefined;
-	const automaticGate = new Promise<void>((resolve) => {
-		releaseAutomatic = resolve;
-	});
-	const automaticEntered = new Promise<void>((resolve) => {
-		markAutomaticEntered = resolve;
-	});
+	const { promise: automaticGate, resolve: releaseAutomatic } = Promise.withResolvers<void>();
+	const { promise: automaticEntered, resolve: markAutomaticEntered } = Promise.withResolvers<void>();
 	let mutationFreeAttempts = 0;
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({

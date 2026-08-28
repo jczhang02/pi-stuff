@@ -24,6 +24,16 @@ const SUITE_CAPABILITIES = [
 	"notification",
 	"code-mode",
 ];
+const LOCAL_PACKAGE = {
+	name: "@jczhang02/pi-stuff",
+	private: true,
+	files: ["index.ts", "src", "README.md", "LICENSE"],
+	pi: {
+		extensions: ["./index.ts"],
+		skills: ["./src/ponytail/skills"],
+		themes: ["./themes/*.json"],
+	},
+} satisfies JsonInputObject;
 
 async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-safety-"));
@@ -55,16 +65,7 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 			"\t",
 		)}\n`,
 	);
-	await writeLocalPackage(root, {
-		name: "@jczhang02/pi-stuff",
-		private: true,
-		files: ["index.ts", "src", "README.md", "LICENSE"],
-		pi: {
-			extensions: ["./index.ts"],
-			skills: ["./src/ponytail/skills"],
-			themes: ["./themes/*.json"],
-		},
-	});
+	await writeLocalPackage(root, LOCAL_PACKAGE);
 	return root;
 }
 
@@ -107,14 +108,7 @@ afterEach(async () => {
 test("accepts one private local Pi Package with exact dependencies", async () => {
 	const root = await createRepository();
 	await writeLocalPackage(root, {
-		name: "@jczhang02/pi-stuff",
-		private: true,
-		files: ["index.ts", "src", "README.md", "LICENSE"],
-		pi: {
-			extensions: ["./index.ts"],
-			skills: ["./src/ponytail/skills"],
-			themes: ["./themes/*.json"],
-		},
+		...LOCAL_PACKAGE,
 		dependencies: { "@cortexkit/pi-magic-context": "0.40.0", typebox: "1.3.10" },
 	});
 
@@ -133,14 +127,7 @@ test("requires repository Bun 1.4.0", async () => {
 test("rejects an unpinned source dependency", async () => {
 	const root = await createRepository();
 	await writeLocalPackage(root, {
-		name: "@jczhang02/pi-stuff",
-		private: true,
-		files: ["index.ts", "src", "README.md", "LICENSE"],
-		pi: {
-			extensions: ["./index.ts"],
-			skills: ["./src/ponytail/skills"],
-			themes: ["./themes/*.json"],
-		},
+		...LOCAL_PACKAGE,
 		dependencies: {
 			"@cortexkit/pi-magic-context": "https://github.com/cortexkit/magic-context/archive/refs/heads/main.tgz",
 		},
@@ -157,14 +144,8 @@ test("rejects host state, private paths, and Package lifecycle side effects", as
 	await writeFile(join(root, "auth.json"), "{}\n");
 	await writeFile(join(root, "README.md"), `Local checkout: ${["", "home", "example", "private-suite"].join("/")}\n`);
 	await writeLocalPackage(root, {
-		name: "@jczhang02/pi-stuff",
-		private: true,
+		...LOCAL_PACKAGE,
 		files: ["index.ts", "src", "README.md", "LICENSE", "AGENTS.md"],
-		pi: {
-			extensions: ["./index.ts"],
-			skills: ["./src/ponytail/skills"],
-			themes: ["./themes/*.json"],
-		},
 		scripts: { postinstall: "modify-host" },
 	});
 

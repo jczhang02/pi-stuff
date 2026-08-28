@@ -329,11 +329,8 @@ test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite prepar
 		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
 		"--tokens 10 finish",
 	);
-	let releasePreparation = () => {};
-	const preparation = new Promise<void>((resolve) => {
-		releasePreparation = resolve;
-	});
-	const unregister = registerSuiteAgentMessagePreparation(budgeted.mock.pi, { prepare: () => preparation });
+	const preparation = Promise.withResolvers<void>();
+	const unregister = registerSuiteAgentMessagePreparation(budgeted.mock.pi, { prepare: () => preparation.promise });
 	branch.push(assistantUsageEntry({ totalTokens: 12 }));
 
 	await budgeted.mock.callEvent(
@@ -343,7 +340,7 @@ test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite prepar
 	);
 	await Promise.resolve();
 	await budgeted.mock.commands.get("goal")?.handler("clear", budgeted.ctx);
-	releasePreparation();
+	preparation.resolve();
 	await new Promise<void>((resolve) => setImmediate(resolve));
 
 	assert.equal(lastGoalStatus(budgeted.mock), null);

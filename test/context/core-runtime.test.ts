@@ -18,14 +18,8 @@ afterEach(cleanupContextCoreFixtures);
 test("awaits startup activation before compaction can run", async () => {
 	const handlers: Handlers = new Map();
 	const sequence: string[] = [];
-	let releaseLoad: (() => void) | undefined;
-	let markLoadEntered: (() => void) | undefined;
-	const loadGate = new Promise<void>((resolve) => {
-		releaseLoad = resolve;
-	});
-	const loadEntered = new Promise<void>((resolve) => {
-		markLoadEntered = resolve;
-	});
+	const { promise: loadGate, resolve: releaseLoad } = Promise.withResolvers<void>();
+	const { promise: loadEntered, resolve: markLoadEntered } = Promise.withResolvers<void>();
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => {
 			sequence.push("loading");
@@ -58,14 +52,8 @@ test("awaits startup activation before compaction can run", async () => {
 
 test("late startup activation after shutdown stays native and runs staged cleanup", async () => {
 	const handlers: Handlers = new Map();
-	let releaseFactory: (() => void) | undefined;
-	let markFactoryEntered: (() => void) | undefined;
-	const factoryGate = new Promise<void>((resolve) => {
-		releaseFactory = resolve;
-	});
-	const factoryEntered = new Promise<void>((resolve) => {
-		markFactoryEntered = resolve;
-	});
+	const { promise: factoryGate, resolve: releaseFactory } = Promise.withResolvers<void>();
+	const { promise: factoryEntered, resolve: markFactoryEntered } = Promise.withResolvers<void>();
 	let cleanupRuns = 0;
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({
@@ -104,14 +92,8 @@ test("late startup activation after shutdown stays native and runs staged cleanu
 
 test("late deferred preparation cannot revive a disposed runtime", async () => {
 	const handlers: Handlers = new Map();
-	let releasePreparation: (() => void) | undefined;
-	let markPreparationEntered: (() => void) | undefined;
-	const preparationGate = new Promise<void>((resolve) => {
-		releasePreparation = resolve;
-	});
-	const preparationEntered = new Promise<void>((resolve) => {
-		markPreparationEntered = resolve;
-	});
+	const { promise: preparationGate, resolve: releasePreparation } = Promise.withResolvers<void>();
+	const { promise: preparationEntered, resolve: markPreparationEntered } = Promise.withResolvers<void>();
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => magicModule(),
 		prepareMagicContext: async () => {
@@ -163,10 +145,7 @@ test("does not let a non-cooperative Magic cleanup own Host shutdown", async () 
 
 test("does not mix concurrent session starts across activation contexts", async () => {
 	const handlers: Handlers = new Map();
-	let releaseLoad: (() => void) | undefined;
-	const loadGate = new Promise<void>((resolve) => {
-		releaseLoad = resolve;
-	});
+	const { promise: loadGate, resolve: releaseLoad } = Promise.withResolvers<void>();
 	const observed: Array<{ reason: unknown; sessionId: string | undefined }> = [];
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => {
@@ -202,10 +181,7 @@ test("does not mix concurrent session starts across activation contexts", async 
 
 test("serializes concurrent session starts after Magic is active", async () => {
 	const handlers: Handlers = new Map();
-	let releaseFirst: (() => void) | undefined;
-	const firstGate = new Promise<void>((resolve) => {
-		releaseFirst = resolve;
-	});
+	const { promise: firstGate, resolve: releaseFirst } = Promise.withResolvers<void>();
 	const order: string[] = [];
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({
@@ -241,14 +217,8 @@ test("serializes concurrent session starts after Magic is active", async () => {
 test("waits for failed-session cleanup before starting a replacement", async () => {
 	const handlers: Handlers = new Map();
 	let factories = 0;
-	let releaseCleanup: (() => void) | undefined;
-	let markCleanupEntered: (() => void) | undefined;
-	const cleanupGate = new Promise<void>((resolve) => {
-		releaseCleanup = resolve;
-	});
-	const cleanupEntered = new Promise<void>((resolve) => {
-		markCleanupEntered = resolve;
-	});
+	const { promise: cleanupGate, resolve: releaseCleanup } = Promise.withResolvers<void>();
+	const { promise: cleanupEntered, resolve: markCleanupEntered } = Promise.withResolvers<void>();
 	const order: string[] = [];
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({

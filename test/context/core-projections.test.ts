@@ -156,22 +156,10 @@ test("invalidates a cached Magic projection when the next prompt is submitted", 
 test("coalesces concurrent projections and rejects an invalidated in-flight result", async () => {
 	const handlers: Handlers = new Map();
 	let transforms = 0;
-	let releaseFirst: (() => void) | undefined;
-	let releaseSecond: (() => void) | undefined;
-	let markFirstEntered: (() => void) | undefined;
-	let markSecondEntered: (() => void) | undefined;
-	const firstGate = new Promise<void>((resolve) => {
-		releaseFirst = resolve;
-	});
-	const secondGate = new Promise<void>((resolve) => {
-		releaseSecond = resolve;
-	});
-	const firstEntered = new Promise<void>((resolve) => {
-		markFirstEntered = resolve;
-	});
-	const secondEntered = new Promise<void>((resolve) => {
-		markSecondEntered = resolve;
-	});
+	const { promise: firstGate, resolve: releaseFirst } = Promise.withResolvers<void>();
+	const { promise: secondGate, resolve: releaseSecond } = Promise.withResolvers<void>();
+	const { promise: firstEntered, resolve: markFirstEntered } = Promise.withResolvers<void>();
+	const { promise: secondEntered, resolve: markSecondEntered } = Promise.withResolvers<void>();
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({
 			default: async (pi: ExtensionAPI) => {

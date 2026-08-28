@@ -230,11 +230,8 @@ test("refreshes from events and tool updates, then releases every owned resource
 });
 
 test("waits for Command Dialog cleanup before appending a durable completion outcome", async () => {
-	let releaseIdle: (() => void) | undefined;
-	const coordinatorIdle = new Promise<void>((resolve) => {
-		releaseIdle = resolve;
-	});
-	const root = createHarness({ coordinatorIdle });
+	const coordinatorIdle = Promise.withResolvers<void>();
+	const root = createHarness({ coordinatorIdle: coordinatorIdle.promise });
 	await root.api.fire("session_start", { reason: "startup", type: "session_start" });
 	const notifier = root.notifier.value;
 	if (!notifier) throw new Error("Expected completion notifier");
@@ -249,7 +246,7 @@ test("waits for Command Dialog cleanup before appending a durable completion out
 	await Promise.resolve();
 	expect(root.api.entries).toEqual([]);
 
-	releaseIdle?.();
+	coordinatorIdle.resolve();
 	expect(await delivery).toBe(true);
 	expect(root.api.entries).toHaveLength(1);
 	expect(root.api.messages).toEqual([]);

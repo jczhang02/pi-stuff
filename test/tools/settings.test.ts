@@ -5,17 +5,8 @@ import { join } from "node:path";
 import { mergeNamespaceRecord } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 import { type ToolUiSettings, ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
-interface Deferred {
-	readonly promise: Promise<void>;
-	resolve(): void;
-}
-
-function deferred(): Deferred {
-	let resolve = (): void => {};
-	const promise = new Promise<void>((promiseResolve) => {
-		resolve = promiseResolve;
-	});
-	return { promise, resolve };
+function deferred() {
+	return Promise.withResolvers<void>();
 }
 
 async function withTemporarySettings(run: (path: string, directory: string) => Promise<void>): Promise<void> {

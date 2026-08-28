@@ -139,14 +139,8 @@ test("fails open when a live Magic turn handler throws", async () => {
 
 test("ignores a stale Magic compaction result after shutdown", async () => {
 	const handlers: Handlers = new Map();
-	let releaseCompaction: (() => void) | undefined;
-	let markCompactionEntered: (() => void) | undefined;
-	const compactionGate = new Promise<void>((resolve) => {
-		releaseCompaction = resolve;
-	});
-	const compactionEntered = new Promise<void>((resolve) => {
-		markCompactionEntered = resolve;
-	});
+	const { promise: compactionGate, resolve: releaseCompaction } = Promise.withResolvers<void>();
+	const { promise: compactionEntered, resolve: markCompactionEntered } = Promise.withResolvers<void>();
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {

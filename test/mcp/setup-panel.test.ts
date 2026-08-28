@@ -308,13 +308,10 @@ test("MCP Setup previews writes and defaults confirmation to Cancel", async () =
 });
 
 test("MCP Setup cannot close while a confirmed write is pending", async () => {
-	let finishWrite: ((value: { path: string }) => void) | undefined;
-	const pendingWrite = new Promise<{ path: string }>((resolve) => {
-		finishWrite = resolve;
-	});
+	const pendingWrite = Promise.withResolvers<{ path: string }>();
 	let closed = 0;
 	const panel = createPanel(
-		callbacks(() => pendingWrite),
+		callbacks(() => pendingWrite.promise),
 		28,
 		discovery,
 		() => {
@@ -329,7 +326,7 @@ test("MCP Setup cannot close while a confirmed write is pending", async () => {
 	panel.handleInput("\u001b");
 	expect(closed).toBe(0);
 	expect(panel.render(64).join("\n")).toContain("Working...");
-	finishWrite?.({ path: "/项目配置/服务.json" });
+	pendingWrite.resolve({ path: "/项目配置/服务.json" });
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(closed).toBe(0);
 	expect(panel.render(24).join("")).toContain("项目配置");
@@ -339,13 +336,10 @@ test("MCP Setup cannot close while a confirmed write is pending", async () => {
 });
 
 test("MCP Setup can close while a non-writing open action is pending", async () => {
-	let finishOpen: (() => void) | undefined;
-	const pendingOpen = new Promise<void>((resolve) => {
-		finishOpen = resolve;
-	});
+	const pendingOpen = Promise.withResolvers<void>();
 	let closed = 0;
 	const panelCallbacks = callbacks(async () => ({ path: "/project/.mcp.json" }));
-	panelCallbacks.openPath = () => pendingOpen;
+	panelCallbacks.openPath = () => pendingOpen.promise;
 	const panel = createPanel(
 		panelCallbacks,
 		28,
@@ -377,7 +371,7 @@ test("MCP Setup can close while a non-writing open action is pending", async () 
 	expect(panel.render(64).join("\n")).toContain("Working...");
 	panel.handleInput("\u001b");
 	expect(closed).toBe(1);
-	finishOpen?.();
+	pendingOpen.resolve();
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(closed).toBe(1);
 	panel.dispose();

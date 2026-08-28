@@ -545,11 +545,8 @@ test("failed kickoff emits active then one cleared rollback event", async () => 
 
 test("a pending start cannot emit for a replacement run after supersession", async () => {
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	let releaseKickoff!: () => void;
-	mock.rawPi.sendUserMessage = () =>
-		new Promise<void>((resolve) => {
-			releaseKickoff = resolve;
-		});
+	const kickoff = Promise.withResolvers<void>();
+	mock.rawPi.sendUserMessage = () => kickoff.promise;
 	registerGoal(mock);
 	const context = bindSession(mock);
 	const firstEvents = observeRun(mock, "first-run");
@@ -565,7 +562,7 @@ test("a pending start cannot emit for a replacement run after supersession", asy
 		["active"],
 	);
 
-	releaseKickoff();
+	kickoff.resolve();
 	await flush();
 
 	assert.deepEqual(

@@ -478,14 +478,8 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 test("nested invocation bounds update handlers to one active and one latest pending update", async () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
-	let releaseFirst: () => void = () => {};
-	const firstBlocked = new Promise<void>((resolve) => {
-		releaseFirst = resolve;
-	});
-	let firstEntered: () => void = () => {};
-	const firstStarted = new Promise<void>((resolve) => {
-		firstEntered = resolve;
-	});
+	const { promise: firstBlocked, resolve: releaseFirst } = Promise.withResolvers<void>();
+	const { promise: firstStarted, resolve: firstEntered } = Promise.withResolvers<void>();
 	const entered: string[] = [];
 	const completed: string[] = [];
 	registrations.api.on("tool_execution_update", async (event) => {

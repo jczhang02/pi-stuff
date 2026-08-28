@@ -124,10 +124,7 @@ test("Suite Agent message delivery rolls staged state back only when Host delive
 });
 
 test("Suite Agent message delivery rechecks session ownership after asynchronous preparation", async () => {
-	let releasePreparation = (): void => {};
-	const preparation = new Promise<void>((resolve) => {
-		releasePreparation = resolve;
-	});
+	const preparation = Promise.withResolvers<void>();
 	let current = true;
 	let deliveries = 0;
 	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
@@ -135,7 +132,7 @@ test("Suite Agent message delivery rechecks session ownership after asynchronous
 		deliveries += 1;
 	}) as SuiteAgentMessageHost["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {
-		prepare: () => preparation,
+		prepare: () => preparation.promise,
 	});
 
 	const pending = sendSuiteAgentMessage(
@@ -145,21 +142,18 @@ test("Suite Agent message delivery rechecks session ownership after asynchronous
 		() => current,
 	);
 	current = false;
-	releasePreparation();
+	preparation.resolve();
 
 	await expect(pending).resolves.toBe(false);
 	expect(deliveries).toBe(0);
 });
 
 test("Suite Agent message delivery cannot accept into a session replaced during Host delivery", async () => {
-	let finishDelivery = (): void => {};
-	const delivery = new Promise<void>((resolve) => {
-		finishDelivery = resolve;
-	});
+	const delivery = Promise.withResolvers<void>();
 	let current = true;
 	let accepted = 0;
 	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
-	const [, sender] = hostApis((() => delivery) as SuiteAgentMessageHost["sendMessage"]);
+	const [, sender] = hostApis((() => delivery.promise) as SuiteAgentMessageHost["sendMessage"]);
 
 	const pending = sendSuiteAgentMessage(
 		sender,
@@ -171,7 +165,7 @@ test("Suite Agent message delivery cannot accept into a session replaced during 
 		},
 	);
 	current = false;
-	finishDelivery();
+	delivery.resolve();
 
 	await expect(pending).resolves.toBe(false);
 	expect(accepted).toBe(0);

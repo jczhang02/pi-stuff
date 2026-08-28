@@ -44,14 +44,8 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 	const resultPath = path.join(asyncDir, "result.json");
 	const interruptSignal = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
 	const baselineListeners = process.listenerCount(interruptSignal);
-	let release!: () => void;
-	const blocked = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	let entered!: () => void;
-	const atSeam = new Promise<void>((resolve) => {
-		entered = resolve;
-	});
+	const { promise: blocked, resolve: release } = Promise.withResolvers<void>();
+	const { promise: atSeam, resolve: entered } = Promise.withResolvers<void>();
 
 	const running = runConfiguredBackground(singleRunnerConfig(root, "finalization-signal", { asyncDir, resultPath }), {
 		beforeFinalPersistence: async () => {

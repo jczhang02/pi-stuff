@@ -304,14 +304,10 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 		abort: () => aborts++,
 	});
 	const sentPrompts: string[] = [];
-	let rejectFirstSend: ((error: Error) => void) | undefined;
+	const firstSend = Promise.withResolvers<void>();
 	mock.rawPi.sendUserMessage = (prompt: string) => {
 		sentPrompts.push(prompt);
-		if (sentPrompts.length === 1) {
-			return new Promise<void>((_resolve, reject) => {
-				rejectFirstSend = reject;
-			});
-		}
+		if (sentPrompts.length === 1) return firstSend.promise;
 	};
 
 	const firstStart = mock.commands.get("goal")?.handler("first objective", context.ctx);
@@ -329,7 +325,7 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 	assert.equal(requireLastGoal(mock).id, replacement.id);
 	assert.equal(requireLastGoal(mock).status, "active");
 
-	rejectFirstSend?.(new Error("late first delivery failure"));
+	firstSend.reject(new Error("late first delivery failure"));
 	await firstStart;
 	assert.equal(requireLastGoal(mock).id, replacement.id);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
@@ -337,16 +333,13 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 
 test("a cleared Goal cannot deliver a kickoff still awaiting Suite preparation", async () => {
 	const [mock, context] = createGoalHarness(["goal_complete", "goal_blocked"]);
-	let releasePreparation = () => {};
-	const preparation = new Promise<void>((resolve) => {
-		releasePreparation = resolve;
-	});
-	const unregister = registerSuiteAgentMessagePreparation(mock.pi, { prepare: () => preparation });
+	const preparation = Promise.withResolvers<void>();
+	const unregister = registerSuiteAgentMessagePreparation(mock.pi, { prepare: () => preparation.promise });
 
 	const starting = mock.commands.get("goal")?.handler("stale objective", context.ctx);
 	await Promise.resolve();
 	await mock.commands.get("goal")?.handler("clear", context.ctx);
-	releasePreparation();
+	preparation.resolve();
 	await starting;
 
 	assert.equal(lastGoalStatus(mock), null);

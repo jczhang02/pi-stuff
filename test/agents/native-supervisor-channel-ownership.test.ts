@@ -336,10 +336,7 @@ test("keeps an in-flight delivery claimed until the replaced session becomes sta
 	directories.push(root);
 	const sessionFile = path.join(root, "parent.jsonl");
 	fs.writeFileSync(sessionFile, "");
-	let finishFirstDelivery = (): void => {};
-	const firstDelivery = new Promise<void>((resolve) => {
-		finishFirstDelivery = resolve;
-	});
+	const firstDelivery = Promise.withResolvers<void>();
 	let firstDeliveries = 0;
 	const common = {
 		primary: "ps2-in-flight-pause",
@@ -352,7 +349,7 @@ test("keeps an in-flight delivery claimed until the replaced session becomes sta
 		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		sendMessage: (() => {
 			firstDeliveries += 1;
-			return firstDelivery;
+			return firstDelivery.promise;
 		}) as ExtensionAPI["sendMessage"],
 	});
 	const secondHost = harness(common);
@@ -370,7 +367,7 @@ test("keeps an in-flight delivery claimed until the replaced session becomes sta
 	await second.start();
 	expect(secondHost.messages).toHaveLength(0);
 
-	finishFirstDelivery();
+	firstDelivery.resolve();
 	await Bun.sleep(0);
 	expect(first.pending.has(request.id)).toBeFalse();
 
