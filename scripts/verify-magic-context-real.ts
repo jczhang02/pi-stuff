@@ -23,21 +23,13 @@ const PACKAGE_MANIFEST_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 
-interface Options {
-	readonly archivePath?: string;
-	readonly authPath: string;
-	readonly packagePath: string;
-	readonly piBinary: string;
-	readonly reportPath: string;
-}
-
 type EvidenceFile = Readonly<{ bytes: number; path: string; sha256: string }>;
 
 function fail(message: string): never {
 	throw new Error(`Magic Context real-provider acceptance failed: ${message}`);
 }
 
-function parseOptions(argv: readonly string[]): Options {
+function parseOptions(argv: readonly string[]) {
 	const values = new Map<string, string>();
 	for (let index = 0; index < argv.length; index += 2) {
 		const flag = argv[index];
@@ -61,9 +53,10 @@ function parseOptions(argv: readonly string[]): Options {
 		piBinary: resolve(values.get("--pi") ?? process.env["PI_BIN"] ?? DEFAULT_PI_BINARY),
 		reportPath: resolve(values.get("--report") ?? join(root, "docs/reports/magic-context-real-acceptance.json")),
 	};
-	if (archive) Object.assign(options, { archivePath: resolve(archive) });
-	return options;
+	return { ...options, archivePath: archive ? resolve(archive) : undefined };
 }
+
+type Options = ReturnType<typeof parseOptions>;
 
 function sha256(value: Uint8Array | string): string {
 	return createHash("sha256").update(value).digest("hex");
@@ -171,24 +164,10 @@ function environment(paths: AcceptancePaths): NodeJS.ProcessEnv {
 }
 
 async function writePressureFiles(projectDirectory: string): Promise<string[]> {
-	const vocabulary = [
-		"boundary",
-		"historian",
-		"compartment",
-		"pressure",
-		"continuity",
-		"session",
-		"marker",
-		"cache",
-		"project",
-		"retrieval",
-		"tool",
-		"context",
-		"evidence",
-		"resume",
-		"durable",
-		"verification",
-	];
+	const vocabulary =
+		"boundary historian compartment pressure continuity session marker cache project retrieval tool context evidence resume durable verification".split(
+			" ",
+		);
 	const paths: string[] = [];
 	for (let fileIndex = 1; fileIndex <= PRESSURE_FILE_COUNT; fileIndex += 1) {
 		const lines: string[] = [];

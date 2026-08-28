@@ -126,13 +126,7 @@ interface SessionEntry extends JsonInputObject {
 	readonly type?: string;
 }
 
-interface DatabaseEvidence {
-	readonly compartments: number;
-	readonly historianFailures: number;
-	readonly historianSuccesses: number;
-	readonly pendingMarker: boolean;
-}
-
+type DatabaseEvidence = ReturnType<typeof readDatabaseEvidence>;
 type PressureObservation = Readonly<{ label: string; percent: number; tokens: number }>;
 
 export interface MagicContextScenarioOptions {
@@ -351,7 +345,7 @@ async function waitForCondition<T>(
 	);
 }
 
-function readDatabaseEvidence(databasePath: string, sessionId: string): DatabaseEvidence {
+function readDatabaseEvidence(databasePath: string, sessionId: string) {
 	const database = new Database(databasePath, { readonly: true });
 	try {
 		const count = (sql: string): number => {
@@ -406,15 +400,6 @@ function readCompartmentRanges(databasePath: string, sessionId: string): Static<
 	}
 }
 
-function magicBoundaryOrdinals(entries: readonly SessionEntry[]): number[] {
-	return magicCompactions(entries).map((entry) => {
-		if (!Check(MAGIC_BOUNDARY_DETAILS_SCHEMA, entry.details)) {
-			fail(`Magic boundary has no valid lastCompactedOrdinal: ${JSON.stringify(entry)}`);
-		}
-		return entry.details.lastCompactedOrdinal;
-	});
-}
-
 function assertStrictlyAdvancing(values: readonly number[], label: string): void {
 	for (let index = 1; index < values.length; index += 1) {
 		if ((values[index] ?? 0) <= (values[index - 1] ?? 0)) {
@@ -449,15 +434,6 @@ function maximumProviderPromptTokens(entries: readonly SessionEntry[]): number {
 function latestGoalStatus(entries: readonly SessionEntry[]): string | undefined {
 	const goalEntry = entries.filter((entry) => entry.type === "custom" && entry["customType"] === "goal-state").at(-1);
 	return goalEntry && Check(GOAL_STATE_DATA_SCHEMA, goalEntry.data) ? goalEntry.data.goal.status : undefined;
-}
-
-function countAuditRecords(records: readonly RpcRecord[], type: string): number {
-	return records.filter((record) => record.type === type).length;
-}
-
-async function readAudit(path: string): Promise<RpcRecord[]> {
-	const contents = await readFile(path, "utf8");
-	return contents.trim().split("\n").filter(Boolean).map(parseRpcRecord);
 }
 
 async function assertInitialState(rpc: RpcTransport): Promise<{ sessionFile: string; sessionId: string }> {
@@ -659,14 +635,22 @@ async function verifySessionEvidence(state: ScenarioTransports, primary: Primary
 	if (magic.length === 0) fail("no Magic boundary survived cold resume");
 	if (magic.some((entry) => entry.fromHook !== true))
 		fail("a final Magic boundary was not attributed to the extension hook");
-	const boundaryOrdinals = magicBoundaryOrdinals(entries);
+	const boundaryOrdinals = magic.map((entry) => {
+		if (!Check(MAGIC_BOUNDARY_DETAILS_SCHEMA, entry.details)) {
+			fail(`Magic boundary has no valid lastCompactedOrdinal: ${JSON.stringify(entry)}`);
+		}
+		return entry.details.lastCompactedOrdinal;
+	});
 	assertStrictlyAdvancing(boundaryOrdinals, "Magic boundary ordinals");
 	const raw = await readFile(primary.sessionFile);
 	const text = raw.toString("utf8");
 	for (const required of ["MAGIC_SETUP_DONE", "MAGIC_SINGLE_TURN_DONE", TODO_SUBJECT, canary]) {
 		if (!text.includes(required)) fail(`authoritative JSONL lost ${required === canary ? "the canary" : required}`);
 	}
-	const audit = await readAudit(state.options.auditPath);
+	const auditContents = await readFile(state.options.auditPath, "utf8");
+	const audit = auditContents.trim().split("\n").filter(Boolean).map(parseRpcRecord);
+	const countRecords = (records: readonly RpcRecord[], type: string): number =>
+		records.filter((record) => record.type === type).length;
 	const maximumContextCharacters = audit
 		.filter((record) => record.type === "context_projection")
 		.reduce((maximum, record) => Math.max(maximum, Number(record["characters"] ?? 0)), 0);
@@ -676,17 +660,13 @@ async function verifySessionEvidence(state: ScenarioTransports, primary: Primary
 	if (audit.some((record) => record.type === "tool_result" && record["isError"] === true)) {
 		fail("a real acceptance Tool result failed");
 	}
-	if (countAuditRecords(audit, "session_before_compact") !== 0 || countAuditRecords(audit, "session_compact") !== 0) {
+	if (countRecords(audit, "session_before_compact") !== 0 || countRecords(audit, "session_compact") !== 0) {
 		fail("Pi native compaction lifecycle events fired despite compaction.enabled=false");
 	}
-	for (const forbidden of [
-		"compaction_start",
-		"compaction_end",
-		"auto_retry_start",
-		"auto_retry_end",
-		"summarization_retry_scheduled",
-	]) {
-		if (countAuditRecords(state.allRecords, forbidden) > 0) fail(`unexpected Pi event ${forbidden} occurred`);
+	for (const forbidden of "compaction_start compaction_end auto_retry_start auto_retry_end summarization_retry_scheduled".split(
+		" ",
+	)) {
+		if (countRecords(state.allRecords, forbidden) > 0) fail(`unexpected Pi event ${forbidden} occurred`);
 	}
 	const extensionErrors = state.allRecords.filter((record) => record.type === "extension_error");
 	if (extensionErrors.length > 0) fail(`extension errors occurred: ${JSON.stringify(extensionErrors)}`);

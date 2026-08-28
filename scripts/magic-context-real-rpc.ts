@@ -69,13 +69,11 @@ function consumeLine(
 	if (!line) return;
 	const record = parseRpcRecord(line);
 	records.push(record);
-	if (record.id && record.type === "response") {
-		const request = pending.get(record.id);
-		if (request) {
-			pending.delete(record.id);
-			clearTimeout(request.timeout);
-			request.resolve(record);
-		}
+	const request = record.id && record.type === "response" ? pending.get(record.id) : undefined;
+	if (request && record.id) {
+		pending.delete(record.id);
+		clearTimeout(request.timeout);
+		request.resolve(record);
 	}
 	for (const waiter of waiters) {
 		if (records.length - 1 < waiter.from || !waiter.predicate(record)) continue;
@@ -142,9 +140,7 @@ export async function createRpcTransport(
 	const readerState: ReaderState = {};
 	let sequence = 0;
 	let stderr = "";
-	const stderrReading = new Response(child.stderr).text().then((value) => {
-		stderr = value;
-	});
+	const stderrReading = new Response(child.stderr).text().then((value) => (stderr = value));
 	const reading = readRpcOutput(child.stdout, records, pending, waiters, readerState);
 
 	await Bun.sleep(150);
