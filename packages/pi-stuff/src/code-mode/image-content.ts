@@ -78,7 +78,8 @@ function hasCompleteEnvelope(bytes: Buffer, mimeType: SupportedImageMimeType): b
 	}
 }
 
-export function isValidCodeModeImage(image: ImageContent): boolean {
+/** Synchronous truncation guard; decoder-backed trust boundaries use assertDecodableSupportedCodeModeImages. */
+export function hasCompleteCodeModeImageEnvelope(image: ImageContent): boolean {
 	try {
 		const mimeType = supportedMimeType(image.mimeType);
 		if (!mimeType) return false;
@@ -96,7 +97,7 @@ export function codeModeImageFromDataUrl(value: string): ImageContent {
 	const mimeType = match?.[1] ? supportedMimeType(match[1]) : undefined;
 	const image: ImageContent | undefined =
 		match && mimeType ? { type: "image", data: match[2] ?? "", mimeType } : undefined;
-	if (!image || !isValidCodeModeImage(image)) throw new InvalidCodeModeImageError();
+	if (!image || !hasCompleteCodeModeImageEnvelope(image)) throw new InvalidCodeModeImageError();
 	return image;
 }
 
@@ -110,7 +111,7 @@ export async function assertDecodableSupportedCodeModeImages(content: readonly T
 		if (checked.has(key)) continue;
 		checked.add(key);
 		const bytes = decodeBase64(item.data);
-		if (!bytes || !isValidCodeModeImage(item)) throw new InvalidCodeModeImageError();
+		if (!bytes || !hasCompleteCodeModeImageEnvelope(item)) throw new InvalidCodeModeImageError();
 		try {
 			const decoded = await resizeImage(bytes, mimeType, {
 				maxBytes: Number.MAX_SAFE_INTEGER,
@@ -124,10 +125,11 @@ export async function assertDecodableSupportedCodeModeImages(content: readonly T
 	}
 }
 
+/** Quarantine incomplete replay/UI payloads after their producing boundary performed decoder validation. */
 export function sanitizeCodeModeContent(content: readonly ToolContent[number][]): SanitizedCodeModeContent {
 	let rejected = 0;
 	const sanitized = content.map((item) => {
-		if (item.type !== "image" || isValidCodeModeImage(item)) return item;
+		if (item.type !== "image" || hasCompleteCodeModeImageEnvelope(item)) return item;
 		rejected += 1;
 		return { type: "text" as const, text: INVALID_CODE_MODE_IMAGE_MESSAGE };
 	});

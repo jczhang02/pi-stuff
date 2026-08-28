@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import {
 	assertDecodableSupportedCodeModeImages,
 	codeModeImageFromDataUrl,
+	hasCompleteCodeModeImageEnvelope,
 	INVALID_CODE_MODE_IMAGE_MESSAGE,
-	isValidCodeModeImage,
 	sanitizeCodeModeContent,
 } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 
@@ -16,7 +16,7 @@ test("accepts complete supported image data URLs", () => {
 		type: "image",
 	});
 	expect(
-		isValidCodeModeImage({
+		hasCompleteCodeModeImageEnvelope({
 			data: "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
 			mimeType: "image/gif",
 			type: "image",
@@ -28,7 +28,7 @@ test("rejects an image whose container looks complete but cannot be decoded", as
 	const bytes = Buffer.from(PNG_DATA, "base64");
 	bytes[45] = (bytes[45] ?? 0) ^ 0xff;
 	const corrupt = { type: "image" as const, data: bytes.toString("base64"), mimeType: "image/png" };
-	expect(isValidCodeModeImage(corrupt)).toBe(true);
+	expect(hasCompleteCodeModeImageEnvelope(corrupt)).toBe(true);
 	await expect(assertDecodableSupportedCodeModeImages([corrupt])).rejects.toThrow(INVALID_CODE_MODE_IMAGE_MESSAGE);
 });
 
