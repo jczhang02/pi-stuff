@@ -1,6 +1,7 @@
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 
 const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_BODY_LIMIT_BYTES = 64 * 1024;
 
 export interface McpProbeResult {
 	isMcp: boolean;
@@ -34,31 +35,51 @@ function responseKind(response: Response): string {
 }
 
 async function hasJsonRpcEnvelope(response: Response): Promise<boolean> {
+	const reader = response.body?.getReader();
+	if (!reader) return false;
+	const decoder = new TextDecoder();
+	let bytes = 0;
+	let text = "";
 	try {
-		return isJsonRpcEnvelope(JSON.parse(await response.text()));
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			bytes += value.byteLength;
+			if (bytes > PROBE_BODY_LIMIT_BYTES) return false;
+			text += decoder.decode(value, { stream: true });
+		}
+		text += decoder.decode();
+		return isJsonRpcEnvelope(JSON.parse(text));
 	} catch {
 		return false;
+	} finally {
+		await reader.cancel().catch(() => undefined);
+		reader.releaseLock();
 	}
 }
 
 async function classifyResponse(response: Response, allowJson: boolean): Promise<McpProbeResult | null> {
-	const isSse = response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream");
-	if (response.ok && isSse) {
-		return { isMcp: true, classification: "endpoint responded with an MCP event stream" };
-	}
+	try {
+		const isSse = response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream");
+		if (response.ok && isSse) {
+			return { isMcp: true, classification: "endpoint responded with an MCP event stream" };
+		}
 
-	const isJsonRpc = (allowJson || response.status === 401) && (await hasJsonRpcEnvelope(response));
-	if (response.ok && allowJson && isJsonRpc) {
-		return { isMcp: true, classification: "endpoint responded with a JSON-RPC 2.0 envelope" };
-	}
-	if (response.status === 401 && isBearerChallenge(response) && isJsonRpc) {
-		return {
-			isMcp: true,
-			classification: "endpoint requires Bearer authentication and responded with a JSON-RPC 2.0 error",
-		};
-	}
+		const isJsonRpc = (allowJson || response.status === 401) && (await hasJsonRpcEnvelope(response));
+		if (response.ok && allowJson && isJsonRpc) {
+			return { isMcp: true, classification: "endpoint responded with a JSON-RPC 2.0 envelope" };
+		}
+		if (response.status === 401 && isBearerChallenge(response) && isJsonRpc) {
+			return {
+				isMcp: true,
+				classification: "endpoint requires Bearer authentication and responded with a JSON-RPC 2.0 error",
+			};
+		}
 
-	return null;
+		return null;
+	} finally {
+		if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined);
+	}
 }
 
 function notMcp(response: Response): McpProbeResult {
