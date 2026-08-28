@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
@@ -39,7 +40,7 @@ const SUPERVISOR_REPLY_SCHEMA = Type.Object(
 		createdAt: Type.Number(),
 		message: Type.String(),
 	},
-	{ additionalProperties: true },
+	{ additionalProperties: false },
 );
 const SUPERVISOR_REQUEST_SCHEMA = Type.Object(
 	{
@@ -63,7 +64,7 @@ const SUPERVISOR_REQUEST_SCHEMA = Type.Object(
 		childTarget: Type.Optional(Type.Unknown()),
 		interview: Type.Optional(Type.Unknown()),
 	},
-	{ additionalProperties: true },
+	{ additionalProperties: false },
 );
 const CHANNEL_METADATA_SCHEMA = Type.Object(
 	{
@@ -76,7 +77,7 @@ const CHANNEL_METADATA_SCHEMA = Type.Object(
 		ownerProcessStartIdentity: Type.Optional(Type.String({ minLength: 1 })),
 		updatedAt: Type.Number(),
 	},
-	{ additionalProperties: true },
+	{ additionalProperties: false },
 );
 
 export function requestDeliveryClaimName(requestId: string): string {
@@ -253,27 +254,13 @@ export function askTimeoutMs(): number {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ASK_TIMEOUT_MS;
 }
 
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new Error("Supervisor request cancelled."));
-			return;
-		}
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const cleanup = () => {
-			if (timer) clearTimeout(timer);
-			signal?.removeEventListener("abort", onAbort);
-		};
-		const onAbort = () => {
-			cleanup();
-			reject(new Error("Supervisor request cancelled."));
-		};
-		timer = setTimeout(() => {
-			cleanup();
-			resolve();
-		}, ms);
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+	try {
+		await sleep(ms, undefined, { signal });
+	} catch (error) {
+		if (signal?.aborted) throw new Error("Supervisor request cancelled.", { cause: error });
+		throw error;
+	}
 }
 
 async function acquireChannelLifecycleClaim(signal?: AbortSignal): Promise<DurableClaim> {
@@ -317,11 +304,11 @@ export async function waitForSupervisorReply(
 	while (Date.now() <= deadline) {
 		if (signal?.aborted) throw new Error("Supervisor request cancelled.");
 		if (fs.existsSync(file)) {
-			let parsed: SupervisorChannelRecord | undefined;
+			let parsed: unknown;
 			let snapshot: OwnedFileSnapshot | undefined;
 			try {
 				snapshot = readBoundedOwnedFileSnapshot(file, MAX_SUPERVISOR_MESSAGE_BYTES);
-				parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
+				parsed = Value.Clean(SUPERVISOR_REPLY_SCHEMA, parseJsonValue(snapshot.text));
 			} catch (error) {
 				if (errorCode(error) === "ENOENT") continue;
 				throw error;
@@ -331,19 +318,13 @@ export async function waitForSupervisorReply(
 				parsed.requestId === requestId &&
 				Buffer.byteLength(parsed.message, "utf-8") <= MAX_SUPERVISOR_MESSAGE_BYTES
 			) {
-				const reply: SupervisorReply = {
-					type: "subagent.supervisor.reply",
-					requestId,
-					createdAt: parsed.createdAt,
-					message: parsed.message,
-				};
 				try {
 					if (!snapshot || removeOwnedFileSnapshot(file, snapshot) !== "removed") continue;
 				} catch (error) {
 					reportAgentDiagnostic(`Failed to remove consumed supervisor reply '${file}':`, error);
 				}
 				removeRequestFile(requestPath(channelDir, requestId));
-				return reply;
+				return parsed;
 			}
 		}
 		await delay(250, signal);
@@ -360,7 +341,7 @@ export function parseRequestFile(file: string, channelDir: string): SupervisorRe
 		throw error;
 	}
 	try {
-		const parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
+		const parsed = Value.Clean(SUPERVISOR_REQUEST_SCHEMA, parseJsonValue(snapshot.text));
 		if (!Value.Check(SUPERVISOR_REQUEST_SCHEMA, parsed)) return { snapshot };
 		if (!parsed.orchestratorSessionId) return { snapshot };
 		const physicalSessionId =
@@ -475,29 +456,21 @@ async function metadataLessChannelSafeToCollect(channelDir: string, now: number)
 
 async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<SupervisorChannelMetadata | undefined> {
 	try {
-		const value = parseJsonValue(
-			(
-				await readBoundedOwnedFileSnapshotAsync(
-					path.join(channelDir, CHANNEL_METADATA_FILE),
-					MAX_CHANNEL_METADATA_BYTES,
-				)
-			).text,
+		const value = Value.Clean(
+			CHANNEL_METADATA_SCHEMA,
+			parseJsonValue(
+				(
+					await readBoundedOwnedFileSnapshotAsync(
+						path.join(channelDir, CHANNEL_METADATA_FILE),
+						MAX_CHANNEL_METADATA_BYTES,
+					)
+				).text,
+			),
 		);
 		if (!Value.Check(CHANNEL_METADATA_SCHEMA, value)) return undefined;
 		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
 		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
-		const metadata: SupervisorChannelMetadata = {
-			version: 1,
-			physicalSessionId: value.physicalSessionId,
-			runId: value.runId,
-			agent: value.agent,
-			childIndex: value.childIndex,
-			ownerPid: value.ownerPid,
-			updatedAt: value.updatedAt,
-		};
-		return value.ownerProcessStartIdentity === undefined
-			? metadata
-			: { ...metadata, ownerProcessStartIdentity: value.ownerProcessStartIdentity };
+		return value;
 	} catch {
 		return undefined;
 	}

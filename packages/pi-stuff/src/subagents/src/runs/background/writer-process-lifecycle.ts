@@ -2,15 +2,11 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Static, Type } from "typebox";
+import { Value } from "typebox/value";
 import { PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isRuntimeBoolean,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-	runtimeErrorCode,
-} from "../../../../shared/runtime-type.js";
+import { runtimeErrorCode } from "../../../../shared/runtime-type.js";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import {
 	identityBoundProcessLiveness,
@@ -96,18 +92,27 @@ export function buildWriterSpawnCommand(
 	};
 }
 
-interface WriterSupervisorDisposition {
-	version: 1;
-	supervisorPid: number;
-	supervisorProcessStartIdentity: string;
-	childPid: number;
-	childProcessStartIdentity: string;
-	exitCode: number | null;
-	signal: string | null;
-	origin: "external" | "manager-final-drain" | "manager-request" | null;
-	reaped: boolean;
-	outputForwardingError?: string;
-}
+const WRITER_SUPERVISOR_DISPOSITION_SCHEMA = Type.Object(
+	{
+		version: Type.Literal(1),
+		supervisorPid: Type.Integer({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+		supervisorProcessStartIdentity: Type.String({ minLength: 1 }),
+		childPid: Type.Integer({ minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }),
+		childProcessStartIdentity: Type.String({ minLength: 1 }),
+		exitCode: Type.Union([Type.Number(), Type.Null()]),
+		signal: Type.Union([Type.String(), Type.Null()]),
+		origin: Type.Union([
+			Type.Literal("external"),
+			Type.Literal("manager-final-drain"),
+			Type.Literal("manager-request"),
+			Type.Null(),
+		]),
+		reaped: Type.Boolean(),
+		outputForwardingError: Type.Optional(Type.String({ maxLength: 1_000 })),
+	},
+	{ additionalProperties: false },
+);
+type WriterSupervisorDisposition = Static<typeof WRITER_SUPERVISOR_DISPOSITION_SCHEMA>;
 
 export function readWriterSupervisorDisposition(
 	filePath: string,
@@ -116,44 +121,17 @@ export function readWriterSupervisorDisposition(
 ): WriterSupervisorDisposition | undefined {
 	if (supervisorPid === undefined || !supervisorProcessStartIdentity) return undefined;
 	try {
-		const value = parseJsonValue(readBoundedOwnedFile(filePath, 8 * 1024));
+		const value = Value.Clean(
+			WRITER_SUPERVISOR_DISPOSITION_SCHEMA,
+			parseJsonValue(readBoundedOwnedFile(filePath, 8 * 1024)),
+		);
 		if (
-			!isRuntimeObject(value) ||
-			value === null ||
-			Array.isArray(value) ||
-			value["version"] !== 1 ||
-			value["supervisorPid"] !== supervisorPid ||
-			value["supervisorProcessStartIdentity"] !== supervisorProcessStartIdentity ||
-			!isRuntimeNumber(value["childPid"]) ||
-			!Number.isSafeInteger(value["childPid"]) ||
-			!isRuntimeString(value["childProcessStartIdentity"]) ||
-			!value["childProcessStartIdentity"] ||
-			(!isRuntimeNumber(value["exitCode"]) && value["exitCode"] !== null) ||
-			(!isRuntimeString(value["signal"]) && value["signal"] !== null) ||
-			(value["origin"] !== null &&
-				value["origin"] !== "external" &&
-				value["origin"] !== "manager-final-drain" &&
-				value["origin"] !== "manager-request") ||
-			!isRuntimeBoolean(value["reaped"]) ||
-			(value["outputForwardingError"] !== undefined &&
-				(!isRuntimeString(value["outputForwardingError"]) || value["outputForwardingError"].length > 1_000))
+			!Value.Check(WRITER_SUPERVISOR_DISPOSITION_SCHEMA, value) ||
+			value.supervisorPid !== supervisorPid ||
+			value.supervisorProcessStartIdentity !== supervisorProcessStartIdentity
 		)
 			return undefined;
-		const disposition: WriterSupervisorDisposition = {
-			version: 1,
-			supervisorPid,
-			supervisorProcessStartIdentity,
-			childPid: value["childPid"],
-			childProcessStartIdentity: value["childProcessStartIdentity"],
-			exitCode: value["exitCode"],
-			signal: value["signal"],
-			origin: value["origin"],
-			reaped: value["reaped"],
-		};
-		if (value["outputForwardingError"] !== undefined) {
-			disposition.outputForwardingError = value["outputForwardingError"];
-		}
-		return disposition;
+		return value;
 	} catch {
 		return undefined;
 	}

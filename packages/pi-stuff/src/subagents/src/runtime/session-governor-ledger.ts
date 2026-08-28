@@ -1,19 +1,17 @@
 import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs/promises";
 import * as path from "node:path";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
-import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { parseJsonValue } from "../../../shared/json-value.js";
+import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
 import {
 	type AgentGovernorLease,
 	type AgentRecord,
-	finiteNumber,
 	type GovernorLedger,
 	type LeaseRecord,
-	nonNegativeInteger,
-	positiveInteger,
-	readCompleteLimits,
 	resolveSessionGovernorLimits,
 	type SessionGovernorFileSystem,
 	type SessionGovernorLimitInput,
@@ -21,7 +19,6 @@ import {
 	type SessionGovernorSnapshot,
 	SessionGovernorStateError,
 	samePath,
-	stableText,
 	type TransactionResult,
 	tightenSessionGovernorLimits,
 } from "./session-governor-contracts.ts";
@@ -32,6 +29,51 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const LEDGER_VERSION = 1;
 const MAX_LEDGER_BYTES = 4 * 1024 * 1024;
+const record = <Properties extends Parameters<typeof Type.Object>[0]>(properties: Properties) =>
+	Type.Object(properties, { additionalProperties: false });
+const STABLE_TEXT_SCHEMA = Type.String({
+	minLength: 1,
+	maxLength: 256,
+	pattern: "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$",
+});
+const POSITIVE_INTEGER_SCHEMA = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
+const NON_NEGATIVE_INTEGER_SCHEMA = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+const AGENT_PATH_SCHEMA = Type.Array(STABLE_TEXT_SCHEMA);
+const LIMITS_SCHEMA = record({
+	maxDepth: POSITIVE_INTEGER_SCHEMA,
+	maxRunning: POSITIVE_INTEGER_SCHEMA,
+	maxTotal: POSITIVE_INTEGER_SCHEMA,
+});
+const AGENT_RECORD_SCHEMA = record({
+	logicalAgentId: STABLE_TEXT_SCHEMA,
+	ownerAgentPath: AGENT_PATH_SCHEMA,
+	agentPath: AGENT_PATH_SCHEMA,
+	limits: LIMITS_SCHEMA,
+	createdAtMs: Type.Number(),
+});
+const LEASE_RECORD_SCHEMA = record({
+	logicalAgentId: STABLE_TEXT_SCHEMA,
+	runtimeRunId: Type.Optional(STABLE_TEXT_SCHEMA),
+	childIndex: Type.Optional(NON_NEGATIVE_INTEGER_SCHEMA),
+	leaseId: STABLE_TEXT_SCHEMA,
+	ownerAgentPath: AGENT_PATH_SCHEMA,
+	agentPath: AGENT_PATH_SCHEMA,
+	pid: POSITIVE_INTEGER_SCHEMA,
+	processStartIdentity: Type.Optional(STABLE_TEXT_SCHEMA),
+	systemBootIdentity: Type.Optional(STABLE_TEXT_SCHEMA),
+	asyncDir: Type.Optional(STABLE_TEXT_SCHEMA),
+	mode: Type.Union([Type.Literal("spawn"), Type.Literal("resume")]),
+	acquiredAtMs: Type.Number(),
+});
+const GOVERNOR_LEDGER_SCHEMA = record({
+	version: Type.Integer(),
+	sessionId: Type.String(),
+	limits: LIMITS_SCHEMA,
+	total: NON_NEGATIVE_INTEGER_SCHEMA,
+	agents: Type.Array(AGENT_RECORD_SCHEMA),
+	leases: Type.Array(LEASE_RECORD_SCHEMA),
+	updatedAtMs: Type.Number(),
+});
 
 interface ReadLedgerResult {
 	readonly ledger: GovernorLedger;
@@ -311,30 +353,32 @@ export function snapshotLedger(
 }
 
 function parseLedger(raw: string, expectedSessionId: string): ReadLedgerResult {
-	let value: JsonValue;
+	let parsed: ReturnType<typeof parseJsonValue>;
 	try {
-		value = parseJsonValue(raw);
+		parsed = parseJsonValue(raw);
 	} catch {
 		throw new SessionGovernorStateError("Session governor ledger is not valid JSON; refusing to overwrite it.");
 	}
-	if (!isRecord(value) || value["version"] !== LEDGER_VERSION || value["sessionId"] !== expectedSessionId) {
-		throw new SessionGovernorStateError("Session governor ledger identity or version is invalid.");
-	}
-	if (!isRuntimeNumber(value["total"]) || !Number.isInteger(value["total"]) || value["total"] < 0) {
-		throw new SessionGovernorStateError("Session governor ledger total is invalid.");
-	}
-	if (!Array.isArray(value["agents"]) || !Array.isArray(value["leases"])) {
+	const value = Value.Clean(GOVERNOR_LEDGER_SCHEMA, parsed);
+	if (!Value.Check(GOVERNOR_LEDGER_SCHEMA, value)) {
 		throw new SessionGovernorStateError("Session governor ledger records are invalid.");
 	}
-
-	const limits = readCompleteLimits(value["limits"]);
-	const agents = value["agents"].map(parseAgentRecord);
-	const rawLeases = value["leases"];
-	const migrated = rawLeases.some(
-		(lease) => isRecord(lease) && (lease["runtimeRunId"] === undefined || lease["childIndex"] === undefined),
-	);
-	const leases = rawLeases.map(parseLeaseRecord);
-	if (value["total"] !== agents.length) {
+	if (value.version !== LEDGER_VERSION || value.sessionId !== expectedSessionId) {
+		throw new SessionGovernorStateError("Session governor ledger identity or version is invalid.");
+	}
+	const agents: AgentRecord[] = value.agents;
+	for (const agent of agents) {
+		if (!samePath(agent.agentPath, [...agent.ownerAgentPath, agent.logicalAgentId])) {
+			throw new SessionGovernorStateError(`Logical Agent '${agent.logicalAgentId}' has an invalid owner path.`);
+		}
+	}
+	const migrated = value.leases.some((lease) => lease.runtimeRunId === undefined || lease.childIndex === undefined);
+	const leases: LeaseRecord[] = value.leases.map((lease) => ({
+		...lease,
+		runtimeRunId: lease.runtimeRunId ?? lease.logicalAgentId,
+		childIndex: lease.childIndex ?? 0,
+	}));
+	if (value.total !== agents.length) {
 		throw new SessionGovernorStateError("Session governor ledger total does not match its durable Agent records.");
 	}
 	if (new Set(agents.map((agent) => agent.logicalAgentId)).size !== agents.length) {
@@ -356,74 +400,7 @@ function parseLedger(raw: string, expectedSessionId: string): ReadLedgerResult {
 		}
 	}
 
-	return {
-		ledger: {
-			version: LEDGER_VERSION,
-			sessionId: expectedSessionId,
-			limits,
-			total: value["total"],
-			agents,
-			leases,
-			updatedAtMs: finiteNumber("updatedAtMs", value["updatedAtMs"]),
-		},
-		migrated,
-	};
-}
-
-function parseAgentRecord(value: JsonValue): AgentRecord {
-	if (!isRecord(value)) throw new SessionGovernorStateError("Session governor Agent record is invalid.");
-	const logicalAgentId = stableText("logicalAgentId", value["logicalAgentId"]);
-	const ownerAgentPath = readAgentPath(value["ownerAgentPath"]);
-	const agentPath = readAgentPath(value["agentPath"]);
-	if (!samePath(agentPath, [...ownerAgentPath, logicalAgentId])) {
-		throw new SessionGovernorStateError(`Logical Agent '${logicalAgentId}' has an invalid owner path.`);
-	}
-	return {
-		logicalAgentId,
-		ownerAgentPath,
-		agentPath,
-		limits: readCompleteLimits(value["limits"]),
-		createdAtMs: finiteNumber("createdAtMs", value["createdAtMs"]),
-	};
-}
-
-function parseLeaseRecord(value: JsonValue): LeaseRecord {
-	if (!isRecord(value)) throw new SessionGovernorStateError("Session governor lease record is invalid.");
-	const mode = value["mode"];
-	if (mode !== "spawn" && mode !== "resume") {
-		throw new SessionGovernorStateError("Session governor lease mode is invalid.");
-	}
-	const logicalAgentId = stableText("logicalAgentId", value["logicalAgentId"]);
-	let record: LeaseRecord = {
-		logicalAgentId,
-		runtimeRunId: stableText("runtimeRunId", value["runtimeRunId"] ?? logicalAgentId),
-		childIndex: nonNegativeInteger("childIndex", value["childIndex"] ?? 0),
-		leaseId: stableText("leaseId", value["leaseId"]),
-		ownerAgentPath: readAgentPath(value["ownerAgentPath"]),
-		agentPath: readAgentPath(value["agentPath"]),
-		pid: positiveInteger("pid", value["pid"]),
-		mode,
-		acquiredAtMs: finiteNumber("acquiredAtMs", value["acquiredAtMs"]),
-	};
-	if (value["processStartIdentity"] !== undefined) {
-		record = { ...record, processStartIdentity: stableText("processStartIdentity", value["processStartIdentity"]) };
-	}
-	if (value["systemBootIdentity"] !== undefined) {
-		record = { ...record, systemBootIdentity: stableText("systemBootIdentity", value["systemBootIdentity"]) };
-	}
-	if (value["asyncDir"] !== undefined) {
-		record = { ...record, asyncDir: stableText("asyncDir", value["asyncDir"]) };
-	}
-	return record;
-}
-
-function readAgentPath(value: JsonValue | undefined): string[] {
-	if (!Array.isArray(value)) throw new SessionGovernorStateError("Session governor Agent path is invalid.");
-	return value.map((entry) => stableText("Agent path entry", entry));
-}
-
-function isRecord(value: JsonValue): value is JsonObject {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+	return { ledger: { ...value, version: LEDGER_VERSION, agents, leases }, migrated };
 }
 
 function errorCode<Cause>(cause: Cause): string | undefined {
