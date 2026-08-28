@@ -467,7 +467,9 @@ test("single recovery data retains the child session and limits without retired 
 	expect("error" in built).toBe(false);
 	if ("error" in built) throw new Error(built.error);
 	expect(built.work.mode).toBe("single");
-	expect(built.recovery).toMatchObject({
+	const recovery = built.recoveries[0];
+	if (!recovery) throw new Error("Single background work did not retain its recovery descriptor.");
+	expect(recovery).toMatchObject({
 		version: 2,
 		sourceRunId: "run-single",
 		agent: "writer",
@@ -492,7 +494,7 @@ test("single recovery data retains the child session and limits without retired 
 		"share",
 		"structuredOutputSchema",
 	]) {
-		expect(retired in built.recovery).toBe(false);
+		expect(retired in recovery).toBe(false);
 	}
 });
 

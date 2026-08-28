@@ -39,21 +39,17 @@ export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
 	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
 
-export type AsyncRunnerWorkBuildResult =
+export type AsyncRunnerWorkBuildResult<Work extends BackgroundRunnerWork = BackgroundRunnerWork> =
 	| {
 			runnerCwd: string;
-			work: BackgroundRunnerWork;
+			work: Work;
 			recoveries: BackgroundRecoveryDescriptor[];
 	  }
 	| { error: string };
 
-export type AsyncSingleRunnerWorkBuildResult =
-	| {
-			runnerCwd: string;
-			work: Extract<BackgroundRunnerWork, { mode: "single" }>;
-			recovery: BackgroundRecoveryDescriptor;
-	  }
-	| { error: string };
+export type AsyncSingleRunnerWorkBuildResult = AsyncRunnerWorkBuildResult<
+	Extract<BackgroundRunnerWork, { mode: "single" }>
+>;
 
 export function buildAsyncParallelRunnerWork(
 	id: string,
@@ -133,6 +129,6 @@ export function buildAsyncSingleRunnerWork(
 	return {
 		runnerCwd,
 		work: { mode: "single", task: built.task },
-		recovery: built.recovery,
+		recoveries: [built.recovery],
 	};
 }

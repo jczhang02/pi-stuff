@@ -575,14 +575,13 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		location.cleanup();
 		throw new Error("Parallel background builder returned single work.");
 	}
-	const parallelWork = built.work;
 	const recoveryError = persistRecoveriesOrError("parallel", id, location, built.recoveries);
 	if (recoveryError) return recoveryError;
 	return executePreparedAsync({
 		id,
 		params,
 		location,
-		work: parallelWork,
+		work: built.work,
 		runnerCwd: built.runnerCwd,
 		timeoutMs: params.timeoutMs,
 		deadlineAt,
@@ -619,7 +618,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		location.cleanup();
 		return formatAsyncStartError("single", built.error);
 	}
-	const recoveryError = persistRecoveriesOrError("single", id, location, [built.recovery]);
+	const recoveryError = persistRecoveriesOrError("single", id, location, built.recoveries);
 	if (recoveryError) return recoveryError;
 	return executePreparedAsync({
 		id,

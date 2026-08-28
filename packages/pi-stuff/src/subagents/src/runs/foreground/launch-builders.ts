@@ -265,7 +265,7 @@ function buildForegroundConfig(
 		if (deadlineAt !== undefined) config.deadlineAt = deadlineAt;
 	}
 	if (data.capabilityCeiling) config.capabilityCeiling = data.capabilityCeiling;
-	const recoveries = "recoveries" in built ? built.recoveries : [built.recovery];
+	const recoveries = built.recoveries;
 	return { config, directoryClaim, recoveries };
 }
 

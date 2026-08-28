@@ -1,19 +1,18 @@
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { PonytailMode } from "../../../../ponytail/types.js";
+import type { LaunchBindingInput } from "../../shared/launch-contract.ts";
 import type {
-	AgentContextUsage,
 	ArtifactConfig,
+	ArtifactPaths,
 	CostSummary,
-	ModelAttempt,
 	NestedRouteInfo,
-	ProtocolOutputLimit,
 	ResolvedControlConfig,
 	ResolvedToolBudget,
 	ResolvedTurnBudget,
-	ToolBudgetState,
-	TurnBudgetState,
 } from "../../shared/types.ts";
-import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "./capability-ceiling.ts";
+import type { PiWriterProcessInstanceExitV1 } from "../background/process-terminal.ts";
+import type { ResolvedSubagentCapabilityCeiling } from "./capability-ceiling.ts";
+import type { SingleResult } from "./run-result.ts";
 
 /**
  * Fully-resolved input for one background child.
@@ -21,7 +20,11 @@ import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from 
  * The launcher owns policy resolution. The detached runner consumes this shape
  * without rediscovering agents or inheriting settings.
  */
-export interface RunnerAgentTask {
+export interface RunnerAgentTask
+	extends Omit<
+		Partial<LaunchBindingInput>,
+		"task" | "inheritProjectContext" | "inheritSkills" | "turnBudget" | "toolBudget" | "capabilityCeiling"
+	> {
 	/** Durable ledger namespace; may be v1 only while finishing an in-flight upgrade. */
 	governorSessionId?: string;
 	/** Immutable physical root-session identity used by lifecycle artifacts. */
@@ -42,22 +45,12 @@ export interface RunnerAgentTask {
 	cwd: string;
 	model?: string;
 	thinking?: string;
-	modelCandidates?: string[];
 	/** Context windows frozen from the launcher's model registry for the selected candidates. */
 	modelContextWindows?: Array<{ model: string; contextWindow: number }>;
-	tools?: string[];
-	extensions?: string[];
-	subagentOnlyExtensions?: string[];
-	mcpDirectTools?: string[];
-	systemPrompt?: string | null;
-	systemPromptMode?: "append" | "replace";
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
 	childBaseExtensionPath?: string;
-	skills?: string[];
 	sessionFile?: string;
-	maxSubagentDepth?: number;
-	definitionDigest?: string;
 	launchBindingTask?: string;
 	launchContractDigest?: string;
 	turnBudget?: ResolvedTurnBudget;
@@ -125,47 +118,19 @@ export interface BackgroundRunnerConfig {
 	startedAt?: number;
 }
 
-export interface BackgroundTaskResult {
-	agent: string;
-	context?: "fresh" | "fork";
+export interface BackgroundTaskResult
+	extends Omit<
+		SingleResult,
+		"task" | "cwd" | "exitCode" | "detached" | "detachedReason" | "crashed" | "usage" | "finalOutput" | "children"
+	> {
 	output: string;
 	success: boolean;
 	exitCode: number | null;
-	error?: string;
-	protocolError?: ProtocolOutputLimit;
-	interrupted?: boolean;
-	timedOut?: boolean;
-	stopped?: boolean;
 	preStartTerminalCause?: "pause" | "timeout" | "stop";
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-	contextNudgeObserved?: boolean;
-	toolBudget?: ToolBudgetState;
-	toolBudgetBlocked?: boolean;
-	sessionFile?: string;
 	intercomTarget?: string;
-	model?: string;
-	contextUsage?: AgentContextUsage;
-	thinking?: string;
-	attemptedModels?: string[];
-	modelAttempts?: ModelAttempt[];
 	totalCost?: CostSummary;
-	artifactPaths?: import("../../shared/types.ts").ArtifactPaths;
-	transcriptPath?: string;
-	transcriptError?: string;
-	launchContractDigest?: string;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	capabilityAudit?: SubagentCapabilityAudit;
-	writerProcesses?: Array<{
-		processInstanceId: string;
-		kind: "pi-writer";
-		attempt: number;
-		closeObservedAt: number;
-		exitCode: number | null;
-		signal: string | null;
-		terminationOrigin?: "external" | "manager-final-drain" | "manager-request";
-	}>;
+	artifactPaths?: ArtifactPaths;
+	writerProcesses?: PiWriterProcessInstanceExitV1[];
 	writerAttemptCount?: number;
 }
 

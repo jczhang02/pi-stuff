@@ -1,42 +1,30 @@
-import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { SubagentRunMode } from "../../shared/types.ts";
+import type { BackgroundCompletion } from "./runner-state.ts";
 
 /** Persisted background completion projected onto the current Agent product contract. */
-export interface CompletionNotification {
+export type CompletionNotification = Partial<
+	Omit<BackgroundCompletion, "id" | "mode" | "state" | "results" | "nestedChildren" | "worktree">
+> & {
 	/** Stable idempotency key for cross-process delivery and external transports. */
 	deliveryId?: string;
 	id?: string | null;
-	runId?: string;
-	/** Effective parent origin, monotonically promoted by accepted direct user steering. */
-	parentRunOrigin?: AgentWorkOrigin;
 	mode?: SubagentRunMode;
+	state?: string;
 	source?: "async" | "foreground";
 	agent?: string | null;
-	success?: boolean;
-	summary?: string;
 	exitCode?: number;
-	state?: string;
 	timestamp?: number;
 	durationMs?: number;
-	cwd?: string;
-	sessionFile?: string;
 	taskIndex?: number;
 	totalTasks?: number;
-	sessionId?: string | null;
 	triggerTurn?: boolean;
 	intercomDelivered?: boolean;
-	stopped?: boolean;
-	timedOut?: boolean;
-	interrupted?: boolean;
-	startedAt?: number;
-	endedAt?: number;
-	asyncDir?: string;
 	launchContractDigest?: string;
 	capabilityCeiling?: unknown;
 	worktree?: unknown;
 	results?: unknown[];
 	nestedChildren?: unknown[];
-}
+};
 
 export async function deliverNotificationWithAbort(
 	notifier: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> },
