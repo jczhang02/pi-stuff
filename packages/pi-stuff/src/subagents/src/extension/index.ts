@@ -22,11 +22,7 @@ import {
 	createDurableAgentExecutionCoordinator,
 } from "../runtime/agent-execution-coordinator.ts";
 import { maintainAgentRuntime } from "../runtime/runtime-maintenance.ts";
-import {
-	type PrepareSessionGovernorCompatibilityInput,
-	prepareSessionGovernorCompatibility,
-	type SessionGovernorCompatibilityResult,
-} from "../runtime/session-governor-compatibility.ts";
+import { prepareSessionGovernorCompatibility } from "../runtime/session-governor-compatibility.ts";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
@@ -88,42 +84,10 @@ interface AgentsRuntimeGlobal {
 	[RUNTIME_CLEANUP_KEY]?: () => void | Promise<void>;
 }
 
-export type ExtensionRootRoster = Pick<
+type ExtensionRootRoster = Pick<
 	AgentRoster,
 	"createFooterTail" | "dispose" | "setContext" | "setFooterHosted" | "setSuppressed"
 >;
-
-/** Narrow seams keep the production root auditable and the host contract testable. */
-export interface ExtensionRootDependencies {
-	readonly childBaseExtensionPath?: string;
-	readonly codeModeProviderTools?: readonly string[];
-	readonly resolveCodeModeEnabled?: () => boolean;
-	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
-	readonly createExecutor: (input: RootExecutorInput) => PublicAgentEngine;
-	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
-	readonly prepareGovernorCompatibility: (
-		input: PrepareSessionGovernorCompatibilityInput,
-	) => Promise<SessionGovernorCompatibilityResult>;
-	readonly createRoster: (current: CurrentAgents, options: AgentRosterOptions) => ExtensionRootRoster;
-	readonly createSupervisor: (pi: ExtensionAPI, state: SubagentState) => RootSupervisor;
-	readonly createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void) => RootTracker;
-	readonly createWatcher: (input: RootWatcherInput) => RootWatcher;
-	readonly discoverAgents: (cwd: string, scope: AgentScope) => Promise<AgentDiscoveryResult>;
-	readonly ensureDirectory: (directory: string) => void;
-	readonly getCoordinator: (pi: ExtensionAPI) => CommandDialogCoordinator;
-	readonly isChildProcess: () => boolean;
-	readonly loadConfiguration: () => PiStuffAgentsConfig;
-	readonly maintainRuntime: () => Promise<void> | void;
-	readonly monotonicNow: () => number;
-	readonly openDialog: (
-		ctx: ExtensionContext,
-		coordinator: CommandDialogCoordinator,
-		current: CurrentAgents,
-		options: AgentDialogOptions,
-	) => Promise<void>;
-	readonly projectContext: typeof projectCurrentContext;
-	readonly randomId: () => string;
-}
 
 function getSubagentSessionRoot(parentSessionFile: string | null): string {
 	if (parentSessionFile) {
@@ -136,8 +100,8 @@ function expandTilde(value: string): string {
 	return value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value;
 }
 
-const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
-	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
+const PRODUCTION_DEPENDENCIES = {
+	createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => new CurrentAgents(state, options),
 	createExecutor: ({
 		childBaseExtensionPath,
 		codeModeProviderTools,
@@ -148,7 +112,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 		projectContext,
 		resolveCodeModeEnabled,
 		state,
-	}) =>
+	}: RootExecutorInput): PublicAgentEngine =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -163,7 +127,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			resolveCodeModeEnabled,
 			onForegroundStatus,
 		}),
-	createGovernorCoordinator: (config) =>
+	createGovernorCoordinator: (config: PiStuffAgentsConfig): AgentExecutionCoordinatorPort =>
 		createDurableAgentExecutionCoordinator({
 			rootDir: SESSION_GOVERNOR_ROOT,
 			limits: {
@@ -173,10 +137,13 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			},
 		}),
 	prepareGovernorCompatibility: prepareSessionGovernorCompatibility,
-	createRoster: (current, options) => new AgentRoster(current, options),
-	createSupervisor: (pi, state) => createNativeSupervisorChannel(pi, state),
-	createTracker: (pi, state, onRefresh) => createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh }),
-	createWatcher: ({ notifier, pi, state }) =>
+	createRoster: (current: CurrentAgents, options: AgentRosterOptions): ExtensionRootRoster =>
+		new AgentRoster(current, options),
+	createSupervisor: (pi: ExtensionAPI, state: SubagentState): RootSupervisor =>
+		createNativeSupervisorChannel(pi, state),
+	createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void): RootTracker =>
+		createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh }),
+	createWatcher: ({ notifier, pi, state }: RootWatcherInput): RootWatcher =>
 		createResultWatcher(pi, state, RESULTS_DIR, 10 * 60 * 1_000, {
 			notifier,
 		}),
@@ -185,14 +152,20 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	getCoordinator: getCommandDialogCoordinator,
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
 	loadConfiguration: loadConfig,
-	maintainRuntime: async () => {
+	maintainRuntime: async (): Promise<void> => {
 		await maintainAgentRuntime();
 		await maintainAgentArtifacts(DEFAULT_ARTIFACT_CONFIG.cleanupDays);
 	},
 	monotonicNow: () => performance.now(),
 	openDialog: openAgentDialog,
 	projectContext: projectCurrentContext,
-	randomId: randomUUID,
+	randomId: (): string => randomUUID(),
+};
+export type ExtensionRootDependencies = Omit<typeof PRODUCTION_DEPENDENCIES, "maintainRuntime"> & {
+	readonly childBaseExtensionPath?: string;
+	readonly codeModeProviderTools?: readonly string[];
+	readonly maintainRuntime: () => Promise<void> | void;
+	readonly resolveCodeModeEnabled?: () => boolean;
 };
 
 function createState(): SubagentState {
