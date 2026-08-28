@@ -4,7 +4,7 @@ import {
 	hostMatchesProviderDomain as hostMatchesDomain,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
@@ -164,17 +164,7 @@ export async function searchWithBrave(query: string, options: SearchOptions = {}
 			.join("\n\n");
 
 		return { answer, results };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 }

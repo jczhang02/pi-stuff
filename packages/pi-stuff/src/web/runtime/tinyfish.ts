@@ -2,7 +2,7 @@ import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -266,15 +266,8 @@ export async function searchWithTinyFish(query: string, options: TinyFishSearchO
 		}
 		activityMonitor.logComplete(activityId, 200);
 		return response;
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 }
 
@@ -307,14 +300,7 @@ export async function extractWithTinyFish(
 		}
 		activityMonitor.logComplete(activityId, 200);
 		return null;
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 }

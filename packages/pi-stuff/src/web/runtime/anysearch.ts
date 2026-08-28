@@ -1,7 +1,7 @@
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -113,15 +113,8 @@ export async function searchWithAnySearch(
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
 		});
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 
 	if (!response.ok) {

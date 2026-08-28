@@ -1,3 +1,5 @@
+import { redactCredential } from "./credential-source.ts";
+
 // Types
 export interface ActivityEntry {
 	id: string;
@@ -98,3 +100,18 @@ export class ActivityMonitor {
 }
 
 export const activityMonitor = new ActivityMonitor();
+
+export function throwRedactedActivityError<ErrorValue>(
+	activityId: string,
+	error: ErrorValue,
+	credential: string | null | undefined,
+): never {
+	const message = error instanceof Error ? error.message : String(error);
+	const redactedMessage = redactCredential(message, credential);
+	if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+	else activityMonitor.logError(activityId, redactedMessage);
+	if (redactedMessage === message) throw error;
+	const redactedError = new Error(redactedMessage);
+	if (error instanceof Error) redactedError.name = error.name;
+	throw redactedError;
+}

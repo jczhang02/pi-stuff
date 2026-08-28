@@ -5,11 +5,11 @@ import {
 	hostMatchesProviderDomain as domainMatches,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -437,15 +437,8 @@ export async function searchWithBrightData(
 			body: JSON.stringify(body),
 			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 
 	// Every thrown message names the zone the request was billed against: with two

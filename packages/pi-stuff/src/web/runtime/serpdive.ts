@@ -5,7 +5,7 @@ import {
 	hostMatchesProviderDomain as domainMatches,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -196,15 +196,8 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 			body: JSON.stringify(body),
 			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 
 	if (!response.ok) {

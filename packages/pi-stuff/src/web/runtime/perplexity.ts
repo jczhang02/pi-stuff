@@ -1,7 +1,7 @@
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -138,18 +138,8 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		};
 		if (options.signal) request.signal = options.signal;
 		response = await fetch(PERPLEXITY_API_URL, request);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 
 	if (!response.ok) {

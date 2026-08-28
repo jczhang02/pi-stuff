@@ -4,7 +4,7 @@ import {
 	hostMatchesProviderDomain as domainMatches,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { activityMonitor } from "./activity.ts";
+import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -168,15 +168,8 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
 		});
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+	} catch (error) {
+		throwRedactedActivityError(activityId, error, apiKey);
 	}
 	if (!response.ok) {
 		activityMonitor.logComplete(activityId, response.status);
