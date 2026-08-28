@@ -38,6 +38,9 @@ export type {
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
 export const MAX_CODE_MODE_LEDGER_BYTES = 16 * 1024 * 1024;
+// Pi 0.84.3 wraps this event once with fixed custom-entry fields, a generated
+// ID, its parent ID, and an ISO timestamp. 512 bytes deliberately overcounts
+// that Host-owned wrapper between exact measurements on Session reload.
 const PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES = 512;
 const PAUSED_TTL_MS = 24 * 60 * 60 * 1_000;
 

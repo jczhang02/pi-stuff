@@ -40,11 +40,19 @@ test("Web configuration stays read-only until an explicit update", async () => {
 	expect(await Bun.file(join(agentDir, "pi-stuff.json")).exists()).toBe(false);
 });
 
-test("invalid Web configuration diagnoses and keeps built-in defaults active", async () => {
+test("invalid Web configuration diagnoses and keeps strict built-in defaults active", async () => {
 	const agentDir = await root();
 	await writeFile(join(agentDir, "pi-stuff.json"), "{");
 	expect(installWeb(agentDir)).toEqual(["web_search", "fetch_content", "get_search_content"]);
 	expect(runtimeConfig.readWebConfig()).toEqual({});
+	expect(loadSsrfConfig()).toEqual({ allowRanges: [], trustEnvProxy: false });
+});
+
+test("invalid stored SSRF fields fail closed", async () => {
+	const agentDir = await root();
+	process.env["PI_CODING_AGENT_DIR"] = agentDir;
+	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: { ssrf: { allowRanges: "private" } } }));
+	expect(() => loadSsrfConfig()).toThrow("ssrf.allowRanges");
 });
 
 test("Web configuration I/O failures propagate during initialization", async () => {

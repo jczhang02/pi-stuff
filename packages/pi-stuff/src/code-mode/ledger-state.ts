@@ -82,6 +82,8 @@ const LEDGER_EVENT_SCHEMA = Type.Union([
 		value: Type.Optional(STORED_VALUE_SCHEMA),
 	}),
 	callEventSchema("call-started", CALL_OPENED_SCHEMA),
+	// Legacy replay only. Current retention trims the projection and relies on
+	// the aggregate physical budget instead of appending more tombstones.
 	executionEventSchema("execution-pruned", {}),
 	executionEventSchema("execution-resumed", { attempt: Type.Integer() }),
 	executionEventSchema("execution-settled", {
