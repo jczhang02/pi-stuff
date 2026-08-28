@@ -5,14 +5,12 @@ import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
-import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
 import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const DEFAULT_API_VERSION = "v2";
 const EXTRACT_TIMEOUT_MS = 60_000;
-const DEFAULT_MAX_REDIRECTS = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const SUPPORTED_API_VERSIONS = ["v1", "v2"] as const;
 type FirecrawlApiVersion = (typeof SUPPORTED_API_VERSIONS)[number];
 
@@ -133,21 +131,14 @@ async function fetchFirecrawlApi(
 	init: { method: string; headers: Headers; body: string; signal: AbortSignal },
 	options: FirecrawlExtractOptions | undefined,
 ): Promise<Response> {
-	let current = await validateRemoteUrl(url, ssrfOptions(options));
-	let headers = init.headers;
-	for (let redirects = 0; redirects <= DEFAULT_MAX_REDIRECTS; redirects++) {
-		const response = await fetch(current, { ...init, headers, redirect: "manual" });
-		if (!REDIRECT_STATUSES.has(response.status)) return response;
-
-		const location = response.headers.get("location");
-		if (!location) return response;
-		if (redirects === DEFAULT_MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${current.toString()}`);
-
-		const next = await validateRemoteUrl(new URL(location, current), ssrfOptions(options));
-		if (next.origin !== current.origin) headers = withoutSensitiveHeaders(headers);
-		current = next;
-	}
-	throw new Error(`Too many redirects fetching ${current.toString()}`);
+	return fetchRemoteUrl(url, init, {
+		...ssrfOptions(options),
+		preserveRedirectMethod: true,
+		onRedirect: ({ from, to, init: nextInit }) =>
+			from.origin === to.origin
+				? nextInit
+				: { ...nextInit, headers: withoutSensitiveHeaders(new Headers(nextInit.headers)) },
+	});
 }
 
 function scrapeBody(url: string): JsonInputObject {

@@ -4,14 +4,12 @@ import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
-import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
 import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request";
 const EXTRACT_TIMEOUT_MS = 60_000;
-const DEFAULT_MAX_REDIRECTS = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ZONE_PATTERN = /^[a-z0-9_-]+$/i;
 
 export interface BrightDataSsrfOptions {
@@ -118,29 +116,14 @@ async function fetchBrightDataApi(
 	init: { method: string; headers: Headers; body: string; signal: AbortSignal },
 	options: BrightDataExtractOptions | undefined,
 ): Promise<Response> {
-	let current = await validateRemoteUrl(url, ssrfOptions(options));
-	let headers = init.headers;
-	// `redirect: "manual"` is what makes this loop exist: with the default "follow"
-	// the runtime resolves the chain itself, the final response is a 200, and the
-	// per-hop validateRemoteUrl / credential strip / hop cap below all become dead
-	// code. Tests assert the option is present on every hop for that reason.
-	//
-	// The loop is intentionally unbounded (`for (;;)`) with the cap enforced inside:
-	// a `redirects <= DEFAULT_MAX_REDIRECTS` header would make the post-loop
-	// statement provably unreachable, which is exactly the dead line firecrawl.ts
-	// carries at :186. Every exit is a `return` or a `throw` written here.
-	for (let redirects = 0; ; redirects++) {
-		const response = await fetch(current, { ...init, headers, redirect: "manual" });
-		if (!REDIRECT_STATUSES.has(response.status)) return response;
-
-		const location = response.headers.get("location");
-		if (!location) return response;
-		if (redirects === DEFAULT_MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${current.toString()}`);
-
-		const next = await validateRemoteUrl(new URL(location, current), ssrfOptions(options));
-		if (next.origin !== current.origin) headers = withoutSensitiveHeaders(headers);
-		current = next;
-	}
+	return fetchRemoteUrl(url, init, {
+		...ssrfOptions(options),
+		preserveRedirectMethod: true,
+		onRedirect: ({ from, to, init: nextInit }) =>
+			from.origin === to.origin
+				? nextInit
+				: { ...nextInit, headers: withoutSensitiveHeaders(new Headers(nextInit.headers)) },
+	});
 }
 
 function unlockerBody(url: string, zone: string): JsonInputObject {
