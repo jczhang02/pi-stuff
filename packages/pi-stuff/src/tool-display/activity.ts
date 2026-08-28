@@ -118,94 +118,44 @@ const BASH_RETRIEVAL_COMMANDS = new Map<string, ToolActivityCategory>([
 const BASH_RETRIEVAL_NEUTRAL_COMMANDS = new Set(["echo", "printf", "true", "false", ":"]);
 const FIND_CONSEQUENTIAL_OPTIONS = /^(?:-delete|-exec(?:dir)?|-fprint0?|-fprintf|-fls|-ok(?:dir)?)$/u;
 
-function splitBashRetrievalSegments(command: string): readonly string[] | undefined {
-	const segments: string[] = [];
-	let current = "";
-	let quote: "'" | '"' | undefined;
-	let escaped = false;
-	let trailingTerminator = false;
-	const flush = () => {
-		const segment = current.trim();
-		if (!segment) return false;
-		segments.push(segment);
-		current = "";
-		return true;
-	};
-	for (let index = 0; index < command.length; index += 1) {
-		const character = command[index] ?? "";
-		if (escaped) {
-			current += character;
-			escaped = false;
-			continue;
-		}
-		if (character === "\\") {
-			current += character;
-			escaped = true;
-			continue;
-		}
-		if (quote) {
-			current += character;
-			if (character === quote) quote = undefined;
-			else if (character === "`" || (character === "$" && command[index + 1] === "(")) return undefined;
-			continue;
-		}
-		if (character === "'" || character === '"') {
-			quote = character;
-			current += character;
-			continue;
-		}
-		if (
-			character === "`" ||
-			(character === "$" && command[index + 1] === "(") ||
-			character === "<" ||
-			character === ">" ||
-			character === "(" ||
-			character === ")" ||
-			character === "{" ||
-			character === "}" ||
-			character === "#"
-		) {
-			return undefined;
-		}
-		if (character === "&") {
-			if (command[index + 1] !== "&" || !flush()) return undefined;
-			index += 1;
-			trailingTerminator = false;
-			continue;
-		}
-		if (character === "|" || character === ";" || character === "\n") {
-			const conditional = character === "|";
-			if (conditional && command[index + 1] === "|") index += 1;
-			if (!flush()) {
-				if (character === "\n" && trailingTerminator) continue;
-				return undefined;
-			}
-			trailingTerminator = !conditional;
-			continue;
-		}
-		current += character;
-		if (!/\s/u.test(character)) trailingTerminator = false;
-	}
-	if (escaped || quote) return undefined;
-	if (!flush() && !trailingTerminator) return undefined;
-	return segments;
-}
-
-function bashSegmentWords(segment: string): readonly string[] | undefined {
-	const words: string[] = [];
-	let current = "";
+function bashRetrievalCategories(command: string): ReadonlySet<ToolActivityCategory> | undefined {
+	const categories = new Set<ToolActivityCategory>();
+	let words: string[] = [];
+	let word = "";
 	let quote: "'" | '"' | undefined;
 	let escaped = false;
 	let started = false;
-	const flush = () => {
+	let trailingTerminator = false;
+	const flushWord = () => {
 		if (!started) return;
-		words.push(current);
-		current = "";
+		words.push(word);
+		word = "";
 		started = false;
 	};
-	for (const character of segment) {
+	const flushCommand = (terminal: boolean) => {
+		flushWord();
+		if (words.length === 0) return false;
+		let commandIndex = 0;
+		while (/^[A-Za-z_][A-Za-z\d_]*=/u.test(words[commandIndex] ?? "")) commandIndex += 1;
+		const base = words[commandIndex];
+		if (!base) return false;
+		if (!BASH_RETRIEVAL_NEUTRAL_COMMANDS.has(base)) {
+			const category = BASH_RETRIEVAL_COMMANDS.get(base);
+			if (!category) return false;
+			if (base === "find" && words.slice(commandIndex + 1).some((item) => FIND_CONSEQUENTIAL_OPTIONS.test(item))) {
+				return false;
+			}
+			categories.add(category);
+		}
+		words = [];
+		trailingTerminator = terminal;
+		return true;
+	};
+
+	for (let index = 0; index < command.length; index += 1) {
+		const character = command[index] ?? "";
 		if (escaped) {
-			current += character;
+			word += character;
 			started = true;
 			escaped = false;
 			continue;
@@ -216,8 +166,9 @@ function bashSegmentWords(segment: string): readonly string[] | undefined {
 			continue;
 		}
 		if (quote) {
+			if (character === "`" || (character === "$" && command[index + 1] === "(")) return undefined;
 			if (character === quote) quote = undefined;
-			else current += character;
+			else word += character;
 			started = true;
 			continue;
 		}
@@ -226,40 +177,41 @@ function bashSegmentWords(segment: string): readonly string[] | undefined {
 			started = true;
 			continue;
 		}
-		if (/\s/u.test(character)) flush();
-		else {
-			current += character;
-			started = true;
+		if ("`<>(){}#".includes(character) || (character === "$" && command[index + 1] === "(")) return undefined;
+		if (/\s/u.test(character) && character !== "\n") {
+			flushWord();
+			continue;
 		}
+		if (character === "&") {
+			if (command[index + 1] !== "&" || !flushCommand(false)) return undefined;
+			index += 1;
+			continue;
+		}
+		if (character === "|" || character === ";" || character === "\n") {
+			if (character === "|" && command[index + 1] === "|") index += 1;
+			if (!flushCommand(character !== "|")) {
+				if (character === "\n" && trailingTerminator) continue;
+				return undefined;
+			}
+			continue;
+		}
+		word += character;
+		started = true;
+		trailingTerminator = false;
 	}
 	if (escaped || quote) return undefined;
-	flush();
-	return words;
+	if (started || words.length > 0) {
+		if (!flushCommand(false)) return undefined;
+	} else if (!trailingTerminator && command.trim() !== "") return undefined;
+	return categories.size > 0 ? categories : undefined;
 }
 
 /** Classify only clearly read-only shell retrieval; ambiguity stays standalone. */
 export function classifyBashRetrievalActivity(args: ToolArguments): readonly ToolActivityItem[] {
 	if (args["run_in_background"] === true) return [];
 	const command = isRuntimeString(args["command"]) ? args["command"] : "";
-	const segments = splitBashRetrievalSegments(command);
-	if (!segments) return [];
-	const categories = new Set<ToolActivityCategory>();
-	for (const segment of segments) {
-		const words = bashSegmentWords(segment);
-		if (!words) return [];
-		let commandIndex = 0;
-		while (/^[A-Za-z_][A-Za-z\d_]*=/u.test(words[commandIndex] ?? "")) commandIndex += 1;
-		const base = words[commandIndex];
-		if (!base) return [];
-		if (BASH_RETRIEVAL_NEUTRAL_COMMANDS.has(base)) continue;
-		const category = BASH_RETRIEVAL_COMMANDS.get(base);
-		if (!category) return [];
-		if (base === "find" && words.slice(commandIndex + 1).some((word) => FIND_CONSEQUENTIAL_OPTIONS.test(word))) {
-			return [];
-		}
-		categories.add(category);
-	}
-	if (categories.size === 0) return [];
+	const categories = bashRetrievalCategories(command);
+	if (!categories) return [];
 	const description = isRuntimeString(args["description"]) ? oneLine(args["description"]) : "";
 	const fallback = categories.has("search-pattern")
 		? "Searching files"

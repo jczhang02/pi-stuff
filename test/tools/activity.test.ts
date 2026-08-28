@@ -261,7 +261,7 @@ test("an infrastructure issue becomes an independent boundary on both sides", ()
 	expect(groups.every((group) => group.closed)).toBe(true);
 });
 
-test("keeps every Bash invocation outside Retrieval Groups", () => {
+test("classifies Bash retrieval without admitting it to Retrieval Groups", () => {
 	for (const command of [
 		"cat a.ts",
 		"head -n 5 a.ts",
@@ -277,6 +277,7 @@ test("keeps every Bash invocation outside Retrieval Groups", () => {
 		"printf 'scan\\n' && rg needle src | head",
 		"cat a.ts;\n",
 	]) {
+		expect(classifyBashRetrievalActivity({ command }).length).toBeGreaterThan(0);
 		expect(classify("bash", { command })).toBe("boundary");
 	}
 
@@ -290,10 +291,12 @@ test("keeps every Bash invocation outside Retrieval Groups", () => {
 		"cat $(generate-path)",
 		"cat 'unterminated",
 		"cat a.ts &",
+		"cat a.ts &&",
+		"cat a.ts |",
 	]) {
-		expect(classify("bash", { command })).toBe("boundary");
+		expect(classifyBashRetrievalActivity({ command })).toEqual([]);
 	}
-	expect(classify("bash", { command: "cat a.ts", run_in_background: true })).toBe("boundary");
+	expect(classifyBashRetrievalActivity({ command: "cat a.ts", run_in_background: true })).toEqual([]);
 });
 
 test("counts each Bash retrieval invocation once per semantic category", () => {
