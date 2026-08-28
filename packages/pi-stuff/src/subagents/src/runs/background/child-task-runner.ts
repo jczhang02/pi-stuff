@@ -92,10 +92,6 @@ interface ResolvedTaskInput {
 	activeControls: Map<number, ChildRuntimeControl>;
 	consumeScheduledStop: (index: number) => boolean;
 	onWriterProcess?: ((writer: WriterRuntimeState) => void) | undefined;
-	afterWriterSpawnBeforeBinding?: ((index: number, pid: number) => void) | undefined;
-	beforeWriterCloseRecovery?: ((index: number) => void | Promise<void>) | undefined;
-	beforeWriterSupervisorDispositionRead?: ((filePath: string, index: number) => void) | undefined;
-	writerSupervisorRuntime?: string | undefined;
 }
 
 type TaskTranscript = ReturnType<typeof createTranscript>;
@@ -294,10 +290,6 @@ async function runAttempts(
 					activeControls: input.activeControls,
 					consumeScheduledStop: () => input.consumeScheduledStop(input.index),
 					onWriterProcess: input.onWriterProcess,
-					afterWriterSpawnBeforeBinding: input.afterWriterSpawnBeforeBinding,
-					beforeWriterCloseRecovery: input.beforeWriterCloseRecovery,
-					beforeWriterSupervisorDispositionRead: input.beforeWriterSupervisorDispositionRead,
-					writerSupervisorRuntime: input.writerSupervisorRuntime,
 				}).run();
 			} catch (error) {
 				const failed = failedLaunch(error instanceof Error ? error.message : String(error), candidate);

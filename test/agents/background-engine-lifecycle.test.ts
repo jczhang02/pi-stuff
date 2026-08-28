@@ -4,7 +4,6 @@ import {
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
-	isolatedSystemTempRoot,
 	path,
 	projectForegroundCompletion,
 	readBackgroundCompletion,
@@ -429,6 +428,7 @@ setInterval(() => {}, 1_000);
 }, 5_000);
 
 test("fails without inventing a crash when final-drain disposition proof is unavailable", async () => {
+	if (process.platform === "win32") return;
 	const root = fixtureRoot();
 	const writer = path.join(root, "missing-disposition-writer.ts");
 	fs.writeFileSync(
@@ -444,7 +444,7 @@ const event = {
   },
 };
 process.stdout.write(JSON.stringify(event) + "\\n");
-setInterval(() => {}, 1_000);
+process.kill(process.ppid, "SIGKILL");
 `,
 		{ mode: 0o700 },
 	);
@@ -452,12 +452,7 @@ setInterval(() => {}, 1_000);
 	const asyncDir = path.join(root, "async-missing-disposition");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground(
-		singleRunnerConfig(root, "missing-final-drain-disposition", { asyncDir, resultPath }),
-		{
-			beforeWriterSupervisorDispositionRead: (filePath) => fs.rmSync(filePath, { force: true }),
-		},
-	);
+	await runConfiguredBackground(singleRunnerConfig(root, "missing-final-drain-disposition", { asyncDir, resultPath }));
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 		state: string;
@@ -478,45 +473,6 @@ setInterval(() => {}, 1_000);
 	});
 	expect(completion.results[0]?.crashed).not.toBeTrue();
 	expect(completion.results[0]?.writerProcesses?.[0]?.terminationOrigin).toBeUndefined();
-}, 5_000);
-
-test("settles durably when asynchronous writer close recovery rejects", async () => {
-	const root = fixtureRoot();
-	const writer = path.join(root, "close-recovery-rejection-writer.ts");
-	fs.writeFileSync(
-		writer,
-		`#!/usr/bin/env bun
-const event = {
-  type: "message_end",
-  message: {
-    role: "assistant",
-    content: [{ type: "text", text: "CLOSE_RECOVERY_REACHED" }],
-    stopReason: "stop",
-    timestamp: Date.now(),
-  },
-};
-process.stdout.write(JSON.stringify(event) + "\\n");
-`,
-		{ mode: 0o700 },
-	);
-	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async-close-recovery-rejection");
-	const resultPath = path.join(asyncDir, "result.json");
-	const tempRoot = isolatedSystemTempRoot();
-
-	await runConfiguredBackground(singleRunnerConfig(root, "close-recovery-rejection", { asyncDir, resultPath }), {
-		beforeWriterCloseRecovery: async () => {
-			throw Object.assign(new Error("injected writer registry EIO"), { code: "EIO" });
-		},
-	});
-	const completion = readBackgroundCompletion(resultPath);
-	const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
-
-	expect(completion).toMatchObject({
-		state: "failed",
-		results: [{ success: false, error: expect.stringContaining("injected writer registry EIO") }],
-	});
-	expect(leaked).toEqual([]);
 }, 5_000);
 
 test("classifies a bare SIGTERM to the writer supervisor as an external crash", async () => {

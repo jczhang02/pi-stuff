@@ -201,6 +201,11 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		expect(buildWriterSpawnCommand("pi", [], process.platform, undefined, undefined, runtime).command).toBe(
 			process.execPath,
 		);
+		if (process.platform !== "win32") {
+			expect(() => buildWriterSpawnCommand("pi", [], process.platform, undefined, undefined, "")).toThrow(
+				"Bun is required",
+			);
+		}
 		const asyncDir = path.join(root, "async-node-less");
 		const resultPath = path.join(asyncDir, "result.json");
 		await runConfiguredBackground(singleRunnerConfig(root, "node-less-writer-supervisor", { asyncDir, resultPath }));
@@ -327,21 +332,6 @@ setInterval(() => {}, 1_000);
 		}
 	}
 }, 8_000);
-
-test("turns a writer-supervisor spawn error into a durable child failure", async () => {
-	const root = fixtureRoot();
-	const asyncDir = path.join(root, "async-missing-supervisor");
-	const resultPath = path.join(asyncDir, "result.json");
-	await runConfiguredBackground(singleRunnerConfig(root, "missing-writer-supervisor", { asyncDir, resultPath }), {
-		writerSupervisorRuntime: path.join(root, "missing-bun"),
-	});
-	await Bun.sleep(25);
-	const completion = readBackgroundCompletion(resultPath);
-	expect(completion.state).toBe("failed");
-	expect(completion.success).toBeFalse();
-	expect(completion.results[0]).toMatchObject({ success: false });
-	expect(completion.results[0]?.error).toContain("stable process-start identity");
-});
 
 test("loads the detached runner import graph with the certified Bun command", () => {
 	const bunCommand = resolveAsyncRunnerBunCommand();

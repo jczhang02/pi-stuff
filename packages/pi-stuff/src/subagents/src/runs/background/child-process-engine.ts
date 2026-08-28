@@ -80,10 +80,6 @@ export interface ChildProcessEngineInput {
 	activeControls: Map<number, ChildRuntimeControl>;
 	consumeScheduledStop: () => boolean;
 	onWriterProcess?: ((writer: WriterRuntimeState) => void) | undefined;
-	afterWriterSpawnBeforeBinding?: ((index: number, pid: number) => void) | undefined;
-	beforeWriterCloseRecovery?: ((index: number) => void | Promise<void>) | undefined;
-	beforeWriterSupervisorDispositionRead?: ((filePath: string, index: number) => void) | undefined;
-	writerSupervisorRuntime?: string | undefined;
 }
 
 function buildChildLaunch(input: ChildProcessEngineInput) {
@@ -242,7 +238,7 @@ export class ChildProcessEngine {
 				process.platform,
 				this.supervisorDispositionPath,
 				this.groupMemberProofPath,
-				this.input.writerSupervisorRuntime,
+				undefined,
 				this.writerControl,
 			);
 			this.child = spawn(this.writerSpawn.command, this.writerSpawn.args, {
@@ -293,13 +289,6 @@ export class ChildProcessEngine {
 	}
 
 	private bindWriter(): void {
-		try {
-			this.input.afterWriterSpawnBeforeBinding?.(this.input.index, this.writerPid);
-		} catch (error) {
-			trySignalChild(this.child, "SIGKILL", this.writerProcessStartIdentity);
-			this.rollBackLaunch();
-			throw error;
-		}
 		try {
 			const writerState: WriterRuntimeState = {
 				state: "running",
@@ -531,7 +520,6 @@ export class ChildProcessEngine {
 	}
 
 	private async recoverWriterGroup(): Promise<void> {
-		await this.input.beforeWriterCloseRecovery?.(this.input.index);
 		let groupClosed = await closeWriterProcessGroup(this.writerPid, this.writerProcessStartIdentity);
 		if (!groupClosed && this.writerSpawn.gated) {
 			groupClosed = (await reapOrphanWriterProcesses(this.input.config.asyncDir)).remaining === 0;
@@ -553,14 +541,6 @@ export class ChildProcessEngine {
 	}
 
 	private readSupervisorDisposition() {
-		try {
-			this.input.beforeWriterSupervisorDispositionRead?.(this.supervisorDispositionPath, this.input.index);
-		} catch (error) {
-			reportAgentDiagnostic(
-				`Agent writer supervisor disposition test hook failed for child ${this.input.index}:`,
-				error,
-			);
-		}
 		const disposition = this.writerSpawn.gated
 			? readWriterSupervisorDisposition(
 					this.supervisorDispositionPath,

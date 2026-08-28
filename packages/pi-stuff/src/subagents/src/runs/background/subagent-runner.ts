@@ -62,10 +62,6 @@ async function runConfiguredWork(
 	beforeFinalPersistence?: () => void | Promise<void>,
 	beforeWorktreeEvidence?: () => void,
 	beforeResultPersistence?: () => void,
-	afterWriterSpawnBeforeBinding?: (index: number, pid: number) => void,
-	beforeWriterCloseRecovery?: (index: number) => void | Promise<void>,
-	beforeWriterSupervisorDispositionRead?: (filePath: string, index: number) => void,
-	writerSupervisorRuntime?: string,
 ): Promise<{ nestedProjectionCommitted: boolean }> {
 	const startedAt = config.startedAt ?? Date.now();
 	const statusPath = path.join(config.asyncDir, "status.json");
@@ -107,10 +103,6 @@ async function runConfiguredWork(
 							activeControls: control.activeControls,
 							consumeScheduledStop: (index) => control.consumeScheduledStop(index),
 							onWriterProcess: onWriterProcess ? (writer) => onWriterProcess(index, writer) : undefined,
-							afterWriterSpawnBeforeBinding,
-							beforeWriterCloseRecovery,
-							beforeWriterSupervisorDispositionRead,
-							writerSupervisorRuntime,
 						});
 					} catch (error) {
 						terminalizeRejectedStep(status, statusPath, eventsPath, index, error);
@@ -199,13 +191,9 @@ export async function runConfiguredBackground(
 	hooks: {
 		afterStatusUpdate?: (status: RunnerStatus) => void;
 		afterWriterProcessUpdate?: (index: number, writer: WriterRuntimeState) => void;
-		afterWriterSpawnBeforeBinding?: (index: number, pid: number) => void;
-		beforeWriterCloseRecovery?: (index: number) => void | Promise<void>;
-		beforeWriterSupervisorDispositionRead?: (filePath: string, index: number) => void;
 		beforeFinalPersistence?: () => void | Promise<void>;
 		beforeWorktreeEvidence?: () => void;
 		beforeResultPersistence?: () => void;
-		writerSupervisorRuntime?: string;
 	} = {},
 ): Promise<void> {
 	if (config.version !== 2) throw new Error("Background runner config version must be 2.");
@@ -250,10 +238,6 @@ export async function runConfiguredBackground(
 			hooks.beforeFinalPersistence,
 			hooks.beforeWorktreeEvidence,
 			hooks.beforeResultPersistence,
-			hooks.afterWriterSpawnBeforeBinding,
-			hooks.beforeWriterCloseRecovery,
-			hooks.beforeWriterSupervisorDispositionRead,
-			hooks.writerSupervisorRuntime,
 		);
 		// `runConfiguredWork` has committed the terminal result/status at this
 		// point. A transient first projection failure must not suppress the

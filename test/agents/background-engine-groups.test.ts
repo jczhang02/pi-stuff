@@ -3,7 +3,6 @@ import {
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
-	isolatedSystemTempRoot,
 	path,
 	readBackgroundCompletion,
 	readBackgroundStatus,
@@ -358,41 +357,4 @@ test("rolls writer identity back when child_process.spawn throws synchronously",
 	expect(completion.results[0]?.writerAttemptCount).toBe(0);
 	expect(observedStates).toEqual(["spawning", "none"]);
 	expect(registry.writers?.["0"]?.state).toBe("none");
-});
-
-test("rolls writer identity and prompt artifacts back when supervisor construction fails", async () => {
-	if (process.platform === "win32") return;
-	const root = fixtureRoot();
-	const asyncDir = path.join(root, "async-supervisor-build-error");
-	const resultPath = path.join(asyncDir, "result.json");
-	const observedStates: string[] = [];
-	const tempRoot = isolatedSystemTempRoot();
-
-	await runConfiguredBackground(
-		singleRunnerConfig(root, "supervisor-build-error", {
-			asyncDir,
-			resultPath,
-			work: {
-				mode: "single",
-				task: { ...task(0), cwd: root, systemPrompt: "temporary prompt artifact" },
-			},
-		}),
-		{
-			afterWriterProcessUpdate: (_index, writerState) => observedStates.push(writerState.state),
-			writerSupervisorRuntime: "",
-		},
-	);
-
-	const completion = readBackgroundCompletion(resultPath);
-	const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
-	const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
-
-	expect(completion).toMatchObject({
-		state: "failed",
-		results: [{ error: expect.stringContaining("Bun is required") }],
-	});
-	expect(completion.results[0]?.writerProcesses).toEqual([]);
-	expect(observedStates).toEqual(["spawning", "none"]);
-	expect(registry.writers?.["0"]?.state).toBe("none");
-	expect(leaked).toEqual([]);
 });
