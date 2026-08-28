@@ -36,6 +36,9 @@ describe("retired Agent surfaces", () => {
 
 		fs.writeFileSync(descriptorPath, JSON.stringify({ ...baseDescriptor, share: true }));
 		expect(() => readAsyncRecoveryDescriptor(asyncDir)).toThrow("unknown field 'share'");
+
+		fs.writeFileSync(descriptorPath, JSON.stringify(baseDescriptor));
+		expect(readAsyncRecoveryDescriptor(asyncDir)).toMatchObject(baseDescriptor);
 	});
 
 	test("drops legacy nested-run mode metadata without dropping transcript evidence", () => {

@@ -269,7 +269,11 @@ function validateControlConfig(
 	return config;
 }
 
-function parseV2RecoveryDescriptor(parsed: JsonObject, descriptorPath: string): BackgroundRecoveryDescriptor {
+function parseV2RecoveryDescriptor(
+	parsed: JsonObject,
+	descriptorPath: string,
+	configVersion: 1 | 2 = 2,
+): BackgroundRecoveryDescriptor {
 	const sourceRunId = requiredRecoveryString(parsed["sourceRunId"], "sourceRunId", descriptorPath);
 	const agent = requiredRecoveryString(parsed["agent"], "agent", descriptorPath);
 	const cwd = requiredRecoveryString(parsed["cwd"], "cwd", descriptorPath);
@@ -343,11 +347,11 @@ function parseV2RecoveryDescriptor(parsed: JsonObject, descriptorPath: string): 
 	const artifactConfig =
 		parsed["artifactConfig"] === undefined
 			? undefined
-			: validateArtifactConfig(parsed["artifactConfig"], descriptorPath, 2);
+			: validateArtifactConfig(parsed["artifactConfig"], descriptorPath, configVersion);
 	const controlConfig =
 		parsed["controlConfig"] === undefined
 			? undefined
-			: validateControlConfig(parsed["controlConfig"], descriptorPath, 2);
+			: validateControlConfig(parsed["controlConfig"], descriptorPath, configVersion);
 	const descriptor: BackgroundRecoveryDescriptor = {
 		agent,
 		childIndex,
@@ -405,73 +409,18 @@ function parseLegacyRecoveryDescriptor(parsed: JsonObject, descriptorPath: strin
 		if (!LEGACY_RECOVERY_DESCRIPTOR_FIELDS.has(field))
 			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': unknown field '${field}'.`);
 	}
-	const sourceRunId = requiredRecoveryString(parsed["sourceRunId"], "sourceRunId", descriptorPath);
-	const agent = requiredRecoveryString(parsed["agent"], "agent", descriptorPath);
-	const cwd = requiredRecoveryString(parsed["cwd"], "cwd", descriptorPath);
-	const rawSystemPromptMode = requiredRecoveryString(parsed["systemPromptMode"], "systemPromptMode", descriptorPath);
 	if (parsed["version"] !== 1)
 		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': version must be 1.`);
-	const capabilityCeiling =
-		parsed["capabilityCeiling"] === undefined
-			? undefined
-			: parseSubagentCapabilityCeiling(
-					parsed["capabilityCeiling"],
-					`async recovery descriptor '${descriptorPath}' capabilityCeiling`,
-				);
-	if (rawSystemPromptMode !== "append" && rawSystemPromptMode !== "replace")
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPromptMode is invalid.`);
-	const systemPromptMode: LegacyRecoveryDescriptor["systemPromptMode"] = rawSystemPromptMode;
-	const inheritProjectContext = requiredRecoveryBoolean(
-		parsed["inheritProjectContext"],
-		"inheritProjectContext",
-		descriptorPath,
-	);
-	const inheritSkills = requiredRecoveryBoolean(parsed["inheritSkills"], "inheritSkills", descriptorPath);
-	const maxSubagentDepth = recoveryInteger(parsed["maxSubagentDepth"], "maxSubagentDepth", descriptorPath, 0);
-	for (const field of [
-		"fallbackModels",
-		"tools",
-		"extensions",
-		"subagentOnlyExtensions",
-		"mcpDirectTools",
-		"skills",
-		"skillPath",
-	] as const) {
-		recoveryStringArray(parsed[field], field, descriptorPath);
-	}
-	if (Array.isArray(parsed["fallbackModels"]) && parsed["fallbackModels"].length >= MAX_MODEL_CANDIDATES_PER_CHILD) {
-		throw new Error(
-			`Invalid async recovery descriptor '${descriptorPath}': fallbackModels must contain fewer than ${MAX_MODEL_CANDIDATES_PER_CHILD} entries.`,
-		);
-	}
-	if (parsed["systemPrompt"] !== undefined && !isRuntimeString(parsed["systemPrompt"]))
-		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPrompt must be a string.`);
-	for (const field of [
-		"launchContractDigest",
-		"sessionFile",
-		"model",
-		"thinking",
-		"agentFilePath",
-		"sessionDir",
-		"artifactsDir",
-	] as const) {
-		recoveryNonemptyString(parsed[field], field, descriptorPath);
-	}
-	recoveryDeadline(parsed["absoluteDeadlineAt"], descriptorPath);
-	if (parsed["initialTurnBudget"] !== undefined) {
-		const result = resolveTurnBudgetConfig(parsed["initialTurnBudget"], "recoveryDescriptor.initialTurnBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-	}
-	if (parsed["initialToolBudget"] !== undefined) {
-		const result = validateToolBudgetConfig(parsed["initialToolBudget"], "recoveryDescriptor.initialToolBudget");
-		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
-	}
-	if (parsed["artifactConfig"] !== undefined) {
-		validateArtifactConfig(parsed["artifactConfig"], descriptorPath, 1);
-	}
-	if (parsed["controlConfig"] !== undefined) {
-		validateControlConfig(parsed["controlConfig"], descriptorPath, 1);
-	}
+	const {
+		sourceRunId,
+		agent,
+		cwd,
+		systemPromptMode,
+		inheritProjectContext,
+		inheritSkills,
+		maxSubagentDepth,
+		capabilityCeiling,
+	} = parseV2RecoveryDescriptor({ ...parsed, version: 2, childIndex: 0 }, descriptorPath, 1);
 	const descriptor = Object.assign({}, parsed, {
 		version: 1 as const,
 		sourceRunId,
