@@ -6,17 +6,13 @@ import { abortable, throwIfAborted } from "./abort.ts";
 import {
 	clearFailure,
 	getFailureAgeSeconds,
+	getFailureMessage,
 	lazyConnect,
-	markKeepAliveAfterConnect,
-	notifyToolMetadataUpdated,
 	recordFailure,
-	updateMetadataCache,
-	updateServerMetadata,
 	updateStatusBar,
 } from "./init.ts";
 import { guardedMcpDetails, guardMcpOutput, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
 import {
-	type AutoAuthResult,
 	attemptAutoAuth,
 	disabledResult,
 	getAuthRequiredMessage,
@@ -37,7 +33,6 @@ import {
 	transformMcpContent,
 } from "./tool-registrar.ts";
 import { getServerPrefix, isServerDisabled, type ToolMetadata, type ToolPrefix } from "./types.ts";
-import { formatMcpStatus } from "./utils.ts";
 
 type ProxyToolResult = AgentToolResult<JsonInputObject>;
 type GuardOptions = ReturnType<typeof resolveMcpOutputGuardOptions>;
@@ -63,6 +58,8 @@ class McpCall {
 	private callIdentity: JsonInputObject | undefined;
 	private prefixMatchedServer: string | undefined;
 	private autoAuthAttempted = false;
+	private autoAuthFailure: string | undefined;
+	private autoAuthSucceeded = false;
 
 	constructor(
 		state: McpExtensionState,
@@ -160,35 +157,16 @@ class McpCall {
 	private async resolveExplicitTarget(): Promise<ProxyToolResult | undefined> {
 		const serverName = this.serverName;
 		if (!serverName || this.toolMeta) return;
-		const connected = await lazyConnect(this.state, serverName, this.ownedSignal);
+		const connected = await this.connect(serverName);
 		if (connected) {
 			this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
+			if (!this.toolMeta && this.autoAuthSucceeded) return this.afterReconnectResult(serverName);
 			return;
 		}
-
-		if (this.state.manager.getConnection(serverName)?.status === "needs-auth") {
-			const autoAuth = await this.tryAutoAuth(serverName);
-			if (autoAuth?.status === "failed") {
-				return authRequiredResult(autoAuth.message, { server: serverName, requestedTool: this.toolName });
-			}
-			if (autoAuth?.status === "success") {
-				await this.state.manager.close(serverName);
-				clearFailure(this.state, serverName);
-				if (await lazyConnect(this.state, serverName, this.ownedSignal)) {
-					this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
-					if (!this.toolMeta) return this.afterReconnectResult(serverName);
-				}
-			}
-			if (!this.toolMeta && this.state.manager.getConnection(serverName)?.status === "needs-auth") {
-				return authRequiredResult(getAuthRequiredMessage(this.state, serverName), {
-					server: serverName,
-					requestedTool: this.toolName,
-				});
-			}
+		if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
+			return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
 		}
-		return this.toolMeta
-			? undefined
-			: this.backoffResult(serverName, { server: serverName, requestedTool: this.toolName });
+		return this.backoffResult(serverName, { server: serverName, requestedTool: this.toolName });
 	}
 
 	private async resolvePrefixedTarget(): Promise<ProxyToolResult | undefined> {
@@ -203,17 +181,9 @@ class McpCall {
 			const connection = this.state.manager.getConnection(serverName);
 			if (getFailureAgeSeconds(this.state, serverName) !== null && connection?.status !== "needs-auth") continue;
 
-			let connected = await lazyConnect(this.state, serverName, this.ownedSignal);
-			if (!connected && this.state.manager.getConnection(serverName)?.status === "needs-auth") {
-				const autoAuth = await this.tryAutoAuth(serverName);
-				if (autoAuth?.status === "failed") {
-					return authRequiredResult(autoAuth.message, { server: serverName, requestedTool: this.toolName });
-				}
-				if (autoAuth?.status === "success") {
-					await this.state.manager.close(serverName);
-					clearFailure(this.state, serverName);
-					connected = await lazyConnect(this.state, serverName, this.ownedSignal);
-				}
+			const connected = await this.connect(serverName);
+			if (this.autoAuthFailure) {
+				return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
 			}
 			if (!connected) continue;
 			this.prefixMatchedServer ??= serverName;
@@ -253,10 +223,26 @@ class McpCall {
 		});
 	}
 
-	private tryAutoAuth(serverName: string): Promise<AutoAuthResult | undefined> {
-		if (this.autoAuthAttempted) return Promise.resolve(undefined);
+	private async autoAuthenticate(serverName: string): Promise<boolean> {
+		if (this.autoAuthAttempted) return false;
 		this.autoAuthAttempted = true;
-		return attemptAutoAuth(this.state, serverName, this.ownedSignal);
+		const result = await attemptAutoAuth(this.state, serverName, this.ownedSignal);
+		this.autoAuthFailure = result.status === "failed" ? result.message : undefined;
+		this.autoAuthSucceeded = result.status === "success";
+		return this.autoAuthSucceeded;
+	}
+
+	private async connect(serverName: string, reason?: string): Promise<boolean> {
+		if (await lazyConnect(this.state, serverName, this.ownedSignal, reason)) return true;
+		if (this.state.manager.getConnection(serverName)?.status !== "needs-auth") return false;
+		if (!(await this.autoAuthenticate(serverName))) return false;
+		await this.state.manager.close(serverName);
+		clearFailure(this.state, serverName);
+		return lazyConnect(this.state, serverName, this.ownedSignal, reason);
+	}
+
+	private authRequired(serverName: string, details: JsonInputObject): ProxyToolResult {
+		return authRequiredResult(this.autoAuthFailure ?? getAuthRequiredMessage(this.state, serverName), details);
 	}
 
 	private backoffResult(serverName: string, details: JsonInputObject): ProxyToolResult | undefined {
@@ -284,21 +270,9 @@ class McpCall {
 
 	private async ensureConnection(): Promise<ProxyToolResult | undefined> {
 		const { callIdentity, serverName } = this.target();
-		let connection = this.state.manager.getConnection(serverName);
-		if (connection?.status === "needs-auth") {
-			const autoAuth = await this.tryAutoAuth(serverName);
-			if (autoAuth?.status === "failed") return authRequiredResult(autoAuth.message, callIdentity);
-			if (autoAuth?.status === "success") {
-				await this.state.manager.close(serverName);
-				clearFailure(this.state, serverName);
-				connection = this.state.manager.getConnection(serverName);
-			}
-			if (connection?.status === "needs-auth") {
-				return authRequiredResult(getAuthRequiredMessage(this.state, serverName), callIdentity);
-			}
-		}
+		const connection = this.state.manager.getConnection(serverName);
 		if (connection?.status === "connected") return;
-		const backoff = this.backoffResult(serverName, callIdentity);
+		const backoff = connection?.status === "needs-auth" ? undefined : this.backoffResult(serverName, callIdentity);
 		if (backoff) return backoff;
 
 		const definition = this.state.config.mcpServers[serverName];
@@ -310,27 +284,17 @@ class McpCall {
 		}
 
 		try {
-			if (this.state.ui) {
-				this.state.ui.setStatus("mcp", formatMcpStatus(this.state.config, `connecting to ${serverName}...`));
-			}
-			connection = await this.state.manager.connect(serverName, definition, this.ownedSignal);
-			if (connection.status === "needs-auth") {
-				const autoAuth = await this.tryAutoAuth(serverName);
-				if (autoAuth?.status === "failed") return authRequiredResult(autoAuth.message, callIdentity);
-				if (autoAuth?.status === "success") {
-					await this.state.manager.close(serverName);
-					connection = await this.state.manager.connect(serverName, definition, this.ownedSignal);
+			if (!(await this.connect(serverName, "proxy-call-reconnect"))) {
+				if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
+					return this.authRequired(serverName, callIdentity);
 				}
-				if (connection.status === "needs-auth") {
-					return authRequiredResult(getAuthRequiredMessage(this.state, serverName), callIdentity);
-				}
+				const message = getFailureMessage(this.state, serverName) ?? `Server "${serverName}" did not connect.`;
+				return textResult(`Failed to connect to "${serverName}": ${message}`, {
+					error: "connect_failed",
+					...callIdentity,
+					message,
+				});
 			}
-			clearFailure(this.state, serverName);
-			updateServerMetadata(this.state, serverName);
-			updateMetadataCache(this.state, serverName);
-			notifyToolMetadataUpdated(this.state, serverName, "proxy-call-reconnect");
-			markKeepAliveAfterConnect(this.state, serverName);
-			updateStatusBar(this.state);
 			this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
 			if (!this.toolMeta) {
 				const available = getToolNames(this.state, serverName);
@@ -374,11 +338,10 @@ class McpCall {
 		const { serverName } = this.target();
 		const current = this.state.manager.getConnection(serverName);
 		if (current?.status === "connected") return current;
-		const autoAuth = await this.tryAutoAuth(serverName);
-		if (autoAuth?.status === "failed") {
-			throw new SessionRecoveryAuthRequiredError(serverName, autoAuth.message);
+		if (!(await this.autoAuthenticate(serverName))) {
+			if (this.autoAuthFailure) throw new SessionRecoveryAuthRequiredError(serverName, this.autoAuthFailure);
+			return this.state.manager.getConnection(serverName);
 		}
-		if (autoAuth?.status !== "success") return this.state.manager.getConnection(serverName);
 
 		const definition = this.state.config.mcpServers[serverName];
 		if (!definition) return;

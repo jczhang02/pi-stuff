@@ -494,6 +494,7 @@ export async function lazyConnect(
 	state: McpExtensionState,
 	serverName: string,
 	signal?: AbortSignal,
+	reason = "lazy-connect",
 ): Promise<boolean> {
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
 	throwIfAborted(ownedSignal);
@@ -525,7 +526,7 @@ export async function lazyConnect(
 		clearFailure(state, serverName);
 		updateServerMetadata(state, serverName);
 		updateMetadataCache(state, serverName);
-		notifyToolMetadataUpdated(state, serverName, "lazy-connect");
+		notifyToolMetadataUpdated(state, serverName, reason);
 		markKeepAliveAfterConnect(state, serverName);
 		updateStatusBar(state);
 		return true;

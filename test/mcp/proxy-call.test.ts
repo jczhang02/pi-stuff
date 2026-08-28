@@ -7,7 +7,10 @@ import type { ToolMetadata } from "../../packages/pi-stuff/src/mcp/runtime/types
 type ToolCallRequest = Parameters<ServerConnection["client"]["callTool"]>[0];
 type ToolCallResult = { content: Array<{ type: "text"; text: string }> };
 
-function harness(callTool: (request: ToolCallRequest) => Promise<ToolCallResult>) {
+function harness(
+	callTool: (request: ToolCallRequest) => Promise<ToolCallResult>,
+	status: ServerConnection["status"] = "connected",
+) {
 	const events: string[] = [];
 	const activity = { events, inFlight: 0 };
 	const tool: ToolMetadata = {
@@ -18,7 +21,7 @@ function harness(callTool: (request: ToolCallRequest) => Promise<ToolCallResult>
 	// SAFETY: this deterministic connection supplies every ServerConnection member exercised by executeCall.
 	const connection: ServerConnection = {
 		client: { callTool },
-		status: "connected",
+		status,
 		transport: {},
 	} as never;
 	// SAFETY: this test manager implements every McpServerManager operation exercised by the connected call path.
@@ -73,4 +76,13 @@ test("MCP proxy call releases activity ownership after a rejected tool call", as
 
 	expect(result.details).toMatchObject({ mode: "call", error: "call_failed", message: "boom" });
 	expect(fixture.activity).toEqual({ events: ["touch", "increment", "decrement", "touch"], inFlight: 0 });
+});
+
+test("MCP proxy call reports authentication required before invoking a cached tool", async () => {
+	const fixture = harness(async () => ({ content: [] }), "needs-auth");
+
+	const result = await executeCall(fixture.state, fixture.tool.name);
+
+	expect(result.details).toMatchObject({ mode: "call", error: "auth_required", server: "demo", tool: "echo" });
+	expect(fixture.activity).toEqual({ events: [], inFlight: 0 });
 });

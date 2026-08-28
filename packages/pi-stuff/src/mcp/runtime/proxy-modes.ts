@@ -8,6 +8,7 @@ import {
 	notifyToolMetadataUpdated,
 	recordFailure,
 	updateMetadataCache,
+	updateServerMetadata,
 	updateStatusBar,
 } from "./init.ts";
 import {
@@ -21,7 +22,7 @@ import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { paginate, rankSuggestions, rankToolMatches } from "./search-ranking.ts";
 import type { McpExtensionState } from "./state.ts";
 import { isToolCallApprovalRequired } from "./tool-approval.ts";
-import { buildToolMetadata, findToolByName, formatSchema } from "./tool-metadata.ts";
+import { findToolByName, formatSchema } from "./tool-metadata.ts";
 import { renderTsType } from "./ts-shape.ts";
 import type { ToolMetadata } from "./types.ts";
 import { isServerDisabled } from "./types.ts";
@@ -570,18 +571,11 @@ export async function executeConnect(
 				});
 			}
 		}
-		const prefix = state.config.settings?.toolPrefix ?? "server";
-		const { metadata } = buildToolMetadata(connection.tools, connection.resources, definition, serverName, prefix);
-		state.toolMetadata.set(serverName, metadata);
-		if (connection.instructions) {
-			state.serverInstructions.set(serverName, connection.instructions);
-		} else {
-			state.serverInstructions.delete(serverName);
-		}
+		clearFailure(state, serverName);
+		updateServerMetadata(state, serverName);
 		updateMetadataCache(state, serverName);
 		notifyToolMetadataUpdated(state, serverName, "proxy-connect");
 		markKeepAliveAfterConnect(state, serverName);
-		clearFailure(state, serverName);
 		updateStatusBar(state);
 		return executeList(state, serverName);
 	} catch (error) {
