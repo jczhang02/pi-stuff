@@ -500,68 +500,80 @@ test(
 		35_000,
 	);
 
+function crashRecoveryFixture() {
+	const root = fixtureRoot("pi-stuff-process-recovery-");
+	const sourceRunId = `crash-${process.pid}-${Date.now()}`;
+	const resumedRunId = `resume-${process.pid}-${Date.now()}`;
+	cleanupRun(sourceRunId);
+	cleanupRun(resumedRunId);
+	return {
+		root,
+		sessionFile: seedSession(root),
+		sessionId: `recovery-session-${process.pid}-${Date.now()}`,
+		sourceRunId,
+		resumedRunId,
+		governorRoot: path.join(root, "governor"),
+		config: agent(root),
+		events: new EventLog(),
+	};
+}
+
+async function launchCrashRecoveryWriter(fixture: ReturnType<typeof crashRecoveryFixture>) {
+	const { config, events, governorRoot, root, sessionFile, sessionId, sourceRunId } = fixture;
+	const firstCoordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
+	firstCoordinator.bindSession({ sessionId, ownerAgentPath: [] });
+	const prepared = await firstCoordinator.prepare({
+		launchRunId: sourceRunId,
+		params: { agent: config.name, task: "PROCESS_CRASH_HOLD" },
+	});
+	if (!prepared.ok || !prepared.invocation) throw new Error("Initial Agent reservation failed.");
+	const launched = await executeAsyncSingle(sourceRunId, {
+		agent: config.name,
+		task: "PROCESS_CRASH_HOLD",
+		agentConfig: config,
+		sessionFile,
+		ctx: { pi: extensionApi(events), cwd: root, currentSessionId: sessionId, parentSessionId: sessionId },
+		artifactConfig: artifactConfig(),
+		maxSubagentDepth: 3,
+	});
+	expect(launched.isError).not.toBeTrue();
+	const asyncDir = launched.details.asyncDir;
+	if (!asyncDir) throw new Error("Crash launch did not return asyncDir.");
+	const pid = runnerPid(events, sourceRunId);
+	await firstCoordinator.observeAsyncStarted(events.started(sourceRunId));
+	await firstCoordinator.settle(prepared.invocation, launched);
+	await waitFor("crash writer to run", () => {
+		const statusPath = path.join(asyncDir, "status.json");
+		if (!fs.existsSync(statusPath)) return undefined;
+		const status = readJson(statusPath);
+		return status.steps?.[0]?.status === "running" ? status : undefined;
+	});
+	expect(await waitFor("runner IPC status projection", () => events.status(sourceRunId))).toMatchObject({
+		id: sourceRunId,
+		asyncDir,
+	});
+	expect(await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot()).toMatchObject({
+		total: 1,
+		running: 1,
+	});
+	const writerPid = await waitFor("writer process identity", () => {
+		const registryPath = writerProcessRegistryPath(asyncDir);
+		if (!fs.existsSync(registryPath)) return undefined;
+		const writer = readJson(registryPath).writers?.["0"];
+		return writer?.state === "running" && writer.pid !== undefined ? writer.pid : undefined;
+	});
+	expect(processAlive(writerPid)).toBeTrue();
+	return { asyncDir, firstCoordinator, pid, writerPid };
+}
+
 // biome-ignore format: Keep crash-recovery body and its independent timeout visibly grouped.
 test(
 		"kills an orphan writer after a runner-only crash, then resumes the same logical Agent once",
 		async () => {
-			const root = fixtureRoot("pi-stuff-process-recovery-");
-			const sessionFile = seedSession(root);
-			const sessionId = `recovery-session-${process.pid}-${Date.now()}`;
-			const sourceRunId = `crash-${process.pid}-${Date.now()}`;
-			const resumedRunId = `resume-${process.pid}-${Date.now()}`;
-			const governorRoot = path.join(root, "governor");
-			const config = agent(root);
-			const events = new EventLog();
-			cleanupRun(sourceRunId);
-			cleanupRun(resumedRunId);
+			const fixture = crashRecoveryFixture();
+			const { config, events, governorRoot, resumedRunId, root, sessionFile, sessionId, sourceRunId } = fixture;
 			try {
-				const firstCoordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
-				firstCoordinator.bindSession({ sessionId, ownerAgentPath: [] });
-				const prepared = await firstCoordinator.prepare({
-					launchRunId: sourceRunId,
-					params: { agent: config.name, task: "PROCESS_CRASH_HOLD" },
-				});
-				if (!prepared.ok || !prepared.invocation) throw new Error("Initial Agent reservation failed.");
-				const launched = await executeAsyncSingle(sourceRunId, {
-					agent: config.name,
-					task: "PROCESS_CRASH_HOLD",
-					agentConfig: config,
-					sessionFile,
-					ctx: {
-						pi: extensionApi(events),
-						cwd: root,
-						currentSessionId: sessionId,
-						parentSessionId: sessionId,
-					},
-					artifactConfig: artifactConfig(),
-					maxSubagentDepth: 3,
-				});
-				expect(launched.isError).not.toBeTrue();
-				const asyncDir = launched.details.asyncDir;
-				if (!asyncDir) throw new Error("Crash launch did not return asyncDir.");
-				const pid = runnerPid(events, sourceRunId);
-				await firstCoordinator.observeAsyncStarted(events.started(sourceRunId));
-				await firstCoordinator.settle(prepared.invocation, launched);
-				await waitFor("crash writer to run", () => {
-					const statusPath = path.join(asyncDir, "status.json");
-					if (!fs.existsSync(statusPath)) return undefined;
-					const status = readJson(statusPath);
-					const steps = status.steps;
-					return steps?.[0]?.status === "running" ? status : undefined;
-				});
-				const liveProjection = await waitFor("runner IPC status projection", () => events.status(sourceRunId));
-				expect(liveProjection).toMatchObject({ id: sourceRunId, asyncDir });
-
-				const beforeCrash = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
-				expect(beforeCrash).toMatchObject({ total: 1, running: 1 });
-				const writerPid = await waitFor("writer process identity", () => {
-					const registryPath = writerProcessRegistryPath(asyncDir);
-					if (!fs.existsSync(registryPath)) return undefined;
-					const registry = readJson(registryPath);
-					const writer = registry.writers?.["0"];
-					return writer?.state === "running" && writer.pid !== undefined ? writer.pid : undefined;
-				});
-				expect(processAlive(writerPid)).toBeTrue();
+				const { asyncDir, firstCoordinator, pid, writerPid } = await launchCrashRecoveryWriter(fixture);
 				process.kill(pid, "SIGKILL");
 				await waitFor("runner process death", () => (!processAlive(pid) ? true : undefined));
 

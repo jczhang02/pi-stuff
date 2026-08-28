@@ -162,7 +162,7 @@ test("isolates throwing event unsubscriptions and still disposes the governor", 
 	expect(disposed).toBe(1);
 });
 
-test("uses the same public contract and parent-session governor lifecycle as the root", async () => {
+function fanoutLifecycleHarness() {
 	setEnvironment(SUBAGENT_CHILD_ENV, "1");
 	setEnvironment(SUBAGENT_FANOUT_CHILD_ENV, "1");
 	setEnvironment(SUBAGENT_PARENT_SESSION_ENV, "parent-session-id");
@@ -238,7 +238,12 @@ test("uses the same public contract and parent-session governor lifecycle as the
 	};
 
 	registerFanoutChild(api.api, dependencies);
-	expect(projectorProvided).toBeTrue();
+	return { api, engineParams, governor, projectorProvided: () => projectorProvided };
+}
+
+test("uses the same public contract and parent-session governor lifecycle as the root", async () => {
+	const { api, engineParams, governor, projectorProvided } = fanoutLifecycleHarness();
+	expect(projectorProvided()).toBeTrue();
 	expect(api.tool?.label).toBe("Agent");
 	expect(api.tool?.description).not.toContain("Allowed management/control actions");
 	expect(api.tool?.description).toContain("Pi Stuff does not provide built-in Agent definitions");
