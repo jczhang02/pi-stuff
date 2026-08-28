@@ -1,5 +1,4 @@
 import { dlopen, FFIType, read } from "bun:ffi";
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
@@ -261,71 +260,6 @@ async function advanceLinuxNameSnapshot(
 	return { complete, scanned };
 }
 
-async function buildPortableNameSnapshot(
-	directory: string,
-	target: string,
-	accept: (name: string, type: number) => boolean,
-	limit: number,
-	now: number,
-): Promise<SnapshotAdvanceResult> {
-	if (await snapshotOverflowIsDeferred(target, now)) return { complete: false, scanned: 0 };
-	if (limit <= 0) return { complete: false, scanned: 0 };
-	const temporary = `${target}.${randomUUID()}.tmp`;
-	let handle: fs.promises.FileHandle | undefined;
-	let entries: fs.Dir | undefined;
-	let scanned = 0;
-	try {
-		handle = await fs.promises.open(temporary, "wx", 0o600);
-		let buffered = "";
-		let bufferedBytes = 0;
-		let snapshotBytes = 0;
-		const flush = async (): Promise<void> => {
-			if (!buffered) return;
-			await handle?.write(buffered);
-			buffered = "";
-			bufferedBytes = 0;
-		};
-		entries = await fs.promises.opendir(directory);
-		let complete = false;
-		while (scanned < limit) {
-			const entry = await entries.read();
-			if (!entry) {
-				complete = true;
-				break;
-			}
-			scanned += 1;
-			if (scanned % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
-			const type = entry.isDirectory() ? 4 : entry.isSymbolicLink() ? 10 : 0;
-			if (!accept(entry.name, type)) continue;
-			const line = `${JSON.stringify(entry.name)}\n`;
-			const lineBytes = Buffer.byteLength(line, "utf8");
-			snapshotBytes += lineBytes;
-			if (snapshotBytes > MAX_SNAPSHOT_BYTES) throw new Error("Artifact maintenance snapshot exceeded its bound.");
-			buffered += line;
-			bufferedBytes += lineBytes;
-			if (bufferedBytes >= SNAPSHOT_BUFFER_BYTES) await flush();
-		}
-		if (!complete && scanned >= limit && !(await entries.read())) complete = true;
-		if (!complete) {
-			// Node/Bun does not expose a durable directory cookie on every platform.
-			// Fail closed for an over-budget directory instead of hiding an unbounded
-			// readdir behind the maintenance API; the normal 50k limit handles the
-			// overwhelmingly common case in one pass.
-			await deferOversizedSnapshot(target, now);
-			return { complete: false, scanned };
-		}
-		await flush();
-		await handle.close();
-		handle = undefined;
-		await fs.promises.rename(temporary, target);
-		return { complete: true, scanned };
-	} finally {
-		await entries?.close().catch(() => undefined);
-		await handle?.close().catch(() => undefined);
-		await fs.promises.unlink(temporary).catch(() => undefined);
-	}
-}
-
 export async function advanceNameSnapshot(
 	directory: string,
 	target: string,
@@ -334,13 +268,7 @@ export async function advanceNameSnapshot(
 	now: number,
 ): Promise<SnapshotAdvanceResult> {
 	if (process.platform === "linux" && (process.arch === "x64" || process.arch === "arm64")) {
-		try {
-			return await advanceLinuxNameSnapshot(directory, target, accept, limit, now);
-		} catch {
-			// Minimal Linux images can lack the expected libc soname. The portable
-			// path remains bounded and fail-closed rather than disabling the Agent.
-			await removeNameSnapshotControl(target);
-		}
+		return advanceLinuxNameSnapshot(directory, target, accept, limit, now);
 	}
 	try {
 		const stat = await fs.promises.lstat(target);
@@ -350,7 +278,7 @@ export async function advanceNameSnapshot(
 	} catch (error) {
 		if (!hasErrorCode(error, "ENOENT")) throw error;
 	}
-	return buildPortableNameSnapshot(directory, target, accept, limit, now);
+	throw new Error("Artifact maintenance snapshots require the certified Linux Host profile.");
 }
 
 export interface NameSnapshotPage {
