@@ -2,11 +2,11 @@
 
 import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { JsonInputValue } from "../../../shared/json-value.js";
 import type { AsyncJobState } from "../runs/background/async-contract.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { NestedRouteInfo, NestedRunSummary } from "../runs/shared/nested-contract.ts";
 import type { SpawnBudgetGrant } from "../runs/shared/run-result.ts";
-import type { AcceptanceLedger, ReviewProjection } from "../shared/acceptance.ts";
 import type { SessionCompatibilityScope } from "../shared/session-identity.ts";
 import type {
 	ActivityState,
@@ -54,11 +54,11 @@ export interface ForegroundResumeChild {
 	transcriptPath?: string;
 	transcriptError?: string;
 	detachedReason?: string;
-	acceptance?: AcceptanceLedger;
+	acceptance?: JsonInputValue;
 	agentContract?: AgentContract;
 	launchContractDigest?: string;
 	execution?: ExecutionProjection;
-	review?: ReviewProjection;
+	review?: JsonInputValue;
 	effects?: EffectsProjection;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;

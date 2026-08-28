@@ -1,7 +1,7 @@
 /** Durable background launch and status contracts. */
 
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
-import type { AcceptanceInput, AcceptanceLedger, ReviewProjection } from "../../shared/acceptance.ts";
+import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
 	ActivityState,
 	AgentContextUsage,
@@ -53,7 +53,7 @@ export interface SteeringRecoveryDescriptor {
 	outputPath?: string;
 	outputMode: "inline" | "file-only";
 	structuredOutputSchema?: JsonSchemaObject;
-	acceptance?: AcceptanceInput;
+	acceptance?: JsonInputValue;
 	controlConfig?: ResolvedControlConfig;
 	absoluteDeadlineAt?: number;
 	initialTurnBudget?: ResolvedTurnBudget;
@@ -200,11 +200,11 @@ export interface AsyncStatus {
 				structuredOutput?: unknown;
 				structuredOutputPath?: string;
 				structuredOutputSchemaPath?: string;
-				acceptance?: AcceptanceLedger;
+				acceptance?: JsonInputValue;
 				agentContract?: AgentContract;
 				launchContractDigest?: string;
 				execution?: ExecutionProjection;
-				review?: ReviewProjection;
+				review?: JsonInputValue;
 				effects?: EffectsProjection;
 				processTerminal?: ProcessTerminalV1;
 				capabilityCeiling?: ResolvedSubagentCapabilityCeiling;

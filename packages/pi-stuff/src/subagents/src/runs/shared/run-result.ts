@@ -1,7 +1,7 @@
 /** Foreground and delivered Agent result contracts. */
 
 import type { Message } from "@earendil-works/pi-ai";
-import type { AcceptanceLedger, ReviewProjection } from "../../shared/acceptance.ts";
+import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
 	ActivityState,
 	AgentContextUsage,
@@ -169,11 +169,11 @@ export interface SingleResult {
 	structuredOutputFailed?: boolean;
 	structuredOutputPath?: string;
 	structuredOutputSchemaPath?: string;
-	acceptance?: AcceptanceLedger;
+	acceptance?: JsonInputValue;
 	agentContract?: AgentContract;
 	launchContractDigest?: string;
 	execution?: ExecutionProjection;
-	review?: ReviewProjection;
+	review?: JsonInputValue;
 	effects?: EffectsProjection;
 	transcriptPath?: string;
 	transcriptError?: string;

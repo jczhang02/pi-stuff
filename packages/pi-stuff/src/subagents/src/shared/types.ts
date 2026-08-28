@@ -14,7 +14,6 @@ export type * from "../runs/background/process-terminal.ts";
 export type * from "../runs/shared/nested-contract.ts";
 export type * from "../runs/shared/run-result.ts";
 export type * from "../runtime/runtime-state.ts";
-export type * from "./acceptance.ts";
 
 // ============================================================================
 // Basic Types
