@@ -497,11 +497,7 @@ const PROVIDER = "pi-stuff-lifecycle-benchmark";
 const MODEL = "fixture-model";
 const READY = ${JSON.stringify(READY_MARKER)};
 const ZERO_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
+  input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
@@ -517,24 +513,16 @@ function providerPromptMarker(context) {
 
 function message(content, stopReason) {
   return {
-    role: "assistant",
-    content,
-    api: "openai-completions",
-    provider: PROVIDER,
-    model: MODEL,
-    usage: ZERO_USAGE,
-    stopReason,
-    timestamp: Date.now(),
+    role: "assistant", content, api: "openai-completions", provider: PROVIDER,
+    model: MODEL, usage: ZERO_USAGE, stopReason, timestamp: Date.now(),
   };
 }
 
 function textStream(text) {
   const stream = createAssistantMessageEventStream();
   const pending = message([], "pending");
-  stream.push({ type: "start", partial: pending });
-  stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-  stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-  stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
+  stream.push({ type: "start", partial: pending }); stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+  stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending }); stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
   stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
   return stream;
 }
@@ -543,10 +531,8 @@ function toolStream(name, id, arguments_) {
   const stream = createAssistantMessageEventStream();
   const pending = message([], "pending");
   const toolCall = { arguments: arguments_, id, name, type: "toolCall" };
-  stream.push({ type: "start", partial: pending });
-  pending.content.push(toolCall);
-  stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
-  stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+  stream.push({ type: "start", partial: pending }); pending.content.push(toolCall);
+  stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending }); stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
   stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
   return stream;
 }
@@ -561,30 +547,19 @@ function responseStream(context) {
     const pidPath = process.env.PS5BW_AGENT_PI_PID;
     if (pidPath) writeFileSync(pidPath, String(process.pid));
     if (!hasToolResult(context, "ps5bw-agent-child-sleep")) {
-      return toolStream("bash", "ps5bw-agent-child-sleep", {
-        command: "echo $$ > $PS5BW_AGENT_SHELL_PID; sleep 30 & child=$!; echo $child > $PS5BW_AGENT_DESCENDANT_PID; wait $child",
-        description: "Lifecycle Agent child",
-      });
+      return toolStream("bash", "ps5bw-agent-child-sleep", { command: "echo $$ > $PS5BW_AGENT_SHELL_PID; sleep 30 & child=$!; echo $child > $PS5BW_AGENT_DESCENDANT_PID; wait $child", description: "Lifecycle Agent child" });
     }
     return textStream("PS5BW_AGENT_CHILD_DONE");
   }
   if (transcript.includes("PS5BW_AGENT_PROMPT")) {
     if (!hasToolResult(context, "ps5bw-agent-launch")) {
-      return toolStream("subagent", "ps5bw-agent-launch", {
-        agent: "general-purpose",
-        foreground: true,
-        task: "PS5BW_AGENT_CHILD_PROMPT",
-      });
+      return toolStream("subagent", "ps5bw-agent-launch", { agent: "general-purpose", foreground: true, task: "PS5BW_AGENT_CHILD_PROMPT" });
     }
     return textStream("PS5BW_AGENT_READY");
   }
   if (transcript.includes("PS5BW_BACKGROUND_PROMPT")) {
     if (!hasToolResult(context, "ps5bw-background-launch")) {
-      return toolStream("bash", "ps5bw-background-launch", {
-        command: "echo $$ > $PS5BW_BACKGROUND_SHELL_PID; sleep 30",
-        description: "Lifecycle background shell",
-        run_in_background: true,
-      });
+      return toolStream("bash", "ps5bw-background-launch", { command: "echo $$ > $PS5BW_BACKGROUND_SHELL_PID; sleep 30", description: "Lifecycle background shell", run_in_background: true });
     }
     return textStream("PS5BW_BACKGROUND_READY");
   }
@@ -595,40 +570,26 @@ function responseStream(context) {
 
 export default function lifecycleBenchmarkFixture(pi) {
   pi.registerProvider(PROVIDER, {
-    name: "Pi Stuff lifecycle benchmark fixture",
-    baseUrl: "https://fixture.invalid",
-    apiKey: "fixture",
-    api: "openai-completions",
+    name: "Pi Stuff lifecycle benchmark fixture", baseUrl: "https://fixture.invalid",
+    apiKey: "fixture", api: "openai-completions",
     models: [{
-      id: MODEL,
-      name: "Pi Stuff lifecycle benchmark fixture",
-      reasoning: false,
-      input: ["text"],
+      id: MODEL, name: "Pi Stuff lifecycle benchmark fixture", reasoning: false, input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 200000,
-      maxTokens: 4096,
+      contextWindow: 200000, maxTokens: 4096,
     }],
 	streamSimple: (_model, context) => {
 		process.stderr.write("PS5BW_PROVIDER_START_" + providerPromptMarker(context) + "\\n");
 		return responseStream(context);
 	},
   });
-  pi.registerCommand("ps5bw-ready", {
-    handler: async (_args, ctx) => {
-      ctx.ui.setEditorText(READY);
-    },
-  });
+	pi.registerCommand("ps5bw-ready", { handler: async (_args, ctx) => ctx.ui.setEditorText(READY) });
 	pi.on("input", (event, ctx) => {
 	const requiredSuiteTools = ["TaskList", "background", "goal_complete", "mcp", "subagent"];
 	const registered = new Set(pi.getAllTools().map((tool) => tool.name));
 	const missing = process.env.PS5BW_EXPECT_SUITE === "1"
 	  ? requiredSuiteTools.filter((name) => !registered.has(name))
 	  : [];
-	if (missing.length > 0) {
-	  process.stderr.write("PS5BW_SURFACE_MISSING " + missing.join(",") + "\\n");
-	} else {
-	  process.stderr.write((process.env.PS5BW_SURFACE_MARKER ?? "PS5BW_SURFACE_READY") + "\\n");
-	}
+	process.stderr.write(missing.length > 0 ? "PS5BW_SURFACE_MISSING " + missing.join(",") + "\\n" : (process.env.PS5BW_SURFACE_MARKER ?? "PS5BW_SURFACE_READY") + "\\n");
     // The Suite owns the Footer and Pi hides the Editor while a turn is active,
     // so neither surface is a reliable observation point. This benchmark-only
     // PTY marker proves the Host reached the input handler without network I/O.
@@ -700,41 +661,33 @@ export default function lifecycleTraceFixture(pi) {
 `;
 }
 
-export function lifecycleExpectProgram(action: Action, trace: boolean): string {
-	let actionProgram: string;
+function lifecycleActionProgram(action: Action): string {
 	switch (action) {
 		case "prompt":
-			actionProgram = `
+			return `
 set response_started [clock microseconds]
 send -- "PS5BW_FIRST_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"
 set first_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"]
-set acknowledgement_finished [lindex $first_ready 0]
-set provider_started [lindex $first_ready 1]
-puts "PS5BW_METRIC acknowledgement_us [expr {$acknowledgement_finished - $response_started}]"
-puts "PS5BW_METRIC provider_start_us [expr {$provider_started - $response_started}]"
+report_metric acknowledgement $response_started [lindex $first_ready 0]
+report_metric provider_start $response_started [lindex $first_ready 1]
 must_expect "PS5BW_FIRST_PROMPT_DONE"
-set response_finished [clock microseconds]
-puts "PS5BW_METRIC response_us [expr {$response_finished - $response_started}]"
+report_metric response $response_started [clock microseconds]
 must_editor_ready "PS5BW_STEADY_EDITOR_READY"
 set steady_response_started [clock microseconds]
 send -- "PS5BW_SECOND_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
 set second_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"]
-set steady_acknowledgement_finished [lindex $second_ready 0]
-set steady_provider_started [lindex $second_ready 1]
-puts "PS5BW_METRIC steady_acknowledgement_us [expr {$steady_acknowledgement_finished - $steady_response_started}]"
-puts "PS5BW_METRIC steady_provider_start_us [expr {$steady_provider_started - $steady_response_started}]"
+report_metric steady_acknowledgement $steady_response_started [lindex $second_ready 0]
+report_metric steady_provider_start $steady_response_started [lindex $second_ready 1]
 must_expect "PS5BW_SECOND_PROMPT_DONE"
-set steady_response_finished [clock microseconds]
-puts "PS5BW_METRIC steady_response_us [expr {$steady_response_finished - $steady_response_started}]"
+report_metric steady_response $steady_response_started [clock microseconds]
 must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
-			break;
 		case "background-exit":
-			actionProgram = `
+			return `
 send -- "PS5BW_BACKGROUND_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_BACKGROUND_PROMPT"
 must_expect "PS5BW_EDITOR_CLEARED_PS5BW_BACKGROUND_PROMPT"
@@ -744,9 +697,8 @@ must_editor_ready "PS5BW_BACKGROUND_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
-			break;
 		case "agent-exit":
-			actionProgram = `
+			return `
 send -- "PS5BW_AGENT_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_AGENT_PROMPT"
 must_expect "PS5BW_EDITOR_CLEARED_PS5BW_AGENT_PROMPT"
@@ -756,15 +708,13 @@ must_file $env(PS5BW_AGENT_DESCENDANT_PID)
 set interrupt_started [clock microseconds]
 send -- "\\003"
 must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"
-set interrupt_finished [clock microseconds]
-puts "PS5BW_METRIC interrupt_us [expr {$interrupt_finished - $interrupt_started}]"
+report_metric interrupt $interrupt_started [clock microseconds]
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
-			break;
 		case "reload":
 		case "reload-change":
-			actionProgram = `
+			return `
 ${
 	action === "reload-change"
 		? `set source_file [open $env(PS5BW_SOURCE_CHANGE_FILE) "a"]
@@ -776,8 +726,7 @@ close $source_file`
 set action_started [clock microseconds]
 send -- "/reload\\r"
 must_expect "Reloaded keybindings, extensions"
-set action_finished [clock microseconds]
-puts "PS5BW_METRIC reload_us [expr {$action_finished - $action_started}]"
+report_metric reload $action_started [clock microseconds]
 must_editor_ready "PS5BW_RELOAD_EDITOR_READY"
 send -- "PS5BW_RELOAD_PROMPT\\r"
 must_expect $env(PS5BW_SURFACE_MARKER)
@@ -788,23 +737,24 @@ must_editor_ready "PS5BW_RELOAD_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
-			break;
 		case "ctrl-c":
-			actionProgram = `
+			return `
 set shutdown_started [clock microseconds]
 send -- "\\003"
 after 100
 send -- "\\003"
 `;
-			break;
 		case "exit":
-			actionProgram = `
+			return `
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
-			break;
 	}
+	return fail(`unsupported lifecycle action: ${action}`);
+}
 
+export function lifecycleExpectProgram(action: Action, trace: boolean): string {
+	const actionProgram = lifecycleActionProgram(action);
 	return `
 set timeout ${String(DEFAULT_TIMEOUT_SECONDS)}
 log_user ${trace ? "1" : "0"}
@@ -816,6 +766,10 @@ proc must_expect {pattern} {
         timeout { puts stderr "Timed out waiting for: $pattern"; exit 2 }
         eof { puts stderr "Reached EOF while waiting for: $pattern"; exit 3 }
     }
+}
+
+proc report_metric {name started finished} {
+    puts "PS5BW_METRIC \${name}_us [expr {$finished - $started}]"
 }
 
 proc must_expect_prompt_ready {editor_pattern provider_pattern} {
@@ -893,15 +847,13 @@ set startup_started [clock microseconds]
 spawn -noecho script -qefc $env(PS5BW_RUNNER) /dev/null
 must_expect "fixture-model"
 wait_for_initial_editor
-set startup_finished [clock microseconds]
-puts "PS5BW_METRIC startup_us [expr {$startup_finished - $startup_started}]"
+report_metric startup $startup_started [clock microseconds]
 ${actionProgram}
 expect {
     eof {}
     timeout { puts stderr "Timed out waiting for Pi to exit"; exit 4 }
 }
-set shutdown_finished [clock microseconds]
-puts "PS5BW_METRIC shutdown_us [expr {$shutdown_finished - $shutdown_started}]"
+report_metric shutdown $shutdown_started [clock microseconds]
 `;
 }
 
@@ -1133,6 +1085,19 @@ Complete the deterministic lifecycle benchmark task.
 `;
 }
 
+function sampleContextConfig(options: BenchmarkOptions, scenario: Scenario): string {
+	if (scenario === "degraded") return "{ invalid lifecycle fixture\n";
+	return `${JSON.stringify({
+		dreamer: { disable: true },
+		embedding: { provider: "off" },
+		enabled: options.contextEnabled,
+		fail_closed_blocking: false,
+		sidekick: { disable: true },
+		toast_duration_ms: 0,
+		todowrite: { enabled: false, overlay: false },
+	})}\n`;
+}
+
 function processIsAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
@@ -1150,6 +1115,129 @@ async function assertProcessSettles(path: string, timeoutMs: number): Promise<vo
 	while (processIsAlive(pid) && performance.now() < deadline) await Bun.sleep(25);
 	if (processIsAlive(pid))
 		fail(`lifecycle resource ${path} process ${String(pid)} remained alive after ${String(timeoutMs)}ms`);
+}
+
+async function executeSample(
+	options: BenchmarkOptions,
+	benchmarkRoot: string,
+	runDirectory: string,
+	environment: BenchmarkEnvironment,
+	variant: Variant,
+	scenario: Scenario,
+	action: Action,
+	size: TerminalSize,
+	sessionDirectory: string,
+	sessionFile: string,
+): Promise<string> {
+	const result = Bun.spawnSync(["expect", "-c", lifecycleExpectProgram(action, options.trace)], {
+		cwd: join(benchmarkRoot, "project"),
+		env: environment,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
+	if (result.exitCode !== 0) {
+		const log = await readFile(join(runDirectory, "pty.log"), "utf8").catch(() => "<PTY log unavailable>");
+		fail(
+			`${variant}/${scenario}/${action}/${String(size.columns)}x${String(size.rows)} exited ${String(result.exitCode)}: ${output.trim()}\nPTY tail:\n${log.slice(-20_000)}`,
+		);
+	}
+	verifyTerminalState(await readFile(join(runDirectory, "tty-state.txt"), "utf8"), size);
+	if (action === "background-exit") await assertProcessSettles(join(runDirectory, "background-shell.pid"), 2_000);
+	if (action === "agent-exit") {
+		await Promise.all(
+			["agent-pi.pid", "agent-shell.pid", "agent-descendant.pid"].map((name) =>
+				assertProcessSettles(join(runDirectory, name), 8_000),
+			),
+		);
+	}
+	await verifySessionDurability(
+		sessionDirectory,
+		sessionFile,
+		action,
+		scenario,
+		options.longSessionTools,
+		options.longSessionToolBytes,
+	);
+	return output;
+}
+
+function assignMetric(sample: LifecycleSample, name: keyof LifecycleSample, value?: number, round = true): void {
+	if (value !== undefined) Object.assign(sample, { [name]: round ? rounded(value) : value });
+}
+
+async function collectSample(
+	options: BenchmarkOptions,
+	runDirectory: string,
+	output: string,
+	traceSuite: boolean,
+	variant: Variant,
+	scenario: Scenario,
+	action: Action,
+	size: TerminalSize,
+	iteration: number,
+	warmup: boolean,
+): Promise<LifecycleSample> {
+	const metrics: ExpectMetrics = {
+		shutdownMs: parseMetric(output, "shutdown"),
+		startupMs: parseMetric(output, "startup"),
+	};
+	if (action === "agent-exit") metrics.interruptMs = parseMetric(output, "interrupt");
+	if (action === "reload" || action === "reload-change") metrics.reloadMs = parseMetric(output, "reload");
+	if (action === "prompt") {
+		metrics.acknowledgementMs = parseMetric(output, "acknowledgement");
+		metrics.providerStartMs = parseMetric(output, "provider_start");
+		metrics.responseMs = parseMetric(output, "response");
+		metrics.steadyAcknowledgementMs = parseMetric(output, "steady_acknowledgement");
+		metrics.steadyProviderStartMs = parseMetric(output, "steady_provider_start");
+		metrics.steadyResponseMs = parseMetric(output, "steady_response");
+	}
+	const trace = options.trace ? parseHostTimings(output) : [];
+	if (options.trace && trace.length === 0) {
+		fail(`PI_TIMING produced no parseable Host timings; PTY tail:\n${output.slice(-20_000)}`);
+	}
+	let suiteTrace: readonly LifecycleTraceEvent[] | undefined;
+	if (traceSuite) {
+		const document = JSON.parse(await readFile(join(runDirectory, "suite-trace.json"), "utf8"));
+		if (!Check(SUITE_TRACE_SCHEMA, document)) fail("Suite lifecycle trace was not persisted");
+		suiteTrace = document.events;
+	}
+	if (action === "reload" && variant === "suite" && suiteTrace) {
+		const labels = suiteTrace.map((event) => event.label);
+		if (!labels.includes("suite.loader.cache.hit")) fail("unchanged Suite reload did not use the runtime cache");
+		if (labels.filter((label) => label === "suite.module-imported").length !== 1) {
+			fail("unchanged Suite reload unexpectedly re-evaluated the generated runtime module");
+		}
+	}
+	if (action === "reload-change" && suiteTrace) {
+		const moduleImports = suiteTrace.filter((event) => event.label === "suite.module-imported");
+		if (moduleImports.length < 2) fail("Suite source change did not re-evaluate the generated runtime module");
+		if (!suiteTrace.some((event) => event.label === "suite.source-change.applied")) {
+			fail("Suite source change did not re-evaluate the changed nested module");
+		}
+	}
+	const sample: LifecycleSample = {
+		action,
+		columns: size.columns,
+		iteration,
+		rows: size.rows,
+		scenario,
+		shutdownMs: rounded(metrics.shutdownMs),
+		startupMs: rounded(metrics.startupMs),
+		variant,
+		warmup,
+	};
+	assignMetric(sample, "acknowledgementMs", metrics.acknowledgementMs);
+	assignMetric(sample, "interruptMs", metrics.interruptMs);
+	assignMetric(sample, "providerStartMs", metrics.providerStartMs);
+	assignMetric(sample, "reloadMs", metrics.reloadMs, false);
+	assignMetric(sample, "responseMs", metrics.responseMs);
+	assignMetric(sample, "steadyAcknowledgementMs", metrics.steadyAcknowledgementMs);
+	assignMetric(sample, "steadyProviderStartMs", metrics.steadyProviderStartMs);
+	assignMetric(sample, "steadyResponseMs", metrics.steadyResponseMs);
+	if (suiteTrace) Object.assign(sample, { suiteTrace });
+	if (trace.length > 0) Object.assign(sample, { trace });
+	return sample;
 }
 
 async function runSample(
@@ -1173,13 +1261,6 @@ async function runSample(
 	);
 	const configDirectory = join(runDirectory, "agent");
 	const sessionDirectory = join(runDirectory, "sessions");
-	const ttyState = join(runDirectory, "tty-state.txt");
-	const ptyLog = join(runDirectory, "pty.log");
-	const suiteTracePath = join(runDirectory, "suite-trace.json");
-	const backgroundShellPid = join(runDirectory, "background-shell.pid");
-	const agentPiPid = join(runDirectory, "agent-pi.pid");
-	const agentShellPid = join(runDirectory, "agent-shell.pid");
-	const agentDescendantPid = join(runDirectory, "agent-descendant.pid");
 	const agentDirectory = join(configDirectory, "agents");
 	const sourceChangePackage = join(runDirectory, "suite-package");
 	const sourceChangeFile = join(sourceChangePackage, "src", "todo", "index.ts");
@@ -1202,16 +1283,12 @@ async function runSample(
 	await Promise.all([
 		writeFile(
 			join(configDirectory, "settings.json"),
-			`${JSON.stringify(
-				{
-					defaultProjectTrust: "always",
-					packages: variant === "suite" ? [samplePackagePath, fixturePackage] : [fixturePackage],
-					quietStartup: true,
-					tuiMode: "fullscreen",
-				},
-				null,
-				2,
-			)}\n`,
+			`${JSON.stringify({
+				defaultProjectTrust: "always",
+				packages: variant === "suite" ? [samplePackagePath, fixturePackage] : [fixturePackage],
+				quietStartup: true,
+				tuiMode: "fullscreen",
+			})}\n`,
 			{ mode: 0o600 },
 		),
 		writeFile(
@@ -1221,27 +1298,15 @@ async function runSample(
 		),
 		...(variant === "suite"
 			? [
-					writeFile(
-						join(contextConfigDirectory, "magic-context.jsonc"),
-						scenario === "degraded"
-							? "{ invalid lifecycle fixture\n"
-							: `${JSON.stringify({
-									enabled: options.contextEnabled,
-									dreamer: { disable: true },
-									embedding: { provider: "off" },
-									fail_closed_blocking: false,
-									sidekick: { disable: true },
-									toast_duration_ms: 0,
-									todowrite: { enabled: false, overlay: false },
-								})}\n`,
-						{ mode: 0o600 },
-					),
+					writeFile(join(contextConfigDirectory, "magic-context.jsonc"), sampleContextConfig(options, scenario), {
+						mode: 0o600,
+					}),
 				]
 			: []),
 	]);
-	let sessionFile = "";
-	if (scenario === "resume-short" || scenario === "resume-long") {
-		sessionFile = join(sessionDirectory, `${scenario}.jsonl`);
+	const sessionFile =
+		scenario === "resume-short" || scenario === "resume-long" ? join(sessionDirectory, `${scenario}.jsonl`) : "";
+	if (sessionFile) {
 		await copyFile(scenario === "resume-long" ? seeded.long : seeded.short, sessionFile);
 	}
 
@@ -1253,12 +1318,12 @@ async function runSample(
 		PI_CODING_AGENT_DIR: configDirectory,
 		PS5BW_COLUMNS: String(size.columns),
 		PS5BW_EXPECT_SUITE: variant === "suite" ? "1" : "0",
-		PS5BW_BACKGROUND_SHELL_PID: backgroundShellPid,
-		PS5BW_AGENT_PI_PID: agentPiPid,
-		PS5BW_AGENT_SHELL_PID: agentShellPid,
-		PS5BW_AGENT_DESCENDANT_PID: agentDescendantPid,
+		PS5BW_BACKGROUND_SHELL_PID: join(runDirectory, "background-shell.pid"),
+		PS5BW_AGENT_PI_PID: join(runDirectory, "agent-pi.pid"),
+		PS5BW_AGENT_SHELL_PID: join(runDirectory, "agent-shell.pid"),
+		PS5BW_AGENT_DESCENDANT_PID: join(runDirectory, "agent-descendant.pid"),
 		PS5BW_PI_BIN: options.piBinary,
-		PS5BW_PTY_LOG: ptyLog,
+		PS5BW_PTY_LOG: join(runDirectory, "pty.log"),
 		PS5BW_ROWS: String(size.rows),
 		PS5BW_RUNNER: join(benchmarkRoot, "runner.sh"),
 		PS5BW_SCENARIO: scenario,
@@ -1266,8 +1331,8 @@ async function runSample(
 		PS5BW_SESSION_DIR: sessionDirectory,
 		PS5BW_SESSION_FILE: sessionFile,
 		PS5BW_SESSION_ID: `ps5bw-${phasePrefix}${variant}-${scenario}-${action}-${String(iteration)}`,
-		PS5BW_TTY_STATE: ttyState,
-		PS5BW_SUITE_TRACE: suiteTracePath,
+		PS5BW_TTY_STATE: join(runDirectory, "tty-state.txt"),
+		PS5BW_SUITE_TRACE: join(runDirectory, "suite-trace.json"),
 		PS5BW_SURFACE_MARKER: `PS5BW_SURFACE_READY_${variant.toUpperCase()}`,
 		PS5BW_TRACE_EXTENSION: traceSuite ? seeded.traceExtension : "",
 		TRANSFORMERS_OFFLINE: "1",
@@ -1275,107 +1340,19 @@ async function runSample(
 	const childBunOptions = process.env["PS5BW_CHILD_BUN_OPTIONS"];
 	if (childBunOptions) Object.assign(environment, { BUN_OPTIONS: childBunOptions });
 	if (options.trace) Object.assign(environment, { PI_TIMING: "1" });
-	const result = Bun.spawnSync(["expect", "-c", lifecycleExpectProgram(action, options.trace)], {
-		cwd: join(benchmarkRoot, "project"),
-		env: environment,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
-	if (result.exitCode !== 0) {
-		const log = await readFile(ptyLog, "utf8").catch(() => "<PTY log unavailable>");
-		fail(
-			`${variant}/${scenario}/${action}/${String(size.columns)}x${String(size.rows)} exited ${String(result.exitCode)}: ${output.trim()}\nPTY tail:\n${log.slice(-20_000)}`,
-		);
-	}
-	verifyTerminalState(await readFile(ttyState, "utf8"), size);
-	if (action === "background-exit") await assertProcessSettles(backgroundShellPid, 2_000);
-	if (action === "agent-exit") {
-		await Promise.all([
-			assertProcessSettles(agentPiPid, 8_000),
-			assertProcessSettles(agentShellPid, 8_000),
-			assertProcessSettles(agentDescendantPid, 8_000),
-		]);
-	}
-	await verifySessionDurability(
+	const output = await executeSample(
+		options,
+		benchmarkRoot,
+		runDirectory,
+		environment,
+		variant,
+		scenario,
+		action,
+		size,
 		sessionDirectory,
 		sessionFile,
-		action,
-		scenario,
-		options.longSessionTools,
-		options.longSessionToolBytes,
 	);
-	const metrics: ExpectMetrics = {
-		shutdownMs: parseMetric(output, "shutdown"),
-		startupMs: parseMetric(output, "startup"),
-	};
-	if (action === "agent-exit") metrics.interruptMs = parseMetric(output, "interrupt");
-	if (action === "reload" || action === "reload-change") metrics.reloadMs = parseMetric(output, "reload");
-	if (action === "prompt") {
-		metrics.acknowledgementMs = parseMetric(output, "acknowledgement");
-		metrics.providerStartMs = parseMetric(output, "provider_start");
-		metrics.responseMs = parseMetric(output, "response");
-		metrics.steadyAcknowledgementMs = parseMetric(output, "steady_acknowledgement");
-		metrics.steadyProviderStartMs = parseMetric(output, "steady_provider_start");
-		metrics.steadyResponseMs = parseMetric(output, "steady_response");
-	}
-	const rawPtyLog = options.trace ? output : "";
-	const trace = options.trace ? parseHostTimings(rawPtyLog) : [];
-	if (options.trace && trace.length === 0) {
-		fail(`PI_TIMING produced no parseable Host timings; PTY tail:\n${rawPtyLog.slice(-20_000)}`);
-	}
-	let suiteTrace: readonly LifecycleTraceEvent[] | undefined;
-	if (traceSuite) {
-		const traceDocument = JSON.parse(await readFile(suiteTracePath, "utf8"));
-		if (!Check(SUITE_TRACE_SCHEMA, traceDocument)) fail("Suite lifecycle trace was not persisted");
-		suiteTrace = traceDocument.events;
-	}
-	if (action === "reload" && variant === "suite" && suiteTrace) {
-		const labels = suiteTrace.map((event) => event.label);
-		if (!labels.includes("suite.loader.cache.hit")) fail("unchanged Suite reload did not use the runtime cache");
-		if (labels.filter((label) => label === "suite.module-imported").length !== 1) {
-			fail("unchanged Suite reload unexpectedly re-evaluated the generated runtime module");
-		}
-	}
-	if (action === "reload-change" && suiteTrace) {
-		const moduleImports = suiteTrace.filter((event) => event.label === "suite.module-imported");
-		if (moduleImports.length < 2) fail("Suite source change did not re-evaluate the generated runtime module");
-		if (!suiteTrace.some((event) => event.label === "suite.source-change.applied")) {
-			fail("Suite source change did not re-evaluate the changed nested module");
-		}
-	}
-	const sample = {
-		action,
-		columns: size.columns,
-		iteration,
-		rows: size.rows,
-		scenario,
-		shutdownMs: rounded(metrics.shutdownMs),
-		startupMs: rounded(metrics.startupMs),
-		variant,
-		warmup,
-	};
-	if (metrics.acknowledgementMs !== undefined) {
-		Object.assign(sample, { acknowledgementMs: rounded(metrics.acknowledgementMs) });
-	}
-	if (metrics.interruptMs !== undefined) Object.assign(sample, { interruptMs: rounded(metrics.interruptMs) });
-	if (metrics.providerStartMs !== undefined) {
-		Object.assign(sample, { providerStartMs: rounded(metrics.providerStartMs) });
-	}
-	if (metrics.reloadMs !== undefined) Object.assign(sample, { reloadMs: metrics.reloadMs });
-	if (metrics.responseMs !== undefined) Object.assign(sample, { responseMs: rounded(metrics.responseMs) });
-	if (metrics.steadyAcknowledgementMs !== undefined) {
-		Object.assign(sample, { steadyAcknowledgementMs: rounded(metrics.steadyAcknowledgementMs) });
-	}
-	if (metrics.steadyProviderStartMs !== undefined) {
-		Object.assign(sample, { steadyProviderStartMs: rounded(metrics.steadyProviderStartMs) });
-	}
-	if (metrics.steadyResponseMs !== undefined) {
-		Object.assign(sample, { steadyResponseMs: rounded(metrics.steadyResponseMs) });
-	}
-	if (suiteTrace) Object.assign(sample, { suiteTrace });
-	if (trace.length > 0) Object.assign(sample, { trace });
-	return sample;
+	return collectSample(options, runDirectory, output, traceSuite, variant, scenario, action, size, iteration, warmup);
 }
 
 function cellKey(sample: LifecycleSample): string {
@@ -1554,42 +1531,49 @@ export function lifecycleConfirmationTargets(cells: readonly CellSummary[]): Cel
 	});
 }
 
-export function lifecycleAcceptanceFindings(
-	selection: LifecycleAcceptanceSelection,
-	cells: readonly CellSummary[],
-	confirmationCells: readonly CellSummary[] = [],
-): string[] {
+function selectionFindings(selection: LifecycleAcceptanceSelection): string[] {
 	const findings: string[] = [];
-	if (selection.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
-		findings.push(`coverage requires at least ${String(ACCEPTANCE_MINIMUM_SAMPLES)} measured samples per cell`);
-	}
-	if (!selection.contextEnabled) findings.push("coverage requires the shipped Context capability to remain enabled");
-	if (selection.longSessionTools < ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS) {
-		findings.push(
+	const minimums = [
+		[
+			selection.samples < ACCEPTANCE_MINIMUM_SAMPLES,
+			`coverage requires at least ${String(ACCEPTANCE_MINIMUM_SAMPLES)} measured samples per cell`,
+		],
+		[!selection.contextEnabled, "coverage requires the shipped Context capability to remain enabled"],
+		[
+			selection.longSessionTools < ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS,
 			`coverage requires at least ${String(ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS)} historical Tool results`,
-		);
-	}
-	if (selection.longSessionToolBytes < ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES) {
-		findings.push(
+		],
+		[
+			selection.longSessionToolBytes < ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES,
 			`coverage requires at least ${String(ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES)} bytes per historical Tool result`,
-		);
-	}
-	if (selection.warmups < 1) findings.push("coverage requires at least one warmup per cell");
-	if (!selection.trace) findings.push("coverage requires Host and Suite lifecycle tracing");
-	for (const action of ACTIONS) {
-		if (!selection.actions.includes(action)) findings.push(`coverage is missing action ${action}`);
-	}
-	for (const scenario of SCENARIOS) {
-		if (!selection.scenarios.includes(scenario)) findings.push(`coverage is missing scenario ${scenario}`);
-	}
-	for (const variant of VARIANTS) {
-		if (!selection.variants.includes(variant)) findings.push(`coverage is missing variant ${variant}`);
+		],
+		[selection.warmups < 1, "coverage requires at least one warmup per cell"],
+		[!selection.trace, "coverage requires Host and Suite lifecycle tracing"],
+	] as const;
+	for (const [missing, message] of minimums) if (missing) findings.push(message);
+	const dimensions: readonly (readonly [string, readonly string[], readonly string[]])[] = [
+		["action", ACTIONS, selection.actions],
+		["scenario", SCENARIOS, selection.scenarios],
+		["variant", VARIANTS, selection.variants],
+	];
+	for (const [label, required, selected] of dimensions) {
+		for (const value of required)
+			if (!selected.includes(value)) findings.push(`coverage is missing ${label} ${value}`);
 	}
 	for (const size of DEFAULT_SIZES) {
 		if (!selection.sizes.some((candidate) => sameSize(candidate, size))) {
 			findings.push(`coverage is missing terminal ${String(size.columns)}x${String(size.rows)}`);
 		}
 	}
+	return findings;
+}
+
+export function lifecycleAcceptanceFindings(
+	selection: LifecycleAcceptanceSelection,
+	cells: readonly CellSummary[],
+	confirmationCells: readonly CellSummary[] = [],
+): string[] {
+	const findings = selectionFindings(selection);
 
 	const cellsByKey = new Map(
 		cells.map((cell) => [acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell), cell]),
@@ -1713,6 +1697,48 @@ function progress(sample: LifecycleSample, phase: "initial" | "confirmation" = "
 	);
 }
 
+async function runInitialSamples(
+	options: BenchmarkOptions,
+	benchmarkRoot: string,
+	fixturePackage: string,
+	seeded: SeededSessions,
+): Promise<LifecycleSample[]> {
+	const samples: LifecycleSample[] = [];
+	for (const size of options.sizes) {
+		for (const scenario of options.scenarios) {
+			for (const action of options.actions) {
+				if (options.acceptance && !acceptanceRequiresCell(action, scenario, size)) continue;
+				for (let iteration = 0; iteration < options.warmups + options.samples; iteration += 1) {
+					const warmup = iteration < options.warmups;
+					const sampleIndex = warmup ? iteration : iteration - options.warmups;
+					const applicableVariants =
+						action === "background-exit" || action === "agent-exit" || action === "reload-change"
+							? options.variants.filter((variant) => variant === "suite")
+							: options.variants;
+					const orderedVariants = iteration % 2 === 0 ? applicableVariants : [...applicableVariants].reverse();
+					for (const variant of orderedVariants) {
+						const sample = await runSample(
+							options,
+							benchmarkRoot,
+							fixturePackage,
+							seeded,
+							variant,
+							scenario,
+							action,
+							size,
+							sampleIndex,
+							warmup,
+						);
+						samples.push(sample);
+						progress(sample);
+					}
+				}
+			}
+		}
+	}
+	return samples;
+}
+
 async function main(): Promise<void> {
 	let options = parseOptions(Bun.argv.slice(2));
 	if (
@@ -1744,41 +1770,9 @@ async function main(): Promise<void> {
 		options.longSessionTools,
 		options.longSessionToolBytes,
 	);
-	const samples: LifecycleSample[] = [];
 
 	try {
-		for (const size of options.sizes) {
-			for (const scenario of options.scenarios) {
-				for (const action of options.actions) {
-					if (options.acceptance && !acceptanceRequiresCell(action, scenario, size)) continue;
-					for (let iteration = 0; iteration < options.warmups + options.samples; iteration += 1) {
-						const warmup = iteration < options.warmups;
-						const sampleIndex = warmup ? iteration : iteration - options.warmups;
-						const applicableVariants =
-							action === "background-exit" || action === "agent-exit" || action === "reload-change"
-								? options.variants.filter((variant) => variant === "suite")
-								: options.variants;
-						const orderedVariants = iteration % 2 === 0 ? applicableVariants : [...applicableVariants].reverse();
-						for (const variant of orderedVariants) {
-							const sample = await runSample(
-								options,
-								benchmarkRoot,
-								fixturePackage,
-								seeded,
-								variant,
-								scenario,
-								action,
-								size,
-								sampleIndex,
-								warmup,
-							);
-							samples.push(sample);
-							progress(sample);
-						}
-					}
-				}
-			}
-		}
+		const samples = await runInitialSamples(options, benchmarkRoot, fixturePackage, seeded);
 		const cellSummaries = summaries(samples);
 		const confirmationSamples: LifecycleSample[] = [];
 		const confirmationTargets = options.acceptance ? lifecycleConfirmationTargets(cellSummaries) : [];
@@ -1817,20 +1811,7 @@ async function main(): Promise<void> {
 				systemCacheState:
 					"Each measured cell follows one retained preconditioning run and therefore measures a warm executable/filesystem-cache start without dropping global caches.",
 			},
-			options: {
-				acceptance: options.acceptance,
-				actions: options.actions,
-				contextEnabled: options.contextEnabled,
-				longSessionToolBytes: options.longSessionToolBytes,
-				longSessionTools: options.longSessionTools,
-				packagePath: options.packagePath,
-				samples: options.samples,
-				scenarios: options.scenarios,
-				sizes: options.sizes,
-				trace: options.trace,
-				variants: options.variants,
-				warmups: options.warmups,
-			},
+			options: { ...options, output: undefined, piBinary: undefined },
 			acceptance: options.acceptance
 				? {
 						confirmationCells: confirmationTargets.map((cell) =>

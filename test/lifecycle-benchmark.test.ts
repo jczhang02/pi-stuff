@@ -112,12 +112,13 @@ describe("lifecycle benchmark statistics", () => {
 			expect(program).not.toMatch(/after (?:60|80)\\b/u);
 		}
 		const prompt = lifecycleExpectProgram("prompt", false);
+		expect(prompt).toContain(`puts "PS5BW_METRIC \${name}_us`);
 		expect(prompt).toContain('must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"');
 		expect(prompt).toContain(
 			'must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"',
 		);
-		expect(prompt).toContain('puts "PS5BW_METRIC provider_start_us');
-		expect(prompt).toContain('puts "PS5BW_METRIC steady_provider_start_us');
+		expect(prompt).toContain("report_metric provider_start");
+		expect(prompt).toContain("report_metric steady_provider_start");
 		expect(prompt).toContain('must_editor_ready "PS5BW_STEADY_EDITOR_READY"');
 		expect(prompt).toContain('must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"');
 		const ctrlC = lifecycleExpectProgram("ctrl-c", false);
@@ -127,7 +128,7 @@ describe("lifecycle benchmark statistics", () => {
 		expect(agentExit).toContain("must_file $env(PS5BW_AGENT_DESCENDANT_PID)");
 		expect(agentExit).toContain('send -- "\\003"');
 		expect(agentExit).toContain('must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"');
-		expect(agentExit).toContain('puts "PS5BW_METRIC interrupt_us');
+		expect(agentExit).toContain("report_metric interrupt");
 	});
 
 	test("uses nearest-rank percentiles", () => {
