@@ -1,53 +1,42 @@
-import { randomBytes } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
-import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getShellConfig } from "@earendil-works/pi-coding-agent";
+import { rmSync } from "node:fs";
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
+import { DEFAULT_MODEL_OUTPUT_LIMIT, tryReadBoundedTail } from "./output.js";
 import {
-	type BoundedOutputFile,
-	DEFAULT_MODEL_OUTPUT_LIMIT,
-	foregroundOutputSnapshot,
-	tryReadBoundedTail,
-} from "./output.js";
-import {
-	abandonSupervisorAndWait,
-	captureProcessIdentity,
-	type captureProcessIdentityWithRetry,
 	consumeCommandAcknowledgement,
 	identityMatches,
 	type ProcessIdentity,
 	publishCommandAuthorization,
 	reapOwnedProcessGroup,
 	type SignalVerifiedSupervisor,
-	type SupervisorProcess,
-	type spawnSupervisor,
 } from "./process.js";
 import type {
 	BackgroundWorkBashDetails,
 	BackgroundWorkKind,
 	BackgroundWorkOutcome,
 	BackgroundWorkSnapshot,
-	BackgroundWorkTerminalStatus,
 	BashExecutionInput,
 } from "./runtime.js";
-import type { StoredProcessTask, WorkRunStorage } from "./storage.js";
+import {
+	prepareShellLaunch,
+	type ShellActivityDependencies,
+	type ShellLaunchInput,
+	type ShellLaunchState,
+} from "./shell-activity-launch.js";
+import {
+	durableShellOutputPath,
+	executeShellTool,
+	projectShellSnapshot,
+	type ShellStopReason,
+	shellActivityTitle,
+	shellOutcomeSummary,
+	shellTerminalStatus,
+} from "./shell-activity-presentation.js";
+import type { StoredProcessTask } from "./storage.js";
 
-const QUICK_COMPLETION_MS = 2_000;
-
-export interface ShellActivityDependencies {
-	readonly captureSupervisorIdentity: typeof captureProcessIdentityWithRetry;
-	readonly cwd: string;
-	readonly outputFactory: (path: string) => BoundedOutputFile;
-	readonly shellPath: string | undefined;
-	readonly signalSupervisor: SignalVerifiedSupervisor;
-	readonly stopCompletionGraceMs: number;
-	readonly storage: WorkRunStorage;
-	readonly supervisorExecutable: string;
-	readonly supervisorFactory: typeof spawnSupervisor;
-}
+export type { ShellActivityDependencies, ShellLaunchInput };
 
 export interface ShellActivityOwner {
 	changed(): void;
@@ -55,81 +44,6 @@ export interface ShellActivityOwner {
 	persist(): void;
 	settled(outcome: BackgroundWorkOutcome, wake: boolean | undefined): void;
 	unregister(activity: ShellActivity, receipt: BackgroundWorkOutcome | undefined): void;
-}
-
-export interface ShellLaunchInput {
-	readonly backgrounded: boolean;
-	readonly command: string;
-	readonly context: ExtensionContext;
-	readonly description?: string;
-	readonly kind?: BackgroundWorkKind;
-	readonly monitorFailureText?: string;
-	readonly monitorSource?: "command";
-	readonly monitorSuccessText?: string;
-	readonly monitorTarget?: string;
-	readonly monitorTimeoutSeconds?: number;
-	readonly parentRunOrigin?: NonNullable<BackgroundWorkOutcome["parentRunOrigin"]>;
-}
-
-interface ShellLaunchState {
-	readonly acknowledgementPath: string;
-	readonly authorizationPath: string;
-	readonly authorizationToken: string;
-	readonly id: string;
-	readonly input: ShellLaunchInput;
-	readonly output: BoundedOutputFile;
-	readonly supervisor: SupervisorProcess;
-	readonly supervisorIdentity: ProcessIdentity;
-}
-
-function textResult(
-	text: string,
-	details?: BackgroundWorkBashDetails,
-): AgentToolResult<BackgroundWorkBashDetails | undefined> {
-	return { content: [{ type: "text", text }], details };
-}
-
-function emitToolUpdate(
-	onUpdate: AgentToolUpdateCallback<BackgroundWorkBashDetails | undefined> | undefined,
-	result: AgentToolResult<BackgroundWorkBashDetails | undefined>,
-): void {
-	try {
-		onUpdate?.(result);
-	} catch (error) {
-		reportWorkDiagnostic("Bash progress observer failed", error, { key: "bash-progress-observer" });
-	}
-}
-
-function titleFromCommand(command: string): string {
-	const first =
-		command
-			.trim()
-			.split(/\r?\n|&&|\|\||;/u)[0]
-			?.trim() ?? "";
-	return boundTerminalLine(first, 80) || "background command";
-}
-
-function sessionEnvironment(ctx: ExtensionContext): NodeJS.ProcessEnv {
-	const env = { ...process.env };
-	delete env["PI_SESSION_ID"];
-	delete env["PI_SESSION_FILE"];
-	delete env["PI_PROVIDER"];
-	delete env["PI_MODEL"];
-	delete env["PI_REASONING_LEVEL"];
-	env["PI_SESSION_ID"] = ctx.sessionManager.getSessionId();
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	if (sessionFile) env["PI_SESSION_FILE"] = sessionFile;
-	if (ctx.model) {
-		env["PI_PROVIDER"] = ctx.model.provider;
-		env["PI_MODEL"] = ctx.model.id;
-	}
-	if (ctx.thinkingLevel) env["PI_REASONING_LEVEL"] = ctx.thinkingLevel;
-	return env;
-}
-
-function discardOutput(output: BoundedOutputFile): void {
-	output.close();
-	rmSync(output.path, { force: true });
 }
 
 export class ShellActivity {
@@ -149,7 +63,7 @@ export class ShellActivity {
 	private readonly owner: ShellActivityOwner;
 	readonly startedAt = Date.now();
 	private stopPromise: Promise<BackgroundWorkOutcome> | undefined;
-	private stopReason: "abort" | "output_limit" | "shutdown" | "timeout" | "user" | undefined;
+	private stopReason: ShellStopReason | undefined;
 	private timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 	private readonly title: string;
 
@@ -160,7 +74,7 @@ export class ShellActivity {
 		this.kind = state.input.kind ?? "shell";
 		this.launch = state;
 		this.owner = owner;
-		this.title = state.input.description?.trim() || titleFromCommand(state.input.command);
+		this.title = shellActivityTitle(state.input);
 	}
 
 	static async spawn(
@@ -169,76 +83,8 @@ export class ShellActivity {
 		dependencies: ShellActivityDependencies,
 		owner: ShellActivityOwner,
 	): Promise<ShellActivity> {
-		if (owner.disposed()) throw new Error("Background Work session is shutting down");
-		const outputPath = dependencies.storage.outputPath(id);
-		const authorizationPath = dependencies.storage.commandAuthorizationPath(id);
-		const acknowledgementPath = `${authorizationPath}.ack`;
-		const authorizationToken = randomBytes(24).toString("base64url");
-		const output = dependencies.outputFactory(outputPath);
-		let shell: ReturnType<typeof getShellConfig>;
-		try {
-			shell = getShellConfig(dependencies.shellPath);
-		} catch (error) {
-			discardOutput(output);
-			throw error;
-		}
-		const processOwner = captureProcessIdentity(process.pid);
-		if (!processOwner) {
-			discardOutput(output);
-			throw new Error("Cannot establish Pi process identity for Background Work");
-		}
-		const envelope = Buffer.from(
-			JSON.stringify({
-				commandTransport: shell.commandTransport ?? "argv",
-				commandAcknowledgementPath: acknowledgementPath,
-				commandAuthorizationPath: authorizationPath,
-				commandAuthorizationToken: authorizationToken,
-				cwd: dependencies.cwd,
-				parentPid: processOwner.pid,
-				parentStarted: processOwner.started,
-				shell: shell.shell,
-				shellArgs: shell.args,
-			}),
-			"utf-8",
-		).toString("base64url");
-		let supervisor: SupervisorProcess;
-		try {
-			supervisor = dependencies.supervisorFactory(dependencies.supervisorExecutable, envelope, {
-				cwd: dependencies.cwd,
-				env: sessionEnvironment(input.context),
-			});
-		} catch (error) {
-			discardOutput(output);
-			throw error;
-		}
-		let supervisorIdentity: ProcessIdentity | undefined;
-		try {
-			supervisorIdentity = await dependencies.captureSupervisorIdentity(supervisor.pid);
-		} catch (error) {
-			await abandonSupervisorAndWait(supervisor);
-			discardOutput(output);
-			throw error;
-		}
-		if (!supervisorIdentity || owner.disposed()) {
-			await abandonSupervisorAndWait(supervisor);
-			discardOutput(output);
-			if (owner.disposed()) throw new Error("Background Work session is shutting down");
-			throw new Error("Cannot establish Background Work supervisor identity");
-		}
-		return new ShellActivity(
-			{
-				acknowledgementPath,
-				authorizationPath,
-				authorizationToken,
-				id,
-				input,
-				output,
-				supervisor,
-				supervisorIdentity,
-			},
-			dependencies,
-			owner,
-		);
+		const state = await prepareShellLaunch(input, id, dependencies, () => owner.disposed());
+		return new ShellActivity(state, dependencies, owner);
 	}
 
 	get visible(): boolean {
@@ -349,63 +195,20 @@ export class ShellActivity {
 		backgroundAfterMs: number,
 	): Promise<AgentToolResult<BackgroundWorkBashDetails | undefined>> {
 		if (input.timeoutSeconds !== undefined) this.armTimeout(input.timeoutSeconds, "timeout");
-		if (input.runInBackground) return this.backgroundLaunchResult();
-
-		let updateTimer: ReturnType<typeof setInterval> | undefined;
-		let lastUpdate = "";
 		const onAbort = () => {
 			if (!this.backgrounded) this.requestStop("abort", "abort signal");
 		};
-		if (input.signal) {
-			if (input.signal.aborted) onAbort();
-			else input.signal.addEventListener("abort", onAbort, { once: true });
-		}
-		const sendUpdate = () => {
-			const output = this.launch.output.recentText(12_000);
-			if (!output || output === lastUpdate) return;
-			lastUpdate = output;
-			emitToolUpdate(input.onUpdate, { content: [{ type: "text", text: output }], details: undefined });
-		};
-		emitToolUpdate(input.onUpdate, { content: [], details: undefined });
-		const detachTimer = setTimeout(() => this.detach("timeout"), backgroundAfterMs);
-		detachTimer.unref?.();
-		let quickTimer: ReturnType<typeof setTimeout> | undefined;
-		const quick = await Promise.race([
-			this.completion.then((outcome) => ({ kind: "completed" as const, outcome })),
-			this.detachState.promise.then((reason) => ({ kind: "detached" as const, reason })),
-			new Promise<{ readonly kind: "still-running" }>((resolve) => {
-				quickTimer = setTimeout(() => resolve({ kind: "still-running" }), QUICK_COMPLETION_MS);
-				quickTimer.unref?.();
-			}),
-		]);
-		if (quickTimer) clearTimeout(quickTimer);
-		if (quick.kind === "completed") {
-			clearTimeout(detachTimer);
-			input.signal?.removeEventListener("abort", onAbort);
-			return this.foregroundResult(quick.outcome);
-		}
-		if (quick.kind === "detached") {
-			clearTimeout(detachTimer);
-			input.signal?.removeEventListener("abort", onAbort);
-			return this.backgroundLaunchResult(quick.reason);
-		}
-
-		updateTimer = setInterval(sendUpdate, 250);
-		updateTimer.unref?.();
-		try {
-			const result = await Promise.race([
-				this.completion.then((outcome) => ({ kind: "completed" as const, outcome })),
-				this.detachState.promise.then((reason) => ({ kind: "detached" as const, reason })),
-			]);
-			sendUpdate();
-			return result.kind === "detached"
-				? this.backgroundLaunchResult(result.reason)
-				: this.foregroundResult(result.outcome);
-		} finally {
-			if (updateTimer) clearInterval(updateTimer);
-			clearTimeout(detachTimer);
-			input.signal?.removeEventListener("abort", onAbort);
-		}
+		return executeShellTool(input, backgroundAfterMs, {
+			completion: this.completion,
+			detach: (reason) => {
+				this.detach(reason);
+			},
+			detached: this.detachState.promise,
+			id: this.id,
+			onAbort,
+			output: this.launch.output,
+			outputPath: () => this.durableOutputPath(),
+		});
 	}
 
 	startMonitor(timeoutSeconds: number): {
@@ -435,28 +238,16 @@ export class ShellActivity {
 	}
 
 	snapshot(): BackgroundWorkSnapshot {
-		const { input, output } = this.launch;
-		const recentOutput = output.recentText(4_000);
-		const snapshot: BackgroundWorkSnapshot = {
-			command: input.command,
+		return projectShellSnapshot({
 			id: this.id,
+			input: this.launch.input,
 			kind: this.kind,
+			outputPath: this.durableOutputPath(),
+			recentOutput: this.launch.output.recentText(4_000),
 			startedAt: this.startedAt,
-			status: this.stopReason ? "stopping" : "running",
+			stopReason: this.stopReason,
 			title: this.title,
-		};
-		if (input.description) Object.assign(snapshot, { description: input.description });
-		if (input.monitorFailureText) Object.assign(snapshot, { monitorFailureText: input.monitorFailureText });
-		if (input.monitorSource) Object.assign(snapshot, { monitorSource: input.monitorSource });
-		if (input.monitorSuccessText) Object.assign(snapshot, { monitorSuccessText: input.monitorSuccessText });
-		if (input.monitorTarget) Object.assign(snapshot, { monitorTarget: input.monitorTarget });
-		if (input.monitorTimeoutSeconds !== undefined) {
-			Object.assign(snapshot, { monitorTimeoutSeconds: input.monitorTimeoutSeconds });
-		}
-		const outputPath = this.durableOutputPath();
-		if (outputPath) Object.assign(snapshot, { outputPath });
-		if (recentOutput) Object.assign(snapshot, { recentOutput });
-		return snapshot;
+		});
 	}
 
 	storedTask(): StoredProcessTask {
@@ -469,7 +260,7 @@ export class ShellActivity {
 		this.launch.output.close();
 	}
 
-	async stop(reason: "abort" | "output_limit" | "shutdown" | "timeout" | "user"): Promise<BackgroundWorkOutcome> {
+	async stop(reason: ShellStopReason): Promise<BackgroundWorkOutcome> {
 		if (this.finalization === "done") return this.completion;
 		if (this.stopPromise) return this.stopPromise;
 		this.stopReason = reason;
@@ -525,7 +316,7 @@ export class ShellActivity {
 		this.timeoutTimer.unref?.();
 	}
 
-	private requestStop(reason: "abort" | "output_limit" | "shutdown" | "timeout" | "user", source: string): void {
+	private requestStop(reason: ShellStopReason, source: string): void {
 		void this.stop(reason).catch((error) => {
 			reportWorkDiagnostic(`A task could not stop after ${source}`, error, {
 				action: "/tasks",
@@ -666,8 +457,8 @@ export class ShellActivity {
 			// The control descriptor is already terminal from the supervisor's perspective.
 		}
 		this.launch.output.close();
-		const status = this.terminalStatus(code, signal);
 		const recentOutput = this.launch.output.recentText(DEFAULT_MODEL_OUTPUT_LIMIT);
+		const status = shellTerminalStatus(this.kind, this.launch.input, this.stopReason, code, signal, recentOutput);
 		const outcome: BackgroundWorkOutcome = {
 			endedAt: Date.now(),
 			id: this.id,
@@ -675,7 +466,7 @@ export class ShellActivity {
 			parentRunOrigin: this.launch.input.parentRunOrigin ?? "automatic",
 			startedAt: this.startedAt,
 			status,
-			summary: this.summary(status, code),
+			summary: shellOutcomeSummary(this.kind, this.title, this.stopReason, status, code),
 			title: this.title,
 		};
 		if (isRuntimeNumber(code)) Object.assign(outcome, { exitCode: code });
@@ -698,64 +489,7 @@ export class ShellActivity {
 		this.owner.settled(outcome, shouldNotify ? this.kind === "monitor" : undefined);
 	}
 
-	private terminalStatus(code: number | null, signal: NodeJS.Signals | null): BackgroundWorkTerminalStatus {
-		let status: BackgroundWorkTerminalStatus;
-		if (this.stopReason === "timeout") status = "timed_out";
-		else if (this.stopReason === "output_limit") status = "failed";
-		else if (this.stopReason) status = "stopped";
-		else status = code === 0 && signal === null ? "completed" : "failed";
-		const { input, output } = this.launch;
-		const recentOutput = output.recentText(DEFAULT_MODEL_OUTPUT_LIMIT);
-		if (this.kind === "monitor" && !this.stopReason) {
-			if (input.monitorFailureText && recentOutput.includes(input.monitorFailureText)) status = "failed";
-			else if (input.monitorSuccessText && !recentOutput.includes(input.monitorSuccessText)) status = "failed";
-		}
-		return status;
-	}
-
-	private summary(status: BackgroundWorkTerminalStatus, code: number | null): string {
-		const subject = this.kind === "monitor" ? "Monitor" : "Background command";
-		switch (status) {
-			case "completed":
-				return `${subject} "${this.title}" completed`;
-			case "failed":
-				return this.stopReason === "output_limit"
-					? `${subject} "${this.title}" exceeded the output limit and was stopped`
-					: `${subject} "${this.title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
-			case "stopped":
-				return `${subject} "${this.title}" stopped`;
-			case "timed_out":
-				return `${subject} "${this.title}" timed out`;
-		}
-	}
-
-	private foregroundResult(outcome: BackgroundWorkOutcome): AgentToolResult<BackgroundWorkBashDetails | undefined> {
-		const snapshot = foregroundOutputSnapshot(outcome.outputPath, outcome.recentOutput);
-		if (outcome.status !== "completed") {
-			let status = outcome.summary;
-			if (isRuntimeNumber(outcome.exitCode) && outcome.exitCode !== 0) {
-				status = `Command exited with code ${String(outcome.exitCode)}`;
-			} else if (outcome.status === "timed_out") status = "Command timed out";
-			else if (outcome.status === "stopped") status = "Command aborted";
-			throw new Error(`${snapshot.text ? `${snapshot.text}\n\n` : ""}${status}`);
-		}
-		return textResult(snapshot.text || "(no output)", "details" in snapshot ? snapshot.details : undefined);
-	}
-
-	private backgroundLaunchResult(
-		reason?: "manual" | "timeout",
-	): AgentToolResult<BackgroundWorkBashDetails | undefined> {
-		const action = reason === "manual" ? "manually moved" : reason === "timeout" ? "moved" : "started";
-		const outputPath = this.durableOutputPath();
-		const details: BackgroundWorkBashDetails = { backgroundTaskId: this.id };
-		if (outputPath) Object.assign(details, { fullOutputPath: outputPath });
-		return textResult(
-			`Command ${action} to background task ${this.id}.${outputPath ? `\nOutput: ${outputPath}` : ""}\nThe terminal result will be delivered automatically; continue useful work instead of polling.`,
-			details,
-		);
-	}
-
 	private durableOutputPath(): string | undefined {
-		return this.launch.output.durable && existsSync(this.launch.output.path) ? this.launch.output.path : undefined;
+		return durableShellOutputPath(this.launch.output);
 	}
 }
