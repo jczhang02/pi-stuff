@@ -283,7 +283,7 @@ export async function fetchRemoteUrl(
 
 		const location = response.headers.get("location");
 		if (!location) return response;
-		if (redirects === maxRedirects) throw new Error(`Too many redirects fetching ${current.url.toString()}`);
+		if (redirects === maxRedirects) throw new Error("Too many redirects while fetching remote URL");
 
 		const from = current.url;
 		current = await validateRemoteTarget(new URL(location, current.url), options);
@@ -298,7 +298,7 @@ export async function fetchRemoteUrl(
 		if (options.onRedirect) requestInit = options.onRedirect({ from, to: current.url, init: requestInit, response });
 	}
 
-	throw new Error(`Too many redirects fetching ${current.url.toString()}`);
+	throw new Error("Too many redirects while fetching remote URL");
 }
 
 function normalizeHostname(hostname: string): string {

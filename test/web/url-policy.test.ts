@@ -34,4 +34,10 @@ describe("Pi Stuff Web URL boundary", () => {
 		});
 		expect(result).toEqual({ error: "At most 10 URLs may be fetched at once.", ok: false });
 	});
+
+	test("does not echo malformed URL secrets", () => {
+		const result = validateWebFetchInput({ url: "https://[broken]?token=secret-value" });
+		expect(result).toEqual({ error: "Invalid URL.", ok: false });
+		expect(JSON.stringify(result)).not.toContain("secret-value");
+	});
 });

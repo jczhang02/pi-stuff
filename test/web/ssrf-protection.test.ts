@@ -27,4 +27,18 @@ describe("Web SSRF protection", () => {
 		expect(calls[0]?.init?.keepalive).toBe(false);
 		expect(calls[0]?.init?.tls?.serverName).toBe("example.com");
 	});
+
+	test("does not echo URL secrets after the redirect limit", async () => {
+		const request = fetchRemoteUrl(
+			"https://example.com/start?token=secret-value#private",
+			{},
+			{
+				fetch: async () => new Response(null, { headers: { location: "/next?token=other-secret" }, status: 302 }),
+				lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+				maxRedirects: 0,
+			},
+		);
+
+		await expect(request).rejects.toThrow(/^Too many redirects while fetching remote URL$/u);
+	});
 });

@@ -69,7 +69,7 @@ function validateUrl(raw: string): string | undefined {
 	try {
 		parsed = new URL(raw);
 	} catch {
-		return `Invalid URL: ${raw}`;
+		return "Invalid URL.";
 	}
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "Only HTTP(S) URLs are supported.";
 	if (parsed.username || parsed.password) return "Credential-bearing URLs are not supported.";
