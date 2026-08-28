@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
 
@@ -70,6 +70,34 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 
 async function writeLocalPackage(root: string, manifest: JsonInputObject): Promise<void> {
 	await writeFile(join(root, "packages", "pi-stuff", "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
+}
+
+async function writeFixture(root: string, path: string, content: string): Promise<void> {
+	const absolutePath = join(root, path);
+	await mkdir(dirname(absolutePath), { recursive: true });
+	await writeFile(absolutePath, content);
+}
+
+function repeatedLine(line: string, count: number): string {
+	return `${line}\n`.repeat(count);
+}
+
+function multilineFunction(header: string, lines: number, footer = "}"): string {
+	return [header, ...Array.from({ length: lines - 2 }, () => "\tvoid 0;"), footer].join("\n");
+}
+
+function indent(source: string): string {
+	return source
+		.split("\n")
+		.map((line) => `\t${line}`)
+		.join("\n");
+}
+
+function functionFinding(path: string, source: string, marker: string, lines: number) {
+	const markerIndex = source.indexOf(marker);
+	if (markerIndex < 0) throw new Error(`Missing fixture marker: ${marker}`);
+	const start = source.slice(0, markerIndex).split("\n").length;
+	return { path, rule: `source-function-over-120-lines:${String(start)}:${String(lines)}` };
 }
 
 afterEach(async () => {
@@ -333,11 +361,87 @@ test("rejects literal Host colors but permits browser-owned palettes", async () 
 	]);
 });
 
+test("enforces the 800-line boundary across repository code", async () => {
+	const root = await createRepository();
+	await writeFixture(root, "scripts/exact.ts", repeatedLine("// fixture", 800));
+	await writeFixture(root, "scripts/tracked.ts", repeatedLine("// fixture", 801));
+	Bun.spawnSync(["git", "add", "scripts/tracked.ts"], { cwd: root });
+
+	const prototypeExtensions = ["css", "html", "json", "jsonc", "tape", "yaml", "yml"];
+	for (const extension of prototypeExtensions) {
+		await writeFixture(root, `docs/prototypes/tui/oversized.${extension}`, repeatedLine("fixture", 801));
+	}
+	await writeFixture(root, "scripts/untracked.sh", repeatedLine("# fixture", 801));
+	await writeFixture(root, "docs/reports/oversized.html", repeatedLine("report artifact", 801));
+	await writeFixture(root, "docs/reports/oversized.sh", repeatedLine("# fixture", 801));
+
+	const expectedPaths = [
+		...prototypeExtensions.map((extension) => `docs/prototypes/tui/oversized.${extension}`),
+		"docs/reports/oversized.sh",
+		"scripts/tracked.ts",
+		"scripts/untracked.sh",
+	].sort();
+	expect(await auditRepositoryFiles(root)).toEqual(
+		expectedPaths.map((path) => ({ path, rule: "source-file-over-800-lines:801" })),
+	);
+});
+
+test("parses every JavaScript and TypeScript source extension", async () => {
+	const root = await createRepository();
+	const extensions = ["cjs", "cts", "js", "jsx", "mjs", "mts", "ts", "tsx"];
+	const source = multilineFunction("const fixture = () => {", 121, "};");
+	for (const extension of extensions) {
+		await writeFixture(root, `scripts/extension.${extension}`, source);
+	}
+	await writeFixture(root, "scripts/malformed.ts", "export function broken( {\n");
+
+	expect(await auditRepositoryFiles(root)).toEqual([
+		...extensions.map((extension) => ({
+			path: `scripts/extension.${extension}`,
+			rule: "source-function-over-120-lines:1:121",
+		})),
+		{ path: "scripts/malformed.ts", rule: "source-parse-error:2" },
+	]);
+});
+
+test("recursively enforces the 120-line boundary for executable function forms", async () => {
+	const root = await createRepository();
+	const functionPath = "scripts/functions.ts";
+	const functionSource = [
+		multilineFunction("function accepted() {", 120),
+		multilineFunction("const expression = function () {", 121, "};"),
+		multilineFunction("const arrow = () => {", 122, "};"),
+		`function outer() {\n${indent(multilineFunction("function nested() {", 121))}\n}`,
+	].join("\n\n");
+	const classPath = "scripts/class.ts";
+	const classSource = `class Fixture {\n${indent(
+		[
+			multilineFunction("constructor() {", 121),
+			multilineFunction("method() {", 121),
+			multilineFunction("get value() {", 121),
+			multilineFunction("set value(_value: number) {", 121),
+		].join("\n\n"),
+	)}\n}`;
+	await writeFixture(root, functionPath, functionSource);
+	await writeFixture(root, classPath, classSource);
+
+	expect(await auditRepositoryFiles(root)).toEqual([
+		functionFinding(classPath, classSource, "constructor()", 121),
+		functionFinding(classPath, classSource, "method()", 121),
+		functionFinding(classPath, classSource, "get value()", 121),
+		functionFinding(classPath, classSource, "set value", 121),
+		functionFinding(functionPath, functionSource, "const expression", 121),
+		functionFinding(functionPath, functionSource, "const arrow", 122),
+		functionFinding(functionPath, functionSource, "function outer", 123),
+		functionFinding(functionPath, functionSource, "function nested", 121),
+	]);
+});
+
 test("ignores tracked files deleted from the working tree", async () => {
 	const root = await createRepository();
-	const deletedPath = join(root, "README.md");
-	await writeFile(deletedPath, `private path: ${["", "home", "example", "secret"].join("/")}\n`);
-	Bun.spawnSync(["git", "add", "README.md"], { cwd: root });
+	const deletedPath = join(root, "scripts", "deleted.ts");
+	await writeFixture(root, "scripts/deleted.ts", repeatedLine("// fixture", 801));
+	Bun.spawnSync(["git", "add", "scripts/deleted.ts"], { cwd: root });
 	await rm(deletedPath);
 
 	expect(await auditRepositoryFiles(root)).toEqual([]);

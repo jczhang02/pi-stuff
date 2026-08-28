@@ -34,6 +34,10 @@ const HOST_STREAM_WRITE_PATTERN = /\bprocess\s*\.\s*(?:stderr|stdout)\s*\.\s*wri
 const HOST_LITERAL_COLOR_PATTERN = /(?:#[0-9a-f]{6}\b|(?:38|48);(?:2|5);|\\x1b\[(?:3[0-7]|4[0-7]|9[0-7]|10[0-7])m)/iu;
 const HOST_DYNAMIC_SGR_PATTERN = /\\x1b\[\$\{[^}\r\n]+\}m/u;
 const HOST_SHORT_COLOR_LITERAL_PATTERN = /["'`](?:3[0-7]|4[0-7]|9[0-7]|10[0-7])["'`]/u;
+const JAVASCRIPT_SOURCE_PATTERN = /\.[cm]?[jt]sx?$/u;
+const REPOSITORY_CODE_PATTERN = /\.(?:css|html|jsonc?|tape|ya?ml)$/u;
+const MAX_SOURCE_FILE_LINES = 800;
+const MAX_SOURCE_FUNCTION_LINES = 120;
 const HOST_CONSOLE_ALLOWLIST = new Set<string>();
 const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	// Explicit subprocess protocols and detached-runner logs; none execute in Pi's Host TUI path.
@@ -101,6 +105,10 @@ const ALLOWED_INTERNAL_DEPENDENCIES: InternalDependencyTable = {
 export interface SafetyFinding {
 	path: string;
 	rule: string;
+}
+
+interface ParsedSourceFile extends ts.SourceFile {
+	readonly parseDiagnostics?: readonly ts.Diagnostic[];
 }
 
 const PACKAGE_MANIFEST_SCHEMA = Type.Object(
@@ -204,13 +212,13 @@ function isInternalModule(value: string): value is InternalModule {
 
 function isUnownedInternalSource(path: string): boolean {
 	const prefix = "packages/pi-stuff/src/";
-	if (!path.startsWith(prefix) || !/\.[cm]?[jt]sx?$/u.test(path)) return false;
+	if (!path.startsWith(prefix) || !JAVASCRIPT_SOURCE_PATTERN.test(path)) return false;
 	return !SUITE_COMPOSITION_SOURCE_FILES.has(path) && !path.slice(prefix.length).includes("/");
 }
 
 async function auditInternalModuleImports(root: string, path: string): Promise<SafetyFinding[]> {
 	const sourceModule = internalModuleFromPath(path);
-	if (!sourceModule || !/\.[cm]?[jt]sx?$/u.test(path)) return [];
+	if (!sourceModule || !JAVASCRIPT_SOURCE_PATTERN.test(path)) return [];
 	const source = await readFile(join(root, path), "utf8");
 	const imports = ts.preProcessFile(source, true, true).importedFiles;
 	const findings: SafetyFinding[] = [];
@@ -232,13 +240,72 @@ async function auditInternalModuleImports(root: string, path: string): Promise<S
 	return findings;
 }
 
+function isRepositoryCode(path: string): boolean {
+	if (JAVASCRIPT_SOURCE_PATTERN.test(path) || path.endsWith(".sh")) return true;
+	return !path.startsWith("docs/reports/") && REPOSITORY_CODE_PATTERN.test(path);
+}
+
+function countPhysicalLines(source: string): number {
+	if (source.length === 0) return 0;
+	const trailingBreak = source.endsWith("\n") || source.endsWith("\r") ? 1 : 0;
+	return source.split(/\r\n|\r|\n/u).length - trailingBreak;
+}
+
+function isSourceFunction(node: ts.Node): boolean {
+	return (
+		ts.isFunctionDeclaration(node) ||
+		ts.isFunctionExpression(node) ||
+		ts.isArrowFunction(node) ||
+		ts.isMethodDeclaration(node) ||
+		ts.isConstructorDeclaration(node) ||
+		ts.isGetAccessorDeclaration(node) ||
+		ts.isSetAccessorDeclaration(node)
+	);
+}
+
+function auditSourceLimits(path: string, source: string): SafetyFinding[] {
+	if (!isRepositoryCode(path)) return [];
+	const findings: SafetyFinding[] = [];
+	const fileLines = countPhysicalLines(source);
+	if (fileLines > MAX_SOURCE_FILE_LINES) {
+		findings.push({ path, rule: `source-file-over-800-lines:${String(fileLines)}` });
+	}
+	if (!JAVASCRIPT_SOURCE_PATTERN.test(path)) return findings;
+
+	const sourceFile: ParsedSourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+	const parseError = sourceFile.parseDiagnostics?.find(
+		(diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+	);
+	if (parseError) {
+		const line = sourceFile.getLineAndCharacterOfPosition(parseError.start ?? 0).line + 1;
+		findings.push({ path, rule: `source-parse-error:${String(line)}` });
+		return findings;
+	}
+	const visit = (node: ts.Node): void => {
+		if (isSourceFunction(node)) {
+			const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+			const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+			const functionLines = end - start + 1;
+			if (functionLines > MAX_SOURCE_FUNCTION_LINES) {
+				findings.push({
+					path,
+					rule: `source-function-over-120-lines:${String(start)}:${String(functionLines)}`,
+				});
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+	return findings;
+}
+
 async function auditTextFile(root: string, path: string): Promise<SafetyFinding[]> {
 	const content = await readFile(join(root, path));
 	if (content.includes(0)) {
 		return [];
 	}
 	const text = content.toString("utf8");
-	const findings: SafetyFinding[] = [];
+	const findings = auditSourceLimits(path, text);
 	if (PRIVATE_PATH_PATTERNS.some((pattern) => pattern.test(text))) {
 		findings.push({ path, rule: "private-absolute-path" });
 	}

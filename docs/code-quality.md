@@ -15,6 +15,9 @@ not code and remain outside code checks.
 - A formatted hand-maintained file should contain 200–400 physical lines. More than 500 lines requires an explicit
   cohesion review; 800 lines is the merge limit. A function should contain 20–50 lines, requires review above 80, and
   may not exceed 120 lines.
+- `check:repository` enforces the 800-line limit across repository code and recursively enforces the 120-line function
+  limit in JavaScript and TypeScript. It audits tracked and non-ignored untracked files while excluding deleted files,
+  binary assets, prose, and report artifacts.
 - Splitting a file must reduce responsibilities, mutable state, branching, or concepts held at once. Moving unchanged
   complexity into mechanically named fragments does not satisfy the standard.
 - Code-quality work reports before-and-after physical line counts. An owning Capability must not grow during a
