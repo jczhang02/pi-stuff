@@ -13,7 +13,7 @@ import {
 } from "../../shared/types.ts";
 import { isTerminalAsyncState as isTerminalJobStatus, readStatusAsync } from "../../shared/utils.ts";
 import { hasLiveNestedDescendants } from "../shared/nested-events.ts";
-import { AsyncJobObserver, type AsyncJobWatch } from "./async-job-observer.ts";
+import { AsyncJobObserver } from "./async-job-observer.ts";
 import { type AsyncStatusReader, MAX_RECENT_AGENT_JOBS, scanRestorableAsyncJobs } from "./async-job-recovery.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 
@@ -23,7 +23,6 @@ interface AsyncJobTrackerOptions {
 	pollIntervalMs?: number;
 	onRefresh?: () => void;
 	readRunStatus?: AsyncStatusReader;
-	watchRun?: AsyncJobWatch;
 }
 
 interface RestoreInFlight {
@@ -84,7 +83,6 @@ class AsyncJobTracker {
 			onStatus: (job, status) => this.applyStatus(job, status),
 			pollIntervalMs: options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS),
 			readRunStatus: this.readRunStatus,
-			watchRun: options.watchRun,
 		});
 	}
 

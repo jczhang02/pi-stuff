@@ -32,7 +32,6 @@ interface JobObservation {
 	watcher?: fs.FSWatcher;
 }
 
-export type AsyncJobWatch = typeof fs.watch;
 export type ObservationKind = { status?: boolean; control?: boolean };
 
 type AsyncLifecycleEmitter = <Payload extends object>(event: string, payload: Payload) => void;
@@ -46,7 +45,6 @@ interface AsyncJobObserverOptions {
 	readonly onStatus: (job: AsyncJobState, status: AsyncStatus) => void;
 	readonly pollIntervalMs: number;
 	readonly readRunStatus: AsyncStatusReader;
-	readonly watchRun?: AsyncJobWatch | undefined;
 }
 
 /** Owns native observation, polling fallback, and durable control-event delivery for async jobs. */
@@ -54,18 +52,16 @@ export class AsyncJobObserver {
 	private readonly observations = new Map<string, JobObservation>();
 	private readonly options: AsyncJobObserverOptions;
 	private readonly steeringNoticeSeen = new Map<string, number>();
-	private readonly watchRun: AsyncJobWatch;
 
 	constructor(options: AsyncJobObserverOptions) {
 		this.options = options;
-		this.watchRun = options.watchRun ?? fs.watch;
 	}
 
 	ensure(job: AsyncJobState): void {
 		const observation = this.observationFor(job.asyncId);
 		if (observation.watcher || observation.fallbackTimer) return;
 		try {
-			const watcher = this.watchRun(job.asyncDir, (_event, filename) => {
+			const watcher = fs.watch(job.asyncDir, (_event, filename) => {
 				if (!this.options.isCurrentJob(job)) return;
 				const name = filename?.toString();
 				if (!name || name === "events.jsonl") void this.observe(job, { control: true });

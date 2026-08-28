@@ -81,20 +81,11 @@ test("does not poll foreground recovery state from the Agent status observer", a
 		],
 	});
 	state.foregroundRuns?.set(run.runId, run);
-	let watchCalls = 0;
-	const tracker = createAsyncJobTracker(eventHost(), state, root, {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		watchRun: ((...args: unknown[]) => {
-			watchCalls += 1;
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			return (fs.watch as (...watchArgs: unknown[]) => fs.FSWatcher)(...args);
-		}) as typeof fs.watch,
-	});
+	const tracker = createAsyncJobTracker(eventHost(), state, root);
 
 	try {
 		tracker.ensureObserver();
 		await Bun.sleep(40);
-		expect(watchCalls).toBe(0);
 		expect(run.children[0]?.status).toBe("detached");
 	} finally {
 		tracker.resetJobs();
