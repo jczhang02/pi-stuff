@@ -71,7 +71,7 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe.serial("Magic Context first-use configuration", () => {
+function registerUserConfigurationTests(): void {
 	test("keeps automatic Extension turns write-free until direct use", async () => {
 		const paths = await isolatedEnvironment();
 
@@ -149,7 +149,9 @@ describe.serial("Magic Context first-use configuration", () => {
 		expect(await readFile(legacy, "utf8")).toContain("legacy/model");
 		expect(await Bun.file(paths.canonical).exists()).toBeFalse();
 	});
+}
 
+function registerProjectConfigurationTests(): void {
 	test("does not mistake a custom Pi agent directory for an upstream config location", async () => {
 		const paths = await isolatedEnvironment();
 		await mkdir(paths.customAgent, { recursive: true });
@@ -213,4 +215,9 @@ describe.serial("Magic Context first-use configuration", () => {
 		expect(await readFile(legacyProject, "utf8")).toBe('{"enabled":false}\n');
 		expect(await Bun.file(join(paths.root, ".cortexkit", "magic-context.jsonc")).exists()).toBeFalse();
 	});
+}
+
+describe.serial("Magic Context first-use configuration", () => {
+	registerUserConfigurationTests();
+	registerProjectConfigurationTests();
 });
