@@ -36,6 +36,7 @@ import {
 	getPiGlobalConfigPath,
 	getProjectConfigPath,
 	getProjectPiConfigPath,
+	readConfigSources,
 } from "./config-sources.ts";
 import { type ImportKind, isServerDisabled, type McpConfig, type ServerEntry } from "./types.ts";
 
@@ -65,15 +66,14 @@ export function cloneMcpConfig(config: McpConfig): McpConfig {
 }
 
 export function loadMcpConfig(overridePath?: string, cwd = process.cwd()): McpConfig {
-	const sourceSpecs = getConfigSources(overridePath, cwd);
-	const hostConfigDiscovery = getConfiguredHostConfigDiscovery(overridePath, cwd);
+	const sources = readConfigSources(overridePath, cwd);
+	const hostConfigDiscovery = getConfiguredHostConfigDiscovery(sources);
 	// Host files are a lower-precedence fallback. This ordering means an opt-in
 	// discovery cannot override a shared or Pi-owned definition, and all normal
 	// URL-bound credential stripping remains in mergeServerMaps.
 	let config: McpConfig = hostConfigDiscovery === "on" ? loadDiscoveredHostConfigs(cwd) : { mcpServers: {} };
 
-	for (const source of sourceSpecs) {
-		const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
+	for (const { config: loaded } of sources) {
 		if (!loaded) continue;
 		config = mergeConfigs(config, expandImports(loaded, cwd));
 	}

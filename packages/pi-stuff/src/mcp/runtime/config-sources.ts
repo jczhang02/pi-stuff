@@ -4,8 +4,14 @@ import { dirname, join, resolve } from "node:path";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { xdgConfigHome } from "../../xdg/index.ts";
 import { getAgentPath } from "./agent-dir.ts";
-import { extractServers, importKinds, loadImportedConfig, readValidatedConfig } from "./config-codecs.ts";
-import type { HostConfigDiscovery, ImportKind, ServerEntry } from "./types.ts";
+import {
+	extractServers,
+	importKinds,
+	loadImportedConfig,
+	readValidatedConfig,
+	type ServerMap,
+} from "./config-codecs.ts";
+import type { HostConfigDiscovery, ImportKind, McpConfig, ServerEntry } from "./types.ts";
 
 const AGENTS_GLOBAL_CONFIG_PATHS = [
 	join(homedir(), ".agents", "mcp.json"),
@@ -66,6 +72,12 @@ export interface ConfigSourceSpec {
 	scope: "global" | "project";
 }
 
+export interface ConfigSourceSnapshot {
+	readonly config: McpConfig | null;
+	readonly exists: boolean;
+	readonly spec: ConfigSourceSpec;
+}
+
 export interface ConfigDiscoveryPath {
 	label: string;
 	path: string;
@@ -86,6 +98,10 @@ export interface ConfigDiscoverySource extends ConfigDiscoveryPath {
 
 export interface ImportConfigSummary extends DiscoveredImportConfig {
 	serverCount: number;
+}
+
+interface ImportConfigSnapshot extends ImportConfigSummary {
+	readonly servers: ServerMap;
 }
 
 export interface HostConfigSummary extends ImportConfigSummary {
@@ -164,32 +180,22 @@ export function findAvailableImportConfigs(cwd = process.cwd()): DiscoveredImpor
 }
 
 export function getMcpDiscoverySummary(overridePath?: string, cwd = process.cwd()): McpDiscoverySummary {
-	const sourceSpecs = getConfigSources(overridePath, cwd);
-	const sources = sourceSpecs.map((source) => {
-		const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
+	const sourceSnapshots = readConfigSources(overridePath, cwd);
+	const sources = sourceSnapshots.map(({ config, exists, spec }) => {
 		return {
-			id: source.id,
-			label: source.label,
-			path: source.readPath,
-			exists: existsSync(source.readPath),
-			scope: source.scope,
-			kind: source.shared ? "shared" : "pi",
-			serverCount: loaded ? Object.keys(loaded.mcpServers).length : 0,
+			id: spec.id,
+			label: spec.label,
+			path: spec.readPath,
+			exists,
+			scope: spec.scope,
+			kind: spec.shared ? "shared" : "pi",
+			serverCount: config ? Object.keys(config.mcpServers).length : 0,
 		} satisfies ConfigDiscoverySource;
 	});
 
-	const imports = importKinds()
-		.map((kind) => {
-			const imported = loadImportedConfig(kind, cwd, `Failed to inspect imported MCP config from ${kind}:`);
-			if (!imported) return null;
-			return {
-				kind,
-				path: imported.path,
-				serverCount: Object.keys(extractServers(imported.value, kind)).length,
-			} satisfies ImportConfigSummary;
-		})
-		.filter((value): value is ImportConfigSummary => value !== null);
-	const hostConfigDiscovery = getConfiguredHostConfigDiscovery(overridePath, cwd);
+	const importSnapshots = readImportConfigSnapshots(cwd);
+	const imports = importSnapshots.map(({ kind, path, serverCount }) => ({ kind, path, serverCount }));
+	const hostConfigDiscovery = getConfiguredHostConfigDiscovery(sourceSnapshots);
 	const hostConfigs = imports.map((entry) => ({ ...entry, active: hostConfigDiscovery === "on" }));
 	const totalServerCount = sources.reduce((sum, source) => sum + source.serverCount, 0);
 	const hasSharedServers = sources.some((source) => source.kind === "shared" && source.serverCount > 0);
@@ -202,7 +208,7 @@ export function getMcpDiscoverySummary(overridePath?: string, cwd = process.cwd(
 		imports,
 		hostConfigs,
 		hostConfigDiscovery,
-		conflicts: getConfigConflicts(sourceSpecs, imports, cwd),
+		conflicts: getConfigConflicts(sourceSnapshots, importSnapshots),
 		hasAnyConfig,
 		hasAnyDetectedPaths,
 		hasSharedServers,
@@ -220,22 +226,40 @@ export function getMcpDiscoverySummary(overridePath?: string, cwd = process.cwd(
 	return {
 		...summaryWithoutRepoPrompt,
 		fingerprint,
-		repoPrompt: detectRepoPrompt(summaryWithoutRepoPrompt, cwd),
+		repoPrompt: detectRepoPrompt(sourceSnapshots, cwd),
 	};
 }
-export function getConfiguredHostConfigDiscovery(overridePath?: string, cwd = process.cwd()): HostConfigDiscovery {
+
+export function readConfigSources(overridePath?: string, cwd = process.cwd()): ConfigSourceSnapshot[] {
+	return getConfigSources(overridePath, cwd).map((spec) => ({
+		config: readValidatedConfig(spec.readPath, `MCP config from ${spec.readPath}`),
+		exists: existsSync(spec.readPath),
+		spec,
+	}));
+}
+
+export function getConfiguredHostConfigDiscovery(sources: readonly ConfigSourceSnapshot[]): HostConfigDiscovery {
 	let configured: HostConfigDiscovery = "off";
-	for (const source of getConfigSources(overridePath, cwd)) {
-		const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
-		const value = loaded?.settings?.hostConfigDiscovery;
+	for (const { config } of sources) {
+		const value = config?.settings?.hostConfigDiscovery;
 		if (value === "off" || value === "prompt" || value === "on") configured = value;
 	}
 	return configured;
 }
+
+function readImportConfigSnapshots(cwd: string): ImportConfigSnapshot[] {
+	const snapshots: ImportConfigSnapshot[] = [];
+	for (const kind of importKinds()) {
+		const imported = loadImportedConfig(kind, cwd, `Failed to inspect imported MCP config from ${kind}:`);
+		if (!imported) continue;
+		const servers = extractServers(imported.value, kind);
+		snapshots.push({ kind, path: imported.path, serverCount: Object.keys(servers).length, servers });
+	}
+	return snapshots;
+}
 function getConfigConflicts(
-	sourceSpecs: ConfigSourceSpec[],
-	imports: ImportConfigSummary[],
-	cwd: string,
+	sources: readonly ConfigSourceSnapshot[],
+	imports: readonly ImportConfigSnapshot[],
 ): McpConfigConflict[] {
 	const seen = new Map<string, Array<{ kind: "shared" | "pi" | "host"; path: string }>>();
 	const record = (name: string, source: { kind: "shared" | "pi" | "host"; path: string }): void => {
@@ -247,32 +271,26 @@ function getConfigConflicts(
 	// Host candidates are listed first because, when enabled, they are the
 	// lowest-precedence fallback. The fixed IMPORT_PATHS order is deterministic.
 	for (const entry of imports) {
-		const imported = loadImportedConfig(entry.kind, cwd, `Failed to inspect imported MCP config from ${entry.kind}:`);
-		if (!imported) continue;
-		for (const name of Object.keys(extractServers(imported.value, entry.kind))) {
-			record(name, { kind: "host", path: imported.path });
+		for (const name of Object.keys(entry.servers)) {
+			record(name, { kind: "host", path: entry.path });
 		}
 	}
-	for (const source of sourceSpecs) {
-		const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
-		if (!loaded) continue;
-		if (loaded.imports?.length) {
-			for (const importKind of loaded.imports) {
-				const imported = loadImportedConfig(
-					importKind,
-					cwd,
-					`Failed to inspect imported MCP config from ${importKind}:`,
-				);
+	const importsByKind = new Map(imports.map((entry) => [entry.kind, entry]));
+	for (const { config, spec } of sources) {
+		if (!config) continue;
+		if (config.imports?.length) {
+			for (const importKind of config.imports) {
+				const imported = importsByKind.get(importKind);
 				if (!imported) continue;
-				for (const name of Object.keys(extractServers(imported.value, importKind))) {
+				for (const name of Object.keys(imported.servers)) {
 					record(name, { kind: "host", path: imported.path });
 				}
 			}
 		}
-		for (const name of Object.keys(loaded.mcpServers)) {
+		for (const name of Object.keys(config.mcpServers)) {
 			record(name, {
-				kind: source.shared ? "shared" : "pi",
-				path: source.readPath,
+				kind: spec.shared ? "shared" : "pi",
+				path: spec.readPath,
 			});
 		}
 	}
@@ -373,17 +391,12 @@ function findProjectRoot(cwd = process.cwd()): string | null {
 	}
 }
 
-function detectRepoPrompt(
-	summary: Omit<McpDiscoverySummary, "fingerprint" | "repoPrompt">,
-	cwd = process.cwd(),
-): RepoPromptDiscovery {
-	for (const source of summary.sources) {
-		if (source.kind !== "shared" || source.serverCount === 0) continue;
-		const config = readValidatedConfig(source.path, `MCP config from ${source.path}`);
-		if (!config) continue;
+function detectRepoPrompt(sources: readonly ConfigSourceSnapshot[], cwd = process.cwd()): RepoPromptDiscovery {
+	for (const { config, spec } of sources) {
+		if (!spec.shared || !config) continue;
 		for (const [name, entry] of Object.entries(config.mcpServers)) {
 			if (isRepoPromptServer(name, entry)) {
-				return { configured: true, configuredPath: source.path };
+				return { configured: true, configuredPath: spec.readPath };
 			}
 		}
 	}
