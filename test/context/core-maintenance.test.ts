@@ -3,6 +3,7 @@ import {
 	type AgentKeybindingsManager,
 	apiFor,
 	cleanupContextCoreFixtures,
+	commandMagicModule,
 	context,
 	contextActivityData,
 	createExtensionCommandContext,
@@ -10,12 +11,11 @@ import {
 	emit,
 	getContextCapability,
 	type Handlers,
-	type HostRegistrations,
 	isRuntimeObject,
 	KeybindingsManager,
 	magicModule,
+	maintenanceHarness,
 	piStuffContext,
-	type TestCommandDefinition,
 	TestTui,
 	type ToolDefinition,
 	TUI_KEYBINDINGS,
@@ -27,16 +27,7 @@ import {
 afterEach(cleanupContextCoreFixtures);
 
 test("reports unavailable maintenance through a Pi Stuff activity", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
-	const api = apiFor(handlers, [], registrations);
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
 	const renderRequests: Array<{ force?: unknown; handled?: unknown }> = [];
 	api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
 		if (!isRuntimeObject(value) || value === null) return;
@@ -64,18 +55,9 @@ test("reports unavailable maintenance through a Pi Stuff activity", async () => 
 });
 
 test("executes a rebuild confirmed in the Context dialog without asking the user to repeat the command", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
 	let recompCalls = 0;
 	let publishRecompComplete: (() => void) | undefined;
-	const api = apiFor(handlers, [], registrations);
 	await piStuffContext(api, {
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
@@ -212,39 +194,25 @@ test("routes Magic Context tools through the shared Tool row renderer", async ()
 });
 
 test("adapts command progress into one model-hidden Pi Stuff activity", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
-	piStuffContext(apiFor(handlers, [], registrations), {
-		loadMagicContext: async () => ({
-			default: async (magicApi: ExtensionAPI) => {
-				magicApi.on("context", (event) => event);
-				magicApi.registerCommand("ctx-wrapup", {
-					handler: async () => {
-						for (const details of [
-							{
-								level: "info",
-								text: "## Magic Wrapup\n\nEligible history is about 12,000 tokens.",
-								title: "/ctx-wrapup",
-							},
-							{
-								level: "success",
-								text: "## Magic Wrapup\n\nWrapped up 84 messages into 3 compartments.",
-								title: "/ctx-wrapup",
-							},
-						]) {
-							magicApi.appendEntry("ctx-status", details);
-						}
+	const { api, commandDefinitions, entries, handlers, registrations } = maintenanceHarness();
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			commandMagicModule("ctx-wrapup", (magicApi) => {
+				for (const details of [
+					{
+						level: "info",
+						text: "## Magic Wrapup\n\nEligible history is about 12,000 tokens.",
+						title: "/ctx-wrapup",
 					},
-				});
-			},
-		}),
+					{
+						level: "success",
+						text: "## Magic Wrapup\n\nWrapped up 84 messages into 3 compartments.",
+						title: "/ctx-wrapup",
+					},
+				]) {
+					magicApi.appendEntry("ctx-status", details);
+				}
+			}),
 	});
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -262,37 +230,23 @@ test("adapts command progress into one model-hidden Pi Stuff activity", async ()
 });
 
 test("routes detached maintenance completion back to its running activity", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
 	let finishRecomp: (() => void) | undefined;
-	piStuffContext(apiFor(handlers, [], registrations), {
-		loadMagicContext: async () => ({
-			default: async (magicApi: ExtensionAPI) => {
-				magicApi.on("context", (event) => event);
-				magicApi.registerCommand("ctx-recomp", {
-					handler: async () => {
-						magicApi.appendEntry("ctx-status", {
-							level: "info",
-							text: "## Magic Recomp\n\nHistorian recomp started.",
-							title: "/ctx-recomp",
-						});
-						finishRecomp = () =>
-							magicApi.appendEntry("ctx-status", {
-								level: "success",
-								text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
-								title: "/ctx-recomp",
-							});
-					},
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			commandMagicModule("ctx-recomp", (magicApi) => {
+				magicApi.appendEntry("ctx-status", {
+					level: "info",
+					text: "## Magic Recomp\n\nHistorian recomp started.",
+					title: "/ctx-recomp",
 				});
-			},
-		}),
+				finishRecomp = () =>
+					magicApi.appendEntry("ctx-status", {
+						level: "success",
+						text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
+						title: "/ctx-recomp",
+					});
+			}),
 	});
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -314,39 +268,25 @@ test("routes detached maintenance completion back to its running activity", asyn
 });
 
 test("does not route detached maintenance updates into a different Session", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
 	let recompCalls = 0;
 	let finishRecomp: (() => void) | undefined;
-	piStuffContext(apiFor(handlers, [], registrations), {
-		loadMagicContext: async () => ({
-			default: async (magicApi: ExtensionAPI) => {
-				magicApi.on("context", (event) => event);
-				magicApi.registerCommand("ctx-recomp", {
-					handler: async () => {
-						recompCalls++;
-						magicApi.appendEntry("ctx-status", {
-							level: "info",
-							text: "## Magic Recomp\n\nHistorian recomp started.",
-							title: "/ctx-recomp",
-						});
-						finishRecomp = () =>
-							magicApi.appendEntry("ctx-status", {
-								level: "success",
-								text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
-								title: "/ctx-recomp",
-							});
-					},
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			commandMagicModule("ctx-recomp", (magicApi) => {
+				recompCalls++;
+				magicApi.appendEntry("ctx-status", {
+					level: "info",
+					text: "## Magic Recomp\n\nHistorian recomp started.",
+					title: "/ctx-recomp",
 				});
-			},
-		}),
+				finishRecomp = () =>
+					magicApi.appendEntry("ctx-status", {
+						level: "success",
+						text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
+						title: "/ctx-recomp",
+					});
+			}),
 	});
 	const firstCtx = context([], "/workspace/first", "session-first");
 	const secondCtx = context([], "/workspace/second", "session-second");
@@ -373,37 +313,23 @@ test("does not route detached maintenance updates into a different Session", asy
 });
 
 test("releases detached maintenance ownership when its handler rejects", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
 	let recompCalls = 0;
 	let rejectRecomp: ((error: Error) => void) | undefined;
-	piStuffContext(apiFor(handlers, [], registrations), {
-		loadMagicContext: async () => ({
-			default: async (magicApi: ExtensionAPI) => {
-				magicApi.on("context", (event) => event);
-				magicApi.registerCommand("ctx-recomp", {
-					handler: async () => {
-						recompCalls++;
-						if (recompCalls > 1) return;
-						magicApi.appendEntry("ctx-status", {
-							level: "info",
-							text: "## Magic Recomp\n\nHistorian recomp started.",
-							title: "/ctx-recomp",
-						});
-						await new Promise<void>((_resolve, reject) => {
-							rejectRecomp = reject;
-						});
-					},
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			commandMagicModule("ctx-recomp", async (magicApi) => {
+				recompCalls++;
+				if (recompCalls > 1) return;
+				magicApi.appendEntry("ctx-status", {
+					level: "info",
+					text: "## Magic Recomp\n\nHistorian recomp started.",
+					title: "/ctx-recomp",
 				});
-			},
-		}),
+				await new Promise<void>((_resolve, reject) => {
+					rejectRecomp = reject;
+				});
+			}),
 	});
 	const firstCtx = context([], "/workspace/first", "session-first");
 	const secondCtx = context([], "/workspace/second", "session-second");
@@ -426,26 +352,12 @@ test("releases detached maintenance ownership when its handler rejects", async (
 });
 
 test("settles an unexpected maintenance failure into the same activity", async () => {
-	const handlers: Handlers = new Map();
-	const commandDefinitions = new Map<string, TestCommandDefinition>();
-	const entries: NonNullable<HostRegistrations["entries"]> = [];
-	const registrations: HostRegistrations = {
-		commands: [],
-		commandDefinitions,
-		entries,
-		entryRenderers: [],
-	};
-	piStuffContext(apiFor(handlers, [], registrations), {
-		loadMagicContext: async () => ({
-			default: async (magicApi: ExtensionAPI) => {
-				magicApi.on("context", (event) => event);
-				magicApi.registerCommand("ctx-flush", {
-					handler: async () => {
-						throw new Error("database unavailable");
-					},
-				});
-			},
-		}),
+	const { api, commandDefinitions, entries, handlers } = maintenanceHarness();
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			commandMagicModule("ctx-flush", () => {
+				throw new Error("database unavailable");
+			}),
 	});
 	const ctx = context();
 	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);

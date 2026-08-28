@@ -133,6 +133,14 @@ function apiFor(
 	});
 }
 
+function maintenanceHarness() {
+	const handlers: Handlers = new Map();
+	const commandDefinitions = new Map<string, TestCommandDefinition>();
+	const entries: NonNullable<HostRegistrations["entries"]> = [];
+	const registrations: HostRegistrations = { commands: [], commandDefinitions, entries, entryRenderers: [] };
+	return { api: apiFor(handlers, [], registrations), commandDefinitions, entries, handlers, registrations };
+}
+
 function context(
 	entries: readonly SessionEntry[] = [],
 	cwd = "/workspace/project-a",
@@ -234,6 +242,15 @@ function magicModule(
 	};
 }
 
+function commandMagicModule(name: string, handler: (pi: ExtensionAPI, args: string) => Promise<void> | void) {
+	return {
+		default: async (pi: ExtensionAPI) => {
+			pi.on("context", (event) => event);
+			pi.registerCommand(name, { handler: async (args) => handler(pi, args) });
+		},
+	};
+}
+
 export type {
 	CompactOptions,
 	Extension,
@@ -252,6 +269,7 @@ export {
 	apiFor,
 	Check,
 	COMPACTION_RESULT,
+	commandMagicModule,
 	context,
 	contextActivityData,
 	createExtensionCommandContext,
@@ -267,6 +285,7 @@ export {
 	isSuiteNativeCompactionPreflight,
 	KeybindingsManager,
 	magicModule,
+	maintenanceHarness,
 	piStuffContext,
 	projectCurrentContext,
 	SYSTEM_PROMPT_EVENT_SCHEMA,
