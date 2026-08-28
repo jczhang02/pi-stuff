@@ -189,10 +189,10 @@
     padding-left: 1.25em;
   }
 
+  .source li { color: var(--ink-soft); }
+
   .source li + li,
   .decision-list li + li { margin-top: 9px; }
-
-  .source li { color: var(--ink-soft); }
 
   .source-note {
     margin-top: 18px;
@@ -344,7 +344,7 @@
     font-size: 13px;
   }
 
-  figcaption strong {
+  .capture figcaption strong {
     display: block;
     margin-bottom: 3px;
     color: var(--ink);
@@ -478,7 +478,7 @@
       <h1>Agent 在工作时，主对话应该长什么样？</h1>
       <p class="hero-lead">Claude Code 2.1.197 的真实界面同时使用对话记录和输入框下方的 Agent 列表；tintinweb 还增加了输入框上方的实时工作区。真正要决定的不是配色，而是这些位置各自承担什么职责。</p>
     </div>
-    <div class="hero-meta" aria-label="原型元数据">
+    <section class="hero-meta" aria-label="原型元数据">
       <div class="metric">
         <div class="metric-value">3</div>
         <div class="metric-label">结构不同的方案</div>
@@ -491,7 +491,7 @@
         <div class="metric-value">100×32</div>
         <div class="metric-label">统一终端网格</div>
       </div>
-    </div>
+    </section>
   </header>
 
   <aside class="evidence-notice">

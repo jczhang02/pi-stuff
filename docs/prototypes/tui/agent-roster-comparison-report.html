@@ -216,7 +216,7 @@
   }
   .capture-frame img { display: block; width: 100%; height: auto; }
   figcaption { padding-top: 13px; color: var(--muted); font-size: 13px; }
-  figcaption strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 14px; }
+  .capture figcaption strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 14px; }
   .evidence-label { display: block; margin-bottom: 5px; font-size: 10px; }
   .evidence-label.reference { color: #8a4c11; }
 
@@ -310,7 +310,7 @@
       <h1>Agent 列表放在编辑器下方，具体应该长什么样？</h1>
       <p class="hero-lead">大方向已经收敛：保留 C 的生命周期分工，但实时界面采用 Claude Code 的下方 roster。这里不再比较“放上面还是下面”，只比较下方 roster 的三种信息密度。</p>
     </div>
-    <div class="hero-meta" aria-label="原型元数据">
+    <section class="hero-meta" aria-label="原型元数据">
       <div class="metric">
         <div class="metric-value">3</div>
         <div class="metric-label">结构不同的 Pi roster</div>
@@ -323,7 +323,7 @@
         <div class="metric-value">100×32</div>
         <div class="metric-label">主要终端网格；另测 64×28</div>
       </div>
-    </div>
+    </section>
   </header>
 
   <aside class="notice">

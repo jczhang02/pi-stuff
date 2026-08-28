@@ -245,7 +245,7 @@
         </figcaption>
       </figure>
 
-      <div class="steps" aria-label="Tool Details interaction">
+      <section class="steps" aria-label="Tool Details interaction">
         <div class="step">
           <div class="step-num">01</div>
           <div><strong>打开</strong><p>原型用 Ctrl+O 打开最近的工具记录。Pi 也把它用于全局展开和 tree filter，因此最终键位仍待确认。</p></div>
@@ -262,7 +262,7 @@
           <div class="step-num">04</div>
           <div><strong>关闭</strong><p>Esc 一次关闭界面并恢复普通 editor 与 statusline；对话不跳动。</p></div>
         </div>
-      </div>
+      </section>
     </div>
   </section>
 
@@ -315,14 +315,14 @@
   Prototype review control only. It intentionally looks unlike Pi Stuff and never
   appears inside the PTY captures. This static engineering report is not shipped.
 -->
-<div class="prototype-switcher" data-prototype-only aria-label="浏览器报告方案切换器">
+<nav class="prototype-switcher" data-prototype-only aria-label="浏览器报告方案切换器">
   <button type="button" data-direction="-1" aria-label="上一个方案">←</button>
   <div class="switcher-label" aria-live="polite">
     <span class="switcher-warning">浏览器报告评审控件 · 不是 PI STUFF UI</span>
     <span class="switcher-current" data-switcher-current>A · 逐条（Flat rows）</span>
   </div>
   <button type="button" data-direction="1" aria-label="下一个方案">→</button>
-</div>
+</nav>
 
 <script>
   (() => {

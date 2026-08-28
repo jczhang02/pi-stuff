@@ -7,11 +7,12 @@
 	},
 	"files": {
 		"includes": [
-			"**/*.{ts,js,mjs,cjs,json,jsonc}",
+			"**/*.{ts,js,mjs,cjs,json,jsonc,css,html}",
 			"!**/node_modules",
 			"!**/.artifacts",
 			"!**/.beads",
 			"!**/.pi-subagents",
+			"!docs/reports/**/*.{css,html}",
 			"!bun.lock"
 		]
 	},
