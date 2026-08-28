@@ -45,7 +45,8 @@ lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed pro
 `intercom/native-supervisor-client.ts` owns child communication Tools and request orchestration, while
 `intercom/native-supervisor-storage.ts` owns the validated filesystem protocol, delivery records, and channel GC mechanics.
 `session/current-agents.ts` owns subscriptions, controls, overrides, and revisions;
-`session/current-agents-projection.ts` normalizes durable and live sources into immutable rows.
+`session/current-agents-projection.ts` merges durable and live sources into immutable rows, while
+`session/current-agents-projection-normalization.ts` owns bounded raw-value and nested-status normalization.
 `ui/agent-dialog.ts` owns interaction and async control/transcript generations; `ui/agent-dialog-renderer.ts` owns the
 single-column `/agents` layout, terminal-width fitting, and scroll metrics.
 
