@@ -5,6 +5,7 @@ import test from "node:test";
 import {
 	bindSession,
 	cancelRun,
+	createRunHarness,
 	errors,
 	flush,
 	lastPersistedGoal,
@@ -20,9 +21,7 @@ import {
 import { createMockContext, createMockPi } from "./support.js";
 
 test("run event listener failures do not interrupt persistence or sibling listeners", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	mock.eventBus.on(runEventChannel("listener-run"), () => {
 		throw new Error("observer failed");
 	});
@@ -41,9 +40,7 @@ test("run event listener failures do not interrupt persistence or sibling listen
 test("disabling RPC rejects new starts while the accepted run can drain", async () => {
 	const settingsPath = join(SETTINGS_DIRECTORY, "draining.json");
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always","rpc":{"enabled":true}}}\n');
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock, settingsPath);
-	bindSession(mock);
+	const [mock] = createRunHarness(createMockContext(), settingsPath);
 	const acceptedEvents = observeRun(mock, "draining-run");
 	startRun(mock, "draining-run");
 	await flush();
@@ -77,9 +74,7 @@ test("disabling RPC rejects new starts while the accepted run can drain", async 
 });
 
 test("shutdown cancels a queued terminal publication from the old session", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const events = observeRun(mock, "shutdown-terminal");
 	startRun(mock, "shutdown-terminal");
 	await flush();
@@ -127,9 +122,7 @@ test("shutdown invalidates a start continuation still awaiting kickoff delivery"
 });
 
 test("session replacement invalidates old run ownership and terminal details", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const firstContext = bindSession(mock);
+	const [mock, firstContext] = createRunHarness();
 	const firstEvents = observeRun(mock, "old-run");
 	startRun(mock, "old-run");
 	await flush();
@@ -182,9 +175,7 @@ test("session replacement invalidates old run ownership and terminal details", a
 });
 
 test("removed RPC, global state, and versioned channels are inert", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const oldReplies: unknown[] = [];
 	const oldStates: unknown[] = [];
 	const versionedEvents: unknown[] = [];

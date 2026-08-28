@@ -119,6 +119,18 @@ export function registerGoalWithSettingsPath(pi: Parameters<typeof goal>[0], set
 	runtimeByPi.set(pi, goal(pi, { settingsPath }));
 }
 
+export function createGoalHarness(
+	activeTools: string[] = [],
+	toolVisibility: "always" | "after-first-goal" = "always",
+	contextOverrides: MockContextOverrides = {},
+) {
+	const mock = createMockPi({ activeTools });
+	registerGoal(mock.pi, toolVisibility);
+	const context = createMockContext(contextOverrides);
+	mock.callEvent("session_start", {}, context.ctx);
+	return [mock, context] as const;
+}
+
 export type GoalTool = {
 	execute: (...args: unknown[]) => Promise<{
 		content?: Array<{ type: string; text: string }>;

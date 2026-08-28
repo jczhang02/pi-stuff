@@ -7,6 +7,7 @@ import {
 	type BlockedToolParameters,
 	type CompletionToolParameters,
 	completionReport,
+	createGoalHarness,
 	createMockContext,
 	createMockPi,
 	GOAL_SETTINGS_DIRECTORY,
@@ -92,10 +93,7 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 });
 
 test("goal command attributes its hidden Agent prompt to the user", async () => {
-	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
-	registerGoal(mock.pi);
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["goal_complete", "goal_blocked"]);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	assert.equal(readAgentWorkOrigin(mock.sentHiddenGoalMessages.at(-1)?.message as { details?: unknown }), "user");
@@ -130,10 +128,8 @@ test("TUI Goal lifecycle info uses the shared transcript row while RPC stays pla
 });
 
 test("bare goal is menu-first in TUI, observable in RPC, and rejects headless modes", async () => {
-	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
-	registerGoal(mock.pi);
 	const selections: Array<{ title: string; actions: string[] }> = [];
-	const tui = createMockContext({
+	const [mock, tui] = createGoalHarness(["goal_complete", "goal_blocked"], "always", {
 		mode: "tui",
 		hasUI: true,
 		select: async (title: string, actions: string[]) => {
@@ -141,7 +137,6 @@ test("bare goal is menu-first in TUI, observable in RPC, and rejects headless mo
 			return undefined;
 		},
 	});
-	mock.callEvent("session_start", {}, tui.ctx);
 
 	await mock.commands.get("goal")?.handler("", tui.ctx);
 	assert.equal(selections.length, 1);
@@ -281,12 +276,7 @@ test("invalid settings remain read-only in the Goal settings UI", async () => {
 });
 
 test("after-first-goal hides tools until activation, then keeps them visible", async () => {
-	const mock = createMockPi({
-		activeTools: ["read", "bash", "goal_complete", "goal_blocked"],
-	});
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);

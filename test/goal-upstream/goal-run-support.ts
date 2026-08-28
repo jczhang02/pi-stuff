@@ -6,7 +6,7 @@ import { after } from "node:test";
 import goal from "../../packages/pi-stuff/src/goal/src/goal.js";
 import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { recordGoalBlockerAttempt } from "../../packages/pi-stuff/src/goal/src/safety.js";
-import { createMockContext, type createMockPi } from "./support.js";
+import { createMockContext, createMockPi } from "./support.js";
 
 export const START_CHANNEL = "pi-goal:start";
 export const CANCEL_CHANNEL = "pi-goal:cancel";
@@ -79,6 +79,12 @@ export function registerGoal(mock: ReturnType<typeof createMockPi>, settingsPath
 export function bindSession(mock: ReturnType<typeof createMockPi>, context = createMockContext()) {
 	mock.callEvent("session_start", {}, context.ctx);
 	return context;
+}
+
+export function createRunHarness(context = createMockContext(), settingsPath = ENABLED_SETTINGS_PATH) {
+	const mock = createMockPi({ activeTools: ["read", "bash"] });
+	registerGoal(mock, settingsPath);
+	return [mock, bindSession(mock, context)] as const;
 }
 
 export function runEventChannel(runId: string) {

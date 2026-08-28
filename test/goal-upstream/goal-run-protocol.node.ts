@@ -6,6 +6,7 @@ import {
 	CANCEL_CHANNEL,
 	cancelRun,
 	completionReport,
+	createRunHarness,
 	DISABLED_SETTINGS_PATH,
 	errors,
 	flush,
@@ -31,9 +32,7 @@ test("managed run RPC is disabled when settings are missing, invalid, or explici
 		["invalid", INVALID_SETTINGS_PATH],
 		["explicit", DISABLED_SETTINGS_PATH],
 	] as const) {
-		const mock = createMockPi({ activeTools: ["read", "bash"] });
-		registerGoal(mock, settingsPath);
-		bindSession(mock);
+		const [mock] = createRunHarness(createMockContext(), settingsPath);
 		const runId = `disabled-${name}`;
 		const events = observeRun(mock, runId);
 
@@ -73,9 +72,7 @@ test("start reports no active session before bind and after shutdown", async () 
 });
 
 test("enabled start emits run-scoped active state and delivers kickoff", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	const events = observeRun(mock, "run-start");
 
 	startRun(mock, "run-start", { objective: "  ship the feature  ", tokenBudget: 50_000 });
@@ -94,9 +91,7 @@ test("enabled start emits run-scoped active state and delivers kickoff", async (
 });
 
 test("unsafe or missing run ids are ignored without creating channel injection", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	for (const runId of ["", ":other-channel", "with space", "x".repeat(129)]) {
 		startRun(mock, runId);
 	}
@@ -116,9 +111,7 @@ test("valid run ids receive structured request validation errors", async () => {
 		{ runId: "string-budget", overrides: { tokenBudget: "100" } },
 	];
 	for (const { runId, overrides } of invalidPayloads) {
-		const mock = createMockPi({ activeTools: ["read", "bash"] });
-		registerGoal(mock);
-		bindSession(mock);
+		const [mock] = createRunHarness();
 		const events = observeRun(mock, runId);
 		startRun(mock, runId, overrides);
 		await flush();
@@ -131,9 +124,7 @@ test("valid run ids receive structured request validation errors", async () => {
 });
 
 test("payload access failures are contained as invalid requests", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	const startEvents = observeRun(mock, "throwing-start");
 	const throwingStart = {
 		runId: "throwing-start",
@@ -177,9 +168,7 @@ test("payload access failures are contained as invalid requests", async () => {
 });
 
 test("payload evaluation cannot revive a replaced session", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const events = observeRun(mock, "session-changing-payload");
 	const payload = {
 		runId: "session-changing-payload",
@@ -201,11 +190,8 @@ test("payload evaluation cannot revive a replaced session", async () => {
 });
 
 test("start rejects a pre-existing manual goal without replacement confirmation", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
 	let confirmations = 0;
-	const context = bindSession(
-		mock,
+	const [mock, context] = createRunHarness(
 		createMockContext({
 			confirm: async () => {
 				confirmations++;
@@ -229,9 +215,7 @@ test("start rejects a pre-existing manual goal without replacement confirmation"
 });
 
 test("duplicate run ids are rejected without starting twice", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	const events = observeRun(mock, "duplicate-run");
 	startRun(mock, "duplicate-run");
 	await flush();
@@ -251,10 +235,8 @@ test("duplicate run ids are rejected without starting twice", async () => {
 });
 
 test("cancel pauses only the matching managed run", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
 	let aborts = 0;
-	bindSession(mock, createMockContext({ abort: () => aborts++ }));
+	const [mock] = createRunHarness(createMockContext({ abort: () => aborts++ }));
 	const events = observeRun(mock, "cancel-run");
 	startRun(mock, "cancel-run");
 	await flush();
@@ -272,9 +254,7 @@ test("cancel pauses only the matching managed run", async () => {
 });
 
 test("cancel during the first active event prevents kickoff delivery", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	bindSession(mock);
+	const [mock] = createRunHarness();
 	const events = observeRun(mock, "cancel-before-kickoff");
 	mock.eventBus.on(runEventChannel("cancel-before-kickoff"), (data) => {
 		// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
@@ -297,9 +277,7 @@ test("cancel during the first active event prevents kickoff delivery", async () 
 });
 
 test("unknown, stale, and manual runs cannot be cancelled", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	await mock.commands.get("goal")?.handler("manual goal", context.ctx);
 	const events = observeRun(mock, "not-owned");
 
@@ -318,9 +296,7 @@ test("cancel rejects malformed reasons without mutating the run", async () => {
 		[42, "number"],
 		["x".repeat(1_001), "string"],
 	] as const) {
-		const mock = createMockPi({ activeTools: ["read", "bash"] });
-		registerGoal(mock);
-		bindSession(mock);
+		const [mock] = createRunHarness();
 		const runId = `bad-reason-${reasonType}`;
 		const events = observeRun(mock, runId);
 		startRun(mock, runId);
@@ -338,9 +314,7 @@ test("cancel rejects malformed reasons without mutating the run", async () => {
 });
 
 test("manual edits terminate the prior managed run as superseded", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const events = observeRun(mock, "edited-run");
 	startRun(mock, "edited-run", { objective: "managed objective" });
 	await flush();
@@ -360,9 +334,7 @@ test("manual edits terminate the prior managed run as superseded", async () => {
 });
 
 test("completion emits one terminal event with summary and suppresses clear duplication", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const events = observeRun(mock, "complete-run");
 	startRun(mock, "complete-run");
 	await flush();
@@ -393,9 +365,7 @@ test("completion emits one terminal event with summary and suppresses clear dupl
 });
 
 test("a completion listener can start the next managed run", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const firstEvents = observeRun(mock, "chained-first");
 	const secondEvents = observeRun(mock, "chained-second");
 	mock.eventBus.on(runEventChannel("chained-first"), (data) => {
@@ -433,9 +403,7 @@ test("a completion listener can start the next managed run", async () => {
 });
 
 test("terminal listeners cannot make stale pause work mutate a replacement", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const firstEvents = observeRun(mock, "pause-first");
 	const secondEvents = observeRun(mock, "pause-second");
 	mock.eventBus.on(runEventChannel("pause-first"), (data) => {
@@ -468,9 +436,7 @@ test("terminal listeners cannot make stale pause work mutate a replacement", asy
 });
 
 test("blocked and usage-limited transitions preserve terminal reasons", async () => {
-	const blockedMock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(blockedMock);
-	const blockedContext = bindSession(blockedMock);
+	const [blockedMock, blockedContext] = createRunHarness();
 	const blockedEvents = observeRun(blockedMock, "blocked-run");
 	startRun(blockedMock, "blocked-run");
 	await flush();
@@ -495,9 +461,7 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 	assert.equal(states(blockedEvents).at(-1)?.status, "blocked");
 	assert.match(states(blockedEvents).at(-1)?.reason ?? "", /credentials/i);
 
-	const usageMock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(usageMock);
-	const usageContext = bindSession(usageMock);
+	const [usageMock, usageContext] = createRunHarness();
 	const usageEvents = observeRun(usageMock, "usage-run");
 	startRun(usageMock, "usage-run");
 	await flush();
@@ -521,10 +485,7 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 
 test("budget exhaustion emits the budget-limited terminal state", async () => {
 	const branch: Array<ReturnType<typeof assistantUsageEntry>> = [];
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(
-		mock,
+	const [mock, context] = createRunHarness(
 		createMockContext({
 			sessionManager: { getBranch: () => branch, getEntries: () => branch },
 		}),
@@ -548,9 +509,7 @@ test("budget exhaustion emits the budget-limited terminal state", async () => {
 });
 
 test("manual clear emits one cleared terminal event for its managed run", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock);
-	const context = bindSession(mock);
+	const [mock, context] = createRunHarness();
 	const events = observeRun(mock, "clear-run");
 	startRun(mock, "clear-run");
 	await flush();

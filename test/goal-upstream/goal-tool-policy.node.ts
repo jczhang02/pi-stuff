@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	assistantUsageEntry,
+	createGoalHarness,
 	createMockContext,
 	createMockPi,
 	lastGoalStatus,
@@ -15,12 +16,11 @@ import {
 
 test("an active goal pauses without aborting an unrelated restrictive turn", async () => {
 	let aborts = 0;
-	const mock = createMockPi({
-		activeTools: ["read", "bash", "scrape", "goal_complete", "goal_blocked"],
-	});
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext({ abort: () => aborts++ });
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(
+		["read", "bash", "scrape", "goal_complete", "goal_blocked"],
+		"after-first-goal",
+		{ abort: () => aborts++ },
+	);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
 	// Plan-mode style whole-set replacement drops goal tools and keeps unrelated ones.
@@ -97,12 +97,7 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 });
 
 test("a later restrictive tool policy pauses the goal at agent_end without continuation", async () => {
-	const mock = createMockPi({
-		activeTools: ["read", "bash", "goal_complete", "goal_blocked"],
-	});
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
 	const promptResult = mock.callEvent(
@@ -125,12 +120,7 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 });
 
 test("after-first-goal does not fight another extension that exposes locked tools", () => {
-	const mock = createMockPi({
-		activeTools: ["read", "bash", "goal_complete", "goal_blocked"],
-	});
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	mock.rawPi.setActiveTools(["read", "bash", "goal_complete", "goal_blocked", "scrape"]);
@@ -179,10 +169,7 @@ test("restored active goal applies budget limits before unavailable-tool pauses"
 });
 
 test("always visibility respects a restrictive policy when starting a goal", async () => {
-	const mock = createMockPi();
-	registerGoal(mock.pi);
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness();
 	mock.rawPi.setActiveTools(["read", "bash"]);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
@@ -194,10 +181,7 @@ test("always visibility respects a restrictive policy when starting a goal", asy
 });
 
 test("after-first-goal does not widen a restrictive active turn", async () => {
-	const mock = createMockPi();
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext({ isIdle: () => false });
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness([], "after-first-goal", { isIdle: () => false });
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
@@ -221,10 +205,7 @@ test("failed replacement activation pauses an existing active goal without termi
 });
 
 test("start fails without committing a goal when goal tools cannot become active", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal");
 
 	const originalSetActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
 	mock.rawPi.setActiveTools = (names: string[]) => {
@@ -240,10 +221,7 @@ test("start fails without committing a goal when goal tools cannot become active
 });
 
 test("failed first prompt delivery restores the locked tool set", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal");
 
 	const sendUserMessage = mock.rawPi.sendUserMessage.bind(mock.rawPi);
 	mock.rawPi.sendUserMessage = () => {
@@ -260,12 +238,7 @@ test("failed first prompt delivery restores the locked tool set", async () => {
 });
 
 test("failed first prompt delivery preserves a preexisting external goal-tool set", async () => {
-	const mock = createMockPi({
-		activeTools: ["read", "bash", "goal_complete", "goal_blocked"],
-	});
-	registerGoal(mock.pi, "after-first-goal");
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
 	// Another extension exposes both terminal tools while pi-goal remains locked.
 	mock.rawPi.setActiveTools(["read", "goal_complete", "goal_blocked", "scrape"]);
 	mock.rawPi.sendUserMessage = () => {
@@ -326,11 +299,10 @@ test("failed lazy reactivation deliveries restore the restrictive tool set", asy
 });
 
 test("a stale first kickoff cannot run or roll back a newer replacement", async () => {
-	const mock = createMockPi({ activeTools: ["read", "bash"] });
-	registerGoal(mock.pi, "after-first-goal");
 	let aborts = 0;
-	const context = createMockContext({ abort: () => aborts++ });
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal", {
+		abort: () => aborts++,
+	});
 	const sentPrompts: string[] = [];
 	let rejectFirstSend: ((error: Error) => void) | undefined;
 	mock.rawPi.sendUserMessage = (prompt: string) => {
@@ -364,10 +336,7 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 });
 
 test("a cleared Goal cannot deliver a kickoff still awaiting Suite preparation", async () => {
-	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
-	registerGoal(mock.pi);
-	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	const [mock, context] = createGoalHarness(["goal_complete", "goal_blocked"]);
 	let releasePreparation = () => {};
 	const preparation = new Promise<void>((resolve) => {
 		releasePreparation = resolve;
