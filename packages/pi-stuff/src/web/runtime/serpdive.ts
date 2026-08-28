@@ -8,7 +8,7 @@ import {
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
@@ -36,26 +36,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "SERPdive",
-		configuredValue: loadConfig()["serpdiveApiKey"],
-		environmentValue: process.env["SERPDIVE_API_KEY"],
-		signal,
-	});
-}
-
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
-	if (!apiKey) {
-		throw new Error(
-			"SERPdive API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "serpdiveApiKey": "your-key" }\n` +
-				"  2. Set SERPDIVE_API_KEY environment variable\n" +
-				"Get a key at https://serpdive.com/dashboard/keys",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "SERPdive",
+			configuredValue: loadConfig()["serpdiveApiKey"],
+			environmentValue: process.env["SERPDIVE_API_KEY"],
+			signal,
+		},
+		"SERPdive API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "serpdiveApiKey": "your-key" }\n` +
+			"  2. Set SERPDIVE_API_KEY environment variable\n" +
+			"Get a key at https://serpdive.com/dashboard/keys",
+	);
 }
 
 // An unknown value falls back to the free default rather than failing: a typo

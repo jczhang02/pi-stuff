@@ -7,7 +7,7 @@ import {
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
@@ -42,26 +42,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "SerpBase",
-		configuredValue: loadConfig()["serpbaseApiKey"],
-		environmentValue: process.env["SERPBASE_API_KEY"],
-		signal,
-	});
-}
-
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
-	if (!apiKey) {
-		throw new Error(
-			"SerpBase API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "serpbaseApiKey": "your-key" }\n` +
-				"  2. Set SERPBASE_API_KEY environment variable\n" +
-				"Get a key at https://serpbase.dev",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "SerpBase",
+			configuredValue: loadConfig()["serpbaseApiKey"],
+			environmentValue: process.env["SERPBASE_API_KEY"],
+			signal,
+		},
+		"SerpBase API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "serpbaseApiKey": "your-key" }\n` +
+			"  2. Set SERPBASE_API_KEY environment variable\n" +
+			"Get a key at https://serpbase.dev",
+	);
 }
 
 function passesDomainFilters(url: string, filters: ProviderDomainFilters): boolean {

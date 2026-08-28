@@ -4,7 +4,7 @@ import { isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { errorMessage, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
@@ -21,26 +21,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "Tavily",
-		configuredValue: loadConfig()["tavilyApiKey"],
-		environmentValue: process.env["TAVILY_API_KEY"],
-		signal,
-	});
-}
-
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
-	if (!apiKey) {
-		throw new Error(
-			"Tavily API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "tavilyApiKey": "your-key" }\n` +
-				"  2. Set TAVILY_API_KEY environment variable\n" +
-				"Get a key at https://app.tavily.com/",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "Tavily",
+			configuredValue: loadConfig()["tavilyApiKey"],
+			environmentValue: process.env["TAVILY_API_KEY"],
+			signal,
+		},
+		"Tavily API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "tavilyApiKey": "your-key" }\n` +
+			"  2. Set TAVILY_API_KEY environment variable\n" +
+			"Get a key at https://app.tavily.com/",
+	);
 }
 
 interface TavilyDomainFilter {

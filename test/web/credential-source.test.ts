@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { hasCredentialSource, resolveCredential } from "../../packages/pi-stuff/src/web/runtime/credential-source.js";
+import {
+	hasCredentialSource,
+	requireCredential,
+	resolveCredential,
+} from "../../packages/pi-stuff/src/web/runtime/credential-source.js";
 
 test("1Password references are detected without executing and resolve through argv only on demand", async () => {
 	let calls = 0;
@@ -52,4 +56,8 @@ test("1Password output remains bounded and terminal-safe", async () => {
 			runProgram: async () => ({ stdout: "bad\nkey" }),
 		}),
 	).rejects.toThrow("command-invalid-output");
+});
+
+test("required credentials preserve the provider's missing-key message", async () => {
+	await expect(requireCredential({ provider: "Test" }, "Test key missing")).rejects.toThrow("Test key missing");
 });

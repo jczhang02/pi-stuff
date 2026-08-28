@@ -4,7 +4,7 @@ import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
@@ -24,21 +24,18 @@ function loadConfig() {
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
-	const key = await resolveCredential({
-		provider: "Search1API",
-		configuredValue: loadConfig()["search1apiApiKey"],
-		environmentValue: process.env["SEARCH1API_KEY"],
-		signal,
-	});
-	if (!key) {
-		throw new Error(
-			"Search1API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "search1apiApiKey": "your-key" }\n` +
-				"  2. Set SEARCH1API_KEY environment variable\n" +
-				"Create a key at https://dashboard.search1api.com",
-		);
-	}
-	return key;
+	return requireCredential(
+		{
+			provider: "Search1API",
+			configuredValue: loadConfig()["search1apiApiKey"],
+			environmentValue: process.env["SEARCH1API_KEY"],
+			signal,
+		},
+		"Search1API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "search1apiApiKey": "your-key" }\n` +
+			"  2. Set SEARCH1API_KEY environment variable\n" +
+			"Create a key at https://dashboard.search1api.com",
+	);
 }
 
 export function isSearch1APIAvailable(): boolean {

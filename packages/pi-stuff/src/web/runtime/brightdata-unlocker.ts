@@ -2,7 +2,7 @@ import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
 import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
@@ -76,21 +76,18 @@ function requireZone(): string {
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await resolveCredential({
-		provider: "Bright Data",
-		configuredValue: loadConfig()["brightdataApiKey"],
-		environmentValue: process.env["BRIGHTDATA_API_KEY"],
-		signal,
-	});
-	if (!apiKey) {
-		throw new Error(
-			"Bright Data API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "brightdataApiKey": "your-key" }\n` +
-				"  2. Set BRIGHTDATA_API_KEY environment variable\n" +
-				"Get a key at https://brightdata.com/cp/setting/users",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "Bright Data",
+			configuredValue: loadConfig()["brightdataApiKey"],
+			environmentValue: process.env["BRIGHTDATA_API_KEY"],
+			signal,
+		},
+		"Bright Data API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "brightdataApiKey": "your-key" }\n` +
+			"  2. Set BRIGHTDATA_API_KEY environment variable\n" +
+			"Get a key at https://brightdata.com/cp/setting/users",
+	);
 }
 
 interface BrightDataValidationOptions {

@@ -3,7 +3,7 @@ import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-valu
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import {
@@ -32,26 +32,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "Kagi",
-		configuredValue: loadConfig()["kagiApiKey"],
-		environmentValue: process.env["KAGI_API_KEY"],
-		signal,
-	});
-}
-
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
-	if (!apiKey) {
-		throw new Error(
-			"Kagi API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "kagiApiKey": "your-key" }\n` +
-				"  2. Set KAGI_API_KEY environment variable\n" +
-				"Create a key at https://kagi.com/settings?p=api",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "Kagi",
+			configuredValue: loadConfig()["kagiApiKey"],
+			environmentValue: process.env["KAGI_API_KEY"],
+			signal,
+		},
+		"Kagi API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "kagiApiKey": "your-key" }\n` +
+			"  2. Set KAGI_API_KEY environment variable\n" +
+			"Create a key at https://kagi.com/settings?p=api",
+	);
 }
 
 function invalidResponse(message: string): Error {

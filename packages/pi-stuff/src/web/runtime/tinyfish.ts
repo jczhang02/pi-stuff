@@ -4,7 +4,7 @@ import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
@@ -26,21 +26,18 @@ function loadConfig() {
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
-	const key = await resolveCredential({
-		provider: "TinyFish",
-		configuredValue: loadConfig()["tinyfishApiKey"],
-		environmentValue: process.env["TINYFISH_API_KEY"],
-		signal,
-	});
-	if (!key) {
-		throw new Error(
-			"TinyFish API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "tinyfishApiKey": "your-key" }\n` +
-				"  2. Set TINYFISH_API_KEY environment variable\n" +
-				"Get a key at https://agent.tinyfish.ai/api-keys",
-		);
-	}
-	return key;
+	return requireCredential(
+		{
+			provider: "TinyFish",
+			configuredValue: loadConfig()["tinyfishApiKey"],
+			environmentValue: process.env["TINYFISH_API_KEY"],
+			signal,
+		},
+		"TinyFish API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "tinyfishApiKey": "your-key" }\n` +
+			"  2. Set TINYFISH_API_KEY environment variable\n" +
+			"Get a key at https://agent.tinyfish.ai/api-keys",
+	);
 }
 
 export function isTinyFishAvailable(): boolean {

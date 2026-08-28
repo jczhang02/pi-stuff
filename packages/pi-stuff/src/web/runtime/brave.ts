@@ -6,7 +6,7 @@ import {
 } from "../provider-domain-filter.ts";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
 
@@ -23,13 +23,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "Brave",
-		configuredValue: loadConfig()["braveApiKey"],
-		environmentValue: process.env["BRAVE_API_KEY"],
-		signal,
-	});
+async function getApiKey(signal?: AbortSignal): Promise<string> {
+	return requireCredential(
+		{
+			provider: "Brave",
+			configuredValue: loadConfig()["braveApiKey"],
+			environmentValue: process.env["BRAVE_API_KEY"],
+			signal,
+		},
+		"Brave Search API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "braveApiKey": "your-key" }\n` +
+			"  2. Set BRAVE_API_KEY environment variable\n" +
+			"Get a key at https://brave.com/search/api/",
+	);
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
@@ -90,15 +96,6 @@ export function isBraveAvailable(): boolean {
 
 export async function searchWithBrave(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	if (!apiKey) {
-		throw new Error(
-			"Brave Search API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "braveApiKey": "your-key" }\n` +
-				"  2. Set BRAVE_API_KEY environment variable\n" +
-				"Get a key at https://brave.com/search/api/",
-		);
-	}
-
 	const numResults = normalizeCount(options.numResults);
 	const domainFilters = normalizeDomainFilters(options.domainFilter);
 	const searchQuery = buildBraveQuery(query, options.domainFilter);

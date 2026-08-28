@@ -3,7 +3,7 @@ import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -41,21 +41,18 @@ function loadConfig() {
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string> {
-	const key = await resolveCredential({
-		provider: "Perplexity",
-		configuredValue: loadConfig()["perplexityApiKey"],
-		environmentValue: process.env["PERPLEXITY_API_KEY"],
-		signal,
-	});
-	if (!key) {
-		throw new Error(
-			"Perplexity API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
-				"  2. Set PERPLEXITY_API_KEY environment variable\n" +
-				"Get a key at https://perplexity.ai/settings/api",
-		);
-	}
-	return key;
+	return requireCredential(
+		{
+			provider: "Perplexity",
+			configuredValue: loadConfig()["perplexityApiKey"],
+			environmentValue: process.env["PERPLEXITY_API_KEY"],
+			signal,
+		},
+		"Perplexity API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
+			"  2. Set PERPLEXITY_API_KEY environment variable\n" +
+			"Get a key at https://perplexity.ai/settings/api",
+	);
 }
 
 function checkRateLimit(): void {

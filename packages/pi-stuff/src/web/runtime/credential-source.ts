@@ -249,3 +249,9 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 	}
 	return normalize(options.environmentValue) ?? source;
 }
+
+export async function requireCredential(options: CredentialOptions, missingMessage: string): Promise<string> {
+	const credential = await resolveCredential(options);
+	if (!credential) throw new Error(missingMessage);
+	return credential;
+}

@@ -3,7 +3,7 @@ import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-valu
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import {
@@ -48,26 +48,19 @@ function loadConfig() {
 	return readWebConfig() ?? {};
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "Ollama",
-		configuredValue: loadConfig()["ollamaApiKey"],
-		environmentValue: process.env["OLLAMA_API_KEY"],
-		signal,
-	});
-}
-
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
-	if (!apiKey) {
-		throw new Error(
-			"Ollama API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "ollamaApiKey": "your-key" }\n` +
-				"  2. Set OLLAMA_API_KEY environment variable\n" +
-				"Create a key at https://ollama.com/settings/keys",
-		);
-	}
-	return apiKey;
+	return requireCredential(
+		{
+			provider: "Ollama",
+			configuredValue: loadConfig()["ollamaApiKey"],
+			environmentValue: process.env["OLLAMA_API_KEY"],
+			signal,
+		},
+		"Ollama API key not found. Either:\n" +
+			`  1. Create ${CONFIG_PATH} with { "ollamaApiKey": "your-key" }\n` +
+			"  2. Set OLLAMA_API_KEY environment variable\n" +
+			"Create a key at https://ollama.com/settings/keys",
+	);
 }
 
 function invalidResponse(message: string): Error {
