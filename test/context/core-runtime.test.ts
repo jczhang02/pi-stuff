@@ -176,6 +176,7 @@ test("does not mix concurrent session starts across activation contexts", async 
 		{ reason: "startup", sessionId: "session-first" },
 		{ reason: "switch", sessionId: "session-second" },
 	]);
+	expect(getContextCapability(firstCtx).status()).toEqual({ state: "native", engine: "native" });
 	expect(getContextCapability(secondCtx).status().state).toBe("active");
 });
 

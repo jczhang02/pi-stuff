@@ -213,6 +213,13 @@ export class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	captureSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void {
+		const previousSessionManager = this.sessionContext?.sessionManager;
+		if (previousSessionManager && previousSessionManager !== ctx.sessionManager) {
+			if (this.registry.contexts.get(previousSessionManager) === this) {
+				this.registry.contexts.delete(previousSessionManager);
+			}
+			this.ownedContexts.delete(previousSessionManager);
+		}
 		this.sessionStart = { ...event };
 		this.sessionContext = ctx;
 		this.projectionRuntime.invalidate(true);
