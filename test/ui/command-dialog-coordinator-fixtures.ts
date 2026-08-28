@@ -413,12 +413,11 @@ function commandDialogHarness() {
 	return { api, coordinator, ctx: createContext(ui), ui };
 }
 
-async function installedCommandDialogHarness() {
-	const api = createApiHarness();
+async function installedCommandDialogHarness(options: ContextOptions = {}, api = createApiHarness()) {
 	await piStuffUi(api.api);
 	const coordinator = getCommandDialogCoordinator(api.api);
 	const ui = new UiHarness();
-	const ctx = createContext(ui);
+	const ctx = createContext(ui, "tui", options);
 	await api.start(ctx);
 	return { api, coordinator, ctx, ui };
 }
@@ -484,6 +483,26 @@ async function settleAgentRun(
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 }
 
+async function emitAgentTurn<Message extends HarnessMessage>(
+	api: ReturnType<typeof createApiHarness>,
+	ctx: ExtensionContext,
+	message: Message | string,
+	turnIndex = 0,
+	timestamp = turnIndex + 1,
+): Promise<void> {
+	await api.emit("turn_start", { type: "turn_start", turnIndex, timestamp }, ctx);
+	await api.emit(
+		"message_start",
+		{
+			type: "message_start",
+			message: Check(Type.String(), message)
+				? { role: "user", content: [{ type: "text", text: message }] }
+				: message,
+		},
+		ctx,
+	);
+}
+
 function createDeferred<Value>(): TestDeferred<Value> {
 	let resolvePromise: (value: Value) => void = () => {};
 	let rejectPromise: (cause: unknown) => void = () => {};
@@ -506,6 +525,7 @@ export {
 	DiagnosticChannel,
 	drainMicrotasks,
 	EventBusHarness,
+	emitAgentTurn,
 	ensureUiSettingsCommand,
 	eventBusView,
 	FocusableTestComponent,

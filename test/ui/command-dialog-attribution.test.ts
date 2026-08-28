@@ -6,7 +6,9 @@ import {
 	createDeferred,
 	drainMicrotasks,
 	EventBusHarness,
+	emitAgentTurn,
 	INPUT_EVENT_SCHEMA,
+	installedCommandDialogHarness,
 	piStuffUi,
 	promoteActiveAgentWorkToUser,
 	readCurrentAgentWorkOrigin,
@@ -16,45 +18,24 @@ import {
 } from "./command-dialog-coordinator-fixtures.js";
 
 test("refreshes Git once after a direct-user Agent run, not after automatic Extension runs", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const ctx = createContext(new UiHarness());
-	await api.start(ctx);
+	const { api, ctx } = await installedCommandDialogHarness();
 
 	await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "automatic" }] } },
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "automatic");
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	expect(api.execCalls).toHaveLength(0);
 
 	await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 2 }, ctx);
-	await api.emit(
-		"message_start",
-		{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "direct", 0, 2);
 	await api.emit(
 		"input",
 		{ type: "input", text: "queued automatic", source: "extension", streamingBehavior: "followUp" },
 		ctx,
 	);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 3 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: { role: "user", content: [{ type: "text", text: "queued automatic" }] },
-		},
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "queued automatic", 1, 3);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	expect(api.execCalls).toHaveLength(1);
@@ -64,12 +45,7 @@ test("refreshes Git once after a direct-user Agent run, not after automatic Exte
 	expect(api.execCalls).toHaveLength(1);
 
 	await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 4 }, ctx);
-	await api.emit(
-		"message_start",
-		{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "automatic" }] } },
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "automatic", 0, 4);
 	await api.emit(
 		"input",
 		{ type: "input", text: "user follow-up", source: "rpc", streamingBehavior: "followUp" },
@@ -77,15 +53,7 @@ test("refreshes Git once after a direct-user Agent run, not after automatic Exte
 	);
 	// Merely accepting a follow-up must not change the work currently executing.
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 5 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: { role: "user", content: [{ type: "text", text: "user follow-up" }] },
-		},
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "user follow-up", 1, 5);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	expect(api.execCalls).toHaveLength(2);
@@ -112,28 +80,18 @@ test("waits for a Goal continuation started by an earlier settlement handler bef
 	await api.start(ctx);
 
 	await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "direct");
 	await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	expect(api.execCalls).toHaveLength(0);
 
 	pendingMessages = false;
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: withAgentWorkOrigin(
-				{ role: "custom", customType: "goal-continuation", content: "continue" },
-				"automatic",
-			),
-		},
+	await emitAgentTurn(
+		api,
 		ctx,
+		withAgentWorkOrigin({ role: "custom", customType: "goal-continuation", content: "continue" }, "automatic"),
+		1,
+		2,
 	);
 	await api.emit("turn_end", { type: "turn_end", turnIndex: 1 }, ctx);
 	idle = true;
@@ -183,9 +141,7 @@ test("finishes Git observation before a later settlement handler can start Agent
 		gitRunning = false;
 		return { code: 1, killed: false, stderr: "", stdout: "" };
 	});
-	await piStuffUi(api.api);
-	const ctx = createContext(new UiHarness());
-	await api.start(ctx);
+	const { ctx } = await installedCommandDialogHarness({}, api);
 	// A separately loaded Extension can register after Pi Stuff's dynamic
 	// observer. Pi 0.84.3 awaits these handlers in registration order.
 	api.api.on("agent_settled", () => {
@@ -195,12 +151,7 @@ test("finishes Git observation before a later settlement handler can start Agent
 
 	await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
 	await api.emit("agent_start", { type: "agent_start" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
-		ctx,
-	);
+	await emitAgentTurn(api, ctx, "direct");
 	await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
 	const settlement = api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	await gitEntered.promise;
@@ -213,23 +164,13 @@ test("finishes Git observation before a later settlement handler can start Agent
 });
 
 test("does not refresh Git for a direct input handled before Pi starts a turn", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const ctx = createContext(new UiHarness());
-	await api.start(ctx);
+	const { api, ctx } = await installedCommandDialogHarness();
 
 	await api.emit("input", { type: "input", text: "/handled", source: "interactive" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: withAgentWorkOrigin(
-				{ role: "custom", customType: "automatic-work", content: "continue" },
-				"automatic",
-			),
-		},
+	await emitAgentTurn(
+		api,
 		ctx,
+		withAgentWorkOrigin({ role: "custom", customType: "automatic-work", content: "continue" }, "automatic"),
 	);
 	await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
@@ -248,17 +189,10 @@ test("does not refresh Git for a steer handled before Pi delivers it", async () 
 	await api.start(ctx);
 
 	await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: withAgentWorkOrigin(
-				{ role: "custom", customType: "automatic-work", content: "continue" },
-				"automatic",
-			),
-		},
+	await emitAgentTurn(
+		api,
 		ctx,
+		withAgentWorkOrigin({ role: "custom", customType: "automatic-work", content: "continue" }, "automatic"),
 	);
 	await api.emit(
 		"input",
@@ -281,10 +215,7 @@ test("does not refresh Git for a steer handled before Pi delivers it", async () 
 });
 
 test("fails closed when a later Extension makes steer attribution ambiguous", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const ctx = createContext(new UiHarness());
-	await api.start(ctx);
+	const { api, ctx } = await installedCommandDialogHarness();
 	// Registered after session_start, this simulates a separately loaded
 	// Extension that Pi visits after Pi Stuff's Package-local late observer.
 	api.api.on("input", (event) => {
@@ -297,17 +228,10 @@ test("fails closed when a later Extension makes steer attribution ambiguous", as
 	});
 
 	await api.emit("input", { type: "input", text: "automatic run", source: "extension" }, ctx);
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit(
-		"message_start",
-		{
-			type: "message_start",
-			message: withAgentWorkOrigin(
-				{ role: "custom", customType: "automatic-work", content: "continue" },
-				"automatic",
-			),
-		},
+	await emitAgentTurn(
+		api,
 		ctx,
+		withAgentWorkOrigin({ role: "custom", customType: "automatic-work", content: "continue" }, "automatic"),
 	);
 	await api.emit(
 		"input",
@@ -331,18 +255,14 @@ test("fails closed when a later Extension makes steer attribution ambiguous", as
 });
 
 test("attributes marked custom work at delivery and accepted Suite steers immediately", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const ctx = createContext(new UiHarness());
-	await api.start(ctx);
+	const { api, ctx } = await installedCommandDialogHarness();
 
 	const queued = withAgentWorkOrigin(
 		{ role: "custom", customType: "explicit-user-action", content: "continue" },
 		"user",
 	);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
-	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
-	await api.emit("message_start", { type: "message_start", message: queued }, ctx);
+	await emitAgentTurn(api, ctx, queued);
 	expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
 	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 	expect(api.execCalls).toHaveLength(1);
