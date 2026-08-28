@@ -260,6 +260,18 @@ function assertScenario(
 	}
 }
 
+async function seedCompactionHistory(transport: RpcTransport): Promise<void> {
+	for (const index of [1, 2, 3, 4]) {
+		const settledBefore = transport.records.filter((record) => record.type === "agent_settled").length;
+		await transport.send({ type: "prompt", message: `Create historical compaction context ${String(index)}.` });
+		const deadline = Date.now() + TIMEOUT_MS;
+		while (transport.records.filter((record) => record.type === "agent_settled").length === settledBefore) {
+			if (Date.now() >= deadline) throw new Error("compaction: historical prompt did not settle");
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+	}
+}
+
 async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenario): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), `pi-stuff-goal-${scenario}-`));
 	const agentDirectory = join(temporaryDirectory, "agent");
@@ -307,20 +319,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			environment(temporaryDirectory, scenario, logPath),
 		);
 		try {
-			if (scenario === "compaction") {
-				for (const index of [1, 2, 3, 4]) {
-					const settledBefore = transport.records.filter((record) => record.type === "agent_settled").length;
-					await transport.send({
-						type: "prompt",
-						message: `Create historical compaction context ${String(index)}.`,
-					});
-					const deadline = Date.now() + TIMEOUT_MS;
-					while (transport.records.filter((record) => record.type === "agent_settled").length === settledBefore) {
-						if (Date.now() >= deadline) throw new Error("compaction: historical prompt did not settle");
-						await new Promise((resolve) => setTimeout(resolve, 20));
-					}
-				}
-			}
+			if (scenario === "compaction") await seedCompactionHistory(transport);
 			await transport.send({ type: "prompt", message: startMessage });
 			const deadline = Date.now() + TIMEOUT_MS;
 			let finalRecords: RpcRecord[] | undefined;
