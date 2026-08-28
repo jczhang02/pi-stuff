@@ -114,14 +114,69 @@ type MockPiApi = {
 	setModel<Model>(model: Model): Promise<boolean>;
 };
 
-export function createMockPi(
-	options: {
-		activeTools?: string[];
-		allTools?: MockTool[];
-		thinkingLevel?: string;
-		clampThinkingLevel?: (level: string) => string;
-	} = {},
-) {
+interface MockPiOptions {
+	activeTools?: string[];
+	allTools?: MockTool[];
+	thinkingLevel?: string;
+	clampThinkingLevel?: (level: string) => string;
+}
+
+function createMockEventBus() {
+	const subscriptions = new Map<string, MockHandler[]>();
+	return {
+		emit<Data>(channel: string, data: Data) {
+			for (const handler of subscriptions.get(channel) ?? []) {
+				try {
+					const result = handler(data);
+					void Promise.resolve(result).catch(() => undefined);
+				} catch {
+					// Match Pi's event bus: one observer cannot interrupt sibling handlers.
+				}
+			}
+		},
+		on<Data>(channel: string, handler: (data: Data) => void) {
+			const list = subscriptions.get(channel) ?? [];
+			const subscription: MockHandler = (data) => {
+				// SAFETY: this test bus delivers values emitted on the same channel whose registration owns Data.
+				handler(data as Data);
+				return undefined;
+			};
+			list.push(subscription);
+			subscriptions.set(channel, list);
+			return () => {
+				const current = subscriptions.get(channel);
+				if (!current) return;
+				const index = current.indexOf(subscription);
+				if (index >= 0) current.splice(index, 1);
+			};
+		},
+		clear() {
+			subscriptions.clear();
+		},
+	};
+}
+
+function registerMockProvider<Config>(
+	providers: Map<string, unknown>,
+	registrations: Array<{ name: string; config: unknown }>,
+	name: string,
+	config: Config,
+): void {
+	const previous = providers.get(name);
+	const effective =
+		previous &&
+		isRuntimeObject(previous) &&
+		!Array.isArray(previous) &&
+		config &&
+		isRuntimeObject(config) &&
+		!Array.isArray(config)
+			? { ...previous, ...config }
+			: config;
+	providers.set(name, effective);
+	registrations.push({ name, config });
+}
+
+export function createMockPi(options: MockPiOptions = {}) {
 	const commands = new Map<string, MockCommand>();
 	const entryRenderers = new Map<string, MockHandler>();
 	const flags = new Map<string, MockFlag>();
@@ -136,38 +191,7 @@ export function createMockPi(
 	const sentHiddenGoalMessages: Array<{ message: unknown; options?: unknown }> = [];
 	const setModels: unknown[] = [];
 	const thinkingLevels: string[] = [];
-	const eventBusSubscriptions = new Map<string, MockHandler[]>();
-	const eventBus = {
-		emit<Data>(channel: string, data: Data) {
-			for (const handler of eventBusSubscriptions.get(channel) ?? []) {
-				try {
-					const result = handler(data);
-					void Promise.resolve(result).catch(() => undefined);
-				} catch {
-					// Match Pi's event bus: one observer cannot interrupt sibling handlers.
-				}
-			}
-		},
-		on<Data>(channel: string, handler: (data: Data) => void) {
-			const list = eventBusSubscriptions.get(channel) ?? [];
-			const subscription: MockHandler = (data) => {
-				// SAFETY: this test bus delivers values emitted on the same channel whose registration owns Data.
-				handler(data as Data);
-				return undefined;
-			};
-			list.push(subscription);
-			eventBusSubscriptions.set(channel, list);
-			return () => {
-				const current = eventBusSubscriptions.get(channel);
-				if (!current) return;
-				const index = current.indexOf(subscription);
-				if (index >= 0) current.splice(index, 1);
-			};
-		},
-		clear() {
-			eventBusSubscriptions.clear();
-		},
-	};
+	const eventBus = createMockEventBus();
 	let thinkingLevel = options.thinkingLevel ?? "off";
 	let activeTools = [...(options.activeTools ?? [])];
 	const allTools = options.allTools ?? activeTools.map((name) => builtinTool(name));
@@ -186,18 +210,7 @@ export function createMockPi(
 			entryRenderers.set(customType, renderer);
 		},
 		registerProvider<Config>(name: string, config: Config) {
-			const previous = providers.get(name);
-			const effective =
-				previous &&
-				isRuntimeObject(previous) &&
-				!Array.isArray(previous) &&
-				config &&
-				isRuntimeObject(config) &&
-				!Array.isArray(config)
-					? { ...previous, ...config }
-					: config;
-			providers.set(name, effective);
-			providerRegistrations.push({ name, config });
+			registerMockProvider(providers, providerRegistrations, name, config);
 		},
 		unregisterProvider(name: string) {
 			providers.delete(name);
@@ -279,16 +292,12 @@ export function createMockPi(
 	};
 }
 
-export function createMockContext(overrides: MockContextOverrides = {}) {
-	const notifications: Array<{ message: string; level?: string | undefined }> = [];
-	const statuses = new Map<string, string | undefined>();
-	const widgets = new Map<string, unknown>();
-	let footer: unknown;
-	let workingVisible = true;
-	let editorText = String(overrides.editorText ?? "");
-	const selectOverride = overrides.select;
-	const inputOverride = overrides.input;
-	const defaultCustom = async <Factory>(factory: Factory) => {
+function createDefaultCustom(
+	overrides: MockContextOverrides,
+	selectOverride: MockContextOverrides["select"],
+	inputOverride: MockContextOverrides["input"],
+) {
+	return async <Factory>(factory: Factory) => {
 		if (!selectOverride) return undefined;
 		const harness = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
 		const options: string[] = [];
@@ -349,6 +358,18 @@ export function createMockContext(overrides: MockContextOverrides = {}) {
 		harness.handleInput("tui.select.cancel");
 		return harness.result;
 	};
+}
+
+export function createMockContext(overrides: MockContextOverrides = {}) {
+	const notifications: Array<{ message: string; level?: string | undefined }> = [];
+	const statuses = new Map<string, string | undefined>();
+	const widgets = new Map<string, unknown>();
+	let footer: unknown;
+	let workingVisible = true;
+	let editorText = String(overrides.editorText ?? "");
+	const selectOverride = overrides.select;
+	const inputOverride = overrides.input;
+	const defaultCustom = createDefaultCustom(overrides, selectOverride, inputOverride);
 	const customOverride = overrides.custom;
 	const custom =
 		customOverride && selectOverride
