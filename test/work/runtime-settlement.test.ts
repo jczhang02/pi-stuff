@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	BackgroundWorkRuntime,
+	type BackgroundWorkRuntime,
 	BoundedOutputFile,
 	captureProcessIdentity,
 	cleanupRuntimeFixtures,
+	configuredRuntime,
 	context,
 	type DeliveredMessage,
 	escapedProcessGroups,
@@ -33,17 +34,13 @@ afterEach(cleanupRuntimeFixtures);
 
 test("settles from the in-memory tail when output-file writes fail", async () => {
 	const root = temporaryRoot();
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
+	const active = configuredRuntime(root, {
 		outputFactory: (filePath) =>
 			new BoundedOutputFile(filePath, 1_024 * 1_024, {
 				writeSync: () => {
 					throw Object.assign(new Error("injected runtime output EIO"), { code: "EIO" });
 				},
 			}),
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 	const result = await active.executeBash({ command: "printf 'MEMORY-RUNTIME-RESULT\\n'" }, context(root));
 	const text = result.content.find((item) => item.type === "text");
@@ -120,13 +117,9 @@ test("delivers bounded background output when the persisted output path disappea
 
 test("recreates authenticated recovery metadata while Background Work is still live", async () => {
 	const root = temporaryRoot();
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		backgroundAfterMs: 50,
-		cwd: root,
 		metadataHeartbeatMs: 40,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 	try {
 		await active.executeBash({ command: "sleep 30", runInBackground: true }, context(root));
@@ -158,9 +151,8 @@ test("retries a transient terminal notification failure without duplicating deli
 	const root = temporaryRoot();
 	const messages: DeliveredMessage[] = [];
 	let attempts = 0;
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		backgroundAfterMs: 50,
-		cwd: root,
 		pi: {
 			sendMessage: (message: SuiteAgentMessage, options?: SuiteAgentMessageOptions) => {
 				attempts += 1;
@@ -168,8 +160,6 @@ test("retries a transient terminal notification failure without duplicating deli
 				messages.push({ message, options });
 			},
 		},
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 	try {
 		await active.executeBash(
@@ -238,13 +228,7 @@ test("contains rejected timeout, abort, and output-limit stops without an unhand
 		for (const trigger of ["timeout", "abort", "output-limit"] as const) {
 			const root = temporaryRoot();
 			let terminationAttempts = 0;
-			const runtimeOptions: ConstructorParameters<typeof BackgroundWorkRuntime>[0] = {
-				cwd: root,
-				pi: { sendMessage: () => {} },
-				sessionId: "work-test-session",
-				storage: new WorkRunStorage(root, "work-test-session", {
-					authorityKey: TEST_WORK_AUTHORITY_KEY,
-				}),
+			const runtimeOptions: Partial<ConstructorParameters<typeof BackgroundWorkRuntime>[0]> = {
 				signalSupervisor: (supervisor, _identity, signal) => {
 					terminationAttempts += 1;
 					supervisor.kill(signal);
@@ -256,7 +240,7 @@ test("contains rejected timeout, abort, and output-limit stops without an unhand
 					outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
 				});
 			}
-			const active = new BackgroundWorkRuntime(runtimeOptions);
+			const active = configuredRuntime(root, runtimeOptions);
 			const controller = new AbortController();
 			const execution = active.executeBash(
 				Object.assign(
@@ -287,11 +271,7 @@ test("contains rejected timeout, abort, and output-limit stops without an unhand
 test("retries process termination after a transient unresolved stop proof", async () => {
 	const root = temporaryRoot();
 	let attempts = 0;
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+	const active = configuredRuntime(root, {
 		signalSupervisor: (supervisor, identity, signal) => {
 			attempts += 1;
 			if (attempts === 1) return "unresolved";
@@ -316,12 +296,7 @@ test("retries process termination after a transient unresolved stop proof", asyn
 test("settles terminal outcome when launch-artifact cleanup fails", async () => {
 	const root = temporaryRoot();
 	const storage = new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY });
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage,
-	});
+	const active = configuredRuntime(root, { storage });
 	try {
 		const started = await active.startCommandMonitor({ command: "sleep 0.2", timeoutSeconds: 5 }, context(root));
 		mkdirSync(storage.commandAuthorizationPath(started.id), { recursive: true });
@@ -341,11 +316,7 @@ test("settles terminal outcome when launch-artifact cleanup fails", async () => 
 
 test("rolls back a spawned supervisor when post-spawn metadata persistence fails", async () => {
 	const root = temporaryRoot();
-	const pi = { sendMessage: () => {} };
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi,
-		sessionId: "work-test-session",
+	const active = configuredRuntime(root, {
 		storage: new SecondPersistFailsStorage(root, "work-test-session", {
 			authorityKey: TEST_WORK_AUTHORITY_KEY,
 		}),
@@ -387,10 +358,7 @@ test("cancels and retains a published command when its acknowledgement is invali
 	const storage = new CorruptAcknowledgementStorage(root, "work-test-session", {
 		authorityKey: TEST_WORK_AUTHORITY_KEY,
 	});
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
+	const active = configuredRuntime(root, {
 		storage,
 		signalSupervisor: (supervisor, identity, signal) => {
 			terminationAttempts += 1;
@@ -421,11 +389,7 @@ test("cancels and retains a published command when its acknowledgement is invali
 
 test("keeps running and shuts down cleanly when live metadata storage degrades", async () => {
 	const root = temporaryRoot();
-	const pi = { sendMessage: () => {} };
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi,
-		sessionId: "work-test-session",
+	const active = configuredRuntime(root, {
 		storage: new RunningMetadataDegradesStorage(root, "work-test-session", {
 			authorityKey: TEST_WORK_AUTHORITY_KEY,
 		}),

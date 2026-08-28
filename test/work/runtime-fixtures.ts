@@ -139,22 +139,27 @@ function context(cwd: string): ExtensionContext {
 	} as ExtensionContext;
 }
 
+type RuntimeOptions = ConstructorParameters<typeof BackgroundWorkRuntime>[0];
+
+function configuredRuntime(cwd: string, overrides: Partial<RuntimeOptions> = {}): BackgroundWorkRuntime {
+	return new BackgroundWorkRuntime({
+		cwd,
+		pi: { sendMessage: () => {} },
+		sessionId: "work-test-session",
+		storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		...overrides,
+	});
+}
+
 function runtime(cwd: string, messages: DeliveredMessage[] = [], backgroundAfterMs?: number): BackgroundWorkRuntime {
 	const pi = {
 		sendMessage: (message: SuiteAgentMessage, options?: SuiteAgentMessageOptions) => {
 			messages.push({ message, options });
 		},
 	};
-	return new BackgroundWorkRuntime(
-		Object.assign(
-			{
-				cwd,
-				pi,
-				sessionId: "work-test-session",
-				storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
-			},
-			backgroundAfterMs === undefined ? undefined : { backgroundAfterMs },
-		),
+	return configuredRuntime(
+		cwd,
+		Object.assign({ pi }, backgroundAfterMs === undefined ? undefined : { backgroundAfterMs }),
 	);
 }
 
@@ -245,6 +250,7 @@ export {
 	captureProcessIdentityWithRetry,
 	children,
 	closeSync,
+	configuredRuntime,
 	context,
 	createAuthenticatedRuntimeRecord,
 	DiagnosticChannel,

@@ -2,11 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import {
 	activateDiagnosticChannel,
 	type BackgroundWorkOutcome,
-	BackgroundWorkRuntime,
 	BoundedOutputFile,
 	captureProcessIdentityWithRetry,
 	cleanupRuntimeFixtures,
 	closeSync,
+	configuredRuntime,
 	context,
 	DiagnosticChannel,
 	existsSync,
@@ -145,12 +145,8 @@ test("keeps an unverified stale runtime in diagnostics without raising a main-UI
 	const root = temporaryRoot();
 	const diagnostics = new DiagnosticChannel();
 	activateDiagnosticChannel(diagnostics);
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
+	const active = configuredRuntime(root, {
 		reconcileStale: async () => ({ cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 1 }),
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 
 	await active.prepare();
@@ -163,16 +159,12 @@ test("keeps an unverified stale runtime in diagnostics without raising a main-UI
 test("retries stale-runtime preparation after a transient failure", async () => {
 	const root = temporaryRoot();
 	let attempts = 0;
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
+	const active = configuredRuntime(root, {
 		reconcileStale: async () => {
 			attempts += 1;
 			if (attempts === 1) throw Object.assign(new Error("injected recovery EIO"), { code: "EIO" });
 			return { cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 0 };
 		},
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 
 	await expect(active.prepare()).rejects.toThrow("injected recovery EIO");
@@ -189,14 +181,11 @@ test("does not open an output file when command authorization path resolution fa
 		}
 	}
 	let outputFactoryCalls = 0;
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
+	const active = configuredRuntime(root, {
 		outputFactory: (filePath) => {
 			outputFactoryCalls += 1;
 			return new BoundedOutputFile(filePath);
 		},
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
 		storage: new AuthorizationPathFailsStorage(root, "work-test-session", {
 			authorityKey: TEST_WORK_AUTHORITY_KEY,
 		}),
@@ -228,16 +217,13 @@ test("shutdown cancels and awaits a supervisor whose launch identity is still be
 	});
 	let supervisorPid: number | undefined;
 	const storage = new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY });
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async (pid) => {
 			supervisorPid = pid;
 			identityCaptureStarted();
 			await identityGate;
 			return captureProcessIdentityWithRetry(pid);
 		},
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
 		storage,
 	});
 
@@ -263,12 +249,8 @@ test("shutdown cancels and awaits a supervisor whose launch identity is still be
 
 test("bounds shutdown when an external monitor ignores cancellation", async () => {
 	const root = temporaryRoot();
-	const active = new BackgroundWorkRuntime({
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
+	const active = configuredRuntime(root, {
 		shutdownGraceMs: 10,
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 	active.registerMonitor({
 		cancel: async () => new Promise<BackgroundWorkOutcome>(() => undefined),
@@ -298,16 +280,12 @@ test("reserves the sixteenth activity slot before supervisor identity capture co
 		releaseCaptures = resolve;
 	});
 	let captureCalls = 0;
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async (pid) => {
 			captureCalls += 1;
 			await captureGate;
 			return captureProcessIdentityWithRetry(pid);
 		},
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 	for (let index = 0; index < 15; index += 1) {
 		const id = `m-reserved-slot-${String(index)}`;
@@ -358,16 +336,12 @@ test("queues a manual foreground detach while supervisor identity is still being
 	const started = new Promise<void>((resolve) => {
 		captureStarted = resolve;
 	});
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async (pid) => {
 			captureStarted();
 			await captureGate;
 			return captureProcessIdentityWithRetry(pid);
 		},
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
 
 	const execution = active.executeBash({ command: "sleep 30" }, context(root));
@@ -415,12 +389,8 @@ test("keeps the Host event loop responsive while concurrent supervisor identitie
 test("accepts a command acknowledgement after a fast supervisor exit", async () => {
 	const root = temporaryRoot();
 	const supervisorIdentity = { pid: 987_654, started: "test:fast-supervisor" };
-	const active = new BackgroundWorkRuntime({
+	const active = configuredRuntime(root, {
 		captureSupervisorIdentity: async () => supervisorIdentity,
-		cwd: root,
-		pi: { sendMessage: () => {} },
-		sessionId: "work-test-session",
-		storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		supervisorFactory: (_executable, encoded) => {
 			const envelope = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
 			let resolveCompletion!: (value: { code: number; signal: null }) => void;
