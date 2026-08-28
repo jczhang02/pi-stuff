@@ -320,7 +320,7 @@ When a matching tool is called from the proxy tool, a direct MCP tool, a resourc
 Oversized MCP tool/resource results are guarded by default so a single huge response can't blow up the model context window or the session file:
 
 - Inline text output is capped at **50 KiB / 2,000 lines** (matching Pi's built-in `bash` guard). Larger output is truncated to a head preview and the full text is saved to a temp file whose path is included in the result, so the agent can `read`/`grep` it.
-- **Image content blocks pass through unchanged** — only text output is guarded. Images are delivered to the provider as native image content.
+- **Image content blocks bypass the MCP text budget.** Pi then applies its normal post-extension image normalization before Session history and provider delivery; MCP does not duplicate that Host-owned path.
 - In proxy mode, `details.mcpResult` is kept raw when its JSON is **≤ 16 KiB**; larger results are replaced with a compact summary (block counts, sizes, key previews) and the raw JSON is saved to a temp file. Direct tools keep their lean details and never carry `mcpResult`.
 
 Tune the limits with the object form:

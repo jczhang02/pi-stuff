@@ -114,9 +114,10 @@ export function guardedMcpDetails(guarded: GuardedMcpOutput): JsonInputObject {
 }
 
 /**
- * Bound model-facing MCP output. Text output is capped at maxBytes/maxLines and
- * spilled to a temp file when oversized. Image blocks pass through untouched —
- * they are delivered to the provider as native image content, not text context.
+ * Bound model-facing MCP text output. Text is capped at maxBytes/maxLines and
+ * spilled to a temp file when oversized. Image blocks bypass this text budget;
+ * Pi's post-extension Tool-result seam owns their normalization before history
+ * and provider delivery.
  */
 export async function guardMcpOutput(
 	content: ContentBlock[],
