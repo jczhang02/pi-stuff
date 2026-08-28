@@ -109,10 +109,15 @@ function hostHarness() {
 			name = next;
 		},
 	} satisfies SessionNamingHost;
-	const emitLifecycle = (event: string): void => {
+	const emitLifecycle = (event: string, ctx: ExtensionContext = extensionContext): void => {
 		// SAFETY: these handlers do not inspect the event payload in the exercised lifecycle cases.
 		const fixtureEvent = { type: event } as ExtensionEvent;
-		for (const listener of lifecycle.get(event) ?? []) listener(fixtureEvent, extensionContext);
+		for (const listener of lifecycle.get(event) ?? []) listener(fixtureEvent, ctx);
+	};
+	const emitSessionInfoChanged = (name: string, ctx: ExtensionContext = extensionContext): void => {
+		// SAFETY: The fixture supplies the exact Host event fields read by Session Naming.
+		const event = { type: "session_info_changed", name } as ExtensionEvent;
+		for (const listener of lifecycle.get("session_info_changed") ?? []) listener(event, ctx);
 	};
 	const emitSettled = (): void => {
 		const settledEvent = subscribedChannels.find((event) => event.includes("user-agent-run-settled"));
@@ -129,7 +134,18 @@ function hostHarness() {
 		if (!command) throw new Error("Session Naming did not register /autoname");
 		await command.handler(args, extensionContext);
 	};
-	return { emitLifecycle, emitSettled, getAutonameCompletions, name: () => name, notices, pi, runAutoname };
+	return {
+		context: extensionContext,
+		emitLifecycle,
+		emitSessionInfoChanged,
+		emitSettled,
+		entries,
+		getAutonameCompletions,
+		name: () => name,
+		notices,
+		pi,
+		runAutoname,
+	};
 }
 
 async function waitForName(read: () => string | undefined): Promise<string | undefined> {
@@ -194,5 +210,17 @@ describe("Session Naming Extension lifecycle", () => {
 
 		await Promise.resolve();
 		expect(host.name()).toBeUndefined();
+	});
+
+	test("ignores name events from a replaced Session context", async () => {
+		const host = hostHarness();
+		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
+		host.emitLifecycle("session_start");
+		const replacementContext: ExtensionContext = { ...host.context };
+		host.emitLifecycle("session_start", replacementContext);
+
+		const entryCount = host.entries.length;
+		host.emitSessionInfoChanged("stale Session name", host.context);
+		expect(host.entries).toHaveLength(entryCount);
 	});
 });

@@ -117,7 +117,9 @@ export function installSessionNamingCapability(
 		controller = createController(pi, ctx, settings);
 		controller.restore();
 	});
-	pi.on("session_info_changed", (event) => controller?.observeSessionNameChange(event.name));
+	pi.on("session_info_changed", (event, ctx) => {
+		if (ctx === sessionContext) controller?.observeSessionNameChange(event.name);
+	});
 	pi.on("session_shutdown", async () => {
 		active = false;
 		stopListeningForSettings();
