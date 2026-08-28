@@ -122,6 +122,49 @@ test("non-Error thrown values still settle the trace and V8 request", async () =
 	runtime.clear();
 });
 
+test("malformed transport input returns an error response", async () => {
+	const responses: unknown[] = [];
+	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-malformed-input",
+		{ cwd: "/project" },
+		new Map([
+			[
+				"fixture",
+				{
+					description: "input fixture",
+					inputSchema: Type.Object({}),
+					invoke: async () => true,
+					name: "fixture",
+					usage: "tools.fixture({})",
+				},
+			],
+		]),
+	);
+	runtime.handleRequest({
+		id: 11,
+		request: {
+			invocation: {
+				cell_id: "cell-malformed-input",
+				input: { __codemode_bigint_v1__: "not-an-integer" },
+				runtime_tool_call_id: "nested-malformed-input",
+				tool_name: { name: "fixture" },
+			},
+			type: "tool/invoke",
+		},
+	});
+	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
+
+	expect(responses).toEqual([
+		{
+			id: 11,
+			result: { message: "Code Mode bigint envelope is invalid", status: "error" },
+			type: "delegate/response",
+		},
+	]);
+	runtime.clear();
+});
+
 test("a durable approval decision pauses before the nested Tool can execute", async () => {
 	const responses: unknown[] = [];
 	const updates: unknown[] = [];

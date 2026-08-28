@@ -144,7 +144,6 @@ export class CodeModeDelegateRuntime {
 		const invocation = request.invocation;
 		const cellId = invocation.cell_id;
 		const name = invocation.tool_name.name;
-		const input = decodeTransportValue(invocation.input);
 		const context = this.cellContexts.get(cellId);
 		const tool = this.cellTools.get(cellId)?.get(name);
 		if (!context || !tool) {
@@ -155,10 +154,12 @@ export class CodeModeDelegateRuntime {
 			this.controllers.delete(message.id);
 			return;
 		}
+		let input: CodemodeValue;
 		let plan: RuntimeToolCallPlan | undefined;
 		let trace: RuntimeToolTrace;
 		const hidden = tool.presentation === "hidden";
 		try {
+			input = decodeTransportValue(invocation.input);
 			plan = tool.ledger === "bypass" ? undefined : context.beginToolCall?.(name, input);
 			trace = hidden
 				? { id: plan?.id ?? invocation.runtime_tool_call_id, input, name, status: "running" }
