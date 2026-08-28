@@ -115,11 +115,11 @@ export class ToolActivityPresentation {
 		return this.settings.get().liveElapsed;
 	}
 
-	discardBindings(): void {
+	protected discardBindings(): void {
 		this.bindings.clear();
 	}
 
-	shouldQueueResult(toolCallId: string): boolean {
+	protected shouldQueueResult(toolCallId: string): boolean {
 		const binding = this.bindings.get(toolCallId);
 		return Boolean(binding && this.isRendered(binding.metadata.name));
 	}
@@ -151,13 +151,13 @@ export class ToolActivityPresentation {
 		this.groups().updateToolResult(toolCallId, result);
 	}
 
-	resetProjection(): void {
+	protected resetActivityProjection(): void {
 		this.suspend();
 		this.groupHints.clear();
 		this.activities.clear();
 	}
 
-	groupsRebuilt(): void {
+	protected groupsRebuilt(): void {
 		this.groupSummaries.clear();
 		const groups = this.groups().groupsInOrder();
 		for (const group of groups) this.reconcileGroup(group);
@@ -171,7 +171,7 @@ export class ToolActivityPresentation {
 		this.clock.pruneGroups(leaderIds);
 	}
 
-	retainBindings(toolCallIds: ReadonlySet<string>): void {
+	protected retainBindings(toolCallIds: ReadonlySet<string>): void {
 		for (const toolCallId of this.bindings.keys()) {
 			if (!toolCallIds.has(toolCallId)) this.bindings.delete(toolCallId);
 		}
@@ -294,7 +294,7 @@ export class ToolActivityPresentation {
 		return this.query.toolActivityDetail(toolCallId, mode);
 	}
 
-	dropGroup(leaderId: string): void {
+	protected dropGroup(leaderId: string): void {
 		this.clock.dropGroup(leaderId);
 		this.groupSummaries.delete(leaderId);
 		this.groupHints.delete(leaderId);
@@ -310,7 +310,7 @@ export class ToolActivityPresentation {
 		this.reconcileGroup(group, semanticChange ? toolCallId : undefined);
 	}
 
-	reconcileGroup(group: PlannedRetrievalGroup | undefined, changedMemberId?: string): void {
+	protected reconcileGroup(group: PlannedRetrievalGroup | undefined, changedMemberId?: string): void {
 		if (!group) return;
 		const leader = this.bindings.get(group.leaderId);
 		if (group.standalone) {

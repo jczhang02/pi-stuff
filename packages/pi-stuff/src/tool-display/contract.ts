@@ -18,10 +18,10 @@ import {
 } from "./activity.js";
 import { DEFAULT_TOOL_UI_TIMER_SCHEDULER } from "./activity-clock.js";
 import { ToolActivityPresentation } from "./activity-presentation.js";
-import type { ToolActivity, ToolActivityState, ToolActivityStore } from "./activity-store.js";
+import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { ToolGroupProjection } from "./group-projection.js";
-import type { CachedToolRow, ToolRowModel } from "./render.js";
+import type { CachedToolRow } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
 
 export {
@@ -280,19 +280,15 @@ export interface ToolUiTimerScheduler {
 	clearInterval(id: ReturnType<typeof setInterval> | number): void;
 }
 
-export class ToolUiRuntime {
-	readonly activities: ToolActivityStore;
-	private readonly activityPolicies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>();
-	private readonly detailPresentations = new Map<string, ToolDetailPresentation>();
-	private readonly envelopes = new ToolEnvelopeProjection();
-	private readonly errorPolicies = new Map<
-		string,
-		(args: ToolArguments, result: AgentToolResult<unknown>) => boolean
-	>();
-	private readonly groups: ToolGroupProjection;
-	private readonly presentation: ToolActivityPresentation;
+export class ToolUiRuntime extends ToolActivityPresentation {
+	private readonly activityPolicies: Map<string, ToolActivityMetadata<ToolArguments, unknown>>;
+	private readonly detailPresentations: Map<string, ToolDetailPresentation>;
+	private readonly disposition: (name: string, args: ToolArguments) => RetrievalGroupDisposition;
+	private readonly envelopes: ToolEnvelopeProjection;
+	private readonly errorPolicies: Map<string, (args: ToolArguments, result: AgentToolResult<unknown>) => boolean>;
+	private readonly groupProjection: ToolGroupProjection;
 	private reloadActiveToolNames: readonly string[] | undefined;
-	private readonly renderedToolNames = new Set<string>();
+	private readonly renderedToolNames: Set<string>;
 	private readonly replayFallbackToolNames = new Set<string>();
 	private readonly replayOnlyToolNames = new Set<string>();
 	private readonly replayToolDefinitions = new Map<string, SuiteToolReplayDefinition>();
@@ -303,40 +299,47 @@ export class ToolUiRuntime {
 		scheduler: ToolUiTimerScheduler = DEFAULT_TOOL_UI_TIMER_SCHEDULER,
 		now: () => number = Date.now,
 	) {
-		this.presentation = new ToolActivityPresentation(
-			() => this.groups,
-			this.envelopes,
-			this.activityPolicies,
-			this.detailPresentations,
-			this.errorPolicies,
-			(name, args) => this.groupDisposition(name, args),
-			(name) => this.renderedToolNames.has(name),
+		const activityPolicies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>();
+		const detailPresentations = new Map<string, ToolDetailPresentation>();
+		const envelopes = new ToolEnvelopeProjection();
+		const errorPolicies = new Map<string, (args: ToolArguments, result: AgentToolResult<unknown>) => boolean>();
+		const renderedToolNames = new Set<string>();
+		const disposition = (name: string, args: ToolArguments): RetrievalGroupDisposition =>
+			renderedToolNames.has(name)
+				? classifyRetrievalGroupInvocation(name, args, activityPolicies.get(name))
+				: "boundary";
+		let groups!: ToolGroupProjection;
+		super(
+			() => groups,
+			envelopes,
+			activityPolicies,
+			detailPresentations,
+			errorPolicies,
+			disposition,
+			(name) => renderedToolNames.has(name),
 			settings,
 			scheduler,
 			now,
 		);
-		this.groups = new ToolGroupProjection(
-			this.envelopes,
-			(name, args) => this.groupDisposition(name, args),
-			(name) => this.errorPolicies.get(name),
+		this.activityPolicies = activityPolicies;
+		this.detailPresentations = detailPresentations;
+		this.disposition = disposition;
+		this.envelopes = envelopes;
+		this.errorPolicies = errorPolicies;
+		this.renderedToolNames = renderedToolNames;
+		this.groupProjection = groups = new ToolGroupProjection(
+			envelopes,
+			disposition,
+			(name) => errorPolicies.get(name),
 			{
-				groupChanged: (group, changedMemberId) => this.presentation.reconcileGroup(group, changedMemberId),
-				groupRemoved: (leaderId) => this.presentation.dropGroup(leaderId),
-				groupsRebuilt: () => this.presentation.groupsRebuilt(),
-				liveResult: (toolCallId, result) => this.presentation.observeToolExecutionUpdate(toolCallId, result),
-				shouldQueueResult: (toolCallId) => this.presentation.shouldQueueResult(toolCallId),
-				stopTimer: (toolCallId) => this.presentation.stopTimer(toolCallId),
+				groupChanged: (group, changedMemberId) => this.reconcileGroup(group, changedMemberId),
+				groupRemoved: (leaderId) => this.dropGroup(leaderId),
+				groupsRebuilt: () => this.groupsRebuilt(),
+				liveResult: (toolCallId, result) => this.observeToolExecutionUpdate(toolCallId, result),
+				shouldQueueResult: (toolCallId) => this.shouldQueueResult(toolCallId),
+				stopTimer: (toolCallId) => this.stopTimer(toolCallId),
 			},
 		);
-		this.activities = this.presentation.activities;
-	}
-
-	configure(settings: ToolUiSettingsStore): void {
-		this.presentation.configure(settings);
-	}
-
-	showLiveElapsed(): boolean {
-		return this.presentation.showLiveElapsed();
 	}
 
 	consumeReloadActiveTools(): readonly string[] | undefined {
@@ -363,7 +366,7 @@ export class ToolUiRuntime {
 			toolDefinitions: this.resumeToolDefinitions(),
 		});
 		this.suspend();
-		this.presentation.discardBindings();
+		this.discardBindings();
 	}
 
 	registerReplayToolDefinition(definition: SuiteToolReplayDefinition): void {
@@ -438,7 +441,7 @@ export class ToolUiRuntime {
 		} else {
 			this.errorPolicies.delete(name);
 		}
-		if (this.renderedToolNames.has(name) && this.groups.hasMessages()) this.groups.rebuild();
+		if (this.renderedToolNames.has(name) && this.groupProjection.hasMessages()) this.groupProjection.rebuild();
 	}
 
 	registerDetailPresentation(name: string, presentation: ToolDetailPresentation): void {
@@ -452,18 +455,18 @@ export class ToolUiRuntime {
 		showFallback?: SuiteToolEnvelopeFallbackVisibility,
 	): void {
 		this.envelopes.register(name, decode, prepareArguments, showFallback);
-		if (this.groups.hasMessages()) this.groups.rebuild();
+		if (this.groupProjection.hasMessages()) this.groupProjection.rebuild();
 	}
 
 	markRendererAttached(name: string): void {
 		if (this.renderedToolNames.has(name)) return;
 		this.renderedToolNames.add(name);
-		if (this.groups.hasMessages()) this.groups.rebuild();
+		if (this.groupProjection.hasMessages()) this.groupProjection.rebuild();
 	}
 
 	markRendererDetached(name: string): void {
 		if (!this.renderedToolNames.delete(name)) return;
-		if (this.groups.hasMessages()) this.groups.rebuild();
+		if (this.groupProjection.hasMessages()) this.groupProjection.rebuild();
 	}
 
 	hasActivityRenderer(name: string): boolean {
@@ -485,149 +488,64 @@ export class ToolUiRuntime {
 	}
 
 	startTurn(messages?: readonly unknown[]): void {
-		this.groups.startTurn(messages);
+		this.groupProjection.startTurn(messages);
 	}
 
 	observeUserBoundary(): void {
-		this.groups.observeUserBoundary();
+		this.groupProjection.observeUserBoundary();
 	}
 
 	endTurn(): void {
-		this.groups.endTurn();
+		this.groupProjection.endTurn();
 	}
 
 	observeAssistantProse(): void {
-		this.groups.observeAssistantProse();
+		this.groupProjection.observeAssistantProse();
 	}
 
 	observeAssistantUpdate<Message>(message: Message): void {
-		this.groups.observeAssistantUpdate(message);
+		this.groupProjection.observeAssistantUpdate(message);
 	}
 
 	observeAssistantEvent(event: AssistantMessageEvent): void {
-		this.groups.observeAssistantEvent(event);
+		this.groupProjection.observeAssistantEvent(event);
 	}
 
 	indexMessages(messages: readonly unknown[], closeTail?: boolean): void {
-		this.groups.indexMessages(messages, closeTail);
+		this.groupProjection.indexMessages(messages, closeTail);
 	}
 
 	indexMessage<Message>(message: Message): void {
-		this.groups.indexMessage(message);
+		this.groupProjection.indexMessage(message);
 	}
 
 	observeEnvelopeResult(envelopeName: string, envelopeId: string, details: SuiteToolEnvelopeDetails): void {
-		this.groups.observeEnvelopeResult(envelopeName, envelopeId, details);
-	}
-
-	observeToolExecutionStart(toolCallId: string): void {
-		this.presentation.observeToolExecutionStart(toolCallId);
-	}
-
-	observeToolExecutionUpdate(toolCallId: string, result: AgentToolResult<unknown>): void {
-		this.presentation.observeToolExecutionUpdate(toolCallId, result);
-	}
-
-	observeToolExecutionEnd(toolCallId: string, result: AgentToolResult<unknown>): void {
-		this.presentation.observeToolExecutionEnd(toolCallId, result);
+		this.groupProjection.observeEnvelopeResult(envelopeName, envelopeId, details);
 	}
 
 	resetProjection(messages: readonly unknown[]): void {
-		this.presentation.resetProjection();
+		this.resetActivityProjection();
 		this.envelopes.clearClaims();
-		this.groups.resetProjection(messages);
-		this.presentation.retainBindings(this.groups.memberIds());
+		this.groupProjection.resetProjection(messages);
+		this.retainBindings(this.groupProjection.memberIds());
 	}
 
-	clear(): void {
-		this.presentation.clear();
+	override clear(): void {
+		super.clear();
 		this.envelopes.clearClaims();
-		this.groups.clear();
-	}
-
-	suspend(): void {
-		this.presentation.suspend();
-	}
-
-	presentRow(
-		toolCallId: string,
-		row: CachedToolRow,
-		model: ToolRowModel,
-		visible: boolean,
-		invalidate: () => void,
-		expanded: boolean,
-		metadata: PresentedToolMetadata,
-	): void {
-		this.presentation.presentRow(toolCallId, row, model, visible, invalidate, expanded, metadata);
-	}
-
-	updateProjectedRow(
-		toolCallId: string,
-		row: CachedToolRow,
-		model: ToolRowModel,
-		visible: boolean,
-		invalidate: () => void,
-		expanded: boolean,
-		metadata: PresentedToolMetadata,
-	): boolean {
-		return this.presentation.updateProjectedRow(toolCallId, row, model, visible, invalidate, expanded, metadata);
-	}
-
-	setRowExpanded(toolCallId: string, expanded: boolean): void {
-		this.presentation.setRowExpanded(toolCallId, expanded);
-	}
-
-	startTimer(
-		toolCallId: string,
-		invalidate: () => void,
-		setMarkerVisible: (visible: boolean) => void = () => {},
-	): void {
-		this.presentation.startTimer(toolCallId, invalidate, setMarkerVisible);
-	}
-
-	stopTimer(toolCallId: string): void {
-		this.presentation.stopTimer(toolCallId);
-	}
-
-	syncTimers(): void {
-		this.presentation.syncTimers();
-	}
-
-	listGroups(): readonly ToolActivityView[] {
-		return this.presentation.listGroups();
-	}
-
-	resolveGroup(query: string): ToolActivityView | "ambiguous" | undefined {
-		return this.presentation.resolveGroup(query);
-	}
-
-	groupActivities(groupId: string): readonly ToolActivity[] {
-		return this.presentation.groupActivities(groupId);
+		this.groupProjection.clear();
 	}
 
 	projectedResult(toolCallId: string): AgentToolResult<unknown> | undefined {
-		return this.groups.projectedResult(toolCallId);
+		return this.groupProjection.projectedResult(toolCallId);
 	}
 
 	isStandaloneInvocation(name: string, args: ToolArguments): boolean {
-		return this.groupDisposition(name, args) === "boundary";
-	}
-
-	groupActivityPage(groupId: string, offset: number, limit: number): readonly ToolActivity[] {
-		return this.presentation.groupActivityPage(groupId, offset, limit);
-	}
-
-	toolActivityDetail(toolCallId: string, mode: ToolActivityDetailMode): ToolActivityDetailView | undefined {
-		return this.presentation.toolActivityDetail(toolCallId, mode);
+		return this.disposition(name, args) === "boundary";
 	}
 
 	projectMessages(messages: readonly unknown[]): readonly unknown[] {
 		return this.envelopes.projectMessages(messages);
-	}
-
-	private groupDisposition(name: string, args: ToolArguments): RetrievalGroupDisposition {
-		if (!this.renderedToolNames.has(name)) return "boundary";
-		return classifyRetrievalGroupInvocation(name, args, this.activityPolicies.get(name));
 	}
 }
 
