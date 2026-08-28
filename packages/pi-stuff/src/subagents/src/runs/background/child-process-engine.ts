@@ -161,9 +161,6 @@ export class ChildProcessEngine {
 	private writerProcessBindingError: unknown;
 	private terminalCause: ChildTerminalCause | undefined;
 	private forcedError: string | undefined;
-	private interrupted = false;
-	private timedOut = false;
-	private stopped = false;
 	private settled = false;
 	private childExited = false;
 	private finalDrainEvidence = false;
@@ -415,9 +412,6 @@ export class ChildProcessEngine {
 	private terminate(kind: "pause" | "timeout" | "stop"): void {
 		if (!this.claimTerminalCause(kind)) return;
 		this.cancelFinalDrain();
-		this.interrupted = kind === "pause";
-		this.timedOut = kind === "timeout";
-		this.stopped = kind === "stop";
 		this.forcedError =
 			kind === "pause" ? "Agent paused." : kind === "timeout" ? "Agent timed out." : "Agent stopped by user.";
 		this.requestTermination(kind === "pause" ? "SIGINT" : "SIGTERM");
@@ -647,7 +641,10 @@ export class ChildProcessEngine {
 		if (observed.terminationOrigin) writerProcess.terminationOrigin = observed.terminationOrigin;
 		return {
 			exitCode:
-				this.interrupted || this.timedOut || this.stopped || snapshot.turnBudgetExceeded
+				this.terminalCause === "pause" ||
+				this.terminalCause === "timeout" ||
+				this.terminalCause === "stop" ||
+				snapshot.turnBudgetExceeded
 					? 1
 					: observed.completedByInternalFinalDrain
 						? 0
@@ -665,9 +662,9 @@ export class ChildProcessEngine {
 			durationMs: Date.now() - this.startedAt,
 			model: snapshot.model,
 			contextUsage: this.input.statusStep.contextUsage,
-			interrupted: this.interrupted || undefined,
-			timedOut: this.timedOut || undefined,
-			stopped: this.stopped || undefined,
+			interrupted: this.terminalCause === "pause" || undefined,
+			timedOut: this.terminalCause === "timeout" || undefined,
+			stopped: this.terminalCause === "stop" || undefined,
 			turnBudget: snapshot.turnBudget,
 			turnBudgetExceeded: snapshot.turnBudgetExceeded || undefined,
 			contextNudgeObserved: snapshot.contextNudgeObserved || undefined,

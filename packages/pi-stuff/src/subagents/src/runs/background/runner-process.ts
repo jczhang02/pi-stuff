@@ -358,7 +358,6 @@ interface RunnerLaunchState {
 }
 
 interface StartedRunner {
-	readonly proc: ReturnType<typeof spawn>;
 	readonly pid: number;
 	readonly processStartIdentity: string;
 }
@@ -485,7 +484,7 @@ async function startRunnerProcess(state: RunnerLaunchState, suffix: string): Pro
 	state.processStartIdentity = processStartIdentity;
 	proc.unref();
 	proc.channel?.unref?.();
-	return { proc, pid: proc.pid, processStartIdentity };
+	return { pid: proc.pid, processStartIdentity };
 }
 
 function failBeforeRunnerProceed(state: RunnerLaunchState, runner: StartedRunner, error: string): never {
