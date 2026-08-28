@@ -41,6 +41,7 @@ import type {
 import { isTaskOnlyAgentText } from "../shared/display-description.js";
 import {
 	AGENT_LIST_ROWS,
+	type AgentDialogRenderMetrics,
 	type AgentTranscriptItem,
 	boundedTerminalText,
 	type DialogMode,
@@ -118,18 +119,20 @@ class AgentDialogComponent implements CommandDialogComponent {
 	private disposed = false;
 	private feedback: Feedback | undefined;
 	private input = "";
-	private lastDetailMaxOffset = 0;
-	private lastDetailViewportRows = 1;
-	private listPageRows = AGENT_LIST_ROWS;
 	private listSelectedKey: string | undefined;
 	private readonly markdown: Markdown;
 	private mode: DialogMode = "list";
-	private nestedListPageRows = AGENT_LIST_ROWS;
 	private nestedSelectedKey: string | undefined;
 	private operationGeneration = 0;
 	private operationPending = false;
 	private followActivity = true;
-	private scrollOffset = 0;
+	private readonly renderMetrics: AgentDialogRenderMetrics = {
+		lastDetailMaxOffset: 0,
+		lastDetailViewportRows: 1,
+		listPageRows: AGENT_LIST_ROWS,
+		nestedListPageRows: AGENT_LIST_ROWS,
+		scrollOffset: 0,
+	};
 	private selectedKey: string | undefined;
 	private showKeyHelp = false;
 	private showToolDetails = false;
@@ -229,22 +232,18 @@ class AgentDialogComponent implements CommandDialogComponent {
 			}
 			return renderCommandDialogKeyHelp(this.context, renderWidth, "Agents", keyHelp);
 		}
-		const rendered = renderAgentDialog(
+		const lines = renderAgentDialog(
 			this.context,
 			this.markdown,
 			{
 				feedback: this.feedback,
 				followActivity: this.followActivity,
 				input: this.input,
-				lastDetailMaxOffset: this.lastDetailMaxOffset,
-				lastDetailViewportRows: this.lastDetailViewportRows,
-				listPageRows: this.listPageRows,
 				listSelectedKey: this.listSelectedKey,
 				maxTranscriptChars: this.options.maxTranscriptChars,
+				metrics: this.renderMetrics,
 				mode: this.mode,
-				nestedListPageRows: this.nestedListPageRows,
 				nestedSelectedKey: this.nestedSelectedKey,
-				scrollOffset: this.scrollOffset,
 				selectedKey: this.selectedKey,
 				showToolDetails: this.showToolDetails,
 				snapshotValue: this.snapshotValue,
@@ -252,12 +251,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			},
 			renderWidth,
 		);
-		this.lastDetailMaxOffset = rendered.lastDetailMaxOffset;
-		this.lastDetailViewportRows = rendered.lastDetailViewportRows;
-		this.listPageRows = rendered.listPageRows;
-		this.nestedListPageRows = rendered.nestedListPageRows;
-		this.scrollOffset = rendered.scrollOffset;
-		return rendered.lines.map((line) => truncateToWidth(line, renderWidth, ""));
+		return lines.map((line) => truncateToWidth(line, renderWidth, ""));
 	}
 
 	dispose(): void {
@@ -276,7 +270,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			this.mode = "list";
 			this.selectedKey = undefined;
 			this.input = "";
-			this.scrollOffset = 0;
+			this.renderMetrics.scrollOffset = 0;
 			this.transcriptGeneration += 1;
 			this.transcript = { items: [], state: "unavailable", text: "" };
 			this.nestedSelectedKey = undefined;
@@ -309,7 +303,12 @@ class AgentDialogComponent implements CommandDialogComponent {
 				0,
 				rows.findIndex((row) => row.key === this.listSelectedKey),
 			);
-			const nextIndex = commandDialogListIndex(currentIndex, rows.length, this.listPageRows, navigation);
+			const nextIndex = commandDialogListIndex(
+				currentIndex,
+				rows.length,
+				this.renderMetrics.listPageRows,
+				navigation,
+			);
 			this.listSelectedKey = rows[nextIndex]?.key;
 			if (!this.operationPending) this.feedback = undefined;
 			this.requestRender();
@@ -335,7 +334,12 @@ class AgentDialogComponent implements CommandDialogComponent {
 				0,
 				rows.findIndex((row) => row.key === this.nestedSelectedKey),
 			);
-			const nextIndex = commandDialogListIndex(currentIndex, rows.length, this.nestedListPageRows, navigation);
+			const nextIndex = commandDialogListIndex(
+				currentIndex,
+				rows.length,
+				this.renderMetrics.nestedListPageRows,
+				navigation,
+			);
 			this.nestedSelectedKey = rows[nextIndex]?.key;
 			this.requestRender();
 			return;
@@ -354,19 +358,13 @@ class AgentDialogComponent implements CommandDialogComponent {
 		}
 		const navigation = commandDialogNavigation(data, this.context.keybindings);
 		if (!navigation) return;
-		const page = this.detailViewportRows();
-		this.scrollOffset = commandDialogScrollOffset(this.scrollOffset, this.lastDetailMaxOffset, page, navigation);
-		this.followActivity = navigation === "end" || this.scrollOffset >= this.lastDetailMaxOffset;
-		this.requestRender();
+		this.scrollDetail(navigation);
 	}
 
 	private handleDetailInput(data: string): void {
 		const navigation = commandDialogNavigation(data, this.context.keybindings);
 		if (navigation) {
-			const page = this.detailViewportRows();
-			this.scrollOffset = commandDialogScrollOffset(this.scrollOffset, this.lastDetailMaxOffset, page, navigation);
-			this.followActivity = navigation === "end" || this.scrollOffset >= this.lastDetailMaxOffset;
-			this.requestRender();
+			this.scrollDetail(navigation);
 			return;
 		}
 
@@ -496,10 +494,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.selectedKey = undefined;
 		this.nestedSelectedKey = undefined;
 		this.input = "";
-		this.scrollOffset = 0;
-		this.followActivity = true;
-		this.lastDetailMaxOffset = 0;
-		this.lastDetailViewportRows = 1;
+		this.resetDetailViewport();
 		this.transcriptGeneration += 1;
 		this.transcript = { items: [], state: "unavailable", text: "" };
 		this.showToolDetails = false;
@@ -513,10 +508,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.selectedKey = row.key;
 		this.nestedSelectedKey = row.nestedAgents[0]?.key;
 		this.listSelectedKey = row.key;
-		this.scrollOffset = 0;
-		this.followActivity = true;
-		this.lastDetailMaxOffset = 0;
-		this.lastDetailViewportRows = 1;
+		this.resetDetailViewport();
 		this.showToolDetails = false;
 		if (!this.operationPending) this.feedback = undefined;
 		this.loadTranscript(row, row.key);
@@ -530,10 +522,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			return;
 		}
 		this.mode = "detail";
-		this.scrollOffset = 0;
-		this.followActivity = true;
-		this.lastDetailMaxOffset = 0;
-		this.lastDetailViewportRows = 1;
+		this.resetDetailViewport();
 		this.showToolDetails = false;
 		this.loadTranscript(row, row.key);
 		this.requestRender();
@@ -549,10 +538,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		if (!row.nestedAgents.some((nested) => nested.key === this.nestedSelectedKey)) {
 			this.nestedSelectedKey = row.nestedAgents[0]?.key;
 		}
-		this.scrollOffset = 0;
-		this.followActivity = true;
-		this.lastDetailMaxOffset = 0;
-		this.lastDetailViewportRows = 1;
+		this.resetDetailViewport();
 		this.transcriptGeneration += 1;
 		this.transcript = { items: [], state: "unavailable", text: "" };
 		this.showToolDetails = false;
@@ -562,10 +548,10 @@ class AgentDialogComponent implements CommandDialogComponent {
 	private showNestedDetail(row: AgentNestedDetail): void {
 		this.mode = "nested-detail";
 		this.nestedSelectedKey = row.key;
-		this.scrollOffset = 0;
+		this.renderMetrics.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastDetailMaxOffset = 0;
-		this.lastDetailViewportRows = 1;
+		this.renderMetrics.lastDetailMaxOffset = 0;
+		this.renderMetrics.lastDetailViewportRows = 1;
 		this.showToolDetails = false;
 		this.loadTranscript(row, row.key);
 		this.requestRender();
@@ -602,7 +588,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 					items.length > 0 && !onlyPartial
 						? { items, state: "ready", text: "" }
 						: { items: [], state: "unavailable", text: "" };
-				this.scrollOffset = 0;
+				this.renderMetrics.scrollOffset = 0;
 				this.requestRender();
 			})
 			.catch((error) => {
@@ -612,7 +598,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 					state: "error",
 					text: `Unable to read Activity: ${oneLine(errorMessage(error))}`,
 				};
-				this.scrollOffset = 0;
+				this.renderMetrics.scrollOffset = 0;
 				this.requestRender();
 			});
 	}
@@ -638,8 +624,27 @@ class AgentDialogComponent implements CommandDialogComponent {
 		return this.transcript.items.some((item) => item.kind === "tool");
 	}
 
+	private resetDetailViewport(): void {
+		this.renderMetrics.scrollOffset = 0;
+		this.renderMetrics.lastDetailMaxOffset = 0;
+		this.renderMetrics.lastDetailViewportRows = 1;
+		this.followActivity = true;
+	}
+
+	private scrollDetail(navigation: NonNullable<ReturnType<typeof commandDialogNavigation>>): void {
+		this.renderMetrics.scrollOffset = commandDialogScrollOffset(
+			this.renderMetrics.scrollOffset,
+			this.renderMetrics.lastDetailMaxOffset,
+			this.detailViewportRows(),
+			navigation,
+		);
+		this.followActivity =
+			navigation === "end" || this.renderMetrics.scrollOffset >= this.renderMetrics.lastDetailMaxOffset;
+		this.requestRender();
+	}
+
 	private detailViewportRows(): number {
-		return this.lastDetailViewportRows;
+		return this.renderMetrics.lastDetailViewportRows;
 	}
 
 	private requestRender(): void {

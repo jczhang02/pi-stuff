@@ -58,32 +58,27 @@ export interface Transcript {
 	readonly text: string;
 }
 
+export interface AgentDialogRenderMetrics {
+	lastDetailMaxOffset: number;
+	lastDetailViewportRows: number;
+	listPageRows: number;
+	nestedListPageRows: number;
+	scrollOffset: number;
+}
+
 export interface AgentDialogRenderState {
 	readonly feedback: Feedback | undefined;
 	readonly followActivity: boolean;
 	readonly input: string;
-	readonly lastDetailMaxOffset: number;
-	readonly lastDetailViewportRows: number;
-	readonly listPageRows: number;
 	readonly listSelectedKey: string | undefined;
 	readonly maxTranscriptChars: number;
+	readonly metrics: AgentDialogRenderMetrics;
 	readonly mode: DialogMode;
-	readonly nestedListPageRows: number;
 	readonly nestedSelectedKey: string | undefined;
-	readonly scrollOffset: number;
 	readonly selectedKey: string | undefined;
 	readonly showToolDetails: boolean;
 	readonly snapshotValue: AgentSessionSnapshot;
 	readonly transcript: Transcript;
-}
-
-export interface AgentDialogRenderResult {
-	readonly lastDetailMaxOffset: number;
-	readonly lastDetailViewportRows: number;
-	readonly lines: string[];
-	readonly listPageRows: number;
-	readonly nestedListPageRows: number;
-	readonly scrollOffset: number;
 }
 
 export function renderAgentDialog(
@@ -91,50 +86,31 @@ export function renderAgentDialog(
 	markdown: Markdown,
 	state: AgentDialogRenderState,
 	width: number,
-): AgentDialogRenderResult {
+): string[] {
 	return new AgentDialogRenderFrame(context, markdown, state).render(width);
 }
 
 class AgentDialogRenderFrame {
 	private readonly context: CommandDialogViewContext<void>;
-	private lastDetailMaxOffset: number;
-	private lastDetailViewportRows: number;
-	private listPageRows: number;
 	private readonly markdown: Markdown;
-	private nestedListPageRows: number;
-	private scrollOffset: number;
 	private readonly state: AgentDialogRenderState;
 
 	constructor(context: CommandDialogViewContext<void>, markdown: Markdown, state: AgentDialogRenderState) {
 		this.context = context;
 		this.markdown = markdown;
 		this.state = state;
-		this.lastDetailMaxOffset = state.lastDetailMaxOffset;
-		this.lastDetailViewportRows = state.lastDetailViewportRows;
-		this.listPageRows = state.listPageRows;
-		this.nestedListPageRows = state.nestedListPageRows;
-		this.scrollOffset = state.scrollOffset;
 	}
 
-	render(width: number): AgentDialogRenderResult {
-		const lines =
-			this.state.mode === "list"
-				? this.renderList(width)
-				: this.state.mode === "nested-list"
-					? this.renderNestedList(width)
-					: this.state.mode === "nested-detail"
-						? this.renderNestedDetail(width)
-						: this.state.mode === "detail"
-							? this.renderDetail(width)
-							: this.renderComposer(width);
-		return {
-			lines,
-			listPageRows: this.listPageRows,
-			nestedListPageRows: this.nestedListPageRows,
-			scrollOffset: this.scrollOffset,
-			lastDetailMaxOffset: this.lastDetailMaxOffset,
-			lastDetailViewportRows: this.lastDetailViewportRows,
-		};
+	render(width: number): string[] {
+		return this.state.mode === "list"
+			? this.renderList(width)
+			: this.state.mode === "nested-list"
+				? this.renderNestedList(width)
+				: this.state.mode === "nested-detail"
+					? this.renderNestedDetail(width)
+					: this.state.mode === "detail"
+						? this.renderDetail(width)
+						: this.renderComposer(width);
 	}
 
 	private listRow(): AgentRow | undefined {
@@ -160,7 +136,7 @@ class AgentDialogRenderFrame {
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		this.listPageRows = limit;
+		this.state.metrics.listPageRows = limit;
 		const window = selectedWindow(rows, this.state.listSelectedKey, limit);
 		const header = [divider(this.context.theme, width), title(this.context.theme, "Agents")];
 		const feedbackLine = this.state.feedback
@@ -224,7 +200,7 @@ class AgentDialogRenderFrame {
 		if (!parent) return this.renderList(width);
 		const rows = parent.nestedAgents;
 		const limit = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : AGENT_LIST_ROWS;
-		this.nestedListPageRows = limit;
+		this.state.metrics.nestedListPageRows = limit;
 		const window = selectedWindow(rows, this.state.nestedSelectedKey, limit);
 		const theme = this.context.theme;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
@@ -286,24 +262,13 @@ class AgentDialogRenderFrame {
 		}`;
 		const header = [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`), stateLine];
 		const feedbackLine = this.state.feedback ? renderFeedback(theme, this.state.feedback, width) : undefined;
-		const taskLines = sectionBody(row.task || "(no task)", width);
-		const outcome = agentOutcome(row, width, theme, this.markdown);
-		const activity = this.activityLines(width);
-		const document = [
-			sectionHeading(theme, "Task"),
-			...taskLines,
-			...(outcome ? ["", sectionHeading(theme, outcome.label), ...outcome.lines] : []),
-			"",
-			sectionHeading(theme, "Activity"),
-			...activity,
-		];
-		const activityError = this.state.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
+		const detail = this.detailContent(row, width);
 		return this.renderDetailSurface(
 			header,
-			document,
+			detail.document,
 			(scrollable) => this.renderDetailFooter(row, width, scrollable),
 			!TERMINAL_STATUSES.has(row.status),
-			[feedbackLine ?? outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
+			[feedbackLine ?? detail.priority ?? stateLine, ...detail.taskLines.slice(0, 1)],
 			feedbackLine,
 		);
 	}
@@ -327,21 +292,10 @@ class AgentDialogRenderFrame {
 			` · depth ${row.depth}${row.nestedCount > 0 ? ` · ${row.nestedCount} nested` : ""}`,
 		)}`;
 		header.push(stateLine);
-		const taskLines = sectionBody(row.task || "(no task)", width);
-		const outcome = agentOutcome(row, width, theme, this.markdown);
-		const activity = this.activityLines(width);
-		const document = [
-			sectionHeading(theme, "Task"),
-			...taskLines,
-			...(outcome ? ["", sectionHeading(theme, outcome.label), ...outcome.lines] : []),
-			"",
-			sectionHeading(theme, "Activity"),
-			...activity,
-		];
-		const activityError = this.state.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
+		const detail = this.detailContent(row, width);
 		return this.renderDetailSurface(
 			header,
-			document,
+			detail.document,
 			(scrollable) =>
 				hintLines(theme, width, [
 					...(scrollable ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
@@ -350,8 +304,28 @@ class AgentDialogRenderFrame {
 					`${cancel} back`,
 				]),
 			!TERMINAL_STATUSES.has(row.status),
-			[outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
+			[detail.priority ?? stateLine, ...detail.taskLines.slice(0, 1)],
 		);
+	}
+
+	private detailContent(row: AgentRow | AgentNestedDetail, width: number) {
+		const taskLines = sectionBody(row.task || "(no task)", width);
+		const outcome = agentOutcome(row, width, this.context.theme, this.markdown);
+		const activity = this.activityLines(width);
+		return {
+			document: [
+				sectionHeading(this.context.theme, "Task"),
+				...taskLines,
+				...(outcome ? ["", sectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
+				"",
+				sectionHeading(this.context.theme, "Activity"),
+				...activity,
+			],
+			priority:
+				outcome?.lines[0] ??
+				(this.state.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined),
+			taskLines,
+		};
 	}
 
 	private renderDetailSurface(
@@ -372,15 +346,17 @@ class AgentDialogRenderFrame {
 		}
 		const content = viewport <= 3 ? document.filter((line) => line.trim().length > 0) : document;
 		const maxOffset = Math.max(0, content.length - viewport);
-		this.lastDetailMaxOffset = maxOffset;
-		this.lastDetailViewportRows = Math.max(1, viewport);
-		this.scrollOffset =
-			this.state.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
-		const visible = content.slice(this.scrollOffset, this.scrollOffset + viewport);
-		if (this.scrollOffset > 0 && visible.length > 0) {
-			visible[0] = `${GUTTER}${this.context.theme.fg("dim", `… ${this.scrollOffset} earlier lines`)}`;
+		this.state.metrics.lastDetailMaxOffset = maxOffset;
+		this.state.metrics.lastDetailViewportRows = Math.max(1, viewport);
+		this.state.metrics.scrollOffset =
+			this.state.followActivity && live
+				? maxOffset
+				: Math.min(maxOffset, Math.max(0, this.state.metrics.scrollOffset));
+		const visible = content.slice(this.state.metrics.scrollOffset, this.state.metrics.scrollOffset + viewport);
+		if (this.state.metrics.scrollOffset > 0 && visible.length > 0) {
+			visible[0] = `${GUTTER}${this.context.theme.fg("dim", `… ${this.state.metrics.scrollOffset} earlier lines`)}`;
 		}
-		const later = content.length - this.scrollOffset - visible.length;
+		const later = content.length - this.state.metrics.scrollOffset - visible.length;
 		if (later > 0 && visible.length > 0) {
 			visible[visible.length - 1] = `${GUTTER}${this.context.theme.fg("dim", `… ${later} later lines`)}`;
 		}
