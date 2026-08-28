@@ -67,6 +67,27 @@ async function waitFor(predicate: () => Promise<boolean>, description: string): 
 	fail(`timed out waiting for ${description}`);
 }
 
+async function readResponses(stdout: ReadableStream<Uint8Array>, responses: RpcRecord[]): Promise<void> {
+	const reader = stdout.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	for (;;) {
+		const item = await reader.read();
+		buffer += decoder.decode(item.value, { stream: !item.done });
+		while (buffer.includes("\n")) {
+			const newline = buffer.indexOf("\n");
+			const line = buffer.slice(0, newline).trim();
+			buffer = buffer.slice(newline + 1);
+			if (line) {
+				const response = JSON.parse(line);
+				if (!Check(RPC_RECORD_SCHEMA, response)) fail("Pi emitted a malformed RPC record");
+				responses.push(response);
+			}
+		}
+		if (item.done) break;
+	}
+}
+
 export async function verifyWorkMonitorMatrix(options: {
 	readonly packagePath: string;
 	readonly piBinary: string;
@@ -131,26 +152,7 @@ export async function verifyWorkMonitorMatrix(options: {
 		);
 		child = spawned;
 		const responses: RpcRecord[] = [];
-		const reader = spawned.stdout.getReader();
-		const reading = (async () => {
-			const decoder = new TextDecoder();
-			let buffer = "";
-			for (;;) {
-				const item = await reader.read();
-				buffer += decoder.decode(item.value, { stream: !item.done });
-				while (buffer.includes("\n")) {
-					const newline = buffer.indexOf("\n");
-					const line = buffer.slice(0, newline).trim();
-					buffer = buffer.slice(newline + 1);
-					if (line) {
-						const response = JSON.parse(line);
-						if (!Check(RPC_RECORD_SCHEMA, response)) fail("Pi emitted a malformed RPC record");
-						responses.push(response);
-					}
-				}
-				if (item.done) break;
-			}
-		})();
+		const reading = readResponses(spawned.stdout, responses);
 
 		for (const scenario of SCENARIOS) {
 			const requestId = `matrix-${scenario}`;
