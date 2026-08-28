@@ -3,15 +3,13 @@ import {
 	baseRequest,
 	cleanupNativeSupervisorFixtures,
 	createNativeSupervisorChannel,
-	directories,
 	fs,
-	harness,
 	legacyChannel,
 	path,
 	randomUUID,
 	resolveSupervisorChannelDir,
 	type SupervisorRequestFixture,
-	TEMP_ROOT_DIR,
+	sessionHarness,
 	writeRequest,
 } from "./native-supervisor-channel-fixtures.js";
 
@@ -28,13 +26,8 @@ test("releases every delivery claim when one claim close fails", async () => {
 			expiresAt: now + 60_000,
 		});
 	}
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-release-failure",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -85,13 +78,8 @@ test("does not rescan the session for an already accepted request awaiting a rep
 		}),
 		{ mode: 0o600 },
 	);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-accepted-ask",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -120,13 +108,8 @@ test("does not rescan the session on repeated polls during an unaccepted deliver
 		JSON.stringify({ version: 2, requestId: request.id, lastAttemptAt: now }),
 		{ mode: 0o600 },
 	);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-delivery-grace",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -150,13 +133,8 @@ test("indexes the session once and records accepted delivery without another his
 		expiresAt: now + 60_000,
 	};
 	writeRequest(legacyChannel(runId), request);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-accepted-index",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -182,13 +160,8 @@ test("treats a reply consumed immediately after publication as delivered", async
 	};
 	const channelDir = legacyChannel(runId);
 	const requestFile = writeRequest(channelDir, request);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-reply-race",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -223,13 +196,8 @@ test("delivers a branch-proven v1 progress update without expiresAt exactly once
 	const runId = `legacy-${now}`;
 	const request = baseRequest(`v1-${now}`, runId, now);
 	writeRequest(legacyChannel(runId), request);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-current",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -264,19 +232,15 @@ test("indexes one bounded session tail once for a full page of persisted request
 			}),
 		);
 	}
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	const persisted = `${records.join("\n")}\n`;
-	const padding = Buffer.alloc(32 * 1024 * 1024 - Buffer.byteLength(persisted), 0x20);
-	fs.writeFileSync(sessionFile, padding);
-	fs.appendFileSync(sessionFile, persisted);
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-indexed-page",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
+	const persisted = `${records.join("\n")}\n`;
+	const padding = Buffer.alloc(32 * 1024 * 1024 - Buffer.byteLength(persisted), 0x20);
+	fs.writeFileSync(test.sessionFile, padding);
+	fs.appendFileSync(test.sessionFile, persisted);
 	const channel = createNativeSupervisorChannel(test.api, test.state);
 
 	await channel.start();
@@ -307,13 +271,8 @@ test("removes a full malformed-message page before delivering the next valid req
 	}
 	const valid = baseRequest(`zzz-valid-${now}`, runId, now);
 	writeRequest(channelDir, valid);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-current",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});
@@ -336,13 +295,8 @@ test("retains but never delivers a v1 request that the active branch cannot prov
 	const runId = `foreign-${now}`;
 	const request = baseRequest(`foreign-request-${now}`, runId, now);
 	const file = writeRequest(legacyChannel(runId), request);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-current",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set(),
 		startedAtMs: now - 1_000,
 	});
@@ -365,13 +319,8 @@ test("continues to deliver a v2 request addressed to the primary physical sessio
 		expiresAt: now + 60_000,
 	};
 	writeRequest(resolveSupervisorChannelDir(runId, "worker", 0, primary), request);
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary,
-		legacyFile: sessionFile,
 		legacyRunIds: new Set(),
 		startedAtMs: now - 1_000,
 	});

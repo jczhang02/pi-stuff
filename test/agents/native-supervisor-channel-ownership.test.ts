@@ -13,6 +13,7 @@ import {
 	path,
 	resolveSupervisorChannelDir,
 	type SupervisorRequestFixture,
+	sessionHarness,
 	shardedDurableClaimName,
 	TEMP_ROOT_DIR,
 	type ToolDefinition,
@@ -110,13 +111,8 @@ test("garbage-collects a dead child channel including orphan replies and durable
 
 test("does not let the root native fallback pre-empt a later session_start intercom tool", async () => {
 	const now = Date.now();
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-dynamic-intercom",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set(),
 		startedAtMs: now,
 	});
@@ -146,13 +142,8 @@ test("does not let the root native fallback pre-empt a later session_start inter
 
 test("replaces a replay-only supervisor definition when the live channel starts", async () => {
 	const now = Date.now();
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const fixture = harness({
+	const fixture = sessionHarness({
 		primary: "ps2-replay-supervisor",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set(),
 		startedAtMs: now,
 	});
@@ -267,13 +258,8 @@ test("accepts simultaneous same-channel asks even when their legacy delivery sha
 			expiresAt: now + 60_000,
 		});
 	}
-	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-	directories.push(root);
-	const sessionFile = path.join(root, "parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const test = harness({
+	const test = sessionHarness({
 		primary: "ps2-current",
-		legacyFile: sessionFile,
 		legacyRunIds: new Set([runId]),
 		startedAtMs: now - 1_000,
 	});

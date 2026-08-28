@@ -45,14 +45,16 @@ function writeRequest(channelDir: string, request: SupervisorRequestFixture): st
 	return file;
 }
 
-function harness(input: {
+interface HarnessInput {
 	primary: string;
 	legacyFile: string;
 	legacyRunIds: ReadonlySet<string>;
 	logicalSessionId?: string;
 	startedAtMs: number;
 	sendMessage?: ExtensionAPI["sendMessage"];
-}) {
+}
+
+function harness(input: HarnessInput) {
 	type TestHandlerResult = object | undefined | Promise<object | undefined>;
 	type TestHandler = (...args: never[]) => TestHandlerResult;
 	const messages: Array<{ customType?: string; details?: unknown }> = [];
@@ -132,6 +134,14 @@ function harness(input: {
 	};
 }
 
+function sessionHarness(input: Omit<HarnessInput, "legacyFile">) {
+	const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+	directories.push(root);
+	const sessionFile = path.join(root, "parent.jsonl");
+	fs.writeFileSync(sessionFile, "");
+	return { ...harness({ ...input, legacyFile: sessionFile }), sessionFile };
+}
+
 function baseRequest(id: string, runId: string, createdAt: number): SupervisorRequestFixture {
 	return {
 		type: "subagent.supervisor.request",
@@ -160,6 +170,7 @@ export {
 	path,
 	randomUUID,
 	resolveSupervisorChannelDir,
+	sessionHarness,
 	shardedDurableClaimName,
 	TEMP_ROOT_DIR,
 	writeRequest,
