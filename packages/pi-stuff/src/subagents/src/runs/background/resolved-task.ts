@@ -84,7 +84,6 @@ export interface CommonBuildParams {
 	maxSubagentDepth: number;
 	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
-	configToolBudget?: ResolvedToolBudget | undefined;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
 	controlConfig?: ResolvedControlConfig | undefined;
 	absoluteDeadlineAt?: number | undefined;
@@ -182,7 +181,6 @@ function resolveTaskToolBudget(
 	explicit: ToolBudgetConfig | undefined,
 	runBudget: ResolvedToolBudget | undefined,
 	agentBudget: ToolBudgetConfig | undefined,
-	configBudget: ResolvedToolBudget | undefined,
 ) {
 	if (explicit !== undefined) {
 		const resolved = validateToolBudgetConfig(explicit, "toolBudget");
@@ -193,7 +191,7 @@ function resolveTaskToolBudget(
 		const resolved = validateToolBudgetConfig(agentBudget, "agent.toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
 	}
-	return { toolBudget: configBudget ?? DEFAULT_AGENT_TOOL_BUDGET };
+	return { toolBudget: DEFAULT_AGENT_TOOL_BUDGET };
 }
 
 function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskProjection): BuiltTask {
@@ -344,12 +342,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	const thinking = resolveEffectiveThinking(primaryModel, thinkingConfig);
 	const turnBudget = resolveTaskTurnBudget(taskInput.turnBudget, params.turnBudget, agent.defaultTurnBudget);
 	if (turnBudget.error) return { error: turnBudget.error };
-	const toolBudget = resolveTaskToolBudget(
-		taskInput.toolBudget,
-		params.toolBudget,
-		agent.toolBudget,
-		params.configToolBudget,
-	);
+	const toolBudget = resolveTaskToolBudget(taskInput.toolBudget, params.toolBudget, agent.toolBudget);
 	if (toolBudget.error) return { error: toolBudget.error };
 
 	const maxSubagentDepth = resolveChildMaxSubagentDepth(params.maxSubagentDepth, agent.maxSubagentDepth);

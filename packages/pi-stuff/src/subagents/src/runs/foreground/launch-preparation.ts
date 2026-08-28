@@ -10,7 +10,6 @@ import { createForkContextResolver, forkedChildRequiresThinkingOff } from "../..
 import { type ModelInfo, toModelInfo } from "../../shared/model-info.ts";
 import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
 import {
-	type ArtifactConfig,
 	checkSubagentDepth,
 	DEFAULT_ARTIFACT_CONFIG,
 	type Details,
@@ -173,7 +172,7 @@ async function resolveLaunchPreflight(
 	deps: ExecutorDeps,
 	mode: "single" | "parallel",
 ) {
-	const depth = checkSubagentDepth(deps.config.maxSubagentDepth);
+	const depth = checkSubagentDepth();
 	if (depth.blocked) {
 		return errorResult(
 			mode,
@@ -202,20 +201,17 @@ async function resolveLaunchPreflight(
 	};
 }
 
-function resolveLaunchBudgets(params: SubagentParamsLike, deps: ExecutorDeps) {
+function resolveLaunchBudgets(params: SubagentParamsLike) {
 	const timeout = resolveTimeout(params.timeoutMs);
 	if (timeout.error) return { error: timeout.error };
-	const turn = resolveTurnBudgetConfig(params.turnBudget ?? deps.config.turnBudget, "turnBudget");
+	const turn = resolveTurnBudgetConfig(params.turnBudget, "turnBudget");
 	if (turn.error) return { error: turn.error };
 	const tool = validateToolBudgetConfig(params.toolBudget, "toolBudget");
 	if (tool.error) return { error: tool.error };
-	const configTool = validateToolBudgetConfig(deps.config.toolBudget, "config.toolBudget");
-	if (configTool.error) return { error: configTool.error };
 	return {
 		timeoutMs: timeout.timeoutMs,
 		turnBudget: turn.turnBudget,
 		toolBudget: tool.budget,
-		configToolBudget: configTool.budget,
 	};
 }
 
@@ -229,7 +225,7 @@ export async function prepareLaunch(
 	const preflight = await resolveLaunchPreflight(params, ctx, deps, mode);
 	if ("content" in preflight) return preflight;
 	const { agents, currentSessionId, effectiveCwd, modelScope, parentModel } = preflight;
-	const budgets = resolveLaunchBudgets(params, deps);
+	const budgets = resolveLaunchBudgets(params);
 	if (budgets.error) return errorResult(mode, budgets.error);
 
 	const parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
@@ -247,15 +243,12 @@ export async function prepareLaunch(
 		modelScope,
 		interactive: ctx.hasUI,
 	};
-	const artifactConfig: ArtifactConfig = {
-		...DEFAULT_ARTIFACT_CONFIG,
-		dir: deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
-	};
+	const artifactConfig = DEFAULT_ARTIFACT_CONFIG;
 	const artifactsDir = getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir);
 	const models = availableModels(ctx);
 	const context = contextFor(params);
 	const capabilityCeiling = resolveCurrentSubagentCapabilityCeiling(currentSessionId);
-	const maxSubagentDepth = resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth);
+	const maxSubagentDepth = resolveCurrentMaxSubagentDepth();
 	let modelPlan: ReturnType<typeof prepareLaunchModelPlan>;
 	try {
 		modelPlan = prepareLaunchModelPlan({
@@ -269,7 +262,6 @@ export async function prepareLaunch(
 			availableModels: models,
 			turnBudget: budgets.turnBudget,
 			toolBudget: budgets.toolBudget,
-			configToolBudget: budgets.configToolBudget,
 			capabilityCeiling,
 			maxSubagentDepth,
 			childBaseExtensionPath: deps.childBaseExtensionPath,
@@ -291,10 +283,7 @@ export async function prepareLaunch(
 	} catch (error) {
 		return errorResult(mode, error instanceof Error ? error.message : String(error));
 	}
-	const sessionBase = deps.config.defaultSessionDir
-		? path.resolve(deps.expandTilde(deps.config.defaultSessionDir))
-		: deps.getSubagentSessionRoot(parentSessionFile);
-	const sessionRoot = path.join(sessionBase, runId);
+	const sessionRoot = path.join(deps.getSubagentSessionRoot(parentSessionFile), runId);
 	try {
 		fs.mkdirSync(sessionRoot, { recursive: true });
 	} catch (error) {
@@ -320,7 +309,6 @@ export async function prepareLaunch(
 		artifactsDir,
 		turnBudget: budgets.turnBudget,
 		toolBudget: budgets.toolBudget,
-		configToolBudget: budgets.configToolBudget,
 		timeoutMs: budgets.timeoutMs,
 		context,
 		rawForkByIndex: modelPlan.rawForkByIndex,

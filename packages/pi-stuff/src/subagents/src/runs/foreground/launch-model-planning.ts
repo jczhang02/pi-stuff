@@ -265,7 +265,6 @@ interface LaunchModelPlanInput {
 	availableModels: ModelInfo[];
 	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
-	configToolBudget?: ResolvedToolBudget | undefined;
 	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling> | undefined;
 	maxSubagentDepth: number;
 	childBaseExtensionPath?: string | undefined;
@@ -297,7 +296,6 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 			maxSubagentDepth: input.maxSubagentDepth,
 			turnBudget: input.turnBudget,
 			toolBudget: input.toolBudget,
-			configToolBudget: input.configToolBudget,
 			capabilityCeiling: input.capabilityCeiling,
 			childBaseExtensionPath: input.childBaseExtensionPath,
 		},

@@ -88,19 +88,9 @@ async function runConfiguredWork(
 		let results: BackgroundTaskResult[];
 		try {
 			if (config.work.mode === "parallel" && config.work.group.worktree) {
-				const worktreeOptions: NonNullable<Parameters<typeof createWorktrees>[3]> = {
+				worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, {
 					agents: config.work.group.tasks.map((task) => task.agent),
-				};
-				if (config.worktreeSetupHook) {
-					const setupHook: NonNullable<typeof worktreeOptions.setupHook> = {
-						hookPath: config.worktreeSetupHook,
-					};
-					if (config.worktreeSetupHookTimeoutMs !== undefined)
-						setupHook.timeoutMs = config.worktreeSetupHookTimeoutMs;
-					worktreeOptions.setupHook = setupHook;
-				}
-				if (config.worktreeBaseDir) worktreeOptions.baseDir = config.worktreeBaseDir;
-				worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, worktreeOptions);
+				});
 			}
 			results = await runBackgroundWork(
 				config.work,

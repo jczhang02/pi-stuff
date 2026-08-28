@@ -248,18 +248,6 @@ export const SUBAGENT_STEERING_NOTICE_EVENT = "subagent:steering-notice";
 export const SUBAGENT_RESULT_INTERCOM_EVENT = "subagent:result-intercom";
 export const SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT = "subagent:result-intercom-delivery";
 
-/** Internal inputs read by the owned Agent executor; there is no private settings surface. */
-export interface ExtensionConfig {
-	defaultSessionDir?: string;
-	maxSubagentDepth?: number;
-	turnBudget?: TurnBudgetConfig;
-	toolBudget?: ToolBudgetConfig;
-	worktreeSetupHook?: string;
-	worktreeSetupHookTimeoutMs?: number;
-	worktreeBaseDir?: string;
-	artifactDir?: ArtifactDirPreference;
-}
-
 // ============================================================================
 // Constants
 // ============================================================================

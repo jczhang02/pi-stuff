@@ -228,10 +228,8 @@ function executor(
 	const delegate = createSubagentExecutor({
 		pi,
 		state: runState,
-		config: { artifactDir: "temp", maxSubagentDepth: 3 },
 		asyncByDefault: true,
 		getSubagentSessionRoot: () => path.join(cwd, "sessions"),
-		expandTilde: (value) => value,
 		discoverAgents: options.discoverAgents ?? (() => ({ agents: options.agents ?? [options.agent ?? agent()] })),
 		projectContext: options.projectContext,
 		onForegroundStatus: options.onForegroundStatus,

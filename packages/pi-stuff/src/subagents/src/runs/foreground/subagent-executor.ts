@@ -8,7 +8,6 @@ import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { validateOwnedRegularFile } from "../../shared/private-directory.ts";
 import { resolveCurrentSessionId, sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
-	type ArtifactConfig,
 	ASYNC_DIR,
 	checkSubagentDepth,
 	DEFAULT_ARTIFACT_CONFIG,
@@ -279,7 +278,7 @@ async function prepareResumeRun(input: ResumeRunInput) {
 		resolveAsyncResumeTarget(resumeTarget, { kill: input.deps.kill }, resumeOptions);
 	if (target.kind === "live") throw new Error(`Agent '${target.runId}' is still running; use action='steer'.`);
 	if (!target.sessionFile) throw new Error(`Agent '${target.runId}' has no persisted session to resume.`);
-	const depth = checkSubagentDepth(input.deps.config.maxSubagentDepth);
+	const depth = checkSubagentDepth();
 	if (depth.blocked) throw new Error(`Agent resume blocked at maximum nesting depth ${depth.maxDepth}.`);
 	const effectiveCwd = target.cwd ?? input.ctx.cwd;
 	const discovered = await input.deps.discoverAgents(input.ctx.cwd, "both");
@@ -332,10 +331,7 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 		prepared;
 	const runId = randomUUID().replace(/-/g, "").slice(0, 12);
 	const parentSessionFile = input.ctx.sessionManager.getSessionFile() ?? null;
-	const artifactConfig: ArtifactConfig = {
-		...DEFAULT_ARTIFACT_CONFIG,
-		dir: input.deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
-	};
+	const artifactConfig = DEFAULT_ARTIFACT_CONFIG;
 	const currentSessionId = input.deps.state.currentSessionId;
 	if (!currentSessionId) return errorResult("management", "Current session identity is unavailable.");
 	// A revived top-level Agent is a new lifecycle owner and needs a route for
@@ -385,8 +381,7 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 			thinkingOverride: descriptor?.thinking ?? target.thinking,
 			logicalSourceRunId: descriptor?.sourceRunId ?? target.runId,
 			logicalChildIndex: descriptor?.version === 2 ? descriptor.childIndex : target.index,
-			maxSubagentDepth:
-				descriptor?.maxSubagentDepth ?? resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
+			maxSubagentDepth: descriptor?.maxSubagentDepth ?? resolveCurrentMaxSubagentDepth(),
 			availableModels: availableModels(input.ctx),
 			capabilityCeiling: intersectSubagentCapabilityCeilings(
 				target.capabilityCeiling,

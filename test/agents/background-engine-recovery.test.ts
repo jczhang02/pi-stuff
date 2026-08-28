@@ -399,7 +399,6 @@ test("builds one parallel group and resolves every task override before persiste
 		thinking: "high",
 		turnBudget: { maxTurns: 12, graceTurns: 2 },
 		toolBudget: { hard: 14, soft: 10, block: ["read"] },
-		configToolBudget: { hard: 40, block: ["read"] },
 		concurrency: 2,
 		worktree: false,
 		maxSubagentDepth: 3,

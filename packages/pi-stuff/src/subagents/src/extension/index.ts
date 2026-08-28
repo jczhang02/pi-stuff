@@ -63,7 +63,6 @@ export { loadConfig } from "./config.ts";
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
 
 interface RootExecutorInput {
-	readonly config: PiStuffAgentsConfig;
 	readonly codeModeProviderTools?: readonly string[] | undefined;
 	readonly discoverAgents: (cwd: string, scope: AgentScope) => Promise<AgentDiscoveryResult>;
 	readonly pi: ExtensionAPI;
@@ -96,16 +95,11 @@ function getSubagentSessionRoot(parentSessionFile: string | null): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-session-"));
 }
 
-function expandTilde(value: string): string {
-	return value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value;
-}
-
 const PRODUCTION_DEPENDENCIES = {
 	createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => new CurrentAgents(state, options),
 	createExecutor: ({
 		childBaseExtensionPath,
 		codeModeProviderTools,
-		config,
 		discoverAgents: discoverAgentDefinitions,
 		onForegroundStatus,
 		pi,
@@ -116,10 +110,8 @@ const PRODUCTION_DEPENDENCIES = {
 		createSubagentExecutor({
 			pi,
 			state,
-			config,
 			asyncByDefault: true,
 			getSubagentSessionRoot,
-			expandTilde,
 			discoverAgents: discoverAgentDefinitions,
 			projectContext,
 			childBaseExtensionPath,
@@ -393,7 +385,6 @@ export default function registerSubagentExtension(
 	});
 	const current = surface.current;
 	const executor = deps.createExecutor({
-		config,
 		onForegroundStatus: () => current.refresh(),
 		pi,
 		projectContext: deps.projectContext,

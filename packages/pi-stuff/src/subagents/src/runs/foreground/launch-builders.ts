@@ -3,12 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getPonytailMode } from "../../../../ponytail/state.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
-import {
-	type Details,
-	resolveChildMaxSubagentDepth,
-	resolveCurrentMaxSubagentDepth,
-	wrapForkTask,
-} from "../../shared/types.ts";
+import { type Details, resolveChildMaxSubagentDepth, wrapForkTask } from "../../shared/types.ts";
 import {
 	type AsyncParallelTaskInput,
 	buildAsyncParallelRunnerWork,
@@ -75,7 +70,6 @@ function commonBuild(data: PreparedLaunch, deps: ExecutorDeps) {
 		sessionDir: data.sessionRoot,
 		turnBudget: data.turnBudget,
 		toolBudget: data.toolBudget,
-		configToolBudget: data.configToolBudget,
 		capabilityCeiling: data.capabilityCeiling,
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 	};
@@ -95,7 +89,7 @@ function parallelBuild(data: PreparedLaunch, deps: ExecutorDeps, common = common
 		concurrency: tasks.length,
 		globalConcurrencyLimit: 20,
 		worktree: data.params.worktree === true,
-		maxSubagentDepth: resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth),
+		maxSubagentDepth: data.maxSubagentDepth,
 	};
 }
 
@@ -148,9 +142,6 @@ export async function launchBackground(
 			parentRunOrigin: hooks?.parentRunOrigin,
 			goal: data.params.tasks?.[0]?.description ?? data.params.tasks?.[0]?.task ?? "",
 			sessionRoot: data.sessionRoot,
-			worktreeSetupHook: deps.config.worktreeSetupHook,
-			worktreeSetupHookTimeoutMs: deps.config.worktreeSetupHookTimeoutMs,
-			worktreeBaseDir: deps.config.worktreeBaseDir,
 			nestedRoute: data.nestedRoute,
 			timeoutMs: data.timeoutMs,
 		});
@@ -163,9 +154,6 @@ export async function launchBackground(
 		parentRunOrigin: hooks?.parentRunOrigin,
 		goal: data.params.description ?? data.params.task ?? "",
 		sessionRoot: data.sessionRoot,
-		worktreeSetupHook: deps.config.worktreeSetupHook,
-		worktreeSetupHookTimeoutMs: deps.config.worktreeSetupHookTimeoutMs,
-		worktreeBaseDir: deps.config.worktreeBaseDir,
 		nestedRoute: data.nestedRoute,
 		timeoutMs: data.timeoutMs,
 	});
@@ -209,10 +197,6 @@ function buildForegroundConfig(
 		nativeSupervisor: false,
 		sessionDir: data.sessionRoot,
 	};
-	if (deps.config.worktreeSetupHook) config.worktreeSetupHook = deps.config.worktreeSetupHook;
-	if (deps.config.worktreeSetupHookTimeoutMs !== undefined)
-		config.worktreeSetupHookTimeoutMs = deps.config.worktreeSetupHookTimeoutMs;
-	if (deps.config.worktreeBaseDir) config.worktreeBaseDir = deps.config.worktreeBaseDir;
 	if (data.nestedRoute) config.nestedRoute = data.nestedRoute;
 	if (nestedSelf) config.nestedSelf = nestedSelf;
 	if (common.codeModeProviderTools?.length) config.codeModeProviderTools = [...common.codeModeProviderTools];

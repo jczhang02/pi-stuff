@@ -7,7 +7,6 @@ import type { ModelInfo } from "../../shared/model-info.ts";
 import type {
 	ArtifactConfig,
 	Details,
-	ExtensionConfig,
 	ResolvedToolBudget,
 	ResolvedTurnBudget,
 	SubagentState,
@@ -94,10 +93,8 @@ export interface ExecutorEngines {
 export interface ExecutorDeps {
 	pi: ExtensionAPI;
 	state: SubagentState;
-	config: ExtensionConfig;
 	asyncByDefault: boolean;
 	getSubagentSessionRoot: (parentSessionFile: string | null) => string;
-	expandTilde: (value: string) => string;
 	discoverAgents: (
 		cwd: string,
 		scope: AgentScope,
@@ -143,7 +140,6 @@ export interface PreparedLaunch {
 	artifactsDir: string;
 	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
-	configToolBudget?: ResolvedToolBudget | undefined;
 	timeoutMs?: number | undefined;
 	context: ContextMode;
 	forkContextTokens?: number | undefined;

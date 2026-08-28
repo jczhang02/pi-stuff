@@ -68,7 +68,6 @@ interface FanoutExecutor {
 }
 
 interface FanoutExecutorInput {
-	readonly config: PiStuffAgentsConfig;
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly state: SubagentState;
@@ -89,19 +88,13 @@ function getSubagentSessionRoot(parentSessionFile: string | null): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-session-"));
 }
 
-function expandTilde(p: string): string {
-	return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
-}
-
 const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
-	createExecutor: ({ config, pi, projectContext, state }) =>
+	createExecutor: ({ pi, projectContext, state }) =>
 		createSubagentExecutor({
 			pi,
 			state,
-			config,
 			asyncByDefault: false,
 			getSubagentSessionRoot,
-			expandTilde,
 			discoverAgents,
 			projectContext,
 			allowMutatingManagementActions: false,
@@ -160,7 +153,6 @@ class FanoutChildRuntime {
 		this.config = deps.loadConfiguration();
 		this.state = createChildSafeState();
 		this.executor = deps.createExecutor({
-			config: this.config,
 			pi,
 			projectContext: projectCurrentContext,
 			state: this.state,

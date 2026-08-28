@@ -88,9 +88,6 @@ interface AsyncLaunchParams {
 	artifactsDir?: string | undefined;
 	artifactConfig: ArtifactConfig;
 	sessionRoot?: string | undefined;
-	worktreeSetupHook?: string | undefined;
-	worktreeSetupHookTimeoutMs?: number | undefined;
-	worktreeBaseDir?: string | undefined;
 	controlIntercomTarget?: string | undefined;
 	childIntercomTarget?: ((agent: string, index: number) => string | undefined) | undefined;
 	nestedRoute?: NestedRouteInfo | undefined;
@@ -416,10 +413,6 @@ function createAsyncRunnerConfig(input: PreparedAsyncLaunch): BackgroundRunnerCo
 	};
 	if (piPackageRoot) config.piPackageRoot = piPackageRoot;
 	if (process.argv[1]) config.piArgv1 = process.argv[1];
-	if (params.worktreeSetupHook) config.worktreeSetupHook = params.worktreeSetupHook;
-	if (params.worktreeSetupHookTimeoutMs !== undefined)
-		config.worktreeSetupHookTimeoutMs = params.worktreeSetupHookTimeoutMs;
-	if (params.worktreeBaseDir) config.worktreeBaseDir = params.worktreeBaseDir;
 	if (params.controlConfig) config.controlConfig = params.controlConfig;
 	if (params.controlIntercomTarget) config.controlIntercomTarget = params.controlIntercomTarget;
 	if (params.childIntercomTarget) {

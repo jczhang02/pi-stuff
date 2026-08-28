@@ -90,9 +90,6 @@ export interface BackgroundRunnerConfig {
 	piPackageRoot?: string;
 	piArgv1?: string;
 	piExecutable?: string;
-	worktreeSetupHook?: string;
-	worktreeSetupHookTimeoutMs?: number;
-	worktreeBaseDir?: string;
 	controlConfig?: ResolvedControlConfig;
 	controlIntercomTarget?: string;
 	/** Native child→root supervisor requests; safe only for detached root runs. */
