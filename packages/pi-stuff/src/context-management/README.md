@@ -36,8 +36,9 @@ whether Pi, Goal, or Agents should pause, stop, complete, or fail. Each owning
 Capability retains its own lifecycle policy.
 
 `index.ts` is the Pi-facing wiring and public facade; `runtime.ts` remains the one lifecycle and activation authority.
-`activity.ts` owns `/ctx`, persistent Context Activity, and Magic Tool presentation. `projection.ts` owns projection
-cache and in-flight work, while `projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains the Worker/Host adapter,
+`activity.ts` owns persistent Context Activity, `command-runtime.ts` owns `/ctx` dispatch, and
+`tool-presentation.ts` owns Magic Tool presentation. `projection.ts` owns projection cache and in-flight work, while
+`projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains the Worker/Host adapter,
 event schemas, quiet Host proxy, and retryable module loader.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one

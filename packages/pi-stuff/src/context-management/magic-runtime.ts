@@ -13,7 +13,8 @@ import { Check } from "typebox/value";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { isJsonInputValue, type JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";
-import { MAGIC_COMMAND_NAMES, MAGIC_TOOL_NAME_SET, type MagicCommandDefinition } from "./activity.js";
+import { MAGIC_TOOL_NAME_SET } from "./activity.js";
+import { MAGIC_COMMAND_NAMES, type MagicCommandDefinition } from "./command-runtime.js";
 import type { MagicContextPreparation, MagicContextPreparationOptions } from "./config.js";
 import type { MagicContextEventResult, MagicContextHandler } from "./projection.js";
 

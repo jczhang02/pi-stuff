@@ -19,14 +19,8 @@ import {
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { isRuntimeObject, isRuntimeSymbol } from "../shared/runtime-type.js";
 import { registerSuiteOwnedTool, registerSuiteToolActivityMetadata } from "../tool-display/index.js";
-import {
-	ContextCommandRuntime,
-	MAGIC_TOOL_LABELS,
-	MAGIC_TOOL_NAME_SET,
-	MAGIC_TOOL_NAMES,
-	type MagicCommandDefinition,
-	magicToolPresentation,
-} from "./activity.js";
+import { MAGIC_TOOL_LABELS, MAGIC_TOOL_NAME_SET, MAGIC_TOOL_NAMES } from "./activity.js";
+import { ContextCommandRuntime, type MagicCommandDefinition } from "./command-runtime.js";
 import {
 	addCompactMagicContextMessage,
 	addCompactMagicContextPrompt,
@@ -47,6 +41,7 @@ import {
 import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
 import { ContextProjectionRuntime, type MagicContextEventResult, type MagicContextHandler } from "./projection.js";
 import { applyContextPromptContributions, stripContextPromptContributions } from "./prompt-contributions.js";
+import { magicToolPresentation } from "./tool-presentation.js";
 
 export type ContextActivationTrigger = "startup" | "input" | "automatic-turn" | "projection";
 export type ContextCapabilityState = "dormant" | "loading" | "active" | "native" | "degraded";
