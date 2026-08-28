@@ -1,13 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type BackgroundRunnerConfig,
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
 	path,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	requestAsyncSteer,
 	requestAsyncStop,
 	runConfiguredBackground,
+	singleRunnerConfig,
 	steerAcksDir,
 	steerInboxClosedPath,
 	steerRequestsDir,
@@ -52,22 +54,12 @@ setTimeout(() => process.exit(0), 1_225);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "steered-terminal-report",
-		cwd: root,
-		asyncDir,
-		resultPath,
+	const config = singleRunnerConfig(root, "steered-terminal-report", {
 		work: { mode: "single", task: task(0) },
-	};
+	});
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{ exitCode: number | null; output: string; success: boolean }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 
 	expect(completion).toMatchObject({
 		state: "complete",
@@ -120,22 +112,12 @@ setInterval(() => {}, 1_000);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "late-steering-cancels-hard-drain",
-		cwd: root,
-		asyncDir,
-		resultPath,
+	const config = singleRunnerConfig(root, "late-steering-cancels-hard-drain", {
 		work: { mode: "single", task: task(0) },
-	};
+	});
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{ exitCode: number | null; output: string; success: boolean }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 
 	expect(completion).toMatchObject({
 		state: "complete",
@@ -177,15 +159,9 @@ setInterval(() => {}, 1_000);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "real-steering-revokes-final-drain",
+	const config = singleRunnerConfig(root, "real-steering-revokes-final-drain", {
 		parentRunOrigin: "automatic",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	});
 
 	const running = runConfiguredBackground(config);
 	await waitForFile(termMarker);
@@ -197,17 +173,7 @@ setInterval(() => {}, 1_000);
 		targetIndex: 0,
 	});
 	await running;
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		parentRunOrigin?: string;
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses: Array<{ exitCode: number | null; signal: string | null }>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 
 	expect(completion).toMatchObject({
 		parentRunOrigin: "user",
@@ -221,7 +187,7 @@ setInterval(() => {}, 1_000);
 			},
 		],
 	});
-	expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+	expect(readBackgroundStatus(asyncDir)).toMatchObject({
 		parentRunOrigin: "user",
 	});
 }, 7_000);
@@ -249,14 +215,7 @@ const timer = setInterval(() => {
 	const asyncDir = path.join(root, "async-ack-before-source");
 	const resultPath = path.join(asyncDir, "result.json");
 	const requestId = "ack-visible-first";
-	const running = runConfiguredBackground({
-		version: 2,
-		id: "ack-before-source",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
+	const running = runConfiguredBackground(singleRunnerConfig(root, "ack-before-source", { asyncDir, resultPath }));
 	await waitForFile(readyMarker);
 	writeSteerAck(asyncDir, {
 		index: 0,
@@ -279,10 +238,7 @@ const timer = setInterval(() => {
 	});
 	await waitForCondition(() => {
 		try {
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			const persisted = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-				steering?: { recent?: Array<{ id?: string; targets?: Array<{ state?: string }> }> };
-			};
+			const persisted = readBackgroundStatus(asyncDir);
 			return persisted.steering?.recent?.find(({ id }) => id === requestId)?.targets?.[0]?.state === "delivered";
 		} catch {
 			return false;
@@ -320,14 +276,7 @@ const timer = setInterval(() => {
 	const resultPath = path.join(asyncDir, "result.json");
 	const statusPath = path.join(asyncDir, "status.json");
 	const requestId = "source-status-retry";
-	const running = runConfiguredBackground({
-		version: 2,
-		id: "steer-source-retry",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
+	const running = runConfiguredBackground(singleRunnerConfig(root, "steer-source-retry", { asyncDir, resultPath }));
 	await waitForFile(readyMarker);
 	fs.rmSync(statusPath, { force: true });
 	fs.mkdirSync(statusPath);
@@ -346,10 +295,7 @@ const timer = setInterval(() => {
 	fs.rmSync(statusPath, { recursive: true, force: true });
 	await waitForCondition(() => {
 		try {
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			const persisted = JSON.parse(fs.readFileSync(statusPath, "utf8")) as {
-				steering?: { recent?: Array<{ id?: string }> };
-			};
+			const persisted = readBackgroundStatus(asyncDir);
 			return persisted.steering?.recent?.some(({ id }) => id === requestId) === true;
 		} catch {
 			return false;
@@ -407,10 +353,7 @@ const timer = setInterval(() => {
 	const statusPath = path.join(asyncDir, "status.json");
 	const requestId = "multi-target-persistence";
 	const running = runConfiguredBackground(
-		{
-			version: 2,
-			id: "steering-persistence",
-			cwd: root,
+		singleRunnerConfig(root, "steering-persistence", {
 			asyncDir,
 			resultPath,
 			work: {
@@ -424,7 +367,7 @@ const timer = setInterval(() => {
 					worktree: false,
 				},
 			},
-		},
+		}),
 		{
 			beforeFinalPersistence: () => {
 				writeSteerAck(asyncDir, {
@@ -462,7 +405,7 @@ const timer = setInterval(() => {
 	fs.writeFileSync(releaseMarker, "release");
 	await running;
 
-	expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+	expect(readBackgroundCompletion(resultPath)).toMatchObject({
 		state: "complete",
 		success: true,
 		results: [{ success: true }, { success: true }],
@@ -495,14 +438,7 @@ setInterval(() => {}, 1_000);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "stop-cause-wins-race",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	const config = singleRunnerConfig(root, "stop-cause-wins-race");
 
 	const running = runConfiguredBackground(config);
 	await waitForFile(readyMarker);
@@ -514,15 +450,8 @@ setInterval(() => {}, 1_000);
 		targetIndex: 0,
 	});
 	await running;
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string; stopped?: boolean }>;
-	};
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steering?: { recent?: Array<{ targets?: Array<{ state?: string; reason?: string }> }> };
-	};
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion).toMatchObject({
 		state: "stopped",

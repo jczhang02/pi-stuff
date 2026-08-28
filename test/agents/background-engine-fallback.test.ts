@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type BackgroundRunnerConfig,
 	cleanupBackgroundEngineFixtures,
 	createHash,
 	fallbackSessionKeyForTest,
@@ -10,9 +9,12 @@ import {
 	PROCESS_TERMINAL_CANDIDATE_SCHEMA,
 	path,
 	pathToFileURL,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	readFixtureJson,
 	runConfiguredBackground,
 	shardedDurableClaimName,
+	singleRunnerConfig,
 	spawn,
 	task,
 	tryAcquireKernelClaim,
@@ -81,28 +83,23 @@ if (model.endsWith("model-a")) {
 	const asyncDir = path.join(root, "async-clean-fallback");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "clean-fallback",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: {
-			mode: "single",
-			task: {
-				...task(0),
-				cwd: root,
-				sessionFile,
-				modelCandidates: ["test/model-a", "test/model-b"],
+	await runConfiguredBackground(
+		singleRunnerConfig(root, "clean-fallback", {
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					sessionFile,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
 			},
-		},
-	});
+		}),
+	);
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ output?: string; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	expect(completion).toMatchObject({
 		state: "complete",
 		results: [
@@ -195,32 +192,27 @@ test("restores different fallback sessions concurrently without a shared lock", 
 	const asyncDir = path.join(root, "async-parallel-fallback");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "parallel-fallback",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: {
-			mode: "parallel",
-			group: {
-				tasks: sessionFiles.map((sessionFile, index) => ({
-					...task(index),
-					cwd: root,
-					sessionFile,
-					modelCandidates: ["test/model-a", "test/model-b"],
-				})),
-				concurrency: 2,
-				worktree: false,
+	await runConfiguredBackground(
+		singleRunnerConfig(root, "parallel-fallback", {
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "parallel",
+				group: {
+					tasks: sessionFiles.map((sessionFile, index) => ({
+						...task(index),
+						cwd: root,
+						sessionFile,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					})),
+					concurrency: 2,
+					worktree: false,
+				},
 			},
-		},
-	});
+		}),
+	);
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ success?: boolean; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	expect(completion.state).toBe("complete");
 	expect(completion.results).toHaveLength(2);
 	for (const result of completion.results) {
@@ -271,32 +263,27 @@ setTimeout(() => process.stdout.write(JSON.stringify({
 	const asyncDir = path.join(root, "async-same-session");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "same-session",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: {
-			mode: "parallel",
-			group: {
-				tasks: [sessionFile, path.join(alias, path.basename(sessionFile))].map((aliasedSession, index) => ({
-					...task(index),
-					cwd: root,
-					sessionFile: aliasedSession,
-					modelCandidates: ["test/model-a", "test/model-b"],
-				})),
-				concurrency: 2,
-				worktree: false,
+	await runConfiguredBackground(
+		singleRunnerConfig(root, "same-session", {
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "parallel",
+				group: {
+					tasks: [sessionFile, path.join(alias, path.basename(sessionFile))].map((aliasedSession, index) => ({
+						...task(index),
+						cwd: root,
+						sessionFile: aliasedSession,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					})),
+					concurrency: 2,
+					worktree: false,
+				},
 			},
-		},
-	});
+		}),
+	);
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string; output?: string; success?: boolean }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	expect(completion.state).toBe("failed");
 	expect(completion.results.filter((result) => result.success)).toHaveLength(1);
 	expect(completion.results.filter((result) => result.output === "HELD_SESSION_SUCCESS")).toHaveLength(1);
@@ -350,22 +337,20 @@ process.stdout.write(JSON.stringify({
 		const sessionFile = path.join(root, `sweep-${index}.jsonl`);
 		fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
 		const asyncDir = path.join(root, `async-sweep-${index}`);
-		await runConfiguredBackground({
-			version: 2,
-			id: `sweep-${index}`,
-			cwd: root,
-			asyncDir,
-			resultPath: path.join(asyncDir, "result.json"),
-			work: {
-				mode: "single",
-				task: {
-					...task(index),
-					cwd: root,
-					sessionFile,
-					modelCandidates: ["test/model-a", "test/model-b"],
+		await runConfiguredBackground(
+			singleRunnerConfig(root, `sweep-${index}`, {
+				asyncDir,
+				work: {
+					mode: "single",
+					task: {
+						...task(index),
+						cwd: root,
+						sessionFile,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					},
 				},
-			},
-		});
+			}),
+		);
 	};
 
 	try {
@@ -405,12 +390,8 @@ setTimeout(() => process.exit(0), 2_000);
 		path.resolve("packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts"),
 	).href;
 	const asyncDir = path.join(root, "async-fallback-crash");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "fallback-crash",
-		cwd: root,
+	const config = singleRunnerConfig(root, "fallback-crash", {
 		asyncDir,
-		resultPath: path.join(asyncDir, "result.json"),
 		work: {
 			mode: "single",
 			task: {
@@ -420,7 +401,7 @@ setTimeout(() => process.exit(0), 2_000);
 				modelCandidates: ["test/model-a", "test/model-b"],
 			},
 		},
-	};
+	});
 	const script = `
 const { runConfiguredBackground } = await import(${JSON.stringify(moduleUrl)});
 await runConfiguredBackground(${JSON.stringify(config)});
@@ -520,27 +501,22 @@ if (model.endsWith("model-a")) {
 	const asyncDir = path.join(root, "async-no-fallback-after-tool");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "no-fallback-after-tool",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: {
-			mode: "single",
-			task: {
-				...task(0),
-				cwd: root,
-				modelCandidates: ["test/model-a", "test/model-b"],
+	await runConfiguredBackground(
+		singleRunnerConfig(root, "no-fallback-after-tool", {
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
 			},
-		},
-	});
+		}),
+	);
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	expect(completion).toMatchObject({
 		state: "failed",
 		results: [
@@ -549,7 +525,7 @@ if (model.endsWith("model-a")) {
 			},
 		],
 	});
-	expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+	expect(readBackgroundStatus(asyncDir)).toMatchObject({
 		steps: [{ toolCount: 1 }],
 	});
 	expect(fs.readFileSync(attemptsPath, "utf8").trim().split("\n")).toEqual(["test/model-a"]);
@@ -583,10 +559,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 	let spawning = 0;
 
 	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "retry-proof",
-			cwd: root,
+		singleRunnerConfig(root, "retry-proof", {
 			asyncDir,
 			resultPath,
 			runnerProcessInstanceId: "runner-proof",
@@ -598,7 +571,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 					modelCandidates: ["test/model-a", "test/model-b"],
 				},
 			},
-		},
+		}),
 		{
 			afterWriterProcessUpdate: (_index, writerState) => {
 				if (writerState.state === "spawning") {
@@ -615,15 +588,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 			},
 		},
 	);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{
-			writerProcesses?: Array<{ processInstanceId?: string }>;
-			writerAttemptCount?: number;
-			modelAttempts?: Array<{ model?: string; error?: string }>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	const candidate = readFixtureJson(
 		path.join(asyncDir, "process-terminal-candidate.json"),
 		PROCESS_TERMINAL_CANDIDATE_SCHEMA,

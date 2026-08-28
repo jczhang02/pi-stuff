@@ -1,14 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type BackgroundRunnerConfig,
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
 	path,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	requestAsyncSteer,
 	requestAsyncStop,
 	runConfiguredBackground,
-	task,
+	singleRunnerConfig,
 	waitForFile,
 } from "./background-engine-fixtures.js";
 
@@ -33,21 +34,11 @@ setInterval(() => {}, 1_000);
 	const asyncDir = path.join(root, "async-stubborn-writer");
 	const resultPath = path.join(asyncDir, "result.json");
 	let supervisorPid: number | undefined;
-	const running = runConfiguredBackground(
-		{
-			version: 2,
-			id: "stubborn-writer",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
+	const running = runConfiguredBackground(singleRunnerConfig(root, "stubborn-writer", { asyncDir, resultPath }), {
+		afterWriterProcessUpdate: (_index, writerState) => {
+			if (writerState.state === "running") supervisorPid = writerState.pid;
 		},
-		{
-			afterWriterProcessUpdate: (_index, writerState) => {
-				if (writerState.state === "running") supervisorPid = writerState.pid;
-			},
-		},
-	);
+	});
 	await waitForFile(readyMarker);
 	requestAsyncStop(asyncDir, { source: "test" });
 	await running;
@@ -102,21 +93,10 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 
 	try {
 		const startedAt = Date.now();
-		await runConfiguredBackground({
-			version: 2,
-			id: "escaped-writer-descendant",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
-		});
+		await runConfiguredBackground(singleRunnerConfig(root, "escaped-writer-descendant", { asyncDir, resultPath }));
 		expect(Date.now() - startedAt).toBeLessThan(6_000);
 		escapedPid = Number(fs.readFileSync(escapedPidPath, "utf8"));
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-			state: string;
-			results: Array<{ output?: string; success: boolean }>;
-		};
+		const completion = readBackgroundCompletion(resultPath);
 		expect(completion).toMatchObject({
 			state: "complete",
 			results: [{ output: "ESCAPED_PIPE_RESULT", success: true }],
@@ -157,31 +137,11 @@ setInterval(() => {}, 1_000);
 		{ mode: 0o700 },
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async-143-manager");
-	const resultPath = path.join(asyncDir, "result.json");
-
-	await runConfiguredBackground({
-		version: 2,
-		id: "manager-owned-host-exit-143",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
+	const config = singleRunnerConfig(root, "manager-owned-host-exit-143", {
+		asyncDir: path.join(root, "async-143-manager"),
 	});
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses?: Array<{
-				exitCode: number | null;
-				signal: string | null;
-				terminationOrigin?: string;
-			}>;
-		}>;
-	};
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
 
 	expect(completion).toMatchObject({
 		state: "complete",
@@ -225,14 +185,7 @@ setInterval(() => {}, 1_000);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async-steer-drain-race");
 	const resultPath = path.join(asyncDir, "result.json");
-	const running = runConfiguredBackground({
-		version: 2,
-		id: "steer-drain-race",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
+	const running = runConfiguredBackground(singleRunnerConfig(root, "steer-drain-race", { asyncDir, resultPath }));
 
 	await waitForFile(signalMarker, 3_000);
 	requestAsyncSteer(asyncDir, {
@@ -242,15 +195,8 @@ setInterval(() => {}, 1_000);
 		targetIndex: 0,
 	});
 	await running;
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ writerProcesses?: Array<{ terminationOrigin?: string }> }>;
-	};
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steering?: { failed?: number; pending?: number };
-	};
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion).toMatchObject({
 		state: "complete",
@@ -281,27 +227,11 @@ setInterval(() => {}, 1_000);
 		{ mode: 0o700 },
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async-143-external");
-	const resultPath = path.join(asyncDir, "result.json");
-
-	await runConfiguredBackground({
-		version: 2,
-		id: "external-host-exit-143",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
+	const config = singleRunnerConfig(root, "external-host-exit-143", {
+		asyncDir: path.join(root, "async-143-external"),
 	});
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses?: Array<{ terminationOrigin?: string }>;
-		}>;
-	};
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
 
 	expect(completion).toMatchObject({
 		state: "failed",
@@ -338,32 +268,10 @@ setInterval(() => {}, 1_000);
 		{ mode: 0o700 },
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async");
-	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "external-signal-after-report",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	const config = singleRunnerConfig(root, "external-signal-after-report");
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses: Array<{
-				exitCode: number | null;
-				signal: string | null;
-				terminationOrigin?: string;
-			}>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(config.resultPath);
 
 	expect(completion).toMatchObject({
 		state: "failed",
@@ -401,28 +309,10 @@ setInterval(() => {}, 1_000);
 		{ mode: 0o700 },
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async");
-	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "external-sigkill-after-final-drain-term",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	const config = singleRunnerConfig(root, "external-sigkill-after-final-drain-term");
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses: Array<{ exitCode: number | null; signal: string | null }>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(config.resultPath);
 
 	expect(completion).toMatchObject({
 		state: "failed",
@@ -459,28 +349,10 @@ setInterval(() => {}, 1_000);
 		{ mode: 0o700 },
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
-	const asyncDir = path.join(root, "async");
-	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "manager-owned-final-drain-sigkill",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	const config = singleRunnerConfig(root, "manager-owned-final-drain-sigkill");
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{
-			exitCode: number | null;
-			success: boolean;
-			writerProcesses: Array<{ exitCode: number | null; signal: string | null }>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(config.resultPath);
 
 	expect(completion).toMatchObject({
 		state: "complete",

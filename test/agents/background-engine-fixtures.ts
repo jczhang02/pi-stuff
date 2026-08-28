@@ -37,6 +37,7 @@ import {
 	finalizeProcessTerminal,
 	writeProcessTerminalCandidate,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/process-terminal.js";
+import type { BackgroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/background/runner-state.js";
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
 import {
 	buildWriterProcessEnv,
@@ -71,7 +72,7 @@ import {
 	projectAgentDefinition,
 	projectLaunchBinding,
 } from "../../packages/pi-stuff/src/subagents/src/shared/launch-contract.js";
-import { ASYNC_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { ASYNC_DIR, type AsyncStatus } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
 const originalPiBinary = process.env["PI_SUBAGENT_PI_BINARY"];
@@ -234,6 +235,34 @@ function nestedFallbackConfig(root: string, resultPath: string): BackgroundRunne
 	};
 }
 
+function singleRunnerConfig(
+	root: string,
+	id: string,
+	overrides: Partial<BackgroundRunnerConfig> = {},
+): BackgroundRunnerConfig {
+	const cwd = overrides.cwd ?? root;
+	const asyncDir = overrides.asyncDir ?? path.join(root, "async");
+	return {
+		version: 2,
+		id,
+		cwd,
+		asyncDir,
+		resultPath: overrides.resultPath ?? path.join(asyncDir, "result.json"),
+		work: { mode: "single", task: { ...task(0), cwd } },
+		...overrides,
+	};
+}
+
+function readBackgroundCompletion(resultPath: string): BackgroundCompletion {
+	// SAFETY: Background Engine tests control this output and exercise the complete production completion contract.
+	return JSON.parse(fs.readFileSync(resultPath, "utf8")) as BackgroundCompletion;
+}
+
+function readBackgroundStatus(asyncDir: string): AsyncStatus {
+	// SAFETY: Background Engine tests control this status output, including fixtures that deliberately vary path identity.
+	return JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as AsyncStatus;
+}
+
 export function task(index: number): RunnerAgentTask {
 	return {
 		agent: `agent-${index}`,
@@ -284,6 +313,8 @@ export {
 	projectLaunchBinding,
 	randomUUID,
 	readAsyncRecoveryDescriptor,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	readFixtureJson,
 	reconcileAsyncRun,
 	removeRunnerStartupMarkerBestEffort,
@@ -296,6 +327,7 @@ export {
 	runBackgroundWork,
 	runConfiguredBackground,
 	shardedDurableClaimName,
+	singleRunnerConfig,
 	spawn,
 	steerAcksDir,
 	steerInboxClosedPath,

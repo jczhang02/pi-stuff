@@ -1,14 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type BackgroundRunnerConfig,
 	cleanupBackgroundEngineFixtures,
 	fixtureRoot,
 	fs,
 	isolatedSystemTempRoot,
 	path,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	readFixtureJson,
 	requestAsyncStop,
 	runConfiguredBackground,
+	singleRunnerConfig,
 	task,
 	WRITER_REGISTRY_SCHEMA,
 	waitForFile,
@@ -32,13 +34,7 @@ setInterval(() => {}, 1_000);
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
-	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "queued-group-timeout",
-		cwd: root,
-		asyncDir,
-		resultPath,
+	const config = singleRunnerConfig(root, "queued-group-timeout", {
 		deadlineAt: Date.now() + 250,
 		work: {
 			mode: "parallel",
@@ -51,16 +47,11 @@ setInterval(() => {}, 1_000);
 				worktree: false,
 			},
 		},
-	};
+	});
 
 	await runConfiguredBackground(config);
 	expect(fs.existsSync(readyMarker)).toBe(true);
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		state: string;
-		timedOut?: boolean;
-		steps: Array<{ status: string; startedAt?: number; endedAt?: number; timedOut?: boolean }>;
-	};
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(status).toMatchObject({
 		state: "failed",
@@ -70,9 +61,9 @@ setInterval(() => {}, 1_000);
 			{ status: "failed", timedOut: true },
 		],
 	});
-	expect(status.steps[0]?.startedAt).toBeNumber();
-	expect(status.steps[1]?.startedAt).toBeUndefined();
-	expect(status.steps[1]?.endedAt).toBeNumber();
+	expect(status.steps?.[0]?.startedAt).toBeNumber();
+	expect(status.steps?.[1]?.startedAt).toBeUndefined();
+	expect(status.steps?.[1]?.endedAt).toBeNumber();
 }, 5_000);
 
 test("stops one queued child without ever spawning its writer", async () => {
@@ -107,47 +98,37 @@ const timer = setInterval(() => {
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const running = runConfiguredBackground({
-		version: 2,
-		id: "queued-target-stop",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: {
-			mode: "parallel",
-			group: {
-				tasks: [
-					{ ...task(0), cwd: root },
-					{ ...task(1), cwd: root },
-				],
-				concurrency: 1,
-				worktree: false,
+	const running = runConfiguredBackground(
+		singleRunnerConfig(root, "queued-target-stop", {
+			work: {
+				mode: "parallel",
+				group: {
+					tasks: [
+						{ ...task(0), cwd: root },
+						{ ...task(1), cwd: root },
+					],
+					concurrency: 1,
+					worktree: false,
+				},
 			},
-		},
-	});
+		}),
+	);
 
 	await waitForFile(readyMarker);
 	requestAsyncStop(asyncDir, { source: "test", targetIndex: 1 });
 	await waitForFileText(path.join(asyncDir, "events.jsonl"), '"subagent.child.stop_requested"');
 	fs.writeFileSync(releaseMarker, "release");
 	await running;
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ stopped?: boolean; writerProcesses?: unknown[] }>;
-	};
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steps: Array<{ status: string; startedAt?: number }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion).toMatchObject({
 		state: "stopped",
 		results: [{ success: true }, { success: false, stopped: true }],
 	});
 	expect(completion.results[1]?.writerProcesses).toBeUndefined();
-	expect(status.steps[1]).toMatchObject({ status: "stopped" });
-	expect(status.steps[1]?.startedAt).toBeUndefined();
+	expect(status.steps?.[1]).toMatchObject({ status: "stopped" });
+	expect(status.steps?.[1]?.startedAt).toBeUndefined();
 	expect(fs.existsSync(queuedSpawnMarker)).toBe(false);
 }, 5_000);
 
@@ -155,12 +136,7 @@ test("terminalizes a child step when resolved child setup rejects", async () => 
 	const root = fixtureRoot();
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "child-setup-rejection",
-		cwd: root,
-		asyncDir,
-		resultPath,
+	const config = singleRunnerConfig(root, "child-setup-rejection", {
 		work: {
 			mode: "single",
 			task: {
@@ -176,19 +152,11 @@ test("terminalizes a child step when resolved child setup rejects", async () => 
 				},
 			},
 		},
-	};
+	});
 
 	await runConfiguredBackground(config);
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-	};
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		state: string;
-		steps: Array<{ status: string; endedAt?: number; exitCode?: number; error?: string }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion).toMatchObject({ state: "failed", success: false });
 	expect(status).toMatchObject({
@@ -201,7 +169,7 @@ test("terminalizes a child step when resolved child setup rejects", async () => 
 			},
 		],
 	});
-	expect(status.steps[0]?.endedAt).toBeNumber();
+	expect(status.steps?.[0]?.endedAt).toBeNumber();
 });
 
 test("reports a provider-payload diagnostic ahead of the generic aborted assistant error", async () => {
@@ -231,19 +199,8 @@ process.stdout.write(JSON.stringify({
 	const asyncDir = path.join(root, "async-payload-diagnostic");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "payload-diagnostic",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string }>;
-	};
+	await runConfiguredBackground(singleRunnerConfig(root, "payload-diagnostic", { asyncDir, resultPath }));
+	const completion = readBackgroundCompletion(resultPath);
 
 	expect(completion.state).toBe("failed");
 	expect(completion.results[0]?.error).toBe("FINAL_PAYLOAD_BOUND");
@@ -257,28 +214,15 @@ test("records a diagnostic when the Agent process exits nonzero without reportin
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "silent-nonzero-exit",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		results: Array<{ error?: string; exitCode: number | null }>;
-	};
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steps: Array<{ error?: string; exitCode?: number }>;
-	};
+	await runConfiguredBackground(singleRunnerConfig(root, "silent-nonzero-exit"));
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion.results[0]).toMatchObject({
 		exitCode: 7,
 		error: "Agent process exited with code 7 without a diagnostic.",
 	});
-	expect(status.steps[0]?.error).toBe("Agent process exited with code 7 without a diagnostic.");
+	expect(status.steps?.[0]?.error).toBe("Agent process exited with code 7 without a diagnostic.");
 });
 
 test("records a diagnostic when the Agent process dies from a signal without reporting an error", async () => {
@@ -289,28 +233,15 @@ test("records a diagnostic when the Agent process dies from a signal without rep
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "silent-signal-exit",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		results: Array<{ error?: string; exitCode: number | null }>;
-	};
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steps: Array<{ error?: string; exitCode?: number }>;
-	};
+	await runConfiguredBackground(singleRunnerConfig(root, "silent-signal-exit"));
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(completion.results[0]).toMatchObject({
 		exitCode: 1,
 		error: "Agent process terminated by SIGTERM without a diagnostic.",
 	});
-	expect(status.steps[0]?.error).toBe("Agent process terminated by SIGTERM without a diagnostic.");
+	expect(status.steps?.[0]?.error).toBe("Agent process terminated by SIGTERM without a diagnostic.");
 });
 
 test("reaps a writer and clears its registry when post-spawn identity binding fails", async () => {
@@ -329,28 +260,14 @@ setInterval(() => {}, 1_000);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
 	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "writer-binding-failure",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	};
+	const config = singleRunnerConfig(root, "writer-binding-failure");
 
 	await runConfiguredBackground(config, {
 		afterWriterProcessUpdate: (_index, writerState) => {
 			if (writerState.state === "running") throw new Error("injected writer binding failure");
 		},
 	});
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{
-			error?: string;
-			writerProcesses?: Array<{ signal?: string | null }>;
-		}>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 	expect(completion).toMatchObject({
@@ -384,27 +301,13 @@ setInterval(() => {}, 1_000);
 	const resultPath = path.join(asyncDir, "result.json");
 	const observedStates: string[] = [];
 
-	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "pre-spawn-writer-binding-failure",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
+	await runConfiguredBackground(singleRunnerConfig(root, "pre-spawn-writer-binding-failure"), {
+		afterWriterProcessUpdate: (_index, writerState) => {
+			observedStates.push(writerState.state);
+			if (writerState.state === "spawning") throw new Error("injected pre-spawn binding failure");
 		},
-		{
-			afterWriterProcessUpdate: (_index, writerState) => {
-				observedStates.push(writerState.state);
-				if (writerState.state === "spawning") throw new Error("injected pre-spawn binding failure");
-			},
-		},
-	);
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string; writerProcesses?: unknown[] }>;
-	};
+	});
+	const completion = readBackgroundCompletion(resultPath);
 	const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 	expect(completion).toMatchObject({
@@ -422,30 +325,14 @@ test("bounds rejected child errors before persisting result, status, and diagnos
 	const asyncDir = path.join(root, "async-bounded-rejection");
 	const resultPath = path.join(asyncDir, "result.json");
 	const hugeError = `REJECTION-${"界".repeat(500_000)}`;
-	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "bounded-rejection",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
+	await runConfiguredBackground(singleRunnerConfig(root, "bounded-rejection", { asyncDir, resultPath }), {
+		afterWriterProcessUpdate: (_index, writerState) => {
+			if (writerState.state === "spawning") throw new Error(hugeError);
 		},
-		{
-			afterWriterProcessUpdate: (_index, writerState) => {
-				if (writerState.state === "spawning") throw new Error(hugeError);
-			},
-		},
-	);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		results: Array<{ error?: string; output: string }>;
-	};
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steps: Array<{ error?: string }>;
-	};
-	for (const value of [completion.results[0]?.error, completion.results[0]?.output, status.steps[0]?.error]) {
+	});
+	const completion = readBackgroundCompletion(resultPath);
+	const status = readBackgroundStatus(asyncDir);
+	for (const value of [completion.results[0]?.error, completion.results[0]?.output, status.steps?.[0]?.error]) {
 		expect(Buffer.byteLength(value ?? "", "utf8")).toBeLessThanOrEqual(32 * 1024);
 		expect(value).not.toContain("�");
 	}
@@ -459,24 +346,10 @@ test("rolls writer identity back when child_process.spawn throws synchronously",
 	const resultPath = path.join(asyncDir, "result.json");
 	const observedStates: string[] = [];
 
-	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "sync-spawn-error",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
-		},
-		{
-			afterWriterProcessUpdate: (_index, writerState) => observedStates.push(writerState.state),
-		},
-	);
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string; writerProcesses?: unknown[]; writerAttemptCount?: number }>;
-	};
+	await runConfiguredBackground(singleRunnerConfig(root, "sync-spawn-error", { asyncDir, resultPath }), {
+		afterWriterProcessUpdate: (_index, writerState) => observedStates.push(writerState.state),
+	});
+	const completion = readBackgroundCompletion(resultPath);
 	const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 	expect(completion.state).toBe("failed");
@@ -496,28 +369,21 @@ test("rolls writer identity and prompt artifacts back when supervisor constructi
 	const tempRoot = isolatedSystemTempRoot();
 
 	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "supervisor-build-error",
-			cwd: root,
+		singleRunnerConfig(root, "supervisor-build-error", {
 			asyncDir,
 			resultPath,
 			work: {
 				mode: "single",
 				task: { ...task(0), cwd: root, systemPrompt: "temporary prompt artifact" },
 			},
-		},
+		}),
 		{
 			afterWriterProcessUpdate: (_index, writerState) => observedStates.push(writerState.state),
 			writerSupervisorRuntime: "",
 		},
 	);
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ error?: string; writerProcesses?: unknown[] }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 	const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
 

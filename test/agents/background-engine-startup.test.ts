@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
 	ASYNC_DIR,
-	type BackgroundRunnerConfig,
 	buildWriterSpawnCommand,
 	CHILD_MODEL_CONTEXT_ENTRY_TYPE,
 	captureWriterProcessStartIdentity,
@@ -14,12 +13,15 @@ import {
 	pathToFileURL,
 	projectForegroundCompletion,
 	randomUUID,
+	readBackgroundCompletion,
+	readBackgroundStatus,
 	requestAsyncSteer,
 	requestAsyncStop,
 	resolveAsyncRunnerBunCommand,
 	resolveBunRuntimeCommand,
 	runBackgroundWork,
 	runConfiguredBackground,
+	singleRunnerConfig,
 	spawn,
 	task,
 	temporaryDirectories,
@@ -93,23 +95,21 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		},
 	});
 
-	await runConfiguredBackground({
-		version: 2,
-		id,
-		cwd: root,
-		asyncDir,
-		resultPath,
-		nestedRoute,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
+	await runConfiguredBackground(
+		singleRunnerConfig(root, id, {
+			asyncDir,
+			resultPath,
+			nestedRoute,
+		}),
+	);
 
-	expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+	expect(readBackgroundCompletion(resultPath)).toMatchObject({
 		parentRunOrigin: "user",
 		state: "complete",
 		results: [{ output: "ROUTE_RETIRED" }],
 		nestedChildren: [{ id: `${id}-child`, parentRunOrigin: "user" }],
 	});
-	expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+	expect(readBackgroundStatus(asyncDir)).toMatchObject({
 		parentRunOrigin: "user",
 		steps: [{ children: [{ id: `${id}-child`, parentRunOrigin: "user" }] }],
 	});
@@ -141,13 +141,10 @@ test("tracks active Provider context against the actual child Host model window"
 	const statusPath = path.join(asyncDir, "status.json");
 	const readContextUsage = (): { tokens: number; contextWindow: number } | undefined => {
 		if (!fs.existsSync(statusPath)) return undefined;
-		return JSON.parse(fs.readFileSync(statusPath, "utf8")).steps?.[0]?.contextUsage;
+		return readBackgroundStatus(asyncDir).steps?.[0]?.contextUsage;
 	};
 
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "context-usage",
-		cwd: root,
+	const config = singleRunnerConfig(root, "context-usage", {
 		asyncDir,
 		resultPath,
 		work: {
@@ -159,7 +156,7 @@ test("tracks active Provider context against the actual child Host model window"
 				modelContextWindows: [{ model: "provider/context-model", contextWindow: 50_000 }],
 			},
 		},
-	};
+	});
 	const running = runConfiguredBackground(config);
 
 	await waitForCondition(() => readContextUsage()?.tokens === 20_000, "first Provider usage");
@@ -170,9 +167,9 @@ test("tracks active Provider context against the actual child Host model window"
 	await waitForCondition(() => readContextUsage() === undefined, "compaction context reset");
 	await running;
 
-	const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
-	const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
-	expect(status.steps[0].contextUsage).toEqual({ tokens: 25_000, contextWindow: 100_000 });
+	const status = readBackgroundStatus(asyncDir);
+	const result = readBackgroundCompletion(resultPath);
+	expect(status.steps?.[0]?.contextUsage).toEqual({ tokens: 25_000, contextWindow: 100_000 });
 	expect(result.results[0]).toMatchObject({
 		output: "CONTEXT_OK",
 		contextUsage: { tokens: 25_000, contextWindow: 100_000 },
@@ -206,15 +203,8 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		);
 		const asyncDir = path.join(root, "async-node-less");
 		const resultPath = path.join(asyncDir, "result.json");
-		await runConfiguredBackground({
-			version: 2,
-			id: "node-less-writer-supervisor",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
-		});
-		expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+		await runConfiguredBackground(singleRunnerConfig(root, "node-less-writer-supervisor", { asyncDir, resultPath }));
+		expect(readBackgroundCompletion(resultPath)).toMatchObject({
 			state: "complete",
 			success: true,
 			results: [{ output: "NODELESS_OK", success: true }],
@@ -249,20 +239,9 @@ for (let offset = 0; offset < line.length; offset += 4096) {
 	const asyncDir = path.join(root, "async-backpressured-output");
 	const resultPath = path.join(asyncDir, "result.json");
 
-	await runConfiguredBackground({
-		version: 2,
-		id: "backpressured-output",
-		cwd: root,
-		asyncDir,
-		resultPath,
-		work: { mode: "single", task: { ...task(0), cwd: root } },
-	});
+	await runConfiguredBackground(singleRunnerConfig(root, "backpressured-output", { asyncDir, resultPath }));
 
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const result = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		results: Array<{ output?: string; success: boolean }>;
-	};
+	const result = readBackgroundCompletion(resultPath);
 	expect(result.state).toBe("complete");
 	expect(result.results[0]?.success).toBeTrue();
 	expect(result.results[0]?.output?.endsWith(tail)).toBeTrue();
@@ -353,24 +332,11 @@ test("turns a writer-supervisor spawn error into a durable child failure", async
 	const root = fixtureRoot();
 	const asyncDir = path.join(root, "async-missing-supervisor");
 	const resultPath = path.join(asyncDir, "result.json");
-	await runConfiguredBackground(
-		{
-			version: 2,
-			id: "missing-writer-supervisor",
-			cwd: root,
-			asyncDir,
-			resultPath,
-			work: { mode: "single", task: { ...task(0), cwd: root } },
-		},
-		{ writerSupervisorRuntime: path.join(root, "missing-bun") },
-	);
+	await runConfiguredBackground(singleRunnerConfig(root, "missing-writer-supervisor", { asyncDir, resultPath }), {
+		writerSupervisorRuntime: path.join(root, "missing-bun"),
+	});
 	await Bun.sleep(25);
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
-		state: string;
-		success: boolean;
-		results: Array<{ error?: string; success: boolean }>;
-	};
+	const completion = readBackgroundCompletion(resultPath);
 	expect(completion.state).toBe("failed");
 	expect(completion.success).toBeFalse();
 	expect(completion.results[0]).toMatchObject({ success: false });
@@ -409,16 +375,13 @@ test("honors group concurrency and produces direct parallel children", async () 
 	expect(peak).toBe(2);
 	expect(results.map((result) => result.output)).toEqual(["done-0", "done-1", "done-2"]);
 
-	const config = {
-		version: 2,
-		id: "run-parallel",
+	const config = singleRunnerConfig("/tmp", "run-parallel", {
 		parentRunOrigin: "user",
 		work,
 		resultPath: "/tmp/result.json",
-		cwd: "/tmp",
 		asyncDir: "/tmp/run-parallel",
 		sessionId: "parent-session",
-	} satisfies BackgroundRunnerConfig;
+	});
 	const completion = createBackgroundCompletion(config, results, 100, 200);
 	expect(completion).toMatchObject({
 		id: "run-parallel",
@@ -496,14 +459,11 @@ test("does not start queued children after a stop and records a stopped completi
 	expect(results.every((result) => result.stopped)).toBe(true);
 	expect(results.slice(1).every((result) => result.preStartTerminalCause === "stop")).toBe(true);
 
-	const config = {
-		version: 2,
-		id: "run-stopped",
+	const config = singleRunnerConfig("/tmp", "run-stopped", {
 		work,
 		resultPath: "/tmp/result.json",
-		cwd: "/tmp",
 		asyncDir: "/tmp/run-stopped",
-	} satisfies BackgroundRunnerConfig;
+	});
 	expect(createBackgroundCompletion(config, results, 100, 200)).toMatchObject({
 		state: "stopped",
 		success: false,
@@ -558,13 +518,7 @@ setInterval(() => {}, 1_000);
 	);
 	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
 	const asyncDir = path.join(root, "async");
-	const resultPath = path.join(asyncDir, "result.json");
-	const config: BackgroundRunnerConfig = {
-		version: 2,
-		id: "queued-group-stop",
-		cwd: root,
-		asyncDir,
-		resultPath,
+	const config = singleRunnerConfig(root, "queued-group-stop", {
 		work: {
 			mode: "parallel",
 			group: {
@@ -576,7 +530,7 @@ setInterval(() => {}, 1_000);
 				worktree: false,
 			},
 		},
-	};
+	});
 
 	const running = runConfiguredBackground(config);
 	await waitForFile(readyMarker);
@@ -587,33 +541,20 @@ setInterval(() => {}, 1_000);
 		targetIndex: 1,
 	});
 	await waitForFileText(path.join(asyncDir, "status.json"), "queued-stop-steer");
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const routed = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		steering?: { recent?: Array<{ targets?: Array<{ state?: string }> }> };
-	};
+	const routed = readBackgroundStatus(asyncDir);
 	expect(routed.steering?.recent?.[0]?.targets?.[0]?.state).toBe("routed");
 	requestAsyncStop(asyncDir, { source: "test" });
 	await running;
-	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-	const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
-		state: string;
-		steps: Array<{ status: string; startedAt?: number; endedAt?: number; stopped?: boolean }>;
-		steering?: {
-			scheduled?: number;
-			pending?: number;
-			failed?: number;
-			recent?: Array<{ targets?: Array<{ state?: string; reason?: string }> }>;
-		};
-	};
+	const status = readBackgroundStatus(asyncDir);
 
 	expect(status.state).toBe("stopped");
 	expect(status.steps).toMatchObject([
 		{ status: "stopped", stopped: true },
 		{ status: "stopped", stopped: true },
 	]);
-	expect(status.steps[0]?.startedAt).toBeNumber();
-	expect(status.steps[1]?.startedAt).toBeUndefined();
-	expect(status.steps[1]?.endedAt).toBeNumber();
+	expect(status.steps?.[0]?.startedAt).toBeNumber();
+	expect(status.steps?.[1]?.startedAt).toBeUndefined();
+	expect(status.steps?.[1]?.endedAt).toBeNumber();
 	expect(status.steering).toMatchObject({
 		scheduled: 0,
 		pending: 0,
