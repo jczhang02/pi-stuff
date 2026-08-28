@@ -115,15 +115,6 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
-	runtime.registerEnvelope(
-		tool.name,
-		presentation.decode,
-		(operation) => {
-			const nested = presentation.registry.get(operation.name);
-			return nested ? prepareEnvelopeRenderArguments(nested, operation.args) : operation.args;
-		},
-		presentation.showFallback,
-	);
 	runtime.registerDetailPresentation(tool.name, {
 		label: () => sanitizeTerminalText(tool.label ?? tool.name) || tool.name,
 		summary: (_args, result, state) =>
