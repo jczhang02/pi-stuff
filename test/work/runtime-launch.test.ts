@@ -204,7 +204,7 @@ test("does not open an output file when command authorization path resolution fa
 	await active.shutdown();
 });
 
-test("shutdown cancels and awaits a supervisor whose launch identity is still being captured", async () => {
+test("shutdown cleans and awaits a supervisor when launch identity capture fails", async () => {
 	const root = temporaryRoot();
 	const marker = join(root, "must-not-run");
 	const { promise: identityGate, resolve: releaseIdentity } = Promise.withResolvers<void>();
@@ -216,7 +216,7 @@ test("shutdown cancels and awaits a supervisor whose launch identity is still be
 			supervisorPid = pid;
 			identityCaptureStarted();
 			await identityGate;
-			return captureProcessIdentityWithRetry(pid);
+			throw new Error("injected supervisor identity EIO");
 		},
 		storage,
 	});
@@ -230,11 +230,13 @@ test("shutdown cancels and awaits a supervisor whose launch identity is still be
 	await Bun.sleep(25);
 	expect(shutdownSettled).toBeFalse();
 	releaseIdentity();
-	await expect(execution).rejects.toThrow("session is shutting down");
+	await expect(execution).rejects.toThrow("injected supervisor identity EIO");
 	await shutdown;
 
 	expect(supervisorPid).toBeNumber();
-	if (supervisorPid !== undefined) expect(processExists(supervisorPid)).toBeFalse();
+	const supervisorSurvived = supervisorPid !== undefined && processExists(supervisorPid);
+	if (supervisorPid !== undefined && supervisorSurvived) process.kill(supervisorPid, "SIGKILL");
+	expect(supervisorSurvived).toBeFalse();
 	expect(existsSync(marker)).toBeFalse();
 	expect(active.snapshot()).toHaveLength(0);
 	const runtimeFiles = storage.directory ? readdirSync(storage.directory) : [];

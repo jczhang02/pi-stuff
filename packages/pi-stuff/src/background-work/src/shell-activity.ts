@@ -211,7 +211,14 @@ export class ShellActivity {
 			discardOutput(output);
 			throw error;
 		}
-		const supervisorIdentity = await dependencies.captureSupervisorIdentity(supervisor.pid);
+		let supervisorIdentity: ProcessIdentity | undefined;
+		try {
+			supervisorIdentity = await dependencies.captureSupervisorIdentity(supervisor.pid);
+		} catch (error) {
+			await abandonSupervisorAndWait(supervisor);
+			discardOutput(output);
+			throw error;
+		}
 		if (!supervisorIdentity || owner.disposed()) {
 			await abandonSupervisorAndWait(supervisor);
 			discardOutput(output);
