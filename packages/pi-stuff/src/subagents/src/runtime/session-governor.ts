@@ -114,7 +114,6 @@ export class SessionAgentGovernor {
 			lockTimeoutMs: positiveInteger("lockTimeoutMs", options.lockTimeoutMs ?? 5_000),
 			fs: options.fs,
 		});
-		positiveInteger("staleLockMs", options.staleLockMs ?? 30_000);
 	}
 
 	async hasLedger(): Promise<boolean> {

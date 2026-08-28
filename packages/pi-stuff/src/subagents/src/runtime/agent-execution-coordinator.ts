@@ -30,6 +30,7 @@ import {
 	type SessionGovernorRebindResult,
 	type SessionGovernorSnapshot,
 } from "./session-governor.ts";
+import { samePath } from "./session-governor-contracts.ts";
 
 export { explicitProcessPidState, parseAgentOwnerPath, runtimeCompletionAddresses };
 
@@ -793,8 +794,4 @@ function classifyStartupFailure(
 		bindRuntime: start !== undefined,
 		settlement: { kind: "background-started" },
 	};
-}
-
-function samePath(left: readonly string[], right: readonly string[]): boolean {
-	return left.length === right.length && left.every((component, index) => component === right[index]);
 }

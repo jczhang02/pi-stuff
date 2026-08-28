@@ -1,6 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityCategory, ToolActivityMetadata, ToolArguments } from "./activity-model.js";
+import { isToolArguments } from "./tool-value.js";
 
 export interface PlannedToolActivityMember {
 	readonly args: ToolArguments;
@@ -56,10 +57,6 @@ interface ToolTranscriptRecord {
 }
 
 function isRecord<Value>(value: Value): value is Value & ToolTranscriptRecord {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
-}
-
-function isToolArguments<Value>(value: Value): value is Value & ToolArguments {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 

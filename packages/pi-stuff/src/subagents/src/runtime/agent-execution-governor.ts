@@ -1,4 +1,4 @@
-import { isRuntimeString } from "../../../shared/runtime-type.js";
+import { nonNegativeSafeInteger, requiredText } from "./agent-runtime-event.ts";
 import type {
 	AcquireAgentRequest,
 	AcquireSpawnRequest,
@@ -309,18 +309,8 @@ function uniqueReservationIndexes(
 	return [...unique];
 }
 
-function requiredText(name: string, value: string): string {
-	if (!isRuntimeString(value) || value.trim().length === 0) throw new TypeError(`${name} must be a non-empty string.`);
-	return value.trim();
-}
-
 function positiveSafeInteger(name: string, value: number): number {
 	if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${name} must be a positive safe integer.`);
-	return value;
-}
-
-function nonNegativeSafeInteger(name: string, value: number): number {
-	if (!Number.isSafeInteger(value) || value < 0) throw new TypeError(`${name} must be a non-negative safe integer.`);
 	return value;
 }
 

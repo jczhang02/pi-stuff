@@ -26,7 +26,6 @@ export interface SessionAgentGovernorOptions {
 	readonly token?: () => string;
 	readonly lockRetryMs?: number;
 	readonly lockTimeoutMs?: number;
-	readonly staleLockMs?: number;
 	readonly readProcessStartIdentity?: (pid: number) => string | undefined;
 	readonly readSystemBootIdentity?: (() => string | undefined) | undefined;
 	readonly fs?: SessionGovernorFileSystem;
