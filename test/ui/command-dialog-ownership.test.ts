@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	type CommandDialogComponent,
 	type CommandDialogViewContext,
+	commandDialogHarness,
 	createApiHarness,
 	createContext,
 	drainMicrotasks,
@@ -12,6 +13,7 @@ import {
 	FocusableTestComponent,
 	type FooterFactory,
 	getCommandDialogCoordinator,
+	installedCommandDialogHarness,
 	piStuffUi,
 	TestComponent,
 	UiHarness,
@@ -147,12 +149,7 @@ test("shares one /ui registry across distinct Package APIs in one Host generatio
 });
 
 test("owns one non-overlay host and restores the draft, footer, working row, and chrome", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	const normalFooter = ui.footerWrites.at(-1);
 	if (!normalFooter) throw new Error("Expected the normal Suite footer");
 	const chromeWrites: boolean[] = [];
@@ -208,10 +205,7 @@ test("owns one non-overlay host and restores the draft, footer, working row, and
 });
 
 test("keeps shared chrome adapter registrations independent", async () => {
-	const api = createApiHarness();
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
+	const { coordinator, ctx } = commandDialogHarness();
 	const writes: boolean[] = [];
 	const chrome = { setSuppressed: (suppressed: boolean) => writes.push(suppressed) };
 	const unregisterTodo = coordinator.registerChrome("todo", chrome);
@@ -264,12 +258,7 @@ test("does not restore an already submitted slash command when the caller opts o
 });
 
 test("forwards host focus to the active dialog component", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	let viewContext: CommandDialogViewContext | undefined;
 	const component = new FocusableTestComponent("input dialog");
 
@@ -293,12 +282,7 @@ test("forwards host focus to the active dialog component", async () => {
 });
 
 test("restores the Suite-owned working visibility that preceded the dialog", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	coordinator.setWorkingVisible(ctx, false);
 	let viewContext: CommandDialogViewContext | undefined;
 
@@ -317,12 +301,7 @@ test("restores the Suite-owned working visibility that preceded the dialog", asy
 });
 
 test("restores footer and working updates made while the dialog owns Pi UI", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	const initialFooter = ui.footerWrites.at(-1);
 	if (!initialFooter) throw new Error("Expected the initial Suite footer");
 	let viewContext: CommandDialogViewContext | undefined;

@@ -406,6 +406,23 @@ function createContext(
 	return createExtensionContext(contextOptions);
 }
 
+function commandDialogHarness() {
+	const api = createApiHarness();
+	const coordinator = getCommandDialogCoordinator(api.api);
+	const ui = new UiHarness();
+	return { api, coordinator, ctx: createContext(ui), ui };
+}
+
+async function installedCommandDialogHarness() {
+	const api = createApiHarness();
+	await piStuffUi(api.api);
+	const coordinator = getCommandDialogCoordinator(api.api);
+	const ui = new UiHarness();
+	const ctx = createContext(ui);
+	await api.start(ctx);
+	return { api, coordinator, ctx, ui };
+}
+
 function createFooterData(branch: string | null = null) {
 	const listeners = new Set<() => void>();
 	return {
@@ -480,6 +497,7 @@ function createDeferred<Value>(): TestDeferred<Value> {
 export type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext, ExtensionContext, FooterFactory };
 export {
 	Check,
+	commandDialogHarness,
 	createApiHarness,
 	createContext,
 	createDeferred,
@@ -496,6 +514,7 @@ export {
 	getGoalStatusChannel,
 	homedir,
 	INPUT_EVENT_SCHEMA,
+	installedCommandDialogHarness,
 	installUiSessionPresentation,
 	join,
 	piStuffCodex,

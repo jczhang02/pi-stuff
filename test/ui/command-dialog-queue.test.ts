@@ -2,21 +2,19 @@ import { expect, test } from "bun:test";
 import {
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogHarness,
 	createApiHarness,
 	createContext,
 	createView,
 	drainMicrotasks,
 	getCommandDialogCoordinator,
-	piStuffUi,
+	installedCommandDialogHarness,
 	TestComponent,
 	UiHarness,
 } from "./command-dialog-coordinator-fixtures.js";
 
 test("does not mount a view twice when its factory synchronously queues a blocker", async () => {
-	const api = createApiHarness();
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
+	const { coordinator, ctx, ui } = commandDialogHarness();
 	const normal = new TestComponent("normal");
 	const blocker = new TestComponent("blocker");
 	let normalContext: CommandDialogViewContext | undefined;
@@ -57,12 +55,7 @@ test("does not mount a view twice when its factory synchronously queues a blocke
 });
 
 test("preempts a normal view with FIFO blockers, then resumes the same component", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	const normalFooter = ui.footerWrites.at(-1);
 	if (!normalFooter) throw new Error("Expected the normal Suite footer");
 	const components = new Map<string, TestComponent>();
@@ -167,12 +160,7 @@ test("reports idle only after a preempted view closes and all shared chrome is r
 });
 
 test("session shutdown aborts and dismisses every view before restoring UI", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { api, coordinator, ctx, ui } = await installedCommandDialogHarness();
 	const normalFooter = ui.footerWrites.at(-1);
 	if (!normalFooter) throw new Error("Expected the normal Suite footer");
 	const components = new Map<string, TestComponent>();
@@ -206,12 +194,7 @@ test("session shutdown aborts and dismisses every view before restoring UI", asy
 });
 
 test("restores the exact Suite footer after a custom Host failure", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
-	await api.start(ctx);
+	const { coordinator, ctx, ui } = await installedCommandDialogHarness();
 	const normalFooter = ui.footerWrites.at(-1);
 	if (!normalFooter) throw new Error("Expected the normal Suite footer");
 
@@ -312,10 +295,7 @@ test("preserves show order across host cleanup and final-view continuations", as
 });
 
 test("runs every restoration after host failure and starts a new host only after prior cleanup", async () => {
-	const api = createApiHarness();
-	const coordinator = getCommandDialogCoordinator(api.api);
-	const ui = new UiHarness();
-	const ctx = createContext(ui);
+	const { coordinator, ctx, ui } = commandDialogHarness();
 	const chromeWrites: boolean[] = [];
 	coordinator.registerChrome("throwing", {
 		setSuppressed: (suppressed) => {
