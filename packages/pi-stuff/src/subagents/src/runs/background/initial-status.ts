@@ -32,7 +32,6 @@ export function createInitialStatus(
 		lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 		runId: config.id,
 		mode: config.work.mode,
-		isNested: Boolean(config.nestedSelf),
 		state: "running",
 		startedAt,
 		lastUpdate: startedAt,

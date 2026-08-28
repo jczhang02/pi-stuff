@@ -127,8 +127,6 @@ export interface Details {
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 	launchContractDigest?: string;
-	/** Original launch contract whose persisted session is being revived. */
-	sourceLaunchContractDigest?: string;
 	/** Internal engine→governor startup gate; removed by the public projection. */
 	lifecycleBinding?: {
 		pid: number;

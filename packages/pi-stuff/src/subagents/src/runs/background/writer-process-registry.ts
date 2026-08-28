@@ -484,14 +484,6 @@ function supportsProcessStartIdentity(): boolean {
 	return process.platform === "linux" || process.platform === "darwin" || process.platform === "freebsd";
 }
 
-export interface WriterGroupMemberProof {
-	readonly version: 1;
-	readonly groupLeaderPid: number;
-	readonly groupLeaderProcessStartIdentity: string;
-	readonly memberPid: number;
-	readonly memberProcessStartIdentity: string;
-}
-
 type ProcessIdentityGroupReader = (pid: number) => ProcessIdentityGroupSnapshot | undefined;
 
 export function readAuthenticatedGroupMember(

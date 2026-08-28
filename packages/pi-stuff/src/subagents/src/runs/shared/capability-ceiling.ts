@@ -5,10 +5,6 @@ import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../
 export const SUBAGENT_CAPABILITY_CEILING_VERSION = 1 as const;
 export const SUBAGENT_CAPABILITY_CEILING_ENV = "PI_SUBAGENT_CAPABILITY_CEILING_V1";
 
-export type SubagentCapabilityCeiling =
-	| { allowedTools: readonly string[]; denyExtensions?: boolean }
-	| { allowedTools?: readonly string[]; denyExtensions: boolean };
-
 export interface ResolvedSubagentCapabilityCeiling {
 	version: typeof SUBAGENT_CAPABILITY_CEILING_VERSION;
 	allowedTools?: string[];

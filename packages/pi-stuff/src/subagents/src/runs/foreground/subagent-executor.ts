@@ -401,11 +401,9 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 		backgroundOwnsRoute = Boolean(result.details.asyncId);
 		if (resultIsError(result)) return result;
 		const revivedId = result.details.asyncId ?? runId;
-		const details: Details = { ...result.details };
-		if (target.launchContractDigest) details.sourceLaunchContractDigest = target.launchContractDigest;
 		return {
 			content: [{ type: "text", text: `Agent ${target.agent} resumed from ${target.runId} as ${revivedId}.` }],
-			details,
+			details: result.details,
 		};
 	} finally {
 		if (!inheritedNestedRoute && !backgroundOwnsRoute) {

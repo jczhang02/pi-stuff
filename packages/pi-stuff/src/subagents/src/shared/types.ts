@@ -19,11 +19,6 @@ export type * from "../runtime/runtime-state.ts";
 // Basic Types
 // ============================================================================
 
-export interface MaxOutputConfig {
-	bytes?: number;
-	lines?: number;
-}
-
 export interface JsonSchemaObject extends JsonInputObject {}
 
 export interface Usage {

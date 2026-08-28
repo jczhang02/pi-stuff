@@ -50,7 +50,6 @@ interface AsyncRunStepSummary {
 	currentToolArgs?: string;
 	currentToolStartedAt?: number;
 	currentPath?: string;
-	recentTools?: Array<{ tool: string; args: string; endMs: number }>;
 	recentOutput?: string[];
 	turnCount?: number;
 	toolCount?: number;
@@ -236,7 +235,6 @@ function summarizeAsyncStep(
 	if (step.currentToolArgs) summary.currentToolArgs = step.currentToolArgs;
 	if (step.currentToolStartedAt) summary.currentToolStartedAt = step.currentToolStartedAt;
 	if (step.currentPath) summary.currentPath = step.currentPath;
-	if (step.recentTools) summary.recentTools = step.recentTools.map((tool) => ({ ...tool }));
 	if (step.recentOutput) summary.recentOutput = [...step.recentOutput];
 	Object.assign(summary, pickFields(step, ["turnCount", "toolCount"]));
 	if (step.steering) summary.steering = step.steering;

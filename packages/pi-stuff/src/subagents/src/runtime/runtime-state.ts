@@ -8,7 +8,6 @@ import type { SessionCompatibilityScope } from "../shared/session-identity.ts";
 import type {
 	ActivityState,
 	AgentContextUsage,
-	ArtifactDirPreference,
 	SingleResult,
 	SubagentResultStatus,
 	SubagentRunMode,
@@ -90,8 +89,6 @@ export interface SubagentState {
 	currentSessionScope?: SessionCompatibilityScope | null;
 	/** Selected governor namespace; normally v2, legacy only for a proven live upgrade. */
 	currentGovernorSessionId?: string | null;
-	/** Runtime-owned artifact resolution inputs used by Agent transcript targeting. */
-	artifactDirPreference?: ArtifactDirPreference;
 	parentSessionFile?: string | null;
 	/** Last valid parent session model observed for this session; used when continuation contexts omit ctx.model. */
 	lastParentModel?: { provider: string; id: string };

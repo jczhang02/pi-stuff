@@ -188,7 +188,6 @@ class AsyncJobTracker {
 			job.agents = visibleSteps.map((step) => step.agent);
 			job.steps = visibleSteps;
 			job.stepsTotal = visibleSteps.length;
-			job.runningSteps = visibleSteps.filter((step) => step.status === "running").length;
 			job.completedSteps = visibleSteps.filter(
 				(step) => step.status === "complete" || step.status === "completed",
 			).length;

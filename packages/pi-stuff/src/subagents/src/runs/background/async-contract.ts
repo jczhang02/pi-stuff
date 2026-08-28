@@ -65,7 +65,6 @@ export interface AsyncStatusStep extends NestedStepSummary {
 	finalOutput?: string | undefined;
 	savedOutputPath?: string | undefined;
 	currentToolArgs?: string | undefined;
-	recentTools?: Array<{ tool: string; args: string; endMs: number }>;
 	recentOutput?: string[] | undefined;
 	durationMs?: number | undefined;
 	exitCode?: number | null | undefined;
@@ -80,7 +79,6 @@ export interface AsyncStatusStep extends NestedStepSummary {
 	steering?: SteeringStatus;
 	structuredOutput?: unknown;
 	structuredOutputPath?: string;
-	structuredOutputSchemaPath?: string;
 	acceptance?: JsonInputValue;
 	launchContractDigest?: string;
 }
@@ -92,7 +90,6 @@ export interface AsyncStatus extends Omit<NestedRuntimeEvidence, "agentStatus" |
 	/** Origin of the parent Agent run; absent only on legacy lifecycle artifacts. */
 	parentRunOrigin?: AgentWorkOrigin;
 	mode: SubagentRunMode;
-	isNested?: boolean;
 	/** Exact nested event route selected at launch; legacy statuses may omit it. */
 	nestedRoute?: NestedRouteInfo | undefined;
 	state: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
@@ -149,7 +146,6 @@ export interface AsyncJobState
 	parallelGroups?: AsyncParallelGroupStatus[] | undefined;
 	steps?: AsyncJobStep[];
 	stepsTotal?: number | undefined;
-	runningSteps?: number;
 	completedSteps?: number;
 	hasParallelGroups?: boolean | undefined;
 	activeParallelGroup?: boolean | undefined;

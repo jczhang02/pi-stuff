@@ -195,7 +195,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	randomId: randomUUID,
 };
 
-function createState(config: PiStuffAgentsConfig): SubagentState {
+function createState(): SubagentState {
 	const state: SubagentState = {
 		baseCwd: "",
 		currentSessionId: null,
@@ -217,7 +217,6 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 			clear: () => {},
 		},
 	};
-	if (config.artifactDir) state.artifactDirPreference = config.artifactDir;
 	return state;
 }
 
@@ -404,7 +403,7 @@ export default function registerSubagentExtension(
 	const globalStore = globalThis as typeof globalThis & AgentsRuntimeGlobal;
 	const previousCleanupPromise = retirePreviousRoot(globalStore);
 	const config = deps.loadConfiguration();
-	const state = createState(config);
+	const state = createState();
 	const coordinator = deps.getCoordinator(pi);
 	let runtime!: RootSessionRuntime;
 	let executePublicAgent!: ExecutePublicAgent;
