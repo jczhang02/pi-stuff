@@ -13,6 +13,8 @@ import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.t
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
+const GROUNDING_REDIRECT_ORIGIN = "https://vertexaisearch.cloud.google.com";
+const GROUNDING_REDIRECT_PATH = "/grounding-api-redirect";
 const API_VERSION = "v1beta";
 export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -226,10 +228,8 @@ async function resolveGroundingChunks(chunks: GroundingChunk[], signal?: AbortSi
 		if (!chunk.web) continue;
 		const title = chunk.web.title || "";
 		let url = chunk.web.uri || "";
-		if (url.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
-			const resolved = await resolveRedirect(url, signal);
-			if (resolved) url = resolved;
-		}
+		const resolved = await resolveRedirect(url, signal);
+		if (resolved) url = resolved;
 		if (url) results.push({ title, url, snippet: "" });
 	}
 	return results;
@@ -237,7 +237,14 @@ async function resolveGroundingChunks(chunks: GroundingChunk[], signal?: AbortSi
 
 async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string | null> {
 	try {
-		const res = await fetch(proxyUrl, {
+		const url = new URL(proxyUrl);
+		if (
+			url.origin !== GROUNDING_REDIRECT_ORIGIN ||
+			(url.pathname !== GROUNDING_REDIRECT_PATH && !url.pathname.startsWith(`${GROUNDING_REDIRECT_PATH}/`))
+		) {
+			return null;
+		}
+		const res = await fetch(url, {
 			method: "HEAD",
 			redirect: "manual",
 			signal: withTimeout(signal, 5_000),
