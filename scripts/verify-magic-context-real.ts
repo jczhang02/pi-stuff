@@ -11,11 +11,9 @@ const root = resolve(import.meta.dir, "..");
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
 const PRESSURE_FILE_BYTES = 48 * 1024;
 const PRESSURE_FILE_COUNT = 12;
-const MAGIC_CONTEXT_REAL_SETTINGS = {
-	executeThresholdPercentage: 65,
-	historianModel: "openai-codex/gpt-5.6-terra",
-	historianTimeoutMs: 10 * 60_000,
-} as const;
+const EXECUTE_THRESHOLD_PERCENTAGE = 65;
+const HISTORIAN_MODEL = "openai-codex/gpt-5.6-terra";
+const HISTORIAN_TIMEOUT_MS = 10 * 60_000;
 const PACKAGE_MANIFEST_SCHEMA = Type.Object(
 	{
 		name: Type.String(),
@@ -33,28 +31,7 @@ interface Options {
 	readonly reportPath: string;
 }
 
-interface AcceptancePaths {
-	readonly agent: string;
-	readonly audit: string;
-	readonly cache: string;
-	readonly data: string;
-	readonly home: string;
-	readonly magicConfig: string;
-	readonly magicLog: string;
-	readonly packageRoot: string;
-	readonly projectA: string;
-	readonly projectB: string;
-	readonly sessions: string;
-	readonly settings: string;
-	readonly state: string;
-	readonly xdgConfig: string;
-}
-
-interface EvidenceFile {
-	readonly bytes: number;
-	readonly path: string;
-	readonly sha256: string;
-}
+type EvidenceFile = Readonly<{ bytes: number; path: string; sha256: string }>;
 
 function fail(message: string): never {
 	throw new Error(`Magic Context real-provider acceptance failed: ${message}`);
@@ -152,7 +129,7 @@ async function extractPackage(archivePath: string, destination: string): Promise
 	return verifyLocalPackage(packagePath);
 }
 
-function acceptancePaths(workspace: string): AcceptancePaths {
+function acceptancePaths(workspace: string) {
 	return {
 		agent: join(workspace, "agent"),
 		audit: join(workspace, "audit.jsonl"),
@@ -170,6 +147,8 @@ function acceptancePaths(workspace: string): AcceptancePaths {
 		xdgConfig: join(workspace, "config"),
 	};
 }
+
+type AcceptancePaths = ReturnType<typeof acceptancePaths>;
 
 function environment(paths: AcceptancePaths): NodeJS.ProcessEnv {
 	return {
@@ -278,13 +257,13 @@ async function writeAcceptanceConfiguration(paths: AcceptancePaths, authPath: st
 				compressor: { enabled: false },
 				dreamer: { disable: true },
 				embedding: { provider: "off" },
-				execute_threshold_percentage: MAGIC_CONTEXT_REAL_SETTINGS.executeThresholdPercentage,
+				execute_threshold_percentage: EXECUTE_THRESHOLD_PERCENTAGE,
 				fail_closed_blocking: false,
 				historian: {
-					opencode: { model: MAGIC_CONTEXT_REAL_SETTINGS.historianModel },
-					pi: { model: MAGIC_CONTEXT_REAL_SETTINGS.historianModel, thinking_level: "medium" },
+					opencode: { model: HISTORIAN_MODEL },
+					pi: { model: HISTORIAN_MODEL, thinking_level: "medium" },
 				},
-				historian_timeout_ms: MAGIC_CONTEXT_REAL_SETTINGS.historianTimeoutMs,
+				historian_timeout_ms: HISTORIAN_TIMEOUT_MS,
 				memory: {
 					auto_promote: false,
 					auto_search: { enabled: false },
@@ -417,8 +396,8 @@ async function main(): Promise<void> {
 			evidence,
 			host: { piVersion: command([options.piBinary, "--version"], root).trim() },
 			magicContext: {
-				executeThresholdPercentage: MAGIC_CONTEXT_REAL_SETTINGS.executeThresholdPercentage,
-				historianModel: MAGIC_CONTEXT_REAL_SETTINGS.historianModel,
+				executeThresholdPercentage: EXECUTE_THRESHOLD_PERCENTAGE,
+				historianModel: HISTORIAN_MODEL,
 				package: "@cortexkit/pi-magic-context@0.40.0",
 				usableContextLimit: scenario.magicContextLimit,
 			},

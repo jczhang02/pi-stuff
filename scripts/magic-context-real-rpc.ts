@@ -1,23 +1,13 @@
-import { Type } from "typebox";
-import { Check } from "typebox/value";
 import {
 	isJsonInputObject,
 	type JsonInputObject,
 	type JsonInputValue,
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const TURN_TIMEOUT_MS = 10 * 60_000;
-const RPC_RECORD_FIELDS_SCHEMA = Type.Object(
-	{
-		command: Type.Optional(Type.String()),
-		id: Type.Optional(Type.String()),
-		success: Type.Optional(Type.Boolean()),
-		type: Type.Optional(Type.String()),
-	},
-	{ additionalProperties: true },
-);
 
 export interface RpcRecord extends JsonInputObject {
 	readonly command?: string;
@@ -60,7 +50,11 @@ function fail(message: string): never {
 
 export function parseRpcRecord(line: string): RpcRecord {
 	const value = parseJsonValue(line);
-	if (!isJsonInputObject(value) || !Check(RPC_RECORD_FIELDS_SCHEMA, value)) {
+	if (
+		!isJsonInputObject(value) ||
+		["command", "id", "type"].some((key) => value[key] !== undefined && !isRuntimeString(value[key])) ||
+		(value["success"] !== undefined && !isRuntimeBoolean(value["success"]))
+	) {
 		throw new Error(`Invalid Pi RPC record: ${line}`);
 	}
 	return value;
