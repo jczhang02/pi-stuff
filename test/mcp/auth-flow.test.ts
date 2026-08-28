@@ -163,6 +163,49 @@ test("OAuth discovery never follows redirects with configured headers", async ()
 	}
 });
 
+test("OAuth SDK discovery never requests private URLs advertised by a remote server", async () => {
+	const authStoreEnv = "PI_MCP_ADAPTER_TEST_AUTH_STORE";
+	const previousAuthStore = process.env[authStoreEnv];
+	const originalFetch = globalThis.fetch;
+	const runtime = createOAuthRuntime();
+	const requests: string[] = [];
+	process.env[authStoreEnv] = "memory";
+	resetTestAuthSecretStore();
+	globalThis.fetch = Object.assign(
+		async (input: string | URL | Request) => {
+			requests.push(String(input));
+			if (requests.length === 1) {
+				return new Response(null, {
+					headers: { "www-authenticate": 'Bearer resource_metadata="http://127.0.0.1/private"' },
+					status: 401,
+				});
+			}
+			throw new Error("OAuth discovery stopped");
+		},
+		{ preconnect: originalFetch.preconnect },
+	);
+	try {
+		await expect(
+			startAuth(
+				"private-discovery",
+				"https://mcp.example",
+				{
+					oauth: { clientId: "client", clientSecret: "secret", grantType: "client_credentials" },
+					url: "https://mcp.example",
+				},
+				{ runtime },
+			),
+		).rejects.toThrow("OAuth discovery stopped");
+		expect(requests).not.toContain("http://127.0.0.1/private");
+	} finally {
+		globalThis.fetch = originalFetch;
+		await shutdownOAuth(runtime);
+		resetTestAuthSecretStore();
+		if (previousAuthStore === undefined) delete process.env[authStoreEnv];
+		else process.env[authStoreEnv] = previousAuthStore;
+	}
+});
+
 test("binds secure OAuth credentials to their server URL and detects chunk tampering", () => {
 	const authStoreEnv = "PI_MCP_ADAPTER_TEST_AUTH_STORE";
 	const previousAuthStore = process.env[authStoreEnv];

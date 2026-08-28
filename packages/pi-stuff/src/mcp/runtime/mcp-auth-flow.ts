@@ -4,12 +4,7 @@
  * High-level OAuth flow management using the MCP SDK's built-in auth functions.
  */
 
-import {
-	extractWWWAuthenticateParams,
-	auth as runSdkAuth,
-	UnauthorizedError,
-} from "@modelcontextprotocol/sdk/client/auth.js";
-import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
+import { auth as runSdkAuth, UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import open from "open";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { abortable, throwIfAborted } from "./abort.ts";
@@ -36,6 +31,7 @@ import {
 	parseAuthorizationRedirectInput,
 	parseOAuthRedirectUri,
 } from "./mcp-auth-config.ts";
+import { probeAuthDiscovery, sdkAuthOptions } from "./mcp-auth-discovery.ts";
 import {
 	cancelPendingCallback,
 	ensureCallbackServer,
@@ -46,7 +42,7 @@ import {
 import { type McpOAuthConfig, McpOAuthProvider } from "./mcp-oauth-provider.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { isServerDisabled, type ServerEntry } from "./types.ts";
-import { formatTerminalError, interpolateEnvRecord } from "./utils.ts";
+import { formatTerminalError } from "./utils.ts";
 
 export {
 	type AuthorizationCodeInput,
@@ -152,57 +148,6 @@ function generateState(): string {
 		.join("");
 }
 
-async function probeAuthDiscovery(
-	serverUrl: string,
-	definition?: ServerEntry,
-	signal?: AbortSignal,
-): Promise<AuthDiscovery> {
-	// Discovery must not execute config commands or send their source text.
-	const discoveryHeaders = definition?.headers
-		? Object.fromEntries(
-				Object.entries(definition.headers).filter(([, value]) => !value.startsWith("!") || value.startsWith("!!")),
-			)
-		: undefined;
-	const headers = new Headers(interpolateEnvRecord(discoveryHeaders));
-	headers.set("content-type", "application/json");
-
-	const controller = new AbortController();
-	const discoverySignal = combineAbortSignals(signal, controller.signal) ?? controller.signal;
-	const timer = setTimeout(() => controller.abort(), 5000);
-
-	try {
-		headers.set("accept", "application/json, text/event-stream");
-
-		const response = await fetch(new URL(serverUrl), {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				jsonrpc: "2.0",
-				id: 0,
-				method: "initialize",
-				params: {
-					protocolVersion: LATEST_PROTOCOL_VERSION,
-					capabilities: {},
-					clientInfo: { name: "pi-mcp-adapter", version: "2.11.0" },
-				},
-			}),
-			redirect: "manual",
-			signal: discoverySignal,
-		});
-		const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
-		await response.body?.cancel().catch(() => {});
-		const discovery: AuthDiscovery = {};
-		if (resourceMetadataUrl) discovery.resourceMetadataUrl = resourceMetadataUrl;
-		if (scope) discovery.scope = scope;
-		return discovery;
-	} catch {
-		if (signal?.aborted) throwIfAborted(signal);
-		return {};
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
 type AuthStartContext = {
 	serverName: string;
 	serverUrl: string;
@@ -239,7 +184,7 @@ async function startClientCredentialsAuth(context: AuthStartContext): Promise<{ 
 	try {
 		const discovery = applyConfiguredScope(await probeAuthDiscovery(serverUrl, definition, signal), config);
 		throwIfAborted(signal);
-		const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
+		const result = await abortable(runSdkAuth(authProvider, sdkAuthOptions(serverUrl, discovery)), signal);
 		throwIfAborted(signal);
 		if (result !== "AUTHORIZED") throw new UnauthorizedError("Failed to authorize");
 		return { authorizationUrl: "" };
@@ -316,7 +261,7 @@ async function startInteractiveAuth(context: AuthStartContext): Promise<{ author
 		throwIfAborted(signal);
 		const discovery = applyConfiguredScope(await probeAuthDiscovery(serverUrl, definition, signal), config);
 		throwIfAborted(signal);
-		const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
+		const result = await abortable(runSdkAuth(authProvider, sdkAuthOptions(serverUrl, discovery)), signal);
 		throwIfAborted(signal);
 		if (result === "AUTHORIZED") {
 			authProvider.deactivate();
@@ -504,9 +449,8 @@ export async function completeAuth(
 
 		const result = await abortable(
 			runSdkAuth(pendingAuth.authProvider, {
-				serverUrl: pendingAuth.serverUrl,
+				...sdkAuthOptions(pendingAuth.serverUrl, pendingAuth.discovery),
 				authorizationCode: code,
-				...pendingAuth.discovery,
 			}),
 			signal,
 		);
@@ -686,7 +630,7 @@ export async function getValidToken(
 
 				const discovery = await probeAuthDiscovery(serverUrl, undefined, signal);
 				throwIfAborted(signal);
-				const result = await abortable(runSdkAuth(authProvider, { serverUrl, ...discovery }), signal);
+				const result = await abortable(runSdkAuth(authProvider, sdkAuthOptions(serverUrl, discovery)), signal);
 				throwIfAborted(signal);
 				if (result !== "AUTHORIZED") {
 					return null;

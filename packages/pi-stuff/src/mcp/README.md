@@ -78,6 +78,11 @@ Legacy plaintext OAuth entries are read without migration during startup. The
 next explicit OAuth mutation writes the entry to the operating-system credential
 store and removes the plaintext copy.
 
+OAuth discovery may use another port on the explicitly configured server host,
+including localhost deployments. Server-advertised endpoints on another host
+must resolve only to public addresses; their requests are DNS-pinned and never
+follow redirects.
+
 Setup rejects source or generated previews above 1,000,000 bytes or 10,000 lines
 before diff construction. Within that bound, previews keep exact line diffs
 through 250,000 compared line pairs; larger comparisons retain common
