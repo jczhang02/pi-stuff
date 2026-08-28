@@ -178,8 +178,8 @@ export function resolveServerUrl(definition: Pick<ServerEntry, "url">): string |
 	const resolved = interpolateEnvVars(definition.url);
 	try {
 		new URL(resolved);
-	} catch (error) {
-		throw new Error(`Invalid MCP server URL after environment interpolation: ${resolved}`, { cause: error });
+	} catch {
+		throw new Error("Invalid MCP server URL after environment interpolation");
 	}
 	return resolved;
 }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolveCommandSecret } from "../../packages/pi-stuff/src/mcp/runtime/utils.ts";
+import {
+	formatTerminalError,
+	resolveCommandSecret,
+	resolveServerUrl,
+} from "../../packages/pi-stuff/src/mcp/runtime/utils.ts";
 
 describe("MCP command secrets", () => {
 	test("does not block the Host event loop while the command runs", async () => {
@@ -13,5 +17,23 @@ describe("MCP command secrets", () => {
 		clearTimeout(timer);
 		expect(secret).toBe("secret");
 		expect(timerRan).toBe(true);
+	});
+
+	test("does not expose interpolated secrets in invalid URL errors", () => {
+		const name = "PI_STUFF_TEST_MCP_URL_SECRET";
+		const previous = process.env[name];
+		process.env[name] = "sensitive-token";
+		try {
+			let failure: unknown;
+			try {
+				resolveServerUrl({ url: `http://[\${${name}}]` });
+			} catch (error) {
+				failure = error;
+			}
+			expect(formatTerminalError(failure)).toBe("Invalid MCP server URL after environment interpolation");
+		} finally {
+			if (previous === undefined) delete process.env[name];
+			else process.env[name] = previous;
+		}
 	});
 });
