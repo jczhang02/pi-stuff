@@ -1,29 +1,20 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isFiniteRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { errnoCode, readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
 	type AsyncJobState,
 	type AsyncStartedEvent,
 	type AsyncStatus,
-	type ControlEvent,
 	POLL_INTERVAL_MS,
 	type ProcessTerminalV1,
-	type SteeringNotice,
-	SUBAGENT_CONTROL_EVENT,
-	SUBAGENT_CONTROL_INTERCOM_EVENT,
-	SUBAGENT_STEERING_NOTICE_EVENT,
 	type SubagentState,
 } from "../../shared/types.ts";
 import { isTerminalAsyncState as isTerminalJobStatus, readStatusAsync } from "../../shared/utils.ts";
 import { hasLiveNestedDescendants } from "../shared/nested-events.ts";
-import { mapConcurrent } from "../shared/parallel-utils.ts";
-import { formatControlNoticeMessage } from "../shared/subagent-control.ts";
-import { readNewAsyncControlEvents } from "./async-control-events.ts";
+import { AsyncJobObserver, type AsyncJobWatch } from "./async-job-observer.ts";
+import { type AsyncStatusReader, MAX_RECENT_AGENT_JOBS, scanRestorableAsyncJobs } from "./async-job-recovery.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 
 interface AsyncJobTrackerOptions {
@@ -31,109 +22,14 @@ interface AsyncJobTrackerOptions {
 	/** Used only when native file observation is unavailable. */
 	pollIntervalMs?: number;
 	onRefresh?: () => void;
-	readRunStatus?: (asyncDir: string) => Promise<AsyncStatus | null> | AsyncStatus | null;
-	watchRun?: typeof fs.watch;
-}
-
-interface JobObservation {
-	running: boolean;
-	status: boolean;
-	control: boolean;
-	watcher?: fs.FSWatcher;
-	fallbackTimer?: ReturnType<typeof setInterval>;
-	statusFallbackTimer?: ReturnType<typeof setTimeout>;
-	retryTimer?: ReturnType<typeof setTimeout>;
-	lastIpcStatusAt?: number;
+	readRunStatus?: AsyncStatusReader;
+	watchRun?: AsyncJobWatch;
 }
 
 interface RestoreInFlight {
 	readonly controller: AbortController;
 	readonly generation: number;
 	promise: Promise<void>;
-}
-
-type ObservationKind = { status?: boolean; control?: boolean };
-
-const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
-const MAX_RECENT_AGENT_JOBS = 200;
-const RESTORE_READ_CONCURRENCY = 8;
-const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
-
-interface TrackerEventRecord {
-	readonly channels?: unknown;
-	readonly childIntercomTarget?: unknown;
-	readonly error?: unknown;
-	readonly errorMessage?: unknown;
-	readonly event?: unknown;
-	readonly intercom?: unknown;
-	readonly isError?: unknown;
-	readonly message?: unknown;
-	readonly noticeText?: unknown;
-	readonly recordType?: unknown;
-	readonly role?: unknown;
-	readonly sourceEventType?: unknown;
-	readonly stopReason?: unknown;
-	readonly text?: unknown;
-	readonly type?: unknown;
-}
-
-function record<Value>(value: Value): TrackerEventRecord {
-	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
-	// SAFETY: consumers read only the declared raw fields and validate them before dispatch.
-	return value as Value & TrackerEventRecord;
-}
-
-function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
-	const terminal = step.processTerminal;
-	if (step.error || step.status !== "failed" || terminal?.state !== "observed") return false;
-	const writers = terminal.instances.filter(
-		(instance): instance is Extract<(typeof terminal.instances)[number], { kind: "pi-writer" }> =>
-			instance.kind === "pi-writer" && Number.isInteger(instance.attempt),
-	);
-	const finalAttempt = writers.reduce(
-		(latest, instance) => Math.max(latest, instance.attempt),
-		Number.NEGATIVE_INFINITY,
-	);
-	return writers.some(
-		(instance) =>
-			instance.attempt === finalAttempt &&
-			instance.terminationOrigin === undefined &&
-			(instance.signal === "SIGTERM" || (instance.signal === null && instance.exitCode === 143)),
-	);
-}
-
-async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStatus> {
-	if (status.state !== "failed" || !status.steps?.some(ambiguousLegacyFinalDrain)) return status;
-	let changed = false;
-	const steps = await mapConcurrent(status.steps, 4, async (step) => {
-		if (!ambiguousLegacyFinalDrain(step) || !step.transcriptPath || !path.isAbsolute(step.transcriptPath))
-			return step;
-		try {
-			const tail = await readOwnedFileTailAsync(step.transcriptPath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
-			const lastLine = tail.text.trimEnd().split("\n").at(-1);
-			if (!lastLine) return step;
-			const entry = record(parseJsonValue(lastLine));
-			const message = record(entry.message);
-			if (
-				entry.recordType !== "message" ||
-				entry.sourceEventType !== "message_end" ||
-				entry.role !== "assistant" ||
-				entry.stopReason !== "stop" ||
-				entry.isError === true ||
-				!isRuntimeString(entry.text) ||
-				!entry.text.trim() ||
-				isRuntimeString(entry.error) ||
-				isRuntimeString(entry.errorMessage) ||
-				isRuntimeString(message.errorMessage)
-			)
-				return step;
-			changed = true;
-			return { ...step, legacyFinalReportComplete: true as const };
-		} catch {
-			return step;
-		}
-	});
-	return changed ? { ...status, steps } : status;
 }
 
 function rememberRecentAgentJob(state: SubagentState, job: AsyncJobState): void {
@@ -156,12 +52,9 @@ class AsyncJobTracker {
 	private readonly state: SubagentState;
 	private readonly asyncDirRoot: string;
 	private readonly completionRetentionMs: number;
-	private readonly fallbackIntervalMs: number;
 	private readonly onRefresh: (() => void) | undefined;
+	private readonly observer: AsyncJobObserver;
 	private readonly readRunStatus: NonNullable<AsyncJobTrackerOptions["readRunStatus"]>;
-	private readonly watchRun: typeof fs.watch;
-	private readonly steeringNoticeSeen = new Map<string, number>();
-	private readonly observations = new Map<string, JobObservation>();
 	private trackerGeneration = 0;
 	private refreshScheduled = false;
 	private restoreInFlight: RestoreInFlight | undefined;
@@ -177,16 +70,22 @@ class AsyncJobTracker {
 		this.state = state;
 		this.asyncDirRoot = asyncDirRoot;
 		this.completionRetentionMs = options.completionRetentionMs ?? 10_000;
-		this.fallbackIntervalMs = options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS);
 		this.onRefresh = options.onRefresh;
 		this.readRunStatus = options.readRunStatus ?? readStatusAsync;
-		this.watchRun = options.watchRun ?? fs.watch;
-	}
-
-	private observationFor(asyncId: string): JobObservation {
-		const observation = this.observations.get(asyncId) ?? { running: false, status: false, control: false };
-		this.observations.set(asyncId, observation);
-		return observation;
+		this.observer = new AsyncJobObserver({
+			acceptSessionId: (sessionId, runId) => {
+				if (!this.state.currentSessionId) return undefined;
+				return this.normalizeAcceptedSessionId(sessionId, runId) ?? false;
+			},
+			emitLifecycleEvent: (event, payload) => this.emitLifecycleEvent(event, payload),
+			generation: () => this.trackerGeneration,
+			isCurrentJob: (job) => this.state.asyncJobs.get(job.asyncId) === job,
+			onRefresh: () => this.scheduleRefresh(),
+			onStatus: (job, status) => this.applyStatus(job, status),
+			pollIntervalMs: options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS),
+			readRunStatus: this.readRunStatus,
+			watchRun: options.watchRun,
+		});
 	}
 
 	private normalizeAcceptedSessionId<SessionId, RunId>(sessionId: SessionId, runId: RunId): string | undefined {
@@ -223,15 +122,6 @@ class AsyncJobTracker {
 		this.state.cleanupTimers.delete(asyncId);
 	}
 
-	private stopObservation(asyncId: string): void {
-		const observation = this.observations.get(asyncId);
-		observation?.watcher?.close();
-		if (observation?.fallbackTimer) clearInterval(observation.fallbackTimer);
-		if (observation?.statusFallbackTimer) clearTimeout(observation.statusFallbackTimer);
-		if (observation?.retryTimer) clearTimeout(observation.retryTimer);
-		this.observations.delete(asyncId);
-	}
-
 	private scheduleCleanup(job: AsyncJobState): void {
 		this.cancelCleanup(job.asyncId);
 		const expectedGeneration = this.trackerGeneration;
@@ -239,7 +129,7 @@ class AsyncJobTracker {
 			if (this.state.cleanupTimers.get(job.asyncId) !== timer) return;
 			this.state.cleanupTimers.delete(job.asyncId);
 			if (this.trackerGeneration !== expectedGeneration || this.state.asyncJobs.get(job.asyncId) !== job) return;
-			this.stopObservation(job.asyncId);
+			this.observer.stop(job.asyncId);
 			this.state.asyncJobs.delete(job.asyncId);
 			this.scheduleRefresh();
 		}, this.completionRetentionMs);
@@ -349,197 +239,8 @@ class AsyncJobTracker {
 		return job;
 	}
 
-	private handleControlLine(job: AsyncJobState, line: string): boolean {
-		const { state } = this;
-		const steeringNoticeSeen = this.steeringNoticeSeen;
-		if (!line.trim()) return false;
-		let parsed: TrackerEventRecord;
-		try {
-			parsed = record(parseJsonValue(line));
-		} catch (error) {
-			reportAgentDiagnostic(`Ignoring malformed async control event in '${job.asyncDir}':`, error);
-			return false;
-		}
-		if (parsed.type === "subagent.steering.notice") {
-			// SAFETY: the discriminator selects the Suite-owned steering notice protocol; required fields are checked below.
-			const notice = parsed as Partial<SteeringNotice>;
-			if (
-				!isRuntimeString(notice.requestId) ||
-				!isRuntimeString(notice.runId) ||
-				(notice.state !== "failed" && notice.state !== "partial" && notice.state !== "recovered") ||
-				!isRuntimeString(notice.message)
-			)
-				return false;
-			const normalizedSessionId = this.normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
-			if (state.currentSessionId && !normalizedSessionId) return false;
-			const key = `${notice.runId}:${notice.requestId}:${notice.state}`;
-			if (steeringNoticeSeen.has(key)) return false;
-			const now = Date.now();
-			steeringNoticeSeen.set(key, now);
-			if (steeringNoticeSeen.size > 200) {
-				for (const [seenKey, seenAt] of steeringNoticeSeen) {
-					if (now - seenAt > 10 * 60 * 1_000 || steeringNoticeSeen.size > 200) steeringNoticeSeen.delete(seenKey);
-				}
-			}
-			const payload = {
-				...notice,
-				source: "async",
-				asyncDir: job.asyncDir,
-				noticeText: notice.message,
-			};
-			if (normalizedSessionId) Object.assign(payload, { currentSessionId: normalizedSessionId });
-			this.emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, payload);
-			return true;
-		}
-		if (parsed.type !== "subagent.control") return false;
-		// SAFETY: the discriminator selects the Suite-owned control record; channel and event presence are checked next.
-		const controlRecord = parsed as {
-			event?: ControlEvent;
-			channels?: string[];
-			childIntercomTarget?: string;
-			noticeText?: string;
-			intercom?: { to?: string; message?: string };
-		};
-		if (!controlRecord.event || !Array.isArray(controlRecord.channels)) return false;
-		const payload = {
-			event: controlRecord.event,
-			source: "async" as const,
-			asyncDir: job.asyncDir,
-			childIntercomTarget: controlRecord.childIntercomTarget,
-			noticeText:
-				controlRecord.noticeText ??
-				formatControlNoticeMessage(controlRecord.event, controlRecord.childIntercomTarget),
-		};
-		if (controlRecord.channels.includes("event")) this.emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
-		if (
-			controlRecord.event.type !== "active_long_running" &&
-			controlRecord.channels.includes("intercom") &&
-			controlRecord.intercom?.to &&
-			controlRecord.intercom.message
-		) {
-			this.emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
-				...payload,
-				to: controlRecord.intercom.to,
-				message: controlRecord.intercom.message,
-			});
-		}
-		return true;
-	}
-
-	private async observeJob(job: AsyncJobState, kind: ObservationKind): Promise<void> {
-		const observation = this.observationFor(job.asyncId);
-		observation.status ||= kind.status === true;
-		observation.control ||= kind.control === true;
-		if (observation.running) return;
-		observation.running = true;
-		const expectedGeneration = this.trackerGeneration;
-		let changed = false;
-		try {
-			do {
-				const readStatus = observation.status;
-				const readControl = observation.control;
-				observation.status = false;
-				observation.control = false;
-				if (readControl) {
-					const control = await readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
-					changed ||= control.changed;
-					observation.control ||= control.more;
-				}
-				if (readStatus) {
-					const observedStatus = await this.readRunStatus(job.asyncDir);
-					const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
-					if (
-						status &&
-						status.runId === job.asyncId &&
-						this.trackerGeneration === expectedGeneration &&
-						this.state.asyncJobs.get(job.asyncId) === job
-					) {
-						this.applyStatus(job, status);
-						changed = true;
-					}
-				}
-			} while (
-				this.trackerGeneration === expectedGeneration &&
-				this.state.asyncJobs.get(job.asyncId) === job &&
-				(observation.status || observation.control)
-			);
-		} catch (error) {
-			if (this.trackerGeneration === expectedGeneration && this.state.asyncJobs.get(job.asyncId) === job) {
-				reportAgentDiagnostic(
-					`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
-					error,
-				);
-				if (!observation.retryTimer) {
-					observation.retryTimer = setTimeout(() => {
-						delete observation.retryTimer;
-						void this.observeJob(job, { status: true, control: true });
-					}, this.fallbackIntervalMs);
-					observation.retryTimer.unref?.();
-				}
-			}
-		} finally {
-			observation.running = false;
-			if (
-				changed &&
-				this.trackerGeneration === expectedGeneration &&
-				this.state.asyncJobs.get(job.asyncId) === job
-			) {
-				this.scheduleRefresh();
-			}
-		}
-	}
-
-	private startFallbackObserver(job: AsyncJobState, cause: unknown): void {
-		const observation = this.observationFor(job.asyncId);
-		observation.watcher?.close();
-		delete observation.watcher;
-		if (observation.fallbackTimer) return;
-		reportAgentDiagnostic(
-			`Agent status observation for '${job.asyncId}' fell back to asynchronous reconciliation:`,
-			cause,
-		);
-		const timer = setInterval(
-			() => void this.observeJob(job, { status: true, control: true }),
-			this.fallbackIntervalMs,
-		);
-		timer.unref?.();
-		observation.fallbackTimer = timer;
-	}
-
-	private scheduleStatusWatchFallback(job: AsyncJobState): void {
-		const observation = this.observationFor(job.asyncId);
-		if (observation.statusFallbackTimer) return;
-		const timer = setTimeout(() => {
-			delete observation.statusFallbackTimer;
-			if (Date.now() - (observation.lastIpcStatusAt ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
-			void this.observeJob(job, { status: true });
-		}, STATUS_WATCH_FALLBACK_DELAY_MS);
-		timer.unref?.();
-		observation.statusFallbackTimer = timer;
-	}
-
-	private ensureJobObserver(job: AsyncJobState): void {
-		const observation = this.observationFor(job.asyncId);
-		if (observation.watcher || observation.fallbackTimer) return;
-		try {
-			const watcher = this.watchRun(job.asyncDir, (_event, filename) => {
-				if (this.state.asyncJobs.get(job.asyncId) !== job) return;
-				const name = filename?.toString();
-				if (!name || name === "events.jsonl") void this.observeJob(job, { control: true });
-				if (!name || name === "status.json" || name === "process-terminal.json") {
-					this.scheduleStatusWatchFallback(job);
-				}
-			});
-			watcher.on("error", (error) => this.startFallbackObserver(job, error));
-			watcher.unref?.();
-			observation.watcher = watcher;
-		} catch (error) {
-			this.startFallbackObserver(job, error);
-		}
-	}
-
 	readonly ensureObserver = (): void => {
-		for (const job of this.state.asyncJobs.values()) this.ensureJobObserver(job);
+		for (const job of this.state.asyncJobs.values()) this.observer.ensure(job);
 	};
 
 	readonly handleStarted = <Data>(data: Data): void => {
@@ -589,8 +290,8 @@ class AsyncJobTracker {
 		job.turnBudget = info.turnBudget ?? job.turnBudget;
 		state.asyncJobs.set(info.id, job);
 		rememberRecentAgentJob(state, job);
-		this.ensureJobObserver(job);
-		void this.observeJob(job, { status: true, control: true });
+		this.observer.ensure(job);
+		void this.observer.observe(job, { status: true, control: true });
 		this.scheduleRefresh();
 	};
 
@@ -619,9 +320,9 @@ class AsyncJobTracker {
 			if (path.resolve(update.asyncDir) !== path.resolve(job.asyncDir)) return;
 			this.applyStatus(job, status);
 		}
-		this.observationFor(update.id).lastIpcStatusAt = Date.now();
+		this.observer.noteIpcStatus(update.id);
 		rememberRecentAgentJob(state, job);
-		this.ensureJobObserver(job);
+		this.observer.ensure(job);
 		this.scheduleRefresh();
 	};
 
@@ -645,13 +346,13 @@ class AsyncJobTracker {
 		job.stopped = result.stopped ?? job.stopped;
 		job.updatedAt = Date.now();
 		if (result.asyncDir && result.asyncDir !== job.asyncDir) {
-			this.stopObservation(job.asyncId);
+			this.observer.stop(job.asyncId);
 			job.asyncDir = result.asyncDir;
-			this.ensureJobObserver(job);
+			this.observer.ensure(job);
 		}
 		rememberRecentAgentJob(state, job);
 		this.maybeScheduleCleanup(job);
-		void this.observeJob(job, { status: true, control: true });
+		void this.observer.observe(job, { status: true, control: true });
 		this.scheduleRefresh();
 	};
 
@@ -679,13 +380,13 @@ class AsyncJobTracker {
 		job.processTerminal = proof as ProcessTerminalV1;
 		job.updatedAt = Math.max(job.updatedAt ?? 0, proof.observedAt);
 		this.maybeScheduleCleanup(job);
-		void this.observeJob(job, { status: true, control: true });
+		void this.observer.observe(job, { status: true, control: true });
 		this.scheduleRefresh();
 	};
 
 	readonly resetJobs = (): void => {
 		this.trackerGeneration += 1;
-		for (const asyncId of this.observations.keys()) this.stopObservation(asyncId);
+		this.observer.clear();
 		for (const timer of this.state.cleanupTimers.values()) clearTimeout(timer);
 		this.state.cleanupTimers.clear();
 		this.state.asyncJobs.clear();
@@ -709,58 +410,16 @@ class AsyncJobTracker {
 		const controller = new AbortController();
 		const restore = { controller, generation, promise: Promise.resolve() };
 		restore.promise = (async () => {
-			let directories: string[];
-			if (targeted) {
-				const root = path.resolve(this.asyncDirRoot);
-				directories = [...new Set(asyncDirectories.map((directory) => path.resolve(directory)))].filter(
-					(directory) => path.dirname(directory) === root,
-				);
-			} else {
-				let entries: fs.Dirent[];
-				try {
-					entries = await fs.promises.readdir(this.asyncDirRoot, { withFileTypes: true });
-				} catch (error) {
-					if (errnoCode(error) === "ENOENT") {
-						if (this.trackerGeneration === generation && state.currentSessionId === sessionId) {
-							this.restoredGeneration = generation;
-						}
-						return;
-					}
-					throw error;
-				}
-				directories = entries
-					.filter((entry) => entry.isDirectory() && entry.name !== "." && entry.name !== "..")
-					.map((entry) => path.join(this.asyncDirRoot, entry.name));
-			}
-			const statuses = await mapConcurrent(directories, RESTORE_READ_CONCURRENCY, async (asyncDir) => {
-				if (controller.signal.aborted) return undefined;
-				try {
-					const observedStatus = await this.readRunStatus(asyncDir);
-					if (!observedStatus || controller.signal.aborted) return undefined;
-					const status = await recoverLegacyFinalReports(observedStatus);
-					const normalized = this.normalizeAcceptedSessionId(status.sessionId, status.runId);
-					return normalized ? { asyncDir, status, sessionId: normalized } : undefined;
-				} catch (error) {
-					reportAgentDiagnostic(
-						`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`,
-						error,
-					);
-					return undefined;
-				}
-			});
+			const jobs = await scanRestorableAsyncJobs(
+				this.asyncDirRoot,
+				asyncDirectories,
+				this.readRunStatus,
+				(sessionId, runId) => this.normalizeAcceptedSessionId(sessionId, runId),
+				controller.signal,
+			);
 			if (controller.signal.aborted || this.trackerGeneration !== generation || state.currentSessionId !== sessionId)
 				return;
-			const observed = statuses.filter((value) => value !== undefined);
-			const active = observed.filter(({ status }) => status.state === "queued" || status.state === "running");
-			const terminal = observed
-				.filter(({ status }) => status.state !== "queued" && status.state !== "running")
-				.sort(
-					(left, right) =>
-						(right.status.lastUpdate ?? right.status.endedAt ?? right.status.startedAt) -
-						(left.status.lastUpdate ?? left.status.endedAt ?? left.status.startedAt),
-				)
-				.slice(0, MAX_RECENT_AGENT_JOBS);
-			for (const { asyncDir, status, sessionId: normalized } of [...active, ...terminal]) {
+			for (const { asyncDir, status, sessionId: normalized } of jobs) {
 				const existing = state.asyncJobs.get(status.runId);
 				const job = existing ?? this.jobFromStatus(asyncDir, status, normalized, true);
 				if (existing) this.applyStatus(existing, status);
@@ -771,8 +430,8 @@ class AsyncJobTracker {
 					(status.processTerminal !== undefined && status.processTerminal.state !== "observed")
 				) {
 					state.asyncJobs.set(status.runId, job);
-					this.ensureJobObserver(job);
-					void this.observeJob(job, { control: true });
+					this.observer.ensure(job);
+					void this.observer.observe(job, { control: true });
 				}
 			}
 			this.scheduleRefresh();
