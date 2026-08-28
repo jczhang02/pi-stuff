@@ -42,11 +42,7 @@ import { type ImportKind, isServerDisabled, type McpConfig, type ServerEntry } f
 
 export type { ConfigWritePreview, ServerDisabledOverrideResult } from "../config-persistence.ts";
 export {
-	type ConfigDiscoveryPath,
 	type ConfigDiscoverySource,
-	type DiscoveredImportConfig,
-	findAvailableImportConfigs,
-	getConfigDiscoveryPaths,
 	getGenericGlobalConfigPath,
 	getMcpDiscoverySummary,
 	getPiGlobalConfigPath,

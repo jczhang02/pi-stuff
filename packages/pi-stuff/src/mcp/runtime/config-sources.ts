@@ -78,25 +78,19 @@ export interface ConfigSourceSnapshot {
 	readonly spec: ConfigSourceSpec;
 }
 
-export interface ConfigDiscoveryPath {
+export interface ConfigDiscoverySource {
+	id: ConfigSourceSpec["id"];
 	label: string;
 	path: string;
 	exists: boolean;
-}
-
-export interface DiscoveredImportConfig {
-	kind: ImportKind;
-	path: string;
-}
-
-export interface ConfigDiscoverySource extends ConfigDiscoveryPath {
-	id: ConfigSourceSpec["id"];
 	scope: ConfigSourceSpec["scope"];
 	kind: "shared" | "pi";
 	serverCount: number;
 }
 
-export interface ImportConfigSummary extends DiscoveredImportConfig {
+export interface ImportConfigSummary {
+	kind: ImportKind;
+	path: string;
 	serverCount: number;
 }
 
@@ -152,31 +146,6 @@ export function getProjectConfigPath(cwd = process.cwd()): string {
 
 export function getProjectPiConfigPath(cwd = process.cwd()): string {
 	return resolve(cwd, PROJECT_PI_CONFIG_NAME);
-}
-
-export function getConfigDiscoveryPaths(overridePath?: string, cwd = process.cwd()): ConfigDiscoveryPath[] {
-	return getConfigSources(overridePath, cwd).map((source) => ({
-		label: source.label,
-		path: source.readPath,
-		exists: existsSync(source.readPath),
-	}));
-}
-
-export function findAvailableImportConfigs(cwd = process.cwd()): DiscoveredImportConfig[] {
-	const discovered: DiscoveredImportConfig[] = [];
-
-	for (const importKind of importKinds()) {
-		const imported = loadImportedConfig(
-			importKind,
-			cwd,
-			`Failed to discover imported MCP config from ${importKind}:`,
-		);
-		if (imported) {
-			discovered.push({ kind: importKind, path: imported.path });
-		}
-	}
-
-	return discovered;
 }
 
 export function getMcpDiscoverySummary(overridePath?: string, cwd = process.cwd()): McpDiscoverySummary {
