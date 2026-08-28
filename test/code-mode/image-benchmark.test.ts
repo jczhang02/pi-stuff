@@ -8,7 +8,7 @@ import {
 	IMAGE_BENCHMARK_CODES,
 	type ImageBenchmarkCase,
 	sanitizeBenchmarkSearchQuery,
-} from "../../scripts/benchmark-code-mode-image.js";
+} from "../../scripts/code-mode-image-benchmark-core.js";
 import { inspectProviderPayload } from "../fixtures/code-mode-image-benchmark-observer.js";
 
 function benchmarkCase(arm: "baseline" | "candidate", repetition: number): ImageBenchmarkCase {
