@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as runtimeConfig from "../../packages/pi-stuff/src/web/runtime/config.js";
 import piWebAccess, { type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
+import { loadSsrfConfig } from "../../packages/pi-stuff/src/web/runtime/ssrf-protection.js";
 import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
 
 const roots: string[] = [];
@@ -51,6 +52,7 @@ test("Web configuration I/O failures propagate during initialization", async () 
 	await mkdir(join(agentDir, "pi-stuff.json"));
 	expect(() => installWeb(agentDir)).toThrow();
 	expect(() => installWeb(agentDir)).not.toThrow(WebConfigError);
+	expect(() => loadSsrfConfig()).toThrow();
 });
 
 test("explicit update lifts legacy Web configuration and preserves sibling namespaces", async () => {

@@ -20,11 +20,7 @@ type Fetch = typeof fetch;
 const WEB_SEARCH_CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
 function loadConfigRoot(): JsonInputObject | null {
-	try {
-		return readWebConfig() ?? null;
-	} catch {
-		return null;
-	}
+	return readWebConfig() ?? null;
 }
 
 export interface SsrfConfig {
