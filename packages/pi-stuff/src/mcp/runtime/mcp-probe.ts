@@ -98,6 +98,7 @@ export async function probeMcpEndpoint(url: string | URL): Promise<McpProbeResul
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify(INITIALIZE_REQUEST),
+		redirect: "manual",
 		signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
 	});
 	const postClassification = await classifyResponse(postResponse, true);
@@ -107,6 +108,7 @@ export async function probeMcpEndpoint(url: string | URL): Promise<McpProbeResul
 
 	const getResponse = await fetch(url, {
 		headers: { Accept: "text/event-stream" },
+		redirect: "manual",
 		signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
 	});
 	const getClassification = await classifyResponse(getResponse, false);

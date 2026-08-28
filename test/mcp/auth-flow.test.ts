@@ -18,6 +18,7 @@ import {
 	parseOAuthRedirectUri,
 	supportsOAuth,
 } from "../../packages/pi-stuff/src/mcp/runtime/mcp-auth-config.js";
+import { createOAuthRuntime, shutdownOAuth, startAuth } from "../../packages/pi-stuff/src/mcp/runtime/mcp-auth-flow.js";
 import { getAuthSecretStore, isRevokedKeyringError } from "../../packages/pi-stuff/src/mcp/runtime/mcp-auth-keyring.js";
 import {
 	ensureCallbackServer,
@@ -115,6 +116,50 @@ test("OAuth callback requests ignore a malformed Host header", async () => {
 		expect(status).toBe(404);
 	} finally {
 		await stopCallbackServer();
+	}
+});
+
+test("OAuth discovery never follows redirects with configured headers", async () => {
+	const authStoreEnv = "PI_MCP_ADAPTER_TEST_AUTH_STORE";
+	const previousAuthStore = process.env[authStoreEnv];
+	const originalFetch = globalThis.fetch;
+	const controller = new AbortController();
+	const runtime = createOAuthRuntime();
+	let requestInit: RequestInit | undefined;
+	process.env[authStoreEnv] = "memory";
+	resetTestAuthSecretStore();
+	globalThis.fetch = Object.assign(
+		async (_input: string | URL | Request, init?: RequestInit) => {
+			requestInit = init;
+			controller.abort(new Error("OAuth discovery captured"));
+			return new Response(null, { headers: { location: "https://redirect.example" }, status: 302 });
+		},
+		{ preconnect: originalFetch.preconnect },
+	);
+	try {
+		await expect(
+			startAuth(
+				"redirecting",
+				"https://mcp.example",
+				{
+					headers: { "X-API-Key": "configured-secret" },
+					oauth: {
+						clientId: "client",
+						clientSecret: "secret",
+						grantType: "client_credentials",
+					},
+					url: "https://mcp.example",
+				},
+				{ runtime, signal: controller.signal },
+			),
+		).rejects.toThrow("OAuth discovery captured");
+		expect(requestInit?.redirect).toBe("manual");
+	} finally {
+		globalThis.fetch = originalFetch;
+		await shutdownOAuth(runtime);
+		resetTestAuthSecretStore();
+		if (previousAuthStore === undefined) delete process.env[authStoreEnv];
+		else process.env[authStoreEnv] = previousAuthStore;
 	}
 });
 

@@ -186,6 +186,7 @@ async function probeAuthDiscovery(
 					clientInfo: { name: "pi-mcp-adapter", version: "2.11.0" },
 				},
 			}),
+			redirect: "manual",
 			signal: discoverySignal,
 		});
 		const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);

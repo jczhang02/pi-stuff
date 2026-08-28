@@ -33,9 +33,11 @@ test("bounds and cancels MCP probe response bodies", async () => {
 	const jsonRpcResponse = Response.json({ id: 1, jsonrpc: "2.0", result: { capabilities: {} } });
 
 	const responses = [sseResponse, jsonRpcResponse, oversizedResponse];
+	const requestInits: Array<RequestInit | undefined> = [];
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = Object.assign(
-		async (_input: string | URL | Request, _init?: RequestInit) => {
+		async (_input: string | URL | Request, init?: RequestInit) => {
+			requestInits.push(init);
 			const response = responses.shift();
 			if (!response) throw new Error("Unexpected MCP probe request");
 			return response;
@@ -57,6 +59,7 @@ test("bounds and cancels MCP probe response bodies", async () => {
 		expect((await probeMcpEndpoint("https://mcp.example/large")).isMcp).toBe(false);
 		expect(oversizedPulls).toBeLessThan(128);
 		expect(oversizedCancelled).toBe(true);
+		expect(requestInits.every((init) => init?.redirect === "manual")).toBe(true);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
