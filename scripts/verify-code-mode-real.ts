@@ -48,6 +48,8 @@ async function runPi(
 		"--no-themes",
 		"--offline",
 		"--approve",
+		"--name",
+		"Code Mode acceptance",
 		"--provider",
 		"pi-stuff-code-mode-fixture",
 		"--model",
