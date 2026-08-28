@@ -61,15 +61,13 @@ async function commitForegroundStart(
 	prepared: PreparedForegroundConfig,
 	hooks?: ForegroundLifecycleHooks,
 	onLifecycleCommitted?: (() => void) | undefined,
-): Promise<void> {
+): Promise<AsyncStatus> {
 	const { config, directoryClaim, recoveries } = prepared;
 	try {
 		persistRecoveries(config.asyncDir, recoveries);
 		initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, tasks.length);
-		writePrivateAtomicJson(
-			path.join(config.asyncDir, "status.json"),
-			createInitialStatus(config, config.startedAt ?? Date.now()),
-		);
+		const initialStatus = createInitialStatus(config, config.startedAt ?? Date.now());
+		writePrivateAtomicJson(path.join(config.asyncDir, "status.json"), initialStatus);
 		await hooks?.beforeForegroundStart?.({
 			runId: data.runId,
 			asyncDir: config.asyncDir,
@@ -80,6 +78,7 @@ async function commitForegroundStart(
 			throw new Error(`Foreground Agent runtime ownership changed before '${data.runId}' could start.`);
 		}
 		onLifecycleCommitted?.();
+		return initialStatus;
 	} catch (error) {
 		// Remove only the exact unstarted inode; collisions remain recovery evidence.
 		directoryClaim.cleanup();
@@ -104,7 +103,7 @@ export async function executeForegroundLifecycle(
 	onLifecycleCommitted?: (() => void) | undefined,
 ): Promise<AgentToolResult<Details>> {
 	const { config, directoryClaim } = prepared;
-	await commitForegroundStart(data, tasks, prepared, hooks, onLifecycleCommitted);
+	const initialStatus = await commitForegroundStart(data, tasks, prepared, hooks, onLifecycleCommitted);
 	const emitUpdate = (update: AgentToolResult<Details>) => {
 		try {
 			onUpdate?.(update);
@@ -115,16 +114,16 @@ export async function executeForegroundLifecycle(
 	const control = createForegroundControl(data, config, tasks);
 	runtime.state.foregroundControls.set(data.runId, control);
 	runtime.state.lastForegroundControlId = data.runId;
-	let liveStatus: AsyncStatus | undefined;
+	let liveStatus: AsyncStatus = initialStatus;
 	const nestedProjectionTimer = setInterval(() => {
 		refreshForegroundNestedProjection(control);
 		if (data.inheritedNestedRoute) {
-			emitNestedLifecycle(data, config, control, tasks, control.startedAt, undefined, true, liveStatus);
+			emitNestedLifecycle(data, config, control.startedAt, liveStatus, undefined, true);
 		}
 		runtime.onForegroundStatus?.();
 	}, 500);
 	nestedProjectionTimer.unref?.();
-	emitNestedLifecycle(data, config, control, tasks, control.startedAt);
+	emitNestedLifecycle(data, config, control.startedAt, liveStatus);
 	emitUpdate({
 		content: [{ type: "text", text: `${data.mode === "parallel" ? "Agents" : "Agent"} running in foreground.` }],
 		details: { mode: data.mode, runId: data.runId, results: [], context: data.context },
@@ -134,7 +133,7 @@ export async function executeForegroundLifecycle(
 	try {
 		result = await engine(config, signal, {
 			onStatus(status) {
-				liveStatus = status;
+				liveStatus = { ...liveStatus, ...status };
 				updateForegroundControl(control, status);
 				runtime.onForegroundStatus?.();
 			},
@@ -157,12 +156,12 @@ export async function executeForegroundLifecycle(
 		if (runtime.state.lastForegroundControlId === data.runId) runtime.state.lastForegroundControlId = null;
 	}
 	if (abortedBeforeStart) {
-		emitNestedLifecycle(data, config, control, tasks, control.startedAt, result);
+		emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
 		emitUpdate(result);
 		return result;
 	}
 	rememberForegroundResult(runtime.state, data, result, tasks, control.startedAt, config.asyncDir);
-	emitNestedLifecycle(data, config, control, tasks, control.startedAt, result);
+	emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
 	for (const [index, child] of result.details.results.entries()) {
 		if (child.detached) continue;
 		try {

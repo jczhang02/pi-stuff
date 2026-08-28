@@ -2,7 +2,6 @@
 
 import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { JsonInputValue } from "../../../shared/json-value.js";
 import type { AsyncJobState } from "../runs/background/async-contract.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { NestedRouteInfo, NestedRunSummary } from "../runs/shared/nested-contract.ts";
@@ -36,19 +35,16 @@ export interface ForegroundResumeChild {
 	currentToolStartedAt?: number | undefined;
 	currentPath?: string | undefined;
 	turnCount?: number;
-	tokens?: number;
 	contextUsage?: AgentContextUsage;
 	toolCount?: number;
 	exitCode?: number;
 	error?: string;
 	finalOutput?: string;
 	savedOutputPath?: string;
-	outputSaveError?: string;
 	artifactPaths?: ArtifactPaths;
 	transcriptPath?: string;
 	transcriptError?: string;
 	detachedReason?: string;
-	acceptance?: JsonInputValue;
 	launchContractDigest?: string;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
@@ -83,12 +79,7 @@ export interface ForegroundChildControl {
 	currentToolStartedAt?: number | undefined;
 	currentPath?: string | undefined;
 	turnCount?: number | undefined;
-	tokens?: number;
 	contextUsage?: AgentContextUsage | undefined;
-	inputTokens?: number;
-	outputTokens?: number;
-	model?: string;
-	thinking?: string;
 	toolCount?: number | undefined;
 	interrupt?: () => boolean;
 }
@@ -114,12 +105,7 @@ export interface ForegroundRunControl {
 	currentToolStartedAt?: number;
 	currentPath?: string;
 	turnCount?: number;
-	tokens?: number;
 	contextUsage?: AgentContextUsage;
-	inputTokens?: number;
-	outputTokens?: number;
-	model?: string;
-	thinking?: string;
 	toolCount?: number;
 	/** Independently tracked children for foreground parallel work and Agent inspection. */
 	activeChildren?: Map<number, ForegroundChildControl>;

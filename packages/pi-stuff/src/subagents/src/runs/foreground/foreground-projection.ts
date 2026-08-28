@@ -9,13 +9,12 @@ import type {
 	ForegroundResumeRun,
 	ForegroundRunControl,
 	NestedRouteInfo,
-	NestedRunSummary,
-	NestedStepSummary,
 	SubagentState,
 } from "../../shared/types.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
 import {
+	nestedSummaryFromAsyncStatus,
 	type resolveNestedParentAddressFromEnv,
 	updateForegroundNestedProjection,
 	writeNestedEvent,
@@ -123,7 +122,7 @@ export function refreshForegroundNestedProjection(control: ForegroundRunControl)
 	}
 }
 
-function nestedState(result?: AgentToolResult<Details>): "running" | "complete" | "failed" | "paused" | "stopped" {
+function nestedState(result?: AgentToolResult<Details>): AsyncStatus["state"] {
 	if (!result) return "running";
 	if (result.details.results.some((child) => child.detached)) return "running";
 	if (result.details.stopped || result.details.results.some((child) => child.stopped)) return "stopped";
@@ -133,106 +132,75 @@ function nestedState(result?: AgentToolResult<Details>): "running" | "complete" 
 		: "complete";
 }
 
+function foregroundResultStatus(child: Details["results"][number]): ForegroundResumeChild["status"] {
+	return child.detached
+		? "detached"
+		: child.stopped
+			? "stopped"
+			: child.interrupted
+				? "paused"
+				: child.exitCode === 0
+					? "completed"
+					: "failed";
+}
+
+function nestedResultSteps(status: AsyncStatus, result?: AgentToolResult<Details>): AsyncStatus["steps"] {
+	if (!result?.details.results.length) return status.steps;
+	return result.details.results.map((child, index) => {
+		const resultStatus = foregroundResultStatus(child);
+		const nestedStatus =
+			resultStatus === "detached" ? "running" : resultStatus === "completed" ? "complete" : resultStatus;
+		const projected: NonNullable<AsyncStatus["steps"]>[number] = {
+			...status.steps?.[index],
+			...child,
+			agent: child.agent,
+			status: nestedStatus,
+		};
+		if (child.crashed) projected.agentStatus = "crashed";
+		return projected;
+	});
+}
+
 export function emitNestedLifecycle(
 	data: ForegroundProjectionData,
 	config: BackgroundRunnerConfig,
-	control: ForegroundRunControl,
-	tasks: readonly ForegroundTask[],
 	startedAt: number,
+	status: AsyncStatus,
 	result?: AgentToolResult<Details>,
 	updated = false,
-	liveStatus?: AsyncStatus,
 ): void {
 	if (!data.inheritedNestedRoute || !data.nestedParentAddress) return;
 	const now = Date.now();
 	const state = nestedState(result);
 	const terminalResult = result && state !== "running" ? result : undefined;
-	const liveSteps = liveStatus?.steps?.map((step): NestedStepSummary => {
-		const projected: NestedStepSummary = { agent: step.agent, status: step.status };
-		if (step.delegatedTask) projected.delegatedTask = step.delegatedTask;
-		if (step.task) projected.task = step.task;
-		if (step.label) projected.description = step.label;
-		if (
-			step.processTerminal?.state === "observed" &&
-			step.processTerminal.instances.some(
-				(instance) => instance.kind === "pi-writer" && instance.terminationOrigin === "external",
-			)
-		) {
-			projected.agentStatus = "crashed";
-		}
-		if (step.sessionFile) projected.sessionFile = step.sessionFile;
-		if (step.transcriptPath) projected.transcriptPath = step.transcriptPath;
-		if (step.transcriptError) projected.transcriptError = step.transcriptError;
-		if (step.activityState) projected.activityState = step.activityState;
-		if (step.lastActivityAt) projected.lastActivityAt = step.lastActivityAt;
-		if (step.currentTool) projected.currentTool = step.currentTool;
-		if (step.currentToolStartedAt) projected.currentToolStartedAt = step.currentToolStartedAt;
-		if (step.currentPath) projected.currentPath = step.currentPath;
-		if (step.turnCount !== undefined) projected.turnCount = step.turnCount;
-		if (step.toolCount !== undefined) projected.toolCount = step.toolCount;
-		if (step.error) projected.error = step.error;
-		return projected;
-	});
-	const projectedLiveSteps = liveSteps?.length
-		? liveSteps
-		: [...(control.activeChildren?.values() ?? [])].map((child): NestedStepSummary => {
-				const projected: NestedStepSummary = { agent: child.agent, status: child.status ?? "running" };
-				if (child.task) projected.task = child.task;
-				if (child.description) projected.description = child.description;
-				if (child.currentActivityState) projected.activityState = child.currentActivityState;
-				if (child.lastActivityAt) projected.lastActivityAt = child.lastActivityAt;
-				if (child.currentTool) projected.currentTool = child.currentTool;
-				if (child.currentToolStartedAt) projected.currentToolStartedAt = child.currentToolStartedAt;
-				if (child.currentPath) projected.currentPath = child.currentPath;
-				if (child.turnCount !== undefined) projected.turnCount = child.turnCount;
-				if (child.toolCount !== undefined) projected.toolCount = child.toolCount;
-				return projected;
-			});
-	const nestedChild: NestedRunSummary = {
-		id: data.runId,
-		parentRunId: data.nestedParentAddress.parentRunId,
-		depth: data.nestedParentAddress.depth,
-		path: data.nestedParentAddress.path,
-		asyncDir: config.asyncDir,
-		ownerState: state === "running" ? "live" : "gone",
-		mode: data.mode,
-		state,
-		agents: tasks.map((task) => task.agent),
-		startedAt,
-		lastUpdate: now,
-	};
-	if (data.nestedParentAddress.parentStepIndex !== undefined)
-		nestedChild.parentStepIndex = data.nestedParentAddress.parentStepIndex;
-	if (tasks[0]) nestedChild.agent = tasks[0].agent;
-	if (terminalResult) nestedChild.endedAt = now;
-	if (result?.details.results.length) {
-		nestedChild.steps = result.details.results.map((child, index): NestedStepSummary => {
-			const projected: NestedStepSummary = {
-				agent: child.agent,
-				status: child.detached
-					? "running"
-					: child.stopped
-						? "stopped"
-						: child.interrupted
-							? "paused"
-							: child.exitCode === 0
-								? "complete"
-								: "failed",
-			};
-			if (tasks[index]?.task) projected.task = tasks[index].task;
-			if (tasks[index]?.description) projected.description = tasks[index].description;
-			if (child.crashed) projected.agentStatus = "crashed";
-			if (child.sessionFile) projected.sessionFile = child.sessionFile;
-			if (child.transcriptPath) projected.transcriptPath = child.transcriptPath;
-			if (child.transcriptError) projected.transcriptError = child.transcriptError;
-			if (child.error) projected.error = child.error;
-			if (child.children?.length) projected.children = child.children;
-			return projected;
-		});
-	} else if (projectedLiveSteps.length) {
-		nestedChild.steps = projectedLiveSteps;
-	}
 	try {
+		const projectedStatus: AsyncStatus = {
+			...status,
+			runId: data.runId,
+			mode: data.mode,
+			state,
+			startedAt,
+			endedAt: terminalResult ? now : undefined,
+			lastUpdate: now,
+			steps: nestedResultSteps(status, result),
+		};
+		const fallback: Parameters<typeof nestedSummaryFromAsyncStatus>[2] = {
+			id: data.runId,
+			parentRunId: data.nestedParentAddress.parentRunId,
+			depth: data.nestedParentAddress.depth,
+			path: data.nestedParentAddress.path,
+			mode: data.mode,
+			ts: now,
+		};
+		if (data.nestedParentAddress.parentStepIndex !== undefined)
+			fallback.parentStepIndex = data.nestedParentAddress.parentStepIndex;
+		const nestedChild = nestedSummaryFromAsyncStatus(projectedStatus, config.asyncDir, fallback);
+		const agents = projectedStatus.steps?.map((step) => step.agent) ?? [];
+		const agent = agents[0];
+		if (agent) {
+			nestedChild.agent = agent;
+			nestedChild.agents = agents;
+		}
 		const event: Parameters<typeof writeNestedEvent>[1] = {
 			type: terminalResult
 				? "subagent.nested.completed"
@@ -275,15 +243,7 @@ export function rememberForegroundResult(
 				description: tasks[index]?.description,
 				task: tasks[index]?.task,
 				startedAt,
-				status: child.detached
-					? "detached"
-					: child.stopped
-						? "stopped"
-						: child.interrupted
-							? "paused"
-							: child.exitCode === 0
-								? "completed"
-								: "failed",
+				status: foregroundResultStatus(child),
 				exitCode: child.exitCode,
 				updatedAt,
 			};
