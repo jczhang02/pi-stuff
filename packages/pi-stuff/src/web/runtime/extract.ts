@@ -118,7 +118,7 @@ async function extractWithJinaReader(
 			return null;
 		}
 
-		const content = await res.text();
+		const content = await readTextResponseWithLimit(res, 5 * 1024 * 1024);
 		activityMonitor.logComplete(activityId, res.status);
 
 		const contentStart = content.indexOf("Markdown Content:");
