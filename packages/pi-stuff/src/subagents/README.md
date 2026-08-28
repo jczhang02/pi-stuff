@@ -30,8 +30,9 @@ restore scans. `fallback-session.ts` only freezes and restores a fork between el
 `runs/shared/steering-inbox.ts` owns durable steering delivery and acknowledgement state;
 `runtime/runtime-state.ts` owns in-memory foreground and Extension state. `shared/types.ts` retains common configuration
 and the compatibility type facade. Within foreground execution, `executor-contract.ts` defines the private composition
-contract. `launch-preparation.ts` owns one launch-admission transaction across inputs and budgets, context/model
-capacity, fork-session selection, and session-root/nested-route setup; `launch-builders.ts` maps its admitted plan to
+contract. `launch-preparation.ts` owns one launch-admission transaction across inputs, budgets, fork-session selection,
+and session-root/nested-route setup; `launch-model-planning.ts` owns model-capacity and projection admission;
+`launch-builders.ts` maps the admitted plan to
 the existing runner engines. `foreground-run-claim.ts`, `foreground-projection.ts`, and `foreground-lifecycle.ts`
 separately own private directory proof, current/nested state projection, and execution settlement.
 `runtime/session-governor.ts` owns Agent lifecycle operations plus the stable public facade;

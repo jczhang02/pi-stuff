@@ -27,7 +27,7 @@ import {
 } from "./executor-contract.ts";
 import { executeForegroundLifecycle, type PreparedForegroundConfig } from "./foreground-lifecycle.ts";
 import { claimForegroundRunDirectory } from "./foreground-run-claim.ts";
-import { taskInputs } from "./launch-preparation.ts";
+import { taskInputs } from "./launch-model-planning.ts";
 
 function childTask(data: PreparedLaunch, task: TaskParam, index: number): string {
 	const taskText = data.context === "fork" ? wrapForkTask(task.task) : task.task;
