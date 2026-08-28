@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
 import { readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
@@ -13,7 +13,15 @@ import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.t
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../shared/session-identity.ts";
 import { tryAcquireStatusMutationClaimAsync } from "../shared/status-mutation.ts";
-import type { AgentContextUsage, AsyncStatus, ForegroundResumeChild, ForegroundResumeRun } from "../shared/types.ts";
+import type {
+	AgentContextUsage,
+	AsyncJobStep,
+	AsyncStatus,
+	Details,
+	ForegroundResumeChild,
+	ForegroundResumeRun,
+	SingleResult,
+} from "../shared/types.ts";
 import { readStatusAsync } from "../shared/utils.ts";
 
 const MAX_REPLAYED_FOREGROUND_RUNS = 200;
@@ -21,54 +29,27 @@ const MAX_REPLAYED_CHILDREN = 20;
 const MAX_FOREGROUND_COMPLETION_BYTES = 32 * 1024 * 1024;
 const FOREGROUND_OWNER_CRASH = "Foreground Agent crashed because its owning Pi process exited.";
 
-interface ForegroundReplayRecord {
-	readonly activityState?: unknown;
-	readonly agent?: unknown;
-	readonly agentStatus?: unknown;
-	readonly capabilityCeiling?: unknown;
-	readonly children?: unknown;
-	readonly context?: unknown;
-	readonly contextUsage?: unknown;
-	readonly contextWindow?: unknown;
-	readonly crashed?: unknown;
-	readonly currentPath?: unknown;
-	readonly currentTool?: unknown;
-	readonly currentToolStartedAt?: unknown;
-	readonly cwd?: unknown;
-	readonly details?: unknown;
-	readonly endedAt?: unknown;
-	readonly error?: unknown;
-	readonly exitCode?: unknown;
-	readonly finalOutput?: unknown;
-	readonly id?: unknown;
-	readonly interrupted?: unknown;
-	readonly label?: unknown;
-	readonly lastActivityAt?: unknown;
-	readonly launchContractDigest?: unknown;
-	readonly message?: unknown;
-	readonly mode?: unknown;
-	readonly model?: unknown;
-	readonly output?: unknown;
-	readonly recentOutput?: unknown;
-	readonly results?: unknown;
-	readonly role?: unknown;
-	readonly runId?: unknown;
-	readonly sessionFile?: unknown;
-	readonly state?: unknown;
-	readonly stopped?: unknown;
-	readonly success?: unknown;
-	readonly summary?: unknown;
-	readonly task?: unknown;
-	readonly thinking?: unknown;
-	readonly timestamp?: unknown;
-	readonly toolCount?: unknown;
-	readonly toolName?: unknown;
-	readonly transcriptError?: unknown;
-	readonly transcriptPath?: unknown;
-	readonly tokens?: unknown;
-	readonly turnCount?: unknown;
-	readonly type?: unknown;
-}
+type ForegroundReplayKey =
+	| keyof AgentContextUsage
+	| keyof AsyncJobStep
+	| keyof AsyncStatus
+	| keyof Details
+	| keyof ForegroundResumeChild
+	| keyof SingleResult;
+type RawReplayFields = { readonly [Key in ForegroundReplayKey]?: JsonValue };
+
+type ForegroundReplayRecord = RawReplayFields & {
+	readonly details?: JsonValue;
+	readonly id?: JsonValue;
+	readonly message?: JsonValue;
+	readonly output?: JsonValue;
+	readonly role?: JsonValue;
+	readonly success?: JsonValue;
+	readonly summary?: JsonValue;
+	readonly timestamp?: JsonValue;
+	readonly toolName?: JsonValue;
+	readonly type?: JsonValue;
+};
 
 function record<Value>(value: Value): ForegroundReplayRecord {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return {};

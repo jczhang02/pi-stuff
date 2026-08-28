@@ -1,10 +1,24 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
+import type { JsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
 import { resolveNestedAsyncDir } from "../runs/shared/nested-events.ts";
 import { sanitizeSummary } from "../runs/shared/nested-summary.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
-import type { AgentContextUsage } from "../shared/types.ts";
+import type {
+	AgentContextUsage,
+	AsyncJobState,
+	AsyncJobStep,
+	AsyncStatus,
+	ForegroundChildControl,
+	ForegroundResumeChild,
+	ForegroundRunControl,
+	NestedRunSummary,
+	NestedStepSummary,
+	PiWriterProcessInstanceExitV1,
+	ProcessTerminalV1,
+	SingleResult,
+} from "../shared/types.ts";
 export type AgentStatus =
 	| "queued"
 	| "running"
@@ -38,69 +52,41 @@ export interface AgentNestedDetail extends AgentTranscriptTarget {
 	readonly depth: number;
 	readonly name: string;
 	readonly description: string;
-	readonly task: string;
 	readonly status: AgentStatus;
 	readonly nestedCount: number;
 }
 export type AgentProjectionValue = boolean | null | number | object | string | undefined;
 
-export interface AgentProjectionRecord {
-	readonly activityState?: AgentProjectionValue;
-	readonly agent?: AgentProjectionValue;
-	readonly agentStatus?: AgentProjectionValue;
-	readonly artifactPaths?: AgentProjectionValue;
-	readonly attempt?: AgentProjectionValue;
-	readonly attentionKind?: AgentProjectionValue;
-	readonly cancelledBy?: AgentProjectionValue;
-	readonly children?: AgentProjectionValue;
-	readonly crashed?: AgentProjectionValue;
-	readonly contextUsage?: AgentProjectionValue;
-	readonly contextWindow?: AgentProjectionValue;
-	readonly currentActivityState?: AgentProjectionValue;
-	readonly currentTool?: AgentProjectionValue;
-	readonly delegatedTask?: AgentProjectionValue;
-	readonly depth?: AgentProjectionValue;
-	readonly description?: AgentProjectionValue;
-	readonly endedAt?: AgentProjectionValue;
-	readonly error?: AgentProjectionValue;
-	readonly execution?: AgentProjectionValue;
-	readonly finalOutput?: AgentProjectionValue;
-	readonly id?: AgentProjectionValue;
-	readonly instances?: AgentProjectionValue;
-	readonly interrupted?: AgentProjectionValue;
-	readonly kind?: AgentProjectionValue;
-	readonly label?: AgentProjectionValue;
-	readonly legacyFinalReportComplete?: AgentProjectionValue;
-	readonly output?: AgentProjectionValue;
-	readonly parentRunId?: AgentProjectionValue;
-	readonly parentStepIndex?: AgentProjectionValue;
-	readonly phase?: AgentProjectionValue;
-	readonly processTerminal?: AgentProjectionValue;
-	readonly reason?: AgentProjectionValue;
-	readonly recentOutput?: AgentProjectionValue;
-	readonly resuming?: AgentProjectionValue;
-	readonly savedOutputPath?: AgentProjectionValue;
-	readonly sessionFile?: AgentProjectionValue;
-	readonly startedAt?: AgentProjectionValue;
-	readonly state?: AgentProjectionValue;
-	readonly status?: AgentProjectionValue;
-	readonly steps?: AgentProjectionValue;
-	readonly stopped?: AgentProjectionValue;
-	readonly stoppedBy?: AgentProjectionValue;
-	readonly stopping?: AgentProjectionValue;
-	readonly structuredOutputPath?: AgentProjectionValue;
-	readonly summary?: AgentProjectionValue;
-	readonly task?: AgentProjectionValue;
-	readonly terminationOrigin?: AgentProjectionValue;
-	readonly timedOut?: AgentProjectionValue;
-	readonly toolBudgetBlocked?: AgentProjectionValue;
-	readonly transcriptPath?: AgentProjectionValue;
-	readonly tokens?: AgentProjectionValue;
-	readonly turnBudgetExceeded?: AgentProjectionValue;
-	readonly uiStatus?: AgentProjectionValue;
-	readonly waitReason?: AgentProjectionValue;
-	readonly waitingFor?: AgentProjectionValue;
-}
+type AgentProjectionKey =
+	| keyof AgentContextUsage
+	| keyof AsyncJobState
+	| keyof AsyncJobStep
+	| keyof AsyncStatus
+	| keyof ForegroundChildControl
+	| keyof ForegroundResumeChild
+	| keyof ForegroundRunControl
+	| keyof NestedRunSummary
+	| keyof NestedStepSummary
+	| keyof PiWriterProcessInstanceExitV1
+	| keyof ProcessTerminalV1
+	| keyof Extract<ProcessTerminalV1, { state: "observed" }>
+	| keyof Extract<ProcessTerminalV1, { state: "unknown" }>
+	| keyof SingleResult;
+type RawProjectionFields = { readonly [Key in AgentProjectionKey]?: JsonValue };
+
+export type AgentProjectionRecord = RawProjectionFields & {
+	readonly attentionKind?: JsonValue;
+	readonly cancelledBy?: JsonValue;
+	readonly execution?: JsonValue;
+	readonly output?: JsonValue;
+	readonly resuming?: JsonValue;
+	readonly stoppedBy?: JsonValue;
+	readonly stopping?: JsonValue;
+	readonly summary?: JsonValue;
+	readonly uiStatus?: JsonValue;
+	readonly waitReason?: JsonValue;
+	readonly waitingFor?: JsonValue;
+};
 export const ACTIVE_SOURCE_STATUSES = new Set(["queued", "running"]);
 export const TERMINAL_SOURCE_STATUSES = new Set(["complete", "completed", "failed", "paused", "stopped"]);
 export const TERMINAL_STATUSES = new Set<AgentStatus>([

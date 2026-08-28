@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -100,28 +100,19 @@ export interface RunnerCloseObservation {
 	signal: string | null;
 }
 
-interface ProcessTerminalRecord {
-	readonly attempt?: unknown;
-	readonly childIndex?: unknown;
-	readonly closeObservedAt?: unknown;
-	readonly expectedWriters?: unknown;
-	readonly exitCode?: unknown;
-	readonly instances?: unknown;
-	readonly kind?: unknown;
-	readonly observedAt?: unknown;
-	readonly processInstanceId?: unknown;
-	readonly resumeDisposition?: unknown;
-	readonly revivalLeaseReleaseAcknowledged?: unknown;
-	readonly revivalLeaseToken?: unknown;
-	readonly runId?: unknown;
-	readonly runnerProcessInstanceId?: unknown;
-	readonly sessionFile?: unknown;
-	readonly signal?: unknown;
-	readonly state?: unknown;
-	readonly terminationOrigin?: unknown;
-	readonly version?: unknown;
-	readonly writers?: unknown;
-}
+type ProcessTerminalRecord = Readonly<
+	Partial<
+		Record<
+			| keyof ProcessTerminalCandidate
+			| keyof ProcessTerminalBaseV1
+			| keyof RunnerCloseObservation
+			| keyof PiWriterProcessInstanceExitV1
+			| keyof Extract<ProcessTerminalV1, { state: "observed" }>
+			| keyof Extract<ProcessTerminalV1, { state: "unknown" }>,
+			JsonValue
+		>
+	>
+>;
 
 function isRecord<Value>(value: Value): value is Value & ProcessTerminalRecord {
 	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
