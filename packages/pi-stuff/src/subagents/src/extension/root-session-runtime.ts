@@ -282,13 +282,6 @@ export class RootSessionRuntime {
 		this.governorCompatibilityScope = buildSessionGovernorCompatibilityScope(identity, entries);
 		state.foregroundRuns = state.currentSessionId ? replayForegroundRuns(entries, state.currentSessionId) : new Map();
 		state.parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
-		state.subagentSpawns = {
-			sessionId: state.currentSessionId,
-			count: 0,
-			configuredLimit: this.input.config.maxAgentsPerSession,
-			granted: 0,
-			grantHistory: [],
-		};
 		this.input.bindContext(ctx);
 		this.bindExecutionGovernor(ctx);
 		try {

@@ -16,7 +16,7 @@ import {
 	readBoundedOwnedFileSnapshot,
 	readBoundedOwnedFileSnapshotAsync,
 } from "./private-directory.ts";
-import type { AsyncStatus, ErrorInfo, SingleResult } from "./types.ts";
+import type { AsyncStatus, ErrorInfo } from "./types.ts";
 
 // ============================================================================
 // File System Utilities
@@ -350,10 +350,6 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 		}
 	}
 	return validTextParts[0] ?? "";
-}
-
-export function getSingleResultOutput(result: Pick<SingleResult, "finalOutput" | "messages">): string {
-	return result.finalOutput ?? getFinalOutput(result.messages ?? []);
 }
 
 export const MAX_STREAMED_OUTPUT_LINE_CHARS = 2000;

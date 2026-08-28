@@ -4,7 +4,6 @@ import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details, SingleResult } from "../shared/types.ts";
-import { getSingleResultOutput } from "../shared/utils.ts";
 
 const MAX_CHILD_SUMMARY_CHARS = 4_000;
 const MAX_PARENT_RESULT_CHARS = 12_000;
@@ -228,12 +227,12 @@ function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" 
 }
 
 function childSummary(result: SingleResult, limit: number): string {
-	const output = getSingleResultOutput(result).trim();
+	const output = result.finalOutput?.trim() ?? "";
 	const error = result.error?.trim();
 	const raw = error
 		? `Runtime error: ${error}${output ? `\nPartial child report:\n${output}` : ""}`
 		: output || "(no report)";
-	const fullReportPath = result.outputReference?.path ?? result.savedOutputPath ?? result.artifactPaths?.outputPath;
+	const fullReportPath = result.artifactPaths?.outputPath;
 	return boundedReport(scanAgentReport(raw).text, limit, fullReportPath);
 }
 

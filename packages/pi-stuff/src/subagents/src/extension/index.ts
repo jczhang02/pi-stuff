@@ -201,13 +201,6 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 		currentSessionId: null,
 		currentSessionScope: null,
 		parentSessionFile: null,
-		subagentSpawns: {
-			sessionId: null,
-			count: 0,
-			configuredLimit: config.maxAgentsPerSession,
-			granted: 0,
-			grantHistory: [],
-		},
 		asyncJobs: new Map(),
 		recentAgentJobs: new Map(),
 		foregroundRuns: new Map(),

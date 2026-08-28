@@ -24,16 +24,7 @@ export interface MaxOutputConfig {
 	lines?: number;
 }
 
-export type OutputMode = "inline" | "file-only";
-
 export interface JsonSchemaObject extends JsonInputObject {}
-
-export interface SavedOutputReference {
-	path: string;
-	bytes: number;
-	lines: number;
-	message: string;
-}
 
 export interface Usage {
 	input: number;
@@ -126,8 +117,6 @@ export interface ControlEvent {
 	agent: string;
 	index?: number;
 	runId: string;
-	nestedRunId?: string;
-	nestingPath?: Array<{ runId: string; stepIndex?: number; agent?: string }>;
 	message: string;
 	reason?:
 		| "idle"

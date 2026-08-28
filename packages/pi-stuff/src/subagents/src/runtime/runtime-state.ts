@@ -6,14 +6,12 @@ import type { JsonInputValue } from "../../../shared/json-value.js";
 import type { AsyncJobState } from "../runs/background/async-contract.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { NestedRouteInfo, NestedRunSummary } from "../runs/shared/nested-contract.ts";
-import type { SpawnBudgetGrant } from "../runs/shared/run-result.ts";
 import type { SessionCompatibilityScope } from "../shared/session-identity.ts";
 import type {
 	ActivityState,
 	AgentContextUsage,
 	ArtifactDirPreference,
 	ArtifactPaths,
-	OutputMode,
 	SubagentResultStatus,
 	SubagentRunMode,
 } from "../shared/types.ts";
@@ -44,7 +42,6 @@ export interface ForegroundResumeChild {
 	exitCode?: number;
 	error?: string;
 	finalOutput?: string;
-	outputMode?: OutputMode;
 	savedOutputPath?: string;
 	outputSaveError?: string;
 	artifactPaths?: ArtifactPaths;
@@ -143,13 +140,6 @@ export interface SubagentState {
 	parentSessionFile?: string | null;
 	/** Last valid parent session model observed for this session; used when continuation contexts omit ctx.model. */
 	lastParentModel?: { provider: string; id: string };
-	subagentSpawns?: {
-		sessionId: string | null;
-		count: number;
-		configuredLimit?: number | null;
-		granted?: number;
-		grantHistory?: SpawnBudgetGrant[];
-	};
 	asyncJobs: Map<string, AsyncJobState>;
 	/** Current-session active and recent runs retained for the Agent roster. */
 	recentAgentJobs?: Map<string, AsyncJobState>;
