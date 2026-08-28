@@ -143,6 +143,24 @@ async function runOldEnvelopeBenchmark(root: string, temporary: string): Promise
 	return providerRequest(line);
 }
 
+async function stopArm(tmux: Tmux, session: string, socket: string): Promise<void> {
+	try {
+		await tmux(["send-keys", "-t", session, "C-d"]);
+		const deadline = Date.now() + 5_000;
+		while (Date.now() < deadline) {
+			const paneDead = (await tmux(["display-message", "-p", "-t", session, "#{pane_dead}"])).stdout.trim();
+			if (paneDead === "1") break;
+			await Bun.sleep(10);
+		}
+	} catch {
+		// The pane may already have exited while the verifier captured its final frame.
+	}
+	Bun.spawnSync(["tmux", "-S", socket, "kill-session", "-t", session], {
+		stderr: "ignore",
+		stdout: "ignore",
+	});
+}
+
 async function runArm(
 	root: string,
 	temporary: string,
@@ -256,21 +274,7 @@ async function runArm(
 		const styled = await capture(tmux, session, true);
 		return { activity: activityBlock(plain, styled, activityMarker), screen: plain };
 	} finally {
-		try {
-			await tmux(["send-keys", "-t", session, "C-d"]);
-			const deadline = Date.now() + 5_000;
-			while (Date.now() < deadline) {
-				const paneDead = (await tmux(["display-message", "-p", "-t", session, "#{pane_dead}"])).stdout.trim();
-				if (paneDead === "1") break;
-				await Bun.sleep(10);
-			}
-		} catch {
-			// The pane may already have exited while the verifier captured its final frame.
-		}
-		Bun.spawnSync(["tmux", "-S", socket, "kill-session", "-t", session], {
-			stderr: "ignore",
-			stdout: "ignore",
-		});
+		await stopArm(tmux, session, socket);
 	}
 }
 
