@@ -43,9 +43,9 @@ the lock, codec, and atomic ledger storage. `runtime/session-governor-contracts.
 validation. `runtime/agent-runtime-event.ts` validates raw
 lifecycle event values; `runtime/agent-runtime-liveness.ts` owns fail-closed process and writer-registry proof.
 `shared/artifacts.ts` is the stable artifact facade; `shared/artifact-files.ts` owns paths, writers, and group claims,
-`shared/artifact-snapshot.ts` owns bounded crash-resumable directory snapshots, and
-`shared/artifact-maintenance.ts` owns cleanup discovery and orchestration. Snapshot maintenance uses native directory
-cookies on the certified Linux Host profile and fails closed without deleting artifacts elsewhere.
+`shared/artifact-snapshot.ts` owns bounded crash-resumable native directory scans, and
+`shared/artifact-maintenance.ts` owns cleanup discovery and orchestration. Maintenance persists only directory identity
+and cookies after successful slices on the certified Linux Host profile and fails closed without deleting artifacts elsewhere.
 `intercom/native-supervisor-channel.ts` owns parent delivery orchestration and run lifecycle;
 `intercom/native-supervisor-client.ts` owns child communication Tools and request orchestration, while
 `intercom/native-supervisor-storage.ts` owns the validated filesystem protocol, delivery records, and channel GC mechanics.

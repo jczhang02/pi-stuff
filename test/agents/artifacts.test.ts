@@ -5,7 +5,6 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
-	readdirSync,
 	readFileSync,
 	renameSync,
 	rmSync,
@@ -323,7 +322,7 @@ test("persists a discovery frontier across deeply bounded session-tree passes", 
 	expect(files.every((file) => !existsSync(file))).toBeTrue();
 });
 
-test("bounds construction of a wide discovery snapshot to the requested scan budget", async () => {
+test("bounds a wide discovery scan and persists its native cursor", async () => {
 	if (process.platform !== "linux" || !["x64", "arm64"].includes(process.arch)) return;
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-bounded-snapshot-"));
 	temporaryDirectories.push(root);
@@ -340,26 +339,26 @@ test("bounds construction of a wide discovery snapshot to the requested scan bud
 		maxEntries: 1,
 	});
 
-	const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
-	const controls = readdirSync(snapshotDirectory);
-	expect(controls.filter((name) => name.endsWith(".build.json"))).toHaveLength(1);
-	expect(controls.filter((name) => name.endsWith(".partial"))).toHaveLength(1);
-	expect(controls.filter((name) => /^[0-9a-f-]{36}\.jsonl$/u.test(name))).toHaveLength(0);
-	const frontier = JSON.parse(readFileSync(join(sessionsRoot, ".artifact-cleanup-frontier"), "utf8"));
-	expect(frontier.pending.some((frame: { building?: boolean }) => frame.building === true)).toBeTrue();
+	const frontier = JSON.parse(
+		readFileSync(join(sessionsRoot, ".artifact-cleanup-control", ".artifact-cleanup-frontier"), "utf8"),
+	);
+	expect(frontier.pending).toContainEqual(
+		expect.objectContaining({
+			directory: ".",
+			cursor: expect.objectContaining({ version: 1 }),
+		}),
+	);
+	expect(existsSync(join(sessionsRoot, ".artifact-cleanup-snapshots"))).toBeFalse();
 });
 
-test("does not let a stale cleanup cursor skip a replacement snapshot", async () => {
+test("does not let a stale cleanup cursor skip a replacement directory", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-stale-cursor-"));
 	temporaryDirectories.push(root);
 	const tempArtifacts = join(root, "temp-artifacts");
 	const control = join(tempArtifacts, ".artifact-cleanup-control");
 	mkdirSync(control, { recursive: true, mode: 0o700 });
 	chmodSync(control, 0o700);
-	writeFileSync(
-		join(control, ".cleanup-cursor"),
-		JSON.stringify({ version: 2, offset: 999_999, snapshot: { dev: 0, ino: 0, mtimeMs: 0, size: 0 } }),
-	);
+	writeFileSync(join(control, ".cleanup-cursor"), JSON.stringify({ version: 1, cookie: "999999", dev: 0, ino: 0 }));
 	const now = Date.now();
 	const terminal = writeArtifactGroup(tempArtifacts, "stalecursor00", "complete", now);
 
@@ -373,106 +372,7 @@ test("does not let a stale cleanup cursor skip a replacement snapshot", async ()
 	expect(existsSync(terminal.metadataPath)).toBeFalse();
 });
 
-test("skips an oversized malformed snapshot record without losing the next valid artifact", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-malformed-snapshot-"));
-	temporaryDirectories.push(root);
-	const tempArtifacts = join(root, "temp-artifacts");
-	const control = join(tempArtifacts, ".artifact-cleanup-control");
-	mkdirSync(control, { recursive: true, mode: 0o700 });
-	chmodSync(control, 0o700);
-	const now = Date.now();
-	const terminal = writeArtifactGroup(tempArtifacts, "afterbadline", "complete", now);
-	writeFileSync(
-		join(control, ".cleanup-snapshot.jsonl"),
-		`${"x".repeat(128 * 1024)}\n${JSON.stringify("afterbadline_general-purpose_meta.json")}\n`,
-	);
-
-	await maintainAgentArtifacts(7, {
-		sessionsRoot: join(root, "missing-sessions"),
-		tempArtifactsDir: tempArtifacts,
-		now,
-	});
-
-	expect(existsSync(terminal.inputPath)).toBeFalse();
-	expect(existsSync(terminal.metadataPath)).toBeFalse();
-});
-
-test("sweeps old orphan discovery snapshots but preserves a fresh possible writer", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-orphan-snapshot-"));
-	temporaryDirectories.push(root);
-	const sessionsRoot = join(root, "sessions");
-	const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
-	mkdirSync(snapshotDirectory, { recursive: true, mode: 0o700 });
-	chmodSync(snapshotDirectory, 0o700);
-	const oldSnapshot = join(snapshotDirectory, "00000000-0000-0000-0000-000000000001.jsonl");
-	const freshSnapshot = join(snapshotDirectory, "00000000-0000-0000-0000-000000000002.jsonl");
-	writeFileSync(oldSnapshot, "");
-	writeFileSync(freshSnapshot, "");
-	const now = Date.now();
-	const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
-	utimesSync(oldSnapshot, oldDate, oldDate);
-
-	await maintainAgentArtifacts(7, {
-		sessionsRoot,
-		tempArtifactsDir: join(root, "missing-temp"),
-		now,
-	});
-
-	expect(existsSync(oldSnapshot)).toBeFalse();
-	expect(existsSync(freshSnapshot)).toBeTrue();
-});
-
-test("sweeps an orphan discovery snapshot beyond a large stable prefix", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-wide-discovery-control-"));
-	temporaryDirectories.push(root);
-	const sessionsRoot = join(root, "sessions");
-	const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
-	mkdirSync(snapshotDirectory, { recursive: true, mode: 0o700 });
-	chmodSync(snapshotDirectory, 0o700);
-	const now = Date.now();
-	for (let index = 0; index < 300; index += 1) {
-		writeFileSync(join(snapshotDirectory, `unknown-${String(index).padStart(3, "0")}`), "retained");
-	}
-	const orphan = join(snapshotDirectory, "00000000-0000-0000-0000-000000000007.jsonl");
-	writeFileSync(orphan, '"stale"\n');
-	const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
-	utimesSync(orphan, oldDate, oldDate);
-
-	const report = await maintainAgentArtifacts(7, {
-		sessionsRoot,
-		tempArtifactsDir: join(root, "missing-temp"),
-		now,
-	});
-
-	expect(report.scanComplete).toBeTrue();
-	expect(existsSync(orphan)).toBeFalse();
-});
-
-test("removes the snapshot referenced by a discovery frame whose directory disappeared", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-deleted-frontier-"));
-	temporaryDirectories.push(root);
-	const sessionsRoot = join(root, "sessions");
-	const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
-	mkdirSync(snapshotDirectory, { recursive: true, mode: 0o700 });
-	chmodSync(snapshotDirectory, 0o700);
-	const snapshotName = "00000000-0000-0000-0000-000000000003.jsonl";
-	const snapshot = join(snapshotDirectory, snapshotName);
-	writeFileSync(snapshot, '"child"\n');
-	writeFileSync(
-		join(sessionsRoot, ".artifact-cleanup-frontier"),
-		JSON.stringify({ version: 3, pending: [{ directory: "deleted", snapshot: snapshotName, offset: 0 }] }),
-	);
-
-	await maintainAgentArtifacts(7, {
-		sessionsRoot,
-		tempArtifactsDir: join(root, "missing-temp"),
-	});
-
-	expect(existsSync(snapshot)).toBeFalse();
-	expect(existsSync(join(sessionsRoot, ".artifact-cleanup-frontier"))).toBeFalse();
-});
-
-test("serializes concurrent discovery maintenance without leaking snapshot controls", async () => {
+test("serializes concurrent discovery maintenance without leaking its frontier", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-concurrent-discovery-"));
 	temporaryDirectories.push(root);
 	const sessionsRoot = join(root, "sessions");
@@ -481,17 +381,15 @@ test("serializes concurrent discovery maintenance without leaking snapshot contr
 	const now = Date.now();
 	const terminal = writeArtifactGroup(artifacts, "concurrent00", "complete", now);
 	const options = { sessionsRoot, tempArtifactsDir: join(root, "missing-temp"), now, maxEntries: 2 };
+	const frontier = join(sessionsRoot, ".artifact-cleanup-control", ".artifact-cleanup-frontier");
 
 	await Promise.all(Array.from({ length: 8 }, async () => maintainAgentArtifacts(7, options)));
-	for (let attempt = 0; attempt < 20 && existsSync(terminal.inputPath); attempt += 1) {
+	for (let attempt = 0; attempt < 20 && (existsSync(terminal.inputPath) || existsSync(frontier)); attempt += 1) {
 		await maintainAgentArtifacts(7, options);
 	}
-	await maintainAgentArtifacts(7, options);
 
-	const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
-	const leaked = readdirSync(snapshotDirectory).filter((name) => /\.jsonl(?:\.|$)/u.test(name));
 	expect(existsSync(terminal.inputPath)).toBeFalse();
-	expect(leaked).toEqual([]);
+	expect(existsSync(frontier)).toBeFalse();
 });
 
 test("does not delete an artifact group while a Suite writer owns its claim", async () => {
@@ -585,61 +483,3 @@ withArtifactGroupWriteClaim(${JSON.stringify(contenderPath)}, () => fs.writeFile
 		}
 	}
 }, 5_000);
-
-test("recovers malformed overflow state and sweeps stale control temporaries", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-control-recovery-"));
-	temporaryDirectories.push(root);
-	const tempArtifacts = join(root, "temp-artifacts");
-	const control = join(tempArtifacts, ".artifact-cleanup-control");
-	mkdirSync(control, { recursive: true, mode: 0o700 });
-	chmodSync(control, 0o700);
-	const now = Date.now();
-	const terminal = writeArtifactGroup(tempArtifacts, "controlstate", "complete", now);
-	const overflow = join(control, ".cleanup-snapshot.jsonl.overflow.json");
-	const staleTemporary = join(control, ".cleanup-snapshot.jsonl.build.json.00000000-0000-0000-0000-000000000004.tmp");
-	const freshTemporary = join(control, ".cleanup-snapshot.jsonl.00000000-0000-0000-0000-000000000005.tmp");
-	writeFileSync(overflow, "{malformed");
-	writeFileSync(staleTemporary, "stale");
-	writeFileSync(freshTemporary, "fresh");
-	const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
-	utimesSync(staleTemporary, oldDate, oldDate);
-
-	await maintainAgentArtifacts(7, {
-		sessionsRoot: join(root, "missing-sessions"),
-		tempArtifactsDir: tempArtifacts,
-		now,
-	});
-
-	expect(existsSync(overflow)).toBeFalse();
-	expect(existsSync(staleTemporary)).toBeFalse();
-	expect(existsSync(freshTemporary)).toBeTrue();
-	expect(existsSync(terminal.inputPath)).toBeFalse();
-	expect(existsSync(terminal.metadataPath)).toBeFalse();
-});
-
-test("sweeps a stale control temporary beyond a large stable prefix before throttling maintenance", async () => {
-	const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-wide-control-"));
-	temporaryDirectories.push(root);
-	const tempArtifacts = join(root, "temp-artifacts");
-	const control = join(tempArtifacts, ".artifact-cleanup-control");
-	mkdirSync(control, { recursive: true, mode: 0o700 });
-	chmodSync(control, 0o700);
-	const now = Date.now();
-	for (let index = 0; index < 300; index += 1) {
-		writeFileSync(join(control, `unknown-${String(index).padStart(3, "0")}`), "retained");
-	}
-	const orphan = join(control, ".cleanup-snapshot.jsonl.00000000-0000-0000-0000-000000000006.tmp");
-	writeFileSync(orphan, "stale");
-	const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
-	utimesSync(orphan, oldDate, oldDate);
-
-	const report = await maintainAgentArtifacts(7, {
-		sessionsRoot: join(root, "missing-sessions"),
-		tempArtifactsDir: tempArtifacts,
-		now,
-	});
-
-	expect(report.scanComplete).toBeTrue();
-	expect(existsSync(orphan)).toBeFalse();
-	expect(existsSync(join(tempArtifacts, ".last-cleanup"))).toBeTrue();
-});
