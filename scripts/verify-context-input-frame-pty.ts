@@ -25,6 +25,7 @@ const RECORD_SCHEMA = Type.Object(
 );
 
 type RecordLine = Static<typeof RECORD_SCHEMA>;
+type PtyEnvironment = Record<string, string | undefined>;
 
 const ZERO_USAGE = {
 	cacheRead: 0,
@@ -46,7 +47,7 @@ function fail(message: string): never {
 	throw new Error(`Context input-frame PTY verification failed: ${message}`);
 }
 
-function runCommand(args: readonly string[], environment?: Record<string, string | undefined>): string {
+function runCommand(args: readonly string[], environment?: PtyEnvironment): string {
 	const result = environment
 		? Bun.spawnSync([...args], { env: environment, stderr: "pipe", stdout: "pipe" })
 		: Bun.spawnSync([...args], { stderr: "pipe", stdout: "pipe" });
@@ -144,11 +145,56 @@ function seedSession(sessionDirectory: string, cwd: string): string {
 	return sessionFile;
 }
 
-async function verifySubmittedFrame(
-	environment: Record<string, string | undefined>,
-	cwd: string,
-	requestLog: string,
-): Promise<void> {
+async function verifySubmittedPromptFrame(capture: () => string, submit: () => void, prompt: string): Promise<void> {
+	const captureOverheads = Array.from({ length: 5 }, () => {
+		const startedAt = performance.now();
+		capture();
+		return performance.now() - startedAt;
+	}).sort((left, right) => left - right);
+	const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
+	const submittedAt = performance.now();
+	submit();
+	const workingFrames = new Set<string>();
+	const workingDeadline = Date.now() + 2_000;
+	let workingFrame: string | undefined;
+	let workingFrameChangedAt: number | undefined;
+	let transcriptVisibleMs: number | undefined;
+	while (Date.now() < workingDeadline) {
+		const frame = capture();
+		if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
+			transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
+		}
+		const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
+		const observedAt = performance.now();
+		if (indicator) {
+			workingFrames.add(indicator);
+			if (indicator !== workingFrame) {
+				workingFrame = indicator;
+				workingFrameChangedAt = observedAt;
+			}
+			if (workingFrameChangedAt !== undefined && observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
+				fail(
+					`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
+				);
+			}
+		} else {
+			workingFrame = undefined;
+			workingFrameChangedAt = undefined;
+		}
+		await Bun.sleep(50);
+	}
+	if (transcriptVisibleMs === undefined) {
+		fail("the submitted prompt did not appear in the Conversation Transcript during the 2s observation window");
+	}
+	if (transcriptVisibleMs > INPUT_FRAME_LATENCY_LIMIT_MS) {
+		fail(`submitted prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
+	}
+	if (workingFrames.size < 2) {
+		fail(`Vibe Line Working animation did not advance: ${JSON.stringify([...workingFrames])}`);
+	}
+}
+
+async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, requestLog: string): Promise<void> {
 	const socket = join(environment["HOME"] ?? cwd, "context-input-frame-tmux.sock");
 	const terminalOutputPath = join(environment["HOME"] ?? cwd, "context-input-frame-terminal.log");
 	const terminalOutputDonePath = `${terminalOutputPath}.done`;
@@ -222,52 +268,7 @@ async function verifySubmittedFrame(
 		const prompt = "CONTEXT_RESUME_REQUEST";
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
-		const captureOverheads = Array.from({ length: 5 }, () => {
-			const startedAt = performance.now();
-			capture(false);
-			return performance.now() - startedAt;
-		}).sort((left, right) => left - right);
-		const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
-		const submittedAt = performance.now();
-		tmux(["send-keys", "-t", session, "Enter"]);
-		const workingFrames = new Set<string>();
-		const workingDeadline = Date.now() + 2_000;
-		let workingFrame: string | undefined;
-		let workingFrameChangedAt: number | undefined;
-		let transcriptVisibleMs: number | undefined;
-		while (Date.now() < workingDeadline) {
-			const frame = capture(false);
-			if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-				transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
-			}
-			const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
-			const observedAt = performance.now();
-			if (indicator) {
-				workingFrames.add(indicator);
-				if (indicator !== workingFrame) {
-					workingFrame = indicator;
-					workingFrameChangedAt = observedAt;
-				}
-				if (workingFrameChangedAt !== undefined && observedAt - workingFrameChangedAt > WORKING_STALL_LIMIT_MS) {
-					fail(
-						`Vibe Line Working animation stalled for more than ${String(WORKING_STALL_LIMIT_MS)}ms: ${JSON.stringify([...workingFrames])}`,
-					);
-				}
-			} else {
-				workingFrame = undefined;
-				workingFrameChangedAt = undefined;
-			}
-			await Bun.sleep(50);
-		}
-		if (transcriptVisibleMs === undefined) {
-			fail("the submitted prompt did not appear in the Conversation Transcript during the 2s observation window");
-		}
-		if (transcriptVisibleMs > INPUT_FRAME_LATENCY_LIMIT_MS) {
-			fail(`submitted prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
-		}
-		if (workingFrames.size < 2) {
-			fail(`Vibe Line Working animation did not advance: ${JSON.stringify([...workingFrames])}`);
-		}
+		await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), prompt);
 
 		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
 		const modelRequest = (await readRecords(requestLog))
