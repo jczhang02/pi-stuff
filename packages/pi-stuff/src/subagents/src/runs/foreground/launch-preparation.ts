@@ -129,13 +129,7 @@ function prepareForkSessions(input: {
 	rawForkByIndex: boolean[];
 }) {
 	const tasks = taskInputs(input.params);
-	if (input.context !== "fork") {
-		return {
-			sessionFiles: tasks.map(() => undefined),
-			thinkingOverrides: tasks.map(() => input.params.thinking),
-		};
-	}
-	if (!input.rawForkByIndex.some(Boolean)) {
+	if (input.context !== "fork" || !input.rawForkByIndex.some(Boolean)) {
 		return {
 			sessionFiles: tasks.map(() => undefined),
 			thinkingOverrides: tasks.map(() => input.params.thinking),

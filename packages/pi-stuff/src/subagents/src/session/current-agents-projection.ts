@@ -64,26 +64,11 @@ type ForegroundControl = SubagentState["foregroundControls"] extends Map<string,
 type ForegroundRun = NonNullable<SubagentState["foregroundRuns"]> extends Map<string, infer Run> ? Run : never;
 type ForegroundResumeChild = ForegroundRun["children"][number];
 
-export interface RowDraft {
-	key: string;
-	runId: string;
-	childIndex: number;
-	sessionId: string;
-	name: string;
-	description: string;
-	task: string;
+export type RowDraft = Omit<AgentRow, "contextUsage" | "elapsedMs" | "nestedAgents" | "status"> & {
+	readonly contextUsage: AgentContextUsage | null;
+	readonly nestedAgents: AgentNestedDetail[];
 	status: AgentStatus;
-	error: string | null;
-	startedAt: number | null;
-	endedAt: number | null;
-	contextUsage: AgentContextUsage | null;
-	partialResult: string | null;
-	nestedCount: number;
-	nestedAgents: AgentNestedDetail[];
-	sessionFile: string | null;
-	transcriptPath: string | null;
-	savedOutputPath: string | null;
-}
+};
 
 function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean): RowDraft[] {
 	if (job.sessionId !== sessionId) return [];
@@ -279,25 +264,11 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 			? draft.partialResult
 			: null;
 	return Object.freeze({
-		key: draft.key,
-		runId: draft.runId,
-		childIndex: draft.childIndex,
-		sessionId: draft.sessionId,
-		name: draft.name,
-		description: draft.description,
-		task: draft.task,
-		status: draft.status,
-		error: draft.error,
-		startedAt: draft.startedAt,
-		endedAt: draft.endedAt,
+		...draft,
 		elapsedMs,
 		contextUsage: draft.contextUsage ? Object.freeze({ ...draft.contextUsage }) : null,
 		partialResult,
-		nestedCount: draft.nestedCount,
 		nestedAgents: Object.freeze([...draft.nestedAgents]),
-		sessionFile: draft.sessionFile,
-		transcriptPath: draft.transcriptPath,
-		savedOutputPath: draft.savedOutputPath,
 	});
 }
 

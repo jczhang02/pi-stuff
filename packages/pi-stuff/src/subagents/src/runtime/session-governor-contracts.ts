@@ -73,13 +73,7 @@ export interface SessionGovernorAgentSnapshot {
 	readonly createdAtMs: number;
 }
 
-export interface SessionGovernorHistoricalAgent {
-	readonly logicalAgentId: string;
-	readonly ownerAgentPath: readonly string[];
-	readonly agentPath: readonly string[];
-	readonly limits: SessionGovernorLimits;
-	readonly createdAtMs: number;
-}
+export type SessionGovernorHistoricalAgent = SessionGovernorAgentSnapshot;
 
 export interface SessionGovernorSnapshot {
 	readonly sessionId: string;

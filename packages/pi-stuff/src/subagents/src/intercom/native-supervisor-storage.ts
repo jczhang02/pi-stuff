@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { supervisorChannelDir } from "../runs/shared/pi-args.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
@@ -88,32 +88,16 @@ export type SupervisorChannelIdentity = Pick<
 	"physicalSessionId" | "runId" | "agent" | "childIndex"
 >;
 
-export interface SupervisorChannelRecord {
-	readonly acceptedAt?: unknown;
-	readonly agent?: unknown;
-	readonly childIndex?: unknown;
-	readonly childTarget?: unknown;
-	readonly createdAt?: unknown;
-	readonly customType?: unknown;
-	readonly details?: unknown;
-	readonly expectsReply?: unknown;
-	readonly expiresAt?: unknown;
-	readonly id?: unknown;
-	readonly interview?: unknown;
-	readonly lastAttemptAt?: unknown;
-	readonly message?: unknown;
-	readonly orchestratorSessionId?: unknown;
-	readonly orchestratorTarget?: unknown;
-	readonly ownerPid?: unknown;
-	readonly ownerProcessStartIdentity?: unknown;
-	readonly physicalSessionId?: unknown;
-	readonly reason?: unknown;
-	readonly requestId?: unknown;
-	readonly runId?: unknown;
-	readonly type?: unknown;
-	readonly updatedAt?: unknown;
-	readonly version?: unknown;
-}
+type SupervisorChannelRecord = {
+	readonly [Field in
+		| keyof SupervisorRequest
+		| keyof SupervisorReply
+		| keyof SupervisorChannelMetadata
+		| "acceptedAt"
+		| "customType"
+		| "details"
+		| "lastAttemptAt"]?: JsonValue;
+};
 
 export function supervisorChannelRecord<Value>(value: Value): SupervisorChannelRecord {
 	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};

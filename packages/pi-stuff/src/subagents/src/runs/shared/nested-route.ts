@@ -58,10 +58,6 @@ export function assertSafeNestedId(label: string, value: string): void {
 	if (!isSafeNestedId(value)) throw new Error(`${label} must be a non-empty safe id token.`);
 }
 
-function assertSafeId(label: string, value: string): void {
-	assertSafeNestedId(label, value);
-}
-
 export function containedPath(base: string, candidate: string): boolean {
 	const resolvedBase = path.resolve(base);
 	const resolvedCandidate = path.resolve(candidate);
@@ -73,8 +69,8 @@ export function commonRouteRoot(route: Pick<NestedRoute, "eventSink" | "controlI
 }
 
 function validateRoutePaths(route: NestedRoute): void {
-	assertSafeId("rootRunId", route.rootRunId);
-	assertSafeId("capabilityToken", route.capabilityToken);
+	assertSafeNestedId("rootRunId", route.rootRunId);
+	assertSafeNestedId("capabilityToken", route.capabilityToken);
 	if (!containedPath(NESTED_EVENTS_DIR, route.eventSink))
 		throw new Error("Nested event sink is outside the subagent nested event root.");
 	if (!containedPath(NESTED_EVENTS_DIR, route.controlInbox))
@@ -101,7 +97,7 @@ export function validateRouteStorage(route: NestedRoute): void {
 }
 
 export function createNestedRoute(rootRunId: string): NestedRoute {
-	assertSafeId("rootRunId", rootRunId);
+	assertSafeNestedId("rootRunId", rootRunId);
 	const capabilityToken = randomUUID();
 	const routeRoot = path.join(NESTED_EVENTS_DIR, `${rootRunId}-${capabilityToken}`);
 	const stagingRoot = path.join(NESTED_EVENTS_DIR, `.creating-${rootRunId}-${capabilityToken}`);

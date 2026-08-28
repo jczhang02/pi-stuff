@@ -34,7 +34,6 @@ import {
 	requestFilesInChannelAsync,
 	SUPERVISOR_CHANNEL_ROOT,
 	type SupervisorChannelMetadata,
-	type SupervisorReason,
 	type SupervisorRequest,
 	supervisorChannelDirsAsync,
 	supervisorChannelRecord,
@@ -310,14 +309,10 @@ function resolvePendingRequest(
 	throw new Error("Multiple pending supervisor requests need replies. Use replyTo.");
 }
 
-interface PublicPendingSupervisorRequest {
-	readonly agent: string;
-	readonly childIndex: number;
-	readonly expectsReply: boolean;
-	readonly id: string;
-	readonly reason: SupervisorReason;
-	readonly runId: string;
-}
+type PublicPendingSupervisorRequest = Pick<
+	PendingSupervisorRequest,
+	"agent" | "childIndex" | "expectsReply" | "id" | "reason" | "runId"
+>;
 
 function publicPendingRequests(pending: Map<string, PendingSupervisorRequest>): PublicPendingSupervisorRequest[] {
 	return [...pending.values()].map((request) => ({
