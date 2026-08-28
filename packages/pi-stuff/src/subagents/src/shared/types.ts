@@ -151,34 +151,6 @@ export interface ControlEvent {
 export type SubagentResultStatus = "completed" | "failed" | "paused" | "stopped" | "detached";
 export type SubagentRunMode = "single" | "parallel";
 
-export interface AgentContract {
-	version: 1;
-}
-
-export type ExecutionProjectionStatus = "completed" | "failed" | "paused" | "stopped" | "detached";
-
-export interface ExecutionProjection {
-	status: ExecutionProjectionStatus;
-	success: boolean;
-	exitCode: number;
-	error?: string;
-	interrupted?: boolean;
-	timedOut?: boolean;
-	stopped?: boolean;
-	detached?: boolean;
-}
-
-export interface FileMutationEffect {
-	status: "not-requested" | "not-applicable" | "observed" | "missing";
-	expected: boolean;
-	attempted: boolean;
-	message?: string;
-}
-
-export interface EffectsProjection {
-	fileMutation?: FileMutationEffect;
-}
-
 export const SUBAGENT_LIFECYCLE_ARTIFACT_VERSION = 3;
 export type SubagentLifecycleArtifactVersion = typeof SUBAGENT_LIFECYCLE_ARTIFACT_VERSION;
 

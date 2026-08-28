@@ -73,11 +73,7 @@ interface AsyncRunStepSummary {
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;
 	acceptance?: AsyncJobStep["acceptance"];
-	agentContract?: AsyncJobStep["agentContract"];
 	launchContractDigest?: string;
-	execution?: AsyncJobStep["execution"];
-	review?: AsyncJobStep["review"];
-	effects?: AsyncJobStep["effects"];
 	processTerminal?: AsyncJobStep["processTerminal"];
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
@@ -260,11 +256,7 @@ function summarizeAsyncStep(
 	if (step.turnBudget) summary.turnBudget = step.turnBudget;
 	Object.assign(summary, pickFields(step, ["turnBudgetExceeded", "wrapUpRequested"]));
 	if (step.acceptance) summary.acceptance = step.acceptance;
-	if (step.agentContract) summary.agentContract = step.agentContract;
 	if (step.launchContractDigest) summary.launchContractDigest = step.launchContractDigest;
-	if (step.execution) summary.execution = step.execution;
-	if (step.review) summary.review = step.review;
-	if (step.effects) summary.effects = step.effects;
 	if (step.processTerminal) {
 		summary.processTerminal = sanitizeProcessTerminal(
 			step.processTerminal,

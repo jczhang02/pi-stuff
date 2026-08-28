@@ -5,12 +5,9 @@ import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
 	ActivityState,
 	AgentContextUsage,
-	AgentContract,
 	ArtifactPaths,
 	ControlEvent,
 	CostSummary,
-	EffectsProjection,
-	ExecutionProjection,
 	OutputMode,
 	ResolvedToolBudget,
 	ResolvedTurnBudget,
@@ -170,11 +167,7 @@ export interface SingleResult {
 	structuredOutputPath?: string;
 	structuredOutputSchemaPath?: string;
 	acceptance?: JsonInputValue;
-	agentContract?: AgentContract;
 	launchContractDigest?: string;
-	execution?: ExecutionProjection;
-	review?: JsonInputValue;
-	effects?: EffectsProjection;
 	transcriptPath?: string;
 	transcriptError?: string;
 	children?: NestedRunSummary[];

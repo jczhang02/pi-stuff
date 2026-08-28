@@ -11,11 +11,8 @@ import type { SessionCompatibilityScope } from "../shared/session-identity.ts";
 import type {
 	ActivityState,
 	AgentContextUsage,
-	AgentContract,
 	ArtifactDirPreference,
 	ArtifactPaths,
-	EffectsProjection,
-	ExecutionProjection,
 	OutputMode,
 	SubagentResultStatus,
 	SubagentRunMode,
@@ -55,11 +52,7 @@ export interface ForegroundResumeChild {
 	transcriptError?: string;
 	detachedReason?: string;
 	acceptance?: JsonInputValue;
-	agentContract?: AgentContract;
 	launchContractDigest?: string;
-	execution?: ExecutionProjection;
-	review?: JsonInputValue;
-	effects?: EffectsProjection;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 	children?: NestedRunSummary[];

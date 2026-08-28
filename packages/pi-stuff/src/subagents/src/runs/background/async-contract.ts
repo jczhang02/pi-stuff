@@ -5,11 +5,8 @@ import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
 	ActivityState,
 	AgentContextUsage,
-	AgentContract,
 	ArtifactConfig,
 	CostSummary,
-	EffectsProjection,
-	ExecutionProjection,
 	JsonSchemaObject,
 	MaxOutputConfig,
 	ResolvedControlConfig,
@@ -31,7 +28,6 @@ export interface SteeringRecoveryDescriptor {
 	version: 1;
 	launchContractDigest?: string;
 	sourceRunId: string;
-	agentContract?: AgentContract;
 	agent: string;
 	sessionFile?: string;
 	cwd: string;
@@ -201,11 +197,7 @@ export interface AsyncStatus {
 				structuredOutputPath?: string;
 				structuredOutputSchemaPath?: string;
 				acceptance?: JsonInputValue;
-				agentContract?: AgentContract;
 				launchContractDigest?: string;
-				execution?: ExecutionProjection;
-				review?: JsonInputValue;
-				effects?: EffectsProjection;
 				processTerminal?: ProcessTerminalV1;
 				capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 				capabilityAudit?: SubagentCapabilityAudit;
