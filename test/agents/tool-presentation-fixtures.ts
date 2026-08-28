@@ -78,6 +78,7 @@ import type { ToolArguments } from "../../packages/pi-stuff/src/tool-display/act
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { testTheme } from "../fixtures/extension-context.js";
+import { isWellFormed } from "../fixtures/terminal.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
@@ -161,18 +162,6 @@ function lifecycleHandler<Event>(handlers: Map<string, (event: Event) => Lifecyc
 			return undefined;
 		},
 	});
-}
-
-function isWellFormed(value: string): boolean {
-	for (let index = 0; index < value.length; index += 1) {
-		const code = value.charCodeAt(index);
-		if (code >= 0xd800 && code <= 0xdbff) {
-			const next = value.charCodeAt(index + 1);
-			if (next < 0xdc00 || next > 0xdfff) return false;
-			index += 1;
-		} else if (code >= 0xdc00 && code <= 0xdfff) return false;
-	}
-	return true;
 }
 
 function setEnvironment(name: string, value: string): void {
