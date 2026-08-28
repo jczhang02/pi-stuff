@@ -203,22 +203,25 @@ function cleanupControlTemporaryName(name: string): boolean {
 	);
 }
 
-async function sweepCleanupControlTemporaries(controlDirectory: string, now: number): Promise<boolean> {
-	const snapshot = path.join(controlDirectory, CLEANUP_CONTROL_SWEEP_SNAPSHOT_FILE);
-	const cursor = path.join(controlDirectory, CLEANUP_CONTROL_SWEEP_CURSOR_FILE);
+async function sweepStaleSnapshotFiles(
+	directory: string,
+	snapshotName: string,
+	cursorName: string,
+	accept: (name: string, type: number) => boolean,
+	now: number,
+	maximum: number,
+	retained?: ReadonlySet<string>,
+): Promise<boolean> {
+	const snapshot = path.join(directory, snapshotName);
+	const cursor = path.join(directory, cursorName);
 	try {
-		const advanced = await advanceNameSnapshot(
-			controlDirectory,
-			snapshot,
-			(name, type) => type !== 10 && cleanupControlTemporaryName(name),
-			MAX_CONTROL_ENTRIES_PER_PASS,
-			now,
-		);
+		const advanced = await advanceNameSnapshot(directory, snapshot, accept, maximum, now);
 		if (!advanced.complete) return false;
 		const offset = await readSnapshotCursor(cursor, snapshot);
 		const page = await readNameSnapshotPage(snapshot, offset, MAX_CONTROL_TEMPORARIES_PER_PASS);
 		for (const name of page.names) {
-			const candidate = path.join(controlDirectory, name);
+			if (retained?.has(name)) continue;
+			const candidate = path.join(directory, name);
 			try {
 				const stat = await fs.promises.lstat(candidate);
 				if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
@@ -277,7 +280,16 @@ async function cleanArtifactDirectory(
 	let complete = false;
 	const snapshot = path.join(controlDirectory, CLEANUP_SNAPSHOT_FILE);
 	try {
-		if (!(await sweepCleanupControlTemporaries(controlDirectory, now))) {
+		if (
+			!(await sweepStaleSnapshotFiles(
+				controlDirectory,
+				CLEANUP_CONTROL_SWEEP_SNAPSHOT_FILE,
+				CLEANUP_CONTROL_SWEEP_CURSOR_FILE,
+				(name, type) => type !== 10 && cleanupControlTemporaryName(name),
+				now,
+				MAX_CONTROL_ENTRIES_PER_PASS,
+			))
+		) {
 			return { filesRemoved, bytesReclaimed, complete: false };
 		}
 		const remaining = Math.max(0, budget.maxEntries - budget.entries);
@@ -398,42 +410,15 @@ async function sweepDiscoverySnapshots(
 	const retained = new Set(
 		pending.flatMap((frame) => (frame.snapshot ? nameSnapshotControlNames(frame.snapshot) : [])),
 	);
-	const snapshot = path.join(snapshotDirectory, DISCOVERY_SWEEP_SNAPSHOT_FILE);
-	const cursor = path.join(snapshotDirectory, DISCOVERY_SWEEP_CURSOR_FILE);
-	try {
-		const advanced = await advanceNameSnapshot(
-			snapshotDirectory,
-			snapshot,
-			(name, type) => type !== 10 && (discoverySnapshotControlName(name) || discoverySweepTemporaryName(name)),
-			maximum,
-			now,
-		);
-		if (!advanced.complete) return false;
-		const offset = await readSnapshotCursor(cursor, snapshot);
-		const page = await readNameSnapshotPage(snapshot, offset, MAX_CONTROL_TEMPORARIES_PER_PASS);
-		for (const name of page.names) {
-			if (retained.has(name)) continue;
-			const candidate = path.join(snapshotDirectory, name);
-			try {
-				const stat = await fs.promises.lstat(candidate);
-				if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
-				await fs.promises.unlink(candidate);
-			} catch {
-				// A concurrent disappearance is already clean; unsafe entries fail closed.
-			}
-		}
-		if (!page.complete) {
-			await writeSnapshotCursor(cursor, snapshot, page.nextOffset);
-			return false;
-		}
-		await fs.promises.unlink(cursor).catch(() => undefined);
-		await removeNameSnapshotControl(snapshot);
-		return true;
-	} catch {
-		await fs.promises.unlink(cursor).catch(() => undefined);
-		await removeNameSnapshotControl(snapshot);
-		return false;
-	}
+	return sweepStaleSnapshotFiles(
+		snapshotDirectory,
+		DISCOVERY_SWEEP_SNAPSHOT_FILE,
+		DISCOVERY_SWEEP_CURSOR_FILE,
+		(name, type) => type !== 10 && (discoverySnapshotControlName(name) || discoverySweepTemporaryName(name)),
+		now,
+		maximum,
+		retained,
+	);
 }
 
 async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | undefined> {
