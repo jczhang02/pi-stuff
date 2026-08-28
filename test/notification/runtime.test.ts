@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import {
 	createWorkCycleState,
+	type NotificationAlert,
 	type NotificationClock,
 	NotificationRuntime,
+	type NotificationRuntimeSettings,
 	type NotificationTimer,
 	reduceWorkCycle,
 } from "../../packages/pi-stuff/src/notification/runtime.ts";
@@ -49,6 +51,32 @@ class FakeClock implements NotificationClock {
 	}
 }
 
+function notificationFixture(
+	settings: Partial<NotificationRuntimeSettings> = {},
+	isQuiet: () => boolean = () => true,
+	notify?: (alert: NotificationAlert) => void,
+) {
+	const alerts: NotificationAlert[] = [];
+	const clock = new FakeClock();
+	return {
+		alerts,
+		clock,
+		runtime: new NotificationRuntime({
+			clock,
+			getSettings: () => ({
+				completionAlerts: true,
+				enabled: true,
+				failureAlerts: true,
+				gracePeriodMs: 2_000,
+				minimumDurationMs: 10_000,
+				...settings,
+			}),
+			isQuiet,
+			notify: notify ?? ((alert) => alerts.push(alert)),
+		}),
+	};
+}
+
 test("the latest finalized Assistant result replaces a provider error in one work cycle", () => {
 	let state = createWorkCycleState();
 	state = reduceWorkCycle(state, { now: 100, type: "agent_start" });
@@ -73,20 +101,7 @@ test("the latest finalized Assistant result replaces a provider error in one wor
 });
 
 test("a real user receives one completion alert after long work settles", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture();
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -102,20 +117,7 @@ test("a real user receives one completion alert after long work settles", () => 
 });
 
 test("the settled alert carries only the latest finalized Assistant preview", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 0,
-			minimumDurationMs: 0,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture({ gracePeriodMs: 0, minimumDurationMs: 0 });
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -129,20 +131,7 @@ test("the settled alert carries only the latest finalized Assistant preview", ()
 });
 
 test("a user who types during the grace period is not interrupted by a stale alert", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture();
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -157,20 +146,7 @@ test("a user who types during the grace period is not interrupted by a stale ale
 });
 
 test("an automatic retry, compaction, or Goal continuation rejects the stale generation before one final alert", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture();
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -190,20 +166,7 @@ test("an automatic retry, compaction, or Goal continuation rejects the stale gen
 });
 
 test("session replacement, reload, or shutdown releases a pending alert", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture();
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -217,20 +180,7 @@ test("session replacement, reload, or shutdown releases a pending alert", () => 
 });
 
 test("a stray terminal key during grace cancels the alert without being consumed", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => true,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture();
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -244,21 +194,8 @@ test("a stray terminal key during grace cancels the alert without being consumed
 });
 
 test("input cancels a deferred alert even when queued Host work outlives the first timer", () => {
-	const clock = new FakeClock();
-	const alerts: unknown[] = [];
 	let quiet = true;
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 10_000,
-		}),
-		isQuiet: () => quiet,
-		notify: (alert) => alerts.push(alert),
-	});
+	const { alerts, clock, runtime } = notificationFixture({}, () => quiet);
 
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
@@ -307,20 +244,7 @@ test("the settled outcome matrix follows the latest finalized Assistant message"
 	];
 
 	for (const scenario of cases) {
-		const clock = new FakeClock();
-		const alerts: Array<{ outcome: string }> = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 0,
-				minimumDurationMs: 0,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
+		const { alerts, clock, runtime } = notificationFixture({ gracePeriodMs: 0, minimumDurationMs: 0 });
 		runtime.observe({ type: "agent_start" });
 		runtime.observe({ type: "user_work" });
 		for (const event of scenario.events) runtime.observe(event);
@@ -377,20 +301,7 @@ test("short, automatic, disabled, and outcome-disabled work remains silent", () 
 		},
 	] as const;
 	for (const scenario of cases) {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: scenario.completionAlerts,
-				enabled: scenario.enabled,
-				failureAlerts: scenario.failureAlerts,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
+		const { alerts, clock, runtime } = notificationFixture(scenario);
 		runtime.observe({ type: "agent_start" });
 		if (scenario.user) runtime.observe({ type: "user_work" });
 		clock.advance(scenario.name === "short" ? 9_999 : 10_000);
@@ -406,23 +317,15 @@ test("short, automatic, disabled, and outcome-disabled work remains silent", () 
 });
 
 test("a pending timer is unreferenced and a failed quiet check degrades silently", () => {
-	const clock = new FakeClock();
-	const runtime = new NotificationRuntime({
-		clock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 2_000,
-			minimumDurationMs: 0,
-		}),
-		isQuiet: () => {
+	const { clock, runtime } = notificationFixture(
+		{ minimumDurationMs: 0 },
+		() => {
 			throw new Error("Host is replacing the session");
 		},
-		notify: () => {
+		() => {
 			throw new Error("should not notify");
 		},
-	});
+	);
 	runtime.observe({ type: "agent_start" });
 	runtime.observe({ type: "user_work" });
 	runtime.observe({ stopReason: "stop", type: "assistant_finalized" });
@@ -430,21 +333,13 @@ test("a pending timer is unreferenced and a failed quiet check degrades silently
 	expect(clock.unrefCount).toBe(1);
 	expect(() => clock.advance(2_000)).not.toThrow();
 
-	const deliveryClock = new FakeClock();
-	const deliveryRuntime = new NotificationRuntime({
-		clock: deliveryClock,
-		getSettings: () => ({
-			completionAlerts: true,
-			enabled: true,
-			failureAlerts: true,
-			gracePeriodMs: 0,
-			minimumDurationMs: 0,
-		}),
-		isQuiet: () => true,
-		notify: () => {
+	const { clock: deliveryClock, runtime: deliveryRuntime } = notificationFixture(
+		{ gracePeriodMs: 0, minimumDurationMs: 0 },
+		undefined,
+		() => {
 			throw new Error("terminal closed");
 		},
-	});
+	);
 	deliveryRuntime.observe({ type: "agent_start" });
 	deliveryRuntime.observe({ type: "user_work" });
 	deliveryRuntime.observe({ stopReason: "stop", type: "assistant_finalized" });
