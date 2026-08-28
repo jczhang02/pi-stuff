@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/runtime/mcp-status.js";
 import { McpServerManager } from "../../packages/pi-stuff/src/mcp/runtime/server-manager.js";
@@ -34,4 +35,19 @@ test("MCP status events omit absent optional server fields", () => {
 	});
 	expect(isJsonSourceValue(snapshot)).toBeTrue();
 	expect(snapshot.servers[0]).not.toHaveProperty("resourceCount");
+});
+
+test("MCP connection rejects advertised resources that cannot be listed", async () => {
+	const manager = new McpServerManager();
+	try {
+		await expect(
+			manager.connect("broken-resources", {
+				command: process.execPath,
+				args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+				env: { PI_STUFF_MCP_RESOURCES_ERROR: "1" },
+			}),
+		).rejects.toThrow("resource listing failed");
+	} finally {
+		await manager.closeAll();
+	}
 });

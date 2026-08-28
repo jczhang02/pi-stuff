@@ -2,6 +2,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const marker = process.env.PI_STUFF_MCP_MARKER;
+const resourcesError = process.env.PI_STUFF_MCP_RESOURCES_ERROR === "1";
 if (marker) writeFileSync(marker, `${String(process.pid)}\n`, "utf8");
 
 let stopped = false;
@@ -52,7 +53,13 @@ function handle(message) {
 			reply(message.id, { prompts: [] });
 			break;
 		case "resources/list":
-			reply(message.id, { resources: [] });
+			if (resourcesError) {
+				process.stdout.write(
+					`${JSON.stringify({ error: { code: -32000, message: "resource listing failed" }, id: message.id, jsonrpc: "2.0" })}\n`,
+				);
+			} else {
+				reply(message.id, { resources: [] });
+			}
 			break;
 		case "resources/templates/list":
 			reply(message.id, { resourceTemplates: [] });

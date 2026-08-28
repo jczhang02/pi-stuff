@@ -560,24 +560,16 @@ export class McpServerManager {
 		const capabilities = client.getServerCapabilities?.();
 		if (!capabilities?.resources) return [];
 
-		try {
-			const allResources: McpResource[] = [];
-			let cursor: string | undefined;
+		const allResources: McpResource[] = [];
+		let cursor: string | undefined;
 
-			do {
-				const result = await client.listResources(cursor ? { cursor } : undefined, requestOptions);
-				allResources.push(...(result.resources ?? []).map(normalizeResource));
-				cursor = result.nextCursor;
-			} while (cursor);
+		do {
+			const result = await client.listResources(cursor ? { cursor } : undefined, requestOptions);
+			allResources.push(...(result.resources ?? []).map(normalizeResource));
+			cursor = result.nextCursor;
+		} while (cursor);
 
-			return allResources;
-		} catch {
-			if (requestOptions?.signal?.aborted) {
-				throwIfAborted(requestOptions.signal);
-			}
-			// The server advertises resources but the listing failed
-			return [];
-		}
+		return allResources;
 	}
 
 	async close(name: string): Promise<void> {
