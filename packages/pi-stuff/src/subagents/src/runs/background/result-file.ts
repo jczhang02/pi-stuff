@@ -1,10 +1,7 @@
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
-import {
-	isFiniteRuntimeNumber as isFiniteNumber,
-	isRuntimeBoolean,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../../../shared/runtime-type.js";
+import { type Static, type TSchema, Type } from "typebox";
+import { Value } from "typebox/value";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
+import { isFiniteRuntimeNumber as isFiniteNumber } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
@@ -21,8 +18,6 @@ import type { CompletionNotification } from "./notify.ts";
 import type { BackgroundCompletion } from "./runner-state.ts";
 
 export const MAX_ASYNC_RESULT_BYTES = 32 * 1024 * 1024;
-
-type ResultModelAttempt = NonNullable<BackgroundTaskResult["modelAttempts"]>[number];
 
 export interface AsyncResultChild extends Partial<BackgroundTaskResult> {
 	state?: string;
@@ -55,6 +50,84 @@ export type ResultFileData = CompletionNotification & {
 	asyncDir?: string;
 	intercomTarget?: string;
 };
+
+const MODEL_USAGE_SCHEMA = Type.Object(
+	{
+		input: Type.Number(),
+		output: Type.Number(),
+		cacheRead: Type.Number(),
+		cacheWrite: Type.Number(),
+		cost: Type.Number(),
+		turns: Type.Number(),
+	},
+	{ additionalProperties: false },
+);
+const JSON_VALUE_SCHEMA = Type.Unsafe<JsonValue>({});
+const MODEL_ATTEMPT_SCHEMA = Type.Object(
+	{
+		model: Type.String(),
+		success: Type.Boolean(),
+		exitCode: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+		error: Type.Optional(Type.String()),
+		usage: Type.Optional(MODEL_USAGE_SCHEMA),
+	},
+	{ additionalProperties: false },
+);
+const RESULT_CHILD_SCHEMA = Type.Object(
+	{
+		agent: Type.Optional(Type.String()),
+		state: Type.Optional(Type.String()),
+		error: Type.Optional(Type.String()),
+		sessionFile: Type.Optional(Type.String()),
+		intercomTarget: Type.Optional(Type.String()),
+		model: Type.Optional(Type.String()),
+		thinking: Type.Optional(Type.String()),
+		transcriptPath: Type.Optional(Type.String()),
+		transcriptError: Type.Optional(Type.String()),
+		launchContractDigest: Type.Optional(Type.String()),
+		success: Type.Optional(Type.Boolean()),
+		interrupted: Type.Optional(Type.Boolean()),
+		stopped: Type.Optional(Type.Boolean()),
+		timedOut: Type.Optional(Type.Boolean()),
+		turnBudgetExceeded: Type.Optional(Type.Boolean()),
+		wrapUpRequested: Type.Optional(Type.Boolean()),
+		toolBudgetBlocked: Type.Optional(Type.Boolean()),
+		exitCode: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+		attemptedModels: Type.Optional(Type.Array(Type.String())),
+		modelAttempts: Type.Optional(Type.Array(MODEL_ATTEMPT_SCHEMA)),
+		turnBudget: Type.Optional(Type.Unknown()),
+		toolBudget: Type.Optional(Type.Unknown()),
+		totalCost: Type.Optional(Type.Unknown()),
+		capabilityCeiling: Type.Optional(Type.Unknown()),
+		children: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: false },
+);
+const ASYNC_RESULT_SCHEMA = Type.Object(
+	{
+		id: Type.Optional(Type.String()),
+		runId: Type.Optional(Type.String()),
+		agent: Type.Optional(Type.String()),
+		mode: Type.Optional(Type.String()),
+		state: Type.Optional(Type.String()),
+		cwd: Type.Optional(Type.String()),
+		sessionId: Type.Optional(Type.String()),
+		sessionFile: Type.Optional(Type.String()),
+		model: Type.Optional(Type.String()),
+		thinking: Type.Optional(Type.String()),
+		launchContractDigest: Type.Optional(Type.String()),
+		success: Type.Optional(Type.Boolean()),
+		capabilityCeiling: Type.Optional(Type.Unknown()),
+		parentRunOrigin: Type.Optional(Type.Unknown()),
+		startedAt: Type.Optional(Type.Unknown()),
+		endedAt: Type.Optional(Type.Unknown()),
+		exitCode: Type.Optional(Type.Unknown()),
+		timedOut: Type.Optional(Type.Unknown()),
+		results: Type.Optional(Type.Array(JSON_VALUE_SCHEMA)),
+		nestedChildren: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: false },
+);
 
 export const COMPLETION_FIELDS = [
 	"source",
@@ -136,197 +209,94 @@ export function sanitizeNestedResultChildren(
 	return children.length ? children : undefined;
 }
 
-function resultObject(value: JsonValue, resultPath: string, field?: string): JsonObject {
-	if (value && isRuntimeObject(value) && !Array.isArray(value)) return value;
-	throw invalidResult(resultPath, field ? `${field} must be an object` : "expected an object");
-}
-
 function invalidResult(resultPath: string, message: string): Error {
 	return new Error(`Invalid async result file '${resultPath}': ${message}.`);
 }
 
-function parseUsage(value: JsonValue, resultPath: string, field: string): NonNullable<ResultModelAttempt["usage"]> {
-	const usage = resultObject(value, resultPath, field);
-	const input = usage["input"];
-	const output = usage["output"];
-	const cacheRead = usage["cacheRead"];
-	const cacheWrite = usage["cacheWrite"];
-	const cost = usage["cost"];
-	const turns = usage["turns"];
-	if (
-		!isFiniteNumber(input) ||
-		!isFiniteNumber(output) ||
-		!isFiniteNumber(cacheRead) ||
-		!isFiniteNumber(cacheWrite) ||
-		!isFiniteNumber(cost) ||
-		!isFiniteNumber(turns)
-	) {
-		throw invalidResult(resultPath, `${field} is malformed`);
-	}
-	return { input, output, cacheRead, cacheWrite, cost, turns };
-}
-
-function parseModelAttempt(value: JsonValue, resultPath: string, field: string): ResultModelAttempt {
-	const raw = resultObject(value, resultPath, field);
-	const model = raw["model"];
-	const success = raw["success"];
-	if (!isRuntimeString(model)) throw invalidResult(resultPath, `${field}.model must be a string`);
-	if (!isRuntimeBoolean(success)) throw invalidResult(resultPath, `${field}.success must be a boolean`);
-	const attempt: ResultModelAttempt = { model, success };
-	const exitCode = raw["exitCode"];
-	if (exitCode !== undefined) {
-		if (exitCode !== null && !isFiniteNumber(exitCode)) {
-			throw invalidResult(resultPath, `${field}.exitCode must be a finite number or null`);
-		}
-		attempt.exitCode = exitCode;
-	}
-	const error = raw["error"];
-	if (error !== undefined) {
-		if (!isRuntimeString(error)) throw invalidResult(resultPath, `${field}.error must be a string`);
-		attempt.error = error;
-	}
-	if (raw["usage"] !== undefined) attempt.usage = parseUsage(raw["usage"], resultPath, `${field}.usage`);
-	return attempt;
+function cleanResult<Schema extends TSchema>(
+	schema: Schema,
+	value: JsonValue,
+	resultPath: string,
+	field = "",
+): Static<Schema> {
+	const cleaned = Value.Clean(schema, structuredClone(value));
+	if (Value.Check(schema, cleaned)) return cleaned;
+	const error = Value.Errors(schema, cleaned)[0];
+	if (!error) throw invalidResult(resultPath, "result did not match its schema");
+	const nested = error.instancePath.slice(1).replaceAll("/", ".");
+	const location = [field, nested].filter(Boolean).join(".") || "result";
+	throw invalidResult(resultPath, `${location} ${error.message}`);
 }
 
 function parseResultChild(value: JsonValue, resultPath: string, index: number): AsyncResultChild {
-	const raw = resultObject(value, resultPath, `results[${index}]`);
-	const child: AsyncResultChild = {};
-	for (const field of [
-		"agent",
-		"state",
-		"error",
-		"sessionFile",
-		"intercomTarget",
-		"model",
-		"thinking",
-		"transcriptPath",
-		"transcriptError",
-		"launchContractDigest",
-	] as const) {
-		const fieldValue = raw[field];
-		if (fieldValue === undefined) continue;
-		if (!isRuntimeString(fieldValue)) {
-			throw invalidResult(resultPath, `results[${index}].${field} must be a string`);
-		}
-		child[field] = fieldValue;
-	}
-	for (const field of [
-		"success",
-		"interrupted",
-		"stopped",
-		"timedOut",
-		"turnBudgetExceeded",
-		"wrapUpRequested",
-		"toolBudgetBlocked",
-	] as const) {
-		const fieldValue = raw[field];
-		if (fieldValue === undefined) continue;
-		if (!isRuntimeBoolean(fieldValue)) {
-			throw invalidResult(resultPath, `results[${index}].${field} must be a boolean`);
-		}
-		child[field] = fieldValue;
-	}
-	const exitCode = raw["exitCode"];
-	if (exitCode !== undefined) {
-		if (exitCode !== null && !isFiniteNumber(exitCode)) {
-			throw invalidResult(resultPath, `results[${index}].exitCode must be a finite number or null`);
-		}
-		child.exitCode = exitCode;
-	}
-	const attemptedModels = raw["attemptedModels"];
-	if (attemptedModels !== undefined) {
-		if (!Array.isArray(attemptedModels) || !attemptedModels.every(isRuntimeString)) {
-			throw invalidResult(resultPath, `results[${index}].attemptedModels must contain strings`);
-		}
-		child.attemptedModels = [...attemptedModels];
-	}
-	const turnBudget = sanitizeTurnBudget(raw["turnBudget"]);
-	if (raw["turnBudget"] !== undefined && !turnBudget) {
+	const parsed = cleanResult(RESULT_CHILD_SCHEMA, value, resultPath, `results[${index}]`);
+	const {
+		turnBudget: rawTurnBudget,
+		toolBudget: rawToolBudget,
+		totalCost: rawTotalCost,
+		capabilityCeiling: rawCapabilityCeiling,
+		children: rawChildren,
+		...plain
+	} = parsed;
+	const child: AsyncResultChild = plain;
+	const turnBudget = sanitizeTurnBudget(rawTurnBudget);
+	if (rawTurnBudget !== undefined && !turnBudget) {
 		throw invalidResult(resultPath, `results[${index}].turnBudget is malformed`);
 	}
 	if (turnBudget) child.turnBudget = turnBudget;
-	const toolBudget = sanitizeToolBudget(raw["toolBudget"]);
-	if (raw["toolBudget"] !== undefined && !toolBudget) {
+	const toolBudget = sanitizeToolBudget(rawToolBudget);
+	if (rawToolBudget !== undefined && !toolBudget) {
 		throw invalidResult(resultPath, `results[${index}].toolBudget is malformed`);
 	}
 	if (toolBudget) child.toolBudget = toolBudget;
-	const totalCost = sanitizeCost(raw["totalCost"]);
-	if (raw["totalCost"] !== undefined && !totalCost) {
+	const totalCost = sanitizeCost(rawTotalCost);
+	if (rawTotalCost !== undefined && !totalCost) {
 		throw invalidResult(resultPath, `results[${index}].totalCost is malformed`);
 	}
 	if (totalCost) child.totalCost = totalCost;
-	const modelAttempts = raw["modelAttempts"];
-	if (modelAttempts !== undefined) {
-		if (!Array.isArray(modelAttempts)) {
-			throw invalidResult(resultPath, `results[${index}].modelAttempts must be an array`);
-		}
-		child.modelAttempts = modelAttempts.map((attempt, attemptIndex) =>
-			parseModelAttempt(attempt, resultPath, `results[${index}].modelAttempts[${attemptIndex}]`),
-		);
-	}
-	if (raw["capabilityCeiling"] !== undefined) {
+	if (rawCapabilityCeiling !== undefined) {
 		child.capabilityCeiling = parseSubagentCapabilityCeiling(
-			raw["capabilityCeiling"],
+			rawCapabilityCeiling,
 			`async result file '${resultPath}' results[${index}].capabilityCeiling`,
 		);
 	}
-	if (Array.isArray(raw["children"])) {
-		const children = raw["children"]
-			.map(sanitizeSummary)
-			.filter((entry): entry is NestedRunSummary => Boolean(entry));
+	if (Array.isArray(rawChildren)) {
+		const children = rawChildren.map(sanitizeSummary).filter((entry): entry is NestedRunSummary => Boolean(entry));
 		if (children.length) child.children = children;
 	}
 	return child;
 }
 
 export function parseAsyncResultFile(value: JsonValue, resultPath: string): AsyncResultFile {
-	const raw = resultObject(value, resultPath);
-	const result: AsyncResultFile = {};
-	for (const field of [
-		"id",
-		"runId",
-		"agent",
-		"mode",
-		"state",
-		"cwd",
-		"sessionId",
-		"sessionFile",
-		"model",
-		"thinking",
-		"launchContractDigest",
-	] as const) {
-		const fieldValue = raw[field];
-		if (fieldValue === undefined) continue;
-		if (!isRuntimeString(fieldValue)) throw invalidResult(resultPath, `${field} must be a string`);
-		result[field] = fieldValue;
-	}
-	if (raw["success"] !== undefined) {
-		if (!isRuntimeBoolean(raw["success"])) throw invalidResult(resultPath, "success must be a boolean");
-		result.success = raw["success"];
-	}
-	if (raw["capabilityCeiling"] !== undefined) {
+	const parsed = cleanResult(ASYNC_RESULT_SCHEMA, value, resultPath);
+	const {
+		capabilityCeiling: rawCapabilityCeiling,
+		parentRunOrigin,
+		startedAt,
+		endedAt,
+		exitCode,
+		timedOut,
+		results,
+		nestedChildren,
+		...plain
+	} = parsed;
+	const result: AsyncResultFile = plain;
+	if (rawCapabilityCeiling !== undefined) {
 		result.capabilityCeiling = parseSubagentCapabilityCeiling(
-			raw["capabilityCeiling"],
+			rawCapabilityCeiling,
 			`async result file '${resultPath}' capabilityCeiling`,
 		);
 	}
-	if (raw["parentRunOrigin"] === "automatic" || raw["parentRunOrigin"] === "user") {
-		result.parentRunOrigin = raw["parentRunOrigin"];
+	if (parentRunOrigin === "automatic" || parentRunOrigin === "user") {
+		result.parentRunOrigin = parentRunOrigin;
 	}
-	for (const field of ["startedAt", "endedAt"] as const) {
-		const timestamp = raw[field];
-		if (isFiniteNumber(timestamp) && timestamp >= 0) result[field] = timestamp;
-	}
-	const exitCode = raw["exitCode"];
+	if (isFiniteNumber(startedAt) && startedAt >= 0) result.startedAt = startedAt;
+	if (isFiniteNumber(endedAt) && endedAt >= 0) result.endedAt = endedAt;
 	if (exitCode === null || isFiniteNumber(exitCode)) result.exitCode = exitCode;
-	if (raw["timedOut"] === true) result.timedOut = true;
-	if (raw["results"] !== undefined) {
-		if (!Array.isArray(raw["results"])) throw invalidResult(resultPath, "results must be an array");
-		result.results = raw["results"].map((entry, index) => parseResultChild(entry, resultPath, index));
-	}
-	if (Array.isArray(raw["nestedChildren"])) {
-		result.nestedChildren = raw["nestedChildren"]
+	if (timedOut === true) result.timedOut = true;
+	if (results) result.results = results.map((entry, index) => parseResultChild(entry, resultPath, index));
+	if (Array.isArray(nestedChildren)) {
+		result.nestedChildren = nestedChildren
 			.map(sanitizeSummary)
 			.filter((entry): entry is NestedRunSummary => Boolean(entry));
 	}
