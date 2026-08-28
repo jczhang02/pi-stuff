@@ -213,6 +213,90 @@ class GoalPtySession {
 	}
 }
 
+async function verifyGoalDialogs(session: GoalPtySession, columns: number, gitProbePath: string): Promise<void> {
+	await session.waitForText("Welcome back!");
+	session.sendLiteral("/goal");
+	session.sendKey("Enter");
+	const main = await session.waitForText("No goal is currently set");
+	for (const required of ["Goal", "Start a goal", "Start with token budget", "Settings", "Help"]) {
+		if (!main.includes(required)) fail(`Goal manager is missing ${required}\n${main}`);
+	}
+	verifyScreen(main, columns, "Goal manager");
+
+	session.sendKey("Down", "Down", "Enter");
+	const settings = await session.waitForText("Pi Goal Settings");
+	for (const required of ["Automatic work", "Unlimited", "No-progress guard", "Off", "Goal tools"]) {
+		if (!settings.includes(required)) fail(`Goal SettingsList is missing ${required}\n${settings}`);
+	}
+	verifyScreen(settings, columns, "Goal SettingsList");
+
+	session.sendKey("Escape");
+	await session.waitForText("No goal is currently set");
+	session.sendKey("Escape");
+	const restored = await session.waitForMissing(["Pi Goal Settings", "No goal is currently set"]);
+	verifyScreen(restored, columns, "restored conversation", true);
+	if (await readFile(gitProbePath, "utf8").catch(() => "")) {
+		fail("handled Goal dialogs triggered a Statusline Git refresh without an Agent turn");
+	}
+}
+
+async function verifyPersistedGoal(temporaryDirectory: string, sessionDirectory: string): Promise<void> {
+	await delay(500);
+	const sessionFiles = (await readdir(sessionDirectory, { recursive: true }))
+		.filter((file) => file.endsWith(".jsonl"))
+		.map((file) => join(sessionDirectory, file));
+	if (sessionFiles.length !== 1) {
+		fail(`expected one persisted Goal session, found ${String(sessionFiles.length)}`);
+	}
+	const [sessionFile] = sessionFiles;
+	if (!sessionFile) fail("persisted Goal session path is missing");
+	const sessionJsonl = await readFile(sessionFile, "utf8");
+	const entries = sessionJsonl
+		.trim()
+		.split("\n")
+		.map((line) => {
+			const entry = JSON.parse(line);
+			if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("Goal session contains a malformed entry");
+			return entry;
+		});
+	const hiddenEntry = entries.find(
+		(entry) => entry.type === "custom_message" && entry.customType === "pi-stuff-goal-prompt",
+	);
+	if (hiddenEntry?.display !== false) fail("persisted Goal protocol is not marked display=false");
+	const goalStates = entries.filter((entry) => entry.type === "custom" && entry.customType === "goal-state");
+	const completedGoal = goalStates
+		.map((entry) => (Check(GOAL_DATA_SCHEMA, entry.data) ? entry.data.goal : undefined))
+		.find((goal) => goal?.status === "complete");
+	const completionResults = entries.flatMap((entry) =>
+		entry.type === "message" && entry.message?.role === "toolResult" && entry.message.toolName === "goal_complete"
+			? [entry.message]
+			: [],
+	);
+	const successfulCompletion = completionResults.some((message) =>
+		message.content?.some((part) => part.text?.startsWith("Goal complete:")),
+	);
+	if (!completedGoal || !successfulCompletion) {
+		fail(
+			`hidden Goal prompt fixture did not complete its Goal: ${JSON.stringify({ completedGoal, completionResults })}`,
+		);
+	}
+
+	const exportPath = join(temporaryDirectory, "goal-session.html");
+	const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+	const exportModuleUrl = pathToFileURL(join(dirname(piEntry), "core/export-html/index.js")).href;
+	const exportModule = await import(exportModuleUrl);
+	if (!isRuntimeFunction(exportModule.exportFromFile)) fail("certified Pi HTML exporter is unavailable");
+	try {
+		await exportModule.exportFromFile(sessionFile, { outputPath: exportPath });
+	} catch (error) {
+		fail(`Pi HTML export failed: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	const exportedHtml = await readFile(exportPath, "utf8");
+	for (const forbidden of ["<goal_objective>", "Goal-mode rules:", "pi-goal-prompt:"]) {
+		if (exportedHtml.includes(forbidden)) fail(`Goal protocol leaked as plaintext into HTML export: ${forbidden}`);
+	}
+}
+
 export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-goal-pty-"));
 	const configDirectory = join(temporaryDirectory, "agent");
@@ -243,30 +327,7 @@ exec /usr/bin/git "$@"
 	const session = new GoalPtySession(temporaryDirectory, options, configDirectory, sessionDirectory);
 	try {
 		session.start();
-		await session.waitForText("Welcome back!");
-		session.sendLiteral("/goal");
-		session.sendKey("Enter");
-		const main = await session.waitForText("No goal is currently set");
-		for (const required of ["Goal", "Start a goal", "Start with token budget", "Settings", "Help"]) {
-			if (!main.includes(required)) fail(`Goal manager is missing ${required}\n${main}`);
-		}
-		verifyScreen(main, options.columns, "Goal manager");
-
-		session.sendKey("Down", "Down", "Enter");
-		const settings = await session.waitForText("Pi Goal Settings");
-		for (const required of ["Automatic work", "Unlimited", "No-progress guard", "Off", "Goal tools"]) {
-			if (!settings.includes(required)) fail(`Goal SettingsList is missing ${required}\n${settings}`);
-		}
-		verifyScreen(settings, options.columns, "Goal SettingsList");
-
-		session.sendKey("Escape");
-		await session.waitForText("No goal is currently set");
-		session.sendKey("Escape");
-		const restored = await session.waitForMissing(["Pi Goal Settings", "No goal is currently set"]);
-		verifyScreen(restored, options.columns, "restored conversation", true);
-		if (await readFile(gitProbePath, "utf8").catch(() => "")) {
-			fail("handled Goal dialogs triggered a Statusline Git refresh without an Agent turn");
-		}
+		await verifyGoalDialogs(session, options.columns, gitProbePath);
 
 		const objective = "verify hidden Goal protocol";
 		session.sendLiteral(`/goal ${objective}`);
@@ -334,60 +395,7 @@ exec /usr/bin/git "$@"
 			if (!deliveredPrompt.includes(required)) fail(`model context is missing hidden Goal protocol: ${required}`);
 		}
 
-		await delay(500);
-		const sessionFiles = (await readdir(sessionDirectory, { recursive: true }))
-			.filter((file) => file.endsWith(".jsonl"))
-			.map((file) => join(sessionDirectory, file));
-		if (sessionFiles.length !== 1) {
-			fail(`expected one persisted Goal session, found ${String(sessionFiles.length)}`);
-		}
-		const [sessionFile] = sessionFiles;
-		if (!sessionFile) fail("persisted Goal session path is missing");
-		const sessionJsonl = await readFile(sessionFile, "utf8");
-		const entries = sessionJsonl
-			.trim()
-			.split("\n")
-			.map((line) => {
-				const entry = JSON.parse(line);
-				if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("Goal session contains a malformed entry");
-				return entry;
-			});
-		const hiddenEntry = entries.find(
-			(entry) => entry.type === "custom_message" && entry.customType === "pi-stuff-goal-prompt",
-		);
-		if (hiddenEntry?.display !== false) fail("persisted Goal protocol is not marked display=false");
-		const goalStates = entries.filter((entry) => entry.type === "custom" && entry.customType === "goal-state");
-		const completedGoal = goalStates
-			.map((entry) => (Check(GOAL_DATA_SCHEMA, entry.data) ? entry.data.goal : undefined))
-			.find((goal) => goal?.status === "complete");
-		const completionResults = entries.flatMap((entry) =>
-			entry.type === "message" && entry.message?.role === "toolResult" && entry.message.toolName === "goal_complete"
-				? [entry.message]
-				: [],
-		);
-		const successfulCompletion = completionResults.some((message) =>
-			message.content?.some((part) => part.text?.startsWith("Goal complete:")),
-		);
-		if (!completedGoal || !successfulCompletion) {
-			fail(
-				`hidden Goal prompt fixture did not complete its Goal: ${JSON.stringify({ completedGoal, completionResults })}`,
-			);
-		}
-
-		const exportPath = join(temporaryDirectory, "goal-session.html");
-		const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
-		const exportModuleUrl = pathToFileURL(join(dirname(piEntry), "core/export-html/index.js")).href;
-		const exportModule = await import(exportModuleUrl);
-		if (!isRuntimeFunction(exportModule.exportFromFile)) fail("certified Pi HTML exporter is unavailable");
-		try {
-			await exportModule.exportFromFile(sessionFile, { outputPath: exportPath });
-		} catch (error) {
-			fail(`Pi HTML export failed: ${error instanceof Error ? error.message : String(error)}`);
-		}
-		const exportedHtml = await readFile(exportPath, "utf8");
-		for (const forbidden of ["<goal_objective>", "Goal-mode rules:", "pi-goal-prompt:"]) {
-			if (exportedHtml.includes(forbidden)) fail(`Goal protocol leaked as plaintext into HTML export: ${forbidden}`);
-		}
+		await verifyPersistedGoal(temporaryDirectory, sessionDirectory);
 	} finally {
 		session.stop();
 		await rm(temporaryDirectory, { recursive: true, force: true });
