@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import { readProcessStartIdentity } from "./process-identity.ts";
 
 export function errnoCode<Value>(cause: Value): string | undefined {
 	if (!isRuntimeObject(cause) || cause === null || !("code" in cause)) return undefined;
@@ -29,6 +31,97 @@ export function ensurePrivateDirectory(directory: string): void {
 	}
 	assertPrivateDirectory(directory, stat);
 	fs.chmodSync(directory, 0o700);
+}
+
+/** Claim one new Agent run directory until its lifecycle owner commits it. */
+export function claimPreparedRunDirectory(directory: string, kind: "background" | "foreground") {
+	try {
+		fs.mkdirSync(directory, { mode: 0o700 });
+	} catch (error) {
+		if (errnoCode(error) === "EEXIST") {
+			throw new Error(
+				`${kind === "foreground" ? "Foreground" : "Background"} Agent runtime '${directory}' already exists; refusing to overwrite retained lifecycle evidence.`,
+			);
+		}
+		throw error;
+	}
+	const created = fs.lstatSync(directory);
+	const token = randomUUID();
+	const markerPath = path.join(directory, `.${kind}-preparation-owner.json`);
+	let committed = false;
+	let removed = false;
+	const stillCreated = (): boolean => {
+		if (removed) return false;
+		try {
+			const current = fs.lstatSync(directory);
+			return current.isDirectory() && current.dev === created.dev && current.ino === created.ino;
+		} catch {
+			return false;
+		}
+	};
+	const removeCreated = (): boolean => {
+		if (removed) return true;
+		if (!stillCreated()) return false;
+		const failedPath = `${directory}.failed-${token}`;
+		try {
+			fs.renameSync(directory, failedPath);
+			const moved = fs.lstatSync(failedPath);
+			if (!moved.isDirectory() || moved.dev !== created.dev || moved.ino !== created.ino) return false;
+			fs.rmSync(failedPath, { recursive: true });
+			removed = true;
+			return true;
+		} catch {
+			// Preserve unproven lifecycle evidence instead of deleting through an ownership race.
+			return false;
+		}
+	};
+	try {
+		ensurePrivateDirectory(directory);
+		fs.writeFileSync(
+			markerPath,
+			`${JSON.stringify({
+				version: 2,
+				token,
+				pid: process.pid,
+				processStartIdentity: readProcessStartIdentity(process.pid),
+				createdAt: Date.now(),
+				device: created.dev,
+				inode: created.ino,
+			})}\n`,
+			{ encoding: "utf8", flag: "wx", mode: 0o600 },
+		);
+	} catch (error) {
+		removeCreated();
+		throw error;
+	}
+	const stillOwned = (): boolean => {
+		if (committed || !stillCreated()) return false;
+		try {
+			const marker = parseJsonValue(readBoundedOwnedFile(markerPath, 4 * 1024));
+			return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker["token"] === token;
+		} catch {
+			return false;
+		}
+	};
+	return {
+		cleanup: () => {
+			if (stillOwned()) removeCreated();
+		},
+		commit: () => {
+			if (!stillOwned()) return false;
+			try {
+				fs.unlinkSync(markerPath);
+				committed = true;
+				return true;
+			} catch {
+				return false;
+			}
+		},
+		isCommitted: () => committed,
+		isRemoved: () => removed,
+		removeCreated,
+		stillCreated,
+	};
 }
 
 /** Validate an existing Agent runtime directory without creating it. */

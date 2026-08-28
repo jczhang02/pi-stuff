@@ -1,15 +1,10 @@
 /** Build and launch detached single-Agent or parallel-Agent runs. */
 
-import { randomUUID } from "node:crypto";
-import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseJsonValue } from "../../../../shared/json-value.js";
-import { isRuntimeObject } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
-import { ensurePrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../../shared/process-identity.ts";
+import { claimPreparedRunDirectory, ensurePrivateDirectory } from "../../shared/private-directory.ts";
 import {
 	type ArtifactConfig,
 	ASYNC_DIR,
@@ -240,85 +235,11 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 		} else {
 			ensurePrivateDirectory(ASYNC_DIR);
 		}
-		try {
-			fs.mkdirSync(asyncDir, { mode: 0o700 });
-		} catch (error) {
-			if (errnoCode(error) === "EEXIST") {
-				throw new Error(
-					`Background Agent runtime '${asyncDir}' already exists; refusing to overwrite retained lifecycle evidence.`,
-				);
-			}
-			throw error;
-		}
-		const created = fs.lstatSync(asyncDir);
-		const token = randomUUID();
-		const markerPath = path.join(asyncDir, ".background-preparation-owner.json");
-		try {
-			ensurePrivateDirectory(asyncDir);
-			fs.writeFileSync(
-				markerPath,
-				`${JSON.stringify({
-					version: 2,
-					token,
-					pid: process.pid,
-					processStartIdentity: readProcessStartIdentity(process.pid),
-					createdAt: Date.now(),
-					device: created.dev,
-					inode: created.ino,
-				})}\n`,
-				{
-					encoding: "utf8",
-					flag: "wx",
-					mode: 0o600,
-				},
-			);
-		} catch (error) {
-			try {
-				const current = fs.lstatSync(asyncDir);
-				if (current.dev === created.dev && current.ino === created.ino) fs.rmSync(asyncDir, { recursive: true });
-			} catch {
-				// Preserve the original ownership/preparation failure.
-			}
-			throw error;
-		}
-
-		let committed = false;
-		const stillOwned = (): boolean => {
-			if (committed) return false;
-			try {
-				const current = fs.lstatSync(asyncDir);
-				if (!current.isDirectory() || current.dev !== created.dev || current.ino !== created.ino) return false;
-				const marker = parseJsonValue(readBoundedOwnedFile(markerPath, 4 * 1024));
-				return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker["token"] === token;
-			} catch {
-				return false;
-			}
-		};
+		const prepared = claimPreparedRunDirectory(asyncDir, "background");
 		const claim: BackgroundRunDirectoryClaim = {
 			asyncDir,
-			cleanup: () => {
-				if (!stillOwned()) return;
-				const failedPath = `${asyncDir}.failed-${token}`;
-				try {
-					fs.renameSync(asyncDir, failedPath);
-					const moved = fs.lstatSync(failedPath);
-					if (moved.dev === created.dev && moved.ino === created.ino) {
-						fs.rmSync(failedPath, { recursive: true });
-					}
-				} catch {
-					// An ownership race leaves evidence in place instead of deleting an unproven directory.
-				}
-			},
-			commit: () => {
-				if (!stillOwned()) return false;
-				try {
-					fs.unlinkSync(markerPath);
-					committed = true;
-					return true;
-				} catch {
-					return false;
-				}
-			},
+			cleanup: prepared.cleanup,
+			commit: prepared.commit,
 		};
 		if (inheritedNestedRoute && nestedAddress) return { ...claim, inheritedNestedRoute, nestedAddress };
 		if (inheritedNestedRoute) return { ...claim, inheritedNestedRoute };
