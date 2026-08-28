@@ -113,11 +113,7 @@ export async function assertDecodableSupportedCodeModeImages(content: readonly T
 		const bytes = decodeBase64(item.data);
 		if (!bytes || !hasCompleteCodeModeImageEnvelope(item)) throw new InvalidCodeModeImageError();
 		try {
-			const decoded = await resizeImage(bytes, mimeType, {
-				maxBytes: Number.MAX_SAFE_INTEGER,
-				maxHeight: 0x7fffffff,
-				maxWidth: 0x7fffffff,
-			});
+			const decoded = await resizeImage(bytes, mimeType);
 			if (!decoded) throw new InvalidCodeModeImageError();
 		} catch {
 			throw new InvalidCodeModeImageError();
