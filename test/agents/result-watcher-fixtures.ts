@@ -49,6 +49,12 @@ const COMPLETION_EVENT_SCHEMA = Type.Object(
 type IntercomPayload = Parameters<Parameters<IntercomEventBus["on"]>[1]>[0];
 type IntercomListener = Parameters<IntercomEventBus["on"]>[1];
 type ReceivedIntercomPayload = Static<typeof INTERCOM_PAYLOAD_SCHEMA>;
+type RecordingResultWatcherOptions = Omit<NonNullable<Parameters<typeof createResultWatcher>[4]>, "notifier"> & {
+	readonly events?: IntercomEventBus;
+	readonly sessionId?: string;
+};
+
+const INERT_INTERCOM_BUS: IntercomEventBus = { emit: () => {}, on: () => () => {} };
 
 function createIntercomBus(deliveries: boolean[]) {
 	const handlers = new Map<string, Set<IntercomListener>>();
@@ -100,6 +106,22 @@ export function createResultWatcherState(currentSessionId = "root-session"): Res
 		watcher: null,
 		watcherRestartTimer: null,
 	};
+}
+
+export function createRecordingResultWatcher(resultsDir: string, options: RecordingResultWatcherOptions = {}) {
+	const { events = INERT_INTERCOM_BUS, sessionId, ...deps } = options;
+	const delivered: CompletionNotification[] = [];
+	const state = createResultWatcherState(sessionId);
+	const watcher = createResultWatcher({ events }, state, resultsDir, 60_000, {
+		...deps,
+		notifier: {
+			deliver: async (notification) => {
+				delivered.push(notification);
+				return true;
+			},
+		},
+	});
+	return { delivered, state, watcher };
 }
 
 export async function waitForResultWatcher(

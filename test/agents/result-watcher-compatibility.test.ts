@@ -5,6 +5,7 @@ import {
 	type CompletionNotification,
 	cleanupResultWatcherFixtures,
 	createIntercomBus,
+	createRecordingResultWatcher,
 	createResultWatcher,
 	createResultWatcherState,
 	fs,
@@ -54,17 +55,7 @@ test("projects legacy result files onto the single/parallel completion contract"
 		}),
 	);
 
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir);
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
@@ -114,17 +105,7 @@ test("preserves completed and paused child truth in one grouped result", async (
 		}),
 	);
 
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir);
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
@@ -322,16 +303,12 @@ test("does not deliver an old-session result after an awaited nested projection"
 	const projectionStarted = Promise.withResolvers<void>();
 	const projectionRelease = Promise.withResolvers<void>();
 	const { bus, received } = createIntercomBus([true]);
-	const notifications: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				notifications.push(notification);
-				return true;
-			},
-		},
+	const {
+		delivered: notifications,
+		state,
+		watcher,
+	} = createRecordingResultWatcher(resultsDir, {
+		events: bus,
 		projectNestedEvents: async () => {
 			projectionStarted.resolve();
 			await projectionRelease.promise;

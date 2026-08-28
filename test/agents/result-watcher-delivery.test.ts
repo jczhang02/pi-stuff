@@ -1,10 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type CompletionNotification,
 	cleanupResultWatcherFixtures,
 	createIntercomBus,
-	createResultWatcher,
-	createResultWatcherState,
+	createRecordingResultWatcher,
 	fs,
 	os,
 	path,
@@ -21,17 +19,7 @@ test("delivers a cold targeted result without waking the main model, then delete
 	temporaryDirectories.push(resultsDir);
 	const resultPath = writeTargetedResult(resultsDir, "cold-target");
 	const { bus, received } = createIntercomBus([true]);
-	const notifications: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				notifications.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered: notifications, watcher } = createRecordingResultWatcher(resultsDir, { events: bus });
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
@@ -50,17 +38,7 @@ test("retains and retries a cold targeted result until target delivery is acknow
 	temporaryDirectories.push(resultsDir);
 	const resultPath = writeTargetedResult(resultsDir, "cold-retry");
 	const { bus, received } = createIntercomBus([false, true]);
-	const notifications: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				notifications.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered: notifications, watcher } = createRecordingResultWatcher(resultsDir, { events: bus });
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
@@ -117,17 +95,7 @@ test("repairs terminal status before deleting an accepted result so reload canno
 		}),
 	);
 
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir);
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults();
@@ -175,17 +143,7 @@ test("delivers a durable result once while missing status is repaired with bound
 			results: [{ agent: "writer", output: "done", success: true, exitCode: 0 }],
 		}),
 	);
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
-		},
-	});
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir);
 
 	watcher.startResultWatcher();
 	watcher.primeExistingResults({ triggerTurn: false });
@@ -237,29 +195,15 @@ test("recovers the final result name when fs.watch reports only its atomic temp 
 		on: () => fakeWatcher,
 		unref: () => fakeWatcher,
 	};
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir, {
 		fs: {
 			existsSync: fs.existsSync,
-			lstatSync: fs.lstatSync,
-			mkdirSync: fs.mkdirSync,
-			readFileSync: fs.readFileSync,
-			readdirSync: fs.readdirSync,
 			realpathSync: fs.realpathSync,
-			unlinkSync: fs.unlinkSync,
-			watch: (_directory: Parameters<typeof fs.watch>[0], listener: typeof watchListener) => {
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+			watch: ((_directory: Parameters<typeof fs.watch>[0], listener: typeof watchListener) => {
 				watchListener = listener;
 				return fakeWatcher;
-			},
-		} as never,
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
+			}) as never,
 		},
 	});
 

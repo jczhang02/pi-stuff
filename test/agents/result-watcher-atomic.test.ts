@@ -1,9 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type CompletionNotification,
 	cleanupResultWatcherFixtures,
-	createResultWatcher,
-	createResultWatcherState,
+	createRecordingResultWatcher,
 	fs,
 	os,
 	path,
@@ -24,20 +22,11 @@ test("awaits result snapshots without blocking the host event loop", async () =>
 	);
 	const readStarted = Promise.withResolvers<void>();
 	const releaseRead = Promise.withResolvers<void>();
-	const delivered: CompletionNotification[] = [];
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir, {
 		readResultSnapshot: async (target, maxBytes) => {
 			readStarted.resolve();
 			await releaseRead.promise;
 			return readBoundedOwnedFileSnapshot(target, maxBytes);
-		},
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
 		},
 	});
 
@@ -67,15 +56,12 @@ test("reads an unchanged foreign-session result once and revisits an atomic repl
 		JSON.stringify({ id: "shared-name", sessionId: "other-session", success: true, summary: "foreign" }),
 	);
 	let reads = 0;
-	const delivered: CompletionNotification[] = [];
 	const inertWatcher = {
 		close: () => {},
 		on: () => inertWatcher,
 		unref: () => inertWatcher,
 	};
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir, {
 		fs: {
 			existsSync: fs.existsSync,
 			realpathSync: fs.realpathSync,
@@ -85,12 +71,6 @@ test("reads an unchanged foreign-session result once and revisits an atomic repl
 		readResultSnapshot: (target, maxBytes) => {
 			reads += 1;
 			return readBoundedOwnedFileSnapshot(target, maxBytes);
-		},
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
 		},
 	});
 
@@ -144,11 +124,8 @@ test("caches an unchanged invalid async binding and revisits an atomic replaceme
 		}),
 	);
 	let reads = 0;
-	const delivered: CompletionNotification[] = [];
 	const inertWatcher = { close: () => {}, on: () => inertWatcher, unref: () => inertWatcher };
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+	const { delivered, watcher } = createRecordingResultWatcher(resultsDir, {
 		asyncDirRoot,
 		fs: {
 			existsSync: fs.existsSync,
@@ -159,12 +136,6 @@ test("caches an unchanged invalid async binding and revisits an atomic replaceme
 		readResultSnapshot: (target, maxBytes) => {
 			reads += 1;
 			return readBoundedOwnedFileSnapshot(target, maxBytes);
-		},
-		notifier: {
-			deliver: async (notification) => {
-				delivered.push(notification);
-				return true;
-			},
 		},
 	});
 
@@ -203,9 +174,7 @@ test("contains a durable result-claim release failure", async () => {
 	const onUnhandled = (cause: unknown) => unhandled.push(cause);
 	process.on("unhandledRejection", onUnhandled);
 	let releases = 0;
-	const state = createResultWatcherState();
-	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+	const { watcher } = createRecordingResultWatcher(resultsDir, {
 		acquireClaim: () => ({
 			directory: path.join(resultsDir, "fake.lock"),
 			token: "fake",
