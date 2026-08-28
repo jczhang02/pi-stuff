@@ -499,7 +499,8 @@ export class ChildProcessEngine {
 					? this.writerProcessBindingError.message
 					: String(this.writerProcessBindingError)
 			}`;
-			trySignalChild(this.child, "SIGTERM", this.writerProcessStartIdentity);
+			this.requestTermination("SIGTERM");
+			this.armTerminationHardKill();
 			this.childStdin.destroy();
 			return;
 		}
@@ -516,7 +517,8 @@ export class ChildProcessEngine {
 	private failStartupGate(): void {
 		if (!this.claimTerminalCause("setup")) return;
 		this.forcedError = `Failed to release Agent writer supervisor startup gate: ${this.writerControlError?.message ?? "control pipe closed"}.`;
-		trySignalChild(this.child, "SIGTERM", this.writerProcessStartIdentity);
+		this.requestTermination("SIGTERM");
+		this.armTerminationHardKill();
 	}
 
 	private async recoverWriterGroup(): Promise<void> {

@@ -274,7 +274,7 @@ setInterval(() => {}, 1_000);
 		results: [
 			{
 				error: expect.stringContaining("injected writer binding failure"),
-				writerProcesses: [{ signal: "SIGTERM" }],
+				writerProcesses: [{ exitCode: 125, signal: null }],
 			},
 		],
 	});
