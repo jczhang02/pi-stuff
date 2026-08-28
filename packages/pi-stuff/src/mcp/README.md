@@ -74,6 +74,10 @@ confirmation performs the write. Press `s` from the server list, or Enter on an
 empty list, to open setup inside the same Command Dialog. OAuth authentication
 and logout are available from each eligible server's detail actions.
 
+Legacy plaintext OAuth entries are read without migration during startup. The
+next explicit OAuth mutation writes the entry to the operating-system credential
+store and removes the plaintext copy.
+
 Setup rejects source or generated previews above 1,000,000 bytes or 10,000 lines
 before diff construction. Within that bound, previews keep exact line diffs
 through 250,000 compared line pairs; larger comparisons retain common

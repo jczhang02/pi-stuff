@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { request } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
+	getAuthEntryFilePath,
 	getAuthForUrl,
 	getTestAuthSecretStoreEntries,
 	resetTestAuthSecretStore,
@@ -152,6 +156,38 @@ test("binds secure OAuth credentials to their server URL and detects chunk tampe
 		resetTestAuthSecretStore();
 		if (previousAuthStore === undefined) delete process.env[authStoreEnv];
 		else process.env[authStoreEnv] = previousAuthStore;
+	}
+});
+
+test("keeps legacy plaintext OAuth credentials read-only until an explicit auth write", async () => {
+	const authStoreEnv = "PI_MCP_ADAPTER_TEST_AUTH_STORE";
+	const previousAuthStore = process.env[authStoreEnv];
+	const baseDir = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-auth-"));
+	const options = { baseDir };
+	const serverUrl = "https://legacy.example";
+	const legacyPath = getAuthEntryFilePath("legacy", options);
+	process.env[authStoreEnv] = "memory";
+	resetTestAuthSecretStore();
+	try {
+		await mkdir(dirname(legacyPath), { recursive: true });
+		await Bun.write(legacyPath, JSON.stringify({ serverUrl, tokens: { accessToken: "legacy-token" } }));
+
+		expect(getAuthForUrl("legacy", serverUrl, options)?.tokens?.accessToken).toBe("legacy-token");
+		expect(await Bun.file(legacyPath).exists()).toBe(true);
+		expect(getTestAuthSecretStoreEntries()).toEqual([]);
+
+		updateTokens("legacy", { accessToken: "secure-token" }, serverUrl, options);
+		expect(await Bun.file(legacyPath).exists()).toBe(false);
+
+		await mkdir(dirname(legacyPath), { recursive: true });
+		await Bun.write(legacyPath, JSON.stringify({ serverUrl, tokens: { accessToken: "stale-token" } }));
+		expect(getAuthForUrl("legacy", serverUrl, options)?.tokens?.accessToken).toBe("secure-token");
+		expect(await Bun.file(legacyPath).exists()).toBe(true);
+	} finally {
+		resetTestAuthSecretStore();
+		if (previousAuthStore === undefined) delete process.env[authStoreEnv];
+		else process.env[authStoreEnv] = previousAuthStore;
+		await rm(baseDir, { force: true, recursive: true });
 	}
 });
 

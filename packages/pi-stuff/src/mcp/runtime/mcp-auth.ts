@@ -5,9 +5,9 @@
  * and legacy PKCE state for MCP servers.
  *
  * Persistent OAuth entries are stored in the operating system credential store.
- * Legacy plaintext entries are imported from $MCP_OAUTH_DIR/sha256-<server-hash>/tokens.json
- * when set, otherwise <Pi agent dir>/mcp-oauth/sha256-<server-hash>/tokens.json,
- * then the plaintext file is removed.
+ * Legacy plaintext entries are read from $MCP_OAUTH_DIR/sha256-<server-hash>/tokens.json
+ * when set, otherwise <Pi agent dir>/mcp-oauth/sha256-<server-hash>/tokens.json.
+ * An explicit OAuth write moves them to the secure store and removes the plaintext file.
  */
 
 import { createHash } from "node:crypto";
@@ -416,15 +416,11 @@ function writeSecureAuthEntry(serverName: string, entry: AuthEntry): void {
 	}
 }
 
-/**
- * Read the auth entry for a server from the OS secure store, importing and
- * deleting a legacy plaintext entry when present.
- */
+/** Read the auth entry without mutating either credential store. */
 function readAuthEntryFromStore(
 	store: AuthSecretStore,
 	serverName: string,
 	options?: AuthStorageOptions,
-	behavior: { migrateLegacy?: boolean } = {},
 ): AuthEntry | undefined {
 	const account = getAuthEntryAccount(serverName);
 	let payload: string | undefined;
@@ -443,28 +439,18 @@ function readAuthEntryFromStore(
 		const entry = manifest
 			? readChunkedAuthEntry(store, serverName, account, manifest)
 			: parseAuthEntryPayload(serverName, payload, "OS secure credential store");
-		removeLegacyAuthEntry(serverName, options);
 		return entry;
 	}
 
-	const legacyEntry = readLegacyAuthEntry(serverName, options);
-	if (!legacyEntry) return undefined;
-	if (behavior.migrateLegacy === false) return legacyEntry;
-	writeSecureAuthEntryToStore(store, serverName, legacyEntry);
-	removeLegacyAuthEntry(serverName, options);
-	return legacyEntry;
+	return readLegacyAuthEntry(serverName, options);
 }
 
-function readAuthEntry(
-	serverName: string,
-	options?: AuthStorageOptions,
-	behavior: { migrateLegacy?: boolean } = {},
-): AuthEntry | undefined {
+function readAuthEntry(serverName: string, options?: AuthStorageOptions): AuthEntry | undefined {
 	try {
-		return readAuthEntryFromStore(getAuthSecretStore(), serverName, options, behavior);
+		return readAuthEntryFromStore(getAuthSecretStore(), serverName, options);
 	} catch (error) {
 		if (!shouldAttemptLinuxKeyringRecovery(error)) throw error;
-		return readAuthEntryFromStore(linuxKeyringRecoveryAuthSecretStore, serverName, options, behavior);
+		return readAuthEntryFromStore(linuxKeyringRecoveryAuthSecretStore, serverName, options);
 	}
 }
 
@@ -499,7 +485,7 @@ export function inspectAuthForUrl(
 	options?: AuthStorageOptions,
 ): OAuthCredentialStatus {
 	try {
-		const entry = readAuthEntry(serverName, options, { migrateLegacy: false });
+		const entry = readAuthEntry(serverName, options);
 		if (!entry?.serverUrl || entry.serverUrl !== serverUrl) return { status: "absent" };
 		return { status: "present", entry };
 	} catch (error) {

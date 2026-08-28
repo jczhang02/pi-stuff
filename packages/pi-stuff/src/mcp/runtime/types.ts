@@ -197,7 +197,8 @@ export interface McpSettings {
 	 *
 	 * Persistent OAuth credentials are stored in the operating system credential
 	 * store, not this directory. Existing plaintext tokens.json files found here
-	 * are imported once and removed.
+	 * remain a read-only compatibility fallback until an explicit OAuth mutation
+	 * moves the entry to secure storage and removes the plaintext file.
 	 */
 	oauthDir?: string;
 }
