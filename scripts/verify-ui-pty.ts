@@ -1222,19 +1222,12 @@ async function verifyPonytailDialog(
 	}
 }
 
-async function verifyWideInteractions(
+async function verifyWideUi(
 	session: TmuxPiSession,
 	paths: CasePaths,
 	options: UiPtyVerificationOptions,
-): Promise<{ readonly liveThought: boolean }> {
+): Promise<void> {
 	const settingsPath = join(paths.config, "pi-stuff.json");
-	const toolSettingsPath = join(paths.config, "pi-stuff.json");
-
-	await verifyDiagnosticsUi(session, paths, options, 100, 32);
-	await verifyCodexDialog(session, paths);
-	await verifySessionNamingDialog(session, paths, options);
-	await verifyPonytailDialog(session, paths, options);
-
 	let screen = await openUi(session);
 	screen = await session.waitForDialogFrame("Tool running timer", 100);
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-100x32`, session);
@@ -1272,7 +1265,7 @@ async function verifyWideInteractions(
 	session.sendKey("C-u");
 	session.sendLiteral("/u");
 	await session.waitForText("Configure Pi Stuff UI");
-	screen = await session.waitForStatuslineAbsence();
+	await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing native autocomplete");
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
@@ -1280,28 +1273,32 @@ async function verifyWideInteractions(
 	session.sendKey("C-u");
 	session.sendLiteral("prefix /hzh");
 	await session.waitForText("Humanize Chinese fixture text");
-	screen = await session.waitForStatuslineAbsence();
+	await session.waitForStatuslineAbsence();
 	session.sendKey("Escape");
 	await session.waitForText("prefix /hzh");
 	await session.waitForStatusline("closing inline slash autocomplete");
 	session.sendKey("C-u");
+}
 
+async function verifyWidePrompt(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+): Promise<void> {
 	session.sendLiteral(LONG_PROMPT);
 	session.sendKey("Enter");
 	const finalThought = expectedThoughtProjection(THOUGHT_PHASES.length - 1, 100);
 	await session.waitForText(finalThought);
-	const liveThought = true;
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
 	await session.waitForText("\u{F03EB}1");
 	await session.waitForText("\u{F0752}1");
-	screen = await session.waitForAbsence("Welcome back!");
+	const screen = await session.waitForAbsence("Welcome back!");
 	if (!screen.includes(`${NERD_PONYTAIL_MARKER} full`)) fail("settled Statusline lost Ponytail's mode authority");
 	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
-		if (screen.includes(capabilityStatus)) {
+		if (screen.includes(capabilityStatus))
 			fail(`ordinary Statusline exposed capability-owned status: ${capabilityStatus}`);
-		}
 	}
 	const promptLines = rowsBelowEditorDivider(screen).filter((line) => line.includes(LONG_PROMPT_TOKEN));
 	if (promptLines.length !== 1) {
@@ -1350,13 +1347,12 @@ async function verifyWideInteractions(
 	if (request?.lastUser !== LONG_PROMPT) fail("fixture did not receive the complete long CJK prompt");
 
 	await verifyTodoOverlay(session, options, 100, 32);
-
 	session.sendKey("F11");
 	await session.waitForText("SUBSCRIPTION_MODEL_READY");
 	await session.waitForText(SUBSCRIPTION_MODEL);
 	await session.waitForText("22%");
-	screen = session.capture();
-	if (screen.includes("$") || screen.includes("(sub)")) {
+	const subscriptionScreen = session.capture();
+	if (subscriptionScreen.includes("$") || subscriptionScreen.includes("(sub)")) {
 		fail("API-key kimi-coding subscription exposed cost or a (sub) label");
 	}
 	const switchRecords = await waitForFixtureRecords(paths.log, "subscription-switch", 1);
@@ -1369,8 +1365,11 @@ async function verifyWideInteractions(
 	) {
 		fail(`subscription fixture did not select API-key kimi-coding: ${JSON.stringify(subscriptionSwitch)}`);
 	}
+}
 
-	screen = await openFilteredUi(session, "density", "Statusline density");
+async function verifyWideSettings(session: TmuxPiSession, paths: CasePaths): Promise<void> {
+	const settingsPath = join(paths.config, "pi-stuff.json");
+	let screen = await openFilteredUi(session, "density", "Statusline density");
 	verifySettingValue(screen, "Statusline density", "auto");
 	session.sendKey("Enter");
 	await waitForPersistedSetting(settingsPath, "ui", "statuslineDensity", "full");
@@ -1409,7 +1408,7 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "timer", "Tool running timer");
 	verifySettingValue(screen, "Tool running timer", true);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(toolSettingsPath, "tools", "liveElapsed", false);
+	await waitForPersistedSetting(settingsPath, "tools", "liveElapsed", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Tool running timer", false);
 	session.sendKey("Escape");
@@ -1428,7 +1427,10 @@ async function verifyWideInteractions(
 	await session.waitForText("STATUSLINE_OFF_草稿");
 	if (hasStatusline(session.capture())) fail("disabled Statusline returned after /ui closed");
 	session.stop();
+}
 
+async function verifyWideRestart(paths: CasePaths, options: UiPtyVerificationOptions): Promise<void> {
+	const settingsPath = join(paths.config, "pi-stuff.json");
 	const restarted = new TmuxPiSession(paths, options, 100, 32);
 	try {
 		await restarted.start();
@@ -1441,7 +1443,7 @@ async function verifyWideInteractions(
 		if (resumedHistory.includes("type: sparkline")) {
 			fail("resumed wide Session exposed raw chart source instead of its projection");
 		}
-		screen = restarted.capture();
+		let screen = restarted.capture();
 		if (screen.includes("Welcome back!")) fail("persisted Welcome=false was ignored on the next launch");
 		if (hasStatusline(screen)) fail("persisted Statusline=false was ignored after restart");
 		restarted.sendKey("C-u");
@@ -1484,10 +1486,25 @@ async function verifyWideInteractions(
 	}
 
 	const persistedMode = (await stat(settingsPath)).mode & 0o777;
-	if (persistedMode !== 0o600) fail(`UI settings mode is ${persistedMode.toString(8)}, expected 600`);
-	const toolPersistedMode = (await stat(toolSettingsPath)).mode & 0o777;
-	if (toolPersistedMode !== 0o600) fail(`Tool settings mode is ${toolPersistedMode.toString(8)}, expected 600`);
-	return { liveThought };
+	if (persistedMode !== 0o600) fail(`Pi Stuff settings mode is ${persistedMode.toString(8)}, expected 600`);
+}
+
+async function verifyWideInteractions(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+): Promise<void> {
+	await verifyDiagnosticsUi(session, paths, options, 100, 32);
+	await verifyCodexDialog(session, paths);
+	await verifySessionNamingDialog(session, paths, options);
+	await verifyPonytailDialog(session, paths, options);
+	await verifyWideUi(session, paths, options);
+
+	await verifyWidePrompt(session, paths, options);
+
+	await verifyWideSettings(session, paths);
+
+	await verifyWideRestart(paths, options);
 }
 
 async function readFixtureRecords(path: string): Promise<readonly FixtureRecord[]> {
@@ -1607,8 +1624,8 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					await verifyThoughtLifecycle(session, paths, columns, rows);
 					await verifyThoughtContextPreservation(session, paths);
 					await verifyFencedVisualization(session, paths, caseOptions);
-					const result = await verifyWideInteractions(session, paths, caseOptions);
-					liveThought = result.liveThought;
+					await verifyWideInteractions(session, paths, caseOptions);
+					liveThought = true;
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
