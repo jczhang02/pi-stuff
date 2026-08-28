@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,203 +38,201 @@ function result(stdout = "", code = 0, options: { killed?: boolean; stderr?: str
 	};
 }
 
-describe("RTK runtime certification", () => {
-	test("keeps the official release identity synchronized with CI and provenance", async () => {
-		const root = join(import.meta.dir, "../..");
-		const records = await Promise.all(
-			[
-				".github/workflows/ci.yml",
-				"docs/compatibility.md",
-				"packages/pi-stuff/src/rtk/README.md",
-				"packages/pi-stuff/src/rtk/UPSTREAM.md",
-			].map((path) => readFile(join(root, path), "utf8")),
-		);
-		for (const record of records) {
-			expect(record).toContain(CERTIFIED_RTK_VERSION);
-			expect(record).toContain(CERTIFIED_RTK_LINUX_X64_SHA256);
-		}
-		expect(records[0]).toContain("c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4");
-		expect(records[2]).toContain("compound predicates");
-		expect(records[3]).not.toContain("Maintainer source build");
+test("keeps the official release identity synchronized with CI and provenance", async () => {
+	const root = join(import.meta.dir, "../..");
+	const records = await Promise.all(
+		[
+			".github/workflows/ci.yml",
+			"docs/compatibility.md",
+			"packages/pi-stuff/src/rtk/README.md",
+			"packages/pi-stuff/src/rtk/UPSTREAM.md",
+		].map((path) => readFile(join(root, path), "utf8")),
+	);
+	for (const record of records) {
+		expect(record).toContain(CERTIFIED_RTK_VERSION);
+		expect(record).toContain(CERTIFIED_RTK_LINUX_X64_SHA256);
+	}
+	expect(records[0]).toContain("c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4");
+	expect(records[2]).toContain("compound predicates");
+	expect(records[3]).not.toContain("Maintainer source build");
+});
+
+test("rejects an uncertified executable that reports the certified version", async () => {
+	const binary = await fakeBinary();
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			if (command === "which") return result(`${binary.path}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+
+	expect(await new RtkRuntime().verify(pi)).toMatchObject({ state: "unavailable" });
+});
+
+test("bounds runtime errors by terminal cells", async () => {
+	const runtime = new RtkRuntime({ expectedSha256: "unused" });
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	await runtime.verify({
+		exec: async () => {
+			throw new Error(`\u001b[31m${"失败😀".repeat(100)}\u001b[0m`);
+		},
+	} as Pick<ExtensionAPI, "exec">);
+	const error = runtime.snapshot().lastError ?? "";
+	expect(visibleWidth(error)).toBeLessThanOrEqual(220 + visibleWidth("RTK verification failed: "));
+	expect(error).not.toContain("\u001b");
+});
+
+test("verifies one exact executable and rewrites through its absolute path", async () => {
+	const binary = await fakeBinary();
+	const calls: Array<{ args: string[]; command: string }> = [];
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			calls.push({ args, command });
+			if (command === "which") return result(`${binary.path}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			if (args[0] === "rewrite") return result("rtk git status\n", 3);
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ expectedSha256: binary.sha256 });
+
+	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
+	expect(runtime.snapshot()).toMatchObject({
+		path: binary.path,
+		sha256: binary.sha256,
+		state: "ready",
+		version: CERTIFIED_RTK_VERSION,
 	});
+	expect(calls.some((call) => call.command === binary.path && call.args[0] === "rewrite")).toBe(true);
+});
 
-	test("rejects an uncertified executable that reports the certified version", async () => {
-		const binary = await fakeBinary();
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				if (command === "which") return result(`${binary.path}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
+test("keeps the original command when RTK is missing and avoids repeated probes", async () => {
+	let probes = 0;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async () => {
+			probes += 1;
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ expectedSha256: "unused" });
 
-		expect(await new RtkRuntime().verify(pi)).toMatchObject({ state: "unavailable" });
-	});
+	expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
+	expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
+	expect(probes).toBe(1);
+	expect(runtime.snapshot().state).toBe("unavailable");
+});
 
-	test("bounds runtime errors by terminal cells", async () => {
-		const runtime = new RtkRuntime({ expectedSha256: "unused" });
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		await runtime.verify({
-			exec: async () => {
-				throw new Error(`\u001b[31m${"失败😀".repeat(100)}\u001b[0m`);
-			},
-		} as Pick<ExtensionAPI, "exec">);
-		const error = runtime.snapshot().lastError ?? "";
-		expect(visibleWidth(error)).toBeLessThanOrEqual(220 + visibleWidth("RTK verification failed: "));
-		expect(error).not.toContain("\u001b");
-	});
+test("fails open when the current platform has no certified binary identity", async () => {
+	const binary = await fakeBinary();
+	let rewriteCalls = 0;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			if (command === "which") return result(`${binary.path}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			if (args[0] === "rewrite") rewriteCalls += 1;
+			return result("rtk git status\n", 3);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ platform: "darwin" });
 
-	test("verifies one exact executable and rewrites through its absolute path", async () => {
-		const binary = await fakeBinary();
-		const calls: Array<{ args: string[]; command: string }> = [];
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				calls.push({ args, command });
-				if (command === "which") return result(`${binary.path}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				if (args[0] === "rewrite") return result("rtk git status\n", 3);
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ expectedSha256: binary.sha256 });
+	expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
+	expect(rewriteCalls).toBe(0);
+	expect(runtime.snapshot()).toMatchObject({ state: "unavailable" });
+});
 
-		expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
-		expect(runtime.snapshot()).toMatchObject({
-			path: binary.path,
-			sha256: binary.sha256,
-			state: "ready",
-			version: CERTIFIED_RTK_VERSION,
-		});
-		expect(calls.some((call) => call.command === binary.path && call.args[0] === "rewrite")).toBe(true);
-	});
+test("fails open on timeout and stops retrying the slow executable", async () => {
+	const binary = await fakeBinary();
+	let rewriteCalls = 0;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			if (command === "which") return result(`${binary.path}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			if (args[0] === "rewrite") {
+				rewriteCalls += 1;
+				throw new Error("timed out");
+			}
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ expectedSha256: binary.sha256 });
 
-	test("keeps the original command when RTK is missing and avoids repeated probes", async () => {
-		let probes = 0;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async () => {
-				probes += 1;
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ expectedSha256: "unused" });
+	expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
+	expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
+	expect(rewriteCalls).toBe(1);
+	expect(runtime.snapshot()).toMatchObject({ state: "unavailable" });
+});
 
-		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
-		expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
-		expect(probes).toBe(1);
-		expect(runtime.snapshot().state).toBe("unavailable");
-	});
-
-	test("fails open when the current platform has no certified binary identity", async () => {
-		const binary = await fakeBinary();
-		let rewriteCalls = 0;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				if (command === "which") return result(`${binary.path}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				if (args[0] === "rewrite") rewriteCalls += 1;
+test("detects path and executable drift before running rewritten commands", async () => {
+	const first = await fakeBinary("first");
+	const second = await fakeBinary("second");
+	let selectedPath = first.path;
+	let rewriteCalls = 0;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			if (command === "which") return result(`${selectedPath}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			if (args[0] === "rewrite") {
+				rewriteCalls += 1;
 				return result("rtk git status\n", 3);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ platform: "darwin" });
+			}
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ expectedSha256: first.sha256 });
 
-		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
-		expect(rewriteCalls).toBe(0);
-		expect(runtime.snapshot()).toMatchObject({ state: "unavailable" });
-	});
+	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
+	selectedPath = second.path;
+	expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
+	expect(rewriteCalls).toBe(1);
+	expect(runtime.snapshot().state).toBe("drifted");
+});
 
-	test("fails open on timeout and stops retrying the slow executable", async () => {
-		const binary = await fakeBinary();
-		let rewriteCalls = 0;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				if (command === "which") return result(`${binary.path}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				if (args[0] === "rewrite") {
-					rewriteCalls += 1;
-					throw new Error("timed out");
-				}
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ expectedSha256: binary.sha256 });
+test("detects in-place binary drift and allows explicit re-certification", async () => {
+	const binary = await fakeBinary("first");
+	let expectedSha256 = binary.sha256;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async (command: string, args: string[]) => {
+			if (command === "which") return result(`${binary.path}\n`);
+			if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+			if (args[0] === "rewrite") return result("rtk git status\n", 3);
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime({ expectedSha256 });
 
-		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
-		expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
-		expect(rewriteCalls).toBe(1);
-		expect(runtime.snapshot()).toMatchObject({ state: "unavailable" });
-	});
+	expect(await runtime.rewrite(pi, "git status")).toBeDefined();
+	await writeFile(binary.path, "changed");
+	expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
+	expect(runtime.snapshot().state).toBe("drifted");
 
-	test("detects path and executable drift before running rewritten commands", async () => {
-		const first = await fakeBinary("first");
-		const second = await fakeBinary("second");
-		let selectedPath = first.path;
-		let rewriteCalls = 0;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				if (command === "which") return result(`${selectedPath}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				if (args[0] === "rewrite") {
-					rewriteCalls += 1;
-					return result("rtk git status\n", 3);
-				}
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ expectedSha256: first.sha256 });
+	expectedSha256 = createHash("sha256")
+		.update(await readFile(binary.path))
+		.digest("hex");
+	const replacementRuntime = new RtkRuntime({ expectedSha256 });
+	expect((await replacementRuntime.verify(pi, { refresh: true })).state).toBe("ready");
+});
 
-		expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
-		selectedPath = second.path;
-		expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
-		expect(rewriteCalls).toBe(1);
-		expect(runtime.snapshot().state).toBe("drifted");
-	});
+test("does not rewrite empty or already-RTK commands", async () => {
+	let calls = 0;
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
+	const pi = {
+		exec: async () => {
+			calls += 1;
+			return result("", 1);
+		},
+	} as Pick<ExtensionAPI, "exec">;
+	const runtime = new RtkRuntime();
 
-	test("detects in-place binary drift and allows explicit re-certification", async () => {
-		const binary = await fakeBinary("first");
-		let expectedSha256 = binary.sha256;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async (command: string, args: string[]) => {
-				if (command === "which") return result(`${binary.path}\n`);
-				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
-				if (args[0] === "rewrite") return result("rtk git status\n", 3);
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime({ expectedSha256 });
-
-		expect(await runtime.rewrite(pi, "git status")).toBeDefined();
-		await writeFile(binary.path, "changed");
-		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
-		expect(runtime.snapshot().state).toBe("drifted");
-
-		expectedSha256 = createHash("sha256")
-			.update(await readFile(binary.path))
-			.digest("hex");
-		const replacementRuntime = new RtkRuntime({ expectedSha256 });
-		expect((await replacementRuntime.verify(pi, { refresh: true })).state).toBe("ready");
-	});
-
-	test("does not rewrite empty or already-RTK commands", async () => {
-		let calls = 0;
-		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
-		const pi = {
-			exec: async () => {
-				calls += 1;
-				return result("", 1);
-			},
-		} as Pick<ExtensionAPI, "exec">;
-		const runtime = new RtkRuntime();
-
-		expect(await runtime.rewrite(pi, "  ")).toBeUndefined();
-		expect(await runtime.rewrite(pi, "rtk git status")).toBeUndefined();
-		expect(await runtime.rewrite(pi, "CI=1 rtk git status")).toBeUndefined();
-		expect(calls).toBe(0);
-	});
+	expect(await runtime.rewrite(pi, "  ")).toBeUndefined();
+	expect(await runtime.rewrite(pi, "rtk git status")).toBeUndefined();
+	expect(await runtime.rewrite(pi, "CI=1 rtk git status")).toBeUndefined();
+	expect(calls).toBe(0);
 });

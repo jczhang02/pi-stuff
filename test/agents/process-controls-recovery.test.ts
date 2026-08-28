@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -346,9 +346,8 @@ function seedSession(root: string): string {
 	return path.join(sessionDir, session);
 }
 
-describe("process-level Agent controls and crash recovery", () => {
-	// biome-ignore format: Keep real-Host acceptance and its independent timeout visibly grouped.
-	test(
+// biome-ignore format: Keep real-Host acceptance and its independent timeout visibly grouped.
+test(
 		"reports context capacity from a real child-only Provider",
 		async () => {
 			const root = fixtureRoot("pi-stuff-child-model-context-");
@@ -392,8 +391,8 @@ describe("process-level Agent controls and crash recovery", () => {
 		20_000,
 	);
 
-	// biome-ignore format: Keep real-process body and its independent timeout visibly grouped.
-	test(
+// biome-ignore format: Keep real-process body and its independent timeout visibly grouped.
+test(
 		"targets steer and stop to one real parallel writer without disturbing its sibling",
 		async () => {
 			const root = fixtureRoot("pi-stuff-process-controls-");
@@ -501,8 +500,8 @@ describe("process-level Agent controls and crash recovery", () => {
 		35_000,
 	);
 
-	// biome-ignore format: Keep crash-recovery body and its independent timeout visibly grouped.
-	test(
+// biome-ignore format: Keep crash-recovery body and its independent timeout visibly grouped.
+test(
 		"kills an orphan writer after a runner-only crash, then resumes the same logical Agent once",
 		async () => {
 			const root = fixtureRoot("pi-stuff-process-recovery-");
@@ -662,8 +661,8 @@ describe("process-level Agent controls and crash recovery", () => {
 		30_000,
 	);
 
-	// biome-ignore format: Keep supervisor-crash acceptance and its process cleanup visibly grouped.
-	test(
+// biome-ignore format: Keep supervisor-crash acceptance and its process cleanup visibly grouped.
+test(
 		"authenticates and reaps a surviving Pi child after its writer supervisor is SIGKILLed",
 		async () => {
 			if (process.platform === "win32") return;
@@ -745,4 +744,3 @@ describe("process-level Agent controls and crash recovery", () => {
 		},
 		25_000,
 	);
-});

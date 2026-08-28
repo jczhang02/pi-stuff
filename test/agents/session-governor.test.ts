@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import * as nodeFs from "node:fs/promises";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -78,700 +78,698 @@ function governorFs(overrides: Partial<SessionGovernorFileSystem>): SessionGover
 	return { ...nodeFs, ...overrides };
 }
 
-describe("session-wide Agent resource governor", () => {
-	test("ignores a relative XDG_STATE_HOME instead of disabling the governor", () => {
-		expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "relative/state" }, "/workspace/example-user")).toBe(
-			"/workspace/example-user/.local/state/pi-stuff/agents/session-governor",
-		);
-		expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "/var/lib/test-state" }, "/workspace/example-user")).toBe(
-			"/var/lib/test-state/pi-stuff/agents/session-governor",
-		);
-		expect(resolveTempRootDir({ env: { XDG_RUNTIME_DIR: "/run/user/1000" }, getuid: () => 1000 })).toBe(
-			"/run/user/1000/pi-stuff/agents-uid-1000",
-		);
-		expect(
-			resolveTempRootDir({
-				env: { XDG_RUNTIME_DIR: "relative/runtime" },
-				getuid: () => 1000,
-				tmpdir: () => "/tmp",
+test("ignores a relative XDG_STATE_HOME instead of disabling the governor", () => {
+	expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "relative/state" }, "/workspace/example-user")).toBe(
+		"/workspace/example-user/.local/state/pi-stuff/agents/session-governor",
+	);
+	expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "/var/lib/test-state" }, "/workspace/example-user")).toBe(
+		"/var/lib/test-state/pi-stuff/agents/session-governor",
+	);
+	expect(resolveTempRootDir({ env: { XDG_RUNTIME_DIR: "/run/user/1000" }, getuid: () => 1000 })).toBe(
+		"/run/user/1000/pi-stuff/agents-uid-1000",
+	);
+	expect(
+		resolveTempRootDir({
+			env: { XDG_RUNTIME_DIR: "relative/runtime" },
+			getuid: () => 1000,
+			tmpdir: () => "/tmp",
+		}),
+	).toBe("/tmp/pi-stuff-agents-uid-1000");
+	expect(getAgentSessionsDir({ HOME: "/users/example", PI_CODING_AGENT_SESSION_DIR: "~/pi-sessions" })).toBe(
+		"/users/example/pi-sessions",
+	);
+});
+
+test("uses finite 3/20/200 defaults and rejects zero, fractional, or unlimited configuration", async () => {
+	const rootDir = await storageRoot("defaults");
+	const governor = new SessionAgentGovernor({ rootDir, sessionId: "session-defaults" });
+
+	expect(await governor.snapshot()).toMatchObject({
+		limits: DEFAULT_SESSION_GOVERNOR_LIMITS,
+		effectiveLimits: DEFAULT_SESSION_GOVERNOR_LIMITS,
+		total: 0,
+		running: 0,
+	});
+	expect(
+		() =>
+			new SessionAgentGovernor({
+				rootDir,
+				sessionId: "invalid-zero",
+				limits: { maxRunning: 0 },
 			}),
-		).toBe("/tmp/pi-stuff-agents-uid-1000");
-		expect(getAgentSessionsDir({ HOME: "/users/example", PI_CODING_AGENT_SESSION_DIR: "~/pi-sessions" })).toBe(
-			"/users/example/pi-sessions",
-		);
-	});
-
-	test("uses finite 3/20/200 defaults and rejects zero, fractional, or unlimited configuration", async () => {
-		const rootDir = await storageRoot("defaults");
-		const governor = new SessionAgentGovernor({ rootDir, sessionId: "session-defaults" });
-
-		expect(await governor.snapshot()).toMatchObject({
-			limits: DEFAULT_SESSION_GOVERNOR_LIMITS,
-			effectiveLimits: DEFAULT_SESSION_GOVERNOR_LIMITS,
-			total: 0,
-			running: 0,
-		});
-		expect(
-			() =>
-				new SessionAgentGovernor({
-					rootDir,
-					sessionId: "invalid-zero",
-					limits: { maxRunning: 0 },
-				}),
-		).toThrow("positive safe integer");
-		expect(
-			() =>
-				new SessionAgentGovernor({
-					rootDir,
-					sessionId: "invalid-fraction",
-					limits: { maxDepth: 1.5 },
-				}),
-		).toThrow("positive safe integer");
-		expect(
-			() =>
-				new SessionAgentGovernor({
-					rootDir,
-					sessionId: "invalid-unlimited",
-					limits: { maxTotal: Number.POSITIVE_INFINITY },
-				}),
-		).toThrow("unlimited and zero are not supported");
-	});
-
-	test("persists one owner-only ledger across governor reloads", async () => {
-		const rootDir = await storageRoot("reload");
-		const first = new SessionAgentGovernor({ rootDir, sessionId: "durable-session", pid: 101 });
-		const lease = requireLease(await first.acquireSpawn({ logicalAgentId: "agent-stable", pid: 501 }));
-
-		const reloaded = new SessionAgentGovernor({ rootDir, sessionId: "durable-session", pid: 102 });
-		expect(await reloaded.snapshot()).toMatchObject({
-			total: 1,
-			running: 1,
-			agents: [{ logicalAgentId: "agent-stable", agentPath: ["agent-stable"] }],
-			leases: [
-				{
-					logicalAgentId: "agent-stable",
-					runtimeRunId: "agent-stable",
-					childIndex: 0,
-					pid: 501,
-					mode: "spawn",
-				},
-			],
-		});
-
-		expect((await stat(rootDir)).mode & 0o777).toBe(0o700);
-		const sessionEntries = await readdir(rootDir);
-		expect(sessionEntries).toHaveLength(1);
-		const sessionDir = join(rootDir, sessionEntries[0] ?? "missing");
-		expect((await stat(sessionDir)).mode & 0o777).toBe(0o700);
-		expect((await stat(join(sessionDir, "ledger.json"))).mode & 0o777).toBe(0o600);
-		expect((await readdir(sessionDir)).sort()).toEqual(["ledger.json", "ledger.lock"]);
-
-		expect(await reloaded.release(lease)).toMatchObject({ released: true, snapshot: { total: 1, running: 0 } });
-		expect(await reloaded.release(lease)).toMatchObject({
-			released: false,
-			reason: "already_released",
-			snapshot: { total: 1, running: 0 },
-		});
-		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-		const persisted = JSON.parse(await readFile(join(sessionDir, "ledger.json"), "utf8")) as {
-			total: number;
-			leases: unknown[];
-		};
-		expect(persisted).toMatchObject({ total: 1, leases: [] });
-	});
-
-	test("rejects an oversized durable ledger before reading or parsing it", async () => {
-		const rootDir = await storageRoot("oversized-ledger");
-		const sessionId = "oversized-ledger-session";
-		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
-		const pathToLedger = await ledgerPath(rootDir);
-		await writeFile(pathToLedger, "x".repeat(4 * 1024 * 1024 + 1), { mode: 0o600 });
-		const governor = new SessionAgentGovernor({ rootDir, sessionId });
-
-		await expect(governor.snapshot()).rejects.toThrow("exceeds the 4194304-byte safety limit");
-	});
-
-	test("persists explicit spawn runtime mappings and resolves the current lease", async () => {
-		const rootDir = await storageRoot("spawn-runtime-mapping");
-		const governor = new SessionAgentGovernor({ rootDir, sessionId: "spawn-runtime-session" });
-		const result = await governor.acquireSpawnBatch([
-			{ logicalAgentId: "logical-a", runtimeRunId: "runtime-group", childIndex: 0, pid: 601 },
-			{ logicalAgentId: "logical-b", runtimeRunId: "runtime-group", childIndex: 1, pid: 602 },
-		]);
-		const leases = requireBatchLeases(result);
-
-		expect(leases).toMatchObject([
-			{ logicalAgentId: "logical-a", runtimeRunId: "runtime-group", childIndex: 0 },
-			{ logicalAgentId: "logical-b", runtimeRunId: "runtime-group", childIndex: 1 },
-		]);
-		expect(result.snapshot.leases).toMatchObject(leases);
-		expect(await governor.findRuntimeLease("runtime-group", 1)).toMatchObject({
-			logicalAgentId: "logical-b",
-			leaseId: leases[1]?.leaseId,
-		});
-		expect(await governor.findRuntimeLease("runtime-group", 9)).toBeUndefined();
-	});
-
-	test("keeps logical identity while resume receives a new runtime mapping", async () => {
-		const rootDir = await storageRoot("resume-runtime-mapping");
-		const governor = new SessionAgentGovernor({ rootDir, sessionId: "resume-runtime-session" });
-		const spawned = requireLease(
-			await governor.acquireSpawn({
-				logicalAgentId: "durable-logical-agent",
-				runtimeRunId: "initial-runtime",
-				childIndex: 2,
-				pid: 701,
+	).toThrow("positive safe integer");
+	expect(
+		() =>
+			new SessionAgentGovernor({
+				rootDir,
+				sessionId: "invalid-fraction",
+				limits: { maxDepth: 1.5 },
 			}),
-		);
-		await governor.release(spawned);
+	).toThrow("positive safe integer");
+	expect(
+		() =>
+			new SessionAgentGovernor({
+				rootDir,
+				sessionId: "invalid-unlimited",
+				limits: { maxTotal: Number.POSITIVE_INFINITY },
+			}),
+	).toThrow("unlimited and zero are not supported");
+});
 
-		const resumed = await governor.acquireResume({
-			logicalAgentId: spawned.logicalAgentId,
-			runtimeRunId: "resumed-runtime",
-			childIndex: 4,
-			pid: 702,
-		});
-		if (!resumed.ok) throw new Error(resumed.error.message);
+test("persists one owner-only ledger across governor reloads", async () => {
+	const rootDir = await storageRoot("reload");
+	const first = new SessionAgentGovernor({ rootDir, sessionId: "durable-session", pid: 101 });
+	const lease = requireLease(await first.acquireSpawn({ logicalAgentId: "agent-stable", pid: 501 }));
 
-		expect(resumed.lease).toMatchObject({
-			logicalAgentId: "durable-logical-agent",
-			runtimeRunId: "resumed-runtime",
-			childIndex: 4,
-			mode: "resume",
-			agentPath: spawned.agentPath,
-		});
-		expect(resumed.snapshot).toMatchObject({ total: 1, running: 1 });
-		expect(await governor.findRuntimeLease("initial-runtime", 2)).toBeUndefined();
-		expect(await governor.findRuntimeLease("resumed-runtime", 4)).toMatchObject({
-			logicalAgentId: spawned.logicalAgentId,
-		});
-	});
-
-	test("rebinds atomically only when the current lease ownership matches", async () => {
-		const rootDir = await storageRoot("runtime-rebind");
-		const governor = new SessionAgentGovernor({ rootDir, sessionId: "runtime-rebind-session" });
-		const lease = requireLease(
-			await governor.acquireSpawn({
-				logicalAgentId: "rebind-agent",
-				runtimeRunId: "provisional-runtime",
+	const reloaded = new SessionAgentGovernor({ rootDir, sessionId: "durable-session", pid: 102 });
+	expect(await reloaded.snapshot()).toMatchObject({
+		total: 1,
+		running: 1,
+		agents: [{ logicalAgentId: "agent-stable", agentPath: ["agent-stable"] }],
+		leases: [
+			{
+				logicalAgentId: "agent-stable",
+				runtimeRunId: "agent-stable",
 				childIndex: 0,
-				pid: 801,
-			}),
-		);
-		const staleOwner: AgentGovernorLease = { ...lease, leaseId: "stale-lease-owner" };
-
-		expect(
-			await governor.rebindRuntime(staleOwner, {
-				runtimeRunId: "must-not-bind",
-				childIndex: 8,
-				pid: 899,
-			}),
-		).toMatchObject({
-			rebound: false,
-			reason: "ownership_changed",
-			snapshot: {
-				leases: [{ runtimeRunId: "provisional-runtime", childIndex: 0, pid: 801 }],
+				pid: 501,
+				mode: "spawn",
 			},
-		});
-
-		const rebound = await governor.rebindRuntime(lease, {
-			runtimeRunId: "actual-runtime",
-			childIndex: 3,
-			pid: 802,
-		});
-		expect(rebound).toMatchObject({
-			rebound: true,
-			lease: { runtimeRunId: "actual-runtime", childIndex: 3, pid: 802 },
-			snapshot: { leases: [{ runtimeRunId: "actual-runtime", childIndex: 3, pid: 802 }] },
-		});
-		expect(await governor.findRuntimeLease("provisional-runtime", 0)).toBeUndefined();
-		expect(await governor.findRuntimeLease("actual-runtime", 3)).toMatchObject({ leaseId: lease.leaseId });
+		],
 	});
 
-	test("reloads rebound runtime mappings from the durable ledger", async () => {
-		const rootDir = await storageRoot("runtime-reload");
-		const first = new SessionAgentGovernor({ rootDir, sessionId: "runtime-reload-session" });
-		const lease = requireLease(await first.acquireSpawn({ logicalAgentId: "reload-agent", pid: 901 }));
-		const rebound = await first.rebindRuntime(lease, {
-			runtimeRunId: "persisted-runtime",
-			childIndex: 6,
-			pid: 902,
-		});
-		if (!rebound.rebound) throw new Error(rebound.reason);
+	expect((await stat(rootDir)).mode & 0o777).toBe(0o700);
+	const sessionEntries = await readdir(rootDir);
+	expect(sessionEntries).toHaveLength(1);
+	const sessionDir = join(rootDir, sessionEntries[0] ?? "missing");
+	expect((await stat(sessionDir)).mode & 0o777).toBe(0o700);
+	expect((await stat(join(sessionDir, "ledger.json"))).mode & 0o777).toBe(0o600);
+	expect((await readdir(sessionDir)).sort()).toEqual(["ledger.json", "ledger.lock"]);
 
-		const reloaded = new SessionAgentGovernor({ rootDir, sessionId: "runtime-reload-session" });
-		expect(await reloaded.snapshot()).toMatchObject({
-			leases: [
-				{
-					logicalAgentId: "reload-agent",
-					runtimeRunId: "persisted-runtime",
-					childIndex: 6,
-					pid: 902,
-				},
-			],
-		});
-		expect(await reloaded.findRuntimeLease("persisted-runtime", 6)).toEqual(rebound.lease);
-		const persisted = await readGovernorLedger(await ledgerPath(rootDir));
-		expect(persisted.leases[0]).toMatchObject({ runtimeRunId: "persisted-runtime", childIndex: 6, pid: 902 });
+	expect(await reloaded.release(lease)).toMatchObject({ released: true, snapshot: { total: 1, running: 0 } });
+	expect(await reloaded.release(lease)).toMatchObject({
+		released: false,
+		reason: "already_released",
+		snapshot: { total: 1, running: 0 },
+	});
+	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
+	const persisted = JSON.parse(await readFile(join(sessionDir, "ledger.json"), "utf8")) as {
+		total: number;
+		leases: unknown[];
+	};
+	expect(persisted).toMatchObject({ total: 1, leases: [] });
+});
+
+test("rejects an oversized durable ledger before reading or parsing it", async () => {
+	const rootDir = await storageRoot("oversized-ledger");
+	const sessionId = "oversized-ledger-session";
+	await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+	const pathToLedger = await ledgerPath(rootDir);
+	await writeFile(pathToLedger, "x".repeat(4 * 1024 * 1024 + 1), { mode: 0o600 });
+	const governor = new SessionAgentGovernor({ rootDir, sessionId });
+
+	await expect(governor.snapshot()).rejects.toThrow("exceeds the 4194304-byte safety limit");
+});
+
+test("persists explicit spawn runtime mappings and resolves the current lease", async () => {
+	const rootDir = await storageRoot("spawn-runtime-mapping");
+	const governor = new SessionAgentGovernor({ rootDir, sessionId: "spawn-runtime-session" });
+	const result = await governor.acquireSpawnBatch([
+		{ logicalAgentId: "logical-a", runtimeRunId: "runtime-group", childIndex: 0, pid: 601 },
+		{ logicalAgentId: "logical-b", runtimeRunId: "runtime-group", childIndex: 1, pid: 602 },
+	]);
+	const leases = requireBatchLeases(result);
+
+	expect(leases).toMatchObject([
+		{ logicalAgentId: "logical-a", runtimeRunId: "runtime-group", childIndex: 0 },
+		{ logicalAgentId: "logical-b", runtimeRunId: "runtime-group", childIndex: 1 },
+	]);
+	expect(result.snapshot.leases).toMatchObject(leases);
+	expect(await governor.findRuntimeLease("runtime-group", 1)).toMatchObject({
+		logicalAgentId: "logical-b",
+		leaseId: leases[1]?.leaseId,
+	});
+	expect(await governor.findRuntimeLease("runtime-group", 9)).toBeUndefined();
+});
+
+test("keeps logical identity while resume receives a new runtime mapping", async () => {
+	const rootDir = await storageRoot("resume-runtime-mapping");
+	const governor = new SessionAgentGovernor({ rootDir, sessionId: "resume-runtime-session" });
+	const spawned = requireLease(
+		await governor.acquireSpawn({
+			logicalAgentId: "durable-logical-agent",
+			runtimeRunId: "initial-runtime",
+			childIndex: 2,
+			pid: 701,
+		}),
+	);
+	await governor.release(spawned);
+
+	const resumed = await governor.acquireResume({
+		logicalAgentId: spawned.logicalAgentId,
+		runtimeRunId: "resumed-runtime",
+		childIndex: 4,
+		pid: 702,
+	});
+	if (!resumed.ok) throw new Error(resumed.error.message);
+
+	expect(resumed.lease).toMatchObject({
+		logicalAgentId: "durable-logical-agent",
+		runtimeRunId: "resumed-runtime",
+		childIndex: 4,
+		mode: "resume",
+		agentPath: spawned.agentPath,
+	});
+	expect(resumed.snapshot).toMatchObject({ total: 1, running: 1 });
+	expect(await governor.findRuntimeLease("initial-runtime", 2)).toBeUndefined();
+	expect(await governor.findRuntimeLease("resumed-runtime", 4)).toMatchObject({
+		logicalAgentId: spawned.logicalAgentId,
+	});
+});
+
+test("rebinds atomically only when the current lease ownership matches", async () => {
+	const rootDir = await storageRoot("runtime-rebind");
+	const governor = new SessionAgentGovernor({ rootDir, sessionId: "runtime-rebind-session" });
+	const lease = requireLease(
+		await governor.acquireSpawn({
+			logicalAgentId: "rebind-agent",
+			runtimeRunId: "provisional-runtime",
+			childIndex: 0,
+			pid: 801,
+		}),
+	);
+	const staleOwner: AgentGovernorLease = { ...lease, leaseId: "stale-lease-owner" };
+
+	expect(
+		await governor.rebindRuntime(staleOwner, {
+			runtimeRunId: "must-not-bind",
+			childIndex: 8,
+			pid: 899,
+		}),
+	).toMatchObject({
+		rebound: false,
+		reason: "ownership_changed",
+		snapshot: {
+			leases: [{ runtimeRunId: "provisional-runtime", childIndex: 0, pid: 801 }],
+		},
 	});
 
-	test("migrates old lease records without runtime fields and rewrites the ledger", async () => {
-		const rootDir = await storageRoot("runtime-migration");
-		const sessionId = "runtime-migration-session";
-		const first = new SessionAgentGovernor({ rootDir, sessionId });
-		await first.acquireSpawn({ logicalAgentId: "legacy-agent", pid: 1_001 });
-		const pathToLedger = await ledgerPath(rootDir);
-		const legacy = await readGovernorLedger(pathToLedger);
-		const legacyLease = legacy.leases[0];
-		if (!legacyLease) throw new Error("Expected a legacy lease record");
-		delete legacyLease.runtimeRunId;
-		delete legacyLease.childIndex;
-		await writeFile(pathToLedger, `${JSON.stringify(legacy, null, 2)}\n`, "utf8");
-
-		const migrated = new SessionAgentGovernor({ rootDir, sessionId });
-		expect(await migrated.snapshot()).toMatchObject({
-			leases: [{ logicalAgentId: "legacy-agent", runtimeRunId: "legacy-agent", childIndex: 0, pid: 1_001 }],
-		});
-		expect(await migrated.findRuntimeLease("legacy-agent", 0)).toMatchObject({ logicalAgentId: "legacy-agent" });
-
-		const rewritten = await readGovernorLedger(pathToLedger);
-		expect(rewritten.leases[0]).toMatchObject({ runtimeRunId: "legacy-agent", childIndex: 0 });
+	const rebound = await governor.rebindRuntime(lease, {
+		runtimeRunId: "actual-runtime",
+		childIndex: 3,
+		pid: 802,
 	});
-
-	test("atomically enforces running and total limits without leaking either counter", async () => {
-		const rootDir = await storageRoot("limits");
-		const options = {
-			rootDir,
-			sessionId: "limited-session",
-			limits: { maxDepth: 3, maxRunning: 1, maxTotal: 2 },
-		};
-		const firstGovernor = new SessionAgentGovernor({ ...options, pid: 111 });
-		const secondGovernor = new SessionAgentGovernor({ ...options, pid: 222 });
-
-		const raced = await Promise.all([
-			firstGovernor.acquireSpawn({ logicalAgentId: "agent-a", pid: 1_001 }),
-			secondGovernor.acquireSpawn({ logicalAgentId: "agent-b", pid: 1_002 }),
-		]);
-		const success = raced.find((result) => result.ok);
-		const limited = raced.find((result) => !result.ok);
-		if (!success?.ok || !limited || limited.ok) throw new Error("Expected one winner and one limit result");
-		expect(limited.error).toMatchObject({ kind: "limit", code: "running_limit", limit: 1, used: 1 });
-		expect(limited.snapshot).toMatchObject({ total: 1, running: 1 });
-
-		await firstGovernor.release(success.lease);
-		const secondId = limited.error.logicalAgentId;
-		const second = await secondGovernor.acquireSpawn({ logicalAgentId: secondId, pid: 1_003 });
-		const secondLease = requireLease(second);
-		expect(second.snapshot).toMatchObject({ total: 2, running: 1 });
-		await secondGovernor.release(secondLease);
-
-		const totalLimited = await firstGovernor.acquireSpawn({ logicalAgentId: "agent-c", pid: 1_004 });
-		expect(totalLimited).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "total_limit", limit: 2, used: 2 },
-			snapshot: { total: 2, running: 0 },
-		});
-
-		const resumed = await firstGovernor.acquireResume({ logicalAgentId: success.lease.logicalAgentId, pid: 1_005 });
-		if (!resumed.ok) throw new Error(`Expected resume, received ${resumed.error.code}`);
-		expect(resumed).toMatchObject({ ok: true, lease: { mode: "resume" }, snapshot: { total: 2, running: 1 } });
-		const resumeLimited = await secondGovernor.acquireResume({ logicalAgentId: secondId, pid: 1_006 });
-		expect(resumeLimited).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "running_limit" },
-			snapshot: { total: 2, running: 1 },
-		});
-		await firstGovernor.release(resumed.lease);
-
-		const duplicateSpawn = await firstGovernor.acquireSpawn({
-			logicalAgentId: success.lease.logicalAgentId,
-			pid: 1_007,
-		});
-		expect(duplicateSpawn).toMatchObject({
-			ok: false,
-			error: { kind: "conflict", code: "logical_agent_exists" },
-			snapshot: { total: 2, running: 0 },
-		});
+	expect(rebound).toMatchObject({
+		rebound: true,
+		lease: { runtimeRunId: "actual-runtime", childIndex: 3, pid: 802 },
+		snapshot: { leases: [{ runtimeRunId: "actual-runtime", childIndex: 3, pid: 802 }] },
 	});
+	expect(await governor.findRuntimeLease("provisional-runtime", 0)).toBeUndefined();
+	expect(await governor.findRuntimeLease("actual-runtime", 3)).toMatchObject({ leaseId: lease.leaseId });
+});
 
-	test("atomically reserves whole parallel batches across competing governor instances", async () => {
-		const rootDir = await storageRoot("batch-race");
-		const options = {
-			rootDir,
-			sessionId: "batch-race-session",
-			limits: { maxDepth: 3, maxRunning: 3, maxTotal: 6 },
-		};
-		const first = new SessionAgentGovernor({ ...options, pid: 811 });
-		const second = new SessionAgentGovernor({ ...options, pid: 822 });
-		const requests = (prefix: string, pid: number) => [
-			{ logicalAgentId: `${prefix}-1`, pid },
-			{ logicalAgentId: `${prefix}-2`, pid: pid + 1 },
-		];
-
-		const raced = await Promise.all([
-			first.acquireSpawnBatch(requests("first", 8_101)),
-			second.acquireSpawnBatch(requests("second", 8_201)),
-		]);
-		const winner = raced.find((result) => result.ok);
-		const loser = raced.find((result) => !result.ok);
-		if (!winner?.ok || !loser || loser.ok) throw new Error("Expected one whole batch winner and one loser");
-
-		expect(winner.leases).toHaveLength(2);
-		expect(winner.snapshot).toMatchObject({ total: 2, running: 2 });
-		expect(winner.leases.every((lease) => lease.agentPath.length === 1)).toBe(true);
-		expect(loser).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "running_limit", limit: 3, used: 2, requested: 2 },
-			snapshot: { total: 2, running: 2 },
-		});
-		expect(await first.snapshot()).toMatchObject({ total: 2, running: 2 });
-
-		expect(await first.releaseBatch(winner.leases)).toMatchObject({
-			released: true,
-			releasedCount: 2,
-			snapshot: { total: 2, running: 0 },
-		});
-		const retried = await second.acquireSpawnBatch(
-			requests(loser.error.logicalAgentId.startsWith("first") ? "first" : "second", 8_301),
-		);
-		expect(retried).toMatchObject({ ok: true, snapshot: { total: 4, running: 2 } });
-		if (retried.ok) await second.releaseBatch(retried.leases);
+test("reloads rebound runtime mappings from the durable ledger", async () => {
+	const rootDir = await storageRoot("runtime-reload");
+	const first = new SessionAgentGovernor({ rootDir, sessionId: "runtime-reload-session" });
+	const lease = requireLease(await first.acquireSpawn({ logicalAgentId: "reload-agent", pid: 901 }));
+	const rebound = await first.rebindRuntime(lease, {
+		runtimeRunId: "persisted-runtime",
+		childIndex: 6,
+		pid: 902,
 	});
+	if (!rebound.rebound) throw new Error(rebound.reason);
 
-	test("rolls back batch validation and mid-construction failures without durable partial Agents", async () => {
-		const rootDir = await storageRoot("batch-rollback");
-		const governor = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "batch-rollback-session",
-			limits: { maxRunning: 2, maxTotal: 3 },
-		});
-		const seed = requireLease(await governor.acquireSpawn({ logicalAgentId: "seed", pid: 9_001 }));
-		await governor.release(seed);
-
-		const existingConflict = await governor.acquireSpawnBatch([
-			{ logicalAgentId: "new-before", pid: 9_002 },
-			{ logicalAgentId: "seed", pid: 9_003 },
-			{ logicalAgentId: "new-after", pid: 9_004 },
-		]);
-		expect(existingConflict).toMatchObject({
-			ok: false,
-			error: { kind: "conflict", code: "logical_agent_exists", logicalAgentId: "seed" },
-			snapshot: { total: 1, running: 0 },
-		});
-		expect(existingConflict.snapshot.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["seed"]);
-
-		const capacityFailure = await governor.acquireSpawnBatch([
-			{ logicalAgentId: "capacity-1", pid: 9_011 },
-			{ logicalAgentId: "capacity-2", pid: 9_012 },
-			{ logicalAgentId: "capacity-3", pid: 9_013 },
-		]);
-		expect(capacityFailure).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "running_limit", used: 0, requested: 3 },
-			snapshot: { total: 1, running: 0 },
-		});
-
-		const totalRoot = await storageRoot("batch-total-rollback");
-		const totalGovernor = new SessionAgentGovernor({
-			rootDir: totalRoot,
-			sessionId: "batch-total-rollback-session",
-			limits: { maxRunning: 5, maxTotal: 2 },
-		});
-		const counted = requireLease(await totalGovernor.acquireSpawn({ logicalAgentId: "already-counted", pid: 9_015 }));
-		await totalGovernor.release(counted);
-		const totalFailure = await totalGovernor.acquireSpawnBatch([
-			{ logicalAgentId: "total-1", pid: 9_016 },
-			{ logicalAgentId: "total-2", pid: 9_017 },
-		]);
-		expect(totalFailure).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "total_limit", used: 1, requested: 2 },
-			snapshot: { total: 1, running: 0 },
-		});
-		expect(totalFailure.snapshot.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["already-counted"]);
-
-		const throwRoot = await storageRoot("batch-token-failure");
-		let tokenCalls = 0;
-		const throwing = new SessionAgentGovernor({
-			rootDir: throwRoot,
-			sessionId: "batch-token-failure-session",
-			token: () => {
-				tokenCalls += 1;
-				if (tokenCalls === 3) throw new Error("second lease token failed");
-				return `token-${tokenCalls}`;
+	const reloaded = new SessionAgentGovernor({ rootDir, sessionId: "runtime-reload-session" });
+	expect(await reloaded.snapshot()).toMatchObject({
+		leases: [
+			{
+				logicalAgentId: "reload-agent",
+				runtimeRunId: "persisted-runtime",
+				childIndex: 6,
+				pid: 902,
 			},
-		});
-		await expect(
-			throwing.acquireSpawnBatch([
-				{ logicalAgentId: "token-1", pid: 9_021 },
-				{ logicalAgentId: "token-2", pid: 9_022 },
-			]),
-		).rejects.toThrow("second lease token failed");
-		const reloaded = new SessionAgentGovernor({ rootDir: throwRoot, sessionId: "batch-token-failure-session" });
-		expect(await reloaded.snapshot()).toMatchObject({ total: 0, running: 0, agents: [], leases: [] });
+		],
+	});
+	expect(await reloaded.findRuntimeLease("persisted-runtime", 6)).toEqual(rebound.lease);
+	const persisted = await readGovernorLedger(await ledgerPath(rootDir));
+	expect(persisted.leases[0]).toMatchObject({ runtimeRunId: "persisted-runtime", childIndex: 6, pid: 902 });
+});
+
+test("migrates old lease records without runtime fields and rewrites the ledger", async () => {
+	const rootDir = await storageRoot("runtime-migration");
+	const sessionId = "runtime-migration-session";
+	const first = new SessionAgentGovernor({ rootDir, sessionId });
+	await first.acquireSpawn({ logicalAgentId: "legacy-agent", pid: 1_001 });
+	const pathToLedger = await ledgerPath(rootDir);
+	const legacy = await readGovernorLedger(pathToLedger);
+	const legacyLease = legacy.leases[0];
+	if (!legacyLease) throw new Error("Expected a legacy lease record");
+	delete legacyLease.runtimeRunId;
+	delete legacyLease.childIndex;
+	await writeFile(pathToLedger, `${JSON.stringify(legacy, null, 2)}\n`, "utf8");
+
+	const migrated = new SessionAgentGovernor({ rootDir, sessionId });
+	expect(await migrated.snapshot()).toMatchObject({
+		leases: [{ logicalAgentId: "legacy-agent", runtimeRunId: "legacy-agent", childIndex: 0, pid: 1_001 }],
+	});
+	expect(await migrated.findRuntimeLease("legacy-agent", 0)).toMatchObject({ logicalAgentId: "legacy-agent" });
+
+	const rewritten = await readGovernorLedger(pathToLedger);
+	expect(rewritten.leases[0]).toMatchObject({ runtimeRunId: "legacy-agent", childIndex: 0 });
+});
+
+test("atomically enforces running and total limits without leaking either counter", async () => {
+	const rootDir = await storageRoot("limits");
+	const options = {
+		rootDir,
+		sessionId: "limited-session",
+		limits: { maxDepth: 3, maxRunning: 1, maxTotal: 2 },
+	};
+	const firstGovernor = new SessionAgentGovernor({ ...options, pid: 111 });
+	const secondGovernor = new SessionAgentGovernor({ ...options, pid: 222 });
+
+	const raced = await Promise.all([
+		firstGovernor.acquireSpawn({ logicalAgentId: "agent-a", pid: 1_001 }),
+		secondGovernor.acquireSpawn({ logicalAgentId: "agent-b", pid: 1_002 }),
+	]);
+	const success = raced.find((result) => result.ok);
+	const limited = raced.find((result) => !result.ok);
+	if (!success?.ok || !limited || limited.ok) throw new Error("Expected one winner and one limit result");
+	expect(limited.error).toMatchObject({ kind: "limit", code: "running_limit", limit: 1, used: 1 });
+	expect(limited.snapshot).toMatchObject({ total: 1, running: 1 });
+
+	await firstGovernor.release(success.lease);
+	const secondId = limited.error.logicalAgentId;
+	const second = await secondGovernor.acquireSpawn({ logicalAgentId: secondId, pid: 1_003 });
+	const secondLease = requireLease(second);
+	expect(second.snapshot).toMatchObject({ total: 2, running: 1 });
+	await secondGovernor.release(secondLease);
+
+	const totalLimited = await firstGovernor.acquireSpawn({ logicalAgentId: "agent-c", pid: 1_004 });
+	expect(totalLimited).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "total_limit", limit: 2, used: 2 },
+		snapshot: { total: 2, running: 0 },
 	});
 
-	test("rejects duplicate logical run IDs and releases batches all-or-none", async () => {
-		const rootDir = await storageRoot("batch-duplicates");
-		const governor = new SessionAgentGovernor({ rootDir, sessionId: "batch-duplicate-session" });
-		const duplicate = await governor.acquireSpawnBatch([
-			{ logicalAgentId: "same-run", pid: 10_001 },
-			{ logicalAgentId: "same-run", pid: 10_002 },
-		]);
-		expect(duplicate).toMatchObject({
-			ok: false,
-			error: { kind: "conflict", code: "logical_agent_exists", logicalAgentId: "same-run" },
-			snapshot: { total: 0, running: 0 },
-		});
+	const resumed = await firstGovernor.acquireResume({ logicalAgentId: success.lease.logicalAgentId, pid: 1_005 });
+	if (!resumed.ok) throw new Error(`Expected resume, received ${resumed.error.code}`);
+	expect(resumed).toMatchObject({ ok: true, lease: { mode: "resume" }, snapshot: { total: 2, running: 1 } });
+	const resumeLimited = await secondGovernor.acquireResume({ logicalAgentId: secondId, pid: 1_006 });
+	expect(resumeLimited).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "running_limit" },
+		snapshot: { total: 2, running: 1 },
+	});
+	await firstGovernor.release(resumed.lease);
 
-		const leases = requireBatchLeases(
-			await governor.acquireSpawnBatch([
-				{ logicalAgentId: "release-1", pid: 10_011 },
-				{ logicalAgentId: "release-2", pid: 10_012 },
-			]),
-		);
-		const firstLease = leases[0];
-		const secondLease = leases[1];
-		if (!firstLease || !secondLease) throw new Error("Expected both release leases");
-		const changedLease: AgentGovernorLease = { ...secondLease, leaseId: "changed-owner" };
-		expect(await governor.releaseBatch([firstLease, changedLease])).toMatchObject({
-			released: false,
-			releasedCount: 0,
-			logicalAgentId: "release-2",
-			reason: "ownership_changed",
-			snapshot: { total: 2, running: 2 },
-		});
-		expect(await governor.releaseBatch([firstLease, firstLease])).toMatchObject({
-			released: false,
-			releasedCount: 0,
-			logicalAgentId: "release-1",
-			reason: "duplicate_logical_agent_id",
-			snapshot: { total: 2, running: 2 },
-		});
-		expect(await governor.releaseBatch(leases)).toMatchObject({
-			released: true,
-			releasedCount: 2,
-			snapshot: { total: 2, running: 0 },
-		});
-		expect(await governor.releaseBatch(leases)).toMatchObject({
-			released: false,
-			releasedCount: 0,
-			logicalAgentId: "release-1",
-			reason: "already_released",
-			snapshot: { total: 2, running: 0 },
-		});
+	const duplicateSpawn = await firstGovernor.acquireSpawn({
+		logicalAgentId: success.lease.logicalAgentId,
+		pid: 1_007,
+	});
+	expect(duplicateSpawn).toMatchObject({
+		ok: false,
+		error: { kind: "conflict", code: "logical_agent_exists" },
+		snapshot: { total: 2, running: 0 },
+	});
+});
+
+test("atomically reserves whole parallel batches across competing governor instances", async () => {
+	const rootDir = await storageRoot("batch-race");
+	const options = {
+		rootDir,
+		sessionId: "batch-race-session",
+		limits: { maxDepth: 3, maxRunning: 3, maxTotal: 6 },
+	};
+	const first = new SessionAgentGovernor({ ...options, pid: 811 });
+	const second = new SessionAgentGovernor({ ...options, pid: 822 });
+	const requests = (prefix: string, pid: number) => [
+		{ logicalAgentId: `${prefix}-1`, pid },
+		{ logicalAgentId: `${prefix}-2`, pid: pid + 1 },
+	];
+
+	const raced = await Promise.all([
+		first.acquireSpawnBatch(requests("first", 8_101)),
+		second.acquireSpawnBatch(requests("second", 8_201)),
+	]);
+	const winner = raced.find((result) => result.ok);
+	const loser = raced.find((result) => !result.ok);
+	if (!winner?.ok || !loser || loser.ok) throw new Error("Expected one whole batch winner and one loser");
+
+	expect(winner.leases).toHaveLength(2);
+	expect(winner.snapshot).toMatchObject({ total: 2, running: 2 });
+	expect(winner.leases.every((lease) => lease.agentPath.length === 1)).toBe(true);
+	expect(loser).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "running_limit", limit: 3, used: 2, requested: 2 },
+		snapshot: { total: 2, running: 2 },
+	});
+	expect(await first.snapshot()).toMatchObject({ total: 2, running: 2 });
+
+	expect(await first.releaseBatch(winner.leases)).toMatchObject({
+		released: true,
+		releasedCount: 2,
+		snapshot: { total: 2, running: 0 },
+	});
+	const retried = await second.acquireSpawnBatch(
+		requests(loser.error.logicalAgentId.startsWith("first") ? "first" : "second", 8_301),
+	);
+	expect(retried).toMatchObject({ ok: true, snapshot: { total: 4, running: 2 } });
+	if (retried.ok) await second.releaseBatch(retried.leases);
+});
+
+test("rolls back batch validation and mid-construction failures without durable partial Agents", async () => {
+	const rootDir = await storageRoot("batch-rollback");
+	const governor = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "batch-rollback-session",
+		limits: { maxRunning: 2, maxTotal: 3 },
+	});
+	const seed = requireLease(await governor.acquireSpawn({ logicalAgentId: "seed", pid: 9_001 }));
+	await governor.release(seed);
+
+	const existingConflict = await governor.acquireSpawnBatch([
+		{ logicalAgentId: "new-before", pid: 9_002 },
+		{ logicalAgentId: "seed", pid: 9_003 },
+		{ logicalAgentId: "new-after", pid: 9_004 },
+	]);
+	expect(existingConflict).toMatchObject({
+		ok: false,
+		error: { kind: "conflict", code: "logical_agent_exists", logicalAgentId: "seed" },
+		snapshot: { total: 1, running: 0 },
+	});
+	expect(existingConflict.snapshot.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["seed"]);
+
+	const capacityFailure = await governor.acquireSpawnBatch([
+		{ logicalAgentId: "capacity-1", pid: 9_011 },
+		{ logicalAgentId: "capacity-2", pid: 9_012 },
+		{ logicalAgentId: "capacity-3", pid: 9_013 },
+	]);
+	expect(capacityFailure).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "running_limit", used: 0, requested: 3 },
+		snapshot: { total: 1, running: 0 },
 	});
 
-	test("keeps child ceilings monotonic and rejects delegation below depth three", async () => {
-		const rootDir = await storageRoot("depth");
-		const root = new SessionAgentGovernor({ rootDir, sessionId: "depth-session", pid: 301 });
-		const first = await root.acquireSpawn({
-			logicalAgentId: "level-1",
-			pid: 2_001,
-			childLimits: { maxDepth: 99, maxRunning: 99, maxTotal: 999 },
-		});
-		if (!first.ok) throw new Error(first.error.message);
-		expect(first.snapshot.agents[0]?.limits).toEqual(DEFAULT_SESSION_GOVERNOR_LIMITS);
+	const totalRoot = await storageRoot("batch-total-rollback");
+	const totalGovernor = new SessionAgentGovernor({
+		rootDir: totalRoot,
+		sessionId: "batch-total-rollback-session",
+		limits: { maxRunning: 5, maxTotal: 2 },
+	});
+	const counted = requireLease(await totalGovernor.acquireSpawn({ logicalAgentId: "already-counted", pid: 9_015 }));
+	await totalGovernor.release(counted);
+	const totalFailure = await totalGovernor.acquireSpawnBatch([
+		{ logicalAgentId: "total-1", pid: 9_016 },
+		{ logicalAgentId: "total-2", pid: 9_017 },
+	]);
+	expect(totalFailure).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "total_limit", used: 1, requested: 2 },
+		snapshot: { total: 1, running: 0 },
+	});
+	expect(totalFailure.snapshot.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["already-counted"]);
 
-		const levelOne = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "depth-session",
-			ownerAgentPath: ["level-1"],
-			limits: { maxRunning: 999 },
-			pid: 302,
-		});
-		const second = await levelOne.acquireSpawnBatch([
-			{ logicalAgentId: "level-2", pid: 2_002 },
-			{ logicalAgentId: "level-2-peer", pid: 2_003 },
-		]);
-		if (!second.ok) throw new Error(second.error.message);
-		expect(second.snapshot.agents.find(({ logicalAgentId }) => logicalAgentId === "level-2-peer")).toMatchObject({
-			ownerAgentPath: ["level-1"],
-			agentPath: ["level-1", "level-2-peer"],
-		});
-		const levelTwo = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "depth-session",
-			ownerAgentPath: ["level-1", "level-2"],
-			pid: 303,
-		});
-		const third = await levelTwo.acquireSpawn({ logicalAgentId: "level-3", pid: 2_004 });
-		if (!third.ok) throw new Error(third.error.message);
-		const levelThree = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "depth-session",
-			ownerAgentPath: ["level-1", "level-2", "level-3"],
-			pid: 304,
-		});
-		const rejected = await levelThree.acquireSpawnBatch([
-			{ logicalAgentId: "level-4-a", pid: 2_005 },
-			{ logicalAgentId: "level-4-b", pid: 2_006 },
-		]);
-		expect(rejected).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "depth_limit", limit: 3, used: 3, requested: 4 },
-			snapshot: { total: 4, running: 4 },
-		});
+	const throwRoot = await storageRoot("batch-token-failure");
+	let tokenCalls = 0;
+	const throwing = new SessionAgentGovernor({
+		rootDir: throwRoot,
+		sessionId: "batch-token-failure-session",
+		token: () => {
+			tokenCalls += 1;
+			if (tokenCalls === 3) throw new Error("second lease token failed");
+			return `token-${tokenCalls}`;
+		},
+	});
+	await expect(
+		throwing.acquireSpawnBatch([
+			{ logicalAgentId: "token-1", pid: 9_021 },
+			{ logicalAgentId: "token-2", pid: 9_022 },
+		]),
+	).rejects.toThrow("second lease token failed");
+	const reloaded = new SessionAgentGovernor({ rootDir: throwRoot, sessionId: "batch-token-failure-session" });
+	expect(await reloaded.snapshot()).toMatchObject({ total: 0, running: 0, agents: [], leases: [] });
+});
 
-		const ceilingRootDir = await storageRoot("child-ceiling");
-		const ceilingRoot = new SessionAgentGovernor({ rootDir: ceilingRootDir, sessionId: "ceiling-session" });
-		const ceilingChild = await ceilingRoot.acquireSpawn({
-			logicalAgentId: "bounded-child",
-			pid: 2_101,
-			childLimits: { maxDepth: 1, maxRunning: 2, maxTotal: 10 },
-		});
-		if (!ceilingChild.ok) throw new Error(ceilingChild.error.message);
-		const bounded = new SessionAgentGovernor({
-			rootDir: ceilingRootDir,
-			sessionId: "ceiling-session",
-			ownerAgentPath: ["bounded-child"],
-			limits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 },
-		});
-		expect((await bounded.snapshot()).effectiveLimits).toEqual({ maxDepth: 1, maxRunning: 2, maxTotal: 10 });
-		expect(await bounded.acquireSpawn({ logicalAgentId: "forbidden-grandchild", pid: 2_102 })).toMatchObject({
-			ok: false,
-			error: { kind: "limit", code: "depth_limit", limit: 1 },
-			snapshot: { total: 1, running: 1 },
-		});
+test("rejects duplicate logical run IDs and releases batches all-or-none", async () => {
+	const rootDir = await storageRoot("batch-duplicates");
+	const governor = new SessionAgentGovernor({ rootDir, sessionId: "batch-duplicate-session" });
+	const duplicate = await governor.acquireSpawnBatch([
+		{ logicalAgentId: "same-run", pid: 10_001 },
+		{ logicalAgentId: "same-run", pid: 10_002 },
+	]);
+	expect(duplicate).toMatchObject({
+		ok: false,
+		error: { kind: "conflict", code: "logical_agent_exists", logicalAgentId: "same-run" },
+		snapshot: { total: 0, running: 0 },
 	});
 
-	test("explicit reconciliation reclaims only demonstrably dead running leases and never total", async () => {
-		const rootDir = await storageRoot("reconcile");
-		const governor = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "reconcile-session",
-			limits: { maxRunning: 3 },
-		});
-		const initial = requireBatchLeases(
-			await governor.acquireSpawnBatch([
-				{ logicalAgentId: "stale-agent", pid: 7_001 },
-				{ logicalAgentId: "live-agent", pid: 7_002 },
-			]),
-		);
-		const stale = initial[0];
-		const live = initial[1];
-		if (!stale || !live) throw new Error("Expected the reconciliation batch to return both leases");
+	const leases = requireBatchLeases(
+		await governor.acquireSpawnBatch([
+			{ logicalAgentId: "release-1", pid: 10_011 },
+			{ logicalAgentId: "release-2", pid: 10_012 },
+		]),
+	);
+	const firstLease = leases[0];
+	const secondLease = leases[1];
+	if (!firstLease || !secondLease) throw new Error("Expected both release leases");
+	const changedLease: AgentGovernorLease = { ...secondLease, leaseId: "changed-owner" };
+	expect(await governor.releaseBatch([firstLease, changedLease])).toMatchObject({
+		released: false,
+		releasedCount: 0,
+		logicalAgentId: "release-2",
+		reason: "ownership_changed",
+		snapshot: { total: 2, running: 2 },
+	});
+	expect(await governor.releaseBatch([firstLease, firstLease])).toMatchObject({
+		released: false,
+		releasedCount: 0,
+		logicalAgentId: "release-1",
+		reason: "duplicate_logical_agent_id",
+		snapshot: { total: 2, running: 2 },
+	});
+	expect(await governor.releaseBatch(leases)).toMatchObject({
+		released: true,
+		releasedCount: 2,
+		snapshot: { total: 2, running: 0 },
+	});
+	expect(await governor.releaseBatch(leases)).toMatchObject({
+		released: false,
+		releasedCount: 0,
+		logicalAgentId: "release-1",
+		reason: "already_released",
+		snapshot: { total: 2, running: 0 },
+	});
+});
 
-		const reconciled = await governor.reconcile((pid) => (pid === stale.pid ? false : undefined));
-		expect(reconciled).toMatchObject({
-			reclaimedLogicalAgentIds: ["stale-agent"],
-			snapshot: { total: 2, running: 1 },
-		});
-		expect(await governor.reconcile(() => true)).toMatchObject({
-			reclaimedLogicalAgentIds: [],
-			snapshot: { total: 2, running: 1 },
-		});
+test("keeps child ceilings monotonic and rejects delegation below depth three", async () => {
+	const rootDir = await storageRoot("depth");
+	const root = new SessionAgentGovernor({ rootDir, sessionId: "depth-session", pid: 301 });
+	const first = await root.acquireSpawn({
+		logicalAgentId: "level-1",
+		pid: 2_001,
+		childLimits: { maxDepth: 99, maxRunning: 99, maxTotal: 999 },
+	});
+	if (!first.ok) throw new Error(first.error.message);
+	expect(first.snapshot.agents[0]?.limits).toEqual(DEFAULT_SESSION_GOVERNOR_LIMITS);
 
-		const resumed = await governor.acquireResume({ logicalAgentId: stale.logicalAgentId, pid: 7_003 });
-		if (!resumed.ok) throw new Error(resumed.error.message);
-		expect(resumed.snapshot).toMatchObject({ total: 2, running: 2 });
-		await governor.releaseBatch([resumed.lease, live]);
-		expect(await governor.snapshot()).toMatchObject({ total: 2, running: 0 });
+	const levelOne = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "depth-session",
+		ownerAgentPath: ["level-1"],
+		limits: { maxRunning: 999 },
+		pid: 302,
+	});
+	const second = await levelOne.acquireSpawnBatch([
+		{ logicalAgentId: "level-2", pid: 2_002 },
+		{ logicalAgentId: "level-2-peer", pid: 2_003 },
+	]);
+	if (!second.ok) throw new Error(second.error.message);
+	expect(second.snapshot.agents.find(({ logicalAgentId }) => logicalAgentId === "level-2-peer")).toMatchObject({
+		ownerAgentPath: ["level-1"],
+		agentPath: ["level-1", "level-2-peer"],
+	});
+	const levelTwo = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "depth-session",
+		ownerAgentPath: ["level-1", "level-2"],
+		pid: 303,
+	});
+	const third = await levelTwo.acquireSpawn({ logicalAgentId: "level-3", pid: 2_004 });
+	if (!third.ok) throw new Error(third.error.message);
+	const levelThree = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "depth-session",
+		ownerAgentPath: ["level-1", "level-2", "level-3"],
+		pid: 304,
+	});
+	const rejected = await levelThree.acquireSpawnBatch([
+		{ logicalAgentId: "level-4-a", pid: 2_005 },
+		{ logicalAgentId: "level-4-b", pid: 2_006 },
+	]);
+	expect(rejected).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "depth_limit", limit: 3, used: 3, requested: 4 },
+		snapshot: { total: 4, running: 4 },
 	});
 
-	test("does not let an unregistered child path initialize or impersonate a session owner", async () => {
-		const rootDir = await storageRoot("owner-path");
-		const child = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "owner-session",
-			ownerAgentPath: ["unknown-child"],
-		});
-		await expect(child.snapshot()).rejects.toBeInstanceOf(SessionGovernorStateError);
+	const ceilingRootDir = await storageRoot("child-ceiling");
+	const ceilingRoot = new SessionAgentGovernor({ rootDir: ceilingRootDir, sessionId: "ceiling-session" });
+	const ceilingChild = await ceilingRoot.acquireSpawn({
+		logicalAgentId: "bounded-child",
+		pid: 2_101,
+		childLimits: { maxDepth: 1, maxRunning: 2, maxTotal: 10 },
+	});
+	if (!ceilingChild.ok) throw new Error(ceilingChild.error.message);
+	const bounded = new SessionAgentGovernor({
+		rootDir: ceilingRootDir,
+		sessionId: "ceiling-session",
+		ownerAgentPath: ["bounded-child"],
+		limits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 },
+	});
+	expect((await bounded.snapshot()).effectiveLimits).toEqual({ maxDepth: 1, maxRunning: 2, maxTotal: 10 });
+	expect(await bounded.acquireSpawn({ logicalAgentId: "forbidden-grandchild", pid: 2_102 })).toMatchObject({
+		ok: false,
+		error: { kind: "limit", code: "depth_limit", limit: 1 },
+		snapshot: { total: 1, running: 1 },
+	});
+});
 
-		const root = new SessionAgentGovernor({ rootDir, sessionId: "owner-session" });
-		await root.snapshot();
-		await expect(child.snapshot()).rejects.toThrow("is not registered");
+test("explicit reconciliation reclaims only demonstrably dead running leases and never total", async () => {
+	const rootDir = await storageRoot("reconcile");
+	const governor = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "reconcile-session",
+		limits: { maxRunning: 3 },
+	});
+	const initial = requireBatchLeases(
+		await governor.acquireSpawnBatch([
+			{ logicalAgentId: "stale-agent", pid: 7_001 },
+			{ logicalAgentId: "live-agent", pid: 7_002 },
+		]),
+	);
+	const stale = initial[0];
+	const live = initial[1];
+	if (!stale || !live) throw new Error("Expected the reconciliation batch to return both leases");
+
+	const reconciled = await governor.reconcile((pid) => (pid === stale.pid ? false : undefined));
+	expect(reconciled).toMatchObject({
+		reclaimedLogicalAgentIds: ["stale-agent"],
+		snapshot: { total: 2, running: 1 },
+	});
+	expect(await governor.reconcile(() => true)).toMatchObject({
+		reclaimedLogicalAgentIds: [],
+		snapshot: { total: 2, running: 1 },
 	});
 
-	test("returns a committed reservation when post-rename ledger hardening fails", async () => {
-		const rootDir = await storageRoot("post-commit-chmod");
-		let injected = false;
-		const governor = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "post-commit-chmod-session",
-			fs: governorFs({
-				chmod: async (target, mode) => {
-					if (!injected && String(target).endsWith("/ledger.json")) {
-						injected = true;
-						throw ioError("injected post-commit chmod failure");
-					}
-					await nodeFs.chmod(target, mode);
-				},
-			}),
-		});
+	const resumed = await governor.acquireResume({ logicalAgentId: stale.logicalAgentId, pid: 7_003 });
+	if (!resumed.ok) throw new Error(resumed.error.message);
+	expect(resumed.snapshot).toMatchObject({ total: 2, running: 2 });
+	await governor.releaseBatch([resumed.lease, live]);
+	expect(await governor.snapshot()).toMatchObject({ total: 2, running: 0 });
+});
 
-		const acquired = await governor.acquireSpawn({ logicalAgentId: "committed-agent", pid: 12_001 });
-		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
-		expect(injected).toBe(true);
-		expect(
-			await new SessionAgentGovernor({ rootDir, sessionId: "post-commit-chmod-session" }).snapshot(),
-		).toMatchObject({ total: 1, running: 1, leases: [{ logicalAgentId: "committed-agent" }] });
+test("does not let an unregistered child path initialize or impersonate a session owner", async () => {
+	const rootDir = await storageRoot("owner-path");
+	const child = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "owner-session",
+		ownerAgentPath: ["unknown-child"],
+	});
+	await expect(child.snapshot()).rejects.toBeInstanceOf(SessionGovernorStateError);
+
+	const root = new SessionAgentGovernor({ rootDir, sessionId: "owner-session" });
+	await root.snapshot();
+	await expect(child.snapshot()).rejects.toThrow("is not registered");
+});
+
+test("returns a committed reservation when post-rename ledger hardening fails", async () => {
+	const rootDir = await storageRoot("post-commit-chmod");
+	let injected = false;
+	const governor = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "post-commit-chmod-session",
+		fs: governorFs({
+			chmod: async (target, mode) => {
+				if (!injected && String(target).endsWith("/ledger.json")) {
+					injected = true;
+					throw ioError("injected post-commit chmod failure");
+				}
+				await nodeFs.chmod(target, mode);
+			},
+		}),
 	});
 
-	test("does not turn best-effort temporary-ledger cleanup into a false reservation failure", async () => {
-		const rootDir = await storageRoot("temp-cleanup");
-		let injected = false;
-		const governor = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "temp-cleanup-session",
-			fs: governorFs({
-				rm: async (target, options) => {
-					if (!injected && String(target).includes("/.ledger.") && String(target).endsWith(".tmp")) {
-						injected = true;
-						throw ioError("injected temporary cleanup failure");
-					}
-					await nodeFs.rm(target, options);
-				},
-			}),
-		});
+	const acquired = await governor.acquireSpawn({ logicalAgentId: "committed-agent", pid: 12_001 });
+	expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+	expect(injected).toBe(true);
+	expect(await new SessionAgentGovernor({ rootDir, sessionId: "post-commit-chmod-session" }).snapshot()).toMatchObject(
+		{ total: 1, running: 1, leases: [{ logicalAgentId: "committed-agent" }] },
+	);
+});
 
-		const acquired = await governor.acquireSpawn({ logicalAgentId: "cleanup-agent", pid: 12_011 });
-		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
-		expect(injected).toBe(true);
-		expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "cleanup-agent"');
+test("does not turn best-effort temporary-ledger cleanup into a false reservation failure", async () => {
+	const rootDir = await storageRoot("temp-cleanup");
+	let injected = false;
+	const governor = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "temp-cleanup-session",
+		fs: governorFs({
+			rm: async (target, options) => {
+				if (!injected && String(target).includes("/.ledger.") && String(target).endsWith(".tmp")) {
+					injected = true;
+					throw ioError("injected temporary cleanup failure");
+				}
+				await nodeFs.rm(target, options);
+			},
+		}),
 	});
 
-	test("keeps a stable kernel lock inode without making lock-file cleanup part of commit", async () => {
-		const rootDir = await storageRoot("release-lock-cleanup");
-		const governor = new SessionAgentGovernor({
-			rootDir,
-			sessionId: "release-lock-cleanup-session",
-		});
+	const acquired = await governor.acquireSpawn({ logicalAgentId: "cleanup-agent", pid: 12_011 });
+	expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+	expect(injected).toBe(true);
+	expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "cleanup-agent"');
+});
 
-		const acquired = await governor.acquireSpawn({ logicalAgentId: "unlock-agent", pid: 12_021 });
-		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
-		expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "unlock-agent"');
-		const [sessionDirectory] = await readdir(rootDir);
-		if (!sessionDirectory) throw new Error("Expected a session governor directory");
-		expect((await stat(join(rootDir, sessionDirectory, "ledger.lock"))).isFile()).toBe(true);
-		expect(
-			await new SessionAgentGovernor({ rootDir, sessionId: "release-lock-cleanup-session" }).snapshot(),
-		).toMatchObject({ total: 1, running: 1 });
+test("keeps a stable kernel lock inode without making lock-file cleanup part of commit", async () => {
+	const rootDir = await storageRoot("release-lock-cleanup");
+	const governor = new SessionAgentGovernor({
+		rootDir,
+		sessionId: "release-lock-cleanup-session",
 	});
 
-	test("fails closed when the stable governor lock path is replaced by a directory", async () => {
-		const rootDir = await storageRoot("incomplete-lock");
-		const sessionId = "incomplete-lock-session";
-		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
-		const [sessionDirectory] = await readdir(rootDir);
-		if (!sessionDirectory) throw new Error("Expected a session governor directory");
-		const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
-		await rm(lockPath);
-		await nodeFs.mkdir(lockPath, { mode: 0o700 });
-		await expect(new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).rejects.toThrow("regular file");
-	});
+	const acquired = await governor.acquireSpawn({ logicalAgentId: "unlock-agent", pid: 12_021 });
+	expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+	expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "unlock-agent"');
+	const [sessionDirectory] = await readdir(rootDir);
+	if (!sessionDirectory) throw new Error("Expected a session governor directory");
+	expect((await stat(join(rootDir, sessionDirectory, "ledger.lock"))).isFile()).toBe(true);
+	expect(
+		await new SessionAgentGovernor({ rootDir, sessionId: "release-lock-cleanup-session" }).snapshot(),
+	).toMatchObject({ total: 1, running: 1 });
+});
 
-	test("ignores stale diagnostic bytes because kernel ownership is the only lock authority", async () => {
-		const rootDir = await storageRoot("stale-diagnostic-lock");
-		const sessionId = "stale-diagnostic-lock-session";
-		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
-		const [sessionDirectory] = await readdir(rootDir);
-		if (!sessionDirectory) throw new Error("Expected a session governor directory");
-		const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
-		await writeFile(lockPath, JSON.stringify({ token: "abandoned", pid: 44_001, acquiredAtMs: 0 }), {
-			mode: 0o600,
-		});
-		expect(await new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).toMatchObject({ total: 0, running: 0 });
-		expect((await readdir(join(rootDir, sessionDirectory))).sort()).toEqual(["ledger.json", "ledger.lock"]);
+test("fails closed when the stable governor lock path is replaced by a directory", async () => {
+	const rootDir = await storageRoot("incomplete-lock");
+	const sessionId = "incomplete-lock-session";
+	await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+	const [sessionDirectory] = await readdir(rootDir);
+	if (!sessionDirectory) throw new Error("Expected a session governor directory");
+	const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
+	await rm(lockPath);
+	await nodeFs.mkdir(lockPath, { mode: 0o700 });
+	await expect(new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).rejects.toThrow("regular file");
+});
+
+test("ignores stale diagnostic bytes because kernel ownership is the only lock authority", async () => {
+	const rootDir = await storageRoot("stale-diagnostic-lock");
+	const sessionId = "stale-diagnostic-lock-session";
+	await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+	const [sessionDirectory] = await readdir(rootDir);
+	if (!sessionDirectory) throw new Error("Expected a session governor directory");
+	const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
+	await writeFile(lockPath, JSON.stringify({ token: "abandoned", pid: 44_001, acquiredAtMs: 0 }), {
+		mode: 0o600,
 	});
+	expect(await new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).toMatchObject({ total: 0, running: 0 });
+	expect((await readdir(join(rootDir, sessionDirectory))).sort()).toEqual(["ledger.json", "ledger.lock"]);
 });

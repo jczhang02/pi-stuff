@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
 	createWorkCycleState,
 	type NotificationClock,
@@ -49,62 +49,266 @@ class FakeClock implements NotificationClock {
 	}
 }
 
-describe("NotificationRuntime", () => {
-	test("the latest finalized Assistant result replaces a provider error in one work cycle", () => {
-		let state = createWorkCycleState();
-		state = reduceWorkCycle(state, { now: 100, type: "agent_start" });
-		state = reduceWorkCycle(state, { type: "user_work" });
-		state = reduceWorkCycle(state, {
-			errorMessage: "HTTP 503",
-			stopReason: "error",
-			type: "assistant_finalized",
-		});
-		state = reduceWorkCycle(state, { now: 200, type: "agent_start" });
-		state = reduceWorkCycle(state, { stopReason: "toolUse", type: "assistant_finalized" });
-		state = reduceWorkCycle(state, { now: 900, type: "agent_settled" });
+test("the latest finalized Assistant result replaces a provider error in one work cycle", () => {
+	let state = createWorkCycleState();
+	state = reduceWorkCycle(state, { now: 100, type: "agent_start" });
+	state = reduceWorkCycle(state, { type: "user_work" });
+	state = reduceWorkCycle(state, {
+		errorMessage: "HTTP 503",
+		stopReason: "error",
+		type: "assistant_finalized",
+	});
+	state = reduceWorkCycle(state, { now: 200, type: "agent_start" });
+	state = reduceWorkCycle(state, { stopReason: "toolUse", type: "assistant_finalized" });
+	state = reduceWorkCycle(state, { now: 900, type: "agent_settled" });
 
-		expect(state).toEqual({
-			generation: 1,
-			includesUserWork: true,
-			latestAssistant: { stopReason: "toolUse" },
-			settledAt: 900,
-			startedAt: 100,
-			status: "pending",
-		});
+	expect(state).toEqual({
+		generation: 1,
+		includesUserWork: true,
+		latestAssistant: { stopReason: "toolUse" },
+		settledAt: 900,
+		startedAt: 100,
+		status: "pending",
+	});
+});
+
+test("a real user receives one completion alert after long work settles", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
 	});
 
-	test("a real user receives one completion alert after long work settles", () => {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(1_999);
+	expect(alerts).toEqual([]);
+	clock.advance(1);
+	expect(alerts).toEqual([{ elapsedMs: 10_000, outcome: "completion" }]);
+	clock.advance(10_000);
+	expect(alerts).toHaveLength(1);
+});
 
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
-		runtime.observe({ type: "agent_settled" });
-		clock.advance(1_999);
-		expect(alerts).toEqual([]);
-		clock.advance(1);
-		expect(alerts).toEqual([{ elapsedMs: 10_000, outcome: "completion" }]);
-		clock.advance(10_000);
-		expect(alerts).toHaveLength(1);
+test("the settled alert carries only the latest finalized Assistant preview", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 0,
+			minimumDurationMs: 0,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
 	});
 
-	test("the settled alert carries only the latest finalized Assistant preview", () => {
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	runtime.observe({ preview: "temporary provider failure", stopReason: "error", type: "assistant_finalized" });
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ preview: "The final result is ready.", stopReason: "stop", type: "assistant_finalized" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(0);
+
+	expect(alerts).toEqual([{ elapsedMs: 0, outcome: "completion", preview: "The final result is ready." }]);
+});
+
+test("a user who types during the grace period is not interrupted by a stale alert", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
+	});
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(1_000);
+	runtime.observe({ type: "input" });
+	clock.advance(10_000);
+
+	expect(alerts).toEqual([]);
+});
+
+test("an automatic retry, compaction, or Goal continuation rejects the stale generation before one final alert", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
+	});
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", errorMessage: "temporary outage", stopReason: "error" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(1_000);
+	runtime.observe({ type: "agent_start" });
+	clock.advance(3_000);
+	expect(alerts).toEqual([]);
+
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(2_000);
+
+	expect(alerts).toEqual([{ elapsedMs: 14_000, outcome: "completion" }]);
+});
+
+test("session replacement, reload, or shutdown releases a pending alert", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
+	});
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	runtime.dispose();
+	clock.advance(10_000);
+
+	expect(alerts).toEqual([]);
+});
+
+test("a stray terminal key during grace cancels the alert without being consumed", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => true,
+		notify: (alert) => alerts.push(alert),
+	});
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	runtime.observe({ type: "terminal_input" });
+	clock.advance(2_000);
+
+	expect(alerts).toEqual([]);
+});
+
+test("input cancels a deferred alert even when queued Host work outlives the first timer", () => {
+	const clock = new FakeClock();
+	const alerts: unknown[] = [];
+	let quiet = true;
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 10_000,
+		}),
+		isQuiet: () => quiet,
+		notify: (alert) => alerts.push(alert),
+	});
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(10_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	quiet = false;
+	clock.advance(2_000);
+	runtime.observe({ type: "input" });
+	quiet = true;
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(2_000);
+
+	expect(alerts).toEqual([]);
+});
+
+test("the settled outcome matrix follows the latest finalized Assistant message", () => {
+	const cases: Array<{
+		readonly events: Array<Parameters<NotificationRuntime["observe"]>[0]>;
+		readonly expected: "completion" | "failure" | undefined;
+		readonly name: string;
+	}> = [
+		{ events: [{ stopReason: "stop", type: "assistant_finalized" }], expected: "completion", name: "ordinary" },
+		{ events: [{ stopReason: "toolUse", type: "assistant_finalized" }], expected: "completion", name: "tool" },
+		{
+			events: [{ errorMessage: "denied", stopReason: "error", type: "assistant_finalized" }],
+			expected: "failure",
+			name: "exhausted retry or final error",
+		},
+		{ events: [{ stopReason: "aborted", type: "assistant_finalized" }], expected: undefined, name: "abort" },
+		{ events: [], expected: undefined, name: "missing Assistant" },
+		{
+			events: [
+				{ errorMessage: "HTTP 503", stopReason: "error", type: "assistant_finalized" },
+				{ type: "agent_start" },
+				{ stopReason: "stop", type: "assistant_finalized" },
+			],
+			expected: "completion",
+			name: "retry recovery",
+		},
+		{
+			events: [{ type: "agent_end" }, { type: "agent_end" }, { stopReason: "stop", type: "assistant_finalized" }],
+			expected: "completion",
+			name: "several agent_end events",
+		},
+	];
+
+	for (const scenario of cases) {
 		const clock = new FakeClock();
-		const alerts: unknown[] = [];
+		const alerts: Array<{ outcome: string }> = [];
 		const runtime = new NotificationRuntime({
 			clock,
 			getSettings: () => ({
@@ -117,339 +321,133 @@ describe("NotificationRuntime", () => {
 			isQuiet: () => true,
 			notify: (alert) => alerts.push(alert),
 		});
-
 		runtime.observe({ type: "agent_start" });
 		runtime.observe({ type: "user_work" });
-		runtime.observe({ preview: "temporary provider failure", stopReason: "error", type: "assistant_finalized" });
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ preview: "The final result is ready.", stopReason: "stop", type: "assistant_finalized" });
+		for (const event of scenario.events) runtime.observe(event);
 		runtime.observe({ type: "agent_settled" });
 		clock.advance(0);
+		expect(
+			alerts.map((alert) => alert.outcome),
+			scenario.name,
+		).toEqual(scenario.expected ? [scenario.expected] : []);
+	}
+});
 
-		expect(alerts).toEqual([{ elapsedMs: 0, outcome: "completion", preview: "The final result is ready." }]);
-	});
-
-	test("a user who types during the grace period is not interrupted by a stale alert", () => {
+test("short, automatic, disabled, and outcome-disabled work remains silent", () => {
+	const cases = [
+		{
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			name: "short",
+			outcome: "completion",
+			user: true,
+		},
+		{
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			name: "automatic",
+			outcome: "completion",
+			user: false,
+		},
+		{
+			completionAlerts: true,
+			enabled: false,
+			failureAlerts: true,
+			name: "disabled",
+			outcome: "completion",
+			user: true,
+		},
+		{
+			completionAlerts: false,
+			enabled: true,
+			failureAlerts: true,
+			name: "completion disabled",
+			outcome: "completion",
+			user: true,
+		},
+		{
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: false,
+			name: "failure disabled",
+			outcome: "failure",
+			user: true,
+		},
+	] as const;
+	for (const scenario of cases) {
 		const clock = new FakeClock();
 		const alerts: unknown[] = [];
 		const runtime = new NotificationRuntime({
 			clock,
 			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
+				completionAlerts: scenario.completionAlerts,
+				enabled: scenario.enabled,
+				failureAlerts: scenario.failureAlerts,
 				gracePeriodMs: 2_000,
 				minimumDurationMs: 10_000,
 			}),
 			isQuiet: () => true,
 			notify: (alert) => alerts.push(alert),
 		});
-
 		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
-		runtime.observe({ type: "agent_settled" });
-		clock.advance(1_000);
-		runtime.observe({ type: "input" });
-		clock.advance(10_000);
-
-		expect(alerts).toEqual([]);
-	});
-
-	test("an automatic retry, compaction, or Goal continuation rejects the stale generation before one final alert", () => {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
-
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", errorMessage: "temporary outage", stopReason: "error" });
-		runtime.observe({ type: "agent_settled" });
-		clock.advance(1_000);
-		runtime.observe({ type: "agent_start" });
-		clock.advance(3_000);
-		expect(alerts).toEqual([]);
-
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+		if (scenario.user) runtime.observe({ type: "user_work" });
+		clock.advance(scenario.name === "short" ? 9_999 : 10_000);
+		runtime.observe(
+			scenario.outcome === "failure"
+				? { errorMessage: "final failure", stopReason: "error", type: "assistant_finalized" }
+				: { stopReason: "stop", type: "assistant_finalized" },
+		);
 		runtime.observe({ type: "agent_settled" });
 		clock.advance(2_000);
+		expect(alerts, scenario.name).toEqual([]);
+	}
+});
 
-		expect(alerts).toEqual([{ elapsedMs: 14_000, outcome: "completion" }]);
+test("a pending timer is unreferenced and a failed quiet check degrades silently", () => {
+	const clock = new FakeClock();
+	const runtime = new NotificationRuntime({
+		clock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 2_000,
+			minimumDurationMs: 0,
+		}),
+		isQuiet: () => {
+			throw new Error("Host is replacing the session");
+		},
+		notify: () => {
+			throw new Error("should not notify");
+		},
 	});
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	runtime.observe({ stopReason: "stop", type: "assistant_finalized" });
+	runtime.observe({ type: "agent_settled" });
+	expect(clock.unrefCount).toBe(1);
+	expect(() => clock.advance(2_000)).not.toThrow();
 
-	test("session replacement, reload, or shutdown releases a pending alert", () => {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
-
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
-		runtime.observe({ type: "agent_settled" });
-		runtime.dispose();
-		clock.advance(10_000);
-
-		expect(alerts).toEqual([]);
+	const deliveryClock = new FakeClock();
+	const deliveryRuntime = new NotificationRuntime({
+		clock: deliveryClock,
+		getSettings: () => ({
+			completionAlerts: true,
+			enabled: true,
+			failureAlerts: true,
+			gracePeriodMs: 0,
+			minimumDurationMs: 0,
+		}),
+		isQuiet: () => true,
+		notify: () => {
+			throw new Error("terminal closed");
+		},
 	});
-
-	test("a stray terminal key during grace cancels the alert without being consumed", () => {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => true,
-			notify: (alert) => alerts.push(alert),
-		});
-
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
-		runtime.observe({ type: "agent_settled" });
-		runtime.observe({ type: "terminal_input" });
-		clock.advance(2_000);
-
-		expect(alerts).toEqual([]);
-	});
-
-	test("input cancels a deferred alert even when queued Host work outlives the first timer", () => {
-		const clock = new FakeClock();
-		const alerts: unknown[] = [];
-		let quiet = true;
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 10_000,
-			}),
-			isQuiet: () => quiet,
-			notify: (alert) => alerts.push(alert),
-		});
-
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		clock.advance(10_000);
-		runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
-		runtime.observe({ type: "agent_settled" });
-		quiet = false;
-		clock.advance(2_000);
-		runtime.observe({ type: "input" });
-		quiet = true;
-		runtime.observe({ type: "agent_settled" });
-		clock.advance(2_000);
-
-		expect(alerts).toEqual([]);
-	});
-
-	test("the settled outcome matrix follows the latest finalized Assistant message", () => {
-		const cases: Array<{
-			readonly events: Array<Parameters<NotificationRuntime["observe"]>[0]>;
-			readonly expected: "completion" | "failure" | undefined;
-			readonly name: string;
-		}> = [
-			{ events: [{ stopReason: "stop", type: "assistant_finalized" }], expected: "completion", name: "ordinary" },
-			{ events: [{ stopReason: "toolUse", type: "assistant_finalized" }], expected: "completion", name: "tool" },
-			{
-				events: [{ errorMessage: "denied", stopReason: "error", type: "assistant_finalized" }],
-				expected: "failure",
-				name: "exhausted retry or final error",
-			},
-			{ events: [{ stopReason: "aborted", type: "assistant_finalized" }], expected: undefined, name: "abort" },
-			{ events: [], expected: undefined, name: "missing Assistant" },
-			{
-				events: [
-					{ errorMessage: "HTTP 503", stopReason: "error", type: "assistant_finalized" },
-					{ type: "agent_start" },
-					{ stopReason: "stop", type: "assistant_finalized" },
-				],
-				expected: "completion",
-				name: "retry recovery",
-			},
-			{
-				events: [{ type: "agent_end" }, { type: "agent_end" }, { stopReason: "stop", type: "assistant_finalized" }],
-				expected: "completion",
-				name: "several agent_end events",
-			},
-		];
-
-		for (const scenario of cases) {
-			const clock = new FakeClock();
-			const alerts: Array<{ outcome: string }> = [];
-			const runtime = new NotificationRuntime({
-				clock,
-				getSettings: () => ({
-					completionAlerts: true,
-					enabled: true,
-					failureAlerts: true,
-					gracePeriodMs: 0,
-					minimumDurationMs: 0,
-				}),
-				isQuiet: () => true,
-				notify: (alert) => alerts.push(alert),
-			});
-			runtime.observe({ type: "agent_start" });
-			runtime.observe({ type: "user_work" });
-			for (const event of scenario.events) runtime.observe(event);
-			runtime.observe({ type: "agent_settled" });
-			clock.advance(0);
-			expect(
-				alerts.map((alert) => alert.outcome),
-				scenario.name,
-			).toEqual(scenario.expected ? [scenario.expected] : []);
-		}
-	});
-
-	test("short, automatic, disabled, and outcome-disabled work remains silent", () => {
-		const cases = [
-			{
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				name: "short",
-				outcome: "completion",
-				user: true,
-			},
-			{
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				name: "automatic",
-				outcome: "completion",
-				user: false,
-			},
-			{
-				completionAlerts: true,
-				enabled: false,
-				failureAlerts: true,
-				name: "disabled",
-				outcome: "completion",
-				user: true,
-			},
-			{
-				completionAlerts: false,
-				enabled: true,
-				failureAlerts: true,
-				name: "completion disabled",
-				outcome: "completion",
-				user: true,
-			},
-			{
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: false,
-				name: "failure disabled",
-				outcome: "failure",
-				user: true,
-			},
-		] as const;
-		for (const scenario of cases) {
-			const clock = new FakeClock();
-			const alerts: unknown[] = [];
-			const runtime = new NotificationRuntime({
-				clock,
-				getSettings: () => ({
-					completionAlerts: scenario.completionAlerts,
-					enabled: scenario.enabled,
-					failureAlerts: scenario.failureAlerts,
-					gracePeriodMs: 2_000,
-					minimumDurationMs: 10_000,
-				}),
-				isQuiet: () => true,
-				notify: (alert) => alerts.push(alert),
-			});
-			runtime.observe({ type: "agent_start" });
-			if (scenario.user) runtime.observe({ type: "user_work" });
-			clock.advance(scenario.name === "short" ? 9_999 : 10_000);
-			runtime.observe(
-				scenario.outcome === "failure"
-					? { errorMessage: "final failure", stopReason: "error", type: "assistant_finalized" }
-					: { stopReason: "stop", type: "assistant_finalized" },
-			);
-			runtime.observe({ type: "agent_settled" });
-			clock.advance(2_000);
-			expect(alerts, scenario.name).toEqual([]);
-		}
-	});
-
-	test("a pending timer is unreferenced and a failed quiet check degrades silently", () => {
-		const clock = new FakeClock();
-		const runtime = new NotificationRuntime({
-			clock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 2_000,
-				minimumDurationMs: 0,
-			}),
-			isQuiet: () => {
-				throw new Error("Host is replacing the session");
-			},
-			notify: () => {
-				throw new Error("should not notify");
-			},
-		});
-		runtime.observe({ type: "agent_start" });
-		runtime.observe({ type: "user_work" });
-		runtime.observe({ stopReason: "stop", type: "assistant_finalized" });
-		runtime.observe({ type: "agent_settled" });
-		expect(clock.unrefCount).toBe(1);
-		expect(() => clock.advance(2_000)).not.toThrow();
-
-		const deliveryClock = new FakeClock();
-		const deliveryRuntime = new NotificationRuntime({
-			clock: deliveryClock,
-			getSettings: () => ({
-				completionAlerts: true,
-				enabled: true,
-				failureAlerts: true,
-				gracePeriodMs: 0,
-				minimumDurationMs: 0,
-			}),
-			isQuiet: () => true,
-			notify: () => {
-				throw new Error("terminal closed");
-			},
-		});
-		deliveryRuntime.observe({ type: "agent_start" });
-		deliveryRuntime.observe({ type: "user_work" });
-		deliveryRuntime.observe({ stopReason: "stop", type: "assistant_finalized" });
-		deliveryRuntime.observe({ type: "agent_settled" });
-		expect(() => deliveryClock.advance(0)).not.toThrow();
-	});
+	deliveryRuntime.observe({ type: "agent_start" });
+	deliveryRuntime.observe({ type: "user_work" });
+	deliveryRuntime.observe({ stopReason: "stop", type: "assistant_finalized" });
+	deliveryRuntime.observe({ type: "agent_settled" });
+	expect(() => deliveryClock.advance(0)).not.toThrow();
 });

@@ -61,144 +61,142 @@ afterEach(() => {
 	__resetState();
 });
 
-describe("TodoOverlay rendering", () => {
-	test("renders zero rows and registers nothing when the list is empty", () => {
-		const { setWidgetCalls, widget } = setup([]);
-		expect(setWidgetCalls).toHaveLength(0);
-		expect(widget).toBeUndefined();
-	});
+test("renders zero rows and registers nothing when the list is empty", () => {
+	const { setWidgetCalls, widget } = setup([]);
+	expect(setWidgetCalls).toHaveLength(0);
+	expect(widget).toBeUndefined();
+});
 
-	test("aligns the summary icon with the content edge and summary text with task glyphs", () => {
-		const { setWidgetCalls, widget } = setup([task("1", "write tests")]);
-		expect(setWidgetCalls).toHaveLength(1);
-		expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
-		expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
-		expect(widget?.render(200)).toEqual(["◆ 1 tasks (0 done, 1 open)", "  □ write tests"]);
-	});
+test("aligns the summary icon with the content edge and summary text with task glyphs", () => {
+	const { setWidgetCalls, widget } = setup([task("1", "write tests")]);
+	expect(setWidgetCalls).toHaveLength(1);
+	expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
+	expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
+	expect(widget?.render(200)).toEqual(["◆ 1 tasks (0 done, 1 open)", "  □ write tests"]);
+});
 
-	test("shows at most five ordered task rows plus one overflow row", () => {
-		const finalTasks = [
-			task("1", "runnable 1"),
-			task("2", "active", "in_progress"),
-			task("3", "recent 3", "completed"),
-			task("4", "blocked 4", "pending", ["1"]),
-			task("5", "runnable 5"),
-			task("6", "runnable 6"),
-			task("7", "recent 7", "completed"),
-		];
-		const initialTasks = finalTasks.map((item) =>
-			item.status === "completed" ? { ...item, status: "pending" as const } : item,
-		);
-		const { overlay, widget } = setup(initialTasks);
-		replaceState(SESSION_ID, { tasks: finalTasks, nextId: 8 });
-		overlay.refresh({ forceExpanded: true });
-		expect(widget?.render(200)).toEqual([
-			"◆ 7 tasks (2 done, 5 open)",
-			"  ✓ recent 3",
-			"  ✓ recent 7",
-			"  ■ active",
-			"  □ runnable 1",
-			"  □ runnable 5",
-			"  … +2 pending",
-		]);
-	});
+test("shows at most five ordered task rows plus one overflow row", () => {
+	const finalTasks = [
+		task("1", "runnable 1"),
+		task("2", "active", "in_progress"),
+		task("3", "recent 3", "completed"),
+		task("4", "blocked 4", "pending", ["1"]),
+		task("5", "runnable 5"),
+		task("6", "runnable 6"),
+		task("7", "recent 7", "completed"),
+	];
+	const initialTasks = finalTasks.map((item) =>
+		item.status === "completed" ? { ...item, status: "pending" as const } : item,
+	);
+	const { overlay, widget } = setup(initialTasks);
+	replaceState(SESSION_ID, { tasks: finalTasks, nextId: 8 });
+	overlay.refresh({ forceExpanded: true });
+	expect(widget?.render(200)).toEqual([
+		"◆ 7 tasks (2 done, 5 open)",
+		"  ✓ recent 3",
+		"  ✓ recent 7",
+		"  ■ active",
+		"  □ runnable 1",
+		"  □ runnable 5",
+		"  … +2 pending",
+	]);
+});
 
-	test("keeps dependency metadata out of the user-facing checklist", () => {
-		const { widget } = setup([
-			task("1", "finished dependency", "completed"),
-			task("2", "now runnable", "pending", ["1"]),
-			task("3", "still blocked", "pending", ["2"]),
-		]);
-		const output = widget?.render(200).join("\n") ?? "";
-		expect(output).toContain("□ now runnable");
-		expect(output).toContain("□ still blocked");
-		expect(output).not.toContain("⊘");
-		expect(output).not.toContain("blocked by");
-	});
+test("keeps dependency metadata out of the user-facing checklist", () => {
+	const { widget } = setup([
+		task("1", "finished dependency", "completed"),
+		task("2", "now runnable", "pending", ["1"]),
+		task("3", "still blocked", "pending", ["2"]),
+	]);
+	const output = widget?.render(200).join("\n") ?? "";
+	expect(output).toContain("□ now runnable");
+	expect(output).toContain("□ still blocked");
+	expect(output).not.toContain("⊘");
+	expect(output).not.toContain("blocked by");
+});
 
-	test("collapses to exactly one Next line and prefers active work", () => {
-		const { overlay, widget } = setup([task("1", "pending"), task("2", "doing now", "in_progress")]);
-		overlay.toggle();
-		expect(widget?.render(200)).toEqual(["  Next: doing now"]);
-	});
+test("collapses to exactly one Next line and prefers active work", () => {
+	const { overlay, widget } = setup([task("1", "pending"), task("2", "doing now", "in_progress")]);
+	overlay.toggle();
+	expect(widget?.render(200)).toEqual(["  Next: doing now"]);
+});
 
-	test("forceExpanded restores task rows after a collapse", () => {
-		const { overlay, widget } = setup([task("1", "one"), task("2", "two")]);
-		overlay.toggle();
-		expect(widget?.render(200)).toHaveLength(1);
-		overlay.refresh({ forceExpanded: true });
-		expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
-	});
+test("forceExpanded restores task rows after a collapse", () => {
+	const { overlay, widget } = setup([task("1", "one"), task("2", "two")]);
+	overlay.toggle();
+	expect(widget?.render(200)).toHaveLength(1);
+	overlay.refresh({ forceExpanded: true });
+	expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+});
 
-	test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
-		const { overlay, widget } = setup([task("1", "one"), task("2", "two")]);
-		overlay.toggle();
-		expect(widget?.render(200)).toEqual(["  Next: one"]);
+test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
+	const { overlay, widget } = setup([task("1", "one"), task("2", "two")]);
+	overlay.toggle();
+	expect(widget?.render(200)).toEqual(["  Next: one"]);
 
-		overlay.setSuppressed(true);
-		overlay.refresh({ forceExpanded: true });
-		overlay.setSuppressed(false);
+	overlay.setSuppressed(true);
+	overlay.refresh({ forceExpanded: true });
+	overlay.setSuppressed(false);
 
-		expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
-		expect(overlay.isRegistered()).toBe(true);
-	});
+	expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+	expect(overlay.isRegistered()).toBe(true);
+});
 
-	test("normalizes and truncates a long subject to one terminal row", () => {
-		const { widget } = setup([task("1", "a long\nsubject that cannot fit")]);
-		const lines = widget?.render(18) ?? [];
-		expect(lines).toHaveLength(2);
-		expect(lines[1]).not.toContain("\n");
-		expect(lines.every((line) => visibleWidth(line) <= 18)).toBe(true);
-	});
+test("normalizes and truncates a long subject to one terminal row", () => {
+	const { widget } = setup([task("1", "a long\nsubject that cannot fit")]);
+	const lines = widget?.render(18) ?? [];
+	expect(lines).toHaveLength(2);
+	expect(lines[1]).not.toContain("\n");
+	expect(lines.every((line) => visibleWidth(line) <= 18)).toBe(true);
+});
 
-	test("keeps aligned CJK, emoji, overflow, and collapsed rows inside the width matrix", () => {
-		const { overlay, widget } = setup([
-			task("1", "检查🙂一个非常长的中文任务名称，确保终端不会横向溢出", "in_progress"),
-			task("2", "继续验证后续步骤🧪"),
-			task("3", "第三个任务"),
-			task("4", "第四个任务"),
-			task("5", "第五个任务"),
-			task("6", "第六个任务"),
-			task("7", "第七个任务"),
-		]);
+test("keeps aligned CJK, emoji, overflow, and collapsed rows inside the width matrix", () => {
+	const { overlay, widget } = setup([
+		task("1", "检查🙂一个非常长的中文任务名称，确保终端不会横向溢出", "in_progress"),
+		task("2", "继续验证后续步骤🧪"),
+		task("3", "第三个任务"),
+		task("4", "第四个任务"),
+		task("5", "第五个任务"),
+		task("6", "第六个任务"),
+		task("7", "第七个任务"),
+	]);
 
-		for (const width of [100, 64, 48, 32, 24]) {
-			const lines = widget?.render(width) ?? [];
-			expect(lines).toHaveLength(7);
-			expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
-			expect(Bun.stripANSI(lines[0] ?? "").startsWith("◆ ")).toBe(true);
-			expect(lines.slice(1).every((line) => Bun.stripANSI(line).startsWith("  "))).toBe(true);
-			expect(lines.slice(1).every((line) => !Bun.stripANSI(line).startsWith("   "))).toBe(true);
-		}
+	for (const width of [100, 64, 48, 32, 24]) {
+		const lines = widget?.render(width) ?? [];
+		expect(lines).toHaveLength(7);
+		expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
+		expect(Bun.stripANSI(lines[0] ?? "").startsWith("◆ ")).toBe(true);
+		expect(lines.slice(1).every((line) => Bun.stripANSI(line).startsWith("  "))).toBe(true);
+		expect(lines.slice(1).every((line) => !Bun.stripANSI(line).startsWith("   "))).toBe(true);
+	}
 
-		overlay.toggle();
-		for (const width of [100, 64, 48, 32, 24]) {
-			const lines = widget?.render(width) ?? [];
-			expect(lines).toHaveLength(1);
-			expect(visibleWidth(lines[0] ?? "")).toBeLessThanOrEqual(width);
-			expect(Bun.stripANSI(lines[0] ?? "").startsWith("  ")).toBe(true);
-			expect(Bun.stripANSI(lines[0] ?? "").startsWith("   ")).toBe(false);
-		}
-	});
+	overlay.toggle();
+	for (const width of [100, 64, 48, 32, 24]) {
+		const lines = widget?.render(width) ?? [];
+		expect(lines).toHaveLength(1);
+		expect(visibleWidth(lines[0] ?? "")).toBeLessThanOrEqual(width);
+		expect(Bun.stripANSI(lines[0] ?? "").startsWith("  ")).toBe(true);
+		expect(Bun.stripANSI(lines[0] ?? "").startsWith("   ")).toBe(false);
+	}
+});
 
-	test("preserves the blocked task subject across the width matrix", () => {
-		const { widget } = setup([task("1", "检查🙂非常长的工作区路径和结果文件", "pending", ["依赖-🧪-非常长的名称"])]);
+test("preserves the blocked task subject across the width matrix", () => {
+	const { widget } = setup([task("1", "检查🙂非常长的工作区路径和结果文件", "pending", ["依赖-🧪-非常长的名称"])]);
 
-		for (const width of [100, 64, 48, 32, 24]) {
-			const line = widget?.render(width)[1] ?? "";
-			const plain = Bun.stripANSI(line);
-			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-			expect(plain).toContain("检查🙂");
-			expect(plain).not.toContain("依赖");
-		}
-	});
+	for (const width of [100, 64, 48, 32, 24]) {
+		const line = widget?.render(width)[1] ?? "";
+		const plain = Bun.stripANSI(line);
+		expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		expect(plain).toContain("检查🙂");
+		expect(plain).not.toContain("依赖");
+	}
+});
 
-	test("refreshes a registered widget without creating a second one", () => {
-		const { overlay, requestRenderCalls, setWidgetCalls } = setup([task("1", "one")]);
-		overlay.refresh();
-		expect(setWidgetCalls).toHaveLength(1);
-		expect(requestRenderCalls).toHaveLength(1);
-	});
+test("refreshes a registered widget without creating a second one", () => {
+	const { overlay, requestRenderCalls, setWidgetCalls } = setup([task("1", "one")]);
+	overlay.refresh();
+	expect(setWidgetCalls).toHaveLength(1);
+	expect(requestRenderCalls).toHaveLength(1);
 });
 
 describe("TodoOverlay all-complete linger", () => {

@@ -47,131 +47,129 @@ function chart(type: string, rows: readonly string[]): string {
 	return fenced("chart", [`type: ${type}`, `title: ${type} sample`, "data:", ...rows]);
 }
 
-describe("fenced visualization projection", () => {
-	test("leaves ordinary Markdown, candidate words, unknown fences, and incomplete targets byte-equivalent", () => {
-		const inputs = [
-			"ordinary chart and tree prose",
-			fenced("typescript", ["const chart = 'tree';"]),
-			[`${FENCE}chart`, "type: bar", "data:", "Jan 1"].join("\n"),
-			"no visualization here\r\n",
-		];
-		for (const source of inputs) expect(projectFencedVisualizations(source, 80)).toBe(source);
-	});
+test("leaves ordinary Markdown, candidate words, unknown fences, and incomplete targets byte-equivalent", () => {
+	const inputs = [
+		"ordinary chart and tree prose",
+		fenced("typescript", ["const chart = 'tree';"]),
+		[`${FENCE}chart`, "type: bar", "data:", "Jan 1"].join("\n"),
+		"no visualization here\r\n",
+	];
+	for (const source of inputs) expect(projectFencedVisualizations(source, 80)).toBe(source);
+});
 
-	test("projects every supported chart type and the histogram alias", async () => {
-		const cases: ReadonlyArray<readonly [string, readonly string[]]> = [
-			["bar", ["Jan -8", "Feb 5", "Mar 12"]],
-			["histogram", ["A 1", "B 3", "C 2"]],
-			["line", ["Mon 1", "Tue 4", "Wed 2", "Thu 6"]],
-			["scatter", ["Mon 1", "Tue 4", "Wed 2", "Thu 6"]],
-			["sparkline", ["1 3 2 7 4 8"]],
-			["heatmap", ["Mon 1 2 3 4", "Tue 4 3 2 1"]],
-		];
-		for (const [type, rows] of cases) {
-			const source = chart(type, rows);
-			const projected = projectFencedVisualizations(source, 64);
-			expect(projected).not.toBe(source);
-			expect(projected).not.toContain(`${FENCE}chart`);
-			const rendered = await renderProjected(source, 64, "user");
-			expect(rendered.length).toBeGreaterThan(0);
-			expect(rendered.every((line) => visibleWidth(line) <= 64)).toBe(true);
-		}
-	});
-
-	test("accepts tilde fences and retains CRLF around a successful projection", () => {
-		const tilde = fenced("chart", ["sparkline", "data:", "1 2 3 4"], "~~~");
-		expect(projectFencedVisualizations(tilde, 40)).not.toBe(tilde);
-
-		const crlf = chart("sparkline", ["1 2 3 4"]).replaceAll("\n", "\r\n");
-		const projected = projectFencedVisualizations(crlf, 40);
-		expect(projected).not.toBe(crlf);
-		expect(projected).toContain("\r\n");
-	});
-
-	test("does not inspect a target fence nested inside an ordinary longer fence", () => {
-		const nested = [`${LONG_FENCE}text`, `${FENCE}chart`, "type: sparkline", "1 2 3", FENCE, LONG_FENCE].join("\n");
-		expect(projectFencedVisualizations(nested, 80)).toBe(nested);
-	});
-
-	test("preserves malformed, unsafe, over-limit, and too-narrow charts", () => {
-		const invalid = [
-			chart("unknown", ["A 1"]),
-			fenced("chart", ["type: bar", "type: line", "A 1"]),
-			fenced("chart", ["type: bar", "width: 10", "A 1"]),
-			fenced("chart", ["type: line", "A 1", "broken row"]),
-			fenced("chart", ["type: bar", "title: unsafe\u001b[31m", "A 1"]),
-			fenced("chart", [
-				"type: line",
-				...Array.from({ length: 65 }, (_value, index) => `P${String(index)} ${String(index)}`),
-			]),
-			fenced("chart", ["type: sparkline", "1 ".repeat(6_100)]),
-		];
-		for (const source of invalid) expect(projectFencedVisualizations(source, 80)).toBe(source);
-		const narrow = chart("bar", ["A 1", "B 2"]);
-		expect(projectFencedVisualizations(narrow, 23)).toBe(narrow);
-	});
-
-	test("uses Host column width and grapheme-safe truncation", () => {
-		const source = [
-			"type: bar",
-			"title: 中文🧪 family 👨‍👩‍👧‍👦 title that is deliberately long",
-			"data:",
-			"一月 1",
-			"二月 2",
-		].join("\n");
-		const lines = renderChartSource(source, 24);
-		expect(lines.length).toBeGreaterThan(0);
-		expect(lines.every((line) => visibleWidth(line) <= 24)).toBe(true);
-		expect(lines.join("\n")).not.toContain("�");
-	});
-
-	test("renders multiple outputs as inert borderless code blocks", async () => {
-		const tree = fenced("tree", ["root", "  child `code` <tag>"]);
-		const sparkline = chart("sparkline", ["1 3 2 4"]);
-		const source = `${tree}\n\n${sparkline}`;
-		const projected = projectFencedVisualizations(source, 80);
-		expect(projected).not.toContain(`${FENCE}tree`);
+test("projects every supported chart type and the histogram alias", async () => {
+	const cases: ReadonlyArray<readonly [string, readonly string[]]> = [
+		["bar", ["Jan -8", "Feb 5", "Mar 12"]],
+		["histogram", ["A 1", "B 3", "C 2"]],
+		["line", ["Mon 1", "Tue 4", "Wed 2", "Thu 6"]],
+		["scatter", ["Mon 1", "Tue 4", "Wed 2", "Thu 6"]],
+		["sparkline", ["1 3 2 7 4 8"]],
+		["heatmap", ["Mon 1 2 3 4", "Tue 4 3 2 1"]],
+	];
+	for (const [type, rows] of cases) {
+		const source = chart(type, rows);
+		const projected = projectFencedVisualizations(source, 64);
+		expect(projected).not.toBe(source);
 		expect(projected).not.toContain(`${FENCE}chart`);
-		expect(projected.includes("\u001b") || projected.includes("\u009b")).toBe(false);
-		const rendered = (await renderProjected(source, 80, "user")).join("\n");
-		expect(rendered).toContain("child `code` <tag>");
-		expect(rendered).not.toContain(FENCE);
-	});
+		const rendered = await renderProjected(source, 64, "user");
+		expect(rendered.length).toBeGreaterThan(0);
+		expect(rendered.every((line) => visibleWidth(line) <= 64)).toBe(true);
+	}
+});
 
-	test("preserves ordinary code-block borders around a projected visualization", async () => {
-		const source = [
-			fenced("pi-stuff-visualization", ["reserved"]),
-			fenced("tree", ["root", "  child"]),
-			fenced("text", ["literal"]),
-		].join("\n\n");
-		const rendered = (await renderProjected(source, 80, "user")).join("\n");
-		expect(rendered).toContain("└── child");
-		expect(rendered).toContain(`${FENCE}pi-stuff-visualization`);
-		expect(rendered).toContain(`${FENCE}text`);
-	});
+test("accepts tilde fences and retains CRLF around a successful projection", () => {
+	const tilde = fenced("chart", ["sparkline", "data:", "1 2 3 4"], "~~~");
+	expect(projectFencedVisualizations(tilde, 40)).not.toBe(tilde);
 
-	test("bounds projected blocks and internal border-language selection", () => {
-		const blocks = Array.from({ length: 17 }, (_value, index) => fenced("tree", [`root-${String(index)}`]));
-		const capped = projectFencedVisualizations(blocks.join("\n\n"), 80);
-		expect(capped.split(`${FENCE}tree`)).toHaveLength(2);
+	const crlf = chart("sparkline", ["1 2 3 4"]).replaceAll("\n", "\r\n");
+	const projected = projectFencedVisualizations(crlf, 40);
+	expect(projected).not.toBe(crlf);
+	expect(projected).toContain("\r\n");
+});
 
-		const occupied = Array.from({ length: 33 }, (_value, index) =>
-			fenced(index === 0 ? "pi-stuff-visualization" : `pi-stuff-visualization-${String(index)}`, ["literal"]),
-		);
-		const exhausted = [...occupied, fenced("tree", ["root"])].join("\n\n");
-		expect(projectFencedVisualizations(exhausted, 80)).toBe(exhausted);
-	});
+test("does not inspect a target fence nested inside an ordinary longer fence", () => {
+	const nested = [`${LONG_FENCE}text`, `${FENCE}chart`, "type: sparkline", "1 2 3", FENCE, LONG_FENCE].join("\n");
+	expect(projectFencedVisualizations(nested, 80)).toBe(nested);
+});
 
-	test("rejects partial chart rows instead of silently dropping them", () => {
-		expect(renderChartSource("type: line\nA 1\ninvalid", 80)).toEqual([]);
-		expect(renderChartSource("type: heatmap\nA 1 nope", 80)).toEqual([]);
-		expect(
-			renderChartSource(
-				`type: heatmap\nA ${Array.from({ length: 65 }, (_value, index) => String(index)).join(" ")}`,
-				80,
-			),
-		).toEqual([]);
-	});
+test("preserves malformed, unsafe, over-limit, and too-narrow charts", () => {
+	const invalid = [
+		chart("unknown", ["A 1"]),
+		fenced("chart", ["type: bar", "type: line", "A 1"]),
+		fenced("chart", ["type: bar", "width: 10", "A 1"]),
+		fenced("chart", ["type: line", "A 1", "broken row"]),
+		fenced("chart", ["type: bar", "title: unsafe\u001b[31m", "A 1"]),
+		fenced("chart", [
+			"type: line",
+			...Array.from({ length: 65 }, (_value, index) => `P${String(index)} ${String(index)}`),
+		]),
+		fenced("chart", ["type: sparkline", "1 ".repeat(6_100)]),
+	];
+	for (const source of invalid) expect(projectFencedVisualizations(source, 80)).toBe(source);
+	const narrow = chart("bar", ["A 1", "B 2"]);
+	expect(projectFencedVisualizations(narrow, 23)).toBe(narrow);
+});
+
+test("uses Host column width and grapheme-safe truncation", () => {
+	const source = [
+		"type: bar",
+		"title: 中文🧪 family 👨‍👩‍👧‍👦 title that is deliberately long",
+		"data:",
+		"一月 1",
+		"二月 2",
+	].join("\n");
+	const lines = renderChartSource(source, 24);
+	expect(lines.length).toBeGreaterThan(0);
+	expect(lines.every((line) => visibleWidth(line) <= 24)).toBe(true);
+	expect(lines.join("\n")).not.toContain("�");
+});
+
+test("renders multiple outputs as inert borderless code blocks", async () => {
+	const tree = fenced("tree", ["root", "  child `code` <tag>"]);
+	const sparkline = chart("sparkline", ["1 3 2 4"]);
+	const source = `${tree}\n\n${sparkline}`;
+	const projected = projectFencedVisualizations(source, 80);
+	expect(projected).not.toContain(`${FENCE}tree`);
+	expect(projected).not.toContain(`${FENCE}chart`);
+	expect(projected.includes("\u001b") || projected.includes("\u009b")).toBe(false);
+	const rendered = (await renderProjected(source, 80, "user")).join("\n");
+	expect(rendered).toContain("child `code` <tag>");
+	expect(rendered).not.toContain(FENCE);
+});
+
+test("preserves ordinary code-block borders around a projected visualization", async () => {
+	const source = [
+		fenced("pi-stuff-visualization", ["reserved"]),
+		fenced("tree", ["root", "  child"]),
+		fenced("text", ["literal"]),
+	].join("\n\n");
+	const rendered = (await renderProjected(source, 80, "user")).join("\n");
+	expect(rendered).toContain("└── child");
+	expect(rendered).toContain(`${FENCE}pi-stuff-visualization`);
+	expect(rendered).toContain(`${FENCE}text`);
+});
+
+test("bounds projected blocks and internal border-language selection", () => {
+	const blocks = Array.from({ length: 17 }, (_value, index) => fenced("tree", [`root-${String(index)}`]));
+	const capped = projectFencedVisualizations(blocks.join("\n\n"), 80);
+	expect(capped.split(`${FENCE}tree`)).toHaveLength(2);
+
+	const occupied = Array.from({ length: 33 }, (_value, index) =>
+		fenced(index === 0 ? "pi-stuff-visualization" : `pi-stuff-visualization-${String(index)}`, ["literal"]),
+	);
+	const exhausted = [...occupied, fenced("tree", ["root"])].join("\n\n");
+	expect(projectFencedVisualizations(exhausted, 80)).toBe(exhausted);
+});
+
+test("rejects partial chart rows instead of silently dropping them", () => {
+	expect(renderChartSource("type: line\nA 1\ninvalid", 80)).toEqual([]);
+	expect(renderChartSource("type: heatmap\nA 1 nope", 80)).toEqual([]);
+	expect(
+		renderChartSource(
+			`type: heatmap\nA ${Array.from({ length: 65 }, (_value, index) => String(index)).join(" ")}`,
+			80,
+		),
+	).toEqual([]);
 });
 
 describe("indentation tree renderer", () => {

@@ -226,207 +226,205 @@ describe("BTW context budget", () => {
 	});
 });
 
-describe("BTW stream execution", () => {
-	test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
-		type ContextHandlerResult = object | undefined | Promise<object | undefined>;
-		interface ContextHarnessEvent {
-			readonly messages?: readonly Message[];
-			readonly prompt?: string;
-			readonly reason?: string;
-			readonly type?: string;
+test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
+	type ContextHandlerResult = object | undefined | Promise<object | undefined>;
+	interface ContextHarnessEvent {
+		readonly messages?: readonly Message[];
+		readonly prompt?: string;
+		readonly reason?: string;
+		readonly type?: string;
+	}
+	type ContextHandler = (event: ContextHarnessEvent, ctx: ExtensionContext) => ContextHandlerResult;
+	const handlers = new Map<string, ContextHandler[]>();
+	const activeTools: string[] = [];
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+	const api = {
+		events: {},
+		on: (event: string, handler: ContextHandler) => {
+			const current = handlers.get(event) ?? [];
+			current.push(handler);
+			handlers.set(event, current);
+		},
+		registerTool: () => undefined,
+		getActiveTools: () => [...activeTools],
+		setActiveTools: (names: string[]) => {
+			activeTools.splice(0, activeTools.length, ...names);
+		},
+		registerCommand: () => undefined,
+		registerEntryRenderer: () => undefined,
+	} as never;
+	let captured: Parameters<OpenBtwStream>[0] | undefined;
+	let magicTransforms = 0;
+	try {
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicPi) => {
+					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+					const register = magicPi.on.bind(magicPi) as (
+						event: string,
+						handler: (event: ContextHarnessEvent) => ContextHandlerResult,
+					) => void;
+					register("context", () => {
+						magicTransforms += 1;
+						return {
+							messages: [
+								user("<session-history><project-memory>side memory</project-memory></session-history>"),
+							],
+						};
+					});
+				},
+			}),
+		});
+		const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))]);
+		for (const handler of handlers.get("session_start") ?? []) {
+			await handler({ type: "session_start", reason: "startup" }, ctx);
 		}
-		type ContextHandler = (event: ContextHarnessEvent, ctx: ExtensionContext) => ContextHandlerResult;
-		const handlers = new Map<string, ContextHandler[]>();
-		const activeTools: string[] = [];
-		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-		const api = {
-			events: {},
-			on: (event: string, handler: ContextHandler) => {
-				const current = handlers.get(event) ?? [];
-				current.push(handler);
-				handlers.set(event, current);
-			},
-			registerTool: () => undefined,
-			getActiveTools: () => [...activeTools],
-			setActiveTools: (names: string[]) => {
-				activeTools.splice(0, activeTools.length, ...names);
-			},
-			registerCommand: () => undefined,
-			registerEntryRenderer: () => undefined,
-		} as never;
-		let captured: Parameters<OpenBtwStream>[0] | undefined;
-		let magicTransforms = 0;
-		try {
-			piStuffContext(api, {
-				loadMagicContext: async () => ({
-					default: async (magicPi) => {
-						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-						const register = magicPi.on.bind(magicPi) as (
-							event: string,
-							handler: (event: ContextHarnessEvent) => ContextHandlerResult,
-						) => void;
-						register("context", () => {
-							magicTransforms += 1;
-							return {
-								messages: [
-									user("<session-history><project-memory>side memory</project-memory></session-history>"),
-								],
-							};
-						});
-					},
-				}),
-			});
-			const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))]);
-			for (const handler of handlers.get("session_start") ?? []) {
-				await handler({ type: "session_start", reason: "startup" }, ctx);
-			}
-			for (const handler of handlers.get("before_agent_start") ?? []) {
-				await handler({ type: "before_agent_start", prompt: "main conversation" }, ctx);
-			}
-			for (const handler of handlers.get("context") ?? []) {
-				await handler({ type: "context", messages: [user("main conversation")] }, ctx);
-			}
-			await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
-				captured = request;
-				return completedStream(["answer"], assistant("answer"));
-			});
-		} finally {
-			contextTest.clear();
+		for (const handler of handlers.get("before_agent_start") ?? []) {
+			await handler({ type: "before_agent_start", prompt: "main conversation" }, ctx);
 		}
-
-		expect(magicTransforms).toBe(1);
-		expect(captured?.context.systemPrompt).toContain("pi-stuff-context");
-		expect(captured?.context.systemPrompt).toContain("side memory");
-		expect(JSON.stringify(captured?.context.messages)).toContain("main conversation");
-	});
-
-	test("streams text through the composed transport with no tools and an independent signal", async () => {
-		const mainController = new AbortController();
-		const sideController = new AbortController();
-		const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))], mainController.signal);
-		const deltas: string[] = [];
-		let captured: Parameters<OpenBtwStream>[0] | undefined;
-		const openStream: OpenBtwStream = async (request) => {
+		for (const handler of handlers.get("context") ?? []) {
+			await handler({ type: "context", messages: [user("main conversation")] }, ctx);
+		}
+		await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
 			captured = request;
-			return completedStream(["side ", "answer"], assistant("side answer"));
-		};
-
-		const result = await executeBtw(
-			"isolated question",
-			ctx,
-			sideController.signal,
-			{ onTextDelta: (delta) => deltas.push(delta) },
-			openStream,
-		);
-
-		expect(result.kind).toBe("success");
-		expect(deltas).toEqual(["side ", "answer"]);
-		expect(captured?.signal).toBe(sideController.signal);
-		expect(captured?.signal).not.toBe(mainController.signal);
-		expect(captured?.context.tools).toEqual([]);
-		const requestText = JSON.stringify(captured?.context.messages);
-		expect(requestText).toContain("main conversation");
-		expect(requestText).toContain("isolated question");
-	});
-
-	test("retries overflow once, resets partial output, and never re-reads a changed main branch", async () => {
-		let contextReads = 0;
-		const ctx = extensionContext(() => {
-			contextReads++;
-			return [messageEntry("main", user(contextReads === 1 ? "frozen context" : "leaked later context"))];
+			return completedStream(["answer"], assistant("answer"));
 		});
-		let calls = 0;
-		const events: string[] = [];
-		const requests: Parameters<OpenBtwStream>[0][] = [];
-		const openStream: OpenBtwStream = async (request) => {
-			requests.push(request);
-			calls++;
-			return calls === 1
-				? completedStream(["discard me"], assistant("", "error", "prompt is too long"))
-				: completedStream(["kept"], assistant("kept"));
-		};
+	} finally {
+		contextTest.clear();
+	}
 
-		const result = await executeBtw(
-			"question",
-			ctx,
-			new AbortController().signal,
-			{
-				onTextDelta: (delta) => events.push(delta),
-				onRetry: () => events.push("RESET"),
-			},
-			openStream,
-		);
+	expect(magicTransforms).toBe(1);
+	expect(captured?.context.systemPrompt).toContain("pi-stuff-context");
+	expect(captured?.context.systemPrompt).toContain("side memory");
+	expect(JSON.stringify(captured?.context.messages)).toContain("main conversation");
+});
 
-		expect(result.kind).toBe("success");
-		expect(calls).toBe(2);
-		expect(contextReads).toBe(1);
-		expect(events).toEqual(["discard me", "RESET", "kept"]);
-		expect(JSON.stringify(requests[1]?.context.messages)).toContain("frozen context");
-		expect(JSON.stringify(requests[1]?.context.messages)).not.toContain("leaked later context");
+test("streams text through the composed transport with no tools and an independent signal", async () => {
+	const mainController = new AbortController();
+	const sideController = new AbortController();
+	const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))], mainController.signal);
+	const deltas: string[] = [];
+	let captured: Parameters<OpenBtwStream>[0] | undefined;
+	const openStream: OpenBtwStream = async (request) => {
+		captured = request;
+		return completedStream(["side ", "answer"], assistant("side answer"));
+	};
+
+	const result = await executeBtw(
+		"isolated question",
+		ctx,
+		sideController.signal,
+		{ onTextDelta: (delta) => deltas.push(delta) },
+		openStream,
+	);
+
+	expect(result.kind).toBe("success");
+	expect(deltas).toEqual(["side ", "answer"]);
+	expect(captured?.signal).toBe(sideController.signal);
+	expect(captured?.signal).not.toBe(mainController.signal);
+	expect(captured?.context.tools).toEqual([]);
+	const requestText = JSON.stringify(captured?.context.messages);
+	expect(requestText).toContain("main conversation");
+	expect(requestText).toContain("isolated question");
+});
+
+test("retries overflow once, resets partial output, and never re-reads a changed main branch", async () => {
+	let contextReads = 0;
+	const ctx = extensionContext(() => {
+		contextReads++;
+		return [messageEntry("main", user(contextReads === 1 ? "frozen context" : "leaked later context"))];
 	});
+	let calls = 0;
+	const events: string[] = [];
+	const requests: Parameters<OpenBtwStream>[0][] = [];
+	const openStream: OpenBtwStream = async (request) => {
+		requests.push(request);
+		calls++;
+		return calls === 1
+			? completedStream(["discard me"], assistant("", "error", "prompt is too long"))
+			: completedStream(["kept"], assistant("kept"));
+	};
 
-	test("keeps failed partial output ephemeral and rejects a model tool attempt", async () => {
-		const stream = createAssistantMessageEventStream();
-		const pending = assistant("", "pending");
-		stream.push({ type: "start", partial: pending });
-		stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-		stream.push({ type: "text_delta", contentIndex: 0, delta: "partial", partial: pending });
-		stream.push({
-			type: "toolcall_start",
-			contentIndex: 1,
-			partial: pending,
-		});
-		stream.push({
-			type: "toolcall_end",
-			contentIndex: 1,
-			toolCall: { type: "toolCall", id: "tool-1", name: "read", arguments: {} },
-			partial: pending,
-		});
-		stream.push({ type: "done", reason: "toolUse", message: assistant("partial", "toolUse") });
-		const result = await executeBtw(
-			"question",
-			extensionContext(() => []),
-			new AbortController().signal,
-			{},
-			async () => stream,
-		);
+	const result = await executeBtw(
+		"question",
+		ctx,
+		new AbortController().signal,
+		{
+			onTextDelta: (delta) => events.push(delta),
+			onRetry: () => events.push("RESET"),
+		},
+		openStream,
+	);
 
-		expect(result).toMatchObject({ kind: "error", partial: "partial" });
-		if (result.kind === "error") expect(result.error).toContain("tools are disabled");
+	expect(result.kind).toBe("success");
+	expect(calls).toBe(2);
+	expect(contextReads).toBe(1);
+	expect(events).toEqual(["discard me", "RESET", "kept"]);
+	expect(JSON.stringify(requests[1]?.context.messages)).toContain("frozen context");
+	expect(JSON.stringify(requests[1]?.context.messages)).not.toContain("leaked later context");
+});
+
+test("keeps failed partial output ephemeral and rejects a model tool attempt", async () => {
+	const stream = createAssistantMessageEventStream();
+	const pending = assistant("", "pending");
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "text_delta", contentIndex: 0, delta: "partial", partial: pending });
+	stream.push({
+		type: "toolcall_start",
+		contentIndex: 1,
+		partial: pending,
 	});
-
-	test("an aborted side signal does not touch the main signal", async () => {
-		const mainController = new AbortController();
-		const sideController = new AbortController();
-		const result = await executeBtw(
-			"question",
-			extensionContext(() => [], mainController.signal),
-			sideController.signal,
-			{},
-			async () => {
-				const stream = createAssistantMessageEventStream();
-				queueMicrotask(() => {
-					sideController.abort();
-					stream.push({ type: "error", reason: "aborted", error: assistant("", "aborted") });
-				});
-				return stream;
-			},
-		);
-
-		expect(result.kind).toBe("aborted");
-		expect(mainController.signal.aborted).toBe(false);
+	stream.push({
+		type: "toolcall_end",
+		contentIndex: 1,
+		toolCall: { type: "toolCall", id: "tool-1", name: "read", arguments: {} },
+		partial: pending,
 	});
+	stream.push({ type: "done", reason: "toolUse", message: assistant("partial", "toolUse") });
+	const result = await executeBtw(
+		"question",
+		extensionContext(() => []),
+		new AbortController().signal,
+		{},
+		async () => stream,
+	);
 
-	test("projects a provider-originated abort as an in-surface error", async () => {
-		const result = await executeBtw(
-			"question",
-			extensionContext(() => []),
-			new AbortController().signal,
-			{},
-			async () => completedStream(["partial"], assistant("partial", "aborted")),
-		);
+	expect(result).toMatchObject({ kind: "error", partial: "partial" });
+	if (result.kind === "error") expect(result.error).toContain("tools are disabled");
+});
 
-		expect(result).toMatchObject({ kind: "error", partial: "partial", stopReason: "aborted" });
-		if (result.kind === "error") expect(result.error).toContain("model provider");
-	});
+test("an aborted side signal does not touch the main signal", async () => {
+	const mainController = new AbortController();
+	const sideController = new AbortController();
+	const result = await executeBtw(
+		"question",
+		extensionContext(() => [], mainController.signal),
+		sideController.signal,
+		{},
+		async () => {
+			const stream = createAssistantMessageEventStream();
+			queueMicrotask(() => {
+				sideController.abort();
+				stream.push({ type: "error", reason: "aborted", error: assistant("", "aborted") });
+			});
+			return stream;
+		},
+	);
+
+	expect(result.kind).toBe("aborted");
+	expect(mainController.signal.aborted).toBe(false);
+});
+
+test("projects a provider-originated abort as an in-surface error", async () => {
+	const result = await executeBtw(
+		"question",
+		extensionContext(() => []),
+		new AbortController().signal,
+		{},
+		async () => completedStream(["partial"], assistant("partial", "aborted")),
+	);
+
+	expect(result).toMatchObject({ kind: "error", partial: "partial", stopReason: "aborted" });
+	if (result.kind === "error") expect(result.error).toContain("model provider");
 });

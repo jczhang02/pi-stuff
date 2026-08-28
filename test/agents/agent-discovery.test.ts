@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,126 +30,124 @@ async function writeAgent(directory: string, name: string, description: string, 
 	);
 }
 
-describe("Claude-style Agent definition discovery", () => {
-	test("uses package < user < project precedence without a settings override layer", async () => {
-		const root = await temporaryRoot();
-		const user = join(root, "user");
-		const project = join(root, "project");
-		const nested = join(project, "src", "feature");
-		const projectAgents = join(project, ".pi", "agents");
-		const installedPackage = join(root, "sample-agents");
-		process.env["PI_CODING_AGENT_DIR"] = user;
+test("uses package < user < project precedence without a settings override layer", async () => {
+	const root = await temporaryRoot();
+	const user = join(root, "user");
+	const project = join(root, "project");
+	const nested = join(project, "src", "feature");
+	const projectAgents = join(project, ".pi", "agents");
+	const installedPackage = join(root, "sample-agents");
+	process.env["PI_CODING_AGENT_DIR"] = user;
 
-		await Promise.all([
-			mkdir(nested, { recursive: true }),
-			writeAgent(join(user, "agents"), "shared", "user definition"),
-			writeAgent(projectAgents, "shared", "project definition"),
-			writeAgent(join(installedPackage, "agent-definitions"), "shared", "package definition"),
-			writeAgent(join(installedPackage, "agent-definitions"), "package-only", "package-only definition"),
-		]);
-		await writeFile(
-			join(installedPackage, "package.json"),
-			`${JSON.stringify({ name: "sample-agents", pi: { agents: ["./agent-definitions"] } })}\n`,
-		);
-		await writeFile(
-			join(user, "settings.json"),
-			`${JSON.stringify({
-				packages: [`file:${installedPackage}`],
-				subagents: { defaultModel: "ignored/model", disableBuiltins: true },
-			})}\n`,
-		);
+	await Promise.all([
+		mkdir(nested, { recursive: true }),
+		writeAgent(join(user, "agents"), "shared", "user definition"),
+		writeAgent(projectAgents, "shared", "project definition"),
+		writeAgent(join(installedPackage, "agent-definitions"), "shared", "package definition"),
+		writeAgent(join(installedPackage, "agent-definitions"), "package-only", "package-only definition"),
+	]);
+	await writeFile(
+		join(installedPackage, "package.json"),
+		`${JSON.stringify({ name: "sample-agents", pi: { agents: ["./agent-definitions"] } })}\n`,
+	);
+	await writeFile(
+		join(user, "settings.json"),
+		`${JSON.stringify({
+			packages: [`file:${installedPackage}`],
+			subagents: { defaultModel: "ignored/model", disableBuiltins: true },
+		})}\n`,
+	);
 
-		const both = (await discoverAgents(nested, "both")).agents;
-		expect(both.find(({ name }) => name === "shared")).toMatchObject({
-			description: "project definition",
-			source: "project",
-		});
-		expect(both.find(({ name }) => name === "package-only")?.source).toBe("package");
-		expect(new Set(both.map(({ source }) => source))).toEqual(new Set(["package", "project"]));
-
-		const userOnly = (await discoverAgents(nested, "user")).agents;
-		expect(userOnly.find(({ name }) => name === "shared")?.description).toBe("user definition");
-		expect(userOnly.find(({ name }) => name === "package-only")?.source).toBe("package");
+	const both = (await discoverAgents(nested, "both")).agents;
+	expect(both.find(({ name }) => name === "shared")).toMatchObject({
+		description: "project definition",
+		source: "project",
 	});
+	expect(both.find(({ name }) => name === "package-only")?.source).toBe("package");
+	expect(new Set(both.map(({ source }) => source))).toEqual(new Set(["package", "project"]));
 
-	test("parses only current execution controls and skips one malformed definition locally", async () => {
-		const root = await temporaryRoot();
-		const user = join(root, "user");
-		process.env["PI_CODING_AGENT_DIR"] = user;
-		await writeAgent(
-			join(user, "agents"),
-			"configured",
-			"configured Agent",
-			[
-				"model: provider/model",
-				"fallbackModels: provider/one, provider/two",
-				"thinking: high",
-				"tools: read, bash, mcp:browser/open",
-				"systemPromptMode: replace",
-				"inheritProjectContext: false",
-				"inheritSkills: false",
-				"skills: research, review",
-				'turnBudget: {"maxTurns":4,"graceTurns":1}',
-				'toolBudget: {"soft":6,"hard":8,"block":["read"]}',
-				"maxSubagentDepth: 2",
-				"defaultAsync: true",
-				"defaultTimeoutMs: 30000",
-				"completionGuard: true",
-				'memory: {"scope":"project","path":"retired"}',
-				"output: retired.md",
-				"",
-			].join("\n"),
-		);
-		await writeAgent(join(user, "agents"), "broken", "broken Agent", "inheritSkills: maybe\n");
+	const userOnly = (await discoverAgents(nested, "user")).agents;
+	expect(userOnly.find(({ name }) => name === "shared")?.description).toBe("user definition");
+	expect(userOnly.find(({ name }) => name === "package-only")?.source).toBe("package");
+});
 
-		const agents = (await discoverAgents(root, "user")).agents;
-		expect(agents.some(({ name }) => name === "broken")).toBeFalse();
-		const configured = agents.find(({ name }) => name === "configured");
-		expect(configured).toMatchObject({
-			fallbackModels: ["provider/one", "provider/two"],
-			inheritProjectContext: false,
-			inheritSkills: false,
-			maxSubagentDepth: 2,
-			mcpDirectTools: ["browser/open"],
-			model: "provider/model",
-			skills: ["research", "review"],
-			systemPromptMode: "replace",
-			thinking: "high",
-			toolBudget: { block: ["read"], hard: 8, soft: 6 },
-			tools: ["read", "bash"],
-			defaultTurnBudget: { graceTurns: 1, maxTurns: 4 },
-		});
-		for (const retiredField of ["defaultAsync", "defaultTimeoutMs", "completionGuard", "memory", "output"]) {
-			expect(configured).not.toHaveProperty(retiredField);
-		}
+test("parses only current execution controls and skips one malformed definition locally", async () => {
+	const root = await temporaryRoot();
+	const user = join(root, "user");
+	process.env["PI_CODING_AGENT_DIR"] = user;
+	await writeAgent(
+		join(user, "agents"),
+		"configured",
+		"configured Agent",
+		[
+			"model: provider/model",
+			"fallbackModels: provider/one, provider/two",
+			"thinking: high",
+			"tools: read, bash, mcp:browser/open",
+			"systemPromptMode: replace",
+			"inheritProjectContext: false",
+			"inheritSkills: false",
+			"skills: research, review",
+			'turnBudget: {"maxTurns":4,"graceTurns":1}',
+			'toolBudget: {"soft":6,"hard":8,"block":["read"]}',
+			"maxSubagentDepth: 2",
+			"defaultAsync: true",
+			"defaultTimeoutMs: 30000",
+			"completionGuard: true",
+			'memory: {"scope":"project","path":"retired"}',
+			"output: retired.md",
+			"",
+		].join("\n"),
+	);
+	await writeAgent(join(user, "agents"), "broken", "broken Agent", "inheritSkills: maybe\n");
+
+	const agents = (await discoverAgents(root, "user")).agents;
+	expect(agents.some(({ name }) => name === "broken")).toBeFalse();
+	const configured = agents.find(({ name }) => name === "configured");
+	expect(configured).toMatchObject({
+		fallbackModels: ["provider/one", "provider/two"],
+		inheritProjectContext: false,
+		inheritSkills: false,
+		maxSubagentDepth: 2,
+		mcpDirectTools: ["browser/open"],
+		model: "provider/model",
+		skills: ["research", "review"],
+		systemPromptMode: "replace",
+		thinking: "high",
+		toolBudget: { block: ["read"], hard: 8, soft: 6 },
+		tools: ["read", "bash"],
+		defaultTurnBudget: { graceTurns: 1, maxTurns: 4 },
 	});
+	for (const retiredField of ["defaultAsync", "defaultTimeoutMs", "completionGuard", "memory", "output"]) {
+		expect(configured).not.toHaveProperty(retiredField);
+	}
+});
 
-	test("supports explicitly installed file Packages but ignores the retired .agents convention", async () => {
-		const root = await temporaryRoot();
-		const user = join(root, "user");
-		const project = join(root, "project");
-		const installed = join(root, "installed-agent-package");
-		process.env["PI_CODING_AGENT_DIR"] = user;
-		await Promise.all([
-			mkdir(join(project, ".git"), { recursive: true }),
-			mkdir(join(project, ".pi", "agents"), { recursive: true }),
-			writeAgent(join(project, ".agents"), "legacy", "retired convention"),
-			writeAgent(join(installed, "agents"), "installed", "installed Package"),
-			mkdir(user, { recursive: true }),
-		]);
-		await writeFile(
-			join(project, ".pi", "agents", "retired.chain.md"),
-			"---\nname: retired-chain\ndescription: retired chain definition\n---\n\nDo not discover this file.\n",
-		);
-		await writeFile(
-			join(installed, "package.json"),
-			`${JSON.stringify({ name: "installed-agent-package", pi: { agents: ["./agents"] } })}\n`,
-		);
-		await writeFile(join(user, "settings.json"), `${JSON.stringify({ packages: [`file:${installed}`] })}\n`);
+test("supports explicitly installed file Packages but ignores the retired .agents convention", async () => {
+	const root = await temporaryRoot();
+	const user = join(root, "user");
+	const project = join(root, "project");
+	const installed = join(root, "installed-agent-package");
+	process.env["PI_CODING_AGENT_DIR"] = user;
+	await Promise.all([
+		mkdir(join(project, ".git"), { recursive: true }),
+		mkdir(join(project, ".pi", "agents"), { recursive: true }),
+		writeAgent(join(project, ".agents"), "legacy", "retired convention"),
+		writeAgent(join(installed, "agents"), "installed", "installed Package"),
+		mkdir(user, { recursive: true }),
+	]);
+	await writeFile(
+		join(project, ".pi", "agents", "retired.chain.md"),
+		"---\nname: retired-chain\ndescription: retired chain definition\n---\n\nDo not discover this file.\n",
+	);
+	await writeFile(
+		join(installed, "package.json"),
+		`${JSON.stringify({ name: "installed-agent-package", pi: { agents: ["./agents"] } })}\n`,
+	);
+	await writeFile(join(user, "settings.json"), `${JSON.stringify({ packages: [`file:${installed}`] })}\n`);
 
-		const agents = (await discoverAgents(project, "both")).agents;
-		expect(agents.find(({ name }) => name === "installed")?.source).toBe("package");
-		expect(agents.some(({ name }) => name === "legacy")).toBeFalse();
-		expect(agents.some(({ name }) => name === "retired-chain")).toBeFalse();
-	});
+	const agents = (await discoverAgents(project, "both")).agents;
+	expect(agents.find(({ name }) => name === "installed")?.source).toBe("package");
+	expect(agents.some(({ name }) => name === "legacy")).toBeFalse();
+	expect(agents.some(({ name }) => name === "retired-chain")).toBeFalse();
 });

@@ -294,128 +294,126 @@ describe("Pi Stuff inline slash autocomplete", () => {
 	});
 });
 
-describe("editor composition", () => {
-	test("exposes native and inline autocomplete visibility through a cleanup-compatible controller", async () => {
-		type Factory = (tui: TUI, theme: EditorTheme, keybindings: AgentKeybindingsManager) => EditorComponent;
-		let installedFactory: Factory | undefined;
-		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
-		const context = {
-			ui: {
-				getEditorComponent: () => installedFactory,
-				setEditorComponent: (factory: Factory | undefined) => {
-					installedFactory = factory;
-				},
+test("exposes native and inline autocomplete visibility through a cleanup-compatible controller", async () => {
+	type Factory = (tui: TUI, theme: EditorTheme, keybindings: AgentKeybindingsManager) => EditorComponent;
+	let installedFactory: Factory | undefined;
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+	const context = {
+		ui: {
+			getEditorComponent: () => installedFactory,
+			setEditorComponent: (factory: Factory | undefined) => {
+				installedFactory = factory;
 			},
-		} as ExtensionContext;
-		const settings = { inlineSlashAutocomplete: true, inputHighlighting: false };
-		const controller = installInputEnhancementEditor(context, {
-			getCommands: () => commands("skill:review"),
-			getSettings: () => settings,
-			getTheme: () => theme,
-		});
-		const visibility: boolean[] = [];
-		const unsubscribe = controller.subscribe((visible) => visibility.push(visible));
-		const tui = new TestTui();
-		const keybindings = new TestAppKeybindings();
-		if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const editor = installedFactory?.(tui, editorTheme, keybindings) as ObservableEditor;
-		editor.setAutocompleteProvider?.(new CommandProvider([{ value: "skill:review", label: "skill:review" }]));
-		editor.setText("ask /re");
-		await settleAutocomplete();
-
-		expect(controller.isShowingAutocomplete()).toBeTrue();
-		expect(visibility).toEqual([true]);
-		settings.inlineSlashAutocomplete = false;
-		editor.render(64);
-		expect(controller.isShowingAutocomplete()).toBeFalse();
-		expect(visibility).toEqual([true, false]);
-
-		settings.inlineSlashAutocomplete = true;
-		editor.setText("");
-		editor.handleInput("/");
-		await settleAutocomplete();
-		editor.render(64);
-		expect(controller.isShowingAutocomplete()).toBeTrue();
-		expect(visibility).toEqual([true, false, true]);
-		editor.handleInput("\u001b");
-		expect(controller.isShowingAutocomplete()).toBeFalse();
-		expect(visibility).toEqual([true, false, true, false]);
-
-		unsubscribe();
-		const firstFactory = installedFactory;
-		const replacement = installInputEnhancementEditor(context, {
-			getCommands: () => commands("review"),
-			getSettings: () => settings,
-			getTheme: () => theme,
-		});
-		expect(installedFactory).not.toBe(firstFactory);
-		controller();
-		expect(installedFactory).not.toBeUndefined();
-		replacement.dispose();
-		expect(installedFactory).toBeUndefined();
-		expect(controller.isShowingAutocomplete()).toBeFalse();
-		controller.dispose();
+		},
+	} as ExtensionContext;
+	const settings = { inlineSlashAutocomplete: true, inputHighlighting: false };
+	const controller = installInputEnhancementEditor(context, {
+		getCommands: () => commands("skill:review"),
+		getSettings: () => settings,
+		getTheme: () => theme,
 	});
+	const visibility: boolean[] = [];
+	const unsubscribe = controller.subscribe((visible) => visibility.push(visible));
+	const tui = new TestTui();
+	const keybindings = new TestAppKeybindings();
+	if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+	const editor = installedFactory?.(tui, editorTheme, keybindings) as ObservableEditor;
+	editor.setAutocompleteProvider?.(new CommandProvider([{ value: "skill:review", label: "skill:review" }]));
+	editor.setText("ask /re");
+	await settleAutocomplete();
 
-	test("preserves an existing opaque editor instead of replacing unsupported behavior", () => {
-		class OpaqueEditor implements EditorComponent {
-			text = "";
-			onSubmit?: (text: string) => void;
-			onChange?: (text: string) => void;
+	expect(controller.isShowingAutocomplete()).toBeTrue();
+	expect(visibility).toEqual([true]);
+	settings.inlineSlashAutocomplete = false;
+	editor.render(64);
+	expect(controller.isShowingAutocomplete()).toBeFalse();
+	expect(visibility).toEqual([true, false]);
 
-			getText(): string {
-				return this.text;
-			}
+	settings.inlineSlashAutocomplete = true;
+	editor.setText("");
+	editor.handleInput("/");
+	await settleAutocomplete();
+	editor.render(64);
+	expect(controller.isShowingAutocomplete()).toBeTrue();
+	expect(visibility).toEqual([true, false, true]);
+	editor.handleInput("\u001b");
+	expect(controller.isShowingAutocomplete()).toBeFalse();
+	expect(visibility).toEqual([true, false, true, false]);
 
-			handleInput(data: string): void {
-				this.text += data;
-			}
+	unsubscribe();
+	const firstFactory = installedFactory;
+	const replacement = installInputEnhancementEditor(context, {
+		getCommands: () => commands("review"),
+		getSettings: () => settings,
+		getTheme: () => theme,
+	});
+	expect(installedFactory).not.toBe(firstFactory);
+	controller();
+	expect(installedFactory).not.toBeUndefined();
+	replacement.dispose();
+	expect(installedFactory).toBeUndefined();
+	expect(controller.isShowingAutocomplete()).toBeFalse();
+	controller.dispose();
+});
 
-			invalidate(): void {}
+test("preserves an existing opaque editor instead of replacing unsupported behavior", () => {
+	class OpaqueEditor implements EditorComponent {
+		text = "";
+		onSubmit?: (text: string) => void;
+		onChange?: (text: string) => void;
 
-			render(): string[] {
-				return [this.text];
-			}
-
-			setText(text: string): void {
-				this.text = text;
-			}
+		getText(): string {
+			return this.text;
 		}
 
-		const opaque = new OpaqueEditor();
-		const previous = () => opaque;
-		const factory = createInputEnhancementEditorFactory(previous, {
-			getCommands: () => commands("review"),
-			getSettings: () => ({ inlineSlashAutocomplete: true, inputHighlighting: true }),
-			getTheme: () => theme,
-		});
-		const keybindings = new TestAppKeybindings();
-		if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
-		const result = factory(new TestTui(), editorTheme, keybindings);
+		handleInput(data: string): void {
+			this.text += data;
+		}
 
-		expect(result).toBe(opaque);
-		result.handleInput("保留");
-		expect(result.getText()).toBe("保留");
-	});
+		invalidate(): void {}
 
-	test("restores tail-following only when the native editor submits", () => {
-		const { editor, tui } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
-			{ value: "review", label: "review" },
-		]);
-		const submissions: string[] = [];
-		editor.onSubmit = (text) => submissions.push(text);
-		editor.setText("普通输入");
-		editor.handleInput("\u001b[D");
-		expect(tui.followingEnd).toBeFalse();
-		expect(tui.scrollToBottomCalls).toBe(0);
-		editor.handleInput("\r");
-		expect(tui.followingEnd).toBeTrue();
-		expect(tui.scrollToBottomCalls).toBe(1);
-		editor.setText("/ui");
-		editor.handleInput("\r");
-		expect(submissions).toEqual(["普通输入", "/ui"]);
-		expect(tui.scrollToBottomCalls).toBe(2);
-		expect(tui.renderRequests).toBe(2);
+		render(): string[] {
+			return [this.text];
+		}
+
+		setText(text: string): void {
+			this.text = text;
+		}
+	}
+
+	const opaque = new OpaqueEditor();
+	const previous = () => opaque;
+	const factory = createInputEnhancementEditorFactory(previous, {
+		getCommands: () => commands("review"),
+		getSettings: () => ({ inlineSlashAutocomplete: true, inputHighlighting: true }),
+		getTheme: () => theme,
 	});
+	const keybindings = new TestAppKeybindings();
+	if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+	const result = factory(new TestTui(), editorTheme, keybindings);
+
+	expect(result).toBe(opaque);
+	result.handleInput("保留");
+	expect(result.getText()).toBe("保留");
+});
+
+test("restores tail-following only when the native editor submits", () => {
+	const { editor, tui } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
+		{ value: "review", label: "review" },
+	]);
+	const submissions: string[] = [];
+	editor.onSubmit = (text) => submissions.push(text);
+	editor.setText("普通输入");
+	editor.handleInput("\u001b[D");
+	expect(tui.followingEnd).toBeFalse();
+	expect(tui.scrollToBottomCalls).toBe(0);
+	editor.handleInput("\r");
+	expect(tui.followingEnd).toBeTrue();
+	expect(tui.scrollToBottomCalls).toBe(1);
+	editor.setText("/ui");
+	editor.handleInput("\r");
+	expect(submissions).toEqual(["普通输入", "/ui"]);
+	expect(tui.scrollToBottomCalls).toBe(2);
+	expect(tui.renderRequests).toBe(2);
 });
