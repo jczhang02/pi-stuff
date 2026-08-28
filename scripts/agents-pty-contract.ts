@@ -1,3 +1,4 @@
+import { stripTerminalControls } from "./terminal-controls.js";
 export const AGENTS_EXPECT_PROGRAM = `
 set timeout 40
 
@@ -141,42 +142,6 @@ expect {
 
 export function fail(message: string): never {
 	throw new Error(`Agents PTY verification failed: ${message}`);
-}
-function stripTerminalControls(output: string): string {
-	let visible = "";
-	for (let index = 0; index < output.length; index++) {
-		const code = output.charCodeAt(index);
-		if (code === 13) continue;
-		if (code !== 27) {
-			visible += output[index];
-			continue;
-		}
-
-		const introducer = output[index + 1];
-		if (introducer === "[") {
-			index += 2;
-			while (index < output.length) {
-				const finalCode = output.charCodeAt(index);
-				if (finalCode >= 0x40 && finalCode <= 0x7e) break;
-				index++;
-			}
-			continue;
-		}
-		if (introducer === "]") {
-			index += 2;
-			while (index < output.length) {
-				if (output.charCodeAt(index) === 7) break;
-				if (output.charCodeAt(index) === 27 && output[index + 1] === "\\") {
-					index++;
-					break;
-				}
-				index++;
-			}
-			continue;
-		}
-		if (introducer !== undefined) index++;
-	}
-	return visible;
 }
 
 export type FleetviewSelection = "idle" | "live" | "main" | "terminal";

@@ -6,6 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeObject } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { stripTerminalControls } from "./terminal-controls.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/mcp-pty-provider.ts");
@@ -415,44 +416,6 @@ expect {
     }
 }
 `;
-
-function stripTerminalControls(output: string): string {
-	let visible = "";
-	for (let index = 0; index < output.length; index += 1) {
-		const code = output.charCodeAt(index);
-		if (code === 13) continue;
-		if (code !== 27) {
-			visible += output[index];
-			continue;
-		}
-
-		const introducer = output[index + 1];
-		if (introducer === "[") {
-			index += 2;
-			while (index < output.length) {
-				const sequenceCode = output.charCodeAt(index);
-				if (sequenceCode >= 0x40 && sequenceCode <= 0x7e) break;
-				index += 1;
-			}
-			continue;
-		}
-		if (introducer === "]") {
-			index += 2;
-			while (index < output.length) {
-				const sequenceCode = output.charCodeAt(index);
-				if (sequenceCode === 7) break;
-				if (sequenceCode === 27 && output[index + 1] === "\\") {
-					index += 1;
-					break;
-				}
-				index += 1;
-			}
-			continue;
-		}
-		if (introducer !== undefined) index += 1;
-	}
-	return visible;
-}
 
 function outputBetweenMarkers(output: string, start: string, end: string): string {
 	const startIndex = output.indexOf(start);
