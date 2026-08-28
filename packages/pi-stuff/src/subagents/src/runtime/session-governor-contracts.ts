@@ -49,29 +49,12 @@ export interface AcquireSpawnRequest extends AcquireAgentRequest {
 	readonly childLimits?: SessionGovernorLimitInput;
 }
 
-export interface AgentGovernorLease {
+export type AgentGovernorLease = Readonly<Omit<LeaseRecord, "ownerAgentPath" | "agentPath">> & {
 	readonly sessionId: string;
-	readonly logicalAgentId: string;
-	readonly runtimeRunId: string;
-	readonly childIndex: number;
-	readonly leaseId: string;
 	readonly ownerAgentPath: readonly string[];
 	readonly agentPath: readonly string[];
-	readonly pid: number;
-	readonly processStartIdentity?: string;
-	readonly systemBootIdentity?: string;
-	readonly asyncDir?: string;
-	readonly mode: "spawn" | "resume";
-	readonly acquiredAtMs: number;
-}
-
-export interface SessionGovernorAgentSnapshot {
-	readonly logicalAgentId: string;
-	readonly ownerAgentPath: readonly string[];
-	readonly agentPath: readonly string[];
-	readonly limits: SessionGovernorLimits;
-	readonly createdAtMs: number;
-}
+};
+export type SessionGovernorAgentSnapshot = AgentRecord;
 
 export type SessionGovernorHistoricalAgent = SessionGovernorAgentSnapshot;
 
@@ -143,13 +126,9 @@ export interface SessionGovernorReleaseResult {
 	readonly snapshot: SessionGovernorSnapshot;
 }
 
-export interface RebindAgentRuntimeRequest {
-	readonly runtimeRunId?: string;
-	readonly childIndex?: number;
-	readonly pid?: number;
-	readonly processStartIdentity?: string;
-	readonly asyncDir?: string;
-}
+export type RebindAgentRuntimeRequest = Partial<
+	Pick<LeaseRecord, "runtimeRunId" | "childIndex" | "pid" | "processStartIdentity" | "asyncDir">
+>;
 
 export type SessionGovernorRebindResult =
 	| {
@@ -192,11 +171,11 @@ export class SessionGovernorStateError extends Error {
 }
 
 export interface AgentRecord {
-	logicalAgentId: string;
-	ownerAgentPath: string[];
-	agentPath: string[];
-	limits: SessionGovernorLimits;
-	createdAtMs: number;
+	readonly logicalAgentId: string;
+	readonly ownerAgentPath: readonly string[];
+	readonly agentPath: readonly string[];
+	readonly limits: SessionGovernorLimits;
+	readonly createdAtMs: number;
 }
 
 export interface LeaseRecord {
@@ -229,14 +208,11 @@ export interface TransactionResult<Value> {
 	readonly changed: boolean;
 }
 
-export interface ValidatedSpawnRequest {
-	readonly logicalAgentId: string;
-	readonly runtimeRunId: string;
-	readonly childIndex: number;
-	readonly pid: number;
-	readonly processStartIdentity?: string;
+export type ValidatedSpawnRequest = Readonly<
+	Pick<LeaseRecord, "logicalAgentId" | "runtimeRunId" | "childIndex" | "pid" | "processStartIdentity">
+> & {
 	readonly childLimits: SessionGovernorLimitInput;
-}
+};
 
 export interface ValidatedBatchLease {
 	readonly logicalAgentId: string;

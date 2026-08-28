@@ -3,69 +3,36 @@
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
-	ActivityState,
 	AgentContextUsage,
-	ArtifactConfig,
 	CostSummary,
 	JsonSchemaObject,
 	MaxOutputConfig,
-	ResolvedControlConfig,
-	ResolvedToolBudget,
-	ResolvedTurnBudget,
 	SteeringStatus,
 	SubagentLifecycleArtifactVersion,
 	SubagentRunMode,
 	TokenUsage,
-	ToolBudgetState,
 	TurnBudgetState,
 } from "../../shared/types.ts";
-import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
+import type { ResolvedSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type {
 	AsyncParallelGroupStatus,
 	NestedRouteInfo,
 	NestedRunSummary,
+	NestedRuntimeEvidence,
 	NestedStepSummary,
 } from "../shared/nested-contract.ts";
 import type { ModelAttempt } from "../shared/run-result.ts";
-import type { ProcessTerminalV1 } from "./process-terminal.ts";
+import type { BackgroundRecoveryDescriptor } from "./resolved-task.ts";
 
-export interface SteeringRecoveryDescriptor {
+export type SteeringRecoveryDescriptor = Omit<BackgroundRecoveryDescriptor, "version" | "childIndex" | "context"> & {
 	version: 1;
-	launchContractDigest?: string;
-	sourceRunId: string;
-	agent: string;
-	sessionFile?: string;
-	cwd: string;
-	model?: string;
-	fallbackModels?: string[];
-	thinking?: string;
-	tools?: string[];
-	extensions?: string[];
-	subagentOnlyExtensions?: string[];
-	mcpDirectTools?: string[];
-	systemPrompt?: string;
-	systemPromptMode: "append" | "replace";
-	inheritProjectContext: boolean;
-	inheritSkills: boolean;
-	skills?: string[];
-	skillPath?: string[];
-	agentFilePath?: string;
 	completionGuard?: boolean;
 	outputPath?: string;
 	outputMode: "inline" | "file-only";
 	structuredOutputSchema?: JsonSchemaObject;
 	acceptance?: JsonInputValue;
-	controlConfig?: ResolvedControlConfig;
-	absoluteDeadlineAt?: number;
-	initialTurnBudget?: ResolvedTurnBudget;
-	initialToolBudget?: ResolvedToolBudget;
-	maxSubagentDepth: number;
 	maxOutput?: MaxOutputConfig;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	sessionDir?: string;
-	artifactsDir?: string;
-	artifactConfig?: ArtifactConfig;
-}
+};
 
 export interface AsyncStartedEvent {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
@@ -131,7 +98,7 @@ export interface AsyncStatusStep extends NestedStepSummary {
 	launchContractDigest?: string;
 }
 
-export interface AsyncStatus {
+export interface AsyncStatus extends Omit<NestedRuntimeEvidence, "agentStatus" | "children"> {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
 	runId: string;
 	sessionId?: string;
@@ -142,27 +109,11 @@ export interface AsyncStatus {
 	/** Exact nested event route selected at launch; legacy statuses may omit it. */
 	nestedRoute?: NestedRouteInfo | undefined;
 	state: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
-	error?: string | undefined;
-	activityState?: ActivityState | undefined;
-	lastActivityAt?: number | undefined;
-	currentTool?: string | undefined;
-	currentToolStartedAt?: number | undefined;
-	currentPath?: string | undefined;
-	turnCount?: number | undefined;
-	toolCount?: number | undefined;
 	steering?: SteeringStatus | undefined;
 	startedAt: number;
-	endedAt?: number | undefined;
 	lastUpdate?: number | undefined;
 	timeoutMs?: number | undefined;
 	deadlineAt?: number | undefined;
-	timedOut?: boolean | undefined;
-	stopped?: boolean | undefined;
-	turnBudget?: TurnBudgetState | undefined;
-	turnBudgetExceeded?: boolean | undefined;
-	wrapUpRequested?: boolean | undefined;
-	toolBudget?: ToolBudgetState | undefined;
-	toolBudgetBlocked?: boolean | undefined;
 	pid?: number;
 	/** OS process-birth identity paired with pid to reject PID reuse. */
 	processStartIdentity?: string;
@@ -171,10 +122,7 @@ export interface AsyncStatus {
 	cwd?: string | undefined;
 	currentStep?: number | undefined;
 	parallelGroups?: AsyncParallelGroupStatus[];
-	processTerminal?: ProcessTerminalV1 | undefined;
 	launchContractDigest?: string;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	capabilityAudit?: SubagentCapabilityAudit;
 	steps?: AsyncStatusStep[] | undefined;
 	sessionDir?: string | undefined;
 	outputFile?: string | undefined;
@@ -187,13 +135,16 @@ export type AsyncJobStep = AsyncStatusStep & {
 	index?: number;
 };
 
-export interface AsyncJobState {
+export interface AsyncJobState
+	extends Omit<
+		NestedRuntimeEvidence,
+		"agentStatus" | "children" | "endedAt" | "capabilityCeiling" | "capabilityAudit"
+	> {
 	asyncId: string;
 	asyncDir: string;
 	/** Parent-resolved launch directory retained for trusted live artifact lookup. */
 	cwd?: string | undefined;
 	status: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
-	error?: string | undefined;
 	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string | undefined;
 	/** Short per-child UI descriptions available before the first status poll. */
@@ -202,13 +153,6 @@ export interface AsyncJobState {
 	tasks?: string[] | undefined;
 	pid?: number | undefined;
 	sessionId?: string | undefined;
-	activityState?: ActivityState | undefined;
-	lastActivityAt?: number | undefined;
-	currentTool?: string | undefined;
-	currentToolStartedAt?: number | undefined;
-	currentPath?: string | undefined;
-	turnCount?: number | undefined;
-	toolCount?: number | undefined;
 	steering?: SteeringStatus | undefined;
 	mode?: SubagentRunMode | undefined;
 	/** Run-level context summary derived from step contexts. */
@@ -222,19 +166,9 @@ export interface AsyncJobState {
 	completedSteps?: number;
 	hasParallelGroups?: boolean | undefined;
 	activeParallelGroup?: boolean | undefined;
-	startedAt?: number | undefined;
 	updatedAt?: number | undefined;
 	timeoutMs?: number | undefined;
 	deadlineAt?: number | undefined;
-	timedOut?: boolean | undefined;
-	stopped?: boolean | undefined;
-	/** Detached runner/writer proof; pending/unknown keeps physical recovery polled. */
-	processTerminal?: ProcessTerminalV1 | undefined;
-	turnBudget?: TurnBudgetState | undefined;
-	turnBudgetExceeded?: boolean | undefined;
-	wrapUpRequested?: boolean | undefined;
-	toolBudget?: ToolBudgetState | undefined;
-	toolBudgetBlocked?: boolean | undefined;
 	sessionDir?: string | undefined;
 	outputFile?: string | undefined;
 	totalTokens?: TokenUsage | undefined;

@@ -108,7 +108,7 @@ export interface NestedRunAddress {
 	path: Array<{ runId: string; stepIndex?: number; agent?: string }>;
 }
 
-interface NestedRuntimeEvidence {
+export interface NestedRuntimeEvidence {
 	/** Small UI projection retained when full process proof is intentionally omitted. */
 	agentStatus?: "crashed";
 	activityState?: ActivityState | undefined;
@@ -128,7 +128,8 @@ interface NestedRuntimeEvidence {
 	wrapUpRequested?: boolean | undefined;
 	toolBudget?: ToolBudgetState | undefined;
 	toolBudgetBlocked?: boolean | undefined;
-	processTerminal?: ProcessTerminalV1;
+	/** Detached runner/writer proof; pending or unknown keeps physical recovery polled. */
+	processTerminal?: ProcessTerminalV1 | undefined;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 	children?: NestedRunSummary[] | undefined;

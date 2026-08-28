@@ -303,15 +303,12 @@ export function parseAsyncResultFile(value: JsonValue, resultPath: string): Asyn
 	return result;
 }
 
-interface ResultRepairData {
-	parentRunOrigin?: AsyncStatus["parentRunOrigin"];
-	state: "complete" | "failed" | "paused" | "stopped";
-	startedAt?: number;
-	endedAt?: number;
-	timedOut?: boolean;
-	results?: AsyncResultChild[];
-	nestedChildren?: NestedRunSummary[];
-}
+type ResultRepairData = Pick<BackgroundCompletion, "state"> &
+	Partial<
+		Pick<BackgroundCompletion, "parentRunOrigin" | "startedAt" | "endedAt" | "timedOut" | "nestedChildren"> & {
+			results: AsyncResultChild[];
+		}
+	>;
 
 function readResultRepairData(
 	resultPath: string,
