@@ -20,7 +20,12 @@ import type {
 	TurnBudgetState,
 } from "../../shared/types.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
-import type { AsyncParallelGroupStatus, NestedRouteInfo, NestedRunSummary } from "../shared/nested-contract.ts";
+import type {
+	AsyncParallelGroupStatus,
+	NestedRouteInfo,
+	NestedRunSummary,
+	NestedStepSummary,
+} from "../shared/nested-contract.ts";
 import type { ModelAttempt } from "../shared/run-result.ts";
 import type { ProcessTerminalV1 } from "./process-terminal.ts";
 
@@ -93,6 +98,39 @@ export interface AsyncStartedEvent {
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 }
 
+export interface AsyncStatusStep extends NestedStepSummary {
+	/** In-memory compatibility proof recovered asynchronously from a legacy transcript. */
+	legacyFinalReportComplete?: true;
+	/** Resolved launch context for this child step. */
+	context?: "fresh" | "fork";
+	phase?: string;
+	label?: string;
+	outputName?: string;
+	structured?: boolean;
+	/** Bounded final Agent answer retained separately from recent activity. */
+	finalOutput?: string | undefined;
+	savedOutputPath?: string | undefined;
+	currentToolArgs?: string | undefined;
+	recentTools?: Array<{ tool: string; args: string; endMs: number }>;
+	recentOutput?: string[] | undefined;
+	durationMs?: number | undefined;
+	exitCode?: number | null | undefined;
+	tokens?: TokenUsage | undefined;
+	contextUsage?: AgentContextUsage | undefined;
+	skills?: string[];
+	model?: string | undefined;
+	thinking?: string | undefined;
+	attemptedModels?: string[] | undefined;
+	modelAttempts?: ModelAttempt[] | undefined;
+	totalCost?: CostSummary | undefined;
+	steering?: SteeringStatus;
+	structuredOutput?: unknown;
+	structuredOutputPath?: string;
+	structuredOutputSchemaPath?: string;
+	acceptance?: JsonInputValue;
+	launchContractDigest?: string;
+}
+
 export interface AsyncStatus {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
 	runId: string;
@@ -137,72 +175,7 @@ export interface AsyncStatus {
 	launchContractDigest?: string;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
-	steps?:
-		| Array<{
-				agent: string;
-				/** Small explicit UI projection when recovery proves an unexpected owner crash. */
-				agentStatus?: "crashed";
-				/** In-memory compatibility proof recovered asynchronously from a legacy transcript. */
-				legacyFinalReportComplete?: true;
-				/** Resolved launch context for this child step. */
-				context?: "fresh" | "fork";
-				phase?: string;
-				/** Full execution task; legacy status files may only have label. */
-				task?: string;
-				/** Original delegated task before Suite-owned execution context is prepended. */
-				delegatedTask?: string;
-				label?: string;
-				outputName?: string;
-				structured?: boolean;
-				status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
-				children?: NestedRunSummary[] | undefined;
-				sessionFile?: string | undefined;
-				transcriptPath?: string | undefined;
-				transcriptError?: string | undefined;
-				/** Bounded final Agent answer retained separately from recent activity. */
-				finalOutput?: string | undefined;
-				savedOutputPath?: string | undefined;
-				activityState?: ActivityState | undefined;
-				lastActivityAt?: number;
-				currentTool?: string | undefined;
-				currentToolArgs?: string | undefined;
-				currentToolStartedAt?: number | undefined;
-				currentPath?: string | undefined;
-				recentTools?: Array<{ tool: string; args: string; endMs: number }>;
-				recentOutput?: string[] | undefined;
-				turnCount?: number;
-				toolCount?: number;
-				startedAt?: number;
-				endedAt?: number;
-				durationMs?: number | undefined;
-				exitCode?: number | null | undefined;
-				timedOut?: boolean | undefined;
-				stopped?: boolean | undefined;
-				turnBudget?: TurnBudgetState | undefined;
-				turnBudgetExceeded?: boolean | undefined;
-				wrapUpRequested?: boolean | undefined;
-				toolBudget?: ToolBudgetState | undefined;
-				toolBudgetBlocked?: boolean | undefined;
-				tokens?: TokenUsage | undefined;
-				contextUsage?: AgentContextUsage | undefined;
-				skills?: string[];
-				model?: string | undefined;
-				thinking?: string | undefined;
-				attemptedModels?: string[] | undefined;
-				modelAttempts?: ModelAttempt[] | undefined;
-				totalCost?: CostSummary | undefined;
-				steering?: SteeringStatus;
-				error?: string | undefined;
-				structuredOutput?: unknown;
-				structuredOutputPath?: string;
-				structuredOutputSchemaPath?: string;
-				acceptance?: JsonInputValue;
-				launchContractDigest?: string;
-				processTerminal?: ProcessTerminalV1;
-				capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-				capabilityAudit?: SubagentCapabilityAudit;
-		  }>
-		| undefined;
+	steps?: AsyncStatusStep[] | undefined;
 	sessionDir?: string | undefined;
 	outputFile?: string | undefined;
 	totalTokens?: TokenUsage | undefined;
@@ -210,7 +183,7 @@ export interface AsyncStatus {
 	sessionFile?: string | undefined;
 }
 
-export type AsyncJobStep = NonNullable<AsyncStatus["steps"]>[number] & {
+export type AsyncJobStep = AsyncStatusStep & {
 	index?: number;
 };
 

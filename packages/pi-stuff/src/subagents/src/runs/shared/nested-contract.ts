@@ -108,44 +108,46 @@ export interface NestedRunAddress {
 	path: Array<{ runId: string; stepIndex?: number; agent?: string }>;
 }
 
-export interface NestedStepSummary {
-	agent: string;
-	/** Bounded task text used to distinguish same-named nested Agents. */
-	task?: string;
-	/** Original delegated task before Suite-owned execution context is prepended. */
-	delegatedTask?: string;
-	description?: string;
+interface NestedRuntimeEvidence {
 	/** Small UI projection retained when full process proof is intentionally omitted. */
 	agentStatus?: "crashed";
-	status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
-	sessionFile?: string;
-	transcriptPath?: string;
-	transcriptError?: string;
-	activityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	toolCount?: number;
-	startedAt?: number;
-	endedAt?: number;
-	error?: string;
-	timedOut?: boolean;
-	stopped?: boolean;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-	toolBudget?: ToolBudgetState;
-	toolBudgetBlocked?: boolean;
+	activityState?: ActivityState | undefined;
+	lastActivityAt?: number | undefined;
+	currentTool?: string | undefined;
+	currentToolStartedAt?: number | undefined;
+	currentPath?: string | undefined;
+	turnCount?: number | undefined;
+	toolCount?: number | undefined;
+	startedAt?: number | undefined;
+	endedAt?: number | undefined;
+	error?: string | undefined;
+	timedOut?: boolean | undefined;
+	stopped?: boolean | undefined;
+	turnBudget?: TurnBudgetState | undefined;
+	turnBudgetExceeded?: boolean | undefined;
+	wrapUpRequested?: boolean | undefined;
+	toolBudget?: ToolBudgetState | undefined;
+	toolBudgetBlocked?: boolean | undefined;
 	processTerminal?: ProcessTerminalV1;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 	children?: NestedRunSummary[] | undefined;
 }
 
-export interface NestedRunSummary extends NestedRunAddress {
-	agentStatus?: "crashed";
+export interface NestedStepSummary extends NestedRuntimeEvidence {
+	agent: string;
+	/** Bounded task text used to distinguish same-named nested Agents. */
+	task?: string;
+	/** Original delegated task before Suite-owned execution context is prepended. */
+	delegatedTask?: string;
+	description?: string;
+	status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
+	sessionFile?: string | undefined;
+	transcriptPath?: string | undefined;
+	transcriptError?: string | undefined;
+}
+
+export interface NestedRunSummary extends NestedRunAddress, NestedRuntimeEvidence {
 	/** User takeover is monotonic across nested lifecycle projections. */
 	parentRunOrigin?: AgentWorkOrigin;
 	asyncDir?: string;
@@ -159,38 +161,17 @@ export interface NestedRunSummary extends NestedRunAddress {
 	controlInbox?: string;
 	capabilityToken?: string;
 	mode?: SubagentRunMode;
-	processTerminal?: ProcessTerminalV1;
-	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	capabilityAudit?: SubagentCapabilityAudit;
 	state: NestedRunState;
 	agent?: string;
 	agents?: string[];
 	currentStep?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
 	steps?: NestedStepSummary[];
-	children?: NestedRunSummary[];
-	activityState?: ActivityState;
-	lastActivityAt?: number;
-	currentTool?: string;
-	currentToolStartedAt?: number;
-	currentPath?: string;
-	turnCount?: number;
-	toolCount?: number;
 	totalTokens?: TokenUsage;
 	totalCost?: CostSummary;
-	startedAt?: number;
-	endedAt?: number;
 	lastUpdate?: number;
 	timeoutMs?: number;
 	deadlineAt?: number;
-	timedOut?: boolean;
-	stopped?: boolean;
-	turnBudget?: TurnBudgetState;
-	turnBudgetExceeded?: boolean;
-	wrapUpRequested?: boolean;
-	toolBudget?: ToolBudgetState;
-	toolBudgetBlocked?: boolean;
-	error?: string;
 }
 
 export interface NestedRouteInfo {
