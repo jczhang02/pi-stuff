@@ -283,6 +283,7 @@ export async function fetchRemoteUrl(
 
 		const location = response.headers.get("location");
 		if (!location) return response;
+		await response.body?.cancel().catch(() => undefined);
 		if (redirects === maxRedirects) throw new Error("Too many redirects while fetching remote URL");
 
 		const from = current.url;

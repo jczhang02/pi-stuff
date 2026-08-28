@@ -41,4 +41,32 @@ describe("Web SSRF protection", () => {
 
 		await expect(request).rejects.toThrow(/^Too many redirects while fetching remote URL$/u);
 	});
+
+	test("cancels redirect bodies before following the validated location", async () => {
+		let cancelled = false;
+		let requests = 0;
+		const response = await fetchRemoteUrl(
+			"https://example.com/start",
+			{},
+			{
+				fetch: async () => {
+					requests += 1;
+					return requests === 1
+						? new Response(
+								new ReadableStream({
+									cancel: () => {
+										cancelled = true;
+									},
+								}),
+								{ headers: { location: "/done" }, status: 302 },
+							)
+						: new Response("done");
+				},
+				lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+			},
+		);
+
+		expect(cancelled).toBe(true);
+		expect(await response.text()).toBe("done");
+	});
 });
