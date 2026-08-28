@@ -1,10 +1,10 @@
 import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { ARTIFACT_MAINTENANCE_INTERVAL_MS, hasErrorCode } from "./artifact-files.ts";
+import { writePrivateAtomicTextAsync } from "./atomic-json.ts";
 
 const SCAN_YIELD_INTERVAL = 32;
 const SNAPSHOT_BUFFER_BYTES = 64 * 1024;
@@ -98,18 +98,7 @@ async function readSnapshotBuildState(target: string): Promise<SnapshotBuildStat
 }
 
 async function writeSnapshotBuildState(target: string, state: SnapshotBuildState): Promise<void> {
-	const statePath = snapshotBuildStatePath(target);
-	const temporary = `${statePath}.${randomUUID()}.tmp`;
-	try {
-		await fs.promises.writeFile(temporary, `${JSON.stringify(state)}\n`, {
-			encoding: "utf8",
-			flag: "wx",
-			mode: 0o600,
-		});
-		await fs.promises.rename(temporary, statePath);
-	} finally {
-		await fs.promises.unlink(temporary).catch(() => undefined);
-	}
+	await writePrivateAtomicTextAsync(snapshotBuildStatePath(target), `${JSON.stringify(state)}\n`);
 }
 
 async function snapshotOverflowIsDeferred(target: string, now: number): Promise<boolean> {
@@ -150,18 +139,10 @@ async function snapshotOverflowIsDeferred(target: string, now: number): Promise<
 async function deferOversizedSnapshot(target: string, now: number): Promise<void> {
 	await unlinkOwnedRegularFile(snapshotPartialPath(target));
 	await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
-	const overflow = snapshotOverflowPath(target);
-	const temporary = `${overflow}.${randomUUID()}.tmp`;
-	try {
-		await fs.promises.writeFile(
-			temporary,
-			`${JSON.stringify({ version: 1, retryAt: now + ARTIFACT_MAINTENANCE_INTERVAL_MS })}\n`,
-			{ encoding: "utf8", flag: "wx", mode: 0o600 },
-		);
-		await fs.promises.rename(temporary, overflow);
-	} finally {
-		await fs.promises.unlink(temporary).catch(() => undefined);
-	}
+	await writePrivateAtomicTextAsync(
+		snapshotOverflowPath(target),
+		`${JSON.stringify({ version: 1, retryAt: now + ARTIFACT_MAINTENANCE_INTERVAL_MS })}\n`,
+	);
 }
 
 function loadLinuxDirectoryLibrary() {
@@ -508,25 +489,10 @@ export async function readSnapshotCursor(cursorPath: string, snapshot: string): 
 }
 
 export async function writeSnapshotCursor(cursor: string, snapshot: string, offset: number): Promise<void> {
-	const temporary = path.join(path.dirname(cursor), `.${path.basename(cursor)}.${randomUUID()}.tmp`);
-	try {
-		await fs.promises.writeFile(
-			temporary,
-			`${JSON.stringify({ version: 2, offset, snapshot: await cleanupSnapshotIdentity(snapshot) })}\n`,
-			{
-				encoding: "utf8",
-				flag: "wx",
-				mode: 0o600,
-			},
-		);
-		await fs.promises.rename(temporary, cursor);
-	} finally {
-		try {
-			await fs.promises.unlink(temporary);
-		} catch {
-			// Atomic rename already consumed the temporary, or best-effort cleanup failed.
-		}
-	}
+	await writePrivateAtomicTextAsync(
+		cursor,
+		`${JSON.stringify({ version: 2, offset, snapshot: await cleanupSnapshotIdentity(snapshot) })}\n`,
+	);
 }
 
 function eventLoopTurn(): Promise<void> {

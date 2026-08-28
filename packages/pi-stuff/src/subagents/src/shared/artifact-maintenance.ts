@@ -19,6 +19,7 @@ import {
 	removeNameSnapshotControl,
 	writeSnapshotCursor,
 } from "./artifact-snapshot.ts";
+import { writePrivateAtomicTextAsync } from "./atomic-json.ts";
 import { shardedDurableClaimName, tryAcquireDurableClaim } from "./durable-claim.ts";
 import { TEMP_ARTIFACTS_DIR } from "./types.ts";
 import { getAgentSessionsDir } from "./utils.ts";
@@ -100,18 +101,7 @@ async function cleanupMarkerIsFresh(directory: string, now: number): Promise<boo
 }
 
 async function writeCleanupMarker(directory: string, now: number): Promise<void> {
-	const marker = path.join(directory, CLEANUP_MARKER_FILE);
-	const temporary = path.join(directory, `.${CLEANUP_MARKER_FILE}.${randomUUID()}.tmp`);
-	try {
-		await fs.promises.writeFile(temporary, `${String(now)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-		await fs.promises.rename(temporary, marker);
-	} finally {
-		try {
-			await fs.promises.unlink(temporary);
-		} catch {
-			// Atomic rename already consumed the temporary, or best-effort cleanup failed.
-		}
-	}
+	await writePrivateAtomicTextAsync(path.join(directory, CLEANUP_MARKER_FILE), `${String(now)}\n`);
 }
 
 interface ArtifactCleanupBudget {
@@ -492,21 +482,11 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 
 async function writeDiscoveryFrontier(root: string, pending: readonly DiscoveryFrame[]): Promise<void> {
 	const cursor = path.join(root, DISCOVERY_CURSOR_FILE);
-	const temporary = path.join(root, `.${DISCOVERY_CURSOR_FILE}.${randomUUID()}.tmp`);
-	try {
-		const serialized = `${JSON.stringify({ version: 3, pending })}\n`;
-		if (Buffer.byteLength(serialized, "utf8") > MAX_DISCOVERY_CURSOR_BYTES) {
-			throw new Error("Artifact discovery frontier exceeded its persistence bound.");
-		}
-		await fs.promises.writeFile(temporary, serialized, {
-			encoding: "utf8",
-			flag: "wx",
-			mode: 0o600,
-		});
-		await fs.promises.rename(temporary, cursor);
-	} finally {
-		await fs.promises.unlink(temporary).catch(() => undefined);
+	const serialized = `${JSON.stringify({ version: 3, pending })}\n`;
+	if (Buffer.byteLength(serialized, "utf8") > MAX_DISCOVERY_CURSOR_BYTES) {
+		throw new Error("Artifact discovery frontier exceeded its persistence bound.");
 	}
+	await writePrivateAtomicTextAsync(cursor, serialized);
 }
 
 function resolveDiscoveryFrame(root: string, frame: DiscoveryFrame): string | undefined {
