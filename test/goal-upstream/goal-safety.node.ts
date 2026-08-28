@@ -475,12 +475,12 @@ test("queued input attribution remains lossless beyond the former mirror limit",
 	registerGoal(mock.pi);
 	const runtime = runtimeByPi.get(mock.pi);
 	assert.ok(runtime);
-	runtime.noteQueuedNonGoalInput("oldest user follow-up", "followUp", "manual", true);
+	runtime.prompts.noteQueuedNonGoalInput("oldest user follow-up", "followUp", "manual", true);
 	for (let index = 0; index < 64; index += 1) {
-		runtime.noteQueuedNonGoalInput(`user follow-up ${index}`, "followUp", "manual", true);
+		runtime.prompts.noteQueuedNonGoalInput(`user follow-up ${index}`, "followUp", "manual", true);
 	}
 
-	const delivered = runtime.consumeQueuedNonGoalInput("oldest user follow-up");
+	const delivered = runtime.prompts.consumeQueuedNonGoalInput("oldest user follow-up");
 	assert.equal(delivered?.behavior, "followUp");
 	assert.equal(delivered?.resetSafetyEpoch, true);
 });
@@ -498,7 +498,7 @@ test("owned Goal prompt attribution remains lossless beyond the former marker li
 
 	const oldestPrompt = mock.sentUserMessages[0]?.text;
 	assert.equal(isRuntimeString(oldestPrompt), true);
-	assert.deepEqual(runtime.consumeOwnedGoalPrompt(oldestPrompt ?? ""), {
+	assert.deepEqual(runtime.prompts.consumeOwnedGoalPrompt(oldestPrompt ?? ""), {
 		goalId: "goal-0",
 		origin: "automatic",
 		resetSafetyEpoch: true,

@@ -82,8 +82,8 @@ const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
 );
 
 function clearGoalSessionWork(runtime: GoalRuntime): void {
-	runtime.clearContinuationTracking();
-	runtime.clearPendingGoalPrompts();
+	runtime.prompts.clearContinuationTracking();
+	runtime.prompts.clearPendingGoalPrompts();
 	runtime.clearAgentRun();
 	runtime.guardAbortGoalId = undefined;
 	runtime.goalRecovery = undefined;
@@ -175,7 +175,7 @@ function restoreActiveGoalSession(
 		};
 	}
 	if (runtime.activeGoal.status !== "active" || !reloaded) return;
-	runtime.requestContinuation(runtime.activeGoal);
+	runtime.prompts.requestContinuation(runtime.activeGoal);
 	return async () => {
 		if (await whenSuiteSessionReady(pi, ctx)) await runtime.dispatchContinuationIfSettled(ctx);
 	};
@@ -307,7 +307,7 @@ function beginNonGoalFollowUp(
 function beginPromptRun(lifecycle: GoalLifecycle, prompt: string, ctx: StatusContext): ActiveGoal | undefined {
 	const { runtime } = lifecycle;
 	runtime.clearAgentRun();
-	if (runtime.consumeCancelledContinuationPrompt(prompt) || runtime.consumeStaleOwnedGoalPrompt(prompt)) {
+	if (runtime.prompts.consumeCancelledContinuationPrompt(prompt) || runtime.consumeStaleOwnedGoalPrompt(prompt)) {
 		runtime.beginAgentRun(null, undefined);
 		abortCurrentTurn(ctx);
 		return;
@@ -316,9 +316,9 @@ function beginPromptRun(lifecycle: GoalLifecycle, prompt: string, ctx: StatusCon
 	// A normal prompt boundary supersedes stale retry and hard-cap cleanup ownership.
 	runtime.goalRecovery = undefined;
 	if (runtime.guardAbortGoalId) runtime.guardAbortGoalId = undefined;
-	const goalPrompt = runtime.consumeOwnedGoalPrompt(prompt);
+	const goalPrompt = runtime.prompts.consumeOwnedGoalPrompt(prompt);
 	const goalPromptGoalId = goalPrompt?.goalId;
-	const continuationGoalId = goalPromptGoalId ? undefined : runtime.markContinuationStarted(prompt);
+	const continuationGoalId = goalPromptGoalId ? undefined : runtime.prompts.markContinuationStarted(prompt);
 	const ownedPromptGoalId = goalPromptGoalId ?? continuationGoalId;
 	const activeBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
 	const runOrigin = continuationGoalId ? "automatic" : (goalPrompt?.origin ?? "automatic");
@@ -369,18 +369,18 @@ function registerGoalInputHandlers(lifecycle: GoalLifecycle): void {
 	pi.on("input", (event) => {
 		if (event.source === "extension") {
 			if (
-				runtime.consumeCancelledContinuationPrompt(event.text) ||
+				runtime.prompts.consumeCancelledContinuationPrompt(event.text) ||
 				runtime.consumeStaleOwnedGoalPrompt(event.text)
 			) {
 				return { action: "handled" as const };
 			}
 			if (runtime.queueFrozen) return;
-			if (runtime.hasPendingOwnedGoalPrompt(event.text)) return;
-			runtime.noteQueuedNonGoalInput(event.text, event.streamingBehavior ?? "idle", "automatic", false);
+			if (runtime.prompts.hasPendingOwnedGoalPrompt(event.text)) return;
+			runtime.prompts.noteQueuedNonGoalInput(event.text, event.streamingBehavior ?? "idle", "automatic", false);
 			return;
 		}
 		if (runtime.queueFrozen || /^\/goal(?:\s|$)/u.test(event.text.trimStart())) return;
-		runtime.noteQueuedNonGoalInput(event.text, event.streamingBehavior ?? "idle", "manual", true);
+		runtime.prompts.noteQueuedNonGoalInput(event.text, event.streamingBehavior ?? "idle", "manual", true);
 	});
 	pi.on("turn_start", () => {
 		lifecycle.turnActive = true;
@@ -399,7 +399,7 @@ function handleGoalMessageStart(lifecycle: GoalLifecycle, messageValue: GoalMess
 		return;
 	}
 	if (message.role === "custom") {
-		if (lifecycle.turnActive) runtime.discardQueuedNonGoalInputs(["idle"]);
+		if (lifecycle.turnActive) runtime.prompts.discardQueuedNonGoalInputs(["idle"]);
 		if (message.customType === GOAL_PROMPT_MESSAGE_TYPE && isRuntimeString(message.content)) {
 			beginPromptRun(lifecycle, message.content, ctx);
 			return;
@@ -419,9 +419,13 @@ function handleGoalMessageStart(lifecycle: GoalLifecycle, messageValue: GoalMess
 		: Check(Type.String(), message.content)
 			? message.content
 			: "";
-	const ownedPrompt = runtime.consumeOwnedGoalPrompt(prompt);
-	const ownedPromptBoundary = runtime.hasOwnedPromptBoundary(prompt);
-	const queued = runtime.consumeQueuedNonGoalInput(prompt, !ownedPromptBoundary, ["steer", "followUp", "idle"]);
+	const ownedPrompt = runtime.prompts.consumeOwnedGoalPrompt(prompt);
+	const ownedPromptBoundary = runtime.prompts.hasOwnedPromptBoundary(prompt);
+	const queued = runtime.prompts.consumeQueuedNonGoalInput(prompt, !ownedPromptBoundary, [
+		"steer",
+		"followUp",
+		"idle",
+	]);
 	if (!ownedPrompt) {
 		if (queued?.behavior === "followUp") {
 			beginNonGoalFollowUp(lifecycle, ctx, queued.origin, queued.resetSafetyEpoch);
@@ -534,7 +538,7 @@ function stopGoalAfterAgentEnd(
 	status: "paused" | "usage_limited",
 ): void {
 	const { runtime } = lifecycle;
-	runtime.cancelContinuationWork();
+	runtime.prompts.cancelContinuationWork();
 	runtime.clearBudgetWrapUp();
 	runtime.blockStaleGoalToolCalls();
 	abortCurrentTurn(ctx);
@@ -577,7 +581,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 	}
 
 	const goalId = runtime.activeGoal.id;
-	const alreadyAwaitingContinuation = runtime.hasContinuationWorkForGoal(goalId);
+	const alreadyAwaitingContinuation = runtime.prompts.hasContinuationWorkForGoal(goalId);
 	const finalAssistant = findFinalAssistantMessage(event.messages);
 	if (!alreadyAwaitingContinuation) runtime.activeGoal = incrementGoal(runtime.activeGoal);
 	runtime.recordGoalUsage(runtime.activeGoal, ctx);
@@ -601,7 +605,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 				automaticOwner: run.origin === "automatic",
 				errorMessage: finalAssistant.errorMessage,
 			};
-			runtime.cancelContinuationWork();
+			runtime.prompts.cancelContinuationWork();
 			runtime.persistGoalStatus(ctx, runtime.activeGoal);
 			return;
 		}
@@ -617,7 +621,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 			automaticOwner: run.origin === "automatic",
 			errorMessage: finalAssistant.errorMessage,
 		};
-		runtime.cancelContinuationWork();
+		runtime.prompts.cancelContinuationWork();
 		runtime.persistGoalStatus(ctx, runtime.activeGoal);
 		return;
 	}
@@ -642,7 +646,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 	const currentGoal = runtime.activeGoal;
 	if (!currentGoal || currentGoal.id !== goalId || currentGoal.status !== "active") return;
 	if (runtime.pendingQueueAction?.kind === "prioritize") return;
-	runtime.requestContinuation(currentGoal);
+	runtime.prompts.requestContinuation(currentGoal);
 }
 
 function registerGoalAgentHandlers(lifecycle: GoalLifecycle): void {

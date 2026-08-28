@@ -484,7 +484,7 @@ function applyQueueSetting(runtime: GoalRuntime, ctx: ExtensionCommandContext) {
 	else runtime.clearPresentationStatus();
 	if (!shouldFreeze) return;
 
-	runtime.cancelContinuationWork();
+	runtime.prompts.cancelContinuationWork();
 	runtime.goalRecovery = undefined;
 	runtime.clearBudgetWrapUp();
 	if (goalOwnedRun) {

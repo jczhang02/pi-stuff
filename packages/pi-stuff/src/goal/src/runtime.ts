@@ -158,11 +158,11 @@ export class GoalRuntime extends GoalToolPolicy {
 	menuGeneration = 0;
 	menuController = new AbortController();
 
-	private readonly promptOwnership: GoalPromptOwnership;
+	readonly prompts: GoalPromptOwnership;
 
 	constructor(pi: ExtensionAPI) {
 		super(pi);
-		this.promptOwnership = new GoalPromptOwnership(pi);
+		this.prompts = new GoalPromptOwnership(pi);
 	}
 
 	setGoalStateSink(sink: ((snapshot: GoalStateSnapshot) => void) | undefined) {
@@ -267,19 +267,15 @@ export class GoalRuntime extends GoalToolPolicy {
 		return true;
 	}
 
-	requestContinuation(goal: ActiveGoal) {
-		return this.promptOwnership.requestContinuation(goal);
-	}
-
 	async dispatchContinuationIfSettled(ctx: StatusContext): Promise<boolean> {
-		const intent = this.promptOwnership.continuationIntent;
+		const intent = this.prompts.continuationIntent;
 		if (!intent) return false;
 		if (this.activeGoal?.status === "active" && !this.goalToolsAvailable()) {
 			this.pauseGoalForUnavailableTools(ctx);
 			return false;
 		}
 		if (!this.activeGoal || this.activeGoal.id !== intent.goalId || this.activeGoal.status !== "active") {
-			this.promptOwnership.continuationIntent = undefined;
+			this.prompts.continuationIntent = undefined;
 			return false;
 		}
 		if (this.enforceAutomaticTurnLimit(ctx, false) || this.enforceNoProgressLimit(ctx)) {
@@ -287,29 +283,25 @@ export class GoalRuntime extends GoalToolPolicy {
 		}
 		if (ctx.isIdle?.() !== true || hasPendingMessages(ctx)) return false;
 
-		this.promptOwnership.continuationIntent = undefined;
-		this.promptOwnership.continuationDelivery = intent;
+		this.prompts.continuationIntent = undefined;
+		this.prompts.continuationDelivery = intent;
 		try {
 			const delivered = await sendHiddenGoalPrompt(this.pi, intent.prompt);
 			if (delivered) return true;
-			if (this.promptOwnership.continuationDelivery?.marker === intent.marker) {
-				this.promptOwnership.continuationDelivery = undefined;
+			if (this.prompts.continuationDelivery?.marker === intent.marker) {
+				this.prompts.continuationDelivery = undefined;
 			}
 			return false;
 		} catch (error) {
-			if (this.promptOwnership.continuationDelivery?.marker === intent.marker) {
-				this.promptOwnership.continuationDelivery = undefined;
+			if (this.prompts.continuationDelivery?.marker === intent.marker) {
+				this.prompts.continuationDelivery = undefined;
 			}
 			if (this.activeGoal?.id === intent.goalId && this.activeGoal.status === "active") {
-				this.promptOwnership.continuationIntent = intent;
+				this.prompts.continuationIntent = intent;
 			}
 			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
 			return false;
 		}
-	}
-
-	hasContinuationWorkForGoal(goalId: string) {
-		return this.promptOwnership.hasContinuationWorkForGoal(goalId);
 	}
 
 	updateStatus(_ctx: StatusContext, goal: ActiveGoal) {
@@ -428,7 +420,7 @@ export class GoalRuntime extends GoalToolPolicy {
 			return false;
 		}
 
-		this.cancelContinuationWork();
+		this.prompts.cancelContinuationWork();
 		this.clearGoalRecoveryForGoal(goal.id);
 		this.clearBudgetWrapUp();
 		this.activeGoal = transitionGoal(goal, "budget_limited");
@@ -497,7 +489,7 @@ export class GoalRuntime extends GoalToolPolicy {
 	pauseGoalForSafety(ctx: StatusContext, cause: SafetyPauseCause, abortTurn: boolean) {
 		const goal = this.activeGoal;
 		if (goal?.status !== "active") return false;
-		this.cancelContinuationWork();
+		this.prompts.cancelContinuationWork();
 		this.clearGoalRecoveryForGoal(goal.id);
 		this.clearBudgetWrapUp();
 		this.blockStaleGoalToolCalls();
@@ -537,7 +529,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.goalRecovery = undefined;
 		const goal = this.activeGoal;
 		if (goal?.id !== recovery.goalId || goal.status !== "active") return false;
-		this.cancelContinuationWork();
+		this.prompts.cancelContinuationWork();
 		this.clearBudgetWrapUp();
 		const details = recovery.errorMessage ? `: ${truncateNotification(recovery.errorMessage)}` : "";
 		this.clearStaleGoalToolCallBlock();
@@ -546,13 +538,13 @@ export class GoalRuntime extends GoalToolPolicy {
 			`Goal provider retry was exhausted${details}. The Goal remains active and will continue from the next settled boundary.`,
 			"warning",
 		);
-		this.requestContinuation(goal);
+		this.prompts.requestContinuation(goal);
 		return true;
 	}
 
 	clearSettledSafetyTracking() {
 		this.guardAbortGoalId = undefined;
-		this.promptOwnership.clearSettledClaims();
+		this.prompts.clearSettledClaims();
 		this.clearAgentRun();
 	}
 
@@ -569,21 +561,13 @@ export class GoalRuntime extends GoalToolPolicy {
 		);
 	}
 
-	clearContinuationTracking() {
-		this.promptOwnership.clearContinuationTracking();
-	}
-
-	clearPendingGoalPrompts() {
-		this.promptOwnership.clearPendingGoalPrompts();
-	}
-
 	async sendOwnedGoalPrompt(
 		ctx: StatusContext,
 		goalId: string,
 		prompt: string,
 		options: GoalPromptDeliveryOptions = {},
 	) {
-		return this.promptOwnership.sendOwnedGoalPrompt(
+		return this.prompts.sendOwnedGoalPrompt(
 			ctx,
 			goalId,
 			prompt,
@@ -592,24 +576,8 @@ export class GoalRuntime extends GoalToolPolicy {
 		);
 	}
 
-	cancelContinuationWork() {
-		this.promptOwnership.cancelContinuationWork();
-	}
-
-	consumeCancelledContinuationPrompt(prompt: string) {
-		return this.promptOwnership.consumeCancelledContinuationPrompt(prompt);
-	}
-
-	hasPendingOwnedGoalPrompt(prompt: string) {
-		return this.promptOwnership.hasPendingOwnedGoalPrompt(prompt);
-	}
-
-	hasOwnedPromptBoundary(prompt: string) {
-		return this.promptOwnership.hasOwnedPromptBoundary(prompt);
-	}
-
 	consumeStaleOwnedGoalPrompt(prompt: string) {
-		return this.promptOwnership.consumeStaleOwnedGoalPrompt(
+		return this.prompts.consumeStaleOwnedGoalPrompt(
 			prompt,
 			(goalId) =>
 				!this.queueFrozen &&
@@ -617,31 +585,6 @@ export class GoalRuntime extends GoalToolPolicy {
 				this.activeGoal?.id === goalId &&
 				this.activeGoal.status === "active",
 		);
-	}
-
-	noteQueuedNonGoalInput(
-		prompt: string,
-		behavior: "idle" | "steer" | "followUp",
-		origin: GoalRunOrigin,
-		resetSafetyEpoch = origin === "manual",
-	) {
-		this.promptOwnership.noteQueuedNonGoalInput(prompt, behavior, origin, resetSafetyEpoch);
-	}
-
-	discardQueuedNonGoalInputs(behaviors: readonly ("idle" | "steer" | "followUp")[]) {
-		this.promptOwnership.discardQueuedNonGoalInputs(behaviors);
-	}
-
-	consumeQueuedNonGoalInput(
-		prompt: string,
-		allowDeliveryFallback = true,
-		behaviors: readonly ("idle" | "steer" | "followUp")[] = ["steer", "followUp"],
-	) {
-		return this.promptOwnership.consumeQueuedNonGoalInput(prompt, allowDeliveryFallback, behaviors);
-	}
-
-	markContinuationStarted(prompt: string) {
-		return this.promptOwnership.markContinuationStarted(prompt);
 	}
 
 	persistGoal(goal: ActiveGoal) {
@@ -683,7 +626,7 @@ export class GoalRuntime extends GoalToolPolicy {
 
 	async clearActiveGoal(ctx: StatusContext, reason = "goal cleared"): Promise<void> {
 		const clearedGoal = this.activeGoal;
-		this.cancelContinuationWork();
+		this.prompts.cancelContinuationWork();
 		this.goalRecovery = undefined;
 		this.clearBudgetWrapUp();
 		this.clearStaleGoalToolCallBlock();
@@ -708,7 +651,7 @@ export class GoalRuntime extends GoalToolPolicy {
 			activeGoal: this.activeGoal ? structuredClone(this.activeGoal) : undefined,
 			queueFrozen: this.queueFrozen,
 			queueFreezeAwaitingSettle: this.queueFreezeAwaitingSettle,
-			promptOwnership: this.promptOwnership.snapshot(),
+			promptOwnership: this.prompts.snapshot(),
 			goalRecovery: this.goalRecovery ? structuredClone(this.goalRecovery) : undefined,
 			budgetWrapUp: this.budgetWrapUp ? structuredClone(this.budgetWrapUp) : undefined,
 			guardAbortGoalId: this.guardAbortGoalId,
@@ -723,7 +666,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.activeGoal = snapshot.activeGoal ? structuredClone(snapshot.activeGoal) : undefined;
 		this.queueFrozen = snapshot.queueFrozen;
 		this.queueFreezeAwaitingSettle = snapshot.queueFreezeAwaitingSettle;
-		this.promptOwnership.restore(snapshot.promptOwnership);
+		this.prompts.restore(snapshot.promptOwnership);
 		this.goalRecovery = snapshot.goalRecovery ? structuredClone(snapshot.goalRecovery) : undefined;
 		this.budgetWrapUp = snapshot.budgetWrapUp ? structuredClone(snapshot.budgetWrapUp) : undefined;
 		this.guardAbortGoalId = snapshot.guardAbortGoalId;
@@ -736,7 +679,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		const goal = this.activeGoal;
 		if (goal?.status !== "active") return false;
 		if (recordUsage) this.recordGoalUsage(goal, ctx);
-		this.cancelContinuationWork();
+		this.prompts.cancelContinuationWork();
 		this.clearGoalRecoveryForGoal(goal.id);
 		this.clearBudgetWrapUp();
 		if (abortTurn) {
@@ -767,10 +710,6 @@ export class GoalRuntime extends GoalToolPolicy {
 		if (!this.completionStatusTimer) return;
 		clearTimeout(this.completionStatusTimer);
 		this.completionStatusTimer = undefined;
-	}
-
-	consumeOwnedGoalPrompt(prompt: string) {
-		return this.promptOwnership.consumeOwnedGoalPrompt(prompt);
 	}
 }
 

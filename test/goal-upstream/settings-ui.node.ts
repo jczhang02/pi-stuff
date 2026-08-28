@@ -132,7 +132,7 @@ test("disabling a retained queue pauses and aborts in-flight Goal work", () => {
 	};
 	state.activeGoal = createGoal("current objective", undefined, 0);
 	state.queuedGoals = [createGoal("queued objective", undefined, 0)];
-	state.requestContinuation(state.activeGoal);
+	state.prompts.requestContinuation(state.activeGoal);
 	state.beginAgentRun(state.activeGoal.id, "automatic");
 	let aborts = 0;
 	const context = createMockContext({

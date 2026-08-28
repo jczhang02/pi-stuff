@@ -213,7 +213,7 @@ export class GoalCommandController {
 			return;
 		}
 
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
@@ -292,7 +292,7 @@ export class GoalCommandController {
 			await this.startGoal(objective, tokenBudget, ctx);
 			return;
 		}
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.pendingQueueAction = { kind: "prioritize", objective, tokenBudget };
 		this.runtime.persistGoal(this.runtime.activeGoal);
 		if (ctx.isIdle?.() !== true || hasPendingMessages(ctx)) {
@@ -331,7 +331,7 @@ export class GoalCommandController {
 			return;
 		}
 		if (currentGoal.status === "active") this.runtime.recordGoalUsage(currentGoal, ctx);
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
@@ -369,7 +369,7 @@ export class GoalCommandController {
 		}
 		const goal = this.runtime.activeGoal;
 		if (goal?.status !== "active") return false;
-		this.runtime.requestContinuation(goal);
+		this.runtime.prompts.requestContinuation(goal);
 		return this.runtime.dispatchContinuationIfSettled(ctx);
 	}
 
@@ -399,7 +399,7 @@ export class GoalCommandController {
 		const previousText = pending.completedText;
 		const reason = pending.reason;
 		this.runtime.pendingQueueAction = undefined;
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
@@ -474,7 +474,7 @@ export class GoalCommandController {
 			return;
 		}
 		this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx);
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.blockStaleGoalToolCalls();
 		abortCurrentTurn(ctx);
@@ -511,7 +511,7 @@ export class GoalCommandController {
 		}
 		const stoppedGoal = this.runtime.activeGoal;
 		const stoppedStatus = stoppedGoal.status;
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();
@@ -547,7 +547,7 @@ export class GoalCommandController {
 	async clearGoal(ctx: StatusContext): Promise<void> {
 		if (!this.runtime.activeGoal) {
 			ctx.ui.notify("No active goal.", "info");
-			this.runtime.cancelContinuationWork();
+			this.runtime.prompts.cancelContinuationWork();
 			this.runtime.goalRecovery = undefined;
 			this.runtime.clearBudgetWrapUp();
 			this.runtime.clearStaleGoalToolCallBlock();
@@ -574,7 +574,7 @@ export class GoalCommandController {
 
 		this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx);
 		const previousGoal = { ...this.runtime.activeGoal };
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		const previousStatus = this.runtime.activeGoal.status;
@@ -719,7 +719,7 @@ export class GoalCommandController {
 			return false;
 		}
 
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		this.runtime.goalRecovery = undefined;
 		this.runtime.clearBudgetWrapUp();
 		this.runtime.clearStaleGoalToolCallBlock();

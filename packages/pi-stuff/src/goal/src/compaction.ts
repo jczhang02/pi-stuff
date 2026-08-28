@@ -41,7 +41,7 @@ export class GoalCompactionCoordinator {
 		}
 		if (this.runtime.activeGoal?.status !== "active") return;
 		if (!this.runtime.recordGoalUsage(this.runtime.activeGoal, ctx)) return;
-		this.runtime.cancelContinuationWork();
+		this.runtime.prompts.cancelContinuationWork();
 		if (!suiteNativePreflight) this.arm(ctx, this.runtime.activeGoal.id);
 		this.runtime.persistGoalStatus(ctx, this.runtime.activeGoal);
 		if (this.runtime.pendingQueueAction) return;
@@ -93,7 +93,7 @@ export class GoalCompactionCoordinator {
 		if (!usageRecorded || this.runtime.limitActiveGoalForBudget(ctx, false)) return;
 		if (this.runtime.isPiOwnedCompactionRetry(event, this.runtime.activeGoal.id)) return;
 		this.runtime.clearGoalRecoveryForGoal(this.runtime.activeGoal.id);
-		this.runtime.requestContinuation(this.runtime.activeGoal);
+		this.runtime.prompts.requestContinuation(this.runtime.activeGoal);
 		// Manual compaction does not emit agent_settled, so dispatch from this settled fallback.
 		await this.runtime.dispatchContinuationIfSettled(ctx);
 	}
@@ -117,7 +117,7 @@ export class GoalCompactionCoordinator {
 		}
 		if (this.runtime.isPiOwnedCompactionRetry(event, activeGoal.id)) return;
 		this.runtime.clearGoalRecoveryForGoal(activeGoal.id);
-		this.runtime.requestContinuation(activeGoal);
+		this.runtime.prompts.requestContinuation(activeGoal);
 		await this.runtime.dispatchContinuationIfSettled(pending.ctx);
 	}
 }

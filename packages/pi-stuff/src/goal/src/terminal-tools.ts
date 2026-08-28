@@ -250,7 +250,7 @@ async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParam
 	if (repeatedTurns < 3) return reject("repeated_turns must acknowledge at least 3 consecutive Goal turns");
 
 	runtime.recordGoalUsage(blockedGoal, ctx);
-	runtime.cancelContinuationWork();
+	runtime.prompts.cancelContinuationWork();
 	runtime.clearBudgetWrapUp();
 	runtime.clearGoalRecoveryForGoal(blockedGoal.id);
 	runtime.blockStaleGoalToolCalls();
