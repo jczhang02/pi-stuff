@@ -557,7 +557,16 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private reconcileSelection(): void {
-		if (this.selectedId && this.groups.some((group) => group.id === this.selectedId)) return;
+		const selected = this.selected();
+		if (selected) {
+			const memberIndex = Math.min(this.detailMemberIndex, Math.max(0, selected.memberIds.length - 1));
+			if (memberIndex !== this.detailMemberIndex) {
+				this.detailMemberIndex = memberIndex;
+				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
+			}
+			return;
+		}
 		this.selectedId = this.groups[0]?.id;
 		if (!this.selectedId) {
 			this.mode = "list";

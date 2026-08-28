@@ -147,6 +147,16 @@ test("/tools drops a pinned detail after its projection is removed", () => {
 	component.dispose?.();
 });
 
+test("/tools keeps a valid member selected when a group shrinks", () => {
+	const runtime = groupedRuntime(["a.ts", "b.ts", "c.ts"]);
+	const component = createToolDialogView(runtime, "read-3").create(contextHarness(32).context);
+	expect(component.render(64).join("\n")).toContain("Path: c.ts");
+
+	runtime.resetProjection([{ role: "assistant", content: [toolCall("read-1", "a.ts")] }, toolResult("read-1")]);
+	expect(component.render(64).join("\n")).toContain("Path: a.ts");
+	component.dispose?.();
+});
+
 test("/tools keeps a five-member selection window while arrows traverse the whole group", () => {
 	const runtime = groupedRuntime(Array.from({ length: 8 }, (_, index) => `${String(index + 1)}.ts`));
 	const harness = contextHarness(28);
