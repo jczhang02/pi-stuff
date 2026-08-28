@@ -23,8 +23,12 @@ import {
 	finishMagicWorkerShutdown,
 	magicContextWorkerFactory,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
+import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-management/magic-worker-context.js";
 import { writeMagicWorkerSyncResponse } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
-import { MAGIC_WORKER_SYNC_BUFFER_BYTES } from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
+import {
+	MAGIC_WORKER_SYNC_BUFFER_BYTES,
+	type MagicWorkerInvocationRequest,
+} from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
@@ -297,6 +301,35 @@ test("an oversized synchronous Host response still wakes the Worker with a bound
 	const length = Atomics.load(control, 1);
 	const response = new TextDecoder().decode(new Uint8Array(buffer, Int32Array.BYTES_PER_ELEMENT * 2, length));
 	expect(response).toBe("Magic Context Host effect response exceeded its buffer.");
+});
+
+test("an invocation cancelled while queued never reaches Magic Context", () => {
+	const contexts = new MagicWorkerContextStore(() => undefined);
+	const controller = new AbortController();
+	const request = {
+		args: "",
+		context: {
+			contextUsage: undefined,
+			cwd: "/project",
+			hasUI: false,
+			mode: "rpc",
+			model: undefined,
+			session: { id: "cancelled-session", leafId: undefined },
+			systemPrompt: "",
+		},
+		id: 1,
+		name: "ctx-status",
+		type: "command",
+	} satisfies MagicWorkerInvocationRequest;
+	let invoked = false;
+	controller.abort(new Error("queued invocation cancelled"));
+
+	expect(() =>
+		contexts.run(request, controller, async () => {
+			invoked = true;
+		}),
+	).toThrow("queued invocation cancelled");
+	expect(invoked).toBeFalse();
 });
 
 test("a hung upstream shutdown cannot keep the Worker alive", async () => {

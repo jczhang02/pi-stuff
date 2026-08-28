@@ -77,6 +77,7 @@ export class MagicWorkerContextStore {
 		controller: AbortController,
 		operation: (ctx: MagicContextExtensionContext) => Promise<Result>,
 	): Promise<Result> {
+		controller.signal.throwIfAborted();
 		return this.effectSession.run(request.context.session.id ?? null, () =>
 			operation(this.contextFor(request.context, controller)),
 		);
