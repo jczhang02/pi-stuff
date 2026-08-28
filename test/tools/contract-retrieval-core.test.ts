@@ -361,6 +361,8 @@ test("projection replacement isolates reused IDs from stale rows, callbacks, and
 		args: { value: "old.ts" },
 		name: "read",
 	});
+	await Promise.resolve();
+	expect(oldInvalidations).toBe(1);
 	runtime.startTimer("same", () => oldInvalidations++);
 	runtime.setRowExpanded("same", true);
 	runtime.suspend();
@@ -375,7 +377,7 @@ test("projection replacement isolates reused IDs from stale rows, callbacks, and
 	runtime.resetProjection([assistant(call("same", "edit", "new.ts")), result("same")]);
 	await Promise.resolve();
 
-	expect(oldInvalidations).toBe(0);
+	expect(oldInvalidations).toBe(1);
 	expect(newInvalidations).toBe(1);
 	expect(scheduler.activeCount).toBe(0);
 	expect(renderLines(oldRow).join("\n")).not.toContain("Changed");

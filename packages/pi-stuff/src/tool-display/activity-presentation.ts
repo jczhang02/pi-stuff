@@ -219,13 +219,12 @@ export class ToolActivityPresentation {
 		let binding = this.bindings.get(toolCallId);
 		const projectedResult = metadata.result ?? this.liveResults.get(toolCallId) ?? binding?.metadata.result;
 		const projectedMetadata = projectedResult === undefined ? metadata : { ...metadata, result: projectedResult };
-		const firstBinding = !binding;
 		if (!binding) {
 			binding = {
 				baseModel: model,
 				baseVisible: visible,
 				expanded,
-				invalidate: () => {},
+				invalidate,
 				metadata: projectedMetadata,
 				row,
 				startedAt: model.state === "running" ? this.now() : undefined,
@@ -242,7 +241,6 @@ export class ToolActivityPresentation {
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
 		this.reconcileGroupForTool(toolCallId, projectedMetadata.result !== this.groups().projectedResult(toolCallId));
-		if (firstBinding) binding.invalidate = invalidate;
 		this.trimBindings(toolCallId);
 	}
 
