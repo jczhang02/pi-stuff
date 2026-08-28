@@ -21,6 +21,7 @@ import type {
 	SuiteToolSurfaceController,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createSuiteToolRegistrationTracker } from "../../packages/pi-stuff/src/tool-display/registration.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
@@ -60,13 +61,14 @@ function loadExtension(surface: SuiteToolSurfaceController) {
 	const registerCommand: ExtensionAPI["registerCommand"] = (name, command) => {
 		commands.set(name, command);
 	};
-	const api: CodeModeHost = {
+	const hostApi: CodeModeHost = {
 		...host,
 		appendEntry: () => undefined,
 		on,
 		registerCommand,
 		sendMessage: () => undefined,
 	};
+	const { api } = createSuiteToolRegistrationTracker({ ...hostApi, getAllTools: () => [] });
 	piStuffCodeMode(api, { registry, surface });
 	return { api, commands, events, tools };
 }
