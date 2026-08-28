@@ -13,7 +13,7 @@ import {
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { terminateDetachedProcessGroup } from "./detached-process.js";
+import { createRpcTransport, parseRpcRecord, type RpcRecord, type RpcTransport } from "./magic-context-real-rpc.js";
 
 const root = resolve(import.meta.dir, "..");
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
@@ -29,7 +29,6 @@ const EXECUTE_THRESHOLD_PERCENTAGE = 65;
 const TARGET_PRESSURE_PERCENTAGE = 82;
 const TARGET_PROVIDER_PRESSURE_PERCENTAGE =
 	(EXPECTED_MAGIC_CONTEXT_LIMIT / EXPECTED_CONTEXT_WINDOW) * TARGET_PRESSURE_PERCENTAGE;
-const TURN_TIMEOUT_MS = 10 * 60_000;
 const HISTORIAN_TIMEOUT_MS = 10 * 60_000;
 const PRESSURE_FILE_BYTES = 48 * 1024;
 const PRESSURE_FILE_COUNT = 12;
@@ -72,15 +71,6 @@ const PACKAGE_MANIFEST_SCHEMA = Type.Object(
 		name: Type.String(),
 		private: Type.Optional(Type.Boolean()),
 		version: Type.String(),
-	},
-	{ additionalProperties: true },
-);
-const RPC_RECORD_FIELDS_SCHEMA = Type.Object(
-	{
-		command: Type.Optional(Type.String()),
-		id: Type.Optional(Type.String()),
-		success: Type.Optional(Type.Boolean()),
-		type: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: true },
 );
@@ -159,26 +149,6 @@ interface Options {
 	readonly packagePath: string;
 	readonly piBinary: string;
 	readonly reportPath: string;
-}
-
-interface RpcRecord extends JsonInputObject {
-	readonly command?: string;
-	readonly data?: JsonInputValue;
-	readonly id?: string;
-	readonly success?: boolean;
-	readonly type?: string;
-}
-
-interface RpcTransport {
-	readonly records: RpcRecord[];
-	readonly stderr: () => string;
-	promptAndWait(message: string, timeoutMs?: number): Promise<RpcRecord[]>;
-	send(command: JsonInputObject, timeoutMs?: number): Promise<RpcRecord>;
-	stop(): Promise<void>;
-	waitFor(
-		predicate: (record: RpcRecord) => boolean,
-		options?: { readonly from?: number; readonly timeoutMs?: number },
-	): Promise<RpcRecord>;
 }
 
 type SessionStats = Static<typeof SESSION_STATS_SCHEMA>;
@@ -331,166 +301,6 @@ function successfulResponse(record: RpcRecord, commandName: string): JsonInputOb
 	return isJsonInputObject(record.data) ? record.data : {};
 }
 
-function parseRpcRecord(line: string): RpcRecord {
-	const value = parseJsonValue(line);
-	if (!isJsonInputObject(value) || !Check(RPC_RECORD_FIELDS_SCHEMA, value)) {
-		throw new Error(`Invalid Pi RPC record: ${line}`);
-	}
-	return value;
-}
-
-async function createRpcTransport(
-	commandLine: readonly string[],
-	cwd: string,
-	environment: Record<string, string | undefined>,
-): Promise<RpcTransport> {
-	const child = Bun.spawn([...commandLine], {
-		cwd,
-		detached: true,
-		env: environment,
-		stdin: "pipe",
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const records: RpcRecord[] = [];
-	const pending = new Map<
-		string,
-		{
-			reject: (error: Error) => void;
-			resolve: (record: RpcRecord) => void;
-			timeout: ReturnType<typeof setTimeout>;
-		}
-	>();
-	const waiters = new Set<{
-		from: number;
-		predicate: (record: RpcRecord) => boolean;
-		reject: (error: Error) => void;
-		resolve: (record: RpcRecord) => void;
-		timeout: ReturnType<typeof setTimeout>;
-	}>();
-	let sequence = 0;
-	let stderr = "";
-	let readError: Error | undefined;
-	const stderrReading = (async () => {
-		stderr = await new Response(child.stderr).text();
-	})();
-	const reader = child.stdout.getReader();
-	const decoder = new TextDecoder();
-	let buffer = "";
-
-	const consume = (line: string): void => {
-		if (!line) return;
-		const record = parseRpcRecord(line);
-		records.push(record);
-		if (record.id && record.type === "response") {
-			const request = pending.get(record.id);
-			if (request) {
-				pending.delete(record.id);
-				clearTimeout(request.timeout);
-				request.resolve(record);
-			}
-		}
-		for (const waiter of waiters) {
-			if (records.length - 1 < waiter.from || !waiter.predicate(record)) continue;
-			waiters.delete(waiter);
-			clearTimeout(waiter.timeout);
-			waiter.resolve(record);
-		}
-	};
-
-	const reading = (async () => {
-		while (true) {
-			const { done, value } = await reader.read();
-			buffer += decoder.decode(value, { stream: !done });
-			while (buffer.includes("\n")) {
-				const newline = buffer.indexOf("\n");
-				consume(buffer.slice(0, newline).replace(/\r$/u, ""));
-				buffer = buffer.slice(newline + 1);
-			}
-			if (done) {
-				consume(buffer.replace(/\r$/u, ""));
-				break;
-			}
-		}
-	})().catch((cause: unknown) => {
-		readError = cause instanceof Error ? cause : new Error(String(cause));
-		for (const request of pending.values()) {
-			clearTimeout(request.timeout);
-			request.reject(readError);
-		}
-		pending.clear();
-		for (const waiter of waiters) {
-			clearTimeout(waiter.timeout);
-			waiter.reject(readError);
-		}
-		waiters.clear();
-	});
-
-	await Bun.sleep(150);
-	if (child.exitCode !== null) {
-		await stderrReading;
-		fail(`Pi exited during RPC startup: ${stderr.trim() || String(child.exitCode)}`);
-	}
-
-	const waitFor: RpcTransport["waitFor"] = async (predicate, options = {}) => {
-		const from = options.from ?? 0;
-		const existing = records.slice(from).find(predicate);
-		if (existing) return existing;
-		const timeoutMs = options.timeoutMs ?? TURN_TIMEOUT_MS;
-		return new Promise<RpcRecord>((resolve_, reject) => {
-			const waiter = {
-				from,
-				predicate,
-				reject,
-				resolve: resolve_,
-				timeout: setTimeout(() => {
-					waiters.delete(waiter);
-					reject(new Error(`Timed out waiting for Pi RPC event after ${String(timeoutMs)}ms`));
-				}, timeoutMs),
-			};
-			waiters.add(waiter);
-		});
-	};
-
-	const send: RpcTransport["send"] = async (command_, timeoutMs = 60_000) => {
-		if (readError) throw readError;
-		if (child.exitCode !== null) fail(`Pi RPC process exited ${String(child.exitCode)}: ${stderr.trim()}`);
-		const id = `magic-real-rpc-${String(++sequence)}`;
-		const response = new Promise<RpcRecord>((resolve_, reject) => {
-			const timeout = setTimeout(() => {
-				pending.delete(id);
-				reject(new Error(`Pi RPC request timed out: ${JSON.stringify(command_)}`));
-			}, timeoutMs);
-			pending.set(id, { reject, resolve: resolve_, timeout });
-		});
-		child.stdin.write(`${JSON.stringify({ ...command_, id })}\n`);
-		await child.stdin.flush();
-		const record = await response;
-		if (record.success !== true) fail(`Pi RPC request failed: ${JSON.stringify(record)}`);
-		return record;
-	};
-
-	return {
-		records,
-		stderr: () => stderr,
-		async promptAndWait(message, timeoutMs = TURN_TIMEOUT_MS) {
-			const from = records.length;
-			await send({ message, type: "prompt" });
-			await waitFor((record) => record.type === "agent_settled", { from, timeoutMs });
-			return records.slice(from);
-		},
-		send,
-		async stop() {
-			await terminateDetachedProcessGroup(child, 10_000);
-			await reading;
-			await stderrReading;
-		},
-		waitFor,
-	};
-}
-
-interface MagicContextEnvironment extends NodeJS.ProcessEnv {}
-
 function environment(paths: {
 	readonly agent: string;
 	readonly audit: string;
@@ -500,7 +310,7 @@ function environment(paths: {
 	readonly magicLog: string;
 	readonly state: string;
 	readonly xdgConfig: string;
-}): MagicContextEnvironment {
+}): NodeJS.ProcessEnv {
 	return {
 		...process.env,
 		HOME: paths.home,
