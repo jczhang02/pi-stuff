@@ -114,16 +114,10 @@ type StoredValue = Readonly<Static<typeof STORED_VALUE_SCHEMA>>;
 type SchemaLedgerEvent = Static<typeof LEDGER_EVENT_SCHEMA>;
 type SchemaEvent<Kind extends SchemaLedgerEvent["kind"]> = Readonly<Extract<SchemaLedgerEvent, { kind: Kind }>>;
 
-export type CallCompensatedEvent = SchemaEvent<"call-compensated">;
 export type CallPendingEvent = SchemaEvent<"call-pending">;
 export type CallSettledEvent = SchemaEvent<"call-settled">;
 export type CallStartedEvent = SchemaEvent<"call-started">;
-export type ExecutionPrunedEvent = SchemaEvent<"execution-pruned">;
-export type ExecutionResumedEvent = SchemaEvent<"execution-resumed">;
 export type ExecutionSettledEvent = SchemaEvent<"execution-settled">;
-export type ExecutionStartedEvent = SchemaEvent<"execution-started">;
-export type SnippetDeletedEvent = SchemaEvent<"snippet-deleted">;
-export type SnippetSavedEvent = SchemaEvent<"snippet-saved"> & { readonly snippet: Snippet };
 export type LedgerEvent = Readonly<SchemaLedgerEvent>;
 
 export interface CallState {

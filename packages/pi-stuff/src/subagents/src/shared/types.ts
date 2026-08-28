@@ -87,17 +87,6 @@ export type ActivityState = "active_long_running" | "needs_attention";
 export type ControlEventType = "active_long_running" | "needs_attention";
 export type ControlNotificationChannel = "event" | "async" | "intercom";
 
-export interface ControlConfig {
-	enabled?: boolean;
-	needsAttentionAfterMs?: number;
-	activeNoticeAfterMs?: number;
-	activeNoticeAfterTurns?: number | undefined;
-	activeNoticeAfterTokens?: number | undefined;
-	failedToolAttemptsBeforeAttention?: number;
-	notifyOn?: ControlEventType[];
-	notifyChannels?: ControlNotificationChannel[];
-}
-
 export interface ResolvedControlConfig {
 	enabled: boolean;
 	needsAttentionAfterMs: number;
@@ -238,8 +227,6 @@ export interface ArtifactConfig {
 // ============================================================================
 // Display
 // ============================================================================
-
-export type DisplayItem = { type: "text"; text: string } | { type: "tool"; name: string; args: JsonInputObject };
 
 // ============================================================================
 // Error Handling

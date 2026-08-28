@@ -5,8 +5,6 @@ import type { JsonInputValue } from "../../../../shared/json-value.js";
 import type {
 	AgentContextUsage,
 	CostSummary,
-	JsonSchemaObject,
-	MaxOutputConfig,
 	SteeringStatus,
 	SubagentLifecycleArtifactVersion,
 	SubagentRunMode,
@@ -22,17 +20,6 @@ import type {
 	NestedStepSummary,
 } from "../shared/nested-contract.ts";
 import type { ModelAttempt } from "../shared/run-result.ts";
-import type { BackgroundRecoveryDescriptor } from "./resolved-task.ts";
-
-export type SteeringRecoveryDescriptor = Omit<BackgroundRecoveryDescriptor, "version" | "childIndex" | "context"> & {
-	version: 1;
-	completionGuard?: boolean;
-	outputPath?: string;
-	outputMode: "inline" | "file-only";
-	structuredOutputSchema?: JsonSchemaObject;
-	acceptance?: JsonInputValue;
-	maxOutput?: MaxOutputConfig;
-};
 
 export interface AsyncStartedEvent {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
