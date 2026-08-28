@@ -25,9 +25,9 @@ import {
 	transitionGoal,
 } from "./policy.js";
 import {
-	type ContinuationTicket,
 	type GoalPromptDeliveryOptions,
 	GoalPromptOwnership,
+	type GoalPromptOwnershipSnapshot,
 	type GoalRunOrigin,
 	sendHiddenGoalPrompt,
 } from "./prompt-ownership.js";
@@ -116,13 +116,11 @@ export interface GoalSettingsRuntimeSnapshot {
 	activeGoal?: ActiveGoal | undefined;
 	queueFrozen: boolean;
 	queueFreezeAwaitingSettle: boolean;
-	continuationIntent?: ContinuationTicket | undefined;
-	continuationDelivery?: ContinuationTicket | undefined;
+	promptOwnership: GoalPromptOwnershipSnapshot;
 	goalRecovery?: GoalRecovery | undefined;
 	budgetWrapUp?: BudgetWrapUp | undefined;
 	guardAbortGoalId?: string | undefined;
 	staleGoalToolCallsBlocked: boolean;
-	cancelledContinuationMarkers: string[];
 	terminalDetails?: GoalTerminalDetails | undefined;
 	toolVisibility: GoalToolVisibilitySnapshot;
 }
@@ -705,19 +703,16 @@ export class GoalRuntime extends GoalToolPolicy {
 	}
 
 	snapshotSettingsApplicationState(): GoalSettingsRuntimeSnapshot {
-		const promptState = this.promptOwnership.snapshot();
 		return {
 			settings: structuredClone(this.settings),
 			activeGoal: this.activeGoal ? structuredClone(this.activeGoal) : undefined,
 			queueFrozen: this.queueFrozen,
 			queueFreezeAwaitingSettle: this.queueFreezeAwaitingSettle,
-			continuationIntent: promptState.continuationIntent,
-			continuationDelivery: promptState.continuationDelivery,
+			promptOwnership: this.promptOwnership.snapshot(),
 			goalRecovery: this.goalRecovery ? structuredClone(this.goalRecovery) : undefined,
 			budgetWrapUp: this.budgetWrapUp ? structuredClone(this.budgetWrapUp) : undefined,
 			guardAbortGoalId: this.guardAbortGoalId,
 			staleGoalToolCallsBlocked: this.staleGoalToolCallsBlocked,
-			cancelledContinuationMarkers: promptState.cancelledContinuationMarkers,
 			terminalDetails: this.terminalDetails ? structuredClone(this.terminalDetails) : undefined,
 			toolVisibility: this.snapshotGoalToolVisibility(),
 		};
@@ -728,11 +723,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.activeGoal = snapshot.activeGoal ? structuredClone(snapshot.activeGoal) : undefined;
 		this.queueFrozen = snapshot.queueFrozen;
 		this.queueFreezeAwaitingSettle = snapshot.queueFreezeAwaitingSettle;
-		this.promptOwnership.restore({
-			continuationIntent: snapshot.continuationIntent,
-			continuationDelivery: snapshot.continuationDelivery,
-			cancelledContinuationMarkers: snapshot.cancelledContinuationMarkers,
-		});
+		this.promptOwnership.restore(snapshot.promptOwnership);
 		this.goalRecovery = snapshot.goalRecovery ? structuredClone(snapshot.goalRecovery) : undefined;
 		this.budgetWrapUp = snapshot.budgetWrapUp ? structuredClone(snapshot.budgetWrapUp) : undefined;
 		this.guardAbortGoalId = snapshot.guardAbortGoalId;

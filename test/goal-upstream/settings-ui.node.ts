@@ -148,7 +148,7 @@ test("disabling a retained queue pauses and aborts in-flight Goal work", () => {
 	assert.equal(state.queueFrozen, true);
 	assert.equal(state.activeGoal?.status, "active");
 	assert.equal(state.activeGoal?.activeStartedAt, undefined);
-	assert.equal(state.snapshotSettingsApplicationState().continuationIntent, undefined);
+	assert.equal(state.snapshotSettingsApplicationState().promptOwnership.continuationIntent, undefined);
 	assert.equal(state.staleGoalToolCallsBlocked, true);
 });
 

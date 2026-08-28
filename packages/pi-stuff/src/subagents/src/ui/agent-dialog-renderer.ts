@@ -97,54 +97,34 @@ export function renderAgentDialog(
 
 class AgentDialogRenderFrame {
 	private readonly context: CommandDialogViewContext<void>;
-	private readonly feedback: Feedback | undefined;
-	private readonly followActivity: boolean;
-	private readonly input: string;
 	private lastDetailMaxOffset: number;
 	private lastDetailViewportRows: number;
 	private listPageRows: number;
-	private readonly listSelectedKey: string | undefined;
 	private readonly markdown: Markdown;
-	private readonly maxTranscriptChars: number;
-	private readonly mode: DialogMode;
 	private nestedListPageRows: number;
-	private readonly nestedSelectedKey: string | undefined;
 	private scrollOffset: number;
-	private readonly selectedKey: string | undefined;
-	private readonly showToolDetails: boolean;
-	private readonly snapshotValue: AgentSessionSnapshot;
-	private readonly transcript: Transcript;
+	private readonly state: AgentDialogRenderState;
 
 	constructor(context: CommandDialogViewContext<void>, markdown: Markdown, state: AgentDialogRenderState) {
 		this.context = context;
 		this.markdown = markdown;
-		this.feedback = state.feedback;
-		this.followActivity = state.followActivity;
-		this.input = state.input;
+		this.state = state;
 		this.lastDetailMaxOffset = state.lastDetailMaxOffset;
 		this.lastDetailViewportRows = state.lastDetailViewportRows;
 		this.listPageRows = state.listPageRows;
-		this.listSelectedKey = state.listSelectedKey;
-		this.maxTranscriptChars = state.maxTranscriptChars;
-		this.mode = state.mode;
 		this.nestedListPageRows = state.nestedListPageRows;
-		this.nestedSelectedKey = state.nestedSelectedKey;
 		this.scrollOffset = state.scrollOffset;
-		this.selectedKey = state.selectedKey;
-		this.showToolDetails = state.showToolDetails;
-		this.snapshotValue = state.snapshotValue;
-		this.transcript = state.transcript;
 	}
 
 	render(width: number): AgentDialogRenderResult {
 		const lines =
-			this.mode === "list"
+			this.state.mode === "list"
 				? this.renderList(width)
-				: this.mode === "nested-list"
+				: this.state.mode === "nested-list"
 					? this.renderNestedList(width)
-					: this.mode === "nested-detail"
+					: this.state.mode === "nested-detail"
 						? this.renderNestedDetail(width)
-						: this.mode === "detail"
+						: this.state.mode === "detail"
 							? this.renderDetail(width)
 							: this.renderComposer(width);
 		return {
@@ -158,32 +138,34 @@ class AgentDialogRenderFrame {
 	}
 
 	private listRow(): AgentRow | undefined {
-		return this.snapshotValue.rows.find((row) => row.key === this.listSelectedKey);
+		return this.state.snapshotValue.rows.find((row) => row.key === this.state.listSelectedKey);
 	}
 
 	private detailRow(): AgentRow | undefined {
-		return this.snapshotValue.rows.find((row) => row.key === this.selectedKey);
+		return this.state.snapshotValue.rows.find((row) => row.key === this.state.selectedKey);
 	}
 
 	private nestedDetailRow(): AgentNestedDetail | undefined {
-		return this.detailRow()?.nestedAgents.find((row) => row.key === this.nestedSelectedKey);
+		return this.detailRow()?.nestedAgents.find((row) => row.key === this.state.nestedSelectedKey);
 	}
 
 	private hasToolActivity(): boolean {
-		return this.transcript.items.some((item) => item.kind === "tool");
+		return this.state.transcript.items.some((item) => item.kind === "tool");
 	}
 
 	private renderList(width: number): string[] {
-		const rows = this.snapshotValue.rows;
+		const rows = this.state.snapshotValue.rows;
 		const limit = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : AGENT_LIST_ROWS;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		this.listPageRows = limit;
-		const window = selectedWindow(rows, this.listSelectedKey, limit);
+		const window = selectedWindow(rows, this.state.listSelectedKey, limit);
 		const header = [divider(this.context.theme, width), title(this.context.theme, "Agents")];
-		const feedbackLine = this.feedback ? renderFeedback(this.context.theme, this.feedback, width) : undefined;
+		const feedbackLine = this.state.feedback
+			? renderFeedback(this.context.theme, this.state.feedback, width)
+			: undefined;
 		const body = [...(feedbackLine ? [feedbackLine] : []), ""];
 		const emptyLine = `${GUTTER}${this.context.theme.fg("muted", "No Agents in the current session.")}`;
 		const rowLines: string[] = [];
@@ -205,7 +187,7 @@ class AgentDialogRenderFrame {
 		hints.push("? keys", `${cancel} close`);
 		body.push("");
 		const footer = hintLines(this.context.theme, width, hints);
-		const selectedIndex = window.rows.findIndex((row) => row.key === this.listSelectedKey);
+		const selectedIndex = window.rows.findIndex((row) => row.key === this.state.listSelectedKey);
 		return fitCommandDialogRows(
 			{
 				header,
@@ -219,7 +201,7 @@ class AgentDialogRenderFrame {
 
 	private renderListRow(row: AgentRow, width: number): string {
 		const theme = this.context.theme;
-		const selected = row.key === this.listSelectedKey;
+		const selected = row.key === this.state.listSelectedKey;
 		const prefix = `${GUTTER}${selected ? theme.fg("accent", "› ") : "  "}`;
 		const name = oneLine(row.name) || "agent";
 		const description = oneLine(row.description ?? row.task);
@@ -243,7 +225,7 @@ class AgentDialogRenderFrame {
 		const rows = parent.nestedAgents;
 		const limit = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : AGENT_LIST_ROWS;
 		this.nestedListPageRows = limit;
-		const window = selectedWindow(rows, this.nestedSelectedKey, limit);
+		const window = selectedWindow(rows, this.state.nestedSelectedKey, limit);
 		const theme = this.context.theme;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
@@ -263,7 +245,7 @@ class AgentDialogRenderFrame {
 		body.push("");
 		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
 		hints.push("? keys", `${cancel} back`);
-		const selectedIndex = window.rows.findIndex((row) => row.key === this.nestedSelectedKey);
+		const selectedIndex = window.rows.findIndex((row) => row.key === this.state.nestedSelectedKey);
 		return fitCommandDialogRows(
 			{
 				header,
@@ -277,7 +259,7 @@ class AgentDialogRenderFrame {
 
 	private renderNestedListRow(row: AgentNestedDetail, width: number): string {
 		const theme = this.context.theme;
-		const selected = row.key === this.nestedSelectedKey;
+		const selected = row.key === this.state.nestedSelectedKey;
 		const prefix = `${GUTTER}${selected ? theme.fg("accent", "› ") : "  "}`;
 		const state = `${theme.fg("dim", `d${row.depth}`)} · ${styledNestedStatus(row.status, theme)}`;
 		const contentWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(state) - 3);
@@ -303,7 +285,7 @@ class AgentDialogRenderFrame {
 			row.nestedCount > 0 ? theme.fg("dim", ` · ${row.nestedCount} nested`) : ""
 		}`;
 		const header = [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`), stateLine];
-		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
+		const feedbackLine = this.state.feedback ? renderFeedback(theme, this.state.feedback, width) : undefined;
 		const taskLines = sectionBody(row.task || "(no task)", width);
 		const outcome = agentOutcome(row, width, theme, this.markdown);
 		const activity = this.activityLines(width);
@@ -315,7 +297,7 @@ class AgentDialogRenderFrame {
 			sectionHeading(theme, "Activity"),
 			...activity,
 		];
-		const activityError = this.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
+		const activityError = this.state.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
 		return this.renderDetailSurface(
 			header,
 			document,
@@ -356,7 +338,7 @@ class AgentDialogRenderFrame {
 			sectionHeading(theme, "Activity"),
 			...activity,
 		];
-		const activityError = this.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
+		const activityError = this.state.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
 		return this.renderDetailSurface(
 			header,
 			document,
@@ -392,7 +374,8 @@ class AgentDialogRenderFrame {
 		const maxOffset = Math.max(0, content.length - viewport);
 		this.lastDetailMaxOffset = maxOffset;
 		this.lastDetailViewportRows = Math.max(1, viewport);
-		this.scrollOffset = this.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
+		this.scrollOffset =
+			this.state.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
 		const visible = content.slice(this.scrollOffset, this.scrollOffset + viewport);
 		if (this.scrollOffset > 0 && visible.length > 0) {
 			visible[0] = `${GUTTER}${this.context.theme.fg("dim", `… ${this.scrollOffset} earlier lines`)}`;
@@ -417,7 +400,7 @@ class AgentDialogRenderFrame {
 		const theme = this.context.theme;
 		const contentWidth = Math.max(1, width - GUTTER.length);
 		const allLines: string[] = [];
-		switch (this.transcript.state) {
+		switch (this.state.transcript.state) {
 			case "loading":
 				allLines.push(theme.fg("muted", "Loading Activity…"));
 				break;
@@ -425,22 +408,22 @@ class AgentDialogRenderFrame {
 				allLines.push(theme.fg("muted", "No Activity yet."));
 				break;
 			case "error":
-				allLines.push(theme.fg("error", truncateToWidth(this.transcript.text, contentWidth, "…")));
+				allLines.push(theme.fg("error", truncateToWidth(this.state.transcript.text, contentWidth, "…")));
 				break;
 			case "ready":
-				for (const item of this.transcript.items) {
+				for (const item of this.state.transcript.items) {
 					if (allLines.length > 0) allLines.push("");
 					if (item.kind === "notice") {
 						allLines.push(theme.fg("dim", oneLine(item.text)));
 						continue;
 					}
 					if (item.kind === "tool") {
-						allLines.push(...renderAgentTool(item, contentWidth, theme, this.showToolDetails));
+						allLines.push(...renderAgentTool(item, contentWidth, theme, this.state.showToolDetails));
 						continue;
 					}
 					const speaker = item.speaker ? oneLine(item.speaker) : "";
 					if (speaker) allLines.push(theme.fg("text", theme.bold(speaker)));
-					const body = boundedTerminalText(item.text, this.maxTranscriptChars);
+					const body = boundedTerminalText(item.text, this.state.maxTranscriptChars);
 					this.markdown.setText(body);
 					allLines.push(...this.markdown.render(contentWidth));
 				}
@@ -469,9 +452,9 @@ class AgentDialogRenderFrame {
 		const row = this.detailRow();
 		if (!row) return this.renderList(width);
 		const theme = this.context.theme;
-		const resume = this.mode === "resume-input";
-		const inputLine = `${GUTTER}${theme.fg("accent", "›")} ${this.input || theme.fg("dim", resume ? "Continue the task…" : "Send new guidance…")}`;
-		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
+		const resume = this.state.mode === "resume-input";
+		const inputLine = `${GUTTER}${theme.fg("accent", "›")} ${this.state.input || theme.fg("dim", resume ? "Continue the task…" : "Send new guidance…")}`;
+		const feedbackLine = this.state.feedback ? renderFeedback(theme, this.state.feedback, width) : undefined;
 		const body = [
 			"",
 			`${GUTTER}${theme.fg("muted", resume ? "Resume message (optional)" : "Steer Agent")}`,
