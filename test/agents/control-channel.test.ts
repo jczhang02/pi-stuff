@@ -108,7 +108,7 @@ describe("Agent stop control channel", () => {
 				interrupts += 1;
 			},
 			onStop: (request) => received.push(request.targetIndex ?? -1),
-			fs: { ...fs, watch: silentWatch },
+			watch: silentWatch,
 			timers: {
 				setInterval: setPollInterval,
 				clearInterval,

@@ -56,10 +56,10 @@ export const INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "
 const CONTROL_INFLIGHT_SEPARATOR = ".pi-stuff-inflight.";
 const activeControlConsumers = new Set<string>();
 
-export type ControlChannelFs = Pick<
-	typeof fs,
-	"mkdirSync" | "existsSync" | "rmSync" | "watch" | "readdirSync" | "readFileSync" | "realpathSync"
->;
+function compareCodePoints(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export type ControlChannelTimers = { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
 type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
@@ -149,45 +149,6 @@ export function requestAsyncStop(
 	const request: StopRequest = { ...payload, id, ts, type: "stop" };
 	writePrivateAtomicJson(requestPath, request);
 	return requestPath;
-}
-
-function consumeJsonRecord<T>(
-	target: string,
-	parse: (raw: JsonValue) => T | undefined,
-	fsImpl: Pick<typeof fs, "readFileSync" | "rmSync">,
-): T | undefined {
-	if (fsImpl === fs) {
-		try {
-			const snapshot = readBoundedOwnedFileSnapshot(target, MAX_CONTROL_RECORD_BYTES);
-			let parsed: T | undefined;
-			try {
-				parsed = parse(parseJsonValue(snapshot.text));
-			} catch {
-				parsed = undefined;
-			}
-			return removeOwnedFileSnapshot(target, snapshot) === "removed" ? parsed : undefined;
-		} catch {
-			return undefined;
-		}
-	}
-	let text: string;
-	try {
-		text = fsImpl.readFileSync(target, "utf-8");
-	} catch {
-		return undefined;
-	}
-	let parsed: T | undefined;
-	try {
-		parsed = parse(parseJsonValue(text));
-	} catch {
-		parsed = undefined;
-	}
-	try {
-		fsImpl.rmSync(target);
-	} catch {
-		return undefined;
-	}
-	return parsed;
 }
 
 interface ClaimedControlRecord {
@@ -280,7 +241,8 @@ function processDurableControlRecords<T>(input: {
 		}
 		candidates.sort(
 			(left, right) =>
-				left.originalName.localeCompare(right.originalName) || left.claimedPath.localeCompare(right.claimedPath),
+				compareCodePoints(left.originalName, right.originalName) ||
+				compareCodePoints(left.claimedPath, right.claimedPath),
 		);
 		for (const candidate of candidates) {
 			let snapshot: OwnedFileSnapshot;
@@ -338,6 +300,15 @@ export function processSteerRequestsFromDir(
 	});
 }
 
+export function consumeSteerRequestsFromDir(dir: string): SteerRequest[] {
+	const requests: SteerRequest[] = [];
+	processSteerRequestsFromDir(dir, (request) => {
+		requests.push(request);
+		return undefined;
+	});
+	return requests;
+}
+
 export function processSteerAcks(
 	asyncDir: string,
 	callback: (ack: SteerAck) => undefined | "retain",
@@ -360,99 +331,6 @@ export function processSteerAcks(
 		kind: "steer-ack",
 		afterClaim,
 	});
-}
-
-export function consumeSteerAcks(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "readdirSync" | "readFileSync" | "rmSync"> = fs,
-): SteerAck[] {
-	const root = path.join(controlInboxDir(asyncDir), STEER_ACKS_DIR);
-	if (!fsImpl.existsSync(root)) return [];
-	const acks: SteerAck[] = [];
-	let indexNames: string[];
-	try {
-		indexNames = fsImpl.readdirSync(root).filter((name) => /^\d+$/.test(name));
-	} catch {
-		return [];
-	}
-	for (const indexName of indexNames) {
-		const dir = path.join(root, indexName);
-		let entries: string[];
-		try {
-			entries = fsImpl
-				.readdirSync(dir)
-				.filter((name) => name.endsWith(".json"))
-				.sort();
-		} catch {
-			continue;
-		}
-		for (const entry of entries) {
-			const target = path.join(dir, entry);
-			const ack = consumeJsonRecord(target, parseSteerAck, fsImpl);
-			if (ack) acks.push(ack);
-		}
-	}
-	return acks;
-}
-
-export function consumeSteerRequestsFromDir(
-	dir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "rmSync" | "readdirSync" | "readFileSync"> = fs,
-): SteerRequest[] {
-	if (!fsImpl.existsSync(dir)) return [];
-	let entries: string[];
-	try {
-		entries = fsImpl
-			.readdirSync(dir)
-			.filter((name) => name.endsWith(".json"))
-			.sort();
-	} catch {
-		// Leave requests in place so the periodic poll can retry the scan.
-		return [];
-	}
-	const requests: SteerRequest[] = [];
-	for (const entry of entries) {
-		const requestPath = path.join(dir, entry);
-		const parsed = consumeJsonRecord(requestPath, parseSteerRequest, fsImpl);
-		if (parsed) requests.push(parsed);
-	}
-	return requests.sort((left, right) => left.ts - right.ts || left.id.localeCompare(right.id));
-}
-
-export function consumeSteerRequests(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "rmSync" | "readdirSync" | "readFileSync"> = fs,
-): SteerRequest[] {
-	return consumeSteerRequestsFromDir(steerRequestsDir(asyncDir), fsImpl);
-}
-
-/**
- * Runner side: consume a pending interrupt request. Idempotent — removes the file
- * so each distinct request fires exactly once. Returns whether one was pending.
- */
-function consumeSingletonRequest(requestPath: string, fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs): boolean {
-	if (!fsImpl.existsSync(requestPath)) return false;
-	try {
-		fsImpl.rmSync(requestPath);
-		return true;
-	} catch {
-		// A concurrent consumer or transient I/O failure owns the retry.
-		return false;
-	}
-}
-
-export function consumeInterruptRequest(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs,
-): boolean {
-	return consumeSingletonRequest(interruptRequestPath(asyncDir), fsImpl);
-}
-
-export function consumeTimeoutRequest(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "rmSync"> = fs,
-): boolean {
-	return consumeSingletonRequest(timeoutRequestPath(asyncDir), fsImpl);
 }
 
 function parseStopRequest(raw: JsonValue): StopRequest | undefined {
@@ -478,41 +356,11 @@ function parseStopRequest(raw: JsonValue): StopRequest | undefined {
 	return request;
 }
 
-function consumeStopFile(
-	requestPath: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "readFileSync" | "rmSync">,
-): StopRequest | undefined {
-	if (!fsImpl.existsSync(requestPath)) return undefined;
-	return consumeJsonRecord(requestPath, parseStopRequest, fsImpl);
-}
-
 /** Drain queued stop requests plus a valid legacy `stop.json`, ignoring malformed input. */
-export function consumeStopRequests(
-	asyncDir: string,
-	fsImpl: Pick<typeof fs, "existsSync" | "readFileSync" | "rmSync" | "readdirSync"> = fs,
-): StopRequest[] {
+export function consumeStopRequests(asyncDir: string): StopRequest[] {
 	const requests: StopRequest[] = [];
-	const queuedDir = stopRequestsDir(asyncDir);
-	if (fsImpl.existsSync(queuedDir)) {
-		let entries: string[] = [];
-		try {
-			entries = fsImpl
-				.readdirSync(queuedDir)
-				.filter((entry) => entry.endsWith(".json"))
-				.sort();
-		} catch {
-			entries = [];
-		}
-		for (const entry of entries) {
-			const request = consumeStopFile(path.join(queuedDir, entry), fsImpl);
-			if (request) requests.push(request);
-		}
-	}
-	const legacy = consumeStopFile(stopRequestPath(asyncDir), fsImpl);
-	if (legacy) requests.push(legacy);
-	return requests.sort(
-		(left, right) => (left.ts ?? 0) - (right.ts ?? 0) || (left.id ?? "").localeCompare(right.id ?? ""),
-	);
+	processStopRequests(asyncDir, (request) => requests.push(request));
+	return requests;
 }
 
 function processStopRequests(
@@ -635,17 +483,16 @@ export function watchAsyncControlInbox(
 		onSteerCapability?: (capability: SteerCapability) => void;
 		onSteerAck?: (ack: SteerAck) => undefined | "retain";
 		pollIntervalMs?: number;
-		fs?: ControlChannelFs;
+		watch?: typeof fs.watch;
 		timers?: ControlChannelTimers;
 		/** Deterministic crash-window seam used by process-level recovery tests. */
 		afterControlClaim?: (kind: string, claimedPath: string) => void;
 	},
 ): () => void {
-	const fsImpl = opts.fs ?? fs;
 	const timers = opts.timers ?? { setInterval, clearInterval };
 	const dir = controlInboxDir(asyncDir);
 	try {
-		fsImpl.mkdirSync(dir, { recursive: true });
+		fs.mkdirSync(dir, { recursive: true });
 	} catch {
 		// Best effort — the poll/watch below tolerates a missing dir.
 	}
@@ -658,49 +505,34 @@ export function watchAsyncControlInbox(
 			// One control observer must not prevent later durable requests from being consumed.
 		}
 	};
-	const invokeNoArg = (callback: (() => void) | undefined): void => {
-		try {
-			callback?.();
-		} catch {
-			// Continue draining the remaining durable control requests.
-		}
-	};
 	const check = (): void => {
 		if (disposed) return;
 		try {
-			if (fsImpl === fs) {
-				processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
-				processSingletonRequest(
-					timeoutRequestPath(asyncDir),
-					"timeout",
-					() => opts.onTimeout?.(),
-					opts.afterControlClaim,
-				);
-				processSingletonRequest(
-					interruptRequestPath(asyncDir),
-					"interrupt",
-					() => opts.onInterrupt(),
-					opts.afterControlClaim,
-				);
-				processSteerRequestsFromDir(
-					steerRequestsDir(asyncDir),
-					(request) => {
-						opts.onSteer?.(request);
-						return undefined;
-					},
-					opts.afterControlClaim,
-				);
-			} else {
-				for (const stop of consumeStopRequests(asyncDir, fsImpl)) invoke(opts.onStop, stop);
-				if (consumeTimeoutRequest(asyncDir, fsImpl)) invokeNoArg(opts.onTimeout);
-				if (consumeInterruptRequest(asyncDir, fsImpl)) invokeNoArg(opts.onInterrupt);
-				for (const request of consumeSteerRequests(asyncDir, fsImpl)) invoke(opts.onSteer, request);
-			}
-			for (const capability of consumeSteerCapabilities(asyncDir, fsImpl)) {
+			processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
+			processSingletonRequest(
+				timeoutRequestPath(asyncDir),
+				"timeout",
+				() => opts.onTimeout?.(),
+				opts.afterControlClaim,
+			);
+			processSingletonRequest(
+				interruptRequestPath(asyncDir),
+				"interrupt",
+				() => opts.onInterrupt(),
+				opts.afterControlClaim,
+			);
+			processSteerRequestsFromDir(
+				steerRequestsDir(asyncDir),
+				(request) => {
+					opts.onSteer?.(request);
+					return undefined;
+				},
+				opts.afterControlClaim,
+			);
+			for (const capability of consumeSteerCapabilities(asyncDir)) {
 				invoke(opts.onSteerCapability, capability);
 			}
-			if (fsImpl === fs) processSteerAcks(asyncDir, (ack) => opts.onSteerAck?.(ack), opts.afterControlClaim);
-			else for (const ack of consumeSteerAcks(asyncDir, fsImpl)) invoke(opts.onSteerAck, ack);
+			processSteerAcks(asyncDir, (ack) => opts.onSteerAck?.(ack), opts.afterControlClaim);
 		} catch {
 			// Never let inbox errors crash the runner.
 		}
@@ -711,7 +543,7 @@ export function watchAsyncControlInbox(
 
 	let watcher: fs.FSWatcher | undefined;
 	try {
-		watcher = fsImpl.watch(resolveWatchPath(dir, fsImpl.realpathSync.native), () => check());
+		watcher = (opts.watch ?? fs.watch)(resolveWatchPath(dir, fs.realpathSync.native), () => check());
 		watcher.on?.("error", () => {
 			// fs.watch can emit on transient FS errors; the interval poll keeps us live.
 		});
