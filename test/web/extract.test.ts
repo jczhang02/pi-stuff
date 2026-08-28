@@ -1,18 +1,20 @@
 import { expect, test } from "bun:test";
 import { extractContent } from "../../packages/pi-stuff/src/web/runtime/extract.ts";
 
-test("cancels oversized Jina reader responses", async () => {
+test("bounds Jina reader responses without following redirects", async () => {
 	const originalFetch = globalThis.fetch;
 	const abortController = new AbortController();
 	let cancelled = false;
+	let jinaRedirect: string | undefined;
 	let jinaRequests = 0;
 	let pulls = 0;
 	const prefix = "Markdown Content:\n# Title\n";
 	const firstChunk = new TextEncoder().encode(`${prefix}${"a".repeat(5 * 1024 * 1024 - prefix.length)}`);
 
 	// SAFETY: This test exercises only fetch's request/response call signature; preconnect is never used.
-	const mockFetch = (async (input) => {
+	const mockFetch = (async (input, init) => {
 		if (!String(input).startsWith("https://r.jina.ai/")) return new Response(null, { status: 503 });
+		jinaRedirect = init?.redirect;
 		jinaRequests += 1;
 		return new Response(
 			new ReadableStream<Uint8Array>(
@@ -40,6 +42,7 @@ test("cancels oversized Jina reader responses", async () => {
 			lookup: async () => [{ address: "93.184.216.34", family: 4 }],
 		});
 		expect(jinaRequests).toBe(1);
+		expect(jinaRedirect).toBe("error");
 		expect(cancelled).toBe(true);
 		expect(result.error).toBe("Aborted");
 	} finally {

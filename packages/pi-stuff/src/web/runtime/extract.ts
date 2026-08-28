@@ -110,6 +110,7 @@ async function extractWithJinaReader(
 				Accept: "text/markdown",
 				"X-No-Cache": "true",
 			},
+			redirect: "error",
 			signal: AbortSignal.any([AbortSignal.timeout(JINA_TIMEOUT_MS), ...(signal ? [signal] : [])]),
 		});
 
