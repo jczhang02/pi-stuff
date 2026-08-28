@@ -1,63 +1,19 @@
-import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type Focusable, isFocusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
-import { isRuntimeFunction } from "../shared/runtime-type.js";
-import { getHostSharedResource } from "./host-resource.js";
-
-export type CommandDialogPriority = "blocking" | "normal";
-
-export interface CommandDialogChrome {
-	setSuppressed(suppressed: boolean): void;
-}
-
-export type CommandDialogCoordinatorHost = Pick<ExtensionAPI, "events" | "on">;
-
-export interface CommandDialogComponent extends Component {
-	dispose?(): void;
-}
-
-export type CommandDialogKeybindings = Pick<KeybindingsManager, "getKeys" | "matches">;
-
-export interface CommandDialogViewContext<Result = void> {
-	readonly keybindings: CommandDialogKeybindings;
-	readonly signal: AbortSignal;
-	readonly theme: Theme;
-	readonly tui: TUI;
-	close(result?: Result): void;
-	requestRender(force?: boolean): void;
-}
-
-export interface CommandDialogView<Result = void> {
-	readonly priority: CommandDialogPriority;
-	create(context: CommandDialogViewContext<Result>): CommandDialogComponent;
-}
-
-export interface CommandDialogShowOptions {
-	/** Restore the editor text captured before the dialog opened. Defaults to true. */
-	readonly restoreDraft?: boolean;
-}
-
-export interface CommandDialogCoordinator {
-	registerChrome(id: string, chrome: CommandDialogChrome): () => void;
-	/** Add a Suite-owned region after the primary Statusline Footer. */
-	registerFooterTail?(id: string, factory: FooterTailFactory): () => void;
-	/** Report whether this TUI context is currently hosted by the shared Footer. */
-	hasInstalledFooter?(ctx: ExtensionContext): boolean;
-	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void;
-	show<Result = void>(
-		ctx: ExtensionContext,
-		view: CommandDialogView<Result>,
-		options?: CommandDialogShowOptions,
-	): Promise<Result | undefined>;
-	whenIdle(): Promise<void>;
-}
-
-export type FooterFactory = NonNullable<Parameters<ExtensionUIContext["setFooter"]>[0]>;
-export type FooterTailComponent = Component & {
-	/** Replace the primary Footer's second row while this tail renders its controls. */
-	readonly replacesBaseRow2?: boolean;
-};
-export type FooterTailFactory = (tui: TUI, theme: Theme) => FooterTailComponent;
+import { composeFooter, disposeComponent, EmptyComponent } from "./command-dialog-footer.js";
+import { CommandDialogHost } from "./command-dialog-host.js";
+import type {
+	CommandDialogChrome,
+	CommandDialogComponent,
+	CommandDialogCoordinator,
+	CommandDialogCoordinatorHost,
+	CommandDialogPriority,
+	CommandDialogShowOptions,
+	CommandDialogView,
+	FooterFactory,
+	FooterTailFactory,
+} from "./command-dialog-types.js";
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
 type HostRunState = "closed" | "closing" | "open" | "opening";
@@ -113,126 +69,6 @@ interface NormalUiState {
 type RequestOutcome =
 	| { readonly kind: "reject"; readonly reason: unknown }
 	| { readonly kind: "resolve"; readonly value: unknown };
-
-class EmptyComponent implements Component {
-	render(): string[] {
-		return [];
-	}
-
-	invalidate(): void {}
-}
-
-class FooterStackComponent implements Component {
-	private disposed = false;
-	private readonly components: readonly Component[];
-
-	constructor(components: readonly Component[]) {
-		this.components = components;
-	}
-
-	dispose(): void {
-		if (this.disposed) return;
-		this.disposed = true;
-		for (const component of [...this.components].reverse()) disposeComponent(component);
-	}
-
-	invalidate(): void {
-		if (this.disposed) return;
-		for (const component of this.components) callComponent(() => component.invalidate());
-	}
-
-	render(width: number): string[] {
-		if (this.disposed) return [];
-		const lines: string[] = [];
-		let baseRow2Available = false;
-		for (const [index, component] of this.components.entries()) {
-			const section: string[] = [];
-			let rendered = false;
-			let replacesBaseRow2 = false;
-			callComponent(() => {
-				replacesBaseRow2 = "replacesBaseRow2" in component && component.replacesBaseRow2 === true;
-				section.push(...component.render(width));
-				rendered = true;
-			});
-			if (!rendered) continue;
-			if (index === 0) baseRow2Available = section.length > 1;
-			else if (replacesBaseRow2 && baseRow2Available) {
-				lines.splice(1, 1);
-				baseRow2Available = false;
-			}
-			lines.push(...section);
-		}
-		return lines;
-	}
-}
-
-class CommandDialogHost implements Component, Focusable {
-	private readonly coordinator: CommandDialogCoordinatorImplementation;
-	private _focused = false;
-	private readonly keybindings: KeybindingsManager;
-	private readonly run: HostRun;
-	private readonly theme: Theme;
-	private readonly tui: TUI;
-
-	constructor(
-		coordinator: CommandDialogCoordinatorImplementation,
-		run: HostRun,
-		tui: TUI,
-		theme: Theme,
-		keybindings: KeybindingsManager,
-	) {
-		this.coordinator = coordinator;
-		this.keybindings = keybindings;
-		this.run = run;
-		this.theme = theme;
-		this.tui = tui;
-	}
-
-	get wantsKeyRelease(): boolean {
-		return this.activeComponent().wantsKeyRelease ?? false;
-	}
-
-	get focused(): boolean {
-		return this._focused;
-	}
-
-	set focused(value: boolean) {
-		this._focused = value;
-		const component = this.activeComponent();
-		if (isFocusable(component)) component.focused = value;
-	}
-
-	activate(): void {
-		this.activeComponent();
-		this.tui.requestRender();
-	}
-
-	dispose(): void {
-		this.coordinator.dismissRun(this.run);
-	}
-
-	handleInput(data: string): void {
-		this.activeComponent().handleInput?.(data);
-	}
-
-	invalidate(): void {
-		this.activeComponent().invalidate();
-	}
-
-	render(width: number): string[] {
-		return this.activeComponent().render(width);
-	}
-
-	requestRender(force?: boolean): void {
-		this.tui.requestRender(force);
-	}
-
-	private activeComponent(): CommandDialogComponent {
-		const component = this.coordinator.mountActiveRequest(this.run, this, this.tui, this.theme, this.keybindings);
-		if (isFocusable(component)) component.focused = this._focused;
-		return component;
-	}
-}
 
 export class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator {
 	private readonly chrome = new Map<string, { readonly chrome: CommandDialogChrome }>();
@@ -367,7 +203,7 @@ export class CommandDialogCoordinatorImplementation implements CommandDialogCoor
 		while (this.activeRun) await this.activeRun.finished.promise;
 	}
 
-	dismissRun(run: HostRun): void {
+	private dismissRun(run: HostRun): void {
 		if (run.state === "closed") return;
 		run.state = "closing";
 		for (const request of [...run.blocking, ...run.normal]) {
@@ -376,7 +212,7 @@ export class CommandDialogCoordinatorImplementation implements CommandDialogCoor
 		this.closeHost(run);
 	}
 
-	mountActiveRequest(
+	private mountActiveRequest(
 		run: HostRun,
 		host: CommandDialogHost,
 		tui: TUI,
@@ -491,7 +327,13 @@ export class CommandDialogCoordinatorImplementation implements CommandDialogCoor
 			await run.ctx.ui.custom<void>(
 				(tui, theme, keybindings, done) => {
 					run.closeHost = () => done();
-					const host = new CommandDialogHost(this, run, tui, theme, keybindings);
+					const host = new CommandDialogHost(
+						{
+							dismiss: () => this.dismissRun(run),
+							mount: (activeHost) => this.mountActiveRequest(run, activeHost, tui, theme, keybindings),
+						},
+						tui,
+					);
 					run.host = host;
 					if (run.state === "opening") run.state = "open";
 					host.activate();
@@ -588,38 +430,6 @@ export class CommandDialogCoordinatorImplementation implements CommandDialogCoor
 	}
 }
 
-const COORDINATOR_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/coordinators/v1");
-const COORDINATOR_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/coordinator-discovery/v1";
-
-function coordinatorRegistry(): WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> {
-	// SAFETY: this package-owned symbol slot is initialized only with the coordinator WeakMap.
-	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> | undefined;
-	};
-	root[COORDINATOR_REGISTRY] ??= new WeakMap();
-	return root[COORDINATOR_REGISTRY];
-}
-
-export function getCommandDialogCoordinator(pi: CommandDialogCoordinatorHost): CommandDialogCoordinator {
-	const registry = coordinatorRegistry();
-	const existing = registry.get(pi.events);
-	if (existing) {
-		existing.ensureGeneration(pi);
-		return existing;
-	}
-
-	const coordinator = getHostSharedResource(
-		pi.events,
-		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
-		registry as WeakMap<object, CommandDialogCoordinatorImplementation>,
-		COORDINATOR_DISCOVERY_EVENT,
-		() => new CommandDialogCoordinatorImplementation(),
-		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
-	);
-	coordinator.ensureGeneration(pi);
-	return coordinator;
-}
-
 function createDialogRequest<Result>(view: CommandDialogView<Result>) {
 	const completion = Promise.withResolvers<Result | undefined>();
 	const controller = new AbortController();
@@ -662,39 +472,6 @@ function createHostRun(ctx: ExtensionContext, options: CommandDialogShowOptions)
 		state: "opening",
 		suppressedChrome: new Set(),
 	};
-}
-
-function composeFooter(base: FooterFactory, tails: readonly FooterTailFactory[]): FooterFactory {
-	return (tui, theme, footerData) => {
-		const components: Component[] = [];
-		callComponentFactory(() => base(tui, theme, footerData), components);
-		for (const tail of tails) callComponentFactory(() => tail(tui, theme), components);
-		return new FooterStackComponent(components);
-	};
-}
-
-function callComponentFactory(factory: () => Component, output: Component[]): void {
-	try {
-		output.push(factory());
-	} catch {
-		// One optional Footer tail must not take down the primary Statusline.
-	}
-}
-
-function callComponent(callback: () => void): void {
-	try {
-		callback();
-	} catch {
-		// Footer sections are independent presentation adapters.
-	}
-}
-
-function disposeComponent(component: Component | undefined): void {
-	try {
-		if (component && "dispose" in component && isRuntimeFunction(component.dispose)) component.dispose();
-	} catch {
-		// A child cannot prevent the coordinator from advancing or restoring Pi UI.
-	}
 }
 
 function removeRequest(queue: DialogRequest[], request: DialogRequest): void {

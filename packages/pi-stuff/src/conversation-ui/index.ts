@@ -8,7 +8,8 @@ import {
 	listenForActiveAgentWorkUserPromotions,
 	listenForAgentWorkOriginQueries,
 } from "./agent-run-origin.js";
-import { type CommandDialogCoordinatorImplementation, getCommandDialogCoordinator } from "./command-dialog.js";
+import type { CommandDialogCoordinatorImplementation } from "./command-dialog.js";
+import { getCommandDialogCoordinator } from "./command-dialog-registry.js";
 import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -31,6 +32,7 @@ export {
 	withAgentWorkOrigin,
 	withDirectUserActivation,
 } from "./agent-run-origin.js";
+export { getCommandDialogCoordinator } from "./command-dialog-registry.js";
 export type {
 	CommandDialogChrome,
 	CommandDialogComponent,
@@ -44,8 +46,7 @@ export type {
 	FooterFactory,
 	FooterTailComponent,
 	FooterTailFactory,
-} from "./command-dialog.js";
-export { getCommandDialogCoordinator } from "./command-dialog.js";
+} from "./command-dialog-types.js";
 export {
 	activateDiagnosticChannel,
 	DiagnosticChannel,
