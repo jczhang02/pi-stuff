@@ -8,8 +8,8 @@ import {
 } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import { readWebConfig } from "../settings.ts";
 import { activityMonitor } from "./activity.ts";
+import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath, normalizeHeaders } from "./utils.ts";

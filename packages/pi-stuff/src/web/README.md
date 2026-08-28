@@ -27,7 +27,9 @@ Web reads the shared `web` settings namespace through one parser. A missing
 namespace leaves the built-in defaults dormant, while invalid JSON or an
 invalid namespace produces one bounded Diagnostic Record and activates the
 complete defaults. Filesystem and unexpected read failures abort Suite
-initialization instead of silently loading a partial Web configuration.
+initialization instead of silently loading a partial Web configuration. Each
+search or fetch uses one read-only snapshot, so an explicit update takes effect
+on the next Tool call without changing an operation already in flight.
 
 On systems whose TUN resolver maps public domains into `198.18.0.0/15`, page
 fetching detects the condition lazily with both the requested host and a public

@@ -1,8 +1,7 @@
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig } from "../settings.ts";
-
 import { activityMonitor } from "./activity.ts";
+import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";

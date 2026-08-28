@@ -5,9 +5,8 @@ import {
 	hostMatchesProviderDomain as hostMatchesDomain,
 	normalizeProviderDomain as normalizeDomain,
 } from "../provider-domain-filter.ts";
-import { readWebConfig } from "../settings.ts";
-
 import { activityMonitor } from "./activity.ts";
+import { readWebConfig } from "./config.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath, normalizeCount } from "./utils.ts";

@@ -2,9 +2,8 @@ import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { normalizeProviderDomain as normalizeDomain } from "../provider-domain-filter.ts";
-import { readWebConfig } from "../settings.ts";
-
 import { activityMonitor } from "./activity.ts";
+import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";

@@ -4,7 +4,6 @@ import { parseHTML } from "linkedom";
 import pLimit from "p-limit";
 import TurndownService from "turndown";
 import { isRuntimeString } from "../../shared/runtime-type.js";
-import { WebConfigError } from "../settings.ts";
 import { activityMonitor } from "./activity.ts";
 import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
@@ -53,10 +52,6 @@ export { loadSsrfConfig } from "./ssrf-protection.ts";
 
 export function loadSsrfAllowRanges(): string[] {
 	return loadSsrfConfig().allowRanges;
-}
-
-function isConfigParseError<ErrorValue>(err: ErrorValue): boolean {
-	return err instanceof WebConfigError;
 }
 
 function abortedResult(url: string): ExtractedContent {
@@ -216,7 +211,6 @@ async function tryContentFallbacks(
 	url: string,
 	signal: AbortSignal | undefined,
 	options: ExtractOptions | undefined,
-	httpResult: ExtractedContent,
 	declaredLinks: DeclaredWebLink[],
 ): Promise<ContentFallbackResult> {
 	const errors: string[] = [];
@@ -229,7 +223,6 @@ async function tryContentFallbacks(
 		} catch (err) {
 			if (isAbortError(err)) return { errors, result: abortedResult(url) };
 			const message = errorMessage(err);
-			if (isConfigParseError(err)) return { errors, result: { ...httpResult, error: message } };
 			if (fallback.label) errors.push(`${fallback.label} fallback failed: ${message}`);
 		}
 		if (signal?.aborted) return { errors, result: abortedResult(url) };
@@ -293,7 +286,6 @@ export async function extractContent(
 		if (signal?.aborted) return abortedResult(url);
 	} catch (err) {
 		if (isAbortError(err)) return abortedResult(url);
-		if (isConfigParseError(err)) return { url, title: "", content: "", error: errorMessage(err) };
 	}
 	if (signal?.aborted) return abortedResult(url);
 	const { declaredLinks = [], ...httpResult } = await extractViaHttp(url, signal, options);
@@ -301,14 +293,14 @@ export async function extractContent(
 	if (!httpResult.error) return httpResult;
 	const httpError = httpResult.error;
 	if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
-	const fallback = await tryContentFallbacks(url, signal, options, httpResult, declaredLinks);
+	const fallback = await tryContentFallbacks(url, signal, options, declaredLinks);
 	if (fallback.result) return fallback.result;
 	let geminiResult: ExtractedContent | null = null;
 	try {
 		geminiResult = (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal));
 	} catch (err) {
 		if (isAbortError(err)) return abortedResult(url);
-		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
+		if (err instanceof CredentialResolutionError) {
 			return { ...httpResult, error: errorMessage(err) };
 		}
 	}
@@ -528,7 +520,7 @@ async function extractPdfResponse(
 		if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
 			return { url, title: "", content: "", error: message };
 		}
-		if (err instanceof CredentialResolutionError || isConfigParseError(err)) {
+		if (err instanceof CredentialResolutionError) {
 			return { url, title: "", content: "", error: message };
 		}
 		return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };

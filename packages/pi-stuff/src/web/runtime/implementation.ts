@@ -2,7 +2,6 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig, WebConfigError } from "../settings.ts";
 import {
 	WEB_CONTENT_PARAMETERS,
 	WEB_FETCH_PARAMETERS,
@@ -11,8 +10,8 @@ import {
 	type WebFetchParams,
 	type WebSearchParams,
 } from "../tool-contracts.ts";
+import { readWebConfig, withWebConfigSnapshot } from "./config.ts";
 import { type FindMode, findContent } from "./content-find.ts";
-import { reportWebDiagnostic } from "./diagnostics.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { normalizeSearchProviderSelection, type SearchProviderSelection, search } from "./gemini-search.ts";
@@ -122,20 +121,6 @@ function resolveToolNames(config: WebSearchConfig): ToolNames {
 		seen.set(name, key);
 	}
 	return names;
-}
-
-function loadConfigForExtensionInit(): WebSearchConfig {
-	try {
-		return loadConfig();
-	} catch (err) {
-		if (!(err instanceof WebConfigError)) throw err;
-		reportWebDiagnostic("Web settings were invalid and built-in defaults are active", err.message, {
-			key: "invalid-settings",
-			notice: true,
-			severity: "warning",
-		});
-		return {};
-	}
 }
 
 function normalizeProviderInput(value: JsonInputValue, label = "provider"): SearchProviderSelection | undefined {
@@ -644,7 +629,8 @@ function registerSearchTool(runtime: WebRuntime): void {
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: WEB_SEARCH_PARAMETERS,
-		execute: (_callId, params, signal, onUpdate, ctx) => executeSearch(runtime, params, signal, onUpdate, ctx),
+		execute: (_callId, params, signal, onUpdate, ctx) =>
+			withWebConfigSnapshot(() => executeSearch(runtime, params, signal, onUpdate, ctx)),
 	});
 }
 
@@ -656,7 +642,8 @@ function registerFetchTool(runtime: WebRuntime): void {
 		promptSnippet:
 			"Read public HTTP(S) pages, direct images, GitHub URLs, and PDFs. Use raw only for exact textual response bodies.",
 		parameters: WEB_FETCH_PARAMETERS,
-		execute: (_callId, params, signal, onUpdate) => executeFetch(runtime, params, signal, onUpdate),
+		execute: (_callId, params, signal, onUpdate) =>
+			withWebConfigSnapshot(() => executeFetch(runtime, params, signal, onUpdate)),
 	});
 }
 
@@ -672,7 +659,7 @@ function registerContentTool(runtime: WebRuntime): void {
 }
 
 function installPiWebAccess(pi: PiWebAccessHost): void {
-	const initConfig = loadConfigForExtensionInit();
+	const initConfig = loadConfig();
 	const toolNames = resolveToolNames(initConfig);
 	const runtime: WebRuntime = {
 		pi,

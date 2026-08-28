@@ -1,10 +1,10 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig } from "../settings.ts";
 import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
+import { readWebConfig } from "./config.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { isExaAvailable, searchWithExa } from "./exa.ts";
 import { isGeminiApiAvailable, searchWithGeminiApi } from "./gemini-api.ts";

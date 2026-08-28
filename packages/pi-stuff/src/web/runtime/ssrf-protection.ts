@@ -7,7 +7,7 @@ import {
 	jsonInputKind,
 } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig } from "../settings.ts";
+import { readWebConfig } from "./config.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;

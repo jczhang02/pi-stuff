@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as runtimeConfig from "../../packages/pi-stuff/src/web/runtime/config.js";
 import piWebAccess, { type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
 import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
 
@@ -26,9 +27,7 @@ function installWeb(agentDirectory: string): string[] {
 	const host: PiWebAccessHost = {
 		appendEntry: () => undefined,
 		on: () => undefined,
-		registerTool: (tool) => {
-			tools.push(tool.name);
-		},
+		registerTool: (tool) => void tools.push(tool.name),
 	};
 	piWebAccess(host);
 	return tools;
@@ -40,23 +39,18 @@ test("Web configuration stays read-only until an explicit update", async () => {
 	expect(await Bun.file(join(agentDir, "pi-stuff.json")).exists()).toBe(false);
 });
 
-test("invalid Web configuration diagnoses and installs built-in defaults", async () => {
+test("invalid Web configuration diagnoses and keeps built-in defaults active", async () => {
 	const agentDir = await root();
 	await writeFile(join(agentDir, "pi-stuff.json"), "{");
 	expect(installWeb(agentDir)).toEqual(["web_search", "fetch_content", "get_search_content"]);
+	expect(runtimeConfig.readWebConfig()).toEqual({});
 });
 
 test("Web configuration I/O failures propagate during initialization", async () => {
 	const agentDir = await root();
 	await mkdir(join(agentDir, "pi-stuff.json"));
-	let failure: unknown;
-	try {
-		installWeb(agentDir);
-	} catch (error) {
-		failure = error;
-	}
-	expect(failure).toBeInstanceOf(Error);
-	expect(failure).not.toBeInstanceOf(WebConfigError);
+	expect(() => installWeb(agentDir)).toThrow();
+	expect(() => installWeb(agentDir)).not.toThrow(WebConfigError);
 });
 
 test("explicit update lifts legacy Web configuration and preserves sibling namespaces", async () => {
@@ -75,15 +69,21 @@ test("explicit update lifts legacy Web configuration and preserves sibling names
 
 test("canonical Web configuration wins and concurrent updates retain both fields", async () => {
 	const agentDir = await root();
+	process.env["PI_CODING_AGENT_DIR"] = agentDir;
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: { provider: "brave" } }));
 	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ provider: "parallel" }));
-	expect(readWebConfig(agentDir)?.["provider"]).toBe("brave");
+	await runtimeConfig.withWebConfigSnapshot(async () => {
+		expect(runtimeConfig.readWebConfig()["provider"]).toBe("brave");
+		await updateWebConfig({ provider: "parallel" }, agentDir);
+		expect(runtimeConfig.readWebConfig()["provider"]).toBe("brave");
+	});
+	expect(runtimeConfig.readWebConfig()["provider"]).toBe("parallel");
 	await Promise.all([
 		updateWebConfig({ recencyFilter: "month" }, agentDir),
 		updateWebConfig({ searchModel: "model-a" }, agentDir),
 	]);
 	expect(readWebConfig(agentDir)).toEqual({
-		provider: "brave",
+		provider: "parallel",
 		recencyFilter: "month",
 		searchModel: "model-a",
 	});

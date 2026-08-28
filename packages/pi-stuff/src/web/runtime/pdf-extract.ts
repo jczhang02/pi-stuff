@@ -1,6 +1,6 @@
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { readWebConfig } from "../settings.ts";
+import { readWebConfig } from "./config.ts";
 /**
  * PDF Content Extractor
  *
