@@ -135,6 +135,18 @@ test("/tools <member-id> focuses the requested member within its complete group"
 	component.dispose?.();
 });
 
+test("/tools drops a pinned detail after its projection is removed", () => {
+	const runtime = groupedRuntime(["stale.ts"]);
+	const component = createToolDialogView(runtime, "read-1").create(contextHarness(32).context);
+	expect(component.render(100).join("\n")).toContain("Path: stale.ts");
+
+	runtime.resetProjection([]);
+	const output = component.render(100).join("\n");
+	expect(output).toContain("No tool activity in this session.");
+	expect(output).not.toContain("stale.ts");
+	component.dispose?.();
+});
+
 test("/tools keeps a five-member selection window while arrows traverse the whole group", () => {
 	const runtime = groupedRuntime(Array.from({ length: 8 }, (_, index) => `${String(index + 1)}.ts`));
 	const harness = contextHarness(28);

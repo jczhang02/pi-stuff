@@ -287,7 +287,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const groups = this.runtime.listGroups();
 		const listed = groups.length > 0 ? groups : this.activities.map(singletonGroup);
 		const resolved = this.pinnedGroup ? this.runtime.resolveGroup(this.pinnedGroup.id) : undefined;
-		const pinned = resolved && resolved !== "ambiguous" ? resolved : this.pinnedGroup;
+		const pinned = resolved && resolved !== "ambiguous" ? resolved : undefined;
 		this.pinnedGroup = pinned;
 		return pinned && !listed.some((group) => group.id === pinned.id) ? [pinned, ...listed] : listed;
 	}
