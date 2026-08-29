@@ -26,6 +26,8 @@ Transcript `•` record marker with an emphasized action label; RPC and headless
 Pi's fully settled idle boundary, so retries, compaction, steering, and queued user work settle before the next automatic
 turn.
 
+Experimental multi-Goal mode keeps at most 64 waiting Goals so each persisted Session state remains bounded.
+
 Automatic continuation is unlimited for ordinary use by default. A non-disableable emergency backstop pauses only
 after 10,000 automatic model responses, preventing catastrophic runaway even when the user-facing limit is Unlimited.
 The no-progress heuristic is off by default: phase boundaries, ordinary tool failures, compaction, and short responses

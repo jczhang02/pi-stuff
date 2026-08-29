@@ -4,7 +4,7 @@ import { isRuntimeString } from "../../shared/runtime-type.js";
 import { checkpointGoalActiveTime, currentTokenTotal } from "./accounting.js";
 import { completeGoalArguments, parseCommand, validateObjective } from "./command.js";
 import { safeGoalMenuText, showGoalManager } from "./menu.js";
-import type { ActiveGoal, PendingQueueAction } from "./persistence.js";
+import { type ActiveGoal, MAX_QUEUED_GOALS, type PendingQueueAction } from "./persistence.js";
 import { buildGoalPrompt, buildObjectiveUpdatedPrompt, buildResumePrompt } from "./prompts.js";
 import {
 	activateQueuedGoal,
@@ -276,6 +276,13 @@ export class GoalCommandController {
 			await this.startGoal(objective, tokenBudget, ctx);
 			return;
 		}
+		if (this.runtime.queuedGoals.length >= MAX_QUEUED_GOALS) {
+			ctx.ui.notify(
+				`Goal queue is full (${MAX_QUEUED_GOALS} queued goals). Remove one before adding another.`,
+				"warning",
+			);
+			return;
+		}
 		this.runtime.queuedGoals = appendGoal(this.runtime.queuedGoals, createQueuedGoal(objective, tokenBudget));
 		this.runtime.persistGoal(this.runtime.activeGoal);
 		ctx.ui.notify(`Goal added at position ${this.runtime.queuedGoals.length + 1}: ${objective}`, "info");
@@ -289,6 +296,13 @@ export class GoalCommandController {
 		}
 		if (!this.runtime.activeGoal) {
 			await this.startGoal(objective, tokenBudget, ctx);
+			return;
+		}
+		if (this.runtime.activeGoal.status !== "complete" && this.runtime.queuedGoals.length >= MAX_QUEUED_GOALS) {
+			ctx.ui.notify(
+				`Goal queue is full (${MAX_QUEUED_GOALS} queued goals). Remove one before prioritizing another.`,
+				"warning",
+			);
 			return;
 		}
 		this.runtime.prompts.cancelContinuationWork();

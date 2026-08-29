@@ -7,6 +7,7 @@ import {
 	type ActiveGoal,
 	clearLegacyPersistedGoal,
 	loadGoalStateFromSession,
+	MAX_QUEUED_GOALS,
 	serializeGoalState,
 } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 
@@ -320,6 +321,22 @@ test("malformed canonical or plural queue state fails closed", () => {
 		assert.equal(loaded.goal, undefined);
 		assert.deepEqual(loaded.queue, []);
 		assert.equal(loaded.pendingAction, undefined);
+	}
+});
+
+test("Goal persistence rejects oversized current and restored queues", () => {
+	const oversizedQueue = Array.from({ length: MAX_QUEUED_GOALS + 1 }, (_, index) =>
+		storedGoal(`queued-${index}`, "queued"),
+	);
+	assert.throws(() => serializeGoalState(active, oversizedQueue, undefined), /64-goal limit/);
+
+	for (const [customType, data] of [
+		["goal-state", { goal: active, queue: oversizedQueue }],
+		["goals-state", { goals: [active, ...oversizedQueue] }],
+	] as const) {
+		const loaded = loadGoalStateFromSession(branch({ customType, data }));
+		assert.equal(loaded.goal, undefined);
+		assert.deepEqual(loaded.queue, []);
 	}
 });
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { checkpointGoalActiveTime } from "./accounting.js";
-import type { ActiveGoal, PendingQueueAction } from "./persistence.js";
+import { type ActiveGoal, MAX_QUEUED_GOALS, type PendingQueueAction } from "./persistence.js";
 import { resetGoalSafetyEpoch } from "./safety.js";
 
 export interface GoalQueueResult {
@@ -49,6 +49,7 @@ export function createQueuedGoal(text: string, tokenBudget: number | undefined, 
 }
 
 export function appendGoal(queue: readonly ActiveGoal[], goal: ActiveGoal): ActiveGoal[] {
+	assertGoalQueueCapacity(queue);
 	return [...queue, goal];
 }
 
@@ -58,10 +59,17 @@ export function prioritizeGoal(
 	prioritizedGoal: ActiveGoal,
 	now = Date.now(),
 ): GoalQueueResult {
+	assertGoalQueueCapacity(queue);
 	return {
 		goal: prioritizedGoal,
 		queue: [shelveGoal(currentGoal, now), ...queue],
 	};
+}
+
+function assertGoalQueueCapacity(queue: readonly ActiveGoal[]): void {
+	if (queue.length >= MAX_QUEUED_GOALS) {
+		throw new RangeError(`Goal queue is full (${MAX_QUEUED_GOALS} queued goals).`);
+	}
 }
 
 export function dropLastGoal(currentGoal: ActiveGoal, queue: readonly ActiveGoal[]): DropLastGoalResult {

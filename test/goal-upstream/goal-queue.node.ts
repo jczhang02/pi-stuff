@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GoalStateEntryData } from "../../packages/pi-stuff/src/goal/src/persistence.js";
+import { MAX_QUEUED_GOALS } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import {
 	completionReport,
 	completionTool,
@@ -96,6 +97,22 @@ test("compatibility aliases route through the canonical queue operations", async
 		stateGoals(harness.mock).map(({ text }) => text),
 		["head"],
 	);
+});
+
+test("the Goal queue rejects additions and priorities beyond its persisted bound", async () => {
+	const harness = await createHarness();
+	await harness.command("head");
+	for (let index = 0; index < MAX_QUEUED_GOALS; index += 1) {
+		await harness.command(`add queued ${index}`);
+	}
+
+	await harness.command("add overflow");
+	assert.equal(lastState(harness.mock)?.queue?.length, MAX_QUEUED_GOALS);
+	assert.match(harness.notifications.at(-1)?.message ?? "", /queue is full.*remove one/i);
+
+	await harness.command("prioritize overflow");
+	assert.equal(lastState(harness.mock)?.pendingAction, undefined);
+	assert.match(harness.notifications.at(-1)?.message ?? "", /queue is full.*remove one/i);
 });
 
 test("goal_complete advances only after the finishing run settles", async () => {

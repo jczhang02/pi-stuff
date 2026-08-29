@@ -10,6 +10,7 @@ import type { GoalStatus } from "./prompts.js";
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
 const LEGACY_GOALS_STATE_ENTRY_TYPE = "goals-state";
 const STATE_FILE = join(getAgentDir(), "pi-goal-state.json");
+export const MAX_QUEUED_GOALS = 64;
 
 type LegacyStateLock = <Value>(path: string, owner: string, operation: () => Value | Promise<Value>) => Promise<Value>;
 
@@ -95,6 +96,9 @@ export function serializeGoalState(
 	queue: readonly ActiveGoal[],
 	pendingAction: PendingQueueAction | undefined,
 ): GoalStateEntryData {
+	if (queue.length > MAX_QUEUED_GOALS) {
+		throw new RangeError(`Goal queue exceeds its ${MAX_QUEUED_GOALS}-goal limit.`);
+	}
 	const optional: Pick<GoalStateEntryData, "pendingAction" | "queue"> = {};
 	if (queue.length > 0) optional.queue = [...queue];
 	if (pendingAction) optional.pendingAction = pendingAction;
@@ -126,7 +130,7 @@ function loadCanonicalGoalState(data: JsonInputValue): LoadedGoalState {
 	const rawGoal = data["goal"];
 	if (rawGoal !== null && !isGoal(rawGoal)) return emptyGoalState("canonical");
 	const rawQueue = Object.hasOwn(data, "queue") ? data["queue"] : [];
-	if (!Array.isArray(rawQueue) || !rawQueue.every(isQueueGoal)) {
+	if (!Array.isArray(rawQueue) || rawQueue.length > MAX_QUEUED_GOALS || !rawQueue.every(isQueueGoal)) {
 		return emptyGoalState("canonical");
 	}
 	const pendingAction = normalizePendingQueueAction(data["pendingAction"]);
@@ -137,6 +141,9 @@ function loadCanonicalGoalState(data: JsonInputValue): LoadedGoalState {
 	const queue = rawQueue.map(normalizeQueuedGoal);
 	let goal = rawGoal === null ? undefined : normalizeLoadedGoal(rawGoal);
 	if (goal?.status === "complete" && !pendingAction) goal = undefined;
+	if (pendingAction?.kind === "prioritize" && goal?.status !== "complete" && queue.length >= MAX_QUEUED_GOALS) {
+		return emptyGoalState("canonical");
+	}
 	if (!goal && (queue.length > 0 || pendingAction)) return emptyGoalState("canonical");
 	return {
 		goal,
@@ -151,7 +158,9 @@ function loadLegacyGoalsState(data: JsonInputValue): LoadedGoalState {
 	if (!isRecord(data)) return emptyGoalState("legacy-goals");
 	let rawGoals: ActiveGoal[];
 	if (Array.isArray(data["goals"])) {
-		if (!data["goals"].every(isGoal)) return emptyGoalState("legacy-goals");
+		if (data["goals"].length > MAX_QUEUED_GOALS + 1 || !data["goals"].every(isGoal)) {
+			return emptyGoalState("legacy-goals");
+		}
 		rawGoals = data["goals"].filter((goal) => goal.status !== "complete");
 	} else if (isGoal(data["goal"]) && data["goal"].status !== "complete") {
 		rawGoals = [data["goal"]];
@@ -161,6 +170,7 @@ function loadLegacyGoalsState(data: JsonInputValue): LoadedGoalState {
 	const goals = rawGoals.map((goal, index) => (index === 0 ? normalizeLoadedGoal(goal) : normalizeQueuedGoal(goal)));
 	const pendingAction = normalizeLegacyPendingPrioritize(data["pendingUnshift"]);
 	if (goals.length === 0) return emptyGoalState("legacy-goals");
+	if (pendingAction && goals.length > MAX_QUEUED_GOALS) return emptyGoalState("legacy-goals");
 	return {
 		goal: goals[0],
 		queue: goals.slice(1),
