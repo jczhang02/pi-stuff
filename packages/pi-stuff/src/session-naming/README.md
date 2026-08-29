@@ -4,7 +4,7 @@ Session Naming gives a settled direct-user Session a concise semantic name and r
 cooldown. `/autoname` forces regeneration, while `/autoname settings` opens the routine controls. Pi remains the owner
 of Session metadata and its native presentation; this Capability only chooses a label and calls Pi's public
 `setSessionName()` API. Periodic requests include the current authoritative name and retain it exactly when it still
-fits, avoiding needless Session metadata writes.
+fits both the work and the generated-English policy, avoiding needless Session metadata writes.
 
 Automatic naming listens to the Conversation UI's shared direct-user settled boundary. Goal continuation, background
 results, and other Extension-authored work do not trigger it. Child Agent Sessions retain the names assigned by Agents,
@@ -12,12 +12,18 @@ although an explicit `/autoname` remains available inside a child. Generated and
 branch-local custom entries so cooldown and `respectManualName` behavior survive resume and branching. An existing
 authoritative name without a matching marker is treated as manual; its native `session_info` timestamp anchors the
 cooldown without a startup write. Existing upstream `pi-autoname-state` entries are read for resume compatibility.
+The English policy applies only to newly generated names: manually assigned non-English names remain valid, and
+existing names are not scanned or migrated before an otherwise eligible rename.
 
 The naming request includes only bounded user and Assistant text, removes leading Magic Context control blocks, redacts
 common credential forms, and frames all conversation text as untrusted data. Thinking, Tool records, images, and full
-Session files are not sent. Requests use Pi's public model registry with a 64-token output cap, 12-second per-model
-timeout, and 30-second total budget. Failure falls back to a bounded local label and never blocks Agent settlement.
-The local fallback is retried on the next settled direct-user run so an authenticated model can replace it later.
+Session files are not sent. The model is asked for a natural two-to-four-word English label regardless of conversation
+language, preserving technical identifiers without transliterating non-English prose. Every AI or local-fallback
+candidate must contain an ASCII English letter, use only printable ASCII, and pass the existing safety and quality
+checks. A non-compliant model result advances through the existing model chain; the unchanged local fallback is used
+only when its complete candidate complies. If none does, the authoritative Session name remains unchanged and the next
+settled direct-user run retries. Requests use Pi's public model registry with a 64-token output cap, 12-second per-model
+timeout, and 30-second total budget, and naming failure never blocks Agent settlement.
 
 Settings live under `sessionNaming` in `<agentDir>/pi-stuff.json`. Startup reads this namespace without writing; only a
 direct change in `/autoname settings` persists it:

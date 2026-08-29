@@ -248,7 +248,7 @@ export async function verifySessionNaming(options: VerifySessionNamingOptions): 
 		);
 		await withRpcTransport(first, "First", async () => {
 			await first.send({ type: "get_commands" });
-			await first.send({ type: "prompt", message: "Implement automatic Session naming acceptance." });
+			await first.send({ type: "prompt", message: "实现自动会话命名验收。" });
 			await first.send({ type: "prompt", message: "/session-naming-wait" });
 			const currentEntries = entries(await first.send({ type: "get_entries" }));
 			const marker = getLastRenameMarker(currentEntries);

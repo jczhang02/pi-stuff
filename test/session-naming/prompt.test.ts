@@ -3,7 +3,6 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	assistantText,
 	buildNamingPrompt,
-	chooseLanguage,
 	cleanModelName,
 	fallbackName,
 	isHighQualityName,
@@ -20,35 +19,14 @@ const ZERO_USAGE = {
 };
 
 describe("Session Naming prompt", () => {
-	test("uses the first real user text after a Magic Context control block for language choice", () => {
+	test("removes a leading Magic Context control block from the naming request", () => {
 		const messages: NamingMessage[] = [
 			{
 				role: "user",
 				content: "<system-reminder>Compact English control text</system-reminder>\n修复会话命名",
 			},
 		];
-		expect(chooseLanguage(messages)).toBe("Chinese");
 		expect(buildNamingPrompt(messages).userPrompt).not.toContain("Compact English control text");
-	});
-
-	test("does not let Latin noise outweigh CJK prose in the same user message", () => {
-		expect(
-			chooseLanguage([
-				{
-					role: "user",
-					content: `修复命名 ${"English diagnostic noise ".repeat(20)}`,
-				},
-			]),
-		).toBe("Chinese");
-	});
-
-	test("distinguishes Japanese from shared Han characters using user prose only", () => {
-		expect(
-			chooseLanguage([
-				{ role: "assistant", content: "Respond in English" },
-				{ role: "user", content: "`const englishIdentifier = true` この実装を修正してください" },
-			]),
-		).toBe("Japanese");
 	});
 
 	test("redacts credentials, escapes delimiters, and keeps a fitting current name", () => {
@@ -87,6 +65,24 @@ describe("Session Naming prompt", () => {
 		expect(isHighQualityName("session")).toBe(false);
 		expect(cleanModelName("<script>alert(1)</script>")).toBeUndefined();
 		expect(cleanModelName("Bearer abcdefghijklmnop")).toBeUndefined();
+	});
+
+	test("accepts only high-quality printable ASCII English candidates", () => {
+		for (const candidate of ["OAuth 2 Refresh", "pi-stuff Naming", "C++ Build Fix"]) {
+			expect(isHighQualityName(candidate)).toBe(true);
+		}
+		for (const candidate of [
+			"修复会话命名",
+			"セッション命名",
+			"세션 이름 수정",
+			"Исправить имя",
+			"Café Naming",
+			"Naming 🚀",
+			"1234",
+			"+#./_-",
+		]) {
+			expect(isHighQualityName(candidate)).toBe(false);
+		}
 	});
 
 	test("local fallback uses the newest safe user message", () => {

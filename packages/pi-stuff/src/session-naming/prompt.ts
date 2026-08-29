@@ -69,45 +69,11 @@ function sanitizeText(text: string): SanitizedText {
 	return { redacted, text: sanitized };
 }
 
-export function chooseLanguage(messages: readonly NamingMessage[]): string {
-	const scores = new Map<string, { order: number; score: number }>();
-	let order = 0;
-	const add = (language: string, score: number): void => {
-		if (score <= 0) return;
-		const current = scores.get(language);
-		scores.set(language, { order: current?.order ?? order, score: (current?.score ?? 0) + score });
-	};
-	for (const message of messages) {
-		if (message.role !== "user") continue;
-		const text = stripSystemReminderPrefix(messageText(message))
-			.replace(/```[\s\S]*?```/gu, " ")
-			.replace(/`[^`]*`/gu, " ")
-			.replace(/https?:\/\/\S+/gu, " ");
-		const count = (pattern: RegExp): number => text.match(pattern)?.length ?? 0;
-		const han = count(/\p{Script=Han}/gu);
-		const kana = count(/\p{Script=Hiragana}|\p{Script=Katakana}/gu);
-		const hangul = count(/\p{Script=Hangul}/gu);
-		add(kana > 0 ? "Japanese" : "Chinese", (kana > 0 ? kana + han : han) * 2);
-		add("Korean", hangul * 2);
-		add("Russian or another Cyrillic language", count(/\p{Script=Cyrillic}/gu));
-		add("Arabic", count(/\p{Script=Arabic}/gu));
-		add("the Devanagari-script language used by the user", count(/\p{Script=Devanagari}/gu));
-		if (han === 0 && kana === 0 && hangul === 0) add("English", count(/\p{Script=Latin}/gu));
-		order += 1;
-	}
-	return (
-		Array.from(scores.entries()).sort(
-			([, left], [, right]) => right.score - left.score || left.order - right.order,
-		)[0]?.[0] ?? "the user's language"
-	);
-}
-
 function escapePromptData(text: string): string {
 	return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 export function buildNamingPrompt(messages: readonly NamingMessage[], currentName?: string): NamingPrompt {
-	const language = chooseLanguage(messages);
 	const conversation = messages
 		.map((message) => {
 			const label = message.role === "user" ? "User" : "Assistant";
@@ -120,10 +86,10 @@ export function buildNamingPrompt(messages: readonly NamingMessage[], currentNam
 		? "There is no current Session name."
 		: sanitizedCurrentName.redacted
 			? "The current Session name contains sensitive text and is intentionally omitted."
-			: `Current Session name: <current-name>${escapePromptData(sanitizedCurrentName.text.slice(0, MAX_MESSAGE_LENGTH))}</current-name>. Return it exactly when it still fits; change it only when the task has materially shifted.`;
+			: `Current Session name: <current-name>${escapePromptData(sanitizedCurrentName.text.slice(0, MAX_MESSAGE_LENGTH))}</current-name>. Return it exactly when it still fits and complies with the English-only policy; change it only when the task has materially shifted.`;
 	return {
 		systemPrompt: SESSION_NAMING_SYSTEM_PROMPT,
-		userPrompt: `Name the coding session below in ${language}. Use 5-15 characters for CJK text or 2-4 words otherwise. Prefer the concrete artifact and action. ${currentNameInstruction}\n\n<conversation>\n${conversation}\n</conversation>`,
+		userPrompt: `Name the coding session below in English. Use 2-4 words. Prefer the concrete artifact and action. Translate non-English meaning naturally. Do not transliterate non-English prose. Preserve established technical identifiers. ${currentNameInstruction}\n\n<conversation>\n${conversation}\n</conversation>`,
 	};
 }
 
@@ -177,6 +143,7 @@ export function fallbackName(messages: readonly NamingMessage[]): string | undef
 
 export function isHighQualityName(value: string): boolean {
 	if (value.length < 3 || value.length > MAX_NAME_LENGTH) return false;
+	if (!/[A-Za-z]/u.test(value) || /[^\x20-\x7e]/u.test(value)) return false;
 	if (/^(?:session|coding session|new session|task|untitled)$/iu.test(value)) return false;
 	const punctuation = value.match(/[^\p{L}\p{N}\s+#./_-]/gu)?.length ?? 0;
 	return punctuation <= 1;

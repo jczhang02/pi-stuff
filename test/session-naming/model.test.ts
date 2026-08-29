@@ -56,6 +56,36 @@ function settings(overrides: Partial<SessionNamingSettings> = {}): SessionNaming
 }
 
 describe("Session Naming model selection", () => {
+	test("skips a non-English result for the next configured model", async () => {
+		const primary = model("fixture", "primary");
+		const backup = model("fixture", "backup");
+		const registry = new Map([
+			["fixture/primary", primary],
+			["fixture/backup", backup],
+		]);
+		const ctx = {
+			model: undefined,
+			modelRegistry: {
+				find: (provider: string, id: string) => registry.get(`${provider}/${id}`),
+				hasConfiguredAuth: () => true,
+				complete: async (candidate: Model<Api>) =>
+					candidate.id === "primary"
+						? response("fixture", candidate.id, "修复会话命名")
+						: response("fixture", candidate.id, "Session Naming Fix"),
+			},
+		} satisfies SessionNamingModelContext;
+
+		expect(
+			await generateSessionName(
+				ctx,
+				settings({ model: "fixture/primary", fallbackModels: ["fixture/backup"] }),
+				[{ role: "user", content: "修复会话命名" }],
+				"旧会话名称",
+				new AbortController().signal,
+			),
+		).toEqual({ name: "Session Naming Fix", source: "ai" });
+	});
+
 	test("orders configured models before the active model and removes duplicates", () => {
 		const primary = model("fixture", "primary");
 		const backup = model("fixture", "backup");
@@ -79,8 +109,10 @@ describe("Session Naming model selection", () => {
 			).map((candidate) => `${candidate.provider}/${candidate.id}`),
 		).toEqual(["fixture/primary", "fixture/backup"]);
 	});
+});
 
-	test("uses the public registry, bounded options, and redacted prompt", async () => {
+describe("Session Naming generation", () => {
+	test("uses the public registry with a bounded, redacted English prompt", async () => {
 		const selected = model("fixture", "primary");
 		const calls: { context: Context; options: ModelsApiStreamOptions<Api> | undefined }[] = [];
 		const ctx = {
@@ -99,7 +131,7 @@ describe("Session Naming model selection", () => {
 			await generateSessionName(
 				ctx,
 				settings(),
-				[{ role: "user", content: "Fix api_key=do-not-send-this naming" }],
+				[{ role: "user", content: "修复 api_key=do-not-send-this 会话命名" }],
 				"Existing Session Name",
 				new AbortController().signal,
 			),
@@ -108,11 +140,15 @@ describe("Session Naming model selection", () => {
 		expect(calls[0]?.context.messages[0]?.content).not.toContain("do-not-send-this");
 		expect(calls[0]?.context.messages[0]?.content).toContain("Existing Session Name");
 		expect(calls[0]?.context.messages[0]?.content).toContain("Return it exactly when it still fits");
+		expect(calls[0]?.context.messages[0]?.content).toContain("in English");
+		expect(calls[0]?.context.messages[0]?.content).toContain("Use 2-4 words");
+		expect(calls[0]?.context.messages[0]?.content).toContain("Do not transliterate");
+		expect(calls[0]?.context.messages[0]?.content).not.toContain("5-15 characters");
 		expect(calls[0]?.options).toMatchObject({ cacheRetention: "none", maxTokens: 64 });
 		expect(calls[0]?.options?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	test("falls back locally when no authenticated model is available", async () => {
+	test("uses only a compliant local fallback when no authenticated model is available", async () => {
 		const selected = model("fixture", "primary");
 		const ctx = {
 			model: selected,
@@ -132,6 +168,15 @@ describe("Session Naming model selection", () => {
 				new AbortController().signal,
 			),
 		).toEqual({ name: "repair automatic Session", source: "fallback" });
+		expect(
+			await generateSessionName(
+				ctx,
+				settings(),
+				[{ role: "user", content: "修复 OAuth 会话命名" }],
+				undefined,
+				new AbortController().signal,
+			),
+		).toBeUndefined();
 	});
 
 	test("stops when the lifecycle aborts a provider that ignores its signal", async () => {
