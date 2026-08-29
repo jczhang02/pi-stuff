@@ -252,6 +252,9 @@ export function formatAgentExecutionGovernorError(
 	if (error.code === "logical_agent_unknown") {
 		return `Cannot resume Agent '${error.logicalAgentId}' because this session has no saved record for that child.`;
 	}
+	if (error.code === "runtime_address_in_use") {
+		return `Cannot ${action} ${agentCount(requested)}: ${error.message}`;
+	}
 	return (
 		`Cannot resume Agent '${error.logicalAgentId}' from here because it belongs to a different parent Agent. ` +
 		"Resume it from the Agent that created it."

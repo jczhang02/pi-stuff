@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	AgentExecutionGovernor,
 	agentExecutionLogicalId,
+	formatAgentExecutionGovernorError,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-governor.js";
 import {
 	DEFAULT_SESSION_GOVERNOR_LIMITS,
@@ -73,6 +74,21 @@ test("returns a concrete capacity explanation and leaves a rejected batch entire
 	expect(rejected.message).toContain("1 may run at once");
 	expect(rejected.message).toContain("Wait for a running Agent to finish");
 	expect(await session.snapshot()).toMatchObject({ total: 0, running: 0, agents: [], leases: [] });
+});
+
+test("reports a runtime Target conflict without inventing an owner mismatch", () => {
+	expect(
+		formatAgentExecutionGovernorError(
+			{
+				kind: "conflict",
+				code: "runtime_address_in_use",
+				logicalAgentId: "launch:1",
+				message: "Runtime Agent address 'launch:1' is already reserved in this session.",
+			},
+			"start",
+			2,
+		),
+	).toBe("Cannot start 2 Agents: Runtime Agent address 'launch:1' is already reserved in this session.");
 });
 
 test("resumes the durable target child identity under the new launch runtime", async () => {
