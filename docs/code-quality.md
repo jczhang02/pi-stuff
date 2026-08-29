@@ -55,5 +55,11 @@ Work proceeds in small behavior-preserving batches:
 6. Run at least three complete Thermo-Nuclear Code Quality Review rounds. Fix every finding before the next round and
    finish only after two consecutive whole-repository rounds report no new issues.
 
+For the `ps-6z2` Luna image study, exact digit recognition and the composite end-to-end rate that includes it are
+observational model-quality evidence, not repository completion gates. Preserve the preregistered study and its failed
+verdict unchanged. Hard compatibility acceptance remains on Suite-controlled behavior: Tool choice, exact image
+transfer and integrity, exactly-once persistence, Session resume, valid instrumentation, zero Code Mode errors, and no
+standing Provider-context increase.
+
 The canonical work map lives in Beads. Record per-Capability baselines and acceptance criteria there before
 implementation. Use line counts to expose code movement and unexplained growth, not as a deletion quota.

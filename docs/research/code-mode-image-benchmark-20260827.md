@@ -258,3 +258,14 @@ therefore missed the unchanged 18/20 behavioral gate even though every candidate
 persistence, continuation, instrumentation, and Code Mode error gate passed. Doubling the deterministic point-matrix
 fixture did not improve Luna's exact digit reading, so the result does not support further outcome-driven fixture
 tuning.
+
+## Maintainer acceptance disposition
+
+Recorded on 2026-08-29 after the V4 outcome. The preregistered V4 verdict and report remain unchanged: the study failed
+its original understanding and composite end-to-end thresholds. For `ps-8z1` completion, those two rates are retained
+as observational model-quality evidence rather than Suite compatibility gates because exact digit recognition is
+model behavior after the verified image bytes reach the Provider.
+
+The Suite-controlled compatibility gates remain hard: Tool choice, exact image transfer and integrity, exactly-once
+Session persistence, safe new-process resume, valid instrumentation, zero Code Mode errors, and no standing
+Provider-context increase. V4 passed each of those gates.
