@@ -61,6 +61,7 @@ export class CodeModeHostLostError extends Error {
 export class CodeModeHostClient {
 	private readonly binary: string;
 	private buffer = Buffer.alloc(0);
+	private readonly cancelled = new Set<number>();
 	private child: ChildProcessWithoutNullStreams | undefined;
 	private readonly delegateRuntime = new CodeModeDelegateRuntime((message) => this.send(message));
 	private readonly initial = new Map<number, Pending>();
@@ -176,6 +177,7 @@ export class CodeModeHostClient {
 		const error = abortError();
 		try {
 			this.send({ id, type: "operation/cancel" });
+			if (!cellId) this.cancelled.add(id);
 		} catch {
 			// Host teardown is already authoritative.
 		}
@@ -184,9 +186,9 @@ export class CodeModeHostClient {
 		if (cellId) void this.terminate(cellId, context).catch(() => undefined);
 	}
 
-	private async terminate(cellId: string, context: ExecutorContext): Promise<void> {
+	private async terminate(cellId: string, context?: ExecutorContext): Promise<void> {
 		await this.start();
-		this.delegateRuntime.updateCellContext(cellId, context);
+		if (context) this.delegateRuntime.updateCellContext(cellId, context);
 		await this.request({ cellId, method: "session/terminate", sessionId: this.sessionId }, context);
 	}
 
@@ -315,7 +317,13 @@ export class CodeModeHostClient {
 		if (message.type === "operation/response") {
 			const pending = this.pending.get(message.id);
 			this.pending.delete(message.id);
-			if (!pending) return;
+			if (!pending) {
+				if (this.cancelled.delete(message.id) && message.result.status === "ok") {
+					const cellId = executionCellId(message.result.value);
+					if (cellId) void this.terminate(cellId).catch(() => undefined);
+				}
+				return;
+			}
 			if (message.result.status === "error") {
 				pending.reject(new Error(message.result.message));
 				return;
@@ -346,6 +354,7 @@ export class CodeModeHostClient {
 
 	private failAll(error: Error): void {
 		for (const pending of [...this.pending.values(), ...this.initial.values()]) pending.reject(error);
+		this.cancelled.clear();
 		this.pending.clear();
 		this.initial.clear();
 		this.delegateRuntime.clear();
