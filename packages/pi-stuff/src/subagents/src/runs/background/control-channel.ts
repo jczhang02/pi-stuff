@@ -406,8 +406,7 @@ function processSingletonRequest<Type extends "interrupt" | "timeout">(
  * Parent side: portable interrupt = authoritative file request + best-effort OS
  * signal. The signal is only a latency optimization on Unix; ENOSYS on Windows
  * is swallowed because the file inbox is authoritative there. Other signal
- * failures are surfaced because they usually mean the runner is not alive to
- * consume the request.
+ * failures are surfaced, but never revoke the durable request.
  */
 export function deliverInterruptRequest(input: {
 	asyncDir: string;
@@ -418,7 +417,7 @@ export function deliverInterruptRequest(input: {
 	source?: string;
 }): void {
 	const timing = input.now === undefined ? {} : { now: input.now };
-	const requestPath = requestAsyncInterrupt(input.asyncDir, input.source ? { source: input.source } : {}, timing);
+	requestAsyncInterrupt(input.asyncDir, input.source ? { source: input.source } : {}, timing);
 	if (isRuntimeNumber(input.pid) && input.pid > 0) {
 		try {
 			(input.kill ?? process.kill)(input.pid, input.signal ?? INTERRUPT_SIGNAL);
@@ -426,11 +425,6 @@ export function deliverInterruptRequest(input: {
 			if (errnoCode(error) === "ENOSYS") {
 				// File inbox is authoritative when custom cross-process signals are unavailable.
 				return;
-			}
-			try {
-				fs.rmSync(requestPath, { force: true });
-			} catch {
-				// Best effort cleanup; the caller still gets the signal failure.
 			}
 			throw error;
 		}

@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	consumeStopRequests,
+	deliverInterruptRequest,
 	interruptRequestPath,
 	requestAsyncInterrupt,
 	requestAsyncStop,
@@ -128,5 +129,21 @@ describe("Agent stop control channel", () => {
 		expect(received).toEqual([4]);
 		expect(interrupts).toBe(1);
 		dispose();
+	});
+
+	test("signal failure never revokes the authoritative interrupt request", () => {
+		const asyncDir = fixture();
+		const signalError = Object.assign(new Error("signal denied"), { code: "EPERM" });
+
+		expect(() =>
+			deliverInterruptRequest({
+				asyncDir,
+				kill: () => {
+					throw signalError;
+				},
+				pid: 42,
+			}),
+		).toThrow(signalError);
+		expect(fs.existsSync(interruptRequestPath(asyncDir))).toBeTrue();
 	});
 });
