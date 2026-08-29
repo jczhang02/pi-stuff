@@ -44,7 +44,7 @@ test("all preregistered challenge PNGs are distinct and decoder-readable", () =>
 	expect(new Set(images.map((image) => createHash("sha256").update(image).digest("hex"))).size).toBe(40);
 	for (const image of images) {
 		expect(image.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-		expect(getImageDimensions(image.toString("base64"), "image/png")).toEqual({ heightPx: 80, widthPx: 304 });
+		expect(getImageDimensions(image.toString("base64"), "image/png")).toEqual({ heightPx: 160, widthPx: 608 });
 	}
 });
 

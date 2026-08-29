@@ -73,6 +73,13 @@ function packageTree(rootPath: string, commit: string): PackageIdentity {
 	if (currentTree !== expectedTree) fail(`package tree does not match preregistered commit ${resolvedCommit}`);
 	return { commit: resolvedCommit, tree: currentTree };
 }
+async function verifyPackageImport(rootPath: string, label: string): Promise<void> {
+	try {
+		await import(join(rootPath, "packages/pi-stuff/index.ts"));
+	} catch (cause) {
+		fail(`${label} Package import preflight failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+	}
+}
 async function files(directory: string): Promise<string[]> {
 	const output: string[] = [];
 	for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -377,6 +384,8 @@ if (import.meta.main) {
 	await verifyPiHostProvenance(PI_BINARY);
 	const baselinePackage = packageTree(options.baselineRoot, BASELINE_COMMIT);
 	const candidatePackage = packageTree(root, CANDIDATE_COMMIT);
+	await verifyPackageImport(options.baselineRoot, "baseline");
+	await verifyPackageImport(root, "candidate");
 	const benchmarkRoot = await mkdtemp(join(process.env["XDG_RUNTIME_DIR"] ?? tmpdir(), "pi-stuff-code-image-"));
 	const cases: ImageBenchmarkCase[] = [];
 	try {

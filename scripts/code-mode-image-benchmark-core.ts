@@ -9,12 +9,12 @@ export const REQUIRED_HARD_SUCCESSES = 20;
 const codes = (...groups: string[]): readonly string[] => groups.flatMap((group) => group.split(" "));
 export const IMAGE_BENCHMARK_CODES = {
 	baseline: codes(
-		"731905 284167 609352 418730 952641 367824 805219 146593 573086 920475",
-		"238761 694028 351972 782436 469105 817354 205687 936412 542809 173648",
+		"274906 581347 630285 947120 362748 715903 489261 826570 193684 504739",
+		"768312 250967 913475 647208 385621 729046 156830 894572 431709 570284",
 	),
 	candidate: codes(
-		"615204 807361 392570 708143 154829 683517 429630 571264 836951 247583",
-		"918426 365701 729815 481692 653278 194537 826149 537284 961750 348625",
+		"682930 145782 907463 358174 726591 410836 839205 264718 591024 773460",
+		"208675 964103 537920 681254 349806 812597 475130 926348 103769 754682",
 	),
 };
 const SESSIONS_PER_ARM = IMAGE_BENCHMARK_CODES.baseline.length;
@@ -119,9 +119,9 @@ function pngChunk(type: string, data: Uint8Array): Buffer {
 
 export function createChallengePng(code: string): Buffer {
 	if (!/^\d{6}$/u.test(code)) failBenchmark("challenge code must contain exactly six digits");
-	const scale = 8;
-	const margin = 12;
-	const gap = 8;
+	const scale = 16;
+	const margin = 24;
+	const gap = 16;
 	const width = margin * 2 + code.length * 5 * scale + (code.length - 1) * gap;
 	const height = margin * 2 + 7 * scale;
 	const rows = Buffer.alloc((width + 1) * height, 255);

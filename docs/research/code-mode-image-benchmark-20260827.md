@@ -204,3 +204,37 @@ Provider-payload validation, and no-retry/no-replacement/no-exclusion rules. The
 The output path is `docs/reports/code-mode-image-20260827/benchmark-v3-luna.json`. Any process, Provider,
 instrumentation, parsing, image-integrity, or resume failure counts as the original sample's failure. No V3 Session may
 be retried, replaced, or omitted after an outcome is observed.
+
+## V3 Luna outcome
+
+V3 completed at 2026-08-29T02:05:26.143Z and failed its preregistered verdict. The complete, content-preserving
+repository-formatted report is
+`docs/reports/code-mode-image-20260827/benchmark-v3-luna.json`, SHA-256
+`c2ba372ebc494f642e187cac46a1c1a3a0fe303915fb1223a3dcd875dbe4ab1e`.
+
+The candidate achieved 20/20 direct `view_image` Tool choice, exact image transfer, exactly-once decoder-readable
+persistence, safe new-process Session resume, valid instrumentation, and zero Code Mode errors. Luna read 15/20 small
+304×80 point-matrix images exactly, below the 18/20 behavioral gate; each miss was a one-digit substitution after the
+correct image bytes had reached the Provider. The baseline Package exited before every Provider request because its
+fresh worktree had no installed dependencies, so its 20 failures remain in V3 and the standing-context comparison is
+invalid. No V3 sample was retried, replaced, or excluded.
+
+## V4 Luna preregistration
+
+Recorded at 2026-08-29T10:07:45+08:00 before any V4 Provider request or outcome. V4 is a new study, not a retry or
+replacement of V3. It retains the certified Host, `openai-codex/gpt-5.6-luna` with medium Thinking, Package trees,
+observer, prompts, 20 Sessions per arm, alternating order, isolation, sequential execution, measures, thresholds,
+complete-payload validation, and no-retry/no-replacement/no-exclusion rules.
+
+V4 uses 40 new fixed six-digit codes, in runner order:
+
+- baseline: `274906`, `581347`, `630285`, `947120`, `362748`, `715903`, `489261`, `826570`, `193684`, `504739`,
+  `768312`, `250967`, `913475`, `647208`, `385621`, `729046`, `156830`, `894572`, `431709`, `570284`;
+- candidate: `682930`, `145782`, `907463`, `358174`, `726591`, `410836`, `839205`, `264718`, `591024`, `773460`,
+  `208675`, `964103`, `537920`, `681254`, `349806`, `812597`, `475130`, `926348`, `103769`, `754682`.
+
+The same deterministic high-contrast glyphs are doubled from 304×80 to 608×160. This isolates the Tool-selection,
+transport, persistence, and continuation question from the small Luna model's observed low-resolution digit-reading
+errors; the prompt and success thresholds do not change. The baseline worktree has been installed from its frozen
+lockfile, and the runner now imports both Package entries before creating a benchmark Session so an unloadable arm
+fails before any sample. The output path is `docs/reports/code-mode-image-20260827/benchmark-v4-luna.json`.
