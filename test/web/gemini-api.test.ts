@@ -2,15 +2,17 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { searchWithGeminiApi } from "../../packages/pi-stuff/src/web/runtime/gemini-api.ts";
+import { fetchGeminiApi, searchWithGeminiApi } from "../../packages/pi-stuff/src/web/runtime/gemini-api.ts";
 
 const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
 const originalApiKey = process.env["GEMINI_API_KEY"];
 const originalBaseUrl = process.env["GOOGLE_GEMINI_BASE_URL"];
 const originalFetch = globalThis.fetch;
 let agentDirectory: string | undefined;
+const servers: Bun.Server<unknown>[] = [];
 
 afterEach(async () => {
+	for (const server of servers.splice(0)) server.stop(true);
 	globalThis.fetch = originalFetch;
 	if (originalAgentDirectory === undefined) delete process.env["PI_CODING_AGENT_DIR"];
 	else process.env["PI_CODING_AGENT_DIR"] = originalAgentDirectory;
@@ -59,4 +61,37 @@ test("fetches only exact Gemini grounding redirect URLs", async () => {
 		{ snippet: "", title: "lookalike", url: maliciousUrl },
 		{ snippet: "", title: "trusted", url: "https://example.com" },
 	]);
+});
+
+test("rejects Gemini API redirects before forwarding credentials", async () => {
+	let destinationRequests = 0;
+	const sourceKeys: Array<string | null> = [];
+	const destination = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		fetch: () => {
+			destinationRequests++;
+			return new Response("unexpected redirect target");
+		},
+	});
+	servers.push(destination);
+	const source = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		fetch: (request) => {
+			sourceKeys.push(request.headers.get("x-goog-api-key"));
+			return new Response(null, {
+				status: 302,
+				headers: { location: `http://127.0.0.1:${String(destination.port)}/target` },
+			});
+		},
+	});
+	servers.push(source);
+	process.env["GOOGLE_GEMINI_BASE_URL"] = `http://127.0.0.1:${String(source.port)}`;
+
+	await expect(
+		fetchGeminiApi(`${process.env["GOOGLE_GEMINI_BASE_URL"]}/v1beta/models/test:generateContent`, {}, "test-key"),
+	).rejects.toThrow();
+	expect(sourceKeys).toEqual(["test-key"]);
+	expect(destinationRequests).toBe(0);
 });

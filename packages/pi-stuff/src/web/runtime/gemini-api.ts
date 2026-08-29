@@ -147,7 +147,7 @@ export async function fetchGeminiApi(
 		headers.set(name, value);
 	}
 	try {
-		const response = await fetch(parsedUrl, { ...init, headers });
+		const response = await fetch(parsedUrl, { ...init, headers, redirect: "error" });
 		responseCredentials.set(response, { apiKey: resolvedApiKey, cloudflareApiKey });
 		return response;
 	} catch (error) {
