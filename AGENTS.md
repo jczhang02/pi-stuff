@@ -26,8 +26,12 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
 - Make obvious, reversible repository-local decisions without asking. Ask one concise question in the conversation,
   not through a question widget, only when scope, authority, or a material product decision genuinely depends on it.
 - Keep long-running work observable. The Agent owns focused checks and representative real-Host acceptance; do not hand
-  routine verification back to the user. Use independent review for broad, cross-Capability, architecture, or
-  release-risk work, and when the user requests adversarial review—not for every small isolated change.
+  routine verification back to the user.
+- Every code change must pass the Thermo-Nuclear completion review in `docs/code-quality.md` against the complete final
+  diff. A small isolated change needs one focused clean review. Broad, cross-Capability, architecture, whole-repository
+  quality/refactoring/source-reduction, or release-risk work needs an independent reviewer and repeated review of the
+  whole affected scope until two consecutive rounds report no findings. A finding blocks completion until it is fixed
+  or disproved with direct source evidence; any later code change invalidates the clean result.
 
 ## Hard boundaries
 

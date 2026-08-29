@@ -1,4 +1,4 @@
-<!-- translation-source: AGENTS.md; translation-source-sha256: 3d061b8943d2f1082e39807475223c1432d8c1b5c47ee54b8a5021dc350ad588 -->
+<!-- translation-source: AGENTS.md; translation-source-sha256: dade524590386e02c7d9e12c789f8bdd2f14179cae0d413e3f75cd8a43f50962 -->
 
 # 仓库指令
 
@@ -25,9 +25,11 @@
 - 面对实质性设计选择，先比较可行选项和证据，再选最小且足够的方案。用直白语言解释陌生术语和结果。
 - 显然且可逆的仓库内决定可直接做。只有当范围、权限或实质产品决定确实依赖用户时，才在对话中提出一个
   简短问题，不使用问题 widget。
-- 让长时间工作保持可观察。Agent 负责聚焦检查和有代表性的真实 Host 验收；不要把例行验证交还用户。广泛、
-  跨 Capability、架构或 Release 风险工作，以及用户要求对抗审查时使用独立 review；小型隔离变更不必每次
-  都做。
+- 让长时间工作保持可观察。Agent 负责聚焦检查和有代表性的真实 Host 验收；不要把例行验证交还用户。
+- 每次代码变更都必须针对完整最终 diff，通过 `docs/code-quality.md` 中的 Thermo-Nuclear 完成审查。
+  小型隔离变更需要一次聚焦且无发现的 review。广泛、跨 Capability、架构、全仓库质量/重构/
+  源码精简或 Release 风险工作，需要独立 reviewer 反复审查完整受影响范围，直到连续两轮都无发现。
+  任何 finding 在修复或用直接源码证据证明不成立前都会阻止完成；之后任何代码变更都会使无发现结果失效。
 
 ## 硬边界
 

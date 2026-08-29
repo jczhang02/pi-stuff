@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: d787d721fc76936a0a3cac13132f4018064bfa9e2c7dd4d5088361340bf883f2 -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: 1d4521fa116b8d77697a009a857e29a4e18da263b392dd7dc51863759b4840c3 -->
 
 # Repository-owned Source 质量标准
 
@@ -21,3 +21,16 @@ prototype、脚本和质量工具代码都适用同一可维护性标准。来�
   删除重复、分支、wrapper、兼容层或状态。当变更形成更深的 Module，或保留必要的说明、验证、安全、数据完整性、
   无障碍或兼容性时，行数不变或增加也可以接受。不得通过压缩语法或削弱保障来改善指标。
 - 测试用于证明行为和兼容性。测试通过永远不能代替依据本标准进行源码审查。
+
+## Thermo-Nuclear 完成审查
+
+- 每次代码变更都必须使用 `thermo-nuclear-code-quality-review` Skill 审查。针对固定 base 的完整
+  diff 和完整受影响 Capability 进行检查。如果该 Skill 不可用，本节仍然是必须遵守的 approval bar；
+  Skill 不可用绝不构成豁免。
+- 通过审查要求：没有结构退化，没有遗留明确可行的 code-judo 简化，没有临时分支或边界泄漏，没有
+  不必要的 wrapper、cast、optionality 或重复 helper，也没有无法说明的规模增长或机械拆分。必须检查 ownership、
+  可变状态、coupling、类型边界、规范归属位置和原子性。
+- 小型隔离变更需要一次聚焦且无发现的 review。广泛、跨 Capability、架构、全仓库质量/
+  重构/源码精简或 Release 风险工作，需要独立 reviewer 反复审查完整受影响范围，直到连续两轮都无发现。
+- 任何 finding 在实现被修复或直接源码证据证明其不适用前，都会阻止完成。无发现结果只认证被审查的精确源码；
+  之后任何代码变更都会使结果失效。完成前，必须针对最终源码重新运行相关自动检查和 review。

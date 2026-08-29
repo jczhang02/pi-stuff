@@ -26,3 +26,18 @@ not code and remain outside code checks.
   preserves necessary explanation, validation, security, data integrity, accessibility, or compatibility. Never
   improve the metric through compressed syntax or weakened safeguards.
 - Tests establish behavior and compatibility. Passing tests never substitutes for source review against this standard.
+
+## Thermo-Nuclear completion review
+
+- Review every code change with the `thermo-nuclear-code-quality-review` Skill. Review the complete diff from a fixed
+  base and the complete affected Capability. If the Skill is unavailable, this section remains the required approval
+  bar; unavailability never waives the review.
+- Approval requires no structural regression, no clear code-judo simplification left undone, no ad hoc branching or
+  boundary leak, no unnecessary wrapper, cast, optionality, or duplicated helper, and no unjustified size growth or
+  mechanical split. Inspect ownership, mutable state, coupling, type boundaries, canonical placement, and atomicity.
+- A small isolated change requires one focused clean review. Broad, cross-Capability, architecture, whole-repository
+  quality/refactoring/source-reduction, or release-risk work requires an independent reviewer and repeated review of
+  the whole affected scope until two consecutive rounds report no findings.
+- A finding blocks completion until the implementation is fixed or direct source evidence proves that the finding does
+  not apply. A clean result certifies only the exact reviewed source: any later code change invalidates it. Run the
+  relevant automated checks again and review the final source before completion.
