@@ -4,6 +4,7 @@ import {
 	type CommandDialogViewContext,
 	commandDialogPrimaryKey,
 	commandDialogRows,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
 } from "../../../conversation-ui/index.js";
@@ -314,11 +315,11 @@ class AgentDialogRenderFrame {
 		const activity = this.activityLines(width);
 		return {
 			document: [
-				sectionHeading(this.context.theme, "Task"),
+				commandDialogSectionHeading(this.context.theme, "Task"),
 				...taskLines,
-				...(outcome ? ["", sectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
+				...(outcome ? ["", commandDialogSectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
 				"",
-				sectionHeading(this.context.theme, "Activity"),
+				commandDialogSectionHeading(this.context.theme, "Activity"),
 				...activity,
 			],
 			priority:
@@ -470,10 +471,6 @@ function divider(theme: Theme, width: number): string {
 
 function title(theme: Theme, value: string): string {
 	return `${GUTTER}${theme.fg("text", theme.bold(value))}`;
-}
-
-function sectionHeading(theme: Theme, value: string): string {
-	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(value)}`;
 }
 
 function sectionBody(value: string, width: number): string[] {

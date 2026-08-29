@@ -95,7 +95,7 @@ input area. It does not duplicate Agent, Todo, BTW, MCP, or Tool activity.
 The startup header follows the observed Claude Code 2.1.197 card geometry while keeping Pi Stuff's own identity and
 content. Its accent-colored Pi mark is reconstructed from the official pi.dev geometry: an 8×4 mark at ordinary sizes
 and a complete 4×2 mark below 48 columns or at 18 rows and shorter. It selects the compact mark instead of cropping the
-large one and always keeps one effective blank row below the mark. At 70 columns and above the card uses a fixed 52-cell
+large one and always keeps one effective blank row below the mark. At 82 columns and above the card uses a fixed 52-cell
 identity column plus a responsive guidance column; below that it becomes a centered single-column card and removes
 guidance and inventory instead of wrapping them. It is part of Pi's normal scrollback, not a floating window.
 

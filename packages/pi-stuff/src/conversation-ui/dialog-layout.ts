@@ -15,6 +15,11 @@ const DEFAULT_NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export const WIDE_COMMAND_DIALOG_MIN_WIDTH = 96;
 
+export function commandDialogSectionHeading(theme: Theme, label: string, gutter = "  "): string {
+	const color = label === "Error" ? "error" : label === "Rejection" || label === "Cancellation" ? "warning" : "accent";
+	return `${gutter}${theme.bold(theme.fg(color, label))}`;
+}
+
 export type CommandDialogNavigation = "down" | "end" | "home" | "pageDown" | "pageUp" | "up";
 
 export interface CommandDialogKeyHelpEntry {

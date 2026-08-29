@@ -72,7 +72,7 @@ test("aligns the summary icon with the content edge and summary text with task g
 	expect(setWidgetCalls).toHaveLength(1);
 	expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
 	expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
-	expect(widget?.render(200)).toEqual(["◆ 1 tasks (0 done, 1 open)", "  □ write tests"]);
+	expect(widget?.render(200)).toEqual(["1 tasks (0 done, 1 open)", "  □ write tests"]);
 });
 
 test("shows at most five ordered task rows plus one overflow row", () => {
@@ -92,7 +92,7 @@ test("shows at most five ordered task rows plus one overflow row", () => {
 	replaceState(SESSION_ID, { tasks: finalTasks, nextId: 8 });
 	overlay.refresh({ forceExpanded: true });
 	expect(widget?.render(200)).toEqual([
-		"◆ 7 tasks (2 done, 5 open)",
+		"7 tasks (2 done, 5 open)",
 		"  ✓ recent 3",
 		"  ✓ recent 7",
 		"  ■ active",
@@ -126,7 +126,7 @@ test("forceExpanded restores task rows after a collapse", () => {
 	overlay.toggle();
 	expect(widget?.render(200)).toHaveLength(1);
 	overlay.refresh({ forceExpanded: true });
-	expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+	expect(widget?.render(200)).toEqual(["2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 });
 
 test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
@@ -138,7 +138,7 @@ test("retains forceExpanded while a Command Dialog suppresses the widget", () =>
 	overlay.refresh({ forceExpanded: true });
 	overlay.setSuppressed(false);
 
-	expect(widget?.render(200)).toEqual(["◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+	expect(widget?.render(200)).toEqual(["2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 	expect(overlay.isRegistered()).toBe(true);
 });
 
@@ -165,7 +165,8 @@ test("keeps aligned CJK, emoji, overflow, and collapsed rows inside the width ma
 		const lines = widget?.render(width) ?? [];
 		expect(lines).toHaveLength(7);
 		expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
-		expect(Bun.stripANSI(lines[0] ?? "").startsWith("◆ ")).toBe(true);
+		expect(Bun.stripANSI(lines[0] ?? "").startsWith("7 tasks ")).toBe(true);
+		expect(Bun.stripANSI(lines[0] ?? "")).not.toContain("◆");
 		expect(lines.slice(1).every((line) => Bun.stripANSI(line).startsWith("  "))).toBe(true);
 		expect(lines.slice(1).every((line) => !Bun.stripANSI(line).startsWith("   "))).toBe(true);
 	}
@@ -222,7 +223,7 @@ describe("TodoOverlay all-complete linger", () => {
 				lingerCompleted: true,
 			});
 			expect(scheduledDelay).toBe(5_000);
-			expect(widget?.render(200)).toEqual(["◆ 1 tasks (1 done, 0 open)", "  ✓ finished"]);
+			expect(widget?.render(200)).toEqual(["1 tasks (1 done, 0 open)", "  ✓ finished"]);
 			expect(overlay.isRegistered()).toBe(true);
 
 			scheduledCallback?.();

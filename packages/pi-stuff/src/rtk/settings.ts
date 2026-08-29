@@ -63,7 +63,7 @@ async function readSettings(path: string): Promise<RtkSettings | undefined> {
 	} catch (error) {
 		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return undefined;
 		reportDiagnostic({
-			action: "/rtk settings",
+			action: "/rtk",
 			capability: "RTK",
 			details: path,
 			error,
@@ -97,7 +97,7 @@ function sameSettings(left: RtkSettings, right: RtkSettings): boolean {
 	);
 }
 
-/** Settings remain read-only until the user changes them from `/rtk settings`. */
+/** Settings remain read-only until the user changes them from `/rtk`. */
 export class RtkSettingsStore {
 	private drainPromise: Promise<void> | undefined;
 	private generation = 0;

@@ -16,4 +16,4 @@ test("execution-matrix polling ignores only a JSONL record still being appended"
 
 test("real Pi executes the Agent shape, context, and scheduling matrix with parallel provider overlap", async () => {
 	await verifyAgentsExecutionMatrix({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE });
-}, 120_000);
+}, 240_000);

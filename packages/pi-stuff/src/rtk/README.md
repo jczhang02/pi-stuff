@@ -6,9 +6,10 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 
 ## Behavior
 
-- `/rtk` opens the shared full-width Pi Stuff Command Dialog with runtime identity and session savings.
-- `/rtk settings` opens Pi's native settings component for the two persistent behavior switches: **Command rewriting**
-  and **Model projection**.
+- `/rtk` opens one shared full-width Command Dialog containing runtime identity, two Pi-native behavior controls, and
+  Session savings. It does not verify the executable merely because the Dialog opened.
+- **Command rewriting** and **Model projection** show both their configured value and effective state. Model projection
+  remains independent of Runtime availability.
 - Startup performs no subprocess, file write, hook installation, notice, floating UI, or Statusline mutation.
 - The first Bash call verifies RTK `0.45.0`, its executable path, and the certified official Linux x64 SHA-256 before
   rewriting.
@@ -19,68 +20,52 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 ## Commands
 
 ```text
-/rtk                 Verify and inspect RTK
-/rtk status          Verify and inspect RTK
-/rtk settings        Configure RTK behavior
-/rtk verify          Re-certify the current executable explicitly
-/rtk stats           Inspect this session's projection savings
-/rtk clear-stats     Clear in-memory projection statistics
-/rtk help            Show the bounded command summary
+/rtk                 Inspect and configure RTK
 ```
+
+RTK has no subcommands or aliases. Any non-empty argument reports
+`/rtk takes no subcommands; run /rtk.` and does not open another surface.
 
 The local RTK executable is optional. When it is absent or fails certification, Pi continues normally without command rewriting. Model-only output projection remains available because it does not require the executable.
 
-## Accepted `/rtk` readability target
+## `/rtk` interaction contract
 
-**Decision update:** 2026-08-17
-**Status:** Implemented on 2026-08-18.
-
-The non-settings `/rtk` surface remains one static inspection Dialog. It does not add list/detail modes or duplicate
-the native `/rtk settings` component. Its three questions are whether the executable is trusted, which behaviors are
-enabled, and how much model-visible result text this session avoided:
+The Dialog answers three questions in one place: whether the executable is trusted, what behavior is configured and
+effective, and how much eligible model-visible result text this Session avoided:
 
 ```text
 RTK
-✓ ready · v0.45.0
 
-◆ Runtime
-Binary  ~/.local/bin/rtk
-SHA-256  99e0cff729d52297…
+Runtime
+○ unchecked
+Not verified yet.
 
-◆ Behavior
-✓ Command rewriting on
-✓ Model projection on
+Behavior
+→ Command rewriting  configured on · effective unchecked
+  Model projection    configured on · effective active
 
-◆ Session savings
-12,430 chars (38%) · 24 results
-Bash 12 · Grep 12
+Session savings
+No eligible result projected yet.
 
-/rtk settings · Esc close
+↑/↓ select · Enter/Space toggle · v verify · c clear savings
+? keys · Esc close
 ```
 
 Use `✓ ready`, `○ unchecked`, `! drifted`, and `× unavailable`, always with the state word. `Drifted` means the selected
-executable identity changed after certification; it is a warning and rewriting remains disabled until explicit
-`/rtk verify`. `Unavailable` includes a bounded error under a marked `Error` section and the next step
-`Run /rtk verify`; it must not imply that Pi itself cannot continue.
+executable identity changed after certification; it is a warning and rewriting remains disabled until the user presses
+`v` to verify again. `Unavailable` includes a bounded `Error` section and must not imply that Pi itself cannot continue.
 
-Behavior switches use `✓ on` and `○ off` rather than color-only words. `Model projection` means only the compact copy
-sent to the model; the transcript, Tool result, and Session JSONL remain exact. Keep this distinction in the visible
-description or section copy and never imply that RTK rewrites stored output.
+Pi's configured Up/Down actions select a behavior. Enter or Space toggles it and is the only path that persists the
+corresponding setting. The Command rewriting description says that rewriting occurs only when the certified Runtime is
+ready. The Model projection description says that it projects eligible Tool results into model context independently
+of Runtime availability; the transcript, Tool result, and Session JSONL remain exact.
 
 Session savings are derived statistics, not a billing or token claim. Show saved characters, percentage of eligible
-original result characters, and result count. Technique counts are secondary and disappear before runtime state,
-error, switch values, or the total savings line at low height. Binary path and shortened SHA are verification evidence;
-they disappear after an actionable error but before core state and savings when space is scarce.
-
-`/rtk clear-stats` reports `✓ Projection statistics cleared.` `/rtk help` shows the bounded command form, and an unknown
-action uses `! Unknown action` followed by that same form. Feedback never replaces the runtime state or Escape path.
-Pi's configured Up/Down actions and Ctrl+P/Ctrl+N scroll long status content; PageUp/PageDown and `b`/Space move a
-page, Home/End jump, and `?` opens contextual key help. Only the configured cancel action closes the status surface;
-Enter and `q` have no hidden close behavior.
-
-The implementation now pairs states and switches with fixed icons, uses `◆` sections, explains model-only projection,
-keeps feedback structured, and shortens the Footer. Focused tests cover runtime states, settings ownership, projection
-wording, low-height fitting, and failure behavior; the real PTY verifier covers Host rendering.
+original result characters, and result count. Before any eligible projection, show exactly
+`No eligible result projected yet.` Pressing `c` resets only the in-memory Session statistics and reports
+`Session savings cleared.` Technique counts, Binary, and SHA are secondary; low-height rendering removes them first and
+retains Runtime state, both configured/effective behavior rows, the savings outcome, and the Escape path. `?` opens the
+complete key guide, and only the configured cancel action closes the Dialog.
 
 ## Certified RTK runtime
 
@@ -93,12 +78,12 @@ source commit `b34be37caf3796b69a50952a28e60e32b5daad43`. Only the released bina
 | Official archive's `rtk` binary | `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
 Every rewrite rechecks the selected path, resolved path, file fingerprint, and actual binary SHA. Any identity change
-disables rewriting until `/rtk verify` explicitly re-certifies it.
+disables rewriting until `v` in `/rtk` explicitly re-certifies it.
 
 RTK v0.45.0 preserves supported `rg` syntax, including `--files`, globs, and ordinary line-number searches. Its
 official `find` wrapper still rejects compound predicates and actions such as `-not` and `-exec`; pipelines such as
 `find ... -print0 | xargs ...` are left native. This is an external RTK constraint. Pi Stuff does not parse or repair
-commands; disable Command rewriting in `/rtk settings` when an unsupported `find` form is required, then remove that
+commands; disable Command rewriting in `/rtk` when an unsupported `find` form is required, then remove that
 workaround after a later official RTK release is certified.
 
 ## Context composition

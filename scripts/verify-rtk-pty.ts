@@ -79,17 +79,17 @@ must_expect "RTK_FRESH_DONE"
 after 200
 send -- "/rtk\\r"
 must_expect "RTK"
+must_expect "Runtime"
 must_expect "ready"
 must_expect "${CERTIFIED_RTK_VERSION}"
-must_expect "/rtk settings"
+must_expect "Behavior"
+must_expect "Command rewriting"
+must_expect "Model projection"
+must_expect "Session savings"
 send -- "\\033"
 after 100
 send -- "/rtk settings\\r"
-must_expect "RTK settings"
-must_expect "Command rewriting"
-must_expect "Model projection"
-send -- "\\033"
-after 100
+must_expect "/rtk takes no subcommands; run /rtk."
 send -- "\\004"
 expect {
     eof {}
@@ -324,12 +324,14 @@ export async function verifyRtkPty(options: {
 		for (const required of [
 			"RTK_FRESH_DONE",
 			"RTK",
+			"Runtime",
 			"ready",
 			CERTIFIED_RTK_VERSION,
-			"/rtk settings",
-			"RTK settings",
+			"Behavior",
 			"Command rewriting",
 			"Model projection",
+			"Session savings",
+			"/rtk takes no subcommands; run /rtk.",
 		]) {
 			if (!visibleFresh.includes(required)) fail(`fresh TUI is missing ${required}`);
 		}

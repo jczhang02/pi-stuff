@@ -143,8 +143,9 @@ test("keeps task selection and Shell detail together in one stable wide Dialog",
 	expect(lines.slice(1).every((line) => visibleWidth(line.slice(0, line.indexOf("┃"))) === 36)).toBe(true);
 	expect(output).toContain("Tasks · 1 current");
 	expect(output).toContain("Tasks / Shell");
-	expect(output).toContain("◆ Command");
-	expect(output).toContain("◆ Output");
+	expect(output).toContain("Command");
+	expect(output).toContain("Output");
+	expect(output).not.toContain("◆");
 	expect(output).toContain("first line");
 
 	component.handleInput?.("\t");
@@ -182,13 +183,14 @@ test("shows a Monitor source, conditions, and latest evidence", () => {
 	const component = createTasksDialogView(runtime).create(ui.context);
 	const output = component.render(100).join("\n");
 	expect(output).toContain("Tasks / Monitor");
-	expect(output).toContain("◆ Source");
+	expect(output).toContain("Source");
 	expect(output).toContain("HTTP · https://example.test/health");
 	expect(output).toContain('success contains "READY"');
 	expect(output).toContain('failure contains "FATAL"');
 	expect(output).toContain("timeout");
 	expect(output).toContain("30s");
-	expect(output).toContain("◆ Latest evidence");
+	expect(output).toContain("Latest evidence");
+	expect(output).not.toContain("◆");
 	expect(output).toContain("503 booting");
 	component.dispose?.();
 });

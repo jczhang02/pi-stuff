@@ -273,7 +273,7 @@ async function verifyLifecyclePresentation(tmux: TmuxCommand, session: string): 
 	tmux(["send-keys", "-t", session, "Enter"]);
 	await Bun.sleep(100);
 	const details = capture(tmux, session);
-	for (const required of ["Tools / Bash · done", "◆ Result", "BASH_UI_SECOND_DONE"]) {
+	for (const required of ["Tools / Bash · done", "Output", "BASH_UI_SECOND_DONE"]) {
 		if (!details.includes(required)) fail(`/tools group details lost member ${required}\n${details}`);
 	}
 	tmux(["send-keys", "-t", session, "Escape"]);

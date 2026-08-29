@@ -50,7 +50,8 @@ lines, the selected question is emphasized, and its Markdown answer follows dire
 
 There is no `BTW` title, lifecycle label, `Answer` section, list/detail transition, card, or split pane. Pending work is
 shown by the answer loader; a failure appears in the answer flow. A blank successful answer says `(empty answer)`, and
-bare `/btw` with no retained exchange says `No previous /btw exchange in this session.`
+bare `/btw` with no retained exchange shows the neutral muted guidance
+`No previous /btw exchange in this session.` rather than an error.
 
 Left and Right switch retained exchanges. Pi's configured Up and Down actions scroll by three lines, with
 Ctrl+P/Ctrl+N as read-only aliases; PageUp/PageDown and `b`/Space scroll one visible page, and Home/End jump to the top

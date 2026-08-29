@@ -1,15 +1,21 @@
 import { homedir } from "node:os";
-import { isKeyRelease, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import {
+	isKeyRelease,
+	type SettingItem,
+	SettingsList,
+	type SettingsListTheme,
+	truncateToWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	commandDialogHintLines,
-	commandDialogNavigation,
 	commandDialogPrimaryKey,
-	commandDialogReadKeyHelp,
 	commandDialogRows,
-	commandDialogScrollOffset,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	matchesCommandDialogCancel,
 	matchesCommandDialogHelp,
@@ -21,20 +27,27 @@ import type { RtkRuntime } from "./runtime.js";
 import type { RtkSettingsStore } from "./settings.js";
 
 const GUTTER = "  ";
+const MIN_RENDER_WIDTH = 24;
+const SETTING_IDS = ["rewriteCommands", "outputProjection"] as const;
+type SettingId = (typeof SETTING_IDS)[number];
 
 export interface RtkDialogOptions {
-	readonly note?: string;
+	readonly onPersistenceError?: (message: string) => void;
 	readonly projection: RtkProjectionAdapter;
 	readonly runtime: RtkRuntime;
 	readonly settings: RtkSettingsStore;
+	readonly verify?: (signal: AbortSignal) => Promise<void>;
 }
 
 function percent(saved: number, original: number): string {
 	return original > 0 ? `${String(Math.round((saved / original) * 100))}%` : "0%";
 }
 
-function sectionHeading(theme: CommandDialogViewContext["theme"], value: string): string {
-	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(value)}`;
+function oneLine(value: string): string {
+	return value
+		.replaceAll(/[\p{Cc}\p{Cf}]+/gu, " ")
+		.replaceAll(/\s+/gu, " ")
+		.trim();
 }
 
 const RUNTIME_STYLES = {
@@ -53,17 +66,38 @@ export function compactRtkBinaryPath(value: string, maximumWidth: number): strin
 	return compactTerminalPath(display, width);
 }
 
+function behaviorValue(configured: boolean, effective: string): string {
+	return `configured ${configured ? "on" : "off"} · effective ${configured ? effective : "off"}`;
+}
+
 class RtkDialogComponent implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
-	private lastMaximumScroll = 0;
-	private lastViewportRows = 1;
+	private disposed = false;
+	private error = "";
+	private feedback = "";
+	private readonly generations = new Map<string, number>();
 	private readonly options: RtkDialogOptions;
-	private scrollOffset = 0;
+	private selectedSetting: SettingId = "rewriteCommands";
+	private settingsList: SettingsList;
 	private showKeyHelp = false;
+	private readonly unsubscribe: () => void;
+	private verifying = false;
 
 	constructor(context: CommandDialogViewContext<void>, options: RtkDialogOptions) {
 		this.context = context;
 		this.options = options;
+		this.settingsList = this.createSettingsList();
+		this.unsubscribe = options.settings.subscribe(() => this.sync());
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		try {
+			this.unsubscribe();
+		} catch {
+			// A presentation observer cannot block dialog teardown.
+		}
 	}
 
 	handleInput(data: string): void {
@@ -84,64 +118,91 @@ class RtkDialogComponent implements CommandDialogComponent {
 			this.context.close();
 			return;
 		}
-		const navigation = commandDialogNavigation(data, this.context.keybindings);
-		if (!navigation) return;
-		this.scrollOffset = commandDialogScrollOffset(
-			this.scrollOffset,
-			this.lastMaximumScroll,
-			this.lastViewportRows,
-			navigation,
-		);
+		if (data === "v") {
+			void this.verifyRuntime();
+			return;
+		}
+		if (data === "c") {
+			this.options.projection.reset();
+			this.feedback = "Session savings cleared.";
+			this.context.requestRender();
+			return;
+		}
+		if (this.context.keybindings.matches(data, "tui.select.up")) {
+			this.selectedSetting = this.selectedSetting === SETTING_IDS[0] ? SETTING_IDS[1] : SETTING_IDS[0];
+			this.settingsList.selectItem(this.selectedSetting);
+			this.context.requestRender();
+			return;
+		}
+		if (this.context.keybindings.matches(data, "tui.select.down")) {
+			this.selectedSetting = this.selectedSetting === SETTING_IDS[1] ? SETTING_IDS[0] : SETTING_IDS[1];
+			this.settingsList.selectItem(this.selectedSetting);
+			this.context.requestRender();
+			return;
+		}
+		this.settingsList.handleInput?.(data);
 		this.context.requestRender();
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.settingsList.invalidate();
+	}
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
 		if (this.showKeyHelp) {
-			return renderCommandDialogKeyHelp(
-				this.context,
-				renderWidth,
-				"RTK",
-				commandDialogReadKeyHelp(this.context.keybindings, "line", [
-					{ keys: "/rtk settings", description: "Open RTK settings" },
-				]),
-			);
+			return renderCommandDialogKeyHelp(this.context, renderWidth, "RTK", [
+				{ keys: "↑/↓", description: "Select a behavior" },
+				{ keys: "Enter/Space", description: "Toggle the selected behavior" },
+				{ keys: "v", description: "Verify the RTK Runtime" },
+				{ keys: "c", description: "Clear Session savings" },
+				{ keys: "?", description: "Show this key guide" },
+				{
+					keys: commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc"),
+					description: "Close",
+				},
+			]);
 		}
 		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const theme = this.context.theme;
 		const runtime = this.options.runtime.snapshot();
-		const settings = this.options.settings.get();
 		const stats = this.options.projection.stats();
 		const { color: runtimeColor, glyph: runtimeGlyph } = RUNTIME_STYLES[runtime.state];
-		const techniques = Object.entries(stats.techniques)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([name, count]) => `${name} ${String(count)}`)
-			.join(" · ");
 		const version = runtime.version
 			? runtime.version.startsWith("v")
 				? runtime.version
 				: `v${runtime.version}`
 			: "";
 		const runtimeLine = `${GUTTER}${theme.fg(runtimeColor, `${runtimeGlyph} ${runtime.state}`)}${
-			version ? theme.fg("dim", ` · ${version}`) : ""
+			this.verifying ? theme.fg("accent", " · verifying") : version ? theme.fg("dim", ` · ${version}`) : ""
 		}`;
-		const errorLines = runtime.lastError
-			? this.wrapped(renderWidth, theme.fg("error", boundTerminalLine(runtime.lastError, 220)))
-			: [];
-		const noteHeading = this.options.note?.startsWith("/rtk ") ? "Commands" : "Feedback";
-		const note = this.options.note
-			? this.options.note === "Projection statistics cleared."
-				? "✓ Projection statistics cleared."
-				: this.options.note.startsWith("Unknown action")
-					? `! ${this.options.note}`
-					: this.options.note
-			: undefined;
+		const behaviorLines = this.behaviorLines(renderWidth);
+		const savings =
+			stats.resultCount === 0
+				? "No eligible result projected yet."
+				: `${String(stats.savedChars)} chars saved (${percent(stats.savedChars, stats.originalChars)}) · ${String(stats.resultCount)} ${stats.resultCount === 1 ? "result" : "results"}`;
+		const savingsLine = `${GUTTER}${savings}`;
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		if (maximumRows <= 6) {
+			return this.renderLowHeight(
+				renderWidth,
+				maximumRows,
+				runtimeLine,
+				behaviorLines,
+				savingsLine,
+				`${runtimeGlyph} ${runtime.state} · ${savings} · ${cancel} close`,
+			);
+		}
+
+		const techniques = Object.entries(stats.techniques)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([name, count]) => `${name} ${String(count)}`)
+			.join(" · ");
+		const errors = [runtime.lastError, this.error].filter((value): value is string => Boolean(value));
 		const body = [
 			"",
-			sectionHeading(theme, "Runtime"),
+			commandDialogSectionHeading(theme, "Runtime"),
 			runtimeLine,
 			...(runtime.path
 				? [
@@ -152,59 +213,205 @@ class RtkDialogComponent implements CommandDialogComponent {
 					]
 				: []),
 			...(runtime.sha256 ? [`${GUTTER}${theme.fg("dim", `SHA-256  ${runtime.sha256.slice(0, 16)}…`)}`] : []),
-			...(runtime.state === "unchecked" && !runtime.path
+			...(runtime.state === "unchecked" && !this.verifying
 				? [`${GUTTER}${theme.fg("muted", "Not verified yet.")}`]
 				: []),
-			...(errorLines.length > 0
-				? ["", sectionHeading(theme, "Error"), ...errorLines, `${GUTTER}${theme.fg("warning", "Run /rtk verify")}`]
+			...(errors.length > 0
+				? [
+						"",
+						commandDialogSectionHeading(theme, "Error"),
+						...errors.flatMap((error) =>
+							this.wrapped(renderWidth, theme.fg("error", boundTerminalLine(error, 220))),
+						),
+					]
 				: []),
 			"",
-			sectionHeading(theme, "Behavior"),
-			`${GUTTER}${settings.rewriteCommands ? theme.fg("success", "✓") : theme.fg("muted", "○")} Command rewriting ${settings.rewriteCommands ? "on" : "off"}`,
-			`${GUTTER}${settings.outputProjection ? theme.fg("success", "✓") : theme.fg("muted", "○")} Model projection ${settings.outputProjection ? "on" : "off"}`,
-			...this.wrapped(
-				renderWidth,
-				theme.fg(
-					"dim",
-					"Model projection changes only the compact copy sent to the model; stored output stays exact.",
-				),
-			),
+			commandDialogSectionHeading(theme, "Behavior"),
+			...this.settingsBody(renderWidth),
 			"",
-			sectionHeading(theme, "Session savings"),
-			`${GUTTER}${String(stats.savedChars)} chars (${percent(stats.savedChars, stats.originalChars)}) · ${String(stats.resultCount)} results`,
+			commandDialogSectionHeading(theme, "Session savings"),
+			savingsLine,
 			...(techniques ? this.wrapped(renderWidth, `Techniques  ${techniques}`) : []),
-			...(note ? ["", sectionHeading(theme, noteHeading), ...this.wrapped(renderWidth, note)] : []),
+			...(this.feedback
+				? ["", commandDialogSectionHeading(theme, "Feedback"), ...this.wrapped(renderWidth, this.feedback)]
+				: []),
 		];
-		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
-		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
-		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		const footerFor = (overflow: boolean) =>
-			commandDialogHintLines(theme, renderWidth, [
-				...(overflow ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
-				"/rtk settings",
-				"? keys",
-				`${cancel} close`,
-			]);
-		let footer = footerFor(false);
-		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
-		this.lastMaximumScroll = Math.max(0, body.length - this.lastViewportRows);
-		footer = footerFor(this.lastMaximumScroll > 0);
-		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
-		this.lastMaximumScroll = Math.max(0, body.length - this.lastViewportRows);
-		this.scrollOffset = Math.min(this.lastMaximumScroll, Math.max(0, this.scrollOffset));
-		const visibleBody = body.slice(this.scrollOffset, this.scrollOffset + this.lastViewportRows);
-		const lines = fitCommandDialogRows(
+		const footer = commandDialogHintLines(theme, renderWidth, [
+			"↑/↓ select",
+			"Enter/Space toggle",
+			"v verify",
+			"c clear savings",
+			"? keys",
+			`${cancel} close`,
+		]);
+		return fitCommandDialogRows(
 			{
 				header: [theme.fg("border", "━".repeat(renderWidth)), `${GUTTER}${theme.bold("RTK")}`],
-				body: visibleBody,
+				body,
 				footer,
-				priority: [visibleBody.find((line) => line.trim().length > 0) ?? errorLines[0] ?? runtimeLine],
+				priority: [runtimeLine, ...behaviorLines, savingsLine],
 			},
 			maximumRows,
+		).map((line) => truncateToWidth(line, renderWidth, "…"));
+	}
+
+	private behaviorLines(width: number): [string, string] {
+		const settings = this.options.settings.get();
+		const runtimeState = this.options.runtime.snapshot().state;
+		return [
+			this.behaviorLine(
+				"rewriteCommands",
+				"Command rewriting",
+				behaviorValue(settings.rewriteCommands, runtimeState),
+				width,
+			),
+			this.behaviorLine(
+				"outputProjection",
+				"Model projection",
+				behaviorValue(settings.outputProjection, "active"),
+				width,
+			),
+		];
+	}
+
+	private behaviorLine(id: SettingId, label: string, value: string, width: number): string {
+		const prefix = this.selectedSetting === id ? "→ " : GUTTER;
+		return truncateToWidth(`${prefix}${label}  ${value}`, width, "…");
+	}
+
+	private createSettingsList(): SettingsList {
+		const settings = this.options.settings.get();
+		const runtimeState = this.options.runtime.snapshot().state;
+		const rewriteValues = [behaviorValue(true, runtimeState), behaviorValue(false, "off")];
+		const projectionValues = [behaviorValue(true, "active"), behaviorValue(false, "off")];
+		const items: SettingItem[] = [
+			{
+				currentValue: rewriteValues[settings.rewriteCommands ? 0 : 1] ?? rewriteValues[0] ?? "",
+				description: "Rewrites supported Bash commands only when the certified Runtime is ready.",
+				id: "rewriteCommands",
+				label: "Command rewriting",
+				values: rewriteValues,
+			},
+			{
+				currentValue: projectionValues[settings.outputProjection ? 0 : 1] ?? projectionValues[0] ?? "",
+				description: "Projects eligible Tool results into model context; independent of Runtime availability.",
+				id: "outputProjection",
+				label: "Model projection",
+				values: projectionValues,
+			},
+		];
+		const nativeTheme = getSettingsListTheme();
+		const listTheme = {
+			...nativeTheme,
+			value: (text: string, selected: boolean) =>
+				selected ? nativeTheme.value(text, true) : this.context.theme.fg(this.valueColor(text), text),
+		} satisfies SettingsListTheme;
+		const list = new SettingsList(
+			items,
+			items.length,
+			listTheme,
+			(id, value) => this.setValue(id, value),
+			() => this.context.close(),
+			{ enableSearch: false },
 		);
-		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
+		list.selectItem(this.selectedSetting);
+		return list;
+	}
+
+	private renderLowHeight(
+		width: number,
+		maximumRows: number,
+		runtimeLine: string,
+		behaviorLines: readonly string[],
+		savingsLine: string,
+		combinedSummary: string,
+	): string[] {
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const close = `${GUTTER}${this.context.theme.fg("dim", `${cancel} close`)}`;
+		const summary = `${GUTTER}${combinedSummary}`;
+		const rows =
+			maximumRows >= 6
+				? [`${GUTTER}${this.context.theme.bold("RTK")}`, runtimeLine, ...behaviorLines, savingsLine, close]
+				: maximumRows === 5
+					? [runtimeLine, ...behaviorLines, savingsLine, close]
+					: maximumRows === 4
+						? [`${GUTTER}${this.context.theme.bold("RTK")}`, ...behaviorLines, summary]
+						: maximumRows === 3
+							? [...behaviorLines, summary]
+							: maximumRows === 2
+								? [behaviorLines[0] ?? runtimeLine, summary]
+								: [summary];
+		return rows.map((line) => truncateToWidth(line, width, "…"));
+	}
+
+	private setValue(id: string, value: string): void {
+		if (id !== "rewriteCommands" && id !== "outputProjection") return;
+		const generation = (this.generations.get(id) ?? 0) + 1;
+		this.generations.set(id, generation);
+		this.error = "";
+		this.feedback = "";
+		const enabled = value.startsWith("configured on");
+		const update =
+			id === "rewriteCommands"
+				? this.options.settings.setRewriteCommands(enabled)
+				: this.options.settings.setOutputProjection(enabled);
+		void update.catch((error) => {
+			if (this.generations.get(id) !== generation) return;
+			const message = oneLine(String(error)) || "Unable to save RTK setting.";
+			if (this.disposed) {
+				try {
+					this.options.onPersistenceError?.(message);
+				} catch {
+					// A notification adapter cannot turn a handled persistence failure into an unhandled rejection.
+				}
+				return;
+			}
+			this.error = message;
+			this.context.requestRender();
+		});
+	}
+
+	private settingsBody(width: number): string[] {
+		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, width));
+		let hintIndex = -1;
+		for (let index = nativeLines.length - 1; index >= 0; index -= 1) {
+			if (!nativeLines[index]?.includes("Enter/Space to change")) continue;
+			hintIndex = index;
+			break;
+		}
+		const body = hintIndex >= 0 ? nativeLines.slice(0, hintIndex) : nativeLines;
+		while (body.at(-1)?.trim().length === 0) body.pop();
+		return body.map((line) => truncateToWidth(line, width, "…"));
+	}
+
+	private sync(): void {
+		if (this.disposed) return;
+		this.settingsList = this.createSettingsList();
+		this.context.requestRender();
+	}
+
+	private valueColor(value: string): "error" | "muted" | "success" | "warning" {
+		if (value.endsWith("effective active") || value.endsWith("effective ready")) return "success";
+		if (value.endsWith("effective unavailable")) return "error";
+		if (value.endsWith("effective drifted")) return "warning";
+		return "muted";
+	}
+
+	private async verifyRuntime(): Promise<void> {
+		if (this.verifying || !this.options.verify) return;
+		this.verifying = true;
+		this.error = "";
+		this.feedback = "";
+		this.context.requestRender();
+		try {
+			await this.options.verify(this.context.signal);
+		} catch (error) {
+			if (!this.context.signal.aborted) this.error = oneLine(String(error)) || "Unable to verify RTK Runtime.";
+		} finally {
+			this.verifying = false;
+			this.settingsList = this.createSettingsList();
+			if (!this.disposed) this.context.requestRender();
+		}
 	}
 
 	private wrapped(width: number, value: string): string[] {

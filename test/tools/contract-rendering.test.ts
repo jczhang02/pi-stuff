@@ -142,7 +142,7 @@ test("throwing presentation hooks retain a standard direct Tool row", () => {
 	expect(rendered.callLines.join("\n")).toContain("Fragile · direct failure");
 	expect(rendered.resultLines).toEqual([]);
 	const runtime = getToolUiRuntime(harness.api);
-	expect(runtime.toolActivityDetail("direct-fragile", "formatted")?.lines).toEqual([]);
+	expect(runtime.toolActivityDetail("direct-fragile", "formatted")?.lines).toEqual(["direct failure"]);
 	expect(runtime.toolActivityDetail("direct-fragile", "raw")?.lines.join("\n")).toContain("direct failure");
 });
 

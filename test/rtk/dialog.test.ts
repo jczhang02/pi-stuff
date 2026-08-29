@@ -5,7 +5,6 @@ import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-wor
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { RtkProjectionAdapter } from "../../packages/pi-stuff/src/rtk/projection.js";
 import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff/src/rtk/rtk-dialog.js";
-import { createRtkSettingsView } from "../../packages/pi-stuff/src/rtk/rtk-settings-dialog.js";
 import { RtkRuntime } from "../../packages/pi-stuff/src/rtk/runtime.js";
 import { RtkSettingsStore } from "../../packages/pi-stuff/src/rtk/settings.js";
 import { compactPath } from "../../packages/pi-stuff/src/rtk/upstream/techniques/path-utils.js";
@@ -37,10 +36,11 @@ describe("RTK dialog path presentation", () => {
 	});
 });
 
-describe("RTK-owned settings", () => {
-	test("keeps behavior controls under /rtk and cycles them with native settings keys", async () => {
+describe("merged RTK dialog", () => {
+	test("keeps Runtime, native behavior controls, and Session savings in one surface", async () => {
 		initTheme("dark", false);
 		let closed = 0;
+		let verified = 0;
 		const settings = RtkSettingsStore.memory();
 		const tui = new TestTui(28);
 		const context = {
@@ -53,31 +53,64 @@ describe("RTK-owned settings", () => {
 			theme,
 			tui,
 		} satisfies CommandDialogViewContext<void>;
-		const component = createRtkSettingsView(settings).create(context);
+		const component = createRtkDialogView({
+			projection: new RtkProjectionAdapter(),
+			runtime: new RtkRuntime(),
+			settings,
+			verify: async () => {
+				verified += 1;
+			},
+		}).create(context);
 
 		const initial = component.render(64).join("\n");
-		expect(initial).toContain("RTK settings");
+		expect(initial).toContain("RTK");
+		expect(initial).toContain("Runtime");
+		expect(initial).toContain("Behavior");
+		expect(initial).toContain("Session savings");
 		expect(initial).toContain("Command rewriting");
+		expect(initial).toContain("configured on · effective unchecked");
 		expect(initial).toContain("Model projection");
+		expect(initial).toContain("configured on · effective active");
+		expect(initial).toContain("No eligible result projected yet.");
+		expect(initial).not.toContain("/rtk settings");
 		expect(initial).not.toMatch(/[╭╮╰╯]/u);
-		tui.rows = 6;
-		const low = component.render(64);
-		expect(low).toHaveLength(3);
-		expect(low.join("\n")).toContain("RTK settings");
-		expect(low.join("\n")).toContain("Command rewriting");
-		expect(low.at(-1)).toMatch(/Esc(?: to)? close/);
-		tui.rows = 28;
+
 		component.handleInput?.("\r");
 		await Promise.resolve();
 		expect(settings.get().rewriteCommands).toBe(false);
+		expect(component.render(64).join("\n")).toContain("configured off · effective off");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.(" ");
+		await Promise.resolve();
+		expect(settings.get().outputProjection).toBe(false);
 
+		component.handleInput?.("v");
+		await Promise.resolve();
+		expect(verified).toBe(1);
+		component.handleInput?.("c");
+		expect(component.render(64).join("\n")).toContain("Session savings cleared.");
+
+		tui.rows = 6;
+		const low = component.render(64);
+		expect(low).toHaveLength(3);
+		expect(low.join("\n")).toContain("Command rewriting");
+		expect(low.join("\n")).toContain("Model projection");
+		expect(low.at(-1)).toContain("unchecked");
+		expect(low.at(-1)).toContain("No eligible result projected yet.");
+		expect(low.at(-1)).toContain("Esc close");
+
+		tui.rows = 28;
+		component.handleInput?.("?");
+		expect(component.render(64).join("\n")).toContain("RTK / Keys");
+		component.handleInput?.("\u001b");
+		expect(closed).toBe(0);
 		component.handleInput?.("\u001b");
 		expect(closed).toBe(1);
 		component.dispose?.();
 	});
 });
 
-test("RTK status keeps unchecked and off states readable at low height", () => {
+test("RTK low-height state uses semantic colors without hiding configured and effective values", () => {
 	const colors: Array<{ color: string; text: string }> = [];
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const recordingTheme = {
@@ -104,11 +137,11 @@ test("RTK status keeps unchecked and off states readable at low height", () => {
 	} satisfies CommandDialogViewContext<void>);
 	const lines = component.render(64);
 	expect(lines).toHaveLength(3);
-	expect(lines.join("\n")).toContain("RTK");
 	expect(lines.join("\n")).toContain("unchecked");
+	expect(lines.join("\n")).toContain("configured off · effective off");
+	expect(lines.join("\n")).toContain("No eligible result projected yet.");
 	expect(lines.at(-1)).toContain("Esc close");
 	expect(colors).toContainEqual({ color: "muted", text: "○ unchecked" });
-	expect(colors.filter(({ color, text }) => color === "muted" && text === "○")).toHaveLength(2);
 	component.handleInput?.("\r");
 	component.handleInput?.("q");
 	expect(closed).toBe(0);

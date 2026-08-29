@@ -79,19 +79,20 @@ test("MCP Setup follows the Command Dialog hierarchy at wide, narrow, and low he
 	const wideText = wide.join("\n");
 	expect(wide[0]).toBe("━".repeat(64));
 	expect(wideText).toContain("MCP setup");
-	expect(wideText).toContain("◆ Setup");
-	expect(wideText).toContain("◆ Preview");
+	expect(wideText).toContain("Setup");
+	expect(wideText).toContain("Preview");
+	expect(wideText).not.toContain("◆ Setup");
 	expect(wideText).toContain("› View example");
-	expect(wideText.indexOf("No MCP config")).toBeLessThan(wideText.indexOf("◆ Setup"));
-	expect(wideText.indexOf("◆ Setup")).toBeLessThan(wideText.indexOf("› View example"));
-	expect(wideText.indexOf("› View example")).toBeLessThan(wideText.indexOf("◆ Preview"));
+	expect(wideText.indexOf("No MCP config")).toBeLessThan(wideText.indexOf("Setup"));
+	expect(wideText.indexOf("Setup")).toBeLessThan(wideText.indexOf("› View example"));
+	expect(wideText.indexOf("› View example")).toBeLessThan(wideText.indexOf("Preview"));
 	expect(wide.at(-1)).toContain("Esc close");
 	expect(wideText).not.toMatch(/[╭╮╰╯│]/u);
 	expect(wide.every((line) => visibleWidth(line) <= 64)).toBe(true);
 
 	const narrow = panel.render(48);
 	expect(narrow[0]).toBe("━".repeat(48));
-	expect(narrow.join("\n")).not.toContain("◆ Preview");
+	expect(narrow.join("\n")).not.toContain("Preview");
 	expect(narrow.every((line) => visibleWidth(line) <= 48)).toBe(true);
 
 	const lowPanel = createPanel(
@@ -229,7 +230,7 @@ test("MCP Setup pages only overflowing lists and renders active Pi bindings", ()
 	panel.handleInput("go-down");
 	panel.handleInput("go-down");
 	panel.handleInput("\r");
-	expect(panel.render(64).join("\n")).not.toContain("◆ Detected paths");
+	expect(panel.render(64).join("\n")).not.toContain("◆");
 	panel.handleInput("accept");
 	panel.handleInput(" ");
 	const rendered = panel.render(64).join("\n");
@@ -266,9 +267,9 @@ test("MCP Setup honors the active Pi cancel binding", () => {
 
 	panel.handleInput("down");
 	panel.handleInput("confirm");
-	expect(panel.render(64).join("\n")).toContain("◆ Confirm change");
+	expect(panel.render(64).join("\n")).toContain("Confirm change");
 	panel.handleInput("cancel");
-	expect(panel.render(64).join("\n")).not.toContain("◆ Confirm change");
+	expect(panel.render(64).join("\n")).not.toContain("Confirm change");
 	expect(panel.render(64).join("\n")).toContain("Ctrl+G close");
 	panel.handleInput("cancel");
 	expect(closed).toBe(1);
@@ -290,8 +291,9 @@ test("MCP Setup previews writes and defaults confirmation to Cancel", async () =
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(writes).toBe(0);
 	const confirmation = panel.render(64).join("\n");
-	expect(confirmation).toContain("◆ Confirm change");
-	expect(confirmation).toContain("◆ Preview");
+	expect(confirmation).toContain("Confirm change");
+	expect(confirmation).toContain("Preview");
+	expect(confirmation).not.toContain("◆ Confirm change");
 	expect(confirmation).toContain("Write starter project .mcp.json?");
 	expect(confirmation).toContain("› Cancel");
 	expect(confirmation.indexOf("Write starter project .mcp.json?")).toBeLessThan(confirmation.indexOf("› Cancel"));

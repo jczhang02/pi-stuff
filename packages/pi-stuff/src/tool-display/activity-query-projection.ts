@@ -27,8 +27,10 @@ import type {
 	ToolActivityDetailView,
 	ToolActivityView,
 	ToolDetailPresentation,
+	ToolFormattedSection,
 } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
+import { formattedToolSections } from "./formatted-detail.js";
 import type { ToolGroupProjection } from "./group-projection.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
 import { formattedResultLines } from "./registered-tool-renderer.js";
@@ -36,6 +38,23 @@ import type { ToolRowModel } from "./render.js";
 import { buildRawToolDetailLines, capDetailLines, oneLine, summarizeBuiltin } from "./tool-text.js";
 
 const GROUP_LIST_LIMIT = 768;
+
+function capSections(sections: readonly ToolFormattedSection[]): readonly ToolFormattedSection[] {
+	const flattened = sections.flatMap((section, index) => [`@@pi-stuff-section:${String(index)}@@`, ...section.lines]);
+	const capped = capDetailLines(flattened, DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
+	const output: Array<{ lines: string[]; title: string }> = [];
+	let current: { lines: string[]; title: string } | undefined;
+	for (const line of capped) {
+		const marker = line.match(/^@@pi-stuff-section:(\d+)@@$/u);
+		if (marker) {
+			const source = sections[Number(marker[1])];
+			if (!source) continue;
+			current = { lines: [], title: source.title };
+			output.push(current);
+		} else current?.lines.push(line);
+	}
+	return output;
+}
 
 export type ResultErrorPolicy = (args: ToolArguments, result: AgentToolResult<unknown>) => boolean;
 
@@ -114,9 +133,18 @@ export class ToolActivityQueryProjection {
 		const rawArgs = this.source.envelopes.rawArgumentsFor(toolCallId) ?? args;
 		const name = member?.name ?? binding?.metadata.name ?? activity.name;
 		const result = member?.result ?? binding?.metadata.result ?? this.source.liveResultFor(toolCallId);
+		if (name === "codemode" && activity.state === "success") return undefined;
 		if (mode === "raw") return { activity, lines: buildRawToolDetailLines(toolCallId, name, rawArgs, result) };
 		let lines: readonly string[] | undefined;
+		let sections: readonly ToolFormattedSection[] | undefined;
 		const presentation = this.source.detailPresentations.get(name);
+		if (result && activity.state !== "running" && presentation?.detailSections) {
+			try {
+				sections = presentation.detailSections(args, result, activity.state);
+			} catch {
+				// Fall through to the shared semantic projection.
+			}
+		}
 		if (result && activity.state !== "running" && presentation?.detailLines) {
 			try {
 				lines = presentation.detailLines(args, result, activity.state);
@@ -124,23 +152,35 @@ export class ToolActivityQueryProjection {
 				// Fall back to bounded result text when an optional formatter fails.
 			}
 		}
-		return {
+		const fallback =
+			lines && lines.length > 0
+				? lines
+				: result
+					? formattedResultLines(result, {
+							fromResult: activity.summaryFromResult === true,
+							text: activity.summary,
+						})
+					: activity.detailLines.length > 0
+						? activity.detailLines
+						: ["Details are available after completion."];
+		const semantic = capSections(
+			sections && sections.length > 0
+				? sections
+				: result && activity.state !== "running"
+					? formattedToolSections(name, args, result, activity.state, fallback)
+					: [{ lines: fallback, title: "Status" }],
+		);
+		const images = result?.content.flatMap((item) =>
+			item.type === "image" && isRuntimeString(item.data) && isRuntimeString(item.mimeType)
+				? [{ data: item.data, mimeType: item.mimeType }]
+				: [],
+		);
+		const detail: ToolActivityDetailView = {
 			activity,
-			lines: capDetailLines(
-				lines && lines.length > 0
-					? lines
-					: result
-						? formattedResultLines(result, {
-								fromResult: activity.summaryFromResult === true,
-								text: activity.summary,
-							})
-						: activity.detailLines.length > 0
-							? activity.detailLines
-							: ["Details are available after completion."],
-				DETAIL_LINE_LIMIT,
-				DETAIL_BYTE_LIMIT,
-			),
+			lines: semantic.flatMap((section) => section.lines),
+			sections: semantic,
 		};
+		return images && images.length > 0 ? { ...detail, images } : detail;
 	}
 
 	summaryMember(member: PlannedToolActivityMember): ActivitySummaryMember {
@@ -253,9 +293,15 @@ export class ToolActivityQueryProjection {
 			.filter((activity) => !covered.has(activity.id))
 			.map((activity) => ({
 				id: activity.id,
+				label: activity.label,
 				memberIds: [activity.id],
+				operation: activity.target,
 				order: groups.length + activity.sequence,
-				state: toolActivityOutcome(activity.state),
+				outcome: activity.summary,
+				state:
+					activity.state === "rejected" || activity.state === "cancelled"
+						? activity.state
+						: toolActivityOutcome(activity.state),
 				summary: activity.label,
 			}));
 		return [...grouped, ...standalone];
@@ -266,18 +312,38 @@ export class ToolActivityQueryProjection {
 			const member = group.members[0];
 			if (!member) return undefined;
 			const activity = this.source.activities.get(member.id) ?? this.activityFromPlan(member);
+			if (member.name === "codemode" && activity.state === "success") return undefined;
 			return {
 				id: group.leaderId,
+				label: activity.label,
 				memberIds: [member.id],
-				state: toolActivityOutcome(activity.state),
+				operation: activity.target,
+				outcome: activity.summary,
+				state:
+					activity.state === "rejected" || activity.state === "cancelled"
+						? activity.state
+						: toolActivityOutcome(activity.state),
 				summary: activity.summary ? `${activity.label} · ${activity.summary}` : activity.label,
 			};
 		}
 		const summary = this.source.groupSummary(group);
+		const members = group.members.map(
+			(member) => this.source.activities.get(member.id) ?? this.activityFromPlan(member),
+		);
+		const labels = new Set(members.map((activity) => activity.label));
+		const states = group.members.map((member) => this.summaryMember(member).state);
+		const state = states.every((candidate) => candidate === "rejected")
+			? "rejected"
+			: states.every((candidate) => candidate === "cancelled")
+				? "cancelled"
+				: summary.outcome;
 		return {
 			id: group.leaderId,
+			label: labels.size === 1 ? (members[0]?.label ?? "Tools") : "Tools",
 			memberIds: group.members.map((member) => member.id),
-			state: summary.outcome,
+			operation: summary.target,
+			outcome: summary.summary,
+			state,
 			summary: summary.summary,
 		};
 	}

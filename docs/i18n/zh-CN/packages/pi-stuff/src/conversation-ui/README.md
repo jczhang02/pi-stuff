@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 9bf5b67d8b0998d4bb6cd2b9826ca505af012148f169c6e52e17a2b3ca717904 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: b4fcc1d8e0e0c37e53d68b33328ba71601492b38fb4e6f1ad70bd0f92e533f15 -->
 
 # Conversation UI 模块
 
@@ -38,7 +38,7 @@ Pi Stuff 套件的统一呈现层。它保持 Pi 为宿主，并增加响应式�
 
 ### 欢迎标题
 
-启动标题遵循观察到的 Claude Code 2.1.197 卡片几何，同时保留 Pi Stuff 自己的身份和内容。强调色 Pi 标记按官方 pi.dev 几何重建：普通尺寸为 8×4，低于 48 列或高度不超过 18 行时为完整 4×2。它选择紧凑标记，而不是裁切大标记，并始终在标记下保留一行有效空白。70 列及以上时，卡片使用固定 52 单元身份列加响应式指引列；低于该宽度时变为居中单列卡片，并删除指引与清单，而不是让它们换行。它属于 Pi 普通回滚区，不是浮动窗口。
+启动标题遵循观察到的 Claude Code 2.1.197 卡片几何，同时保留 Pi Stuff 自己的身份和内容。强调色 Pi 标记按官方 pi.dev 几何重建：普通尺寸为 8×4，低于 48 列或高度不超过 18 行时为完整 4×2。它选择紧凑标记，而不是裁切大标记，并始终在标记下保留一行有效空白。82 列及以上时，卡片使用固定 52 单元身份列加响应式指引列；低于该宽度时变为居中单列卡片，并删除指引与清单，而不是让它们换行。它属于 Pi 普通回滚区，不是浮动窗口。
 
 ### 输入增强
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 97d03854d5010b9447c7ccfd74f9a8c9560801537444f80b54d5357645b96bbf -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 3653ccc0bbdc0e46c1a48232049a1f1f130001eb28918fcd28cf555daaa45883 -->
 
 # 工程文档
 
@@ -76,6 +76,7 @@
 | [0020](adr/0020-add-automatic-session-naming.md) | 在用户工作 settled 边界自动命名 Session |
 | [0021](adr/0021-fork-ponytail-as-a-suite-capability.md) | 将 Ponytail fork 为 Suite Capability |
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | 只折叠原生 retrieval |
+| [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block family |
 
 ## 证据与历史
 

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 62165427aa671c3bcacffcab6c335a6050da1543152399f15a508026ac949ebf -->
+<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 7018be9edd6bf5a68f3ff81c423d00adacf0fbf3e30667062b3de9f342525586 -->
 
 # BTW 模块
 
@@ -35,7 +35,7 @@ Pi 没有公开的无对话记录宿主模型调用接缝。因此 `/btw` 使用
   x 清除历史 · ? 按键 · Esc 关闭
 ```
 
-不存在 `BTW` 标题、生命周期标签、`Answer` 小节、列表/详情切换、卡片或分栏。待处理工作由回答加载器显示；失败出现在回答流程中。空白成功回答显示 `(empty answer)`；不带参数的 `/btw` 且没有保留交互时，显示 `No previous /btw exchange in this session.`。
+不存在 `BTW` 标题、生命周期标签、`Answer` 小节、列表/详情切换、卡片或分栏。待处理工作由回答加载器显示；失败出现在回答流程中。空白成功回答显示 `(empty answer)`；不带参数的 `/btw` 且没有保留交互时，以 muted neutral guidance 显示 `No previous /btw exchange in this session.`，而不是 error。
 
 Left 和 Right 切换保留交互。Pi 配置的上、下操作每次滚动三行，Ctrl+P/Ctrl+N 是只读别名；PageUp/PageDown 和 `b`/Space 每次滚动一个可见页面，Home/End 跳到顶部或底部。Enter 和 Space 不再关闭阅读界面。`?` 打开上下文按键帮助。只有读者仍在底部时，流式回答才跟随尾部。`c` 和 `f` 只适用于成功交互。`x` 只在存在较早历史时出现，并把行内确认留在同一个界面。
 

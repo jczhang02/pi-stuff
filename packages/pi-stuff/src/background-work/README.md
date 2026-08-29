@@ -27,7 +27,8 @@ owns supervisor and identity mechanisms, while `output.ts` owns bounded output. 
 and Monitor inspection and stop controls. `/agents` owns Agent lifecycle and control, while `/tools` owns Tool invocation
 and protocol inspection. A Tool invocation that launched Background Work and the resulting live task are different
 domain objects, so the UI does not match rows and delete apparent duplicates; each surface reads directly from its
-own authority.
+own authority. A Transcript `background` call uses an Operation Block only for `action=output`; launch and control calls
+retain their ordinary Tool rows.
 
 The list keeps launch order and updates rows in place. It contains live work only; terminal Background Work continues
 through its existing bounded receipt and notification paths. A row is the `›` focus marker, work kind, primary identity,
@@ -61,10 +62,10 @@ Tasks / Shell
 Build package
 ● running · 18s · task bg-ab12
 
-◆ Command
+Command
 bun run check:fast
 
-◆ Output
+Output
 ...latest bounded output...
 ```
 
@@ -75,24 +76,26 @@ Tasks / Monitor
 Wait for CI success
 ● watching · 2m · task mon-ab12
 
-◆ Source
+Source
 HTTP · https://example.test/build/42
 
-◆ Condition
+Condition
 success contains "completed"
 timeout in 8m
 
-◆ Latest evidence
+Latest evidence
 ...latest bounded response or log text...
 ```
 
-Omit an absent condition field rather than displaying placeholders. File, log, HTTP, and command Monitors retain their
+Omit an absent condition field rather than displaying placeholders. A missing file or log source is the expected
+`Waiting for <source> to appear.` state; other source read errors fail the Monitor instead of being presented as
+ordinary waiting. File, log, HTTP, and command Monitors retain their
 real source and target; exposing them requires the live snapshot to carry the existing Monitor input metadata instead
 of flattening every Monitor into a generic command. A task ID remains low-priority detail metadata and never enters the
 list row.
 
-The compact `◆` appears only on section headings. Content keeps its natural Tool-owned command/output hierarchy and
-does not gain another indentation level. Output or evidence follows appended content only while the viewport is at the
+Section headings use bold semantic text without icons. Content keeps its natural Tool-owned command/output hierarchy
+and does not gain another indentation level. Output or evidence follows appended content only while the viewport is at the
 bottom; upward movement freezes reading, reports bounded newer content, and resumes following at the bottom.
 PageUp/PageDown and `b`/Space scroll by a page; Home/End jump to the top or bottom. Footer scroll hints appear only on overflow; `x stop` appears only
 while the selected owned activity is stoppable; `Esc back` is always present and last.

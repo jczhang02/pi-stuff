@@ -11,6 +11,7 @@ import {
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	matchesCommandDialogCancel,
 	matchesCommandDialogConfirm,
@@ -412,7 +413,7 @@ class McpControlDialog implements CommandDialogComponent {
 		];
 		if (server.failureDetail) {
 			const failureLine = `${GUTTER}${this.context.theme.fg("error", server.failureDetail)}`;
-			lines.push(`${GUTTER}${this.context.theme.fg("muted", "◆ Error")}`, failureLine);
+			lines.push("", commandDialogSectionHeading(this.context.theme, "Error"), failureLine);
 			roles.failure = failureLine;
 		}
 		if (this.notice) {
@@ -420,7 +421,7 @@ class McpControlDialog implements CommandDialogComponent {
 			lines.push(noticeLine);
 			roles.notice = noticeLine;
 		}
-		lines.push("", `${GUTTER}${this.context.theme.fg("muted", "◆ Actions")}`);
+		lines.push("", commandDialogSectionHeading(this.context.theme, "Actions"));
 		for (const [index, action] of this.actionItems(server).entries()) {
 			const line = `${GUTTER}${index === this.actionCursor ? this.context.theme.fg("accent", "› ") : "  "}${this.actionLabel(action)}`;
 			lines.push(line);
@@ -445,9 +446,9 @@ class McpControlDialog implements CommandDialogComponent {
 			: confirmation.disabled
 				? "Change  disabled = true"
 				: "Change  remove disabled override; preserve enabled state";
-		const headingLine = `${GUTTER}${this.context.theme.fg("muted", "◆ Confirm change")}`;
+		const headingLine = commandDialogSectionHeading(this.context.theme, "Confirm change");
 		const questionLine = `${GUTTER}${this.context.theme.fg("warning", `! ${question}`)}`;
-		const previewHeading = `${GUTTER}${this.context.theme.fg("muted", "◆ Preview")}`;
+		const previewHeading = commandDialogSectionHeading(this.context.theme, "Preview");
 		const previewDetail = `${GUTTER}${this.context.theme.fg("muted", "Target  .pi/mcp.json")}`;
 		const cancelLine = `${GUTTER}${this.confirmCursor === 0 ? this.context.theme.fg("accent", "› ") : "  "}Cancel`;
 		const confirmLine = `${GUTTER}${this.confirmCursor === 1 ? this.context.theme.fg("accent", "› ") : "  "}${logout ? "Log out" : connection ? `${confirmation.enabled ? "Automatic" : "On demand"} and reload` : `${verb} and reload`}`;

@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 509ee4d11bf40c53ea021f082b2f6b2feec76a9ebf43b027865a6d43e477aac2 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 475f9743591fcb4cd6087816f687cd94e0489e686d366cd99887b0391027093a -->
 
 # Pi Stuff
 
@@ -81,9 +81,15 @@ _避免使用_：Tool call、Tool row、Tool Activity Group
 automatic continuation 或 turn completion 会关闭它。
 _避免使用_：Exploration group、Tool batch、merged Tool call
 
+**Operation Block**：
+一种只用于 Transcript 显示的独立、证据丰富 Tool Activity projection，在 invocation 的原始位置展示有界的
+`Tool(operation identity)` parent 与缩进的 child outcome evidence。它是封闭 family，只包含 Bash、Write、
+Edit、Patch、Background output 和没有匹配 owner 的外层 Code Mode issue；它不是通用 Tool card 或 grouping rule。
+_避免使用_：Tool card、Universal Tool Block、Command Block
+
 **Bash Operation Block**：
-一次 Bash Tool call 的仅显示 projection，在该 call 的原始位置展示一个有界命令标题与 child output preview。
-call 内部的 shell composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
+Operation Block 的 Bash 特化，展示一个有界 command identity 与 child output preview。call 内部的 shell
+composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
 _避免使用_：Command group、parsed subcommand、Retrieval Group
 
 **Envelope Fallback Row**：
@@ -118,6 +124,11 @@ _避免使用_：Agent tokens、total Agent usage、Context budget
 Agent control action 使用的公开二元组：稳定 Agent run ID 与 child index。模型可见 status 会分开暴露二者；
 内部 roster row key 是显示身份，不是 Agent Target。
 _避免使用_：Agent key、child address
+
+**Agent Lifecycle Row**：
+一次 Agent Tool lifecycle event 的仅显示 Transcript projection。Background launch 与 completion 保持为分开的
+chronological event；live Agent state 与完整 child evidence 仍由 Agents 负责。
+_避免使用_：Agent Operation Block、Subagent Row、Agent roster row
 
 **Context Activity**：
 一次由用户发起的 Context maintenance operation 所对应的、模型不可见且持久化的 Session record。一条可见

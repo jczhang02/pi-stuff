@@ -122,9 +122,6 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 				onFork: (exchange, promotionSignal) => promoteBtwExchange(exchange, ctx, promotionSignal),
 			};
 			if (question !== undefined) Object.assign(options, { question });
-			if (question === undefined && history.length === 0) {
-				Object.assign(options, { error: "No previous /btw exchange in this session." });
-			}
 			const controller = new BtwDialogController(theme, tui, keybindings, options);
 			resolveController?.({ controller, signal });
 			resolveController = undefined;

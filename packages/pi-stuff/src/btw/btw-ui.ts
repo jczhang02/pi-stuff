@@ -31,7 +31,7 @@ const GUTTER = "  ";
 const COPY_FEEDBACK_MS = 2_000;
 const SCROLL_STEP = 3;
 
-type DisplayState = "pending" | "success" | "error";
+type DisplayState = "empty" | "pending" | "success" | "error";
 
 interface DisplayExchange {
 	id: string | undefined;
@@ -154,7 +154,7 @@ export class BtwDialogController implements Component {
 				id: undefined,
 				question: "",
 				answer: "",
-				state: "error",
+				state: options.error === undefined ? "empty" : "error",
 				error: options.error ?? "No previous /btw exchange in this session.",
 				timestamp: Date.now(),
 				contextTrimmed: false,
@@ -456,6 +456,9 @@ export class BtwDialogController implements Component {
 		const lines = safeAnswer.length > 0 ? this.markdown.render(Math.max(1, width)) : [];
 		if (exchange.state === "pending") {
 			lines.push(...this.loader.render(Math.max(1, width)));
+		} else if (exchange.state === "empty") {
+			const empty = stripTerminalControls(exchange.error ?? "No previous /btw exchange in this session.");
+			lines.push(...wrapTextWithAnsi(this.theme.fg("muted", empty), Math.max(1, width)));
 		} else if (exchange.state === "error") {
 			const error = stripTerminalControls(exchange.error ?? "Unknown /btw error");
 			lines.push(...wrapTextWithAnsi(this.theme.fg("error", error), Math.max(1, width)));

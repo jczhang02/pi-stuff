@@ -381,7 +381,8 @@ test("projection replacement isolates reused IDs from stale rows, callbacks, and
 	expect(newInvalidations).toBe(1);
 	expect(scheduler.activeCount).toBe(0);
 	expect(renderLines(oldRow).join("\n")).not.toContain("Changed");
-	expect(renderLines(newRow).join("\n")).toContain("edit new.ts · done");
+	expect(renderLines(newRow).join("\n")).toContain("Edit(new.ts)");
+	expect(renderLines(newRow).join("\n")).toContain("diff evidence unavailable");
 });
 
 test("a user input boundary prevents the next turn from reusing the previous group", () => {
@@ -541,7 +542,7 @@ test("an aborted final assistant message settles an unexecuted streamed Tool cal
 	runtime.endTurn();
 	const group = runtime.resolveGroup("r1");
 	if (!group || group === "ambiguous") throw new Error("aborted group missing");
-	expect(group.state).toBe("warning");
+	expect(group.state).toBe("cancelled");
 	expect(group.summary).toContain("cancelled");
 	expect(group.summary).not.toContain("Reading");
 	expect(renderLines(component).join("\n")).toContain("cancelled");

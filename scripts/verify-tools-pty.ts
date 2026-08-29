@@ -46,23 +46,7 @@ function parseRequestRecords(contents: string): RequestRecord[] {
 		});
 }
 
-const EXPECT_PROGRAM = `
-set timeout 25
-
-proc must_expect {pattern} {
-    expect {
-        -exact $pattern {}
-        timeout {
-            puts stderr "Timed out waiting for: $pattern"
-            exit 2
-        }
-        eof {
-            puts stderr "Reached EOF while waiting for: $pattern"
-            exit 3
-        }
-    }
-}
-
+const WAIT_FOR_QUIET_PROGRAM = `
 proc discard_pending_output {} {
     set discarded ""
     expect -timeout 0 {
@@ -95,6 +79,26 @@ proc wait_for_quiet {} {
     puts stderr "Timed out waiting for terminal output to settle"
     exit 2
 }
+`;
+
+const EXPECT_PROGRAM = `
+set timeout 25
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
+${WAIT_FOR_QUIET_PROGRAM}
 
 proc send_and_expect {keys pattern} {
     discard_pending_output
@@ -128,15 +132,15 @@ wait_for_quiet
 send_and_expect "\\033" "activities"
 if {$env(PI_STUFF_TOOLS_PTY_COLUMNS) >= 96} {
     send_and_expect "\\tr" "Raw"
-    send_and_expect "r" "Result"
+    send_and_expect "r" "Cancellation"
     send -- "\\033\\[Z"
     wait_for_quiet
 }
 send_and_expect "\\031" "State · rejected"
 send_and_expect "\\033\\[A" "State · cancelled"
-send_and_expect " " "Bash · done"
+send_and_expect " " "Bash · command · done"
 send_and_expect "\\rr" "Raw"
-send_and_expect "r" "Result"
+send_and_expect "r" "Output"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-4\\r"
@@ -201,13 +205,17 @@ proc must_expect {pattern} {
     }
 }
 
+${WAIT_FOR_QUIET_PROGRAM}
+
 spawn -noecho script -qefc $env(PI_STUFF_TOOLS_ACTIVE_RUNNER) /dev/null
 must_expect "TOOLS_PROBE_DONE"
+wait_for_quiet
 send -- "/reload\\r"
 must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
 send -- "probe after reload\\r"
 must_expect "TOOLS_PROBE_DONE"
+wait_for_quiet
 send -- "\\004"
 expect {
     eof {}
@@ -241,12 +249,12 @@ function verifyOutput(output: string, columns: number): void {
 		"TOOLS_DONE",
 		"• TOOLS_DONE",
 		"• Read 1 file",
-		"• Write written.txt",
-		"• Edit written.txt",
+		"• Write(written.txt)",
+		"• Edit(written.txt)",
 		"• Searched 2 patterns, listed 1 directory",
 		"• List",
 		"• Bash",
-		"• Edit written.txt · +1/-1",
+		"+1/-1",
 		"• State error · working",
 		"• State error · error",
 		"• Bash(printf '",
@@ -296,7 +304,7 @@ function verifyLifecycleFrames(visible: string): void {
 		fail("independent Tool row did not expose its active and settled states");
 	}
 	const firstRetrieval = visible.indexOf("• Read 1 file");
-	const modification = visible.indexOf("• Write written.txt", firstRetrieval + 1);
+	const modification = visible.indexOf("• Write(written.txt)", firstRetrieval + 1);
 	const secondRetrieval = visible.indexOf("• Searched 2 patterns, listed 1 directory", modification + 1);
 	if (firstRetrieval < 0 || modification < 0 || secondRetrieval < 0) {
 		fail("retrieval groups and their independent modification boundary lost source order");

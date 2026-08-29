@@ -303,7 +303,8 @@ test("keeps Space harmless and requires an explicit confirmation before disablin
 	component.handleInput?.("confirm");
 	const disableConfirmation = component.render(72).join("\n");
 	expect(disableConfirmation).toContain("Disable local?");
-	expect(disableConfirmation).toContain("◆ Preview");
+	expect(disableConfirmation).toContain("Preview");
+	expect(disableConfirmation).not.toContain("◆ Preview");
 	expect(disableConfirmation).toContain("Target  .pi/mcp.json");
 	expect(disableConfirmation).toContain("Change  disabled = true");
 	component.handleInput?.("confirm");
@@ -346,8 +347,9 @@ test("confirms and returns a persistent automatic-connection choice", () => {
 	component.handleInput?.("down");
 	component.handleInput?.("confirm");
 	const confirmation = component.render(72).join("\n");
-	expect(confirmation).toContain("◆ Confirm change");
-	expect(confirmation).toContain("◆ Preview");
+	expect(confirmation).toContain("Confirm change");
+	expect(confirmation).toContain("Preview");
+	expect(confirmation).not.toContain("◆ Confirm change");
 	expect(confirmation).toContain("Change  lifecycle = keep-alive");
 	expect(confirmation).toContain("Connect docs automatically?");
 	expect(confirmation).toContain("› Cancel");

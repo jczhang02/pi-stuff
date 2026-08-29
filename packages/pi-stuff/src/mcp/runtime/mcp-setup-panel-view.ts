@@ -1,6 +1,10 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { commandDialogPrimaryKey, fitCommandDialogRows } from "../../conversation-ui/index.js";
+import {
+	commandDialogPrimaryKey,
+	commandDialogSectionHeading,
+	fitCommandDialogRows,
+} from "../../conversation-ui/index.js";
 import { type McpDialogRows, mcpDialogPriority } from "../mcp-dialog-rows.js";
 import type { ConfigWritePreview, KnownServerPreset, McpDiscoverySummary } from "./config.ts";
 import { redactTraceText } from "./mcp-trace.ts";
@@ -151,11 +155,11 @@ function renderConfirmation(view: McpSetupPanelViewState, innerW: number): McpDi
 					? "Add RepoPrompt to the MCP config?"
 					: `Add ${action?.label ?? "this server"} to the MCP config?`;
 	const lines = [
-		padLine(view.theme.fg("muted", "◆ Confirm change"), innerW),
+		padLine(commandDialogSectionHeading(view.theme, "Confirm change", ""), innerW),
 		padLine(view.theme.fg("warning", `! ${question}`), innerW),
 		padLine(view.theme.fg("muted", "Review the target and exact diff before writing."), innerW),
 		padLine("", innerW),
-		padLine(view.theme.fg("muted", "◆ Preview"), innerW),
+		padLine(commandDialogSectionHeading(view.theme, "Preview", ""), innerW),
 	];
 	const preview = safePreview(
 		view,
@@ -209,7 +213,7 @@ function renderActions(view: McpSetupPanelViewState, innerW: number): SetupRows 
 		if (!action) continue;
 		const nextSection = actionSection(action);
 		if (nextSection !== section) {
-			lines.push(padLine(view.theme.fg("muted", `◆ ${nextSection}`), innerW));
+			lines.push(padLine(commandDialogSectionHeading(view.theme, nextSection, ""), innerW));
 			section = nextSection;
 		}
 		const selected = index === view.actionCursor;
@@ -224,7 +228,7 @@ function renderActions(view: McpSetupPanelViewState, innerW: number): SetupRows 
 	}
 	if (innerW >= COMPACT_WIDTH) {
 		lines.push(padLine("", innerW));
-		const previewHeading = padLine(view.theme.fg("muted", "◆ Preview"), innerW);
+		const previewHeading = padLine(commandDialogSectionHeading(view.theme, "Preview", ""), innerW);
 		lines.push(previewHeading);
 		roles["preview-heading"] = previewHeading;
 		const preview = safePreview(
@@ -246,7 +250,7 @@ function renderImports(view: McpSetupPanelViewState, innerW: number): SetupRows 
 	const lines: string[] = [];
 	const selectableRows: string[] = [];
 	const roles: McpDialogRows["roles"] = {};
-	lines.push(padLine(view.theme.fg("muted", "◆ Compatibility imports"), innerW));
+	lines.push(padLine(commandDialogSectionHeading(view.theme, "Compatibility imports", ""), innerW));
 	lines.push(padLine(view.theme.fg("muted", "Choose sources to copy into Pi-owned compatibility config."), innerW));
 	lines.push(padLine("", innerW));
 	const { start, end } = visibleRange(view.discovery.imports.length, view.importCursor);
@@ -271,7 +275,7 @@ function renderImports(view: McpSetupPanelViewState, innerW: number): SetupRows 
 	lines.push(padLine(view.theme.fg("muted", `${selected.length} selected`), innerW));
 	if (innerW >= COMPACT_WIDTH) {
 		lines.push(padLine("", innerW));
-		const previewHeading = padLine(view.theme.fg("muted", "◆ Preview"), innerW);
+		const previewHeading = padLine(commandDialogSectionHeading(view.theme, "Preview", ""), innerW);
 		lines.push(previewHeading);
 		roles["preview-heading"] = previewHeading;
 		const preview = safePreview(
@@ -298,7 +302,7 @@ function renderPaths(view: McpSetupPanelViewState, innerW: number): SetupRows {
 	const lines: string[] = [];
 	const selectableRows: string[] = [];
 	const roles: McpDialogRows["roles"] = {};
-	lines.push(padLine(view.theme.fg("muted", "◆ Detected paths"), innerW));
+	lines.push(padLine(commandDialogSectionHeading(view.theme, "Detected paths", ""), innerW));
 	lines.push(padLine(view.theme.fg("muted", "Open a discovered MCP config in the Host."), innerW));
 	lines.push(padLine("", innerW));
 	const paths = view.paths;

@@ -62,12 +62,51 @@ test("Agent Tool rows use short targets and honest lifecycle summaries", () => {
 	).toBe("2 launched");
 	expect(
 		presentation.summarize?.({ agent: "reviewer", foreground: true, task: fullTask }, longReport, "success", 18_000),
-	).toBe("finished");
+	).toBe("finished · 18s");
 	expect(presentation.summarize?.({ action: "resume", id: "run-1" }, longReport, "success", 18_000)).toBe("resumed");
 	expect(presentation.summarize?.({ action: "steer", id: "run-1" }, longReport, "success", 18_000)).toBe("sent");
 	expect(presentation.summarize?.({ action: "stop", id: "run-1" }, longReport, "success", 18_000)).toBe("stopped");
 	expect(presentation.summarize?.({ action: "status", id: "run-1" }, longReport, "success", 18_000)).toBe("checked");
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
+});
+
+test("Agent expansion lists full member tasks and bounds foreground evidence through the shared renderer", () => {
+	const presentation = createAgentToolPresentation();
+	const parallelArgs = {
+		tasks: [
+			{ agent: "reviewer", task: "Review the complete change." },
+			{ agent: "tester", task: "Run the complete test matrix." },
+		],
+	};
+	const launched = {
+		content: [{ type: "text" as const, text: "2 Agents started." }],
+		// SAFETY: this fixture supplies the exact Agent result fields read by presentation.
+		details: { asyncId: "run-2", mode: "parallel", results: [] } as never,
+	};
+	expect(presentation.detailLines?.(parallelArgs, launched, "success")).toEqual([
+		"reviewer · Review the complete change. · launched",
+		"tester · Run the complete test matrix. · launched",
+	]);
+	const foreground = {
+		content: [{ type: "text" as const, text: "Verified the implementation.\nAll checks passed." }],
+		// SAFETY: this fixture supplies the exact Agent result fields read by presentation.
+		details: {
+			mode: "single",
+			results: [{ agent: "reviewer", error: undefined, exitCode: 0, task: "Review the complete change." }],
+		} as never,
+	};
+	expect(
+		presentation.detailLines?.(
+			{ agent: "reviewer", foreground: true, task: "Review the complete change." },
+			foreground,
+			"success",
+		),
+	).toEqual([
+		"reviewer · Review the complete change. · finished",
+		"",
+		"Verified the implementation.",
+		"All checks passed.",
+	]);
 });
 
 test("Agent Tool activities reflect launches, refusals, and foreground runs", () => {

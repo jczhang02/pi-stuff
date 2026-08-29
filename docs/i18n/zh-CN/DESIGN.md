@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 9cb9798f7d1fdf4d32284c54893584b8b838adc2ac5fbaec8d0599d92ed301c1 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: dccdf60987eaaa494d0a88fd36a919b1c1d3f81551290ad2ca4a42d6447f3c39 -->
 
 ---
 version: alpha
@@ -15,7 +15,7 @@ omitted:
     reason: 目前的组件 token 格式面向 CSS，无法准确描述 Pi TUI 的行为。
 spacing:
   dialog-gutter-cells: 2
-  section-icon-cells: 1
+  section-leading-blank-rows: 1
   internal-divider-cells: 1
 ---
 
@@ -74,7 +74,7 @@ Escape 返回路径，然后才考虑次要数量、描述、提示和周围条�
 
 终端变窄时，按以下顺序删减信息：装饰性文案、数量与时间、可选描述、目标与预览，最后是次要元数据。
 无论多窄，都要保留主要身份、有意义的摘要、生命周期状态、当前选中的操作和返回方式。文字换行不能增加
-额外缩进，也不能在续行中重复板块图标。
+额外缩进，也不能在续行中重复板块标题。
 
 宽屏双栏仍然是一块 Dialog 区域。顶部结构线必须贯穿完整宽度，中间只用一条竖线分隔导航和详情。它
 不能看起来像两张并排的卡片。只有需要在同级条目与详情之间反复切换的 `/tools` 和 `/tasks` 使用这种
@@ -86,14 +86,15 @@ Escape 返回路径，然后才考虑次要数量、描述、提示和周围条�
 Pi Stuff 使用平面界面。没有阴影、模糊、浮动卡片或装饰性层级。界面的深浅关系来自归属和阅读顺序：
 先是对话，然后是临时聚焦界面、当前选中行，最后是详情。
 
-层级通过一条结构分隔线、克制的间距、语义对比和紧凑板块图标表达。不要给每个板块再套一个框。可滚动的
+层级通过一条结构分隔线、克制的间距、语义对比和紧凑板块标题表达。不要给每个板块再套一个框。可滚动的
 Welcome 身份卡是目前唯一确认可以使用完整边框的例外，因为它属于对话文档，不属于临时 Dialog 系统。
 
 ## 形状
 
 Pi Stuff 的形状语言来自终端，以直线结构为主。Dialog 的结构线使用粗体框线字符；宽屏双栏在一条连续
-的 `━` 顶部粗线下使用一条粗体 `┃` 中间分隔线。板块标题使用紧凑的 `◆` 标记，它不能继续延伸成板块
-正文旁边的轨道。它只出现在标题行，不能表示生命周期状态、焦点或 Conversation Transcript 事件。
+的 `━` 顶部粗线下使用一条粗体 `┃` 中间分隔线。板块标题不使用图标。普通标题使用强调色粗体，Error
+使用错误色粗体，Rejection 与 Cancellation 使用警告色粗体。板块前保留一行空白，正文从下一行开始，
+并与 Dialog 的两格 gutter 对齐。不要增加替代符号、冒号、全大写、下划线或板块边框。
 
 `›` 只表示当前获得焦点、可以选择的行，没有其他含义。生命周期和严重程度使用另外一套单字符安全图标。
 Conversation Transcript 已经确定使用小圆点 `•`，本次保持不变。普通 Goal 生命周期信息通知也使用它作为
@@ -124,7 +125,7 @@ Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键�
 
 ### 详情板块
 
-板块标题使用紧凑的 `◆`，例如 `◆ Task`、`◆ Activity`、`◆ Output` 或 `◆ Details`。每个界面根据自己的
+使用 `Task`、`Activity`、`Output` 或 `Details` 等简洁标题，并遵循上述层级规则。每个界面根据自己的
 任务选择板块：`/agents` 围绕 Agent 身份、Task、可选结果和 Activity 组织；`/ctx` 先显示 Context
 占用量；`/diagnostics` 先说明问题；`/tools` 先显示容易理解的 Tool Activity。不要强迫所有 Dialog
 使用同一套字段模板。

@@ -80,10 +80,16 @@ A derived display-only summary of one continuous segment of native Read, Grep/Fi
 Boundary, independent Tool Activity, automatic continuation, or turn completion closes it.
 _Avoid_: Exploration group, Tool batch, merged Tool call
 
+**Operation Block**:
+A display-only Transcript projection of one independent, evidence-rich Tool Activity, with a bounded
+`Tool(operation identity)` parent and indented child outcome evidence at the invocation's native position. It is a
+closed family comprising Bash, Write, Edit, Patch, Background output, and an unmatched outer Code Mode issue, not a
+universal Tool card or a grouping rule.
+_Avoid_: Tool card, Universal Tool Block, Command Block
+
 **Bash Operation Block**:
-A display-only projection of one Bash Tool call, with one bounded command title and child output preview at the call's
-native position. Shell composition inside the call remains one operation, and the underlying Tool result and Session
-records remain unchanged.
+A Bash specialization of Operation Block, with one bounded command identity and child output preview. Shell
+composition inside the call remains one operation, and the underlying Tool result and Session records remain unchanged.
 _Avoid_: Command group, parsed subcommand, Retrieval Group
 
 **Envelope Fallback Row**:
@@ -121,6 +127,11 @@ _Avoid_: Agent tokens, total Agent usage, Context budget
 The public pair of a stable Agent run ID and child index used by Agent control actions. Model-visible status exposes
 these fields separately; an internal roster row key is display identity rather than an Agent Target.
 _Avoid_: Agent key, child address
+
+**Agent Lifecycle Row**:
+A display-only Transcript projection of one Agent Tool lifecycle event. Background launch and completion remain
+separate chronological events, while live Agent state and full child evidence remain owned by Agents.
+_Avoid_: Agent Operation Block, Subagent Row, Agent roster row
 
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row

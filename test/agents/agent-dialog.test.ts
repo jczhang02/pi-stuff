@@ -320,7 +320,8 @@ test("shows a terminal error once and removes repeated task wrappers", async () 
 	await flush();
 	const detail = text(component, 100);
 	expect(detail).toContain("× failed · 12s");
-	expect(detail).toContain("◆ Error\n  Provider rejected the child payload after validation.");
+	expect(detail).toContain("Error\n  Provider rejected the child payload after validation.");
+	expect(detail).not.toContain("◆");
 	expect(detail.split("Provider rejected the child payload")).toHaveLength(2);
 	expect(detail.split(task)).toHaveLength(2);
 	expect(detail).not.toContain("Partial result");
@@ -453,7 +454,7 @@ test("loads a bounded transcript, strips terminal controls, and accepts the comp
 	await flush();
 	const fallbackText = text(fallback.component);
 	expect(fallbackText).toContain("No Activity yet.");
-	expect(fallbackText).toContain("◆ Result");
+	expect(fallbackText).toContain("Result");
 	expect(fallbackText.match(/ONLY_PARTIAL_9X/g)).toHaveLength(1);
 });
 
@@ -557,7 +558,7 @@ test("keeps long detail content in one fixed scrollable window", async () => {
 
 	input(component, "\u001b[F");
 	const atEnd = text(component, 120);
-	expect(atEnd).toContain("◆ Activity");
+	expect(atEnd).toContain("Activity");
 	expect(atEnd).toContain("activity line 5");
 	expect(atEnd).toContain("Esc back");
 });
@@ -576,7 +577,7 @@ test("keeps a section visible while scrolling at low height", async () => {
 
 	input(component, "\u001b[H");
 	input(component, "\u001b[B");
-	expect(text(component, 100)).toContain("◆ Activity");
+	expect(text(component, 100)).toContain("Activity");
 });
 
 test("shows pending and rejected stop results without inventing success", async () => {

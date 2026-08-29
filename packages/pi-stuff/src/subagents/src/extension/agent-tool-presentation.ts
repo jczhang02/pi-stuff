@@ -2,9 +2,11 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Static } from "typebox";
 import { isRuntimeString } from "../../../shared/runtime-type.js";
 import type { ToolArguments } from "../../../tool-display/activity.js";
+import type { ToolActivityState } from "../../../tool-display/activity-store.js";
 import {
 	activityKey,
 	boundTerminalLine,
+	formatElapsed,
 	type SuiteToolPresentation,
 	singleActivity,
 } from "../../../tool-display/index.js";
@@ -81,12 +83,61 @@ function target(params: AgentPresentationParams): string {
 	return launchTarget(params.agent, params.description, params.task);
 }
 
-function successSummary(params: AgentPresentationParams, result: AgentToolResult<Details>): string {
+function usefulDuration(params: AgentPresentationParams, durationMs: number | undefined): string {
+	return params.foreground === true && durationMs !== undefined && durationMs >= 1_000
+		? ` · ${formatElapsed(durationMs)}`
+		: "";
+}
+
+function successSummary(
+	params: AgentPresentationParams,
+	result: AgentToolResult<Details>,
+	durationMs: number | undefined,
+): string {
 	const operation = action(params);
 	if (operation) return AGENT_ACTION_PRESENTATION[operation].summary;
-	if (params.foreground === true) return "finished";
+	if (params.foreground === true) return `finished${usefulDuration(params, durationMs)}`;
 	const count = launchedCount(params, result);
 	return count > 1 ? `${String(count)} launched` : "launched";
+}
+
+function taskRows(params: AgentPresentationParams, result: AgentToolResult<Details>, state: string): string[] {
+	const tasks = Array.isArray(params.tasks)
+		? params.tasks.map((task) => ({ agent: boundedTerminalLine(task?.agent), task: boundedTerminalLine(task?.task) }))
+		: [{ agent: boundedTerminalLine(params.agent), task: boundedTerminalLine(params.task) }];
+	return tasks.flatMap((task, index) => {
+		if (!task.agent && !task.task) return [];
+		const settled = result.details?.results?.[index];
+		const memberState =
+			params.foreground !== true || state !== "success"
+				? state
+				: settled?.stopped || settled?.interrupted || settled?.detached
+					? "stopped"
+					: settled?.error || (settled && settled.exitCode !== 0)
+						? "failed"
+						: "finished";
+		return [`${task.agent || "Agent"} · ${task.task || "Task unavailable"} · ${memberState}`];
+	});
+}
+
+function resultLines(result: AgentToolResult<Details>): string[] {
+	return result.content.flatMap((entry) => (entry.type === "text" ? entry.text.split(/\r?\n/u) : []));
+}
+
+function detailLines(
+	params: AgentPresentationParams,
+	result: AgentToolResult<Details>,
+	state: Exclude<ToolActivityState, "running">,
+): string[] {
+	if (action(params)) return resultLines(result);
+	const tasks = taskRows(
+		params,
+		result,
+		params.foreground === true && state === "success" ? "finished" : state === "success" ? "launched" : state,
+	);
+	if (params.foreground !== true && state === "success") return tasks;
+	const output = resultLines(result);
+	return output.length > 0 ? [...tasks, "", ...output] : tasks;
 }
 
 /** One shared row grammar for root and nested public Agent tools. */
@@ -109,18 +160,20 @@ export function createAgentToolPresentation(): SuiteToolPresentation<AgentPresen
 			},
 			summarizeIssue: (_args, result, state) => firstText(result) || state,
 		},
+		detailLines,
 		label,
 		resultIsError: (params, result) => {
 			if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) return true;
 			return action(params) ? false : launchedCount(params, result) === 0;
 		},
-		runningSummary: "working",
-		summarize: (params, result, state) => {
-			if (state === "success") return successSummary(params, result);
-			if (state === "cancelled") return "cancelled";
-			if (state === "rejected") return "rejected";
-			return firstText(result) || "failed";
+		runningSummary: (params, durationMs) => `working${usefulDuration(params, durationMs)}`,
+		summarize: (params, result, state, durationMs) => {
+			if (state === "success") return successSummary(params, result, durationMs);
+			const summary =
+				state === "cancelled" ? "cancelled" : state === "rejected" ? "rejected" : firstText(result) || "failed";
+			return `${summary}${usefulDuration(params, durationMs)}`;
 		},
 		target,
+		tracksElapsed: true,
 	};
 }

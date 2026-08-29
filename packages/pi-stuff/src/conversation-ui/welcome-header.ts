@@ -6,7 +6,7 @@ import { sanitizeOneLine } from "./terminal-text.js";
 
 const MIN_BOX_WIDTH = 13;
 const WIDE_LEFT_COLUMN_WIDTH = 52;
-const WIDE_MIN_WIDTH = 70;
+const WIDE_MIN_WIDTH = 82;
 
 interface WelcomeHeaderToggle {
 	get(): boolean;

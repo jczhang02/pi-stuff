@@ -95,7 +95,7 @@ through 250,000 compared line pairs; larger comparisons retain common
 prefix/suffix lines and show the changed middle as a linear remove/add block.
 
 Setup uses the same continuous full-width top rule, two-cell content gutter,
-bold Header, `◆` section headings, bounded list windows, and separate Escape
+bold Header, semantic section headings without icons, bounded list windows, and separate Escape
 route as the other Suite Command Dialogs. Narrow layouts omit optional previews;
 low-height layouts retain the Header, current choice, confirmation detail, and
 way back before secondary discovery text.

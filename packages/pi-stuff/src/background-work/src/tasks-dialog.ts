@@ -12,6 +12,7 @@ import {
 	commandDialogReadKeyHelp,
 	commandDialogRows,
 	commandDialogScrollOffset,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
 	matchesCommandDialogCancel,
@@ -99,10 +100,6 @@ function statusGlyph(status: string): string {
 	if (status === "failed") return "×";
 	if (status === "paused" || status === "stopped") return "■";
 	return "●";
-}
-
-function sectionHeading(theme: Theme, label: string): string {
-	return `${theme.fg("accent", "◆")} ${theme.bold(label)}`;
 }
 
 function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
@@ -468,10 +465,10 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const wrap = (value: string) => value.split(/\r?\n/gu).flatMap((line) => wrapTextWithAnsi(line || " ", width));
 		if (row.kind === "shell") {
 			return [
-				sectionHeading(this.context.theme, "Command"),
+				commandDialogSectionHeading(this.context.theme, "Command", ""),
 				...wrap(row.command ?? "Command unavailable."),
 				"",
-				sectionHeading(this.context.theme, "Output"),
+				commandDialogSectionHeading(this.context.theme, "Output", ""),
 				...wrap(row.output ?? "No output yet."),
 			];
 		}
@@ -486,13 +483,13 @@ class TasksDialogComponent implements CommandDialogComponent {
 			...(row.monitorTimeoutSeconds !== undefined ? [`timeout ${String(row.monitorTimeoutSeconds)}s`] : []),
 		];
 		return [
-			sectionHeading(this.context.theme, "Source"),
+			commandDialogSectionHeading(this.context.theme, "Source", ""),
 			...wrap(source),
 			"",
-			sectionHeading(this.context.theme, "Condition"),
+			commandDialogSectionHeading(this.context.theme, "Condition", ""),
 			...wrap(conditions.join(" · ") || "No completion text; any successful probe completes the monitor."),
 			"",
-			sectionHeading(this.context.theme, "Latest evidence"),
+			commandDialogSectionHeading(this.context.theme, "Latest evidence", ""),
 			...wrap(row.output ?? "No evidence yet."),
 		];
 	}

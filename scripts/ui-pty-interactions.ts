@@ -634,7 +634,7 @@ export async function verifyTodoOverlay(
 
 	const lines = screen.split("\n");
 	const summaryIndex = lines.findIndex((line) => line.includes("4 tasks (0 done, 4 open)"));
-	if (summaryIndex < 0 || !lines[summaryIndex]?.startsWith("◆ 4 tasks (0 done, 4 open)")) {
+	if (summaryIndex < 0 || !lines[summaryIndex]?.startsWith("4 tasks (0 done, 4 open)")) {
 		pty.fail(`Todo summary icon and text are not aligned with the checklist columns\n${screen}`);
 	}
 	for (const [index, subject] of TODO_PTY_SUBJECTS.entries()) {
@@ -688,7 +688,7 @@ export async function verifyDiagnosticsUi(
 	if (columns >= 80 && !screen.includes(DIAGNOSTIC_PTY_SUMMARY)) {
 		screen = await session.waitForText(DIAGNOSTIC_PTY_SUMMARY);
 	}
-	if (!screen.includes("×2")) screen = await session.waitForText("×2");
+	if (!screen.includes("2 occurrences")) screen = await session.waitForText("2 occurrences");
 	verifyDialogSurface(screen, columns, "/diagnostics Command Dialog");
 
 	session.sendKey("Enter");

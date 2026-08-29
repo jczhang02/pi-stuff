@@ -12,7 +12,12 @@ unknown third-party Tools keep their native renderer and form a display boundary
 surface projection;
 `envelope-projection.ts` owns nested Tool decoding and ordinary-protocol projection; `group-projection.ts` owns
 transcript grouping and result association; `activity-presentation.ts` owns live row reconciliation, while
-`activity-query-projection.ts` owns summaries and Tool detail and `bash-operation-presentation.ts` owns Bash rows;
+`activity-query-projection.ts` owns summaries and Tool detail. `operation-block-presentation.ts` dispatches the closed
+Operation Block family; `operation-block-evidence.ts` owns its bounded result boundary;
+`file-operation-presentation.ts`, `operation-block-diff.ts`, and `background-operation-presentation.ts` own file
+mutation evidence, diff normalization, and Background output respectively; and `operation-block-renderer.ts` owns the
+Transcript grammar. `formatted-detail.ts` owns the complete semantic `/tools` map, while
+`operation-block-formatted-detail.ts` adapts Operation Block evidence into Dialog sections;
 `registered-tool-renderer.ts` owns row/detail publication; and `activity-clock.ts` owns running markers. `ToolUiRuntime`
 remains the single public live-projection facade.
 `activity-model.ts` owns Activity vocabulary, `activity.ts` preserves the public facade and Bash classification,
@@ -34,18 +39,32 @@ remains the single public live-projection facade.
 - Failed, rejected, and cancelled native retrieval stays in its Retrieval Group. The only two-row compact exception
   keeps state-specific issue counts on the first row and the first bounded reason on one child row; remaining reasons
   stay available through expansion.
+- Operation Block is a closed Transcript family: Bash, Write, Edit, Patch, `background` only for `action=output`, and
+  an outer Code Mode error, rejection, or cancellation that no nested Tool or media projection represents. Its exact
+  grammar is `Tool(operation identity)` followed by `⎿ outcome evidence`; parentheses are required. Other Tools cannot
+  opt in through metadata.
 - Every Bash invocation remains one standalone `Bash(<command>)` Operation Block in source order, including read-only
-  commands. Its command uses Claude Code's two-line/160-code-unit cap, output shows three lines before a bounded
-  `… +N lines` notice, and running, empty, stderr, exit, cancellation, rejection, and failure states remain explicit.
-  `Ctrl+O` expands the bounded command and output in that same block without generic protocol chrome.
+  commands. Its command uses a two-line/160-code-unit compact cap, output shows three lines before a bounded omission
+  notice, and running, empty, stderr, exit, cancellation, rejection, and failure states remain explicit.
+- `Write(path)` shows `N lines written` and the syntax-highlighted final content, not a diff. Compact mode shows ten
+  lines and `… +N lines (ctrl+o to expand)`; expanded evidence is capped at 240 lines and 24 KiB. `Edit(path)` shows
+  exact `+A/-D` statistics and a syntax-highlighted old/new-line diff. `Patch(path)` or `Patch(N files)` shows total and
+  per-file `M/A/D/R` statistics plus bounded changed-line evidence; a pure rename says
+  `renamed without content changes`. Available evidence replaces generic success prose.
+- The `subagent` Tool uses an Agent Lifecycle Row, not an Operation Block. Foreground rows identify the Agent, Task,
+  terminal state, and useful duration; expansion shows each member and bounded foreground result evidence. A background
+  launch and its later model-invisible completion row remain separate chronological events, while `/agents` remains the
+  live control and full-evidence authority.
 - Successful Task calls stay compact-silent because Todo owns their visible state. Successful `tool_search` and
   `ctx_reduce` calls are silent and transparent to retrieval. All remain inspectable through `Ctrl+O` and `/tools`;
   an issue in any of them becomes an independent Tool Activity and closes retrieval on both sides.
 - Pi's global `Ctrl+O` restores eligible calls, existing Tool-specific renderers, successful Task and infrastructure
   calls, and Logical Thinking Runs in persisted source order. `/tools [group-or-member-id]` keeps Tool Activity as its
-  first-level unit: a Retrieval Group exposes ordered `Calls`, while independent activity remains a singleton. Up/Down
-  selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles formatted and Raw views, and Escape unwinds the
-  dialog.
+  first-level unit: List rows expose identity, operation, outcome, and explicit state; a Retrieval Group exposes ordered
+  `Calls`, while independent activity remains a singleton. Detail uses Tool-specific semantic sections such as
+  Command/Output, Change/Diff, Files/Diff, Task/Result, Invocation/Result, or Code/Error. Image blocks use Pi's native
+  image component when available. Up/Down selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles
+  Formatted and Raw, and Escape unwinds the Dialog.
 - Tool rendering is total: a missing historical Tool definition, malformed optional metadata, or throwing presentation
   hook receives a bounded generic row at its source position. Nested envelope Tools and media retain their owning
   renderers. Only an otherwise unrepresented outer error, rejection, or cancellation receives one Envelope Fallback
@@ -59,13 +78,11 @@ remains the single public live-projection facade.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone rows and
   active Retrieval Groups show elapsed time after the existing threshold. Settled summaries never retain it.
 - An empty `/tools` Dialog keeps key-help and close hints, but omits selection and detail hints until a row exists.
-- Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,
-  arguments, result content, and details. The default `Result` section shows an unlabeled target followed by
-  Tool-owned detail instead of injecting repeated Tool, `Target:`, or `Summary:` fields; Raw is explicitly titled
-  `Raw`. When a generic summary was automatically derived from the first result line, formatted `Ctrl+O` and `/tools`
-  detail omit that same line; a one-line result adds no filler. Custom summaries, non-empty Tool-owned detail, and Raw
-  remain unchanged. Compact mode neither precomputes nor caches a global Raw transcript. Tool-owned business results
-  are never truncated or rewritten by this Capability.
+- Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Formatted is the readable semantic
+  view; Raw remains the complete bounded protocol inspection authority with call ID, Tool name, arguments, result
+  content, and details. Operation Blocks do not copy the Transcript `⎿` grammar into the Dialog. Compact mode neither
+  precomputes nor caches a global Raw transcript, and Tool-owned business results are never rewritten by this
+  Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and Tool Activities are rebuilt after live updates, reload, restart/resume,
   tree navigation, and compaction without a migration or compatibility mode.
@@ -83,9 +100,7 @@ stream updates after that 20,000-call history and formatted expansion of 1,000 s
 The formatted benchmark also rejects Raw protocol headings. Streaming updates replan only the current
 Narrative Boundary tail, while timer frames reconcile only the affected group; neither path rescans the full Session.
 
-See `UPSTREAM.md` for source provenance and the local delta. The current interaction contract is recorded in
-repository ADR `docs/adr/0022-restrict-folding-to-native-retrieval.md`; former ADR 0010 is available only in Git
-history. The 2026-08-17 `/tools` readability update was
-implemented on 2026-08-18, including lifecycle icons, `◆` sections, compact-keyboard paging, singleton detail,
-formatted/Raw navigation, and the fixed wide split. Focused tests and the real PTY verifier cover the shipped Dialog,
-including a Space page sequence and Tab pane switch sent through the real Host.
+See `UPSTREAM.md` for source provenance and the local delta. ADR 0022 owns Retrieval Group membership, while ADR 0023
+owns the closed Operation Block family and distinct Agent Lifecycle Rows. Formatted/Raw navigation, semantic headings
+without icons, compact-keyboard paging, singleton detail, and the fixed wide split are covered by focused tests and
+the real PTY verifier.

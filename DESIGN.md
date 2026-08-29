@@ -13,7 +13,7 @@ omitted:
     reason: The current component token schema is CSS-shaped and cannot describe Pi TUI behavior faithfully.
 spacing:
   dialog-gutter-cells: 2
-  section-icon-cells: 1
+  section-leading-blank-rows: 1
   internal-divider-cells: 1
 ---
 
@@ -73,7 +73,7 @@ or surrounding rows.
 
 At narrow widths, remove information in this order: decorative wording, counts and ages, optional descriptions,
 targets and previews, then secondary metadata. Preserve primary identity, useful summary, lifecycle state, selected
-action, and the way back. Wrapping must not introduce extra indentation or repeat a section icon on continuation
+action, and the way back. Wrapping must not introduce extra indentation or repeat a section heading on continuation
 lines.
 
 A wide split view remains one Dialog surface. Its top structural rule is continuous across the full width; one internal
@@ -87,16 +87,17 @@ Show pane focus with the semantic accent on the active pane heading, not with an
 Pi Stuff is flat. It has no shadows, blur, floating cards, or decorative layers. Depth comes from ownership and
 sequence: conversation, temporary focused surface, selected row, then detail.
 
-Use one structural divider, restrained spacing, semantic contrast, and compact section icons to express that hierarchy.
+Use one structural divider, restrained spacing, semantic contrast, and compact section headings to express that hierarchy.
 Do not surround each section with another frame. The scrollable Welcome identity card is the sole confirmed bordered
 exception because it belongs to the conversation document rather than the temporary Dialog system.
 
 ## Shapes
 
 The shape language is terminal-native and rectilinear. Structural Dialog rules use heavy box-drawing characters; a
-wide split uses a heavy `┃` divider beneath one continuous `━` top rule. A compact `◆` identifies a section heading
-without becoming a rail beside the section content. It appears only on the heading row and never represents lifecycle
-state, focus, or a Transcript event.
+wide split uses a heavy `┃` divider beneath one continuous `━` top rule. Section headings use no icon. Ordinary
+headings use bold accent text; Error uses bold error text; Rejection and Cancellation use bold warning text. One blank
+row separates a section from preceding content, and its body begins on the next row at the same two-cell Dialog gutter.
+Do not add a replacement symbol, colon, uppercase transformation, underline, or section frame.
 
 `›` means the currently focused selectable row and nothing else. Lifecycle and severity use separate one-cell-safe
 icons. The Conversation Transcript's small `•` marker remains unchanged. Ordinary Goal lifecycle info notices reuse it
@@ -129,10 +130,10 @@ contextual map through `?` rather than crowding every Footer.
 
 ### Detail sections
 
-Use a compact `◆` heading such as `◆ Task`, `◆ Activity`, `◆ Output`, or `◆ Details`. Section sets are specific to the
-job: `/agents` is organized around Agent identity, Task, optional outcome, and Activity; `/ctx` begins with Context
-usage; `/diagnostics` begins with the problem; `/tools` begins with a readable Tool Activity. Do not force every
-Dialog into the same field template.
+Use concise headings such as `Task`, `Activity`, `Output`, or `Details` with the hierarchy defined above. Section sets
+are specific to the job: `/agents` is organized around Agent identity, Task, optional outcome, and Activity; `/ctx`
+begins with Context usage; `/diagnostics` begins with the problem; `/tools` begins with a readable Tool Activity. Do
+not force every Dialog into the same field template.
 
 `/btw` is a deliberate reference-matching exception: it shows the question followed directly by the Markdown answer,
 with no generic state line or `Answer` section. Its history controls stay in the Footer rather than creating a second

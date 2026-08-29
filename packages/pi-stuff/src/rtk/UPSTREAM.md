@@ -51,7 +51,8 @@ source commit `b34be37caf3796b69a50952a28e60e32b5daad43`, with this immutable ar
 - Formats and strictly types the retained algorithms without weakening their output contracts.
 - Replaces upstream `tool_result` mutation with Pi's model-visible `context` seam so transcript and session JSONL remain raw.
 - Keeps `read` and source projection disabled; failed results and non-text blocks always remain exact.
-- Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/rtk settings`, and the shared non-floating Command Dialog.
+- Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions,
+  and lifecycle with one interactive `/rtk` control surface in the shared non-floating Command Dialog.
 - Certifies only the official Linux x64 RTK 0.45.0 executable against the documented SHA-256; path, binary, timeout,
   or availability drift fails open.
 - Delegates the complete rewrite registry to RTK. Official v0.45.0 still rejects compound `find` predicates and

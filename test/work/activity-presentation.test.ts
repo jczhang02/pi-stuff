@@ -52,6 +52,7 @@ test("/tools formats a background Bash handoff from structured result details", 
 	);
 
 	expect(runtime.toolActivityDetail("bash-background", "formatted")?.lines).toEqual([
+		"bun run check",
 		"Started in background · bf8t2miir",
 		"",
 		"Output file",

@@ -344,10 +344,10 @@ if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
 puts "${SETUP_FRAME_START}"
 send -- "\\r"
 must_expect "MCP setup"
-must_expect "◆ Setup"
+must_expect "Setup"
 must_expect "View example"
 must_expect "Scaffold project"
-must_expect "◆ Preview"
+must_expect "Preview"
 must_expect "Esc close"
 set setup_probe_columns [expr {$env(PI_STUFF_MCP_PTY_COLUMNS) - 1}]
 stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $setup_probe_columns < $mcp_pty
@@ -357,7 +357,7 @@ after 200
 must_expect "MCP setup"
 stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
 after 200
-must_expect "◆ Setup"
+must_expect "Setup"
 must_expect "Esc close"
 stty rows $env(PI_STUFF_MCP_PTY_LOW_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
 after 200
@@ -371,9 +371,9 @@ send -- "\\033\\[B"
 send -- "\\033\\[B"
 send -- "\\033\\[B"
 send -- "\\r"
-must_expect "◆ Confirm change"
+must_expect "Confirm change"
 must_expect "Add Context7 to the MCP config?"
-must_expect "◆ Preview"
+must_expect "Preview"
 must_expect "Cancel"
 if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
     puts stderr "Opening write confirmation wrote MCP config"

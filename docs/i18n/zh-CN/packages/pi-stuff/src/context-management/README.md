@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: c26e5cc7d01d641a599d66ca68d4edde93e93ab139f6e99f6b153647bbc17312 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 05f013b6240fe8ee8c7f5a5f422429e3aae7aef3d37bc52c5369e2f8659c024a -->
 
 # Context Management 模块
 
@@ -18,7 +18,7 @@ Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献
 
 适配器在激活期间把固定引擎打包成内存 Worker 产物，因为已验证的独立 Pi 二进制文件无法解析其外部 Worker 模块图。不把任何包写入磁盘。宿主事件、工具和命令仍注册在 Pi 中，并以不可变、字段受限快照跨越边界。Worker 首次绑定会话、检测到分支不连续后，以及执行显式历史重建命令时，会接收一份完整会话快照。普通上下文投影和持久化至多发送一个新叶节点，因此长会话不会在每次提示词时再次克隆。致命 Worker 错误会立即让该能力返回原生 Context；宿主负责的关闭会在有界宽限期后终止 Worker，即使其请求队列卡住。只有请求待处理时，宿主才引用 Worker，因此空闲引擎不会阻止 Print 或 RPC 进程走到普通退出路径。范围狭窄、逐项列举的宿主副作用和生命周期约定记录在 [ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md)。
 
-已接受的 `/ctx` 可读性目标记录在 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md)。其 2026-08-17 更新已于 2026-08-18 实现。交付的单列对话框以用量为首，使用 `◆` 小节与语义状态图标，隐藏已知无操作项，并解释 Context 词汇。其操作列表和文本字段保留 Pi 原生 SelectList 与 Input 键盘行为，不拦截只读对话框别名。
+已接受的 `/ctx` 可读性目标记录在 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md)。其 2026-08-17 更新已于 2026-08-18 实现。交付的单列对话框以用量为首，使用无图标语义小节标题与显式状态图标，隐藏已知无操作项，并解释 Context 词汇。其操作列表和文本字段保留 Pi 原生 SelectList 与 Input 键盘行为，不拦截只读对话框别名。
 
 套件负责的自定义 Agent 消息使用一个共享传输接缝。该接缝会在宿主冻结第一次请求前等待 Context 激活。Pi 0.84.3 不会为一个空闲 `sendMessage` 轮次发送 `before_agent_start`，因此当此类自定义消息是第一个 Agent 轮次时，普通 Magic `context` 转换只为该次 Provider 请求添加同样的紧凑指引。它不会写入 Pi JSONL，之后普通提示词会恢复到正常系统提示词注入路径。
 

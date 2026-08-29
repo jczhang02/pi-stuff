@@ -93,7 +93,7 @@ test("envelope terminal operations without results keep their explicit outcome",
 	runtime.observeEnvelopeResult("codemode", "outer", { operations });
 
 	expect(runtime.resolveGroup("nested-success")).toMatchObject({ state: "success" });
-	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "warning" });
+	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "rejected" });
 });
 
 test("a settled envelope restores nested Tools to the outer call's source order", () => {

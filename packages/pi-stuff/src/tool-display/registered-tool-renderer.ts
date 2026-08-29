@@ -160,6 +160,20 @@ function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 				) ?? [],
 		});
 	}
+	if (presentation.detailSections) {
+		Object.assign(detail, {
+			detailSections: (
+				args: ToolArguments,
+				result: AgentToolResult<unknown>,
+				state: Exclude<ToolActivityState, "running">,
+			) =>
+				presentation.detailSections?.(
+					argsForPresentation<TArgs, ToolArguments>(args),
+					resultForPresentation<TDetails>(result),
+					state,
+				) ?? [],
+		});
+	}
 	return detail;
 }
 

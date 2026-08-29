@@ -201,7 +201,10 @@ test("a Code Mode envelope prepares Codex Tool aliases before rendering", () => 
 	if (!resultComponent) throw new Error("missing Code Mode patch result");
 
 	const rendered = resultComponent.render(120).join("\n");
-	expect(rendered).toContain("Patch .apply-patch-demo.txt · changed 1 file");
+	expect(rendered).toContain("Patch(.apply-patch-demo.txt)");
+	expect(rendered).toContain("+1/-1");
+	expect(rendered).toContain("- before");
+	expect(rendered).toContain("+ after");
 	expect(rendered).toContain("View preview.png · loaded");
 	expect(rendered).not.toContain("Applied patch successfully");
 	const projected = runtime.projectMessages([
@@ -305,7 +308,8 @@ test("Code Mode cold resume keeps every nested operation behind Tool UI fallback
 	if (!resultComponent) throw new Error("missing cold-resume result");
 	const rendered = resultComponent.render(120).join("\n");
 	expect(rendered).toContain("Bash(printf ok)");
-	expect(rendered).toContain("Patch .apply-patch-demo.txt · Failed to find expected lines");
+	expect(rendered).toContain("Patch(.apply-patch-demo.txt)");
+	expect(rendered).toContain("Error: Failed to find expected lines");
 	expect(rendered).toContain("legacy_tool · legacy failure");
 	expect(rendered).toContain("fragile · renderer failure result");
 	expect(rendered).not.toContain("Code Mode");
@@ -361,7 +365,11 @@ test("Code Mode owns a fallback Tool row when no nested issue represents its res
 				: [],
 		);
 		expect(projectedCalls.at(-1)?.name).toBe("codemode");
-		const context = renderContext({}, { value: "unused" }, { isError: true, toolCallId: "outer-error" });
+		// SAFETY: this test supplies the Code Mode argument shape consumed by the envelope renderer.
+		const context = renderContext({}, { code: "fixture", value: "unused" } as never, {
+			isError: true,
+			toolCallId: "outer-error",
+		});
 		// SAFETY: this test controls the envelope arguments and supplies the exact Pi renderer context used below.
 		const callComponent = envelope.renderCall?.({ code: "fixture" }, theme, context as never);
 		// SAFETY: the controlled result and context satisfy the registered envelope renderer contract.
@@ -371,7 +379,8 @@ test("Code Mode owns a fallback Tool row when no nested issue represents its res
 		} as never);
 		if (!resultComponent) throw new Error("missing outer error result");
 		const rendered = resultComponent.render(120).join("\n");
-		expect(rendered).toContain("Code Mode · Validation failed: invalid arguments");
+		expect(rendered).toContain("Code Mode(fixture)");
+		expect(rendered).toContain("Error: Validation failed: invalid arguments");
 		if (operations.length > 0) expect(rendered).toContain("Read 1 file");
 	}
 });
@@ -443,7 +452,7 @@ const CODE_MODE_FALLBACK_SCENARIOS = [
 	},
 ] as const;
 
-test("Code Mode fallback summarizes output once across transcript and formatted Tool detail", () => {
+test("Code Mode materializes only unmatched outer issues and keeps successful envelopes silent", () => {
 	for (const scenario of CODE_MODE_FALLBACK_SCENARIOS) {
 		const harness = apiHarness();
 		const registrations = createSuiteToolRegistrationTracker(harness.api);
@@ -476,11 +485,12 @@ test("Code Mode fallback summarizes output once across transcript and formatted 
 		];
 		const runtime = getToolUiRuntime(harness.api);
 		runtime.indexMessages(messages, true);
-		const context = renderContext(
-			{},
-			{ value: "unused" },
-			{ expanded: true, isError: scenario.isError, toolCallId: scenario.id },
-		);
+		// SAFETY: this fixture supplies the Code Mode argument shape consumed by the envelope renderer.
+		const context = renderContext({}, { code: 'text("computed")', value: "unused" } as never, {
+			expanded: true,
+			isError: scenario.isError,
+			toolCallId: scenario.id,
+		});
 		// SAFETY: this fixture controls the envelope arguments and complete Host renderer context.
 		const callComponent = envelope.renderCall?.({ code: 'text("computed")' }, theme, context as never);
 		// SAFETY: the controlled result and context satisfy the same registered envelope renderer contract.
@@ -490,13 +500,25 @@ test("Code Mode fallback summarizes output once across transcript and formatted 
 		} as never);
 		if (!resultComponent) throw new Error("missing Code Mode fallback result");
 		const rendered = resultComponent.render(120).join("\n");
-		expect(rendered, scenario.id).toContain(`Code Mode · ${scenario.summary}`);
-		expect(rendered.split(scenario.summary), scenario.id).toHaveLength(2);
-		expect(runtime.toolActivityDetail(scenario.id, "formatted")?.lines, scenario.id).toEqual([
-			...scenario.additional,
-		]);
-		expect(runtime.toolActivityDetail(scenario.id, "raw")?.lines.join("\n"), scenario.id).toContain(
-			scenario.rawExpected,
-		);
+		if (scenario.isError) {
+			expect(rendered, scenario.id).toContain('Code Mode(text("computed"))');
+			const prefix =
+				scenario.id === "outer-rejected" ? "Rejected" : scenario.id === "outer-cancelled" ? "Cancelled" : "Error";
+			expect(rendered, scenario.id).toContain(`${prefix}: ${scenario.summary}`);
+		} else {
+			expect(rendered, scenario.id).toBe("");
+		}
+		if (scenario.isError) {
+			expect(runtime.toolActivityDetail(scenario.id, "formatted")?.sections?.[0]?.title, scenario.id).toBe("Code");
+			expect(runtime.toolActivityDetail(scenario.id, "formatted")?.lines.join("\n"), scenario.id).toContain(
+				scenario.summary,
+			);
+			expect(runtime.toolActivityDetail(scenario.id, "raw")?.lines.join("\n"), scenario.id).toContain(
+				scenario.rawExpected,
+			);
+		} else {
+			expect(runtime.toolActivityDetail(scenario.id, "formatted"), scenario.id).toBeUndefined();
+			expect(runtime.toolActivityDetail(scenario.id, "raw"), scenario.id).toBeUndefined();
+		}
 	}
 });

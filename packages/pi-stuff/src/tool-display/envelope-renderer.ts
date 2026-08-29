@@ -249,16 +249,46 @@ function envelopeHostImageKeys(
 function renderEnvelopeFallback(
 	theme: Theme,
 	envelope: ToolDefinition,
+	args: ToolArguments,
 	result: AgentToolResult<unknown>,
 	state: ToolActivityState,
 	options: ToolResultRenderOptions,
 	successFromResult = false,
 ): Component {
+	if (envelope.name === "codemode" && isIssueState(state)) {
+		const code = isRuntimeString(args["code"]) ? args["code"] : "";
+		const reason = oneLine(
+			result.content
+				.filter((item): item is { readonly text: string; readonly type: "text" } => item.type === "text")
+				.flatMap((item) => item.text.split(/\r?\n/u))
+				.find((line) => line.trim().length > 0) ?? state,
+		);
+		const label = state === "rejected" ? "Rejected" : state === "cancelled" ? "Cancelled" : "Error";
+		return new CachedToolRow(theme, {
+			active: false,
+			evidence: [
+				{
+					kind: "outcome",
+					text: `${label}: ${reason}`,
+					tone: state === "error" ? "error" : "warning",
+				},
+			],
+			expandable: code.length > 160 || code.includes("\n"),
+			expanded: options.expanded,
+			identity: code,
+			identityCodeUnits: options.expanded ? 32 * 1024 : 160,
+			identityLineLimit: 32 * 1024,
+			identityMultiline: true,
+			kind: "operation-block",
+			label: "Code Mode",
+			state,
+		});
+	}
 	return fallbackToolComponent(
 		theme,
 		envelope.name,
 		envelope.label,
-		{},
+		args,
 		result,
 		state,
 		options.expanded,
@@ -278,10 +308,13 @@ export function renderEnvelopeOperations(
 	const visibleResult = stripToolControlMetadata(result);
 	if (operations.length === 0) {
 		const state = outerEnvelopeState(visibleResult, options, context);
+		if (envelope.name === "codemode" && (state === "running" || state === "success")) {
+			return new EmptyToolComponent();
+		}
 		if (!envelopeFallbackVisible(presentation.showFallback, context.args, visibleResult, state)) {
 			return new EmptyToolComponent();
 		}
-		return renderEnvelopeFallback(theme, envelope, visibleResult, state, options, true);
+		return renderEnvelopeFallback(theme, envelope, context.args, visibleResult, state, options, true);
 	}
 	const hostImageKeys = envelopeHostImageKeys(result, context.showImages);
 	const media = resolveEnvelopeMedia(result, presentation);
@@ -357,6 +390,7 @@ export function renderEnvelopeOperations(
 			renderEnvelopeFallback(
 				theme,
 				envelope,
+				context.args,
 				visibleResult,
 				outerEnvelopeState(visibleResult, options, context),
 				options,

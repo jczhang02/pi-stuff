@@ -38,7 +38,22 @@ export interface ToolSummaryProjection {
 	readonly text: string;
 }
 
+export interface ToolFormattedSection {
+	readonly lines: readonly string[];
+	readonly title: string;
+}
+
+export interface ToolFormattedImage {
+	readonly data: string;
+	readonly mimeType: string;
+}
+
 export interface ToolDetailPresentation {
+	readonly detailSections?: (
+		args: ToolArguments,
+		result: AgentToolResult<unknown>,
+		state: Exclude<ToolActivityState, "running">,
+	) => readonly ToolFormattedSection[];
 	readonly detailLines?: (
 		args: ToolArguments,
 		result: AgentToolResult<unknown>,
@@ -97,6 +112,11 @@ export interface SuiteToolPresentation<TArgs extends ToolArguments, TDetails> {
 		result: AgentToolResult<TDetails>,
 		state: Exclude<ToolActivityState, "running">,
 	) => readonly string[];
+	readonly detailSections?: (
+		args: Readonly<TArgs>,
+		result: AgentToolResult<TDetails>,
+		state: Exclude<ToolActivityState, "running">,
+	) => readonly ToolFormattedSection[];
 	readonly label?: string | ((args: Readonly<TArgs>) => string);
 	readonly resultIsError?: (args: Readonly<TArgs>, result: AgentToolResult<TDetails>) => boolean;
 	readonly runningSummary?: string | ((args: Readonly<TArgs>, durationMs: number | undefined) => string);
@@ -263,8 +283,11 @@ export interface PresentedToolMetadata {
 
 export interface ToolActivityView {
 	readonly id: string;
+	readonly label?: string;
 	readonly memberIds: readonly string[];
-	readonly state: ToolActivityOutcome;
+	readonly operation?: string;
+	readonly outcome?: string;
+	readonly state: ToolActivityOutcome | "cancelled" | "rejected";
 	readonly summary: string;
 }
 
@@ -272,7 +295,9 @@ export type ToolActivityDetailMode = "formatted" | "raw";
 
 export interface ToolActivityDetailView {
 	readonly activity: ToolActivity;
+	readonly images?: readonly ToolFormattedImage[];
 	readonly lines: readonly string[];
+	readonly sections?: readonly ToolFormattedSection[];
 }
 
 export interface ToolUiTimerScheduler {

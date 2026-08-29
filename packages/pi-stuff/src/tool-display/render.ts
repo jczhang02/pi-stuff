@@ -8,6 +8,11 @@ import {
 import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { DETAIL_LINE_LIMIT, ROW_PREVIEW_CODE_UNIT_LIMIT } from "./limits.js";
+import {
+	type OperationBlockRowModel,
+	renderOperationBlockRow,
+	sameOperationBlock,
+} from "./operation-block-renderer.js";
 import { boundTerminalText, graphemePrefix, sanitizeTerminalText } from "./terminal.js";
 import { oneLine } from "./tool-text.js";
 
@@ -54,7 +59,11 @@ export interface BashOperationRowModel {
 	readonly state: ToolActivityState;
 }
 
-export type ToolTranscriptRowModel = RetrievalGroupRowModel | BashOperationRowModel | ToolRowModel;
+export type ToolTranscriptRowModel =
+	| RetrievalGroupRowModel
+	| BashOperationRowModel
+	| OperationBlockRowModel
+	| ToolRowModel;
 
 export class EmptyToolComponent implements Component {
 	invalidate(): void {}
@@ -65,6 +74,9 @@ export class EmptyToolComponent implements Component {
 }
 
 function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel): boolean {
+	if (left.kind === "operation-block" || right.kind === "operation-block") {
+		return left.kind === "operation-block" && right.kind === "operation-block" && sameOperationBlock(left, right);
+	}
 	if (left.kind === "bash-operation" || right.kind === "bash-operation") {
 		return (
 			left.kind === "bash-operation" &&
@@ -132,9 +144,11 @@ export class CachedToolRow implements Component {
 		const rendered =
 			this.model.kind === "activity"
 				? renderRetrievalGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
-				: this.model.kind === "bash-operation"
-					? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
-					: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
+				: this.model.kind === "operation-block"
+					? renderOperationBlockRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+					: this.model.kind === "bash-operation"
+						? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+						: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {

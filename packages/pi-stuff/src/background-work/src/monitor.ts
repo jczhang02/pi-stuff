@@ -209,12 +209,15 @@ class PollingMonitor implements BackgroundMonitorActivity {
 			} catch (error) {
 				if (this.controller.signal.aborted) return;
 				const code = error && isRuntimeObject(error) && "code" in error ? String(error.code) : "";
-				if (this.input.source !== "http" && code && code !== "ENOENT") {
+				if (code === "ENOENT" && (this.input.source === "file" || this.input.source === "log")) {
+					this.evidence = `Waiting for ${this.input.source} to appear.`;
+				} else if (this.input.source !== "http" && code) {
 					this.evidence = error instanceof Error ? error.message : String(error);
 					this.finish("failed", `Monitor "${this.title}" could not read its source`);
 					return;
+				} else {
+					this.evidence = error instanceof Error ? error.message : String(error);
 				}
-				this.evidence = error instanceof Error ? error.message : String(error);
 			}
 			try {
 				await wait(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())), this.controller.signal);

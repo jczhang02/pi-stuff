@@ -1,5 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	getCapabilities,
+	Image,
+	isKeyRelease,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogRowSections,
@@ -12,6 +19,7 @@ import {
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogSectionHeading,
 	fitFixedCommandDialogRows,
 	matchesCommandDialogCancel,
 	matchesCommandDialogConfirm,
@@ -23,7 +31,7 @@ import {
 } from "../conversation-ui/index.js";
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
-import type { ToolActivityView, ToolUiRuntime } from "./contract.js";
+import type { ToolActivityView, ToolFormattedImage, ToolUiRuntime } from "./contract.js";
 import { toolStateGlyph } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
 import { oneLine } from "./tool-text.js";
@@ -53,10 +61,6 @@ function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState,
 	}
 }
 
-function sectionHeading(theme: Theme, label: string): string {
-	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(label)}`;
-}
-
 function activityCount(count: number): string {
 	return `${String(count)} ${count === 1 ? "activity" : "activities"}`;
 }
@@ -68,12 +72,32 @@ function callCount(count: number): string {
 function activityRow(theme: Theme, group: ToolActivityView, selected: boolean, width: number): string {
 	const cursor = selected ? theme.fg("accent", "›") : " ";
 	const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
-	const count =
-		width >= 32 && group.memberIds.length > 1 ? theme.fg("dim", ` · ${callCount(group.memberIds.length)}`) : "";
-	const suffix = `${glyph}${count}`;
+	const state = stateText(theme, group.state, group.state);
+	const baseSuffix = `${glyph} ${state}`;
 	const prefix = `${GUTTER}${cursor} `;
-	const summaryWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
-	const summary = truncateToWidth(oneLine(group.summary) || "Tool activity", summaryWidth, "…");
+	const labelText = oneLine(group.label ?? "") || oneLine(group.summary) || "Tool activity";
+	const outcomeText = oneLine(group.outcome ?? "");
+	const operationText = oneLine(group.operation ?? "");
+	const outcomeOwnsIdentity = outcomeText.toLocaleLowerCase().startsWith(`${labelText.toLocaleLowerCase()} `);
+	const semanticOutcome = outcomeOwnsIdentity
+		? outcomeText
+				.slice(labelText.length)
+				.replace(/^\s*·\s*/u, "")
+				.trim()
+		: outcomeText;
+	const essential = semanticOutcome && semanticOutcome !== labelText ? `${labelText} · ${semanticOutcome}` : labelText;
+	const withOperation = operationText
+		? `${labelText} · ${operationText}${semanticOutcome ? ` · ${semanticOutcome}` : ""}`
+		: essential;
+	const countText = group.memberIds.length > 1 ? ` · ${callCount(group.memberIds.length)}` : "";
+	let suffix = baseSuffix;
+	let contentWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
+	if (countText && visibleWidth(essential) + visibleWidth(countText) <= contentWidth) {
+		suffix = `${baseSuffix}${theme.fg("dim", countText)}`;
+		contentWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
+	}
+	const content = visibleWidth(withOperation) <= contentWidth ? withOperation : essential;
+	const summary = truncateToWidth(content, contentWidth, "…");
 	const label = selected ? theme.bold(summary) : summary;
 	const gap = Math.max(1, width - visibleWidth(prefix) - visibleWidth(label) - visibleWidth(suffix));
 	return `${prefix}${label}${" ".repeat(gap)}${suffix}`;
@@ -116,6 +140,22 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 	});
 }
 
+function renderDetailImages(images: readonly ToolFormattedImage[], width: number, theme: Theme): string[] {
+	const available = Math.max(1, width - visibleWidth(GUTTER));
+	if (!getCapabilities().images) {
+		return images.map((item) => theme.fg("dim", `Image preview unavailable · ${item.mimeType}`));
+	}
+	return images.flatMap((item, index) => [
+		...(index > 0 ? [""] : []),
+		...new Image(
+			item.data,
+			item.mimeType,
+			{ fallbackColor: (value) => theme.fg("toolOutput", value) },
+			{ maxWidthCells: Math.min(60, available) },
+		).render(available),
+	]);
+}
+
 interface DetailWrapCache {
 	readonly activityId: string;
 	readonly contentKey: string;
@@ -127,8 +167,14 @@ interface DetailWrapCache {
 function singletonGroup(activity: ToolActivity): ToolActivityView {
 	return {
 		id: activity.id,
+		label: activity.label,
 		memberIds: [activity.id],
-		state: toolActivityOutcome(activity.state),
+		operation: activity.target,
+		outcome: activity.summary,
+		state:
+			activity.state === "rejected" || activity.state === "cancelled"
+				? activity.state
+				: toolActivityOutcome(activity.state),
 		summary: activity.summary || activity.label,
 	};
 }
@@ -443,7 +489,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			"",
 			...(showCalls
 				? [
-						sectionHeading(theme, "Calls"),
+						commandDialogSectionHeading(theme, "Calls"),
 						...layout.members.map((activity, index) => {
 							const memberIndex = layout.memberStart + index;
 							const selected = memberIndex === this.detailMemberIndex;
@@ -455,7 +501,6 @@ class ToolDialogComponent implements CommandDialogComponent {
 						"",
 					]
 				: []),
-			sectionHeading(theme, this.detailRepresentation === "raw" ? "Raw" : "Result"),
 			...detail.map((line) => `${GUTTER}${line}`),
 			"",
 		];
@@ -477,7 +522,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const document = this.detailDocument(group, width);
 		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const showCalls = group.memberIds.length > 1;
-		const fixedRows = 6 + (showCalls ? members.length + 2 : 0);
+		const fixedRows = 5 + (showCalls ? members.length + 2 : 0);
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
@@ -531,12 +576,16 @@ class ToolDialogComponent implements CommandDialogComponent {
 		if (!activityId) return [];
 		const detail = this.runtime.toolActivityDetail(activityId, this.detailRepresentation);
 		if (!detail) return [];
-		const activity = detail.activity;
-		const raw =
+		const sections =
 			this.detailRepresentation === "raw"
-				? detail.lines
-				: [...(activity.target ? [activity.target, ""] : []), ...detail.lines];
-		const contentKey = JSON.stringify(raw);
+				? [{ lines: detail.lines, title: "Raw" }]
+				: (detail.sections ?? [{ lines: detail.lines, title: "Result" }]);
+		const imageKey = detail.images
+			?.map(
+				(item) => `${item.mimeType}:${String(item.data.length)}:${item.data.slice(0, 12)}:${item.data.slice(-12)}`,
+			)
+			.join("|");
+		const contentKey = `${JSON.stringify(sections)}\n${imageKey ?? ""}`;
 		const cached = this.detailWrapCache;
 		if (
 			cached?.activityId === activityId &&
@@ -545,7 +594,18 @@ class ToolDialogComponent implements CommandDialogComponent {
 			cached.width === width
 		)
 			return cached.document;
-		const document = wrapDetailLines(raw, width);
+		const imageSection = Math.max(
+			0,
+			sections.findIndex((section) => section.title === "Image" || section.title === "Images"),
+		);
+		const document = sections.flatMap((section, index) => [
+			...(index > 0 ? [""] : []),
+			commandDialogSectionHeading(this.context.theme, section.title, ""),
+			...wrapDetailLines(section.lines, width),
+			...(detail.images && index === imageSection
+				? renderDetailImages(detail.images, width, this.context.theme)
+				: []),
+		]);
 		this.detailWrapCache = {
 			activityId,
 			contentKey,

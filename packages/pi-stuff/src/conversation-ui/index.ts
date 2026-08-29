@@ -72,6 +72,7 @@ export {
 	commandDialogReadKeyHelp,
 	commandDialogRows,
 	commandDialogScrollOffset,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
 	matchesCommandDialogCancel,
