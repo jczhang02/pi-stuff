@@ -30,6 +30,37 @@ Code maintained inside Pi Stuff and subject to the same architecture, quality, c
 obligations regardless of whether it originated locally, in a fork, or from vendored upstream material.
 _Avoid_: upstream exception, vendored exception, fork exemption
 
+**Capability Contract Catalog**:
+The maintained inventory of every user- or Host-observable behavior promised by the Suite within the certified Host
+profile. Each contract identifies its owning Capability, public seam, scenario, required evidence, and acceptance
+status. One contract is one stable observable promise and may carry multiple normal, failure, recovery, persistence,
+or boundary scenarios; private implementation functions and scenario variants are not separate contracts.
+_Avoid_: Feature checklist, test list, function coverage
+
+**Conditional Capability Contract**:
+A Capability contract whose configured success scenario requires an optional executable, credential, or external
+Service. Its unconfigured behavior remains an unconditional contract; a missing required dependency blocks configured
+acceptance and never counts as passed, skipped, or not applicable.
+_Avoid_: Optional test, skipped feature, best-effort contract
+
+**Suite Outcome Evaluation**:
+A paired evaluation on an external public task set that holds the certified Host, selected model, task, environment,
+and resource budget fixed while comparing the Suite loaded with the Suite absent. It reports complete-system outcomes
+and Suite delta; it does not certify individual Capability contracts.
+_Avoid_: Pi Stuff score, harness certification, correctness test
+
+**Capability Contract Acceptance**:
+The verification of every applicable Capability Contract Catalog entry in an isolated scenario using its declared
+Acceptance Evidence Profile. Deterministic or authenticated acceptance may certify a contract; Suite Outcome
+Evaluation cannot.
+_Avoid_: Feature smoke test, function coverage, benchmark pass
+
+**Acceptance Evidence Profile**:
+The declared execution boundary for one Capability contract: the exact real Host is required, while live Provider and
+live external Service use are stated separately when the behavior depends on them. A fixture Provider is deterministic
+evidence, not live evidence.
+_Avoid_: Realness level, truth test, production-like test
+
 **Diagnostic Record**:
 A bounded, current-process account of a Suite problem for human inspection. It never enters Session history or model
 context. The owning Capability presents ordinary state locally; only a user-relevant problem may raise the shared
@@ -86,10 +117,17 @@ A derived display-only summary of one continuous segment of native Read, Grep/Fi
 Boundary, independent Tool Activity, automatic continuation, or turn completion closes it.
 _Avoid_: Exploration group, Tool batch, merged Tool call
 
+**Operation Block**:
+A display-only Transcript projection of one independent, evidence-rich Tool Activity, with a bounded
+`Tool(operation identity)` parent and indented child outcome evidence at the invocation's native position. It is a
+closed Tool-specific presentation family, not a universal Tool card or grouping rule. Bash Operation Block is its only
+implemented specialization; ADR 0023 limits any later specializations to Write, Edit, Patch, the `background` Tool's
+`action: "output"` activity, and the unmatched outer Code Mode issue currently shown as an Envelope Fallback Row.
+_Avoid_: Tool card, Universal Tool Block, Command Block
+
 **Bash Operation Block**:
-A display-only projection of one Bash Tool call, with one bounded command title and child output preview at the call's
-native position. Shell composition inside the call remains one operation, and the underlying Tool result and Session
-records remain unchanged.
+A Bash specialization of Operation Block, with one bounded command identity and child output preview. Shell
+composition inside the call remains one operation, and the underlying Tool result and Session records remain unchanged.
 _Avoid_: Command group, parsed subcommand, Retrieval Group
 
 **Envelope Fallback Row**:
@@ -127,6 +165,11 @@ _Avoid_: Agent tokens, total Agent usage, Context budget
 The public pair of a stable Agent run ID and child index used by Agent control actions. Model-visible status exposes
 these fields separately; an internal roster row key is display identity rather than an Agent Target.
 _Avoid_: Agent key, child address
+
+**Agent Lifecycle Row**:
+A display-only Transcript projection of one Agent Tool lifecycle event. Background launch and completion remain
+separate chronological events, while live Agent state and full child evidence remain owned by Agents.
+_Avoid_: Agent Operation Block, Subagent Row, Agent roster row
 
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row

@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: a48c816b1f5aa8e14582b953b9bf7254950340f81a6e70845a864913bbed7f88 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: acb23cec47f996612d1cdcdcba93f2e64b3aadbdab721134c29e069c44be2b85 -->
 
 # Pi Stuff
 
@@ -30,6 +30,34 @@ _避免使用_：Capability Package、npm package、plugin fragment
 由 Pi Stuff 仓库维护的代码，无论最初来自本地、fork 还是 vendored 上游材料，都承担相同架构、质量、兼容性
 与认证义务。
 _避免使用_：upstream exception、vendored exception、fork exemption
+
+**Capability Contract Catalog**：
+在认证 Host profile 内，Suite 所承诺的每一项用户或 Host 可观察行为的维护清单。每项 contract 标明所属
+Capability、public seam、scenario、所需 evidence 与 acceptance status。一项 contract 表示一个稳定、可观察的
+承诺，可以包含多个正常、失败、恢复、持久化或边界 scenario；私有 implementation function 与 scenario variant
+不是独立 contract。
+_避免使用_：Feature checklist、test list、function coverage
+
+**Conditional Capability Contract**：
+configured success scenario 依赖可选 executable、credential 或 external Service 的 Capability contract。它的
+unconfigured behavior 仍是一项 unconditional contract；缺少所需 dependency 会阻塞 configured acceptance，
+绝不能计为 passed、skipped 或 not applicable。
+_避免使用_：Optional test、skipped feature、best-effort contract
+
+**Suite Outcome Evaluation**：
+在外部公开 task set 上进行的配对评估：固定认证 Host、所选 model、task、environment 与 resource budget，比较
+加载和不加载 Suite 的两种情况。它报告完整系统 outcome 与 Suite delta；不认证单项 Capability contract。
+_避免使用_：Pi Stuff score、harness certification、correctness test
+
+**Capability Contract Acceptance**：
+使用每项所声明的 Acceptance Evidence Profile，在隔离 scenario 中验证每个适用的 Capability Contract Catalog
+entry。deterministic 或 authenticated acceptance 可以认证 contract；Suite Outcome Evaluation 不可以。
+_避免使用_：Feature smoke test、function coverage、benchmark pass
+
+**Acceptance Evidence Profile**：
+一个 Capability contract 所声明的执行边界：必须使用精确的真实 Host；当行为依赖 live Provider 或 live external
+Service 时分别标明。fixture Provider 属于 deterministic evidence，不是 live evidence。
+_避免使用_：Realness level、truth test、production-like test
 
 **Diagnostic Record**：
 供人检查的、有界且仅限当前进程的 Suite 问题记录。它绝不进入 Session 历史或模型上下文。负责该状态的
@@ -86,9 +114,17 @@ _避免使用_：Tool call、Tool row、Tool Activity Group
 automatic continuation 或 turn completion 会关闭它。
 _避免使用_：Exploration group、Tool batch、merged Tool call
 
+**Operation Block**：
+一个独立且 evidence-rich 的 Tool Activity 在 Transcript 中的仅显示 projection：在该 invocation 的原始位置，
+展示有界的 `Tool(operation identity)` parent 及缩进的 child outcome evidence。它是封闭的 Tool-specific
+presentation 家族，不是通用 Tool card 或 grouping rule。Bash Operation Block 是目前唯一已实现的
+specialization；ADR 0023 将后续 specialization 限定为 Write、Edit、Patch、`background` Tool 的
+`action: "output"` activity，以及目前显示为 Envelope Fallback Row 的 unmatched outer Code Mode issue。
+_避免使用_：Tool card、Universal Tool Block、Command Block
+
 **Bash Operation Block**：
-一次 Bash Tool call 的仅显示 projection，在该 call 的原始位置展示一个有界命令标题与 child output preview。
-call 内部的 shell composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
+一种 Operation Block 的 Bash specialization，包含一个有界 command identity 与 child output preview。call 内部的
+shell composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
 _避免使用_：Command group、parsed subcommand、Retrieval Group
 
 **Envelope Fallback Row**：
@@ -123,6 +159,11 @@ _避免使用_：Agent tokens、total Agent usage、Context budget
 Agent control action 使用的公开二元组：稳定 Agent run ID 与 child index。模型可见 status 会分开暴露二者；
 内部 roster row key 是显示身份，不是 Agent Target。
 _避免使用_：Agent key、child address
+
+**Agent Lifecycle Row**：
+一个 Agent Tool lifecycle event 在 Transcript 中的仅显示 projection。background launch 与 completion 保持为
+两个独立的 chronological event；live Agent state 与完整 child evidence 仍由 Agents 拥有。
+_避免使用_：Agent Operation Block、Subagent Row、Agent roster row
 
 **Context Activity**：
 一次由用户发起的 Context maintenance operation 所对应的、模型不可见且持久化的 Session record。一条可见
