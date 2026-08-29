@@ -331,6 +331,7 @@ async function parallelFetch(url: string, body: JsonInputObject, signal?: AbortS
 	try {
 		response = await fetch(url, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				"x-api-key": apiKey,
 				"Content-Type": "application/json",

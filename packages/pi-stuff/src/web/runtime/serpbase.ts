@@ -130,6 +130,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	let response: Response;
 	try {
 		response = await fetch(url, {
+			redirect: "error",
 			headers: { Accept: "application/json" },
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])

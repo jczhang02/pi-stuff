@@ -117,6 +117,7 @@ async function queritJsonRequest(
 	try {
 		response = await fetch(url, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				Accept: "application/json",

@@ -395,6 +395,7 @@ export async function searchWithBrightData(
 	try {
 		response = await fetch(BRIGHTDATA_API_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",

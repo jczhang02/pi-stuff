@@ -84,6 +84,7 @@ async function search1APIJsonRequest(
 	try {
 		response = await fetch(url, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",

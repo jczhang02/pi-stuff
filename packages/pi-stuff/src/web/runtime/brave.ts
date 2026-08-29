@@ -119,6 +119,7 @@ export async function searchWithBrave(query: string, options: SearchOptions = {}
 	try {
 		const response = await fetch(`${BRAVE_API_URL}?${params.toString()}`, {
 			method: "GET",
+			redirect: "error",
 			headers: {
 				"X-Subscription-Token": apiKey,
 				Accept: "application/json",

@@ -415,6 +415,7 @@ export async function searchWithOpenAI(
 	try {
 		const response = await fetch(useCodexEndpoint ? CODEX_RESPONSES_URL : auth.responsesUrl, {
 			method: "POST",
+			redirect: "error",
 			headers,
 			body: JSON.stringify(body),
 			signal: options.signal

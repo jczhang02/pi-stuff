@@ -127,6 +127,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	try {
 		const request: RequestInit = {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",

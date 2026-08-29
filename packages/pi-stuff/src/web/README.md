@@ -18,8 +18,8 @@ All three Tools use Pi Stuff's shared one-row lifecycle renderer. Model-visible
 results, citations, cancellation, SSRF protection, redirects, extraction, and
 PDF handling remain owned by the pinned fork. `tool-contracts.ts` is the single
 owner of their bounded model-facing schemas across the parent adapter and private runtime.
-Credential-bearing Gemini API and gateway requests reject redirects before a
-provider key can be forwarded to another origin.
+Direct provider API and gateway requests reject redirects before credentials
+or request bodies can be forwarded to another origin.
 
 Provider include/exclude values share one Suite-owned domain normalizer. It
 accepts URL-shaped host input, rejects literal IPs and single-label hosts, and

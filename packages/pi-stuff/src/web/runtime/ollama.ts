@@ -105,6 +105,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	try {
 		response = await fetch(OLLAMA_SEARCH_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 			body: JSON.stringify({ query, max_results: numResults }),
 			signal: options.signal

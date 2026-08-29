@@ -97,6 +97,7 @@ export async function searchWithAnySearch(
 		if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
 		response = await fetch(ANYSEARCH_API_URL, {
 			method: "POST",
+			redirect: "error",
 			headers,
 			body: JSON.stringify(body),
 			signal: options.signal

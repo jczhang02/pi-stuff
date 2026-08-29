@@ -97,6 +97,7 @@ async function tinyFishJsonRequest(
 		if (init.body) headers.set("Content-Type", "application/json");
 		response = await fetch(url, {
 			...init,
+			redirect: "error",
 			headers,
 			signal: requestSignal(signal, timeoutMs),
 		});

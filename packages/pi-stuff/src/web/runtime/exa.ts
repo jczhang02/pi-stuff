@@ -160,6 +160,7 @@ function toSearchResponse(
 export async function callExaMcp(toolName: string, args: JsonInputObject, signal?: AbortSignal): Promise<string> {
 	const response = await fetch(`${EXA_MCP_URL}?tools=${toolName}`, {
 		method: "POST",
+		redirect: "error",
 		headers: {
 			"Content-Type": "application/json",
 			Accept: "application/json, text/event-stream",
@@ -430,6 +431,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 		if (!useSearch) {
 			const response = await fetch(EXA_ANSWER_URL, {
 				method: "POST",
+				redirect: "error",
 				headers: exaApiHeaders(apiKey),
 				body: JSON.stringify({ query }),
 				signal: requestSignal(options.signal, 60_000),
@@ -451,6 +453,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 
 		const response = await fetch(EXA_SEARCH_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: exaApiHeaders(apiKey),
 			body: JSON.stringify({
 				...exaSearchArgs(query, options),

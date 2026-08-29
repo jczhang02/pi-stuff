@@ -97,6 +97,7 @@ async function searchinfinityJsonRequest(
 	try {
 		response = await fetch(SEARCHINFINITY_SEARCH_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",

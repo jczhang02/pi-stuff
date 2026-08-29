@@ -260,6 +260,7 @@ export async function searchWithXai(
 	try {
 		const response = await fetch(XAI_RESPONSES_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				...auth.headers,
 				Authorization: `Bearer ${auth.apiKey}`,

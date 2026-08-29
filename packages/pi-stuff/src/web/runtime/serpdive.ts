@@ -165,6 +165,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	try {
 		response = await fetch(SERPDIVE_API_URL, {
 			method: "POST",
+			redirect: "error",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
