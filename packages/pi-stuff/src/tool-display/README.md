@@ -84,8 +84,8 @@ The formatted benchmark also rejects Raw protocol headings. Streaming updates re
 Narrative Boundary tail, while timer frames reconcile only the affected group; neither path rescans the full Session.
 
 See `UPSTREAM.md` for source provenance and the local delta. The current interaction contract is recorded in
-repository ADR `docs/adr/0022-restrict-folding-to-native-retrieval.md`; ADR 0010 is retained only as superseded
-decision history. The 2026-08-17 `/tools` readability update was
+repository ADR `docs/adr/0022-restrict-folding-to-native-retrieval.md`; former ADR 0010 is available only in Git
+history. The 2026-08-17 `/tools` readability update was
 implemented on 2026-08-18, including lifecycle icons, `◆` sections, compact-keyboard paging, singleton detail,
 formatted/Raw navigation, and the fixed wide split. Focused tests and the real PTY verifier cover the shipped Dialog,
 including a Space page sequence and Tab pane switch sent through the real Host.

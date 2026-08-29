@@ -1,7 +1,8 @@
-# ADR 0021: Fork Ponytail as a Suite Capability
+---
+status: accepted
+---
 
-- Status: Accepted
-- Date: 2026-08-25
+# Fork Ponytail as a Suite Capability
 
 ## Context
 

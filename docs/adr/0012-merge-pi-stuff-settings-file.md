@@ -1,11 +1,8 @@
 ---
 status: accepted
-amended_by:
-  - 0013-unify-web-configuration
-  - 0023-keep-suite-startup-configuration-read-only
 ---
 
-# Consolidate Pi Stuff settings into one merged JSON file
+# Use one merged settings file with read-only startup
 
 ## Context
 
@@ -26,13 +23,13 @@ permissions, a `flock`-based exclusive lock (where concurrency mattered), and a 
 fallback to defaults. The duplication was substantial, the file count was growing, and there was no shared place for
 cross-Capability settings concerns.
 
-At the time of this decision, `web-search.json` was excluded from consolidation. ADR 0013 later amended that exception
-and made the `web` namespace in `pi-stuff.json` canonical.
+Web originally used `web-search.json`, and the first consolidation implementation migrated other legacy files during
+Suite startup. Both exceptions conflicted with the desired single-file shape or the pure startup boundary.
 
 ## Decision
 
-Consolidate the six settings files into a single JSON document at `<agentDir>/pi-stuff.json`. The new global Code Mode
-default from ADR 0011 also uses this document, without introducing a legacy file. Each Capability owns one
+Consolidate Pi Stuff settings into a single JSON document at `<agentDir>/pi-stuff.json`. The global Code Mode default
+from ADR 0009 also uses this document, without introducing a legacy file. Each Capability owns one
 top-level **namespace** (a JSON object key) inside that file and reads and writes only its own section. Sibling
 namespaces are preserved across writes, so a Capability never edits another Capability's section.
 
@@ -68,23 +65,29 @@ The file is plain JSON (`JSON.parse` / `JSON.stringify`, no comments). Both read
 is no JSONC support. Per the project decision, jsonc as the written format was rejected: writes stay plain JSON, and
 the reader is plain JSON as well (no comment tolerance).
 
-### Legacy migration
+### Read-only legacy compatibility
 
-ADR 0023 supersedes the first-load behavior below. Current startup reads a valid legacy file only as an in-memory
-fallback and never writes, rewrites, or deletes user configuration.
+Suite import and Session startup never lock, create, rewrite, rename, migrate, or delete user configuration. When a
+canonical namespace is absent, a Capability may read its valid legacy file as an in-memory fallback through
+`legacyReader`. A later explicit settings action writes the canonical namespace through its owner, preserves sibling
+namespaces, and leaves the legacy file untouched. The canonical namespace wins on later loads.
 
-The original decision required each Capability with a pre-existing per-file config to perform a **one-time lift**: on first load, if the merged
-file has no entry for that namespace but the legacy file exists, the legacy content is parsed and seeded into the
-namespace, then persisted, and the legacy file is **deleted**. There is no `.bak` retention (per the project decision).
+Web follows the same startup rule but has one explicit-update exception: when its canonical namespace is absent, a
+direct Web configuration update may lift the complete legacy object under the shared lock and delete the legacy file
+only after the canonical write succeeds.
 
-### Original exclusion: `web-search.json`
+### Web credentials
 
-This section records the superseded part of the original decision. See ADR 0013 for the current Web configuration and
-on-demand secret-resolution contract.
+Web owns the `web` Settings Namespace and keeps its established field names and nested shapes. Credential fields may
+contain literal values, environment references, legacy explicit command sources, or 1Password `op://` references.
+A secret reference remains inert until the selected provider requests it. Resolution invokes `op read` with an
+argument vector rather than a shell, forwards only the documented minimal environment, bounds waiting and output,
+honors cancellation, and excludes the reference, arguments, stderr, and resolved value from diagnostics. Resolved
+values are neither persisted nor retained beyond that provider operation.
 
 ## Consequences
 
-- New settings persist in one `~/.config/pi/pi-stuff.json` document. Existing legacy files remain read-only fallbacks
+- New settings persist in one `<agentDir>/pi-stuff.json` document. Existing legacy files remain read-only fallbacks
   until an explicit change creates the canonical namespace; they are not deleted automatically.
 - A Capability module no longer reimplements read/write/lock/atomic-rename; it calls into `shared/settings-io`.
   Adding a new Capability-owned setting adds a namespace, not a new file.
@@ -94,8 +97,25 @@ on-demand secret-resolution contract.
   upstream tests that run under Node do not load it.
 - `schemaVersion` remains per-namespace (each Capability owns its own versioning and migration logic). There is no
   top-level file schema version; the file is a plain container of independent namespaces.
+- Suite startup remains observational: loading the Package cannot mutate configuration merely because legacy state
+  exists.
+- Secret resolution is delayed until use and cannot leak the secret source or value through diagnostics or storage.
+
+## Rejected alternatives
+
+- **One settings file per Capability:** rejected because it duplicates parsing, locking, atomic writes, and diagnostics
+  while providing no useful independent lifecycle.
+- **JSONC output:** rejected because a machine-owned merged document can use deterministic plain JSON without a second
+  parser or comment-preservation policy.
+- **Automatic startup migration:** rejected because Package loading must not mutate user configuration before direct
+  interactive or RPC input.
+
+## Consolidation history
+
+This ADR incorporates the Web namespace and on-demand secret decision formerly recorded in ADR 0013 and the read-only
+startup rule formerly recorded in ADR 0023. Those files are removed because both decisions now define the same merged
+settings boundary.
 
 ## References
 
-- ADR 0009 — Code Mode project-scoped opt-in (amended by ADR 0011 for the global namespace).
-- ADR 0011 — Code Mode global default (one namespace occupant of this merged file).
+- ADR 0009 — Code Mode project override, global default, and effective precedence.

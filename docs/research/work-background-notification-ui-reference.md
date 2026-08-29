@@ -66,15 +66,13 @@ The fixture supplied only synthetic model prose and deterministic tool calls. Cl
 - the **prompt, Agent task name, command, assistant prose, timings, and token counts** are synthetic test content;
 - fixture assistant wording is not evidence of Anthropic's model behavior.
 
-The checked-in permission image was produced from a genuine ANSI pane capture and rendered to PNG with the same `freeze`-based terminal capture method used by the existing [`claude-2.1.220-btw-capture.sh`](../prototypes/tui/claude-2.1.220-btw-capture.sh) harness. It is not a hand-built HTML mockup. The PNG is `3672 × 2381`, and its SHA-256 is:
+The reviewed permission image was produced from a genuine ANSI pane capture and rendered to PNG with the repository's former `freeze`-based terminal capture method. It was not a hand-built HTML mockup. The removed artifact was `3672 × 2381` with SHA-256:
 
 ```text
 bdff5df564db5ff15d7d0a622a5fa535aba35a43686e0d77606a138317d670c6
 ```
 
-![Claude Code 2.1.220 background subagent permission prompt](../prototypes/tui/artifacts/claude-2.1.220-background-agent-permission.png)
-
-The test command would have created `permission-probe.txt`. `Esc` was pressed at this screen; the file was confirmed absent, while the subagent continued and later completed. This makes the screenshot evidence of both the visual surface and the “deny one tool, do not kill Agent” lifecycle.
+The test command would have created `permission-probe.txt`. `Esc` was pressed at this screen; the file was confirmed absent, while the subagent continued and later completed. This established both the visual surface and the “deny one tool, do not kill Agent” lifecycle. Git history retains the deleted image and harness.
 
 ## Background subagent lifecycle
 

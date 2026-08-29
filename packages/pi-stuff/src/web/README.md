@@ -38,3 +38,8 @@ fetching detects the condition lazily with both the requested host and a public
 canary. Compatibility is process-local, explicit SSRF settings still win, and
 no settings file is created. Literal-IP URLs remain rejected at the Suite
 boundary.
+
+Named third-party providers receive the query or URL needed for their operation. Paid Bright Data providers are
+explicit-only and excluded from both zero-configuration fallback and `provider: "all"`; merely configuring a token
+does not make a request. See the private runtime [`SECURITY.md`](runtime/SECURITY.md) for credential, downstream-egress,
+and billed-response boundaries.

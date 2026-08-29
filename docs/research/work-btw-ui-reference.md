@@ -13,7 +13,7 @@ The meaningful choice is not a color or shortcut. It is whether BTW is:
 
 All three occupy zero rows while BTW is closed, keep routine BTW exchanges out of the main transcript and model context, and use the accepted divider-led, full-width, non-floating Command Dialog. Only an explicit Bring followed by a user submission may add selected content to the main conversation. A proposed multi-thread shelf was rejected before prototyping because it would add another normal-screen widget beside Todo and the Agent roster, contradicting the established BTW surface rule.
 
-The visual comparison is recorded in the [Work BTW report](../prototypes/tui/work-btw-comparison-report.html). The maintainer selected A, following the Claude Code lifecycle; B and C remain rejected comparison evidence.
+The maintainer selected A, following the Claude Code lifecycle. The discarded visual comparison of A, B, and C remains recoverable from Git history.
 
 ## Owned-fork selection
 

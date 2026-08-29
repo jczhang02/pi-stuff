@@ -4,6 +4,13 @@ status: accepted
 
 # Isolate Context engine work from the Host UI thread
 
+## Context
+
+Magic Context projection can perform enough CPU and module-loading work to stall Pi input paint and the Working
+animation. Deferring the same work on the Host event loop does not change that contention.
+
+## Decision
+
 Magic Context projection executes inside one Context Engine Worker. Pi remains the Host and continues to own input,
 Conversation Transcript rendering, Sessions, model requests, and Agent lifecycle. Context Management does not render a
 second copy of submitted input or call a synthetic refresh API.
@@ -29,7 +36,7 @@ synchronization, or fatal Worker error immediately returns Context ownership to 
 official handler one bounded Host grace period, then terminates the Worker independently of its serialized request queue
 and revokes the in-memory URL.
 
-## Alternatives rejected
+## Rejected alternatives
 
 - Rendering or refreshing the submitted prompt from the adapter creates a second visible authority and caused full-frame
   refresh and stuck-Working regressions.

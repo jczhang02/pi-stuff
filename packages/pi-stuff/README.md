@@ -16,7 +16,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 - [`conversation-ui`](src/conversation-ui/README.md): Statusline, Welcome, live Thought, terminal `chart`/`tree` fences, input presentation, `/ui`, and Command Dialog lifecycle.
 - [`session-naming`](src/session-naming/README.md): bounded semantic Session names after settled direct-user work, resumable ownership state, and `/autoname` controls.
 - [`tool-display`](src/tool-display/README.md): compact presentation for Pi built-ins and participating Suite Tools.
-- [`code-mode`](src/code-mode/README.md): one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
+- [`code-mode`](src/code-mode/README.md): provider-visible `codemode` and `tool_search` Tools that compose active Suite Tools locally without changing Tool UI.
 - [`context-management`](src/context-management/README.md): configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
   session authority.
 - [`ponytail`](src/ponytail/README.md): feature-complete Ponytail fork with Session modes, six Skills, shared Statusline state, and `/ponytail` controls.
@@ -38,7 +38,7 @@ Before changing absorbed or adapted source, read the nearest Module README and i
 ## Context controls
 
 Use `/ctx` to open the Pi Stuff Context dialog. Its actions share one dispatcher with `/ctx flush`, `/ctx wrapup [N]`,
-`/ctx recomp [start-end]`, and `/ctx upgrade`. Operation progress is stored as model-invisible Pi Stuff Activity entries;
+`/ctx recomp [start-end]`, and `/ctx upgrade`. Operation progress is stored as model-invisible Context Activity entries;
 Magic Context's own global UI remains suppressed.
 
 ## Ponytail controls
@@ -71,9 +71,11 @@ Only absolute XDG environment paths are accepted. Config, state, and cache fall 
 Legacy MCP onboarding state is read from the Pi Agent directory only when the XDG state file is absent; subsequent
 writes use XDG state without deleting the legacy file.
 
-Legacy per-Capability settings files, including `web-search.json`, are migration inputs rather than current
-configuration locations. Direct user configuration changes migrate their owned namespace into `pi-stuff.json`.
-The upstream `pi-autoname.json` file is not read or migrated; Session Naming starts read-only from its merged namespace and writes only after direct `/autoname settings` interaction.
+Legacy per-Capability settings files are read-only startup fallbacks when their canonical namespace is absent. An
+explicit settings change writes the owned namespace without deleting the legacy file. Web alone may lift its complete
+legacy object during a direct Web configuration update and deletes that file only after the canonical write succeeds.
+The upstream `pi-autoname.json` file is not read or migrated; Session Naming starts read-only from its merged namespace
+and writes only after direct `/autoname settings` interaction.
 
 ## Themes
 

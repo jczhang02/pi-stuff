@@ -18,13 +18,13 @@ This yields a concrete rule: **the conversation says what happened; a single liv
 
 ## Current roster decision and native-Pi evidence
 
-The earlier bounded above-editor synthesis is superseded. Pi Stuff now keeps its lifecycle semantics but puts the only live roster **below the editor**, following the Claude Code interaction model. The [Agent roster comparison report](../prototypes/tui/agent-roster-comparison-report.html) compares three native Pi projections:
+The earlier bounded above-editor synthesis is superseded. Pi Stuff now keeps its lifecycle semantics but puts the only live roster **below the editor**, following the Claude Code interaction model. Three native Pi projections were compared before this decision:
 
 1. **Vertical sessions — selected:** one line each for `main` and every Agent; task on the left, shortest state on the right.
 2. **Grouped batches:** adds ownership headers but repeats batch context already present in the transcript and consumes more height.
 3. **Horizontal rail:** minimizes height but hides simultaneous child tasks and states until selection.
 
-The throwaway Extension proves this can be implemented without forking Pi: it uses public `setWidget(..., { placement: "belowEditor" })`, `onTerminalInput`, and non-overlay `ctx.ui.custom()`. The capture exercises real Down/Up selection and Enter-to-detail input inside Pi `0.83.0`; only the Agent lifecycle data is a deterministic fixture. The vertical variant also passes a `64 × 28` basic-layout smoke frame with four short tasks and right-side states intact. This does not yet prove live Agent integration, completion linger duration, actual truncation under long labels, or high-agent-count overflow behavior.
+The discarded prototype established that this could be implemented without forking Pi through public `setWidget(..., { placement: "belowEditor" })`, `onTerminalInput`, and non-overlay `ctx.ui.custom()` seams. Its dated Pi `0.83.0` capture covered real selection and Enter-to-detail input with deterministic lifecycle data. Current behavior and acceptance now belong to the Agents Module and its real-Host verifiers; Git history retains the prototype.
 
 ## Provenance and reuse limits
 
@@ -32,7 +32,7 @@ The throwaway Extension proves this can be implemented without forking Pi: it us
 
 Behavior was checked against Anthropic's current documentation and official changelog through Claude Code **2.1.220**. The local CLI inspected also reported `2.1.220`. Current documentation is the authority for behavior such as default background execution, permission prompts, `/tasks`, and team controls ([subagents documentation](https://code.claude.com/docs/en/sub-agents), [agent teams documentation](https://code.claude.com/docs/en/agent-teams), [official changelog at v2.1.220](https://github.com/anthropics/claude-code/blob/v2.1.220/CHANGELOG.md)).
 
-Exact visual evidence for the parallel lifecycle now comes from the genuine Claude Code **2.1.197** Linux x64 npm release binary (SHA-256 `f54e69cbc89b2da61a415700af7ff52a147e862517d4f1b0eecf768448cf7f83`). It was driven as a black box in an isolated `100 × 32` PTY. A localhost-only Anthropic Messages fixture emitted two concurrent Agent calls and delayed their tool-free results for 12 seconds. No user Claude configuration, credential, session, source code, or external model API was used. The renderer, keyboard path, foreground-to-background transition, and completion notifications are therefore real release behavior; the task prose is deterministic fixture data. Reproduction lives in [`claude-2.1.197-agent-activity-capture.sh`](../prototypes/tui/claude-2.1.197-agent-activity-capture.sh) and [`claude-2.1.197-agent-activity-mock.ts`](../prototypes/tui/claude-2.1.197-agent-activity-mock.ts).
+Exact visual evidence for the parallel lifecycle came from the genuine Claude Code **2.1.197** Linux x64 npm release binary (SHA-256 `f54e69cbc89b2da61a415700af7ff52a147e862517d4f1b0eecf768448cf7f83`). It was driven as a black box in an isolated `100 × 32` PTY. A localhost-only Anthropic Messages fixture emitted two concurrent Agent calls and delayed their tool-free results for 12 seconds. No user Claude configuration, credential, session, source code, or external model API was used. The renderer, keyboard path, foreground-to-background transition, and completion notifications are therefore real release behavior; the task prose was deterministic fixture data. The removed harness remains recoverable from Git history.
 
 Some layout decisions were inspected in `tanbiralam/claude-code` at commit [`6f6f12b`](https://github.com/tanbiralam/claude-code/tree/6f6f12b37f529488b10e53928dd5508bb93535c7). That repository is not Anthropic's official source release, contains reconstructed/minified material, cannot be tied reliably to a public Claude Code version, and had no license file at the inspected commit. It is therefore **product evidence only**: do not copy, translate, adapt, or port its code or component structure.
 
@@ -66,7 +66,7 @@ The released binary establishes eight details that the earlier source study coul
 7. A second Down selects the first child and exposes view/stop controls. Selection is expressed by moving the solid circle, not by drawing a boxed row.
 8. Enter on a child opens that child session in the main work area while the roster keeps the child selected.
 
-These observations supersede any earlier wording that called a source-derived layout a “Claude screenshot.” Lifecycle frames are preserved in the historical [Agent activity comparison report](../prototypes/tui/agent-activity-comparison-report.html); the verified roster-management frames are embedded in the current [Agent roster comparison report](../prototypes/tui/agent-roster-comparison-report.html).
+These observations supersede any earlier wording that called a source-derived layout a “Claude screenshot.” The frames and comparison reports were decision evidence rather than current product authority and now live only in Git history.
 
 ### One foreground agent
 

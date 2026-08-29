@@ -5,10 +5,10 @@ Status: design proposal
 Scope: Pi Stuff Code Mode model contract, Tool routing, execution, and recovery
 
 This report records the Cloudflare-parity proposal made before the OpenAI review, summarizes the official OpenAI
-model, and proposes a replacement design. It does not amend accepted
-[ADR 0005](../adr/0005-wrap-active-suite-tools-in-one-local-code-mode-envelope.md). If the replacement is accepted,
-that ADR must be revised before implementation because the new routing policy deliberately stops treating every
-active Suite Tool as programmatic-only.
+model, and proposes a replacement design. It did not itself amend
+[ADR 0005, now consolidated into ADR 0009](../adr/0009-align-code-mode-with-openai-and-cloudflare.md). The accepted
+replacement was recorded there before implementation because the proposed routing policy deliberately stopped treating
+every active Suite Tool as programmatic-only.
 
 ## Decision in one paragraph
 
@@ -31,12 +31,11 @@ The resulting rule is simple:
 
 The local live-provider experiment found that Code Mode materially reduced provider-reported total tokens, but it
 also exposed result-shape and final-output mistakes. The measured reduction was 48.6% to 73.0%, depending on the model
-and task. See the [token-consumption report](./code-mode-token-consumption-20260815.md).
+and task. The detailed one-off token-consumption evidence remains available in Git history.
 
 The Cloudflare investigation then confirmed that generated programs do make both syntactic and semantic mistakes in
 production. Cloudflare responds with narrow normalization, runtime validation, and actionable errors rather than
-prompting alone or silent coercion. See the
-[call-reliability report](./cloudflare-code-mode-call-reliability-20260815.md).
+prompting alone or silent coercion. The detailed one-off call-reliability evidence remains available in Git history.
 
 Those findings still stand. The recommendation below changes because the later OpenAI research revealed an official
 contract that is closer to Pi Stuff's existing runtime than the Cloudflare Worker contract is.

@@ -54,6 +54,11 @@ _Avoid_: chat title, task name, autoname state
 User-owned declarations that select and configure Packages and Runtime Resources for a Host installation.
 _Avoid_: Suite configuration, installer state
 
+**Settings Namespace**:
+One Capability-owned top-level object in `<agentDir>/pi-stuff.json`. Its owner may read and replace that object while
+preserving sibling namespaces; the merged file, lock, and atomic write remain shared infrastructure.
+_Avoid_: Capability settings file, global config
+
 **Logical Thinking Run**:
 A continuously updated visible reasoning segment treated as one narrative unit. A later separately visible reasoning
 segment is a new run; streaming deltas, terminal wrapping, and redraw are not.

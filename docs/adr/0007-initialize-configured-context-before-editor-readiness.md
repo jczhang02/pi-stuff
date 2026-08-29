@@ -4,6 +4,22 @@ status: accepted
 
 # Initialize configured Context before editor readiness
 
-When a Session already has a recognized Magic Context configuration with no pending file migration, Pi Stuff completes the official module load, factory initialization, SQLite setup, and `session_start` handling before the editor is reported ready. This deliberately trades slower process startup for native-like message submission: no module, database, or synthetic frame wait remains on the normal Enter-to-provider path.
+## Context
 
-A missing configuration or legacy configuration still leaves Context dormant until a direct user action authorizes creation or migration. Startup may initialize rebuildable derived Context state, but it must not create, rewrite, or migrate user configuration; failure remains fail-open to Pi native context and can retry on later accepted work.
+Lazy initialization moved Magic Context module, database, and synthetic-frame work onto the first normal
+Enter-to-provider path. Configured Sessions need native-like submission latency without weakening startup purity.
+
+## Decision
+
+When a Session already has a recognized Magic Context configuration with no pending file migration, Pi Stuff completes
+the official module load, factory initialization, SQLite setup, and `session_start` handling before the editor is
+reported ready. A missing or legacy configuration leaves Context dormant until direct user action authorizes creation
+or migration. Startup may initialize rebuildable derived Context state, but it does not create, rewrite, or migrate
+user configuration. Failure remains fail-open to Pi native context and may retry on later accepted work.
+
+## Consequences
+
+- A configured Session deliberately pays more process-startup time so ordinary message submission does not wait for
+  Context initialization.
+- Unconfigured and legacy Sessions remain read-only at startup.
+- Context failure returns ownership to Pi native behavior rather than blocking the Host.

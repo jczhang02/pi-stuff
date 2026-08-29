@@ -95,14 +95,12 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/web/runtime/LICENSE",
 	"package/src/web/runtime/SECURITY.md",
 	"package/src/web/runtime/UPSTREAM.md",
-	"package/src/web/runtime/UPSTREAM_README.md",
 	"package/src/mcp/index.ts",
 	"package/src/mcp/runtime/index.js",
 	"package/src/mcp/runtime/implementation.ts",
 	"package/src/mcp/runtime/mcp-keyring-helper.cjs",
 	"package/src/mcp/runtime/LICENSE",
 	"package/src/mcp/runtime/UPSTREAM.md",
-	"package/src/mcp/runtime/UPSTREAM_README.md",
 	...RTK_TECHNIQUE_FILES.map((file) => `package/src/rtk/upstream/techniques/${file}`),
 	"package/src/background-work/index.ts",
 	"package/src/background-work/src/process-supervisor.mjs",
@@ -294,7 +292,6 @@ async function verifyProvenanceAndLicenses(baseDirectory: string): Promise<void>
 	for (const adapted of ["web/runtime", "mcp/runtime"] as const) {
 		await access(join(baseDirectory, "src", adapted, "LICENSE"));
 		await access(join(baseDirectory, "src", adapted, "UPSTREAM.md"));
-		await access(join(baseDirectory, "src", adapted, "UPSTREAM_README.md"));
 	}
 	await access(join(baseDirectory, "src", "web", "runtime", "SECURITY.md"));
 	await access(join(baseDirectory, "src", "codex", "LICENSES", "Apache-2.0.txt"));

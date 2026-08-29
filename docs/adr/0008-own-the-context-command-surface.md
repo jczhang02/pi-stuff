@@ -4,6 +4,13 @@ status: accepted
 
 # Own the Context command surface
 
+## Context
+
+Magic Context exposes several commands and presentation hooks, but installing them directly would create competing
+command, dialog, widget, Statusline, and Transcript authorities inside the Suite.
+
+## Decision
+
 Pi Stuff exposes one Host command, `/ctx`, for Magic Context inspection and maintenance. Its `status`, `flush`,
 `wrapup`, `recomp`, and `upgrade` subcommands share one dispatcher with the actions in Pi Stuff's full-width Context
 Command Dialog. Upstream command handlers remain the authority for validation, confirmation, storage, Historian work,
@@ -14,12 +21,9 @@ model-invisible Context Activity entries rendered as one bullet row with bounded
 Footer, Widget, Statusline, custom dialog, shortcut, flag, and entry-renderer registrations remain suppressed. Context
 maintenance does not claim a Statusline slot.
 
-## Accepted `/ctx` readability update
+### `/ctx` readability
 
-**Decision update:** 2026-08-17
-**Status:** Implemented on 2026-08-18.
-
-This update changes only the Suite-owned Context Command Dialog presentation. The dispatcher, upstream validation,
+The readability update accepted on 2026-08-17 changes only the Suite-owned Context Command Dialog presentation. The dispatcher, upstream validation,
 storage, confirmation authority, Historian work, Context Activity, typed subcommands, and suppression of upstream UI
 remain unchanged. `/ctx` stays single-column at every terminal width.
 

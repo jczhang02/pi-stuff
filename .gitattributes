@@ -1,7 +1,3 @@
-# Real terminal frames intentionally preserve right-padding cells and ANSI backgrounds.
-docs/prototypes/tui/final-ui-review/fleetview/artifacts/*.ansi -whitespace
-docs/prototypes/tui/final-ui-review/fleetview/artifacts/*.txt -whitespace
-
 # Internal fork snapshots preserve the exact audited upstream bytes.
 packages/pi-web-access/** -whitespace
 packages/pi-mcp-adapter/** -whitespace

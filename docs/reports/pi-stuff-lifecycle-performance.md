@@ -1,5 +1,10 @@
 # Pi Stuff lifecycle performance
 
+> **Current disposition (2026-08-29):** this report preserves measured Pi 0.84.1 and 0.84.2 lifecycle evidence. The
+> certified Host is now Pi 0.84.3; [`docs/compatibility.md`](../compatibility.md) is authoritative for its identity.
+> Benchmark schema 6 and the regression budgets at the end remain executable repository checks, but the historical
+> measurements below are not relabeled as 0.84.3 results.
+
 ## Scope
 
 This report records the acceptance evidence for Bead `ps-5bw`. Measurements use the certified Pi 0.84.1 Host and Bun
@@ -69,7 +74,7 @@ The sole over-budget cell, the 100×32 240-turn response at 50.36 ms, passed an 
 deterministic response was 53.29–114.85 ms. Configured startup moved to 2,022.24–2,388.15 ms; degraded native fail-open
 startup was 2,068.33–2,088.97 ms. Host steady-state response was 19.55–21.16 ms in the same matrix.
 
-The current schema 6 run is recorded locally at `.artifacts/lifecycle-benchmark/ps-9t2-1-4-final.json`. It ran 292
+The latest retained schema 6 run is recorded locally at `.artifacts/lifecycle-benchmark/ps-9t2-1-4-final.json`. It ran 292
 isolated Pi 0.84.2 processes with 6,500 retained 8 KiB Tool results and completed with `acceptance.passed: true`, no
 findings, and no confirmation cells. Across both terminal sizes, 6,500-Tool Suite p95 was 1,997.18–2,053.80 ms for
 reload, 465.75–488.09 ms for the first deterministic response, 54.53–68.28 ms for the second same-process response, and

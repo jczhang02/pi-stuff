@@ -43,7 +43,7 @@
   See ADR 0012.
 - Add a global Code Mode default. `/codemode global on|off` persists the Suite-wide default into the `codeMode` namespace
   of the merged file, and the project-scoped `.pi/code-mode.json` now records only an explicit difference from that global
-  default. See ADR 0011.
+  default. See ADR 0009.
 - Restrict compact Retrieval Groups to native Read, Grep/Find, and List. Keep Bash, Web, MCP, media, mutations,
   delegated work, lifecycle Tools, and unknown Tools independent; make each new visible Logical Thinking Run a
   boundary; and keep infrastructure issues visible between retrieval segments. Successful and active groups occupy

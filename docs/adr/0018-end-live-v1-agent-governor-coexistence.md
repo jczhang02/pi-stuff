@@ -4,6 +4,8 @@ status: accepted
 
 # End live v1 Agent governor coexistence
 
+## Context
+
 Current Pi Stuff releases do not hold the pre-v2 Agent governor's `mkdir` directory lock for the lifetime of a Pi
 session. They may read an unlocked v1 ledger once and import proven historical records into the v2 ledger. If a v1
 lock is present during that read, Agent launches fail closed and tell the user to close the older Pi process.
@@ -12,6 +14,12 @@ The old protocol cannot provide both live old/new process exclusion and automati
 killed: old writers do not participate in the v2 kernel lock, while a directory created for them survives process
 death. PID-based deletion would add a check/remove replacement race. Keeping the lifetime barrier therefore makes an
 ordinary crash permanently disable delegation for that Session.
+
+## Decision
+
+Do not support concurrent pre-v2 and current Agent governors for one Pi Session. Current releases may import an
+unlocked v1 ledger once. If the v1 lock is present, Agent launch fails closed and tells the user to stop the older Pi
+process; current code does not create a new v1 lifetime barrier.
 
 ## Consequences
 

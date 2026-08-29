@@ -1,12 +1,6 @@
 {
 	"extends": "./config/typescript/base.json",
-	"include": [
-		"docs/prototypes/**/*.ts",
-		"scripts/**/*.ts",
-		"test/**/*.ts",
-		"tools/**/*.ts",
-		"packages/pi-stuff/src/**/*.ts"
-	],
+	"include": ["scripts/**/*.ts", "test/**/*.ts", "tools/**/*.ts", "packages/pi-stuff/src/**/*.ts"],
 	"exclude": [
 		"node_modules",
 		".artifacts",

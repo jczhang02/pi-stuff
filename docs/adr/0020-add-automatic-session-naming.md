@@ -1,8 +1,11 @@
-# ADR 0020: Add automatic Session naming at the settled user-work boundary
+---
+status: accepted
+beads:
+  - ps-35b
+  - ps-496
+---
 
-- Status: Accepted
-- Date: 2026-08-24
-- Beads: ps-35b, ps-496
+# Add automatic Session naming at the settled user-work boundary
 
 ## Context
 
@@ -49,7 +52,7 @@ not create or migrate `pi-autoname.json`, and invalid existing settings are neve
 The implementation is a fork of upstream commit `73d25caa9ff33dadfaa8187ad3f7d1495a01cec9`; its adjacent `LICENSE`
 and `UPSTREAM.md` remain the source and license authority.
 
-## Alternatives considered
+## Rejected alternatives
 
 ### Install `pi-autoname` as another Package
 

@@ -4,6 +4,13 @@ status: accepted
 
 # Project chart and tree fences inside Conversation Markdown
 
+## Context
+
+Chart and tree output is useful in a terminal conversation, but display projection must not rewrite canonical messages,
+alter Provider context, or introduce a second Markdown authority and runtime.
+
+## Decision
+
 Pi Stuff will recognize complete `chart` and `tree` fenced code blocks at the existing Conversation Markdown
 projection seam. It will replace valid blocks with width-bounded terminal text for display while leaving the
 canonical User or Assistant message, Session records, copy/export source, and Provider context unchanged. Thinking

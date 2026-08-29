@@ -1,4 +1,10 @@
+---
+status: accepted
+---
+
 # Certify the upstream release binary
+
+## Context
 
 Pi Stuff is a Pi Package, not a Pi Host distribution. Rebuilding Pi from a pinned checkout required repository-owned
 model data, source hydration, build records, and crash-safe binary publication that did not contribute Package behavior.

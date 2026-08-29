@@ -21,6 +21,10 @@ cannot open native prompts behind the shared Command Dialog contract.
 Connection discovery rejects more than 100 pages or 10,000 entries in either
 the Tool or Resource metadata list; list-changed updates use the same entry limit.
 
+MCP text results are bounded to 50 KiB or 2,000 lines by default. Oversized text and raw proxy details above 16 KiB
+spill to mode-`0600` temporary files; image blocks stay on Pi's native image path. Spill files may contain sensitive
+server output and are not removed automatically.
+
 ## Accepted `/mcp` control target
 
 **Decision update:** 2026-08-20

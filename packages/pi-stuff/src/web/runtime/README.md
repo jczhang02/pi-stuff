@@ -6,8 +6,8 @@ locally adapted `pi-web-access` snapshot; it is not a Package, dependency, or in
 Pi Stuff owns the user-visible Tool surface in the parent directory. The implementation here supplies search,
 HTTP/image/PDF extraction, bounded GitHub API reads, storage, and SSRF enforcement. Dormant upstream curator,
 command, source-check, page-answer, cloning, and video surfaces have been removed. See [`UPSTREAM.md`](./UPSTREAM.md) for exact provenance,
-integrity records, license, and the maintained delta. [`UPSTREAM_README.md`](./UPSTREAM_README.md) preserves the
-source project's documentation for maintenance reference; its installation instructions do not apply to Pi Stuff.
+integrity records, license, and the maintained delta. [`SECURITY.md`](./SECURITY.md) records the retained credential,
+remote-extraction, and paid-provider boundaries.
 
 `implementation.ts` keeps installation as a short ordered lifecycle and delegates each Tool to its search, fetch,
 or stored-content handler. The parent `tool-contracts.ts` owns the shared bounded schemas; this private runtime owns

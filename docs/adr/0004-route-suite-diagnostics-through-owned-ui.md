@@ -4,10 +4,16 @@ status: accepted
 
 # Route Suite diagnostics through owned UI
 
+## Context
+
 Pi Stuff runs inside Pi's terminal renderer. Writing maintenance warnings directly to stdout or stderr bypasses that
 renderer, can insert text into the editor area, and gives internal housekeeping the same visual weight as the user's
-work. Capability Modules therefore report structured Diagnostic Records to `conversation-ui` instead of using Host-side
-console output.
+work.
+
+## Decision
+
+Capability Modules report structured Diagnostic Records to `conversation-ui` instead of using Host-side console
+output.
 
 Presentation follows ownership. A Capability's normal state stays on its existing surface, such as Fleetview,
 Background Work, Todo, or a Tool result. Non-actionable cleanup and retry information is silent in the main UI but
@@ -23,12 +29,9 @@ retaining their count and latest details.
 Browser-owned consoles and detached child-process logs remain explicit exceptions because they do not write into Pi's
 Host TUI. Repository safety checks reject any new Host-side console call outside that narrow allowlist.
 
-## Accepted `/diagnostics` readability update
+### `/diagnostics` readability
 
-**Decision update:** 2026-08-17
-**Status:** Implemented on 2026-08-18.
-
-This update changes only the existing current-process Command Dialog. Record ownership, notice acknowledgement,
+The readability update accepted on 2026-08-17 changes only the existing current-process Command Dialog. Record ownership, notice acknowledgement,
 deduplication, bounds, redaction, non-persistence, and the separation from Session, model context, transcript, and
 Statusline remain unchanged. `/diagnostics` uses a sequential list/detail flow and remains single-column at every
 terminal width; it never introduces a split pane for this troubleshooting path.

@@ -1,3 +1,5 @@
+<!-- translation-source: README.md; translation-source-sha256: 02334a25996fcccbd3e760a4476c6d82b1eaa1b11dadffa160c6e030fbf5da21 -->
+
 <div align="center">
 
 # Pi Stuff
@@ -6,7 +8,7 @@
 
 一个本地 Pi Package，提供紧凑的 Tool 活动展示、持久工作、专注的侧边流程与按需集成，同时不取代 Pi。
 
-[English](../../../README.md) · 简体中文
+[English](../../../README.md) · 简体中文 · [工程 Wiki](docs/README.md)
 
 [![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](../../../LICENSE)
@@ -44,6 +46,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
   `/autoname` 可显式刷新，`/autoname settings` 可调整常用策略和主模型，而自动命名不会接管 Child Agent Session。
 - **持久的目标与计划**——Goal 能自动推进一个需要证据才能结束的目标；Todo 则用有界清单维护可恢复的
   会话任务。
+- **Ponytail 实现纪律**——为当前 Session 选择 `off`、`lite`、`full` 或 `ultra`，让 KISS/YAGNI 规则与六个
+  专门 Skill 按模式进入模型上下文，同时保持显式命令始终可用。
 - **当前会话内的并行工作**——Background Shell、一次性 Monitor，以及前台或后台 Agent 都可检查、可控制，
   但不会演变成第二套调度器或运行时。
 - **不打扰主对话的临时问题**——`/btw` 在主对话之外回答一个专注问题，关闭后恢复原来的编辑器草稿。
@@ -85,7 +89,7 @@ Pi 启动后，可以从这些命令开始：
 | `/codex` | 使用受支持的 Codex 模型时，查看用量和 Fast mode |
 | `/mcp` | 查看按需配置的 MCP 服务器 |
 | `/rtk` | 验证或配置可选的 RTK 命令改写 |
-| `/codemode` | 打开可选 Code Mode 控制面板，并把选择持久化到受信任项目 |
+| `/codemode` | 查看 Code Mode 的实际值，并管理受信任项目的覆盖值或全局默认值 |
 
 在 tmux 中使用终端原生通知时，需要配置 `set -g allow-passthrough on`。`Tmux notification` 独立控制所有 tmux
 attention BEL：开启后会保留受支持的系统通知并额外发送 BEL；若 `auto` 无法识别视觉通知协议，则退化为仅发送
@@ -129,6 +133,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 | `codex` | `/codex`、Fast mode、订阅用量、`apply_patch`、`view_image` 与 `imagegen` |
 | `goal` | 一个持久会话目标、自动延续，以及基于证据的完成或阻塞判定 |
 | `context-management` | 集成已配置的 Magic Context，提供 `/ctx` 控制中心，并保留 Pi JSONL 作为原始会话权威 |
+| `ponytail` | 功能完整的 Ponytail fork，提供 Session 模式、六个 Skill、共享 Statusline 状态和 `/ponytail` 控制 |
 | `web` | 有界 Web 搜索、公开 HTTP(S) 内容读取、PDF 提取与后续片段检索 |
 | `mcp` | 一个按需配置的 MCP gateway，支持显式认证与 stdio/HTTP transport |
 | `background-work` | 当前会话中的 Background Shell、一次性 Monitor 和 `/tasks` 管理 |
@@ -136,7 +141,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 | `todo` | 可按分支重放的 Task Tool，以及 Pi 编辑器上方的有界清单 |
 | `btw` | 不进入主对话记录和模型上下文的一次性临时问题 |
 | `notification` | 用户发起的 Agent 工作 settled 后，延迟发送终端原生完成或失败提醒 |
-| `code-mode` | 可选 JavaScript 封装，通过一个模型可见的 schema 暴露当前 Suite Tool |
+| `code-mode` | 可选 JavaScript 封装，通过 `codemode` 和 `tool_search` 暴露当前 Suite Tool |
 
 这些名称只是内部维护边界，没有各自独立的 manifest、版本、安装或发布生命周期。
 
@@ -153,9 +158,16 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 /ctx upgrade
 ```
 
-维护进度和结果会以 Pi Stuff Activity 的形式写入 Session，可在恢复会话后查看，但不会进入模型上下文。
+维护进度和结果会以 Context Activity 的形式写入 Session，可在恢复会话后查看，但不会进入模型上下文。
 Magic Context 仍负责数据和实际执行；它自己的 Header、Footer、Widget、Statusline 和 Dialog 不会与 Pi Stuff
 界面争夺控制权。
+
+### Ponytail 控制
+
+`/ponytail` 会打开全宽控制 Dialog，用于调整当前 Session 模式、默认模式、Statusline 可见性、启动通知和
+专门 Skill。直接命令仍然可用，包括 `/ponytail full`、`/ponytail default lite`，以及从
+`/ponytail-review` 到 `/ponytail-help` 的上游兼容别名。共享 Statusline 仅显示 `󱖿 <mode>` 身份；Agent 活动仍由
+Working Row 统一呈现。`off` 不贡献 Ponytail 指令或模型可见的 Ponytail Skill，但显式 Skill 命令仍可调用。
 
 ## 主题
 
@@ -192,8 +204,9 @@ Pi Host Release 对提取后本地 Package 的验证。CI 会下载该 Release�
 
 维护者文档统一收录在 [`docs/README.md`](../../README.md)。修改行为前，请阅读
 [`CONTRIBUTING.md`](../../../.github/CONTRIBUTING.md)、[`CONTEXT.md`](../../../CONTEXT.md) 中的规范术语、
-可见界面的[中文设计说明](./DESIGN.md)（英文 [`DESIGN.md`](../../../DESIGN.md) 为准），以及 [`adr/`](../../adr/)
-下相关决策记录。工程工作遵循 [Beads 流程](../../agents/issue-tracker.md)，并同步到
+可见界面的[中文设计说明](./DESIGN.md)（英文 [`DESIGN.md`](../../../DESIGN.md) 为准）、
+[`code-quality.md`](docs/code-quality.md) 的 Repository-owned Source 规则，以及 [`adr/`](../../adr/) 下相关决策。
+工程工作遵循 [`AGENTS.md`](../../../AGENTS.md) 与 [Beads 流程](../../agents/issue-tracker.md)，并同步到
 [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues)。
 
 ## 安全

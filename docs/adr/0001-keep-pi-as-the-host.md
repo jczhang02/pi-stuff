@@ -2,13 +2,57 @@
 status: accepted
 ---
 
-# Keep Pi as the Host
+# Keep Pi as the Host and Pi Stuff as one repository-owned Package
 
-Pi Stuff is one normal Pi Package rather than a new coding-agent runtime. Its entry point composes ordered internal
-Capability Modules through Pi's Extension interface, while Pi continues to own the CLI, TUI, sessions, settings,
-Package loading, and model interaction. This avoids duplicating Pi internals and lets the Suite follow the certified
-Pi Host contract.
+## Context
+
+Pi already owns the CLI, TUI, Sessions, Settings Layers, Package loading, and model interaction. Pi Stuff is installed,
+upgraded, tested, and used as one Suite; none of its Capabilities has an independent user, release, or installation
+lifecycle. Splitting the Suite into npm Packages, or moving mechanisms upstream merely to reduce repository line count,
+would add boundaries without creating independent products.
+
+Source provenance also does not change maintenance responsibility. Adapted, forked, vendored, generated, and locally
+written Source all ship from this repository and can affect the same Host behavior.
+
+## Decision
+
+Pi remains the Host. Pi Stuff remains one local Pi Package with one default Extension factory. The entry point installs
+ordered internal Capability Modules through Pi's public Extension interface; it does not introduce another CLI,
+runtime, Session layer, SDK, or TUI shell.
+
+A Capability Module is an internal implementation boundary, not an independently installed or published Package. The
+current ordered set is defined by `packages/pi-stuff/suite.json`, and dependencies between Modules stay explicit.
+Shared Modules may provide narrow interfaces to Capability Modules, but shared Modules do not import the Capabilities
+that consume them. The adapted MCP and Web implementations remain private directories inside their owning Modules.
+
+Every tracked implementation, test, script, generated source, prototype, and repository quality tool is
+Repository-owned Source regardless of origin. All of it follows the same architecture, formatting, lint, type-safety,
+dependency, size, and maintainability gates. Provenance remains mandatory for attribution, licensing, and selective
+upstream review; it never grants a quality exemption.
+
+Extension import stays pure. Package installation and Settings Layer changes are explicit Host or maintainer actions,
+and initialization failures propagate instead of leaving a partially loaded Suite.
 
 ## Consequences
 
-The Suite has no installer or implicit Settings Layer mutation behavior, import stays pure, and failures are exposed instead of producing a silently partial Suite. Installation and Settings Layer changes remain explicit Host or maintainer actions. ADR 0007 permits configured Context startup to initialize rebuildable derived state before editor readiness while preserving the no-configuration-mutation boundary.
+- Pi continues to own ordinary Host behavior and lifecycle authority.
+- The repository keeps one development manifest and one runtime Package manifest; it does not use npm publication,
+  Changesets, per-Capability versions, or multi-Package release manifests.
+- Runtime dependencies are declared once. Tests certify public Host and Module seams rather than npm Package names.
+- Upstream fixes are reviewed and incorporated selectively without a second Package lifecycle.
+- A Capability may become a Package only after a real independent consumer or installation need exists.
+- Repository reduction comes from deleting unneeded behavior, deepening Modules, and reusing public or native seams,
+  not from transferring code ownership to satisfy a line-count target.
+
+## Rejected alternatives
+
+- **A workspace Package per Capability:** rejected because the user-facing deployment and release unit is still one
+  Suite, so the extra manifests, versions, dependency edges, and archives have no independent lifecycle to represent.
+- **Externalize mechanisms for source reduction:** rejected because it moves maintenance responsibility without
+  reducing product complexity or changing who must certify the behavior.
+
+## Consolidation history
+
+This ADR incorporates the durable decisions formerly recorded in ADR 0003 (one local Package with internal Capability
+Modules) and ADR 0016 (repository ownership is independent of provenance). Their separate files are removed because
+they described the same Host and ownership boundary.

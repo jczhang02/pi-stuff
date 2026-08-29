@@ -1,7 +1,14 @@
 # Context submission concurrency research
 
 Date: 2026-08-14
-Status: implemented and verified in the issue worktree
+Status: historical research; the initial implementation was later superseded by ADR 0019
+
+> **Current disposition (2026-08-29):** the render-order findings below remain useful, but the conclusion that Magic
+> Context could not safely cross a Worker boundary is no longer current. Later implementation evidence established the
+> narrow in-memory bundle, immutable snapshot, and bounded Host-effect bridge recorded in
+> [ADR 0019](../adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md). Current behavior belongs to that ADR
+> and the [Context Management README](../../packages/pi-stuff/src/context-management/README.md); this report preserves
+> the earlier evidence and rejected intermediate design.
 
 ## Question
 
@@ -116,7 +123,7 @@ frame and yielded execution before starting the synchronous transform.
 Sources: [Node.js streams](https://nodejs.org/api/stream.html) and
 [tmux control mode](https://github.com/tmux/tmux/wiki/Control-Mode)
 
-## Architecture decision: an interactive input render barrier
+## Historical architecture decision: an interactive input render barrier
 
 The mature seam is not a timer and not direct Context access to `TUI`. It is an
 ordering rule inside the Context adapter:
@@ -234,7 +241,7 @@ resource scoping for operations that are actually interruptible.
 | Partition Magic Context with periodic yields | Change its loops to yield between chunks | Responsive UI during transformation | Requires upstream/fork changes and careful state-machine work | Out of scope |
 | Effect v4 paint pipeline | Model the same barrier with fibers and `Deferred` | Same result as native Promise | Adds a pre-release runtime but still needs the same Host scheduling primitive | Reject for this fix |
 
-## Recommended decision
+## Historical recommendation
 
 Do not treat the current fixed 17 ms experiment as final.
 
@@ -258,7 +265,7 @@ the transformed messages. Reducing that computation time itself would require
 an upstream incremental/prewarm API or changes inside Magic Context, neither of
 which Pi Stuff can safely emulate with a small wrapper.
 
-## Acceptance criteria
+## Historical acceptance criteria
 
 - The direct-interactive editor clears before Context transformation starts in
   a real tmux PTY capture.

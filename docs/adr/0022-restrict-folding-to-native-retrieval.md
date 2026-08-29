@@ -1,6 +1,5 @@
 ---
 status: accepted
-supersedes: 0010-fold-continuous-retrieval-segments
 ---
 
 # Restrict compact folding to native retrieval

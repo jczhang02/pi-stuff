@@ -7,7 +7,7 @@
 One local Pi Package for compact Tool activity, durable work, focused side flows, and lazy integrations—without
 replacing Pi.
 
-English · [简体中文](docs/i18n/zh-CN/README.md)
+English · [简体中文](docs/i18n/zh-CN/README.md) · [Engineering wiki](docs/README.md)
 
 [![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](LICENSE)
@@ -87,7 +87,7 @@ Once Pi starts, these are useful entry points:
 | `/codex` | Inspect Codex usage and Fast mode when using a supported Codex model |
 | `/mcp` | Inspect lazily configured MCP servers |
 | `/rtk` | Verify or configure optional RTK command rewriting |
-| `/codemode` | Open the optional Code Mode controls and persist the choice in the trusted project |
+| `/codemode` | Inspect effective Code Mode and manage trusted-project overrides or the global default |
 
 Inside tmux, terminal-native notifications require `set -g allow-passthrough on`. Pi Stuff wraps notification
 protocols for tmux, and `Tmux notification` exclusively controls attention BELs. Turning it on adds BEL without
@@ -140,7 +140,7 @@ The ordered Suite currently contains:
 | `todo` | Branch-replayable Task Tools and a bounded checklist above Pi's editor |
 | `btw` | One-shot side questions that do not enter the main transcript or model context |
 | `notification` | Delayed terminal-native completion and failure alerts for settled user-started Agent work |
-| `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through one provider-visible schema |
+| `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through `codemode` and `tool_search` |
 
 These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication
 lifecycle.
@@ -158,7 +158,7 @@ state, pending drops, and available maintenance actions. The same actions are av
 /ctx upgrade
 ```
 
-Maintenance progress and results use Pi Stuff Activity rows in the Session transcript. They remain available after
+Maintenance progress and results use Context Activity rows in the Session transcript. They remain available after
 resume but never enter model context. Magic Context remains the data and execution authority; its Header, Footer,
 Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
 
@@ -208,8 +208,9 @@ downloads that release, verifies its exact binary hash, and runs acceptance with
 
 Maintainer documentation is indexed in [`docs/README.md`](docs/README.md). Before changing behavior, read
 [`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in [`CONTEXT.md`](CONTEXT.md),
-[`DESIGN.md`](DESIGN.md) for visible surfaces, and the relevant records under [`docs/adr/`](docs/adr/). Engineering
-work follows the [Beads workflow](docs/agents/issue-tracker.md) and is mirrored to
+[`DESIGN.md`](DESIGN.md) for visible surfaces, [`code-quality.md`](docs/code-quality.md) for repository-owned Source,
+and the relevant records under [`docs/adr/`](docs/adr/). Engineering work follows the
+[repository rules](AGENTS.md) and [Beads workflow](docs/agents/issue-tracker.md), and is mirrored to
 [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
 
 ## Security

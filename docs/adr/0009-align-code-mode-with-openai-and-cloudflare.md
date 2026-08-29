@@ -1,9 +1,10 @@
 ---
 status: accepted
-supersedes: 0005-wrap-active-suite-tools-in-one-local-code-mode-envelope
 ---
 
 # Align Code Mode with OpenAI and Cloudflare
+
+## Context
 
 ADR 0005 proved that one local execution envelope can preserve Pi Tool behavior and UI while removing repeated Tool
 schemas from provider requests. A later routed prototype kept most Tools top-level and added Code Mode beside them. Its
@@ -14,7 +15,9 @@ This decision adopts the full envelope. Pi remains the Host, Code Mode remains o
 Package, and OpenAI's Codex V8 Code Execution Runtime remains the sandbox. Cloudflare Code Mode is the capability and
 API reference, not a reason to add workerd or a second Host.
 
-## Provider surface
+## Decision
+
+### Provider surface
 
 When Code Mode is on:
 
@@ -27,18 +30,31 @@ When Code Mode is on:
 When Code Mode is off, Pi receives the exact original Tool list and order. Code Mode changes visibility only. It does
 not grant a Tool new authority, bypass its validation, or decide whether its effect is safe to repeat.
 
-The opt-in is project-scoped and durable. A trusted project stores the explicit choice as the boolean `enabled` field
-in `.pi/code-mode.json`; that value overrides the process fallback `PI_STUFF_CODE_MODE_DEFAULT`. Session startup and
-project changes only read this file. `/codemode`, `/codemode on`, and `/codemode off` are the explicit user actions
-that may create or atomically replace it. Untrusted projects cannot supply or persist this setting, and a failed write
-leaves the effective mode unchanged.
+### Configuration and dialog
+
+Code Mode uses one boolean value with this precedence, from highest to lowest:
+
+1. `PI_STUFF_CODE_MODE_FROZEN`, captured for a child Agent at launch;
+2. the trusted project's `.pi/code-mode.json` `enabled` override;
+3. the global `codeMode.enabled` Settings Namespace in `<agentDir>/pi-stuff.json`;
+4. `PI_STUFF_CODE_MODE_DEFAULT`; and
+5. the built-in default, `false`.
+
+`/codemode on|off` writes the project override. `/codemode global on|off` writes the global default. The `/codemode`
+Command Dialog shows the effective value and its source, offers project `inherit|off|on` and global `off|on`, and uses
+Pi's native `SettingsList` plus the shared Command Dialog restoration contract. Project inheritance removes only the
+owned `enabled` field and preserves other project settings.
+
+Untrusted projects cannot supply or change a project override. A frozen child shows the frozen source and cannot
+change project or global settings. Persistence completes before runtime projection changes; a failed write leaves the
+last durable state visible. Session startup and project changes only read configuration.
 
 There is no `direct`/`programmatic`/`both` caller policy. That policy made every new Tool easy to misclassify and kept
 the expensive schemas visible. Replay, approval, compensation, and lifecycle are independent effect contracts.
 Unclassified Package Tools are still available through Code Mode and default to the conservative replay policy
 `never`.
 
-## Program and discovery contract
+### Program and discovery contract
 
 OpenAI's Programmatic Tool Calling form is canonical:
 
@@ -68,7 +84,7 @@ serialization, and focused upstream tests. The exact vendored source, commit, pa
 delta are recorded in the Code Mode upstream notice. Workers-only execution and Durable Object storage are not
 imported.
 
-## Invocation and Host boundary
+### Invocation and Host boundary
 
 Every nested call goes through the Suite Tool registry's single `invoke()` seam. It therefore preserves Pi argument
 preparation and validation, `tool_call` and `tool_result` hooks, permission prompts, lifecycle events, streaming
@@ -84,7 +100,7 @@ certification improve required behavior.
 V8 yield and continuation remain an internal Host protocol. Yielded cells are resumed by the Runtime, but
 `yield_control` is not model-facing helper vocabulary and does not represent user-level completion.
 
-## Durable effects, approval, and recovery
+### Durable effects, approval, and recovery
 
 Each execution and nested call has a stable ID in an append-only Pi Session ledger. The effect contract is explicit:
 
@@ -120,7 +136,7 @@ Connector lifecycle hooks run at the end of every pass, including a failed Host 
 terminal execution is disposed once with `completed`, `error`, `rejected`, or `rolled_back`. Cleanup failures are
 best-effort and cannot replace the actual Tool result.
 
-## Agents and RTK
+### Agents and RTK
 
 Every foreground, background, parallel, nested, and resumed Agent launch freezes the parent Session's effective Code
 Mode state. A child receives an explicit `on` or `off` value without mutating global `process.env`; a later parent
@@ -132,7 +148,7 @@ RTK remains useful. Code Mode removes provider-visible Tool schemas and intermed
 Bash and search output. A nested Bash call still traverses `registry.invoke()` and Pi's normal `tool_call` hook, so RTK
 can rewrite it exactly as it does for a direct Bash call.
 
-## Certified result and release gate
+### Certified result and release gate
 
 The certified Pi 0.84.2 group fixture contains Read, Bash, Background Work, and Agent management. The same program is
 run directly and through the full envelope, before and after Session resume, at 100 and 64 columns. Tool Activity and
@@ -160,6 +176,21 @@ reports, these properties:
 
 Code Mode remains opt-in while compatibility evidence accumulates. Opt-in status is a rollout choice, not a reason to
 keep Package-owned Tool schemas outside the envelope.
+
+## Consequences
+
+- When Code Mode is on, Package-owned Tool schemas leave the provider surface without changing Tool authority,
+  validation, lifecycle, or visible results.
+- The Suite maintains one active Tool catalog and one invocation seam for direct and nested calls.
+- Project overrides remain isolated while one Pi-visible global default avoids repeating the same choice per project.
+- Durable approval and recovery state prevents ambiguous effects from being repeated automatically.
+- The V8 Runtime and compatibility inputs remain implementation details; Pi stays the only Host.
+
+## Consolidation history
+
+This ADR superseded the routed and one-Tool-envelope experiments recorded in ADR 0005 and now incorporates the global
+default and dialog decisions formerly recorded in ADRs 0011 and 0014. Those files are removed because they only amend
+this Code Mode contract.
 
 ## References
 

@@ -1,7 +1,0 @@
-{
-	"enableInstallTelemetry": false,
-	"outputPad": 1,
-	"quietStartup": true,
-	"theme": "dark",
-	"tuiMode": "fullscreen"
-}

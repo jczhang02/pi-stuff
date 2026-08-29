@@ -69,10 +69,9 @@ below was rerun from scratch with the certified release executable.
 - Fixture role: fixtures supplied deterministic Assistant content blocks only; the released clients owned Tool
   execution, lifecycle, grouping, rendering, compact projection, and detailed expansion
 
-The Claude harness followed the isolation and SSE patterns in
-[`claude-2.1.220-task-list-capture.sh`](../prototypes/tui/claude-2.1.220-task-list-capture.sh) and
-[`claude-2.1.220-task-list-mock.ts`](../prototypes/tui/claude-2.1.220-task-list-mock.ts). It did not access a Claude
-account, an external model, repository credentials, or the user's Claude configuration.
+The removed Claude harness followed an isolated safe-mode and localhost-SSE pattern. It did not access a Claude
+account, an external model, repository credentials, or the user's Claude configuration. Git history retains the
+capture implementation.
 
 ## Probe matrix
 

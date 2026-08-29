@@ -55,9 +55,15 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
   and untracked state, and the target branch before reporting merge or cleanup status.
 - Commit small, coherent checkpoints frequently after the relevant focused check; do not accumulate unrelated work in
   one commit. Use signed Conventional Commits.
-- Keep current source, ADRs, maintainer instructions, and executable documentation in English. Update the owning
-  current documentation in the same change whenever behavior, contracts, terminology, compatibility, or workflow
-  changes; do not defer documentation until the end.
+- Keep human-authored English Markdown authoritative and update the owning current document in the same change whenever
+  behavior, contracts, terminology, compatibility, or workflow changes. Mirror every retained English Markdown source
+  under `docs/i18n/zh-CN/<repository path>` with its source path and raw-source SHA-256, and update the mirror in the
+  same change. Exclude byte-sensitive Runtime `SKILL.md` resources and `THIRD_PARTY_NOTICES.md`; keep the historical
+  Chinese-only execution checklist Chinese-only.
+- Preserve the wiki roles in `docs/README.md`: entry and Package READMEs describe current behavior, Module READMEs own
+  local contracts, `CONTEXT.md` owns canonical language and boundaries, `DESIGN.md` owns shared visible-surface rules,
+  ADRs explain durable trade-offs, and retained research, reports, and release notes are dated evidence. Git history is
+  the archive for deleted prototypes, rendered duplicates, and redundant evidence.
 - When creating a Bead, record enough conversation provenance to retrieve its source Session: the originating Host or
   Agent surface (`Pi`, `Codex`, or another named surface), the Session name when available, and a stable Session ID or
   equivalent lookup key. Record metadata only and follow the public-data policy; never paste transcript content or

@@ -10,16 +10,16 @@ describe("CI acceptance scope", () => {
 				"README.md",
 				"AGENTS.md",
 				"docs/adr/0001-package-boundary.md",
-				"docs/prototypes/tui/report.html",
-				"docs/prototypes/tui/artifacts/reference.png",
-				"docs/prototypes/tui/artifacts/frame.ansi",
+				"docs/reports/review.html",
+				"docs/reports/reference.png",
+				"docs/reports/frame.ansi",
 			]),
 		).toBe(false);
 	});
 
 	test("runs expensive acceptance for executable docs and ordinary repository changes", () => {
-		expect(requiresFullAcceptance(["docs/prototypes/tui/capture.sh"])).toBe(true);
-		expect(requiresFullAcceptance(["docs/prototypes/tui/prototype.ts"])).toBe(true);
+		expect(requiresFullAcceptance(["docs/examples/capture.sh"])).toBe(true);
+		expect(requiresFullAcceptance(["docs/examples/example.ts"])).toBe(true);
 		expect(requiresFullAcceptance(["packages/pi-stuff/README.md"])).toBe(true);
 		expect(requiresFullAcceptance(["packages/pi-stuff/index.ts"])).toBe(true);
 	});

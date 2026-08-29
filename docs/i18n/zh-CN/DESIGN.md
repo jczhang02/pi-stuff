@@ -1,3 +1,5 @@
+<!-- translation-source: DESIGN.md; translation-source-sha256: 9cb9798f7d1fdf4d32284c54893584b8b838adc2ac5fbaec8d0599d92ed301c1 -->
+
 ---
 version: alpha
 name: Pi Stuff
@@ -94,8 +96,9 @@ Pi Stuff 的形状语言来自终端，以直线结构为主。Dialog 的结构�
 正文旁边的轨道。它只出现在标题行，不能表示生命周期状态、焦点或 Conversation Transcript 事件。
 
 `›` 只表示当前获得焦点、可以选择的行，没有其他含义。生命周期和严重程度使用另外一套单字符安全图标。
-Conversation Transcript 已经确定使用小圆点 `•`，本次保持不变。Dialog 沿用 Transcript 克制、按语义
-表达状态的语言，但不能把这个通用消息标记当作生命周期图标。
+Conversation Transcript 已经确定使用小圆点 `•`，本次保持不变。普通 Goal 生命周期信息通知也使用它作为
+Transcript 记录标记，但完整动作词和语义颜色才表达生命周期。Dialog 沿用 Transcript 克制、按语义表达
+状态的语言，但不能把这个通用消息标记当作生命周期图标。
 
 图标要按照同一套含义使用：`●` 表示正在活动，`○` 表示排队或未活动，`◐` 表示正在停止等过渡状态，
 `↻` 表示正在恢复，`✓` 表示成功，`!` 表示需要注意，`×` 表示失败，`■` 表示已经停止或被明确停用。
@@ -142,8 +145,25 @@ Tab 和 Shift+Tab 用于切换当前栏；Enter 从列表进入详情，Escape �
 ### 常驻界面与对话记录界面
 
 Todo、Agent roster、Statusline、Conversation Transcript 和 Command Dialog 各自承担不同任务。同一
-状态只能有一个可见的权威来源，不能在常驻仪表盘里重复显示。Transcript 的投影保持紧凑和按时间排列，
-Command Dialog 负责检查和控制。重做 Dialog 时，不能顺手改变 Transcript 的标记或 Tool 渲染方式。
+状态只能有一个可见的权威来源，不能在常驻仪表盘里重复显示。共享 Statusline 中按条件出现的 Goal 段是
+当前 Goal 唯一的紧凑常驻权威；Goal 生命周期通知仍是按时间排列的 Transcript 事件，Command Dialog 则负责
+检查和控制。Ponytail 遵循同一边界：`󱖿 <mode>` 是唯一的常驻模式权威，Working Row 仍是 Agent 活动的唯一
+权威，`/ponytail` 负责控制。它的 Dialog 会临时隐藏组合后的 Footer、保留编辑器草稿，并显示环境变量覆盖，
+但不会把这些覆盖项伪装成可写设置。
+
+Statusline 只使用 Nerd Font。固定语法依次为：`󱙺` model、`` Thinking、`` Fast、`󰉋` directory、
+``/``/`` branch tracking、``/``/`󰏫`/`󰝒` Git state、`󰌨` Context、`󰆼` cache、
+`󰊚` weekly allowance、`` cost、``/``/``/`` Goal state、`󱖿` Ponytail 和 `` Prompt。
+分支跟踪和 Git 文件状态构成一个用空格分隔的视觉组；该 Git 组与相邻 Statusline 组之间使用中点。两行中
+的每个语义图标和状态标记都必须是 Nerd Font glyph；不要添加 Unicode/ASCII fallback、终端探测或图标模式
+设置。`·`、`…` 等分隔和截断符号只是标点，不是语义图标。Capability 的身份图标（如 Ponytail 的 `󱖿`）
+应在它自己的 Dialog 中复用，而不是另造第二个视觉身份。重做 Dialog 时，不能顺手改变 Transcript 标记或
+Tool 渲染。
+
+同一 Transcript 消息里的有效 `chart` 或 `tree` fence 可以变成 Fenced Visualization Projection。结果必须
+保持平面、单色且符合终端习惯：使用无边框、不可交互的 code-block 文本与 Unicode 图表或树形 glyph，不加
+frame、ANSI 或新的焦点界面。所有行按终端字符单元格测量。图表只能在有界语法内缩减；树形标签绝不截断，
+如果完整一行放不下，就保留原始 fence。外层 Assistant `• ` 仍是唯一消息权威，Thinking 不会变成可视化。
 
 ## 应做与不应做
 

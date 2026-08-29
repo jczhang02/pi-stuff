@@ -72,9 +72,7 @@ The disposable prototype remains rejected for production. At commit
 23–25 ms to real Pi readiness, added 15–22 MiB median RSS, and enlarged the aggregate archive by 8,225,937 bytes
 (38.58%). No Effect dependency or prototype code is merged.
 
-The decision and thresholds remain documented in
-[Effect v4 adoption assessment](effect-v4-pi-stuff-adoption-20260810.md) and
-[behavior-preserving code reduction and Effect v4 assessment](code-volume-effect-v4-architecture-20260821.md). Revisit
+The detailed Effect v4 adoption and behavior-preserving architecture assessments remain available in Git history. Revisit
 only after stable v4, for one lazy-loaded in-process slice, and only when it beats the optimized native implementation by
 at least 15% net code without a material startup, memory, package, or maintenance regression.
 

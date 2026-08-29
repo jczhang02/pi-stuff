@@ -11,7 +11,7 @@ Three native Pi variants were compared with the already-selected below-editor Ag
 2. **One-line Work strip.** Show only the current task and aggregate progress. It preserves conversation height but turns Todo into a status line rather than a visible plan.
 3. **Quiet until attention.** Show no Todo during normal running and one alert when user input is required. It maximizes conversation height but makes Todo nearly undiscoverable.
 
-The visual comparison is in the [Work Todo report](../prototypes/tui/work-todo-comparison-report.html). The maintainer selected variant A on 2026-08-01.
+The maintainer selected variant A on 2026-08-01. The discarded comparison prototype remains available in Git history.
 
 ## Product boundary already established
 
@@ -51,15 +51,7 @@ Direct observations:
 4. Ctrl+T replaces the five-row checklist with one `Next: …` line and changes the footer hint from `hide tasks` to `show tasks`; restoring does not alter task state.
 5. As soon as all tasks complete, the task rows disappear even before the final model response settles. The completed idle frame also has no Ctrl+T task hint, rather than leaving a completed dashboard.
 
-Reproduction:
-
-```bash
-CLAUDE_21220_BIN=/path/to/claude-code-2.1.220 \
-FREEZE_BIN=/tmp/pi-proto-bin/freeze \
-  ./docs/prototypes/tui/claude-2.1.220-task-list-capture.sh
-```
-
-The fixture requires the Task tools to be enabled in the interactive context. `--bare` was rejected for the final evidence path because it removed the Task tools from the local API request. The reproducible script instead uses an isolated safe-mode session with `CLAUDE_CODE_ENABLE_TASKS=true`.
+The removed evidence harness required the Task tools to be enabled in the interactive context. `--bare` was rejected because it removed the Task tools from the local API request, so the capture used an isolated safe-mode session with `CLAUDE_CODE_ENABLE_TASKS=true`. The harness remains available in Git history.
 
 ## `@juicesharp/rpiv-todo` 2.3.1 behavior
 
@@ -94,16 +86,9 @@ These are behavior inputs for fork tests, not accepted Pi Stuff behavior.
 
 ## Native Pi 0.83 comparison
 
-The throwaway [`work-todo-comparison.ts`](../prototypes/tui/work-todo-comparison.ts) reads a deterministic session fixture and uses Pi's public above/below-editor widget APIs. It performs no model, Agent, network, file, or shell I/O. The capture keeps one transcript, one real input draft, and the selected vertical Agent roster constant across every variant. The static fixture proves layout only; it does not prove live mutation, branch switching, or compaction recovery. Those mechanisms are already present in the rpiv-todo capability base and must be retained in the fork.
+The removed throwaway comparison used a deterministic session fixture and Pi's public above/below-editor widget APIs. It performed no model, Agent, network, file, or shell I/O. The capture kept one transcript, one real input draft, and the selected vertical Agent roster constant across every variant. The static fixture proved layout only; it did not prove live mutation, branch switching, or compaction recovery. Those mechanisms were already present in the rpiv-todo capability base and had to be retained in the fork. The comparison remains available in Git history.
 
 The yellow `needs_input` row is a presentation fixture, not a proposal to add `blocked` to rpiv-todo's state machine. Upstream states remain `pending`, `in_progress`, `completed`, and `deleted`; Todo dependency blocking is derived from `blockedBy`, while waiting for a user decision or permission is an independent Work attention state. A shared presenter may merge those facts visually without changing persisted Todo transitions.
-
-Reproduce the nine frames:
-
-```bash
-FREEZE_BIN=/tmp/pi-proto-bin/freeze \
-  ./docs/prototypes/tui/work-todo-comparison-capture.sh
-```
 
 ### A. Bounded checklist
 
@@ -172,4 +157,4 @@ The following remain implementation/detail questions: row selection and ordering
 - `@juicesharp/rpiv-todo` is the explicit owned-fork candidate. Record its exact npm/archive revision and license when vendored.
 - Claude Code is observable product evidence only. Do not copy, translate, port, mechanically adapt, or redistribute its code.
 - A reconstructed `tanbiralam/claude-code` snapshot was inspected only to generate questions about state ordering and source behavior. Released 2.1.220 pixels and current official documentation are authoritative wherever they differ.
-- The native Pi prototype is disposable evidence, not production implementation.
+- The removed native Pi prototype was disposable evidence, not production implementation; Git history is the archive.

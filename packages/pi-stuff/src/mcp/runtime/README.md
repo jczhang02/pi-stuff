@@ -6,9 +6,8 @@ locally adapted `pi-mcp-adapter` snapshot; it is not a Package, dependency, or i
 Pi Stuff owns the user-visible proxy Tool and Command Dialog in the parent directory. The implementation here supplies
 configuration, transports, discovery, OAuth, lifecycle, output guarding, and protocol handling. See
 [`UPSTREAM.md`](./UPSTREAM.md) for exact provenance, integrity records, license, and the maintained delta.
-[`UPSTREAM_README.md`](./UPSTREAM_README.md) preserves the source project's documentation for maintenance reference;
-its installation instructions do not apply to Pi Stuff. Direct Tools, JavaScript batching, prompts, Apps, sampling,
-and elicitation are intentionally absent rather than retained behind flags.
+Direct Tools, JavaScript batching, prompts, Apps, sampling, and elicitation are intentionally absent rather than
+retained behind flags.
 
 `implementation.ts` keeps one per-factory adapter state and wires ordered session, Command, and gateway Tool phases.
 `init.ts` owns state construction and startup projection; `server-manager.ts` alone owns connection identity and
@@ -18,3 +17,18 @@ its compatibility exports.
 
 `mcp-setup-panel.ts` owns setup interaction, writes, and lifecycle state. `mcp-setup-panel-view.ts` renders immutable
 snapshots and exact write previews without mutating that state.
+
+## Retained runtime contracts
+
+- A supplied in-memory `config` is a complete isolated snapshot: it is cloned per factory and Session, never mutated,
+  and never merged with files or command-line configuration.
+- A configured `!command` credential source runs only while connecting or authenticating. It receives no stdin or
+  stderr, has a 10-second deadline and 1 MiB stdout limit, and never runs while configuration is read, merged,
+  previewed, hashed, or rendered.
+- OAuth credentials require the operating-system credential store and fail closed when it is unavailable. Linux may
+  recover a revoked Session keyring through the packaged `keyctl`/Node helper; failure never falls back to plaintext.
+- A configured `rmcp-mux` socket is a trusted shared endpoint. Pi Stuff owns only its client connection and never
+  starts, adopts, restarts, or stops the mux daemon or upstream process.
+- Enabled `eager` and `keep-alive` servers may initialize for a programmatic Host without `session_start`; a later
+  Session-owned runtime supersedes that load-time runtime.
+- Returned `structuredContent` is validated against an advertised JSON Schema draft-07 or 2020-12 `outputSchema`.

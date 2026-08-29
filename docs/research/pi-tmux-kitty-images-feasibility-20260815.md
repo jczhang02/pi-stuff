@@ -110,7 +110,7 @@ The existing media boundary is already correct:
   content from `view_image`.
 - [`codex/tools.ts` lines 215-277](../../packages/pi-stuff/src/codex/tools.ts#L215-L277) returns generated images as
   native image blocks.
-- [ADR 0005](../adr/0005-wrap-active-suite-tools-in-one-local-code-mode-envelope.md) requires nested media to re-enter
+- [ADR 0005, now consolidated into ADR 0009](../adr/0009-align-code-mode-with-openai-and-cloudflare.md) requires nested media to re-enter
   Pi's normal normalization and renderer so normal terminals, fallback terminals, and resumed Sessions share one path.
 - [ADR 0001](../adr/0001-keep-pi-as-the-host.md) keeps the TUI and Session renderer Host-owned.
 - [ADR 0004](../adr/0004-route-suite-diagnostics-through-owned-ui.md) rules out raw stdout tricks inside the Host TUI.

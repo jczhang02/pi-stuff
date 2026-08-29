@@ -20,7 +20,7 @@ does not alter upstream source or persist a derived artifact.
 
 ## Temporary tokenizer compatibility patch
 
-- Patch: [`patches/@cortexkit%2Fpi-magic-context@0.40.0.patch`](../../../../patches/@cortexkit%2Fpi-magic-context@0.40.0.patch)
+- Patch: [`patches/@cortexkit%2Fpi-magic-context@0.40.0.patch`](../../../../patches/@cortexkit%252Fpi-magic-context@0.40.0.patch)
 - Patch SHA-256: `809e9705edad15cc8f5cfc6122b4c50c62ed6c6d49a2fa00f36353b433a88388`
 - Scope:
   - add the published module's `import.meta.url` ancestry and Bun isolated-linker `node_modules` root to the existing
