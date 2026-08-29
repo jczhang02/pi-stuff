@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
@@ -79,6 +80,33 @@ async function writeFixture(root: string, path: string, content: string): Promis
 	await writeFile(absolutePath, content);
 }
 
+async function writeTranslationFixture(root: string, sourcePath: string, body = "# 中文镜像\n"): Promise<void> {
+	const source = await readFile(join(root, sourcePath));
+	const sha256 = createHash("sha256").update(source).digest("hex");
+	await writeFixture(
+		root,
+		`docs/i18n/zh-CN/${sourcePath}`,
+		`<!-- translation-source: ${sourcePath}; translation-source-sha256: ${sha256} -->\n\n${body}`,
+	);
+}
+
+async function writeDocumentationFixture(root: string): Promise<readonly string[]> {
+	const documents = {
+		"AGENTS.md": "# Repository rules\n",
+		"docs/README.md": "# Wiki\n\n[ADR](adr/0001-host.md)\n",
+		"docs/adr/0001-host.md":
+			"---\nstatus: accepted\n---\n\n# Keep the Host\n\n## Context\n\nContext.\n\n## Decision\n\nDecision.\n\n## Consequences\n\nConsequences.\n",
+		"docs/research/README.md": "# Research\n\n[Study](study.md)\n",
+		"docs/research/study.md": "# Study\n",
+		"docs/reports/README.md": "# Reports\n\n[Report](report.md)\n",
+		"docs/reports/report.md": "# Report\n",
+	} as const;
+	for (const [path, content] of Object.entries(documents)) await writeFixture(root, path, content);
+	const sources = ["README.md", ...Object.keys(documents)];
+	for (const source of sources) await writeTranslationFixture(root, source);
+	return sources;
+}
+
 function repeatedLine(line: string, count: number): string {
 	return `${line}\n`.repeat(count);
 }
@@ -113,6 +141,66 @@ test("accepts one private local Pi Package with exact dependencies", async () =>
 	});
 
 	expect(await auditRepositoryFiles(root)).toEqual([]);
+});
+
+test("accepts indexed ADRs and fresh Simplified Chinese mirrors", async () => {
+	const root = await createRepository();
+	await writeDocumentationFixture(root);
+	await writeFixture(root, "packages/pi-stuff/src/ponytail/skills/example/SKILL.md", "# Runtime Skill\n");
+	await writeFixture(root, "packages/pi-stuff/src/example/THIRD_PARTY_NOTICES.md", "# Notices\n");
+	await writeFixture(root, "docs/reports/historical.zh-CN.md", "# 历史记录\n");
+
+	expect(await auditRepositoryFiles(root)).toEqual([]);
+});
+
+test("rejects broken wiki structure, ADR relations, and translation drift", async () => {
+	const root = await createRepository();
+	await writeDocumentationFixture(root);
+	await writeFixture(
+		root,
+		"docs/README.md",
+		"# Wiki\n\n[Missing](missing.md)\n[Escaped traversal](..%5c..%5coutside.md)\n",
+	);
+	await writeTranslationFixture(root, "docs/README.md");
+	await writeFixture(
+		root,
+		"docs/adr/0001-host.md",
+		"---\nstatus: superseded by ADR-9998\nsupersedes: 9999-missing\n---\n\n# Host\n\n## Decision\n\nDecision.\n\n## Context\n\nContext.\n\n## Consequences\n\nConsequences.\n",
+	);
+	await writeTranslationFixture(root, "docs/adr/0001-host.md");
+	await writeFixture(root, "docs/research/study.md", "# Updated study\n");
+	await rm(join(root, "docs/i18n/zh-CN/docs/reports/report.md"));
+
+	const findings = await auditRepositoryFiles(root);
+	expect(findings).toContainEqual({
+		path: "docs/README.md",
+		rule: "markdown-link-target-missing:docs/missing.md",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/README.md",
+		rule: "markdown-link-outside-repository:..%5c..%5coutside.md",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/README.md",
+		rule: "documentation-index-missing:docs/adr/0001-host.md",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/adr/0001-host.md",
+		rule: "adr-relation-target-missing:9999",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/adr/0001-host.md",
+		rule: "adr-relation-target-missing:9998",
+	});
+	expect(findings).toContainEqual({ path: "docs/adr/0001-host.md", rule: "adr-section-order" });
+	expect(findings).toContainEqual({
+		path: "docs/i18n/zh-CN/docs/research/study.md",
+		rule: "translation-stale",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/reports/report.md",
+		rule: "translation-missing:docs/i18n/zh-CN/docs/reports/report.md",
+	});
 });
 
 test("requires repository Bun 1.4.0", async () => {
@@ -384,16 +472,16 @@ test("enforces the 800-line boundary across repository code", async () => {
 	await writeFixture(root, "scripts/tracked.ts", repeatedLine("// fixture", 801));
 	Bun.spawnSync(["git", "add", "scripts/tracked.ts"], { cwd: root });
 
-	const prototypeExtensions = ["css", "html", "json", "jsonc", "tape", "yaml", "yml"];
-	for (const extension of prototypeExtensions) {
-		await writeFixture(root, `docs/prototypes/tui/oversized.${extension}`, repeatedLine("fixture", 801));
+	const executableDocumentExtensions = ["css", "html", "json", "jsonc", "tape", "yaml", "yml"];
+	for (const extension of executableDocumentExtensions) {
+		await writeFixture(root, `docs/examples/oversized.${extension}`, repeatedLine("fixture", 801));
 	}
 	await writeFixture(root, "scripts/untracked.sh", repeatedLine("# fixture", 801));
 	await writeFixture(root, "docs/reports/oversized.html", repeatedLine("report artifact", 801));
 	await writeFixture(root, "docs/reports/oversized.sh", repeatedLine("# fixture", 801));
 
 	const expectedPaths = [
-		...prototypeExtensions.map((extension) => `docs/prototypes/tui/oversized.${extension}`),
+		...executableDocumentExtensions.map((extension) => `docs/examples/oversized.${extension}`),
 		"docs/reports/oversized.sh",
 		"scripts/tracked.ts",
 		"scripts/untracked.sh",

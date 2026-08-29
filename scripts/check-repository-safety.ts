@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import { type Static, Type } from "typebox";
@@ -39,6 +40,12 @@ const JAVASCRIPT_SOURCE_PATTERN = /\.[cm]?[jt]sx?$/u;
 const REPOSITORY_CODE_PATTERN = /\.(?:css|html|jsonc?|tape|ya?ml)$/u;
 const MAX_SOURCE_FILE_LINES = 800;
 const MAX_SOURCE_FUNCTION_LINES = 120;
+const TRANSLATION_ROOT = "docs/i18n/zh-CN/";
+const TRANSLATION_HEADER_PATTERN =
+	/^<!-- translation-source: ([^;\r\n]+); translation-source-sha256: ([a-f0-9]{64}) -->\r?\n/u;
+const ADR_PATH_PATTERN = /^docs\/adr\/(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u;
+const ADR_STATUS_PATTERN = /^status: (?:accepted|proposed|deprecated|superseded by ADR-\d{4})$/mu;
+const ADR_RELATION_PATTERN = /^(?:supersedes|amends|amended_by):[^\n]*(?:\n(?: {2,}|\t)-[^\n]*)*/gmu;
 const HOST_CONSOLE_ALLOWLIST = new Set<string>();
 const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	// Explicit subprocess protocols and detached-runner logs; none execute in Pi's Host TUI path.
@@ -248,6 +255,76 @@ function countPhysicalLines(source: string): number {
 	return source.split(/\r\n|\r|\n/u).length - trailingBreak;
 }
 
+function stripMarkdownFences(markdown: string): string {
+	let fence: "`" | "~" | undefined;
+	return markdown
+		.split(/\r?\n/u)
+		.map((line) => {
+			const marker = line.match(/^ {0,3}(`{3,}|~{3,})/u)?.[1];
+			if (marker && (fence === undefined || marker[0] === fence)) {
+				// SAFETY: the regular expression only captures backtick or tilde fence markers.
+				fence = fence === undefined ? (marker[0] as "`" | "~") : undefined;
+				return "";
+			}
+			return fence === undefined ? line : "";
+		})
+		.join("\n");
+}
+
+function markdownLinkTargets(markdown: string): string[] {
+	const source = stripMarkdownFences(markdown);
+	const targets: string[] = [];
+	const patterns = [/!?\[[^\]\r\n]*\]\((<[^>\r\n]+>|[^)\r\n]+)\)/gu, /^\s*\[[^\]\r\n]+\]:\s*(<[^>\r\n]+>|\S+)/gmu];
+	for (const pattern of patterns) {
+		for (const match of source.matchAll(pattern)) {
+			const raw = match[1]?.trim();
+			if (!raw) continue;
+			const target = raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw.split(/\s+/u)[0];
+			if (target) targets.push(target);
+		}
+	}
+	return targets;
+}
+
+function resolveMarkdownTarget(sourcePath: string, rawTarget: string): string | undefined {
+	if (rawTarget.startsWith("#") || rawTarget.startsWith("//") || /^[a-z][a-z0-9+.-]*:/iu.test(rawTarget)) {
+		return undefined;
+	}
+	const encodedPath = rawTarget.split(/[?#]/u, 1)[0];
+	if (!encodedPath) return undefined;
+	let decodedPath: string;
+	try {
+		decodedPath = decodeURIComponent(encodedPath);
+	} catch {
+		return `\0${encodedPath}`;
+	}
+	decodedPath = decodedPath.replaceAll("\\", "/");
+	const joined = decodedPath.startsWith("/")
+		? decodedPath.slice(1)
+		: posix.join(posix.dirname(sourcePath), decodedPath);
+	return posix.normalize(joined);
+}
+
+function pathExists(paths: ReadonlySet<string>, target: string): boolean {
+	if (paths.has(target)) return true;
+	const directory = target.replace(/\/$/u, "");
+	return directory.length > 0 && [...paths].some((path) => path.startsWith(`${directory}/`));
+}
+
+function isTranslationSource(path: string): boolean {
+	if (!path.endsWith(".md") || path.startsWith(TRANSLATION_ROOT) || path.endsWith(".zh-CN.md")) return false;
+	const basename = posix.basename(path);
+	return basename !== "SKILL.md" && basename !== "THIRD_PARTY_NOTICES.md";
+}
+
+function translationPath(sourcePath: string): string {
+	return `${TRANSLATION_ROOT}${sourcePath}`;
+}
+
+function rawSha256(content: Buffer): string {
+	return createHash("sha256").update(content).digest("hex");
+}
+
 function isSourceFunction(node: ts.Node): boolean {
 	return (
 		ts.isFunctionDeclaration(node) ||
@@ -331,6 +408,174 @@ async function auditTextFile(root: string, path: string): Promise<SafetyFinding[
 	) {
 		findings.push({ path, rule: "hard-coded-host-color" });
 	}
+	return findings;
+}
+
+function auditMarkdownLinks(
+	path: string,
+	markdown: string,
+	existingPaths: ReadonlySet<string>,
+	resolvedTargets: Set<string>,
+): SafetyFinding[] {
+	const findings: SafetyFinding[] = [];
+	for (const rawTarget of markdownLinkTargets(markdown)) {
+		const target = resolveMarkdownTarget(path, rawTarget);
+		if (target === undefined) continue;
+		if (target.startsWith("\0")) {
+			findings.push({ path, rule: `markdown-link-invalid-encoding:${target.slice(1)}` });
+			continue;
+		}
+		resolvedTargets.add(target);
+		if (target === ".." || target.startsWith("../")) {
+			findings.push({ path, rule: `markdown-link-outside-repository:${rawTarget}` });
+		} else if (!pathExists(existingPaths, target)) {
+			findings.push({ path, rule: `markdown-link-target-missing:${target}` });
+		}
+	}
+	return findings;
+}
+
+function auditAdrDocuments(markdown: ReadonlyMap<string, string>): SafetyFinding[] {
+	const adrEntries = [...markdown].filter(([path]) => path.startsWith("docs/adr/"));
+	const ids = new Map<string, string>();
+	const findings: SafetyFinding[] = [];
+	for (const [path] of adrEntries) {
+		const match = path.match(ADR_PATH_PATTERN);
+		if (!match?.[1]) {
+			findings.push({ path, rule: "adr-filename" });
+			continue;
+		}
+		const previous = ids.get(match[1]);
+		if (previous) findings.push({ path, rule: `adr-number-duplicate:${previous}` });
+		else ids.set(match[1], path);
+	}
+	for (const [path, content] of adrEntries) {
+		const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u)?.[1];
+		if (!frontmatter) {
+			findings.push({ path, rule: "adr-frontmatter" });
+		} else {
+			if (!ADR_STATUS_PATTERN.test(frontmatter)) findings.push({ path, rule: "adr-status" });
+			const supersededBy = frontmatter.match(/^status: superseded by ADR-(\d{4})$/mu)?.[1];
+			if (supersededBy && !ids.has(supersededBy)) {
+				findings.push({ path, rule: `adr-relation-target-missing:${supersededBy}` });
+			}
+			for (const block of frontmatter.matchAll(ADR_RELATION_PATTERN)) {
+				for (const relation of block[0].matchAll(/\b(\d{4})(?:-[a-z0-9-]+)?\b/gu)) {
+					const targetId = relation[1];
+					if (targetId && !ids.has(targetId)) {
+						findings.push({ path, rule: `adr-relation-target-missing:${targetId}` });
+					}
+				}
+			}
+		}
+		const title = content.indexOf("\n# ");
+		const context = content.indexOf("\n## Context\n");
+		const decision = content.indexOf("\n## Decision\n");
+		const consequences = content.indexOf("\n## Consequences\n");
+		if (title < 0) findings.push({ path, rule: "adr-title" });
+		if (!(title < context && context < decision && decision < consequences)) {
+			findings.push({ path, rule: "adr-section-order" });
+		}
+	}
+	return findings;
+}
+
+function auditIndexCoverage(
+	markdownPaths: readonly string[],
+	resolvedTargets: ReadonlyMap<string, ReadonlySet<string>>,
+): SafetyFinding[] {
+	const scopes = [
+		{
+			index: "docs/README.md",
+			targets: markdownPaths.filter((path) => ADR_PATH_PATTERN.test(path)),
+		},
+		{
+			index: "docs/research/README.md",
+			targets: markdownPaths.filter(
+				(path) => path.startsWith("docs/research/") && path !== "docs/research/README.md",
+			),
+		},
+		{
+			index: "docs/reports/README.md",
+			targets: markdownPaths.filter(
+				(path) =>
+					path.startsWith("docs/reports/") && path !== "docs/reports/README.md" && !path.endsWith(".zh-CN.md"),
+			),
+		},
+	];
+	const findings: SafetyFinding[] = [];
+	for (const scope of scopes) {
+		if (scope.targets.length === 0) continue;
+		const indexed = resolvedTargets.get(scope.index);
+		if (!indexed) {
+			findings.push({ path: scope.index, rule: "documentation-index-missing" });
+			continue;
+		}
+		for (const target of scope.targets) {
+			if (!indexed.has(target)) findings.push({ path: scope.index, rule: `documentation-index-missing:${target}` });
+		}
+	}
+	return findings;
+}
+
+function auditTranslations(
+	markdown: ReadonlyMap<string, string>,
+	buffers: ReadonlyMap<string, Buffer>,
+): SafetyFinding[] {
+	const sources = [...markdown.keys()].filter(isTranslationSource);
+	const sourceSet = new Set(sources);
+	const findings: SafetyFinding[] = [];
+	for (const sourcePath of sources) {
+		const targetPath = translationPath(sourcePath);
+		const translation = markdown.get(targetPath);
+		if (!translation) {
+			findings.push({ path: sourcePath, rule: `translation-missing:${targetPath}` });
+			continue;
+		}
+		const metadata = translation.match(TRANSLATION_HEADER_PATTERN);
+		if (!metadata) {
+			findings.push({ path: targetPath, rule: "translation-metadata" });
+			continue;
+		}
+		if (metadata[1] !== sourcePath) findings.push({ path: targetPath, rule: `translation-source:${sourcePath}` });
+		const source = buffers.get(sourcePath);
+		if (source && metadata[2] !== rawSha256(source)) findings.push({ path: targetPath, rule: "translation-stale" });
+	}
+	for (const path of markdown.keys()) {
+		if (!path.startsWith(TRANSLATION_ROOT)) continue;
+		const sourcePath = path.slice(TRANSLATION_ROOT.length);
+		if (!sourceSet.has(sourcePath)) findings.push({ path, rule: `translation-source-missing:${sourcePath}` });
+	}
+	return findings;
+}
+
+async function auditDocumentation(root: string, paths: readonly string[]): Promise<SafetyFinding[]> {
+	const markdown = new Map<string, string>();
+	const buffers = new Map<string, Buffer>();
+	for (const path of paths) {
+		if (!path.endsWith(".md")) continue;
+		try {
+			const content = await readFile(join(root, path));
+			buffers.set(path, content);
+			markdown.set(path, content.toString("utf8"));
+		} catch {
+			// Ignore tracked Markdown deleted in the working tree.
+		}
+	}
+	if (!markdown.has("docs/README.md")) {
+		return markdown.has("AGENTS.md") ? [{ path: "docs/README.md", rule: "documentation-index-missing" }] : [];
+	}
+	const existingPaths = new Set(paths.filter((path) => !path.endsWith(".md") || markdown.has(path)));
+	const resolvedTargets = new Map<string, ReadonlySet<string>>();
+	const findings: SafetyFinding[] = [];
+	for (const [path, content] of markdown) {
+		const targets = new Set<string>();
+		findings.push(...auditMarkdownLinks(path, content, existingPaths, targets));
+		resolvedTargets.set(path, targets);
+	}
+	findings.push(...auditAdrDocuments(markdown));
+	findings.push(...auditIndexCoverage([...markdown.keys()], resolvedTargets));
+	findings.push(...auditTranslations(markdown, buffers));
 	return findings;
 }
 
@@ -457,6 +702,7 @@ export async function auditRepositoryFiles(rootDirectory: string): Promise<Safet
 	if (paths.includes(suiteManifestPath)) {
 		findings.push(...(await auditSuiteManifest(root, suiteManifestPath)));
 	}
+	findings.push(...(await auditDocumentation(root, paths)));
 	for (const path of paths) {
 		try {
 			await access(join(root, path));
