@@ -121,6 +121,22 @@ test("releases only terminal foreground children and releases all reservations o
 	expect(governor.settlements.at(-1)?.settlement).toEqual({ kind: "start-error" });
 });
 
+test("retains foreground leases missing from a short engine result", async () => {
+	const { coordinator, governor } = harness();
+	coordinator.bindSession({ sessionId: "parent-session", ownerAgentPath: [] });
+	const prepared = await coordinator.prepare({ launchRunId: "short-result", params: { tasks: [{}, {}, {}] } });
+	if (!prepared.ok || !prepared.invocation) throw new Error("Expected a governed invocation");
+
+	await coordinator.settle(prepared.invocation, {
+		details: { runId: "short-result", results: [{ exitCode: 0 }] },
+	});
+
+	expect(governor.settlements.at(-1)?.settlement).toEqual({
+		kind: "foreground",
+		terminalChildIndexes: [0],
+	});
+});
+
 test("retains an observed foreground start when the engine throws after its start hook", async () => {
 	const { coordinator, governor } = harness();
 	coordinator.bindSession({ sessionId: "parent-session", ownerAgentPath: [] });

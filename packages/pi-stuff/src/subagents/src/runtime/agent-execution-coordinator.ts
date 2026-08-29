@@ -374,9 +374,9 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 				settlement = startupFailure.settlement;
 				bindRuntime = startupFailure.bindRuntime;
 			} else {
-				const terminalChildIndexes = invocation.reservation.leases
-					.map((_, index) => index)
-					.filter((index) => record(results[index]).detached !== true);
+				const terminalChildIndexes = results
+					.slice(0, invocation.reservation.leases.length)
+					.flatMap((child, index) => (record(child).detached === true ? [] : [index]));
 				settlement = { kind: "foreground", terminalChildIndexes };
 				// Fully foreground work is already terminal when the engine returns.
 				// Rebinding it creates a completion-before-settle race: the durable
