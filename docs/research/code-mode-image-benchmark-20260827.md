@@ -2,6 +2,9 @@
 
 Date: 2026-08-27
 
+The V1/V2 sections preserve their original preregistration and outcomes. The current runner advances only through the
+separately preregistered V3 Luna study below; Git history retains the exact V1/V2 runner.
+
 This document freezes the real-model benchmark before any benchmark outcome is observed. The runner is
 [`scripts/benchmark-code-mode-image.ts`](../../scripts/benchmark-code-mode-image.ts), and the Provider-boundary
 observer is
@@ -182,3 +185,22 @@ archived hashes, Host provenance, and pixel metric are recorded in
 The `Image preview unavailable` line is the certified Pi tmux fallback, not a missing Provider image. The benchmark's
 complete payload hashes and decoder checks remain the authority for image transfer and Session safety; this matched
 capture verifies the visible Tool authority and layout.
+
+## V3 Luna preregistration
+
+Recorded at 2026-08-29T09:53:12+08:00 before any V3 Provider request or outcome. V3 certifies the final `ps-8z1`
+Package tree with the specification's selected `openai-codex/gpt-5.6-luna` configuration and medium Thinking. It is a
+new study, not a retry or replacement of V1 or V2.
+
+V3 retains the V2 Host, observer, prompt, resume prompt, 20 Sessions per arm, 40 distinct fixed challenge codes,
+alternating pair order, isolated fresh projects and Sessions, sequential execution, measures, thresholds, complete
+Provider-payload validation, and no-retry/no-replacement/no-exclusion rules. The immutable Package inputs are:
+
+- baseline commit/tree: `65b676474cc73411b62bf2cab1c910e2e359a6b9` /
+  `24cab67c6893732155ad113747b7f8830335d5c9`;
+- candidate commit/tree: `59742b386c8926cb8db05a8c2fd50e41a8692624` /
+  `f8fa74268f41ac0877ded9eb650dd39d9a8334e4`.
+
+The output path is `docs/reports/code-mode-image-20260827/benchmark-v3-luna.json`. Any process, Provider,
+instrumentation, parsing, image-integrity, or resume failure counts as the original sample's failure. No V3 Session may
+be retried, replaced, or omitted after an outcome is observed.

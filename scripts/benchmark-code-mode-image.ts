@@ -29,9 +29,9 @@ const root = resolve(import.meta.dir, "..");
 const observerExtension = join(root, "test/fixtures/code-mode-image-benchmark-observer.ts");
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const PROVIDER = "openai-codex";
-const MODEL = "gpt-5.6-sol";
+const MODEL = "gpt-5.6-luna";
 const BASELINE_COMMIT = "65b6764";
-const CANDIDATE_COMMIT = "7a3e753";
+const CANDIDATE_COMMIT = "59742b3";
 const CASE_TIMEOUT_MS = 12 * 60_000;
 const SESSIONS_PER_ARM = CODES.baseline.length;
 interface CasePaths {
