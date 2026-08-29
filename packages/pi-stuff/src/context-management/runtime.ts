@@ -318,9 +318,13 @@ export class ContextCapabilityRuntime implements ContextCapability {
 						handlers.map((handler) => Promise.resolve().then(() => handler(event, quietMagicContext(ctx)))),
 					)
 				: undefined;
-		const pending = [this.activation, this.sessionStartQueue, shutdownHandlers, this.cleanup].filter(
-			(operation) => operation !== undefined,
-		);
+		const pending = [
+			this.activation,
+			this.sessionStartQueue,
+			this.nativeCompactionPreflight,
+			shutdownHandlers,
+			this.cleanup,
+		].filter((operation) => operation !== undefined);
 		await settleWithin(Promise.allSettled(pending), HOST_SHUTDOWN_GRACE_MS);
 	}
 

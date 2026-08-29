@@ -143,7 +143,8 @@ This boundary deliberately works within Pi's extension interface:
   is already exceeded. Disabled native compaction stays disabled. Because the
   public API exposes only manual compaction, this safety preflight is reported
   by Pi as `manual`; Goal recognizes the in-process preflight marker and does
-  not schedule a duplicate continuation.
+  not schedule a duplicate continuation. Host shutdown joins an in-flight
+  preflight within the same bounded shutdown grace used for other Context work.
 - A manual `/compact` while Magic is healthy records one extension-owned Pi
   compaction boundary with a positive managed-history result. Automatic
   threshold or overflow compaction remains owned by Magic and cancels Pi's
