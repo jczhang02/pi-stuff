@@ -408,9 +408,6 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 async function auditSuiteManifest(root: string, path: string): Promise<SafetyFinding[]> {
 	const manifest = JSON.parse(await readFile(join(root, path), "utf8"));
 	if (!Check(SUITE_REGISTRY_SCHEMA, manifest)) return [{ path, rule: "suite-manifest-invalid" }];
-	if (!Check(STRING_ARRAY_SCHEMA, manifest.capabilities)) {
-		return [{ path, rule: "suite-capabilities-must-be-string-array" }];
-	}
 	const capabilities = new Set(manifest.capabilities);
 	const findings: SafetyFinding[] = [];
 	for (const capability of capabilities) {

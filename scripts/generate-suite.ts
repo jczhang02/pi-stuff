@@ -31,25 +31,25 @@ export interface GenerationResult {
 	changedFiles: string[];
 }
 
+const STRING_ARRAY_SCHEMA = Type.Array(Type.String(), { uniqueItems: true });
+const TOOL_ARRAY_SCHEMA = Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true });
 export const SUITE_REGISTRY_SCHEMA = Type.Object(
 	{
 		$schema: Type.Optional(Type.String()),
-		schemaVersion: Type.Optional(Type.Unknown()),
-		capabilities: Type.Optional(Type.Unknown()),
-		tools: Type.Optional(Type.Unknown()),
-		deferredTools: Type.Optional(Type.Unknown()),
-		optionalTools: Type.Optional(Type.Unknown()),
+		schemaVersion: Type.Literal(2),
+		capabilities: STRING_ARRAY_SCHEMA,
+		tools: TOOL_ARRAY_SCHEMA,
+		deferredTools: Type.Optional(TOOL_ARRAY_SCHEMA),
+		optionalTools: Type.Optional(TOOL_ARRAY_SCHEMA),
 	},
 	{ additionalProperties: false },
 );
-const STRING_ARRAY_SCHEMA = Type.Array(Type.String());
-const TOOL_ARRAY_SCHEMA = Type.Array(Type.String({ minLength: 1 }));
 type SuiteRegistry = Static<typeof SUITE_REGISTRY_SCHEMA>;
 
 async function readSuiteRegistry(path: string): Promise<SuiteRegistry> {
 	const registry = JSON.parse(await readFile(path, "utf8"));
 	if (!Check(SUITE_REGISTRY_SCHEMA, registry)) {
-		throw new Error(`${path} must contain only supported Suite registry fields`);
+		throw new Error(`${path} must match the supported Suite registry schema`);
 	}
 	return registry;
 }
@@ -276,36 +276,18 @@ const RUNTIME_PATH = join(SOURCE_ROOT, "suite-runtime.ts");`,
 }
 
 function parseCapabilities(registry: SuiteRegistry): CapabilityModule[] {
-	if (registry.schemaVersion !== 2) {
-		throw new Error("packages/pi-stuff/suite.json must use schemaVersion 2");
-	}
-	if (!Check(STRING_ARRAY_SCHEMA, registry.capabilities)) {
-		throw new Error("packages/pi-stuff/suite.json capabilities must be an array of internal module IDs");
-	}
-	const capabilities = registry.capabilities;
-	if (new Set(capabilities).size !== capabilities.length) {
-		throw new Error("packages/pi-stuff/suite.json contains duplicate capabilities");
-	}
-	const parsed: CapabilityModule[] = [];
-	for (const capability of capabilities) {
+	const capabilities: CapabilityModule[] = [];
+	for (const capability of registry.capabilities) {
 		if (!isCapabilityModule(capability)) {
 			throw new Error(`Unknown Capability Module: ${capability}`);
 		}
-		parsed.push(capability);
+		capabilities.push(capability);
 	}
-	return parsed;
+	return capabilities;
 }
 
 function parseTools(registry: SuiteRegistry, field: "tools" | "optionalTools" | "deferredTools"): string[] {
-	const value = registry[field];
-	if (value === undefined && field !== "tools") return [];
-	if (!Check(TOOL_ARRAY_SCHEMA, value)) {
-		throw new Error(`packages/pi-stuff/suite.json ${field} must be an array of Tool names`);
-	}
-	if (new Set(value).size !== value.length) {
-		throw new Error(`packages/pi-stuff/suite.json contains duplicate ${field}`);
-	}
-	return value;
+	return registry[field] ?? [];
 }
 
 function assertDisjointTools(

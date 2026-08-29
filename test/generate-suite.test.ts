@@ -142,13 +142,19 @@ test("rejects unknown Modules and overlapping Tool inventories", async () => {
 test("rejects undeclared Suite registry fields", async () => {
 	const root = await createRepository();
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+		capabilities: [],
+		tools: [],
+	});
+	await expect(generateSuite(root, "write")).rejects.toThrow("must match the supported Suite registry schema");
+
+	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
 		schemaVersion: 2,
 		capabilities: [],
 		tools: [],
 		optionalToolz: [],
 	});
 
-	await expect(generateSuite(root, "write")).rejects.toThrow("must contain only supported Suite registry fields");
+	await expect(generateSuite(root, "write")).rejects.toThrow("must match the supported Suite registry schema");
 });
 
 test("wires Code Mode after ordinary capabilities with the shared Tool registry", async () => {

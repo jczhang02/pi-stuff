@@ -42,7 +42,7 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 	await mkdir(join(root, "packages", "pi-stuff"), { recursive: true });
 	await writeFile(
 		join(root, "packages", "pi-stuff", "suite.json"),
-		`${JSON.stringify({ capabilities: SUITE_CAPABILITIES }, null, "\t")}\n`,
+		`${JSON.stringify({ schemaVersion: 2, capabilities: SUITE_CAPABILITIES, tools: [] }, null, "\t")}\n`,
 	);
 	await mkdir(join(root, "schemas"), { recursive: true });
 	await writeFile(
@@ -248,7 +248,15 @@ test("keeps Suite composition and internal import policy in lockstep", async () 
 	const root = await createRepository();
 	await writeFile(
 		join(root, "packages", "pi-stuff", "suite.json"),
-		`${JSON.stringify({ capabilities: [...SUITE_CAPABILITIES.filter((name) => name !== "code-mode"), "new-mode"] }, null, "\t")}\n`,
+		`${JSON.stringify(
+			{
+				schemaVersion: 2,
+				capabilities: [...SUITE_CAPABILITIES.filter((name) => name !== "code-mode"), "new-mode"],
+				tools: [],
+			},
+			null,
+			"\t",
+		)}\n`,
 	);
 
 	expect(await auditRepositoryFiles(root)).toEqual([
@@ -263,11 +271,24 @@ test("keeps Suite composition and internal import policy in lockstep", async () 
 	]);
 });
 
-test("rejects undeclared Suite manifest fields", async () => {
+test("rejects incomplete and undeclared Suite manifest fields", async () => {
 	const root = await createRepository();
 	await writeFile(
 		join(root, "packages", "pi-stuff", "suite.json"),
-		`${JSON.stringify({ capabilities: SUITE_CAPABILITIES, optionalToolz: [] }, null, "\t")}\n`,
+		`${JSON.stringify({ capabilities: SUITE_CAPABILITIES, tools: [] }, null, "\t")}\n`,
+	);
+	expect(await auditRepositoryFiles(root)).toContainEqual({
+		path: "packages/pi-stuff/suite.json",
+		rule: "suite-manifest-invalid",
+	});
+
+	await writeFile(
+		join(root, "packages", "pi-stuff", "suite.json"),
+		`${JSON.stringify(
+			{ schemaVersion: 2, capabilities: SUITE_CAPABILITIES, tools: [], optionalToolz: [] },
+			null,
+			"\t",
+		)}\n`,
 	);
 
 	expect(await auditRepositoryFiles(root)).toEqual([
