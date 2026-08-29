@@ -13,6 +13,7 @@ import {
 	positiveInteger,
 	type RebindAgentRuntimeRequest,
 	readCompleteLimits,
+	runtimeAddressKey,
 	type SessionAgentGovernorOptions,
 	type SessionGovernorAcquireError,
 	type SessionGovernorAcquireResult,
@@ -224,6 +225,7 @@ export class SessionAgentGovernor {
 		const pid = positiveInteger("pid", request.pid ?? this.pid);
 		const processStartIdentity = this.readProcessStartIdentity(pid);
 		const systemBootIdentity = this.currentSystemBootIdentity();
+		const runtimeAddress = runtimeAddressKey({ runtimeRunId, childIndex });
 
 		return this.ledger.transact<SessionGovernorAcquireResult>((ledger, effectiveLimits) => {
 			const agent = ledger.agents.find((candidate) => candidate.logicalAgentId === logicalAgentId);
@@ -260,6 +262,18 @@ export class SessionAgentGovernor {
 						"logical_agent_running",
 						logicalAgentId,
 						`Logical Agent '${logicalAgentId}' already holds a running lease.`,
+					),
+				);
+			}
+			if (ledger.leases.some((lease) => runtimeAddressKey(lease) === runtimeAddress)) {
+				return acquireFailure(
+					ledger,
+					effectiveLimits,
+					this.ownerAgentPath,
+					conflictError(
+						"runtime_address_in_use",
+						logicalAgentId,
+						`Runtime Agent address '${runtimeRunId}:${childIndex}' is already reserved in this session.`,
 					),
 				);
 			}
@@ -344,6 +358,24 @@ export class SessionAgentGovernor {
 
 			const nextRuntimeRunId = runtimeRunId ?? current.runtimeRunId;
 			const nextChildIndex = childIndex ?? current.childIndex;
+			const nextRuntimeAddress = runtimeAddressKey({
+				runtimeRunId: nextRuntimeRunId,
+				childIndex: nextChildIndex,
+			});
+			if (
+				ledger.leases.some(
+					(candidate) => candidate !== current && runtimeAddressKey(candidate) === nextRuntimeAddress,
+				)
+			) {
+				return {
+					value: {
+						rebound: false,
+						reason: "runtime_address_in_use",
+						snapshot: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
+					},
+					changed: false,
+				};
+			}
 			const nextPid = pid ?? current.pid;
 			const nextProcessStartIdentity =
 				processStartIdentity ??

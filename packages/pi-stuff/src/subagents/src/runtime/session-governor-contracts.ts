@@ -83,7 +83,8 @@ export type SessionGovernorConflictCode =
 	| "logical_agent_exists"
 	| "logical_agent_running"
 	| "logical_agent_unknown"
-	| "owner_mismatch";
+	| "owner_mismatch"
+	| "runtime_address_in_use";
 
 export interface SessionGovernorConflictError {
 	readonly kind: "conflict";
@@ -136,7 +137,7 @@ export type SessionGovernorRebindResult =
 	  }
 	| {
 			readonly rebound: false;
-			readonly reason: "already_released" | "ownership_changed";
+			readonly reason: "already_released" | "ownership_changed" | "runtime_address_in_use";
 			readonly snapshot: SessionGovernorSnapshot;
 	  };
 
@@ -189,6 +190,10 @@ export interface LeaseRecord {
 	asyncDir?: string;
 	mode: "spawn" | "resume";
 	acquiredAtMs: number;
+}
+
+export function runtimeAddressKey(value: Pick<LeaseRecord, "runtimeRunId" | "childIndex">): string {
+	return `${value.runtimeRunId}\0${value.childIndex}`;
 }
 
 export interface GovernorLedger {

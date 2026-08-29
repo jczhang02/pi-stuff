@@ -6,6 +6,7 @@ import {
 	type GovernorLedger,
 	nonNegativeInteger,
 	positiveInteger,
+	runtimeAddressKey,
 	type SessionGovernorAcquireError,
 	type SessionGovernorBatchAcquireResult,
 	type SessionGovernorConflictCode,
@@ -86,6 +87,24 @@ export function reserveSpawnBatch(
 				"logical_agent_exists",
 				existing.logicalAgentId,
 				`Logical Agent '${existing.logicalAgentId}' already exists in this session; use resume instead of spawning it again.`,
+			),
+		);
+	}
+
+	const runtimeAddresses = new Set(ledger.leases.map(runtimeAddressKey));
+	const addressConflict = requests.find((request) => {
+		const address = runtimeAddressKey(request);
+		if (runtimeAddresses.has(address)) return true;
+		runtimeAddresses.add(address);
+		return false;
+	});
+	if (addressConflict) {
+		return batchAcquireFailure(
+			context,
+			conflictError(
+				"runtime_address_in_use",
+				addressConflict.logicalAgentId,
+				`Runtime Agent address '${addressConflict.runtimeRunId}:${addressConflict.childIndex}' is already reserved in this session.`,
 			),
 		);
 	}

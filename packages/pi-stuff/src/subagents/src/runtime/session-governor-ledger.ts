@@ -13,6 +13,7 @@ import {
 	type GovernorLedger,
 	type LeaseRecord,
 	resolveSessionGovernorLimits,
+	runtimeAddressKey,
 	type SessionGovernorFileSystem,
 	type SessionGovernorLimitInput,
 	type SessionGovernorLimits,
@@ -386,6 +387,9 @@ function parseLedger(raw: string, expectedSessionId: string): ReadLedgerResult {
 	}
 	if (new Set(leases.map((lease) => lease.logicalAgentId)).size !== leases.length) {
 		throw new SessionGovernorStateError("Session governor ledger contains duplicate running leases.");
+	}
+	if (new Set(leases.map(runtimeAddressKey)).size !== leases.length) {
+		throw new SessionGovernorStateError("Session governor ledger contains duplicate runtime Agent addresses.");
 	}
 	for (const lease of leases) {
 		const agent = agents.find((candidate) => candidate.logicalAgentId === lease.logicalAgentId);
