@@ -49,6 +49,7 @@ export class McpSetupPanel {
 	private disposed = false;
 	private confirmation: PendingWrite | null = null;
 	private confirmCursor = 0;
+	private pageRows = LIST_WINDOW_ROWS;
 	private notice: SetupNotice | null = null;
 	private tui: SetupTui;
 	private readonly theme: Theme;
@@ -193,13 +194,13 @@ export class McpSetupPanel {
 			this.tui.requestRender();
 			return;
 		}
-		if (actions.length > LIST_WINDOW_ROWS && this.keys.selectPageUp(data)) {
-			this.actionCursor = Math.max(0, this.actionCursor - LIST_WINDOW_ROWS);
+		if (actions.length > this.pageRows && this.keys.selectPageUp(data)) {
+			this.actionCursor = Math.max(0, this.actionCursor - this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
-		if (actions.length > LIST_WINDOW_ROWS && this.keys.selectPageDown(data)) {
-			this.actionCursor = Math.min(actions.length - 1, this.actionCursor + LIST_WINDOW_ROWS);
+		if (actions.length > this.pageRows && this.keys.selectPageDown(data)) {
+			this.actionCursor = Math.min(actions.length - 1, this.actionCursor + this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
@@ -231,8 +232,8 @@ export class McpSetupPanel {
 			this.tui.requestRender();
 			return;
 		}
-		if (imports.length > LIST_WINDOW_ROWS && this.keys.selectPageUp(data)) {
-			this.importCursor = Math.max(0, this.importCursor - LIST_WINDOW_ROWS);
+		if (imports.length > this.pageRows && this.keys.selectPageUp(data)) {
+			this.importCursor = Math.max(0, this.importCursor - this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
@@ -247,8 +248,8 @@ export class McpSetupPanel {
 			this.tui.requestRender();
 			return;
 		}
-		if (imports.length > LIST_WINDOW_ROWS && this.keys.selectPageDown(data)) {
-			this.importCursor = Math.min(imports.length - 1, this.importCursor + LIST_WINDOW_ROWS);
+		if (imports.length > this.pageRows && this.keys.selectPageDown(data)) {
+			this.importCursor = Math.min(imports.length - 1, this.importCursor + this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
@@ -317,13 +318,13 @@ export class McpSetupPanel {
 			this.tui.requestRender();
 			return;
 		}
-		if (paths.length > LIST_WINDOW_ROWS && this.keys.selectPageUp(data)) {
-			this.pathCursor = Math.max(0, this.pathCursor - LIST_WINDOW_ROWS);
+		if (paths.length > this.pageRows && this.keys.selectPageUp(data)) {
+			this.pathCursor = Math.max(0, this.pathCursor - this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
-		if (paths.length > LIST_WINDOW_ROWS && this.keys.selectPageDown(data)) {
-			this.pathCursor = Math.min(paths.length - 1, this.pathCursor + LIST_WINDOW_ROWS);
+		if (paths.length > this.pageRows && this.keys.selectPageDown(data)) {
+			this.pathCursor = Math.min(paths.length - 1, this.pathCursor + this.pageRows);
 			this.tui.requestRender();
 			return;
 		}
@@ -451,7 +452,7 @@ export class McpSetupPanel {
 	}
 
 	render(width: number): string[] {
-		return renderMcpSetupPanel(
+		const rendered = renderMcpSetupPanel(
 			{
 				actionCursor: this.actionCursor,
 				actions: this.getActions(),
@@ -473,6 +474,8 @@ export class McpSetupPanel {
 			},
 			width,
 		);
+		this.pageRows = rendered.pageRows;
+		return rendered.lines;
 	}
 
 	private maximumRows(): number {

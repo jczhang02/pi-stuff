@@ -60,7 +60,8 @@ function createPanel(
 				getKeys: (binding) => (binding === "tui.select.confirm" ? ["enter"] : []),
 				matches: (data, binding) =>
 					(data === "confirm" && binding === "tui.select.confirm") ||
-					(data === "down" && binding === "tui.select.down"),
+					(data === "down" && binding === "tui.select.down") ||
+					(data === "page-down" && binding === "tui.select.pageDown"),
 			},
 			mode: "setup",
 			onboardingState: { setupCompleted: false, version: 1 },
@@ -102,6 +103,8 @@ test("MCP Setup follows the Command Dialog hierarchy at wide, narrow, and low he
 	expect(low.join("\n")).toContain("MCP setup");
 	expect(low.join("\n")).toContain("View example");
 	expect(low.at(-1)).toContain("Esc close");
+	lowPanel.handleInput("page-down");
+	expect(lowPanel.render(48).join("\n")).toContain("› Scaffold project");
 	panel.dispose();
 	lowPanel.dispose();
 });

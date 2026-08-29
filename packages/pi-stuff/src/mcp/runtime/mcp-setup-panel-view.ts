@@ -63,7 +63,16 @@ export interface McpSetupPanelViewState {
 	readonly theme: Theme;
 }
 
-export function renderMcpSetupPanel(state: McpSetupPanelViewState, width: number): string[] {
+interface SetupRows extends McpDialogRows {
+	readonly selectableRows?: readonly string[];
+}
+
+export interface McpSetupPanelRender {
+	readonly lines: string[];
+	readonly pageRows: number;
+}
+
+export function renderMcpSetupPanel(state: McpSetupPanelViewState, width: number): McpSetupPanelRender {
 	const panelW = Math.max(1, Math.floor(width));
 	const contentW = contentWidth(panelW);
 	const header = [state.theme.fg("border", "━".repeat(panelW)), padLine(state.theme.bold("MCP setup"), panelW)];
@@ -99,7 +108,7 @@ export function renderMcpSetupPanel(state: McpSetupPanelViewState, width: number
 	}
 	if (noticeLine !== undefined) roles.notice = noticeLine;
 
-	const content = state.confirmation
+	const content: SetupRows = state.confirmation
 		? renderConfirmation(state, panelW)
 		: state.screen === "imports"
 			? renderImports(state, panelW)
@@ -118,11 +127,14 @@ export function renderMcpSetupPanel(state: McpSetupPanelViewState, width: number
 		"preview-detail",
 	]);
 	if (priority.length === 0 && body[0]) priority.push(body[0]);
+	const sections = { header, body, footer: renderFooter(state, panelW, false), priority };
+	const firstPass = fitCommandDialogRows(sections, state.maximumRows);
+	const pageRows = Math.max(1, content.selectableRows?.filter((line) => firstPass.includes(line)).length ?? 0);
 	const lines = fitCommandDialogRows(
-		{ header, body, footer: renderFooter(state, panelW), priority },
+		{ ...sections, footer: renderFooter(state, panelW, activeItemCount(state) > pageRows) },
 		state.maximumRows,
 	);
-	return lines.map((line) => truncateToWidth(line, panelW, "…"));
+	return { lines: lines.map((line) => truncateToWidth(line, panelW, "…")), pageRows };
 }
 
 function renderConfirmation(view: McpSetupPanelViewState, innerW: number): McpDialogRows {
@@ -181,8 +193,9 @@ function renderConfirmation(view: McpSetupPanelViewState, innerW: number): McpDi
 	return { lines, roles };
 }
 
-function renderActions(view: McpSetupPanelViewState, innerW: number): McpDialogRows {
+function renderActions(view: McpSetupPanelViewState, innerW: number): SetupRows {
 	const lines: string[] = [];
+	const selectableRows: string[] = [];
 	const roles: McpDialogRows["roles"] = {};
 	const actions = view.actions;
 	const { start, end } = visibleRange(actions.length, view.actionCursor);
@@ -203,6 +216,7 @@ function renderActions(view: McpSetupPanelViewState, innerW: number): McpDialogR
 		const cursor = selected ? view.theme.fg("accent", "›") : " ";
 		const line = padLine(`${cursor} ${truncateToWidth(action.label, contentWidth(innerW) - 2)}`, innerW);
 		lines.push(line);
+		selectableRows.push(line);
 		if (selected) roles.selected = line;
 	}
 	if (end < actions.length) {
@@ -225,11 +239,12 @@ function renderActions(view: McpSetupPanelViewState, innerW: number): McpDialogR
 		}
 	}
 	lines.push(padLine("", innerW));
-	return { lines, roles };
+	return { lines, roles, selectableRows };
 }
 
-function renderImports(view: McpSetupPanelViewState, innerW: number): McpDialogRows {
+function renderImports(view: McpSetupPanelViewState, innerW: number): SetupRows {
 	const lines: string[] = [];
+	const selectableRows: string[] = [];
 	const roles: McpDialogRows["roles"] = {};
 	lines.push(padLine(view.theme.fg("muted", "◆ Compatibility imports"), innerW));
 	lines.push(padLine(view.theme.fg("muted", "Choose sources to copy into Pi-owned compatibility config."), innerW));
@@ -243,6 +258,7 @@ function renderImports(view: McpSetupPanelViewState, innerW: number): McpDialogR
 		const cursor = index === view.importCursor ? view.theme.fg("accent", "›") : " ";
 		const line = padLine(`${cursor} ${selected} ${entry.kind}  ${entry.path}`, innerW);
 		lines.push(line);
+		selectableRows.push(line);
 		if (index === view.importCursor) roles.selected = line;
 	}
 	if (end < view.discovery.imports.length) {
@@ -275,11 +291,12 @@ function renderImports(view: McpSetupPanelViewState, innerW: number): McpDialogR
 			if (index === 0) roles["preview-detail"] = rendered;
 		}
 	}
-	return { lines, roles };
+	return { lines, roles, selectableRows };
 }
 
-function renderPaths(view: McpSetupPanelViewState, innerW: number): McpDialogRows {
+function renderPaths(view: McpSetupPanelViewState, innerW: number): SetupRows {
 	const lines: string[] = [];
+	const selectableRows: string[] = [];
 	const roles: McpDialogRows["roles"] = {};
 	lines.push(padLine(view.theme.fg("muted", "◆ Detected paths"), innerW));
 	lines.push(padLine(view.theme.fg("muted", "Open a discovered MCP config in the Host."), innerW));
@@ -291,10 +308,11 @@ function renderPaths(view: McpSetupPanelViewState, innerW: number): McpDialogRow
 		const cursor = index === view.pathCursor ? view.theme.fg("accent", "›") : " ";
 		const line = padLine(`${cursor} ${paths[index]}`, innerW);
 		lines.push(line);
+		selectableRows.push(line);
 		if (index === view.pathCursor) roles.selected = line;
 	}
 	if (end < paths.length) lines.push(padLine(view.theme.fg("muted", `… ${paths.length - end} later`), innerW));
-	return { lines, roles };
+	return { lines, roles, selectableRows };
 }
 
 function discoverySummary(view: McpSetupPanelViewState) {
@@ -542,13 +560,15 @@ function padLine(text: string, innerW: number): string {
 	return `${" ".repeat(Math.min(inset, innerW))}${fitted}`;
 }
 
-function renderFooter(view: McpSetupPanelViewState, width: number): string[] {
-	const total =
-		view.screen === "imports"
-			? view.discovery.imports.length
-			: view.screen === "paths"
-				? view.paths.length
-				: view.actions.length;
+function activeItemCount(view: McpSetupPanelViewState): number {
+	return view.screen === "imports"
+		? view.discovery.imports.length
+		: view.screen === "paths"
+			? view.paths.length
+			: view.actions.length;
+}
+
+function renderFooter(view: McpSetupPanelViewState, width: number, hasOverflow: boolean): string[] {
 	const keybindings = view.keybindings;
 	const up = keybindings ? commandDialogPrimaryKey(keybindings, "tui.select.up", "↑") : "↑";
 	const down = keybindings ? commandDialogPrimaryKey(keybindings, "tui.select.down", "↓") : "↓";
@@ -556,7 +576,7 @@ function renderFooter(view: McpSetupPanelViewState, width: number): string[] {
 	const pageDown = keybindings ? commandDialogPrimaryKey(keybindings, "tui.select.pageDown", "PgDn") : "PgDn";
 	const confirm = keybindings ? commandDialogPrimaryKey(keybindings, "tui.select.confirm", "Enter") : "Enter";
 	const cancel = keybindings ? commandDialogPrimaryKey(keybindings, "tui.select.cancel", "Esc") : "Esc";
-	const page = total > LIST_WINDOW_ROWS ? ` · ${pageUp}/${pageDown} page` : "";
+	const page = hasOverflow ? ` · ${pageUp}/${pageDown} page` : "";
 	const action = view.confirmation
 		? `${up}/${down} navigate · ${confirm} select`
 		: view.screen === "imports"
