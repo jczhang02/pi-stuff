@@ -18,6 +18,8 @@ before it reaches model context. Discovery uses ranked literal terms; regex
 search and its heavyweight execution backends are intentionally omitted.
 Server-initiated sampling and elicitation are omitted, so MCP callbacks
 cannot open native prompts behind the shared Command Dialog contract.
+Connection discovery rejects more than 100 pages or 10,000 entries in either
+the Tool or Resource metadata list; list-changed updates use the same entry limit.
 
 ## Accepted `/mcp` control target
 

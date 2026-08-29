@@ -3,6 +3,8 @@ import { createInterface } from "node:readline";
 
 const marker = process.env.PI_STUFF_MCP_MARKER;
 const resourcesError = process.env.PI_STUFF_MCP_RESOURCES_ERROR === "1";
+const metadataLoop = process.env.PI_STUFF_MCP_METADATA_LOOP;
+const oversizedMetadata = process.env.PI_STUFF_MCP_OVERSIZED_METADATA === "1";
 if (marker) writeFileSync(marker, `${String(process.pid)}\n`, "utf8");
 
 let stopped = false;
@@ -27,6 +29,22 @@ function handle(message) {
 			});
 			break;
 		case "tools/list":
+			if (metadataLoop === "tools") {
+				reply(message.id, {
+					nextCursor: String(Number(message.params?.cursor ?? 0) + 1),
+					tools: [],
+				});
+				break;
+			}
+			if (oversizedMetadata) {
+				reply(message.id, {
+					tools: Array.from({ length: 10_001 }, (_, index) => ({
+						inputSchema: { type: "object" },
+						name: `tool-${String(index)}`,
+					})),
+				});
+				break;
+			}
 			reply(message.id, {
 				tools: [
 					{
@@ -57,6 +75,11 @@ function handle(message) {
 				process.stdout.write(
 					`${JSON.stringify({ error: { code: -32000, message: "resource listing failed" }, id: message.id, jsonrpc: "2.0" })}\n`,
 				);
+			} else if (metadataLoop === "resources") {
+				reply(message.id, {
+					nextCursor: String(Number(message.params?.cursor ?? 0) + 1),
+					resources: [],
+				});
 			} else {
 				reply(message.id, { resources: [] });
 			}

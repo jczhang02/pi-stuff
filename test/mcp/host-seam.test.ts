@@ -51,3 +51,33 @@ test("MCP connection rejects advertised resources that cannot be listed", async 
 		await manager.closeAll();
 	}
 });
+
+test("MCP connection bounds server-controlled metadata pagination and entries", async () => {
+	for (const kind of ["tools", "resources"] as const) {
+		const manager = new McpServerManager();
+		try {
+			await expect(
+				manager.connect(`looping-${kind}`, {
+					command: process.execPath,
+					args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+					env: { PI_STUFF_MCP_METADATA_LOOP: kind },
+				}),
+			).rejects.toThrow("metadata exceeded 100 pages");
+		} finally {
+			await manager.closeAll();
+		}
+	}
+
+	const manager = new McpServerManager();
+	try {
+		await expect(
+			manager.connect("oversized-tools", {
+				command: process.execPath,
+				args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+				env: { PI_STUFF_MCP_OVERSIZED_METADATA: "1" },
+			}),
+		).rejects.toThrow("metadata exceeded 10000 entries");
+	} finally {
+		await manager.closeAll();
+	}
+});

@@ -40,6 +40,15 @@ import { resolveCommandSecretsRecord, resolveConfigPath, resolveServerUrl } from
 
 const MAX_CAPTURED_STDERR_BYTES = 8 * 1024;
 const MAX_CAPTURED_STDERR_LINES = 3;
+const MAX_METADATA_ENTRIES = 10_000;
+const MAX_METADATA_PAGES = 100;
+
+function metadataLimitMessage(kind: "tool" | "resource", pages: number, entries: number): string | undefined {
+	if (pages > MAX_METADATA_PAGES) return `MCP ${kind} metadata exceeded ${MAX_METADATA_PAGES} pages`;
+	if (entries > MAX_METADATA_ENTRIES) return `MCP ${kind} metadata exceeded ${MAX_METADATA_ENTRIES} entries`;
+	return undefined;
+}
+
 function optionalJsonObject<Value>(value: Value, description: string): JsonInputObject | undefined {
 	if (value === undefined) return undefined;
 	if (!isJsonInputObject(value)) throw new TypeError(`${description} must contain only JSON values`);
@@ -495,12 +504,12 @@ export class McpServerManager {
 			listChanged: {
 				tools: {
 					onChanged: (error, tools) => {
-						this.handleToolsListChanged(serverName, client, error, tools?.map(normalizeTool) ?? null);
+						this.handleToolsListChanged(serverName, client, error, tools ?? null);
 					},
 				},
 				resources: {
 					onChanged: (error, resources) => {
-						this.handleResourcesListChanged(serverName, client, error, resources?.map(normalizeResource) ?? null);
+						this.handleResourcesListChanged(serverName, client, error, resources ?? null);
 					},
 				},
 			},
@@ -513,16 +522,21 @@ export class McpServerManager {
 		serverName: string,
 		client: Client,
 		error: Error | null,
-		tools: McpTool[] | null,
+		tools: readonly Tool[] | null,
 	): void {
 		if (error) {
 			logger.debug(`MCP: tools/list_changed refresh failed for ${serverName}: ${error.message}`);
 			return;
 		}
 		if (!tools) return;
+		const limit = metadataLimitMessage("tool", 1, tools.length);
+		if (limit) {
+			logger.debug(`MCP: tools/list_changed refresh failed for ${serverName}: ${limit}`);
+			return;
+		}
 		const connection = this.connections.get(serverName);
 		if (!connection || connection.client !== client || connection.status !== "connected") return;
-		connection.tools = tools;
+		connection.tools = tools.map(normalizeTool);
 		this.metadataListChangedListener?.(serverName, "tools-list-changed");
 	}
 
@@ -530,26 +544,36 @@ export class McpServerManager {
 		serverName: string,
 		client: Client,
 		error: Error | null,
-		resources: McpResource[] | null,
+		resources: readonly Resource[] | null,
 	): void {
 		if (error) {
 			logger.debug(`MCP: resources/list_changed refresh failed for ${serverName}: ${error.message}`);
 			return;
 		}
 		if (!resources) return;
+		const limit = metadataLimitMessage("resource", 1, resources.length);
+		if (limit) {
+			logger.debug(`MCP: resources/list_changed refresh failed for ${serverName}: ${limit}`);
+			return;
+		}
 		const connection = this.connections.get(serverName);
 		if (!connection || connection.client !== client || connection.status !== "connected") return;
-		connection.resources = resources;
+		connection.resources = resources.map(normalizeResource);
 		this.metadataListChangedListener?.(serverName, "resources-list-changed");
 	}
 
 	private async fetchAllTools(client: Client, requestOptions?: RequestOptions): Promise<McpTool[]> {
 		const allTools: McpTool[] = [];
 		let cursor: string | undefined;
+		let pages = 0;
 
 		do {
 			const result = await client.listTools(cursor ? { cursor } : undefined, requestOptions);
-			allTools.push(...(result.tools ?? []).map(normalizeTool));
+			const tools = result.tools ?? [];
+			pages += 1;
+			const limit = metadataLimitMessage("tool", pages, allTools.length + tools.length);
+			if (limit) throw new Error(limit);
+			allTools.push(...tools.map(normalizeTool));
 			cursor = result.nextCursor;
 		} while (cursor);
 
@@ -562,10 +586,15 @@ export class McpServerManager {
 
 		const allResources: McpResource[] = [];
 		let cursor: string | undefined;
+		let pages = 0;
 
 		do {
 			const result = await client.listResources(cursor ? { cursor } : undefined, requestOptions);
-			allResources.push(...(result.resources ?? []).map(normalizeResource));
+			const resources = result.resources ?? [];
+			pages += 1;
+			const limit = metadataLimitMessage("resource", pages, allResources.length + resources.length);
+			if (limit) throw new Error(limit);
+			allResources.push(...resources.map(normalizeResource));
 			cursor = result.nextCursor;
 		} while (cursor);
 
