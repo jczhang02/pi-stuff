@@ -263,6 +263,21 @@ test("keeps Suite composition and internal import policy in lockstep", async () 
 	]);
 });
 
+test("rejects undeclared Suite manifest fields", async () => {
+	const root = await createRepository();
+	await writeFile(
+		join(root, "packages", "pi-stuff", "suite.json"),
+		`${JSON.stringify({ capabilities: SUITE_CAPABILITIES, optionalToolz: [] }, null, "\t")}\n`,
+	);
+
+	expect(await auditRepositoryFiles(root)).toEqual([
+		{
+			path: "packages/pi-stuff/suite.json",
+			rule: "suite-manifest-invalid",
+		},
+	]);
+});
+
 test("keeps the Suite schema and internal import policy in lockstep", async () => {
 	const root = await createRepository();
 	await writeFile(

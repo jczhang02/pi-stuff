@@ -6,6 +6,9 @@
 	"additionalProperties": false,
 	"required": ["schemaVersion", "capabilities", "tools"],
 	"properties": {
+		"$schema": {
+			"type": "string"
+		},
 		"schemaVersion": {
 			"const": 2
 		},

@@ -31,15 +31,16 @@ export interface GenerationResult {
 	changedFiles: string[];
 }
 
-const SUITE_REGISTRY_SCHEMA = Type.Object(
+export const SUITE_REGISTRY_SCHEMA = Type.Object(
 	{
+		$schema: Type.Optional(Type.String()),
 		schemaVersion: Type.Optional(Type.Unknown()),
 		capabilities: Type.Optional(Type.Unknown()),
 		tools: Type.Optional(Type.Unknown()),
 		deferredTools: Type.Optional(Type.Unknown()),
 		optionalTools: Type.Optional(Type.Unknown()),
 	},
-	{ additionalProperties: true },
+	{ additionalProperties: false },
 );
 const STRING_ARRAY_SCHEMA = Type.Array(Type.String());
 const TOOL_ARRAY_SCHEMA = Type.Array(Type.String({ minLength: 1 }));
@@ -47,7 +48,9 @@ type SuiteRegistry = Static<typeof SUITE_REGISTRY_SCHEMA>;
 
 async function readSuiteRegistry(path: string): Promise<SuiteRegistry> {
 	const registry = JSON.parse(await readFile(path, "utf8"));
-	if (!Check(SUITE_REGISTRY_SCHEMA, registry)) throw new Error(`${path} must contain a JSON object`);
+	if (!Check(SUITE_REGISTRY_SCHEMA, registry)) {
+		throw new Error(`${path} must contain only supported Suite registry fields`);
+	}
 	return registry;
 }
 

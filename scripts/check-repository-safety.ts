@@ -4,6 +4,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import ts from "typescript";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { SUITE_REGISTRY_SCHEMA } from "./generate-suite.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);
 const FORBIDDEN_PACKAGE_FILES = new Set(["AGENTS.md", "CONTEXT.md"]);
@@ -125,10 +126,6 @@ const PACKAGE_MANIFEST_SCHEMA = Type.Object(
 		trustedDependencies: Type.Optional(Type.Unknown()),
 		workspaces: Type.Optional(Type.Unknown()),
 	},
-	{ additionalProperties: true },
-);
-const SUITE_MANIFEST_SCHEMA = Type.Object(
-	{ capabilities: Type.Optional(Type.Unknown()) },
 	{ additionalProperties: true },
 );
 const SUITE_SCHEMA_SCHEMA = Type.Object(
@@ -410,7 +407,8 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 
 async function auditSuiteManifest(root: string, path: string): Promise<SafetyFinding[]> {
 	const manifest = JSON.parse(await readFile(join(root, path), "utf8"));
-	if (!Check(SUITE_MANIFEST_SCHEMA, manifest) || !Check(STRING_ARRAY_SCHEMA, manifest.capabilities)) {
+	if (!Check(SUITE_REGISTRY_SCHEMA, manifest)) return [{ path, rule: "suite-manifest-invalid" }];
+	if (!Check(STRING_ARRAY_SCHEMA, manifest.capabilities)) {
 		return [{ path, rule: "suite-capabilities-must-be-string-array" }];
 	}
 	const capabilities = new Set(manifest.capabilities);

@@ -21,6 +21,7 @@ async function createRepository(): Promise<string> {
 		dependencies: { typebox: "1.3.10" },
 	});
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+		$schema: "../../schemas/suite.schema.json",
 		schemaVersion: 2,
 		capabilities: ["conversation-ui", "goal", "subagents", "btw"],
 		tools: [],
@@ -136,6 +137,18 @@ test("rejects unknown Modules and overlapping Tool inventories", async () => {
 		optionalTools: ["read"],
 	});
 	await expect(generateSuite(root, "write")).rejects.toThrow("Suite Tool inventories overlap at read");
+});
+
+test("rejects undeclared Suite registry fields", async () => {
+	const root = await createRepository();
+	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+		schemaVersion: 2,
+		capabilities: [],
+		tools: [],
+		optionalToolz: [],
+	});
+
+	await expect(generateSuite(root, "write")).rejects.toThrow("must contain only supported Suite registry fields");
 });
 
 test("wires Code Mode after ordinary capabilities with the shared Tool registry", async () => {
