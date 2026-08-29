@@ -303,7 +303,10 @@ test("expiring a stale approval rejects it without executing the pending Tool", 
 	controller.beginToolCall("write", { value: 1 });
 
 	expect(ledger.expire(context, 0)).toEqual([controller.executionId]);
-	expect(ledger.history(context)[0]?.status).toBe("rejected");
+	expect(ledger.history(context)[0]).toMatchObject({
+		error: "Code Mode approval expired after the configured age limit",
+		status: "rejected",
+	});
 	expect(ledger.pending(context)).toEqual([]);
 });
 

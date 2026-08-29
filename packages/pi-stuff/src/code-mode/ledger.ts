@@ -402,6 +402,7 @@ export class CodeModeSessionLedger {
 
 	private expireState(scope: SessionScope, state: LedgerSnapshot, now: number, maxAgeMs: number): string[] {
 		const expired: string[] = [];
+		const ageLimit = maxAgeMs === PAUSED_TTL_MS ? "24 hours" : "the configured age limit";
 		for (const execution of state.executions.values()) {
 			if (!["running", "incomplete", "paused"].includes(execution.status) || now - execution.updatedAt < maxAgeMs)
 				continue;
@@ -411,7 +412,7 @@ export class CodeModeSessionLedger {
 				state,
 				execution,
 				paused ? "rejected" : "expired",
-				paused ? "Code Mode approval expired after 24 hours" : "Code Mode execution expired after 24 hours",
+				`${paused ? "Code Mode approval" : "Code Mode execution"} expired after ${ageLimit}`,
 			);
 			expired.push(execution.executionId);
 		}
