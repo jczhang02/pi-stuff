@@ -223,6 +223,11 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 			cancel: true,
 		});
 		expect(state.branchReads).toBe(1);
+		const cancelled = new AbortController();
+		cancelled.abort(new Error("already cancelled"));
+		await expect(
+			requireHandler(handlers, "session_before_compact")({ ...beforeCompact, signal: cancelled.signal }, context),
+		).rejects.toThrow("already cancelled");
 
 		const taggedMessage = assistantMessage("§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		const projectedMessage = assistantMessage("WORKER_INCREMENTAL_INDEX_EVIDENCE");

@@ -345,6 +345,7 @@ class MagicWorkerClient {
 		onUpdate?: AgentToolUpdateCallback<JsonInputValue | undefined>,
 	): Promise<MagicWorkerResultMessage> {
 		if (this.closed) throw new Error("Magic Context worker is closed.");
+		signal?.throwIfAborted();
 		const session = request.context.session.id;
 		const previousContext = session ? this.contexts.get(session) : undefined;
 		if (session) this.contexts.set(session, ctx);
