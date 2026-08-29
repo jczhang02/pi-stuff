@@ -238,3 +238,23 @@ transport, persistence, and continuation question from the small Luna model's ob
 errors; the prompt and success thresholds do not change. The baseline worktree has been installed from its frozen
 lockfile, and the runner now imports both Package entries before creating a benchmark Session so an unloadable arm
 fails before any sample. The output path is `docs/reports/code-mode-image-20260827/benchmark-v4-luna.json`.
+
+## V4 Luna outcome
+
+V4 completed at 2026-08-29T02:31:10.098Z and failed its preregistered overall verdict. The complete,
+content-preserving repository-formatted report is
+`docs/reports/code-mode-image-20260827/benchmark-v4-luna.json`, SHA-256
+`cfd4f754b87ea1537c63439ddbe7cf213d0194f2b6cc8042642e15866d462a2d`. No sample was retried, replaced, excluded,
+or run concurrently.
+
+Both arms produced valid instrumentation, exact image transfer, exactly-once decoder-readable Session persistence,
+and safe new-process resume in all 20 Sessions. The candidate selected nested `view_image` directly in 20/20 versus
+1/20 for the baseline, demonstrating the prompt-steering contribution. Candidate Code Mode errors were 0 versus 16
+for the baseline, demonstrating the complete-envelope compatibility invariant. Candidate Provider Tool definitions
+were 2,135 characters versus 2,177 for the baseline, so standing context decreased by 42 characters.
+
+Luna read 12/20 candidate images and 16/20 baseline images exactly. Candidate understanding and end-to-end success
+therefore missed the unchanged 18/20 behavioral gate even though every candidate Tool-selection, byte-integrity,
+persistence, continuation, instrumentation, and Code Mode error gate passed. Doubling the deterministic point-matrix
+fixture did not improve Luna's exact digit reading, so the result does not support further outcome-driven fixture
+tuning.
