@@ -1,10 +1,10 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 4d774839a575450cc260eda3891363b04ce0be666323af3e38b5a3451417eb23 -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 9d84f96aa920e69a291be5a356d2c95d18a538b0e1d92f3ce22cc8a9d09c1df3 -->
 
 # Tool Display 模块
 
 Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 
-该能力使用原始定义重新注册七个 Pi 0.84.3 内置工具，只替换其渲染位置。工具 Schema、提示词元数据、执行、结果内容、生命周期事件和权限检查保持不变。Pi 0.84.3 的 PowerShell 工具完全由宿主渲染；Pi Stuff 只为重载/恢复成员关系识别其 `powershell` 名称。每个套件负责的工具必须通过 `registerSuiteOwnedTool` 声明 Activity 元数据；未知第三方工具保留原生渲染器并形成显示边界。
+该能力使用原始定义重新注册七个 Pi 0.84.4 内置工具，只替换其渲染位置。工具 Schema、提示词元数据、执行、结果内容、生命周期事件和权限检查保持不变。Pi 0.84.4 的 PowerShell 工具完全由宿主渲染；Pi Stuff 只为重载/恢复成员关系识别其 `powershell` 名称。每个套件负责的工具必须通过 `registerSuiteOwnedTool` 声明 Activity 元数据；未知第三方工具保留原生渲染器并形成显示边界。
 
 `registration.ts` 负责套件工具装饰、Activity 覆盖和历史重放绑定；`index.ts` 负责有序宿主事件投影生命周期；`registration-tracker.ts` 负责工具注册表与活跃界面投影；`envelope-projection.ts` 负责嵌套工具解码和普通协议投影；`group-projection.ts` 负责对话记录分组与结果关联；`activity-presentation.ts` 负责实时行协调，`activity-query-projection.ts` 负责摘要与工具详情，`bash-operation-presentation.ts` 负责 Bash 行；`registered-tool-renderer.ts` 负责行/详情发布；`activity-clock.ts` 负责运行标记。`ToolUiRuntime` 仍是唯一公开实时投影外观。
 

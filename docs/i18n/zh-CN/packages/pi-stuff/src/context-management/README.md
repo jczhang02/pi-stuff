@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: c26e5cc7d01d641a599d66ca68d4edde93e93ab139f6e99f6b153647bbc17312 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 4f5e0b4bea625c5e8481a59cf52242b48632b79df5f38c68e46da16940c05622 -->
 
 # Context Management 模块
 
@@ -20,7 +20,7 @@ Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献
 
 已接受的 `/ctx` 可读性目标记录在 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md)。其 2026-08-17 更新已于 2026-08-18 实现。交付的单列对话框以用量为首，使用 `◆` 小节与语义状态图标，隐藏已知无操作项，并解释 Context 词汇。其操作列表和文本字段保留 Pi 原生 SelectList 与 Input 键盘行为，不拦截只读对话框别名。
 
-套件负责的自定义 Agent 消息使用一个共享传输接缝。该接缝会在宿主冻结第一次请求前等待 Context 激活。Pi 0.84.3 不会为一个空闲 `sendMessage` 轮次发送 `before_agent_start`，因此当此类自定义消息是第一个 Agent 轮次时，普通 Magic `context` 转换只为该次 Provider 请求添加同样的紧凑指引。它不会写入 Pi JSONL，之后普通提示词会恢复到正常系统提示词注入路径。
+套件负责的自定义 Agent 消息使用一个共享传输接缝。该接缝会在宿主冻结第一次请求前等待 Context 激活。Pi 0.84.4 不会为一个空闲 `sendMessage` 轮次发送 `before_agent_start`，因此当此类自定义消息是第一个 Agent 轮次时，普通 Magic `context` 转换只为该次 Provider 请求添加同样的紧凑指引。它不会写入 Pi JSONL，之后普通提示词会恢复到正常系统提示词注入路径。
 
 第一次直接交互/RPC 激活（或显式 Context 投影）时，只有不存在可识别用户或项目配置，才写入保守用户配置；绝不覆盖现有配置。扩展发起的自动轮次只有在官方工厂没有旧版用户/项目配置待迁移时，才可使用现有 CortexKit 用户或项目配置。创建和迁移始终等待直接使用。精确源码与产物来源记录在 [UPSTREAM.md](./UPSTREAM.md)。
 
@@ -37,7 +37,8 @@ Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献
 - 扩展上下文不暴露宿主标识。能力通过 `session_start` 观察到的 `sessionManager` 对象路由；未绑定上下文总是接收 Pi 原生行为，而非进程全局回退。
 - Magic 工厂既不提供中止信号，也不返回处置器。重载会使迟到继续失效，并运行任何暂存关闭处理器；但 Pi Stuff 无法取消卡住的第三方工厂，也无法撤销该处理器注册前已发生的副作用。
 - Pi 公开 token 估算是通用四代码单元启发式，不是模型特定分词器。因此安全关键 Agent 投影使用 UTF-8 字节长度作为与分词器无关的上界，并结合解析后的子模型与回退模型窗口和保守启动预留；精确 Provider 分词仍由 Provider 负责。
-- Pi 0.84.3 还会跳过空闲自定义 `sendMessage` 轮次的轮次前原生压缩阈值检查。如果 Magic 保持休眠或不可用，Context 会读取 Pi 精确当前压缩设置，并且只有同一阈值已超出时，才在传输前运行公开 `ctx.compact` 回调边界。禁用的原生压缩继续禁用。因为公开 API 只暴露手动压缩，该安全预检由 Pi 报告为 `manual`；Goal 会识别进程内预检标记，不安排重复继续。宿主关闭会在其他 Context 工作使用的同一个有界关闭宽限期内等待进行中的预检。
-- Magic 健康时手动 `/compact` 会记录一个扩展负责的 Pi 压缩边界，并带正面的受管历史结果。自动阈值或溢出压缩仍由 Magic 负责，并取消 Pi 原生摘要。Pi 0.84.3 通过原生 `session_compact_failed` 事件报告该取消；Goal 只使用匹配的待处理会话事件，替换它在 `session_before_compact` 暂停的继续。`session_compact` 仍是唯一成功路径。如果 Context 在尝试前已经降级，Pi 原生路径仍可用。如果活跃 Magic 压缩 Hook 本身失败，适配器会取消该尝试、报告失败并保持完整 JSONL，而不是在部分 Magic 尝试后叠加原生摘要。
+- Pi 0.84.4 会在 Tool result 之后、下一次 Assistant 请求之前执行原生阈值检查；Context 不复制这条 Host 路径。
+- Pi 0.84.4 仍会跳过空闲自定义 `sendMessage` 轮次的轮次前原生压缩阈值检查。如果 Magic 保持休眠或不可用，Context 会读取 Pi 精确当前压缩设置，并且只有同一阈值已超出时，才在传输前运行公开 `ctx.compact` 回调边界。禁用的原生压缩继续禁用。因为公开 API 只暴露手动压缩，该安全预检由 Pi 报告为 `manual`；Goal 会识别进程内预检标记，不安排重复继续。宿主关闭会在其他 Context 工作使用的同一个有界关闭宽限期内等待进行中的预检。
+- Magic 健康时手动 `/compact` 会记录一个扩展负责的 Pi 压缩边界，并带正面的受管历史结果。自动阈值或溢出压缩仍由 Magic 负责，并取消 Pi 原生摘要。Pi 0.84.4 通过原生 `session_compact_failed` 事件报告该取消；Goal 只使用匹配的待处理会话事件，替换它在 `session_before_compact` 暂停的继续。`session_compact` 仍是唯一成功路径。如果 Context 在尝试前已经降级，Pi 原生路径仍可用。如果活跃 Magic 压缩 Hook 本身失败，适配器会取消该尝试、报告失败并保持完整 JSONL，而不是在部分 Magic 尝试后叠加原生摘要。
 - 官方引擎负责其持久消息索引。Context 激活会精确重放一次捕获的 `session_start`，使全新与恢复会话进入该索引生命周期。可识别且无需迁移的配置会在编辑器就绪前完成；休眠或降级重试则在替换运行时提交前事务式完成。
 - 真实 Pi 验收会观察最终 Provider 请求，要求紧凑约定，拒绝上游冗长指引，并把直接模式系统提示词限制在 8,000 字符。这样可捕获依赖升级造成的提示词回归，而不把适配器耦合到私有引擎辅助函数。

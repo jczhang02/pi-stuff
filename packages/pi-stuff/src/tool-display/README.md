@@ -2,9 +2,9 @@
 
 Compact, presentation-only Tool UI for the Pi Stuff Suite.
 
-The Capability re-registers seven Pi 0.84.3 built-in Tools with their original definitions and replaces only their
+The Capability re-registers seven Pi 0.84.4 built-in Tools with their original definitions and replaces only their
 render slots. Tool schemas, prompt metadata, execution, result content, lifecycle events, and permission checks stay
-unchanged. Pi 0.84.3's PowerShell Tool remains entirely Host-rendered; Pi Stuff recognizes its `powershell` name only
+unchanged. Pi 0.84.4's PowerShell Tool remains entirely Host-rendered; Pi Stuff recognizes its `powershell` name only
 for reload/resume membership. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`;
 unknown third-party Tools keep their native renderer and form a display boundary.
 `registration.ts` owns Suite Tool decoration, Activity coverage, and historical replay binding;

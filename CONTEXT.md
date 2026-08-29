@@ -70,6 +70,12 @@ model-context Custom Message, or a new Logical Thinking Run after Tool activity.
 Thinking Run, hidden state, and branch or compaction metadata do not create another boundary.
 _Avoid_: Assistant message boundary, API turn, physical terminal row
 
+**Agent Work Duration**:
+The wall-clock duration of one user-started Agent work cycle minus intervals when Pi is waiting for a UI prompt
+response. Notification compares this value with its configured minimum-duration threshold; Goal active elapsed time
+and Host lifecycle timing remain unchanged.
+_Avoid_: Prompt-inclusive run duration, Goal elapsed time, model latency
+
 **Tool Activity**:
 A display-only unit representing either one independent Tool invocation or one Retrieval Group. Its projection does
 not merge or alter the underlying protocol events, ordering, or Session history.

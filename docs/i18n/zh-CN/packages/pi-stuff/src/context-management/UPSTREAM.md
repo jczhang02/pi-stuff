@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: d94d118426e7698b16c67763fbb75a6aea572d9f7b843a4362b27f3568861dad -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: a4706e88ae53ce9be53773ff500f976ca6fc5c12b077122241e680c562f360f7 -->
 
 # 捆绑上下文引擎来源
 
@@ -27,7 +27,7 @@ Pi Stuff 通过本适配器集成官方 Magic Context 软件包，不内嵌 Magi
 - 证据：在已验证独立 Pi 宿主下直接调用 `preloadTokenizer()`，当宿主从无关用户项目运行时会从 `false` 变为 `true`；长异常图像 PTY 用例保持响应；真实上下文 PTY 门槛拒绝原始 `[magic-context]` 输出。
 - 删除触发条件：只有某个精确官方 Magic Context 产物通过相同的全新安装、首次输入、异常图像和真实宿主检查后，才替换该补丁。
 
-软件包声明 Pi Peer 为 `^0.80.2`，不包括套件已验证的 Pi 0.84.3 宿主。因此 Pi Stuff 不从 Peer 范围推断兼容性：其真实宿主 PTY 门槛会针对固定 Pi 0.84.3 源码配置单独验证该精确产物。
+软件包声明 Pi Peer 为 `^0.80.2`，不包括套件已验证的 Pi 0.84.4 宿主。因此 Pi Stuff 不从 Peer 范围推断兼容性：其真实宿主 PTY 门槛会针对固定 Pi 0.84.4 源码配置单独验证该精确产物。
 
 ## Pi Stuff 适配器政策
 

@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 509ee4d11bf40c53ea021f082b2f6b2feec76a9ebf43b027865a6d43e477aac2 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: a48c816b1f5aa8e14582b953b9bf7254950340f81a6e70845a864913bbed7f88 -->
 
 # Pi Stuff
 
@@ -70,6 +70,11 @@ _避免使用_：Thinking row、terminal line、provider content index
 或 Tool activity 之后的新 Logical Thinking Run。当前 Logical Thinking Run 内的更新、隐藏状态、branch 或
 compaction 元数据都不会产生新边界。
 _避免使用_：Assistant message boundary、API turn、physical terminal row
+
+**Agent Work Duration**：
+一次用户启动的 Agent 工作周期的墙钟时长，减去 Pi 等待 UI prompt 响应的区间。Notification 用它比较所配置的
+最短时长阈值；Goal 的活跃 elapsed time 与 Host 生命周期计时不变。
+_避免使用_：包含 prompt 等待的运行时长、Goal elapsed time、model latency
 
 **Tool Activity**：
 只用于显示的单元，代表一次独立 Tool invocation 或一个 Retrieval Group。它的 projection 不合并或改变底层

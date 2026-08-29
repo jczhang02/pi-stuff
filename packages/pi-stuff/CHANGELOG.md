@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Certify the Suite against the official Pi 0.84.4 Linux x64 Host while retaining Bun 1.4.0 for repository tooling and
+  verifying the Host executable's embedded Bun 1.3.14 runtime banner. Use Pi's public image MIME detector for Codex-generated
+  JPEG, PNG, GIF, WebP, and BMP media, exclude interactive UI prompt waits from Notification Agent Work Duration, and
+  add real-Host coverage for queue clearing, Tool-phase message ordering, and post-Tool Goal compaction continuation.
 - Patch Magic Context 0.40.0's packaged tokenizer path to search its own Bun module ancestry, preload before the first
   turn, and avoid BPE work over image payloads used only for hashing. This restores exact token counts without input
   stalls or raw `[magic-context]` fallback warnings in the Pi editor. Add real-Host PTY regression coverage and remove

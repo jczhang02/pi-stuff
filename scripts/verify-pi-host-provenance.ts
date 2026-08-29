@@ -3,6 +3,9 @@ import { constants } from "node:fs";
 import { chmod, cp, mkdtemp, open, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import {
+	CERTIFIED_PI_BUN_RUNTIME_MARKER,
+	CERTIFIED_PI_BUN_RUNTIME_MARKER_OFFSET,
+	CERTIFIED_PI_BUN_VERSION,
 	CERTIFIED_PI_HOST_PROFILE,
 	CERTIFIED_PI_RELEASE_BINARY_SHA256,
 	CERTIFIED_PI_RELEASE_BINARY_SIZE,
@@ -33,6 +36,17 @@ async function readCertifiedPiHost(piBinary: string): Promise<Uint8Array> {
 			const metadata = await file.stat();
 			if (!metadata.isFile()) throw new Error("PI_BIN must be a regular file");
 			if (metadata.size !== CERTIFIED_PI_RELEASE_BINARY_SIZE) throw uncertifiedHostError();
+			const expectedBunMarker = Buffer.from(CERTIFIED_PI_BUN_RUNTIME_MARKER);
+			const actualBunMarker = Buffer.alloc(expectedBunMarker.length);
+			const { bytesRead } = await file.read(
+				actualBunMarker,
+				0,
+				actualBunMarker.length,
+				CERTIFIED_PI_BUN_RUNTIME_MARKER_OFFSET,
+			);
+			if (bytesRead !== expectedBunMarker.length || !actualBunMarker.equals(expectedBunMarker)) {
+				throw new Error(`PI_BIN does not embed certified Bun ${CERTIFIED_PI_BUN_VERSION}`);
+			}
 			bytes = await file.readFile();
 		} finally {
 			await file.close();

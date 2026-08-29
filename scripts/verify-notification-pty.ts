@@ -214,10 +214,12 @@ async function createNotificationSession(
 	rawLog: string,
 	columns: number,
 	rows: number,
+	minimumDurationMs = 0,
 ): Promise<NotificationPtySession> {
 	const agentDirectory = join(temporaryDirectory, "agent");
 	const projectDirectory = join(temporaryDirectory, "project");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
+	await mkdir(temporaryDirectory, { recursive: true });
 	await Promise.all([
 		mkdir(agentDirectory, { recursive: true }),
 		mkdir(projectDirectory, { recursive: true }),
@@ -241,7 +243,7 @@ async function createNotificationSession(
 					enabled: true,
 					failureAlerts: true,
 					gracePeriodMs: GRACE_MS,
-					minimumDurationMs: 0,
+					minimumDurationMs,
 					responsePreview: true,
 					schemaVersion: 2,
 					terminalBell: false,
@@ -272,6 +274,33 @@ async function createNotificationSession(
 		},
 		rawLog,
 	);
+}
+
+async function verifyPromptWaitIsExcluded(
+	options: NotificationPtyVerificationOptions,
+	temporaryDirectory: string,
+	columns: number,
+	rows: number,
+): Promise<void> {
+	const rawLog = join(temporaryDirectory, "terminal.raw");
+	const session = await createNotificationSession(options, temporaryDirectory, rawLog, columns, rows, 2_000);
+	try {
+		await session.start(columns, rows);
+		await session.waitForText("notification-pty-model");
+		await session.sendPrompt("NOTIFY_PROMPT_WAIT");
+		await session.waitForText("Fixture prompt");
+		await delay(2_500);
+		session.sendKey("Enter");
+		await session.waitForText("NOTIFICATION_PROMPT_DONE");
+		await delay(GRACE_MS + 500);
+		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 0) {
+			fail("UI prompt wait counted toward the minimum Agent Work Duration");
+		}
+		session.sendKey("C-d");
+		await session.waitForExit();
+	} finally {
+		session.stop();
+	}
 }
 
 async function verifyNotificationFlow(
@@ -362,12 +391,15 @@ async function verifyNotificationFlow(
 
 export async function verifyNotificationPty(options: NotificationPtyVerificationOptions): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-notification-pty-"));
-	const rawLog = join(temporaryDirectory, "terminal.raw");
+	const standardDirectory = join(temporaryDirectory, "standard");
+	const rawLog = join(standardDirectory, "terminal.raw");
 	const columns = options.columns ?? 64;
 	const rows = options.rows ?? 28;
-	const session = await createNotificationSession(options, temporaryDirectory, rawLog, columns, rows);
+	const session = await createNotificationSession(options, standardDirectory, rawLog, columns, rows);
 	try {
 		await verifyNotificationFlow(session, rawLog, columns, rows);
+		session.stop();
+		await verifyPromptWaitIsExcluded(options, join(temporaryDirectory, "prompt-wait"), columns, rows);
 	} finally {
 		session.stop();
 		await rm(temporaryDirectory, { force: true, recursive: true });

@@ -1,4 +1,4 @@
-<!-- translation-source: README.md; translation-source-sha256: 02334a25996fcccbd3e760a4476c6d82b1eaa1b11dadffa160c6e030fbf5da21 -->
+<!-- translation-source: README.md; translation-source-sha256: b50b69351f648adb62a4d8a05716d047d23472aeb632bc85400263e0fc040523 -->
 
 <div align="center">
 
@@ -51,7 +51,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
 - **当前会话内的并行工作**——Background Shell、一次性 Monitor，以及前台或后台 Agent 都可检查、可控制，
   但不会演变成第二套调度器或运行时。
 - **不打扰主对话的临时问题**——`/btw` 在主对话之外回答一个专注问题，关闭后恢复原来的编辑器草稿。
-- **工作完成提醒**——仅当用户发起的 Agent 工作真正 settled 后发送终端原生提醒，并在短暂宽限期内因用户活动自动取消。
+- **工作完成提醒**——仅当用户发起的 Agent 工作真正 settled，且扣除 Pi UI 提示等待后的 Agent Work Duration
+  达到配置阈值时，才发送终端原生提醒。
 - **有界集成**——已配置的 Context 会在编辑器就绪前完成初始化；未配置的 Context、Web、MCP、RTK、Codex
   控制和可选 Code Mode 只在需要时激活，并在不可用时安全降级。
 
@@ -59,7 +60,7 @@ Pi Stuff 是一个私有、本地使用的 Package，不发布到 npm；其中�
 
 ## 快速开始
 
-要走已认证路径，请使用基于上游提交 `4e58f324fae8ebfa98a3d45181fb248072a2afac` 构建的 Pi `0.84.3` Linux x64
+要走已认证路径，请使用基于上游提交 `b79e4cc834970cca69daebffab7df1da7d1e52c4` 构建的 Pi `0.84.4` Linux x64
 Host。只有相同版本号并不足以证明已经认证。
 
 ```bash
@@ -95,6 +96,9 @@ Pi 启动后，可以从这些命令开始：
 attention BEL：开启后会保留受支持的系统通知并额外发送 BEL；若 `auto` 无法识别视觉通知协议，则退化为仅发送
 BEL。关闭后会保留受支持的系统通知并禁止所有 BEL，包括显式 `bell` delivery。Pi Stuff 不会修改用户拥有的 tmux
 设置，标记样式和切回后的清除仍由 tmux 管理。
+
+这项通知 passthrough 设置不会启用或认证 tmux 内的行内图像渲染。图像显示仍取决于 Pi Host、终端协议和
+multiplexer 能力。
 
 通知的 `auto` 方式会为 Kitty 选择 OSC 99、为 Ghostty 选择 OSC 777，并为 iTerm2 和 WezTerm 选择 OSC 9。
 响应预览默认关闭，因为桌面通知历史可能在 Pi 之外可见。在 tmux 之外，可选的 terminal bell 设置会额外发送
@@ -140,7 +144,7 @@ Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite �
 | `subagents` | 前台与后台 Agent、紧凑 roster，以及 `/agents` 检查界面 |
 | `todo` | 可按分支重放的 Task Tool，以及 Pi 编辑器上方的有界清单 |
 | `btw` | 不进入主对话记录和模型上下文的一次性临时问题 |
-| `notification` | 用户发起的 Agent 工作 settled 后，延迟发送终端原生完成或失败提醒 |
+| `notification` | 用户发起的 Agent 工作 settled，且扣除 prompt 等待后的 Agent Work Duration 达到阈值时，延迟发送终端原生提醒 |
 | `code-mode` | 可选 JavaScript 封装，通过 `codemode` 和 `tool_search` 暴露当前 Suite Tool |
 
 这些名称只是内部维护边界，没有各自独立的 manifest、版本、安装或发布生命周期。
@@ -179,7 +183,7 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 
 | 契约 | 已认证配置 |
 | --- | --- |
-| Pi Host | `0.84.3`，上游提交 `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
+| Pi Host | `0.84.4`，上游提交 `b79e4cc834970cca69daebffab7df1da7d1e52c4` |
 | Pi Host 二进制 | 已审核的上游 Linux x64 Release SHA-256 |
 | 平台 | Linux x64；CI 系统工具基线为 Ubuntu 24.04 |
 | Pi Host 内嵌 Bun runtime | `1.3.14` |

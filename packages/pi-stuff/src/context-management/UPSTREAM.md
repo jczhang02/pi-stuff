@@ -37,9 +37,9 @@ does not alter upstream source or persist a derived artifact.
   first-input, malformed-image, and real-Host checks.
 
 The Package declares Pi peers `^0.80.2`, which does not include the Suite's
-certified Pi 0.84.3 Host. Pi Stuff therefore does not infer compatibility from
+certified Pi 0.84.4 Host. Pi Stuff therefore does not infer compatibility from
 the peer range: its real-Host PTY gate separately certifies this exact artifact
-against the pinned Pi 0.84.3 source profile.
+against the pinned Pi 0.84.4 source profile.
 
 ## Pi Stuff adapter policy
 

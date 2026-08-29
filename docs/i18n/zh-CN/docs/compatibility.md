@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: e841afdc3254566c0bf65e3689ab95ebee2c6fc02e841d5bc23759f7f956e549 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 4509ef24ff9e3e4131b4d83b50671f1162f56bf4e0f635014e0439060a21c883 -->
 
 # 兼容性
 
@@ -6,11 +6,13 @@
 
 | 契约 | 已认证版本 |
 | --- | --- |
-| Pi standalone Host | `0.84.3`，上游 `4e58f324fae8ebfa98a3d45181fb248072a2afac`，Linux x64 |
-| Pi Release archive | SHA-256 `6f8bb67c21bc6b8a8a106d354f56d7fd4a190a3cd8ad3a32db45f6d281a5d008` |
-| Pi Release executable | SHA-256 `ca858fde375ab91531353b22fac6ebdf29c0a153efe754f5f9b8a72a7423ed08`，104,487,040 bytes |
+| Pi standalone Host | `0.84.4`，上游 `b79e4cc834970cca69daebffab7df1da7d1e52c4`，Linux x64 |
+| Pi Release archive | SHA-256 `c2f3c3e6a1850bd87654cc3ca8811013272397c3d042a4e2a64c43ee1b423972` |
+| Pi Release executable | SHA-256 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`，104,511,616 bytes |
 | Pi Host 内嵌 Bun runtime | 1.3.14 |
 | 仓库 Bun 工具链 | 1.4.0 |
+| Pi Stuff Package | 0.3.3 |
+| 仓库开发 Package | 0.0.0 |
 | 系统工具基线 | Ubuntu 24.04，包含 Bash、curl、tar、gzip 和标准 Unix 工具；不含 `pwsh` |
 | PTY 验证工具 | Ubuntu 24.04 的 Expect 与 tmux package |
 | TypeScript checker | 5.9.3 |
@@ -18,7 +20,7 @@
 | RTK Release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK Release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-认证的上游 Host 是由上述提交构建、并报告 `0.84.3` 的 `v0.84.3` Linux x64 Release。每条验收路径都会先
+认证的上游 Host 是由上述提交构建、并报告 `0.84.4` 的 `v0.84.4` Linux x64 Release。每条验收路径都会先
 哈希可执行文件并拒绝不在已审核 allowlist 中的文件，再覆盖完整 Suite 契约，包括公开
 `registerMarkdownTransformer()`、常规与 fullscreen UI 行为，以及保留空格的原生设置搜索。可执行文件身份由
 精确二进制哈希确定，而不是可复用的版本字符串。Pi Stuff 不重建或分发 Pi Host。
@@ -31,9 +33,9 @@ benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 
 Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍须完整认证。每周
 另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
 
-认证执行配置包含两个职责分离的 Bun 版本。已审核 standalone Host 内嵌 Bun 1.3.14，并通过精确二进制哈希保持
-该身份。仓库脚本、CI 测试及通过 PATH 解析 Bun 的 Suite subprocess helper 使用 1.4.0。升级仓库工具链不会
-重新标记 Host 产物的内嵌 runtime。
+认证执行配置包含两个职责分离的 Bun 版本。已审核 standalone Host 内嵌 Bun 1.3.14；provenance 会先在已审核
+字节偏移处检查精确 runtime banner，再对完整可执行文件计算哈希。仓库脚本、CI 测试及通过 PATH 解析 Bun 的
+Suite subprocess helper 使用 1.4.0。升级仓库工具链不会重新标记 Host 产物的内嵌 runtime。
 
 Bun 依赖升级必须由维护者明确执行，因为冻结 Bun lockfile、精确仓库工具链、`@types/bun`、CI 和可执行文档
 必须协调移动。Host Bun 版本只随新的精确 Release 产物和重新认证而改变。Dependabot 仅覆盖固定版本的 GitHub
@@ -44,12 +46,25 @@ Actions；它不会创建遗漏或绕过仓库 Bun lockfile 的 npm pull request
 随后断网运行验收。archive 在解压前检查哈希，可执行文件在使用前再次检查。升级 Pi 必须一起审查并更新这些
 常量；本仓库不声称能复现上游编译过程。
 
-Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。开发依赖固定到已发布的 `0.84.3` 类型
+Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。开发依赖固定到已发布的 `0.84.4` 类型
 接口。版本敏感验证脚本读取共享的认证 Host 契约，不维护各自的 Pi 版本常量。PowerShell 会作为 Pi 内置 Tool
 参与生命周期、MCP 名称冲突和 Child Agent 可用性策略，但认证 Linux 基线不包含 `pwsh`，因此不声明
-PowerShell 执行或 Windows 行为。真实 RPC Provider fixture 按 Pi 0.84.3 RPC 序列化契约的要求，在
-`toolcall_start.partial` 中填充每个 Tool call。Pi 0.84.3 也拥有实时 compaction replay：它验证持久化边界，
-通过 `buildContextEntries()` 重建，并只渲染一次摘要。Suite 不拦截该 SessionManager 调用。
+PowerShell 执行或 Windows 行为。真实 RPC Provider fixture 按 Pi 0.84.4 RPC 序列化契约的要求，在
+`toolcall_start.partial` 中填充每个 Tool call。Pi 0.84.4 还拥有实时 compaction replay，以及 Tool result 与下一次
+Assistant 请求之间的原生阈值检查：它验证持久化边界，通过 `buildContextEntries()` 重建，并只渲染一次摘要。
+Suite 不拦截这两条 Host 路径。打包验收证明，大型 Tool result 会触发一次原生阈值压缩，而活跃 Goal 只安排一次
+continuation。
+
+Pi 0.84.4 负责 RPC `clear_queue`、终端设置、非触发 Custom Message 排序、Session 与 Provider。Pi Stuff 不包装或
+遮蔽这些契约。`clear_queue` 会返回移除的队列，但不发出 Extension event，所以 Conversation UI 无法同步修剪其
+观察性归属镜像。下一次无法判定的 user/automatic 混合投递会清空该镜像并 fail closed 为 automatic；真实 RPC
+验收覆盖了这个缺口。Host 也会把 Tool 执行期间排入的 `sendMessage({ triggerTurn: false })` 内容推迟到该轮所有
+Tool result 持久化之后。
+
+Codex 生成图像的内联使用 Pi 0.84.4 公开 `detectSupportedImageMimeTypeFromFile()` 接缝，从文件字节识别 JPEG、
+PNG、GIF、WebP 与 BMP。原有最多四张、每张 25 MiB、仅普通文件和 best-effort 文本回退限制保持不变。内联图像
+结果认证的是模型可见媒体和 Host 渲染行为，并不证明 tmux 内能显示图像；实际显示仍取决于 Host、终端协议与
+multiplexer passthrough。Pi Stuff 不改终端设置，也不声称 tmux 自身能够渲染这些图像。
 
 Pi 0.84 会为独立加载的 Extension 提供不同的 `ExtensionAPI.events` facade 对象，但它们位于同一个 Host event
 bus 上。因此 Suite-wide registry 使用同步 event-bus discovery handoff，只把以 facade 为键的 WeakMap 当作本地

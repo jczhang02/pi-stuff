@@ -87,7 +87,7 @@ Its 2026-08-17 update was implemented on 2026-08-18. The shipped single-column D
 and text fields keep Pi's native SelectList and Input keyboard behavior rather than intercepting the read-only Dialog
 aliases.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits
-for Context activation before the Host freezes the first request. Pi 0.84.3
+for Context activation before the Host freezes the first request. Pi 0.84.4
 does not emit `before_agent_start` for an idle `sendMessage` turn, so when such a
 custom message is the first Agent turn, the normal Magic `context` transform
 adds the same compact guidance to that provider request only. It is not written
@@ -136,7 +136,9 @@ This boundary deliberately works within Pi's extension interface:
   UTF-8 byte length as a tokenizer-independent upper bound, together with the
   resolved child and fallback model windows and conservative launch reserves;
   exact provider tokenization remains the provider's responsibility.
-- Pi 0.84.3 also skips its pre-turn native compaction threshold check for an
+- Pi 0.84.4 performs its native threshold check after Tool results and before
+  the next Assistant request. Context does not duplicate that Host path.
+- Pi 0.84.4 still skips its pre-turn native compaction threshold check for an
   idle custom `sendMessage` turn. If Magic remains dormant or unavailable,
   Context reads Pi's exact current compaction settings and runs the public
   `ctx.compact` callback boundary before delivery only when the same threshold
@@ -148,7 +150,7 @@ This boundary deliberately works within Pi's extension interface:
 - A manual `/compact` while Magic is healthy records one extension-owned Pi
   compaction boundary with a positive managed-history result. Automatic
   threshold or overflow compaction remains owned by Magic and cancels Pi's
-  native summary. Pi 0.84.3 reports that cancellation through its native
+  native summary. Pi 0.84.4 reports that cancellation through its native
   `session_compact_failed` event; Goal uses a matching pending Session event
   only to replace the continuation it suspended at `session_before_compact`.
   `session_compact` remains the sole success path. If Context is already

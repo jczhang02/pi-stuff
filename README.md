@@ -47,8 +47,8 @@ The result is a denser, quieter coding workflow:
   inspectable without becoming a second scheduler or runtime.
 - **Side questions without transcript noise** — `/btw` answers a focused question outside the main conversation and
   restores the original editor draft when closed.
-- **Settled-work attention** — terminal-native alerts arrive only after user-started Agent work genuinely settles,
-  with a short activity-cancellation grace period.
+- **Settled-work attention** — terminal-native alerts arrive only after user-started Agent work genuinely settles and
+  its Agent Work Duration crosses the configured threshold, excluding time spent waiting for a Pi UI prompt.
 - **Bounded integrations** — configured Context initializes before editor readiness; unconfigured Context, Web, MCP,
   RTK, Codex controls, and optional Code Mode activate only when needed and fail safely when unavailable.
 
@@ -57,8 +57,8 @@ not independently installable products.
 
 ## Quick start
 
-For the certified path, use the Pi `0.84.3` Linux x64 Host built from upstream
-`4e58f324fae8ebfa98a3d45181fb248072a2afac`. A matching version string alone does not establish certification.
+For the certified path, use the Pi `0.84.4` Linux x64 Host built from upstream
+`b79e4cc834970cca69daebffab7df1da7d1e52c4`. A matching version string alone does not establish certification.
 
 ```bash
 git clone https://github.com/jczhang02/pi-stuff.git
@@ -94,6 +94,9 @@ protocols for tmux, and `Tmux notification` exclusively controls attention BELs.
 replacing a supported system notification, or falls back to BEL when `auto` cannot identify a visual protocol. Turning
 it off preserves supported system notifications and suppresses BEL, including explicit `bell` delivery. Pi Stuff does
 not mutate user-owned tmux settings.
+
+This notification passthrough setting does not enable or certify inline image rendering inside tmux. Image display
+remains a Pi Host, terminal-protocol, and multiplexer-capability concern.
 
 Notification `auto` delivery selects Kitty OSC 99, Ghostty OSC 777, or OSC 9 for iTerm2 and WezTerm. Response previews
 are off by default because desktop notification history may be visible outside Pi. Outside tmux, the optional
@@ -139,7 +142,7 @@ The ordered Suite currently contains:
 | `subagents` | Foreground and background Agents, a compact roster, and `/agents` inspection |
 | `todo` | Branch-replayable Task Tools and a bounded checklist above Pi's editor |
 | `btw` | One-shot side questions that do not enter the main transcript or model context |
-| `notification` | Delayed terminal-native completion and failure alerts for settled user-started Agent work |
+| `notification` | Delayed terminal-native alerts for settled user-started Agent work that crosses its prompt-excluding Agent Work Duration threshold |
 | `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through `codemode` and `tool_search` |
 
 These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication
@@ -181,7 +184,7 @@ the user's theme choice.
 
 | Contract | Certified profile |
 | --- | --- |
-| Pi Host | `0.84.3`, upstream `4e58f324fae8ebfa98a3d45181fb248072a2afac` |
+| Pi Host | `0.84.4`, upstream `b79e4cc834970cca69daebffab7df1da7d1e52c4` |
 | Pi Host binary | Audited upstream Linux x64 release SHA-256 |
 | Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
 | Pi Host embedded Bun runtime | `1.3.14` |

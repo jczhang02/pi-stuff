@@ -26,4 +26,10 @@ The current certified native-helper target is Linux x64.
 - `imagegen` generates or edits images with `gpt-image-2` and saves results under `.pi/openai-codex-images/`.
 
 All three Tools use the shared Pi Stuff Tool lifecycle renderer. Image Tools retain inline terminal media as a result
-body below the shared lifecycle row.
+body below the shared lifecycle row. For `imagegen`, Pi Stuff keeps the native structured result and textual generated
+path, then best-effort inlines at most four readable regular files no larger than 25 MiB each. Pi 0.84.4's public
+`detectSupportedImageMimeTypeFromFile()` identifies JPEG, PNG, GIF, WebP, and BMP from file bytes; unsupported,
+missing, oversized, or unreadable files keep the text result without mislabeled media.
+
+This media result does not by itself certify image display through tmux. Rendering remains owned by Pi and the active
+terminal protocol, including any multiplexer passthrough requirements; Codex does not change terminal settings.

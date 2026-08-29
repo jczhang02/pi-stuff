@@ -15,6 +15,7 @@ import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
 import { verifyGoalPty } from "./verify-goal-pty.ts";
 import { verifyMcpPty } from "./verify-mcp-pty.ts";
 import { verifyNotificationPty } from "./verify-notification-pty.ts";
+import { verifyPi0844HostSeams } from "./verify-pi-0844-host-seams.ts";
 import { stageCertifiedPiHost } from "./verify-pi-host-provenance.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
@@ -392,6 +393,7 @@ async function verifyRealPi(piBinary: string, packagePath: string): Promise<void
 	await verifyRtkPty({ piBinary, packagePath });
 	await verifyMcpPty({ piBinary, packagePath, columns: 64, rows: 28 });
 	await verifyNotificationPty({ piBinary, packagePath, columns: 64, rows: 28 });
+	await verifyPi0844HostSeams({ piBinary, packagePath });
 	await verifyToolsPty({ piBinary, packagePath, columns: 64, rows: 28 });
 	await verifyToolsResumePty({ piBinary, packagePath });
 	await verifyWorkMonitorMatrix({ piBinary, packagePath });

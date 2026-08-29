@@ -37,6 +37,9 @@ interface ActiveWorkCycle {
 	readonly generation: number;
 	readonly includesUserWork: boolean;
 	readonly latestAssistant?: FinalAssistantOutcome;
+	readonly promptDepth: number;
+	readonly promptStartedAt: number | null;
+	readonly promptWaitMs: number;
 	readonly startedAt: number;
 }
 
@@ -57,6 +60,8 @@ export type WorkCycleEvent =
 	| { readonly type: "user_work" }
 	| ({ readonly type: "assistant_finalized" } & FinalAssistantOutcome)
 	| { readonly now: number; readonly type: "agent_settled" }
+	| { readonly now: number; readonly type: "ui_prompt_start" }
+	| { readonly now: number; readonly type: "ui_prompt_end" }
 	| { readonly type: "input" }
 	| { readonly type: "terminal_input" }
 	| { readonly type: "clear" };
@@ -67,6 +72,8 @@ export type NotificationRuntimeEvent =
 	| { readonly type: "user_work" }
 	| ({ readonly type: "assistant_finalized" } & FinalAssistantOutcome)
 	| { readonly type: "agent_settled" }
+	| { readonly type: "ui_prompt_start" }
+	| { readonly type: "ui_prompt_end" }
 	| { readonly type: "input" }
 	| { readonly type: "terminal_input" };
 
@@ -85,6 +92,9 @@ export function reduceWorkCycle(state: WorkCycleState, event: WorkCycleEvent): W
 			return {
 				generation: state.generation + 1,
 				includesUserWork: false,
+				promptDepth: 0,
+				promptStartedAt: null,
+				promptWaitMs: 0,
 				startedAt: event.now,
 				status: "running",
 			};
@@ -93,6 +103,9 @@ export function reduceWorkCycle(state: WorkCycleState, event: WorkCycleEvent): W
 			const running = {
 				generation: state.generation + 1,
 				includesUserWork: state.includesUserWork,
+				promptDepth: state.promptDepth,
+				promptStartedAt: state.promptStartedAt,
+				promptWaitMs: state.promptWaitMs,
 				startedAt: state.startedAt,
 				status: "running" as const,
 			};
@@ -103,6 +116,23 @@ export function reduceWorkCycle(state: WorkCycleState, event: WorkCycleEvent): W
 	}
 	if (state.status === "idle" || event.type === "agent_end") return state;
 	if (event.type === "user_work") return { ...state, includesUserWork: true };
+	if (event.type === "ui_prompt_start") {
+		if (state.status !== "running") return state;
+		return state.promptDepth === 0
+			? { ...state, promptDepth: 1, promptStartedAt: event.now }
+			: { ...state, promptDepth: state.promptDepth + 1 };
+	}
+	if (event.type === "ui_prompt_end") {
+		if (state.promptDepth === 0 || state.promptStartedAt === null) return state;
+		return state.promptDepth > 1
+			? { ...state, promptDepth: state.promptDepth - 1 }
+			: {
+					...state,
+					promptDepth: 0,
+					promptStartedAt: null,
+					promptWaitMs: state.promptWaitMs + Math.max(0, event.now - state.promptStartedAt),
+				};
+	}
 	if (event.type === "assistant_finalized") {
 		const latestAssistant = {};
 		if (event.errorMessage !== undefined) Object.assign(latestAssistant, { errorMessage: event.errorMessage });
@@ -114,7 +144,9 @@ export function reduceWorkCycle(state: WorkCycleState, event: WorkCycleEvent): W
 		};
 	}
 	if (event.type === "agent_settled") {
-		return state.status === "running" ? { ...state, settledAt: event.now, status: "pending" } : state;
+		if (state.status !== "running") return state;
+		const promptWaitMs = state.promptWaitMs + Math.max(0, event.now - (state.promptStartedAt ?? event.now));
+		return { ...state, promptDepth: 0, promptStartedAt: null, promptWaitMs, settledAt: event.now, status: "pending" };
 	}
 	if ((event.type === "input" || event.type === "terminal_input") && state.status === "pending") {
 		return idleAfter(state);
@@ -156,7 +188,10 @@ export class NotificationRuntime {
 		const previous = this.state;
 		this.state = reduceWorkCycle(
 			previous,
-			event.type === "agent_start" || event.type === "agent_settled"
+			event.type === "agent_start" ||
+				event.type === "agent_settled" ||
+				event.type === "ui_prompt_start" ||
+				event.type === "ui_prompt_end"
 				? { now: this.clock.now(), type: event.type }
 				: event,
 		);
@@ -193,7 +228,7 @@ export class NotificationRuntime {
 			const settled = this.state;
 			this.state = reduceWorkCycle(this.state, { type: "clear" });
 			const settings = this.getSettings();
-			const elapsedMs = Math.max(0, settled.settledAt - settled.startedAt);
+			const elapsedMs = Math.max(0, settled.settledAt - settled.startedAt - settled.promptWaitMs);
 			const outcome = classifyOutcome(settled.latestAssistant);
 			if (
 				!settings.enabled ||

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: d07a6f6b91083021eee78e92b9548e0a36e48cc0746ae9484c230bc6d904d08b -->
+<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 759bca93a02056c2555777962cc54a69d295018afbc0f820b5ef021df1081f80 -->
 
 # `@jczhang02/pi-stuff`
 
@@ -8,7 +8,7 @@
 
 - 通过 Pi 原生 Package 系统加载，并导出一个默认 Extension factory。
 - 按一个明确顺序安装 `suite.json` 中列出的内部 Module。
-- 面向仓库记录的已认证 Pi 0.84.3 Host profile。
+- 面向仓库记录的已认证 Pi 0.84.4 Host profile。
 - 必要 Module 无法初始化时立即失败。
 - import 期间不联网、不写文件、不启动 subprocess，也不修改 Host 设置。
 - 仅私有、本地使用；没有 npm 发布契约。

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 729d1e22c13d264d352d04c8e7fcd879399ba45407c69975716fbef973138364 -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 820a3ce913dda4a9847663f9959d45d147a5ef1cb3fe6e748f343d58dfb318be -->
 
 # Goal 模块
 
@@ -22,7 +22,7 @@ Goal 能力在当前 Pi 会话中保持一个目标活跃，直到模型用 `goa
 
 普通使用默认无限自动继续。不可禁用的紧急后备限制只在 10,000 次自动模型响应后暂停，即使面向用户的限制为 Unlimited，也能避免灾难性失控。无进展启发式默认关闭：阶段边界、普通工具失败、压缩和短响应都不能结束 Goal。用户可以在 Goal 设置中选择较低限制。Provider 报告用量和可选 token 预算仍是权威。
 
-Goal 状态追加到 Pi 会话 JSONL，并在重载、恢复和压缩时还原。重载会从新的受保护继续中自动恢复活跃且空闲的 Goal；新会话不继承其他会话的 Goal。显式清除还会在共享设置锁和原子替换下，删除该项目过时的会话前状态。无效旧版 JSON 保持不变并报告，而不是丢弃。Magic Context 或其他扩展取消 Pi 原生压缩时，Pi 0.84.3 会发送 `session_compact_failed`。Goal 只针对它在 `session_before_compact` 观察到的匹配压缩接受该原生失败，再恰好一次替换过期继续。成功的 `session_compact` 仍是唯一成功边界。完整目标、完成防护和继续协议通过不渲染的 Pi 自定义消息传递：模型会收到且会话会保留，而 TUI 与 HTML 对话导出仍聚焦用户命令、工具结果和最终响应。
+Goal 状态追加到 Pi 会话 JSONL，并在重载、恢复和压缩时还原。重载会从新的受保护继续中自动恢复活跃且空闲的 Goal；新会话不继承其他会话的 Goal。显式清除还会在共享设置锁和原子替换下，删除该项目过时的会话前状态。无效旧版 JSON 保持不变并报告，而不是丢弃。Pi 0.84.4 可在 Tool result 之后、下一次 Assistant 请求之前执行原生阈值压缩；Goal 保留该 Host 生命周期，并只在完整 Agent 运行稳定后安排一次 continuation。Magic Context 或其他扩展取消 Pi 原生压缩时，Pi 0.84.4 会发送 `session_compact_failed`。Goal 只针对它在 `session_before_compact` 观察到的匹配压缩接受该原生失败，再恰好一次替换过期继续。成功的 `session_compact` 仍是唯一成功边界。完整目标、完成防护和继续协议通过不渲染的 Pi 自定义消息传递：模型会收到且会话会保留，而 TUI 与 HTML 对话导出仍聚焦用户命令、工具结果和最终响应。
 
 内部的 `goal.ts` 是唯一 Pi 生命周期组合根：每个工厂一个所有者，连接有序会话、输入、消息、工具和 Agent 阶段。带代际防护的状态机位于 `runtime.ts`，纯状态和格式政策位于 `policy.ts`，命令注册与转换位于 `commands.ts`，排队提示词关联位于 `prompt-ownership.ts`，压缩重试协调位于 `compaction.ts`，自动运行协调位于 `run-protocol.ts`，终态工具执行位于 `terminal-tools.ts`，宿主工具可见性所有权位于 `tool-policy.ts`，无状态工具 Schema 与呈现位于 `tool-contract.ts`。把这些阶段拆到多个模块，会复制继续、过期轮次、持久化和安全不变量。
 
