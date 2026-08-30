@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: a05849c5f3c5b1fc727a5f2736125b6ed734440df486f9bc5fbcc87f31ead63b -->
+<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: 391d16cde69d6b24f2f86fd6530b59d815f322049f3b5c56f1af66e76e58841a -->
 
 # Skill Discovery 隔离真实模型确认预注册
 
@@ -69,7 +69,9 @@ one-turn Session 禁用可选 derived Context engine；三个 arm 仍全部使�
 
 在第一次 Provider 请求前，preflight 会拒绝不同 Host、dirty tree、不匹配的 Package tree、source、observer、
 manifest、Context mode、model 配置、authentication 或已存在的报告。Candidate commit 与 clean execution tree
-必须解析到相同的锁定 Package tree，各 runner input 则独立计算 hash。
+必须解析到相同的锁定 Package tree，各 runner input 则独立计算 hash。之后的签名 Run Lock commit 无法标识
+自身：`candidateCommit` 绑定的是产品 Package identity，而不是 execution HEAD；后者只能增加已锁定的研究输入，
+同时保持完全相同的 Package tree。
 
 ## Tasks、顺序与隔离
 
@@ -84,8 +86,9 @@ relative resource、expected token、fixture hash 与 arm order。Task 经过 se
 
 每个 Session 都获得全新的 project、Agent、Session、cache、config、data、runtime、state 与 temporary
 directory。Arms 共享完全相同的 prompt 与 fixture bytes、ordinary Tool authority、model 配置、observer、
-native Context mode 与 timeout，但不共享 Session、cache、fixture path、model history、mutable authentication
-copy 或 temporary state。
+native Context mode、timeout，以及一条 runner 所有的 Provider authentication chain。每个 Session 获得全新
+credential copy；通过 safety check 后，Provider 所有的 OAuth rotation 会向后复制给下一个 Session。Session、
+cache、fixture path、model history、case-local credential file 与其他 temporary state 均不共享。
 
 不允许 retry、replacement、结果产生后的 exclusion 或 early stopping。Sampling 开始后，每个 timeout、
 process、Provider、parsing、instrumentation 或 model failure 都保留在原 arm，作为失败 observation。

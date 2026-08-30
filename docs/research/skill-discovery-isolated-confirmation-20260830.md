@@ -68,6 +68,8 @@ The new manifest path is `test/fixtures/skill-discovery-isolated-confirmation-ma
 Preflight rejects a different Host, dirty tree, mismatched Package tree, source, observer, manifest, Context mode,
 model configuration, authentication, or existing report before the first Provider request. The candidate commit and
 the clean execution tree must resolve to the same locked Package tree while runner inputs are hashed independently.
+The later signed Run Lock commit cannot identify itself: `candidateCommit` binds the product Package identity, not the
+execution HEAD, which may contain only locked study inputs while preserving that exact Package tree.
 
 ## Tasks, order, and isolation
 
@@ -83,7 +85,9 @@ Agent-settle timeout.
 
 Each Session receives fresh project, Agent, Session, cache, config, data, runtime, state, and temporary directories.
 Arms share exact prompt and fixture bytes, ordinary Tool authority, model configuration, observer, native Context
-mode, and timeouts, but no Session, cache, fixture path, model history, mutable authentication copy, or temporary state.
+mode, timeouts, and one runner-owned Provider authentication chain. Each Session receives a fresh credential copy;
+after its safety check, Provider-owned OAuth rotation is copied forward for the next Session. No Session, cache,
+fixture path, model history, case-local credential file, or other temporary state is shared.
 
 There are no retries, replacements, post-outcome exclusions, or early stopping. Once sampling starts, every timeout,
 process, Provider, parsing, instrumentation, or model failure remains a failed observation in its original arm.

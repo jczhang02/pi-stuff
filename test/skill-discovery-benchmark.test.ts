@@ -64,6 +64,9 @@ test("freezes thirty triads and six arm permutations five times each", () => {
 	}
 	const orders = new Map<string, number>();
 	for (const task of manifest.tasks) {
+		expect(task.id).toStartWith("isolated-");
+		expect(task.target.name).toStartWith("sd-isolated-");
+		expect(task.expectedToken).toContain("_ISOLATED_");
 		expect([...task.armOrder].sort()).toEqual([...ARMS].sort());
 		const key = task.armOrder.join(",");
 		orders.set(key, (orders.get(key) ?? 0) + 1);
