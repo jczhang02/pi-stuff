@@ -20,13 +20,13 @@ import { deliverStopRequest } from "../background/control-channel.ts";
 import { runConfiguredBackground } from "../background/subagent-runner.ts";
 import { reapOrphanWriterProcesses } from "../background/writer-process-registry.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import { recordForegroundOwnerExit } from "./owner-exit.ts";
 import {
 	type ForegroundCompletion,
 	foregroundStatusIsTerminal,
 	projectForegroundCompletion,
 	projectForegroundStatus,
-} from "./foreground-projection.ts";
-import { recordForegroundOwnerExit } from "./owner-exit.ts";
+} from "./result-projection.ts";
 
 export interface ForegroundExecutionDependencies {
 	acquireStatusClaim(asyncDir: string): { release(): void } | undefined;

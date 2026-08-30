@@ -19,7 +19,7 @@ import {
 	type ForegroundExecutionDependencies,
 	runForegroundConfig,
 } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
-import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/foreground-projection.js";
+import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/result-projection.js";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
