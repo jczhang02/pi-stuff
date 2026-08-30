@@ -1,7 +1,7 @@
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { Readability } from "@mozilla/readability";
+import { Cause, Effect } from "effect";
 import { parseHTML } from "linkedom";
-import pLimit from "p-limit";
 import TurndownService from "turndown";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
@@ -63,7 +63,12 @@ const turndown = new TurndownService({
 	codeBlockStyle: "fenced",
 });
 
-const fetchLimit = pLimit(CONCURRENT_LIMIT);
+function nativePromise<Value>(operation: (signal: AbortSignal) => PromiseLike<Value>): Effect.Effect<Value, Error> {
+	return Effect.tryPromise({
+		try: operation,
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
 
 export interface ExtractedContent {
 	url: string;
@@ -87,73 +92,67 @@ export interface ExtractOptions {
 const JINA_READER_BASE = "https://r.jina.ai/";
 const JINA_TIMEOUT_MS = 30000;
 
-async function extractWithJinaReader(
-	url: string,
-	signal?: AbortSignal,
-	lookup?: Lookup,
-): Promise<ExtractedContent | null> {
-	const jinaUrl = JINA_READER_BASE + url;
-
-	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
-
-	try {
-		const ssrf = loadSsrfConfig();
-		const domainPolicy = loadFetchContentDomainPolicy();
-		await validateRemoteUrl(url, {
-			allowRanges: ssrf.allowRanges,
-			trustEnvProxy: ssrf.trustEnvProxy,
-			domainPolicy,
-			lookup,
+function extractWithJinaReader(url: string, lookup?: Lookup): Effect.Effect<ExtractedContent | null> {
+	return Effect.suspend(() => {
+		const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
+		const program = Effect.gen(function* () {
+			const ssrf = loadSsrfConfig();
+			yield* nativePromise(() =>
+				validateRemoteUrl(url, {
+					allowRanges: ssrf.allowRanges,
+					trustEnvProxy: ssrf.trustEnvProxy,
+					domainPolicy: loadFetchContentDomainPolicy(),
+					lookup,
+				}),
+			);
+			const response = yield* nativePromise((signal) =>
+				fetch(JINA_READER_BASE + url, {
+					headers: { Accept: "text/markdown", "X-No-Cache": "true" },
+					redirect: "error",
+					signal,
+				}),
+			);
+			if (!response.ok) return { content: null, response };
+			const content = yield* readTextResponseWithLimit(response, 5 * 1024 * 1024);
+			return { content, response };
 		});
-		const res = await fetch(jinaUrl, {
-			headers: {
-				Accept: "text/markdown",
-				"X-No-Cache": "true",
-			},
-			redirect: "error",
-			signal: AbortSignal.any([AbortSignal.timeout(JINA_TIMEOUT_MS), ...(signal ? [signal] : [])]),
-		});
-
-		if (!res.ok) {
-			activityMonitor.logComplete(activityId, res.status);
-			return null;
-		}
-
-		const content = await readTextResponseWithLimit(res, 5 * 1024 * 1024);
-		activityMonitor.logComplete(activityId, res.status);
-
-		const contentStart = content.indexOf("Markdown Content:");
-		if (contentStart < 0) {
-			return null;
-		}
-
-		const markdownPart = content.slice(contentStart + 17).trim(); // 17 = "Markdown Content:".length
-
-		// Check for failed JS rendering or minimal content
-		if (
-			markdownPart.length < 100 ||
-			markdownPart.startsWith("Loading...") ||
-			markdownPart.startsWith("Please enable JavaScript")
-		) {
-			return null;
-		}
-
-		const title = extractHeadingTitle(markdownPart) ?? (new URL(url).pathname.split("/").pop() || url);
-		return { url, title, content: markdownPart, error: null };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		return null;
-	}
+		return program.pipe(
+			Effect.timeout(JINA_TIMEOUT_MS),
+			Effect.mapError((error) =>
+				Cause.isTimeoutError(error) ? new DOMException("This operation was aborted", "AbortError") : error,
+			),
+			Effect.map(({ content, response }) => {
+				activityMonitor.logComplete(activityId, response.status);
+				if (content === null) return null;
+				const contentStart = content.indexOf("Markdown Content:");
+				if (contentStart < 0) return null;
+				const markdownPart = content.slice(contentStart + 17).trim();
+				if (
+					markdownPart.length < 100 ||
+					markdownPart.startsWith("Loading...") ||
+					markdownPart.startsWith("Please enable JavaScript")
+				) {
+					return null;
+				}
+				const title = extractHeadingTitle(markdownPart) ?? (new URL(url).pathname.split("/").pop() || url);
+				return { url, title, content: markdownPart, error: null };
+			}),
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					const message = errorMessage(error);
+					if (isAbortError(error)) activityMonitor.logComplete(activityId, 0);
+					else activityMonitor.logError(activityId, message);
+					return null;
+				}),
+			),
+			Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+		);
+	});
 }
 
 interface ContentFallback {
 	readonly available: () => boolean;
-	readonly extract: () => Promise<ExtractedContent | null>;
+	readonly extract: Effect.Effect<ExtractedContent | null, Error>;
 	readonly label?: string;
 }
 
@@ -166,7 +165,7 @@ function appendLinks(result: ExtractedContent, declaredLinks: DeclaredWebLink[])
 	return { ...result, content: appendDeclaredWebLinks(result.content, declaredLinks) };
 }
 
-function contentFallbacks(url: string, signal: AbortSignal | undefined, options: ExtractOptions | undefined) {
+function contentFallbacks(url: string, options: ExtractOptions | undefined) {
 	const ssrfOptions = () => {
 		const ssrf = loadSsrfConfig();
 		return { timeoutMs: options?.timeoutMs, lookup: options?.lookup, ssrf };
@@ -174,61 +173,73 @@ function contentFallbacks(url: string, signal: AbortSignal | undefined, options:
 	return [
 		{
 			available: isFirecrawlAvailable,
-			extract: () => extractWithFirecrawl(url, signal, ssrfOptions()),
+			extract: nativePromise((signal) => extractWithFirecrawl(url, signal, ssrfOptions())),
 			label: "Firecrawl",
 		},
-		{ available: () => true, extract: () => extractWithJinaReader(url, signal, options?.lookup) },
+		{ available: () => true, extract: extractWithJinaReader(url, options?.lookup) },
 		{
 			available: isTinyFishAvailable,
-			extract: () => extractWithTinyFish(url, signal, options),
+			extract: nativePromise((signal) => extractWithTinyFish(url, signal, options)),
 			label: "TinyFish",
 		},
 		{
 			available: isSearch1APIAvailable,
-			extract: () => extractWithSearch1API(url, signal, options),
+			extract: nativePromise((signal) => extractWithSearch1API(url, signal, options)),
 			label: "Search1API",
 		},
 		{
 			available: isQueritAvailable,
-			extract: () => extractWithQuerit(url, signal, options),
+			extract: nativePromise((signal) => extractWithQuerit(url, signal, options)),
 			label: "Querit",
 		},
-		{ available: isKagiExtractAvailable, extract: () => extractWithKagi(url, signal, ssrfOptions()), label: "Kagi" },
+		{
+			available: isKagiExtractAvailable,
+			extract: nativePromise((signal) => extractWithKagi(url, signal, ssrfOptions())),
+			label: "Kagi",
+		},
 		{
 			available: isOllamaFetchAvailable,
-			extract: () => extractWithOllama(url, signal, ssrfOptions()),
+			extract: nativePromise((signal) => extractWithOllama(url, signal, ssrfOptions())),
 			label: "Ollama",
 		},
-		{ available: isParallelAvailable, extract: () => extractWithParallel(url, signal), label: "Parallel" },
+		{
+			available: isParallelAvailable,
+			extract: nativePromise((signal) => extractWithParallel(url, signal)),
+			label: "Parallel",
+		},
 		{
 			available: isBrightDataUnlockerAvailable,
-			extract: () => extractWithBrightDataUnlocker(url, signal, ssrfOptions()),
+			extract: nativePromise((signal) => extractWithBrightDataUnlocker(url, signal, ssrfOptions())),
 			label: "Bright Data",
 		},
 	] satisfies readonly ContentFallback[];
 }
 
-async function tryContentFallbacks(
+function tryContentFallbacks(
 	url: string,
-	signal: AbortSignal | undefined,
 	options: ExtractOptions | undefined,
 	declaredLinks: DeclaredWebLink[],
-): Promise<ContentFallbackResult> {
-	const errors: string[] = [];
-	for (const fallback of contentFallbacks(url, signal, options)) {
-		try {
-			if (fallback.available()) {
-				const result = await fallback.extract();
-				if (result) return { errors, result: appendLinks(result, declaredLinks) };
+): Effect.Effect<ContentFallbackResult> {
+	return Effect.gen(function* () {
+		const errors: string[] = [];
+		for (const fallback of contentFallbacks(url, options)) {
+			const result = yield* Effect.try({
+				try: fallback.available,
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}).pipe(
+				Effect.flatMap((available) => (available ? fallback.extract : Effect.succeed(null))),
+				Effect.map((value) => ({ ok: true as const, value })),
+				Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+			);
+			if (result.ok) {
+				if (result.value) return { errors, result: appendLinks(result.value, declaredLinks) };
+				continue;
 			}
-		} catch (err) {
-			if (isAbortError(err)) return { errors, result: abortedResult(url) };
-			const message = errorMessage(err);
-			if (fallback.label) errors.push(`${fallback.label} fallback failed: ${message}`);
+			if (isAbortError(result.error)) return { errors, result: abortedResult(url) };
+			if (fallback.label) errors.push(`${fallback.label} fallback failed: ${errorMessage(result.error)}`);
 		}
-		if (signal?.aborted) return { errors, result: abortedResult(url) };
-	}
-	return { errors, result: null };
+		return { errors, result: null };
+	});
 }
 
 function extractionGuidance(httpError: string, fallbackErrors: readonly string[]): string {
@@ -251,64 +262,59 @@ function extractionGuidance(httpError: string, fallbackErrors: readonly string[]
 	].join("\n");
 }
 
-export async function extractContent(
-	url: string,
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<ExtractedContent> {
-	if (signal?.aborted) return abortedResult(url);
-	let remoteUrl: URL | null = null;
-	try {
-		const parsed = new URL(url);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
-	} catch {}
-	if (remoteUrl) {
+export function extractContent(url: string, options?: ExtractOptions): Effect.Effect<ExtractedContent> {
+	return Effect.gen(function* () {
+		let remoteUrl: URL | null = null;
 		try {
+			const parsed = new URL(url);
+			if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
+		} catch {}
+		if (remoteUrl) {
 			const ssrf = loadSsrfConfig();
-			await validateRemoteUrl(remoteUrl, {
-				allowRanges: ssrf.allowRanges,
-				trustEnvProxy: ssrf.trustEnvProxy,
-				domainPolicy: loadFetchContentDomainPolicy(),
-				lookup: options?.lookup,
-			});
-		} catch (err) {
-			return { url, title: "", content: "", error: errorMessage(err) };
+			const validationError = yield* nativePromise(() =>
+				validateRemoteUrl(remoteUrl, {
+					allowRanges: ssrf.allowRanges,
+					trustEnvProxy: ssrf.trustEnvProxy,
+					domainPolicy: loadFetchContentDomainPolicy(),
+					lookup: options?.lookup,
+				}),
+			).pipe(
+				Effect.map((): Error | null => null),
+				Effect.catch((error) => Effect.succeed(error)),
+			);
+			if (validationError) return { url, title: "", content: "", error: errorMessage(validationError) };
 		}
-	}
-	if (options?.mode === "raw") return extractViaHttp(url, signal, options);
-	try {
-		if (!remoteUrl) new URL(url);
-	} catch (err) {
-		return { url, title: "", content: "", error: errorMessage(err) };
-	}
-	try {
-		const ghResult = await extractGitHub(url, signal);
+		if (options?.mode === "raw") return yield* extractViaHttp(url, options);
+		try {
+			if (!remoteUrl) new URL(url);
+		} catch (error) {
+			return { url, title: "", content: "", error: errorMessage(error) };
+		}
+		const ghResult = yield* extractGitHub(url);
 		if (ghResult) return ghResult;
-		if (signal?.aborted) return abortedResult(url);
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-	}
-	if (signal?.aborted) return abortedResult(url);
-	const { declaredLinks = [], ...httpResult } = await extractViaHttp(url, signal, options);
-	if (signal?.aborted) return abortedResult(url);
-	if (!httpResult.error) return httpResult;
-	const httpError = httpResult.error;
-	if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
-	const fallback = await tryContentFallbacks(url, signal, options, declaredLinks);
-	if (fallback.result) return fallback.result;
-	let geminiResult: ExtractedContent | null = null;
-	try {
-		geminiResult = (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal));
-	} catch (err) {
-		if (isAbortError(err)) return abortedResult(url);
-		if (err instanceof CredentialResolutionError) {
-			return { ...httpResult, error: errorMessage(err) };
+		const { declaredLinks = [], ...httpResult } = yield* extractViaHttp(url, options);
+		if (!httpResult.error) return httpResult;
+		const httpError = httpResult.error;
+		if (NON_RECOVERABLE_ERRORS.some((prefix) => httpError.startsWith(prefix))) return httpResult;
+		const fallback = yield* tryContentFallbacks(url, options, declaredLinks);
+		if (fallback.result) return fallback.result;
+		let geminiError: Error | undefined;
+		const geminiResult = yield* nativePromise(
+			async (signal) => (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal)),
+		).pipe(
+			Effect.catch((error) => {
+				geminiError = error;
+				return Effect.succeed(null);
+			}),
+		);
+		if (geminiError && isAbortError(geminiError)) return abortedResult(url);
+		if (geminiError instanceof CredentialResolutionError) {
+			return { ...httpResult, error: errorMessage(geminiError) };
 		}
-	}
-	if (geminiResult) return appendLinks(geminiResult, declaredLinks);
-	if (signal?.aborted) return abortedResult(url);
-	if (declaredLinks.length > 0) return { ...httpResult, error: null };
-	return { ...httpResult, error: extractionGuidance(httpError, fallback.errors) };
+		if (geminiResult) return appendLinks(geminiResult, declaredLinks);
+		if (declaredLinks.length > 0) return { ...httpResult, error: null };
+		return { ...httpResult, error: extractionGuidance(httpError, fallback.errors) };
+	});
 }
 
 function isLikelyJSRendered(html: string): boolean {
@@ -333,20 +339,23 @@ function isLikelyJSRendered(html: string): boolean {
 	return textContent.length < 500 && scriptCount > 3;
 }
 
-export async function readPDFResponseBuffer(response: Response, maxSizeMB: number): Promise<ArrayBuffer> {
+export function readPDFResponseBuffer(response: Response, maxSizeMB: number): Effect.Effect<ArrayBuffer, Error> {
 	const maxBytes = maxSizeMB * 1024 * 1024;
 	return readResponseBufferWithLimit(response, maxBytes, () => pdfSizeLimitError(maxSizeMB));
 }
 
-async function readTextResponseWithLimit(response: Response, maxBytes: number): Promise<string> {
-	const buffer = await readResponseBufferWithLimit(response, maxBytes, () => responseSizeLimitError(maxBytes));
-	const charset = response.headers.get("content-type")?.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1];
-	try {
-		// SAFETY: Bun narrows TextDecoder labels to Encoding, while the runtime accepts arbitrary labels and throws below.
-		return new TextDecoder((charset || "utf-8") as ConstructorParameters<typeof TextDecoder>[0]).decode(buffer);
-	} catch {
-		return new TextDecoder("utf-8").decode(buffer);
-	}
+function readTextResponseWithLimit(response: Response, maxBytes: number): Effect.Effect<string, Error> {
+	return readResponseBufferWithLimit(response, maxBytes, () => responseSizeLimitError(maxBytes)).pipe(
+		Effect.map((buffer) => {
+			const charset = response.headers.get("content-type")?.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1];
+			try {
+				// SAFETY: Bun narrows TextDecoder labels to Encoding, while the runtime accepts arbitrary labels and throws below.
+				return new TextDecoder((charset || "utf-8") as ConstructorParameters<typeof TextDecoder>[0]).decode(buffer);
+			} catch {
+				return new TextDecoder("utf-8").decode(buffer);
+			}
+		}),
+	);
 }
 
 function isTextContentType(contentType: string): boolean {
@@ -364,43 +373,55 @@ function isTextContentType(contentType: string): boolean {
 	);
 }
 
-async function readResponseBufferWithLimit(
+function readResponseBufferWithLimit(
 	response: Response,
 	maxBytes: number,
 	buildError: () => Error,
-): Promise<ArrayBuffer> {
-	const reader = response.body?.getReader();
-	if (!reader) {
-		const buffer = await response.arrayBuffer();
-		if (buffer.byteLength > maxBytes) throw buildError();
-		return buffer;
-	}
-
-	const chunks: Uint8Array[] = [];
-	let totalBytes = 0;
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			if (!value) continue;
-			totalBytes += value.byteLength;
-			if (totalBytes > maxBytes) {
-				await reader.cancel();
-				throw buildError();
-			}
-			chunks.push(value);
+): Effect.Effect<ArrayBuffer, Error> {
+	return Effect.suspend(() => {
+		const reader = response.body?.getReader();
+		if (!reader) {
+			return nativePromise(() => response.arrayBuffer()).pipe(
+				Effect.flatMap((buffer) =>
+					buffer.byteLength > maxBytes ? Effect.fail(buildError()) : Effect.succeed(buffer),
+				),
+			);
 		}
-	} finally {
-		reader.releaseLock();
-	}
 
-	const combined = new Uint8Array(totalBytes);
-	let offset = 0;
-	for (const chunk of chunks) {
-		combined.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return combined.buffer;
+		let finished = false;
+		const read = nativePromise(async () => {
+			const chunks: Uint8Array[] = [];
+			let totalBytes = 0;
+			while (true) {
+				const chunk = await reader.read();
+				if (chunk.done) {
+					finished = true;
+					break;
+				}
+				if (!chunk.value) continue;
+				totalBytes += chunk.value.byteLength;
+				if (totalBytes > maxBytes) {
+					await reader.cancel();
+					finished = true;
+					throw buildError();
+				}
+				chunks.push(chunk.value);
+			}
+			const combined = new Uint8Array(totalBytes);
+			let offset = 0;
+			for (const chunk of chunks) {
+				combined.set(chunk, offset);
+				offset += chunk.byteLength;
+			}
+			return combined.buffer;
+		});
+		const release = Effect.suspend(() =>
+			(finished ? Effect.void : nativePromise(() => reader.cancel()).pipe(Effect.catch(() => Effect.void))).pipe(
+				Effect.andThen(Effect.sync(() => reader.releaseLock())),
+			),
+		);
+		return read.pipe(Effect.ensuring(release));
+	});
 }
 
 function pdfSizeLimitError(maxSizeMB: number): Error {
@@ -433,42 +454,54 @@ function oversizedResponse(
 	};
 }
 
-async function extractRawResponse(
+function extractRawResponse(
 	response: Response,
 	url: string,
 	contentType: string,
 	mimeType: string,
 	maxResponseSize: number,
 	activityId: string,
-): Promise<HttpExtractedContent> {
+): Effect.Effect<HttpExtractedContent, Error> {
 	if (!isTextContentType(contentType)) {
 		activityMonitor.logComplete(activityId, response.status);
-		return {
+		return Effect.succeed({
 			url,
 			title: "",
 			content: "",
 			error: `Unsupported content type in raw mode: ${mimeType || "missing"}`,
 			mimeType,
 			status: response.status,
-		};
+		});
 	}
-	const text = await readTextResponseWithLimit(response, maxResponseSize);
-	activityMonitor.logComplete(activityId, response.status);
-	return { url, title: extractTextTitle(text, url), content: text, error: null, mimeType, status: response.status };
+	return readTextResponseWithLimit(response, maxResponseSize).pipe(
+		Effect.map((text) => {
+			activityMonitor.logComplete(activityId, response.status);
+			return {
+				url,
+				title: extractTextTitle(text, url),
+				content: text,
+				error: null,
+				mimeType,
+				status: response.status,
+			};
+		}),
+	);
 }
 
-async function extractImageResponse(
+function extractImageResponse(
 	response: Response,
 	url: string,
 	mimeType: string,
 	maxResponseSize: number,
 	activityId: string,
-): Promise<HttpExtractedContent> {
-	try {
-		const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () =>
+): Effect.Effect<HttpExtractedContent> {
+	return Effect.gen(function* () {
+		const buffer = yield* readResponseBufferWithLimit(response, maxResponseSize, () =>
 			responseSizeLimitError(maxResponseSize),
 		);
-		const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
+		const resized = yield* nativePromise(() =>
+			resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 }),
+		);
 		activityMonitor.logComplete(activityId, response.status);
 		if (!resized) {
 			return {
@@ -480,52 +513,55 @@ async function extractImageResponse(
 				status: response.status,
 			};
 		}
-		const title = new URL(response.url || url).pathname.split("/").pop() || url;
 		return {
 			url,
-			title,
-			content: `Image fetched (${resized.width}×${resized.height}, ${resized.mimeType})`,
+			title: new URL(response.url || url).pathname.split("/").pop() || url,
+			content: `Image fetched (${String(resized.width)}×${String(resized.height)}, ${resized.mimeType})`,
 			error: null,
 			thumbnail: { data: resized.data, mimeType: resized.mimeType },
 			mimeType: resized.mimeType,
 			status: response.status,
 		};
-	} catch (err) {
-		const message = errorMessage(err);
-		activityMonitor.logError(activityId, message);
-		return { url, title: "", content: "", error: message, mimeType, status: response.status };
-	}
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.sync(() => {
+				const message = errorMessage(error);
+				activityMonitor.logError(activityId, message);
+				return { url, title: "", content: "", error: message, mimeType, status: response.status };
+			}),
+		),
+	);
 }
 
-async function extractPdfResponse(
+function extractPdfResponse(
 	response: Response,
 	url: string,
-	signal: AbortSignal | undefined,
 	pdfConfig: PDFConfig,
 	activityId: string,
-): Promise<HttpExtractedContent> {
-	try {
-		const buffer = await readPDFResponseBuffer(response, pdfConfig.maxSizeMB);
-		if (signal?.aborted) return abortedResult(url);
-		const result = await extractPDFToMarkdown(buffer, url, { signal });
+): Effect.Effect<HttpExtractedContent> {
+	return Effect.gen(function* () {
+		const buffer = yield* readPDFResponseBuffer(response, pdfConfig.maxSizeMB);
+		const result = yield* extractPDFToMarkdown(buffer, url);
 		activityMonitor.logComplete(activityId, response.status);
 		return {
 			url,
 			title: result.title,
-			content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
+			content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${String(result.pages)}\nCharacters: ${String(result.chars)}`,
 			error: null,
 		};
-	} catch (err) {
-		const message = errorMessage(err);
-		activityMonitor.logError(activityId, message);
-		if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
-			return { url, title: "", content: "", error: message };
-		}
-		if (err instanceof CredentialResolutionError) {
-			return { url, title: "", content: "", error: message };
-		}
-		return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };
-	}
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.sync(() => {
+				const message = errorMessage(error);
+				activityMonitor.logError(activityId, message);
+				if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
+					return { url, title: "", content: "", error: message };
+				}
+				if (error instanceof CredentialResolutionError) return { url, title: "", content: "", error: message };
+				return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };
+			}),
+		),
+	);
 }
 
 function isUnsupportedBinary(contentType: string): boolean {
@@ -583,90 +619,96 @@ function extractHtmlResponse(response: Response, url: string, text: string, acti
 	};
 }
 
-async function extractHttpResponse(
+function extractHttpResponse(
 	response: Response,
 	url: string,
-	signal: AbortSignal | undefined,
 	options: ExtractOptions | undefined,
 	activityId: string,
-): Promise<HttpExtractedContent> {
+): Effect.Effect<HttpExtractedContent, Error> {
 	if (!response.ok && options?.mode !== "raw") {
 		activityMonitor.logComplete(activityId, response.status);
-		return {
+		return Effect.succeed({
 			url,
 			title: "",
 			content: "",
 			error: `HTTP ${response.status}: ${response.statusText}`,
 			status: response.status,
-		};
+		});
 	}
 	const contentType = response.headers.get("content-type") || "";
 	const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 	const pdfConfig = isPDF(url, contentType) ? loadPDFConfig() : null;
 	const maxResponseSize = (pdfConfig?.maxSizeMB ?? 5) * 1024 * 1024;
 	const sizeError = oversizedResponse(response, url, maxResponseSize, pdfConfig, activityId);
-	if (sizeError) return sizeError;
+	if (sizeError) return Effect.succeed(sizeError);
 	if (options?.mode === "raw") {
 		return extractRawResponse(response, url, contentType, mimeType, maxResponseSize, activityId);
 	}
 	if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
 		return extractImageResponse(response, url, mimeType, maxResponseSize, activityId);
 	}
-	if (pdfConfig) return extractPdfResponse(response, url, signal, pdfConfig, activityId);
+	if (pdfConfig) return extractPdfResponse(response, url, pdfConfig, activityId);
 	if (isUnsupportedBinary(contentType)) {
 		activityMonitor.logComplete(activityId, response.status);
-		return { url, title: "", content: "", error: `Unsupported content type: ${contentType.split(";")[0]}` };
+		return Effect.succeed({
+			url,
+			title: "",
+			content: "",
+			error: `Unsupported content type: ${contentType.split(";")[0]}`,
+		});
 	}
-	const text = await readTextResponseWithLimit(response, maxResponseSize);
-	if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
-		activityMonitor.logComplete(activityId, response.status);
-		return { url, title: extractTextTitle(text, url), content: text, error: null };
-	}
-	return extractHtmlResponse(response, url, text, activityId);
+	return readTextResponseWithLimit(response, maxResponseSize).pipe(
+		Effect.flatMap((text) => {
+			if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+				activityMonitor.logComplete(activityId, response.status);
+				return Effect.succeed({ url, title: extractTextTitle(text, url), content: text, error: null });
+			}
+			return Effect.try({
+				try: () => extractHtmlResponse(response, url, text, activityId),
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			});
+		}),
+	);
 }
 
-async function extractViaHttp(
-	url: string,
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<HttpExtractedContent> {
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-	const onAbort = () => controller.abort();
-	signal?.addEventListener("abort", onAbort);
-	try {
+function extractViaHttp(url: string, options?: ExtractOptions): Effect.Effect<HttpExtractedContent> {
+	return Effect.suspend(() => {
+		const activityId = activityMonitor.logStart({ type: "fetch", url });
 		const ssrf = loadSsrfConfig();
-		const response = await fetchRemoteUrl(
-			url,
-			{ headers: PAGE_REQUEST_HEADERS, signal: controller.signal },
-			{
-				allowRanges: ssrf.allowRanges,
-				trustEnvProxy: ssrf.trustEnvProxy,
-				domainPolicy: loadFetchContentDomainPolicy(),
-				lookup: options?.lookup,
-			},
+		return nativePromise((signal) =>
+			fetchRemoteUrl(
+				url,
+				{ headers: PAGE_REQUEST_HEADERS, signal },
+				{
+					allowRanges: ssrf.allowRanges,
+					trustEnvProxy: ssrf.trustEnvProxy,
+					domainPolicy: loadFetchContentDomainPolicy(),
+					lookup: options?.lookup,
+				},
+			),
+		).pipe(
+			Effect.flatMap((response) => extractHttpResponse(response, url, options, activityId)),
+			Effect.timeout(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+			Effect.mapError((error) =>
+				Cause.isTimeoutError(error) ? new DOMException("This operation was aborted", "AbortError") : error,
+			),
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					const message = errorMessage(error);
+					if (isAbortError(error)) activityMonitor.logComplete(activityId, 0);
+					else activityMonitor.logError(activityId, message);
+					return { url, title: "", content: "", error: message };
+				}),
+			),
+			Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
 		);
-		return await extractHttpResponse(response, url, signal, options, activityId);
-	} catch (err) {
-		const message = errorMessage(err);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		return { url, title: "", content: "", error: message };
-	} finally {
-		clearTimeout(timeoutId);
-		signal?.removeEventListener("abort", onAbort);
-	}
+	});
 }
 
 function extractTextTitle(text: string, url: string): string {
 	return extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url);
 }
 
-export async function fetchAllContent(
-	urls: string[],
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<ExtractedContent[]> {
-	return Promise.all(urls.map((url) => fetchLimit(() => extractContent(url, signal, options))));
+export function fetchAllContent(urls: string[], options?: ExtractOptions): Effect.Effect<ExtractedContent[]> {
+	return Effect.forEach(urls, (url) => extractContent(url, options), { concurrency: CONCURRENT_LIMIT });
 }

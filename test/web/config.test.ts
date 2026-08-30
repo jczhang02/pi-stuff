@@ -2,8 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import * as runtimeConfig from "../../packages/pi-stuff/src/web/runtime/config.js";
-import piWebAccess, { type PiWebAccessHost } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
+import piWebAccess, {
+	type PiWebAccessHost,
+	type WebRuntimeEffectOptions,
+} from "../../packages/pi-stuff/src/web/runtime/implementation.js";
 import { loadSsrfConfig } from "../../packages/pi-stuff/src/web/runtime/ssrf-protection.js";
 import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
 
@@ -30,7 +34,11 @@ function installWeb(agentDirectory: string): string[] {
 		on: () => undefined,
 		registerTool: (tool) => void tools.push(tool.name),
 	};
-	piWebAccess(host);
+	const effects: WebRuntimeEffectOptions = {
+		prepareFetch: () => Effect.void,
+		runContentOperation: (_ctx, program, signal) => Effect.runPromise(program, { signal }),
+	};
+	piWebAccess(host, effects);
 	return tools;
 }
 

@@ -20,4 +20,7 @@ API reads, validated process-local SSRF defaults, storage, and continuation. Cur
 repository-clone, YouTube/local-video, command, shortcut, and private Tool-rendering code has been removed. Explicit
 user SSRF configuration remains authoritative. Pi Stuff also replaces the snapshot's repeated provider config parsers
 with the Package-owned Web settings reader and derives dispatch, availability, labels, and safe automatic routing from
-one typed provider registry.
+one typed provider registry. Content retrieval now runs as a Session-owned Effect operation with native timeout,
+interruption, bounded stream finalization, stable three-way URL concurrency, interruptible GitHub subprocesses, and
+Effect-owned PDF parsing and persistence. Deterministic URL, parsing, and rendering helpers remain ordinary
+TypeScript; the parent Web adapter remains the sole runner.

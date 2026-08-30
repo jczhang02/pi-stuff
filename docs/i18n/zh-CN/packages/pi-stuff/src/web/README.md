@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: 49dfaaf1e6f284331541f4507d04308e91d27976b9dd962665610ac33caa1e18 -->
+<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: b28c6654c93b978bfdf2fe16e269b036ae40c6a3a5cc6d66bdf12d56060157bb -->
 
 # Pi Stuff Web
 
@@ -11,6 +11,8 @@ Pi Stuff Web 暴露三个面向模型的工具：
 软件包有意不包含交互式浏览器、浮动窗口、活动组件、本地文件/视频读取器、仓库克隆器或独立研究工作流。搜索始终使用非 Curator 路径。Provider 选择通过工具调用或自有上游配置保持显式。
 
 三个工具都使用 Pi Stuff 共享单行生命周期渲染器。模型可见结果、引用、取消、SSRF 防护、重定向、提取和 PDF 处理仍由固定分叉负责。`tool-contracts.ts` 是父级适配器与私有运行时之间有界、面向模型 Schema 的唯一所有者。直接 Provider API 和网关请求会在凭据或请求正文可能被转发到另一来源前拒绝重定向。
+
+每次 `fetch_content` 调用都由父级适配器作为一个归属当前会话的 Effect 操作运行。该操作包含延迟 fake-IP 准备、远程目标校验、安全重定向抓取、现有 30 秒超时、有界响应读取、内容提取，以及按输入顺序最多并发三个 URL。中断会取消活动的原生请求或响应读取器，过期会话不能存储或发布完成结果。URL 策略、内容解析、渲染和确定性提取仍使用普通 TypeScript。
 
 Provider 包含/排除值共用一个套件负责的域名规范化器。它接受 URL 形态主机输入，拒绝字面 IP 和单标签主机，只匹配精确主机或其子域名。
 

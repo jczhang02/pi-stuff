@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { ExtractedContent } from "./extract.ts";
 import { fetchViaApi } from "./github-api.ts";
 
@@ -84,8 +85,8 @@ export function parseGitHubUrl(url: string): GitHubUrlInfo | null {
 	return info;
 }
 
-export async function extractGitHub(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
+export function extractGitHub(url: string): Effect.Effect<ExtractedContent | null> {
 	const info = parseGitHubUrl(url);
-	if (!info || signal?.aborted) return null;
+	if (!info) return Effect.succeed(null);
 	return fetchViaApi(url, info.owner, info.repo, info);
 }

@@ -1,10 +1,12 @@
-import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Cause, type Effect, Exit } from "effect";
 import type { TSchema } from "typebox";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
-import piWebAccess, { type PiWebAccessHost } from "./runtime/index.js";
+import piWebAccess, { type PiWebAccessHost, WebContentSessionError } from "./runtime/index.js";
 import { WEB_CONTENT_PARAMETERS, WEB_FETCH_PARAMETERS, WEB_SEARCH_PARAMETERS } from "./tool-contracts.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
@@ -12,11 +14,7 @@ type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
 type SharedToolFields = Pick<CapturedTool, "label" | "name"> &
 	Partial<Pick<CapturedTool, "constrainedSampling" | "executionMode">>;
 export type WebAdapterHost = SuiteToolRegistrationHost;
-export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost;
-
-export interface WebAdapterOptions {
-	readonly fakeIpCompatibility?: Pick<FakeIpCompatibility, "prepare">;
-}
+export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost & Pick<ExtensionAPI, "events" | "on">;
 
 function errorResult(error: string): AgentToolResult<unknown> {
 	return {
@@ -48,11 +46,7 @@ function registerSearch(pi: SuiteToolRegistrationHost, upstream: CapturedTool): 
 	registerSuiteOwnedTool(pi, tool, WEB_SEARCH_PRESENTATION);
 }
 
-function registerFetch(
-	pi: SuiteToolRegistrationHost,
-	upstream: CapturedTool,
-	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
-): void {
+function registerFetch(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
 	const tool: ToolDefinition<typeof WEB_FETCH_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
 		description:
@@ -60,8 +54,7 @@ function registerFetch(
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			const validation = validateWebFetchInput(params);
 			if (!validation.ok) return errorResult(validation.error);
-			await fakeIpCompatibility.prepare(validation.input);
-			return upstream.execute(toolCallId, validation.input, signal, onUpdate, ctx);
+			return await upstream.execute(toolCallId, validation.input, signal, onUpdate, ctx);
 		},
 		parameters: WEB_FETCH_PARAMETERS,
 		promptSnippet:
@@ -82,17 +75,13 @@ function registerContinuation(pi: SuiteToolRegistrationHost, upstream: CapturedT
 	registerSuiteOwnedTool(pi, tool, WEB_CONTENT_PRESENTATION);
 }
 
-function registerSelectedTool(
-	pi: SuiteToolRegistrationHost,
-	tool: CapturedTool,
-	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
-): void {
+function registerSelectedTool(pi: SuiteToolRegistrationHost, tool: CapturedTool): void {
 	switch (tool.label) {
 		case "Web Search":
 			registerSearch(pi, tool);
 			break;
 		case "Fetch Content":
-			registerFetch(pi, tool, fakeIpCompatibility);
+			registerFetch(pi, tool);
 			break;
 		case "Get Search Content":
 			registerContinuation(pi, tool);
@@ -104,11 +93,9 @@ function registerSelectedTool(
 }
 
 /** Build the narrow host facade supplied to the pinned fork. */
-export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, options: WebAdapterOptions = {}): Host {
-	const fakeIpCompatibility = options.fakeIpCompatibility ?? new FakeIpCompatibility();
+export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host): Host {
 	// SAFETY: the fork calls registerTool with ToolDefinition values; this facade only narrows which labels are installed.
-	const registerTool = ((tool: CapturedTool) =>
-		registerSelectedTool(pi, tool, fakeIpCompatibility)) as ExtensionAPI["registerTool"];
+	const registerTool = ((tool: CapturedTool) => registerSelectedTool(pi, tool)) as ExtensionAPI["registerTool"];
 	return new Proxy(pi, {
 		get(target, property) {
 			if (property === "registerTool") return registerTool;
@@ -117,7 +104,36 @@ export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, optio
 	});
 }
 
+export async function runWebContentOperation<A, E>(
+	foundation: EffectFoundation,
+	ctx: ExtensionContext,
+	program: Effect.Effect<A, E>,
+	signal?: AbortSignal | undefined,
+): Promise<A> {
+	const session = foundation.sessionFor(ctx.sessionManager);
+	if (!session || !foundation.isCurrent(session)) {
+		throw new WebContentSessionError("Web content fetch is unavailable before Session start.");
+	}
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program, { signal });
+	await foundation.close(operation, exit);
+	if (!foundation.isCurrent(session))
+		throw new WebContentSessionError("Web content fetch belongs to a stale Session.");
+	if (signal?.aborted) throw new DOMException("This operation was aborted", "AbortError");
+	if (Exit.isFailure(exit)) {
+		if (Cause.hasInterrupts(exit.cause)) throw new DOMException("This operation was aborted", "AbortError");
+		throw Cause.squash(exit.cause);
+	}
+	return exit.value;
+}
+
 /** Installation performs configuration reads only; all external work stays Tool-triggered. */
 export function installWebCapability(pi: WebCapabilityHost): void {
-	piWebAccess(createWebAdapterApi(pi));
+	// SAFETY: this Capability facade supplies the event bus and lifecycle registration used by the Foundation installer.
+	const foundation = installEffectFoundation(pi as ExtensionAPI);
+	const fakeIpCompatibility = new FakeIpCompatibility();
+	piWebAccess(createWebAdapterApi(pi), {
+		prepareFetch: (input) => fakeIpCompatibility.prepare(input),
+		runContentOperation: (ctx, program, signal) => runWebContentOperation(foundation, ctx, program, signal),
+	});
 }

@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { type AgentToolResult, createEventBus, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentToolResult,
+	createEventBus,
+	type ExtensionContext,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import { createWebAdapterApi, type WebAdapterHost } from "../../packages/pi-stuff/src/web/adapter.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
+import {
+	createWebAdapterApi,
+	runWebContentOperation,
+	type WebAdapterHost,
+} from "../../packages/pi-stuff/src/web/adapter.js";
+import { WebContentSessionError } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 const SearchParameters = Type.Object(
@@ -130,5 +142,28 @@ describe("Pi Stuff Web fork boundary", () => {
 		expect(properties.limit.maximum).toBe(30_000);
 		expect(properties.offset.minimum).toBe(0);
 		expect(tool.renderShell).toBe("self");
+	});
+
+	test("runs content work in the current Session operation and maps cancellation", async () => {
+		const foundation = new EffectFoundation();
+		// SAFETY: Foundation ownership uses Session Manager identity only; no Session methods are exercised here.
+		const sessionManager = {} as ExtensionContext["sessionManager"];
+		await foundation.startSession(sessionManager);
+		// SAFETY: The runner reads only sessionManager from this focused Host context fixture.
+		const ctx = { sessionManager } as ExtensionContext;
+		try {
+			await expect(runWebContentOperation(foundation, ctx, Effect.succeed("ok"))).resolves.toBe("ok");
+			const controller = new AbortController();
+			const cancelled = runWebContentOperation(foundation, ctx, Effect.never, controller.signal);
+			controller.abort();
+			await expect(cancelled).rejects.toThrow("aborted");
+
+			const stale = runWebContentOperation(foundation, ctx, Effect.never);
+			// SAFETY: Foundation ownership uses Session Manager identity only; no Session methods are exercised here.
+			await foundation.startSession({} as ExtensionContext["sessionManager"]);
+			await expect(stale).rejects.toBeInstanceOf(WebContentSessionError);
+		} finally {
+			await foundation.shutdown();
+		}
 	});
 });

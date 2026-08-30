@@ -1,5 +1,6 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
@@ -10,6 +11,7 @@ import {
 	type WebFetchParams,
 	type WebSearchParams,
 } from "../tool-contracts.ts";
+import type { WebFetchInput } from "../url-policy.ts";
 import { readWebConfig, withWebConfigSnapshot } from "./config.ts";
 import { type FindMode, findContent } from "./content-find.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -29,19 +31,26 @@ import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
 
 export type PiWebAccessHost = Pick<ExtensionAPI, "appendEntry" | "on" | "registerTool">;
 
+export class WebContentSessionError extends Error {}
+
+export interface WebRuntimeEffectOptions {
+	readonly prepareFetch: (input: WebFetchInput) => Effect.Effect<void, Error>;
+	readonly runContentOperation: <A, E>(
+		ctx: ExtensionContext,
+		program: Effect.Effect<A, E>,
+		signal?: AbortSignal | undefined,
+	) => Promise<A>;
+}
+
 export { configureRuntimeSsrfDefaults, type RuntimeSsrfDefaults } from "./ssrf-protection.ts";
 
 const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
-let extractModulePromise: Promise<typeof import("./extract.ts")> | undefined;
-async function fetchAllContent(
-	urls: string[],
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<ExtractedContent[]> {
-	extractModulePromise ??= import("./extract.ts");
-	const extractModule = await extractModulePromise;
-	return extractModule.fetchAllContent(urls, signal, options);
+function fetchAllContent(urls: string[], options?: ExtractOptions): Effect.Effect<ExtractedContent[], Error> {
+	return Effect.tryPromise({
+		try: () => import("./extract.ts"),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(Effect.flatMap((extractModule) => extractModule.fetchAllContent(urls, options)));
 }
 
 function resolveFindMode(value: JsonInputValue): FindMode {
@@ -213,6 +222,7 @@ function formatFullResults(queryData: QueryResultData): string {
 }
 
 interface WebRuntime {
+	readonly effects: WebRuntimeEffectOptions;
 	readonly pi: PiWebAccessHost;
 	readonly storedContentSources: string;
 	readonly toolNames: ToolNames;
@@ -397,6 +407,7 @@ async function executeFetch(
 	params: WebFetchParams,
 	signal: AbortSignal | undefined,
 	onUpdate: WebUpdate | undefined,
+	ctx: ExtensionContext,
 ): Promise<AgentToolResult<JsonInputObject>> {
 	let normalized: ReturnType<typeof normalizeFetchContentParams>;
 	try {
@@ -416,7 +427,18 @@ async function executeFetch(
 		content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
 		details: { phase: "fetch", progress: 0 },
 	});
-	const results = await fetchAllContent(urlList, signal, options);
+	let results: ExtractedContent[];
+	try {
+		results = await runtime.effects.runContentOperation(
+			ctx,
+			Effect.andThen(runtime.effects.prepareFetch({ urls: urlList }), fetchAllContent(urlList, options)),
+			signal,
+		);
+	} catch (error) {
+		if (error instanceof WebContentSessionError) throw error;
+		if (!signal?.aborted && !isAbortError(error)) throw error;
+		results = urlList.map((url) => ({ url, title: "", content: "", error: "Aborted" }));
+	}
 	const responseId = storeAndPublish(runtime, {
 		id: generateId(),
 		type: "fetch",
@@ -642,8 +664,8 @@ function registerFetchTool(runtime: WebRuntime): void {
 		promptSnippet:
 			"Read public HTTP(S) pages, direct images, GitHub URLs, and PDFs. Use raw only for exact textual response bodies.",
 		parameters: WEB_FETCH_PARAMETERS,
-		execute: (_callId, params, signal, onUpdate) =>
-			withWebConfigSnapshot(() => executeFetch(runtime, params, signal, onUpdate)),
+		execute: (_callId, params, signal, onUpdate, ctx) =>
+			withWebConfigSnapshot(() => executeFetch(runtime, params, signal, onUpdate, ctx)),
 	});
 }
 
@@ -658,10 +680,11 @@ function registerContentTool(runtime: WebRuntime): void {
 	});
 }
 
-function installPiWebAccess(pi: PiWebAccessHost): void {
+function installPiWebAccess(pi: PiWebAccessHost, effects: WebRuntimeEffectOptions): void {
 	const initConfig = loadConfig();
 	const toolNames = resolveToolNames(initConfig);
 	const runtime: WebRuntime = {
+		effects,
 		pi,
 		toolNames,
 		storedContentSources:

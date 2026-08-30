@@ -16,8 +16,14 @@ execution, storage, and Session restoration only.
 `rsc-extract.ts` separates flight-chunk parsing from the cycle-safe node traversal that renders referenced content and
 Markdown tables.
 
-`extract.ts` keeps the ordered provider fallback policy in one sequence and delegates HTTP response types to focused
-raw, image, PDF, text, HTML, and RSC handlers.
+`extract.ts` owns the Effect content-retrieval program: remote validation, redirect-safe native fetches, timeout and
+interruption, bounded response-reader finalization, ordered provider fallback, and stable three-way URL concurrency.
+It delegates raw, image, PDF, text, HTML, and RSC interpretation to focused handlers while keeping deterministic
+parsing as ordinary TypeScript. `github-api.ts` is the interruptible native `gh` adapter, and `pdf-extract.ts` is the
+native PDF parser/filesystem adapter; returned temporary Markdown files intentionally outlive the operation so Pi can
+read them afterward. The parent adapter is the only Effect runner and fences storage/publication to the current
+Session. Extraction-provider Promise bridges are temporary, explicitly inventoried against `ps-pby.10` or
+`ps-pby.11`, and share this one content path rather than creating a second runtime.
 
 `gemini-search.ts` owns one typed provider registry and the routing policy built from it. Each provider is declared
 once with its dispatch, availability, label, and automatic-routing metadata. Gemini API and browser transports remain
