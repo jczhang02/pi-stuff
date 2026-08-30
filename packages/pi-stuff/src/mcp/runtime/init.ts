@@ -7,6 +7,7 @@ import { McpLifecycleManager } from "./lifecycle.ts";
 import { logger } from "./logger.ts";
 import { getAuthStorageOptions } from "./mcp-auth.ts";
 import { createOAuthRuntime, hasPendingAuth, type McpOAuthRuntime, shutdownOAuth } from "./mcp-auth-flow.ts";
+import type { McpEffectRunner } from "./mcp-effect-runner.ts";
 import { publishMcpStatusSnapshot } from "./mcp-status.ts";
 import {
 	computeServerHash,
@@ -241,6 +242,7 @@ async function connectStartupServers(
 export async function initializeMcp(
 	pi: ExtensionAPI,
 	ctx: McpInitializationContext,
+	runEffect: McpEffectRunner,
 	owner: McpRuntimeOwner = createMcpRuntimeOwner(),
 	options: McpInitializationOptions = {},
 ): Promise<McpExtensionState> {
@@ -262,7 +264,7 @@ export async function initializeMcp(
 
 	const ownsOAuthRuntime = options.oauthRuntime === undefined;
 	const oauthRuntime = options.oauthRuntime ?? createOAuthRuntime(owner.signal);
-	const manager = new McpServerManager(cwd);
+	const manager = new McpServerManager(runEffect, cwd);
 	manager.setRuntimeSignal?.(owner.signal);
 	manager.setOAuthRuntime?.(oauthRuntime);
 	manager.setDefaultRequestTimeoutMs(config.settings?.requestTimeoutMs);

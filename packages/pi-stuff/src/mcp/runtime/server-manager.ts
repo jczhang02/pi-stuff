@@ -9,11 +9,11 @@ import { createJsonSchemaValidator } from "./json-schema-validator.ts";
 import { logger } from "./logger.ts";
 import type { AuthStorageOptions } from "./mcp-auth.ts";
 import { type McpOAuthRuntime, supportsOAuth } from "./mcp-auth-flow.ts";
+import type { McpEffectRunner } from "./mcp-effect-runner.ts";
 import {
-	connectClientWithAbort,
+	connectClient,
 	createHttpTransport,
 	createSessionTerminator,
-	getAbortCleanupPromise,
 	isUnauthorizedHttpError,
 } from "./mcp-http-transport.ts";
 import { probeMcpEndpoint } from "./mcp-probe.ts";
@@ -121,6 +121,7 @@ type MetadataListChangedListener = (serverName: string, reason: string) => void;
 
 export class McpServerManager {
 	private readonly defaultCwd: string | undefined;
+	private readonly runEffect: McpEffectRunner;
 	private connections = new Map<string, ServerConnection>();
 	private connectPromises = new Map<string, Promise<ServerConnection>>();
 	private reconnectPromises = new Map<string, Promise<ServerConnection>>();
@@ -137,7 +138,8 @@ export class McpServerManager {
 	private stopped = false;
 
 	/** Default cwd for stdio servers without an explicit config `cwd`. */
-	constructor(defaultCwd?: string) {
+	constructor(runEffect: McpEffectRunner, defaultCwd?: string) {
+		this.runEffect = runEffect;
 		this.defaultCwd = defaultCwd;
 	}
 
@@ -215,7 +217,7 @@ export class McpServerManager {
 		const connectionAttempt = this.createConnection(name, definition, attemptSignal, ownedSignal);
 		const promise = definition.url
 			? connectionAttempt.catch(async (error) => {
-					throw await this.enrichHttpConnectionError(definition, error);
+					throw await this.enrichHttpConnectionError(definition, error, attemptSignal);
 				})
 			: connectionAttempt;
 		this.connectPromises.set(name, promise);
@@ -336,15 +338,17 @@ export class McpServerManager {
 			});
 			transport = stdioTransport;
 		} else if (definition.url) {
-			transport = await createHttpTransport({
-				authStorageOptions: this.authStorageOptions,
-				definition,
-				oauthSignal: this.oauthRuntime?.signal,
-				requestOptions,
-				serverName: name,
+			transport = await this.runEffect(
+				createHttpTransport({
+					authStorageOptions: this.authStorageOptions,
+					definition,
+					oauthSignal: this.oauthRuntime?.signal,
+					requestOptions,
+					serverName: name,
+					traceObserver,
+				}),
 				signal,
-				traceObserver,
-			});
+			);
 			terminateSession = createSessionTerminator(transport, name);
 		} else {
 			const socketPath = resolveConfigPath(definition.socket);
@@ -391,8 +395,10 @@ export class McpServerManager {
 		);
 
 		throwIfAborted(signal);
+		let connected = false;
 		try {
-			await connectClientWithAbort(client, transport, requestOptions, signal);
+			await this.runEffect(connectClient(client, transport, requestOptions), signal);
+			connected = true;
 
 			const instructions = client.getInstructions?.();
 			const connection: ServerConnection = {
@@ -433,15 +439,9 @@ export class McpServerManager {
 
 			return connection;
 		} catch (error) {
-			// If connectClientWithAbort closed the transport, await that exact close.
-			// Otherwise the SDK client owns its transport, so client.close() is the
-			// single cleanup operation rather than closing the transport twice.
-			const abortCleanup = getAbortCleanupPromise(transport);
-			const abortCleanupFailed =
-				error instanceof AggregateError && error.message === "MCP connection abort cleanup failed";
-			const cleanupResults = abortCleanupFailed
-				? []
-				: await Promise.allSettled([abortCleanup ?? Promise.resolve().then(() => client.close())]);
+			// connectClient owns failed acquisition cleanup. Once connected, the SDK
+			// client owns cleanup for metadata discovery failures.
+			const cleanupResults = connected ? await Promise.allSettled([client.close()]) : [];
 			const cleanupFailures = cleanupResults.flatMap((result) =>
 				result.status === "rejected" ? [result.reason] : [],
 			);
@@ -485,12 +485,13 @@ export class McpServerManager {
 	private async enrichHttpConnectionError<ErrorValue>(
 		definition: ServerDefinition,
 		error: ErrorValue,
+		signal?: AbortSignal,
 	): Promise<Error> {
 		const originalMessage = error instanceof Error ? error.message : String(error);
 		try {
 			const serverUrl = resolveServerUrl(definition);
 			if (!serverUrl) throw new Error("MCP server URL is missing");
-			const probe = await probeMcpEndpoint(serverUrl);
+			const probe = await this.runEffect(probeMcpEndpoint(serverUrl), signal);
 			return new Error(`${originalMessage} — probe: ${probe.classification}`, { cause: error });
 		} catch {
 			return error instanceof Error ? error : new Error(originalMessage);

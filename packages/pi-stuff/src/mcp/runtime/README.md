@@ -10,8 +10,9 @@ Direct Tools, JavaScript batching, prompts, Apps, sampling, and elicitation are 
 retained behind flags.
 
 `implementation.ts` keeps one per-factory adapter state and wires ordered session, Command, and gateway Tool phases.
-`init.ts` owns state construction and startup projection; `server-manager.ts` alone owns connection identity and
-transport cleanup.
+`init.ts` owns state construction and startup projection; `server-manager.ts` owns connection identity and
+post-connect disposal. `mcp-http-transport.ts` owns native HTTP negotiation and failed-acquisition cleanup, while
+`mcp-effect-runner.ts` projects its Effects to the existing Promise and `AbortSignal` contract at the Pi-facing seam.
 `config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe loading, narrow writes, and
 its compatibility exports.
 
@@ -27,6 +28,11 @@ snapshots and exact write previews without mutating that state.
   previewed, hashed, or rendered.
 - OAuth credentials require the operating-system credential store and fail closed when it is unavailable. Linux may
   recover a revoked Session keyring through the packaged `keyctl`/Node helper; failure never falls back to plaintext.
+- HTTP connection first probes Streamable HTTP, retries one implicit OAuth challenge with the native SDK provider,
+  and falls back to native SSE only after a non-authentication protocol failure. SDK Client and Transport identities
+  remain native.
+- Endpoint classification keeps manual redirects, a 5-second deadline per request, a 64 KiB response-body limit, and
+  guaranteed response cancellation. Effect interruption closes a failed connection acquisition exactly once.
 - A configured `rmcp-mux` socket is a trusted shared endpoint. Pi Stuff owns only its client connection and never
   starts, adopts, restarts, or stops the mux daemon or upstream process.
 - Enabled `eager` and `keep-alive` servers may initialize for a programmatic Host without `session_start`; a later

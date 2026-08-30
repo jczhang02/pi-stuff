@@ -650,7 +650,7 @@ function extractHttpResponse(
 		});
 	}
 	return readTextResponseWithLimit(response, maxResponseSize).pipe(
-		Effect.flatMap((text) => {
+		Effect.flatMap((text): Effect.Effect<HttpExtractedContent, Error> => {
 			if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
 				activityMonitor.logComplete(activityId, response.status);
 				return Effect.succeed({ url, title: extractTextTitle(text, url), content: text, error: null });

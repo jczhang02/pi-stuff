@@ -23,6 +23,7 @@ import { flushMetadataCache, initializeMcp, type McpInitializationContext, updat
 import { logger } from "./logger.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { createOAuthRuntime, shutdownOAuth } from "./mcp-auth-flow.ts";
+import { runMcpEffect } from "./mcp-effect-runner.ts";
 import { publishMcpStatusShutdown } from "./mcp-status.ts";
 import { executeCall } from "./proxy-call.ts";
 import {
@@ -207,7 +208,7 @@ function startMcpInitialization(
 	) {
 		initializationOptions.configPath = runtime.earlyConfigPath;
 	}
-	const promise = initializeMcp(runtime.pi, ctx, owner, initializationOptions);
+	const promise = initializeMcp(runtime.pi, ctx, runMcpEffect, owner, initializationOptions);
 	runtime.initPromise = promise;
 
 	return promise

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
 import { createMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/runtime/mcp-status.js";
 import { McpServerManager } from "../../packages/pi-stuff/src/mcp/runtime/server-manager.js";
 import {
@@ -29,7 +30,7 @@ test("MCP status events omit absent optional server fields", () => {
 		config: { mcpServers: { context7: { url: "https://mcp.context7.com/mcp" } } },
 		failureMessages: new Map(),
 		failureTracker: new Map(),
-		manager: new McpServerManager(),
+		manager: new McpServerManager(runMcpEffect),
 		resourceCounts: new Map(),
 		toolMetadata: new Map(),
 	});
@@ -38,7 +39,7 @@ test("MCP status events omit absent optional server fields", () => {
 });
 
 test("MCP connection rejects advertised resources that cannot be listed", async () => {
-	const manager = new McpServerManager();
+	const manager = new McpServerManager(runMcpEffect);
 	try {
 		await expect(
 			manager.connect("broken-resources", {
@@ -54,7 +55,7 @@ test("MCP connection rejects advertised resources that cannot be listed", async 
 
 test("MCP connection bounds server-controlled metadata pagination and entries", async () => {
 	for (const kind of ["tools", "resources"] as const) {
-		const manager = new McpServerManager();
+		const manager = new McpServerManager(runMcpEffect);
 		try {
 			await expect(
 				manager.connect(`looping-${kind}`, {
@@ -68,7 +69,7 @@ test("MCP connection bounds server-controlled metadata pagination and entries", 
 		}
 	}
 
-	const manager = new McpServerManager();
+	const manager = new McpServerManager(runMcpEffect);
 	try {
 		await expect(
 			manager.connect("oversized-tools", {

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -6,6 +7,12 @@ const PROBE_BODY_LIMIT_BYTES = 64 * 1024;
 export interface McpProbeResult {
 	isMcp: boolean;
 	classification: string;
+}
+
+interface ClassifiedResponse {
+	readonly classification: McpProbeResult | null;
+	readonly fallbackAllowed: boolean;
+	readonly negative: McpProbeResult;
 }
 
 const INITIALIZE_REQUEST = {
@@ -34,38 +41,55 @@ function responseKind(response: Response): string {
 	return "an untyped response";
 }
 
-async function hasJsonRpcEnvelope(response: Response): Promise<boolean> {
+function cancelReader(reader: Pick<ReadableStreamDefaultReader, "cancel" | "releaseLock">): Effect.Effect<void> {
+	return Effect.promise(async () => {
+		try {
+			await reader.cancel();
+		} catch {
+			// Probe cleanup is best-effort and must not replace the classification.
+		} finally {
+			reader.releaseLock();
+		}
+	});
+}
+
+function hasJsonRpcEnvelope(response: Response): Effect.Effect<boolean> {
 	const reader = response.body?.getReader();
-	if (!reader) return false;
-	const decoder = new TextDecoder();
-	let bytes = 0;
-	let text = "";
-	try {
+	if (!reader) return Effect.succeed(false);
+	return Effect.gen(function* () {
+		const decoder = new TextDecoder();
+		let bytes = 0;
+		let text = "";
 		while (true) {
-			const { done, value } = await reader.read();
+			const { done, value } = yield* Effect.tryPromise({
+				try: () => reader.read(),
+				catch: (error) => error,
+			});
 			if (done) break;
 			bytes += value.byteLength;
 			if (bytes > PROBE_BODY_LIMIT_BYTES) return false;
 			text += decoder.decode(value, { stream: true });
 		}
 		text += decoder.decode();
-		return isJsonRpcEnvelope(JSON.parse(text));
-	} catch {
-		return false;
-	} finally {
-		await reader.cancel().catch(() => undefined);
-		reader.releaseLock();
-	}
+		try {
+			return isJsonRpcEnvelope(JSON.parse(text));
+		} catch {
+			return false;
+		}
+	}).pipe(
+		Effect.catch(() => Effect.succeed(false)),
+		Effect.ensuring(cancelReader(reader)),
+	);
 }
 
-async function classifyResponse(response: Response, allowJson: boolean): Promise<McpProbeResult | null> {
-	try {
+function classifyResponse(response: Response, allowJson: boolean): Effect.Effect<McpProbeResult | null> {
+	return Effect.gen(function* () {
 		const isSse = response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream");
 		if (response.ok && isSse) {
 			return { isMcp: true, classification: "endpoint responded with an MCP event stream" };
 		}
 
-		const isJsonRpc = (allowJson || response.status === 401) && (await hasJsonRpcEnvelope(response));
+		const isJsonRpc = (allowJson || response.status === 401) && (yield* hasJsonRpcEnvelope(response));
 		if (response.ok && allowJson && isJsonRpc) {
 			return { isMcp: true, classification: "endpoint responded with a JSON-RPC 2.0 envelope" };
 		}
@@ -77,9 +101,7 @@ async function classifyResponse(response: Response, allowJson: boolean): Promise
 		}
 
 		return null;
-	} finally {
-		if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined);
-	}
+	});
 }
 
 function notMcp(response: Response): McpProbeResult {
@@ -89,28 +111,58 @@ function notMcp(response: Response): McpProbeResult {
 	};
 }
 
+function cancelResponse(response: Response): Effect.Effect<void> {
+	return Effect.promise(async () => {
+		if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined);
+	});
+}
+
+function inspectEndpoint(
+	url: string | URL,
+	init: RequestInit,
+	allowJson: boolean,
+): Effect.Effect<ClassifiedResponse, unknown> {
+	return Effect.uninterruptibleMask((restore) =>
+		Effect.gen(function* () {
+			const response = yield* restore(
+				Effect.tryPromise({
+					try: (signal) => fetch(url, { ...init, signal }),
+					catch: (error) => error,
+				}),
+			);
+			return yield* restore(
+				classifyResponse(response, allowJson).pipe(
+					Effect.map((classification) => ({
+						classification,
+						fallbackAllowed: [404, 405, 406, 415].includes(response.status),
+						negative: notMcp(response),
+					})),
+				),
+			).pipe(Effect.ensuring(cancelResponse(response)));
+		}),
+	).pipe(Effect.timeout(PROBE_TIMEOUT_MS));
+}
+
 /** Makes one unauthenticated metadata-only request to identify an HTTP endpoint's protocol shape. */
-export async function probeMcpEndpoint(url: string | URL): Promise<McpProbeResult> {
-	const postResponse = await fetch(url, {
-		method: "POST",
-		headers: {
-			Accept: "application/json, text/event-stream",
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify(INITIALIZE_REQUEST),
-		redirect: "manual",
-		signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-	});
-	const postClassification = await classifyResponse(postResponse, true);
-	if (postClassification) return postClassification;
+export function probeMcpEndpoint(url: string | URL): Effect.Effect<McpProbeResult, unknown> {
+	return Effect.gen(function* () {
+		const post = yield* inspectEndpoint(
+			url,
+			{
+				method: "POST",
+				headers: {
+					Accept: "application/json, text/event-stream",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(INITIALIZE_REQUEST),
+				redirect: "manual",
+			},
+			true,
+		);
+		if (post.classification) return post.classification;
+		if (!post.fallbackAllowed) return post.negative;
 
-	if (![404, 405, 406, 415].includes(postResponse.status)) return notMcp(postResponse);
-
-	const getResponse = await fetch(url, {
-		headers: { Accept: "text/event-stream" },
-		redirect: "manual",
-		signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+		const get = yield* inspectEndpoint(url, { headers: { Accept: "text/event-stream" }, redirect: "manual" }, false);
+		return get.classification ?? get.negative;
 	});
-	const getClassification = await classifyResponse(getResponse, false);
-	return getClassification ?? notMcp(getResponse);
 }
