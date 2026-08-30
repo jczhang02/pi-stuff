@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: design frozen; Run Lock incomplete; no confirmation Session, Provider request, or outcome has been produced.
+Status: design and Run Lock frozen; no confirmation Session, Provider request, or outcome has been produced.
 
 This is a new confirmation study for Bead `ps-1gd`. It does not replace the retained failed-instrumentation
 [first study](skill-discovery-benchmark-20260830.md) or reuse any of its samples. The question remains whether Pi Stuff
@@ -37,13 +37,24 @@ verdict. The primary comparisons remain Pi Stuff off minus Raw Pi, then Pi Stuff
 
 ## Run Lock
 
-No live confirmation call may begin until one pre-outcome amendment records exact values for:
+The pre-outcome Run Lock is complete:
 
-- Provider, model, and reasoning configuration;
-- clean candidate Package commit and tree;
-- runner and measurement-only observer paths and SHA-256 values;
-- generated confirmation-manifest path and SHA-256;
-- Run Lock and sanitized report paths.
+- Provider `openai-codex`, model `gpt-5.6-sol`, reasoning `xhigh`.
+- Candidate commit `361915932c3a50ffc3d8b2d06108bf289c4f2f3a`; Package tree
+  `261e1fb3719913a8ca7ed6f62281de3e122cd34c`.
+- Runner sources:
+  - `scripts/benchmark-skill-discovery.ts`: `53f810d62a600acf59e09e4e5b9ce9a44331521fa1ede67b1f7ba17af603dcbb`;
+  - `scripts/pi-rpc-client.ts`: `bad75a34475d04209580df6fc68acda606eab87606cd711ac8b449065509eb1e`;
+  - `scripts/skill-discovery-benchmark-core.ts`: `fc9ad5f4875a48d46899ada9cdabe1beb6171609b42cdfd43cd36e25b2d0239d`;
+  - `scripts/skill-discovery-benchmark-evidence.ts`: `b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`;
+  - `scripts/skill-discovery-benchmark-report.ts`: `72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`;
+  - `scripts/skill-discovery-benchmark-session.ts`: `2d5a7ea8180c357c89f798f57e1f8d62937c8fbcd9ed0fef785045269e5e16b9`.
+- Measurement-only observer `test/fixtures/skill-discovery-benchmark-observer.ts`:
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`.
+- Immutable manifest `test/fixtures/skill-discovery-confirmation-manifest.jsonl`:
+  `6fa006d7df5273ed38a9c0176eb02f19f73a9ade768d4ebf0bf8b5bb5d51ae59`.
+- Run Lock `test/fixtures/skill-discovery-confirmation-run-lock.json`.
+- Sanitized report destination `docs/reports/skill-discovery-confirmation-20260830.json`.
 
 The candidate commit identifies the Package source; the later Run Lock commit cannot self-identify. Preflight instead
 requires the candidate and clean execution tree to resolve to the same locked Package tree, and independently hashes

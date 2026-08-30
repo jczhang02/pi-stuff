@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-confirmation-20260830.md; translation-source-sha256: 0980ed65ec71338132e999935df49ead2c232264cc684c6c0d575bec37279f76 -->
+<!-- translation-source: docs/research/skill-discovery-confirmation-20260830.md; translation-source-sha256: 4124d3ded67cf5151b10dd865ad555f01bd8e991a19b1ffa8624cc266d7ca4d6 -->
 
 # Skill Discovery 真实模型 confirmation 预注册
 
 日期：2026-08-30
 
-状态：研究设计已冻结；Run Lock 尚未完成；尚未产生 confirmation Session、Provider 请求或结果。
+状态：研究设计与 Run Lock 已冻结；尚未产生 confirmation Session、Provider 请求或结果。
 
 这是 Bead `ps-1gd` 的新 confirmation study。它不会替换保留的 instrumentation failure
 [首次研究](../../../../../docs/research/skill-discovery-benchmark-20260830.md)，也不复用其中任何样本。问题仍是
@@ -37,13 +37,24 @@ Tool-selection 设计，并使用新 seed、task、fixture、manifest、Run Lock
 
 ## Run Lock
 
-在一次结果产生前的 amendment 记录以下精确值之前，不得发起 live confirmation call：
+结果产生前的 Run Lock 已完成：
 
-- Provider、model 与 reasoning 配置；
-- clean candidate Package commit 与 tree；
-- runner 与只测量 observer 的路径和 SHA-256；
-- 已生成 confirmation manifest 的路径和 SHA-256；
-- Run Lock 与 sanitized report 路径。
+- Provider `openai-codex`、model `gpt-5.6-sol`、reasoning `xhigh`。
+- Candidate commit `361915932c3a50ffc3d8b2d06108bf289c4f2f3a`；Package tree
+  `261e1fb3719913a8ca7ed6f62281de3e122cd34c`。
+- Runner source：
+  - `scripts/benchmark-skill-discovery.ts`：`53f810d62a600acf59e09e4e5b9ce9a44331521fa1ede67b1f7ba17af603dcbb`；
+  - `scripts/pi-rpc-client.ts`：`bad75a34475d04209580df6fc68acda606eab87606cd711ac8b449065509eb1e`；
+  - `scripts/skill-discovery-benchmark-core.ts`：`fc9ad5f4875a48d46899ada9cdabe1beb6171609b42cdfd43cd36e25b2d0239d`；
+  - `scripts/skill-discovery-benchmark-evidence.ts`：`b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`；
+  - `scripts/skill-discovery-benchmark-report.ts`：`72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`；
+  - `scripts/skill-discovery-benchmark-session.ts`：`2d5a7ea8180c357c89f798f57e1f8d62937c8fbcd9ed0fef785045269e5e16b9`。
+- 只测量 observer `test/fixtures/skill-discovery-benchmark-observer.ts`：
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`。
+- Immutable manifest `test/fixtures/skill-discovery-confirmation-manifest.jsonl`：
+  `6fa006d7df5273ed38a9c0176eb02f19f73a9ade768d4ebf0bf8b5bb5d51ae59`。
+- Run Lock `test/fixtures/skill-discovery-confirmation-run-lock.json`。
+- Sanitized report 目标 `docs/reports/skill-discovery-confirmation-20260830.json`。
 
 Candidate commit 标识 Package source；更晚的 Run Lock commit 无法自我标识。Preflight 改为要求 candidate 与
 clean execution tree 解析到相同 locked Package tree，并独立计算每个可执行 runner input、observer 与 manifest
