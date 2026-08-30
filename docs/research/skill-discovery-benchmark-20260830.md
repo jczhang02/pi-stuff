@@ -158,3 +158,20 @@ token totals, exact model/Host/source identities, statistical summaries, and the
 credentials, prompts, Assistant text, Skill bodies, Provider payloads, Session JSON, Session IDs, private absolute
 paths, or machine-specific temporary directories. All temporary projects, Sessions, fixtures, and observer logs are
 deleted after the sanitized report is written and validated.
+
+## Retained outcome
+
+The single frozen run completed all 90 Sessions. Raw Pi succeeded on 30/30 tasks; Pi Stuff off succeeded on 29/30,
+with one timeout; Pi Stuff on recorded 0/30 primary successes. The preregistered verdict is **failed**. The sanitized
+report is [`skill-discovery-benchmark-20260830.json`](../reports/skill-discovery-benchmark-20260830.json), SHA-256
+`659ae1f417012796221ff4355c8998c7e7ac6b2baaca69ea38ac1a33e1727aaa`.
+
+The on-arm rate is not interpretable as a product regression because the study's own hard Provider-Tool invariant
+failed. Every on-arm first Provider request exposed no Tools and omitted the Skill catalog; all 30 were therefore
+instrumentation failures before model selection. Post-outcome diagnosis found that the runner passed
+`--tools bash,find,grep,ls,read` to every arm. Pi 0.84.4 defines `--tools` as a strict allowlist across built-in,
+extension, and custom Tools, so it excluded the on arm's `codemode` and `tool_search` Tools. This is a benchmark-design
+error, not evidence that Code Mode suppresses Skill discovery under its supported Tool surface.
+
+No sample was retried or replaced. This study and report remain unchanged. Any corrected measurement is a separately
+preregistered confirmation study with a new seed, fixtures, manifest, Run Lock, and report.

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: 8edceb1a167b770843d1a2904b2a55985d2da5069510f7f6ef5be48c8e1c8108 -->
+<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: 0fa07fb5631d8a31e5c97d91e65ae700116549b631f5b8c328c3452fc916f22d -->
 
 # Skill Discovery 真实模型 benchmark 预注册
 
@@ -155,3 +155,19 @@ model/Host/source identity、statistical summary 与最终 verdict。报告不�
 text、Skill body、Provider payload、Session JSON、Session ID、private absolute path 或 machine-specific
 temporary directory。写入并验证 sanitized report 后，删除全部 temporary project、Session、fixture 与 observer
 log。
+
+## 保留结果
+
+唯一一次冻结运行完成了全部 90 个 Session。Raw Pi 成功 30/30；Pi Stuff off 成功 29/30，其中一次 timeout；
+Pi Stuff on 的 primary success 为 0/30。预注册 verdict 为 **failed**。Sanitized report 为
+[`skill-discovery-benchmark-20260830.json`](../../../../../docs/reports/skill-discovery-benchmark-20260830.json)，
+SHA-256 `659ae1f417012796221ff4355c8998c7e7ac6b2baaca69ea38ac1a33e1727aaa`。
+
+On arm 的比率不能解释为产品退化，因为本研究自身的 Provider-Tool hard invariant 未通过。每个 on arm 的首次
+Provider 请求都没有暴露任何 Tool，也缺失 Skill catalog；因此 30 个样本全部在模型选择前被判为 instrumentation
+failure。结果产生后的诊断发现，runner 向所有 arm 都传入了 `--tools bash,find,grep,ls,read`。Pi 0.84.4 把
+`--tools` 定义为覆盖 built-in、extension 与 custom Tool 的严格 allowlist，因此排除了 on arm 的 `codemode`
+与 `tool_search`。这是 benchmark 设计错误，不能证明 Code Mode 在受支持的 Tool surface 下抑制 Skill discovery。
+
+没有任何样本被重试或替换。本研究与报告保持不变。任何修正后的测量都必须是独立预注册的 confirmation study，
+使用新 seed、fixture、manifest、Run Lock 与报告。
