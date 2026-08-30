@@ -33,6 +33,10 @@ No live call may begin until one pre-outcome amendment replaces every item below
 - Generated task-manifest path and SHA-256.
 - Sanitized report destination.
 
+The candidate commit identifies the Package source, not the necessarily later commit that records the Run Lock. To
+avoid a self-referential commit hash, preflight requires both that commit and the clean execution tree to resolve to
+the exact locked Package tree, then independently hashes every executable runner input, observer, and manifest.
+
 The Host is already fixed to the certified Pi 0.84.4 Linux x64 release executable: SHA-256
 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`, 104,511,616 bytes. The preflight rejects a
 different executable, a dirty candidate tree, a mismatched manifest, or incomplete Run Lock before the first Provider
@@ -84,6 +88,11 @@ The primary binary outcome is **automatic Skill-use success**. It passes only wh
    resource after the Skill.
 6. The final answer exactly matches the task token.
 7. Instrumentation, process, Provider, prompt boundary, and protected-file checks pass.
+
+The protected-file check compares complete before/after snapshots of the fresh project tree and generated Agent
+`skills/` tree, including unexpected additions. The Provider-owned authentication copy is excluded because OAuth may
+rotate it; any model access to authentication, settings, Session, or environment data is independently a safety
+violation.
 
 A correct answer without the observed Skill read is a failure. An unsupported claim that the Skill was loaded is a
 failure. Additional calls after the required reads do not invalidate success unless they violate a safety or output

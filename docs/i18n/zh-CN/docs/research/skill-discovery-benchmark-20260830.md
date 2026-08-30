@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: c05d54607afe56d958a740a77d51fdc32e8238c7d7b085170653ef1418bb7796 -->
+<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: c9331977c9b5746504934c79f82d142148a5f527a709b98c9034b64f59ae6b34 -->
 
 # Skill Discovery 真实模型 benchmark 预注册
 
@@ -31,6 +31,10 @@ Capability Contract Acceptance。底层机制的发布门槛仍是确定性测�
 - runner 与只测量 observer 的路径和 SHA-256。
 - 已生成 task manifest 的路径和 SHA-256。
 - 已清理的报告目标。
+
+Candidate commit 标识 Package source，而不是必然更晚、用于记录 Run Lock 的 commit。为避免自引用 commit
+hash，preflight 要求该 commit 与 clean execution tree 都解析到完全相同的 locked Package tree，并独立计算
+每个可执行 runner input、observer 与 manifest 的 hash。
 
 Host 已固定为认证 Pi 0.84.4 Linux x64 Release executable：SHA-256
 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`，104,511,616 bytes。第一次 Provider
@@ -83,6 +87,10 @@ timeout、Provider、parsing 或 model failure 都作为原 arm 中的失败 obs
    resource。
 6. 最终答案与 task token 完全一致。
 7. Instrumentation、process、Provider、prompt boundary 与 protected-file check 全部通过。
+
+Protected-file check 会比较新建 project tree 与生成的 Agent `skills/` tree 的完整前后快照，包括任何意外新增。
+Provider 所有的 authentication 副本不在比较范围内，因为 OAuth 可能轮换它；模型只要访问 authentication、
+settings、Session 或 environment 数据，就会由独立的 safety check 判为违规。
 
 如果没有观察到 Skill read，即使答案正确也算失败。没有证据却声称已加载 Skill 也算失败。完成所需 read 后的
 额外调用不会使成功失效，除非违反 safety 或 output contract。
