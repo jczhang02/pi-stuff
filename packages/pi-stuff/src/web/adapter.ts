@@ -1,5 +1,5 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Cause, type Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import type { TSchema } from "typebox";
 import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
@@ -7,6 +7,7 @@ import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-
 import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
 import piWebAccess, { type PiWebAccessHost, WebContentSessionError } from "./runtime/index.js";
+import { WebSettingsStore } from "./settings.js";
 import { WEB_CONTENT_PARAMETERS, WEB_FETCH_PARAMETERS, WEB_SEARCH_PARAMETERS } from "./tool-contracts.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
@@ -130,12 +131,14 @@ export async function runWebContentOperation<A, E, Result>(
 }
 
 /** Installation performs configuration reads only; all external work stays Tool-triggered. */
-export function installWebCapability(pi: WebCapabilityHost): void {
+export async function installWebCapability(pi: WebCapabilityHost): Promise<void> {
+	const settings = await Effect.runPromise(WebSettingsStore.load());
 	// SAFETY: this Capability facade supplies the event bus and lifecycle registration used by the Foundation installer.
 	const foundation = installEffectFoundation(pi as ExtensionAPI);
 	const fakeIpCompatibility = new FakeIpCompatibility();
 	piWebAccess(createWebAdapterApi(pi), {
 		prepareFetch: (input) => fakeIpCompatibility.prepare(input),
+		readSettings: () => settings.get(),
 		runContentOperation: (ctx, program, handlers, signal) =>
 			runWebContentOperation(foundation, ctx, program, handlers, signal),
 	});

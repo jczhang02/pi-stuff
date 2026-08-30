@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSyn
 import { homedir, platform, tmpdir } from "node:os";
 import { isAbsolute, join, sep } from "node:path";
 import type { SQLOutputValue } from "node:sqlite";
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -21,6 +22,15 @@ interface BrowserConfig {
 
 type SqliteRow = JsonInputObject;
 type SqliteFailure = "unavailable" | "query";
+
+interface CookieSearchOutcome {
+	readonly missingRequiredCookies: boolean;
+	readonly requestedProfile: string | undefined;
+	readonly sawBackendFailure: SqliteFailure | undefined;
+	readonly sawCookieDatabase: boolean;
+	readonly sawUnsafeProfilePath: boolean;
+	readonly warningSet: ReadonlySet<string>;
+}
 
 const GOOGLE_ORIGINS = ["https://gemini.google.com", "https://accounts.google.com", "https://www.google.com"];
 
@@ -71,7 +81,7 @@ const LINUX_BROWSER_CONFIGS: BrowserConfig[] = [
 	{ name: "Chrome", baseDir: ".config/google-chrome", secretToolApp: "chrome" },
 ];
 
-const browserPasswordCache = new Map<string, Promise<string | null>>();
+const browserPasswordCache = new Map<string, string>();
 let lastCookieDiagnostic: string | null = null;
 let sqliteModule: typeof import("node:sqlite") | null = null;
 let sqliteImportAttempted = false;
@@ -80,10 +90,16 @@ export function getLastGoogleCookieDiagnostic(): string | null {
 	return lastCookieDiagnostic;
 }
 
-export async function getGoogleCookies(options?: {
-	profile?: string | undefined;
-	requiredCookies?: string[];
-}): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+async function getGoogleCookiesNative(
+	options:
+		| {
+				profile?: string | undefined;
+				requiredCookies?: string[];
+		  }
+		| undefined,
+	signal: AbortSignal,
+): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+	signal.throwIfAborted();
 	lastCookieDiagnostic = null;
 	if (!isBrowserCookieAccessAllowed()) {
 		lastCookieDiagnostic = "Browser cookie access is disabled; enable allowBrowserCookies to use Gemini Web cookies.";
@@ -113,8 +129,10 @@ export async function getGoogleCookies(options?: {
 	let sawUnsafeProfilePath = false;
 
 	for (const config of configs) {
+		signal.throwIfAborted();
 		const profiles = requestedProfile ? [requestedProfile] : listBrowserProfiles(home, config);
 		for (const profile of profiles) {
+			signal.throwIfAborted();
 			const profilePath = resolveProfilePath(home, config, profile);
 			if (profilePath === "outside-root") {
 				sawUnsafeProfilePath = true;
@@ -132,23 +150,23 @@ export async function getGoogleCookies(options?: {
 				copySidecar(cookiesPath, tempDb, "-shm");
 
 				if (requiredCookies?.length) {
-					const preflight = await hasCookieNames(tempDb, hosts, requiredCookies);
+					const preflight = await hasCookieNames(tempDb, hosts, requiredCookies, signal);
 					if (preflight.failure) sawBackendFailure = preflight.failure;
 					if (!preflight.present) continue;
 					sawRequiredCookies = true;
 				}
 
-				const password = await readBrowserPassword(config, currentPlatform);
+				const password = await readBrowserPassword(config, currentPlatform, signal);
 				if (!password) {
 					warningSet.add(`Could not read ${config.name} cookie encryption password`);
 					continue;
 				}
 
 				const key = pbkdf2Sync(password, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1");
-				const metaVersion = await readMetaVersion(tempDb);
+				const metaVersion = await readMetaVersion(tempDb, signal);
 				if (metaVersion.failure) sawBackendFailure = metaVersion.failure;
 				if (metaVersion.value === null) continue;
-				const rowsResult = await queryCookieRows(tempDb, hosts, ALL_COOKIE_NAMES);
+				const rowsResult = await queryCookieRows(tempDb, hosts, ALL_COOKIE_NAMES, signal);
 				if (rowsResult.status === "failure") {
 					sawBackendFailure = rowsResult.failure;
 					continue;
@@ -181,24 +199,44 @@ export async function getGoogleCookies(options?: {
 		}
 	}
 
-	if (sawBackendFailure === "unavailable") {
-		lastCookieDiagnostic = "SQLite backend unavailable: install sqlite3 or use a runtime with SQLite support.";
-	} else if (sawBackendFailure === "query") {
-		lastCookieDiagnostic = "SQLite query failed while reading the copied Chromium cookie database.";
-	} else if (sawUnsafeProfilePath) {
-		lastCookieDiagnostic = "Configured Chromium profile must resolve inside the browser profile root.";
-	} else if (!sawCookieDatabase) {
-		lastCookieDiagnostic = requestedProfile
-			? `Chromium profile '${requestedProfile}' does not contain a cookie database.`
-			: "No detected Chromium profile contains a cookie database.";
-	} else if (requiredCookies?.length && !sawRequiredCookies) {
-		lastCookieDiagnostic = "No detected Chromium profile contains the required Gemini cookies.";
-	} else if (warningSet.size > 0) {
-		lastCookieDiagnostic = warningSet.values().next().value ?? "Chromium cookie access produced a warning.";
-	} else {
-		lastCookieDiagnostic = "Required Gemini cookies were not available or could not be decrypted.";
-	}
+	lastCookieDiagnostic = unavailableCookieDiagnostic({
+		missingRequiredCookies: Boolean(requiredCookies?.length) && !sawRequiredCookies,
+		requestedProfile,
+		sawBackendFailure,
+		sawCookieDatabase,
+		sawUnsafeProfilePath,
+		warningSet,
+	});
 	return null;
+}
+
+function unavailableCookieDiagnostic(outcome: CookieSearchOutcome): string {
+	if (outcome.sawBackendFailure === "unavailable") {
+		return "SQLite backend unavailable: install sqlite3 or use a runtime with SQLite support.";
+	}
+	if (outcome.sawBackendFailure === "query") {
+		return "SQLite query failed while reading the copied Chromium cookie database.";
+	}
+	if (outcome.sawUnsafeProfilePath) {
+		return "Configured Chromium profile must resolve inside the browser profile root.";
+	}
+	if (!outcome.sawCookieDatabase) {
+		return outcome.requestedProfile
+			? `Chromium profile '${outcome.requestedProfile}' does not contain a cookie database.`
+			: "No detected Chromium profile contains a cookie database.";
+	}
+	if (outcome.missingRequiredCookies) return "No detected Chromium profile contains the required Gemini cookies.";
+	return (
+		outcome.warningSet.values().next().value ??
+		"Required Gemini cookies were not available or could not be decrypted."
+	);
+}
+
+export function getGoogleCookies(options?: { profile?: string | undefined; requiredCookies?: string[] }) {
+	return Effect.tryPromise({
+		try: (signal) => getGoogleCookiesNative(options, signal),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
 }
 
 function normalizeProfileName(value: string | undefined): string | undefined {
@@ -294,45 +332,39 @@ function removePkcs7Padding(buf: Buffer): Buffer {
 	return !padding || padding > 16 ? buf : buf.subarray(0, buf.length - padding);
 }
 
-function readBrowserPassword(
+async function readBrowserPassword(
 	config: BrowserConfig,
 	currentPlatform: ReturnType<typeof platform>,
+	signal: AbortSignal,
 ): Promise<string | null> {
 	const cacheKey = `${currentPlatform}:${config.name}`;
 	const cached = browserPasswordCache.get(cacheKey);
 	if (cached) return cached;
-	const passwordResult =
+	const result =
 		currentPlatform === "darwin"
 			? config.keychainAccount && config.keychainService
-				? readKeychainPassword(config.keychainAccount, config.keychainService).then((password) => ({
-						password,
-						cacheable: Boolean(password),
-					}))
-				: Promise.resolve({ password: null, cacheable: false })
+				? { password: await readKeychainPassword(config.keychainAccount, config.keychainService, signal) }
+				: { password: null }
 			: currentPlatform === "linux"
-				? readLinuxPassword(config.secretToolApp)
-				: Promise.resolve({ password: null, cacheable: false });
-	const passwordPromise = passwordResult.then(
-		({ password, cacheable }) => {
-			if (!cacheable) browserPasswordCache.delete(cacheKey);
-			return password;
-		},
-		(error) => {
-			browserPasswordCache.delete(cacheKey);
-			throw error;
-		},
-	);
-	browserPasswordCache.set(cacheKey, passwordPromise);
-	return passwordPromise;
+				? await readLinuxPassword(config.secretToolApp, signal)
+				: { password: null, cacheable: false };
+	if (result.password && ("cacheable" in result ? result.cacheable : true)) {
+		browserPasswordCache.set(cacheKey, result.password);
+	}
+	return result.password;
 }
 
-function readKeychainPassword(account: string, service: string): Promise<string | null> {
-	return new Promise((resolve) => {
+function readKeychainPassword(account: string, service: string, signal: AbortSignal): Promise<string | null> {
+	return new Promise((resolve, reject) => {
 		execFile(
 			"security",
 			["find-generic-password", "-w", "-a", account, "-s", service],
-			{ timeout: 5000 },
+			{ timeout: 5000, signal },
 			(err, stdout) => {
+				if (signal.aborted) {
+					reject(signal.reason);
+					return;
+				}
 				if (err) {
 					resolve(null);
 					return;
@@ -343,10 +375,17 @@ function readKeychainPassword(account: string, service: string): Promise<string 
 	});
 }
 
-function readLinuxPassword(secretToolApp: string | undefined): Promise<{ password: string; cacheable: boolean }> {
+function readLinuxPassword(
+	secretToolApp: string | undefined,
+	signal: AbortSignal,
+): Promise<{ password: string; cacheable: boolean }> {
 	if (!secretToolApp) return Promise.resolve({ password: "peanuts", cacheable: true });
-	return new Promise((resolve) => {
-		execFile("secret-tool", ["lookup", "application", secretToolApp], { timeout: 5000 }, (err, stdout) => {
+	return new Promise((resolve, reject) => {
+		execFile("secret-tool", ["lookup", "application", secretToolApp], { timeout: 5000, signal }, (err, stdout) => {
+			if (signal.aborted) {
+				reject(signal.reason);
+				return;
+			}
 			if (err) {
 				resolve({ password: "peanuts", cacheable: false });
 				return;
@@ -391,7 +430,8 @@ async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
 
 type QueryResult = { status: "success"; rows: SqliteRow[] } | { status: "failure"; failure: SqliteFailure };
 
-async function runSqliteQuery(dbPath: string, sql: string): Promise<QueryResult> {
+async function runSqliteQuery(dbPath: string, sql: string, signal: AbortSignal): Promise<QueryResult> {
+	signal.throwIfAborted();
 	const sqlite = await importSqlite();
 	let queryFailed = false;
 	if (sqlite) {
@@ -409,22 +449,26 @@ async function runSqliteQuery(dbPath: string, sql: string): Promise<QueryResult>
 		}
 	}
 
-	const cli = await runSqliteCli(dbPath, sql);
+	const cli = await runSqliteCli(dbPath, sql, signal);
 	if (cli.status === "success") return cli;
 	if (cli.failure === "query") queryFailed = true;
-	const python = await runPythonSqlite(dbPath, sql);
+	const python = await runPythonSqlite(dbPath, sql, signal);
 	if (python.status === "success") return python;
 	if (python.failure === "query") queryFailed = true;
 	return { status: "failure", failure: queryFailed ? "query" : "unavailable" };
 }
 
-function runSqliteCli(dbPath: string, sql: string): Promise<QueryResult> {
-	return new Promise((resolve) => {
+function runSqliteCli(dbPath: string, sql: string, signal: AbortSignal): Promise<QueryResult> {
+	return new Promise((resolve, reject) => {
 		execFile(
 			"sqlite3",
 			["-readonly", "-json", dbPath, sql],
-			{ timeout: 5000, maxBuffer: 1024 * 1024 },
+			{ timeout: 5000, maxBuffer: 1024 * 1024, signal },
 			(err, stdout) => {
+				if (signal.aborted) {
+					reject(signal.reason);
+					return;
+				}
 				if (err) {
 					resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" });
 					return;
@@ -442,24 +486,33 @@ function runSqliteCli(dbPath: string, sql: string): Promise<QueryResult> {
 	});
 }
 
-function runPythonSqlite(dbPath: string, sql: string): Promise<QueryResult> {
+function runPythonSqlite(dbPath: string, sql: string, signal: AbortSignal): Promise<QueryResult> {
 	const script =
 		"import json,sqlite3,sys\ntry:\n c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)\n c.row_factory=sqlite3.Row\n print(json.dumps([dict(r) for r in c.execute(sys.argv[2]).fetchall()]))\nexcept Exception:\n sys.exit(1)";
-	return new Promise((resolve) => {
-		execFile("python3", ["-c", script, dbPath, sql], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-			if (err) {
-				resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" });
-				return;
-			}
-			try {
-				const parsed = parseJsonValue(stdout || "[]");
-				resolve(
-					isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" },
-				);
-			} catch {
-				resolve({ status: "failure", failure: "query" });
-			}
-		});
+	return new Promise((resolve, reject) => {
+		execFile(
+			"python3",
+			["-c", script, dbPath, sql],
+			{ timeout: 5000, maxBuffer: 1024 * 1024, signal },
+			(err, stdout) => {
+				if (signal.aborted) {
+					reject(signal.reason);
+					return;
+				}
+				if (err) {
+					resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" });
+					return;
+				}
+				try {
+					const parsed = parseJsonValue(stdout || "[]");
+					resolve(
+						isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" },
+					);
+				} catch {
+					resolve({ status: "failure", failure: "query" });
+				}
+			},
+		);
 	});
 }
 
@@ -467,8 +520,11 @@ function isSqliteRows(value: JsonInputValue | Record<string, SQLOutputValue>[]):
 	return Array.isArray(value) && value.every(isJsonInputObject);
 }
 
-async function readMetaVersion(dbPath: string): Promise<{ value: number | null; failure?: SqliteFailure }> {
-	const result = await runSqliteQuery(dbPath, "SELECT value FROM meta WHERE key = 'version'");
+async function readMetaVersion(
+	dbPath: string,
+	signal: AbortSignal,
+): Promise<{ value: number | null; failure?: SqliteFailure }> {
+	const result = await runSqliteQuery(dbPath, "SELECT value FROM meta WHERE key = 'version'", signal);
 	if (result.status === "failure") {
 		return result.failure === "unavailable" ? { value: null, failure: result.failure } : { value: 0 };
 	}
@@ -482,20 +538,28 @@ async function hasCookieNames(
 	dbPath: string,
 	hosts: string[],
 	names: string[],
+	signal: AbortSignal,
 ): Promise<{ present: boolean; failure?: SqliteFailure }> {
 	const result = await runSqliteQuery(
 		dbPath,
 		`SELECT DISTINCT name FROM cookies WHERE ${buildCookieWhere(hosts, names)}`,
+		signal,
 	);
 	if (result.status === "failure") return { present: false, failure: result.failure };
 	const present = new Set(result.rows.map((row) => (isRuntimeString(row["name"]) ? row["name"] : "")));
 	return { present: names.every((name) => present.has(name)) };
 }
 
-async function queryCookieRows(dbPath: string, hosts: string[], names: Iterable<string>): Promise<QueryResult> {
+async function queryCookieRows(
+	dbPath: string,
+	hosts: string[],
+	names: Iterable<string>,
+	signal: AbortSignal,
+): Promise<QueryResult> {
 	return runSqliteQuery(
 		dbPath,
 		`SELECT name, value, host_key, hex(encrypted_value) AS encrypted_value_hex FROM cookies WHERE ${buildCookieWhere(hosts, names)} ORDER BY expires_utc DESC`,
+		signal,
 	);
 }
 

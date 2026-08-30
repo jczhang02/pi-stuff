@@ -25,5 +25,7 @@ or release lifecycle to maintain.
 - Rejects non-HTTP(S), credential-bearing, and malformed URLs before extraction; the absorbed DNS/IP SSRF guard remains
   authoritative afterward.
 - Detects system TUN fake-IP DNS only when a fetch begins and supplies a process-local default without writing settings.
+- Runs retained providers as one Session-owned Effect operation while keeping fetches, credentials, browser cookies,
+  uploads, and subprocess protocols in narrow provider-owned native adapters.
 - Removes the upstream curator, source-check, page-answer, command, shortcut, and private Tool-rendering surfaces; the
   parent module owns the three retained Tools and their shared Suite presentation.

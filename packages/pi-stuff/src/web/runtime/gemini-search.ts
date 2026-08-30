@@ -29,7 +29,7 @@ import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
 import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
 import { isTinyFishAvailable, searchWithTinyFish } from "./tinyfish.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
 import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -57,17 +57,6 @@ interface SearchProviderDefinition<Provider extends string = string> {
 	readonly stopAutomaticOnCredentialError?: boolean;
 }
 
-type LegacyProviderSearch = (query: string, options: ProviderRuntimeOptions) => Promise<SearchResponse | null>;
-type LegacyProviderAvailability = (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
-
-function legacyProviderSearch(search: LegacyProviderSearch): ProviderSearch {
-	return (query, options) => nativePromise((signal) => search(query, { ...options, signal }), options.signal);
-}
-
-function legacyProviderAvailability(available: LegacyProviderAvailability): ProviderAvailability {
-	return (options) => nativePromise(async (signal) => await available({ ...options, signal }), options.signal);
-}
-
 function providerAvailability(available: (options: ProviderRuntimeOptions) => boolean): ProviderAvailability {
 	return (options) =>
 		Effect.try({
@@ -80,11 +69,12 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "openai",
 		label: "OpenAI",
-		search: legacyProviderSearch((query, options) => searchWithOpenAI(query, options, options.extensionContext)),
-		available: legacyProviderAvailability((options) => isOpenAISearchAvailable(options.extensionContext)),
-		automaticAvailable: legacyProviderAvailability(
-			async (options) => shouldTryOpenAIInAuto(options) && (await isOpenAISearchAvailable(options.extensionContext)),
-		),
+		search: (query, options) => searchWithOpenAI(query, options, options.extensionContext),
+		available: (options) => isOpenAISearchAvailable(options.extensionContext, options.signal),
+		automaticAvailable: (options) =>
+			shouldTryOpenAIInAuto(options)
+				? isOpenAISearchAvailable(options.extensionContext, options.signal)
+				: Effect.succeed(false),
 		catchAutomaticAvailabilityError: true,
 		automaticPriority: 1,
 	},
@@ -105,7 +95,7 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "tinyfish",
 		label: "TinyFish",
-		search: legacyProviderSearch(searchWithTinyFish),
+		search: searchWithTinyFish,
 		available: providerAvailability(isTinyFishAvailable),
 		automaticPriority: 5,
 	},
@@ -147,23 +137,24 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "perplexity",
 		label: "Perplexity",
-		search: legacyProviderSearch(searchWithPerplexity),
+		search: searchWithPerplexity,
 		available: providerAvailability(isPerplexityAvailable),
 		automaticPriority: 13,
 	},
 	{
 		id: "gemini",
 		label: "Gemini",
-		search: legacyProviderSearch((query, options) => searchWithGemini(query, options, true)),
-		available: legacyProviderAvailability(
-			async () => isGeminiApiAvailable() || Boolean(await isGeminiWebAvailable()),
-		),
+		search: (query, options) => searchWithGemini(query, options, true),
+		available: () =>
+			isGeminiApiAvailable()
+				? Effect.succeed(true)
+				: isGeminiWebAvailable().pipe(Effect.map((cookies) => Boolean(cookies))),
 		automaticAvailable: providerAvailability(() => true),
 		automaticPriority: 14,
-		automaticSearch: legacyProviderSearch((query, options) => searchWithGemini(query, options, false)),
+		automaticSearch: (query, options) => searchWithGemini(query, options, false),
 		aggregateAvailable: providerAvailability(isGeminiApiAvailable),
 		aggregateEmptyResultMessage: "Gemini API search returned no results.",
-		aggregateSearch: legacyProviderSearch(searchWithGeminiApi),
+		aggregateSearch: searchWithGeminiApi,
 		emptyResultMessage:
 			"Gemini search unavailable. Either:\n" +
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
@@ -196,7 +187,7 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "ollama",
 		label: "Ollama",
-		search: legacyProviderSearch(searchWithOllama),
+		search: searchWithOllama,
 		available: providerAvailability(isOllamaAvailable),
 		automaticPriority: 12,
 	},
@@ -209,8 +200,8 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "xai",
 		label: "xAI",
-		search: legacyProviderSearch((query, options) => searchWithXai(query, options, options.extensionContext)),
-		available: legacyProviderAvailability((options) => isXaiSearchAvailable(options.extensionContext)),
+		search: (query, options) => searchWithXai(query, options, options.extensionContext),
+		available: (options) => isXaiSearchAvailable(options.extensionContext, options.signal),
 	},
 	{
 		id: "brightdata",
@@ -395,36 +386,36 @@ function shouldTryOpenAIInAuto(options: SearchOptions): boolean {
 	return true;
 }
 
-async function searchWithGemini(
-	query: string,
-	options: SearchOptions,
-	strictErrors: boolean,
-): Promise<SearchResponse | null> {
-	const errors: string[] = [];
+function searchWithGemini(query: string, options: SearchOptions, strictErrors: boolean) {
+	return Effect.gen(function* () {
+		const errors: string[] = [];
+		const api = yield* searchWithGeminiApi(query, options).pipe(
+			Effect.map((result) => ({ result })),
+			Effect.catch((error) =>
+				error instanceof CredentialResolutionError || isAbortError(error)
+					? Effect.fail(error)
+					: Effect.succeed({ error }),
+			),
+		);
+		if ("result" in api && api.result) return api.result;
+		if ("error" in api) errors.push(`Gemini API: ${errorMessage(api.error)}`);
 
-	try {
-		const apiResult = await searchWithGeminiApi(query, options);
-		if (apiResult) return apiResult;
-	} catch (err) {
-		if (err instanceof CredentialResolutionError || isAbortError(err)) throw err;
-		errors.push(`Gemini API: ${errorMessage(err)}`);
-	}
+		const web = yield* searchWithGeminiWeb(query, options).pipe(
+			Effect.map((result) => ({ result })),
+			Effect.catch((error) => (isAbortError(error) ? Effect.fail(error) : Effect.succeed({ error }))),
+		);
+		if ("result" in web && web.result) return web.result;
+		if ("error" in web) errors.push(`Gemini Web: ${errorMessage(web.error)}`);
+		else {
+			const diagnostic = getGeminiWebAvailabilityDiagnostic();
+			if (diagnostic) errors.push(`Gemini Web: ${diagnostic}`);
+		}
 
-	try {
-		const webResult = await searchWithGeminiWeb(query, options);
-		if (webResult) return webResult;
-		const diagnostic = getGeminiWebAvailabilityDiagnostic();
-		if (diagnostic) errors.push(`Gemini Web: ${diagnostic}`);
-	} catch (err) {
-		if (isAbortError(err)) throw err;
-		errors.push(`Gemini Web: ${errorMessage(err)}`);
-	}
-
-	if (strictErrors && errors.length > 0) {
-		throw new Error(`Gemini search failed:\n  - ${errors.join("\n  - ")}`);
-	}
-
-	return null;
+		if (strictErrors && errors.length > 0) {
+			return yield* Effect.fail(new Error(`Gemini search failed:\n  - ${errors.join("\n  - ")}`));
+		}
+		return null;
+	});
 }
 
 function providerErrorStatus(message: string): number | undefined {
@@ -581,7 +572,9 @@ function searchWithProviders(
 		const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
 		for (const [index, outcome] of outcomes.entries()) {
 			const provider = providers[index];
-			if (!provider) throw new Error("Search provider result did not match its request");
+			if (!provider) {
+				return yield* Effect.fail(new Error("Search provider result did not match its request"));
+			}
 			if (outcome.ok) successes.push(outcome.value);
 			else failures.push({ provider, error: errorMessage(outcome.error) });
 		}

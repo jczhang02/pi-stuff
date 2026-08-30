@@ -172,7 +172,7 @@ function contentFallbacks(url: string, options: ExtractOptions | undefined): rea
 		{ available: () => true, extract: extractWithJinaReader(url, options?.lookup) },
 		{
 			available: isTinyFishAvailable,
-			extract: nativePromise((signal) => extractWithTinyFish(url, signal, options)),
+			extract: extractWithTinyFish(url, undefined, options),
 			label: "TinyFish",
 		},
 		{
@@ -192,7 +192,7 @@ function contentFallbacks(url: string, options: ExtractOptions | undefined): rea
 		},
 		{
 			available: isOllamaFetchAvailable,
-			extract: nativePromise((signal) => extractWithOllama(url, signal, ssrfOptions())),
+			extract: extractWithOllama(url, undefined, ssrfOptions()),
 			label: "Ollama",
 		},
 		{
@@ -292,9 +292,8 @@ export function extractContent(url: string, options?: ExtractOptions): Effect.Ef
 		const fallback = yield* tryContentFallbacks(url, options, declaredLinks);
 		if (fallback.result) return fallback.result;
 		let geminiError: Error | undefined;
-		const geminiResult = yield* nativePromise(
-			async (signal) => (await extractWithUrlContext(url, signal)) ?? (await extractWithGeminiWeb(url, signal)),
-		).pipe(
+		const geminiResult = yield* extractWithUrlContext(url).pipe(
+			Effect.flatMap((result) => (result ? Effect.succeed(result) : extractWithGeminiWeb(url))),
 			Effect.catch((error) => {
 				geminiError = error;
 				return Effect.succeed(null);

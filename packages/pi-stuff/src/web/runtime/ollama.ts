@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -13,7 +14,14 @@ import {
 	type SsrfConfig,
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const OLLAMA_SEARCH_URL = "https://ollama.com/api/web_search";
 const OLLAMA_FETCH_URL = "https://ollama.com/api/web_fetch";
@@ -97,8 +105,12 @@ export function isOllamaAvailable(): boolean {
 	});
 }
 
-export async function searchWithOllama(query: string, options: OllamaSearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await requireApiKey(options.signal);
+async function searchWithOllamaRequest(
+	query: string,
+	options: OllamaSearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults = normalizeCount(options.numResults, 5, 10);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
@@ -108,9 +120,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 			redirect: "error",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 			body: JSON.stringify({ query, max_results: numResults }),
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -146,25 +156,29 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	return mapped;
 }
 
+export function searchWithOllama(query: string, options: OllamaSearchOptions = {}) {
+	return nativePromise(requireApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithOllamaRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
+}
+
 export function isOllamaFetchAvailable(): boolean {
 	return isOllamaAvailable();
 }
 
-export async function extractWithOllama(
+async function extractWithOllamaRequest(
 	url: string,
-	signal?: AbortSignal,
-	options: OllamaExtractOptions = {},
+	options: OllamaExtractOptions,
+	ssrf: SsrfConfig,
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const ssrf = options.ssrf ?? loadSsrfConfig();
-	const domainPolicy = loadFetchContentDomainPolicy();
-	const validationOptions = {
-		allowRanges: ssrf.allowRanges,
-		trustEnvProxy: ssrf.trustEnvProxy,
-		domainPolicy,
-	};
-	if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
-	await validateRemoteUrl(url, validationOptions);
-	const apiKey = await requireApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "api", query: `ollama fetch: ${url}` });
 	let response: Response;
 	try {
@@ -181,9 +195,7 @@ export async function extractWithOllama(
 				method: "POST",
 				headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 				body: JSON.stringify({ url }),
-				signal: signal
-					? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal])
-					: AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
+				signal,
 			},
 			remoteOptions,
 		);
@@ -208,4 +220,32 @@ export async function extractWithOllama(
 	const content = data.content.trim();
 	if (!content) return null;
 	return { url, title: data.title, content, error: null };
+}
+
+export function extractWithOllama(url: string, signal?: AbortSignal, options: OllamaExtractOptions = {}) {
+	return Effect.try({
+		try: () => {
+			const ssrf = options.ssrf ?? loadSsrfConfig();
+			const validationOptions = {
+				allowRanges: ssrf.allowRanges,
+				trustEnvProxy: ssrf.trustEnvProxy,
+				domainPolicy: loadFetchContentDomainPolicy(),
+			};
+			if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
+			return { ssrf, validationOptions };
+		},
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(
+		Effect.flatMap(({ ssrf, validationOptions }) =>
+			nativePromise(() => validateRemoteUrl(url, validationOptions), signal).pipe(Effect.as(ssrf)),
+		),
+		Effect.flatMap((ssrf) => nativePromise(requireApiKey, signal).pipe(Effect.map((apiKey) => ({ apiKey, ssrf })))),
+		Effect.flatMap(({ apiKey, ssrf }) =>
+			nativeRequest(
+				(requestSignal) => extractWithOllamaRequest(url, options, ssrf, apiKey, requestSignal),
+				options.timeoutMs ?? SEARCH_TIMEOUT_MS,
+				signal,
+			),
+		),
+	);
 }

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -7,7 +8,14 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai";
 const TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai";
@@ -82,13 +90,12 @@ function buildSearchUrl(query: string, options: SearchOptions, page: number): st
 	return `${TINYFISH_SEARCH_URL}?${params.toString()}`;
 }
 
-async function tinyFishJsonRequest(
+async function tinyFishJsonRequestNative(
 	label: "Search" | "Fetch",
 	url: string,
 	apiKey: string,
 	init: RequestInit,
-	timeoutMs: number,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<JsonInputObject> {
 	let response: Response;
 	try {
@@ -99,7 +106,7 @@ async function tinyFishJsonRequest(
 			...init,
 			redirect: "error",
 			headers,
-			signal: requestSignal(signal, timeoutMs),
+			signal,
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -119,6 +126,21 @@ async function tinyFishJsonRequest(
 	} catch (err) {
 		throw new Error(`TinyFish ${label} API returned invalid JSON: ${errorMessage(err)}`);
 	}
+}
+
+function tinyFishJsonRequest(
+	label: "Search" | "Fetch",
+	url: string,
+	apiKey: string,
+	init: RequestInit,
+	timeoutMs: number,
+	signal?: AbortSignal,
+) {
+	return nativeRequest(
+		(requestSignal) => tinyFishJsonRequestNative(label, url, apiKey, init, requestSignal),
+		timeoutMs,
+		signal,
+	);
 }
 
 function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
@@ -186,12 +208,12 @@ function mapFetchResult(result: JsonInputValue, requestedUrl: string): Extracted
 	};
 }
 
-async function fetchBatch(
+function fetchBatch(
 	urls: string[],
 	apiKey: string,
 	signal?: AbortSignal,
 	options: ExtractOptions = {},
-): Promise<JsonInputObject> {
+): Effect.Effect<JsonInputObject, Error> {
 	return tinyFishJsonRequest(
 		"Fetch",
 		TINYFISH_FETCH_URL,
@@ -202,94 +224,109 @@ async function fetchBatch(
 	);
 }
 
-async function fetchInlineContent(urls: string[], apiKey: string, signal?: AbortSignal): Promise<ExtractedContent[]> {
-	const content: ExtractedContent[] = [];
-	for (let offset = 0; offset < urls.length; offset += MAX_FETCH_URLS) {
-		const batch = urls.slice(offset, offset + MAX_FETCH_URLS);
-		const data = await fetchBatch(batch, apiKey, signal);
-		if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
-			throw new Error("TinyFish Fetch API returned an unexpected response shape");
+function fetchInlineContent(urls: string[], apiKey: string, signal?: AbortSignal) {
+	return Effect.gen(function* () {
+		const content: ExtractedContent[] = [];
+		for (let offset = 0; offset < urls.length; offset += MAX_FETCH_URLS) {
+			const batch = urls.slice(offset, offset + MAX_FETCH_URLS);
+			const data = yield* fetchBatch(batch, apiKey, signal);
+			if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
+				return yield* Effect.fail(new Error("TinyFish Fetch API returned an unexpected response shape"));
+			}
+			for (const url of batch) {
+				const result = data["results"].find(
+					(item) => isJsonInputObject(item) && (item.url === url || item.final_url === url),
+				);
+				const mapped = mapFetchResult(result, url);
+				if (mapped) content.push(mapped);
+			}
 		}
-		for (const url of batch) {
-			const result = Array.isArray(data["results"])
-				? data["results"].find((item) => isJsonInputObject(item) && (item.url === url || item.final_url === url))
-				: undefined;
-			const mapped = mapFetchResult(result, url);
-			if (mapped) content.push(mapped);
-		}
-	}
-	return content;
+		return content;
+	});
 }
 
-export async function searchWithTinyFish(query: string, options: TinyFishSearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
-	const activityId = activityMonitor.logStart({ type: "api", query });
-	try {
-		const combined: SearchResponse["results"] = [];
-		const pages = numResults > 10 ? 2 : 1;
-		for (let page = 0; page < pages; page++) {
-			const data = await tinyFishJsonRequest(
-				"Search",
-				buildSearchUrl(query, options, page),
-				apiKey,
-				{ method: "GET" },
-				SEARCH_TIMEOUT_MS,
-				options.signal,
-			);
-			if (!Array.isArray(data["results"]))
-				throw new Error("TinyFish Search API returned an unexpected response shape");
-			combined.push(...mapSearchResults(data["results"]));
-			if (data["results"].length < 10) break;
-		}
-
-		const results = deduplicateResults(combined, numResults);
-		const response: SearchResponse = { answer: formatSearchSources(results), results };
-		if (options.includeContent && results.length > 0) {
-			const inlineContent = await fetchInlineContent(
-				results.map((result) => result.url),
-				apiKey,
-				options.signal,
-			);
-			if (inlineContent.length > 0) response.inlineContent = inlineContent;
-		}
-		activityMonitor.logComplete(activityId, 200);
-		return response;
-	} catch (error) {
-		throwRedactedActivityError(activityId, error, apiKey);
-	}
+function redactedActivityFailure(activityId: string, error: Error, apiKey: string) {
+	return Effect.try({
+		try: () => throwRedactedActivityError(activityId, error, apiKey),
+		catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+	});
 }
 
-export async function extractWithTinyFish(
+export function searchWithTinyFish(query: string, options: TinyFishSearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) => {
+			const numResults = normalizeCount(options.numResults);
+			const activityId = activityMonitor.logStart({ type: "api", query });
+			return Effect.gen(function* () {
+				const combined: SearchResponse["results"] = [];
+				const pages = numResults > 10 ? 2 : 1;
+				for (let page = 0; page < pages; page++) {
+					const data = yield* tinyFishJsonRequest(
+						"Search",
+						buildSearchUrl(query, options, page),
+						apiKey,
+						{ method: "GET" },
+						SEARCH_TIMEOUT_MS,
+						options.signal,
+					);
+					if (!Array.isArray(data["results"])) {
+						return yield* Effect.fail(new Error("TinyFish Search API returned an unexpected response shape"));
+					}
+					combined.push(...mapSearchResults(data["results"]));
+					if (data["results"].length < 10) break;
+				}
+
+				const results = deduplicateResults(combined, numResults);
+				const response: SearchResponse = { answer: formatSearchSources(results), results };
+				if (options.includeContent && results.length > 0) {
+					const inlineContent = yield* fetchInlineContent(
+						results.map((result) => result.url),
+						apiKey,
+						options.signal,
+					);
+					if (inlineContent.length > 0) response.inlineContent = inlineContent;
+				}
+				activityMonitor.logComplete(activityId, 200);
+				return response;
+			}).pipe(Effect.catch((error) => redactedActivityFailure(activityId, error, apiKey)));
+		}),
+	);
+}
+
+export function extractWithTinyFish(
 	url: string,
 	signal?: AbortSignal,
 	options: ExtractOptions = {},
-): Promise<ExtractedContent | null> {
-	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
-	try {
-		const data = await fetchBatch([url], apiKey, signal, options);
-		if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
-			throw new Error("TinyFish Fetch API returned an unexpected response shape");
-		}
-		const result =
-			data["results"].find((item) => isJsonInputObject(item) && (item.url === url || item.final_url === url)) ??
-			data["results"][0];
-		const mapped = mapFetchResult(result, url);
-		if (mapped) {
-			activityMonitor.logComplete(activityId, 200);
-			return mapped;
-		}
-		const fetchError = findFetchError(data["errors"], url);
-		if (fetchError) {
-			const status = isRuntimeNumber(fetchError["status"]) ? ` (HTTP ${fetchError["status"]})` : "";
-			throw new Error(
-				`TinyFish Fetch failed for ${url}: ${isRuntimeString(fetchError["error"]) ? fetchError["error"] : "unknown error"}${status}`,
-			);
-		}
-		activityMonitor.logComplete(activityId, 200);
-		return null;
-	} catch (error) {
-		throwRedactedActivityError(activityId, error, apiKey);
-	}
+): Effect.Effect<ExtractedContent | null, Error> {
+	return nativePromise(getApiKey, signal).pipe(
+		Effect.flatMap((apiKey) => {
+			const activityId = activityMonitor.logStart({ type: "fetch", url });
+			return Effect.gen(function* () {
+				const data = yield* fetchBatch([url], apiKey, signal, options);
+				if (!Array.isArray(data["results"]) || !Array.isArray(data["errors"])) {
+					return yield* Effect.fail(new Error("TinyFish Fetch API returned an unexpected response shape"));
+				}
+				const result =
+					data["results"].find(
+						(item) => isJsonInputObject(item) && (item.url === url || item.final_url === url),
+					) ?? data["results"][0];
+				const mapped = mapFetchResult(result, url);
+				if (mapped) {
+					activityMonitor.logComplete(activityId, 200);
+					return mapped;
+				}
+				const fetchError = findFetchError(data["errors"], url);
+				if (fetchError) {
+					const status = isRuntimeNumber(fetchError["status"]) ? ` (HTTP ${fetchError["status"]})` : "";
+					return yield* Effect.fail(
+						new Error(
+							`TinyFish Fetch failed for ${url}: ${isRuntimeString(fetchError["error"]) ? fetchError["error"] : "unknown error"}${status}`,
+						),
+					);
+				}
+				activityMonitor.logComplete(activityId, 200);
+				return null;
+			}).pipe(Effect.catch((error) => redactedActivityFailure(activityId, error, apiKey)));
+		}),
+	);
 }

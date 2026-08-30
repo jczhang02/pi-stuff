@@ -22,28 +22,32 @@ Direct provider API and gateway requests reject redirects before credentials
 or request bodies can be forwarded to another origin.
 
 Each `web_search` and `fetch_content` call runs as one Session-owned Effect
-operation from the parent adapter. Standard stateless search providers keep
-their credentials and wire protocols in narrow native adapters while Effect
-owns request timeout, interruption, provider routing, partial-success
-aggregation, and fallback. Content retrieval additionally includes lazy
-fake-IP preparation, remote-target validation, redirect-safe fetching, bounded
-response reads, extraction, and at most three concurrent URLs in input order.
-Interruption cancels active native work, and the adapter commits storage and
-publication only after confirming that the Session is still current. Request
-shaping, codecs, URL policy, parsing, rendering, ranking, and deterministic
-extraction remain ordinary TypeScript.
+operation from the parent adapter. Every retained search and extraction
+provider returns an Effect without starting a runner; credentials, browser
+cookies, uploads, redirect handling, and wire protocols stay in narrow
+provider-owned native adapters. Effect owns their lifetime, timeout,
+interruption, sequential pagination, provider routing, partial-success
+aggregation, and fallback.
+Content retrieval additionally includes lazy fake-IP preparation, remote-target
+validation, redirect-safe fetching, bounded response reads, extraction, and at
+most three concurrent URLs in input order. Interruption cancels active native
+work, and the adapter commits storage and publication only after confirming
+that the Session is still current. Request shaping, codecs, URL policy,
+parsing, rendering, ranking, and deterministic extraction remain ordinary
+TypeScript.
 
 Provider include/exclude values share one Suite-owned domain normalizer. It
 accepts URL-shaped host input, rejects literal IPs and single-label hosts, and
 matches only exact hosts or their subdomains.
 
-Web reads the shared `web` settings namespace through one parser. A missing
-namespace leaves the built-in defaults dormant, while invalid JSON or an
-invalid namespace produces one bounded Diagnostic Record and activates the
-complete defaults. Filesystem and unexpected read failures abort Suite
-initialization instead of silently loading a partial Web configuration. Each
-search or fetch uses one read-only snapshot, so an explicit update takes effect
-on the next Tool call without changing an operation already in flight.
+The Pi-facing adapter loads the shared `web` Settings Namespace once through
+the Effect settings store. A missing namespace leaves the built-in defaults
+dormant, while invalid JSON or an invalid namespace produces one bounded
+Diagnostic Record and activates the complete defaults. Filesystem and
+unexpected read failures abort Suite initialization instead of silently
+loading a partial Web configuration. Each search or fetch receives one
+in-memory read-only snapshot, so an update through that store takes effect on
+the next Tool call without changing an operation already in flight.
 
 On systems whose TUN resolver maps public domains into `198.18.0.0/15`, page
 fetching detects the condition lazily with both the requested host and a public

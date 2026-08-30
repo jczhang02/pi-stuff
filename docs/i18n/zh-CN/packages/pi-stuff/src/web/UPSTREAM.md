@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/web/UPSTREAM.md; translation-source-sha256: ccb0ab14340010d176987493ce38154aaf36c3a04f3d3ae6b7a9fbc37a90b8b8 -->
+<!-- translation-source: packages/pi-stuff/src/web/UPSTREAM.md; translation-source-sha256: ad9eabecd01a2ba4acb90911992c6b67973c4103d35ddc2fe73b05068fbaa2f8 -->
 
 # 上游来源
 
@@ -24,4 +24,5 @@ Pi Stuff Web 负责围绕改编版 `nicobailon/pi-web-access` 源码快照的产
 - 使用有界 GitHub API 读取，不克隆仓库，并删除 YouTube/本地视频专用行为。
 - 提取前拒绝非 HTTP(S)、含凭据和异常 URL；之后仍以吸收实现的 DNS/IP SSRF 防护为准。
 - 只在抓取开始时检测系统 TUN 假 IP DNS，并提供进程局部默认值，不写入设置。
+- 把保留的 Provider 作为一个归属当前会话的 Effect 操作运行，同时将抓取、凭据、浏览器 Cookie、上传和子进程协议保留在狭窄的 Provider 自有原生适配器中。
 - 删除上游 Curator、来源检查、页面回答、命令、快捷键和私有工具渲染界面；父模块负责三个保留工具及其共享套件呈现。

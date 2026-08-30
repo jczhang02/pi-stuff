@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -7,7 +8,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, normalizeHeaders } from "./utils.ts";
+import { getWebSearchConfigPath, nativePromise, nativeRequest, normalizeHeaders } from "./utils.ts";
 
 // xAI's Agent Tools API: a hosted `web_search` tool on an OpenAI-compatible
 // Responses endpoint. The search runs inside xAI's own inference, so — unlike
@@ -76,7 +77,10 @@ async function resolvePiAuth(ctx: ExtensionContext, modelOverride?: string): Pro
 	return undefined;
 }
 
-export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<XaiAuth | undefined> {
+async function resolveXaiAuthNative(
+	ctx: ExtensionContext | undefined,
+	signal: AbortSignal,
+): Promise<XaiAuth | undefined> {
 	const config = loadConfig();
 	const modelOverride = resolveConfiguredSearchModel(config["xaiSearchModel"]);
 	if (ctx) {
@@ -99,7 +103,11 @@ export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSigna
 	return apiKey ? { apiKey, model: modelOverride ?? AUTH_MODEL_CANDIDATES[0], headers: {} } : undefined;
 }
 
-export async function isXaiSearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
+export function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSignal) {
+	return nativePromise((requestSignal) => resolveXaiAuthNative(ctx, requestSignal), signal);
+}
+
+async function isXaiSearchAvailableNative(ctx?: ExtensionContext): Promise<boolean> {
 	if (ctx && (await resolvePiAuth(ctx))) return true;
 	const config = loadConfig();
 	return hasCredentialSource({
@@ -107,6 +115,10 @@ export async function isXaiSearchAvailable(ctx?: ExtensionContext): Promise<bool
 		configuredValue: config["xaiApiKey"],
 		environmentValue: process.env["XAI_API_KEY"],
 	});
+}
+
+export function isXaiSearchAvailable(ctx?: ExtensionContext, signal?: AbortSignal) {
+	return nativePromise(() => isXaiSearchAvailableNative(ctx), signal);
 }
 
 /**
@@ -241,21 +253,12 @@ function extractSearchResults(output: JsonInputValue[], numResults: number | und
 	return results;
 }
 
-export async function searchWithXai(
+async function searchWithXaiRequest(
 	query: string,
-	options: SearchOptions = {},
-	ctx?: ExtensionContext,
+	options: SearchOptions,
+	auth: XaiAuth,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	const auth = await resolveXaiAuth(ctx, options.signal);
-	if (!auth) {
-		throw new Error(
-			"xAI web search unavailable. Either:\n" +
-				"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
-				`  2. Create ${CONFIG_PATH} with { "xaiApiKey": "your-key" }\n` +
-				"  3. Set XAI_API_KEY environment variable",
-		);
-	}
-
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const response = await fetch(XAI_RESPONSES_URL, {
@@ -271,9 +274,7 @@ export async function searchWithXai(
 				input: buildInput(query, options),
 				tools: [{ type: "web_search" }],
 			}),
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 
 		if (!response.ok) {
@@ -304,4 +305,25 @@ export async function searchWithXai(
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, auth.apiKey);
 	}
+}
+
+export function searchWithXai(query: string, options: SearchOptions = {}, ctx?: ExtensionContext) {
+	return resolveXaiAuth(ctx, options.signal).pipe(
+		Effect.flatMap((auth) =>
+			auth
+				? nativeRequest(
+						(signal) => searchWithXaiRequest(query, options, auth, signal),
+						SEARCH_TIMEOUT_MS,
+						options.signal,
+					)
+				: Effect.fail(
+						new Error(
+							"xAI web search unavailable. Either:\n" +
+								"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
+								`  2. Create ${CONFIG_PATH} with { "xaiApiKey": "your-key" }\n` +
+								"  3. Set XAI_API_KEY environment variable",
+						),
+					),
+		),
+	);
 }

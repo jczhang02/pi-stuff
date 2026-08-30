@@ -5,6 +5,6 @@ export { createWebAdapterApi, installWebCapability } from "./adapter.js";
 export { type DnsAddress, type DnsLookup, FakeIpCompatibility } from "./fake-ip.js";
 export { validateWebFetchInput, type WebFetchInput, type WebFetchValidation } from "./url-policy.js";
 
-export default function piStuffWeb(pi: ExtensionAPI): void {
-	installWebCapability(pi);
+export default async function piStuffWeb(pi: ExtensionAPI): Promise<void> {
+	await installWebCapability(pi);
 }

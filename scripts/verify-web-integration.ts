@@ -228,7 +228,7 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 		const packageDirectory = resolve(options.packagePath ?? join(root, "packages/pi-stuff"));
 		const { installWebCapability } = await import(pathToFileURL(join(packageDirectory, "src/web/adapter.ts")).href);
 		const fixture = harness();
-		installWebCapability(fixture.pi);
+		await installWebCapability(fixture.pi);
 		for (const handler of fixture.handlers.get("session_start") ?? []) {
 			await handler({ reason: "startup", type: "session_start" }, fixture.context);
 		}

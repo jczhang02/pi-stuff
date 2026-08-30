@@ -1,18 +1,18 @@
-import { existsSync, readFileSync } from "node:fs";
-import { link, rename, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
+import { Effect } from "effect";
+import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isJsonInputValue, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";
 import {
-	mergeNamespaceRecord,
-	readSettingsFile,
-	readSettingsFileSync,
-	SettingsFormatError,
+	EffectNamespacedSettingsStore,
+	mergedSettingsPath,
+	mergeNamespaceRecordEffect,
+	readTextFileEffect,
 	type SettingsRecord,
-} from "../shared/settings-io/file.js";
-import { mergedSettingsPath } from "../shared/settings-io/index.js";
-import { withSettingsLock } from "../shared/settings-io/lock.js";
+} from "../shared/settings-io/index.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 
 const WEB_NAMESPACE = "web";
 const LEGACY_FILE = "web-search.json";
@@ -30,6 +30,13 @@ function settingsRecord<Value extends object>(value: Value): SettingsRecord {
 	const parsed = parseJsonValue(JSON.stringify(value));
 	if (!isRecord(parsed)) throw new WebConfigError("Unable to update Web configuration: expected a JSON object");
 	return parsed;
+}
+
+function normalizeSettings<Value>(value: Value): SettingsRecord {
+	if (!isJsonInputValue(value) || !isRecord(value)) {
+		throw new WebConfigError("Web configuration must be a JSON object");
+	}
+	return value;
 }
 
 export class WebConfigError extends Error {
@@ -51,109 +58,99 @@ function getLegacyWebMigrationPath(agentDirectory = getAgentDir()): string {
 	return join(agentDirectory, LEGACY_MIGRATION_FILE);
 }
 
-function readLegacy(path: string): SettingsRecord | undefined {
-	let text: string;
-	try {
-		text = readFileSync(path, "utf8");
-	} catch (error) {
-		if (isFileError(error, "ENOENT")) return undefined;
-		throw error;
-	}
-	let parsed: JsonInputValue;
-	try {
-		parsed = parseJsonValue(text);
-	} catch {
-		throw new WebConfigError(`Unable to read legacy Web configuration at ${path}: invalid JSON`);
-	}
-	if (!isRecord(parsed)) {
-		throw new WebConfigError(`Unable to read legacy Web configuration at ${path}: expected a JSON object`);
-	}
-	return parsed;
-}
-
-/** Read-only. Canonical settings win; legacy data is lifted only by an explicit update. */
-export function readWebConfig(agentDirectory = getAgentDir()): SettingsRecord | undefined {
-	const path = getWebConfigPath(agentDirectory);
-	let document: SettingsRecord;
-	try {
-		document = readSettingsFileSync(path);
-	} catch (error) {
-		if (error instanceof SettingsFormatError) {
-			throw new WebConfigError(`Unable to read Web configuration at ${path}: invalid JSON`);
-		}
-		throw error;
-	}
-	const canonical = document[WEB_NAMESPACE];
-	if (canonical !== undefined) {
-		if (!isRecord(canonical)) {
-			throw new WebConfigError(`Unable to read Web configuration at ${path}: "web" must be a JSON object`);
-		}
-		return canonical;
-	}
-	return readLegacy(getLegacyWebConfigPath(agentDirectory)) ?? readLegacy(getLegacyWebMigrationPath(agentDirectory));
-}
-
-/** Compatibility adapter for the vendored provider parsers. */
-export function readWebConfigText(agentDirectory = getAgentDir()): string {
-	return JSON.stringify(readWebConfig(agentDirectory) ?? {});
-}
-
-export function webConfigExists(agentDirectory = getAgentDir()): boolean {
-	return readWebConfig(agentDirectory) !== undefined;
-}
-
-/** Explicit user actions only: merge under the shared lock, then remove legacy state. */
-export async function updateWebConfig<Updates extends object>(
-	updates: Updates,
-	agentDirectory = getAgentDir(),
-): Promise<void> {
-	const path = getWebConfigPath(agentDirectory);
-	const legacyPath = getLegacyWebConfigPath(agentDirectory);
-	const stagedLegacyPath = getLegacyWebMigrationPath(agentDirectory);
-	try {
-		await withSettingsLock(path, "Web", async () => {
-			const document = await readSettingsFile(path);
-			const canonical = document[WEB_NAMESPACE];
-			let canonicalRecord: SettingsRecord | undefined;
-			if (canonical !== undefined) {
-				if (!isRecord(canonical)) {
-					throw new WebConfigError(`Unable to update Web configuration at ${path}: "web" must be a JSON object`);
-				}
-				canonicalRecord = canonical;
-			}
-			if (existsSync(stagedLegacyPath) && existsSync(legacyPath)) {
-				await rm(stagedLegacyPath, { force: true });
-			}
-			if (!existsSync(stagedLegacyPath)) {
-				try {
-					await rename(legacyPath, stagedLegacyPath);
-				} catch (error) {
-					if (!isFileError(error, "ENOENT")) throw error;
-				}
-			}
-			const stagedLegacy = existsSync(stagedLegacyPath);
-			try {
-				const legacy = canonicalRecord === undefined && stagedLegacy ? readLegacy(stagedLegacyPath) : undefined;
-				const current = canonicalRecord ?? legacy ?? {};
-				await mergeNamespaceRecord(path, WEB_NAMESPACE, { ...current, ...settingsRecord(updates) });
-				if (stagedLegacy) await rm(stagedLegacyPath, { force: true });
-			} catch (error) {
-				if (stagedLegacy) {
+function readLegacyFile(path: string): Effect.Effect<SettingsRecord, Error> {
+	return readTextFileEffect(path).pipe(
+		Effect.flatMap((content) =>
+			Effect.try({
+				try: () => {
+					let parsed: JsonInputValue;
 					try {
-						await link(stagedLegacyPath, legacyPath);
-						await rm(stagedLegacyPath, { force: true });
-					} catch (restoreError) {
-						if (isFileError(restoreError, "EEXIST")) {
-							// A newly recreated legacy file is newer than the staged snapshot.
-							await rm(stagedLegacyPath, { force: true });
-						}
+						parsed = parseJsonValue(content);
+					} catch {
+						throw new WebConfigError(`Unable to read legacy Web configuration at ${path}: invalid JSON`);
 					}
-				}
-				throw error;
-			}
-		});
-	} catch (error) {
-		if (error instanceof WebConfigError) throw error;
-		throw new WebConfigError(`Unable to update Web configuration at ${path}`);
+					if (!isRecord(parsed)) {
+						throw new WebConfigError(
+							`Unable to read legacy Web configuration at ${path}: expected a JSON object`,
+						);
+					}
+					return parsed;
+				},
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}),
+		),
+	);
+}
+
+function readLegacy(agentDirectory: string): Effect.Effect<SettingsRecord | undefined, Error> {
+	return readLegacyFile(getLegacyWebConfigPath(agentDirectory)).pipe(
+		Effect.catch((error) =>
+			isFileError(error, "ENOENT") ? readLegacyFile(getLegacyWebMigrationPath(agentDirectory)) : Effect.fail(error),
+		),
+	);
+}
+
+function removeLegacyFiles(agentDirectory: string): Effect.Effect<void, Error> {
+	return Effect.tryPromise({
+		try: async () => {
+			await rm(getLegacyWebConfigPath(agentDirectory), { force: true });
+			await rm(getLegacyWebMigrationPath(agentDirectory), { force: true });
+		},
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
+export class WebSettingsStore {
+	private readonly path: string;
+	private readonly store: EffectNamespacedSettingsStore<SettingsRecord>;
+
+	private constructor(store: EffectNamespacedSettingsStore<SettingsRecord>, path: string) {
+		this.path = path;
+		this.store = store;
+	}
+
+	static load(agentDirectory = getAgentDir()): Effect.Effect<WebSettingsStore, Error> {
+		const path = getWebConfigPath(agentDirectory);
+		return Effect.map(
+			EffectNamespacedSettingsStore.load(WEB_NAMESPACE, {}, normalizeSettings, {
+				path,
+				legacyPath: getLegacyWebConfigPath(agentDirectory),
+				legacyReader: () => readLegacy(agentDirectory),
+				acquireLock: acquireSettingsLockEffect,
+				writer: (settingsPath, namespace, record) =>
+					Effect.andThen(
+						Effect.asVoid(mergeNamespaceRecordEffect(settingsPath, namespace, record)),
+						removeLegacyFiles(agentDirectory),
+					),
+				reportDiagnostic: (diagnostic) => reportDiagnostic({ ...diagnostic, capability: "Web" }),
+			}),
+			(store) => new WebSettingsStore(store, path),
+		);
+	}
+
+	static memory(settings: SettingsRecord = {}): WebSettingsStore {
+		return new WebSettingsStore(EffectNamespacedSettingsStore.memory(settings), "");
+	}
+
+	get(): SettingsRecord {
+		return this.store.get();
+	}
+
+	update<Updates extends object>(updates: Updates): Effect.Effect<void, WebConfigError> {
+		return Effect.try({
+			try: () => settingsRecord(updates),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		}).pipe(
+			Effect.flatMap((patch) => Effect.asVoid(this.store.update(patch))),
+			Effect.mapError((error) =>
+				error instanceof WebConfigError
+					? error
+					: new WebConfigError(`Unable to update Web configuration at ${this.path}: ${error.message}`),
+			),
+		);
+	}
+
+	whenIdle(): Effect.Effect<void> {
+		return this.store.whenIdle();
 	}
 }

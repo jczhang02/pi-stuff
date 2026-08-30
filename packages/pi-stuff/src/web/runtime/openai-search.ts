@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	isJsonInputObject,
 	type JsonInputObject,
@@ -12,7 +13,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, normalizeHeaders } from "./utils.ts";
+import { getWebSearchConfigPath, nativePromise, nativeRequest, normalizeHeaders } from "./utils.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -156,7 +157,10 @@ async function resolvePiAuth(
 	return undefined;
 }
 
-export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<OpenAIAuth | undefined> {
+async function resolveOpenAIAuthNative(
+	ctx: ExtensionContext | undefined,
+	signal: AbortSignal,
+): Promise<OpenAIAuth | undefined> {
 	const config = loadConfig();
 	const responsesUrl = resolveConfiguredResponsesUrl(config["openaiResponsesUrl"]);
 	const modelOverride = resolveConfiguredSearchModel(config["openaiSearchModel"]);
@@ -182,7 +186,11 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 		: undefined;
 }
 
-export async function isOpenAISearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
+export function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSignal) {
+	return nativePromise((requestSignal) => resolveOpenAIAuthNative(ctx, requestSignal), signal);
+}
+
+async function isOpenAISearchAvailableNative(ctx?: ExtensionContext): Promise<boolean> {
 	const config = loadConfig();
 	const responsesUrl = resolveConfiguredResponsesUrl(config["openaiResponsesUrl"]);
 	if (ctx && (await resolvePiAuth(ctx, responsesUrl))) return true;
@@ -191,6 +199,10 @@ export async function isOpenAISearchAvailable(ctx?: ExtensionContext): Promise<b
 		configuredValue: config["openaiApiKey"],
 		environmentValue: process.env["OPENAI_API_KEY"],
 	});
+}
+
+export function isOpenAISearchAvailable(ctx?: ExtensionContext, signal?: AbortSignal) {
+	return nativePromise(() => isOpenAISearchAvailableNative(ctx), signal);
 }
 
 function buildInstructions(options: SearchOptions): string {
@@ -373,21 +385,12 @@ function extractAnswer(output: JsonInputValue[]): string {
 	return parts.join("\n").trim();
 }
 
-export async function searchWithOpenAI(
+async function searchWithOpenAIRequest(
 	query: string,
-	options: SearchOptions = {},
-	ctx?: ExtensionContext,
+	options: SearchOptions,
+	auth: OpenAIAuth,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	const auth = await resolveOpenAIAuth(ctx, options.signal);
-	if (!auth) {
-		throw new Error(
-			"OpenAI web search unavailable. Either:\n" +
-				"  1. Use /login to sign in with a Codex subscription\n" +
-				`  2. Create ${CONFIG_PATH} with { "openaiApiKey": "your-key" }\n` +
-				"  3. Set OPENAI_API_KEY environment variable",
-		);
-	}
-
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const headers = new Headers(auth.headers);
 	headers.set("Authorization", `Bearer ${auth.apiKey}`);
@@ -418,9 +421,7 @@ export async function searchWithOpenAI(
 			redirect: "error",
 			headers,
 			body: JSON.stringify(body),
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 
 		if (!response.ok) {
@@ -443,4 +444,25 @@ export async function searchWithOpenAI(
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, auth.apiKey);
 	}
+}
+
+export function searchWithOpenAI(query: string, options: SearchOptions = {}, ctx?: ExtensionContext) {
+	return resolveOpenAIAuth(ctx, options.signal).pipe(
+		Effect.flatMap((auth) =>
+			auth
+				? nativeRequest(
+						(signal) => searchWithOpenAIRequest(query, options, auth, signal),
+						SEARCH_TIMEOUT_MS,
+						options.signal,
+					)
+				: Effect.fail(
+						new Error(
+							"OpenAI web search unavailable. Either:\n" +
+								"  1. Use /login to sign in with a Codex subscription\n" +
+								`  2. Create ${CONFIG_PATH} with { "openaiApiKey": "your-key" }\n` +
+								"  3. Set OPENAI_API_KEY environment variable",
+						),
+					),
+		),
+	);
 }

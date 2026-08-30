@@ -23,6 +23,13 @@ export class SettingsFormatError extends Error {
 	}
 }
 
+export class SettingsNamespaceError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SettingsNamespaceError";
+	}
+}
+
 function isSettingsRecord(value: JsonInputValue): value is SettingsRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
@@ -103,7 +110,9 @@ export async function readNamespace(path: string, namespace: string): Promise<Se
 	const file = await readSettingsFile(path);
 	const value = file[namespace];
 	if (value === undefined) return undefined;
-	if (!isSettingsRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	if (!isSettingsRecord(value)) {
+		throw new SettingsNamespaceError(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	}
 	return value;
 }
 
@@ -167,6 +176,8 @@ export function readNamespaceSync(path: string, namespace: string): SettingsReco
 	const file = readSettingsFileSync(path);
 	const value = file[namespace];
 	if (value === undefined) return undefined;
-	if (!isSettingsRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	if (!isSettingsRecord(value)) {
+		throw new SettingsNamespaceError(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	}
 	return value;
 }

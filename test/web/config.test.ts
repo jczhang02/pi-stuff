@@ -9,7 +9,7 @@ import piWebAccess, {
 	type WebRuntimeEffectOptions,
 } from "../../packages/pi-stuff/src/web/runtime/implementation.js";
 import { loadSsrfConfig } from "../../packages/pi-stuff/src/web/runtime/ssrf-protection.js";
-import { readWebConfig, updateWebConfig, WebConfigError } from "../../packages/pi-stuff/src/web/settings.js";
+import { WebSettingsStore } from "../../packages/pi-stuff/src/web/settings.js";
 
 const roots: string[] = [];
 const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
@@ -26,8 +26,9 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((value) => rm(value, { force: true, recursive: true })));
 });
 
-function installWeb(agentDirectory: string): string[] {
+async function installWeb(agentDirectory: string): Promise<{ settings: WebSettingsStore; tools: string[] }> {
 	process.env["PI_CODING_AGENT_DIR"] = agentDirectory;
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDirectory));
 	const tools: string[] = [];
 	const host: PiWebAccessHost = {
 		appendEntry: () => undefined,
@@ -36,23 +37,25 @@ function installWeb(agentDirectory: string): string[] {
 	};
 	const effects: WebRuntimeEffectOptions = {
 		prepareFetch: () => Effect.void,
+		readSettings: () => settings.get(),
 		runContentOperation: async (_ctx, program, handlers, signal) =>
 			handlers.success(await Effect.runPromise(program, { signal })),
 	};
 	piWebAccess(host, effects);
-	return tools;
+	return { settings, tools };
 }
 
 test("Web configuration stays read-only until an explicit update", async () => {
 	const agentDir = await root();
-	expect(readWebConfig(agentDir)).toBeUndefined();
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	expect(settings.get()).toEqual({});
 	expect(await Bun.file(join(agentDir, "pi-stuff.json")).exists()).toBe(false);
 });
 
 test("invalid Web configuration diagnoses and keeps strict built-in defaults active", async () => {
 	const agentDir = await root();
 	await writeFile(join(agentDir, "pi-stuff.json"), "{");
-	expect(installWeb(agentDir)).toEqual(["web_search", "fetch_content", "get_search_content"]);
+	expect((await installWeb(agentDir)).tools).toEqual(["web_search", "fetch_content", "get_search_content"]);
 	expect(runtimeConfig.readWebConfig()).toEqual({});
 	expect(loadSsrfConfig()).toEqual({ allowRanges: [], trustEnvProxy: false });
 });
@@ -61,24 +64,24 @@ test("invalid stored SSRF fields fail closed", async () => {
 	const agentDir = await root();
 	process.env["PI_CODING_AGENT_DIR"] = agentDir;
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: { ssrf: { allowRanges: "private" } } }));
-	expect(() => loadSsrfConfig()).toThrow("ssrf.allowRanges");
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	expect(() => runtimeConfig.withWebConfigSnapshot(settings.get(), loadSsrfConfig)).toThrow("ssrf.allowRanges");
 });
 
 test("Web configuration I/O failures propagate during initialization", async () => {
 	const agentDir = await root();
 	await mkdir(join(agentDir, "pi-stuff.json"));
-	expect(() => installWeb(agentDir)).toThrow();
-	expect(() => installWeb(agentDir)).not.toThrow(WebConfigError);
-	expect(() => loadSsrfConfig()).toThrow();
+	await expect(installWeb(agentDir)).rejects.toThrow();
 });
 
 test("explicit update lifts legacy Web configuration and preserves sibling namespaces", async () => {
 	const agentDir = await root();
 	const legacyPath = join(agentDir, "web-search.json");
 	await writeFile(legacyPath, JSON.stringify({ parallelApiKey: "op://Private/Parallel/key", provider: "parallel" }));
-	expect(readWebConfig(agentDir)?.["parallelApiKey"]).toBe("op://Private/Parallel/key");
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	expect(settings.get()["parallelApiKey"]).toBe("op://Private/Parallel/key");
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ ui: { statusline: true } }));
-	await updateWebConfig({ searchModel: "model-a" }, agentDir);
+	await Effect.runPromise(settings.update({ searchModel: "model-a" }));
 	expect(JSON.parse(await readFile(join(agentDir, "pi-stuff.json"), "utf8"))).toEqual({
 		ui: { statusline: true },
 		web: { parallelApiKey: "op://Private/Parallel/key", provider: "parallel", searchModel: "model-a" },
@@ -91,17 +94,18 @@ test("canonical Web configuration wins and concurrent updates retain both fields
 	process.env["PI_CODING_AGENT_DIR"] = agentDir;
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: { provider: "brave" } }));
 	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ provider: "parallel" }));
-	await runtimeConfig.withWebConfigSnapshot(async () => {
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	await runtimeConfig.withWebConfigSnapshot(settings.get(), async () => {
 		expect(runtimeConfig.readWebConfig()["provider"]).toBe("brave");
-		await updateWebConfig({ provider: "parallel" }, agentDir);
+		await Effect.runPromise(settings.update({ provider: "parallel" }));
 		expect(runtimeConfig.readWebConfig()["provider"]).toBe("brave");
 	});
-	expect(runtimeConfig.readWebConfig()["provider"]).toBe("parallel");
+	expect(settings.get()["provider"]).toBe("parallel");
 	await Promise.all([
-		updateWebConfig({ recencyFilter: "month" }, agentDir),
-		updateWebConfig({ searchModel: "model-a" }, agentDir),
+		Effect.runPromise(settings.update({ recencyFilter: "month" })),
+		Effect.runPromise(settings.update({ searchModel: "model-a" })),
 	]);
-	expect(readWebConfig(agentDir)).toEqual({
+	expect(settings.get()).toEqual({
 		provider: "parallel",
 		recencyFilter: "month",
 		searchModel: "model-a",
@@ -113,7 +117,8 @@ test("invalid canonical Web configuration never deletes legacy credentials", asy
 	const agentDir = await root();
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: false }));
 	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ parallelApiKey: "secret" }));
-	await expect(updateWebConfig({ provider: "parallel" }, agentDir)).rejects.toThrow('"web" must be a JSON object');
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	await expect(Effect.runPromise(settings.update({ provider: "parallel" }))).rejects.toThrow("not a JSON object");
 	expect(await Bun.file(join(agentDir, "web-search.json")).exists()).toBe(true);
 });
 
@@ -121,10 +126,11 @@ test("an interrupted legacy migration remains readable and resumes on the next e
 	const agentDir = await root();
 	const stagedPath = join(agentDir, "web-search.json.migrating");
 	await writeFile(stagedPath, JSON.stringify({ provider: "parallel", parallelApiKey: "op://Private/key" }));
-	expect(readWebConfig(agentDir)?.["provider"]).toBe("parallel");
+	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
+	expect(settings.get()["provider"]).toBe("parallel");
 
-	await updateWebConfig({ workflow: "none" }, agentDir);
-	expect(readWebConfig(agentDir)).toEqual({
+	await Effect.runPromise(settings.update({ workflow: "none" }));
+	expect(settings.get()).toEqual({
 		provider: "parallel",
 		parallelApiKey: "op://Private/key",
 		workflow: "none",

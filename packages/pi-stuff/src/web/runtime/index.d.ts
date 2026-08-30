@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Effect } from "effect";
+import type { SettingsRecord } from "../../shared/settings-io/index.ts";
 import type { WebFetchInput } from "../url-policy.ts";
 
 export interface RuntimeSsrfDefaults {
@@ -13,6 +14,7 @@ export class WebContentSessionError extends Error {}
 
 export interface WebRuntimeEffectOptions {
 	readonly prepareFetch: (input: WebFetchInput) => Effect<void, Error>;
+	readonly readSettings: () => SettingsRecord;
 	readonly runContentOperation: <A, E, Result>(
 		ctx: ExtensionContext,
 		program: Effect<A, E>,

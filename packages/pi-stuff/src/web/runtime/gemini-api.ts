@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
 	isJsonInputObject,
 	type JsonInputObject,
@@ -9,8 +10,8 @@ import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import type { SearchOptions, SearchResult } from "./perplexity.ts";
+import { getWebSearchConfigPath, nativePromise, nativeRequest } from "./utils.ts";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
 const GROUNDING_REDIRECT_ORIGIN = "https://vertexaisearch.cloud.google.com";
@@ -22,11 +23,6 @@ export const DEFAULT_MODEL = "gemini-3.6-flash";
 
 function loadConfig() {
 	return readWebConfig() ?? {};
-}
-
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function normalizeApiKey(value: JsonInputValue): string | null {
@@ -45,13 +41,17 @@ function isCloudflareGateway(): boolean {
 	return getApiHost().includes("gateway.ai.cloudflare.com");
 }
 
-export async function getApiKey(signal?: AbortSignal): Promise<string | null> {
+async function getApiKeyNative(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
 		provider: "Gemini",
 		configuredValue: loadConfig()["geminiApiKey"],
 		environmentValue: process.env["GEMINI_API_KEY"],
 		signal,
 	});
+}
+
+export function getApiKey(signal?: AbortSignal) {
+	return nativePromise(getApiKeyNative, signal);
 }
 
 export function getApiHost(): string {
@@ -123,7 +123,7 @@ export function redactGeminiApiResponse(response: Response, text: string, apiKey
 	return redactGeminiCredentials(text, credentials?.apiKey ?? apiKey, credentials?.cloudflareApiKey);
 }
 
-export async function fetchGeminiApi(
+async function fetchGeminiApiNative(
 	url: string | URL,
 	init: RequestInit = {},
 	apiKey?: string | null,
@@ -134,7 +134,7 @@ export async function fetchGeminiApi(
 			throw new Error("Gemini API credential query parameters are not allowed");
 		}
 	}
-	const resolvedApiKey = apiKey === undefined ? await getApiKey(init.signal ?? undefined) : apiKey;
+	const resolvedApiKey = apiKey === undefined ? await getApiKeyNative(init.signal ?? undefined) : apiKey;
 	const cloudflareApiKey = isCloudflareGateway() ? await resolveCloudflareApiKey(init.signal ?? undefined) : null;
 	const allowedOrigins = new Set([new URL(getApiHost()).origin, new URL(DEFAULT_API_HOST).origin]);
 	if ((resolvedApiKey || isGatewayConfigured()) && !allowedOrigins.has(parsedUrl.origin)) {
@@ -160,6 +160,10 @@ export async function fetchGeminiApi(
 	}
 }
 
+export function fetchGeminiApi(url: string | URL, init: RequestInit = {}, apiKey?: string | null) {
+	return nativePromise((signal) => fetchGeminiApiNative(url, { ...init, signal }, apiKey), init.signal ?? undefined);
+}
+
 export function isGeminiApiAvailable(): boolean {
 	return (
 		hasCredentialSource({
@@ -170,47 +174,71 @@ export function isGeminiApiAvailable(): boolean {
 	);
 }
 
-export async function searchWithGeminiApi(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
-	const requestSignal = withTimeout(options.signal, 60_000);
-	const apiKey = await getApiKey(requestSignal);
-	if (!apiKey && !isGatewayConfigured()) return null;
-	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	try {
-		const configuredModel = loadConfig()["searchModel"];
-		const model = isRuntimeString(configuredModel) && configuredModel.trim() ? configuredModel.trim() : DEFAULT_MODEL;
-		const res = await fetchGeminiApi(
-			`${getVersionedApiBase()}/models/${model}:generateContent`,
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					contents: [{ role: "user", parts: [{ text: query }] }],
-					tools: [{ google_search: {} }],
-				}),
-				signal: requestSignal,
-			},
-			apiKey,
-		);
-		if (!res.ok) {
-			const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
-			throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
-		}
-
-		const data = parseGeminiSearchPayload(parseJsonObject(await res.text()));
-		activityMonitor.logComplete(activityId, res.status);
-		const answer = data.parts
-			.map((part) => part.text)
-			.filter(Boolean)
-			.join("\n");
-		const results = await resolveGroundingChunks(data.groundingChunks, options.signal);
-		return answer || results.length > 0 ? { answer, results } : null;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw error;
+async function searchWithGeminiApiRequest(
+	query: string,
+	model: string,
+	apiKey: string | null,
+	signal: AbortSignal,
+): Promise<{ payload: GeminiSearchPayload; status: number }> {
+	const res = await fetchGeminiApiNative(
+		`${getVersionedApiBase()}/models/${model}:generateContent`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				contents: [{ role: "user", parts: [{ text: query }] }],
+				tools: [{ google_search: {} }],
+			}),
+			signal,
+		},
+		apiKey,
+	);
+	if (!res.ok) {
+		const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
+		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
+	return { payload: parseGeminiSearchPayload(parseJsonObject(await res.text())), status: res.status };
+}
+
+export function searchWithGeminiApi(query: string, options: SearchOptions = {}) {
+	return getApiKey(options.signal).pipe(
+		Effect.flatMap((apiKey) => {
+			if (!apiKey && !isGatewayConfigured()) return Effect.succeed(null);
+			const activityId = activityMonitor.logStart({ type: "api", query });
+			const configuredModel = loadConfig()["searchModel"];
+			const model =
+				isRuntimeString(configuredModel) && configuredModel.trim() ? configuredModel.trim() : DEFAULT_MODEL;
+			return nativeRequest(
+				(signal) => searchWithGeminiApiRequest(query, model, apiKey, signal),
+				60_000,
+				options.signal,
+			).pipe(
+				Effect.flatMap(({ payload, status }) =>
+					resolveGroundingChunks(payload.groundingChunks, options.signal).pipe(
+						Effect.map((results) => {
+							activityMonitor.logComplete(activityId, status);
+							const answer = payload.parts
+								.map((part) => part.text)
+								.filter(Boolean)
+								.join("\n");
+							return answer || results.length > 0 ? { answer, results } : null;
+						}),
+					),
+				),
+				Effect.catch((error) =>
+					Effect.andThen(
+						Effect.sync(() => {
+							const message = error instanceof Error ? error.message : String(error);
+							if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+							else activityMonitor.logError(activityId, message);
+						}),
+						Effect.fail(error),
+					),
+				),
+				Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+			);
+		}),
+	);
 }
 
 interface GeminiSearchPayload {
@@ -222,37 +250,51 @@ interface GroundingChunk {
 	web: { uri: string; title: string } | undefined;
 }
 
-async function resolveGroundingChunks(chunks: GroundingChunk[], signal?: AbortSignal): Promise<SearchResult[]> {
-	const results: SearchResult[] = [];
-	for (const chunk of chunks) {
-		if (!chunk.web) continue;
-		const title = chunk.web.title || "";
-		let url = chunk.web.uri || "";
-		const resolved = await resolveRedirect(url, signal);
-		if (resolved) url = resolved;
-		if (url) results.push({ title, url, snippet: "" });
-	}
-	return results;
+function resolveGroundingChunks(chunks: GroundingChunk[], signal?: AbortSignal) {
+	return Effect.forEach(
+		chunks,
+		(chunk) => {
+			if (!chunk.web) return Effect.succeed(null);
+			const { title = "", uri = "" } = chunk.web;
+			return resolveRedirect(uri, signal).pipe(
+				Effect.map((resolved) => {
+					const url = resolved ?? uri;
+					return url ? ({ title, url, snippet: "" } satisfies SearchResult) : null;
+				}),
+			);
+		},
+		{ concurrency: 1 },
+	).pipe(Effect.map((results) => results.filter((result): result is SearchResult => result !== null)));
 }
 
-async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string | null> {
-	try {
-		const url = new URL(proxyUrl);
-		if (
-			url.origin !== GROUNDING_REDIRECT_ORIGIN ||
-			(url.pathname !== GROUNDING_REDIRECT_PATH && !url.pathname.startsWith(`${GROUNDING_REDIRECT_PATH}/`))
-		) {
-			return null;
-		}
-		const res = await fetch(url, {
-			method: "HEAD",
-			redirect: "manual",
-			signal: withTimeout(signal, 5_000),
-		});
-		return res.headers.get("location");
-	} catch {
-		return null;
-	}
+function resolveRedirect(proxyUrl: string, signal?: AbortSignal) {
+	return Effect.try({
+		try: () => {
+			const url = new URL(proxyUrl);
+			if (
+				url.origin !== GROUNDING_REDIRECT_ORIGIN ||
+				(url.pathname !== GROUNDING_REDIRECT_PATH && !url.pathname.startsWith(`${GROUNDING_REDIRECT_PATH}/`))
+			) {
+				return undefined;
+			}
+			return url;
+		},
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(
+		Effect.flatMap((url) =>
+			url
+				? nativeRequest(
+						(requestSignal) =>
+							fetch(url, { method: "HEAD", redirect: "manual", signal: requestSignal }).then((response) =>
+								response.headers.get("location"),
+							),
+						5_000,
+						signal,
+					)
+				: Effect.succeed(null),
+		),
+		Effect.catch(() => Effect.succeed(null)),
+	);
 }
 
 function readOptionalObject(value: JsonInputValue, label: string): JsonInputObject | undefined {
@@ -343,22 +385,14 @@ function parseGenerateContentResponse(value: JsonInputValue): GeminiGenerateCont
 	return result;
 }
 
-export async function queryGeminiApiWithInlineData(
+async function queryGeminiApiWithInlineDataRequest(
 	prompt: string,
 	data: string,
 	mimeType: string,
-	options: GeminiApiOptions = {},
+	options: GeminiApiOptions,
+	apiKey: string | null,
+	signal: AbortSignal,
 ): Promise<GeminiGenerateContentResult> {
-	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const apiKey = options.apiKey ?? (await getApiKey(signal));
-	if (!apiKey && !isGatewayConfigured()) {
-		throw new Error(
-			"Gemini API not configured. Either:\n" +
-				`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
-				"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing",
-		);
-	}
-
 	const model = options.model ?? DEFAULT_MODEL;
 	const url = `${getVersionedApiBase()}/models/${model}:generateContent`;
 	const body = {
@@ -370,7 +404,7 @@ export async function queryGeminiApiWithInlineData(
 		],
 	};
 
-	const res = await fetchGeminiApi(
+	const res = await fetchGeminiApiNative(
 		url,
 		{
 			method: "POST",
@@ -389,21 +423,46 @@ export async function queryGeminiApiWithInlineData(
 	return parseGenerateContentResponse(requireJsonInputValue(await res.json(), "Gemini response"));
 }
 
-export async function queryGeminiApiWithVideo(
+function requireGeminiConfiguration(apiKey: string | null): Effect.Effect<void, Error> {
+	return apiKey || isGatewayConfigured()
+		? Effect.void
+		: Effect.fail(
+				new Error(
+					"Gemini API not configured. Either:\n" +
+						`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+						"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing",
+				),
+			);
+}
+
+export function queryGeminiApiWithInlineData(
+	prompt: string,
+	data: string,
+	mimeType: string,
+	options: GeminiApiOptions = {},
+) {
+	const apiKey = options.apiKey === undefined ? getApiKey(options.signal) : Effect.succeed(options.apiKey);
+	return apiKey.pipe(
+		Effect.flatMap((resolvedApiKey) =>
+			Effect.andThen(
+				requireGeminiConfiguration(resolvedApiKey),
+				nativeRequest(
+					(signal) => queryGeminiApiWithInlineDataRequest(prompt, data, mimeType, options, resolvedApiKey, signal),
+					options.timeoutMs ?? 120_000,
+					options.signal,
+				),
+			),
+		),
+	);
+}
+
+async function queryGeminiApiWithVideoRequest(
 	prompt: string,
 	videoUri: string,
-	options: GeminiApiOptions = {},
+	options: GeminiApiOptions,
+	apiKey: string | null,
+	signal: AbortSignal,
 ): Promise<string> {
-	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const apiKey = options.apiKey ?? (await getApiKey(signal));
-	if (!apiKey && !isGatewayConfigured()) {
-		throw new Error(
-			"Gemini API not configured. Either:\n" +
-				`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
-				"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing",
-		);
-	}
-
 	const model = options.model ?? DEFAULT_MODEL;
 	const url = `${getVersionedApiBase()}/models/${model}:generateContent`;
 
@@ -419,7 +478,7 @@ export async function queryGeminiApiWithVideo(
 		],
 	};
 
-	const res = await fetchGeminiApi(
+	const res = await fetchGeminiApiNative(
 		url,
 		{
 			method: "POST",
@@ -439,4 +498,20 @@ export async function queryGeminiApiWithVideo(
 
 	if (!text) throw new Error("Gemini API returned empty response");
 	return text;
+}
+
+export function queryGeminiApiWithVideo(prompt: string, videoUri: string, options: GeminiApiOptions = {}) {
+	const apiKey = options.apiKey === undefined ? getApiKey(options.signal) : Effect.succeed(options.apiKey);
+	return apiKey.pipe(
+		Effect.flatMap((resolvedApiKey) =>
+			Effect.andThen(
+				requireGeminiConfiguration(resolvedApiKey),
+				nativeRequest(
+					(signal) => queryGeminiApiWithVideoRequest(prompt, videoUri, options, resolvedApiKey, signal),
+					options.timeoutMs ?? 120_000,
+					options.signal,
+				),
+			),
+		),
+	);
 }

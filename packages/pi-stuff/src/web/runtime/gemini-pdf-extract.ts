@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { Effect } from "effect";
 import { queryGeminiApiWithInlineData } from "./gemini-api.ts";
 
 const PDF_MIME_TYPE = "application/pdf";
@@ -13,29 +14,31 @@ export interface GeminiPDFExtractOptions {
 	timeoutMs?: number;
 }
 
-export async function extractPDFViaGemini(buffer: ArrayBuffer, options: GeminiPDFExtractOptions): Promise<string> {
+export function extractPDFViaGemini(buffer: ArrayBuffer, options: GeminiPDFExtractOptions) {
 	const pagesToExtract = options.pages === undefined ? options.maxPages : Math.min(options.pages, options.maxPages);
 	const prompt = buildPrompt(pagesToExtract, options.pages !== undefined);
-	const result = await queryGeminiApiWithInlineData(prompt, Buffer.from(buffer).toString("base64"), PDF_MIME_TYPE, {
+	return queryGeminiApiWithInlineData(prompt, Buffer.from(buffer).toString("base64"), PDF_MIME_TYPE, {
 		signal: options.signal,
 		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-	});
-
-	if (result.blockReason) {
-		throw new Error(`Gemini blocked PDF extraction: ${result.blockReason}`);
-	}
-	if (result.finishReason !== "STOP") {
-		throw new Error(
-			`Gemini PDF extraction did not complete normally: ${result.finishReason ?? "missing finish reason"}`,
-		);
-	}
-	if (!result.text.trim()) {
-		throw new Error("Gemini API returned empty PDF extraction");
-	}
-
-	const markdown = stripEnclosingMarkdownFence(result.text);
-	validatePageMarkers(markdown, pagesToExtract, options.pages !== undefined);
-	return removeDuplicateInitialTitle(markdown, options.title);
+	}).pipe(
+		Effect.flatMap((result) =>
+			Effect.try({
+				try: () => {
+					if (result.blockReason) throw new Error(`Gemini blocked PDF extraction: ${result.blockReason}`);
+					if (result.finishReason !== "STOP") {
+						throw new Error(
+							`Gemini PDF extraction did not complete normally: ${result.finishReason ?? "missing finish reason"}`,
+						);
+					}
+					if (!result.text.trim()) throw new Error("Gemini API returned empty PDF extraction");
+					const markdown = stripEnclosingMarkdownFence(result.text);
+					validatePageMarkers(markdown, pagesToExtract, options.pages !== undefined);
+					return removeDuplicateInitialTitle(markdown, options.title);
+				},
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}),
+		),
+	);
 }
 
 function buildPrompt(pagesToExtract: number, exactPageCount: boolean): string {

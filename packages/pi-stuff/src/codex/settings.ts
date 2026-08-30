@@ -43,7 +43,7 @@ export class CodexSettingsStore {
 		this.store = store;
 	}
 
-	static load(agentDirectory = getAgentDir()): Effect.Effect<CodexSettingsStore> {
+	static load(agentDirectory = getAgentDir()): Effect.Effect<CodexSettingsStore, Error> {
 		return Effect.map(
 			EffectNamespacedSettingsStore.load<CodexRecord>(
 				CODEX_NAMESPACE,

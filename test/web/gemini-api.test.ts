@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { fetchGeminiApi, searchWithGeminiApi } from "../../packages/pi-stuff/src/web/runtime/gemini-api.ts";
 
 const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
@@ -54,7 +55,7 @@ test("fetches only exact Gemini grounding redirect URLs", async () => {
 		);
 	}) as typeof fetch;
 
-	const result = await searchWithGeminiApi("query");
+	const result = await Effect.runPromise(searchWithGeminiApi("query"));
 
 	expect(requests.slice(1)).toEqual([trustedUrl]);
 	expect(result?.results).toEqual([
@@ -90,7 +91,9 @@ test("rejects Gemini API redirects before forwarding credentials", async () => {
 	process.env["GOOGLE_GEMINI_BASE_URL"] = `http://127.0.0.1:${String(source.port)}`;
 
 	await expect(
-		fetchGeminiApi(`${process.env["GOOGLE_GEMINI_BASE_URL"]}/v1beta/models/test:generateContent`, {}, "test-key"),
+		Effect.runPromise(
+			fetchGeminiApi(`${process.env["GOOGLE_GEMINI_BASE_URL"]}/v1beta/models/test:generateContent`, {}, "test-key"),
+		),
 	).rejects.toThrow();
 	expect(sourceKeys).toEqual(["test-key"]);
 	expect(destinationRequests).toBe(0);

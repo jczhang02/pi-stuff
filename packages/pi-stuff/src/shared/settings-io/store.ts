@@ -2,7 +2,14 @@
 
 import { isDeepStrictEqual } from "node:util";
 import { Effect, type Scope, Semaphore } from "effect";
-import { mergeNamespaceRecordEffect, readNamespaceEffect, type SettingsRecord } from "./file.js";
+import { isRuntimeString } from "../runtime-type.js";
+import {
+	mergeNamespaceRecordEffect,
+	readNamespaceEffect,
+	SettingsFormatError,
+	SettingsNamespaceError,
+	type SettingsRecord,
+} from "./file.js";
 import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 
 export type NamespaceRecord = SettingsRecord;
@@ -85,7 +92,7 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 		defaults: T,
 		normalize: NamespaceNormalizer<T>,
 		options: EffectNamespaceStoreOptions = {},
-	): Effect.Effect<EffectNamespacedSettingsStore<T>> {
+	): Effect.Effect<EffectNamespacedSettingsStore<T>, Error> {
 		return Effect.gen(function* () {
 			const path = options.path ?? mergedSettingsPath();
 			const writer: EffectNamespaceWriter =
@@ -155,7 +162,7 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 		defaults: T,
 		legacyPath: string | undefined,
 		legacyReader: EffectNamespaceLegacyReader | undefined,
-	): Effect.Effect<void> {
+	): Effect.Effect<void, Error> {
 		return Effect.gen({ self: this }, function* () {
 			if (!this.path || !this.normalize) return;
 			const existing = yield* this.readExisting();
@@ -174,8 +181,9 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 					this.value = value;
 					this.persistedValue = value;
 				}),
-				(error) =>
-					Effect.sync(() => {
+				(error) => {
+					if (isFileSystemError(error) && !isMissingFile(error)) return Effect.fail(error);
+					return Effect.sync(() => {
 						if (!isMissingFile(error)) {
 							this.report(
 								legacyPath,
@@ -184,19 +192,23 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 								error,
 							);
 						}
-					}),
+					});
+				},
 			);
 		});
 	}
 
-	private readExisting(): Effect.Effect<ExistingNamespace> {
+	private readExisting(): Effect.Effect<ExistingNamespace, Error> {
 		return Effect.catch(
 			Effect.map(
 				readNamespaceEffect(this.path, this.namespace),
 				(record): ExistingNamespace => (record === undefined ? { kind: "missing" } : { kind: "loaded", record }),
 			),
-			(error) =>
-				Effect.sync(() => {
+			(error) => {
+				if (!(error instanceof SettingsFormatError || error instanceof SettingsNamespaceError)) {
+					return Effect.fail(error);
+				}
+				return Effect.sync(() => {
 					this.report(
 						this.path,
 						"invalid-settings",
@@ -204,7 +216,8 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 						error,
 					);
 					return { kind: "invalid" } as const;
-				}),
+				});
+			},
 		);
 	}
 
@@ -282,4 +295,8 @@ export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
 
 function isMissingFile(cause: unknown): cause is NodeJS.ErrnoException {
 	return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+}
+
+function isFileSystemError(cause: unknown): cause is NodeJS.ErrnoException {
+	return cause instanceof Error && "code" in cause && isRuntimeString(cause.code);
 }

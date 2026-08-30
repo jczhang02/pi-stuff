@@ -23,6 +23,7 @@ export {
 	readSettingsFileSync,
 	readTextFileEffect,
 	SettingsFormatError,
+	SettingsNamespaceError,
 	type SettingsRecord,
 	writeSettingsFile,
 	writeSettingsFileSync,

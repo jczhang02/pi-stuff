@@ -3,6 +3,7 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import type { SettingsRecord } from "../../shared/settings-io/index.js";
 import {
 	WEB_CONTENT_PARAMETERS,
 	WEB_FETCH_PARAMETERS,
@@ -35,6 +36,7 @@ export class WebContentSessionError extends Error {}
 
 export interface WebRuntimeEffectOptions {
 	readonly prepareFetch: (input: WebFetchInput) => Effect.Effect<void, Error>;
+	readonly readSettings: () => SettingsRecord;
 	readonly runContentOperation: <A, E, Result>(
 		ctx: ExtensionContext,
 		program: Effect.Effect<A, E>,
@@ -663,7 +665,9 @@ function registerSearchTool(runtime: WebRuntime): void {
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: WEB_SEARCH_PARAMETERS,
 		execute: (_callId, params, signal, onUpdate, ctx) =>
-			withWebConfigSnapshot(() => executeSearch(runtime, params, signal, onUpdate, ctx)),
+			withWebConfigSnapshot(runtime.effects.readSettings(), () =>
+				executeSearch(runtime, params, signal, onUpdate, ctx),
+			),
 	});
 }
 
@@ -676,7 +680,9 @@ function registerFetchTool(runtime: WebRuntime): void {
 			"Read public HTTP(S) pages, direct images, GitHub URLs, and PDFs. Use raw only for exact textual response bodies.",
 		parameters: WEB_FETCH_PARAMETERS,
 		execute: (_callId, params, signal, onUpdate, ctx) =>
-			withWebConfigSnapshot(() => executeFetch(runtime, params, signal, onUpdate, ctx)),
+			withWebConfigSnapshot(runtime.effects.readSettings(), () =>
+				executeFetch(runtime, params, signal, onUpdate, ctx),
+			),
 	});
 }
 
@@ -692,7 +698,7 @@ function registerContentTool(runtime: WebRuntime): void {
 }
 
 function installPiWebAccess(pi: PiWebAccessHost, effects: WebRuntimeEffectOptions): void {
-	const initConfig = loadConfig();
+	const initConfig = withWebConfigSnapshot(effects.readSettings(), loadConfig);
 	const toolNames = resolveToolNames(initConfig);
 	const runtime: WebRuntime = {
 		effects,

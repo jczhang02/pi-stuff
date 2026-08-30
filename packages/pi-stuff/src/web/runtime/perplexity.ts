@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -5,7 +6,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, nativePromise } from "./utils.ts";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -87,19 +88,13 @@ export function isPerplexityAvailable(): boolean {
 	});
 }
 
-export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
-	checkRateLimit();
-
-	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	activityMonitor.updateRateLimit({
-		used: requestTimestamps.length,
-		max: RATE_LIMIT.maxRequests,
-		oldestTimestamp: requestTimestamps[0] ?? null,
-		windowMs: RATE_LIMIT.windowMs,
-	});
-
-	const apiKey = await getApiKey(options.signal);
+async function searchWithPerplexityRequest(
+	query: string,
+	options: SearchOptions,
+	apiKey: string,
+	activityId: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults =
 		isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults)
 			? Math.max(1, Math.min(Math.floor(options.numResults), 20))
@@ -134,7 +129,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 			},
 			body: JSON.stringify(requestBody),
 		};
-		if (options.signal) request.signal = options.signal;
+		request.signal = signal;
 		response = await fetch(PERPLEXITY_API_URL, request);
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -179,4 +174,32 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 
 	activityMonitor.logComplete(activityId, response.status);
 	return { answer, results };
+}
+
+export function searchWithPerplexity(query: string, options: SearchOptions = {}) {
+	return Effect.try({
+		try: () => {
+			checkRateLimit();
+			const activityId = activityMonitor.logStart({ type: "api", query });
+			activityMonitor.updateRateLimit({
+				used: requestTimestamps.length,
+				max: RATE_LIMIT.maxRequests,
+				oldestTimestamp: requestTimestamps[0] ?? null,
+				windowMs: RATE_LIMIT.windowMs,
+			});
+			return activityId;
+		},
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(
+		Effect.flatMap((activityId) =>
+			nativePromise(getApiKey, options.signal).pipe(
+				Effect.flatMap((apiKey) =>
+					nativePromise(
+						(signal) => searchWithPerplexityRequest(query, options, apiKey, activityId, signal),
+						options.signal,
+					),
+				),
+			),
+		),
+	);
 }

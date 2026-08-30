@@ -25,11 +25,6 @@ export function normalizeHeaders(headers: Readonly<Record<string, string | null>
 	);
 }
 
-export function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
 export function nativePromise<Value>(
 	request: (signal: AbortSignal) => PromiseLike<Value>,
 	signal?: AbortSignal,

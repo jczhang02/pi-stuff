@@ -77,7 +77,7 @@ export function extractPDFToMarkdown(
 
 		const geminiOptions = { maxPages: safeMaxPages, title: urlTitle };
 		if (geminiTimeoutMs !== undefined) Object.assign(geminiOptions, { timeoutMs: geminiTimeoutMs });
-		return nativePromise((signal) => extractPDFViaGemini(buffer, { ...geminiOptions, signal })).pipe(
+		return extractPDFViaGemini(buffer, geminiOptions).pipe(
 			Effect.flatMap((markdownBody) =>
 				writeMarkdownResult({
 					markdownBody,

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -10,7 +11,8 @@ import {
 	isBrowserCookieAccessAllowed,
 	normalizeChromeProfile,
 } from "./gemini-web-config.ts";
-import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import type { SearchOptions, SearchResult } from "./perplexity.ts";
+import { nativeRequest } from "./utils.ts";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -40,39 +42,45 @@ export interface GeminiWebOptions {
 	timeoutMs?: number;
 }
 
-export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
-	if (!isBrowserCookieAccessAllowed()) return null;
-
-	const result = await getGoogleCookies({
+export function isGeminiWebAvailable(chromeProfile?: string) {
+	if (!isBrowserCookieAccessAllowed()) return Effect.succeed(null);
+	return getGoogleCookies({
 		profile: normalizeChromeProfile(chromeProfile) ?? getChromeProfileFromConfig(),
 		requiredCookies: REQUIRED_COOKIES,
-	});
-	if (!result) return null;
-	return result.cookies;
+	}).pipe(Effect.map((result) => result?.cookies ?? null));
 }
 
 export function getGeminiWebAvailabilityDiagnostic(): string | null {
 	return isBrowserCookieAccessAllowed() ? getLastGoogleCookieDiagnostic() : null;
 }
 
-export async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
-	const cookies = await isGeminiWebAvailable();
-	if (!cookies) return null;
-	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	try {
-		const answer = await queryWithCookies(buildSearchPrompt(query, options), cookies, {
-			signal: options.signal,
-			timeoutMs: 60_000,
-		});
-		activityMonitor.logComplete(activityId, 200);
-		return { answer, results: extractSourceUrls(answer) };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw error;
-	}
+export function searchWithGeminiWeb(query: string, options: SearchOptions = {}) {
+	return isGeminiWebAvailable().pipe(
+		Effect.flatMap((cookies) => {
+			if (!cookies) return Effect.succeed(null);
+			const activityId = activityMonitor.logStart({ type: "api", query });
+			return queryWithCookies(buildSearchPrompt(query, options), cookies, {
+				signal: options.signal,
+				timeoutMs: 60_000,
+			}).pipe(
+				Effect.map((answer) => {
+					activityMonitor.logComplete(activityId, 200);
+					return { answer, results: extractSourceUrls(answer) };
+				}),
+				Effect.catch((error) =>
+					Effect.andThen(
+						Effect.sync(() => {
+							const message = error instanceof Error ? error.message : String(error);
+							if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
+							else activityMonitor.logError(activityId, message);
+						}),
+						Effect.fail(error),
+					),
+				),
+				Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+			);
+		}),
+	);
 }
 
 function buildSearchPrompt(query: string, options: SearchOptions): string {
@@ -103,47 +111,51 @@ function extractSourceUrls(markdown: string): SearchResult[] {
 	return results;
 }
 
-export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string | null> {
+export function getActiveGoogleEmail(cookies: CookieMap) {
 	const cookieHeader = buildCookieHeader(cookies);
-	if (!cookieHeader) return null;
-
-	try {
-		const html = await fetchWithCookieRedirects(GEMINI_APP_URL, cookieHeader, 10, AbortSignal.timeout(10000));
-		const email = extractEmailFromGeminiHtml(html);
-		if (email) return email;
-	} catch {}
-
-	try {
-		const response = await fetchWithCookieRedirects(
-			GOOGLE_LIST_ACCOUNTS_URL,
-			cookieHeader,
-			10,
-			AbortSignal.timeout(10000),
-		);
-		return extractEmailFromListAccounts(response);
-	} catch {
-		return null;
-	}
+	if (!cookieHeader) return Effect.succeed(null);
+	return nativeRequest((signal) => fetchWithCookieRedirects(GEMINI_APP_URL, cookieHeader, 10, signal), 10_000).pipe(
+		Effect.map(extractEmailFromGeminiHtml),
+		Effect.catch(() => Effect.succeed(null)),
+		Effect.flatMap((email) =>
+			email
+				? Effect.succeed(email)
+				: nativeRequest(
+						(signal) => fetchWithCookieRedirects(GOOGLE_LIST_ACCOUNTS_URL, cookieHeader, 10, signal),
+						10_000,
+					).pipe(
+						Effect.map(extractEmailFromListAccounts),
+						Effect.catch(() => Effect.succeed(null)),
+					),
+		),
+	);
 }
 
-export async function queryWithCookies(
+export function queryWithCookies(
 	prompt: string,
 	cookieMap: CookieMap,
 	options: GeminiWebOptions = {},
-): Promise<string> {
+): Effect.Effect<string, Error> {
 	const model = options.model ?? DEFAULT_GEMINI_WEB_MODEL;
 	if (!MODEL_HEADERS.has(model)) {
-		throw new Error(
-			`Gemini Web does not support model ${model}; configure Gemini API or choose a supported Gemini Web model.`,
+		return Effect.fail(
+			new Error(
+				`Gemini Web does not support model ${model}; configure Gemini API or choose a supported Gemini Web model.`,
+			),
 		);
 	}
-	const timeoutMs = options.timeoutMs ?? 120000;
-
-	const result = await runGeminiWebOnce(prompt, cookieMap, model, options.files, timeoutMs, options.signal);
-
-	if (result.errorMessage) throw new Error(result.errorMessage);
-	if (!result.text) throw new Error("Gemini Web returned empty response");
-	return result.text;
+	return nativeRequest(
+		(signal) => runGeminiWebOnce(prompt, cookieMap, model, options.files, signal),
+		options.timeoutMs ?? 120_000,
+		options.signal,
+	).pipe(
+		Effect.flatMap((result) => {
+			if (result.errorMessage) return Effect.fail(new Error(result.errorMessage));
+			return result.text
+				? Effect.succeed(result.text)
+				: Effect.fail(new Error("Gemini Web returned empty response"));
+		}),
+	);
 }
 
 interface GeminiWebResult {
@@ -157,19 +169,17 @@ async function runGeminiWebOnce(
 	cookieMap: CookieMap,
 	model: string,
 	files: string[] | undefined,
-	timeoutMs: number,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<GeminiWebResult> {
-	const effectiveSignal = withTimeout(signal, timeoutMs);
 	const modelHeader = MODEL_HEADERS.get(model);
 	if (!modelHeader) throw new Error(`Gemini Web does not support model ${model}`);
 	const cookieHeader = buildCookieHeader(cookieMap);
-	const accessToken = await fetchAccessToken(cookieHeader, effectiveSignal);
+	const accessToken = await fetchAccessToken(cookieHeader, signal);
 
 	const uploaded: Array<{ id: string; name: string }> = [];
 	if (files) {
 		for (const filePath of files) {
-			uploaded.push(await uploadFile(filePath, cookieHeader, effectiveSignal));
+			uploaded.push(await uploadFile(filePath, cookieHeader, signal));
 		}
 	}
 
@@ -192,7 +202,7 @@ async function runGeminiWebOnce(
 			[MODEL_HEADER_NAME]: modelHeader,
 		},
 		body: params.toString(),
-		signal: effectiveSignal,
+		signal,
 	});
 
 	const rawText = await res.text();
@@ -370,11 +380,6 @@ function buildFReqPayload(prompt: string, uploaded: Array<{ id: string; name: st
 	const promptPayload = uploaded.length > 0 ? [prompt, 0, null, uploaded.map((file) => [[file.id, 1]])] : [prompt];
 	const innerList = [promptPayload, null, null];
 	return JSON.stringify([null, JSON.stringify(innerList)]);
-}
-
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function buildCookieHeader(cookieMap: CookieMap): string {
