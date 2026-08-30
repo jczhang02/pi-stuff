@@ -42,6 +42,7 @@
 		"ai-tokenizer": "1.0.6",
 		"ajv": "8.20.0",
 		"ajv-formats": "3.0.1",
+		"effect": "4.0.0-rc.112",
 		"jiti": "2.7.0",
 		"linkedom": "0.16.11",
 		"open": "10.2.0",

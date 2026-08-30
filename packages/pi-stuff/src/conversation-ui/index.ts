@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { getHostSharedResource } from "../shared/host-resource.js";
 import { isRuntimeBoolean, isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 import {
 	AgentRunOriginTracker,
@@ -13,7 +14,6 @@ import { getCommandDialogCoordinator } from "./command-dialog-registry.js";
 import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { globalWeakMap } from "./global-registry.js";
-import { getHostSharedResource } from "./host-resource.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
 import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
 import {
@@ -24,6 +24,7 @@ import {
 } from "./settings.js";
 import { createUiSettingsView } from "./ui-settings-dialog.js";
 
+export { getHostSharedResource } from "../shared/host-resource.js";
 export {
 	type AgentWorkOrigin,
 	hasDirectUserActivation,
@@ -82,7 +83,6 @@ export {
 	renderCommandDialogSplit,
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "./dialog-layout.js";
-export { getHostSharedResource } from "./host-resource.js";
 export { createMarkdownRenderer } from "./markdown.js";
 export {
 	createPonytailDialogView,

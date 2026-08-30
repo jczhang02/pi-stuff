@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { getHostSharedResource } from "../shared/host-resource.js";
 import {
 	mergedSettingsPath,
 	mergeNamespaceRecord,
@@ -10,7 +11,6 @@ import {
 	resolveSettingsLockPath,
 } from "../shared/settings-io/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
-import { getHostSharedResource } from "./host-resource.js";
 import type { StatuslineDensity } from "./statusline.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-ui.json";

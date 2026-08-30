@@ -19,6 +19,7 @@ import notification from "./notification/index.js";
 import ponytail from "./ponytail/index.js";
 import rtk from "./rtk/index.js";
 import sessionNaming from "./session-naming/index.js";
+import { installEffectFoundation } from "./shared/effect-foundation.js";
 import subagents from "./subagents/index.js";
 import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";
 import type { SuiteInstallationOptions } from "./suite-loader.js";
@@ -161,6 +162,7 @@ const REPLAY_SUITE_TOOL_NAMES = [
 export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 	markLifecyclePhase("suite.factory.start");
 	const suiteApi = installSuiteSessionReadiness(pi);
+	installEffectFoundation(suiteApi);
 	const registrations = createSuiteToolRegistrationTracker(suiteApi);
 	registerCodeModeContextProjection(suiteApi);
 	const resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");

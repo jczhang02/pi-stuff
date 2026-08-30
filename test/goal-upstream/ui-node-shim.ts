@@ -8,13 +8,13 @@ export {
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 export { reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 export { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff/src/conversation-ui/dialog-layout.js";
-export { getHostSharedResource } from "../../packages/pi-stuff/src/conversation-ui/host-resource.js";
 export { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 export {
 	isSuiteNativeCompactionPreflight,
 	sendSuiteAgentMessage,
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 export { whenSuiteSessionReady } from "../../packages/pi-stuff/src/conversation-ui/suite-lifecycle.js";
+export { getHostSharedResource } from "../../packages/pi-stuff/src/shared/host-resource.js";
 
 export function requestUiRender(): boolean {
 	return false;

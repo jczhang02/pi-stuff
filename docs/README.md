@@ -75,6 +75,7 @@ hard-to-reverse, non-obvious trade-off. Git history is the archive for removed p
 | [0021](adr/0021-fork-ponytail-as-a-suite-capability.md) | Fork Ponytail as a Suite Capability |
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | Restrict compact folding to native retrieval |
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | Use a closed Operation Block family |
+| [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | Adopt Effect as the internal effect model |
 
 ## Evidence and history
 

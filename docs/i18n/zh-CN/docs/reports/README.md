@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: c85e01ed716ac8bf0f879f9471cb5fda84e799143c2ce43859c2cbae2cde0712 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 5d78423a455bee91dd4b988d6b6639591c42f1466c778e3217bb4f72d29f86c5 -->
 
 # 报告
 
@@ -8,6 +8,7 @@
 
 ## 保留报告
 
+- [Effect v4 采用基线](effect-v4-adoption-baseline-2026-08-30.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)及其保留的[截图](../../../../../docs/reports/assets/pi-stuff-0.3.0/)
 - [单软件包迁移](single-package-migration.md)

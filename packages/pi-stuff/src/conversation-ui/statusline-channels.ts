@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getHostSharedResource } from "../shared/host-resource.js";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
 import { globalWeakMap } from "./global-registry.js";
-import { getHostSharedResource } from "./host-resource.js";
 
 export interface CodexStatusSnapshot {
 	readonly fastEnabled: boolean;

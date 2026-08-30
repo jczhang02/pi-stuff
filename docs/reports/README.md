@@ -9,6 +9,7 @@ evidence. Current engineering authority is indexed in [`docs/README.md`](../READ
 
 ## Retained reports
 
+- [Effect v4 adoption baseline](effect-v4-adoption-baseline-2026-08-30.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md) with its retained
   [screenshots](assets/pi-stuff-0.3.0/)

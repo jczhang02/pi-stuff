@@ -8,7 +8,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import type { TSchema } from "typebox";
-import { getHostSharedResource } from "../conversation-ui/host-resource.js";
+import { getHostSharedResource } from "../shared/host-resource.js";
 import {
 	classifyRetrievalGroupInvocation,
 	type RetrievalGroupDisposition,

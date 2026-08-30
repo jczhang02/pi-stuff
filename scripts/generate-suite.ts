@@ -95,6 +95,10 @@ function renderRuntimeImports(capabilities: readonly CapabilityModule[], hasSuba
 			source: 'import { markLifecyclePhase } from "./lifecycle-performance.js";',
 		},
 		{
+			id: "shared/effect-foundation",
+			source: 'import { installEffectFoundation } from "./shared/effect-foundation.js";',
+		},
+		{
 			id: "suite-loader",
 			source: 'import type { SuiteInstallationOptions } from "./suite-loader.js";',
 		},
@@ -235,6 +239,7 @@ interface CapabilityInstallation {
 		`export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 \tmarkLifecyclePhase("suite.factory.start");
 \tconst suiteApi = installSuiteSessionReadiness(pi);
+\tinstallEffectFoundation(suiteApi);
 ${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(suiteApi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(suiteApi);\n" : ""}${sharesCodeModeState ? '\tconst resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");\n' : ""}\tfor (const capability of createCapabilities(options${sharesCodeModeState ? ", resolveCodeModeEnabled" : ""})) {
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.start\`);
 \t\tawait capability.install(${toolNames.length > 0 ? "registrations.api" : "suiteApi"});

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 3653ccc0bbdc0e46c1a48232049a1f1f130001eb28918fcd28cf555daaa45883 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: d9ecb7075c29ac4a0947f5e73df447db587dc968153c881e9618690d0fdb5035 -->
 
 # 工程文档
 
@@ -77,6 +77,7 @@
 | [0021](adr/0021-fork-ponytail-as-a-suite-capability.md) | 将 Ponytail fork 为 Suite Capability |
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | 只折叠原生 retrieval |
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 家族 |
+| [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部副作用模型 |
 
 ## 证据与历史
 
