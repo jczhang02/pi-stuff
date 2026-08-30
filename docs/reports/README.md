@@ -9,6 +9,8 @@ evidence. Current engineering authority is indexed in [`docs/README.md`](../READ
 
 ## Retained reports
 
+- [Skill Discovery real-model confirmation](skill-discovery-confirmation-20260830.json) — retained failed behavioral
+  gate; interpretation is recorded in its [preregistration](../research/skill-discovery-confirmation-20260830.md)
 - [Skill Discovery real-model benchmark](skill-discovery-benchmark-20260830.json) — retained failed instrumentation
   study; interpretation is recorded in its [preregistration](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)

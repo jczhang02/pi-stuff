@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: a5960da51105d1ef3aa064434d26e2c8a3a3dd13b2c1b6a4c5facfc62366f51e -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 76dd6ac43cd3acb18694a194f4d104d8795e7d8ccf205c9639ca2d24e668508e -->
 
 # 报告
 
@@ -8,6 +8,8 @@
 
 ## 保留报告
 
+- [Skill Discovery 真实模型 confirmation](../../../../../docs/reports/skill-discovery-confirmation-20260830.json)——
+  保留的 behavioral gate 失败研究；解释见其[预注册](../../../../../docs/research/skill-discovery-confirmation-20260830.md)
 - [Skill Discovery 真实模型 benchmark](../../../../../docs/reports/skill-discovery-benchmark-20260830.json)——保留的
   instrumentation failure 研究；解释见其[预注册](../../../../../docs/research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)

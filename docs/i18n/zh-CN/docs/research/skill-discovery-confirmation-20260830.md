@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-confirmation-20260830.md; translation-source-sha256: 4124d3ded67cf5151b10dd865ad555f01bd8e991a19b1ffa8624cc266d7ca4d6 -->
+<!-- translation-source: docs/research/skill-discovery-confirmation-20260830.md; translation-source-sha256: b4356f9d40f8c54dc71c17235a695ae41ef3a8d85920bb93eb6bc69049191811 -->
 
 # Skill Discovery 真实模型 confirmation 预注册
 
 日期：2026-08-30
 
-状态：研究设计与 Run Lock 已冻结；尚未产生 confirmation Session、Provider 请求或结果。
+状态：已完成并保留；预注册 verdict 为失败。
 
 这是 Bead `ps-1gd` 的新 confirmation study。它不会替换保留的 instrumentation failure
 [首次研究](../../../../../docs/research/skill-discovery-benchmark-20260830.md)，也不复用其中任何样本。问题仍是
@@ -129,3 +129,29 @@ class、count、boolean、bounded failure enum、Tool name、timing、token tota
 与 verdict。它不得包含 credential、prompt、Assistant text、Skill body、Provider payload、Session JSON 或 ID、
 private absolute path 或 temporary directory。Runner 在写入前后验证报告，然后删除全部 temporary project、
 Session、fixture、authentication copy 与 observer log。
+
+## 保留的结果
+
+唯一一次冻结运行完成全部 90 个 Session，没有 retry 或 replacement。Raw Pi 在 30/30 个 task 上成功；Pi Stuff
+off 为 29/30，另一个在任何 Provider 请求前 timeout；Pi Stuff on 的 primary success 为 0/30。预注册 verdict
+为**失败**。Sanitized report 为
+[`skill-discovery-confirmation-20260830.json`](../../../../../docs/reports/skill-discovery-confirmation-20260830.json)，
+SHA-256 `fed9cb200d6b2387a627584659aa17fc20762f0616cadf0c544dff670b7c51a9`。
+
+Suite comparison 为 `-0.0333`，bootstrap interval 为 `[-0.10, 0]`。Code Mode comparison 为 `-0.9667`，
+interval 为 `[-1, -0.90]`；其 exact McNemar cell 是 0 favorable、29 unfavorable，`p = 3.7253e-9`。同一个
+relative-resource task 在 off 与 on 均 timeout，两个 Session 都没有 Provider 请求，因此产生两项
+instrumentation 与 prompt-boundary violation，并使 Provider-Tool hard invariant 为 false。Protected-file、
+safety 与 report-privacy violation 均为零。
+
+On arm 的 primary rate 需要比 verdict 本身更精确的解释。29 个完成的 on Session 全部看见精确 catalog，自动
+选择目标，执行精确的 nested `tools.read`，匹配 Skill 与可选 resource hash，并返回精确答案。但 29 个 Session
+都先调用了 `tool_search`，所以全部违反冻结的 no-detour 条件。报告中的 failure class 是 23 个 detour、6 个
+process 与 1 个 timeout。6 个 process-class observation 同样保留了完整且正确的 measurement；结果产生后的代码
+检查发现，冻结的 RPC close path 在发送 signal 后只检查 `exitCode`，但 Node 对 signal-terminated child 保持
+`exitCode` 为 null，并设置 `signalCode`。这些 observation 仍按原报告保留为失败。
+
+因此，本研究证明候选实现恢复了 catalog visibility 与 nested Read path，却没有达到 issue 要求的直接、无 detour
+行为门禁。投影后的 Host catalog 使用 ordinary Read Tool 名称，而压缩后的 provider surface 指示通过
+`tool_search` 发现 Tool；候选实现没有给出从已选 Skill location 到直接 `codemode` `tools.read` 调用的显式桥接。
+修复并测量这个缺口需要新 candidate 与单独预注册的研究。本 confirmation 与报告保持不变。

@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: design and Run Lock frozen; no confirmation Session, Provider request, or outcome has been produced.
+Status: completed and retained with a failed preregistered verdict.
 
 This is a new confirmation study for Bead `ps-1gd`. It does not replace the retained failed-instrumentation
 [first study](skill-discovery-benchmark-20260830.md) or reuse any of its samples. The question remains whether Pi Stuff
@@ -130,3 +130,31 @@ hashes, relative path classes, counts, booleans, bounded failure enums, Tool nam
 identities, statistics, and verdict. It must not contain credentials, prompts, Assistant text, Skill bodies, Provider
 payloads, Session JSON or IDs, private absolute paths, or temporary directories. The runner validates the report before
 and after writing it, then deletes all temporary projects, Sessions, fixtures, authentication copies, and observer logs.
+
+## Retained outcome
+
+The single frozen run completed all 90 Sessions without retries or replacements. Raw Pi succeeded on 30/30 tasks; Pi
+Stuff off succeeded on 29/30, with one timeout before any Provider request; Pi Stuff on recorded 0/30 primary
+successes. The preregistered verdict is **failed**. The sanitized report is
+[`skill-discovery-confirmation-20260830.json`](../reports/skill-discovery-confirmation-20260830.json), SHA-256
+`fed9cb200d6b2387a627584659aa17fc20762f0616cadf0c544dff670b7c51a9`.
+
+The Suite comparison was `-0.0333` with bootstrap interval `[-0.10, 0]`. The Code Mode comparison was `-0.9667` with
+interval `[-1, -0.90]`; its exact McNemar cells were 0 favorable and 29 unfavorable, `p = 3.7253e-9`. The shared
+relative-resource task that timed out in off and on produced no Provider request in either Session, causing the two
+instrumentation and prompt-boundary violations and making the Provider-Tool hard invariant false. Protected-file,
+safety, and report-privacy violations were zero.
+
+The primary on-arm rate needs a more precise interpretation than the verdict alone. Every one of the 29 completed on
+Sessions saw the exact catalog, automatically selected the target, performed the exact nested `tools.read`, matched the
+Skill and optional resource hashes, and returned the exact answer. All 29 first called `tool_search`, however, so all
+failed the frozen no-detour condition. Their reported failure classes were 23 detour, six process, and one timeout. The
+six process-class observations also retained complete correct measurements; post-outcome code inspection found that
+the frozen RPC close path checked only `exitCode` after sending a signal, although Node leaves `exitCode` null and sets
+`signalCode` for a signal-terminated child. Those observations remain failed exactly as recorded.
+
+This study therefore proves that the candidate restores catalog visibility and the nested Read path, but it does not
+meet the issue's direct, detour-free behavioral gate. The projected Host catalog names the ordinary Read Tool while the
+compressed provider surface directs Tool discovery through `tool_search`; the candidate supplied no explicit bridge
+from a selected Skill location to a direct `codemode` `tools.read` call. Any repair and measurement of that gap requires
+a new candidate and a separately preregistered study. This confirmation and report remain unchanged.
