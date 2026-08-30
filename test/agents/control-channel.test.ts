@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Effect, Fiber } from "effect";
 import {
 	consumeStopRequests,
 	deliverInterruptRequest,
@@ -53,19 +54,23 @@ describe("Agent stop control channel", () => {
 		expect(fs.existsSync(stopRequestPath(asyncDir))).toBeFalse();
 	});
 
-	test("replays a stop after a consumer dies between durable claim and callback", () => {
+	test("replays a stop after a consumer dies between durable claim and callback", async () => {
 		const asyncDir = fixture();
 		const requestPath = requestAsyncStop(asyncDir, { targetIndex: 3 }, { now: () => 1_000, randomId: () => "crash" });
 		const received: number[] = [];
-		const disposeCrashed = watchAsyncControlInbox(asyncDir, {
-			onInterrupt: () => {},
-			onStop: (request) => received.push(request.targetIndex ?? -1),
-			afterControlClaim: (kind) => {
-				if (kind === "stop") throw new Error("injected crash after claim");
-			},
-			pollIntervalMs: 60_000,
-		});
-		disposeCrashed();
+		const crashed = Effect.runFork(
+			Effect.scoped(
+				watchAsyncControlInbox(asyncDir, {
+					onInterrupt: () => {},
+					onStop: (request) => received.push(request.targetIndex ?? -1),
+					afterControlClaim: (kind) => {
+						if (kind === "stop") throw new Error("injected crash after claim");
+					},
+					pollIntervalMs: 60_000,
+				}).pipe(Effect.andThen(Effect.never)),
+			),
+		);
+		await Effect.runPromise(Fiber.interrupt(crashed));
 
 		expect(received).toEqual([]);
 		expect(fs.existsSync(requestPath)).toBeFalse();
@@ -73,12 +78,16 @@ describe("Agent stop control channel", () => {
 			fs.readdirSync(path.dirname(requestPath)).some((entry) => entry.includes(".pi-stuff-inflight.")),
 		).toBeTrue();
 
-		const disposeRecovered = watchAsyncControlInbox(asyncDir, {
-			onInterrupt: () => {},
-			onStop: (request) => received.push(request.targetIndex ?? -1),
-			pollIntervalMs: 60_000,
-		});
-		disposeRecovered();
+		const recovered = Effect.runFork(
+			Effect.scoped(
+				watchAsyncControlInbox(asyncDir, {
+					onInterrupt: () => {},
+					onStop: (request) => received.push(request.targetIndex ?? -1),
+					pollIntervalMs: 60_000,
+				}).pipe(Effect.andThen(Effect.never)),
+			),
+		);
+		await Effect.runPromise(Fiber.interrupt(recovered));
 
 		expect(received).toEqual([3]);
 		expect(
@@ -86,49 +95,40 @@ describe("Agent stop control channel", () => {
 		).toBeFalse();
 	});
 
-	test("polling delivers durable stop and interrupt requests exactly once when fs.watch stays silent", () => {
+	test("polling delivers durable stop and interrupt requests exactly once when fs.watch stays silent", async () => {
 		const asyncDir = fixture();
 		const silentDirectory = fixture();
-		let poll = (): void => {};
-		const intervalToken = setInterval(() => {}, 60_000);
-		clearInterval(intervalToken);
 		const silentWatch = new Proxy(fs.watch, {
 			apply: () => fs.watch(silentDirectory, () => {}),
 		});
-		const setPollInterval = new Proxy(setInterval, {
-			apply: (_target, _thisArg, argumentsList) => {
-				// SAFETY: watchAsyncControlInbox always schedules its local zero-argument check callback.
-				poll = argumentsList[0] as () => void;
-				return intervalToken;
-			},
-		});
 		const received: number[] = [];
 		let interrupts = 0;
-		const dispose = watchAsyncControlInbox(asyncDir, {
-			onInterrupt: () => {
-				interrupts += 1;
-			},
-			onStop: (request) => received.push(request.targetIndex ?? -1),
-			watch: silentWatch,
-			timers: {
-				setInterval: setPollInterval,
-				clearInterval,
-			},
-		});
+		const watcher = Effect.runFork(
+			Effect.scoped(
+				watchAsyncControlInbox(asyncDir, {
+					onInterrupt: () => {
+						interrupts += 1;
+					},
+					onStop: (request) => received.push(request.targetIndex ?? -1),
+					watch: silentWatch,
+					pollIntervalMs: 5,
+				}).pipe(Effect.andThen(Effect.never)),
+			),
+		);
 		const requestPath = requestAsyncStop(asyncDir, { targetIndex: 4 }, { now: () => 1_000, randomId: () => "poll" });
 		requestAsyncInterrupt(asyncDir, {}, { now: () => 1_000 });
 
 		expect(received).toEqual([]);
 		expect(interrupts).toBe(0);
-		poll();
+		await Bun.sleep(20);
 		expect(received).toEqual([4]);
 		expect(interrupts).toBe(1);
 		expect(fs.existsSync(requestPath)).toBeFalse();
 		expect(fs.existsSync(interruptRequestPath(asyncDir))).toBeFalse();
-		poll();
+		await Bun.sleep(20);
 		expect(received).toEqual([4]);
 		expect(interrupts).toBe(1);
-		dispose();
+		await Effect.runPromise(Fiber.interrupt(watcher));
 	});
 });
 

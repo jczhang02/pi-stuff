@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect, Queue, type Scope } from "effect";
 import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
@@ -60,7 +61,6 @@ function compareCodePoints(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export type ControlChannelTimers = { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
 type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
 type SingletonRequest<Type extends "interrupt" | "timeout"> = {
@@ -465,7 +465,7 @@ export function deliverStopRequest(input: {
  * Runner side: watch the control inbox and route interrupt requests into
  * `onInterrupt`. Uses `fs.watch` when available plus an interval poll as a
  * portable safety net (covers filesystems/platforms where `fs.watch` is
- * unreliable). Fires once per distinct request. Returns a disposer.
+ * unreliable). Fires once per distinct request and remains owned by the caller Scope.
  */
 export function watchAsyncControlInbox(
 	asyncDir: string,
@@ -478,84 +478,95 @@ export function watchAsyncControlInbox(
 		onSteerAck?: (ack: SteerAck) => undefined | "retain";
 		pollIntervalMs?: number;
 		watch?: typeof fs.watch;
-		timers?: ControlChannelTimers;
 		/** Deterministic crash-window seam used by process-level recovery tests. */
 		afterControlClaim?: (kind: string, claimedPath: string) => void;
 	},
-): () => void {
-	const timers = opts.timers ?? { setInterval, clearInterval };
-	const dir = controlInboxDir(asyncDir);
-	try {
-		fs.mkdirSync(dir, { recursive: true });
-	} catch {
-		// Best effort — the poll/watch below tolerates a missing dir.
-	}
-
-	let disposed = false;
-	const invoke = <T>(callback: ((value: T) => void) | undefined, value: T): void => {
-		try {
-			callback?.(value);
-		} catch {
-			// One control observer must not prevent later durable requests from being consumed.
-		}
-	};
-	const check = (): void => {
-		if (disposed) return;
-		try {
-			processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
-			processSingletonRequest(
-				timeoutRequestPath(asyncDir),
-				"timeout",
-				() => opts.onTimeout?.(),
-				opts.afterControlClaim,
-			);
-			processSingletonRequest(
-				interruptRequestPath(asyncDir),
-				"interrupt",
-				() => opts.onInterrupt(),
-				opts.afterControlClaim,
-			);
-			processSteerRequestsFromDir(
-				steerRequestsDir(asyncDir),
-				(request) => {
-					opts.onSteer?.(request);
-					return undefined;
-				},
-				opts.afterControlClaim,
-			);
-			for (const capability of consumeSteerCapabilities(asyncDir)) {
-				invoke(opts.onSteerCapability, capability);
+): Effect.Effect<void, never, Scope.Scope> {
+	return Effect.gen(function* () {
+		const changes = yield* Queue.unbounded<void>();
+		const dir = controlInboxDir(asyncDir);
+		yield* Effect.sync(() => {
+			try {
+				fs.mkdirSync(dir, { recursive: true });
+			} catch {
+				// Best effort — the poll/watch below tolerates a missing dir.
 			}
-			processSteerAcks(asyncDir, (ack) => opts.onSteerAck?.(ack), opts.afterControlClaim);
-		} catch {
-			// Never let inbox errors crash the runner.
-		}
-	};
-
-	// Handle a request that may have arrived before the watcher started.
-	check();
-
-	let watcher: fs.FSWatcher | undefined;
-	try {
-		watcher = (opts.watch ?? fs.watch)(resolveWatchPath(dir, fs.realpathSync.native), () => check());
-		watcher.on?.("error", () => {
-			// fs.watch can emit on transient FS errors; the interval poll keeps us live.
 		});
-	} catch {
-		watcher = undefined;
-	}
 
-	const interval = timers.setInterval(check, opts.pollIntervalMs ?? POLL_INTERVAL_MS);
-	interval.unref?.();
+		let disposed = false;
+		const invoke = <T>(callback: ((value: T) => void) | undefined, value: T): void => {
+			try {
+				callback?.(value);
+			} catch {
+				// One control observer must not prevent later durable requests from being consumed.
+			}
+		};
+		const check = (): void => {
+			if (disposed) return;
+			try {
+				processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
+				processSingletonRequest(
+					timeoutRequestPath(asyncDir),
+					"timeout",
+					() => opts.onTimeout?.(),
+					opts.afterControlClaim,
+				);
+				processSingletonRequest(
+					interruptRequestPath(asyncDir),
+					"interrupt",
+					() => opts.onInterrupt(),
+					opts.afterControlClaim,
+				);
+				processSteerRequestsFromDir(
+					steerRequestsDir(asyncDir),
+					(request) => {
+						opts.onSteer?.(request);
+						return undefined;
+					},
+					opts.afterControlClaim,
+				);
+				for (const capability of consumeSteerCapabilities(asyncDir)) {
+					invoke(opts.onSteerCapability, capability);
+				}
+				processSteerAcks(asyncDir, (ack) => opts.onSteerAck?.(ack), opts.afterControlClaim);
+			} catch {
+				// Never let inbox errors crash the runner.
+			}
+		};
 
-	return () => {
-		if (disposed) return;
-		disposed = true;
-		try {
-			watcher?.close();
-		} catch {
-			// ignore
-		}
-		timers.clearInterval(interval);
-	};
+		yield* Effect.sync(check);
+		yield* Effect.acquireRelease(
+			Effect.sync(() => {
+				try {
+					const watcher = (opts.watch ?? fs.watch)(resolveWatchPath(dir, fs.realpathSync.native), () => {
+						Queue.offerUnsafe(changes, undefined);
+					});
+					watcher.on?.("error", () => {
+						// Polling remains authoritative after transient watcher errors.
+					});
+					watcher.unref?.();
+					return watcher;
+				} catch {
+					return undefined;
+				}
+			}),
+			(watcher) =>
+				Effect.sync(() => {
+					disposed = true;
+					try {
+						watcher?.close();
+					} catch {
+						// Native watcher teardown is best effort during process exit.
+					}
+				}),
+		);
+		yield* Effect.forkScoped(
+			Effect.gen(function* () {
+				while (true) {
+					yield* Effect.raceFirst(Queue.take(changes), Effect.sleep(opts.pollIntervalMs ?? POLL_INTERVAL_MS));
+					yield* Effect.sync(check);
+				}
+			}),
+		);
+	});
 }

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
@@ -12,7 +13,6 @@ import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { ensurePrivateDirectory, errnoCode, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import {
 	type ProcessStartIdentityPollOptions,
-	pollProcessStartIdentity,
 	processExists,
 	readProcessStartIdentity,
 } from "../../shared/process-identity.ts";
@@ -123,37 +123,39 @@ function readRunnerStartup(
 	}
 }
 
-async function waitForRunnerStartup(
+function waitForRunnerStartup(
 	startupPath: string,
 	expectedState: RunnerStartupState,
 	timeoutMs: number,
 	expectedToken?: string,
 	runnerPid?: number,
 	runnerProcessStartIdentity?: string,
-): Promise<RunnerStartupWaitResult> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		const result = readRunnerStartup(startupPath, expectedState, expectedToken);
-		if (result) return result;
-		if (
-			runnerPid !== undefined &&
-			runnerProcessStartIdentity !== undefined &&
-			runnerIdentityState(runnerPid, runnerProcessStartIdentity) === false
-		) {
-			return {
-				ok: false,
-				error: `Background runner ${runnerPid} exited before startup reached '${expectedState}'.`,
-			};
+): Effect.Effect<RunnerStartupWaitResult> {
+	return Effect.gen(function* () {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			const result = readRunnerStartup(startupPath, expectedState, expectedToken);
+			if (result) return result;
+			if (
+				runnerPid !== undefined &&
+				runnerProcessStartIdentity !== undefined &&
+				runnerIdentityState(runnerPid, runnerProcessStartIdentity) === false
+			) {
+				return {
+					ok: false as const,
+					error: `Background runner ${runnerPid} exited before startup reached '${expectedState}'.`,
+				};
+			}
+			if (Date.now() >= deadline) break;
+			yield* Effect.sleep(Math.min(20, Math.max(1, deadline - Date.now())));
 		}
-		if (Date.now() >= deadline) break;
-		await new Promise<void>((resolve) => setTimeout(resolve, Math.min(20, Math.max(1, deadline - Date.now()))));
-	}
-	return (
-		readRunnerStartup(startupPath, expectedState, expectedToken) ?? {
-			ok: false,
-			error: `Timed out after ${timeoutMs}ms waiting for async runner state '${expectedState}'.`,
-		}
-	);
+		return (
+			readRunnerStartup(startupPath, expectedState, expectedToken) ?? {
+				ok: false as const,
+				error: `Timed out after ${timeoutMs}ms waiting for async runner state '${expectedState}'.`,
+			}
+		);
+	});
 }
 
 function writeRunnerStartupControl(filePath: string, payload: { action: "ack" | "proceed"; token: string }): void {
@@ -187,38 +189,45 @@ function runnerIdentityState(pid: number, expectedProcessStartIdentity: string):
 	return runnerIsAlive(pid) ? undefined : false;
 }
 
-export async function acquireRunnerProcessStartIdentity(
+export function acquireRunnerProcessStartIdentity(
 	pid: number,
 	options: ProcessStartIdentityPollOptions = {},
-): Promise<string | undefined> {
-	return pollProcessStartIdentity(pid, runnerIsAlive, options);
+): Effect.Effect<string | undefined> {
+	return Effect.gen(function* () {
+		const read = options.read ?? readProcessStartIdentity;
+		const deadline = Date.now() + (options.timeoutMs ?? 250);
+		do {
+			const identity = read(pid);
+			if (identity) return identity;
+			if (!runnerIsAlive(pid) || Date.now() >= deadline) return undefined;
+			yield* Effect.sleep(options.intervalMs ?? 20);
+		} while (Date.now() <= deadline);
+		return undefined;
+	});
 }
 
-async function terminateExactSpawnedRunner(proc: ReturnType<typeof spawn>): Promise<boolean> {
-	if (proc.exitCode !== null || proc.signalCode !== null) return true;
-	const waitForClose = (timeoutMs: number): Promise<boolean> =>
-		new Promise((resolve) => {
-			if (proc.exitCode !== null || proc.signalCode !== null) return resolve(true);
-			let timer: ReturnType<typeof setTimeout> | undefined;
-			const onClose = () => {
-				if (timer) clearTimeout(timer);
-				resolve(true);
-			};
-			proc.once("close", onClose);
-			timer = setTimeout(() => {
-				proc.removeListener("close", onClose);
-				resolve(false);
-			}, timeoutMs);
-			timer.unref?.();
-		});
-	try {
-		proc.kill("SIGTERM");
-	} catch {}
-	if (await waitForClose(250)) return true;
-	try {
-		proc.kill("SIGKILL");
-	} catch {}
-	return waitForClose(1_000);
+function waitForRunnerClose(proc: ReturnType<typeof spawn>, timeoutMs: number): Effect.Effect<boolean> {
+	if (proc.exitCode !== null || proc.signalCode !== null) return Effect.succeed(true);
+	const closed = Effect.callback<void>((resume) => {
+		const onClose = () => resume(Effect.void);
+		proc.once("close", onClose);
+		return Effect.sync(() => proc.removeListener("close", onClose));
+	});
+	return Effect.raceFirst(closed.pipe(Effect.as(true)), Effect.sleep(timeoutMs).pipe(Effect.as(false)));
+}
+
+function terminateExactSpawnedRunner(proc: ReturnType<typeof spawn>): Effect.Effect<boolean> {
+	return Effect.gen(function* () {
+		if (proc.exitCode !== null || proc.signalCode !== null) return true;
+		try {
+			proc.kill("SIGTERM");
+		} catch {}
+		if (yield* waitForRunnerClose(proc, 250)) return true;
+		try {
+			proc.kill("SIGKILL");
+		} catch {}
+		return yield* waitForRunnerClose(proc, 1_000);
+	});
 }
 
 export function terminateRunnerBeforeProceed(pid: number, expectedProcessStartIdentity?: string): boolean {
@@ -405,86 +414,97 @@ function abortRunnerAndWriters(asyncDir: string, pid: number, processStartIdenti
 	return inspectWriterProcessLiveness(asyncDir) === false;
 }
 
-async function startRunnerProcess(state: RunnerLaunchState, suffix: string): Promise<StartedRunner> {
-	const { launchConfig } = state;
-	ensurePrivateDirectory(TEMP_ROOT_DIR);
-	ensurePrivateDirectory(launchConfig.asyncDir);
-	state.configPath = getAsyncConfigPath(suffix);
-	fs.writeFileSync(state.configPath, JSON.stringify(launchConfig), { encoding: "utf-8", mode: 0o600 });
-	for (const filePath of Object.values(state.startupPaths)) {
-		if (filePath) fs.rmSync(filePath, { force: true });
-	}
-	const logPaths = resolveAsyncRunnerLogPaths(launchConfig);
-	ensurePrivateDirectory(path.dirname(logPaths.stdoutPath));
-	state.stdoutFd = fs.openSync(logPaths.stdoutPath, "a", 0o600);
-	state.stderrFd = fs.openSync(logPaths.stderrPath, "a", 0o600);
-	const env = Object.assign({}, process.env);
-	env["PI_STUFF_BACKGROUND_RUNNER"] = "1";
-	env["PI_STUFF_BACKGROUND_RUNNER_CONFIG"] = state.configPath;
-	if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
-	const runner = path.join(path.dirname(fileURLToPath(import.meta.url)), "subagent-runner.ts");
-	const proc = spawn(state.bunCommand, [runner, state.configPath], {
-		cwd: state.cwd,
-		detached: true,
-		stdio: ["ignore", state.stdoutFd, state.stderrFd, "ipc"],
-		windowsHide: true,
-		env,
-	});
-	state.proc = proc;
-	closeFd(state.stdoutFd);
-	closeFd(state.stderrFd);
-	proc.on("error", (error) => {
-		reportAgentDiagnostic(`[pi-stuff-agents] background runner spawn failed: ${error.message}`);
-	});
-	proc.once("close", (exitCode, signal) => {
-		if (state.launchAborted) return;
-		finalizeSpawnedRunnerClose({
-			launchConfig,
-			runnerProcessInstanceId: state.runnerProcessInstanceId,
-			exitCode,
-			signal,
-			onProcessTerminal: state.onProcessTerminal,
+function startRunnerProcess(state: RunnerLaunchState, suffix: string): Effect.Effect<StartedRunner, unknown> {
+	return Effect.gen(function* () {
+		const { launchConfig } = state;
+		const proc = yield* Effect.try({
+			try: () => {
+				ensurePrivateDirectory(TEMP_ROOT_DIR);
+				ensurePrivateDirectory(launchConfig.asyncDir);
+				state.configPath = getAsyncConfigPath(suffix);
+				fs.writeFileSync(state.configPath, JSON.stringify(launchConfig), { encoding: "utf-8", mode: 0o600 });
+				for (const filePath of Object.values(state.startupPaths)) {
+					if (filePath) fs.rmSync(filePath, { force: true });
+				}
+				const logPaths = resolveAsyncRunnerLogPaths(launchConfig);
+				ensurePrivateDirectory(path.dirname(logPaths.stdoutPath));
+				state.stdoutFd = fs.openSync(logPaths.stdoutPath, "a", 0o600);
+				state.stderrFd = fs.openSync(logPaths.stderrPath, "a", 0o600);
+				const env = Object.assign({}, process.env);
+				env["PI_STUFF_BACKGROUND_RUNNER"] = "1";
+				env["PI_STUFF_BACKGROUND_RUNNER_CONFIG"] = state.configPath;
+				if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
+				const runner = path.join(path.dirname(fileURLToPath(import.meta.url)), "subagent-runner.ts");
+				const spawned = spawn(state.bunCommand, [runner, state.configPath], {
+					cwd: state.cwd,
+					detached: true,
+					stdio: ["ignore", state.stdoutFd, state.stderrFd, "ipc"],
+					windowsHide: true,
+					env,
+				});
+				state.proc = spawned;
+				closeFd(state.stdoutFd);
+				closeFd(state.stderrFd);
+				spawned.on("error", (error) => {
+					reportAgentDiagnostic(`[pi-stuff-agents] background runner spawn failed: ${error.message}`);
+				});
+				spawned.once("close", (exitCode, signal) => {
+					if (state.launchAborted) return;
+					finalizeSpawnedRunnerClose({
+						launchConfig,
+						runnerProcessInstanceId: state.runnerProcessInstanceId,
+						exitCode,
+						signal,
+						onProcessTerminal: state.onProcessTerminal,
+					});
+				});
+				spawned.on("message", (message) => {
+					if (!message || !isRuntimeObject(message)) return;
+					// SAFETY: Node's IPC callback and the object guard establish an inspectable runner-status envelope.
+					const update = message as RunnerStatusMessage;
+					if (
+						update.type !== SUBAGENT_ASYNC_STATUS_EVENT ||
+						update.asyncDir !== launchConfig.asyncDir ||
+						!update.status ||
+						!isRuntimeObject(update.status) ||
+						!("runId" in update.status) ||
+						update.status.runId !== launchConfig.id
+					)
+						return;
+					try {
+						const notice: AsyncStatusNotice = {
+							id: launchConfig.id,
+							asyncDir: launchConfig.asyncDir,
+							status: update.status,
+						};
+						if (launchConfig.sessionId !== undefined) notice.sessionId = launchConfig.sessionId;
+						state.onStatus?.(notice);
+					} catch (error) {
+						reportAgentDiagnostic(`Agent status observer failed for '${launchConfig.id}':`, error);
+					}
+				});
+				if (!isRuntimeNumber(spawned.pid)) {
+					state.launchAborted = true;
+					throw new Error(`background runner has no pid for cwd: ${state.cwd}`);
+				}
+				initializePreIdentityWriterAbsenceProof(launchConfig, spawned.pid);
+				return spawned;
+			},
+			catch: (error) => error,
 		});
-	});
-	proc.on("message", (message) => {
-		if (!message || !isRuntimeObject(message)) return;
-		// SAFETY: Node's IPC callback and the object guard establish an inspectable runner-status envelope.
-		const update = message as RunnerStatusMessage;
-		if (
-			update.type !== SUBAGENT_ASYNC_STATUS_EVENT ||
-			update.asyncDir !== launchConfig.asyncDir ||
-			!update.status ||
-			!isRuntimeObject(update.status) ||
-			!("runId" in update.status) ||
-			update.status.runId !== launchConfig.id
-		)
-			return;
-		try {
-			const notice: AsyncStatusNotice = {
-				id: launchConfig.id,
-				asyncDir: launchConfig.asyncDir,
-				status: update.status,
-			};
-			if (launchConfig.sessionId !== undefined) notice.sessionId = launchConfig.sessionId;
-			state.onStatus?.(notice);
-		} catch (error) {
-			reportAgentDiagnostic(`Agent status observer failed for '${launchConfig.id}':`, error);
+		const pid = proc.pid;
+		if (!isRuntimeNumber(pid))
+			return yield* Effect.fail(new Error(`background runner has no pid for cwd: ${state.cwd}`));
+		const processStartIdentity = yield* acquireRunnerProcessStartIdentity(pid);
+		if (!processStartIdentity) {
+			state.launchAborted = true;
+			return yield* Effect.fail(new Error(`background runner ${pid} has no stable process-start identity`));
 		}
+		state.processStartIdentity = processStartIdentity;
+		proc.unref();
+		proc.channel?.unref?.();
+		return { pid, processStartIdentity };
 	});
-	if (!isRuntimeNumber(proc.pid)) {
-		state.launchAborted = true;
-		throw new Error(`background runner has no pid for cwd: ${state.cwd}`);
-	}
-	initializePreIdentityWriterAbsenceProof(launchConfig, proc.pid);
-	const processStartIdentity = await acquireRunnerProcessStartIdentity(proc.pid);
-	if (!processStartIdentity) {
-		state.launchAborted = true;
-		throw new Error(`background runner ${proc.pid} has no stable process-start identity`);
-	}
-	state.processStartIdentity = processStartIdentity;
-	proc.unref();
-	proc.channel?.unref?.();
-	return { pid: proc.pid, processStartIdentity };
 }
 
 function failBeforeRunnerProceed(state: RunnerLaunchState, runner: StartedRunner, error: string): never {
@@ -493,74 +513,81 @@ function failBeforeRunnerProceed(state: RunnerLaunchState, runner: StartedRunner
 	throw new Error(error);
 }
 
-async function authorizeRunnerStartup(state: RunnerLaunchState, runner: StartedRunner): Promise<StartupAuthorization> {
-	const { launchConfig, startupPaths } = state;
-	if (launchConfig.startupGateToken && startupPaths.startupGatePath) {
-		try {
-			writePrivateAtomicJson(
-				path.join(launchConfig.asyncDir, "status.json"),
-				createInitialStatus(
-					launchConfig,
-					launchConfig.startedAt ?? Date.now(),
-					runner.pid,
-					runner.processStartIdentity,
-				),
-			);
-			initializeWriterProcessRegistry(
-				launchConfig.asyncDir,
-				launchConfig.id,
-				runner.pid,
-				launchConfig.work.mode === "single" ? 1 : launchConfig.work.group.tasks.length,
-			);
-		} catch (error) {
-			state.launchAborted = true;
-			terminateRunnerBeforeProceed(runner.pid, runner.processStartIdentity);
+function authorizeRunnerStartup(
+	state: RunnerLaunchState,
+	runner: StartedRunner,
+): Effect.Effect<StartupAuthorization, unknown> {
+	return Effect.gen(function* () {
+		const { launchConfig, startupPaths } = state;
+		if (launchConfig.startupGateToken && startupPaths.startupGatePath) {
 			try {
-				writeFailedStartupStatus(launchConfig, runner.pid, "Background runner startup could not be committed.");
-			} catch {
-				// The caller owns exact directory cleanup after the runner is reaped.
+				writePrivateAtomicJson(
+					path.join(launchConfig.asyncDir, "status.json"),
+					createInitialStatus(
+						launchConfig,
+						launchConfig.startedAt ?? Date.now(),
+						runner.pid,
+						runner.processStartIdentity,
+					),
+				);
+				initializeWriterProcessRegistry(
+					launchConfig.asyncDir,
+					launchConfig.id,
+					runner.pid,
+					launchConfig.work.mode === "single" ? 1 : launchConfig.work.group.tasks.length,
+				);
+			} catch (error) {
+				state.launchAborted = true;
+				terminateRunnerBeforeProceed(runner.pid, runner.processStartIdentity);
+				try {
+					writeFailedStartupStatus(launchConfig, runner.pid, "Background runner startup could not be committed.");
+				} catch {
+					// The caller owns exact directory cleanup after the runner is reaped.
+				}
+				return yield* Effect.fail(
+					new Error(
+						`Failed to commit background runner startup: ${error instanceof Error ? error.message : String(error)}`,
+					),
+				);
 			}
-			throw new Error(
-				`Failed to commit background runner startup: ${error instanceof Error ? error.message : String(error)}`,
-			);
 		}
-	}
-	let authorizationPath = startupPaths.startupGatePath;
-	let authorizationToken = launchConfig.startupGateToken;
-	let markerToRemove: string | undefined;
-	if (startupPaths.startupPath && startupPaths.startupAckPath && startupPaths.startupProceedPath) {
-		const ready = await waitForRunnerStartup(
-			startupPaths.startupPath,
-			"ready",
-			RUNNER_STARTUP_TIMEOUT_MS,
-			undefined,
-			runner.pid,
-			runner.processStartIdentity,
-		);
-		if (!ready.ok) failBeforeRunnerProceed(state, runner, ready.error);
-		try {
-			writeRunnerStartupControl(startupPaths.startupAckPath, { action: "ack", token: ready.token });
-		} catch (error) {
-			failBeforeRunnerProceed(
-				state,
-				runner,
-				`Failed to acknowledge background runner startup: ${error instanceof Error ? error.message : String(error)}`,
+		let authorizationPath = startupPaths.startupGatePath;
+		let authorizationToken = launchConfig.startupGateToken;
+		let markerToRemove: string | undefined;
+		if (startupPaths.startupPath && startupPaths.startupAckPath && startupPaths.startupProceedPath) {
+			const ready = yield* waitForRunnerStartup(
+				startupPaths.startupPath,
+				"ready",
+				RUNNER_STARTUP_TIMEOUT_MS,
+				undefined,
+				runner.pid,
+				runner.processStartIdentity,
 			);
+			if (!ready.ok) failBeforeRunnerProceed(state, runner, ready.error);
+			try {
+				writeRunnerStartupControl(startupPaths.startupAckPath, { action: "ack", token: ready.token });
+			} catch (error) {
+				failBeforeRunnerProceed(
+					state,
+					runner,
+					`Failed to acknowledge background runner startup: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+			const acknowledged = yield* waitForRunnerStartup(
+				startupPaths.startupPath,
+				"acknowledged",
+				RUNNER_STARTUP_TIMEOUT_MS,
+				ready.token,
+				runner.pid,
+				runner.processStartIdentity,
+			);
+			if (!acknowledged.ok) failBeforeRunnerProceed(state, runner, acknowledged.error);
+			authorizationPath = startupPaths.startupProceedPath;
+			authorizationToken = ready.token;
+			markerToRemove = startupPaths.startupPath;
 		}
-		const acknowledged = await waitForRunnerStartup(
-			startupPaths.startupPath,
-			"acknowledged",
-			RUNNER_STARTUP_TIMEOUT_MS,
-			ready.token,
-			runner.pid,
-			runner.processStartIdentity,
-		);
-		if (!acknowledged.ok) failBeforeRunnerProceed(state, runner, acknowledged.error);
-		authorizationPath = startupPaths.startupProceedPath;
-		authorizationToken = ready.token;
-		markerToRemove = startupPaths.startupPath;
-	}
-	return { path: authorizationPath, token: authorizationToken, markerToRemove };
+		return { path: authorizationPath, token: authorizationToken, markerToRemove };
+	});
 }
 
 function createCommittedRunnerLifecycle(
@@ -607,69 +634,71 @@ function createCommittedRunnerLifecycle(
 	return lifecycle;
 }
 
-async function recoverRunnerLaunch(state: RunnerLaunchState, message: string): Promise<SpawnRunnerResult> {
-	const safeToCleanup = state.proc ? await terminateExactSpawnedRunner(state.proc) : true;
-	state.launchAborted = safeToCleanup;
-	closeFd(state.stdoutFd);
-	closeFd(state.stderrFd);
-	if (state.configPath) {
-		try {
-			fs.rmSync(state.configPath, { force: true });
-		} catch {
-			// A failed launch already returns the primary setup error.
+function recoverRunnerLaunch(state: RunnerLaunchState, message: string): Effect.Effect<SpawnRunnerResult> {
+	return Effect.gen(function* () {
+		const safeToCleanup = state.proc ? yield* terminateExactSpawnedRunner(state.proc) : true;
+		state.launchAborted = safeToCleanup;
+		closeFd(state.stdoutFd);
+		closeFd(state.stderrFd);
+		if (state.configPath) {
+			try {
+				fs.rmSync(state.configPath, { force: true });
+			} catch {
+				// A failed launch already returns the primary setup error.
+			}
 		}
-	}
-	const pid = state.proc?.pid;
-	const processStartIdentity = state.processStartIdentity;
-	if (!safeToCleanup && isRuntimeNumber(pid) && processStartIdentity) {
-		try {
-			writeFailedStartupStatus(
-				state.launchConfig,
+		const pid = state.proc?.pid;
+		const processStartIdentity = state.processStartIdentity;
+		if (!safeToCleanup && isRuntimeNumber(pid) && processStartIdentity) {
+			try {
+				writeFailedStartupStatus(
+					state.launchConfig,
+					pid,
+					`Background runner startup failed while process recovery remained pending: ${message}`,
+					processStartIdentity,
+				);
+			} catch {
+				// The retained lifecycle binding and preparation marker remain the
+				// authority when status persistence itself caused the launch error.
+			}
+			let aborted = false;
+			return {
+				error: message,
+				safeToCleanup: false,
 				pid,
-				`Background runner startup failed while process recovery remained pending: ${message}`,
 				processStartIdentity,
-			);
-		} catch {
-			// The retained lifecycle binding and preparation marker remain the
-			// authority when status persistence itself caused the launch error.
+				abortStart: () => {
+					if (aborted) return true;
+					if (!abortRunnerAndWriters(state.launchConfig.asyncDir, pid, processStartIdentity)) return false;
+					aborted = true;
+					state.launchAborted = true;
+					return true;
+				},
+			};
 		}
-		let aborted = false;
-		return {
-			error: message,
-			safeToCleanup: false,
-			pid,
-			processStartIdentity,
-			abortStart: () => {
-				if (aborted) return true;
-				if (!abortRunnerAndWriters(state.launchConfig.asyncDir, pid, processStartIdentity)) return false;
-				aborted = true;
-				state.launchAborted = true;
-				return true;
-			},
-		};
-	}
-	const failure: SpawnRunnerResult = { error: message, safeToCleanup };
-	if (isRuntimeNumber(pid)) failure.pid = pid;
-	return failure;
+		const failure: SpawnRunnerResult = { error: message, safeToCleanup };
+		if (isRuntimeNumber(pid)) failure.pid = pid;
+		return failure;
+	});
 }
 
-export async function spawnRunner(
+export function spawnRunner(
 	cfg: BackgroundRunnerConfig,
 	suffix: string,
 	cwd: string,
 	onProcessTerminal?: (proof: ProcessTerminalNotice) => void,
 	onStatus?: (status: AsyncStatusNotice) => void,
-): Promise<SpawnRunnerResult> {
+): Effect.Effect<SpawnRunnerResult> {
 	const bunCommand = resolveAsyncRunnerBunCommand();
 	if (!bunCommand) {
-		return {
+		return Effect.succeed({
 			error: "Bun is required to launch background Agents but no executable was found on PATH or BUN_INSTALL",
-		};
+		});
 	}
 	try {
-		if (!fs.statSync(cwd).isDirectory()) return { error: `cwd is not a directory: ${cwd}` };
+		if (!fs.statSync(cwd).isDirectory()) return Effect.succeed({ error: `cwd is not a directory: ${cwd}` });
 	} catch {
-		return { error: `cwd does not exist: ${cwd}` };
+		return Effect.succeed({ error: `cwd does not exist: ${cwd}` });
 	}
 	const runnerProcessInstanceId = randomUUID();
 	const startedAt = Date.now();
@@ -686,11 +715,14 @@ export async function spawnRunner(
 		onStatus,
 		launchAborted: false,
 	};
-	try {
-		const runner = await startRunnerProcess(state, suffix);
-		const authorization = await authorizeRunnerStartup(state, runner);
-		return createCommittedRunnerLifecycle(state, runner, authorization);
-	} catch (error) {
-		return recoverRunnerLaunch(state, error instanceof Error ? error.message : String(error));
-	}
+	return Effect.gen(function* () {
+		const launched = yield* Effect.gen(function* () {
+			const runner = yield* startRunnerProcess(state, suffix);
+			const authorization = yield* authorizeRunnerStartup(state, runner);
+			return createCommittedRunnerLifecycle(state, runner, authorization);
+		}).pipe(
+			Effect.catch((error) => recoverRunnerLaunch(state, error instanceof Error ? error.message : String(error))),
+		);
+		return launched;
+	});
 }

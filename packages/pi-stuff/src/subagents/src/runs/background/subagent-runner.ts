@@ -2,6 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { normalizePonytailMode } from "../../../../ponytail/types.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
@@ -78,87 +79,115 @@ async function runConfiguredWork(
 	});
 
 	const control = new BackgroundRunControl(config, status, statusPath, eventsPath);
-
-	try {
-		let worktreeSetup: WorktreeSetup | undefined;
-		let results: BackgroundTaskResult[];
-		try {
-			if (config.work.mode === "parallel" && config.work.group.worktree) {
-				worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, {
-					agents: config.work.group.tasks.map((task) => task.agent),
-				});
-			}
-			results = await runBackgroundWork(
-				config.work,
-				async (task, index) => {
-					try {
-						return await runResolvedTask({
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				yield* control.install();
+				return yield* Effect.tryPromise({
+					try: async () => {
+						let worktreeSetup: WorktreeSetup | undefined;
+						let results: BackgroundTaskResult[];
+						try {
+							if (config.work.mode === "parallel" && config.work.group.worktree) {
+								worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, {
+									agents: config.work.group.tasks.map((task) => task.agent),
+								});
+							}
+							results = await runBackgroundWork(
+								config.work,
+								async (task, index) => {
+									try {
+										return await runResolvedTask({
+											config,
+											task,
+											index,
+											taskCwd: worktreeSetup?.worktrees[index]?.agentCwd ?? task.cwd,
+											status,
+											statusPath,
+											eventsPath,
+											activeControls: control.activeControls,
+											consumeScheduledStop: (index) => control.consumeScheduledStop(index),
+											onWriterProcess: onWriterProcess
+												? (writer) => onWriterProcess(index, writer)
+												: undefined,
+										});
+									} catch (error) {
+										terminalizeRejectedStep(status, statusPath, eventsPath, index, error);
+										throw error;
+									}
+								},
+								{ signal: control.signal },
+							);
+							results = boundRunResultOutputs(results);
+						} catch (error) {
+							const message = error instanceof Error ? error.message : String(error);
+							results = taskList(config.work).map((task) => failedResult(task, message));
+						}
+						return finalizeConfiguredRun({
 							config,
-							task,
-							index,
-							taskCwd: worktreeSetup?.worktrees[index]?.agentCwd ?? task.cwd,
 							status,
 							statusPath,
 							eventsPath,
-							activeControls: control.activeControls,
-							consumeScheduledStop: (index) => control.consumeScheduledStop(index),
-							onWriterProcess: onWriterProcess ? (writer) => onWriterProcess(index, writer) : undefined,
+							startedAt,
+							results,
+							worktreeSetup,
+							control,
+							hooks: { beforeFinalPersistence, beforeWorktreeEvidence, beforeResultPersistence },
 						});
-					} catch (error) {
-						terminalizeRejectedStep(status, statusPath, eventsPath, index, error);
-						throw error;
-					}
-				},
-				{
-					signal: control.signal,
-				},
-			);
-			results = boundRunResultOutputs(results);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			results = taskList(config.work).map((task) => failedResult(task, message));
-		}
-		return await finalizeConfiguredRun({
-			config,
-			status,
-			statusPath,
-			eventsPath,
-			startedAt,
-			results,
-			worktreeSetup,
-			control,
-			hooks: { beforeFinalPersistence, beforeWorktreeEvidence, beforeResultPersistence },
-		});
-	} finally {
-		control.dispose();
-	}
+					},
+					catch: (error) => error,
+				});
+			}),
+		),
+	);
 }
 
-export async function waitForStartupControl(
+function waitForStartupControlEffect(
+	controlPath: string,
+	token: string,
+	action: "ack" | "proceed",
+	timeoutMs = 30_000,
+	readControl: (path: string) => string = (path) => fs.readFileSync(path, "utf-8"),
+): Effect.Effect<void, unknown> {
+	return Effect.gen(function* () {
+		const deadline = Date.now() + timeoutMs;
+		while (Date.now() <= deadline) {
+			const ready = yield* Effect.try({
+				try: () => {
+					const payload = parseJsonValue(readControl(controlPath));
+					if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
+						throw new Error("Runner startup control payload is invalid.");
+					}
+					if (payload["token"] !== token) {
+						throw new Error("Runner startup token does not match the session lease.");
+					}
+					if (payload["action"] === action) return true;
+					if (payload["action"] !== "ack" && payload["action"] !== "proceed") {
+						throw new Error("Runner startup control action is invalid.");
+					}
+					return false;
+				},
+				catch: (error) => error,
+			}).pipe(
+				Effect.catch((error) =>
+					runtimeErrorCode(error) === "ENOENT" ? Effect.succeed(false) : Effect.fail(error),
+				),
+			);
+			if (ready) return;
+			yield* Effect.sleep(Math.min(20, Math.max(1, deadline - Date.now())));
+		}
+		return yield* Effect.fail(new Error(`Timed out after ${timeoutMs}ms waiting for runner startup '${action}'.`));
+	});
+}
+
+export function waitForStartupControl(
 	controlPath: string,
 	token: string,
 	action: "ack" | "proceed",
 	timeoutMs = 30_000,
 	readControl: (path: string) => string = (path) => fs.readFileSync(path, "utf-8"),
 ): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() <= deadline) {
-		try {
-			const payload = parseJsonValue(readControl(controlPath));
-			if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
-				throw new Error("Runner startup control payload is invalid.");
-			}
-			if (payload["token"] !== token) throw new Error("Runner startup token does not match the session lease.");
-			if (payload["action"] === action) return;
-			if (payload["action"] !== "ack" && payload["action"] !== "proceed") {
-				throw new Error("Runner startup control action is invalid.");
-			}
-		} catch (error) {
-			if (runtimeErrorCode(error) !== "ENOENT") throw error;
-		}
-		await new Promise<void>((resolve) => setTimeout(resolve, 20));
-	}
-	throw new Error(`Timed out after ${timeoutMs}ms waiting for runner startup '${action}'.`);
+	return Effect.runPromise(waitForStartupControlEffect(controlPath, token, action, timeoutMs, readControl));
 }
 
 async function completeRevivalHandshake(

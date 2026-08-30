@@ -1,6 +1,7 @@
 /** Build and launch detached single-Agent or parallel-Agent runs. */
 
 import * as path from "node:path";
+import { Effect } from "effect";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
@@ -469,12 +470,14 @@ async function executePreparedAsync(input: PreparedAsyncLaunch): Promise<AsyncEx
 	const mode = work.mode;
 	const subject = mode === "single" ? "Background Agent" : "Background Agents";
 	const config = createAsyncRunnerConfig(input);
-	const spawned = await spawnRunner(
-		config,
-		id,
-		input.runnerCwd,
-		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
-		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
+	const spawned = await Effect.runPromise(
+		spawnRunner(
+			config,
+			id,
+			input.runnerCwd,
+			(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+			(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
+		),
 	);
 	if (spawned.error) {
 		if (spawned.safeToCleanup !== false) {

@@ -4,11 +4,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { Effect } from "effect";
 import { type Static, type TSchema, Type } from "typebox";
 import { Check } from "typebox/value";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import {
-	acquireRunnerProcessStartIdentity,
+	acquireRunnerProcessStartIdentity as acquireRunnerProcessStartIdentityEffect,
 	buildAsyncParallelRunnerWork,
 	buildAsyncSingleRunnerWork,
 	buildNestedTerminalFallbackStatus,
@@ -263,6 +264,13 @@ function readBackgroundStatus(asyncDir: string): AsyncStatus {
 	return JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as AsyncStatus;
 }
 
+export function acquireRunnerProcessStartIdentity(
+	pid: number,
+	options?: Parameters<typeof acquireRunnerProcessStartIdentityEffect>[1],
+): Promise<string | undefined> {
+	return Effect.runPromise(acquireRunnerProcessStartIdentityEffect(pid, options));
+}
+
 export function task(index: number): RunnerAgentTask {
 	return {
 		agent: `agent-${index}`,
@@ -276,7 +284,6 @@ export function task(index: number): RunnerAgentTask {
 export type { BackgroundRunnerConfig, RunnerAgentTask };
 export {
 	ASYNC_DIR,
-	acquireRunnerProcessStartIdentity,
 	agent,
 	buildAsyncParallelRunnerWork,
 	buildAsyncSingleRunnerWork,

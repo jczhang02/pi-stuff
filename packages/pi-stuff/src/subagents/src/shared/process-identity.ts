@@ -116,22 +116,6 @@ export function identityBoundProcessLiveness(
 	return currentIdentity ? currentIdentity === expectedIdentity : undefined;
 }
 
-export async function pollProcessStartIdentity(
-	pid: number,
-	isAlive: (pid: number) => boolean,
-	options: ProcessStartIdentityPollOptions = {},
-): Promise<string | undefined> {
-	const read = options.read ?? readProcessStartIdentity;
-	const deadline = Date.now() + (options.timeoutMs ?? 250);
-	do {
-		const identity = read(pid);
-		if (identity) return identity;
-		if (!isAlive(pid) || Date.now() >= deadline) return undefined;
-		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
-	} while (Date.now() <= deadline);
-	return undefined;
-}
-
 function parseLinuxProcessIdentity(stat: string): ProcessIdentityGroupSnapshot | undefined {
 	const commandEnd = stat.lastIndexOf(")");
 	if (commandEnd === -1) return undefined;

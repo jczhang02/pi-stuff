@@ -1,5 +1,6 @@
 /** Own live stop, timeout, interrupt, and steering control for one background run. */
 
+import { Effect, type Scope } from "effect";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { SteeringTargetState, SteeringTargetStatus } from "../../shared/types.ts";
 import { projectNestedEvents, resolveNestedAsyncDir } from "../shared/nested-events.ts";
@@ -60,9 +61,7 @@ export class BackgroundRunControl {
 	private readonly eventsPath: string;
 	private readonly schedulingAbort = new AbortController();
 	private readonly scheduledStops = new Set<number>();
-	private readonly disposeInbox: () => void;
 	private readonly signalInterrupt = () => this.requestTerminal("pause");
-	private timeout: NodeJS.Timeout | undefined;
 	private terminalKind: TerminalKind | undefined;
 	private steeringStatusPersistenceFailed = false;
 
@@ -72,31 +71,36 @@ export class BackgroundRunControl {
 		this.statusPath = statusPath;
 		this.eventsPath = eventsPath;
 		this.signal = this.schedulingAbort.signal;
-		this.disposeInbox = watchAsyncControlInbox(config.asyncDir, {
-			onInterrupt: () => this.requestTerminal("pause"),
-			onTimeout: () => this.requestTerminal("timeout"),
-			onStop: (request) => {
-				if (request.targetIndex === undefined) this.requestTerminal("stop");
-				else this.stopChild(request.targetIndex);
-			},
-			onSteer: (request) => this.onSteer(request),
-			onSteerAck: (ack) => this.onSteerAck(ack),
+	}
+
+	install(): Effect.Effect<void, never, Scope.Scope> {
+		return Effect.gen({ self: this }, function* () {
+			yield* watchAsyncControlInbox(this.config.asyncDir, {
+				onInterrupt: () => this.requestTerminal("pause"),
+				onTimeout: () => this.requestTerminal("timeout"),
+				onStop: (request) => {
+					if (request.targetIndex === undefined) this.requestTerminal("stop");
+					else this.stopChild(request.targetIndex);
+				},
+				onSteer: (request) => this.onSteer(request),
+				onSteerAck: (ack) => this.onSteerAck(ack),
+			});
+			yield* Effect.acquireRelease(
+				Effect.sync(() => process.on(ASYNC_INTERRUPT_SIGNAL, this.signalInterrupt)),
+				() => Effect.sync(() => process.off(ASYNC_INTERRUPT_SIGNAL, this.signalInterrupt)),
+			);
+			if (this.config.deadlineAt !== undefined) {
+				yield* Effect.forkScoped(
+					Effect.sleep(Math.max(0, this.config.deadlineAt - Date.now())).pipe(
+						Effect.andThen(Effect.sync(() => this.requestTerminal("timeout"))),
+					),
+				);
+			}
 		});
-		process.on(ASYNC_INTERRUPT_SIGNAL, this.signalInterrupt);
-		if (config.deadlineAt !== undefined) {
-			this.timeout = setTimeout(() => this.requestTerminal("timeout"), Math.max(0, config.deadlineAt - Date.now()));
-			this.timeout.unref?.();
-		}
 	}
 
 	consumeScheduledStop(index: number): boolean {
 		return this.scheduledStops.delete(index);
-	}
-
-	dispose(): void {
-		if (this.timeout) clearTimeout(this.timeout);
-		this.disposeInbox();
-		process.off(ASYNC_INTERRUPT_SIGNAL, this.signalInterrupt);
 	}
 
 	private requestTerminal(kind: TerminalKind): void {
