@@ -1,0 +1,55 @@
+{
+	"schemaVersion": 1,
+	"candidateCommit": "518af59db690bd7751ae6e08db9a6750fa411894",
+	"candidatePackageTree": "8d9d7220f39f49fb25d7b7ccb9282b75aedf1c15",
+	"contextMode": "native",
+	"host": {
+		"binarySha256": "ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a",
+		"binarySize": 104511616,
+		"profile": "0.84.4+source.b79e4cc83497.binary.ce91e1f8bff6.bun.1.3.14",
+		"version": "0.84.4"
+	},
+	"manifest": {
+		"path": "test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl",
+		"sha256": "c864808d44bb2e66fda91d5041d4b10c2484f1f38b585409d51f7231595b4441"
+	},
+	"model": "gpt-5.6-sol",
+	"observer": {
+		"path": "test/fixtures/skill-discovery-benchmark-observer.ts",
+		"sha256": "c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705"
+	},
+	"provider": "openai-codex",
+	"reasoning": "xhigh",
+	"reportPath": "docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json",
+	"runnerSources": [
+		{
+			"path": "scripts/benchmark-skill-discovery.ts",
+			"sha256": "8f3e5cb79a3a9d1a6bda7970a599bf80049411f0ba979dd483e62dd9fc7a19f5"
+		},
+		{
+			"path": "scripts/pi-rpc-client.ts",
+			"sha256": "689e4f87c8beae6a2978f8acf722fbf3b32af1bd2894c2c023f7c7f3f960c1b4"
+		},
+		{
+			"path": "scripts/skill-discovery-benchmark-core.ts",
+			"sha256": "a36c324ba95711acbe49893c3d23dbd3063989c94c3309d01f0c6e8d6b38cbf4"
+		},
+		{
+			"path": "scripts/skill-discovery-benchmark-evidence.ts",
+			"sha256": "b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a"
+		},
+		{
+			"path": "scripts/skill-discovery-benchmark-report.ts",
+			"sha256": "72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9"
+		},
+		{
+			"path": "scripts/skill-discovery-benchmark-session.ts",
+			"sha256": "52c1703f8d66a95cf017debf147637d73686edd570674af99574e01f6f9d2f22"
+		}
+	],
+	"timeouts": {
+		"commandMs": 60000,
+		"settlementMs": 900000,
+		"startupMs": 300000
+	}
+}
