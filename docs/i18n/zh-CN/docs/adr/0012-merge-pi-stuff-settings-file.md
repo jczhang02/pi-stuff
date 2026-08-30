@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0012-merge-pi-stuff-settings-file.md; translation-source-sha256: 3439a75d251081ef2c4107943b2602b240e6e62ae1153c6c783098f46a622f7d -->
+<!-- translation-source: docs/adr/0012-merge-pi-stuff-settings-file.md; translation-source-sha256: f00093b99c212c0aa8d11ef942b283e8e8bed494a482c1e1d5fb03aa3168ab2f -->
 
 ---
 status: accepted
@@ -32,9 +32,10 @@ Web 最初使用 `web-search.json`，第一次合并实现又在套件启动时�
 新增的 `packages/pi-stuff/src/shared/settings-io/` 模块负责所有持久化问题：
 
 - `paths.ts`——纯路径辅助函数（`mergedSettingsPath`、`resolveSettingsLockPath`、`MERGED_SETTINGS_FILE`）。该文件不导入运行时能力，因此可以安全加载到仅 Node 的模块图中（编译后的 Goal 上游测试在 Node 下运行）。
-- `file.ts`——`readSettingsFile`/`writeSettingsFile`（异步）、`readSettingsFileSync`/`writeSettingsFileSync`（同步，用于 Goal 热路径加载），以及 `readNamespace`/`mergeNamespaceRecord`（和同步变体）。读写使用普通 JSON（`JSON.parse` / `JSON.stringify`）；文件就是普通 `pi-stuff.json`，不支持注释。写入器输出使用制表符缩进的 JSON，以生成确定性的机器输出。
-- `lock.ts`——基于 `flock` 的排他锁和加锁合并辅助函数，从旧版逐能力锁中提取。它导入 `bun:ffi`，因此 **不会** 通过 `index.js` 汇总入口重新导出。基于 Bun 的能力写入器直接导入它；Goal 只通过动态生产适配器访问它。这样可避免 `bun:ffi` 进入仅 Node 的模块图；Goal 上游 Node 配置中包含的能力模块，只从 Bun 专用写入路径加载它。
-- `store.ts`——可选的高层存储 `NamespacedSettingsStore<T>`（由 codex 使用），把命名空间读取器、写入器、锁（注入而不是静态导入）、订阅和只读旧版回退连接起来。
+- `file.ts`——精简的原生文件系统适配器。它保留异步兼容函数和 Goal 热路径加载所需的同步变体，并为已迁移消费者提供 Effect 读取器和原子命名空间合并。读写使用普通 JSON（`JSON.parse` / `JSON.stringify`）；文件就是普通 `pi-stuff.json`，不支持注释。写入器输出使用制表符缩进的 JSON，以生成确定性的机器输出。
+- `lock.ts`——基于 `flock` 的排他锁和加锁合并辅助函数，从旧版逐能力锁中提取。它导入 `bun:ffi`，因此 **不会** 通过 `index.js` 汇总入口重新导出。基于 Bun 的能力写入器直接导入它；Goal 只通过动态生产适配器访问它。这样可避免 `bun:ffi` 进入仅 Node 的模块图；Goal 上游 Node 配置中包含的能力模块，只从 Bun 专用写入路径加载它。其 Effect 资源允许取消锁轮询，并在 Scope 结束时始终关闭已获取的文件句柄。
+- `store.ts`——`EffectNamespacedSettingsStore<T>`，负责串行提交、命名空间读写、订阅、诊断和只读旧版回退。只有短暂的加锁读取、合并和原子重命名临界区不可中断。
+- `promise-store.ts`——供尚未迁移的设置消费者使用的临时 Promise runner 适配器。它导出的符号以及剩余异步文件系统和锁导出，都记录在仓库 Effect 迁移清单中，并由收缩任务 `ps-pby.32` 删除。
 
 ### 单文件锁
 
@@ -59,6 +60,7 @@ Web 负责 `web` 设置命名空间，并保留既有字段名和嵌套形态。
 - 新设置持久化在一个 `<agentDir>/pi-stuff.json` 文档中。显式变更创建规范命名空间前，现有旧版文件继续作为只读回退；不会自动删除。
 - 能力模块不再重新实现读取、写入、锁和原子重命名，而是调用 `shared/settings-io`。新增能力负责的设置只增加命名空间，不增加文件。
 - 整个文件是一个加锁并原子替换的文档。一项能力的写入可能短暂等待另一项能力使用的同一把锁，但这是低频路径，成本可以忽略。
+- Effect 负责的设置变更通过单个存储门控排队。失败的变更不会修改内存中的实时值，会释放文件锁，也不会阻塞后续变更或空闲排空。
 - `bun:ffi`（flock 锁）被隔离在 `lock.ts`，不会由汇总入口引入，因此在 Node 下运行的编译后 Goal 上游测试不会加载它。
 - `schemaVersion` 仍属于各命名空间（每项能力负责自己的版本控制与迁移逻辑）。没有顶层文件 Schema 版本；该文件只是独立命名空间的普通容器。
 - 套件启动保持观察性：不能仅因存在旧版状态就在加载软件包时修改配置。

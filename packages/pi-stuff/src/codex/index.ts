@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Cause, type Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import {
 	getCodexStatusChannel,
 	getCommandDialogCoordinator,
@@ -18,30 +18,47 @@ function requestPayloadWithFast<Payload>(payload: Payload) {
 	return { ...payload, service_tier: "priority" };
 }
 
+async function runCodexOperation<A>(
+	foundation: EffectFoundation,
+	program: Effect.Effect<A, Error>,
+	unavailableMessage: string,
+	cancelledMessage: string,
+	signal?: AbortSignal | undefined,
+): Promise<A> {
+	const session = foundation.currentSession();
+	if (!session) throw new Error(unavailableMessage);
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program, { signal });
+	await foundation.close(operation, exit);
+	if (signal?.aborted) throw signal.reason;
+	if (Exit.isFailure(exit)) {
+		if (Cause.hasInterrupts(exit.cause)) throw new Error(cancelledMessage);
+		throw Cause.squash(exit.cause);
+	}
+	if (!foundation.isCurrent(session)) throw new Error(cancelledMessage);
+	return exit.value;
+}
+
 export async function runCodexUsageOperation(
 	foundation: EffectFoundation,
 	program: Effect.Effect<CodexUsageSnapshot, Error>,
 	commit: (snapshot: CodexUsageSnapshot) => void,
 	signal?: AbortSignal | undefined,
 ): Promise<CodexUsageSnapshot> {
-	const session = foundation.currentSession();
-	if (!session) throw new Error("Codex usage is unavailable before Session start.");
-	const operation = foundation.forkOperation(session);
-	const exit = await foundation.run(operation, program, { signal });
-	await foundation.close(operation, exit);
-	if (signal?.aborted) throw signal.reason;
-	if (Exit.isFailure(exit)) {
-		if (Cause.hasInterrupts(exit.cause)) throw new Error("Codex usage request was cancelled.");
-		throw Cause.squash(exit.cause);
-	}
-	if (!foundation.isCurrent(session)) throw new Error("Codex usage request was cancelled.");
-	commit(exit.value);
-	return exit.value;
+	const snapshot = await runCodexOperation(
+		foundation,
+		program,
+		"Codex usage is unavailable before Session start.",
+		"Codex usage request was cancelled.",
+		signal,
+	);
+	commit(snapshot);
+	return snapshot;
 }
 
 export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 	const foundation = installEffectFoundation(pi);
-	const settings = await CodexSettingsStore.load();
+	const settings = await Effect.runPromise(CodexSettingsStore.load());
 	const status = getCodexStatusChannel(pi);
 	const tools = registerCodexTools(pi);
 	let active = true;
@@ -70,7 +87,12 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 			);
 		},
 		async setFast(enabled) {
-			await settings.setFast(enabled);
+			await runCodexOperation(
+				foundation,
+				settings.setFast(enabled),
+				"Codex settings are unavailable before Session start.",
+				"Codex settings update was cancelled.",
+			);
 			publishStatus();
 		},
 	});
@@ -143,11 +165,12 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 		publishStatus();
 	});
 	pi.on("model_select", (_event, ctx) => tools.sync(ctx.model));
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
 		active = false;
 		automaticRefreshContext = undefined;
 		stopListeningForUserAgentRunSettled();
 		tools.deactivate();
 		status.clear();
+		await Effect.runPromise(settings.whenIdle());
 	});
 }

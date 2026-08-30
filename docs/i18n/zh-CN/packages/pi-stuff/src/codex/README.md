@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: bf74ce7704cb9728ce258c29656cff47c4193d2745ec037d3853927947ad9c40 -->
+<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 268d5b3a880cd504f763ace4b1f47582b9caaddfd84d623b978bd91fe3a34f3e -->
 
 # Pi Stuff Codex
 
@@ -7,6 +7,8 @@ Codex 模块为 Pi Stuff 提供一个 `/codex` 命令对话框、Fast 模式、C
 该能力在导入和启动期间保持冷态。只有打开 `/codex`，或用户驱动的交互式 Codex Agent 运行真正空闲稳定后，用量功能才进行网络 I/O。自动工作和非 Codex 运行不会刷新用量；重叠的运行后请求合并为一次尾随刷新；失败时保留最后观察到的快照。原生辅助程序只在实际工具调用时启动。认证缺失、模型不受支持或原生辅助程序不可用会成为有界命令或工具错误；普通 Pi 工作仍可使用。
 
 每次用量刷新都作为一个由 Session 负责的 Effect operation 运行。十秒超时和调用方取消由 Effect 负责，Capability adapter 只保留原生的认证 `fetch`。Pi-facing adapter 会把类型化失败投影回现有 Command Dialog 和通知结果；已被替换 Session 的完成结果不能更新共享用量快照或 Statusline。
+
+Fast 设置从头到尾使用共享 Effect 设置路径。启动时由 Pi-facing adapter 执行一次只读加载；每次显式变更都作为 Session 负责的 operation 运行，在共享设置锁下串行执行，并通过原子替换保留同级命名空间。写入失败不会修改内存值，并会投影到现有 Command Dialog 错误路径。Session 关闭时会先排空串行设置门控，再由套件关闭 Effect Foundation。
 
 `imagegen` 只为支持图像的 OpenAI Codex Responses 模型启用，并始终请求 `gpt-image-2`。当前已验证的原生辅助程序目标是 Linux x64。
 

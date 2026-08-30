@@ -12,6 +12,8 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { Effect, type Scope } from "effect";
 import { mergeNamespaceRecord, type SettingsRecord } from "./file.js";
 import { resolveSettingsLockPath } from "./paths.js";
 
@@ -45,8 +47,11 @@ function tryAcquireFileLock(fileDescriptor: number): boolean {
 export async function acquireSettingsLock(
 	lockPath = resolveSettingsLockPath(),
 	owner = "pi-stuff",
+	signal?: AbortSignal,
 ): Promise<() => Promise<void>> {
+	signal?.throwIfAborted();
 	await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
+	signal?.throwIfAborted();
 	const startedAt = Date.now();
 	const handle = await open(
 		lockPath,
@@ -54,16 +59,20 @@ export async function acquireSettingsLock(
 		0o600,
 	);
 	try {
+		signal?.throwIfAborted();
 		while (!tryAcquireFileLock(handle.fd)) {
 			if (Date.now() - startedAt >= SETTINGS_LOCK_TIMEOUT_MS) {
 				throw new Error(`timed out waiting for the ${owner} settings lock at ${lockPath}`);
 			}
-			await new Promise<void>((resolve) => setTimeout(resolve, SETTINGS_LOCK_POLL_MS));
+			await delay(SETTINGS_LOCK_POLL_MS, undefined, signal ? { signal } : undefined);
 		}
 		await handle.chmod(0o600);
+		signal?.throwIfAborted();
 		await handle.truncate(0);
+		signal?.throwIfAborted();
 		// This record is diagnostic only; flock owns the mutual-exclusion contract.
 		await handle.writeFile(`${JSON.stringify({ pid: process.pid, token: randomUUID() })}\n`);
+		signal?.throwIfAborted();
 		let released = false;
 		return async () => {
 			if (released) return;
@@ -74,6 +83,20 @@ export async function acquireSettingsLock(
 		await handle.close().catch(() => undefined);
 		throw error;
 	}
+}
+
+export function acquireSettingsLockEffect(
+	lockPath = resolveSettingsLockPath(),
+	owner = "pi-stuff",
+): Effect.Effect<void, Error, Scope.Scope> {
+	return Effect.acquireRelease(
+		Effect.tryPromise({
+			try: (signal) => acquireSettingsLock(lockPath, owner, signal),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		}),
+		(release) => Effect.promise(release),
+		{ interruptible: true },
+	).pipe(Effect.asVoid);
 }
 
 export async function withSettingsLock<Value>(

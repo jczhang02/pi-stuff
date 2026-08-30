@@ -15,6 +15,12 @@ cancellation, while the Capability adapter retains the native authenticated `fet
 typed failures back to the existing Command Dialog and notification outcomes; a completion from a replaced Session
 cannot update the shared usage snapshot or Statusline.
 
+Fast settings use the shared Effect settings path end to end. Startup performs one read-only load at the Pi-facing
+adapter; each explicit change runs as a Session-owned operation, serializes under the shared settings lock, and keeps
+sibling namespaces intact through atomic replacement. A failed write leaves the in-memory value unchanged and is
+projected to the existing Command Dialog error path. Session shutdown drains the serialized settings gate before the
+Suite closes its Effect Foundation.
+
 `imagegen` is enabled only for image-capable OpenAI Codex Responses models and always requests `gpt-image-2`.
 The current certified native-helper target is Linux x64.
 

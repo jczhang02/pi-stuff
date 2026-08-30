@@ -1,27 +1,19 @@
-/**
- * Per-namespace settings store over the single merged settings file.
- *
- * Each Capability owns one namespace (top-level key) in `<agentDir>/pi-stuff.json`
- * and a `normalize` function that validates an arbitrary record into its
- * strongly-typed shape. The store handles whole-file locking, read/merge/write,
- * subscription, and read-only fallback to a legacy per-Capability file so
- * individual Capability modules stop duplicating this logic.
- */
+/** Effect-owned per-namespace settings over the single merged settings file. */
 
 import { isDeepStrictEqual } from "node:util";
-import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file.js";
+import { Effect, type Scope, Semaphore } from "effect";
+import { mergeNamespaceRecordEffect, readNamespaceEffect, type SettingsRecord } from "./file.js";
 import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 
 export type NamespaceRecord = SettingsRecord;
-export type NamespaceWriter = (path: string, namespace: string, record: NamespaceRecord) => Promise<void>;
-export type NamespaceLockAcquirer = (lockPath: string, owner: string) => Promise<() => Promise<void>>;
 export type NamespaceNormalizer<T extends NamespaceRecord> = <Value>(value: Value) => T;
-
-/**
- * Read a legacy per-Capability settings file as a startup-only fallback.
- * Return `undefined` when there is no valid legacy file.
- */
-export type NamespaceLegacyReader = (legacyPath: string) => Promise<NamespaceRecord | undefined>;
+export type EffectNamespaceWriter = (
+	path: string,
+	namespace: string,
+	record: NamespaceRecord,
+) => Effect.Effect<void, Error>;
+export type EffectNamespaceLock = (lockPath: string, owner: string) => Effect.Effect<void, Error, Scope.Scope>;
+export type EffectNamespaceLegacyReader = (legacyPath: string) => Effect.Effect<NamespaceRecord | undefined, Error>;
 
 export interface NamespaceStoreDiagnostic {
 	readonly action: "settings-load";
@@ -36,96 +28,86 @@ export interface NamespaceStoreDiagnostic {
 
 export type NamespaceDiagnosticReporter = (diagnostic: NamespaceStoreDiagnostic) => void;
 
-export interface NamespaceStoreOptions {
+export interface EffectNamespaceStoreOptions {
 	/** Override the merged file path for tests. */
 	readonly path?: string;
-	/** Override the writer for tests. */
-	readonly writer?: NamespaceWriter;
+	/** Override the Effect writer for tests. */
+	readonly writer?: EffectNamespaceWriter;
 	/** Legacy per-Capability file to read without mutating it. */
 	readonly legacyPath?: string;
 	/** Parse a legacy file as an in-memory fallback when the namespace is absent. */
-	readonly legacyReader?: NamespaceLegacyReader;
-	/**
-	 * Acquire the whole-file lock before persisting. Defaults to none, so the
-	 * store stays free of `bun:ffi`; Bun-based Capabilities inject the real
-	 * flock-based acquirer from `./lock.js`.
-	 */
-	readonly acquireLock?: NamespaceLockAcquirer;
+	readonly legacyReader?: EffectNamespaceLegacyReader;
+	/** Acquire the whole-file lock before persisting. */
+	readonly acquireLock?: EffectNamespaceLock;
 	/** Capability-owned diagnostic adapter; the shared store has no UI dependency. */
 	readonly reportDiagnostic?: NamespaceDiagnosticReporter;
 }
 
-/**
- * A single-Capability view over the merged settings file.
- *
- * Construction is lazy and read-only: `load()` reads the merged file, then a
- * configured legacy fallback. Mutations go through `update()`, `updateWith()`,
- * or `replace()`, which acquire the whole-file lock and merge the result back
- * without touching sibling namespaces or the legacy file.
- */
-export class NamespacedSettingsStore<T extends NamespaceRecord> {
+type ExistingNamespace =
+	| { readonly kind: "invalid" | "missing" }
+	| { readonly kind: "loaded"; readonly record: SettingsRecord };
+
+export class EffectNamespacedSettingsStore<T extends NamespaceRecord> {
+	private readonly gate = Semaphore.makeUnsafe(1);
 	private readonly listeners = new Set<(value: T) => void>();
+	private readonly acquireLock: EffectNamespaceLock | undefined;
 	private readonly lockPath: string;
 	private readonly namespace: string;
+	private readonly normalize: NamespaceNormalizer<T> | undefined;
 	private readonly path: string;
-	private pending = Promise.resolve();
+	private readonly reportDiagnostic: NamespaceDiagnosticReporter | undefined;
+	private readonly writer: EffectNamespaceWriter;
 	private persistedValue: T;
 	private value: T;
-	private readonly writer: NamespaceWriter;
-	private readonly acquireLock: NamespaceLockAcquirer | undefined;
-	private readonly reportDiagnostic: NamespaceDiagnosticReporter | undefined;
-	private readonly normalize: NamespaceNormalizer<T> | undefined;
 
 	private constructor(
 		namespace: string,
 		path: string,
-		lockPath: string,
 		value: T,
-		writer: NamespaceWriter,
-		acquireLock: NamespaceLockAcquirer | undefined,
+		writer: EffectNamespaceWriter,
+		acquireLock: EffectNamespaceLock | undefined,
 		reportDiagnostic: NamespaceDiagnosticReporter | undefined,
 		normalize: NamespaceNormalizer<T> | undefined,
 	) {
+		this.acquireLock = acquireLock;
+		this.lockPath = path ? resolveSettingsLockPath(path) : "";
 		this.namespace = namespace;
+		this.normalize = normalize;
 		this.path = path;
-		this.lockPath = lockPath;
+		this.reportDiagnostic = reportDiagnostic;
+		this.writer = writer;
 		this.value = value;
 		this.persistedValue = value;
-		this.writer = writer;
-		this.acquireLock = acquireLock;
-		this.reportDiagnostic = reportDiagnostic;
-		this.normalize = normalize;
 	}
 
-	static async load<T extends NamespaceRecord>(
+	static load<T extends NamespaceRecord>(
 		namespace: string,
 		defaults: T,
 		normalize: NamespaceNormalizer<T>,
-		options: NamespaceStoreOptions = {},
-	): Promise<NamespacedSettingsStore<T>> {
-		const path = options.path ?? mergedSettingsPath();
-		const lockPath = resolveSettingsLockPath(path);
-		const writer: NamespaceWriter =
-			options.writer ??
-			(async (settingsPath, settingsNamespace, record) => {
-				await mergeNamespaceRecord(settingsPath, settingsNamespace, record);
-			});
-		const store = new NamespacedSettingsStore<T>(
-			namespace,
-			path,
-			lockPath,
-			defaults,
-			writer,
-			options.acquireLock,
-			options.reportDiagnostic,
-			normalize,
-		);
-		await store.initialize(namespace, defaults, options.legacyPath, options.legacyReader);
-		return store;
+		options: EffectNamespaceStoreOptions = {},
+	): Effect.Effect<EffectNamespacedSettingsStore<T>> {
+		return Effect.gen(function* () {
+			const path = options.path ?? mergedSettingsPath();
+			const writer: EffectNamespaceWriter =
+				options.writer ??
+				((settingsPath, settingsNamespace, record) =>
+					Effect.asVoid(mergeNamespaceRecordEffect(settingsPath, settingsNamespace, record)));
+			const store = new EffectNamespacedSettingsStore(
+				namespace,
+				path,
+				defaults,
+				writer,
+				options.acquireLock,
+				options.reportDiagnostic,
+				normalize,
+			);
+			yield* store.initialize(defaults, options.legacyPath, options.legacyReader);
+			return store;
+		});
 	}
 
-	static memory<T extends NamespaceRecord>(value: T): NamespacedSettingsStore<T> {
-		return new NamespacedSettingsStore<T>("", "", "", value, async () => undefined, undefined, undefined, undefined);
+	static memory<T extends NamespaceRecord>(value: T): EffectNamespacedSettingsStore<T> {
+		return new EffectNamespacedSettingsStore("", "", value, () => Effect.void, undefined, undefined, undefined);
 	}
 
 	get(): T {
@@ -137,145 +119,144 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		return () => this.listeners.delete(listener);
 	}
 
-	async whenIdle(): Promise<void> {
-		await this.pending;
+	whenIdle(): Effect.Effect<void> {
+		return this.gate.withPermit(Effect.void);
 	}
 
-	/** Apply a partial patch under the whole-file lock; unchanged records neither write nor notify. */
-	async update(patch: Partial<T>): Promise<T> {
+	update(patch: Partial<T>): Effect.Effect<T, Error> {
 		return this.commit((current) => ({ ...current, ...patch }), true);
 	}
 
-	/** Compute an update from the latest persisted namespace under the whole-file lock. */
-	async updateWith(apply: (current: T) => T): Promise<T> {
+	updateWith(apply: (current: T) => T): Effect.Effect<T, Error> {
 		return this.commit(apply, true);
 	}
 
-	/** Replace the namespace wholesale (used by full-state setters). */
-	async replace(next: T): Promise<T> {
+	replace(next: T): Effect.Effect<T, Error> {
 		return this.commit(() => next, false);
 	}
 
-	private async commit(apply: (current: T) => T, readCurrent: boolean): Promise<T> {
-		if (!this.path) {
-			this.replaceValue(apply(this.value));
-			return this.value;
-		}
-		const write = this.pending.then(async () => {
-			this.replaceValue(await this.persistNamespace(apply, readCurrent));
-		});
-		this.pending = write.catch(() => undefined);
-		await write;
-		return this.value;
+	private commit(apply: (current: T) => T, readCurrent: boolean): Effect.Effect<T, Error> {
+		return this.gate.withPermit(
+			Effect.gen({ self: this }, function* () {
+				if (!this.path) {
+					const next = yield* Effect.try({
+						try: () => apply(this.value),
+						catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+					});
+					this.replaceValue(next);
+					return this.value;
+				}
+				return yield* this.persistNamespace(apply, readCurrent);
+			}),
+		);
 	}
 
-	private async initialize(
-		namespace: string,
+	private initialize(
 		defaults: T,
 		legacyPath: string | undefined,
-		legacyReader: NamespaceLegacyReader | undefined,
-	): Promise<void> {
-		if (!this.path) return;
-		const normalize = this.normalize;
-		if (!normalize) return;
-		const existing = await this.readExisting(namespace);
-		if (existing.kind !== "missing" || !legacyReader || !legacyPath) {
-			const value = existing.kind === "loaded" ? this.normalizeInitial(existing.record, defaults) : defaults;
-			this.value = value;
-			this.persistedValue = value;
-			return;
-		}
-
-		try {
-			const legacy = await legacyReader(legacyPath);
-			const value = legacy === undefined ? defaults : normalize(legacy);
-			this.value = value;
-			this.persistedValue = value;
-		} catch (error) {
-			if (!isMissingFile(error)) {
-				this.reportDiagnostic?.({
-					action: "settings-load",
-					capability: "pi-stuff",
-					details: legacyPath,
-					error,
-					key: "invalid-legacy-settings",
-					severity: "warning",
-					summary: "Legacy settings were invalid and built-in defaults are active",
-					visibility: "notice",
-				});
+		legacyReader: EffectNamespaceLegacyReader | undefined,
+	): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			if (!this.path || !this.normalize) return;
+			const existing = yield* this.readExisting();
+			if (existing.kind !== "missing" || !legacyReader || !legacyPath) {
+				const value =
+					existing.kind === "loaded" ? yield* this.normalizeInitial(existing.record, defaults) : defaults;
+				this.value = value;
+				this.persistedValue = value;
+				return;
 			}
-		}
+
+			yield* Effect.catch(
+				Effect.gen({ self: this }, function* () {
+					const legacy = yield* legacyReader(legacyPath);
+					const value = legacy === undefined ? defaults : yield* this.normalizeValue(legacy);
+					this.value = value;
+					this.persistedValue = value;
+				}),
+				(error) =>
+					Effect.sync(() => {
+						if (!isMissingFile(error)) {
+							this.report(
+								legacyPath,
+								"invalid-legacy-settings",
+								"Legacy settings were invalid and built-in defaults are active",
+								error,
+							);
+						}
+					}),
+			);
+		});
 	}
 
-	/**
-	 * Read the current namespace; a malformed merged file degrades to
-	 * defaults (with a diagnostic) instead of throwing, matching every legacy
-	 * per-Capability store's fail-closed contract.
-	 */
-	private async readExisting(
-		namespace: string,
-	): Promise<{ readonly kind: "invalid" | "missing" } | { readonly kind: "loaded"; readonly record: SettingsRecord }> {
-		try {
-			const record = await readNamespace(this.path, namespace);
-			return record === undefined ? { kind: "missing" } : { kind: "loaded", record };
-		} catch (error) {
-			this.reportDiagnostic?.({
-				action: "settings-load",
-				capability: "pi-stuff",
-				details: this.path,
-				error,
-				key: "invalid-settings",
-				severity: "warning",
-				summary: "Settings were invalid and built-in defaults are active",
-				visibility: "notice",
+	private readExisting(): Effect.Effect<ExistingNamespace> {
+		return Effect.catch(
+			Effect.map(
+				readNamespaceEffect(this.path, this.namespace),
+				(record): ExistingNamespace => (record === undefined ? { kind: "missing" } : { kind: "loaded", record }),
+			),
+			(error) =>
+				Effect.sync(() => {
+					this.report(
+						this.path,
+						"invalid-settings",
+						"Settings were invalid and built-in defaults are active",
+						error,
+					);
+					return { kind: "invalid" } as const;
+				}),
+		);
+	}
+
+	private normalizeInitial(record: SettingsRecord, defaults: T): Effect.Effect<T> {
+		return Effect.catch(this.normalizeValue(record), (error) =>
+			Effect.sync(() => {
+				this.report(this.path, "invalid-settings", "Settings were invalid and built-in defaults are active", error);
+				return defaults;
+			}),
+		);
+	}
+
+	private normalizeValue(value: SettingsRecord): Effect.Effect<T, Error> {
+		return Effect.try({
+			try: () => this.normalize?.(value) ?? this.persistedValue,
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+	}
+
+	private persistNamespace(apply: (current: T) => T, readCurrent: boolean): Effect.Effect<T, Error> {
+		const persist = Effect.gen({ self: this }, function* () {
+			const record = readCurrent ? yield* readNamespaceEffect(this.path, this.namespace) : undefined;
+			const current =
+				record === undefined || !this.normalize ? this.persistedValue : yield* this.normalizeValue(record);
+			const next = yield* Effect.try({
+				try: () => apply(current),
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 			});
-			return { kind: "invalid" };
-		}
-	}
-
-	private normalizeInitial(record: SettingsRecord, defaults: T): T {
-		try {
-			return this.normalize?.(record) ?? defaults;
-		} catch (error) {
-			this.reportDiagnostic?.({
-				action: "settings-load",
-				capability: "pi-stuff",
-				details: this.path,
-				error,
-				key: "invalid-settings",
-				severity: "warning",
-				summary: "Settings were invalid and built-in defaults are active",
-				visibility: "notice",
-			});
-			return defaults;
-		}
-	}
-
-	private async persistNamespace(apply: (current: T) => T, readCurrent: boolean): Promise<T> {
-		const release = this.acquireLock ? await this.acquireLock(this.lockPath, "pi-stuff") : async () => {};
-		try {
-			const record = readCurrent ? await readNamespace(this.path, this.namespace) : undefined;
-			const current = record === undefined || !this.normalize ? this.persistedValue : this.normalize(record);
-			const next = apply(current);
 			if (readCurrent && isDeepStrictEqual(current, next)) {
 				this.persistedValue = current;
-				return current;
+				this.replaceValue(current);
+				return this.value;
 			}
-			await this.writer(this.path, this.namespace, next);
+			yield* this.writer(this.path, this.namespace, next);
 			this.persistedValue = next;
-			return next;
-		} finally {
-			await release();
-		}
+			this.replaceValue(next);
+			return this.value;
+		});
+		const criticalSection = Effect.uninterruptible(persist);
+		const acquireLock = this.acquireLock;
+		if (!acquireLock) return criticalSection;
+		return Effect.scoped(
+			Effect.gen({ self: this }, function* () {
+				yield* acquireLock(this.lockPath, "pi-stuff");
+				return yield* criticalSection;
+			}),
+		);
 	}
 
 	private replaceValue(next: T): void {
 		if (isDeepStrictEqual(this.value, next)) return;
 		this.value = next;
-		this.notify();
-	}
-
-	private notify(): void {
 		for (const listener of this.listeners) {
 			try {
 				listener(this.value);
@@ -283,6 +264,19 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 				// Presentation observers cannot block persistence.
 			}
 		}
+	}
+
+	private report(details: string, key: string, summary: string, cause: unknown): void {
+		this.reportDiagnostic?.({
+			action: "settings-load",
+			capability: "pi-stuff",
+			details,
+			error: cause,
+			key,
+			severity: "warning",
+			summary,
+			visibility: "notice",
+		});
 	}
 }
 

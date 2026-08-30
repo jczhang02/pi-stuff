@@ -45,6 +45,13 @@ export interface EffectBoundaryInventory {
 	readonly governedSources: readonly string[];
 	readonly nativeAdapters: readonly string[];
 	readonly runnerAdapters: readonly string[];
+	readonly transitionCompatibility?: readonly EffectTransitionCompatibility[];
+}
+
+export interface EffectTransitionCompatibility {
+	readonly contractionTicket: string;
+	readonly path: string;
+	readonly symbols: readonly string[];
 }
 
 export interface EffectBoundaryFinding {
@@ -55,11 +62,16 @@ export interface EffectBoundaryFinding {
 export const EFFECT_BOUNDARY_INVENTORY = {
 	governedSources: [
 		"packages/pi-stuff/src/codex/index.ts",
+		"packages/pi-stuff/src/codex/settings.ts",
 		"packages/pi-stuff/src/codex/usage.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
+		"packages/pi-stuff/src/shared/settings-io/file.ts",
+		"packages/pi-stuff/src/shared/settings-io/lock.ts",
+		"packages/pi-stuff/src/shared/settings-io/promise-store.ts",
+		"packages/pi-stuff/src/shared/settings-io/store.ts",
 		"packages/pi-stuff/src/tool-display/index.ts",
 	],
 	nativeAdapters: [
@@ -67,12 +79,38 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
+		"packages/pi-stuff/src/shared/settings-io/file.ts",
+		"packages/pi-stuff/src/shared/settings-io/lock.ts",
 	],
 	runnerAdapters: [
 		"packages/pi-stuff/src/codex/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
+		"packages/pi-stuff/src/shared/settings-io/promise-store.ts",
 		"packages/pi-stuff/src/tool-display/index.ts",
+	],
+	transitionCompatibility: [
+		{
+			contractionTicket: "ps-pby.32",
+			path: "packages/pi-stuff/src/shared/settings-io/file.ts",
+			symbols: ["mergeNamespaceRecord", "readNamespace", "readSettingsFile", "writeSettingsFile"],
+		},
+		{
+			contractionTicket: "ps-pby.32",
+			path: "packages/pi-stuff/src/shared/settings-io/lock.ts",
+			symbols: ["acquireSettingsLock", "mergeNamespaceRecordLocked", "withSettingsLock"],
+		},
+		{
+			contractionTicket: "ps-pby.32",
+			path: "packages/pi-stuff/src/shared/settings-io/promise-store.ts",
+			symbols: [
+				"NamespacedSettingsStore",
+				"NamespaceLegacyReader",
+				"NamespaceLockAcquirer",
+				"NamespaceStoreOptions",
+				"NamespaceWriter",
+			],
+		},
 	],
 } as const satisfies EffectBoundaryInventory;
 
@@ -391,6 +429,28 @@ export async function auditEffectBoundaryInventory(
 			if (name !== "governed-sources" && !governed.has(path)) {
 				findings.push({ path, rule: `effect-boundary-adapter-not-governed:${name}` });
 			}
+		}
+	}
+	const compatibilityKeys = new Set<string>();
+	for (const entry of inventory.transitionCompatibility ?? []) {
+		const key = `${entry.path}:${entry.symbols.join(",")}`;
+		if (compatibilityKeys.has(key)) {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-duplicate" });
+		}
+		compatibilityKeys.add(key);
+		if (!validInventoryPath(entry.path)) {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-path-invalid" });
+		} else if (!publicPathSet.has(entry.path)) {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-path-missing" });
+		}
+		if (!governed.has(entry.path)) {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-not-governed" });
+		}
+		if (entry.contractionTicket.trim() === "") {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-ticket-missing" });
+		}
+		if (entry.symbols.length === 0 || entry.symbols.some((symbol) => symbol.trim() === "")) {
+			findings.push({ path: entry.path, rule: "effect-transition-compatibility-symbol-missing" });
 		}
 	}
 	return findings;

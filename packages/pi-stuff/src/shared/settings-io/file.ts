@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { Effect } from "effect";
 import { type JsonInputObject, type JsonInputValue, type JsonValue, parseJsonValue } from "../json-value.js";
 import { isRuntimeObject } from "../runtime-type.js";
 
@@ -42,6 +43,20 @@ export async function readSettingsFile(path: string): Promise<SettingsRecord> {
 	return parseSettingsContent(content, path);
 }
 
+export function readSettingsFileEffect(path: string): Effect.Effect<SettingsRecord, Error> {
+	return Effect.tryPromise({
+		try: () => readSettingsFile(path),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
+export function readTextFileEffect(path: string): Effect.Effect<string, Error> {
+	return Effect.tryPromise({
+		try: () => readFile(path, "utf8"),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
 export async function writeSettingsFile(path: string, record: SettingsRecord): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporaryPath = `${path}.tmp-${String(process.pid)}-${randomUUID()}`;
@@ -72,6 +87,17 @@ export async function mergeNamespaceRecord(
 	return merged;
 }
 
+export function mergeNamespaceRecordEffect(
+	path: string,
+	namespace: string,
+	next: SettingsRecord,
+): Effect.Effect<SettingsRecord, Error> {
+	return Effect.tryPromise({
+		try: () => mergeNamespaceRecord(path, namespace, next),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
 /** Read one namespace; a missing file or namespace returns `undefined`. */
 export async function readNamespace(path: string, namespace: string): Promise<SettingsRecord | undefined> {
 	const file = await readSettingsFile(path);
@@ -79,6 +105,13 @@ export async function readNamespace(path: string, namespace: string): Promise<Se
 	if (value === undefined) return undefined;
 	if (!isSettingsRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
 	return value;
+}
+
+export function readNamespaceEffect(path: string, namespace: string): Effect.Effect<SettingsRecord | undefined, Error> {
+	return Effect.tryPromise({
+		try: () => readNamespace(path, namespace),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
 }
 
 /** Synchronous variants for lifecycle modules (e.g. Goal) that load on the hot path. */

@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";
-import { mergedSettingsPath, NamespacedSettingsStore } from "../shared/settings-io/index.js";
-import { acquireSettingsLock } from "../shared/settings-io/lock.js";
+import { EffectNamespacedSettingsStore, mergedSettingsPath, readTextFileEffect } from "../shared/settings-io/index.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 
 export interface CodexSettings {
 	readonly fast: boolean;
@@ -36,41 +37,53 @@ function toRecord(settings: CodexSettings): CodexRecord {
 }
 
 export class CodexSettingsStore {
-	private readonly store: NamespacedSettingsStore<CodexRecord>;
+	private readonly store: EffectNamespacedSettingsStore<CodexRecord>;
 
-	private constructor(store: NamespacedSettingsStore<CodexRecord>) {
+	private constructor(store: EffectNamespacedSettingsStore<CodexRecord>) {
 		this.store = store;
 	}
 
-	static async load(agentDirectory = getAgentDir()): Promise<CodexSettingsStore> {
-		const store = await NamespacedSettingsStore.load<CodexRecord>(
-			CODEX_NAMESPACE,
-			toRecord(DEFAULT_SETTINGS),
-			normalizeSettings,
-			{
-				path: mergedSettingsPath(agentDirectory),
-				legacyPath: join(agentDirectory, SETTINGS_FILENAME),
-				acquireLock: acquireSettingsLock,
-				reportDiagnostic,
-				legacyReader: async (legacyPath) => {
-					const raw: unknown = JSON.parse(await Bun.file(legacyPath).text());
-					return toRecord(normalizeSettings(raw));
+	static load(agentDirectory = getAgentDir()): Effect.Effect<CodexSettingsStore> {
+		return Effect.map(
+			EffectNamespacedSettingsStore.load<CodexRecord>(
+				CODEX_NAMESPACE,
+				toRecord(DEFAULT_SETTINGS),
+				normalizeSettings,
+				{
+					path: mergedSettingsPath(agentDirectory),
+					legacyPath: join(agentDirectory, SETTINGS_FILENAME),
+					acquireLock: acquireSettingsLockEffect,
+					reportDiagnostic,
+					legacyReader: (legacyPath) =>
+						Effect.flatMap(readTextFileEffect(legacyPath), (content) =>
+							Effect.try({
+								try: () => {
+									const raw: unknown = JSON.parse(content);
+									return toRecord(normalizeSettings(raw));
+								},
+								catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+							}),
+						),
 				},
-			},
+			),
+			(store) => new CodexSettingsStore(store),
 		);
-		return new CodexSettingsStore(store);
 	}
 
 	static memory(settings: CodexSettings = DEFAULT_SETTINGS): CodexSettingsStore {
-		return new CodexSettingsStore(NamespacedSettingsStore.memory(toRecord(settings)));
+		return new CodexSettingsStore(EffectNamespacedSettingsStore.memory(toRecord(settings)));
 	}
 
 	get(): CodexSettings {
 		return normalizeSettings(this.store.get());
 	}
 
-	async setFast(fast: boolean): Promise<void> {
-		await this.store.replace({ fast });
+	setFast(fast: boolean): Effect.Effect<void, Error> {
+		return Effect.asVoid(this.store.replace({ fast }));
+	}
+
+	whenIdle(): Effect.Effect<void> {
+		return this.store.whenIdle();
 	}
 
 	subscribe(listener: SettingsListener): () => void {

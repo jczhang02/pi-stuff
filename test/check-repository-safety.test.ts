@@ -572,6 +572,22 @@ test("rejects duplicate and missing Effect boundary inventory paths", async () =
 	]);
 });
 
+test("requires every Effect transition compatibility entry to name its contraction ticket and symbols", async () => {
+	const root = await createRepository();
+	const existingPath = "packages/pi-stuff/src/shared/effect-foundation.ts";
+	const inventory = {
+		governedSources: [existingPath],
+		nativeAdapters: [],
+		runnerAdapters: [],
+		transitionCompatibility: [{ contractionTicket: "", path: existingPath, symbols: [] }],
+	} satisfies EffectBoundaryInventory;
+
+	expect(await auditEffectBoundaryInventory(root, [existingPath], inventory)).toEqual([
+		{ path: existingPath, rule: "effect-transition-compatibility-ticket-missing" },
+		{ path: existingPath, rule: "effect-transition-compatibility-symbol-missing" },
+	]);
+});
+
 test("enforces the 800-line boundary across repository code", async () => {
 	const root = await createRepository();
 	await writeFixture(root, "scripts/exact.ts", repeatedLine("// fixture", 800));

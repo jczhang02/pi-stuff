@@ -2,9 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import {
+	EffectNamespacedSettingsStore,
 	mergeNamespaceRecord,
 	NamespacedSettingsStore,
 	readNamespace,
@@ -12,7 +14,7 @@ import {
 	SettingsFormatError,
 	writeSettingsFile,
 } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
-import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+import { acquireSettingsLock, acquireSettingsLockEffect } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const roots: string[] = [];
 
@@ -239,4 +241,91 @@ test("NamespacedSettingsStore skips unchanged writes and notifications", async (
 
 	expect(writes).toBe(0);
 	expect(seen).toEqual([]);
+});
+
+test("EffectNamespacedSettingsStore serializes queued updates from the latest persisted namespace", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	await writeSettingsFile(path, { ui: { statusline: true } });
+	const store = await Effect.runPromise(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path,
+			acquireLock: acquireSettingsLockEffect,
+		}),
+	);
+
+	await Promise.all(
+		Array.from({ length: 12 }, () =>
+			Effect.runPromise(store.updateWith((current) => ({ ...current, count: current.count + 1 }))),
+		),
+	);
+	await Effect.runPromise(store.whenIdle());
+
+	expect(store.get()).toEqual({ enabled: false, count: 12 });
+	expect(await readSettingsFile(path)).toEqual({
+		codex: { enabled: false, count: 12 },
+		ui: { statusline: true },
+	});
+});
+
+test("EffectNamespacedSettingsStore preserves legacy fallback diagnostics", async () => {
+	const root = await dir();
+	const diagnostics: string[] = [];
+	const store = await Effect.runPromise(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path: join(root, "pi-stuff.json"),
+			legacyPath: join(root, "legacy.json"),
+			legacyReader: () => Effect.fail(new Error("invalid legacy settings")),
+			reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic.key),
+		}),
+	);
+
+	expect(store.get()).toEqual({ enabled: false, count: 0 });
+	expect(diagnostics).toEqual(["invalid-legacy-settings"]);
+});
+
+test("an interrupted Effect mutation finishes its atomic write and live-state commit", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	const persisted = Promise.withResolvers<void>();
+	const finish = Promise.withResolvers<void>();
+	const store = await Effect.runPromise(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path,
+			acquireLock: acquireSettingsLockEffect,
+			writer: (settingsPath, namespace, record) =>
+				Effect.tryPromise({
+					try: async () => {
+						await mergeNamespaceRecord(settingsPath, namespace, record);
+						persisted.resolve();
+						await finish.promise;
+					},
+					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				}),
+		}),
+	);
+	const controller = new AbortController();
+	const update = Effect.runPromise(store.replace({ enabled: true, count: 1 }), { signal: controller.signal });
+	await persisted.promise;
+	controller.abort(new Error("cancel after persistence"));
+	finish.resolve();
+
+	await expect(update).rejects.toThrow();
+	await Effect.runPromise(store.whenIdle());
+	expect(store.get()).toEqual({ enabled: true, count: 1 });
+	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 1 });
+});
+
+test("cancelling an Effect settings-lock waiter closes its native handle", async () => {
+	const lockPath = join(await dir(), "pi-stuff.json.lock");
+	const release = await acquireSettingsLock(lockPath, "holder");
+	const controller = new AbortController();
+	const waiting = Effect.runPromise(Effect.scoped(acquireSettingsLockEffect(lockPath, "waiter")), {
+		signal: controller.signal,
+	});
+	await Bun.sleep(20);
+	controller.abort(new Error("cancel settings waiter"));
+	await expect(waiting).rejects.toThrow();
+	await release();
+
+	const releaseAfterCancellation = await acquireSettingsLock(lockPath, "next holder");
+	await releaseAfterCancellation();
 });

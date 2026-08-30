@@ -13,11 +13,15 @@
 
 export {
 	mergeNamespaceRecord,
+	mergeNamespaceRecordEffect,
 	mergeNamespaceRecordSync,
 	readNamespace,
+	readNamespaceEffect,
 	readNamespaceSync,
 	readSettingsFile,
+	readSettingsFileEffect,
 	readSettingsFileSync,
+	readTextFileEffect,
 	SettingsFormatError,
 	type SettingsRecord,
 	writeSettingsFile,
@@ -31,7 +35,14 @@ export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } fro
 export {
 	NamespacedSettingsStore,
 	type NamespaceLegacyReader,
-	type NamespaceRecord,
 	type NamespaceStoreOptions,
 	type NamespaceWriter,
+} from "./promise-store.js";
+export {
+	EffectNamespacedSettingsStore,
+	type EffectNamespaceLegacyReader,
+	type EffectNamespaceLock,
+	type EffectNamespaceStoreOptions,
+	type EffectNamespaceWriter,
+	type NamespaceRecord,
 } from "./store.js";
