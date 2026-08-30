@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect, Option, Semaphore } from "effect";
 import { boundTerminalLine } from "../tool-display/index.js";
 
 const RESOLVE_TIMEOUT_MS = 600;
@@ -39,8 +40,9 @@ interface RuntimeCertificate {
 
 interface VerifyOptions {
 	readonly refresh?: boolean;
-	readonly signal?: AbortSignal;
 }
+
+type RtkProcessHost = Pick<ExtensionAPI, "exec">;
 
 function cleanOneLine(cause: unknown): string {
 	const text = cause instanceof Error ? cause.message : String(cause);
@@ -65,16 +67,29 @@ function effectiveCommandStartsWithRtk(command: string): boolean {
 	return withoutAssignments === "rtk" || withoutAssignments.startsWith("rtk ");
 }
 
-async function sha256File(path: string): Promise<string> {
-	return createHash("sha256")
-		.update(await readFile(path))
-		.digest("hex");
+function sha256File(path: string): Effect.Effect<string, Error> {
+	return Effect.map(
+		Effect.tryPromise({
+			try: (signal) => readFile(path, { signal }),
+			catch: normalizeError,
+		}),
+		(content) => createHash("sha256").update(content).digest("hex"),
+	);
 }
 
-async function fileFingerprint(path: string): Promise<string> {
-	const info = await stat(path);
-	if (!info.isFile()) throw new Error("resolved RTK path is not a regular file");
-	return [info.dev, info.ino, info.size, info.mtimeMs, info.mode].join(":");
+function fileFingerprint(path: string): Effect.Effect<string, Error> {
+	return Effect.tryPromise({
+		try: async () => {
+			const info = await stat(path);
+			if (!info.isFile()) throw new Error("resolved RTK path is not a regular file");
+			return [info.dev, info.ino, info.size, info.mtimeMs, info.mode].join(":");
+		},
+		catch: normalizeError,
+	});
+}
+
+function resolveRealPath(path: string): Effect.Effect<string, Error> {
+	return Effect.tryPromise({ try: () => realpath(path), catch: normalizeError });
 }
 
 function defaultExpectedSha256s(platform: NodeJS.Platform): readonly string[] {
@@ -86,11 +101,12 @@ export class RtkRuntime {
 	private certificate: RuntimeCertificate | undefined;
 	private readonly expectedSha256s: ReadonlySet<string>;
 	private readonly expectedVersion: string;
+	private generation = 0;
 	private readonly platform: NodeJS.Platform;
 	private readonly resolveTimeoutMs: number;
 	private readonly rewriteTimeoutMs: number;
 	private snapshotValue: RtkRuntimeSnapshot = { state: "unchecked" };
-	private verification: Promise<RtkRuntimeSnapshot> | undefined;
+	private readonly verificationGate = Semaphore.makeUnsafe(1);
 	private readonly versionTimeoutMs: number;
 
 	constructor(options: RtkRuntimeOptions = {}) {
@@ -109,117 +125,161 @@ export class RtkRuntime {
 	}
 
 	reset(): void {
+		this.generation += 1;
 		this.certificate = undefined;
 		this.snapshotValue = { state: "unchecked" };
-		this.verification = undefined;
 	}
 
-	async verify(pi: Pick<ExtensionAPI, "exec">, options: VerifyOptions = {}): Promise<RtkRuntimeSnapshot> {
-		if (options.refresh) {
-			if (this.verification) await this.verification;
-			this.certificate = undefined;
-			this.snapshotValue = { state: "unchecked" };
-		}
-		if (this.certificate) return this.snapshot();
-		if (this.snapshotValue.state !== "unchecked") return this.snapshot();
-		this.verification ??= this.certify(pi, options.signal).finally(() => {
-			this.verification = undefined;
-		});
-		return this.verification;
+	verify(pi: RtkProcessHost, options: VerifyOptions = {}): Effect.Effect<RtkRuntimeSnapshot> {
+		return this.verificationGate.withPermit(
+			Effect.suspend(() => {
+				if (options.refresh) this.reset();
+				if (this.certificate || this.snapshotValue.state !== "unchecked") {
+					return Effect.succeed(this.snapshot());
+				}
+				const generation = this.generation;
+				return this.certify(pi).pipe(
+					Effect.map((certificate) => {
+						if (generation === this.generation) {
+							this.certificate = certificate;
+							this.snapshotValue = {
+								path: certificate.path,
+								sha256: certificate.sha256,
+								state: "ready",
+								version: certificate.version,
+							};
+						}
+						return this.snapshot();
+					}),
+					Effect.catch((error) =>
+						Effect.sync(() => {
+							this.markUnavailable(`RTK verification failed: ${cleanOneLine(error)}`, generation);
+							return this.snapshot();
+						}),
+					),
+				);
+			}),
+		);
 	}
 
-	async rewrite(pi: Pick<ExtensionAPI, "exec">, command: string, signal?: AbortSignal): Promise<string | undefined> {
-		if (!command.trim() || effectiveCommandStartsWithRtk(command)) return undefined;
-		await this.verify(pi, signal ? { signal } : {});
-		const certificate = this.certificate;
-		if (!certificate) return undefined;
+	rewrite(pi: RtkProcessHost, command: string): Effect.Effect<string | undefined> {
+		if (!command.trim() || effectiveCommandStartsWithRtk(command)) return Effect.succeed(undefined);
+		return Effect.gen({ self: this }, function* () {
+			yield* this.verify(pi);
+			const certificate = this.certificate;
+			if (!certificate) return undefined;
+			const generation = this.generation;
 
-		try {
-			await this.assertStable(pi, certificate, signal);
-		} catch (error) {
-			if (signal?.aborted) return undefined;
-			this.markDrifted(error, certificate);
-			return undefined;
-		}
+			const stable = yield* Effect.catch(Effect.as(this.assertStable(pi, certificate), true), (error) =>
+				Effect.sync(() => {
+					this.markDrifted(error, certificate, generation);
+					return false;
+				}),
+			);
+			if (!stable || !this.isCurrent(certificate, generation)) return undefined;
 
-		try {
-			const options = { timeout: this.rewriteTimeoutMs };
-			if (signal) Object.assign(options, { signal });
-			const result = await pi.exec(certificate.path, ["rewrite", command], options);
-			if (result.code === 1 || result.code === 2) return undefined;
-			if (result.code !== 0 && result.code !== 3) {
-				if (result.killed) this.markUnavailable("RTK rewrite timed out", certificate);
+			const result = yield* Effect.catch(
+				this.execute(pi, certificate.path, ["rewrite", command]).pipe(Effect.timeoutOption(this.rewriteTimeoutMs)),
+				(error) =>
+					Effect.sync(() => {
+						this.markUnavailable(`RTK rewrite failed: ${cleanOneLine(error)}`, generation, certificate);
+						return undefined;
+					}),
+			);
+			if (result === undefined) return undefined;
+			if (Option.isNone(result)) {
+				this.markUnavailable("RTK rewrite timed out", generation, certificate);
 				return undefined;
 			}
-			const rewritten = result.stdout.trim();
+			if (!this.isCurrent(certificate, generation)) return undefined;
+			if (result.value.code === 1 || result.value.code === 2) return undefined;
+			if (result.value.code !== 0 && result.value.code !== 3) {
+				if (result.value.killed) this.markUnavailable("RTK rewrite timed out", generation, certificate);
+				return undefined;
+			}
+			const rewritten = result.value.stdout.trim();
 			return rewritten && rewritten !== command ? rewritten : undefined;
-		} catch (error) {
-			if (!signal?.aborted) this.markUnavailable(`RTK rewrite failed: ${cleanOneLine(error)}`, certificate);
-			return undefined;
-		}
+		});
 	}
 
-	private async certify(pi: Pick<ExtensionAPI, "exec">, signal?: AbortSignal): Promise<RtkRuntimeSnapshot> {
-		try {
-			const selectedPath = await this.resolveSelectedPath(pi, signal);
-			const path = await realpath(selectedPath);
-			const versionOptions = { timeout: this.versionTimeoutMs };
-			if (signal) Object.assign(versionOptions, { signal });
-			const [fingerprint, sha256, versionResult] = await Promise.all([
-				fileFingerprint(path),
-				sha256File(path),
-				pi.exec(path, ["--version"], versionOptions),
-			]);
-			const version = parseVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
-			if (versionResult.code !== 0 || !version) throw new Error("RTK returned no valid version");
-			if (version !== this.expectedVersion) {
-				throw new Error(`RTK ${version} is not the certified ${this.expectedVersion} runtime`);
+	private certify(pi: RtkProcessHost): Effect.Effect<RuntimeCertificate, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const selectedPath = yield* this.resolveSelectedPath(pi);
+			const path = yield* resolveRealPath(selectedPath);
+			const version = this.execute(pi, path, ["--version"]).pipe(
+				Effect.timeoutOption(this.versionTimeoutMs),
+				Effect.flatMap((result) =>
+					Option.isSome(result)
+						? Effect.succeed(result.value)
+						: Effect.fail(new Error("RTK returned no valid version")),
+				),
+			);
+			const [fingerprint, sha256, versionResult] = yield* Effect.all(
+				[fileFingerprint(path), sha256File(path), version] as const,
+				{ concurrency: "unbounded" },
+			);
+			const parsedVersion = parseVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
+			if (versionResult.code !== 0 || !parsedVersion)
+				return yield* Effect.fail(new Error("RTK returned no valid version"));
+			if (parsedVersion !== this.expectedVersion) {
+				return yield* Effect.fail(
+					new Error(`RTK ${parsedVersion} is not the certified ${this.expectedVersion} runtime`),
+				);
 			}
 			if (this.expectedSha256s.size === 0) {
-				throw new Error(`RTK has no certified runtime for ${this.platform}/${process.arch}`);
+				return yield* Effect.fail(new Error(`RTK has no certified runtime for ${this.platform}/${process.arch}`));
 			}
 			if (!this.expectedSha256s.has(sha256)) {
-				throw new Error("RTK executable SHA-256 does not match the certified runtime");
+				return yield* Effect.fail(new Error("RTK executable SHA-256 does not match the certified runtime"));
 			}
-			this.certificate = { fingerprint, path, selectedPath, sha256, version };
-			this.snapshotValue = { path, sha256, state: "ready", version };
-		} catch (error) {
-			if (signal?.aborted) {
-				this.snapshotValue = { state: "unchecked" };
-			} else {
-				this.markUnavailable(`RTK verification failed: ${cleanOneLine(error)}`);
-			}
-		}
-		return this.snapshot();
+			return { fingerprint, path, selectedPath, sha256, version: parsedVersion };
+		});
 	}
 
-	private async assertStable(
-		pi: Pick<ExtensionAPI, "exec">,
-		certificate: RuntimeCertificate,
-		signal?: AbortSignal,
-	): Promise<void> {
-		const selectedPath = await this.resolveSelectedPath(pi, signal);
-		const path = await realpath(selectedPath);
-		if (selectedPath !== certificate.selectedPath || path !== certificate.path) {
-			throw new Error("resolved RTK path changed after verification");
-		}
-		const [fingerprint, sha256] = await Promise.all([fileFingerprint(path), sha256File(path)]);
-		if (fingerprint !== certificate.fingerprint || sha256 !== certificate.sha256) {
-			throw new Error("RTK executable changed after verification");
-		}
+	private assertStable(pi: RtkProcessHost, certificate: RuntimeCertificate): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const selectedPath = yield* this.resolveSelectedPath(pi);
+			const path = yield* resolveRealPath(selectedPath);
+			if (selectedPath !== certificate.selectedPath || path !== certificate.path) {
+				return yield* Effect.fail(new Error("resolved RTK path changed after verification"));
+			}
+			const [fingerprint, sha256] = yield* Effect.all([fileFingerprint(path), sha256File(path)] as const, {
+				concurrency: "unbounded",
+			});
+			if (fingerprint !== certificate.fingerprint || sha256 !== certificate.sha256) {
+				return yield* Effect.fail(new Error("RTK executable changed after verification"));
+			}
+		});
 	}
 
-	private async resolveSelectedPath(pi: Pick<ExtensionAPI, "exec">, signal?: AbortSignal): Promise<string> {
+	private resolveSelectedPath(pi: RtkProcessHost): Effect.Effect<string, Error> {
 		const resolver = this.platform === "win32" ? "where" : "which";
-		const options = { timeout: this.resolveTimeoutMs };
-		if (signal) Object.assign(options, { signal });
-		const result = await pi.exec(resolver, ["rtk"], options);
-		const selectedPath = firstNonEmptyLine(result.stdout);
-		if (result.code !== 0 || !selectedPath) throw new Error(`${resolver} could not resolve rtk`);
-		return selectedPath.replace(/^(["'])(.*)\1$/u, "$2");
+		return this.execute(pi, resolver, ["rtk"]).pipe(
+			Effect.timeoutOption(this.resolveTimeoutMs),
+			Effect.flatMap((result) => {
+				if (Option.isNone(result)) return Effect.fail(new Error(`${resolver} could not resolve rtk`));
+				const selectedPath = firstNonEmptyLine(result.value.stdout);
+				return result.value.code === 0 && selectedPath
+					? Effect.succeed(selectedPath.replace(/^(["'])(.*)\1$/u, "$2"))
+					: Effect.fail(new Error(`${resolver} could not resolve rtk`));
+			}),
+		);
 	}
 
-	private markDrifted(cause: unknown, certificate: RuntimeCertificate): void {
+	private execute(pi: RtkProcessHost, command: string, args: string[]) {
+		return Effect.tryPromise({
+			try: (signal) => pi.exec(command, args, { signal }),
+			catch: normalizeError,
+		});
+	}
+
+	private isCurrent(certificate: RuntimeCertificate, generation: number): boolean {
+		return generation === this.generation && this.certificate === certificate;
+	}
+
+	private markDrifted(cause: unknown, certificate: RuntimeCertificate, generation: number): void {
+		if (!this.isCurrent(certificate, generation)) return;
+		this.generation += 1;
 		this.certificate = undefined;
 		this.snapshotValue = {
 			lastError: `RTK identity drift: ${cleanOneLine(cause)}`,
@@ -230,15 +290,18 @@ export class RtkRuntime {
 		};
 	}
 
-	private markUnavailable(error: string, certificate?: RuntimeCertificate): void {
+	private markUnavailable(error: string, generation: number, certificate?: RuntimeCertificate): void {
+		if (generation !== this.generation || (certificate !== undefined && certificate !== this.certificate)) return;
+		this.generation += 1;
 		this.certificate = undefined;
-		const snapshot = {
-			lastError: error,
-			state: "unavailable" as const,
-		};
+		const snapshot = { lastError: error, state: "unavailable" as const };
 		if (certificate) {
 			Object.assign(snapshot, { path: certificate.path, sha256: certificate.sha256, version: certificate.version });
 		}
 		this.snapshotValue = snapshot;
 	}
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

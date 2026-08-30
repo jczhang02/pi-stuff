@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import { Effect } from "effect";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { RtkProjectionAdapter } from "../../packages/pi-stuff/src/rtk/projection.js";
 import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff/src/rtk/rtk-dialog.js";
@@ -53,7 +54,10 @@ describe("RTK-owned settings", () => {
 			theme,
 			tui,
 		} satisfies CommandDialogViewContext<void>;
-		const component = createRtkSettingsView(settings).create(context);
+		const component = createRtkSettingsView(settings, {
+			setOutputProjection: (enabled) => Effect.runPromise(settings.setOutputProjection(enabled)),
+			setRewriteCommands: (enabled) => Effect.runPromise(settings.setRewriteCommands(enabled)),
+		}).create(context);
 
 		const initial = component.render(64).join("\n");
 		expect(initial).toContain("RTK settings");

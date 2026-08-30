@@ -16,6 +16,11 @@ export interface RtkSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
 }
 
+export interface RtkSettingsActions {
+	setOutputProjection(enabled: boolean): Promise<void>;
+	setRewriteCommands(enabled: boolean): Promise<void>;
+}
+
 function settingsHint(width: number): string {
 	const candidates = [
 		"  Enter/Space to change · Esc to close",
@@ -35,6 +40,7 @@ function oneLine(value: string): string {
 }
 
 class RtkSettingsDialog implements CommandDialogComponent {
+	private readonly actions: RtkSettingsActions;
 	private readonly context: CommandDialogViewContext<void>;
 	private disposed = false;
 	private error = "";
@@ -44,7 +50,13 @@ class RtkSettingsDialog implements CommandDialogComponent {
 	private readonly settingsList: SettingsList;
 	private readonly unsubscribe: () => void;
 
-	constructor(context: CommandDialogViewContext<void>, settings: RtkSettingsStore, options: RtkSettingsViewOptions) {
+	constructor(
+		context: CommandDialogViewContext<void>,
+		settings: RtkSettingsStore,
+		actions: RtkSettingsActions,
+		options: RtkSettingsViewOptions,
+	) {
+		this.actions = actions;
 		this.context = context;
 		this.onPersistenceError = options.onPersistenceError;
 		this.settings = settings;
@@ -133,9 +145,9 @@ class RtkSettingsDialog implements CommandDialogComponent {
 		const enabled = value === "true";
 		const update =
 			id === "rewriteCommands"
-				? this.settings.setRewriteCommands(enabled)
+				? this.actions.setRewriteCommands(enabled)
 				: id === "outputProjection"
-					? this.settings.setOutputProjection(enabled)
+					? this.actions.setOutputProjection(enabled)
 					: undefined;
 		if (!update) return;
 		void update.catch((error) => {
@@ -165,10 +177,11 @@ class RtkSettingsDialog implements CommandDialogComponent {
 
 export function createRtkSettingsView(
 	settings: RtkSettingsStore,
+	actions: RtkSettingsActions,
 	options: RtkSettingsViewOptions = {},
 ): CommandDialogView<void> {
 	return {
 		priority: "normal",
-		create: (context) => new RtkSettingsDialog(context, settings, options),
+		create: (context) => new RtkSettingsDialog(context, settings, actions, options),
 	};
 }

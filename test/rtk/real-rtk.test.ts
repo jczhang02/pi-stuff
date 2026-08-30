@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	CERTIFIED_RTK_LINUX_X64_SHA256,
 	CERTIFIED_RTK_VERSION,
@@ -33,9 +34,11 @@ test.skipIf(!localRtk)("certifies and uses the official RTK 0.45.0 executable", 
 	const pi = { exec: execute } as Pick<ExtensionAPI, "exec">;
 	const runtime = new RtkRuntime();
 
-	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
-	expect(await runtime.rewrite(pi, "rg --files -g '*.ts' packages")).toBe("rtk rg --files -g '*.ts' packages");
-	expect(await runtime.rewrite(pi, "rg -n CERTIFIED_RTK_VERSION packages/pi-stuff/src/rtk")).toBe(
+	expect(await Effect.runPromise(runtime.rewrite(pi, "git status"))).toBe("rtk git status");
+	expect(await Effect.runPromise(runtime.rewrite(pi, "rg --files -g '*.ts' packages"))).toBe(
+		"rtk rg --files -g '*.ts' packages",
+	);
+	expect(await Effect.runPromise(runtime.rewrite(pi, "rg -n CERTIFIED_RTK_VERSION packages/pi-stuff/src/rtk"))).toBe(
 		"rtk rg -n CERTIFIED_RTK_VERSION packages/pi-stuff/src/rtk",
 	);
 	const snapshot = runtime.snapshot();

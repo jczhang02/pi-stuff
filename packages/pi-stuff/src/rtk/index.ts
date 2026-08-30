@@ -1,6 +1,8 @@
 import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { createRtkProjectionAdapter } from "./projection.js";
 import { createRtkDialogView } from "./rtk-dialog.js";
 import { createRtkSettingsView } from "./rtk-settings-dialog.js";
@@ -24,14 +26,32 @@ export {
 } from "./runtime.js";
 export { type RtkSettings, RtkSettingsStore } from "./settings.js";
 
+async function runRtkOperation<Value, ErrorType>(
+	foundation: EffectFoundation,
+	program: Effect.Effect<Value, ErrorType>,
+	signal?: AbortSignal,
+): Promise<Value | undefined> {
+	const session = foundation.currentSession();
+	if (!session) return undefined;
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program, { signal });
+	await foundation.close(operation, exit);
+	if (Exit.isFailure(exit)) {
+		if (Cause.hasInterrupts(exit.cause)) return undefined;
+		throw Cause.squash(exit.cause);
+	}
+	return foundation.isCurrent(session) ? exit.value : undefined;
+}
+
 export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
+	const foundation = installEffectFoundation(pi);
 	const dialogs = getCommandDialogCoordinator(pi);
-	const settings = await RtkSettingsStore.load();
+	const settings = await Effect.runPromise(RtkSettingsStore.load());
 	const runtime = new RtkRuntime();
 	const projection = createRtkProjectionAdapter({ enabled: () => settings.get().outputProjection });
 	pi.on("tool_call", async (event, ctx) => {
 		if (!settings.get().rewriteCommands || !isToolCallEventType("bash", event)) return;
-		const rewritten = await runtime.rewrite(pi, event.input.command, ctx.signal);
+		const rewritten = await runRtkOperation(foundation, runtime.rewrite(pi, event.input.command), ctx.signal);
 		if (rewritten) event.input.command = rewritten;
 	});
 
@@ -52,14 +72,23 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 			if (action === "settings") {
 				await dialogs.show(
 					ctx,
-					createRtkSettingsView(settings, {
-						onPersistenceError: (message) => ctx.ui.notify(message, "error"),
-					}),
+					createRtkSettingsView(
+						settings,
+						{
+							setOutputProjection: async (enabled) => {
+								await runRtkOperation(foundation, settings.setOutputProjection(enabled));
+							},
+							setRewriteCommands: async (enabled) => {
+								await runRtkOperation(foundation, settings.setRewriteCommands(enabled));
+							},
+						},
+						{ onPersistenceError: (message) => ctx.ui.notify(message, "error") },
+					),
 				);
 				return;
 			}
 			if (!action || action === "status" || action === "verify") {
-				await runtime.verify(pi, ctx.signal ? { refresh: true, signal: ctx.signal } : { refresh: true });
+				await runRtkOperation(foundation, runtime.verify(pi, { refresh: true }), ctx.signal);
 			} else if (action === "clear-stats") {
 				projection.reset();
 				note = "Projection statistics cleared.";
@@ -79,6 +108,6 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 	});
 	pi.on("session_tree", () => projection.reset());
 	pi.on("session_shutdown", async () => {
-		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
+		await Effect.runPromise(settings.whenIdle().pipe(Effect.timeoutOption(HOST_SHUTDOWN_GRACE_MS), Effect.asVoid));
 	});
 }
