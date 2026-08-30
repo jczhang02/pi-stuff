@@ -1,10 +1,12 @@
-<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 2645ff810a5b229f33028e4bf7d40b3c1daa1b8adbbb60964baf47c8803b729c -->
+<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: bf74ce7704cb9728ce258c29656cff47c4193d2745ec037d3853927947ad9c40 -->
 
 # Pi Stuff Codex
 
 Codex 模块为 Pi Stuff 提供一个 `/codex` 命令对话框、Fast 模式、Codex 订阅用量，以及选定的 `apply_patch`、`view_image` 和 `imagegen` 工具。它不会替换 Pi 的 Provider、Shell、压缩、会话或 TUI。
 
 该能力在导入和启动期间保持冷态。只有打开 `/codex`，或用户驱动的交互式 Codex Agent 运行真正空闲稳定后，用量功能才进行网络 I/O。自动工作和非 Codex 运行不会刷新用量；重叠的运行后请求合并为一次尾随刷新；失败时保留最后观察到的快照。原生辅助程序只在实际工具调用时启动。认证缺失、模型不受支持或原生辅助程序不可用会成为有界命令或工具错误；普通 Pi 工作仍可使用。
+
+每次用量刷新都作为一个由 Session 负责的 Effect operation 运行。十秒超时和调用方取消由 Effect 负责，Capability adapter 只保留原生的认证 `fetch`。Pi-facing adapter 会把类型化失败投影回现有 Command Dialog 和通知结果；已被替换 Session 的完成结果不能更新共享用量快照或 Statusline。
 
 `imagegen` 只为支持图像的 OpenAI Codex Responses 模型启用，并始终请求 `gpt-image-2`。当前已验证的原生辅助程序目标是 Linux x64。
 

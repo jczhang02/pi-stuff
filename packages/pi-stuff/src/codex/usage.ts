@@ -1,4 +1,5 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
+import { Cause, Effect } from "effect";
 import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { type CodexAccountContext, resolveCodexAccount } from "./account.js";
@@ -92,41 +93,44 @@ export function buildCodexUsageUrl(baseUrl: string): string {
 	return `${apiBase}/wham/usage`;
 }
 
-export async function fetchCodexUsage(
-	ctx: CodexAccountContext & { readonly signal?: AbortSignal | undefined },
+export function fetchCodexUsage(
+	ctx: CodexAccountContext,
 	fetcher: Fetcher = fetch,
-	signal: AbortSignal | undefined = ctx.signal,
-): Promise<CodexUsageSnapshot> {
-	if (process.env["PI_OFFLINE"] === "1") throw new Error("Codex usage is unavailable in offline mode.");
-	const account = await resolveCodexAccount(ctx);
-	const headers = new Headers(account.headers);
-	headers.set("authorization", `Bearer ${account.token}`);
-	headers.set("chatgpt-account-id", account.accountId);
-	headers.set("accept", "application/json");
-	headers.set("oai-language", "en");
-	headers.set("originator", "pi");
-
-	const controller = new AbortController();
-	const abort = (): void => controller.abort(signal?.reason);
-	signal?.addEventListener("abort", abort, { once: true });
-	const timeout = setTimeout(() => controller.abort(new Error("Codex usage request timed out.")), USAGE_TIMEOUT_MS);
-	timeout.unref?.();
-	try {
-		const response = await fetcher(buildCodexUsageUrl(account.baseUrl), { headers, signal: controller.signal });
-		const body = await response.text();
-		if (!response.ok) throw new Error(`Codex usage request failed (${String(response.status)}).`);
-		try {
-			return parseCodexUsage(parseJsonValue(body));
-		} catch {
-			throw new Error("Codex usage returned invalid JSON.");
+	timeoutMs = USAGE_TIMEOUT_MS,
+): Effect.Effect<CodexUsageSnapshot, Error> {
+	return Effect.gen(function* () {
+		if (process.env["PI_OFFLINE"] === "1") {
+			return yield* Effect.fail(new Error("Codex usage is unavailable in offline mode."));
 		}
-	} catch (error) {
-		if (controller.signal.aborted && !signal?.aborted) throw new Error("Codex usage request timed out.");
-		throw error;
-	} finally {
-		clearTimeout(timeout);
-		signal?.removeEventListener("abort", abort);
-	}
+		const account = yield* Effect.tryPromise({
+			try: () => resolveCodexAccount(ctx),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		const headers = new Headers(account.headers);
+		headers.set("authorization", `Bearer ${account.token}`);
+		headers.set("chatgpt-account-id", account.accountId);
+		headers.set("accept", "application/json");
+		headers.set("oai-language", "en");
+		headers.set("originator", "pi");
+		const { body, response } = yield* Effect.tryPromise({
+			try: async (signal) => {
+				const response = await fetcher(buildCodexUsageUrl(account.baseUrl), { headers, signal });
+				return { body: await response.text(), response };
+			},
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		}).pipe(
+			Effect.timeout(Math.max(0, timeoutMs)),
+			Effect.mapError((error) =>
+				Cause.isTimeoutError(error) ? new Error("Codex usage request timed out.") : error,
+			),
+		);
+		if (!response.ok)
+			return yield* Effect.fail(new Error(`Codex usage request failed (${String(response.status)}).`));
+		return yield* Effect.try({
+			try: () => parseCodexUsage(parseJsonValue(body)),
+			catch: () => new Error("Codex usage returned invalid JSON."),
+		});
+	});
 }
 
 function remaining(window: CodexUsageWindow | undefined): string {

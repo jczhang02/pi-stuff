@@ -53,9 +53,13 @@ export interface EffectBoundaryFinding {
 }
 
 export const EFFECT_BOUNDARY_INVENTORY = {
-	governedSources: ["packages/pi-stuff/src/shared/effect-foundation.ts"],
-	nativeAdapters: [],
-	runnerAdapters: ["packages/pi-stuff/src/shared/effect-foundation.ts"],
+	governedSources: [
+		"packages/pi-stuff/src/codex/index.ts",
+		"packages/pi-stuff/src/codex/usage.ts",
+		"packages/pi-stuff/src/shared/effect-foundation.ts",
+	],
+	nativeAdapters: ["packages/pi-stuff/src/codex/usage.ts"],
+	runnerAdapters: ["packages/pi-stuff/src/codex/index.ts", "packages/pi-stuff/src/shared/effect-foundation.ts"],
 } as const satisfies EffectBoundaryInventory;
 
 type NativeNamespace = "child-process" | "filesystem" | "filesystem-promises" | "timers" | "worker";

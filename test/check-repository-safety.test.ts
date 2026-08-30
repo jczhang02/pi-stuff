@@ -8,6 +8,7 @@ import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
 import {
 	auditEffectBoundaryInventory,
 	auditEffectBoundarySource,
+	EFFECT_BOUNDARY_INVENTORY,
 	type EffectBoundaryInventory,
 } from "../scripts/repository-safety/effect-boundaries.js";
 
@@ -72,7 +73,7 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 		)}\n`,
 	);
 	await writeLocalPackage(root, LOCAL_PACKAGE);
-	await writeFixture(root, "packages/pi-stuff/src/shared/effect-foundation.ts", "export {};\n");
+	for (const path of EFFECT_BOUNDARY_INVENTORY.governedSources) await writeFixture(root, path, "export {};\n");
 	return root;
 }
 

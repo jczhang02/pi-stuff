@@ -1,9 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Cause, type Effect, Exit } from "effect";
 import {
 	getCodexStatusChannel,
 	getCommandDialogCoordinator,
 	listenForUserAgentRunSettled,
 } from "../conversation-ui/index.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";
 import { isOpenAICodexResponsesModel } from "./account.js";
 import { type CodexControls, createCodexDialogView } from "./dialog.js";
@@ -16,7 +18,29 @@ function requestPayloadWithFast<Payload>(payload: Payload) {
 	return { ...payload, service_tier: "priority" };
 }
 
+export async function runCodexUsageOperation(
+	foundation: EffectFoundation,
+	program: Effect.Effect<CodexUsageSnapshot, Error>,
+	commit: (snapshot: CodexUsageSnapshot) => void,
+	signal?: AbortSignal | undefined,
+): Promise<CodexUsageSnapshot> {
+	const session = foundation.currentSession();
+	if (!session) throw new Error("Codex usage is unavailable before Session start.");
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program, { signal });
+	await foundation.close(operation, exit);
+	if (signal?.aborted) throw signal.reason;
+	if (Exit.isFailure(exit)) {
+		if (Cause.hasInterrupts(exit.cause)) throw new Error("Codex usage request was cancelled.");
+		throw Cause.squash(exit.cause);
+	}
+	if (!foundation.isCurrent(session)) throw new Error("Codex usage request was cancelled.");
+	commit(exit.value);
+	return exit.value;
+}
+
 export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
+	const foundation = installEffectFoundation(pi);
 	const settings = await CodexSettingsStore.load();
 	const status = getCodexStatusChannel(pi);
 	const tools = registerCodexTools(pi);
@@ -33,10 +57,17 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 	const controls = (ctx: ExtensionContext): CodexControls => ({
 		getFast: () => settings.get().fast,
 		getUsage: () => usage,
-		async refreshUsage(signal) {
-			usage = await fetchCodexUsage(ctx, fetch, signal);
-			publishStatus();
-			return usage;
+		refreshUsage(signal) {
+			return runCodexUsageOperation(
+				foundation,
+				fetchCodexUsage(ctx),
+				(snapshot) => {
+					if (!active) throw new Error("Codex usage request was cancelled.");
+					usage = snapshot;
+					publishStatus();
+				},
+				signal,
+			);
 		},
 		async setFast(enabled) {
 			await settings.setFast(enabled);

@@ -10,6 +10,11 @@ refresh usage, overlapping post-run requests collapse into one trailing refresh,
 snapshot. Native helpers start only for an actual Tool call. Missing authentication, an unsupported model, or an
 unavailable native helper becomes a bounded command or Tool error; ordinary Pi work remains available.
 
+Each usage refresh runs as one Session-owned Effect operation. Effect owns its ten-second timeout and caller
+cancellation, while the Capability adapter retains the native authenticated `fetch`. The Pi-facing adapter projects
+typed failures back to the existing Command Dialog and notification outcomes; a completion from a replaced Session
+cannot update the shared usage snapshot or Statusline.
+
 `imagegen` is enabled only for image-capable OpenAI Codex Responses models and always requests `gpt-image-2`.
 The current certified native-helper target is Linux x64.
 
