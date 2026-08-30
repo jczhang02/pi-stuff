@@ -18,6 +18,10 @@ not code and remain outside code checks.
 - `check:repository` enforces the 800-line limit across repository code and recursively enforces the 120-line function
   limit in JavaScript and TypeScript. It audits tracked and non-ignored untracked files while excluding deleted files,
   binary assets, prose, and report artifacts.
+- The same check owns the Effect migration boundary inventory. Production Source that imports Effect must be governed;
+  Effect runners are allowed only in listed Pi-facing adapters, and governed Source may use direct native effects only
+  in listed Capability adapters. Inventory entries are exact existing Source paths: duplicates and missing paths fail
+  the check, and each migration expands the governed set without creating a directory-wide quality exemption.
 - Splitting a file must reduce responsibilities, mutable state, branching, or concepts held at once. Moving unchanged
   complexity into mechanically named fragments does not satisfy the standard.
 - Code-quality work reports before-and-after physical line counts. Treat the counts as review evidence, not an

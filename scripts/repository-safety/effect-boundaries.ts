@@ -1,0 +1,379 @@
+import { stat } from "node:fs/promises";
+import { join, posix } from "node:path";
+import ts from "typescript";
+
+const PRODUCTION_SOURCE_PATTERN = /^packages\/pi-stuff\/src\/.*\.[cm]?[jt]sx?$/u;
+const EFFECT_MODULE_PATTERN = /^effect(?:\/|$)/u;
+const EFFECT_NAMESPACE_EXPORTS = new Set(["Effect", "Runtime"]);
+const EFFECT_RUNNERS = new Set(["runCallback", "runFork", "runPromise", "runPromiseExit", "runSync", "runSyncExit"]);
+const CHILD_PROCESS_FUNCTIONS = new Set(["exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync"]);
+const TIMER_FUNCTIONS = new Set(["setImmediate", "setInterval", "setTimeout"]);
+const ASYNC_FILESYSTEM_FUNCTIONS = new Set([
+	"access",
+	"appendFile",
+	"chmod",
+	"chown",
+	"copyFile",
+	"cp",
+	"lchmod",
+	"lchown",
+	"link",
+	"lstat",
+	"lutimes",
+	"mkdir",
+	"mkdtemp",
+	"open",
+	"opendir",
+	"readFile",
+	"readdir",
+	"readlink",
+	"realpath",
+	"rename",
+	"rm",
+	"rmdir",
+	"stat",
+	"statfs",
+	"symlink",
+	"truncate",
+	"unlink",
+	"utimes",
+	"watch",
+	"writeFile",
+]);
+
+export interface EffectBoundaryInventory {
+	readonly governedSources: readonly string[];
+	readonly nativeAdapters: readonly string[];
+	readonly runnerAdapters: readonly string[];
+}
+
+export interface EffectBoundaryFinding {
+	readonly path: string;
+	readonly rule: string;
+}
+
+export const EFFECT_BOUNDARY_INVENTORY = {
+	governedSources: ["packages/pi-stuff/src/shared/effect-foundation.ts"],
+	nativeAdapters: [],
+	runnerAdapters: ["packages/pi-stuff/src/shared/effect-foundation.ts"],
+} as const satisfies EffectBoundaryInventory;
+
+type NativeNamespace = "child-process" | "filesystem" | "filesystem-promises" | "timers" | "worker";
+
+interface SourceBindings {
+	effectImportLine: number | undefined;
+	readonly effectNamespaces: Set<string>;
+	readonly effectPackageNamespaces: Set<string>;
+	readonly runnerFunctions: Map<string, string>;
+	readonly nativeConstructors: Map<string, string>;
+	readonly nativeFunctions: Map<string, string>;
+	readonly nativeNamespaces: Map<string, NativeNamespace>;
+}
+
+function sourceLine(sourceFile: ts.SourceFile, node: ts.Node): number {
+	return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+}
+
+function moduleSpecifier(statement: ts.ImportDeclaration): string | undefined {
+	return ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : undefined;
+}
+
+function importedName(element: ts.ImportSpecifier): string {
+	return element.propertyName?.text ?? element.name.text;
+}
+
+function nativeNamespace(moduleName: string): NativeNamespace | undefined {
+	if (moduleName === "child_process" || moduleName === "node:child_process") return "child-process";
+	if (moduleName === "fs" || moduleName === "node:fs") return "filesystem";
+	if (moduleName === "fs/promises" || moduleName === "node:fs/promises") return "filesystem-promises";
+	if (
+		moduleName === "timers" ||
+		moduleName === "node:timers" ||
+		moduleName === "timers/promises" ||
+		moduleName === "node:timers/promises"
+	) {
+		return "timers";
+	}
+	if (moduleName === "worker_threads" || moduleName === "node:worker_threads") return "worker";
+	return undefined;
+}
+
+function addNativeImport(bindings: SourceBindings, namespace: NativeNamespace, original: string, local: string): void {
+	if (namespace === "child-process" && CHILD_PROCESS_FUNCTIONS.has(original)) {
+		bindings.nativeFunctions.set(local, `process.${original}`);
+	} else if (namespace === "timers" && TIMER_FUNCTIONS.has(original)) {
+		bindings.nativeFunctions.set(local, `timer.${original}`);
+	} else if (
+		(namespace === "filesystem" || namespace === "filesystem-promises") &&
+		ASYNC_FILESYSTEM_FUNCTIONS.has(original)
+	) {
+		bindings.nativeFunctions.set(local, `filesystem.${original}`);
+	} else if (namespace === "worker" && original === "Worker") {
+		bindings.nativeConstructors.set(local, "Worker");
+	}
+}
+
+function collectImports(sourceFile: ts.SourceFile): SourceBindings {
+	const bindings: SourceBindings = {
+		effectImportLine: undefined,
+		effectNamespaces: new Set(),
+		effectPackageNamespaces: new Set(),
+		runnerFunctions: new Map(),
+		nativeConstructors: new Map(),
+		nativeFunctions: new Map(),
+		nativeNamespaces: new Map(),
+	};
+	for (const statement of sourceFile.statements) {
+		if (!ts.isImportDeclaration(statement)) continue;
+		const moduleName = moduleSpecifier(statement);
+		const clause = statement.importClause;
+		if (!moduleName || !clause) continue;
+		if (EFFECT_MODULE_PATTERN.test(moduleName)) {
+			bindings.effectImportLine ??= sourceLine(sourceFile, statement);
+			if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+				const local = clause.namedBindings.name.text;
+				(moduleName === "effect" ? bindings.effectPackageNamespaces : bindings.effectNamespaces).add(local);
+			}
+			if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+				for (const element of clause.namedBindings.elements) {
+					const original = importedName(element);
+					if (EFFECT_NAMESPACE_EXPORTS.has(original)) bindings.effectNamespaces.add(element.name.text);
+					if (EFFECT_RUNNERS.has(original)) bindings.runnerFunctions.set(element.name.text, original);
+				}
+			}
+		}
+		const namespace = nativeNamespace(moduleName);
+		if (!namespace || !clause.namedBindings) continue;
+		if (ts.isNamespaceImport(clause.namedBindings)) {
+			bindings.nativeNamespaces.set(clause.namedBindings.name.text, namespace);
+		} else {
+			for (const element of clause.namedBindings.elements) {
+				addNativeImport(bindings, namespace, importedName(element), element.name.text);
+			}
+		}
+	}
+	return bindings;
+}
+
+function staticMember(
+	expression: ts.Expression,
+): { readonly object: ts.Expression; readonly property: string } | undefined {
+	if (ts.isPropertyAccessExpression(expression)) {
+		return { object: expression.expression, property: expression.name.text };
+	}
+	if (
+		ts.isElementAccessExpression(expression) &&
+		expression.argumentExpression &&
+		(ts.isStringLiteral(expression.argumentExpression) ||
+			ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression))
+	) {
+		return { object: expression.expression, property: expression.argumentExpression.text };
+	}
+	return undefined;
+}
+
+function effectRunner(expression: ts.Expression, bindings: SourceBindings): string | undefined {
+	if (ts.isIdentifier(expression)) return bindings.runnerFunctions.get(expression.text);
+	const member = staticMember(expression);
+	if (!member || !EFFECT_RUNNERS.has(member.property)) return undefined;
+	if (ts.isIdentifier(member.object) && bindings.effectNamespaces.has(member.object.text)) return member.property;
+	const parent = staticMember(member.object);
+	if (
+		parent &&
+		ts.isIdentifier(parent.object) &&
+		bindings.effectPackageNamespaces.has(parent.object.text) &&
+		EFFECT_NAMESPACE_EXPORTS.has(parent.property)
+	) {
+		return member.property;
+	}
+	return undefined;
+}
+
+function nativeNamespaceFunction(namespace: NativeNamespace, property: string): string | undefined {
+	if (namespace === "child-process" && CHILD_PROCESS_FUNCTIONS.has(property)) return `process.${property}`;
+	if (namespace === "timers" && TIMER_FUNCTIONS.has(property)) return `timer.${property}`;
+	if (
+		(namespace === "filesystem" || namespace === "filesystem-promises") &&
+		ASYNC_FILESYSTEM_FUNCTIONS.has(property)
+	) {
+		return `filesystem.${property}`;
+	}
+	return undefined;
+}
+
+function nativeFunction(expression: ts.Expression, bindings: SourceBindings): string | undefined {
+	if (ts.isIdentifier(expression)) {
+		if (expression.text === "fetch") return "network.fetch";
+		if (TIMER_FUNCTIONS.has(expression.text)) return `timer.${expression.text}`;
+		return bindings.nativeFunctions.get(expression.text);
+	}
+	const member = staticMember(expression);
+	if (!member) return undefined;
+	if (ts.isIdentifier(member.object)) {
+		if (member.object.text === "Bun" && (member.property === "spawn" || member.property === "spawnSync")) {
+			return `process.Bun.${member.property}`;
+		}
+		const namespace = bindings.nativeNamespaces.get(member.object.text);
+		if (namespace) return nativeNamespaceFunction(namespace, member.property);
+	}
+	const parent = staticMember(member.object);
+	if (
+		parent?.property === "promises" &&
+		ts.isIdentifier(parent.object) &&
+		bindings.nativeNamespaces.get(parent.object.text) === "filesystem" &&
+		ASYNC_FILESYSTEM_FUNCTIONS.has(member.property)
+	) {
+		return `filesystem.${member.property}`;
+	}
+	return undefined;
+}
+
+function nativeConstructor(expression: ts.Expression, bindings: SourceBindings): string | undefined {
+	if (ts.isIdentifier(expression)) {
+		if (expression.text === "Promise" || expression.text === "AbortController" || expression.text === "Worker") {
+			return expression.text;
+		}
+		return bindings.nativeConstructors.get(expression.text);
+	}
+	const member = staticMember(expression);
+	if (
+		member?.property === "Worker" &&
+		ts.isIdentifier(member.object) &&
+		bindings.nativeNamespaces.get(member.object.text) === "worker"
+	) {
+		return "Worker";
+	}
+	return undefined;
+}
+
+function destructuredBinding(
+	element: ts.BindingElement,
+): { readonly local: string; readonly original: string } | undefined {
+	if (!ts.isIdentifier(element.name)) return undefined;
+	const property = element.propertyName;
+	if (property && !ts.isIdentifier(property) && !ts.isStringLiteral(property)) return undefined;
+	return { local: element.name.text, original: property?.text ?? element.name.text };
+}
+
+function collectAliases(sourceFile: ts.SourceFile, bindings: SourceBindings): void {
+	const visit = (node: ts.Node): void => {
+		if (ts.isVariableDeclaration(node) && node.initializer) {
+			if (ts.isIdentifier(node.name)) {
+				const runner = effectRunner(node.initializer, bindings);
+				const native = nativeFunction(node.initializer, bindings);
+				if (runner) bindings.runnerFunctions.set(node.name.text, runner);
+				if (native) bindings.nativeFunctions.set(node.name.text, native);
+			} else if (ts.isObjectBindingPattern(node.name) && ts.isIdentifier(node.initializer)) {
+				for (const element of node.name.elements) {
+					const binding = destructuredBinding(element);
+					if (!binding) continue;
+					if (bindings.effectNamespaces.has(node.initializer.text) && EFFECT_RUNNERS.has(binding.original)) {
+						bindings.runnerFunctions.set(binding.local, binding.original);
+					}
+					if (
+						node.initializer.text === "Bun" &&
+						(binding.original === "spawn" || binding.original === "spawnSync")
+					) {
+						bindings.nativeFunctions.set(binding.local, `process.Bun.${binding.original}`);
+					}
+					const namespace = bindings.nativeNamespaces.get(node.initializer.text);
+					const native = namespace && nativeNamespaceFunction(namespace, binding.original);
+					if (native) bindings.nativeFunctions.set(binding.local, native);
+				}
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+}
+
+export function auditEffectBoundarySource(
+	path: string,
+	source: string,
+	inventory: EffectBoundaryInventory = EFFECT_BOUNDARY_INVENTORY,
+): EffectBoundaryFinding[] {
+	if (!PRODUCTION_SOURCE_PATTERN.test(path)) return [];
+	const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+	const bindings = collectImports(sourceFile);
+	const governed = inventory.governedSources.includes(path);
+	if (!governed && bindings.effectImportLine === undefined) return [];
+	collectAliases(sourceFile, bindings);
+	const findings: EffectBoundaryFinding[] = [];
+	if (!governed && bindings.effectImportLine !== undefined) {
+		findings.push({ path, rule: `effect-source-not-governed:${String(bindings.effectImportLine)}` });
+	}
+	const allowRunners = inventory.runnerAdapters.includes(path);
+	const allowNative = inventory.nativeAdapters.includes(path);
+	const visit = (node: ts.Node): void => {
+		if (ts.isCallExpression(node)) {
+			const runner = effectRunner(node.expression, bindings);
+			if (runner && !allowRunners) {
+				findings.push({
+					path,
+					rule: `effect-runner-outside-adapter:${runner}:${String(sourceLine(sourceFile, node))}`,
+				});
+			}
+			const native = nativeFunction(node.expression, bindings);
+			if (native && governed && !allowNative) {
+				findings.push({
+					path,
+					rule: `native-effect-outside-adapter:${native}:${String(sourceLine(sourceFile, node))}`,
+				});
+			}
+		} else if (ts.isNewExpression(node) && node.expression) {
+			const native = nativeConstructor(node.expression, bindings);
+			if (native && governed && !allowNative) {
+				findings.push({
+					path,
+					rule: `native-effect-outside-adapter:${native}:${String(sourceLine(sourceFile, node))}`,
+				});
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+	return findings;
+}
+
+function validInventoryPath(path: string): boolean {
+	return PRODUCTION_SOURCE_PATTERN.test(path) && posix.normalize(path) === path && !path.includes("\\");
+}
+
+export async function auditEffectBoundaryInventory(
+	root: string,
+	publicPaths: readonly string[],
+	inventory: EffectBoundaryInventory = EFFECT_BOUNDARY_INVENTORY,
+): Promise<EffectBoundaryFinding[]> {
+	const findings: EffectBoundaryFinding[] = [];
+	const publicPathSet = new Set(publicPaths);
+	const governed = new Set(inventory.governedSources);
+	const lists = [
+		["governed-sources", inventory.governedSources],
+		["native-adapters", inventory.nativeAdapters],
+		["runner-adapters", inventory.runnerAdapters],
+	] as const;
+	for (const [name, paths] of lists) {
+		const seen = new Set<string>();
+		for (const path of paths) {
+			if (seen.has(path)) findings.push({ path, rule: `effect-boundary-inventory-duplicate:${name}` });
+			seen.add(path);
+			if (!validInventoryPath(path)) {
+				findings.push({ path, rule: `effect-boundary-inventory-invalid:${name}` });
+				continue;
+			}
+			let exists = publicPathSet.has(path);
+			if (exists) {
+				try {
+					exists = (await stat(join(root, path))).isFile();
+				} catch {
+					exists = false;
+				}
+			}
+			if (!exists) findings.push({ path, rule: `effect-boundary-inventory-path-missing:${name}` });
+			if (name !== "governed-sources" && !governed.has(path)) {
+				findings.push({ path, rule: `effect-boundary-adapter-not-governed:${name}` });
+			}
+		}
+	}
+	return findings;
+}

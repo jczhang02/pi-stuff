@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
+import {
+	auditEffectBoundaryInventory,
+	auditEffectBoundarySource,
+	type EffectBoundaryInventory,
+} from "../scripts/repository-safety/effect-boundaries.js";
 
 const TEMPORARY_ROOTS: string[] = [];
 const SUITE_CAPABILITIES = [
@@ -67,6 +72,7 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 		)}\n`,
 	);
 	await writeLocalPackage(root, LOCAL_PACKAGE);
+	await writeFixture(root, "packages/pi-stuff/src/shared/effect-foundation.ts", "export {};\n");
 	return root;
 }
 
@@ -463,6 +469,105 @@ test("rejects literal Host colors but permits browser-owned palettes", async () 
 	expect(await auditRepositoryFiles(root)).toEqual([
 		{ path: "packages/pi-stuff/src/goal/ansi.ts", rule: "hard-coded-host-color" },
 		{ path: "packages/pi-stuff/src/goal/index.ts", rule: "hard-coded-host-color" },
+	]);
+});
+
+test("confines Effect runners to governed Pi-facing adapters across aliases", async () => {
+	const root = await createRepository();
+	await writeFixture(
+		root,
+		"packages/pi-stuff/src/shared/effect-foundation.ts",
+		[
+			'import { Effect } from "effect";',
+			"const { runPromise: execute } = Effect;",
+			"void Effect.runPromise(Effect.void);",
+			"void execute(Effect.void);",
+		].join("\n"),
+	);
+	const rejectedPath = "packages/pi-stuff/src/shared/escaped-runner.ts";
+	await writeFixture(
+		root,
+		rejectedPath,
+		[
+			'import * as Runtime from "effect/Runtime";',
+			'import { runPromiseExit as executeExit } from "effect/Effect";',
+			"const execute = Runtime.runPromise;",
+			"const { runSync: executeSync } = Runtime;",
+			"void execute(runtime)(program);",
+			"void executeExit(program);",
+			"void executeSync(program);",
+			"unrelated.runPromise(program);",
+		].join("\n"),
+	);
+
+	expect(await auditRepositoryFiles(root)).toEqual([
+		{ path: rejectedPath, rule: "effect-source-not-governed:1" },
+		{ path: rejectedPath, rule: "effect-runner-outside-adapter:runPromise:5" },
+		{ path: rejectedPath, rule: "effect-runner-outside-adapter:runPromiseExit:6" },
+		{ path: rejectedPath, rule: "effect-runner-outside-adapter:runSync:7" },
+	]);
+});
+
+test("confines native effects to explicit adapters and resolves import and destructuring aliases", () => {
+	const allowedPath = "packages/pi-stuff/src/codex/usage.ts";
+	const rejectedPath = "packages/pi-stuff/src/codex/core.ts";
+	const inventory = {
+		governedSources: [allowedPath, rejectedPath],
+		nativeAdapters: [allowedPath],
+		runnerAdapters: [],
+	} satisfies EffectBoundaryInventory;
+	const source = [
+		'import { spawn as launch } from "node:child_process";',
+		'import { readFile as load } from "node:fs/promises";',
+		'import { setTimeout as delay } from "node:timers/promises";',
+		'import { Worker as Thread } from "node:worker_threads";',
+		"const { spawn: bunLaunch } = Bun;",
+		"export function runNativeEffects() {",
+		"\tnew Promise(() => undefined);",
+		"\tnew AbortController();",
+		"\tvoid fetch(url);",
+		"\tsetTimeout(callback, 1);",
+		"\tsetInterval(callback, 1);",
+		"\tnew Thread(workerPath);",
+		"\tlaunch(command);",
+		"\tload(path);",
+		"\tdelay(1);",
+		"\tBun.spawn(command);",
+		"\tbunLaunch(command);",
+		"\tunrelated.runPromise(program);",
+		"\tpi.exec(command);",
+		"}",
+	].join("\n");
+
+	expect(auditEffectBoundarySource(allowedPath, source, inventory)).toEqual([]);
+	expect(auditEffectBoundarySource(rejectedPath, source, inventory)).toEqual([
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:Promise:7" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:AbortController:8" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:network.fetch:9" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:timer.setTimeout:10" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:timer.setInterval:11" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:Worker:12" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:process.spawn:13" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:filesystem.readFile:14" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:timer.setTimeout:15" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:process.Bun.spawn:16" },
+		{ path: rejectedPath, rule: "native-effect-outside-adapter:process.Bun.spawn:17" },
+	]);
+});
+
+test("rejects duplicate and missing Effect boundary inventory paths", async () => {
+	const root = await createRepository();
+	const existingPath = "packages/pi-stuff/src/shared/effect-foundation.ts";
+	const missingPath = "packages/pi-stuff/src/shared/missing.ts";
+	const inventory = {
+		governedSources: [existingPath, existingPath, missingPath],
+		nativeAdapters: [],
+		runnerAdapters: [existingPath],
+	} satisfies EffectBoundaryInventory;
+
+	expect(await auditEffectBoundaryInventory(root, [existingPath], inventory)).toEqual([
+		{ path: existingPath, rule: "effect-boundary-inventory-duplicate:governed-sources" },
+		{ path: missingPath, rule: "effect-boundary-inventory-path-missing:governed-sources" },
 	]);
 });
 

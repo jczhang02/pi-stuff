@@ -6,6 +6,7 @@ import { Check } from "typebox/value";
 import ts from "typescript";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { SUITE_REGISTRY_SCHEMA } from "./generate-suite.js";
+import { auditEffectBoundaryInventory, auditEffectBoundarySource } from "./repository-safety/effect-boundaries.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);
 const FORBIDDEN_PACKAGE_FILES = new Set(["AGENTS.md", "CONTEXT.md"]);
@@ -379,7 +380,7 @@ async function auditTextFile(root: string, path: string): Promise<SafetyFinding[
 		return [];
 	}
 	const text = content.toString("utf8");
-	const findings = auditSourceLimits(path, text);
+	const findings = [...auditSourceLimits(path, text), ...auditEffectBoundarySource(path, text)];
 	if (PRIVATE_PATH_PATTERNS.some((pattern) => pattern.test(text))) {
 		findings.push({ path, rule: "private-absolute-path" });
 	}
@@ -694,6 +695,7 @@ export async function auditRepositoryFiles(rootDirectory: string): Promise<Safet
 	const root = resolve(rootDirectory);
 	const paths = await listPublicFiles(root);
 	const findings: SafetyFinding[] = [];
+	findings.push(...(await auditEffectBoundaryInventory(root, paths)));
 	const suiteSchemaPath = "schemas/suite.schema.json";
 	if (paths.includes(suiteSchemaPath)) {
 		findings.push(...(await auditSuiteSchema(root, suiteSchemaPath)));
