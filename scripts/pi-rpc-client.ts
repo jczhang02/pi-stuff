@@ -149,16 +149,22 @@ export class PiRpcClient {
 	}
 
 	private async closeProcess(): Promise<void> {
-		if (this.child.exitCode !== null) return;
+		if (this.processExited()) return;
 		this.child.stdin.end();
 		await this.signalAndWait("SIGTERM");
-		if (this.child.exitCode !== null) return;
+		if (this.processExited()) return;
 		await this.signalAndWait("SIGKILL");
-		if (this.child.exitCode === null) this.fail("Pi RPC process did not terminate");
+		if (!this.processExited()) this.fail("Pi RPC process did not terminate");
+	}
+
+	private processExited(): boolean {
+		return this.child.exitCode !== null || this.child.signalCode !== null;
 	}
 
 	private async signalAndWait(signal: NodeJS.Signals): Promise<void> {
+		if (this.processExited()) return;
 		this.child.kill(signal);
+		if (this.processExited()) return;
 		await Promise.race([once(this.child, "exit"), delay(5_000)]);
 	}
 }
