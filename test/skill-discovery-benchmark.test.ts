@@ -55,7 +55,7 @@ function successfulObservations(): SkillDiscoveryObservation[] {
 
 test("freezes thirty triads and six arm permutations five times each", () => {
 	const manifest = createSkillDiscoveryManifest();
-	expect(manifest.seed).toBe(20_260_831);
+	expect(manifest.seed).toBe(20_260_901);
 	expect(manifest.tasks).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.id))).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.expectedToken))).toHaveLength(30);
@@ -85,11 +85,11 @@ test("allows both direct and Code Mode surfaces through the Host strict Tool all
 
 test("parses only the exact deterministic manifest", () => {
 	const text = serializeSkillDiscoveryManifest();
-	expect(readFileSync(new URL("fixtures/skill-discovery-confirmation-manifest.jsonl", import.meta.url), "utf8")).toBe(
+	expect(readFileSync(new URL("fixtures/skill-discovery-direct-read-manifest.jsonl", import.meta.url), "utf8")).toBe(
 		text,
 	);
 	expect(parseSkillDiscoveryManifest(text)).toEqual(createSkillDiscoveryManifest());
-	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260831', '"seed":1'))).toThrow(
+	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260901', '"seed":1'))).toThrow(
 		"manifest does not match",
 	);
 	expect(() => parseSkillDiscoveryManifest(`${text}not-json\n`)).toThrow("not valid JSON Lines");
@@ -312,7 +312,7 @@ test("uses Wilson intervals, whole-triad bootstrap, and exact two-sided McNemar"
 		difference: 1,
 		interval95: [1, 1],
 		iterations: BOOTSTRAP_ITERATIONS,
-		seed: 20_260_831,
+		seed: 20_260_901,
 	});
 	expect(
 		exactMcNemar([
@@ -348,6 +348,19 @@ test("passes only the complete preregistered paired gate", () => {
 	expect(report.comparisons.suite.bootstrap.interval95).toEqual([0, 0]);
 	expect(report.comparisons.code.bootstrap.interval95).toEqual([0, 0]);
 	expect(report.verdict).toEqual({ claim: "non-inferior-under-preregistered-gate", passed: true });
+	const unsafe = observations.map((observation, index) =>
+		index === 0 ? { ...observation, safetyViolation: true } : observation,
+	);
+	expect(
+		evaluateSkillDiscoveryBenchmark(unsafe, {
+			armSchedule: true,
+			host: true,
+			manifest: true,
+			providerConfiguration: true,
+			reportPrivacyViolations: 0,
+			source: true,
+		}).verdict,
+	).toEqual({ claim: "failed", passed: false });
 
 	const firstOn = observations.findIndex((observation) => observation.arm === "on");
 	const failed = [...observations];

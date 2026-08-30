@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: e64461847d968df29ea6b41723b53399cb5f7b4c854324653b0900f428a8e089 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 01ef871bbbf60c468ef40d39305e02c2f4f216e2d926f3b215c50c5d2afd4e40 -->
 # 研究
 
 此目录包含有日期的调查、测量、比较和决策输入。每个文件都是针对其所述仓库快照和源代码修订版本的证据，而不是当前产品或兼容性契约。
@@ -11,6 +11,7 @@
 
 - [Code Mode：Cloudflare/OpenAI 设计](code-mode-cloudflare-openai-design-20260815.md)
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
+- [Skill Discovery 直接读取真实模型研究](skill-discovery-direct-read-20260830.md)
 - [Skill Discovery 真实模型 confirmation](skill-discovery-confirmation-20260830.md)
 - [Skill Discovery 真实模型 benchmark](skill-discovery-benchmark-20260830.md)
 - [仓库代码量缩减](code-volume-reduction-20260823.md)

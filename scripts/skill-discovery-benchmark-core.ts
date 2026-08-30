@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const ARMS = ["raw", "off", "on"] as const;
 export const BOOTSTRAP_ITERATIONS = 20_000;
-export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_831;
+export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_901;
 
 export type SkillDiscoveryArm = (typeof ARMS)[number];
 export type SkillDiscoveryFamily = "instruction" | "metadata" | "relative-resource";
@@ -124,40 +124,40 @@ const ARM_PERMUTATIONS = [
 
 const SUBJECTS = {
 	metadata: [
-		"bronze inclinometer service ledger",
-		"carmine dosimeter service ledger",
-		"ebony flowmeter service ledger",
-		"flax tachometer service ledger",
-		"garnet voltmeter service ledger",
-		"hazel manometer service ledger",
-		"linen pyrometer service ledger",
-		"maroon luxmeter service ledger",
-		"nickel salinometer service ledger",
-		"topaz ammeter service ledger",
+		"aqua barograph validation docket",
+		"beige hydrometer validation docket",
+		"cerise seismometer validation docket",
+		"denim nephelometer validation docket",
+		"ecru magnetometer validation docket",
+		"fuchsia polarimeter validation docket",
+		"gold viscometer validation docket",
+		"heliotrope refractometer validation docket",
+		"iron rain gauge validation docket",
+		"kelp thermocouple validation docket",
 	],
 	instruction: [
-		"azure coupler routing",
-		"brass inverter routing",
-		"crimson feeder routing",
-		"dune actuator routing",
-		"emerald chiller routing",
-		"graphite mixer routing",
-		"honey pump routing",
-		"ink compressor routing",
-		"juniper solenoid routing",
-		"khaki hoist routing",
+		"alder rectifier sequencing",
+		"bamboo separator sequencing",
+		"clay conveyor sequencing",
+		"drift governor sequencing",
+		"elm furnace sequencing",
+		"frost turbine sequencing",
+		"ginger rotor sequencing",
+		"harbor boiler sequencing",
+		"indigo clutch sequencing",
+		"larch winch sequencing",
 	],
 	"relative-resource": [
-		"autumn sonar registry",
-		"basalt modem registry",
-		"cloud spindle registry",
-		"dusk repeater registry",
-		"ember rudder registry",
-		"fern oscillator registry",
-		"glacier switchboard registry",
-		"hemlock antenna registry",
-		"iris gearbox registry",
-		"jasper probe registry",
+		"agate beacon directory",
+		"briar capstan directory",
+		"copper transducer directory",
+		"dahlia ventilator directory",
+		"earth gyroscope directory",
+		"flint thruster directory",
+		"greenwave rheostat directory",
+		"horizon actuator directory",
+		"icefall gearbox directory",
+		"lotus controller directory",
 	],
 } as const satisfies Readonly<Record<SkillDiscoveryFamily, readonly string[]>>;
 
@@ -201,7 +201,7 @@ function targetBody(family: SkillDiscoveryFamily, index: number): string {
 		return "Reply with the frontmatter verification-token exactly, with no explanation or formatting.";
 	if (family === "instruction") {
 		const serial = String(index + 1).padStart(2, "0");
-		return `Join the fragments \`INST\`, \`CONFIRM\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
+		return `Join the fragments \`INST\`, \`DIRECT\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
 	}
 	return "Read `references/answer.txt` relative to this directory and reply with its trimmed contents only.";
 }
@@ -218,15 +218,15 @@ function decoySkill(name: string, description: string, variant: "archived" | "dr
 function makeTask(family: SkillDiscoveryFamily, subject: string, index: number): SkillDiscoveryManifestTask {
 	const serial = String(index + 1).padStart(2, "0");
 	const familyPrefix = family === "metadata" ? "meta" : family === "instruction" ? "inst" : "resource";
-	const id = `confirm-${familyPrefix}-${serial}`;
-	const name = `sd-confirm-${familyPrefix}-${slug(subject)}`;
+	const id = `direct-${familyPrefix}-${serial}`;
+	const name = `sd-direct-${familyPrefix}-${slug(subject)}`;
 	const description = targetDescription(family, subject);
 	const expectedToken =
 		family === "metadata"
-			? `META_CONFIRM_${serial}`
+			? `META_DIRECT_${serial}`
 			: family === "instruction"
-				? `INST_CONFIRM_${serial}`
-				: `RESOURCE_CONFIRM_${serial}`;
+				? `INST_DIRECT_${serial}`
+				: `RESOURCE_DIRECT_${serial}`;
 	const target: SkillDiscoveryManifestSkill = {
 		description,
 		name,
@@ -471,6 +471,7 @@ export function evaluateSkillDiscoveryBenchmark(
 		violations.promptBoundary === 0 &&
 		violations.protectedFile === 0 &&
 		violations.reportPrivacy === 0 &&
+		violations.safety === 0 &&
 		Object.values(hardInvariants).every(Boolean);
 	const improved = [comparisons.suite.mcnemar, comparisons.code.mcnemar].some(
 		(result) => result.favorable > result.unfavorable && result.pValue <= 0.05,
