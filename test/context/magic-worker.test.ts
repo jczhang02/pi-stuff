@@ -15,16 +15,23 @@ import type {
 	SessionStartEvent,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type {
 	MagicContextEventMap,
 	MagicContextEventName,
 } from "../../packages/pi-stuff/src/context-management/magic-context-types.js";
 import { magicContextWorkerFactory } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
 import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-management/magic-worker-context.js";
-import { writeMagicWorkerSyncResponse } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
+import {
+	applyMagicWorkerHostCompaction,
+	applyMagicWorkerHostEffect,
+	writeMagicWorkerSyncResponse,
+} from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
 import {
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
+	type MagicWorkerEffectMessage,
 	type MagicWorkerInvocationRequest,
+	type MagicWorkerSyncEffectMessage,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
 import { installEffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
@@ -302,6 +309,114 @@ test("an oversized synchronous Host response still wakes the Worker with a bound
 	const length = Atomics.load(control, 1);
 	const response = new TextDecoder().decode(new Uint8Array(buffer, Int32Array.BYTES_PER_ELEMENT * 2, length));
 	expect(response).toBe("Magic Context Host effect response exceeded its buffer.");
+});
+
+test("the Host interpreter preserves append, send, notification, status, and compaction effects", () => {
+	const observed: string[] = [];
+	const pi = createExtensionApi({
+		appendEntry: (customType) => observed.push(`append:${customType}`),
+		sendMessage: (message) => observed.push(`send:${message.customType}`),
+		sendUserMessage: (content) => observed.push(`user:${content}`),
+	});
+	const ctx = createExtensionContext({
+		ui: {
+			notify: (message) => observed.push(`notify:${message}`),
+			setStatus: (key, value) => observed.push(`status:${key}:${value ?? ""}`),
+		},
+	});
+	Reflect.set(ctx.sessionManager, "appendCompaction", (summary: string) => {
+		observed.push(`compact:${summary}`);
+		return "compaction-entry";
+	});
+	const effects = [
+		{ args: ["worker-entry", { value: 1 }], name: "appendEntry", sessionId: "session", type: "effect" },
+		{
+			args: [{ content: "continue", customType: "worker-message", display: false }],
+			name: "sendMessage",
+			sessionId: "session",
+			type: "effect",
+		},
+		{ args: ["next"], name: "sendUserMessage", sessionId: "session", type: "effect" },
+		{ args: ["notice", "info"], name: "notify", sessionId: "session", type: "effect" },
+		{ args: ["magic", "working"], name: "setStatus", sessionId: "session", type: "effect" },
+	] satisfies MagicWorkerEffectMessage[];
+	let synchronizations = 0;
+	for (const effect of effects) {
+		Effect.runSync(
+			applyMagicWorkerHostEffect(pi, ctx, effect, () => {
+				synchronizations++;
+			}),
+		);
+	}
+	const compaction = {
+		args: ["managed summary", "first-kept", 42_000],
+		buffer: new SharedArrayBuffer(MAGIC_WORKER_SYNC_BUFFER_BYTES),
+		name: "appendCompaction",
+		sessionId: "session",
+		type: "sync-effect",
+	} satisfies MagicWorkerSyncEffectMessage;
+	expect(
+		Effect.runSync(
+			applyMagicWorkerHostCompaction(ctx, compaction, () => {
+				synchronizations++;
+			}),
+		),
+	).toBe("compaction-entry");
+	expect(observed).toEqual([
+		"append:worker-entry",
+		"send:worker-message",
+		"user:next",
+		"notify:notice",
+		"status:magic:working",
+		"compact:managed summary",
+	]);
+	expect(synchronizations).toBe(2);
+});
+
+test("the Host interpreter fails closed for inactive Sessions, Host exceptions, and unsupported compaction", () => {
+	const inactive = {
+		args: ["notice", "info"],
+		name: "notify",
+		sessionId: "inactive",
+		type: "effect",
+	} satisfies MagicWorkerEffectMessage;
+	expect(() =>
+		Effect.runSync(applyMagicWorkerHostEffect(createExtensionApi(), undefined, inactive, () => undefined)),
+	).toThrow("Magic Context emitted 'notify' for an inactive Session.");
+
+	const appendFailure = {
+		args: ["worker-entry"],
+		name: "appendEntry",
+		sessionId: undefined,
+		type: "effect",
+	} satisfies MagicWorkerEffectMessage;
+	expect(() =>
+		Effect.runSync(
+			applyMagicWorkerHostEffect(
+				createExtensionApi({
+					appendEntry: () => {
+						throw new Error("append failed");
+					},
+				}),
+				undefined,
+				appendFailure,
+				() => undefined,
+			),
+		),
+	).toThrow("append failed");
+
+	const ctx = createExtensionContext();
+	Reflect.set(ctx.sessionManager, "appendCompaction", undefined);
+	const unsupported = {
+		args: ["managed summary", "first-kept", 42_000],
+		buffer: new SharedArrayBuffer(MAGIC_WORKER_SYNC_BUFFER_BYTES),
+		name: "appendCompaction",
+		sessionId: "session",
+		type: "sync-effect",
+	} satisfies MagicWorkerSyncEffectMessage;
+	expect(() => Effect.runSync(applyMagicWorkerHostCompaction(ctx, unsupported, () => undefined))).toThrow(
+		"Pi SessionManager does not expose appendCompaction.",
+	);
 });
 
 test("an invocation cancelled while queued never reaches Magic Context", () => {

@@ -117,7 +117,7 @@ export class ContextCapabilityRuntime {
 	private readonly registry: ContextCapabilityRegistry;
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
-	private nativeCompactionPreflight: Promise<void> | undefined;
+	private nativeCompactionPreflight: Deferred.Deferred<void> | undefined;
 	private interactivePaintPending = false;
 	private magicPromptInstalledForSession = false;
 	private readonly suiteCustomContextGuidance = new Set<symbol>();
@@ -179,12 +179,13 @@ export class ContextCapabilityRuntime {
 		this.interactivePaintPending = source === "interactive";
 	}
 
-	yieldForInteractivePaint(): Promise<boolean> | undefined {
+	yieldForInteractivePaint(): Effect.Effect<boolean> | undefined {
 		if (!this.interactivePaintPending) return;
 		this.interactivePaintPending = false;
 		const generation = this.generation;
-		return new Promise((resolveTurn) => {
-			setImmediate(() => resolveTurn(this.isCurrentGeneration(generation)));
+		return Effect.callback((resume) => {
+			const pending = setImmediate(() => resume(Effect.succeed(this.isCurrentGeneration(generation))));
+			return Effect.sync(() => clearImmediate(pending));
 		});
 	}
 
@@ -301,7 +302,7 @@ export class ContextCapabilityRuntime {
 
 	preflightExtremeOverflow(ctx: ExtensionContext): Effect.Effect<void> {
 		if (!this.yieldExtremeOverflowToNative(ctx)) return Effect.void;
-		return nativeEffect(() => this.preflightNativeCustomTurn(ctx, false)).pipe(Effect.ignore);
+		return this.preflightNativeCustomTurn(ctx, false);
 	}
 
 	dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Effect.Effect<void> {
@@ -332,7 +333,7 @@ export class ContextCapabilityRuntime {
 			const pending = [
 				activation ? Deferred.await(activation.deferred).pipe(Effect.asVoid) : Effect.void,
 				cleanup ? Deferred.await(cleanup.deferred) : Effect.void,
-				preflight ? Effect.promise(() => preflight) : Effect.void,
+				preflight ? Deferred.await(preflight) : Effect.void,
 				this.sessionStarts.withPermit(Effect.void),
 				event && ctx
 					? Effect.forEach(
@@ -421,7 +422,7 @@ export class ContextCapabilityRuntime {
 		return this.activate(ctx, activation === "direct-user" ? "input" : "automatic-turn").pipe(
 			Effect.flatMap(() =>
 				options?.triggerTurn === true && idle && this.state.state !== "active"
-					? nativeEffect(() => this.preflightNativeCustomTurn(ctx)).pipe(Effect.ignore)
+					? this.preflightNativeCustomTurn(ctx)
 					: Effect.void,
 			),
 		);
@@ -451,73 +452,78 @@ export class ContextCapabilityRuntime {
 		this.suiteCustomContextGuidance.delete(token);
 		return true;
 	}
-
-	private async preflightNativeCustomTurn(ctx: ExtensionContext, requireIdle = true): Promise<void> {
-		if (this.nativeCompactionPreflight) {
-			await this.nativeCompactionPreflight;
-			return;
-		}
-		if (requireIdle) {
-			try {
-				if (!ctx.isIdle()) return;
-			} catch {
-				return;
-			}
-		}
-		let settings: NativeCompactionSettings | undefined;
-		try {
-			settings = this.dependencies.readNativeCompactionSettings(ctx);
-		} catch (error) {
-			reportDiagnostic({
-				capability: "Context",
-				error,
-				key: "native-custom-turn-settings",
-				severity: "warning",
-				summary: "Native compaction settings could not be read before a Suite custom turn",
-				visibility: "silent",
-			});
-			return;
-		}
-		if (!settings?.enabled || !Number.isFinite(settings.reserveTokens) || settings.reserveTokens < 0) return;
-		const usage = ctx.getContextUsage();
-		if (!usage || usage.tokens === null || usage.contextWindow <= 0) return;
-		if (usage.tokens <= usage.contextWindow - settings.reserveTokens) return;
-
-		const finishPreflight = beginSuiteNativeCompactionPreflight(ctx);
-		let tracked: Promise<void>;
-		tracked = new Promise<void>((resolve) => {
-			let settled = false;
-			const finish = (error?: Error): void => {
-				if (settled) return;
-				settled = true;
-				if (error) {
-					reportDiagnostic({
-						capability: "Context",
-						error,
-						key: "native-custom-turn-compaction",
-						severity: "warning",
-						summary: "Native compaction could not finish before a Suite custom turn",
-						visibility: "silent",
-					});
+	private preflightNativeCustomTurn(ctx: ExtensionContext, requireIdle = true): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (this.nativeCompactionPreflight) return Deferred.await(this.nativeCompactionPreflight);
+			if (requireIdle) {
+				try {
+					if (!ctx.isIdle()) return Effect.void;
+				} catch {
+					return Effect.void;
 				}
-				resolve();
-			};
-			try {
-				ctx.compact({
-					onComplete: () => finish(),
-					onError: finish,
-				});
-			} catch (error) {
-				finish(error instanceof Error ? error : new Error(String(error)));
 			}
-		}).finally(() => {
-			finishPreflight();
-			if (this.nativeCompactionPreflight === tracked) this.nativeCompactionPreflight = undefined;
+			let settings: NativeCompactionSettings | undefined;
+			try {
+				settings = this.dependencies.readNativeCompactionSettings(ctx);
+			} catch (error) {
+				reportDiagnostic({
+					capability: "Context",
+					error,
+					key: "native-custom-turn-settings",
+					severity: "warning",
+					summary: "Native compaction settings could not be read before a Suite custom turn",
+					visibility: "silent",
+				});
+				return Effect.void;
+			}
+			if (!settings?.enabled || !Number.isFinite(settings.reserveTokens) || settings.reserveTokens < 0)
+				return Effect.void;
+			let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+			try {
+				usage = ctx.getContextUsage();
+			} catch {
+				return Effect.void;
+			}
+			if (!usage || usage.tokens === null || usage.contextWindow <= 0) return Effect.void;
+			if (usage.tokens <= usage.contextWindow - settings.reserveTokens) return Effect.void;
+			const finishPreflight = beginSuiteNativeCompactionPreflight(ctx);
+			const flight = Deferred.makeUnsafe<void>();
+			this.nativeCompactionPreflight = flight;
+			return Effect.callback<void>((resume) => {
+				let settled = false;
+				const finish = (error?: Error): void => {
+					if (settled) return;
+					settled = true;
+					if (error) {
+						reportDiagnostic({
+							capability: "Context",
+							error,
+							key: "native-custom-turn-compaction",
+							severity: "warning",
+							summary: "Native compaction could not finish before a Suite custom turn",
+							visibility: "silent",
+						});
+					}
+					resume(Effect.void);
+				};
+				try {
+					ctx.compact({ onComplete: () => finish(), onError: finish });
+				} catch (error) {
+					finish(error instanceof Error ? error : new Error(String(error)));
+				}
+			}).pipe(
+				// Pi exposes no cancellation handle, so keep the flight published until its callback settles.
+				Effect.uninterruptible,
+				Effect.onExit((exit) => Deferred.done(flight, exit)),
+				Effect.ensuring(
+					Effect.sync(() => {
+						finishPreflight();
+						if (this.nativeCompactionPreflight === flight) this.nativeCompactionPreflight = undefined;
+					}),
+				),
+			);
 		});
-		this.nativeCompactionPreflight = tracked;
-		await tracked;
 	}
-
 	projectCurrentContext(
 		audience: ContextProjectionAudience,
 		ctx: ExtensionContext,

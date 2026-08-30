@@ -12,7 +12,8 @@ import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";
 import { type JsonInputValue, type JsonObject, parseJsonObject } from "../shared/json-value.js";
 import {
-	canAppendMagicWorkerCompaction,
+	applyMagicWorkerHostCompaction,
+	applyMagicWorkerHostEffect,
 	magicWorkerErrorMessage,
 	magicWorkerHostTools,
 	requiredHostCall,
@@ -353,53 +354,20 @@ class MagicWorkerClient {
 	}
 
 	private applyEffect(message: MagicWorkerEffectMessage): void {
-		try {
-			const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
-			if (message.sessionId && !ctx) {
-				throw new Error(`Magic Context emitted '${message.name}' for an inactive Session.`);
-			}
-			switch (message.name) {
-				case "appendEntry":
-					this.pi.appendEntry(...message.args);
-					if (ctx) this.synchronizeSession(ctx);
-					break;
-				case "notify":
-					if (!ctx) throw new Error("Magic Context emitted a notification without a Host context.");
-					ctx.ui.notify(...message.args);
-					break;
-				case "sendMessage":
-					this.pi.sendMessage(...message.args);
-					break;
-				case "sendUserMessage":
-					this.pi.sendUserMessage(...message.args);
-					break;
-				case "setStatus":
-					if (!ctx) throw new Error("Magic Context emitted a status update without a Host context.");
-					ctx.ui.setStatus(...message.args);
-					break;
-			}
-		} catch (cause) {
-			this.reportFatal(cause);
-		}
+		const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
+		const exit = Effect.runSyncExit(
+			applyMagicWorkerHostEffect(this.pi, ctx, message, (active) => this.synchronizeSession(active)),
+		);
+		if (Exit.isFailure(exit)) this.reportFatal(Cause.squash(exit.cause));
 	}
 
 	private applySyncEffect(message: MagicWorkerSyncEffectMessage): void {
-		let status: 1 | 2 = 2;
-		let text: string;
-		try {
-			const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
-			if (!ctx) throw new Error("Pi Host context is no longer available for this Session.");
-			const manager = ctx.sessionManager;
-			if (!canAppendMagicWorkerCompaction(manager)) {
-				throw new Error("Pi SessionManager does not expose appendCompaction.");
-			}
-			const entryId = manager.appendCompaction(...message.args);
-			this.synchronizeSession(ctx);
-			text = entryId;
-			status = 1;
-		} catch (cause) {
-			text = magicWorkerErrorMessage(cause);
-		}
+		const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
+		const exit = Effect.runSyncExit(
+			applyMagicWorkerHostCompaction(ctx, message, (active) => this.synchronizeSession(active)),
+		);
+		const status = Exit.isSuccess(exit) ? 1 : 2;
+		const text = Exit.isSuccess(exit) ? exit.value : magicWorkerErrorMessage(Cause.squash(exit.cause));
 		writeMagicWorkerSyncResponse(message.buffer, status, text);
 	}
 

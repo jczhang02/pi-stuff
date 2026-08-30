@@ -106,6 +106,21 @@ async function runContextOwned(ctx: ExtensionContext, program: Effect.Effect<voi
 	}
 }
 
+function registerContextProjection(pi: ExtensionAPI, runtime: ContextCapabilityRuntime): void {
+	pi.on("context", (event, ctx) => {
+		const interactivePaint = runtime.yieldForInteractivePaint();
+		return Effect.runPromise(
+			interactivePaint
+				? interactivePaint.pipe(
+						Effect.flatMap((current) =>
+							current ? runtime.projectMagicContext(event, ctx) : Effect.succeed(undefined),
+						),
+					)
+				: runtime.projectMagicContext(event, ctx),
+		);
+	});
+}
+
 export default async function piStuffContext(
 	pi: ExtensionAPI,
 	dependencies: ContextCapabilityDependencies = {},
@@ -164,11 +179,7 @@ export default async function piStuffContext(
 	runtime.registerToolHandoffs();
 
 	pi.on("session_start", (event, ctx) => Effect.runPromise(runtime.startSession(event, ctx)));
-	pi.on("context", async (event, ctx) => {
-		const interactivePaint = runtime.yieldForInteractivePaint();
-		if (interactivePaint && !(await interactivePaint)) return;
-		return Effect.runPromise(runtime.projectMagicContext(event, ctx));
-	});
+	registerContextProjection(pi, runtime);
 	pi.on("session_compact", () => runtime.invalidateProjection());
 	pi.on("session_tree", () => {
 		runtime.invalidateProjection();

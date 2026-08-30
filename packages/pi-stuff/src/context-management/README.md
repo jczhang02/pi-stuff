@@ -41,8 +41,9 @@ Capability retains its own lifecycle policy.
 `tool-presentation.ts` owns Magic Tool presentation. `projection.ts` owns projection cache and in-flight work, while
 `projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains event schemas and the quiet
 Host proxy. `magic-worker-client.ts` is the Pi-facing Worker adapter and owns Worker
-registration, Session projection, and its scoped runner boundary; `magic-worker-transport.ts` owns native Worker acquisition, request
-correlation, cancellation, and release.
+registration, Session projection, and its scoped runner boundary; `magic-worker-host.ts` interprets the bounded Host
+effects and synchronous compaction acknowledgement; `magic-worker-transport.ts` owns native Worker acquisition,
+request correlation, cancellation, and release.
 
 Activation, Session-start serialization, committed-engine cleanup, and projection flights use Effect primitives rather
 than Promise-owned queues. One activation `Deferred` is shared by concurrent callers, and the stronger direct-use
@@ -50,8 +51,8 @@ trigger wins before a deferred automatic activation releases its joiners. Activa
 captured Session start, and commits only after the complete plan succeeds; failure runs staged shutdown handlers and
 keeps Pi native Context authoritative. Projection callers share one generation-keyed `Deferred`; invalidation completes
 its joiners with native fallback before clearing the published flight, and generation fences reject its late result. The
-only fire-and-continue programs—direct
-input prewarming and committed fatal cleanup—are started by `index.ts` under the current Pi Session signal; every other
+only fire-and-continue programs—direct input prewarming and committed fatal cleanup—are started by `index.ts` under the
+current Pi Session signal; every other
 Effect program is joined by the Pi callback or public facade that initiated it.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one
@@ -165,8 +166,9 @@ This boundary deliberately works within Pi's extension interface:
   is already exceeded. Disabled native compaction stays disabled. Because the
   public API exposes only manual compaction, this safety preflight is reported
   by Pi as `manual`; Goal recognizes the in-process preflight marker and does
-  not schedule a duplicate continuation. Host shutdown joins an in-flight
-  preflight within the same bounded shutdown grace used for other Context work.
+  not schedule a duplicate continuation. Concurrent callers share one Effect
+  `Deferred`; Host shutdown joins that preflight within the same bounded
+  shutdown grace used for other Context work.
 - A manual `/compact` while Magic is healthy records one extension-owned Pi
   compaction boundary with a positive managed-history result. Automatic
   threshold or overflow compaction remains owned by Magic and cancels Pi's

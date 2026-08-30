@@ -67,6 +67,7 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/context-management/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-host.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
 		"packages/pi-stuff/src/context-management/projection.ts",
 		"packages/pi-stuff/src/context-management/runtime.ts",
@@ -138,6 +139,7 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/codex/usage.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-host.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
 		"packages/pi-stuff/src/context-management/projection.ts",
 		"packages/pi-stuff/src/context-management/runtime.ts",
@@ -203,11 +205,6 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/adapter.ts",
 	],
 	transitionCompatibility: [
-		{
-			contractionTicket: "ps-pby.16",
-			path: "packages/pi-stuff/src/context-management/runtime.ts",
-			symbols: ["nativeCompactionPreflight", "preflightNativeCustomTurn", "yieldForInteractivePaint"],
-		},
 		{
 			contractionTicket: "ps-pby.32",
 			path: "packages/pi-stuff/src/shared/settings-io/file.ts",

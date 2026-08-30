@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 8041549b2332454028b5e2f1ff077365ea7dc0c2587a5bbc8a8543c3b5c66c4e -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: e3f6465d8ff1e41c1a4100115b0b3cadd4abfe696b610d63921983660341c96e -->
 
 # Context Management 模块
 
@@ -10,7 +10,7 @@ Magic Context 0.40 会把扁平用户级 Historian 与 Dreamer 执行设置迁�
 
 上下文管理不会创建任务锚点，不统计通用 Provider 轮次、工具或 Agent 委派，不阻止工具或套件发起消息，也不决定 Pi、Goal 或 Agents 是否应暂停、停止、完成或失败。每项所属能力保留自己的生命周期政策。
 
-`index.ts` 是面向 Pi 的布线与公开外观，也是宿主侧激活和投影的 Effect runner；`runtime.ts` 仍是唯一生命周期与激活权威。`activity.ts` 负责持久上下文活动，`command-runtime.ts` 负责 `/ctx` 分派，`tool-presentation.ts` 负责 Magic 工具呈现。`projection.ts` 负责投影缓存与进行中工作，`projection-format.ts` 负责有界原生/Magic 投影。`magic-runtime.ts` 包含事件 Schema 和安静宿主代理。`magic-worker-client.ts` 是面向 Pi 的 Worker 适配器，负责 Worker 注册、Session 投影及其带 Scope 的 runner 边界；`magic-worker-transport.ts` 负责原生 Worker 获取、请求关联、取消与释放。
+`index.ts` 是面向 Pi 的布线与公开外观，也是宿主侧激活和投影的 Effect runner；`runtime.ts` 仍是唯一生命周期与激活权威。`activity.ts` 负责持久上下文活动，`command-runtime.ts` 负责 `/ctx` 分派，`tool-presentation.ts` 负责 Magic 工具呈现。`projection.ts` 负责投影缓存与进行中工作，`projection-format.ts` 负责有界原生/Magic 投影。`magic-runtime.ts` 包含事件 Schema 和安静宿主代理。`magic-worker-client.ts` 是面向 Pi 的 Worker 适配器，负责 Worker 注册、Session 投影及其带 Scope 的 runner 边界；`magic-worker-host.ts` 负责解释有界宿主效果与同步压缩确认；`magic-worker-transport.ts` 负责原生 Worker 获取、请求关联、取消与释放。
 
 激活、Session 启动串行化、已提交引擎清理和投影 flight 都使用 Effect 原语，不再使用 Promise 自建队列。并发调用者共享一个激活 `Deferred`；若自动激活被延后，更强的直接使用触发会在释放等待者前胜出。激活会暂存注册、重放捕获的 Session 启动，并且只有完整计划成功后才提交；失败时运行暂存的关闭处理器，并继续让 Pi 原生 Context 保持权威。投影调用者共享按代际与键标识的 `Deferred`；失效会先让等待者回退到原生投影，再清除已发布的 flight，代际围栏则拒绝它的迟到结果。仅有两类启动后继续运行的程序——直接输入预热和已提交引擎的致命故障清理——由 `index.ts` 在当前 Pi Session signal 下启动；其他所有 Effect 程序都由发起它们的 Pi 回调或公开外观等待完成。
 
@@ -40,7 +40,7 @@ Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献
 - Magic 工厂既不提供中止信号，也不返回处置器。重载会使迟到继续失效，并运行任何暂存关闭处理器；但 Pi Stuff 无法取消卡住的第三方工厂，也无法撤销该处理器注册前已发生的副作用。
 - Pi 公开 token 估算是通用四代码单元启发式，不是模型特定分词器。因此安全关键 Agent 投影使用 UTF-8 字节长度作为与分词器无关的上界，并结合解析后的子模型与回退模型窗口和保守启动预留；精确 Provider 分词仍由 Provider 负责。
 - Pi 0.84.4 会在 Tool result 之后、下一次 Assistant 请求之前执行原生阈值检查；Context 不复制这条 Host 路径。
-- Pi 0.84.4 仍会跳过空闲自定义 `sendMessage` 轮次的轮次前原生压缩阈值检查。如果 Magic 保持休眠或不可用，Context 会读取 Pi 精确当前压缩设置，并且只有同一阈值已超出时，才在传输前运行公开 `ctx.compact` 回调边界。禁用的原生压缩继续禁用。因为公开 API 只暴露手动压缩，该安全预检由 Pi 报告为 `manual`；Goal 会识别进程内预检标记，不安排重复继续。宿主关闭会在其他 Context 工作使用的同一个有界关闭宽限期内等待进行中的预检。
+- Pi 0.84.4 仍会跳过空闲自定义 `sendMessage` 轮次的轮次前原生压缩阈值检查。如果 Magic 保持休眠或不可用，Context 会读取 Pi 精确当前压缩设置，并且只有同一阈值已超出时，才在传输前运行公开 `ctx.compact` 回调边界。禁用的原生压缩继续禁用。因为公开 API 只暴露手动压缩，该安全预检由 Pi 报告为 `manual`；Goal 会识别进程内预检标记，不安排重复继续。并发调用者共享一个 Effect `Deferred`；宿主关闭会在其他 Context 工作使用的同一个有界关闭宽限期内等待这项预检。
 - Magic 健康时手动 `/compact` 会记录一个扩展负责的 Pi 压缩边界，并带正面的受管历史结果。自动阈值或溢出压缩仍由 Magic 负责，并取消 Pi 原生摘要。Pi 0.84.4 通过原生 `session_compact_failed` 事件报告该取消；Goal 只使用匹配的待处理会话事件，替换它在 `session_before_compact` 暂停的继续。`session_compact` 仍是唯一成功路径。如果 Context 在尝试前已经降级，Pi 原生路径仍可用。如果活跃 Magic 压缩 Hook 本身失败，适配器会取消该尝试、报告失败并保持完整 JSONL，而不是在部分 Magic 尝试后叠加原生摘要。
 - 官方引擎负责其持久消息索引。Context 激活会精确重放一次捕获的 `session_start`，使全新与恢复会话进入该索引生命周期。可识别且无需迁移的配置会在编辑器就绪前完成；休眠或降级重试则在替换运行时提交前事务式完成。
 - 真实 Pi 验收会观察最终 Provider 请求，要求紧凑约定，拒绝上游冗长指引，并把直接模式系统提示词限制在 8,000 字符。这样可捕获依赖升级造成的提示词回归，而不把适配器耦合到私有引擎辅助函数。

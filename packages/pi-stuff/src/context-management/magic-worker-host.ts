@@ -1,13 +1,16 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, SessionManager } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeFunction } from "../shared/runtime-type.js";
 import {
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
 	type MagicWorkerContextSnapshot,
+	type MagicWorkerEffectMessage,
 	type MagicWorkerErrorMessage,
 	type MagicWorkerEventInput,
 	type MagicWorkerHostTool,
+	type MagicWorkerSyncEffectMessage,
 } from "./magic-worker-protocol.js";
 
 export function magicWorkerErrorMessage(cause: unknown): string {
@@ -167,6 +170,66 @@ export function canAppendMagicWorkerCompaction(
 	manager: ExtensionContext["sessionManager"],
 ): manager is ExtensionContext["sessionManager"] & Pick<SessionManager, "appendCompaction"> {
 	return isRuntimeFunction(readHostProxyProperty(manager, "appendCompaction"));
+}
+
+function hostFailure(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(magicWorkerErrorMessage(cause));
+}
+
+export function applyMagicWorkerHostEffect(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext | undefined,
+	message: MagicWorkerEffectMessage,
+	synchronize: (ctx: ExtensionContext) => void,
+): Effect.Effect<void, Error> {
+	return Effect.try({
+		try: () => {
+			if (message.sessionId && !ctx) {
+				throw new Error(`Magic Context emitted '${message.name}' for an inactive Session.`);
+			}
+			switch (message.name) {
+				case "appendEntry":
+					pi.appendEntry(...message.args);
+					if (ctx) synchronize(ctx);
+					break;
+				case "notify":
+					if (!ctx) throw new Error("Magic Context emitted a notification without a Host context.");
+					ctx.ui.notify(...message.args);
+					break;
+				case "sendMessage":
+					pi.sendMessage(...message.args);
+					break;
+				case "sendUserMessage":
+					pi.sendUserMessage(...message.args);
+					break;
+				case "setStatus":
+					if (!ctx) throw new Error("Magic Context emitted a status update without a Host context.");
+					ctx.ui.setStatus(...message.args);
+					break;
+			}
+		},
+		catch: hostFailure,
+	});
+}
+
+export function applyMagicWorkerHostCompaction(
+	ctx: ExtensionContext | undefined,
+	message: MagicWorkerSyncEffectMessage,
+	synchronize: (ctx: ExtensionContext) => void,
+): Effect.Effect<string, Error> {
+	return Effect.try({
+		try: () => {
+			if (!ctx) throw new Error("Pi Host context is no longer available for this Session.");
+			const manager = ctx.sessionManager;
+			if (!canAppendMagicWorkerCompaction(manager)) {
+				throw new Error("Pi SessionManager does not expose appendCompaction.");
+			}
+			const entryId = manager.appendCompaction(...message.args);
+			synchronize(ctx);
+			return entryId;
+		},
+		catch: hostFailure,
+	});
 }
 
 const SYNC_RESPONSE_TOO_LARGE = "Magic Context Host effect response exceeded its buffer.";

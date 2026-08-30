@@ -113,17 +113,63 @@ test("precompacts a near-limit native fallback before an idle Suite custom turn"
 	expect(isSuiteNativeCompactionPreflight(ctx)).toBe(false);
 });
 
-test("awaits an in-flight native custom-turn compaction during shutdown", async () => {
+test("shares an in-flight native custom-turn compaction and awaits it during shutdown", async () => {
 	const handlers: Handlers = new Map();
 	const api = apiFor(handlers);
 	Reflect.set(api, "sendMessage", () => undefined);
 	const { promise: compactionStarted, resolve: markCompactionStarted } = Promise.withResolvers<void>();
 	let completeCompaction: (() => void) | undefined;
+	let compactions = 0;
 	const ctx = context();
 	Object.assign(ctx, {
 		compact: (options: CompactOptions) => {
+			compactions++;
 			completeCompaction = () => options.onComplete?.(COMPACTION_RESULT);
 			markCompactionStarted();
+		},
+		getContextUsage: () => ({ contextWindow: 100, percent: 90, tokens: 90 }),
+		isIdle: () => true,
+	});
+	await piStuffContext(api, {
+		magicSubagent: () => true,
+		readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 20 }),
+	});
+	await emit(handlers, "session_start", { reason: "startup", type: "session_start" }, ctx);
+
+	const sending = sendSuiteAgentMessage(
+		api,
+		{ content: "continue", customType: "suite-test", display: false },
+		{ triggerTurn: true },
+	);
+	await compactionStarted;
+	const joined = sendSuiteAgentMessage(
+		api,
+		{ content: "continue too", customType: "suite-test", display: false },
+		{ triggerTurn: true },
+	);
+	await Promise.resolve();
+	expect(compactions).toBe(1);
+	let shutdownSettled = false;
+	const shutdown = emit(handlers, "session_shutdown", { reason: "reload", type: "session_shutdown" }, ctx).then(() => {
+		shutdownSettled = true;
+	});
+	await Promise.resolve();
+	expect(shutdownSettled).toBe(false);
+	completeCompaction?.();
+	await Promise.all([sending, joined, shutdown]);
+	expect(shutdownSettled).toBe(true);
+});
+
+test("continues an idle Suite custom turn when native compaction throws", async () => {
+	const handlers: Handlers = new Map();
+	const api = apiFor(handlers);
+	const order: string[] = [];
+	Reflect.set(api, "sendMessage", () => order.push("send"));
+	const ctx = context();
+	Object.assign(ctx, {
+		compact: () => {
+			order.push("compact");
+			throw new Error("Host compaction failed");
 		},
 		getContextUsage: () => ({ contextWindow: 100, percent: 90, tokens: 90 }),
 		isIdle: () => true,
@@ -135,21 +181,14 @@ test("awaits an in-flight native custom-turn compaction during shutdown", async 
 	});
 	await emit(handlers, "session_start", { reason: "startup", type: "session_start" }, ctx);
 
-	const sending = sendSuiteAgentMessage(
+	await sendSuiteAgentMessage(
 		api,
 		{ content: "continue", customType: "suite-test", display: false },
 		{ triggerTurn: true },
 	);
-	await compactionStarted;
-	let shutdownSettled = false;
-	const shutdown = emit(handlers, "session_shutdown", { reason: "reload", type: "session_shutdown" }, ctx).then(() => {
-		shutdownSettled = true;
-	});
-	await Promise.resolve();
-	expect(shutdownSettled).toBe(false);
-	completeCompaction?.();
-	await Promise.all([sending, shutdown]);
-	expect(shutdownSettled).toBe(true);
+
+	expect(order).toEqual(["compact", "send"]);
+	expect(isSuiteNativeCompactionPreflight(ctx)).toBe(false);
 });
 
 test("respects disabled native compaction for an idle Suite custom turn", async () => {
