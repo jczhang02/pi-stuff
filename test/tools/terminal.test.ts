@@ -29,6 +29,7 @@ describe("terminal presentation bounds", () => {
 		expect(emoji).toEndWith("…");
 		expect(styled).toBe("界界\néé");
 		expect(malformed).toBe("start� middle� end");
+		expect(boundTerminalLine("👩‍💻", 8)).toBe("👩‍💻");
 		expect(graphemePrefix("👩‍💻👩‍💻", 5)).toBe("👩‍💻");
 		expect(truncateUtf8Graphemes("éé", 3)).toBe("é");
 	});
