@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0022-restrict-folding-to-native-retrieval.md; translation-source-sha256: 5dd3351f939964decc264f45d07a79927dc8334fc4447b97d061c1e84268674c -->
+<!-- translation-source: docs/adr/0022-restrict-folding-to-native-retrieval.md; translation-source-sha256: fed12b8d282122552355bd4039daf9cd73532368772e69a1f86edf8763d65007 -->
 
 ---
 status: accepted
@@ -16,7 +16,7 @@ ADR 0010 会折叠连续检索，也允许保守分类为只读的 Bash、未来
 
 使用 **工具活动** 表示一次独立调用或一个折叠聚合的显示投影。该聚合称为 **检索组**。
 
-只有原生 Read、Grep/Find 和 List 调用能加入检索组。合格集合是封闭的：Bash 即使只读也保持独立；MCP、Web、Image、Agent、Task、编辑/写入/补丁、后台工作、Goal、媒体、未知工具和第三方工具都不能通过呈现元数据选择加入。一个合格调用即可形成一组。
+只有原生 Read、Grep/Find 和 List 调用能加入检索组，但 resolved basename 恰好为 `SKILL.md` 的原生 Read 除外。该 Read 在分组前成为独立的 **Skill Tool Activity**，从 resolved parent directory 派生显示用 Skill name，并在 Raw 检查中保留底层 Read argument 与 result。分类只由 resolved path identity 决定，不解析 frontmatter，也不查询 Skill registry。其余合格集合是封闭的：Bash 即使只读也保持独立；MCP、Web、Image、Agent、Task、编辑/写入/补丁、后台工作、Goal、媒体、未知工具和第三方工具都不能通过呈现元数据选择加入。一个合格调用即可形成一组。
 
 Assistant 说明文字、用户输入、模型上下文可见的自定义消息、独立工具活动、轮次完成和自动继续都会关闭当前检索组。工具活动之后新出现的可见 **逻辑 Thinking 运行** 也会关闭它；同一运行内的流式更新不会关闭。这有意区别于 Claude Code；观察发现后者会跨多个详细 Thinking 运行折叠检索。
 
@@ -25,6 +25,8 @@ Assistant 说明文字、用户输入、模型上下文可见的自定义消息�
 成功的 Task 调用不出现在默认对话记录中，因为 Todo 负责其可见状态。Ctrl+O 和 `/tools` 保留各个调用。Task 错误、拒绝或取消会成为独立工具活动。没有嵌套工具或媒体行的成功纯文本代码模式执行，不出现在对话记录或普通 `/tools` 中；其会话、账本和模型可见结果保持不变。代码模式的独立媒体仍由宿主渲染，不显示文字代码模式行。嵌套工具和媒体继续作为各自唯一可见权威；外层错误、拒绝或取消在没有其他表示时，保留一行封装回退。
 
 独立工具渲染器保持既有工具特定形态。Pi Stuff 不引入所考虑的通用 Claude 风格两行式 `Tool(args)` 加子状态块。
+
+用户可见的检索计数使用正确的单复数，包括使用 `1 line` 而不是 `1 lines`。
 
 ### 紧凑检索组投影
 
@@ -40,15 +42,17 @@ Assistant 说明文字、用户输入、模型上下文可见的自定义消息�
 
 成功的孤立基础设施调用不出现在紧凑对话记录中，但可通过 Ctrl+O 和 `/tools` 恢复。Ctrl+O 仍是全局详细对话记录：它按原始源码顺序恢复检索组成员、成功 Task 与基础设施调用、现有工具特定渲染器，并与逻辑 Thinking 运行一起显示。它不会恢复有意隐藏的成功纯 JavaScript 代码模式封装，也不会用协议转储替代格式化详情。
 
-`/tools` 保持以工具活动作为第一级单元。检索组展开其有序 `Calls` 成员；独立 Web、Bash、编辑、媒体、Agent、Task 问题和基础设施问题活动保持单项。成功 Task 和孤立基础设施调用即使在紧凑视图中静默，仍可在那里检查。成功纯 JavaScript 代码模式封装仍不出现。
+`/tools` 保持以工具活动作为第一级单元。检索组展开其有序 `Calls` 成员；独立 Skill、Web、Bash、编辑、媒体、Agent、Task 问题和基础设施问题活动保持单项。Skill 的 Formatted detail 保留 `Skill <name>` identity，Raw 则保留底层 Read call。成功 Task 和孤立基础设施调用即使在紧凑视图中静默，仍可在那里检查。成功纯 JavaScript 代码模式封装仍不出现。
 
 ### 投影生命周期
 
 新投影在实时更新、加载、恢复、分支导航和压缩期间，根据现有会话事件重建。它适用于新旧会话，无需重写 JSONL 或持久化投影版本。它直接取代 ADR 0010 行为，不增加功能标志、`/ui` 设置、逐会话兼容模式或第二套分组实现。
 
+Skill classification 先于 direct Read 与 Code Mode nested projection，并在 live rendering、reload、replay、resume、branch navigation 和 compaction 中以相同方式派生。
+
 ## 后果
 
-- 只根据原生工具家族即可预测紧凑分组；命令解析和 MCP 元数据不能改变对话记录分组。
+- 只根据原生工具家族与 exact resolved `SKILL.md` 例外即可预测紧凑分组；命令解析和 MCP 元数据不能改变对话记录分组。
 - Bash、Web、MCP、媒体、结果性工作和委派执行保持独立身份与因果关系。
 - 新的可见推理阶段会分隔其前后的检查，即使 Claude Code 不做这种分隔。
 - 成功检索在任何宽度下都保持一行；只有可操作问题可以增加一行有界子项。

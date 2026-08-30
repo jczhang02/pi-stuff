@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 475f9743591fcb4cd6087816f687cd94e0489e686d366cd99887b0391027093a -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: d4b89d15eb972bc8e290d3721bb0696a31122b51ab676fa4ba9a7e8481af7597 -->
 
 # Pi Stuff
 
@@ -77,9 +77,14 @@ _避免使用_：Assistant message boundary、API turn、physical terminal row
 _避免使用_：Tool call、Tool row、Tool Activity Group
 
 **Retrieval Group**：
-对一段连续原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要。Narrative Boundary、独立 Tool Activity、
-automatic continuation 或 turn completion 会关闭它。
+对一段连续原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要，但不包含 resolved basename 恰好为
+`SKILL.md` 的 Read。Narrative Boundary、独立 Tool Activity、automatic continuation 或 turn completion 会关闭它。
 _避免使用_：Exploration group、Tool batch、merged Tool call
+
+**Skill Tool Activity**：
+针对 resolved basename 恰好为 `SKILL.md` 的原生 Read 所形成的独立 Tool Activity。它从 resolved parent
+directory 派生 `Skill <name>`，同时保留底层 Read protocol，并形成 Narrative Boundary。
+_避免使用_：Native Skill row、Skill Retrieval Group、Skill registry result
 
 **Operation Block**：
 一种只用于 Transcript 显示的独立、证据丰富 Tool Activity projection，在 invocation 的原始位置展示有界的

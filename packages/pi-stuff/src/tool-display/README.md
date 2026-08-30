@@ -26,8 +26,14 @@ remains the single public live-projection facade.
 ## Daily use
 
 - Every continuous native Read, Grep/Find, or List segment is one **Retrieval Group**, beginning with the first eligible
-  invocation. The eligibility set is closed: Bash, Web, MCP, media, mutations, Agent, Task, Background Work, Goal,
-  unknown, and third-party Tools are independent Tool Activities and close retrieval.
+  invocation, except a Read whose resolved basename is exactly `SKILL.md`. The remaining eligibility set is closed:
+  Bash, Web, MCP, media, mutations, Agent, Task, Background Work, Goal, unknown, and third-party Tools are independent
+  Tool Activities and close retrieval.
+- An exact resolved `SKILL.md` Read is one independent `Skill <name>` Tool Activity, with the name derived from its
+  resolved parent directory. `Skill <name>` is the high-contrast primary identity; the normal semantic Tool marker and
+  state style distinguish reading, loaded, and failure while settled `loaded` remains muted. It is one row rather than
+  native `[skill]` or Operation Block grammar. Direct Read, nested Code Mode projection, and replay use the same
+  identity; `/tools` Formatted preserves the Skill identity while Raw preserves the underlying Read protocol.
 - Assistant prose, user input, visible model-context Custom Messages, turn completion, automatic continuation, and a
   newly visible Logical Thinking Run after Tool activity close the current Retrieval Group. Streaming updates within
   the same Logical Thinking Run, Tool results, hidden state, and branch or compaction metadata do not.
@@ -35,7 +41,8 @@ remains the single public live-projection facade.
   that fixed order; Read counts unique canonical paths while Search and List count invocations. Active rows use present
   tense, omit the expansion hint, and may add enabled elapsed time and a stabilized target inline. Narrow widths drop
   target, then elapsed time, before truncating the semantic summary. Settled rows omit targets and elapsed time and show
-  `(ctrl+o to expand)` only when it fits without wrapping.
+  `(ctrl+o to expand)` only when it fits without wrapping. User-visible counts use grammatical number, including
+  `1 line` rather than `1 lines`.
 - Failed, rejected, and cancelled native retrieval stays in its Retrieval Group. The only two-row compact exception
   keeps state-specific issue counts on the first row and the first bounded reason on one child row; remaining reasons
   stay available through expansion.
@@ -45,7 +52,9 @@ remains the single public live-projection facade.
   opt in through metadata.
 - Every Bash invocation remains one standalone `Bash(<command>)` Operation Block in source order, including read-only
   commands. Its command uses a two-line/160-code-unit compact cap, output shows three lines before a bounded omission
-  notice, and running, empty, stderr, exit, cancellation, rejection, and failure states remain explicit.
+  notice, and running, empty, stderr, exit, cancellation, rejection, and failure states remain explicit. A later empty
+  Host abort record settles only the immediately preceding in-flight direct Bash call as cancelled, preserves partial
+  output, and suppresses a second fallback error; exit code 128 alone remains an error.
 - `Write(path)` shows `N lines written` and the syntax-highlighted final content, not a diff. Compact mode shows ten
   lines and `… +N lines (ctrl+o to expand)`; expanded evidence is capped at 240 lines and 24 KiB. `Edit(path)` shows
   exact `+A/-D` statistics and a syntax-highlighted old/new-line diff. `Patch(path)` or `Patch(N files)` shows total and
@@ -60,8 +69,9 @@ remains the single public live-projection facade.
   an issue in any of them becomes an independent Tool Activity and closes retrieval on both sides.
 - Pi's global `Ctrl+O` restores eligible calls, existing Tool-specific renderers, successful Task and infrastructure
   calls, and Logical Thinking Runs in persisted source order. `/tools [group-or-member-id]` keeps Tool Activity as its
-  first-level unit: List rows expose identity, operation, outcome, and explicit state; a Retrieval Group exposes ordered
-  `Calls`, while independent activity remains a singleton. Detail uses Tool-specific semantic sections such as
+  first-level unit: List rows expose Tool identity, bounded operation identity, optional verified non-state evidence,
+  and explicit icon-and-word state, omitting generic outcomes that merely restate that state. A Retrieval Group exposes
+  ordered `Calls`, while independent activity remains a singleton. Detail uses Tool-specific semantic sections such as
   Command/Output, Change/Diff, Files/Diff, Task/Result, Invocation/Result, or Code/Error. Image blocks use Pi's native
   image component when available. Up/Down selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles
   Formatted and Raw, and Escape unwinds the Dialog.

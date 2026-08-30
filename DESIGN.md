@@ -122,6 +122,10 @@ Rows keep a stable domain order unless the owning ADR says otherwise. Live updat
 steal focus. A row begins with optional `›`, then its primary identity or readable summary, with lifecycle icon and
 low-priority timing or counts later. Overflow uses `… N earlier/newer` and `… N later/older` around a focused window.
 
+`/tools` rows use Tool identity, bounded operation identity, optional verified non-state evidence, then an explicit
+icon-and-word state. Omit generic outcomes such as `done`, `completed`, `finished`, `running`, `success`, or `error`
+when they merely restate that state.
+
 Resolve standard selection actions through Pi's injected keybinding manager. Up and Down move one row, with
 Ctrl+P/Ctrl+N as read-only aliases. PageUp and PageDown move one visible page, with `b`/Space as compact-keyboard
 aliases; Home and End jump to the first and last row. These aliases apply only to custom read-only lists and details,

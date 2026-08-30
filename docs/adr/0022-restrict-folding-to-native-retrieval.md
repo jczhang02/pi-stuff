@@ -21,10 +21,13 @@ family.
 Use **Tool Activity** for the display projection of either one independent invocation or one folded aggregate. Call
 the aggregate a **Retrieval Group**.
 
-Only native Read, Grep/Find, and List invocations join a Retrieval Group. The eligibility set is closed: Bash remains
-independent even when read-only, and MCP, Web, Image, Agent, Task, edit/write/patch, Background Work, Goal, media,
-unknown, and third-party Tools cannot opt in through presentation metadata. One eligible invocation is sufficient to
-form a group.
+Only native Read, Grep/Find, and List invocations join a Retrieval Group, except a native Read whose resolved basename
+is exactly `SKILL.md`. That Read becomes an independent **Skill Tool Activity** before grouping, derives its displayed
+Skill name from the resolved parent directory, and keeps its underlying Read arguments and result in Raw inspection.
+Resolved path identity alone controls this classification; frontmatter and Skill registries do not. The remaining
+eligibility set is closed: Bash remains independent even when read-only, and MCP, Web, Image, Agent, Task,
+edit/write/patch, Background Work, Goal, media, unknown, and third-party Tools cannot opt in through presentation
+metadata. One eligible invocation is sufficient to form a group.
 
 Assistant prose, user input, visible model-context Custom Messages, independent Tool Activities, turn completion, and
 automatic continuation close the current Retrieval Group. A newly visible **Logical Thinking Run** after Tool activity
@@ -45,6 +48,8 @@ authority, and an otherwise unrepresented outer error, rejection, or cancellatio
 
 Standalone Tool renderers keep their existing Tool-specific shapes. Pi Stuff will not introduce the considered
 universal Claude-style two-line `Tool(args)` plus child-status block.
+
+User-visible retrieval counts use grammatical number, including `1 line` rather than `1 lines`.
 
 ### Compact Retrieval Group projection
 
@@ -79,9 +84,10 @@ Thinking Runs. It does not restore a deliberately hidden successful pure-JavaScr
 formatted details with protocol dumps.
 
 `/tools` keeps Tool Activity as its first-level unit. A Retrieval Group opens its ordered `Calls` members; independent
-Web, Bash, edit, media, Agent, Task-issue, and infrastructure-issue activities remain singleton entries. Successful
-Task and isolated infrastructure calls remain inspectable there even when compact-silent. Successful pure-JavaScript
-Code Mode envelopes remain absent.
+Skill, Web, Bash, edit, media, Agent, Task-issue, and infrastructure-issue activities remain singleton entries. Skill
+Formatted detail retains `Skill <name>` identity, while Raw retains the underlying Read call. Successful Task and
+isolated infrastructure calls remain inspectable there even when compact-silent. Successful pure-JavaScript Code Mode
+envelopes remain absent.
 
 ### Projection lifecycle
 
@@ -90,10 +96,13 @@ compaction. It applies to old and new Sessions without rewriting JSONL or persis
 replaces ADR 0010 behavior with no feature flag, `/ui` setting, per-Session compatibility mode, or second grouping
 implementation.
 
+Skill classification happens before direct Read and Code Mode nested projection and is derived identically during
+live rendering, reload, replay, resume, branch navigation, and compaction.
+
 ## Consequences
 
-- Compact grouping is predictable from the native Tool family alone; command parsing and MCP metadata cannot change a
-  Transcript's grouping.
+- Compact grouping is predictable from the native Tool family plus the exact resolved `SKILL.md` exception; command
+  parsing and MCP metadata cannot change a Transcript's grouping.
 - Bash, Web, MCP, media, consequential work, and delegated execution retain independent identity and causality.
 - A new visible reasoning phase separates inspection before and after it, even though Claude Code does not make that
   split.

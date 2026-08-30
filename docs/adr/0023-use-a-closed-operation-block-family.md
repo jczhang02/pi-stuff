@@ -30,6 +30,11 @@ amount. A pure rename reports `+0/-0` and `renamed without content changes`. Whe
 mutation-success prose is omitted. Error, rejection, cancellation, partial-write, and unavailable-evidence states keep
 their explicit state and never infer successful evidence from unverified arguments.
 
+A direct Bash cancellation has one visible authority only when a later explicit empty Host abort record settles the
+immediately preceding in-flight Bash Tool Activity. Partial output remains attached to that cancelled Operation Block,
+and Compact and Expanded do not add a second Envelope Fallback error. Exit code 128 without that Host abort evidence
+remains an error.
+
 Successful pure JavaScript Code Mode has no outer row: nested Tools and media are its visible authority. Only an outer
 issue unmatched by those projections receives a fallback Operation Block.
 
@@ -44,7 +49,8 @@ inspection authority. Formatted and Raw are two representations of one selected 
 
 ## Consequences
 
-Native Read, Grep/Find, and List remain the only Retrieval Group members. MCP, Web, media, Agent, Task, Goal, Context,
+Native Grep/Find, List, and Read other than the exact resolved `SKILL.md` exception remain the only Retrieval Group
+members. An exact `SKILL.md` Read uses an independent Skill Tool Activity. MCP, Web, media, Agent, Task, Goal, Context,
 and infrastructure Tools retain their domain-specific rows. File changes are inspectable directly in Compact and
 Expanded Transcript UI, while `/tools` retains readable semantic detail and exact protocol evidence without duplicating
 the Transcript's `⎿` shape.

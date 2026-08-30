@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: dccdf60987eaaa494d0a88fd36a919b1c1d3f81551290ad2ca4a42d6447f3c39 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 121e557230c98a72d44fdcfd2ef26952c69787a8e9a0e988fd8700c7f8fe68ca -->
 
 ---
 version: alpha
@@ -117,6 +117,10 @@ Transcript 记录标记，但完整动作词和语义颜色才表达生命周期
 除非负责该界面的 ADR 另有规定，列表行应保持稳定的业务顺序。实时更新只修改原位置的行，不能抢走焦点。
 每行先放可选的 `›`，接着是主要身份或容易理解的摘要，生命周期图标以及低优先级的时间或数量放在后面。
 内容超出可见窗口时，在焦点窗口两侧使用 `… 前面/较新还有 N 项` 和 `… 后面/较旧还有 N 项`。
+
+`/tools` row 依次使用 Tool identity、有界 operation identity、可选且已验证的非状态 evidence，以及明确的
+图标加文字 state。若 `done`、`completed`、`finished`、`running`、`success` 或 `error` 等通用 outcome 只是
+重复该 state，则应省略。
 
 标准选择操作必须通过 Pi 注入的按键管理器处理。Up 和 Down 每次移动一行，只读界面还支持
 Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键盘可用 `b`/Space；Home 和 End
