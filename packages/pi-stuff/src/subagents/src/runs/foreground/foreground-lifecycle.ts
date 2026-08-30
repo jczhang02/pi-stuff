@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect, Fiber, type Scope } from "effect";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import {
@@ -14,7 +15,7 @@ import { type BackgroundRecoveryDescriptor, persistRecoveries } from "../backgro
 import { createInitialStatus } from "../background/initial-status.ts";
 import { initializeWriterProcessRegistry } from "../background/writer-process-registry.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
-import type { executeForegroundConfig } from "./execution.ts";
+import type { runForegroundConfig } from "./execution.ts";
 import {
 	createForegroundControl,
 	emitNestedLifecycle,
@@ -55,113 +56,67 @@ export interface PreparedForegroundConfig {
 	readonly recoveries: BackgroundRecoveryDescriptor[];
 }
 
-async function commitForegroundStart(
+function commitForegroundStart(
 	data: ForegroundLaunchData,
 	tasks: readonly ForegroundTask[],
 	prepared: PreparedForegroundConfig,
 	hooks?: ForegroundLifecycleHooks,
 	onLifecycleCommitted?: (() => void) | undefined,
-): Promise<AsyncStatus> {
+): Effect.Effect<AsyncStatus, unknown> {
 	const { config, directoryClaim, recoveries } = prepared;
-	try {
-		persistRecoveries(config.asyncDir, recoveries);
-		initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, tasks.length);
-		const initialStatus = createInitialStatus(config, config.startedAt ?? Date.now());
-		writePrivateAtomicJson(path.join(config.asyncDir, "status.json"), initialStatus);
-		await hooks?.beforeForegroundStart?.({
-			runId: data.runId,
-			asyncDir: config.asyncDir,
-			writerCount: tasks.length,
-			abortStart: directoryClaim.abortIfUnstarted,
+	return Effect.gen(function* () {
+		const initialStatus = yield* Effect.try({
+			try: () => {
+				persistRecoveries(config.asyncDir, recoveries);
+				initializeWriterProcessRegistry(config.asyncDir, config.id, process.pid, tasks.length);
+				const status = createInitialStatus(config, config.startedAt ?? Date.now());
+				writePrivateAtomicJson(path.join(config.asyncDir, "status.json"), status);
+				return status;
+			},
+			catch: (error) => error,
 		});
-		if (!directoryClaim.commit()) {
-			throw new Error(`Foreground Agent runtime ownership changed before '${data.runId}' could start.`);
+		if (hooks?.beforeForegroundStart) {
+			yield* Effect.tryPromise({
+				try: async () =>
+					hooks.beforeForegroundStart?.({
+						runId: data.runId,
+						asyncDir: config.asyncDir,
+						writerCount: tasks.length,
+						abortStart: directoryClaim.abortIfUnstarted,
+					}),
+				catch: (error) => error,
+			});
 		}
-		onLifecycleCommitted?.();
+		yield* Effect.try({
+			try: () => {
+				if (!directoryClaim.commit()) {
+					throw new Error(`Foreground Agent runtime ownership changed before '${data.runId}' could start.`);
+				}
+				onLifecycleCommitted?.();
+			},
+			catch: (error) => error,
+		});
 		return initialStatus;
-	} catch (error) {
-		// Remove only the exact unstarted inode; collisions remain recovery evidence.
-		directoryClaim.cleanup();
-		try {
-			fs.rmdirSync(data.sessionRoot);
-		} catch {
-			// A non-empty session root may contain a prepared fork and remains recovery evidence.
-		}
-		throw error;
-	}
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.sync(() => {
+				// Remove only the exact unstarted inode; collisions remain recovery evidence.
+				directoryClaim.cleanup();
+				try {
+					fs.rmdirSync(data.sessionRoot);
+				} catch {
+					// A non-empty session root may contain a prepared fork and remains recovery evidence.
+				}
+			}).pipe(Effect.andThen(Effect.fail(error))),
+		),
+	);
 }
 
-export async function executeForegroundLifecycle(
+function emitForegroundCompletionEvents(
 	data: ForegroundLaunchData,
-	tasks: readonly ForegroundTask[],
-	prepared: PreparedForegroundConfig,
 	runtime: ForegroundLifecycleRuntime,
-	engine: typeof executeForegroundConfig,
-	signal: AbortSignal,
-	onUpdate?: ((result: AgentToolResult<Details>) => void) | undefined,
-	hooks?: ForegroundLifecycleHooks,
-	onLifecycleCommitted?: (() => void) | undefined,
-): Promise<AgentToolResult<Details>> {
-	const { config, directoryClaim } = prepared;
-	const initialStatus = await commitForegroundStart(data, tasks, prepared, hooks, onLifecycleCommitted);
-	const emitUpdate = (update: AgentToolResult<Details>) => {
-		try {
-			onUpdate?.(update);
-		} catch (error) {
-			reportAgentDiagnostic(`Foreground Agent progress observer failed for '${data.runId}':`, error);
-		}
-	};
-	const control = createForegroundControl(data, config, tasks);
-	runtime.state.foregroundControls.set(data.runId, control);
-	runtime.state.lastForegroundControlId = data.runId;
-	let liveStatus: AsyncStatus = initialStatus;
-	const nestedProjectionTimer = setInterval(() => {
-		refreshForegroundNestedProjection(control);
-		if (data.inheritedNestedRoute) {
-			emitNestedLifecycle(data, config, control.startedAt, liveStatus, undefined, true);
-		}
-		runtime.onForegroundStatus?.();
-	}, 500);
-	nestedProjectionTimer.unref?.();
-	emitNestedLifecycle(data, config, control.startedAt, liveStatus);
-	emitUpdate({
-		content: [{ type: "text", text: `${data.mode === "parallel" ? "Agents" : "Agent"} running in foreground.` }],
-		details: { mode: data.mode, runId: data.runId, results: [], context: data.context },
-	});
-	let result: AgentToolResult<Details>;
-	let abortedBeforeStart = false;
-	try {
-		result = await engine(config, signal, {
-			onStatus(status) {
-				liveStatus = { ...liveStatus, ...status };
-				updateForegroundControl(control, status);
-				runtime.onForegroundStatus?.();
-			},
-		});
-		if (result.details.results.length === 0 && directoryClaim.abortIfUnstarted()) {
-			abortedBeforeStart = true;
-		}
-	} catch (error) {
-		if (!directoryClaim.abortIfUnstarted()) throw error;
-		abortedBeforeStart = true;
-		result = {
-			content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-			isError: true,
-			details: { mode: data.mode, results: [], runId: data.runId, cwd: data.effectiveCwd },
-		};
-	} finally {
-		clearInterval(nestedProjectionTimer);
-		refreshForegroundNestedProjection(control);
-		runtime.state.foregroundControls.delete(data.runId);
-		if (runtime.state.lastForegroundControlId === data.runId) runtime.state.lastForegroundControlId = null;
-	}
-	if (abortedBeforeStart) {
-		emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
-		emitUpdate(result);
-		return result;
-	}
-	rememberForegroundResult(runtime.state, data, result, tasks, control.startedAt, config.asyncDir);
-	emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
+	result: AgentToolResult<Details>,
+): void {
 	for (const [index, child] of result.details.results.entries()) {
 		if (child.detached) continue;
 		try {
@@ -191,6 +146,102 @@ export async function executeForegroundLifecycle(
 			reportAgentDiagnostic(`Foreground Agent completion observer failed for '${data.runId}:${index}':`, error);
 		}
 	}
-	emitUpdate(result);
-	return result;
+}
+
+export function executeForegroundLifecycle(
+	data: ForegroundLaunchData,
+	tasks: readonly ForegroundTask[],
+	prepared: PreparedForegroundConfig,
+	runtime: ForegroundLifecycleRuntime,
+	engine: typeof runForegroundConfig,
+	signal: AbortSignal,
+	onUpdate?: ((result: AgentToolResult<Details>) => void) | undefined,
+	hooks?: ForegroundLifecycleHooks,
+	onLifecycleCommitted?: (() => void) | undefined,
+): Effect.Effect<AgentToolResult<Details>, unknown, Scope.Scope> {
+	return Effect.gen(function* () {
+		const { config, directoryClaim } = prepared;
+		const initialStatus = yield* commitForegroundStart(data, tasks, prepared, hooks, onLifecycleCommitted);
+		const emitUpdate = (update: AgentToolResult<Details>) => {
+			try {
+				onUpdate?.(update);
+			} catch (error) {
+				reportAgentDiagnostic(`Foreground Agent progress observer failed for '${data.runId}':`, error);
+			}
+		};
+		const control = createForegroundControl(data, config, tasks);
+		runtime.state.foregroundControls.set(data.runId, control);
+		runtime.state.lastForegroundControlId = data.runId;
+		let liveStatus: AsyncStatus = initialStatus;
+		let activity: Fiber.Fiber<void, never> | undefined;
+		const run = Effect.gen(function* () {
+			activity = yield* Effect.forkScoped(
+				Effect.forever(
+					Effect.sleep(500).pipe(
+						Effect.andThen(
+							Effect.sync(() => {
+								refreshForegroundNestedProjection(control);
+								if (data.inheritedNestedRoute) {
+									emitNestedLifecycle(data, config, control.startedAt, liveStatus, undefined, true);
+								}
+								runtime.onForegroundStatus?.();
+							}),
+						),
+					),
+				),
+			);
+			emitNestedLifecycle(data, config, control.startedAt, liveStatus);
+			emitUpdate({
+				content: [
+					{ type: "text", text: `${data.mode === "parallel" ? "Agents" : "Agent"} running in foreground.` },
+				],
+				details: { mode: data.mode, runId: data.runId, results: [], context: data.context },
+			});
+			let abortedBeforeStart = false;
+			const result = yield* engine(config, signal, {
+				onStatus(status) {
+					liveStatus = { ...liveStatus, ...status };
+					updateForegroundControl(control, status);
+					runtime.onForegroundStatus?.();
+				},
+			}).pipe(
+				Effect.catch((error) => {
+					if (!directoryClaim.abortIfUnstarted()) return Effect.fail(error);
+					abortedBeforeStart = true;
+					return Effect.succeed({
+						content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }],
+						isError: true,
+						details: { mode: data.mode, results: [], runId: data.runId, cwd: data.effectiveCwd },
+					});
+				}),
+			);
+			if (result.details.results.length === 0 && directoryClaim.abortIfUnstarted()) {
+				abortedBeforeStart = true;
+			}
+			return { abortedBeforeStart, result };
+		}).pipe(
+			Effect.ensuring(
+				Effect.gen(function* () {
+					if (activity) yield* Fiber.interrupt(activity);
+					yield* Effect.sync(() => {
+						refreshForegroundNestedProjection(control);
+						runtime.state.foregroundControls.delete(data.runId);
+						if (runtime.state.lastForegroundControlId === data.runId)
+							runtime.state.lastForegroundControlId = null;
+					});
+				}),
+			),
+		);
+		const { abortedBeforeStart, result } = yield* run;
+		if (abortedBeforeStart) {
+			emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
+			emitUpdate(result);
+			return result;
+		}
+		rememberForegroundResult(runtime.state, data, result, tasks, control.startedAt, config.asyncDir);
+		emitNestedLifecycle(data, config, control.startedAt, liveStatus, result);
+		emitForegroundCompletionEvents(data, runtime, result);
+		emitUpdate(result);
+		return result;
+	});
 }

@@ -54,7 +54,7 @@ import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
-import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
+import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/foreground-projection.js";
 import { resolveBunRuntimeCommand } from "../../packages/pi-stuff/src/subagents/src/runs/shared/bun-runtime.js";
 import { CHILD_MODEL_CONTEXT_ENTRY_TYPE } from "../../packages/pi-stuff/src/subagents/src/runs/shared/child-protocol.js";
 import {

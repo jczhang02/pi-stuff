@@ -9,15 +9,17 @@ import {
 	type SessionEntry,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import type { executeAsyncSingle } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-execution.js";
 import { steerRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import { createInitialStatus } from "../../packages/pi-stuff/src/subagents/src/runs/background/initial-status.js";
 import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import {
-	executeForegroundConfig,
-	projectForegroundCompletion,
+	type ForegroundExecutionDependencies,
+	runForegroundConfig,
 } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
+import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/foreground-projection.js";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
@@ -57,6 +59,32 @@ import { createExtensionCommandContext } from "../fixtures/extension-context.js"
 
 const temporaryDirectories: string[] = [];
 const environment = new Map<string, string | undefined>();
+
+type ForegroundTestDependencies = Omit<Partial<ForegroundExecutionDependencies>, "reapWriters" | "runConfigured"> & {
+	readonly reapWriters?: (asyncDir: string) => Promise<{ remaining: number; terminated: number }>;
+	readonly runConfigured?: (
+		config: BackgroundRunnerConfig,
+		onStatus: (status: Parameters<ForegroundExecutionDependencies["onStatus"]>[0]) => void,
+	) => Promise<void>;
+};
+
+function executeForegroundConfig(
+	config: BackgroundRunnerConfig,
+	signal?: AbortSignal,
+	dependencies: ForegroundTestDependencies = {},
+) {
+	const { reapWriters, runConfigured, ...rest } = dependencies;
+	const adapted: Partial<ForegroundExecutionDependencies> = { ...rest };
+	if (reapWriters) {
+		adapted.reapWriters = (asyncDir) =>
+			Effect.tryPromise({ try: () => reapWriters(asyncDir), catch: (error) => error });
+	}
+	if (runConfigured) {
+		adapted.runConfigured = (foregroundConfig, onStatus) =>
+			Effect.tryPromise({ try: () => runConfigured(foregroundConfig, onStatus), catch: (error) => error });
+	}
+	return Effect.runPromise(runForegroundConfig(config, signal, adapted));
+}
 
 function clearEnvironment(name: string): void {
 	if (!environment.has(name)) environment.set(name, process.env[name]);
@@ -239,52 +267,53 @@ function executor(
 					details: { asyncId: id, mode: "single", results: [], runId: id },
 				};
 			},
-			foreground: async (config, _signal, dependencies) => {
-				temporaryDirectories.push(config.asyncDir);
-				const status = createInitialStatus(config, config.startedAt ?? Date.now());
-				const child = status.steps[0];
-				if (child) {
-					child.status = "running";
-					child.currentTool = "read";
-					child.turnCount = 2;
-				}
-				dependencies?.onStatus?.(status);
-				options.onForegroundConfig?.(config);
-				if (options.foregroundError) throw options.foregroundError;
-				if (options.foregroundDelayMs) await Bun.sleep(options.foregroundDelayMs);
-				return projectForegroundCompletion(config, {
-					id: config.id,
-					runId: config.id,
-					mode: config.work.mode,
-					state: options.foregroundCrash ? "failed" : "complete",
-					success: !options.foregroundCrash,
-					results: (config.work.mode === "single" ? [config.work.task] : config.work.group.tasks).map(
-						(task, index) => {
-							const result: BackgroundTaskResult = {
-								agent: task.agent,
-								output: `result-${index + 1}`,
-								success: !options.foregroundCrash,
-								exitCode: options.foregroundCrash ? 1 : 0,
-								sessionFile: path.join(cwd, `child-${index}.jsonl`),
-							};
-							if (task.context !== undefined) result.context = task.context;
-							if (options.foregroundCrash)
-								result.writerProcesses = [
-									{
-										attempt: 0,
-										closeObservedAt: Date.now(),
-										exitCode: null,
-										kind: "pi-writer",
-										processInstanceId: "external-crash",
-										signal: "SIGSEGV",
-										terminationOrigin: "external",
-									},
-								];
-							return result;
-						},
-					),
-				});
-			},
+			foreground: (config, _signal, dependencies) =>
+				Effect.gen(function* () {
+					temporaryDirectories.push(config.asyncDir);
+					const status = createInitialStatus(config, config.startedAt ?? Date.now());
+					const child = status.steps[0];
+					if (child) {
+						child.status = "running";
+						child.currentTool = "read";
+						child.turnCount = 2;
+					}
+					dependencies?.onStatus?.(status);
+					options.onForegroundConfig?.(config);
+					if (options.foregroundError) return yield* Effect.fail(options.foregroundError);
+					if (options.foregroundDelayMs) yield* Effect.sleep(options.foregroundDelayMs);
+					return projectForegroundCompletion(config, {
+						id: config.id,
+						runId: config.id,
+						mode: config.work.mode,
+						state: options.foregroundCrash ? "failed" : "complete",
+						success: !options.foregroundCrash,
+						results: (config.work.mode === "single" ? [config.work.task] : config.work.group.tasks).map(
+							(task, index) => {
+								const result: BackgroundTaskResult = {
+									agent: task.agent,
+									output: `result-${index + 1}`,
+									success: !options.foregroundCrash,
+									exitCode: options.foregroundCrash ? 1 : 0,
+									sessionFile: path.join(cwd, `child-${index}.jsonl`),
+								};
+								if (task.context !== undefined) result.context = task.context;
+								if (options.foregroundCrash)
+									result.writerProcesses = [
+										{
+											attempt: 0,
+											closeObservedAt: Date.now(),
+											exitCode: null,
+											kind: "pi-writer",
+											processInstanceId: "external-crash",
+											signal: "SIGSEGV",
+											terminationOrigin: "external",
+										},
+									];
+								return result;
+							},
+						),
+					});
+				}),
 		},
 	});
 	return {

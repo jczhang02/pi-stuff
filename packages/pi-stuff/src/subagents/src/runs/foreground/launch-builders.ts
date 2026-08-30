@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect, type Scope } from "effect";
 import { getPonytailMode } from "../../../../ponytail/state.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
@@ -210,7 +211,7 @@ function buildForegroundConfig(
 	return { config, directoryClaim, recoveries };
 }
 
-export async function launchForeground(
+export function launchForeground(
 	data: PreparedLaunch,
 	deps: ExecutorDeps,
 	engines: ExecutorEngines,
@@ -218,25 +219,29 @@ export async function launchForeground(
 	onUpdate?: (result: AgentToolResult<Details>) => void,
 	hooks?: SubagentExecutionHooks,
 	onLifecycleCommitted?: () => void,
-): Promise<AgentToolResult<Details>> {
-	if (signal.aborted) {
-		return errorResult(data.mode, "Foreground Agent cancelled before launch.", {
-			runId: data.runId,
-			cwd: data.effectiveCwd,
-			stopped: true,
-		});
-	}
-	const preparedConfig = buildForegroundConfig(data, deps);
-	if ("content" in preparedConfig) return preparedConfig;
-	return await executeForegroundLifecycle(
-		data,
-		taskInputs(data.params),
-		preparedConfig,
-		deps,
-		engines.foreground,
-		signal,
-		onUpdate,
-		hooks,
-		onLifecycleCommitted,
-	);
+): Effect.Effect<AgentToolResult<Details>, unknown, Scope.Scope> {
+	return Effect.suspend(() => {
+		if (signal.aborted) {
+			return Effect.succeed(
+				errorResult(data.mode, "Foreground Agent cancelled before launch.", {
+					runId: data.runId,
+					cwd: data.effectiveCwd,
+					stopped: true,
+				}),
+			);
+		}
+		const preparedConfig = buildForegroundConfig(data, deps);
+		if ("content" in preparedConfig) return Effect.succeed(preparedConfig);
+		return executeForegroundLifecycle(
+			data,
+			taskInputs(data.params),
+			preparedConfig,
+			deps,
+			engines.foreground,
+			signal,
+			onUpdate,
+			hooks,
+			onLifecycleCommitted,
+		);
+	});
 }

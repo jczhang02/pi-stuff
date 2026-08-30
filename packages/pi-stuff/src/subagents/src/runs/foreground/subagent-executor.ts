@@ -45,7 +45,7 @@ import { SUBAGENT_PARENT_PHYSICAL_SESSION_ENV, SUBAGENT_PARENT_SESSION_ENV } fro
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
-import { executeForegroundConfig } from "./execution.ts";
+import { runForegroundConfig } from "./execution.ts";
 import type {
 	AgentToolResult,
 	ExecutorDeps,
@@ -81,7 +81,7 @@ export { ponytailLaunchSnapshot };
 const DEFAULT_ENGINES: ExecutorEngines = {
 	backgroundSingle: executeAsyncSingle,
 	backgroundParallel: executeAsyncParallel,
-	foreground: executeForegroundConfig,
+	foreground: runForegroundConfig,
 };
 
 function validateControlInput(params: SubagentParamsLike): string | undefined {
@@ -593,17 +593,24 @@ export function createSubagentExecutor(deps: ExecutorDeps) {
 			const prepared = await prepareLaunch(id, params, ctx, deps);
 			if ("content" in prepared) return prepared;
 			if (!prepared.inheritedNestedRoute) ownedNestedRoute = prepared.nestedRoute;
-			await attachContextProjection(prepared, ctx, deps.projectContext);
 			let result: AgentToolResult<Details>;
 			if (foreground) {
-				result = await launchForeground(prepared, deps, engines, signal, onUpdate, hooks, () => {
-					foregroundLifecycleOwnsRoute = true;
-				});
+				result = await Effect.runPromise(
+					Effect.scoped(
+						Effect.gen(function* () {
+							yield* attachContextProjection(prepared, ctx, deps.projectContext);
+							return yield* launchForeground(prepared, deps, engines, signal, onUpdate, hooks, () => {
+								foregroundLifecycleOwnsRoute = true;
+							});
+						}),
+					),
+				);
 				// A foreground adapter may return detached children after losing its
 				// owner while their writer liveness is still unknown. Their durable
 				// runtime remains authoritative until the tracker terminalizes it.
 				foregroundLifecycleOwnsRoute = result.details.results.some((child) => child.detached === true);
 			} else {
+				await Effect.runPromise(attachContextProjection(prepared, ctx, deps.projectContext));
 				result = await launchBackground(prepared, deps, engines, hooks);
 			}
 			backgroundOwnsRoute = !foreground && Boolean(result.details.asyncId);

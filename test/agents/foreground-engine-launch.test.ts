@@ -240,6 +240,30 @@ test("single foreground execution completes through the shared v2 runner shape",
 	expect(runState.foregroundRuns?.size).toBe(1);
 });
 
+test("stops foreground activity polling when the engine settles", async () => {
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-activity-"));
+	temporaryDirectories.push(cwd);
+	fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+	let observations = 0;
+	const delegate = executor(cwd, state(), undefined, {
+		foregroundDelayMs: 650,
+		onForegroundStatus: () => observations++,
+	});
+
+	await delegate.execute(
+		"activity-settlement",
+		{ agent: "general-purpose", task: "Wait for activity", async: false, context: "fresh" },
+		new AbortController().signal,
+		undefined,
+		context(cwd),
+	);
+
+	expect(observations).toBeGreaterThanOrEqual(2);
+	const settledObservations = observations;
+	await Bun.sleep(550);
+	expect(observations).toBe(settledObservations);
+});
+
 test("runs Host-native concurrent foreground Agent calls without dropping siblings", async () => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-concurrent-"));
 	temporaryDirectories.push(cwd);

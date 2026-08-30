@@ -22,7 +22,7 @@ import type {
 	resolveInheritedNestedRouteFromEnv,
 	resolveNestedParentAddressFromEnv,
 } from "../shared/nested-events.ts";
-import type { executeForegroundConfig } from "./execution.ts";
+import type { runForegroundConfig } from "./execution.ts";
 
 export type AgentToolResult<T> = CoreAgentToolResult<T> & { isError?: boolean };
 
@@ -87,7 +87,7 @@ export interface SubagentParamsLike {
 export interface ExecutorEngines {
 	backgroundSingle: typeof executeAsyncSingle;
 	backgroundParallel: typeof executeAsyncParallel;
-	foreground: typeof executeForegroundConfig;
+	foreground: typeof runForegroundConfig;
 }
 
 export interface ExecutorDeps {

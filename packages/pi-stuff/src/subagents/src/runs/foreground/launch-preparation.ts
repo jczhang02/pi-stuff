@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";
@@ -59,27 +60,28 @@ export function availableModels(ctx: ExtensionContext): ModelInfo[] {
 	}
 }
 
-export async function attachContextProjection(
+export function attachContextProjection(
 	data: PreparedLaunch,
 	ctx: ExtensionContext,
 	projectContext: typeof projectCurrentContext | undefined,
-): Promise<void> {
-	data.params.contextProjection = undefined;
-	if (!projectContext) return;
-	if (data.context === "fork" && data.rawForkByIndex.every(Boolean)) return;
-	const maxTokens = projectionTokenBudget(data);
-	if (maxTokens <= 0) return;
-	try {
+): Effect.Effect<void, never> {
+	return Effect.gen(function* () {
+		data.params.contextProjection = undefined;
+		if (!projectContext) return;
+		if (data.context === "fork" && data.rawForkByIndex.every(Boolean)) return;
+		const maxTokens = projectionTokenBudget(data);
+		if (maxTokens <= 0) return;
 		const audience = data.context === "fork" ? "agent-fork" : "agent-fresh";
 		const options =
 			data.context === "fork" && data.forkSourceMessages
 				? { maxTokens, sourceMessages: data.forkSourceMessages }
 				: { maxTokens };
-		const projection = await projectContext(audience, ctx, options);
-		if (projection.text) data.params.contextProjection = projection.text;
-	} catch {
-		// Context continuity is optional; Agent launch remains fail-open.
-	}
+		const projection = yield* Effect.tryPromise({
+			try: () => projectContext(audience, ctx, options),
+			catch: (error) => error,
+		}).pipe(Effect.catch(() => Effect.succeed(undefined)));
+		if (projection?.text) data.params.contextProjection = projection.text;
+	});
 }
 
 export function rememberParentModel(
