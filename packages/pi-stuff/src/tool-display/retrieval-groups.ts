@@ -1,6 +1,11 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import type { ToolActivityCategory, ToolActivityMetadata, ToolArguments } from "./activity-model.js";
+import {
+	skillReadName,
+	type ToolActivityCategory,
+	type ToolActivityMetadata,
+	type ToolArguments,
+} from "./activity-model.js";
 import { isToolArguments } from "./tool-value.js";
 
 export interface PlannedToolActivityMember {
@@ -30,10 +35,11 @@ const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
 /** One invocation-level policy shared by streaming, replay, and envelope projection. */
 export function classifyRetrievalGroupInvocation(
 	name: string,
-	_args: ToolArguments,
+	args: ToolArguments,
 	metadata: ToolActivityMetadata<ToolArguments, unknown> | undefined,
 ): RetrievalGroupDisposition {
 	if (TRANSPARENT_ACTIVITY_TOOL_NAMES.has(name)) return "transparent";
+	if (name === "read" && skillReadName("/", args)) return "boundary";
 	if (!metadata || !RETRIEVAL_ACTIVITY_TOOL_NAMES.has(name)) return "boundary";
 	return metadata.categories.length > 0 &&
 		metadata.categories.every((category) => RETRIEVAL_ACTIVITY_CATEGORIES.has(category))

@@ -10,7 +10,7 @@ import {
 	getAgentDir,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { classifyBashActivity, singleActivity } from "./activity.js";
+import { classifyBashActivity, singleActivity, skillReadName } from "./activity.js";
 import type { SuiteToolRegistrationHost } from "./contract.js";
 import { registerSuiteOwnedTool } from "./registration.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./tool-text.js";
@@ -81,6 +81,38 @@ function registerBashBuiltin(
 	);
 }
 
+function registerReadBuiltin(
+	pi: SuiteToolRegistrationHost,
+	cwd: string,
+	hostSettings: BuiltinHostSettings,
+	factories: BuiltinFactoryOverrides,
+): void {
+	const read = (factories.read ?? createReadToolDefinition)(cwd, {
+		autoResizeImages: hostSettings.autoResizeImages,
+	});
+	registerSuiteOwnedTool(
+		pi,
+		read,
+		{
+			activity: {
+				categories: ["read-file"],
+				classify: ({ args }) => singleActivity("read-file", { key: resolve(cwd, args.path), target: args.path }),
+			},
+			label: (args) => {
+				const skill = skillReadName(cwd, args);
+				return skill ? `Skill ${skill}` : "Read";
+			},
+			runningSummary: (args) => (skillReadName(cwd, args) ? "loading" : "reading"),
+			summarize: (args, result, state, durationMs) =>
+				skillReadName(cwd, args) && state === "success"
+					? "loaded"
+					: summarizeBuiltin("read", args, result, state, durationMs),
+			target: (args) => (skillReadName(cwd, args) ? "" : describeBuiltinTarget("read", args)),
+		},
+		PROGRAMMATIC_READ,
+	);
+}
+
 export function registerBuiltins(
 	pi: SuiteToolRegistrationHost,
 	cwd: string,
@@ -88,26 +120,7 @@ export function registerBuiltins(
 	factories: BuiltinFactoryOverrides = {},
 	selectedNames?: ReadonlySet<string>,
 ): void {
-	if (!selectedNames || selectedNames.has("read")) {
-		const read = (factories.read ?? createReadToolDefinition)(cwd, {
-			autoResizeImages: hostSettings.autoResizeImages,
-		});
-		registerSuiteOwnedTool(
-			pi,
-			read,
-			{
-				activity: {
-					categories: ["read-file"],
-					classify: ({ args }) => singleActivity("read-file", { key: resolve(cwd, args.path), target: args.path }),
-				},
-				label: "Read",
-				runningSummary: "reading",
-				summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
-				target: (args) => describeBuiltinTarget("read", args),
-			},
-			PROGRAMMATIC_READ,
-		);
-	}
+	if (!selectedNames || selectedNames.has("read")) registerReadBuiltin(pi, cwd, hostSettings, factories);
 
 	if (!selectedNames || selectedNames.has("write")) {
 		const write = createWriteToolDefinition(cwd);

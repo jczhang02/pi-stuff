@@ -150,10 +150,15 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 		for (const name of ["read", "edit", "bash"]) runtime.markRendererAttached(name);
 	};
 	const calls = [
-		{ id: "read-before", name: "read", arguments: { value: "a.ts" } },
+		{ id: "read-before", name: "read", arguments: { path: "a.ts", value: "a.ts" } },
+		{
+			id: "skill",
+			name: "read",
+			arguments: { path: "skills/demo/SKILL.md", value: "skills/demo/SKILL.md" },
+		},
 		{ id: "bash-read", name: "bash", arguments: { command: "cat a.ts", value: "cat a.ts" } },
 		{ id: "edit", name: "edit", arguments: { value: "a.ts" } },
-		{ id: "read-after", name: "read", arguments: { value: "b.ts" } },
+		{ id: "read-after", name: "read", arguments: { path: "b.ts", value: "b.ts" } },
 	] as const;
 	const persisted = [
 		assistant(...calls.map((entry) => ({ ...entry, type: "toolCall" }))),
@@ -196,12 +201,11 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 		true,
 	);
 
-	const groupActivityNames = (runtime: ToolUiRuntime) =>
-		runtime.listGroups().map((group) => runtime.groupActivities(group.id).map((activity) => activity.name));
-	const expected = [["read"], ["edit"], ["bash"], ["read"]];
-	expect(groupActivityNames(rebuilt)).toEqual(expected);
-	expect(groupActivityNames(streaming)).toEqual(expected);
-	expect(groupActivityNames(codeMode)).toEqual(expected);
+	const groupMemberIds = (runtime: ToolUiRuntime) => runtime.listGroups().map((group) => group.memberIds);
+	const expected = [["read-after"], ["edit"], ["bash-read"], ["skill"], ["read-before"]];
+	expect(groupMemberIds(rebuilt)).toEqual(expected);
+	expect(groupMemberIds(streaming)).toEqual(expected);
+	expect(groupMemberIds(codeMode)).toEqual(expected);
 });
 
 test("the Code Mode surface hides every active Suite Tool without changing the virtual active Tool set", () => {

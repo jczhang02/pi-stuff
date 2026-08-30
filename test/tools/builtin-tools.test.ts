@@ -12,7 +12,10 @@ import {
 	registerBuiltins,
 	resolveBuiltinHostSettings,
 } from "../../packages/pi-stuff/src/tool-display/builtin-tools.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import {
+	getToolUiRuntime,
+	type SuiteToolEnvelopeOperation,
+} from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 test("built-in overrides receive Pi's merged image and shell settings exactly", () => {
@@ -152,5 +155,98 @@ test("built-in retrieval metadata deduplicates Read paths but counts Search and 
 		memberIds: ["r1", "r2", "g1", "g2", "l1", "l2"],
 		summary: "Searched 2 patterns, read 1 file, listed 2 directories",
 	});
+	runtime.clear();
+});
+
+test("exact SKILL.md reads present one standalone Skill activity with Read evidence", () => {
+	const { host: pi } = toolRegistrationHarness();
+	registerBuiltins(pi, "/project", {
+		autoResizeImages: true,
+		shellCommandPrefix: undefined,
+		shellPath: undefined,
+	});
+	const runtime = getToolUiRuntime(pi);
+	const calls = [
+		{ type: "toolCall", id: "before", name: "read", arguments: { path: "before.ts" } },
+		{ type: "toolCall", id: "skill", name: "read", arguments: { path: "skills/demo/SKILL.md" } },
+		{ type: "toolCall", id: "after", name: "read", arguments: { path: "after.ts" } },
+	];
+	const results = [
+		{ role: "toolResult", toolCallId: "before", content: [{ type: "text", text: "before" }], details: {} },
+		{
+			role: "toolResult",
+			toolCallId: "skill",
+			content: [{ type: "text", text: "# Demo\nInstructions" }],
+			details: {},
+		},
+		{ role: "toolResult", toolCallId: "after", content: [{ type: "text", text: "after" }], details: {} },
+	];
+
+	runtime.startTurn([{ role: "assistant", content: calls }]);
+	expect(runtime.resolveGroup("skill")).toMatchObject({
+		label: "Skill demo",
+		memberIds: ["skill"],
+		outcome: "loading",
+		state: "running",
+		summary: "Skill demo · loading",
+	});
+	expect(runtime.resolveGroup("before")).toMatchObject({ memberIds: ["before"] });
+	expect(runtime.resolveGroup("after")).toMatchObject({ memberIds: ["after"] });
+	for (const result of results) runtime.indexMessage(result);
+	runtime.endTurn();
+	expect(runtime.resolveGroup("skill")).toMatchObject({ outcome: "loaded", state: "success" });
+	runtime.clear();
+
+	runtime.indexMessages([{ role: "assistant", content: calls }, ...results], true);
+
+	expect(runtime.resolveGroup("skill")).toMatchObject({
+		label: "Skill demo",
+		memberIds: ["skill"],
+		outcome: "loaded",
+		state: "success",
+		summary: "Skill demo · loaded",
+	});
+	expect(runtime.resolveGroup("before")).toMatchObject({ memberIds: ["before"] });
+	expect(runtime.resolveGroup("after")).toMatchObject({ memberIds: ["after"] });
+	const formatted = runtime.toolActivityDetail("skill", "formatted");
+	expect(formatted?.activity).toMatchObject({ label: "Skill demo", name: "read", summary: "loaded" });
+	expect(formatted?.sections).toEqual([{ lines: ["# Demo", "Instructions"], title: "Content" }]);
+	const raw = runtime.toolActivityDetail("skill", "raw")?.lines.join("\n") ?? "";
+	expect(raw).toContain("Tool name: read");
+	expect(raw).toContain('{"path": "skills/demo/SKILL.md"}');
+	expect(raw).toContain("# Demo");
+	runtime.clear();
+
+	let operations: readonly SuiteToolEnvelopeOperation[] = [
+		{ args: { path: "skills/nested/SKILL.md" }, id: "nested-skill", name: "read", state: "running" },
+	];
+	runtime.registerEnvelope("codemode", () => operations);
+	runtime.observeEnvelopeResult("codemode", "outer-skill", { operations });
+	expect(runtime.resolveGroup("nested-skill")).toMatchObject({
+		label: "Skill nested",
+		outcome: "loading",
+		state: "running",
+	});
+	operations = [
+		{
+			args: { path: "skills/nested/SKILL.md" },
+			id: "nested-skill",
+			name: "read",
+			result: { content: [{ type: "text", text: "# Nested" }], details: {} },
+			state: "success",
+		},
+	];
+	runtime.observeEnvelopeResult("codemode", "outer-skill", { operations });
+	expect(runtime.resolveGroup("nested-skill")).toMatchObject({
+		label: "Skill nested",
+		outcome: "loaded",
+		state: "success",
+	});
+	expect(runtime.toolActivityDetail("nested-skill", "formatted")?.sections).toEqual([
+		{ lines: ["# Nested"], title: "Content" },
+	]);
+	const nestedRaw = runtime.toolActivityDetail("nested-skill", "raw")?.lines.join("\n") ?? "";
+	expect(nestedRaw).toContain("Tool name: read");
+	expect(nestedRaw).toContain('{"path": "skills/nested/SKILL.md"}');
 	runtime.clear();
 });
