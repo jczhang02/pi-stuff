@@ -138,7 +138,7 @@ if {$env(PI_STUFF_TOOLS_PTY_COLUMNS) >= 96} {
 }
 send_and_expect "\\031" "State · rejected"
 send_and_expect "\\033\\[A" "State · cancelled"
-send_and_expect " " "Bash · command · done"
+send_and_expect " " "Bash · command"
 send_and_expect "\\rr" "Raw"
 send_and_expect "r" "Output"
 send_and_expect "\\033" "activities"

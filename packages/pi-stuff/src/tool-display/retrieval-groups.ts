@@ -234,7 +234,7 @@ export function planRetrievalGroups(
 			const call = toolCall(block);
 			if (!call) continue;
 			const result = results.get(call.id);
-			const settledState = terminalState ?? (hostCancelledBash.has(call.id) ? "cancelled" : undefined);
+			const settledState = hostCancelledBash.has(call.id) ? "cancelled" : result ? undefined : terminalState;
 			const member: PlannedToolActivityMember = { ...call };
 			if (result) Object.assign(member, { result });
 			if (settledState) Object.assign(member, { terminalState: settledState });

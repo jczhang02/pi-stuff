@@ -193,7 +193,12 @@ export class ToolGroupProjection {
 		}
 		const previous = group.members[memberIndex];
 		if (!previous) return;
-		const updated = { ...previous, result };
+		const updated: PlannedToolActivityMember = {
+			args: previous.args,
+			id: previous.id,
+			name: previous.name,
+			result,
+		};
 		this.mutableMembers(group)[memberIndex] = updated;
 		if (this.isTransparentIssue(updated)) {
 			this.splitGroupAtIssue(group, memberIndex);
