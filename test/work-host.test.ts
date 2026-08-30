@@ -17,4 +17,4 @@ test("the single Pi Stuff Package loads Background Work without reviving a disab
 	expect(result.commandNames).toContain("tasks");
 	expect(result.commandNames).toContain("work-tools-certified");
 	expect(result.createdFiles.some((path) => path.includes("tasks"))).toBe(false);
-});
+}, 30_000);

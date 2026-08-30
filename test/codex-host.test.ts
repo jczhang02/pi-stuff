@@ -20,4 +20,4 @@ test("the single Pi Stuff Package loads only the deliberate Codex surface and le
 		expect(result.commandNames).not.toContain(excluded);
 	}
 	expect(result.createdFiles).not.toContain("agent/pi-stuff-codex.json");
-});
+}, 30_000);

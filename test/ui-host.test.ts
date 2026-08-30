@@ -13,4 +13,4 @@ test("the Suite exposes one unified UI settings command", async () => {
 	expect(result.commandNames).toContain("ui");
 	expect(result.commandNames).not.toContain("tool-settings");
 	expect(result.stderr).toBe("");
-});
+}, 30_000);

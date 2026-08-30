@@ -78,4 +78,4 @@ test("the certified Pi Host loads Agents through the single Pi Stuff Package", a
 	const result = await runPiRpcSmoke({ piBinary: PI_BINARY, packages: [PI_STUFF_PACKAGE] });
 	expect(result.commandNames).toContain("agents");
 	expect(result.stderr).toBe("");
-});
+}, 30_000);

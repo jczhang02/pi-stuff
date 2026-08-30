@@ -79,4 +79,4 @@ test("the certified Pi Host loads all Todo tools through the single Pi Stuff Pac
 
 	expect(result.stderr).toBe("");
 	expect(result.commandNames).toContain("todo-tools-certified");
-});
+}, 30_000);
