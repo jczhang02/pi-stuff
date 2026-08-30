@@ -185,7 +185,7 @@ export class ToolActivityQueryProjection {
 
 	summaryMember(member: PlannedToolActivityMember): ActivitySummaryMember {
 		const binding = this.source.bindingFor(member.id);
-		const forcedTerminal = !member.result ? member.terminalState : undefined;
+		const forcedTerminal = member.terminalState;
 		const state =
 			forcedTerminal ??
 			(member.result
@@ -210,12 +210,12 @@ export class ToolActivityQueryProjection {
 		const issueDetail =
 			state === "success" || state === "running"
 				? undefined
-				: forcedTerminal
-					? state === "cancelled"
-						? "Tool call was cancelled before execution"
-						: "Tool call failed before execution"
-					: metadata.result
-						? this.issueDetail(member.name, metadata.args, metadata.result, state)
+				: metadata.result
+					? this.issueDetail(member.name, metadata.args, metadata.result, state)
+					: forcedTerminal
+						? state === "cancelled"
+							? "Tool call was cancelled before execution"
+							: "Tool call failed before execution"
 						: (binding?.baseModel.summary ?? issueLabel);
 		const summary: ActivitySummaryMember = {
 			items,
@@ -241,8 +241,7 @@ export class ToolActivityQueryProjection {
 		const transparent = this.source.disposition(member.name, member.args) === "transparent";
 		const metadata: PresentedToolMetadata = { args: member.args, name: member.name };
 		if (member.result) Object.assign(metadata, { result: member.result });
-		const classifiedItems =
-			transparent || (member.terminalState && !member.result) ? [] : this.classify(metadata, state);
+		const classifiedItems = transparent || member.terminalState ? [] : this.classify(metadata, state);
 		const items = visibleActivityItems(classifiedItems, state);
 		const summary = summarizeRetrievalGroup([{ items, state }], state !== "running");
 		const presentation = this.source.detailPresentations.get(member.name);

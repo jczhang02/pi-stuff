@@ -322,7 +322,7 @@ function bashOutputLines(model: BashOperationRowModel) {
 	if (exit) {
 		lines = lines.slice(0, -1);
 		while (lines.at(-1)?.trim() === "") lines.pop();
-		lines.unshift(`Error: Exit code ${exit[1] ?? "?"}`);
+		if (model.state !== "cancelled") lines.unshift(`Error: Exit code ${exit[1] ?? "?"}`);
 	} else if (terminal === "Command aborted" || terminal.startsWith("Command timed out")) {
 		lines = lines.slice(0, -1);
 		while (lines.at(-1)?.trim() === "") lines.pop();

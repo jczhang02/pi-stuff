@@ -262,8 +262,7 @@ export class ToolGroupProjection {
 		if (!isRecordValue(message)) return;
 		const role = message.role;
 		if (role === "assistant" && Array.isArray(message.content)) {
-			const previous = this.indexedMessages.at(-2);
-			const cancellation = isRecordValue(previous) ? directBashCancelledByHostAbort(previous, message) : undefined;
+			const cancellation = directBashCancelledByHostAbort(this.indexedMessages);
 			if (cancellation) this.settleHostCancelledBash(cancellation.id);
 			this.applyAssistantContent(message.content, assistantTerminalState(message.stopReason));
 			return;
@@ -296,14 +295,7 @@ export class ToolGroupProjection {
 		const group = this.groupForTool(toolCallId);
 		const memberIndex = this.memberIndexes.get(toolCallId);
 		const member = memberIndex === undefined ? undefined : group?.members[memberIndex];
-		if (
-			!group ||
-			memberIndex === undefined ||
-			!member ||
-			member.name !== "bash" ||
-			member.result ||
-			member.terminalState
-		) {
+		if (!group || memberIndex === undefined || !member || member.name !== "bash" || member.terminalState) {
 			return;
 		}
 		this.mutableMembers(group)[memberIndex] = { ...member, terminalState: "cancelled" };

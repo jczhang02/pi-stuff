@@ -187,7 +187,19 @@ test("an adjacent empty Host abort settles only the in-flight Bash and retains p
 	if (!component) throw new Error("missing cancellable Bash component");
 	const partial = { content: [{ type: "text" as const, text: "partial" }], details: { source: "bash" } };
 	runtime.observeToolExecutionUpdate("cancelled-bash", partial);
-	runtime.indexMessage({ role: "assistant", content: [], stopReason: "aborted" });
+	const interrupted = {
+		content: [{ type: "text" as const, text: "partial\n\nCommand exited with code 128" }],
+		details: { source: "bash" },
+		isError: true,
+	};
+	runtime.observeToolExecutionEnd("cancelled-bash", interrupted);
+	runtime.indexMessage(result("cancelled-bash", "partial\n\nCommand exited with code 128", true));
+	runtime.indexMessage({
+		role: "assistant",
+		content: [],
+		stopReason: "error",
+		errorMessage: "The operation was aborted.",
+	});
 
 	expect(renderLines(component)).toEqual([" • Bash(printf partial; sleep 30)", "  ⎿  Interrupted", "     partial"]);
 	expect(runtime.resolveGroup("cancelled-bash")).toMatchObject({ state: "cancelled" });
@@ -204,7 +216,16 @@ test("an adjacent empty Host abort settles only the in-flight Bash and retains p
 	replay.registerActivity("bash", presentation("run-command").activity);
 	replay.markRendererAttached("bash");
 	replay.indexMessages(
-		[assistant(bashCall("replayed-cancel", command)), { role: "assistant", content: [], stopReason: "aborted" }],
+		[
+			assistant(bashCall("replayed-cancel", command)),
+			result("replayed-cancel", "partial\n\nCommand exited with code 128", true),
+			{
+				role: "assistant",
+				content: [],
+				stopReason: "error",
+				errorMessage: "The operation was aborted.",
+			},
+		],
 		true,
 	);
 	expect(replay.resolveGroup("replayed-cancel")).toMatchObject({ state: "cancelled" });

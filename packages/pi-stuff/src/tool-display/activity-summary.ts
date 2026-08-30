@@ -314,7 +314,8 @@ export function terminalStateFromResult(
 	member: PlannedToolActivityMember,
 	resultIsError: ((args: ToolArguments, result: AgentToolResult<unknown>) => boolean) | undefined,
 ): ToolActivityState {
-	if (!member.result) return member.terminalState ?? "running";
+	if (member.terminalState) return member.terminalState;
+	if (!member.result) return "running";
 	let domainError = Check(ERROR_RESULT_SCHEMA, member.result);
 	if (!domainError && resultIsError) {
 		try {

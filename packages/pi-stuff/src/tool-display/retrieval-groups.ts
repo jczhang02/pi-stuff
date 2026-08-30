@@ -13,7 +13,7 @@ export interface PlannedToolActivityMember {
 	readonly id: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
-	/** Display-only terminal state when Pi persisted a call that never executed. */
+	/** Display-only terminal state proved by the surrounding Host transcript. */
 	readonly terminalState?: "cancelled" | "error";
 }
 
@@ -52,6 +52,7 @@ export interface ToolTranscriptRecord {
 	readonly content?: unknown;
 	readonly details?: unknown;
 	readonly display?: unknown;
+	readonly errorMessage?: unknown;
 	readonly id?: unknown;
 	readonly isError?: unknown;
 	readonly name?: unknown;
@@ -127,16 +128,32 @@ function assistantTerminalState(message: ToolTranscriptRecord): "cancelled" | "e
 	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
 }
 
-/** Pi records a direct Tool cancellation as a later empty aborted assistant message. */
+function isExplicitHostAbort(message: ToolTranscriptRecord): boolean {
+	return (
+		assistantTerminalState(message) === "cancelled" ||
+		(message.stopReason === "error" && message.errorMessage === "The operation was aborted.")
+	);
+}
+
+/** Pi records a direct Tool cancellation as a later explicit empty Host abort. */
 export function directBashCancelledByHostAbort(
-	previous: ToolTranscriptRecord,
-	current: ToolTranscriptRecord,
+	messages: readonly unknown[],
+	abortIndex = messages.length - 1,
 ): Omit<PlannedToolActivityMember, "result"> | undefined {
+	const current = messages[abortIndex];
 	if (
+		!isRecord(current) ||
 		current.role !== "assistant" ||
-		assistantTerminalState(current) !== "cancelled" ||
+		!isExplicitHostAbort(current) ||
 		!Array.isArray(current.content) ||
-		current.content.length !== 0 ||
+		current.content.length !== 0
+	) {
+		return undefined;
+	}
+	const adjacentResult = toolResult(messages[abortIndex - 1]);
+	const previous = messages[abortIndex - (adjacentResult ? 2 : 1)];
+	if (
+		!isRecord(previous) ||
 		previous.role !== "assistant" ||
 		assistantTerminalState(previous) !== undefined ||
 		!Array.isArray(previous.content)
@@ -145,7 +162,12 @@ export function directBashCancelledByHostAbort(
 	}
 	for (let index = previous.content.length - 1; index >= 0; index -= 1) {
 		const call = toolCall(previous.content[index]);
-		if (call) return call.name === "bash" ? call : undefined;
+		if (call) {
+			if (call.name !== "bash") return undefined;
+			return !adjacentResult || (adjacentResult.id === call.id && adjacentResult.result.isError === true)
+				? call
+				: undefined;
+		}
 		if (hasVisibleText(previous.content[index]) || hasVisibleThinking(previous.content[index])) return undefined;
 	}
 	return undefined;
@@ -168,11 +190,8 @@ export function planRetrievalGroups(
 	}
 	const hostCancelledBash = new Set<string>();
 	for (let index = 1; index < messages.length; index += 1) {
-		const previous = messages[index - 1];
-		const current = messages[index];
-		const call =
-			isRecord(previous) && isRecord(current) ? directBashCancelledByHostAbort(previous, current) : undefined;
-		if (call && !results.has(call.id)) hostCancelledBash.add(call.id);
+		const call = directBashCancelledByHostAbort(messages, index);
+		if (call) hostCancelledBash.add(call.id);
 	}
 
 	const groups: PlannedRetrievalGroup[] = [];
@@ -216,10 +235,9 @@ export function planRetrievalGroups(
 			if (!call) continue;
 			const result = results.get(call.id);
 			const settledState = terminalState ?? (hostCancelledBash.has(call.id) ? "cancelled" : undefined);
-			const member = {
-				...call,
-				...(result ? { result } : settledState ? { terminalState: settledState } : {}),
-			};
+			const member: PlannedToolActivityMember = { ...call };
+			if (result) Object.assign(member, { result });
+			if (settledState) Object.assign(member, { terminalState: settledState });
 			const disposition = classifyInvocation(call.name, call.args);
 			if (disposition === "boundary") {
 				appendStandalone(member);
