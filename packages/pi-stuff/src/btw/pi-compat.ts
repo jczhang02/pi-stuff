@@ -17,6 +17,7 @@ import type {
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 
 export interface BtwTransportContext {
 	readonly modelRegistry: Pick<
@@ -40,34 +41,46 @@ export interface OpenBtwStreamRequest {
 	readonly signal: AbortSignal;
 }
 
-export async function openBtwStream(request: OpenBtwStreamRequest): Promise<AssistantMessageEventStream> {
-	const { ctx, model, context, signal } = request;
-	const registry = ctx.modelRegistry;
-	const reasoning = ctx.thinkingLevel;
-	const provider = registry.getProvider(model.provider);
-	if (!provider) {
-		throw new BtwTransportConfigurationError(`unknown provider: ${model.provider}`);
-	}
+export function openBtwStream(request: OpenBtwStreamRequest): Effect.Effect<AssistantMessageEventStream, Error> {
+	return Effect.tryPromise({
+		try: async (effectSignal) => {
+			const { ctx, model, context, signal } = request;
+			const registry = ctx.modelRegistry;
+			const reasoning = ctx.thinkingLevel;
+			const throwIfAborted = (): void => {
+				signal.throwIfAborted();
+				effectSignal.throwIfAborted();
+			};
+			throwIfAborted();
+			const provider = registry.getProvider(model.provider);
+			if (!provider) {
+				throw new BtwTransportConfigurationError(`unknown provider: ${model.provider}`);
+			}
 
-	let resolved: AuthResult | undefined;
-	try {
-		resolved = await registry.getProviderAuth(model.provider);
-	} catch (error) {
-		throw new BtwTransportConfigurationError(error instanceof Error ? error.message : String(error));
-	}
+			let resolved: AuthResult | undefined;
+			try {
+				resolved = await registry.getProviderAuth(model.provider);
+			} catch (error) {
+				throw new BtwTransportConfigurationError(error instanceof Error ? error.message : String(error));
+			}
+			throwIfAborted();
 
-	let requestModel: Model<Api> = model;
-	const options: SimpleStreamOptions = { signal };
-	if (reasoning !== undefined && reasoning !== "off") options.reasoning = reasoning;
+			let requestModel: Model<Api> = model;
+			const options: SimpleStreamOptions = { signal };
+			if (reasoning !== undefined && reasoning !== "off") options.reasoning = reasoning;
 
-	// This model-aware facade applies Pi's provider, extension, models.json, and
-	// per-model header composition. Provider-only auth omits those model layers.
-	const requestAuth = await registry.getApiKeyAndHeaders(model);
-	if (!requestAuth.ok) throw new BtwTransportConfigurationError(requestAuth.error);
-	if (resolved?.auth.baseUrl) requestModel = { ...model, baseUrl: resolved.auth.baseUrl };
-	if (requestAuth.apiKey !== undefined) options.apiKey = requestAuth.apiKey;
-	if (requestAuth.headers !== undefined) options.headers = requestAuth.headers;
-	if (requestAuth.env !== undefined) options.env = requestAuth.env;
+			// This model-aware facade applies Pi's provider, extension, models.json, and
+			// per-model header composition. Provider-only auth omits those model layers.
+			const requestAuth = await registry.getApiKeyAndHeaders(model);
+			throwIfAborted();
+			if (!requestAuth.ok) throw new BtwTransportConfigurationError(requestAuth.error);
+			if (resolved?.auth.baseUrl) requestModel = { ...model, baseUrl: resolved.auth.baseUrl };
+			if (requestAuth.apiKey !== undefined) options.apiKey = requestAuth.apiKey;
+			if (requestAuth.headers !== undefined) options.headers = requestAuth.headers;
+			if (requestAuth.env !== undefined) options.env = requestAuth.env;
 
-	return provider.streamSimple(requestModel, context, options);
+			return provider.streamSimple(requestModel, context, options);
+		},
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
 }

@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { Api, AssistantMessage, Message, Model, UserMessage } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { type ExtensionContext, estimateTokens, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import { executeBtw, type OpenBtwStream, readEffectiveContext } from "../../packages/pi-stuff/src/btw/btw.js";
 import { fitBranch } from "../../packages/pi-stuff/src/btw/btw-budget.js";
 import piStuffContext, { __test as contextTest } from "../../packages/pi-stuff/src/context-management/index.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
 const MODEL: Model<Api> = {
@@ -89,6 +91,10 @@ function completedStream(deltas: readonly string[], final: AssistantMessage) {
 		stream.push({ type: "done", reason: final.stopReason, message: final });
 	}
 	return stream;
+}
+
+function runBtw(...args: Parameters<typeof executeBtw>) {
+	return Effect.runPromise(executeBtw(...args));
 }
 
 describe("BTW effective context", () => {
@@ -285,9 +291,9 @@ test("reuses captured Magic memory without re-running stateful projection for a 
 		for (const handler of handlers.get("context") ?? []) {
 			await handler({ type: "context", messages: [user("main conversation")] }, ctx);
 		}
-		await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
+		await runBtw("isolated question", ctx, new AbortController().signal, {}, (request) => {
 			captured = request;
-			return completedStream(["answer"], assistant("answer"));
+			return Effect.succeed(completedStream(["answer"], assistant("answer")));
 		});
 	} finally {
 		contextTest.clear();
@@ -305,12 +311,12 @@ test("streams text through the composed transport with no tools and an independe
 	const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))], mainController.signal);
 	const deltas: string[] = [];
 	let captured: Parameters<OpenBtwStream>[0] | undefined;
-	const openStream: OpenBtwStream = async (request) => {
+	const openStream: OpenBtwStream = (request) => {
 		captured = request;
-		return completedStream(["side ", "answer"], assistant("side answer"));
+		return Effect.succeed(completedStream(["side ", "answer"], assistant("side answer")));
 	};
 
-	const result = await executeBtw(
+	const result = await runBtw(
 		"isolated question",
 		ctx,
 		sideController.signal,
@@ -320,8 +326,10 @@ test("streams text through the composed transport with no tools and an independe
 
 	expect(result.kind).toBe("success");
 	expect(deltas).toEqual(["side ", "answer"]);
-	expect(captured?.signal).toBe(sideController.signal);
 	expect(captured?.signal).not.toBe(mainController.signal);
+	expect(captured?.signal).not.toBe(sideController.signal);
+	expect(captured?.signal.aborted).toBe(true);
+	expect(sideController.signal.aborted).toBe(false);
 	expect(captured?.context.tools).toEqual([]);
 	const requestText = JSON.stringify(captured?.context.messages);
 	expect(requestText).toContain("main conversation");
@@ -337,15 +345,17 @@ test("retries overflow once, resets partial output, and never re-reads a changed
 	let calls = 0;
 	const events: string[] = [];
 	const requests: Parameters<OpenBtwStream>[0][] = [];
-	const openStream: OpenBtwStream = async (request) => {
+	const openStream: OpenBtwStream = (request) => {
 		requests.push(request);
 		calls++;
-		return calls === 1
-			? completedStream(["discard me"], assistant("", "error", "prompt is too long"))
-			: completedStream(["kept"], assistant("kept"));
+		return Effect.succeed(
+			calls === 1
+				? completedStream(["discard me"], assistant("", "error", "prompt is too long"))
+				: completedStream(["kept"], assistant("kept")),
+		);
 	};
 
-	const result = await executeBtw(
+	const result = await runBtw(
 		"question",
 		ctx,
 		new AbortController().signal,
@@ -382,12 +392,12 @@ test("keeps failed partial output ephemeral and rejects a model tool attempt", a
 		partial: pending,
 	});
 	stream.push({ type: "done", reason: "toolUse", message: assistant("partial", "toolUse") });
-	const result = await executeBtw(
+	const result = await runBtw(
 		"question",
 		extensionContext(() => []),
 		new AbortController().signal,
 		{},
-		async () => stream,
+		() => Effect.succeed(stream),
 	);
 
 	expect(result).toMatchObject({ kind: "error", partial: "partial" });
@@ -397,32 +407,93 @@ test("keeps failed partial output ephemeral and rejects a model tool attempt", a
 test("an aborted side signal does not touch the main signal", async () => {
 	const mainController = new AbortController();
 	const sideController = new AbortController();
-	const result = await executeBtw(
+	const stream = createAssistantMessageEventStream();
+	const pending = assistant("", "pending");
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "text_delta", contentIndex: 0, delta: "partial", partial: pending });
+	const result = await runBtw(
 		"question",
 		extensionContext(() => [], mainController.signal),
 		sideController.signal,
-		{},
-		async () => {
-			const stream = createAssistantMessageEventStream();
-			queueMicrotask(() => {
-				sideController.abort();
-				stream.push({ type: "error", reason: "aborted", error: assistant("", "aborted") });
-			});
-			return stream;
-		},
+		{ onTextDelta: () => sideController.abort() },
+		() => Effect.succeed(stream),
 	);
 
-	expect(result.kind).toBe("aborted");
+	expect(result).toEqual({ kind: "aborted", partial: "partial", stopReason: "aborted" });
 	expect(mainController.signal.aborted).toBe(false);
 });
 
-test("projects a provider-originated abort as an in-surface error", async () => {
-	const result = await executeBtw(
+test("cancels a stream acquisition that has not settled", async () => {
+	const sideController = new AbortController();
+	const pending = runBtw(
+		"question",
+		extensionContext(() => []),
+		sideController.signal,
+		{},
+		() => Effect.never,
+	);
+	sideController.abort();
+
+	expect(await pending).toEqual({ kind: "aborted", partial: "", stopReason: "aborted" });
+});
+
+test("aborts the provider signal when its owning Session Scope is replaced", async () => {
+	const foundation = new EffectFoundation();
+	const session = await foundation.startSession();
+	const operation = foundation.forkOperation(session);
+	const stream = createAssistantMessageEventStream();
+	let providerSignal: AbortSignal | undefined;
+	let markOpened: (() => void) | undefined;
+	const opened = new Promise<void>((resolve) => {
+		markOpened = resolve;
+	});
+	const running = foundation.run(
+		operation,
+		executeBtw(
+			"question",
+			extensionContext(() => []),
+			new AbortController().signal,
+			{},
+			(request) =>
+				Effect.sync(() => {
+					providerSignal = request.signal;
+					markOpened?.();
+					return stream;
+				}),
+		),
+	);
+
+	await opened;
+	expect(providerSignal?.aborted).toBe(false);
+	await foundation.startSession();
+	const exit = await running;
+	expect(Exit.isFailure(exit)).toBe(true);
+	if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true);
+	expect(providerSignal?.aborted).toBe(true);
+	await foundation.shutdown();
+});
+
+test("projects provider failures with their partial text and stop reason", async () => {
+	const result = await runBtw(
 		"question",
 		extensionContext(() => []),
 		new AbortController().signal,
 		{},
-		async () => completedStream(["partial"], assistant("partial", "aborted")),
+		() => Effect.succeed(completedStream(["partial"], assistant("partial", "error", "provider exploded"))),
+	);
+
+	expect(result).toMatchObject({ kind: "error", partial: "partial", stopReason: "error" });
+	if (result.kind === "error") expect(result.error).toContain("provider exploded");
+});
+
+test("projects a provider-originated abort as an in-surface error", async () => {
+	const result = await runBtw(
+		"question",
+		extensionContext(() => []),
+		new AbortController().signal,
+		{},
+		() => Effect.succeed(completedStream(["partial"], assistant("partial", "aborted"))),
 	);
 
 	expect(result).toMatchObject({ kind: "error", partial: "partial", stopReason: "aborted" });

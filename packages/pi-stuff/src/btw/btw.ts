@@ -6,7 +6,15 @@
  * stream, and returns a value. Display history never crosses this boundary.
  */
 
-import type { Api, AssistantMessage, Message, Model, StopReason, UserMessage } from "@earendil-works/pi-ai";
+import type {
+	Api,
+	AssistantMessage,
+	AssistantMessageEventStream,
+	Message,
+	Model,
+	StopReason,
+	UserMessage,
+} from "@earendil-works/pi-ai";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import {
 	convertToLlm,
@@ -14,6 +22,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { projectCurrentContext } from "../context-management/index.js";
 import { fitBranch } from "./btw-budget.js";
 import { assistantMessageText } from "./btw-messages.js";
@@ -26,6 +35,7 @@ const ERR_EMPTY_RESPONSE = "/btw returned no text content.";
 const ERR_PROVIDER_ABORT = "/btw was aborted by the model provider.";
 const ERR_TOOL_ATTEMPT = "/btw attempted to call a tool even though tools are disabled.";
 const ERR_NO_MODEL = "/btw requires an active model.";
+const BTW_ABORT = Symbol("BtwAbort");
 
 const BTW_SYSTEM_PROMPT = btwSystemPrompt.trimEnd();
 
@@ -102,33 +112,58 @@ function buildBtwMessages(
 	};
 }
 
-interface AttemptResult {
-	readonly response: AssistantMessage;
-	readonly partial: string;
-	readonly sawToolAttempt: boolean;
+interface AttemptState {
+	partial: string;
+	sawToolAttempt: boolean;
 }
 
-async function consumeAttempt(
-	stream: Awaited<ReturnType<OpenBtwStream>>,
-	signal: AbortSignal,
+interface BtwExecutionState {
+	attempt: AttemptState;
+}
+
+function consumeAttempt(
+	stream: AssistantMessageEventStream,
+	state: AttemptState,
 	observer: BtwStreamObserver,
-): Promise<AttemptResult> {
-	let partial = "";
-	let sawToolAttempt = false;
-	for await (const event of stream) {
-		if (signal.aborted) continue;
-		if (event.type === "text_delta") {
-			partial += event.delta;
-			observer.onTextDelta?.(event.delta);
-		} else if (event.type === "toolcall_start" || event.type === "toolcall_delta" || event.type === "toolcall_end") {
-			sawToolAttempt = true;
+): Effect.Effect<AssistantMessage, Error> {
+	return Effect.gen(function* () {
+		const iterator = stream[Symbol.asyncIterator]();
+		while (true) {
+			const next = yield* Effect.tryPromise({
+				try: () => iterator.next(),
+				catch: normalizeError,
+			});
+			if (next.done) break;
+			yield* Effect.try({
+				try: () => {
+					const event = next.value;
+					if (event.type === "text_delta") {
+						state.partial += event.delta;
+						observer.onTextDelta?.(event.delta);
+					} else if (
+						event.type === "toolcall_start" ||
+						event.type === "toolcall_delta" ||
+						event.type === "toolcall_end"
+					) {
+						state.sawToolAttempt = true;
+					}
+				},
+				catch: normalizeError,
+			});
 		}
-	}
-	return { response: await stream.result(), partial, sawToolAttempt };
+		return yield* Effect.tryPromise({
+			try: () => stream.result(),
+			catch: normalizeError,
+		});
+	});
 }
 
-function callError(message: string): string {
-	return `/btw call failed: ${message}`;
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
+}
+
+function callError(error: Error | string): string {
+	return `/btw call failed: ${error instanceof Error ? error.message : error}`;
 }
 
 function errorResult(error: string, partial: string, stopReason?: StopReason): BtwExecResult {
@@ -141,81 +176,88 @@ function errorResult(error: string, partial: string, stopReason?: StopReason): B
 	return result;
 }
 
-/**
- * Execute a side call. `signal` belongs to the Suite Command Dialog frame and
- * must not be ctx.signal; closing BTW therefore cannot cancel the main Agent.
- */
-export async function executeBtw(
+function executeWithModel(
 	question: string,
 	ctx: ExtensionContext,
+	model: Model<Api>,
 	signal: AbortSignal,
-	observer: BtwStreamObserver = {},
-	openStream: OpenBtwStream = openBtwStream,
-): Promise<BtwExecResult> {
-	const model = ctx.model;
-	if (!model) return errorResult(ERR_NO_MODEL, "");
+	observer: BtwStreamObserver,
+	openStream: OpenBtwStream,
+	state: BtwExecutionState,
+): Effect.Effect<BtwExecResult, Error> {
+	return Effect.gen(function* () {
+		const userMessage: UserMessage = {
+			role: "user",
+			content: [{ type: "text", text: question }],
+			timestamp: Date.now(),
+		};
+		const effectiveContext = yield* Effect.try({
+			try: () => readEffectiveContext(ctx),
+			catch: normalizeError,
+		});
+		const contextProjection = (yield* Effect.tryPromise({
+			try: () => projectCurrentContext("btw", ctx, { sourceMessages: effectiveContext.contextMessages }),
+			catch: normalizeError,
+		})).text;
+		let built = yield* Effect.try({
+			try: () => buildBtwMessages(ctx, model, userMessage, contextProjection, undefined, effectiveContext),
+			catch: normalizeError,
+		});
+		let retried = false;
 
-	const userMessage: UserMessage = {
-		role: "user",
-		content: [{ type: "text", text: question }],
-		timestamp: Date.now(),
-	};
-	let built: BtwBuiltContext;
-	let effectiveContext: ReturnType<typeof readEffectiveContext>;
-	let contextProjection: string;
-	try {
-		effectiveContext = readEffectiveContext(ctx);
-		contextProjection = (
-			await projectCurrentContext("btw", ctx, { sourceMessages: effectiveContext.contextMessages })
-		).text;
-		built = buildBtwMessages(ctx, model, userMessage, contextProjection, undefined, effectiveContext);
-	} catch (error) {
-		return errorResult(callError(error instanceof Error ? error.message : String(error)), "");
-	}
-
-	let partial = "";
-	let retried = false;
-	try {
 		while (true) {
-			if (signal.aborted) return { kind: "aborted", partial: "", stopReason: "aborted" };
-			const stream = await openStream({
+			if (signal.aborted) return { kind: "aborted", partial: "", stopReason: "aborted" } as const;
+			const stream = yield* openStream({
 				ctx,
 				model,
 				context: { systemPrompt: built.systemPrompt, messages: built.messages, tools: [] },
 				signal,
 			});
-			const attempt = await consumeAttempt(stream, signal, observer);
-			partial = attempt.partial;
-			const { response } = attempt;
+			state.attempt = { partial: "", sawToolAttempt: false };
+			const response = yield* consumeAttempt(stream, state.attempt, observer);
+			const { partial } = state.attempt;
 
-			if (signal.aborted) {
-				return { kind: "aborted", partial, stopReason: "aborted" };
-			}
+			if (signal.aborted) return { kind: "aborted", partial, stopReason: "aborted" } as const;
 			if (response.stopReason === "aborted") return errorResult(ERR_PROVIDER_ABORT, partial, "aborted");
-			if (!retried && isContextOverflow(response, model.contextWindow)) {
+			const overflow = yield* Effect.try({
+				try: () => !retried && isContextOverflow(response, model.contextWindow),
+				catch: normalizeError,
+			});
+			if (overflow) {
 				retried = true;
-				partial = "";
-				observer.onRetry?.();
-				built = buildBtwMessages(
-					ctx,
-					model,
-					userMessage,
-					contextProjection,
-					Math.max(0, Math.floor(built.keepBudget / 2)),
-					effectiveContext,
-				);
+				state.attempt = { partial: "", sawToolAttempt: false };
+				built = yield* Effect.try({
+					try: () => {
+						observer.onRetry?.();
+						return buildBtwMessages(
+							ctx,
+							model,
+							userMessage,
+							contextProjection,
+							Math.max(0, Math.floor(built.keepBudget / 2)),
+							effectiveContext,
+						);
+					},
+					catch: normalizeError,
+				});
 				continue;
 			}
-			if (attempt.sawToolAttempt || response.stopReason === "toolUse") {
+			if (state.attempt.sawToolAttempt || response.stopReason === "toolUse") {
 				return errorResult(ERR_TOOL_ATTEMPT, partial, response.stopReason);
 			}
 			if (response.stopReason === "error") {
 				return errorResult(callError(response.errorMessage ?? "unknown error"), partial, response.stopReason);
 			}
 
-			const answer = assistantMessageText(response).trim();
+			const answer = yield* Effect.try({
+				try: () => assistantMessageText(response).trim(),
+				catch: normalizeError,
+			});
 			if (!answer) return errorResult(ERR_EMPTY_RESPONSE, partial, response.stopReason);
-			observer.onFinalText?.(answer);
+			yield* Effect.try({
+				try: () => observer.onFinalText?.(answer),
+				catch: normalizeError,
+			});
 			return {
 				kind: "success",
 				answer,
@@ -223,10 +265,52 @@ export async function executeBtw(
 				assistantMessage: response,
 				stopReason: response.stopReason,
 				contextTrimmed: built.branchWasTrimmed || built.stubbed,
-			};
+			} as const;
 		}
-	} catch (error) {
-		if (signal.aborted) return { kind: "aborted", partial: "", stopReason: "aborted" };
-		return errorResult(callError(error instanceof Error ? error.message : String(error)), partial);
-	}
+	});
+}
+
+/**
+ * Execute a side call. `signal` belongs to the Suite Command Dialog frame and
+ * must not be ctx.signal; closing BTW therefore cannot cancel the main Agent.
+ */
+export function executeBtw(
+	question: string,
+	ctx: ExtensionContext,
+	signal: AbortSignal,
+	observer: BtwStreamObserver = {},
+	openStream: OpenBtwStream = openBtwStream,
+): Effect.Effect<BtwExecResult> {
+	return Effect.suspend(() => {
+		const model = ctx.model;
+		if (!model) return Effect.succeed(errorResult(ERR_NO_MODEL, ""));
+		const state: BtwExecutionState = { attempt: { partial: "", sawToolAttempt: false } };
+		const operation = Effect.flatMap(Effect.abortSignal, (scopeSignal) =>
+			executeWithModel(question, ctx, model, AbortSignal.any([signal, scopeSignal]), observer, openStream, state),
+		);
+
+		const aborted = Effect.callback<never, typeof BTW_ABORT>((resume) => {
+			const abort = () => resume(Effect.fail(BTW_ABORT));
+			if (signal.aborted) {
+				abort();
+				return;
+			}
+			signal.addEventListener("abort", abort, { once: true });
+			return Effect.sync(() => signal.removeEventListener("abort", abort));
+		});
+		return Effect.scoped(
+			Effect.raceFirst(operation, aborted).pipe(
+				Effect.catch((error) => {
+					if (error === BTW_ABORT || signal.aborted) {
+						return Effect.succeed({
+							kind: "aborted",
+							partial: state.attempt.partial,
+							stopReason: "aborted",
+						} as const);
+					}
+					return Effect.succeed(errorResult(callError(error), state.attempt.partial));
+				}),
+			),
+		);
+	});
 }

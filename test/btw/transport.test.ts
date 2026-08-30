@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, Context, Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { Effect } from "effect";
 import { type BtwTransportContext, openBtwStream } from "../../packages/pi-stuff/src/btw/pi-compat.js";
 
 const model: Model<Api> = {
@@ -78,7 +79,7 @@ describe("BTW Host-composed provider transport", () => {
 		);
 		const controller = new AbortController();
 
-		await openBtwStream({ ctx: fixture.ctx, model, context, signal: controller.signal });
+		await Effect.runPromise(openBtwStream({ ctx: fixture.ctx, model, context, signal: controller.signal }));
 
 		expect(fixture.captured?.model.baseUrl).toBe("https://auth-derived.invalid");
 		expect(fixture.captured?.context).toBe(context);
@@ -89,13 +90,32 @@ describe("BTW Host-composed provider transport", () => {
 			reasoning: "high",
 			signal: controller.signal,
 		});
+		expect(fixture.captured?.options?.signal).toBe(controller.signal);
 	});
 
 	test("permits a keyless provider through the public compatibility fallback", async () => {
 		const fixture = setup(async () => undefined);
-		await openBtwStream({ ctx: fixture.ctx, model, context, signal: new AbortController().signal });
+		await Effect.runPromise(
+			openBtwStream({ ctx: fixture.ctx, model, context, signal: new AbortController().signal }),
+		);
 
 		expect(fixture.captured?.options?.apiKey).toBeUndefined();
 		expect(fixture.captured?.options?.headers).toEqual({ "x-fallback": "yes" });
+	});
+
+	test("does not open a provider stream after cancellation during auth", async () => {
+		let releaseAuth: (() => void) | undefined;
+		const auth = new Promise<undefined>((resolve) => {
+			releaseAuth = () => resolve(undefined);
+		});
+		const fixture = setup(() => auth);
+		const controller = new AbortController();
+		const pending = Effect.runPromise(openBtwStream({ ctx: fixture.ctx, model, context, signal: controller.signal }));
+
+		controller.abort();
+		releaseAuth?.();
+
+		await expect(pending).rejects.toThrow();
+		expect(fixture.captured).toBeUndefined();
 	});
 });

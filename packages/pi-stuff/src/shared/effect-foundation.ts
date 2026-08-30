@@ -7,6 +7,7 @@ const EFFECT_FOUNDATION_DISCOVERY_EVENT = "@jczhang02/pi-stuff/effect-foundation
 const FOUNDATIONS = new WeakMap<object, EffectFoundation>();
 const SCOPE = Symbol("PiStuffEffectScope");
 type HostSessionManager = ExtensionContext["sessionManager"];
+type EffectFoundationHost = Pick<ExtensionAPI, "events" | "on">;
 
 export type EffectScopeKind = "session" | "capability" | "operation";
 
@@ -107,7 +108,7 @@ export class EffectFoundation {
 		return this.shutdownResult;
 	}
 
-	installHostShutdown(pi: ExtensionAPI): void {
+	installHostShutdown(pi: EffectFoundationHost): void {
 		if (this.hostShutdownInstalled) return;
 		this.hostShutdownInstalled = true;
 		try {
@@ -143,7 +144,7 @@ export class EffectFoundation {
 
 /** Install or discover the Effect foundation owned by this Host event bus. */
 export function installEffectFoundation(
-	pi: ExtensionAPI,
+	pi: EffectFoundationHost,
 	options: EffectFoundationInstallationOptions = {},
 ): EffectFoundation {
 	return getHostSharedResource(

@@ -202,12 +202,10 @@ test("evicts only the shutting-down session and can replay that session again", 
 	const persisted: BtwHistoryEvent[] = [];
 	record("session-a", 1, (_customType, event) => persisted.push(event));
 	record("session-b", 2);
-	expect(shutdownHandlers).toHaveLength(1);
-
-	await shutdownHandlers[0]?.(
-		{ reason: "resume", type: "session_shutdown" },
-		createExtensionContext({ sessionManager: { getSessionId: () => "session-a" } }),
-	);
+	expect(shutdownHandlers.length).toBeGreaterThan(0);
+	const event = { reason: "resume", type: "session_shutdown" } as const;
+	const ctx = createExtensionContext({ sessionManager: { getSessionId: () => "session-a" } });
+	for (const handler of shutdownHandlers) await handler(event, ctx);
 
 	expect(readBtwHistory("session-a")).toEqual([]);
 	expect(readBtwHistory("session-b").map((exchange) => exchange.question)).toEqual(["question 2"]);

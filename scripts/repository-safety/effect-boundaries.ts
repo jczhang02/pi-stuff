@@ -61,6 +61,9 @@ export interface EffectBoundaryFinding {
 
 export const EFFECT_BOUNDARY_INVENTORY = {
 	governedSources: [
+		"packages/pi-stuff/src/btw/btw.ts",
+		"packages/pi-stuff/src/btw/index.ts",
+		"packages/pi-stuff/src/btw/pi-compat.ts",
 		"packages/pi-stuff/src/code-mode/controls.ts",
 		"packages/pi-stuff/src/code-mode/host/delegate-runtime.ts",
 		"packages/pi-stuff/src/code-mode/host/effect-owner.ts",
@@ -195,6 +198,8 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/runtime/xai-search.ts",
 	],
 	nativeAdapters: [
+		"packages/pi-stuff/src/btw/index.ts",
+		"packages/pi-stuff/src/btw/pi-compat.ts",
 		"packages/pi-stuff/src/code-mode/host/host-client.ts",
 		"packages/pi-stuff/src/code-mode/settings.ts",
 		"packages/pi-stuff/src/codex/usage.ts",
@@ -280,6 +285,7 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/runtime/xai-search.ts",
 	],
 	runnerAdapters: [
+		"packages/pi-stuff/src/btw/index.ts",
 		"packages/pi-stuff/src/codex/index.ts",
 		"packages/pi-stuff/src/context-management/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",

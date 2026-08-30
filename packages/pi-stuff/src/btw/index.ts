@@ -1,11 +1,13 @@
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Cause, type Effect, Exit } from "effect";
 import {
 	type CommandDialogCoordinatorHost,
 	type CommandDialogView,
 	getCommandDialogCoordinator,
 } from "../conversation-ui/index.js";
-import { BTW_COMMAND_NAME, executeBtw } from "./btw.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
+import { BTW_COMMAND_NAME, type BtwExecResult, executeBtw } from "./btw.js";
 import {
 	type BtwExchange,
 	btwSessionKey,
@@ -28,6 +30,22 @@ const ZERO_USAGE = {
 };
 
 export type BtwHost = CommandDialogCoordinatorHost & Pick<ExtensionAPI, "appendEntry" | "registerCommand">;
+
+async function runBtwOperation(
+	foundation: EffectFoundation,
+	program: Effect.Effect<BtwExecResult>,
+): Promise<BtwExecResult | undefined> {
+	const session = foundation.currentSession();
+	if (!session) return undefined;
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program);
+	await foundation.close(operation, exit);
+	if (Exit.isFailure(exit)) {
+		if (Cause.hasInterrupts(exit.cause)) return undefined;
+		throw Cause.squash(exit.cause);
+	}
+	return foundation.isCurrent(session) ? exit.value : undefined;
+}
 
 function waitForMainIdle(ctx: ExtensionCommandContext, signal: AbortSignal): Promise<boolean> {
 	if (signal.aborted) return Promise.resolve(false);
@@ -95,7 +113,12 @@ async function promoteBtwExchange(
 	if (result.cancelled) throw new Error("Could not fork BTW because the session switch was cancelled");
 }
 
-function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: BtwHost): Promise<void> {
+function runBtw(
+	question: string | undefined,
+	ctx: ExtensionCommandContext,
+	pi: BtwHost,
+	foundation: EffectFoundation,
+): Promise<void> {
 	if (ctx.mode !== "tui") return Promise.resolve();
 
 	const coordinator = getCommandDialogCoordinator(pi);
@@ -135,10 +158,14 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 	const surface = coordinator.show(ctx, view);
 	if (question !== undefined) {
 		void controllerReady.then(async ({ controller, signal }) => {
-			const result = await executeBtw(question, ctx, signal, {
-				onTextDelta: (delta) => controller.appendText(delta),
-				onRetry: () => controller.resetForRetry(),
-			});
+			const result = await runBtwOperation(
+				foundation,
+				executeBtw(question, ctx, signal, {
+					onTextDelta: (delta) => controller.appendText(delta),
+					onRetry: () => controller.resetForRetry(),
+				}),
+			);
+			if (!result) return;
 			if (result.kind === "success") {
 				const response = result.assistantMessage;
 				const responseMetadata = {
@@ -172,9 +199,10 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 }
 
 export default function piStuffBtw(pi: BtwHost): void {
+	const foundation = installEffectFoundation(pi);
 	pi.registerCommand(BTW_COMMAND_NAME, {
 		description: "Ask one side question without changing the main conversation",
-		handler: (args, ctx) => runBtw(args.trim() || undefined, ctx, pi),
+		handler: (args, ctx) => runBtw(args.trim() || undefined, ctx, pi, foundation),
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		evictBtwHistory(btwSessionKey(ctx));
