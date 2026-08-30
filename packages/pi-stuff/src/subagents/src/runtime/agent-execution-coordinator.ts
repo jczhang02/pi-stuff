@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { isRuntimeFunction, isRuntimeString } from "../../../shared/runtime-type.js";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
 import {
@@ -22,6 +23,12 @@ import {
 	runtimeCompletionAddresses,
 } from "./agent-runtime-event.ts";
 import { createRuntimeProcessState, type RuntimeProcessState } from "./agent-runtime-liveness.ts";
+import {
+	type DurableAgentOperation,
+	runDurableAgentOperation,
+	scheduleDurableAgentOperation,
+	stopDurableAgentOperation,
+} from "./durable-agent-operation.ts";
 import {
 	type AgentGovernorLease,
 	type RebindAgentRuntimeRequest,
@@ -138,8 +145,6 @@ export class AgentRuntimeBindingRejectedError extends Error {
 	}
 }
 
-const GOVERNOR_RETRY_DELAYS_MS = [25, 100, 500, 2_000] as const;
-
 interface BoundInvocation {
 	readonly invocation: AgentExecutionInvocation;
 	readonly session: AgentExecutionCoordinatorSession;
@@ -149,7 +154,7 @@ interface BoundInvocation {
 	pending?: PendingSettlement;
 }
 
-interface PendingSettlement {
+interface PendingSettlement extends DurableAgentOperation {
 	readonly owner?: BoundInvocation;
 	readonly session: AgentExecutionCoordinatorSession;
 	readonly reservation: AgentExecutionReservation;
@@ -157,9 +162,6 @@ interface PendingSettlement {
 	readonly start?: AsyncStart;
 	readonly bindRuntime: boolean;
 	readonly settlement: AgentExecutionSettlement;
-	retryIndex: number;
-	retryTimer?: ReturnType<typeof setTimeout>;
-	inFlight?: Promise<void>;
 }
 
 interface PendingSettlementInput {
@@ -172,14 +174,11 @@ interface PendingSettlementInput {
 	readonly settlement: AgentExecutionSettlement;
 }
 
-interface PendingCompletion {
+interface PendingCompletion extends DurableAgentOperation {
 	readonly address: AgentRuntimeCompletionEvent;
 	readonly session: AgentExecutionCoordinatorSession;
 	readonly generation: number;
 	readonly bindingCandidates: Set<BoundInvocation>;
-	retryIndex: number;
-	retryTimer?: ReturnType<typeof setTimeout>;
-	inFlight?: Promise<void>;
 }
 
 /** Pure lifecycle coordinator shared by the root extension and fanout children. */
@@ -482,69 +481,68 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		return pending;
 	}
 
-	private async attemptPendingSettlement(pending: PendingSettlement): Promise<void> {
-		if (!this.pendingSettlements.has(pending)) return;
-		if (pending.inFlight) return pending.inFlight;
-		const inFlight = (async () => {
-			try {
-				if (pending.bindRuntime) {
-					await this.bindReservationRuntime(
-						pending.session,
-						pending.reservation,
-						pending.runtimeRunId,
-						pending.start,
-					);
-				}
-				if (pending.bindRuntime && pending.settlement.kind === "background-started") {
-					// A process-terminal event can win the race against runtime binding
-					// and inspect only the provisional Pi Host lease. Reconcile once more
-					// after the durable pid/directory mapping exists so an already-dead
-					// runner is reclaimed without waiting for another launch or reload.
-					await pending.session.reconcile(this.runtimeProcessState);
-				}
-			} catch (error) {
-				if (!(error instanceof AgentRuntimeBindingRejectedError)) throw error;
-				let safelyAborted = pending.start === undefined;
-				try {
-					safelyAborted = pending.start?.abortStart?.() === true;
-				} catch {
-					safelyAborted = false;
-				}
-				if (!safelyAborted) {
-					// Ownership was rejected, but the runner may still be alive. Keep
-					// the lease reserved so reconciliation retains authority to reap it.
-					throw error;
-				}
-				await pending.session.governor.settle(pending.reservation, { kind: "start-error" });
-				this.finishPendingSettlement(pending);
-				throw error;
-			}
-			await pending.session.governor.settle(pending.reservation, pending.settlement);
-			this.finishPendingSettlement(pending);
-		})();
-		pending.inFlight = inFlight;
-		try {
-			await inFlight;
-		} finally {
-			if (pending.inFlight === inFlight) delete pending.inFlight;
-		}
+	private attemptPendingSettlement(pending: PendingSettlement): Promise<void> {
+		return Effect.runPromise(this.pendingSettlementEffect(pending));
+	}
+
+	private pendingSettlementEffect(pending: PendingSettlement): Effect.Effect<void, unknown> {
+		const bind = pending.bindRuntime
+			? promiseEffect(() =>
+					this.bindReservationRuntime(pending.session, pending.reservation, pending.runtimeRunId, pending.start),
+				).pipe(
+					Effect.andThen(
+						// Reconcile after binding when process completion raced the provisional Host lease.
+						pending.settlement.kind === "background-started"
+							? promiseEffect(() => pending.session.reconcile(this.runtimeProcessState))
+							: Effect.void,
+					),
+					Effect.catch((error) => {
+						if (!(error instanceof AgentRuntimeBindingRejectedError)) return Effect.fail(error);
+						let safelyAborted = pending.start === undefined;
+						try {
+							safelyAborted = pending.start?.abortStart?.() === true;
+						} catch {
+							safelyAborted = false;
+						}
+						if (!safelyAborted) {
+							// Ownership was rejected, but the runner may still be alive. Keep
+							// the lease reserved so reconciliation retains authority to reap it.
+							return Effect.fail(error);
+						}
+						return promiseEffect(() =>
+							pending.session.governor.settle(pending.reservation, { kind: "start-error" }),
+						).pipe(
+							Effect.tap(() => Effect.sync(() => this.finishPendingSettlement(pending))),
+							Effect.andThen(Effect.fail(error)),
+						);
+					}),
+				)
+			: Effect.void;
+		return runDurableAgentOperation(
+			pending,
+			() => this.pendingSettlements.has(pending),
+			() =>
+				bind.pipe(
+					Effect.andThen(
+						promiseEffect(() => pending.session.governor.settle(pending.reservation, pending.settlement)),
+					),
+					Effect.tap(() => Effect.sync(() => this.finishPendingSettlement(pending))),
+					Effect.asVoid,
+				),
+		);
 	}
 
 	private scheduleSettlementRetry(pending: PendingSettlement): void {
-		if (!this.pendingSettlements.has(pending) || pending.retryTimer) return;
-		const delay = retryDelay(pending.retryIndex);
-		pending.retryIndex += 1;
-		pending.retryTimer = setTimeout(() => {
-			delete pending.retryTimer;
-			void this.attemptPendingSettlement(pending).catch(() => this.scheduleSettlementRetry(pending));
-		}, delay);
-		pending.retryTimer.unref?.();
+		scheduleDurableAgentOperation(
+			pending,
+			() => this.pendingSettlements.has(pending),
+			() => this.pendingSettlementEffect(pending),
+		);
 	}
 
 	private finishPendingSettlement(pending: PendingSettlement): void {
 		if (!this.pendingSettlements.delete(pending)) return;
-		if (pending.retryTimer) clearTimeout(pending.retryTimer);
-		delete pending.retryTimer;
+		stopDurableAgentOperation(pending);
 		const owner = pending.owner;
 		if (owner) {
 			owner.settled = true;
@@ -622,34 +620,41 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		return pending;
 	}
 
-	private async attemptPendingCompletion(pending: PendingCompletion): Promise<void> {
+	private attemptPendingCompletion(pending: PendingCompletion): Promise<void> {
+		return Effect.runPromise(this.pendingCompletionEffect(pending));
+	}
+
+	private pendingCompletionEffect(pending: PendingCompletion): Effect.Effect<void, unknown> {
 		const key = completionKey(pending.address, pending.generation);
-		if (this.pendingCompletions.get(key) !== pending) return;
-		if (pending.inFlight) return pending.inFlight;
-		const inFlight = (async () => {
-			const lease = await pending.session.governor.findRuntimeLease(pending.address);
-			if (lease && this.runtimeProcessState(lease.pid, lease) !== false) {
-				// A semantic completion event is not process-terminal proof. Retain
-				// the lease and retry until its writer group is absent or safely reaped.
-				this.scheduleCompletionRetry(pending);
-				return;
-			}
-			const result = await pending.session.governor.completeRuntime(pending.address);
-			if (
-				result.released === false &&
-				result.reason === "not_found" &&
-				this.completionMayNeedRuntimeBinding(pending)
-			) {
-				return;
-			}
-			this.finishPendingCompletion(pending);
-		})();
-		pending.inFlight = inFlight;
-		try {
-			await inFlight;
-		} finally {
-			if (pending.inFlight === inFlight) delete pending.inFlight;
-		}
+		return runDurableAgentOperation(
+			pending,
+			() => this.pendingCompletions.get(key) === pending,
+			() =>
+				promiseEffect(() => pending.session.governor.findRuntimeLease(pending.address)).pipe(
+					Effect.flatMap((lease) => {
+						if (lease && this.runtimeProcessState(lease.pid, lease) !== false) {
+							// A semantic completion event is not process-terminal proof. Retain
+							// the lease and retry until its writer group is absent or safely reaped.
+							return Effect.sync(() => this.scheduleCompletionRetry(pending));
+						}
+						return promiseEffect(() => pending.session.governor.completeRuntime(pending.address)).pipe(
+							Effect.tap((result) =>
+								Effect.sync(() => {
+									if (
+										result.released === false &&
+										result.reason === "not_found" &&
+										this.completionMayNeedRuntimeBinding(pending)
+									) {
+										return;
+									}
+									this.finishPendingCompletion(pending);
+								}),
+							),
+							Effect.asVoid,
+						);
+					}),
+				),
+		);
 	}
 
 	private completionMayNeedRuntimeBinding(pending: PendingCompletion): boolean {
@@ -668,22 +673,18 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 
 	private scheduleCompletionRetry(pending: PendingCompletion): void {
 		const key = completionKey(pending.address, pending.generation);
-		if (this.pendingCompletions.get(key) !== pending || pending.retryTimer) return;
-		const delay = retryDelay(pending.retryIndex);
-		pending.retryIndex += 1;
-		pending.retryTimer = setTimeout(() => {
-			delete pending.retryTimer;
-			void this.attemptPendingCompletion(pending).catch(() => this.scheduleCompletionRetry(pending));
-		}, delay);
-		pending.retryTimer.unref?.();
+		scheduleDurableAgentOperation(
+			pending,
+			() => this.pendingCompletions.get(key) === pending,
+			() => this.pendingCompletionEffect(pending),
+		);
 	}
 
 	private finishPendingCompletion(pending: PendingCompletion): void {
 		const key = completionKey(pending.address, pending.generation);
 		if (this.pendingCompletions.get(key) !== pending) return;
 		this.pendingCompletions.delete(key);
-		if (pending.retryTimer) clearTimeout(pending.retryTimer);
-		delete pending.retryTimer;
+		stopDurableAgentOperation(pending);
 	}
 
 	private async drainPendingCompletions(
@@ -764,8 +765,8 @@ function completionKey(address: AgentRuntimeCompletionEvent, generation: number)
 	return `${generation}\u0000${address.runtimeRunId}\u0000${address.childIndex}`;
 }
 
-function retryDelay(index: number): number {
-	return GOVERNOR_RETRY_DELAYS_MS[Math.min(index, GOVERNOR_RETRY_DELAYS_MS.length - 1)] ?? 2_000;
+function promiseEffect<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+	return Effect.tryPromise({ try: run, catch: (error) => error });
 }
 
 interface StartupFailureClassification {

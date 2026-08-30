@@ -112,6 +112,34 @@ test("drains an old-session completion after session switch and late settlement"
 	]);
 });
 
+test("keeps durable settlement and completion retries alive across dispose", async () => {
+	const settlement = harness();
+	settlement.coordinator.bindSession({ sessionId: "settlement-session", ownerAgentPath: [] });
+	const prepared = await settlement.coordinator.prepare({
+		launchRunId: "retry-settlement",
+		params: { agent: "worker" },
+	});
+	if (!prepared.ok || !prepared.invocation) throw new Error("Expected governed reservation");
+	settlement.governor.settlementFailures = 1;
+	await expect(settlement.coordinator.fail(prepared.invocation)).rejects.toThrow("injected settlement EIO");
+	settlement.coordinator.dispose();
+
+	const completion = harness();
+	completion.coordinator.bindSession({ sessionId: "completion-session", ownerAgentPath: [] });
+	completion.governor.completionFailures = 1;
+	await expect(completion.coordinator.complete({ runId: "retry-completion" })).rejects.toThrow(
+		"injected completion EIO",
+	);
+	completion.coordinator.dispose();
+
+	await Bun.sleep(60);
+	expect(settlement.governor.settlements).toHaveLength(2);
+	expect(completion.governor.completions).toEqual([
+		{ runtimeRunId: "retry-completion", childIndex: 0 },
+		{ runtimeRunId: "retry-completion", childIndex: 0 },
+	]);
+});
+
 test("keeps the startup gate closed across partial rebind failure and acknowledges after retry", async () => {
 	const { coordinator, governor } = harness();
 	coordinator.bindSession({ sessionId: "parent-session", ownerAgentPath: [] });
