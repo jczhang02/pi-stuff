@@ -25,13 +25,15 @@ them, so that study correctly remained failed.
 Post-outcome diagnosis used the certified Pi executable in offline, no-prompt Sessions. The first `get_state`
 response took 1,088 ms for Raw Pi and 24,967–25,464 ms for the two Suite arms; the later configuration commands took
 2–24 ms. Under concurrent repository checks, Suite cold startup took 34,307 ms while the later commands took 26 ms
-total. The old 60-second general command timeout therefore included complete process and Extension cold startup and
-could expire under external CPU contention before prompt preflight.
+total. The old 60-second general command timeout therefore included the post-spawn wait while the process and
+Extension completed cold startup, and could expire under external CPU contention before prompt preflight.
 
-The shared runner now exposes that protocol boundary explicitly. `getInitialState` has a five-minute startup budget;
-ordinary commands retain 60 seconds and Agent settlement retains 15 minutes. Structured timeout observations retain
-only a bounded phase. A real-Host regression passed a 34,307 ms Suite startup while ordinary commands remained
-limited to one second. This runner fix cannot alter the failed historical studies, so a new locked sample is required.
+The shared runner now exposes that protocol boundary explicitly. Immediately after synchronous `spawn` returns,
+`getInitialState` installs a five-minute startup-readiness timer before writing the first request; it bounds cold
+startup through the first response, not the synchronous operating-system call itself. Ordinary commands retain 60
+seconds and Agent settlement retains 15 minutes. Structured timeout observations retain only a bounded phase. A
+real-Host regression passed a 34,307 ms Suite startup while ordinary commands remained limited to one second. This
+runner fix cannot alter the failed historical studies, so a new locked sample is required.
 
 ## Arms and Tool authority
 

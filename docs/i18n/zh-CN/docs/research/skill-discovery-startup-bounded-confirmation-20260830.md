@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/skill-discovery-startup-bounded-confirmation-20260830.md; translation-source-sha256: 593505c6d15b9900a506bf055caef06607d276ff6ff40e1ea6ee697971106c4e -->
+<!-- translation-source: docs/research/skill-discovery-startup-bounded-confirmation-20260830.md; translation-source-sha256: 1290afe41fcd2b4347f4692fe9653d3d40d21d3a62d0b24b1fa4b8ff75b922ec -->
 
 # Skill Discovery 启动边界真实模型确认预注册
 
@@ -27,13 +27,14 @@ Provider 请求前超时。
 结果产生后的诊断使用认证 Pi executable 运行 offline、无 prompt 的 Session。Raw Pi 的第一次 `get_state`
 response 耗时 1,088 ms，两个 Suite arm 分别耗时 24,967–25,464 ms；之后的 configuration command 只耗时
 2–24 ms。在仓库检查并发运行时，Suite cold startup 耗时 34,307 ms，之后的 command 合计耗时 26 ms。因此，
-旧的 60 秒 general command timeout 包含完整 process 与 Extension cold startup，在外部 CPU 竞争下可能在
-prompt preflight 前耗尽。
+旧的 60 秒 general command timeout 包含 `spawn` 返回后、process 与 Extension 完成 cold startup 的等待，
+在外部 CPU 竞争下可能在 prompt preflight 前耗尽。
 
-共享 runner 现在显式表达该 protocol boundary。`getInitialState` 使用 5 分钟 startup budget；普通 command
-保留 60 秒，Agent settlement 保留 15 分钟。结构化 timeout observation 只保留有界 phase。真实 Host
-regression 在普通 command 仍限制为 1 秒时通过了 34,307 ms 的 Suite startup。该 runner 修复不能改变失败的
-历史研究，因此必须使用新的锁定样本。
+共享 runner 现在显式表达该 protocol boundary。同步 `spawn` 返回后，`getInitialState` 会在写入第一次请求前
+安装 5 分钟 startup-readiness timer；它限制从 cold startup 到第一次 response 的等待，而不包围同步操作系统
+调用本身。普通 command 保留 60 秒，Agent settlement 保留 15 分钟。结构化 timeout observation 只保留有界
+phase。真实 Host regression 在普通 command 仍限制为 1 秒时通过了 34,307 ms 的 Suite startup。该 runner
+修复不能改变失败的历史研究，因此必须使用新的锁定样本。
 
 ## Arms 与 Tool authority
 
