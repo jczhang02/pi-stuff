@@ -127,6 +127,8 @@ export async function installNotificationCapability(
 	pi.on("input", () => active?.observe({ type: "input" }));
 	pi.on("agent_start", () => active?.observe({ type: "agent_start" }));
 	pi.on("agent_end", () => active?.observe({ type: "agent_end" }));
+	pi.on("ui_prompt_start", () => active?.observe({ type: "ui_prompt_start" }));
+	pi.on("ui_prompt_end", () => active?.observe({ type: "ui_prompt_end" }));
 	pi.on("message_start", () => {
 		if (active && readCurrentAgentWorkOrigin(pi) === "user") active.observe({ type: "user_work" });
 	});

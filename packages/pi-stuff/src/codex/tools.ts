@@ -1,7 +1,11 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import { readFile, stat } from "node:fs/promises";
-import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentToolUpdateCallback,
+	detectSupportedImageMimeTypeFromFile,
+	type ExtensionContext,
+	withFileMutationQueue,
+} from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
@@ -339,9 +343,11 @@ async function inlineGeneratedImages(images: readonly GeneratedImage[]): Promise
 		try {
 			const metadata = await stat(image.absolute_path);
 			if (!metadata.isFile() || metadata.size > MAX_INLINE_IMAGE_BYTES) continue;
+			const mimeType = await detectSupportedImageMimeTypeFromFile(image.absolute_path);
+			if (!mimeType) continue;
 			content.push({
 				data: (await readFile(image.absolute_path)).toString("base64"),
-				mimeType: "image/png",
+				mimeType,
 				type: "image",
 			});
 		} catch {

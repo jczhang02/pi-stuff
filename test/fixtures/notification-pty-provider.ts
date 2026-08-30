@@ -1,6 +1,7 @@
 import type { AssistantMessage, Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
@@ -66,9 +67,45 @@ function delayedFailure(errorMessage: string) {
 	return stream;
 }
 
+function promptToolStream() {
+	const stream = createAssistantMessageEventStream();
+	const pending = message("pending");
+	const toolCall = {
+		arguments: {},
+		id: "notification-prompt",
+		name: "notification_prompt",
+		type: "toolCall" as const,
+	};
+	stream.push({ partial: pending, type: "start" });
+	stream.push({ contentIndex: 0, partial: pending, type: "toolcall_start" });
+	stream.push({ contentIndex: 0, partial: pending, toolCall, type: "toolcall_end" });
+	stream.push({ message: { ...message("toolUse"), content: [toolCall] }, reason: "toolUse", type: "done" });
+	return stream;
+}
+
 export default function notificationPtyProvider(pi: ExtensionAPI): void {
+	pi.registerTool({
+		description: "Hold a real Pi UI prompt open for Notification timing certification",
+		execute: async (_toolCallId, _args, _signal, _onUpdate, context) => {
+			const confirmed = await context.ui.confirm("Fixture prompt", "Continue after the prompt wait?");
+			return {
+				content: [{ text: confirmed ? "PROMPT_CONFIRMED" : "PROMPT_REJECTED", type: "text" }],
+				details: { confirmed },
+			};
+		},
+		label: "Prompt",
+		name: "notification_prompt",
+		parameters: Type.Object({}),
+	});
 	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Notification PTY fixture", (_model, context, options) => {
 		const prompt = lastUserText(context).trim();
+		if (prompt.includes("NOTIFY_PROMPT_WAIT")) {
+			return context.messages.some(
+				(entry) => entry.role === "toolResult" && entry.toolCallId === "notification-prompt",
+			)
+				? delayedText("NOTIFICATION_PROMPT_DONE", options)
+				: promptToolStream();
+		}
 		if (prompt.includes("NOTIFY_FAILURE")) return delayedFailure("NOTIFICATION_FAILURE_DONE");
 		if (prompt.includes("NOTIFY_ABORT")) {
 			return delayedText("UNEXPECTED_ABORT_FINISH", options, 5_000);

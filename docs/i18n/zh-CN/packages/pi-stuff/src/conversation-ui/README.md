@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: b4fcc1d8e0e0c37e53d68b33328ba71601492b38fb4e6f1ad70bd0f92e533f15 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 799a686f1efbd9ff28bfe16772d9ed6847c26c51f719c9640d1b66464113a7b7 -->
 
 # Conversation UI 模块
 
@@ -31,6 +31,8 @@ Pi Stuff 套件的统一呈现层。它保持 Pi 为宿主，并增加响应式�
 归属遵循 Pi 实际消息传输，而不是排队接受。用户后续消息因此保持待处理，不会重标正在进行的 Agent 工作；它在自己的 `message_start` 边界成为用户工作。直接交互和 RPC 引导只有 Pi 传输消息时才提升活跃工作，因此后续输入处理器仍可拒绝它们而不改变归属。套件负责的 UI 引导在宿主发送被接受后立即提升。套件发起的 Goal、Web、MCP、后台工作和 Supervisor 消息携带内存中的用户/自动标记，因此由这些轮次启动的 Agents 继承正确来源，而标记不会进入持久会话 JSON。独立非持久标记识别直接命令、提示词或 UI/RPC 操作。因此历史用户归属可以跨异步后台工作或 Curator 完成保留，又不会把之后自动唤醒授予首次使用配置权限。
 
 显式套件 UI 工作使用带标记自定义消息，经 Pi 公开 `sendMessage` 接缝发送，而不是尝试标注发出即忘的 `sendUserMessage` 输入分派。待处理传输归属跟随 Pi 自己的队列，不设任意项数上限，因此大型已接受引导/后续积压在传输或 Agent 运行边界清除前保持无损。Pi 在分开加载的扩展之间没有输入后 Hook；如果后续扩展留下转换后无法关联的混合用户/自动记录，整个含糊传输类别会被丢弃并归为自动。这会有意损失一次纯装饰性用户 Git 刷新，而不是允许自动工作触发刷新。
+
+Pi 0.84.4 RPC `clear_queue` 会返回被移除的 steering 与 follow-up 消息，但不会发出 Extension event。因此 Conversation UI 无法在同一时刻删除对应的观察性记录。若之后的自动消息遇到这些过期用户记录，现有 mixed-origin 规则会清空完整镜像并 fail closed 为 automatic。Suite 不包装 `clear_queue`，也不维护第二套 Host 队列。
 
 同一个共享宿主接缝会在套件自定义 Agent 工作被接受前准备 Context，并在每个异步准备边界后重新检查发起会话或 Goal。聚合套件启动使用 `conversation-ui` 负责的模块局部就绪门槛：观察所有能力 `session_start` 处理器，任何失败都会拒绝该代际，只有完整套件成功稳定后才释放已恢复 Goal 工作。
 

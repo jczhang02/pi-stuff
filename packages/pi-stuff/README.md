@@ -6,7 +6,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 - Loads through Pi's native Package system and exports one default Extension factory.
 - Installs the internal modules listed in `suite.json` in one explicit order.
-- Targets the certified Pi 0.84.3 Host profile documented by the repository.
+- Targets the certified Pi 0.84.4 Host profile documented by the repository.
 - Fails fast when a required module cannot initialize.
 - Performs no network access, file writes, subprocess launch, or Host-settings mutation during import.
 - Is private and local-only; it has no npm publication contract.

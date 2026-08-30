@@ -43,6 +43,9 @@ const RPC_RECORD_SCHEMA = Type.Object(
 		error: Type.Optional(Type.Unknown()),
 		event: Type.Optional(Type.Unknown()),
 		extensionPath: Type.Optional(Type.Unknown()),
+		duringGoal: Type.Optional(Type.Boolean()),
+		goalCalls: Type.Optional(Type.Number()),
+		historical: Type.Optional(Type.Boolean()),
 		id: Type.Optional(Type.String()),
 		reason: Type.Optional(Type.Unknown()),
 		result: Type.Optional(Type.Unknown()),
@@ -238,6 +241,9 @@ function assertScenario(
 	}
 	if (scenario === "compaction") {
 		const compactionEnd = records.find((record) => record.type === "compaction_end");
+		if (compactionEnd?.reason !== "threshold") {
+			throw new Error(`compaction: expected a threshold compaction, received ${JSON.stringify(compactionEnd)}`);
+		}
 		const completionBoundaries = logRecords.filter(
 			(record) => record.type === "session_compact" || record.type === "session_compact_failed",
 		);
@@ -246,22 +252,45 @@ function assertScenario(
 				`compaction: expected one native compaction completion boundary, received ${JSON.stringify(completionBoundaries)}`,
 			);
 		}
-		if (completionBoundaries[0]?.type === "session_compact") {
+		const completionBoundary = completionBoundaries[0];
+		if (!completionBoundary) throw new Error("compaction: native compaction completion boundary disappeared");
+		const completionBoundaryIndex = logRecords.indexOf(completionBoundary);
+		const postToolProviderIndex = logRecords.findIndex(
+			(record) => record.type === "provider_call" && record.goalCalls === 2,
+		);
+		if (completionBoundaryIndex < 0 || postToolProviderIndex <= completionBoundaryIndex) {
+			throw new Error("compaction: threshold compaction did not finish before the post-Tool Provider request");
+		}
+		if (completionBoundary.type === "session_compact") {
 			if (!compactionEnd || compactionEnd.aborted === true || !compactionEnd.result) {
 				throw new Error(
 					`compaction: certified host did not complete native compaction successfully: ${JSON.stringify(compactionEnd)}`,
 				);
 			}
-		} else if (compactionEnd?.aborted !== true || completionBoundaries[0]?.aborted !== true) {
+		} else if (compactionEnd?.aborted !== true || completionBoundary.aborted !== true) {
 			throw new Error(
-				`compaction: certified host did not report the aborted compaction through session_compact_failed: ${JSON.stringify({ compactionEnd, completionBoundary: completionBoundaries[0] })}`,
+				`compaction: certified host did not report the aborted compaction through session_compact_failed: ${JSON.stringify({ compactionEnd, completionBoundary })}`,
 			);
+		}
+		const goalProviderCalls = logRecords
+			.filter((record) => record.type === "provider_call" && record.goalCalls !== undefined)
+			.map((record) => record.goalCalls);
+		if (JSON.stringify(goalProviderCalls) !== JSON.stringify([1, 2, 3])) {
+			throw new Error(
+				`compaction: expected Goal provider calls [1,2,3], received ${JSON.stringify(goalProviderCalls)}`,
+			);
+		}
+		if (logRecords.filter((record) => record.type === "agent_start" && record.duringGoal === true).length !== 1) {
+			throw new Error("compaction: Goal did not own exactly one automatic continuation");
+		}
+		if (!JSON.stringify(sessionEntries).includes("GOAL_POST_TOOL_CANARY")) {
+			throw new Error("compaction: raw large Tool result disappeared from the persisted Session");
 		}
 	}
 }
 
 async function seedCompactionHistory(transport: RpcTransport): Promise<void> {
-	for (const index of [1, 2, 3, 4]) {
+	for (const index of [1, 2]) {
 		const settledBefore = transport.records.filter((record) => record.type === "agent_settled").length;
 		await transport.send({ type: "prompt", message: `Create historical compaction context ${String(index)}.` });
 		const deadline = Date.now() + TIMEOUT_MS;
@@ -270,6 +299,21 @@ async function seedCompactionHistory(transport: RpcTransport): Promise<void> {
 			await new Promise((resolve) => setTimeout(resolve, 20));
 		}
 	}
+}
+
+async function writeGoalLifecycleSettings(agentDirectory: string, packagePath: string): Promise<void> {
+	await writeFile(
+		join(agentDirectory, "settings.json"),
+		`${JSON.stringify(
+			{
+				packages: [packagePath],
+				compaction: { enabled: false, keepRecentTokens: 14_000, reserveTokens: 6_000 },
+				retry: { enabled: false },
+			},
+			null,
+			"\t",
+		)}\n`,
+	);
 }
 
 async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenario): Promise<void> {
@@ -282,10 +326,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			mkdir(join(temporaryDirectory, "home"), { recursive: true }),
 			mkdir(agentDirectory, { recursive: true }),
 		]);
-		await writeFile(
-			join(agentDirectory, "settings.json"),
-			`${JSON.stringify({ packages: [options.packagePath], compaction: { enabled: false }, retry: { enabled: false } }, null, "\t")}\n`,
-		);
+		await writeGoalLifecycleSettings(agentDirectory, options.packagePath);
 		const startMessage =
 			scenario === "normal"
 				? "/goal Certify packed multi-turn completion"
@@ -319,7 +360,10 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			environment(temporaryDirectory, scenario, logPath),
 		);
 		try {
-			if (scenario === "compaction") await seedCompactionHistory(transport);
+			if (scenario === "compaction") {
+				await seedCompactionHistory(transport);
+				await transport.send({ enabled: true, type: "set_auto_compaction" });
+			}
 			await transport.send({ type: "prompt", message: startMessage });
 			const deadline = Date.now() + TIMEOUT_MS;
 			let finalRecords: RpcRecord[] | undefined;

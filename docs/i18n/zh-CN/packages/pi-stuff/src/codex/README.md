@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 434b384df24b86db23bd90c0c8b2382bac0039bfc0a0dff85c3676f5de00f10e -->
+<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 2645ff810a5b229f33028e4bf7d40b3c1daa1b8adbbb60964baf47c8803b729c -->
 
 # Pi Stuff Codex
 
@@ -20,4 +20,6 @@ Codex 模块为 Pi Stuff 提供一个 `/codex` 命令对话框、Fast 模式、C
 - `view_image` 为支持图像的 Codex 模型加载本地图像。
 - `imagegen` 使用 `gpt-image-2` 生成或编辑图像，并把结果保存到 `.pi/openai-codex-images/`。
 
-三个工具都使用共享 Pi Stuff 工具生命周期渲染器。图像工具在共享生命周期行下保留行内终端媒体作为结果正文。
+三个工具都使用共享 Pi Stuff 工具生命周期渲染器。图像工具在共享生命周期行下保留行内终端媒体作为结果正文。对于 `imagegen`，Pi Stuff 保留原生结构化结果与生成路径文本，再以 best-effort 方式内联最多四个可读、每个不超过 25 MiB 的普通文件。Pi 0.84.4 公开 `detectSupportedImageMimeTypeFromFile()` 会从文件字节识别 JPEG、PNG、GIF、WebP 与 BMP；不支持、缺失、超大或不可读的文件会保留文本结果，不会产生 MIME 错标。
+
+该媒体结果本身并不认证 tmux 内的图像显示。渲染仍由 Pi 与当前终端协议负责，包括 multiplexer 的 passthrough 要求；Codex 不修改终端设置。

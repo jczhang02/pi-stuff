@@ -1,8 +1,11 @@
 # Notification Capability
 
 Notification sends a delayed terminal-native completion or failure alert only after user-started Agent work settles,
-the configured minimum duration has elapsed, and Pi remains quiet through the grace period. User or terminal input
-cancels a pending alert. Extension-authored automatic work does not create one.
+its Agent Work Duration reaches the configured minimum, and Pi remains quiet through the grace period. Agent Work
+Duration subtracts intervals between Pi's public `ui_prompt_start` and `ui_prompt_end` boundaries, including an open
+prompt closed by settlement, so time spent waiting for confirmation or input cannot turn short Agent work into an
+alert. The stored minimum-duration setting and Goal's active elapsed-time accounting are unchanged. User or terminal
+input cancels a pending alert. Extension-authored automatic work does not create one.
 
 `/notifications` opens the shared full-width Command Dialog for enabling alerts, choosing `auto`, Kitty OSC 99,
 OSC 9, Ghostty OSC 777, or BEL delivery, controlling response previews and terminal BEL, and sending a test alert.

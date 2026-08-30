@@ -468,7 +468,7 @@ async function verifyPrimarySession(
 		for (const command of ["ponytail", ...PONYTAIL_SKILL_COMMANDS]) {
 			if (!commands.includes(command)) fail(`explicit command inventory is missing ${command}`);
 		}
-		const active = records.find((record) => record.lastUser === "PONYTAIL_ACTIVE");
+		const active = records.find((record) => record.lastUser?.endsWith("PONYTAIL_ACTIVE"));
 		if (
 			active?.ponytailMarkerCount !== 1 ||
 			active.hasCatalog !== true ||
@@ -481,7 +481,7 @@ async function verifyPrimarySession(
 		) {
 			fail(`active Provider prompt is invalid: ${JSON.stringify(active)}`);
 		}
-		const off = records.find((record) => record.lastUser === "PONYTAIL_OFF");
+		const off = records.find((record) => record.lastUser?.endsWith("PONYTAIL_OFF"));
 		if (
 			off?.ponytailChars !== 0 ||
 			off.ponytailMarkerCount !== 0 ||

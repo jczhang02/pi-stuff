@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/CHANGELOG.md; translation-source-sha256: c646ff31e19f8b80885464505aab0f0237960c7408fe5195b4f1d3e193d5a89e -->
+<!-- translation-source: packages/pi-stuff/CHANGELOG.md; translation-source-sha256: c0c0e42e497ab054dfa2f9ad883ccfd7dae4b39971d5eabdb564788a271d5bf5 -->
 
 # @jczhang02/pi-stuff
 
@@ -6,6 +6,9 @@
 
 ## 未发布
 
+- 使用官方 Pi 0.84.4 Linux x64 宿主验证套件；仓库工具继续使用 Bun 1.4.0，并验证宿主可执行文件内嵌 Bun 1.3.14 的 runtime banner。Codex
+  生成的 JPEG、PNG、GIF、WebP 与 BMP 媒体改用 Pi 公共图像 MIME 检测器；Notification 的 Agent Work Duration
+  排除交互式 UI 提示等待；增加队列清除、Tool 阶段消息排序以及 Tool 后 Goal 压缩续跑的真实宿主覆盖。
 - 修补 Magic Context 0.40.0 打包后的分词器路径，使其搜索自身 Bun 模块祖先路径、在首轮前预加载，并避免对只用于哈希的图像载荷执行 BPE。这样可恢复精确 token 计数，又不会造成输入停顿或在 Pi 编辑器中出现原始 `[magic-context]` 回退警告。增加真实宿主 PTY 回归覆盖；等同官方版本通过验证后删除补丁。
 - 把共享状态栏两行统一为一套语义明确、只用 Nerd Font 的图标语法，覆盖模型、Thinking、Context、额度、成本、Git、Goal、Prompt 与 Ponytail 状态标记。删除终端图标检测、Unicode/ASCII 回退和 `/ui` 状态栏图标设置；在内存中迁移 Schema v2 UI 设置，不产生启动写入。
 - 增加 `@dietrichgebert/ponytail@4.9.0` 的功能完整内部分叉：四种持久会话模式、六个打包 Skill、自然语言停用、子 Agent 模式快照、Context 管理的提示词投影、合并设置、共享状态栏 `󱖿` 模式片段和 `/ponytail` 控制对话框。通过一个仅显式调用的 Frontmatter 适配保留经过审查的 MIT 上游 Skill 正文和来源，同时删除独立状态/活动与配置所有权。让 `off` 成为硬模型边界，并用活跃模式紧凑政策与目录替换重复完整 Skill 投影。为对话框、低视口、草稿与状态栏恢复、配置、环境变量覆盖、会话账本和 Provider 提示词边界增加专用真实 Pi PTY 验证。增加预登记、模式盲的 18 会话 ox-alpha 行为基准，带隐藏正确性与精确符号检验门槛；验证运行全部通过，测得汇总代码行 87 对 141（`p = 0.01953125`），总代价增加 31% token。增加经过完整性检查、非修改式的上游候选/差异审查命令，并把固定 npm 完整性修正为已验证注册表产物。见 ADR 0021。

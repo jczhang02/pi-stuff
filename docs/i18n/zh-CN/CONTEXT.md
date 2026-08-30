@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: d4b89d15eb972bc8e290d3721bb0696a31122b51ab676fa4ba9a7e8481af7597 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 0796de819e80d00caddb2a0d4361d314c520d7cba88a42da2d368aff7d3887e0 -->
 
 # Pi Stuff
 
@@ -30,6 +30,34 @@ _避免使用_：Capability Package、npm package、plugin fragment
 由 Pi Stuff 仓库维护的代码，无论最初来自本地、fork 还是 vendored 上游材料，都承担相同架构、质量、兼容性
 与认证义务。
 _避免使用_：upstream exception、vendored exception、fork exemption
+
+**Capability Contract Catalog**：
+在认证 Host profile 内，Suite 所承诺的每一项用户或 Host 可观察行为的维护清单。每项 contract 标明所属
+Capability、public seam、scenario、所需 evidence 与 acceptance status。一项 contract 表示一个稳定、可观察的
+承诺，可以包含多个正常、失败、恢复、持久化或边界 scenario；私有 implementation function 与 scenario variant
+不是独立 contract。
+_避免使用_：Feature checklist、test list、function coverage
+
+**Conditional Capability Contract**：
+configured success scenario 依赖可选 executable、credential 或 external Service 的 Capability contract。它的
+unconfigured behavior 仍是一项 unconditional contract；缺少所需 dependency 会阻塞 configured acceptance，
+绝不能计为 passed、skipped 或 not applicable。
+_避免使用_：Optional test、skipped feature、best-effort contract
+
+**Suite Outcome Evaluation**：
+在外部公开 task set 上进行的配对评估：固定认证 Host、所选 model、task、environment 与 resource budget，比较
+加载和不加载 Suite 的两种情况。它报告完整系统 outcome 与 Suite delta；不认证单项 Capability contract。
+_避免使用_：Pi Stuff score、harness certification、correctness test
+
+**Capability Contract Acceptance**：
+使用每项所声明的 Acceptance Evidence Profile，在隔离 scenario 中验证每个适用的 Capability Contract Catalog
+entry。deterministic 或 authenticated acceptance 可以认证 contract；Suite Outcome Evaluation 不可以。
+_避免使用_：Feature smoke test、function coverage、benchmark pass
+
+**Acceptance Evidence Profile**：
+一个 Capability contract 所声明的执行边界：必须使用精确的真实 Host；当行为依赖 live Provider 或 live external
+Service 时分别标明。fixture Provider 属于 deterministic evidence，不是 live evidence。
+_避免使用_：Realness level、truth test、production-like test
 
 **Diagnostic Record**：
 供人检查的、有界且仅限当前进程的 Suite 问题记录。它绝不进入 Session 历史或模型上下文。负责该状态的
@@ -71,6 +99,11 @@ _避免使用_：Thinking row、terminal line、provider content index
 compaction 元数据都不会产生新边界。
 _避免使用_：Assistant message boundary、API turn、physical terminal row
 
+**Agent Work Duration**：
+一次用户启动的 Agent 工作周期的墙钟时长，减去 Pi 等待 UI prompt 响应的区间。Notification 用它比较所配置的
+最短时长阈值；Goal 的活跃 elapsed time 与 Host 生命周期计时不变。
+_避免使用_：包含 prompt 等待的运行时长、Goal elapsed time、model latency
+
 **Tool Activity**：
 只用于显示的单元，代表一次独立 Tool invocation 或一个 Retrieval Group。它的 projection 不合并或改变底层
 协议事件、顺序或 Session 历史。
@@ -91,7 +124,6 @@ _避免使用_：Native Skill row、Skill Retrieval Group、Skill registry resul
 `Tool(operation identity)` parent 与缩进的 child outcome evidence。它是封闭 family，只包含 Bash、Write、
 Edit、Patch、Background output 和没有匹配 owner 的外层 Code Mode issue；它不是通用 Tool card 或 grouping rule。
 _避免使用_：Tool card、Universal Tool Block、Command Block
-
 **Bash Operation Block**：
 Operation Block 的 Bash 特化，展示一个有界 command identity 与 child output preview。call 内部的 shell
 composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
@@ -134,7 +166,6 @@ _避免使用_：Agent key、child address
 一次 Agent Tool lifecycle event 的仅显示 Transcript projection。Background launch 与 completion 保持为分开的
 chronological event；live Agent state 与完整 child evidence 仍由 Agents 负责。
 _避免使用_：Agent Operation Block、Subagent Row、Agent roster row
-
 **Context Activity**：
 一次由用户发起的 Context maintenance operation 所对应的、模型不可见且持久化的 Session record。一条可见
 Pi Stuff row 投影其 anchor，并在 resume 后继续更新。它不是 Tool call、Diagnostic Record 或 Statusline item。

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: d94d118426e7698b16c67763fbb75a6aea572d9f7b843a4362b27f3568861dad -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 2b562a10265b3c88d755c990e6755d03060593c89c5ac2ba428cea72700a2ebd -->
 
 # 捆绑上下文引擎来源
 
@@ -27,7 +27,27 @@ Pi Stuff 通过本适配器集成官方 Magic Context 软件包，不内嵌 Magi
 - 证据：在已验证独立 Pi 宿主下直接调用 `preloadTokenizer()`，当宿主从无关用户项目运行时会从 `false` 变为 `true`；长异常图像 PTY 用例保持响应；真实上下文 PTY 门槛拒绝原始 `[magic-context]` 输出。
 - 删除触发条件：只有某个精确官方 Magic Context 产物通过相同的全新安装、首次输入、异常图像和真实宿主检查后，才替换该补丁。
 
-软件包声明 Pi Peer 为 `^0.80.2`，不包括套件已验证的 Pi 0.84.3 宿主。因此 Pi Stuff 不从 Peer 范围推断兼容性：其真实宿主 PTY 门槛会针对固定 Pi 0.84.3 源码配置单独验证该精确产物。
+### 2026-08-30 上游审计
+
+本次审计时最新的官方软件包版本是
+[`v0.40.1`](https://github.com/cortexkit/magic-context/releases/tag/v0.40.1)，发布自
+[`a239835e161efc730f0da8472786fe372626e66b`](https://github.com/cortexkit/magic-context/commit/a239835e161efc730f0da8472786fe372626e66b)。
+该发布提交只修改三个软件包的版本号；release notes 涉及数据库打开、musl 本地 embedding、Task 可见性和
+reminder rendering，不包括 tokenizer 加载或图像哈希修复。
+
+精确的官方 [`@cortexkit/pi-magic-context@0.40.1` npm
+产物](https://www.npmjs.com/package/@cortexkit/pi-magic-context/v/0.40.1) SHA-1 为
+`86c182b8fe0785f38ec3ff35c2a2196b356cab82`，仍缺少本地补丁的全部行为：
+
+- `tokenizerPackageRoots()` 会搜索工作目录、OpenCode cache 与 `process.argv[1]` 的祖先路径，但不会搜索已发布
+  模块的 `import.meta.url` 祖先路径或 Bun isolated-linker 的 `node_modules` 根目录；
+- `preloadTokenizer()` 仍从 `before_agent_start` 运行，而不是在引擎初始化时运行；
+- `memoizedContent(kind, content)` 仍会执行 `estimateTokens(content)`，不能接收图像草稿已有的 token 估算。
+
+因此删除触发条件尚未满足。Pi Stuff 保留精确的 `0.40.0` 依赖及其已审查补丁；后续升级必须保留等价补丁，
+直到新的官方产物通过全新安装、首次输入、异常图像和真实宿主门槛。
+
+软件包声明 Pi Peer 为 `^0.80.2`，不包括套件已验证的 Pi 0.84.4 宿主。因此 Pi Stuff 不从 Peer 范围推断兼容性：其真实宿主 PTY 门槛会针对固定 Pi 0.84.4 源码配置单独验证该精确产物。
 
 ## Pi Stuff 适配器政策
 

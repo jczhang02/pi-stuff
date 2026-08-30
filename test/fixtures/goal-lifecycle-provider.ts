@@ -2,17 +2,18 @@ import { appendFileSync } from "node:fs";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { Guard } from "typebox/guard";
 import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
+const PROJECTED_USAGE = { ...ZERO_USAGE, input: 12_000, totalTokens: 12_000 };
 type Scenario = "blocker" | "compaction" | "normal" | "reload";
 
 let providerCalls = 0;
 let goalCalls = 0;
-let compactionRequested = false;
 
 function scenario(): Scenario {
 	const value = process.env["PI_STUFF_GOAL_LIFECYCLE_SCENARIO"];
@@ -28,25 +29,27 @@ function log(record: Record<string, JsonInputValue>): void {
 function message(
 	content: AssistantMessage["content"],
 	stopReason: AssistantMessage["stopReason"],
-	errorMessage?: string,
+	usage: AssistantMessage["usage"] = ZERO_USAGE,
 ): AssistantMessage {
-	const result: AssistantMessage = {
+	return {
 		role: "assistant",
 		content,
 		api: "openai-completions",
 		provider: PROVIDER,
 		model: MODEL,
-		usage: ZERO_USAGE,
+		usage,
 		stopReason,
 		timestamp: Date.now(),
 	};
-	if (errorMessage !== undefined) result.errorMessage = errorMessage;
-	return result;
 }
 
-function stream(content: AssistantMessage["content"], stopReason: "length" | "stop" | "toolUse") {
+function stream(
+	content: AssistantMessage["content"],
+	stopReason: "length" | "stop" | "toolUse",
+	usage: AssistantMessage["usage"] = ZERO_USAGE,
+) {
 	const result = createAssistantMessageEventStream();
-	const pending = message([], "pending");
+	const pending = message([], "pending", usage);
 	result.push({ type: "start", partial: pending });
 	for (const [contentIndex, item] of content.entries()) {
 		pending.content.push(item);
@@ -59,12 +62,12 @@ function stream(content: AssistantMessage["content"], stopReason: "length" | "st
 			result.push({ type: "toolcall_end", contentIndex, toolCall: item, partial: pending });
 		}
 	}
-	result.push({ type: "done", reason: stopReason, message: message(content, stopReason) });
+	result.push({ type: "done", reason: stopReason, message: message(content, stopReason, usage) });
 	return result;
 }
 
-function textStream(text: string) {
-	return stream([{ type: "text", text }], "stop");
+function textStream(text: string, usage: AssistantMessage["usage"] = ZERO_USAGE) {
+	return stream([{ type: "text", text }], "stop", usage);
 }
 
 function toolStream<Arguments extends object>(name: string, arguments_: Arguments) {
@@ -79,13 +82,6 @@ function toolStream<Arguments extends object>(name: string, arguments_: Argument
 		],
 		"toolUse",
 	);
-}
-
-function retryableErrorStream(errorMessage: string) {
-	const result = createAssistantMessageEventStream();
-	result.push({ type: "start", partial: message([], "pending") });
-	result.push({ type: "error", reason: "error", error: message([], "error", errorMessage) });
-	return result;
 }
 
 function contextText(context: Context): string {
@@ -152,8 +148,9 @@ function response(context: Context) {
 	}
 	if (selected === "reload") return completion(context);
 	if (selected === "compaction") {
-		return goalCalls === 1
-			? retryableErrorStream("HTTP 524 retryable boundary before owned compaction")
+		if (goalCalls === 1) return toolStream("goal_large_result", {});
+		return goalCalls === 2
+			? textStream("Post-Tool compaction preserved the active Goal.", PROJECTED_USAGE)
 			: completion(context);
 	}
 	const blockerAttempt = Math.floor((goalCalls + 1) / 2);
@@ -187,9 +184,24 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 			willRetry: event.willRetry,
 		});
 	});
-	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Goal lifecycle fixture", (_model, context) =>
-		response(context),
+	registerFixtureProvider(
+		pi,
+		PROVIDER,
+		MODEL,
+		"Pi Stuff Goal lifecycle fixture",
+		(_model, context) => response(context),
+		{ contextWindow: 24_000 },
 	);
+	pi.registerTool({
+		description: "Return one large Tool result that crosses the post-Tool compaction threshold",
+		execute: async () => ({
+			content: [{ text: `GOAL_POST_TOOL_CANARY\n${"x".repeat(48_000)}`, type: "text" }],
+			details: { certified: true },
+		}),
+		label: "Large result",
+		name: "goal_large_result",
+		parameters: Type.Object({}),
+	});
 
 	pi.registerCommand("goal-lifecycle-wait", {
 		description: "Wait for packed Goal lifecycle work to settle",
@@ -216,12 +228,7 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
-		if (scenario() !== "compaction" || goalCalls !== 1 || compactionRequested) return;
-		compactionRequested = true;
-		await ctx.compact({ customInstructions: "Certify active Goal compaction." });
-	});
-	pi.on("agent_start", () => log({ type: "agent_start" }));
+	pi.on("agent_start", () => log({ type: "agent_start", duringGoal: goalCalls > 0 }));
 	pi.on("tool_call", (event) => log({ type: "tool_call", toolCallId: event.toolCallId, toolName: event.toolName }));
 	pi.on("tool_execution_start", (event) =>
 		log({ type: "tool_execution_start", toolCallId: event.toolCallId, toolName: event.toolName }),

@@ -77,7 +77,7 @@ does not relabel either Tool. A missing historical Tool definition or a failing 
 the same source position. The outer result stores the nested calls in normal Pi Session JSONL details, so reload and resume
 rebuild the same projection even when a legal historical result has no `details`. Raw arguments remain available for
 audit, while the Tool's argument compatibility shim supplies Activity semantics and rendering. In particular, Pi
-0.84.3's Edit compatibility shim normalizes both the legacy top-level `oldText`/`newText` form and a single JSON
+0.84.4's Edit compatibility shim normalizes both the legacy top-level `oldText`/`newText` form and a single JSON
 object in `edits` into the canonical `edits[]` array for direct nested execution and historical replay. Final
 settlement reprojects nested and direct calls in the model's source order, including standalone Bash rows. Nested
 images are carried through the outer Host result so Pi performs its normal image
@@ -90,14 +90,14 @@ image output becomes an error before it can be persisted. A provider-context pro
 images from older Code Mode results that predate normalized presentation details with an actionable text error without
 rewriting Session history.
 
-The real Pi 0.84.3 acceptance gate compares the full plain-screen layout and exact ANSI Tool Activity block with Code
+The real Pi 0.84.4 acceptance gate compares the full plain-screen layout and exact ANSI Tool Activity block with Code
 Mode on and off at 100×32 and 64×28, both before and after session resume. Truthful Context pressure and its resulting
 full/compact fixture model label are normalized; icons, placement, and surrounding text remain equal, while Tool
 Activity colors remain exact.
 The gate exercises a mixed Activity containing Read, Bash, Background Work, and Agent management, plus a failed Tool
 call, a cancellation-classified Tool result, and interleaved real PNG/text/PNG reads through Pi's media normalization
 and terminal fallback path. The media gate also proves that both images reach the next provider request after the UI
-projection. An additional test runs Pi 0.84.3's real `ToolExecutionComponent` with Kitty capabilities and proves that
+projection. An additional test runs Pi 0.84.4's real `ToolExecutionComponent` with Kitty capabilities and proves that
 expanded multi-image output stays interleaved with its original Tool rows. Outer execution cancellation is covered
 separately so the gate does not inherit process-exit timing races from Pi's native Bash path. The gate enforces token
 savings. The direct surface is 22 Tools / 31,208 schema characters / 9,573 estimated first-request tokens. The full
@@ -163,7 +163,7 @@ starting Pi does not download, write, or spawn anything for Code Mode.
 
 ## Compatibility
 
-- Pi Host: `0.84.3`
+- Pi Host: `0.84.4`
 - Pi Host embedded Bun runtime: `1.3.14`
 - Repository Bun toolchain: `1.4.0`
 - Host assets: Linux/macOS x64 and arm64, Windows x64 and arm64

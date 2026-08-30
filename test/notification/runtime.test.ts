@@ -94,6 +94,9 @@ test("the latest finalized Assistant result replaces a provider error in one wor
 		generation: 1,
 		includesUserWork: true,
 		latestAssistant: { stopReason: "toolUse" },
+		promptDepth: 0,
+		promptStartedAt: null,
+		promptWaitMs: 0,
 		settledAt: 900,
 		startedAt: 100,
 		status: "pending",
@@ -114,6 +117,41 @@ test("a real user receives one completion alert after long work settles", () => 
 	expect(alerts).toEqual([{ elapsedMs: 10_000, outcome: "completion" }]);
 	clock.advance(10_000);
 	expect(alerts).toHaveLength(1);
+});
+
+test("an open user prompt wait does not turn short Agent work into a completion alert", () => {
+	const { alerts, clock, runtime } = notificationFixture();
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(9_000);
+	runtime.observe({ type: "ui_prompt_start" });
+	clock.advance(5_000);
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(2_000);
+
+	expect(alerts).toEqual([]);
+});
+
+test("nested user prompts exclude the complete outer wait from Agent work", () => {
+	const { alerts, clock, runtime } = notificationFixture();
+
+	runtime.observe({ type: "agent_start" });
+	runtime.observe({ type: "user_work" });
+	clock.advance(9_000);
+	runtime.observe({ type: "ui_prompt_start" });
+	clock.advance(1_000);
+	runtime.observe({ type: "ui_prompt_start" });
+	clock.advance(3_000);
+	runtime.observe({ type: "ui_prompt_end" });
+	clock.advance(1_000);
+	runtime.observe({ type: "ui_prompt_end" });
+	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
+	runtime.observe({ type: "agent_settled" });
+	clock.advance(2_000);
+
+	expect(alerts).toEqual([]);
 });
 
 test("the settled alert carries only the latest finalized Assistant preview", () => {

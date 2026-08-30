@@ -36,10 +36,32 @@ does not alter upstream source or persist a derived artifact.
 - Removal trigger: replace the patch only after an exact official Magic Context artifact passes the same clean-install,
   first-input, malformed-image, and real-Host checks.
 
+### 2026-08-30 upstream audit
+
+The latest official Package release at the time of this audit is
+[`v0.40.1`](https://github.com/cortexkit/magic-context/releases/tag/v0.40.1), published from
+[`a239835e161efc730f0da8472786fe372626e66b`](https://github.com/cortexkit/magic-context/commit/a239835e161efc730f0da8472786fe372626e66b).
+That release commit changes only the three Package versions, and its release notes cover database opening, musl local
+embeddings, task visibility, and reminder rendering rather than tokenizer loading or image hashing.
+
+The exact official [`@cortexkit/pi-magic-context@0.40.1` npm
+artifact](https://www.npmjs.com/package/@cortexkit/pi-magic-context/v/0.40.1) has SHA-1
+`86c182b8fe0785f38ec3ff35c2a2196b356cab82` and still lacks every local patch behavior:
+
+- `tokenizerPackageRoots()` searches the working directory, OpenCode cache, and `process.argv[1]` ancestry, but not the
+  published module's `import.meta.url` ancestry or Bun isolated-linker `node_modules` root;
+- `preloadTokenizer()` still runs from `before_agent_start`, not during engine initialization; and
+- `memoizedContent(kind, content)` still performs `estimateTokens(content)` without accepting the image draft's known
+  token estimate.
+
+The removal trigger is therefore not met. Pi Stuff keeps the exact `0.40.0` dependency and its audited patch; any later
+upgrade must preserve an equivalent patch until a new official artifact passes the clean-install, first-input,
+malformed-image, and real-Host gates.
+
 The Package declares Pi peers `^0.80.2`, which does not include the Suite's
-certified Pi 0.84.3 Host. Pi Stuff therefore does not infer compatibility from
+certified Pi 0.84.4 Host. Pi Stuff therefore does not infer compatibility from
 the peer range: its real-Host PTY gate separately certifies this exact artifact
-against the pinned Pi 0.84.3 source profile.
+against the pinned Pi 0.84.4 source profile.
 
 ## Pi Stuff adapter policy
 

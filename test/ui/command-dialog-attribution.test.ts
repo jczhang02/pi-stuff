@@ -143,7 +143,7 @@ test("finishes Git observation before a later settlement handler can start Agent
 	});
 	const { ctx } = await installedCommandDialogHarness({}, api);
 	// A separately loaded Extension can register after Pi Stuff's dynamic
-	// observer. Pi 0.84.3 awaits these handlers in registration order.
+	// observer. Pi 0.84.4 awaits these handlers in registration order.
 	api.api.on("agent_settled", () => {
 		overlap = gitRunning;
 		order.push("later-extension");

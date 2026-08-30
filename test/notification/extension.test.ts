@@ -58,6 +58,8 @@ test("Notification owns a dedicated settings command and releases its terminal o
 	expect(host.commands.has("notifications")).toBeTrue();
 	expect(host.commands.has("notify-test")).toBeFalse();
 	expect(host.handlers.get("agent_settled")).toBeUndefined();
+	expect(host.handlers.get("ui_prompt_start")).toHaveLength(1);
+	expect(host.handlers.get("ui_prompt_end")).toHaveLength(1);
 	const notices: string[] = [];
 	await host.commands.get("notifications")?.handler(
 		"",

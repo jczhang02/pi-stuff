@@ -30,6 +30,37 @@ Code maintained inside Pi Stuff and subject to the same architecture, quality, c
 obligations regardless of whether it originated locally, in a fork, or from vendored upstream material.
 _Avoid_: upstream exception, vendored exception, fork exemption
 
+**Capability Contract Catalog**:
+The maintained inventory of every user- or Host-observable behavior promised by the Suite within the certified Host
+profile. Each contract identifies its owning Capability, public seam, scenario, required evidence, and acceptance
+status. One contract is one stable observable promise and may carry multiple normal, failure, recovery, persistence,
+or boundary scenarios; private implementation functions and scenario variants are not separate contracts.
+_Avoid_: Feature checklist, test list, function coverage
+
+**Conditional Capability Contract**:
+A Capability contract whose configured success scenario requires an optional executable, credential, or external
+Service. Its unconfigured behavior remains an unconditional contract; a missing required dependency blocks configured
+acceptance and never counts as passed, skipped, or not applicable.
+_Avoid_: Optional test, skipped feature, best-effort contract
+
+**Suite Outcome Evaluation**:
+A paired evaluation on an external public task set that holds the certified Host, selected model, task, environment,
+and resource budget fixed while comparing the Suite loaded with the Suite absent. It reports complete-system outcomes
+and Suite delta; it does not certify individual Capability contracts.
+_Avoid_: Pi Stuff score, harness certification, correctness test
+
+**Capability Contract Acceptance**:
+The verification of every applicable Capability Contract Catalog entry in an isolated scenario using its declared
+Acceptance Evidence Profile. Deterministic or authenticated acceptance may certify a contract; Suite Outcome
+Evaluation cannot.
+_Avoid_: Feature smoke test, function coverage, benchmark pass
+
+**Acceptance Evidence Profile**:
+The declared execution boundary for one Capability contract: the exact real Host is required, while live Provider and
+live external Service use are stated separately when the behavior depends on them. A fixture Provider is deterministic
+evidence, not live evidence.
+_Avoid_: Realness level, truth test, production-like test
+
 **Diagnostic Record**:
 A bounded, current-process account of a Suite problem for human inspection. It never enters Session history or model
 context. The owning Capability presents ordinary state locally; only a user-relevant problem may raise the shared
@@ -70,6 +101,12 @@ model-context Custom Message, or a new Logical Thinking Run after Tool activity.
 Thinking Run, hidden state, and branch or compaction metadata do not create another boundary.
 _Avoid_: Assistant message boundary, API turn, physical terminal row
 
+**Agent Work Duration**:
+The wall-clock duration of one user-started Agent work cycle minus intervals when Pi is waiting for a UI prompt
+response. Notification compares this value with its configured minimum-duration threshold; Goal active elapsed time
+and Host lifecycle timing remain unchanged.
+_Avoid_: Prompt-inclusive run duration, Goal elapsed time, model latency
+
 **Tool Activity**:
 A display-only unit representing either one independent Tool invocation or one Retrieval Group. Its projection does
 not merge or alter the underlying protocol events, ordering, or Session history.
@@ -93,7 +130,6 @@ A display-only Transcript projection of one independent, evidence-rich Tool Acti
 closed family comprising Bash, Write, Edit, Patch, Background output, and an unmatched outer Code Mode issue, not a
 universal Tool card or a grouping rule.
 _Avoid_: Tool card, Universal Tool Block, Command Block
-
 **Bash Operation Block**:
 A Bash specialization of Operation Block, with one bounded command identity and child output preview. Shell
 composition inside the call remains one operation, and the underlying Tool result and Session records remain unchanged.

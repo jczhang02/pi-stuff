@@ -76,7 +76,7 @@
 | [0020](adr/0020-add-automatic-session-naming.md) | 在用户工作 settled 边界自动命名 Session |
 | [0021](adr/0021-fork-ponytail-as-a-suite-capability.md) | 将 Ponytail fork 为 Suite Capability |
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | 只折叠原生 retrieval |
-| [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block family |
+| [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 家族 |
 
 ## 证据与历史
 

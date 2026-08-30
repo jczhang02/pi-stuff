@@ -81,6 +81,10 @@ lossless until delivery or the Agent-run boundary clears it. Pi has no post-inpu
 if a later Extension leaves mixed user/automatic records that cannot be correlated after transformation, the whole
 ambiguous delivery class is discarded and attributed as automatic. This deliberately loses a cosmetic user-only Git
 refresh rather than allowing automatic work to trigger it.
+Pi 0.84.4 RPC `clear_queue` returns removed steering and follow-up messages but emits no Extension event. Conversation
+UI therefore cannot remove the corresponding observational records at the same instant. If a later automatic message
+meets one of those stale user records, the existing mixed-origin rule clears the complete mirror and fails closed to
+automatic attribution. The Suite does not wrap `clear_queue` or maintain a second Host queue.
 
 The same shared Host seam prepares Context before Suite custom Agent work is accepted and rechecks the originating
 Session or Goal after every asynchronous preparation boundary. Aggregate Suite startup uses a `conversation-ui`-owned,
