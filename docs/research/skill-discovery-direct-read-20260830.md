@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: design frozen; Run Lock incomplete; no direct-read Session, Provider request, or outcome has been produced.
+Status: design and Run Lock frozen; no direct-read Session, Provider request, or outcome has been produced.
 
 This is a new, independent study for Bead `ps-1gd`. It does not replace or reuse samples from the retained
 [first benchmark](skill-discovery-benchmark-20260830.md) or
@@ -46,14 +46,24 @@ Provider boundary is an instrumentation failure.
 
 ## Run Lock
 
-No live call may begin until a pre-outcome amendment records:
+The pre-outcome Run Lock is complete:
 
-- Provider `openai-codex`, model `gpt-5.6-sol`, reasoning `xhigh`;
-- clean candidate Package commit and tree;
-- every executable runner source path and SHA-256;
-- measurement-only observer path and SHA-256;
-- immutable manifest path and SHA-256;
-- Run Lock and sanitized report paths.
+- Provider `openai-codex`, model `gpt-5.6-sol`, reasoning `xhigh`.
+- Candidate commit `518af59db690bd7751ae6e08db9a6750fa411894`; Package tree
+  `8d9d7220f39f49fb25d7b7ccb9282b75aedf1c15`.
+- Runner sources:
+  - `scripts/benchmark-skill-discovery.ts`: `263670606ce48c8f1ac63575a5a7efeb529f0c43b1c530282eb242399859a101`;
+  - `scripts/pi-rpc-client.ts`: `75182f6d2a3cbf3a4369921e94063ef6153eacb95dc683397d95b1d943e09eff`;
+  - `scripts/skill-discovery-benchmark-core.ts`: `44ecc6df41d951a5f73401509169688147085cdbd4b9e7e45dc6ebe47346a8b9`;
+  - `scripts/skill-discovery-benchmark-evidence.ts`: `b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`;
+  - `scripts/skill-discovery-benchmark-report.ts`: `72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`;
+  - `scripts/skill-discovery-benchmark-session.ts`: `2d5a7ea8180c357c89f798f57e1f8d62937c8fbcd9ed0fef785045269e5e16b9`.
+- Measurement-only observer `test/fixtures/skill-discovery-benchmark-observer.ts`:
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`.
+- Immutable manifest `test/fixtures/skill-discovery-direct-read-manifest.jsonl`:
+  `d4a6d02e3c0b9cbb5501bd8e0ac9b6d508de2ab947a6472d101acee28c5b93c1`.
+- Run Lock `test/fixtures/skill-discovery-direct-read-run-lock.json`.
+- Sanitized report destination `docs/reports/skill-discovery-direct-read-20260830.json`.
 
 The Host remains the certified Pi 0.84.4 Linux x64 release executable: SHA-256
 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`, 104,511,616 bytes. Preflight rejects a

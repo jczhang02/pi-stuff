@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-direct-read-20260830.md; translation-source-sha256: a69d0576af568827bf851fbe40349c77c7b76bb2e03ae086764ae17b5c6c7dee -->
+<!-- translation-source: docs/research/skill-discovery-direct-read-20260830.md; translation-source-sha256: 873bd26a7baf9def4c990c2b6d8c5b04d3dfb302e9c640fce25b50e27fdcf896 -->
 
 # Skill Discovery 直接读取真实模型预注册
 
 日期：2026-08-30
 
-状态：研究设计已冻结；Run Lock 尚未完成；尚未产生 direct-read Session、Provider 请求或结果。
+状态：研究设计与 Run Lock 已冻结；尚未产生 direct-read Session、Provider 请求或结果。
 
 这是 Bead `ps-1gd` 的全新独立研究。它不会替换或复用已保留的
 [首次 benchmark](../../../../../docs/research/skill-discovery-benchmark-20260830.md)与
@@ -48,14 +48,24 @@ instrumentation failure。
 
 ## Run Lock
 
-在一次结果产生前的 amendment 记录以下内容前，不得发起 live call：
+结果产生前的 Run Lock 已完成：
 
-- Provider `openai-codex`、model `gpt-5.6-sol`、reasoning `xhigh`；
-- clean candidate Package commit 与 tree；
-- 每个 executable runner source 的路径与 SHA-256；
-- 只测量 observer 的路径与 SHA-256；
-- immutable manifest 的路径与 SHA-256；
-- Run Lock 与 sanitized report 路径。
+- Provider `openai-codex`、model `gpt-5.6-sol`、reasoning `xhigh`。
+- Candidate commit `518af59db690bd7751ae6e08db9a6750fa411894`；Package tree
+  `8d9d7220f39f49fb25d7b7ccb9282b75aedf1c15`。
+- Runner source：
+  - `scripts/benchmark-skill-discovery.ts`：`263670606ce48c8f1ac63575a5a7efeb529f0c43b1c530282eb242399859a101`；
+  - `scripts/pi-rpc-client.ts`：`75182f6d2a3cbf3a4369921e94063ef6153eacb95dc683397d95b1d943e09eff`；
+  - `scripts/skill-discovery-benchmark-core.ts`：`44ecc6df41d951a5f73401509169688147085cdbd4b9e7e45dc6ebe47346a8b9`；
+  - `scripts/skill-discovery-benchmark-evidence.ts`：`b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`；
+  - `scripts/skill-discovery-benchmark-report.ts`：`72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`；
+  - `scripts/skill-discovery-benchmark-session.ts`：`2d5a7ea8180c357c89f798f57e1f8d62937c8fbcd9ed0fef785045269e5e16b9`。
+- 只测量 observer `test/fixtures/skill-discovery-benchmark-observer.ts`：
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`。
+- Immutable manifest `test/fixtures/skill-discovery-direct-read-manifest.jsonl`：
+  `d4a6d02e3c0b9cbb5501bd8e0ac9b6d508de2ab947a6472d101acee28c5b93c1`。
+- Run Lock `test/fixtures/skill-discovery-direct-read-run-lock.json`。
+- Sanitized report 目标 `docs/reports/skill-discovery-direct-read-20260830.json`。
 
 Host 仍是认证 Pi 0.84.4 Linux x64 Release executable：SHA-256
 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`，104,511,616 bytes。第一次 Provider
