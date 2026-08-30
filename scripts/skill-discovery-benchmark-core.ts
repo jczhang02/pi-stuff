@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const ARMS = ["raw", "off", "on"] as const;
 export const BOOTSTRAP_ITERATIONS = 20_000;
-export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_901;
+export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_902;
 
 export type SkillDiscoveryArm = (typeof ARMS)[number];
 export type SkillDiscoveryFamily = "instruction" | "metadata" | "relative-resource";
@@ -124,40 +124,40 @@ const ARM_PERMUTATIONS = [
 
 const SUBJECTS = {
 	metadata: [
-		"aqua barograph validation docket",
-		"beige hydrometer validation docket",
-		"cerise seismometer validation docket",
-		"denim nephelometer validation docket",
-		"ecru magnetometer validation docket",
-		"fuchsia polarimeter validation docket",
-		"gold viscometer validation docket",
-		"heliotrope refractometer validation docket",
-		"iron rain gauge validation docket",
-		"kelp thermocouple validation docket",
+		"amber anemometer audit register",
+		"bronze calorimeter audit register",
+		"cobalt densitometer audit register",
+		"dune electrometer audit register",
+		"emerald fluorometer audit register",
+		"garnet gravimeter audit register",
+		"hazel hygrometer audit register",
+		"ivory interferometer audit register",
+		"jade luxmeter audit register",
+		"lilac manometer audit register",
 	],
 	instruction: [
-		"alder rectifier sequencing",
-		"bamboo separator sequencing",
-		"clay conveyor sequencing",
-		"drift governor sequencing",
-		"elm furnace sequencing",
-		"frost turbine sequencing",
-		"ginger rotor sequencing",
-		"harbor boiler sequencing",
-		"indigo clutch sequencing",
-		"larch winch sequencing",
+		"maple alternator calibration",
+		"nickel compressor calibration",
+		"ochre diffuser calibration",
+		"pearl evaporator calibration",
+		"quartz feeder calibration",
+		"russet gearbox calibration",
+		"saffron inverter calibration",
+		"teal kiln calibration",
+		"umber mixer calibration",
+		"violet nozzle calibration",
 	],
 	"relative-resource": [
-		"agate beacon directory",
-		"briar capstan directory",
-		"copper transducer directory",
-		"dahlia ventilator directory",
-		"earth gyroscope directory",
-		"flint thruster directory",
-		"greenwave rheostat directory",
-		"horizon actuator directory",
-		"icefall gearbox directory",
-		"lotus controller directory",
+		"willow oscillator archive",
+		"xanthic pump archive",
+		"yellow quench valve archive",
+		"zircon relay archive",
+		"apricot solenoid archive",
+		"basalt throttle archive",
+		"coral uplink archive",
+		"foghorn vaporizer archive",
+		"granite waveform archive",
+		"heather yaw sensor archive",
 	],
 } as const satisfies Readonly<Record<SkillDiscoveryFamily, readonly string[]>>;
 
@@ -201,7 +201,7 @@ function targetBody(family: SkillDiscoveryFamily, index: number): string {
 		return "Reply with the frontmatter verification-token exactly, with no explanation or formatting.";
 	if (family === "instruction") {
 		const serial = String(index + 1).padStart(2, "0");
-		return `Join the fragments \`INST\`, \`DIRECT\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
+		return `Join the fragments \`INST\`, \`ISOLATED\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
 	}
 	return "Read `references/answer.txt` relative to this directory and reply with its trimmed contents only.";
 }
@@ -218,15 +218,15 @@ function decoySkill(name: string, description: string, variant: "archived" | "dr
 function makeTask(family: SkillDiscoveryFamily, subject: string, index: number): SkillDiscoveryManifestTask {
 	const serial = String(index + 1).padStart(2, "0");
 	const familyPrefix = family === "metadata" ? "meta" : family === "instruction" ? "inst" : "resource";
-	const id = `direct-${familyPrefix}-${serial}`;
-	const name = `sd-direct-${familyPrefix}-${slug(subject)}`;
+	const id = `isolated-${familyPrefix}-${serial}`;
+	const name = `sd-isolated-${familyPrefix}-${slug(subject)}`;
 	const description = targetDescription(family, subject);
 	const expectedToken =
 		family === "metadata"
-			? `META_DIRECT_${serial}`
+			? `META_ISOLATED_${serial}`
 			: family === "instruction"
-				? `INST_DIRECT_${serial}`
-				: `RESOURCE_DIRECT_${serial}`;
+				? `INST_ISOLATED_${serial}`
+				: `RESOURCE_ISOLATED_${serial}`;
 	const target: SkillDiscoveryManifestSkill = {
 		description,
 		name,

@@ -182,11 +182,17 @@ function benchmarkEnvironment(
 ): NodeJS.ProcessEnv {
 	const environment = { ...base };
 	for (const key of Object.keys(environment)) {
-		if (key.startsWith("PONYTAIL_") || key.startsWith("PI_SUBAGENT_PARENT_") || key.startsWith("PI_STUFF_"))
+		if (
+			key.startsWith("MAGIC_CONTEXT_") ||
+			key.startsWith("PONYTAIL_") ||
+			key.startsWith("PI_SUBAGENT_PARENT_") ||
+			key.startsWith("PI_STUFF_")
+		)
 			delete environment[key];
 	}
 	const result: NodeJS.ProcessEnv = {
 		...environment,
+		MAGIC_CONTEXT_PI_SUBAGENT: "1",
 		PI_CODING_AGENT_DIR: directories.agent,
 		PI_STUFF_CODE_MODE_DEFAULT: "off",
 		PI_STUFF_CODE_MODE_HOST: codeModeHost,

@@ -29,10 +29,11 @@ const ROOT = resolve(import.meta.dir, "..");
 const PROVIDER = "openai-codex";
 const MODEL = "gpt-5.6-sol";
 const REASONING = "xhigh";
-const MANIFEST_PATH = "test/fixtures/skill-discovery-direct-read-manifest.jsonl";
+const CONTEXT_MODE = "native";
+const MANIFEST_PATH = "test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl";
 const OBSERVER_PATH = "test/fixtures/skill-discovery-benchmark-observer.ts";
-const LOCK_PATH = "test/fixtures/skill-discovery-direct-read-run-lock.json";
-const REPORT_PATH = "docs/reports/skill-discovery-direct-read-20260830.json";
+const LOCK_PATH = "test/fixtures/skill-discovery-isolated-confirmation-run-lock.json";
+const REPORT_PATH = "docs/reports/skill-discovery-isolated-confirmation-20260830.json";
 const PACKAGE_EXTENSION = "packages/pi-stuff/index.ts";
 const RUNNER_SOURCES = [
 	"scripts/benchmark-skill-discovery.ts",
@@ -51,6 +52,7 @@ const LOCKED_SOURCE_SCHEMA = Type.Object({
 const RUN_LOCK_SCHEMA = Type.Object({
 	candidateCommit: Type.String({ pattern: "^[0-9a-f]{40}$" }),
 	candidatePackageTree: Type.String({ pattern: "^[0-9a-f]{40}$" }),
+	contextMode: Type.Literal("native"),
 	host: Type.Object({
 		binarySha256: Type.String(),
 		binarySize: Type.Number(),
@@ -169,6 +171,7 @@ async function preflight(
 		lock.provider !== PROVIDER ||
 		lock.model !== MODEL ||
 		lock.reasoning !== REASONING ||
+		lock.contextMode !== CONTEXT_MODE ||
 		lock.reportPath !== REPORT_PATH ||
 		lock.host.version !== CERTIFIED_PI_VERSION ||
 		lock.host.profile !== CERTIFIED_PI_HOST_PROFILE ||
@@ -257,6 +260,7 @@ async function writeReport(
 		identities: {
 			candidateCommit: lock.candidateCommit,
 			candidatePackageTree: lock.candidatePackageTree,
+			contextMode: lock.contextMode,
 			host: lock.host,
 			manifestSha256: lock.manifest.sha256,
 			model: MODEL,
@@ -268,7 +272,7 @@ async function writeReport(
 		observations,
 		plan: { bootstrapIterations: 20_000, seed: manifest.seed, sessions: 90, tasks: 30 },
 		schemaVersion: 1,
-		study: "skill-discovery-real-model-direct-read",
+		study: "skill-discovery-real-model-isolated-confirmation",
 	};
 	const reportValue = requireJsonInputValue(report, "Skill Discovery benchmark report");
 	assertSanitizedSkillDiscoveryReport(reportValue, manifest, [benchmarkRoot]);
