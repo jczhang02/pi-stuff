@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Effect } from "effect";
 import { isRuntimeBoolean, isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import {
@@ -286,11 +287,11 @@ export function buildSubagentResultIntercomPayload(
 	return payload;
 }
 
-export async function deliverSubagentResultIntercomEvent(
+export function deliverSubagentResultIntercomEvent(
 	events: IntercomEventBus,
 	payload: SubagentResultIntercomPayload,
 	timeoutMs = 500,
-): Promise<boolean> {
+): Effect.Effect<boolean> {
 	return deliverSubagentIntercomMessageEvent(events, payload.to, payload.message, timeoutMs, payload);
 }
 
@@ -298,37 +299,28 @@ interface SubagentIntercomExtra {
 	readonly requestId?: string;
 }
 
-export async function deliverSubagentIntercomMessageEvent(
+export function deliverSubagentIntercomMessageEvent(
 	events: IntercomEventBus,
 	to: string,
 	message: string,
 	timeoutMs = 500,
 	extra: SubagentIntercomExtra = {},
-): Promise<boolean> {
-	if (!isRuntimeFunction(events.on) || !isRuntimeFunction(events.emit)) return false;
+): Effect.Effect<boolean> {
+	if (!isRuntimeFunction(events.on) || !isRuntimeFunction(events.emit)) return Effect.succeed(false);
 	const requestId = extra.requestId ?? randomUUID();
-	return new Promise((resolve) => {
-		let settled = false;
-		let unsubscribe: (() => void) | undefined;
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const finish = (delivered: boolean) => {
-			if (settled) return;
-			settled = true;
-			if (timer) clearTimeout(timer);
-			unsubscribe?.();
-			resolve(delivered);
-		};
-		unsubscribe = events.on(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
+	const delivered = Effect.callback<boolean>((resume) => {
+		const unsubscribe = events.on?.(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
 			if (!data || !isRuntimeObject(data)) return;
 			const deliveredRequestId = "requestId" in data ? data.requestId : undefined;
 			if (deliveredRequestId !== requestId) return;
-			finish("delivered" in data && data.delivered === true);
+			resume(Effect.succeed("delivered" in data && data.delivered === true));
 		});
-		timer = setTimeout(() => finish(false), timeoutMs);
 		try {
-			events.emit(SUBAGENT_RESULT_INTERCOM_EVENT, { ...extra, to, message, requestId });
+			events.emit?.(SUBAGENT_RESULT_INTERCOM_EVENT, { ...extra, to, message, requestId });
 		} catch {
-			finish(false);
+			resume(Effect.succeed(false));
 		}
+		return Effect.sync(() => unsubscribe?.());
 	});
+	return Effect.raceFirst(delivered, Effect.sleep(timeoutMs).pipe(Effect.as(false)));
 }

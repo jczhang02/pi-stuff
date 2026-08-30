@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { isOwnedFileChangedDuringReadError } from "../../shared/private-directory.ts";
 import type {
 	AsyncStatus,
@@ -189,7 +190,7 @@ export function readSteeringStatus(asyncDir: string): SteeringStatus | undefined
 	return readStatus(asyncDir)?.steering;
 }
 
-export async function waitForSteeringAction(
+export function waitForSteeringAction(
 	input: {
 		asyncDir: string;
 		sourceRunId: string;
@@ -199,11 +200,11 @@ export async function waitForSteeringAction(
 	},
 	deps: {
 		readSteeringStatus?: (asyncDir: string) => SteeringStatus | undefined;
-		sleep?: (delayMs: number) => Promise<void>;
+		sleep?: (delayMs: number) => Effect.Effect<void>;
 	} = {},
-): Promise<SteerActionResult | undefined> {
+): Effect.Effect<SteerActionResult | undefined, unknown> {
 	const read = deps.readSteeringStatus ?? readSteeringStatus;
-	const sleep = deps.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+	const sleep = deps.sleep ?? Effect.sleep;
 	const readForPoll = (): SteeringStatus | undefined => {
 		try {
 			return read(input.asyncDir);
@@ -215,14 +216,26 @@ export async function waitForSteeringAction(
 			throw error;
 		}
 	};
-	const deadline = Date.now() + input.timeoutMs;
-	while (Date.now() <= deadline) {
-		if (input.signal?.aborted) return undefined;
-		const status = readForPoll();
-		const result = status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
-		if (steeringActionIsTerminal(result)) return result;
-		await sleep(Math.min(50, Math.max(1, deadline - Date.now())));
-	}
-	const status = readForPoll();
-	return status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
+	const poll = Effect.gen(function* () {
+		const deadline = Date.now() + input.timeoutMs;
+		while (Date.now() <= deadline) {
+			const status = yield* Effect.try({ try: readForPoll, catch: (error) => error });
+			const result = status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
+			if (steeringActionIsTerminal(result)) return result;
+			yield* sleep(Math.min(50, Math.max(1, deadline - Date.now())));
+		}
+		const status = yield* Effect.try({ try: readForPoll, catch: (error) => error });
+		return status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
+	});
+	if (!input.signal) return poll;
+	const aborted = Effect.callback<void>((resume) => {
+		const stop = () => resume(Effect.void);
+		if (input.signal?.aborted) {
+			stop();
+			return;
+		}
+		input.signal?.addEventListener("abort", stop, { once: true });
+		return Effect.sync(() => input.signal?.removeEventListener("abort", stop));
+	});
+	return Effect.raceFirst(poll, aborted.pipe(Effect.as(undefined)));
 }

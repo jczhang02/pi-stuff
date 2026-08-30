@@ -46,7 +46,7 @@ import {
 	captureWriterProcessStartIdentity,
 	createBackgroundCompletion,
 	createInitialStatus,
-	runBackgroundWork,
+	runBackgroundWork as runBackgroundWorkEffect,
 	runConfiguredBackground,
 	waitForStartupControl,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
@@ -63,6 +63,8 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
 import type {
 	BackgroundRunnerConfig,
+	BackgroundRunnerWork,
+	BackgroundTaskResult,
 	RunnerAgentTask,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
 import {
@@ -271,6 +273,30 @@ export function acquireRunnerProcessStartIdentity(
 	return Effect.runPromise(acquireRunnerProcessStartIdentityEffect(pid, options));
 }
 
+export function runBackgroundWork(
+	work: BackgroundRunnerWork,
+	runTask: (task: RunnerAgentTask, index: number, signal?: AbortSignal) => Promise<BackgroundTaskResult>,
+	options: { signal?: AbortSignal } = {},
+): Promise<BackgroundTaskResult[]> {
+	return Effect.runPromise(
+		runBackgroundWorkEffect(
+			work,
+			(task, index) =>
+				Effect.tryPromise({ try: () => runTask(task, index, options.signal), catch: (error) => error }),
+			{
+				terminalCause: () => {
+					const reason = options.signal?.reason;
+					return options.signal?.aborted
+						? reason === "pause" || reason === "timeout"
+							? reason
+							: "stop"
+						: undefined;
+				},
+			},
+		),
+	);
+}
+
 export function task(index: number): RunnerAgentTask {
 	return {
 		agent: `agent-${index}`,
@@ -331,7 +357,6 @@ export {
 	resolveBackgroundOwnershipFailure,
 	resolveBunRuntimeCommand,
 	resolveNestedTerminalStatus,
-	runBackgroundWork,
 	runConfiguredBackground,
 	shardedDurableClaimName,
 	singleRunnerConfig,

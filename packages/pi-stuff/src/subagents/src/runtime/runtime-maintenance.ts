@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isJsonInputObject, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { shardedDurableClaimName, tryAcquireKernelClaim } from "../shared/durable-claim.ts";
 import { readBoundedOwnedFileSnapshotAsync, removeOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
@@ -41,6 +40,7 @@ export interface RuntimeMaintenanceReport {
 
 interface RuntimeMaintenanceOptions {
 	readonly now?: number;
+	readonly inspectWriterLiveness: (directory: string) => Promise<boolean | undefined>;
 }
 
 interface PreparationMarker {
@@ -192,7 +192,12 @@ async function runDirectories(
 	return [...byPath.values()];
 }
 
-async function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeRunKind): Promise<boolean> {
+async function safeToTrim(
+	directory: string,
+	status: AsyncStatus,
+	kind: RuntimeRunKind,
+	inspectWriterLiveness: RuntimeMaintenanceOptions["inspectWriterLiveness"],
+): Promise<boolean> {
 	if (!terminal(status)) return false;
 	// Foreground work executes in the Host and has no detached runner process to
 	// observe. Async and nested v3 runs must retain diagnostics until the
@@ -200,7 +205,7 @@ async function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeR
 	if (kind !== "foreground" && status.lifecycleArtifactVersion === 3 && status.processTerminal?.state !== "observed") {
 		return false;
 	}
-	return (await inspectWriterProcessLivenessAsync(directory)) === false;
+	return (await inspectWriterLiveness(directory)) === false;
 }
 
 function ownedRegularFile(filePath: string): boolean {
@@ -232,6 +237,7 @@ async function retireStaleResult(
 	directory: string,
 	status: AsyncStatus,
 	now: number,
+	inspectWriterLiveness: RuntimeMaintenanceOptions["inspectWriterLiveness"],
 ): Promise<boolean> {
 	if (
 		status.lifecycleArtifactVersion !== 3 ||
@@ -277,7 +283,7 @@ async function retireStaleResult(
 			!terminal(currentStatus) ||
 			currentStatus.processTerminal?.state !== "observed" ||
 			!hasCompleteSessionHistory(currentStatus) ||
-			(await inspectWriterProcessLivenessAsync(directory)) !== false
+			(await inspectWriterLiveness(directory)) !== false
 		) {
 			return false;
 		}
@@ -478,7 +484,11 @@ async function preparationOwnerIsDead(marker: PreparationMarker): Promise<boolea
 	}
 }
 
-async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKind): Promise<boolean> {
+async function reclaimAbandonedPreparation(
+	directory: string,
+	kind: RuntimeRunKind,
+	inspectWriterLiveness: RuntimeMaintenanceOptions["inspectWriterLiveness"],
+): Promise<boolean> {
 	const marker = await readPreparationMarker(directory, kind);
 	if (!marker || !(await preparationOwnerIsDead(marker))) return false;
 	for (const file of ["status.json", "completion.json"]) {
@@ -489,7 +499,7 @@ async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKi
 			if (errnoCode(error) !== "ENOENT") return false;
 		}
 	}
-	if ((await inspectWriterProcessLivenessAsync(directory)) === true) return false;
+	if ((await inspectWriterLiveness(directory)) === true) return false;
 	let current: fs.Stats;
 	try {
 		current = await fs.promises.lstat(directory);
@@ -519,9 +529,10 @@ async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKi
 /** Compact optional diagnostics only after durable lifecycle and writer proof say the run is over. */
 export async function maintainAgentRuntime(
 	rootDirectory = TEMP_ROOT_DIR,
-	options: RuntimeMaintenanceOptions = {},
+	options: RuntimeMaintenanceOptions,
 ): Promise<RuntimeMaintenanceReport> {
 	const now = options.now ?? Date.now();
+	const { inspectWriterLiveness } = options;
 	const resultsDir = path.join(rootDirectory, "async-subagent-results");
 	const resultCursor = await readStaleResultCursor(resultsDir);
 	const resultSelection = { directory: resultsDir, cutoff: now - RESULT_RETENTION_MS };
@@ -540,7 +551,7 @@ export async function maintainAgentRuntime(
 	let lastPrioritizedResult: string | undefined;
 	for (const candidate of directories) {
 		if (candidate.prioritizedResult) lastPrioritizedResult = path.basename(candidate.directory);
-		if (await reclaimAbandonedPreparation(candidate.directory, candidate.kind)) {
+		if (await reclaimAbandonedPreparation(candidate.directory, candidate.kind, inspectWriterLiveness)) {
 			abandonedPreparationsReclaimed += 1;
 			continue;
 		}
@@ -561,11 +572,11 @@ export async function maintainAgentRuntime(
 			candidate.kind === "async" &&
 			candidate.resultMtimeMs !== undefined &&
 			now - candidate.resultMtimeMs >= RESULT_RETENTION_MS &&
-			(await retireStaleResult(rootDirectory, directory, status, now))
+			(await retireStaleResult(rootDirectory, directory, status, now, inspectWriterLiveness))
 		) {
 			staleResultsRetired += 1;
 		}
-		if (await safeToTrim(directory, status, candidate.kind)) {
+		if (await safeToTrim(directory, status, candidate.kind, inspectWriterLiveness)) {
 			const reclaimed = await trimDiagnosticTail(path.join(directory, "events.jsonl"));
 			if (reclaimed > 0) {
 				trimmed += 1;

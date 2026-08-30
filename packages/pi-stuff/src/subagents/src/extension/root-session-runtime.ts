@@ -64,7 +64,7 @@ interface RootSessionRuntimeInput {
 	readonly monotonicNow: () => number;
 	readonly notifier: CompactCompletionNotifier;
 	readonly prepareGovernorCompatibility: (
-		input: PrepareSessionGovernorCompatibilityInput,
+		input: Omit<PrepareSessionGovernorCompatibilityInput, "inspectWriterLiveness">,
 	) => Promise<{ readonly ok: boolean; readonly message?: string }>;
 	readonly previousCleanup: Promise<void>;
 	readonly refresh: () => void;
@@ -263,7 +263,8 @@ export class RootSessionRuntime {
 		await this.input.previousCleanup;
 		if (!this.active) return;
 		this.resetSessionRuntime();
-		this.input.backgroundEffects.startSession(ctx.sessionManager);
+		await this.input.backgroundEffects.startSession(ctx.sessionManager);
+		if (!this.active) return;
 		const epoch = this.sessionEpoch;
 		const state = this.input.state;
 		state.baseCwd = ctx.cwd;

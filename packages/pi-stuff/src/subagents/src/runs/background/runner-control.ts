@@ -54,12 +54,10 @@ function interruptDescendants(config: BackgroundRunnerConfig, kind: TerminalKind
 
 export class BackgroundRunControl {
 	readonly activeControls = new Map<number, ChildRuntimeControl>();
-	readonly signal: AbortSignal;
 	private readonly config: BackgroundRunnerConfig;
 	private readonly status: RunnerStatus;
 	private readonly statusPath: string;
 	private readonly eventsPath: string;
-	private readonly schedulingAbort = new AbortController();
 	private readonly scheduledStops = new Set<number>();
 	private readonly signalInterrupt = () => this.requestTerminal("pause");
 	private terminalKind: TerminalKind | undefined;
@@ -70,7 +68,6 @@ export class BackgroundRunControl {
 		this.status = status;
 		this.statusPath = statusPath;
 		this.eventsPath = eventsPath;
-		this.signal = this.schedulingAbort.signal;
 	}
 
 	install(): Effect.Effect<void, never, Scope.Scope> {
@@ -103,10 +100,13 @@ export class BackgroundRunControl {
 		return this.scheduledStops.delete(index);
 	}
 
+	preStartTerminalCause(): TerminalKind | undefined {
+		return this.terminalKind;
+	}
+
 	private requestTerminal(kind: TerminalKind): void {
 		if (this.terminalKind) return;
 		this.terminalKind = kind;
-		this.schedulingAbort.abort(kind);
 		for (const control of this.activeControls.values()) control.interrupt(kind);
 		interruptDescendants(this.config, kind);
 	}

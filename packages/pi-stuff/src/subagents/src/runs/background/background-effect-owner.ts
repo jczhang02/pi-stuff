@@ -11,13 +11,18 @@ export interface BackgroundEffectTask<A, E> {
 export class BackgroundEffectOwner {
 	private readonly foundation: EffectFoundation;
 	private capability: EffectScopeOwner | undefined;
+	private generation = 0;
 
 	constructor(foundation: EffectFoundation) {
 		this.foundation = foundation;
 	}
 
-	startSession(sessionManager: ExtensionContext["sessionManager"]): void {
-		void this.stop();
+	async startSession(sessionManager: ExtensionContext["sessionManager"]): Promise<void> {
+		const generation = ++this.generation;
+		const previous = this.capability;
+		this.capability = undefined;
+		if (previous) await this.foundation.close(previous, Exit.interrupt());
+		if (generation !== this.generation) return;
 		const session = this.foundation.sessionFor(sessionManager);
 		if (!session) throw new Error("Background Agent Effects require the current Pi Session Scope.");
 		this.capability = this.foundation.forkCapability(session);
@@ -43,6 +48,7 @@ export class BackgroundEffectOwner {
 	}
 
 	async stop(): Promise<boolean> {
+		this.generation += 1;
 		const capability = this.capability;
 		this.capability = undefined;
 		return capability ? this.foundation.close(capability, Exit.interrupt()) : true;

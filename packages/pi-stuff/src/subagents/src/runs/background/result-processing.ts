@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { type JsonObject, parseJsonObject } from "../../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeString } from "../../../../shared/runtime-type.js";
 import {
@@ -43,7 +44,7 @@ import {
 	stableDeliveryId,
 	writeDeliveryState,
 } from "./completion-dedupe.ts";
-import { type CompletionNotification, deliverNotificationWithAbort } from "./notify.ts";
+import { type CompletionNotification, deliverNotification } from "./notify.ts";
 import {
 	COMPLETION_FIELDS,
 	RESULT_CHILD_FIELDS,
@@ -86,7 +87,6 @@ interface LoadedResult {
 	runId: string;
 	epoch: number;
 	statusChildren: NestedRunSummary[] | undefined;
-	signal: AbortSignal;
 	terminalStatusReady: boolean;
 	triggerTurn: boolean;
 }
@@ -149,24 +149,32 @@ export class ResultProcessor {
 		}
 	}
 
-	private async validAsyncBinding(data: ResultFileData, file: string): Promise<"valid" | "pending" | "invalid"> {
+	private validAsyncBinding(
+		data: ResultFileData,
+		file: string,
+	): Effect.Effect<"valid" | "pending" | "invalid", unknown> {
 		const { asyncDirRoot } = this.options;
 		const fileRunId = file.replace(/\.json$/iu, "");
 		if ((data.runId !== undefined && data.runId !== fileRunId) || (data.id !== undefined && data.id !== fileRunId))
-			return "invalid";
-		if (!isRuntimeString(data.asyncDir) || !data.asyncDir) return "valid";
+			return Effect.succeed("invalid");
+		if (!isRuntimeString(data.asyncDir) || !data.asyncDir) return Effect.succeed("valid");
 		const expectedDir = path.join(path.resolve(asyncDirRoot), fileRunId);
 		if (path.resolve(data.asyncDir) !== expectedDir || path.dirname(expectedDir) !== path.resolve(asyncDirRoot))
-			return "invalid";
-		const entry = await fs.promises.lstat(expectedDir).catch((error) => {
-			if (isNotFound(error)) return undefined;
-			throw error;
+			return Effect.succeed("invalid");
+		return Effect.tryPromise({
+			try: async () => {
+				const entry = await fs.promises.lstat(expectedDir).catch((error) => {
+					if (isNotFound(error)) return undefined;
+					throw error;
+				});
+				if (!entry) return "pending" as const;
+				if (!entry.isDirectory() || entry.isSymbolicLink()) return "invalid" as const;
+				const canonicalRoot = await fs.promises.realpath(asyncDirRoot);
+				const canonicalDir = await fs.promises.realpath(expectedDir);
+				return path.dirname(canonicalDir) === canonicalRoot ? ("valid" as const) : ("invalid" as const);
+			},
+			catch: (error) => error,
 		});
-		if (!entry) return "pending";
-		if (!entry.isDirectory() || entry.isSymbolicLink()) return "invalid";
-		const canonicalRoot = await fs.promises.realpath(asyncDirRoot);
-		const canonicalDir = await fs.promises.realpath(expectedDir);
-		return path.dirname(canonicalDir) === canonicalRoot ? "valid" : "invalid";
 	}
 
 	private ownsSession(sessionId: string, runId: string, epoch: number): boolean {
@@ -179,13 +187,10 @@ export class ResultProcessor {
 		return this.activeSessionId === state.currentSessionId && artifactMatches;
 	}
 
-	private async fileExists(filePath: string): Promise<boolean> {
-		return fs.promises.access(filePath).then(
-			() => true,
-			(error) => {
-				if (isNotFound(error)) return false;
-				throw error;
-			},
+	private fileExists(filePath: string): Effect.Effect<boolean, unknown> {
+		return Effect.tryPromise({ try: () => fs.promises.access(filePath), catch: (error) => error }).pipe(
+			Effect.as(true),
+			Effect.catch((error) => (isNotFound(error) ? Effect.succeed(false) : Effect.fail(error))),
 		);
 	}
 
@@ -204,22 +209,30 @@ export class ResultProcessor {
 		this.options.scheduleResult(file, triggerTurn, delay);
 	}
 
-	private async removeDeliveredResult(loaded: LoadedResult, completionKey: string): Promise<void> {
+	private removeDeliveredResult(loaded: LoadedResult, completionKey: string): Effect.Effect<void> {
 		const { file, resultPath, resultSnapshot, triggerTurn } = loaded;
-		try {
-			if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
+		return Effect.gen({ self: this }, function* () {
+			const removed = yield* Effect.tryPromise({
+				try: () => removeOwnedFileSnapshotAsync(resultPath, resultSnapshot),
+				catch: (error) => error,
+			});
+			if (removed === "changed") {
 				this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 				return;
 			}
-			await removeDeliveryArtifacts(this.options.resultsDir, file);
+			yield* removeDeliveryArtifacts(this.options.resultsDir, file);
 			this.deliveredPendingStatus.delete(completionKey);
 			this.statusRepairRetryDelay.delete(file);
 			this.statusRepairLastLog.delete(file);
-		} catch (error) {
-			if (isNotFound(error)) return;
-			reportAgentDiagnostic(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
-			this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-		}
+		}).pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					if (isNotFound(error)) return;
+					reportAgentDiagnostic(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
+					this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+				}),
+			),
+		);
 	}
 
 	private ensureTerminalStatus(
@@ -255,379 +268,425 @@ export class ResultProcessor {
 		return false;
 	}
 
-	private async loadResult(
+	private loadResult(
 		file: string,
 		resultPath: string,
 		attemptEpoch: number,
 		triggerTurn: boolean,
-		signal: AbortSignal,
-	): Promise<LoadedResult | null> {
-		signal.throwIfAborted();
-		const resultSnapshot = await this.options.readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES);
-		signal.throwIfAborted();
-		const rawResult = resultSnapshot.text;
-		const data: JsonObject & ResultFileData = parseJsonObject(rawResult);
-		this.processRetryDelay.delete(file);
-		this.processRetryLastLog.delete(file);
-		if (!isRuntimeString(data.sessionId) || !data.sessionId) {
-			this.rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
-			return null;
-		}
-		// SAFETY: The persisted sessionId was checked as a non-empty string above.
-		const sessionData = data as typeof data & { sessionId: string };
-		const runId = sessionData.runId ?? sessionData.id ?? file.replace(/\.json$/i, "");
-		const epoch = this.deliveryEpoch;
-		if (!this.ownsSession(sessionData.sessionId, runId, epoch)) {
-			this.rememberIgnoredResult(file, resultSnapshot, epoch);
-			return null;
-		}
-		if ((await this.validAsyncBinding(sessionData, file)) === "invalid") {
-			this.rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
-			this.reportStatusRepair(file, `Ignoring subagent result '${resultPath}' with an unsafe asyncDir binding.`);
-			return null;
-		}
-		const terminalStatusReady = this.ensureTerminalStatus(sessionData, resultPath, file, rawResult);
-		const hasExplicitNestedChildren = sessionData.nestedChildren !== undefined;
-		let nestedChildren = compactNestedResultChildren(
-			sanitizeNestedResultChildren(sessionData.nestedChildren, resultPath, "nestedChildren"),
-		);
-		let persistedStatus: AsyncStatus | null = null;
-		if (isRuntimeString(sessionData.asyncDir) && sessionData.asyncDir) {
-			try {
-				persistedStatus = await readStatusAsync(sessionData.asyncDir);
-			} catch (error) {
-				reportAgentDiagnostic(`Failed to inspect exact nested status for '${resultPath}':`, error);
+	): Effect.Effect<LoadedResult | null, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			const resultSnapshot = yield* Effect.tryPromise({
+				try: async () => this.options.readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES),
+				catch: (error) => error,
+			});
+			const rawResult = resultSnapshot.text;
+			const data: JsonObject & ResultFileData = parseJsonObject(rawResult);
+			this.processRetryDelay.delete(file);
+			this.processRetryLastLog.delete(file);
+			if (!isRuntimeString(data.sessionId) || !data.sessionId) {
+				this.rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
+				return null;
 			}
-		}
-		const statusChildren = compactNestedResultChildren(
-			persistedStatus?.steps?.flatMap((step) => step.children ?? []),
-		);
-		if (!nestedChildren?.length && !hasExplicitNestedChildren) {
-			if (persistedStatus?.nestedRoute) {
-				try {
-					nestedChildren = compactNestedResultChildren(
-						(await this.options.projectNestedEvents(persistedStatus.nestedRoute)).children,
+			// SAFETY: The persisted sessionId was checked as a non-empty string above.
+			const sessionData = data as typeof data & { sessionId: string };
+			const runId = sessionData.runId ?? sessionData.id ?? file.replace(/\.json$/i, "");
+			const epoch = this.deliveryEpoch;
+			if (!this.ownsSession(sessionData.sessionId, runId, epoch)) {
+				this.rememberIgnoredResult(file, resultSnapshot, epoch);
+				return null;
+			}
+			if ((yield* this.validAsyncBinding(sessionData, file)) === "invalid") {
+				this.rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
+				this.reportStatusRepair(file, `Ignoring subagent result '${resultPath}' with an unsafe asyncDir binding.`);
+				return null;
+			}
+			const terminalStatusReady = this.ensureTerminalStatus(sessionData, resultPath, file, rawResult);
+			const hasExplicitNestedChildren = sessionData.nestedChildren !== undefined;
+			let nestedChildren = compactNestedResultChildren(
+				sanitizeNestedResultChildren(sessionData.nestedChildren, resultPath, "nestedChildren"),
+			);
+			let persistedStatus: AsyncStatus | null = null;
+			const asyncDir = sessionData.asyncDir;
+			if (isRuntimeString(asyncDir) && asyncDir) {
+				persistedStatus = yield* Effect.tryPromise({
+					try: () => readStatusAsync(asyncDir),
+					catch: (error) => error,
+				}).pipe(
+					Effect.catch((error) =>
+						Effect.sync(() => {
+							reportAgentDiagnostic(`Failed to inspect exact nested status for '${resultPath}':`, error);
+							return null;
+						}),
+					),
+				);
+			}
+			const statusChildren = compactNestedResultChildren(
+				persistedStatus?.steps?.flatMap((step) => step.children ?? []),
+			);
+			if (!nestedChildren?.length && !hasExplicitNestedChildren) {
+				const nestedRoute = persistedStatus?.nestedRoute;
+				if (nestedRoute) {
+					const projected = yield* Effect.tryPromise({
+						try: () => this.options.projectNestedEvents(nestedRoute),
+						catch: (error) => error,
+					}).pipe(
+						Effect.map((value) => ({ ok: true as const, value })),
+						Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
 					);
-				} catch (error) {
-					// A busy exact-route projector is not an empty tree. Retain the
-					// result instead of permanently delivering an incomplete summary.
-					reportAgentDiagnostic(
-						`Failed to project exact nested route for '${resultPath}'; retaining result for retry:`,
-						error,
-					);
-					this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-					return null;
-				}
-			} else {
-				nestedChildren = statusChildren;
-				if (!nestedChildren?.length) {
-					try {
-						nestedChildren = compactNestedResultChildren(
-							(await projectNestedRegistryForRootAuthoritatively(runId))?.children,
-						);
-					} catch (error) {
+					if (!projected.ok) {
+						// A busy exact-route projector is not an empty tree. Retain the
+						// result instead of permanently delivering an incomplete summary.
 						reportAgentDiagnostic(
-							`Failed to authoritatively enrich legacy subagent result '${resultPath}'; retaining it for retry:`,
-							error,
+							`Failed to project exact nested route for '${resultPath}'; retaining result for retry:`,
+							projected.error,
 						);
 						this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 						return null;
 					}
+					nestedChildren = compactNestedResultChildren(projected.value.children);
+				} else {
+					nestedChildren = statusChildren;
+					if (!nestedChildren?.length) {
+						const projected = yield* Effect.tryPromise({
+							try: () => projectNestedRegistryForRootAuthoritatively(runId),
+							catch: (error) => error,
+						}).pipe(
+							Effect.map((value) => ({ ok: true as const, value })),
+							Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
+						);
+						if (!projected.ok) {
+							reportAgentDiagnostic(
+								`Failed to authoritatively enrich legacy subagent result '${resultPath}'; retaining it for retry:`,
+								projected.error,
+							);
+							this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+							return null;
+						}
+						nestedChildren = compactNestedResultChildren(projected.value?.children);
+					}
 				}
 			}
-		}
-		return {
-			data: sessionData,
-			file,
-			nestedChildren,
-			persistedStatus,
-			rawResult,
-			resultPath,
-			resultSnapshot,
-			runId,
-			epoch,
-			statusChildren,
-			signal,
-			terminalStatusReady,
-			triggerTurn,
-		};
+			return {
+				data: sessionData,
+				file,
+				nestedChildren,
+				persistedStatus,
+				rawResult,
+				resultPath,
+				resultSnapshot,
+				runId,
+				epoch,
+				statusChildren,
+				terminalStatusReady,
+				triggerTurn,
+			};
+		});
 	}
 
-	private async buildCompletion(loaded: LoadedResult, delivery: ResultDeliveryState): Promise<CompletionProjection> {
-		const { data, nestedChildren, persistedStatus, runId, statusChildren, triggerTurn } = loaded;
-		const persistedResults = Array.isArray(data.results) && data.results.length > 0 ? data.results : undefined;
-		const fallbackChild: ResultFileChild = {};
-		if (isRuntimeString(data.agent)) fallbackChild.agent = data.agent;
-		if (data.summary !== undefined) fallbackChild.output = data.summary;
-		if (data.success !== undefined) fallbackChild.success = data.success;
-		const resultChildren: ResultFileChild[] = persistedResults ?? [fallbackChild];
-		const sessionPaths = await Promise.all(
-			resultChildren.map(async (result) => {
-				const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
-				return isRuntimeString(sessionPath) && (await this.fileExists(sessionPath)) ? sessionPath : undefined;
-			}),
-		);
-		const normalizedChildren = attachNestedChildrenToResultChildren(
-			runId,
-			resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
-				const baseOutput = result.output ?? data.summary;
-				const hasRealOutput = isRuntimeString(baseOutput) && baseOutput.trim().length > 0;
-				const output = hasRealOutput ? baseOutput : "(no output)";
-				const summary =
-					result.success === false && result.error
-						? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
-						: output;
-				const sessionPath = sessionPaths[index];
-				const childNestedChildren = sanitizeNestedResultChildren(
-					result.children,
-					loaded.resultPath,
-					`results[${index}].children`,
-				);
-				const childState =
-					result.state === "paused" || result.state === "stopped"
-						? result.state
-						: result.stopped === true
-							? "stopped"
-							: result.interrupted === true
-								? "paused"
-								: persistedResults === undefined &&
-										(data.state === "paused" || data.state === "stopped" || !isRuntimeBoolean(result.success))
-									? data.state
-									: undefined;
-				const statusInput: Parameters<typeof resolveSubagentResultStatus>[0] = {};
-				if (childState !== undefined) statusInput.state = childState;
-				if (isRuntimeBoolean(result.success)) statusInput.success = result.success;
-				const child: SubagentResultIntercomChild = {
-					agent: result.agent ?? data.agent ?? `step-${index + 1}`,
-					status: resolveSubagentResultStatus(statusInput),
-					summary,
-					index,
-				};
-				if (result.artifactPaths?.outputPath) child.artifactPath = result.artifactPaths.outputPath;
-				if (sessionPath) child.sessionPath = sessionPath;
-				if (result.intercomTarget) child.intercomTarget = result.intercomTarget;
-				const publicChildren = compactNestedResultChildren(childNestedChildren);
-				if (publicChildren) child.children = publicChildren;
-				return child;
-			}),
-			nestedChildren,
-		);
-		const mode =
-			data.mode === "parallel" || (data.mode !== "single" && resultChildren.length > 1) ? "parallel" : "single";
-		const projectedResults = Array.isArray(data.results)
-			? persistedResults !== undefined
-				? normalizedChildren.map((child, index) => ({
-						...pickFields(persistedResults?.[index] ?? {}, RESULT_CHILD_FIELDS),
-						agent: child.agent,
-						status: child.status,
-						summary: child.summary,
-						index: child.index,
-						artifactPath: child.artifactPath,
-						sessionPath: child.sessionPath,
-						children: child.children,
-					}))
-				: []
-			: undefined;
-		const completion: CompletionNotification = {
-			...pickFields(data, COMPLETION_FIELDS),
-			id: data.id ?? runId,
-			runId,
-			deliveryId: stableDeliveryId(delivery.completionKey),
-			mode,
-			triggerTurn,
-		};
-		if (
-			persistedStatus?.parentRunOrigin === "user" ||
-			nestedWorkIncludesUser(statusChildren) ||
-			nestedWorkIncludesUser(nestedChildren)
-		)
-			completion.parentRunOrigin = "user";
-		if (this.activeSessionId) completion.sessionId = this.activeSessionId;
-		if (nestedChildren?.length) completion.nestedChildren = nestedChildren;
-		if (projectedResults) completion.results = projectedResults;
-		return { completion, intercomTarget: data.intercomTarget?.trim() ?? "", mode, normalizedChildren };
+	private buildCompletion(
+		loaded: LoadedResult,
+		delivery: ResultDeliveryState,
+	): Effect.Effect<CompletionProjection, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			const { data, nestedChildren, persistedStatus, runId, statusChildren, triggerTurn } = loaded;
+			const persistedResults = Array.isArray(data.results) && data.results.length > 0 ? data.results : undefined;
+			const fallbackChild: ResultFileChild = {};
+			if (isRuntimeString(data.agent)) fallbackChild.agent = data.agent;
+			if (data.summary !== undefined) fallbackChild.output = data.summary;
+			if (data.success !== undefined) fallbackChild.success = data.success;
+			const resultChildren: ResultFileChild[] = persistedResults ?? [fallbackChild];
+			const sessionPaths = yield* Effect.forEach(
+				resultChildren,
+				(result) => {
+					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
+					return isRuntimeString(sessionPath)
+						? this.fileExists(sessionPath).pipe(Effect.map((exists) => (exists ? sessionPath : undefined)))
+						: Effect.succeed(undefined);
+				},
+				{ concurrency: "unbounded" },
+			);
+			const normalizedChildren = attachNestedChildrenToResultChildren(
+				runId,
+				resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
+					const baseOutput = result.output ?? data.summary;
+					const hasRealOutput = isRuntimeString(baseOutput) && baseOutput.trim().length > 0;
+					const output = hasRealOutput ? baseOutput : "(no output)";
+					const summary =
+						result.success === false && result.error
+							? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
+							: output;
+					const sessionPath = sessionPaths[index];
+					const childNestedChildren = sanitizeNestedResultChildren(
+						result.children,
+						loaded.resultPath,
+						`results[${index}].children`,
+					);
+					const childState =
+						result.state === "paused" || result.state === "stopped"
+							? result.state
+							: result.stopped === true
+								? "stopped"
+								: result.interrupted === true
+									? "paused"
+									: persistedResults === undefined &&
+											(data.state === "paused" ||
+												data.state === "stopped" ||
+												!isRuntimeBoolean(result.success))
+										? data.state
+										: undefined;
+					const statusInput: Parameters<typeof resolveSubagentResultStatus>[0] = {};
+					if (childState !== undefined) statusInput.state = childState;
+					if (isRuntimeBoolean(result.success)) statusInput.success = result.success;
+					const child: SubagentResultIntercomChild = {
+						agent: result.agent ?? data.agent ?? `step-${index + 1}`,
+						status: resolveSubagentResultStatus(statusInput),
+						summary,
+						index,
+					};
+					if (result.artifactPaths?.outputPath) child.artifactPath = result.artifactPaths.outputPath;
+					if (sessionPath) child.sessionPath = sessionPath;
+					if (result.intercomTarget) child.intercomTarget = result.intercomTarget;
+					const publicChildren = compactNestedResultChildren(childNestedChildren);
+					if (publicChildren) child.children = publicChildren;
+					return child;
+				}),
+				nestedChildren,
+			);
+			const mode =
+				data.mode === "parallel" || (data.mode !== "single" && resultChildren.length > 1) ? "parallel" : "single";
+			const projectedResults = Array.isArray(data.results)
+				? persistedResults !== undefined
+					? normalizedChildren.map((child, index) => ({
+							...pickFields(persistedResults?.[index] ?? {}, RESULT_CHILD_FIELDS),
+							agent: child.agent,
+							status: child.status,
+							summary: child.summary,
+							index: child.index,
+							artifactPath: child.artifactPath,
+							sessionPath: child.sessionPath,
+							children: child.children,
+						}))
+					: []
+				: undefined;
+			const completion: CompletionNotification = {
+				...pickFields(data, COMPLETION_FIELDS),
+				id: data.id ?? runId,
+				runId,
+				deliveryId: stableDeliveryId(delivery.completionKey),
+				mode,
+				triggerTurn,
+			};
+			if (
+				persistedStatus?.parentRunOrigin === "user" ||
+				nestedWorkIncludesUser(statusChildren) ||
+				nestedWorkIncludesUser(nestedChildren)
+			)
+				completion.parentRunOrigin = "user";
+			if (this.activeSessionId) completion.sessionId = this.activeSessionId;
+			if (nestedChildren?.length) completion.nestedChildren = nestedChildren;
+			if (projectedResults) completion.results = projectedResults;
+			return { completion, intercomTarget: data.intercomTarget?.trim() ?? "", mode, normalizedChildren };
+		});
 	}
 
-	private async deliverCompletion(
+	private deliverCompletion(
 		loaded: LoadedResult,
 		delivery: ResultDeliveryState,
 		projection: CompletionProjection,
-	): Promise<void> {
-		const { data, file, resultPath, runId, epoch, signal, terminalStatusReady, triggerTurn } = loaded;
-		const { completionKey } = delivery;
-		const { completion, intercomTarget, mode, normalizedChildren } = projection;
-		const { notifier, pi, resultsDir, state, completionTtlMs } = this.options;
-		let deliveryState = delivery;
-		let intercomDelivered = deliveryState.intercomDelivered;
-		// `triggerTurn` only controls the local notifier. An explicitly addressed
-		// intercom result remains a durable cold-start delivery obligation.
-		const shouldDeliverIntercom = Boolean(intercomTarget);
-		if (!deliveryState.intercomComplete && shouldDeliverIntercom) {
+	): Effect.Effect<void, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			const { data, file, resultPath, runId, epoch, terminalStatusReady, triggerTurn } = loaded;
+			const { completionKey } = delivery;
+			const { completion, intercomTarget, mode, normalizedChildren } = projection;
+			const { notifier, pi, resultsDir, state, completionTtlMs } = this.options;
+			let deliveryState = delivery;
+			let intercomDelivered = deliveryState.intercomDelivered;
+			// `triggerTurn` only controls the local notifier. An explicitly addressed
+			// intercom result remains a durable cold-start delivery obligation.
+			const shouldDeliverIntercom = Boolean(intercomTarget);
+			if (!deliveryState.intercomComplete && shouldDeliverIntercom) {
+				if (!this.ownsSession(data.sessionId, runId, epoch)) return;
+				const payloadInput: Parameters<typeof buildSubagentResultIntercomPayload>[0] = {
+					to: intercomTarget,
+					runId,
+					mode,
+					source: "async",
+					children: normalizedChildren,
+				};
+				if (isRuntimeString(data.id)) payloadInput.asyncId = data.id;
+				if (data.asyncDir !== undefined) payloadInput.asyncDir = data.asyncDir;
+				const payload = buildSubagentResultIntercomPayload(payloadInput);
+				intercomDelivered = yield* deliverSubagentResultIntercomEvent(pi.events, {
+					...payload,
+					requestId: stableDeliveryId(completionKey),
+				});
+				if (!intercomDelivered)
+					reportAgentDiagnostic(
+						`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`,
+					);
+			}
 			if (!this.ownsSession(data.sessionId, runId, epoch)) return;
-			const payloadInput: Parameters<typeof buildSubagentResultIntercomPayload>[0] = {
-				to: intercomTarget,
-				runId,
-				mode,
-				source: "async",
-				children: normalizedChildren,
-			};
-			if (isRuntimeString(data.id)) payloadInput.asyncId = data.id;
-			if (data.asyncDir !== undefined) payloadInput.asyncDir = data.asyncDir;
-			const payload = buildSubagentResultIntercomPayload(payloadInput);
-			intercomDelivered = await deliverSubagentResultIntercomEvent(pi.events, {
-				...payload,
-				requestId: stableDeliveryId(completionKey),
-			});
-			if (!intercomDelivered)
-				reportAgentDiagnostic(
-					`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`,
-				);
-		}
-		if (!this.ownsSession(data.sessionId, runId, epoch)) return;
-		if (!shouldDeliverIntercom || intercomDelivered) {
-			deliveryState = {
-				...deliveryState,
-				intercomComplete: true,
-				intercomDelivered,
-				updatedAt: Date.now(),
-			};
-			await writeDeliveryState(resultsDir, file, deliveryState);
-		}
-		if (!this.ownsSession(data.sessionId, runId, epoch)) return;
-		completion.intercomDelivered = intercomDelivered;
-		if (!deliveryState.notificationAccepted) {
-			const accepted = await deliverNotificationWithAbort(notifier, completion, signal);
-			if (!accepted) {
-				if (this.ownsSession(data.sessionId, runId, epoch))
-					this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-				return;
+			if (!shouldDeliverIntercom || intercomDelivered) {
+				deliveryState = {
+					...deliveryState,
+					intercomComplete: true,
+					intercomDelivered,
+					updatedAt: Date.now(),
+				};
+				yield* writeDeliveryState(resultsDir, file, deliveryState);
 			}
-			deliveryState = { ...deliveryState, notificationAccepted: true, updatedAt: Date.now() };
-			await writeDeliveryState(resultsDir, file, deliveryState);
-		}
-		if (!this.ownsSession(data.sessionId, runId, epoch)) return;
-		markSeenWithTtl(state.completionSeen, completionKey, Date.now(), completionTtlMs);
-		if (!terminalStatusReady) this.deliveredPendingStatus.add(completionKey);
-		if (!deliveryState.completionEmitted) {
-			try {
-				pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completion);
-			} catch (error) {
-				reportAgentDiagnostic(`Completion observer failed for '${resultPath}':`, error);
+			if (!this.ownsSession(data.sessionId, runId, epoch)) return;
+			completion.intercomDelivered = intercomDelivered;
+			if (!deliveryState.notificationAccepted) {
+				const accepted = yield* deliverNotification(notifier, completion);
+				if (!accepted) {
+					if (this.ownsSession(data.sessionId, runId, epoch))
+						this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+					return;
+				}
+				deliveryState = { ...deliveryState, notificationAccepted: true, updatedAt: Date.now() };
+				yield* writeDeliveryState(resultsDir, file, deliveryState);
 			}
-			deliveryState = { ...deliveryState, completionEmitted: true, updatedAt: Date.now() };
-			await writeDeliveryState(resultsDir, file, deliveryState);
-		}
-		if (!this.ownsSession(data.sessionId, runId, epoch) || !(await this.fileExists(resultPath))) return;
-		// Local completion may already be durable, but an explicitly addressed
-		// result is not disposable until its intercom delivery is acknowledged.
-		if (!deliveryState.intercomComplete) {
-			this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-			return;
-		}
-		if (!terminalStatusReady) {
-			this.scheduleStatusRepair(file, triggerTurn);
-			return;
-		}
-		await this.removeDeliveredResult(loaded, completionKey);
-	}
-
-	readonly handleResult = async (file: string, triggerTurn: boolean, signal: AbortSignal): Promise<void> => {
-		signal.throwIfAborted();
-		if (path.basename(file) !== file || !file.endsWith(".json")) {
-			this.reportStatusRepair(file, `Ignoring unsafe subagent result entry '${file}'.`);
-			return;
-		}
-		const { resultsDir } = this.options;
-		const resultPath = path.join(resultsDir, file);
-		if (this.processing.has(file) || !(await this.fileExists(resultPath))) return;
-		const ignoredFingerprint = this.ignoredResultFingerprints.get(file);
-		if (ignoredFingerprint) {
-			const fingerprint = await fs.promises.lstat(resultPath).catch(() => undefined);
-			if (fingerprint && sameFileVersion(ignoredFingerprint, fingerprint)) return;
-			this.ignoredResultFingerprints.delete(file);
-		}
-		const attemptEpoch = this.deliveryEpoch;
-		const token = Symbol(file);
-		let durableClaim: DurableClaim | undefined;
-		this.processing.set(file, token);
-		try {
-			durableClaim = this.options.acquireClaim(resultsDir, deliveryClaimName(file));
-			if (!durableClaim) {
+			if (!this.ownsSession(data.sessionId, runId, epoch)) return;
+			markSeenWithTtl(state.completionSeen, completionKey, Date.now(), completionTtlMs);
+			if (!terminalStatusReady) this.deliveredPendingStatus.add(completionKey);
+			if (!deliveryState.completionEmitted) {
+				try {
+					pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completion);
+				} catch (error) {
+					reportAgentDiagnostic(`Completion observer failed for '${resultPath}':`, error);
+				}
+				deliveryState = { ...deliveryState, completionEmitted: true, updatedAt: Date.now() };
+				yield* writeDeliveryState(resultsDir, file, deliveryState);
+			}
+			if (!this.ownsSession(data.sessionId, runId, epoch) || !(yield* this.fileExists(resultPath))) return;
+			// Local completion may already be durable, but an explicitly addressed
+			// result is not disposable until its intercom delivery is acknowledged.
+			if (!deliveryState.intercomComplete) {
 				this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 				return;
 			}
-			const loaded = await this.loadResult(file, resultPath, attemptEpoch, triggerTurn, signal);
-			if (!loaded) return;
-			const { completionTtlMs, state } = this.options;
-			const completionKey = buildCompletionKey(loaded.data, `result:${file}`);
-			const digest = resultDigest(loaded.rawResult);
-			const restoredDelivery = await readDeliveryState(resultsDir, file, completionKey, digest);
-			const delivery =
-				restoredDelivery ??
-				({
-					version: 1,
-					completionKey,
-					resultDigest: digest,
-					intercomComplete: false,
-					intercomDelivered: false,
-					notificationAccepted: false,
-					completionEmitted: false,
-					updatedAt: Date.now(),
-				} satisfies ResultDeliveryState);
-			const lastSeenAt = state.completionSeen.get(completionKey);
-			if (
-				lastSeenAt !== undefined &&
-				!this.deliveredPendingStatus.has(completionKey) &&
-				Date.now() - lastSeenAt > completionTtlMs
-			) {
-				state.completionSeen.delete(completionKey);
-			} else if (
-				(lastSeenAt !== undefined || this.deliveredPendingStatus.has(completionKey)) &&
-				(!restoredDelivery ||
-					(restoredDelivery.intercomComplete &&
-						restoredDelivery.notificationAccepted &&
-						restoredDelivery.completionEmitted))
-			) {
-				if (
-					!this.ownsSession(loaded.data.sessionId, loaded.runId, loaded.epoch) ||
-					!(await this.fileExists(resultPath))
-				)
-					return;
-				if (!loaded.terminalStatusReady) {
-					this.scheduleStatusRepair(file, triggerTurn);
-					return;
-				}
-				await this.removeDeliveredResult(loaded, completionKey);
+			if (!terminalStatusReady) {
+				this.scheduleStatusRepair(file, triggerTurn);
 				return;
 			}
-			const projection = await this.buildCompletion(loaded, delivery);
-			await this.deliverCompletion(loaded, delivery, projection);
-		} catch (error) {
-			if (!isNotFound(error)) {
-				const now = Date.now();
-				const last = this.processRetryLastLog.get(file) ?? 0;
-				if (now - last >= STATUS_REPAIR_LOG_INTERVAL_MS) {
-					this.processRetryLastLog.set(file, now);
-					reportAgentDiagnostic(`Failed to process subagent result file '${resultPath}'; will retry:`, error);
+			yield* this.removeDeliveredResult(loaded, completionKey);
+		});
+	}
+
+	readonly handleResult = (file: string, triggerTurn: boolean): Effect.Effect<void, unknown> =>
+		Effect.gen({ self: this }, function* () {
+			if (path.basename(file) !== file || !file.endsWith(".json")) {
+				this.reportStatusRepair(file, `Ignoring unsafe subagent result entry '${file}'.`);
+				return;
+			}
+			const { resultsDir } = this.options;
+			const resultPath = path.join(resultsDir, file);
+			if (this.processing.has(file) || !(yield* this.fileExists(resultPath))) return;
+			const ignoredFingerprint = this.ignoredResultFingerprints.get(file);
+			if (ignoredFingerprint) {
+				const fingerprint = yield* Effect.tryPromise({
+					try: () => fs.promises.lstat(resultPath),
+					catch: () => undefined,
+				}).pipe(Effect.catch(() => Effect.succeed(undefined)));
+				if (fingerprint && sameFileVersion(ignoredFingerprint, fingerprint)) return;
+				this.ignoredResultFingerprints.delete(file);
+			}
+			const attemptEpoch = this.deliveryEpoch;
+			const token = Symbol(file);
+			let durableClaim: DurableClaim | undefined;
+			this.processing.set(file, token);
+			yield* Effect.gen({ self: this }, function* () {
+				durableClaim = this.options.acquireClaim(resultsDir, deliveryClaimName(file));
+				if (!durableClaim) {
+					this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+					return;
 				}
+				const loaded = yield* this.loadResult(file, resultPath, attemptEpoch, triggerTurn);
+				if (!loaded) return;
+				const { completionTtlMs, state } = this.options;
+				const completionKey = buildCompletionKey(loaded.data, `result:${file}`);
+				const digest = resultDigest(loaded.rawResult);
+				const restoredDelivery = yield* readDeliveryState(resultsDir, file, completionKey, digest);
+				const delivery =
+					restoredDelivery ??
+					({
+						version: 1,
+						completionKey,
+						resultDigest: digest,
+						intercomComplete: false,
+						intercomDelivered: false,
+						notificationAccepted: false,
+						completionEmitted: false,
+						updatedAt: Date.now(),
+					} satisfies ResultDeliveryState);
+				const lastSeenAt = state.completionSeen.get(completionKey);
 				if (
-					this.activeSessionId !== undefined &&
-					attemptEpoch === this.deliveryEpoch &&
-					(await this.fileExists(resultPath))
+					lastSeenAt !== undefined &&
+					!this.deliveredPendingStatus.has(completionKey) &&
+					Date.now() - lastSeenAt > completionTtlMs
 				) {
-					const delay = this.processRetryDelay.get(file) ?? PROCESS_RETRY_INITIAL_MS;
-					this.processRetryDelay.set(file, Math.min(PROCESS_RETRY_MAX_MS, delay * 2));
-					this.options.scheduleResult(file, triggerTurn, delay);
+					state.completionSeen.delete(completionKey);
+				} else if (
+					(lastSeenAt !== undefined || this.deliveredPendingStatus.has(completionKey)) &&
+					(!restoredDelivery ||
+						(restoredDelivery.intercomComplete &&
+							restoredDelivery.notificationAccepted &&
+							restoredDelivery.completionEmitted))
+				) {
+					if (
+						!this.ownsSession(loaded.data.sessionId, loaded.runId, loaded.epoch) ||
+						!(yield* this.fileExists(resultPath))
+					) {
+						return;
+					}
+					if (!loaded.terminalStatusReady) {
+						this.scheduleStatusRepair(file, triggerTurn);
+						return;
+					}
+					yield* this.removeDeliveredResult(loaded, completionKey);
+					return;
 				}
-			}
-		} finally {
-			try {
-				durableClaim?.release();
-			} catch (releaseError) {
-				reportAgentDiagnostic(`Failed to release subagent result claim for '${resultPath}':`, releaseError);
-			}
-			// A restarted attempt may already own this file; never clear its lock.
-			if (this.processing.get(file) === token) this.processing.delete(file);
-		}
-	};
+				const projection = yield* this.buildCompletion(loaded, delivery);
+				yield* this.deliverCompletion(loaded, delivery, projection);
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.gen({ self: this }, function* () {
+						if (isNotFound(error)) return;
+						const now = Date.now();
+						const last = this.processRetryLastLog.get(file) ?? 0;
+						if (now - last >= STATUS_REPAIR_LOG_INTERVAL_MS) {
+							this.processRetryLastLog.set(file, now);
+							reportAgentDiagnostic(
+								`Failed to process subagent result file '${resultPath}'; will retry:`,
+								error,
+							);
+						}
+						if (
+							this.activeSessionId !== undefined &&
+							attemptEpoch === this.deliveryEpoch &&
+							(yield* this.fileExists(resultPath))
+						) {
+							const delay = this.processRetryDelay.get(file) ?? PROCESS_RETRY_INITIAL_MS;
+							this.processRetryDelay.set(file, Math.min(PROCESS_RETRY_MAX_MS, delay * 2));
+							this.options.scheduleResult(file, triggerTurn, delay);
+						}
+					}),
+				),
+				Effect.ensuring(
+					Effect.sync(() => {
+						try {
+							durableClaim?.release();
+						} catch (releaseError) {
+							reportAgentDiagnostic(
+								`Failed to release subagent result claim for '${resultPath}':`,
+								releaseError,
+							);
+						}
+						// A restarted attempt may already own this file; never clear its lock.
+						if (this.processing.get(file) === token) this.processing.delete(file);
+					}),
+				),
+			);
+		});
 }

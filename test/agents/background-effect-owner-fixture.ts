@@ -16,7 +16,7 @@ export function createTestBackgroundEffectOwner(): BackgroundEffectOwner {
 	const sessionManager = {} as ExtensionContext["sessionManager"];
 	void foundation.startSession(sessionManager);
 	const owner = new BackgroundEffectOwner(foundation);
-	owner.startSession(sessionManager);
+	void owner.startSession(sessionManager);
 	owners.add(owner);
 	return owner;
 }

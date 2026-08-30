@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { Effect } from "effect";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { deliverStopRequest, requestAsyncSteer } from "../runs/background/control-channel.ts";
 import { waitForSteeringAction } from "../runs/background/steering.ts";
@@ -128,13 +129,15 @@ async function steerNestedAgent(
 		return managementResult(`Failed to steer nested Agent '${match.run.id}': ${errorMessage(error)}`, true);
 	}
 	const now = options.now ?? Date.now;
-	const waited = await waitForSteeringAction({
-		asyncDir,
-		sourceRunId: match.run.id,
-		requestId,
-		timeoutMs: Math.max(0, timeoutMs - (now() - startedAt)),
-		signal,
-	});
+	const waited = await Effect.runPromise(
+		waitForSteeringAction({
+			asyncDir,
+			sourceRunId: match.run.id,
+			requestId,
+			timeoutMs: Math.max(0, timeoutMs - (now() - startedAt)),
+			signal,
+		}),
+	);
 	const targetIndexes = params.index !== undefined ? [params.index] : liveIndexes;
 	const steering =
 		waited ??

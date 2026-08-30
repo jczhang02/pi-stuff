@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isFiniteRuntimeNumber as asFiniteNumber,
@@ -108,32 +109,41 @@ function isResultDeliveryState(value: JsonValue): value is JsonObject & ResultDe
 	);
 }
 
-export async function readDeliveryState(
+export function readDeliveryState(
 	resultsDir: string,
 	file: string,
 	completionKey: string,
 	digest: string,
-): Promise<ResultDeliveryState | undefined> {
-	try {
-		const value = parseJsonValue(
-			(await readBoundedOwnedFileSnapshotAsync(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES)).text,
-		);
-		if (!isResultDeliveryState(value) || value.completionKey !== completionKey || value.resultDigest !== digest)
-			return undefined;
-		return value;
-	} catch {
-		return undefined;
-	}
+): Effect.Effect<ResultDeliveryState | undefined> {
+	return Effect.tryPromise({
+		try: () => readBoundedOwnedFileSnapshotAsync(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES),
+		catch: () => undefined,
+	}).pipe(
+		Effect.map((snapshot) => {
+			const value = parseJsonValue(snapshot.text);
+			if (!isResultDeliveryState(value) || value.completionKey !== completionKey || value.resultDigest !== digest) {
+				return undefined;
+			}
+			return value;
+		}),
+		Effect.catch(() => Effect.succeed(undefined)),
+	);
 }
 
-export async function writeDeliveryState(resultsDir: string, file: string, state: ResultDeliveryState): Promise<void> {
-	await writePrivateAtomicJsonAsync(deliveryStatePath(resultsDir, file), state);
+export function writeDeliveryState(
+	resultsDir: string,
+	file: string,
+	state: ResultDeliveryState,
+): Effect.Effect<void, unknown> {
+	return Effect.tryPromise({
+		try: () => writePrivateAtomicJsonAsync(deliveryStatePath(resultsDir, file), state),
+		catch: (error) => error,
+	});
 }
 
-export async function removeDeliveryArtifacts(resultsDir: string, file: string): Promise<void> {
-	try {
-		await fs.promises.unlink(deliveryStatePath(resultsDir, file));
-	} catch (error) {
-		if (!isNotFoundError(error)) throw error;
-	}
+export function removeDeliveryArtifacts(resultsDir: string, file: string): Effect.Effect<void, unknown> {
+	return Effect.tryPromise({
+		try: () => fs.promises.unlink(deliveryStatePath(resultsDir, file)),
+		catch: (error) => error,
+	}).pipe(Effect.catch((error) => (isNotFoundError(error) ? Effect.void : Effect.fail(error))));
 }

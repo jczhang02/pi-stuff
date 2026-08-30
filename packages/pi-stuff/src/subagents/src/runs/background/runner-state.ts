@@ -1,6 +1,7 @@
 /** Project background work, task results, and published run status. */
 
 import * as path from "node:path";
+import { Effect, Queue, type Scope } from "effect";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { isRuntimeFunction } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
@@ -11,7 +12,6 @@ import {
 	type BackgroundRunnerWork,
 	type BackgroundTaskResult,
 	MAX_BACKGROUND_TASKS,
-	mapConcurrent,
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
 import type { cleanupWorktrees, diffWorktrees } from "../shared/worktree.ts";
@@ -32,7 +32,7 @@ interface ChildCompletedDiagnosticEvent {
 	error?: string;
 }
 interface RunBackgroundWorkOptions {
-	signal?: AbortSignal;
+	terminalCause?: () => NonNullable<BackgroundTaskResult["preStartTerminalCause"]> | undefined;
 }
 
 export interface BackgroundCompletion {
@@ -226,30 +226,26 @@ export function failUndeliveredSteering(
  * Execute the resolved runner shape. This is deliberately small: single runs
  * invoke once; parallel runs are one bounded group and never form a sequence.
  */
-export async function runBackgroundWork(
+export function runBackgroundWork(
 	work: BackgroundRunnerWork,
-	runTask: (task: RunnerAgentTask, index: number, signal?: AbortSignal) => Promise<BackgroundTaskResult>,
+	runTask: (task: RunnerAgentTask, index: number) => Effect.Effect<BackgroundTaskResult, unknown>,
 	options: RunBackgroundWorkOptions = {},
-): Promise<BackgroundTaskResult[]> {
+): Effect.Effect<BackgroundTaskResult[], unknown> {
 	const tasks = taskList(work);
 	if (tasks.length > MAX_BACKGROUND_TASKS) {
-		throw new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`);
+		return Effect.fail(
+			new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`),
+		);
 	}
-	const executeTask = async (task: RunnerAgentTask, index: number): Promise<BackgroundTaskResult> => {
-		if (options.signal?.aborted) {
-			const reason = options.signal.reason;
-			return stoppedResult(task, reason === "pause" || reason === "timeout" ? reason : "stop");
-		}
-		try {
-			return await runTask(task, index, options.signal);
-		} catch (error) {
-			return failedResult(task, error);
-		}
+	const executeTask = (task: RunnerAgentTask, index: number): Effect.Effect<BackgroundTaskResult> => {
+		const cause = options.terminalCause?.();
+		if (cause) return Effect.succeed(stoppedResult(task, cause));
+		return runTask(task, index).pipe(Effect.catch((error) => Effect.succeed(failedResult(task, error))));
 	};
 	if (work.mode === "single") {
-		return [await executeTask(work.task, 0)];
+		return executeTask(work.task, 0).pipe(Effect.map((result) => [result]));
 	}
-	return mapConcurrent(tasks, work.group.concurrency, executeTask);
+	return Effect.forEach(tasks, executeTask, { concurrency: work.group.concurrency });
 }
 
 function parallelSummary(results: BackgroundTaskResult[]): string {
@@ -338,13 +334,14 @@ function updateRunProjection(status: RunnerStatus): void {
 
 const STATUS_PUBLISH_INTERVAL_MS = 100;
 let pendingPublishedStatus: { statusPath: string; status: RunnerStatus } | undefined;
-let statusPublishTimer: ReturnType<typeof setTimeout> | undefined;
+let statusPublishScheduled = false;
+let statusPublishWake: (() => void) | undefined;
 const statusUpdateObservers = new Map<string, (status: RunnerStatus) => void>();
 
 function sendPublishedStatus(): void {
 	const pending = pendingPublishedStatus;
 	pendingPublishedStatus = undefined;
-	statusPublishTimer = undefined;
+	statusPublishScheduled = false;
 	if (!pending || !isRuntimeFunction(process.send) || process.connected === false) return;
 	try {
 		process.send(
@@ -368,13 +365,38 @@ function publishStatus(statusPath: string, status: RunnerStatus): void {
 		status.state === "paused" ||
 		status.state === "stopped"
 	) {
-		if (statusPublishTimer) clearTimeout(statusPublishTimer);
 		sendPublishedStatus();
 		return;
 	}
-	if (statusPublishTimer) return;
-	statusPublishTimer = setTimeout(sendPublishedStatus, STATUS_PUBLISH_INTERVAL_MS);
-	statusPublishTimer.unref?.();
+	if (statusPublishScheduled) return;
+	statusPublishScheduled = true;
+	statusPublishWake?.();
+}
+
+export function installStatusPublisher(): Effect.Effect<void, never, Scope.Scope> {
+	return Effect.gen(function* () {
+		const wake = yield* Queue.sliding<void>(1);
+		const offer = () => Queue.offerUnsafe(wake, undefined);
+		yield* Effect.acquireRelease(
+			Effect.sync(() => {
+				statusPublishWake = offer;
+				if (statusPublishScheduled) offer();
+			}),
+			() =>
+				Effect.sync(() => {
+					if (statusPublishWake === offer) statusPublishWake = undefined;
+					sendPublishedStatus();
+				}),
+		);
+		yield* Effect.forkScoped(
+			Effect.forever(
+				Queue.take(wake).pipe(
+					Effect.andThen(Effect.sleep(STATUS_PUBLISH_INTERVAL_MS)),
+					Effect.andThen(Effect.sync(sendPublishedStatus)),
+				),
+			),
+		);
+	});
 }
 
 export function writeStatus(statusPath: string, status: RunnerStatus): void {

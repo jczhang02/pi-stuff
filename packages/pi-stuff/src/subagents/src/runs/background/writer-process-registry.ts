@@ -148,34 +148,40 @@ export function inspectWriterProcessLiveness(
 }
 
 /** Host-side liveness inspection without synchronous runtime-file or process-identity reads. */
-export async function inspectWriterProcessLivenessAsync(
+export function inspectWriterProcessLivenessEffect(
 	asyncDir: string,
 	kill: ProcessKillFn = process.kill,
-): Promise<boolean | undefined> {
-	const registry = await readWriterProcessRegistryAsync(asyncDir);
-	if (!registry) return undefined;
-	let unknown = false;
-	for (const writer of Object.values(registry.writers)) {
-		if (writer.state === "spawning") {
-			if (registry.writerStartupGate !== "parent-pipe-v1") return true;
-			continue;
+): Effect.Effect<boolean | undefined> {
+	return Effect.gen(function* () {
+		const registry = yield* readWriterProcessRegistryEffect(asyncDir);
+		if (!registry) return undefined;
+		let unknown = false;
+		for (const writer of Object.values(registry.writers)) {
+			if (writer.state === "spawning") {
+				if (registry.writerStartupGate !== "parent-pipe-v1") return true;
+				continue;
+			}
+			if (writer.state !== "running" || writer.pid === undefined) continue;
+			const pid = writer.pid;
+			const alive =
+				registry.writerProcessGroup === "writer-pid-v1"
+					? probeProcessLiveness(-pid, kill)
+					: probeProcessLiveness(pid, kill);
+			if (alive === false) continue;
+			if (alive === undefined || !writer.processStartIdentity) {
+				unknown = true;
+				continue;
+			}
+			const identity = yield* Effect.tryPromise({
+				try: () => readProcessStartIdentityAsync(pid),
+				catch: () => undefined,
+			}).pipe(Effect.catch(() => Effect.succeed(undefined)));
+			if (identity && identity !== writer.processStartIdentity) continue;
+			if (!identity) unknown = true;
+			else return true;
 		}
-		if (writer.state !== "running" || writer.pid === undefined) continue;
-		const alive =
-			registry.writerProcessGroup === "writer-pid-v1"
-				? probeProcessLiveness(-writer.pid, kill)
-				: probeProcessLiveness(writer.pid, kill);
-		if (alive === false) continue;
-		if (alive === undefined || !writer.processStartIdentity) {
-			unknown = true;
-			continue;
-		}
-		const identity = await readProcessStartIdentityAsync(writer.pid);
-		if (identity && identity !== writer.processStartIdentity) continue;
-		if (!identity) unknown = true;
-		else return true;
-	}
-	return unknown ? undefined : false;
+		return unknown ? undefined : false;
+	});
 }
 
 /** Liveness proof for one parallel child, used to release terminal siblings independently. */
@@ -356,26 +362,28 @@ function readWriterProcessRegistry(asyncDir: string): WriterProcessRegistry | un
 	}
 }
 
-async function readWriterProcessRegistryAsync(asyncDir: string): Promise<WriterProcessRegistry | undefined> {
-	try {
-		const resolvedDir = path.resolve(asyncDir);
-		const stat = await fs.promises.lstat(resolvedDir);
-		const currentUid = process.getuid?.();
-		if (
-			!stat.isDirectory() ||
-			stat.isSymbolicLink() ||
-			(currentUid !== undefined && stat.uid !== currentUid) ||
-			(await fs.promises.realpath(resolvedDir)) !== resolvedDir
-		)
-			return undefined;
-		const snapshot = await readBoundedOwnedFileSnapshotAsync(
-			writerProcessRegistryPath(resolvedDir),
-			MAX_WRITER_PROCESS_REGISTRY_BYTES,
-		);
-		return parseWriterProcessRegistry(parseJsonValue(snapshot.text));
-	} catch {
-		return undefined;
-	}
+function readWriterProcessRegistryEffect(asyncDir: string): Effect.Effect<WriterProcessRegistry | undefined> {
+	return Effect.tryPromise({
+		try: async () => {
+			const resolvedDir = path.resolve(asyncDir);
+			const stat = await fs.promises.lstat(resolvedDir);
+			const currentUid = process.getuid?.();
+			if (
+				!stat.isDirectory() ||
+				stat.isSymbolicLink() ||
+				(currentUid !== undefined && stat.uid !== currentUid) ||
+				(await fs.promises.realpath(resolvedDir)) !== resolvedDir
+			) {
+				return undefined;
+			}
+			const snapshot = await readBoundedOwnedFileSnapshotAsync(
+				writerProcessRegistryPath(resolvedDir),
+				MAX_WRITER_PROCESS_REGISTRY_BYTES,
+			);
+			return parseWriterProcessRegistry(parseJsonValue(snapshot.text));
+		},
+		catch: () => undefined,
+	}).pipe(Effect.catch(() => Effect.succeed(undefined)));
 }
 
 function parseWriterProcessRegistry(value: JsonValue): WriterProcessRegistry | undefined {

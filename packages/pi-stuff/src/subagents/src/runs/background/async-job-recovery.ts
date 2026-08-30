@@ -1,17 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { errnoCode, readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import type { AsyncStatus } from "../../shared/types.ts";
-import { mapConcurrent } from "../shared/parallel-utils.ts";
 
 export const MAX_RECENT_AGENT_JOBS = 200;
 const RESTORE_READ_CONCURRENCY = 8;
 const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
 
-export type AsyncStatusReader = (asyncDir: string) => Promise<AsyncStatus | null> | AsyncStatus | null;
+export type AsyncStatusReader = (asyncDir: string) => Effect.Effect<AsyncStatus | null, unknown>;
 
 export interface TrackerEventRecord {
 	readonly channels?: unknown;
@@ -57,42 +57,53 @@ function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[numbe
 	);
 }
 
-export async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStatus> {
-	if (status.state !== "failed" || !status.steps?.some(ambiguousLegacyFinalDrain)) return status;
-	let changed = false;
-	const steps = await mapConcurrent(status.steps, 4, async (step) => {
-		if (!ambiguousLegacyFinalDrain(step) || !step.transcriptPath || !path.isAbsolute(step.transcriptPath))
-			return step;
-		try {
-			const tail = await readOwnedFileTailAsync(step.transcriptPath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
-			const lastLine = tail.text.trimEnd().split("\n").at(-1);
-			if (!lastLine) return step;
-			const entry = parseTrackerEventRecord(lastLine);
-			// SAFETY: the runtime guards below establish a non-array record before reading its optional field.
-			const messageError =
-				isRuntimeObject(entry.message) && entry.message !== null && !Array.isArray(entry.message)
-					? (entry.message as { readonly errorMessage?: unknown }).errorMessage
-					: undefined;
-			if (
-				entry.recordType !== "message" ||
-				entry.sourceEventType !== "message_end" ||
-				entry.role !== "assistant" ||
-				entry.stopReason !== "stop" ||
-				entry.isError === true ||
-				!isRuntimeString(entry.text) ||
-				!entry.text.trim() ||
-				isRuntimeString(entry.error) ||
-				isRuntimeString(entry.errorMessage) ||
-				isRuntimeString(messageError)
-			)
-				return step;
-			changed = true;
-			return { ...step, legacyFinalReportComplete: true as const };
-		} catch {
-			return step;
-		}
-	});
-	return changed ? { ...status, steps } : status;
+export function recoverLegacyFinalReports(status: AsyncStatus): Effect.Effect<AsyncStatus> {
+	if (status.state !== "failed" || !status.steps?.some(ambiguousLegacyFinalDrain)) return Effect.succeed(status);
+	return Effect.forEach(
+		status.steps,
+		(step) => {
+			const transcriptPath = step.transcriptPath;
+			if (!ambiguousLegacyFinalDrain(step) || !transcriptPath || !path.isAbsolute(transcriptPath)) {
+				return Effect.succeed(step);
+			}
+			return Effect.tryPromise({
+				try: () => readOwnedFileTailAsync(transcriptPath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES),
+				catch: () => undefined,
+			}).pipe(
+				Effect.map((tail) => {
+					const lastLine = tail.text.trimEnd().split("\n").at(-1);
+					if (!lastLine) return step;
+					const entry = parseTrackerEventRecord(lastLine);
+					// SAFETY: the runtime guards below establish a non-array record before reading its optional field.
+					const messageError =
+						isRuntimeObject(entry.message) && entry.message !== null && !Array.isArray(entry.message)
+							? (entry.message as { readonly errorMessage?: unknown }).errorMessage
+							: undefined;
+					if (
+						entry.recordType !== "message" ||
+						entry.sourceEventType !== "message_end" ||
+						entry.role !== "assistant" ||
+						entry.stopReason !== "stop" ||
+						entry.isError === true ||
+						!isRuntimeString(entry.text) ||
+						!entry.text.trim() ||
+						isRuntimeString(entry.error) ||
+						isRuntimeString(entry.errorMessage) ||
+						isRuntimeString(messageError)
+					) {
+						return step;
+					}
+					return { ...step, legacyFinalReportComplete: true as const };
+				}),
+				Effect.catch(() => Effect.succeed(step)),
+			);
+		},
+		{ concurrency: 4 },
+	).pipe(
+		Effect.map((steps) =>
+			steps.some((step, index) => step !== status.steps?.[index]) ? { ...status, steps } : status,
+		),
+	);
 }
 
 export interface RestoredAsyncJob {
@@ -101,53 +112,62 @@ export interface RestoredAsyncJob {
 	readonly status: AsyncStatus;
 }
 
-export async function scanRestorableAsyncJobs(
+export function scanRestorableAsyncJobs(
 	asyncDirRoot: string,
 	asyncDirectories: readonly string[] | undefined,
 	readRunStatus: AsyncStatusReader,
 	normalizeSessionId: (sessionId: string | undefined, runId: string) => string | undefined,
-	signal: AbortSignal,
-): Promise<readonly RestoredAsyncJob[]> {
-	let directories: string[];
-	if (asyncDirectories) {
-		const root = path.resolve(asyncDirRoot);
-		directories = [...new Set(asyncDirectories.map((directory) => path.resolve(directory)))].filter(
-			(directory) => path.dirname(directory) === root,
+): Effect.Effect<readonly RestoredAsyncJob[], unknown> {
+	return Effect.gen(function* () {
+		let directories: string[];
+		if (asyncDirectories) {
+			const root = path.resolve(asyncDirRoot);
+			directories = [...new Set(asyncDirectories.map((directory) => path.resolve(directory)))].filter(
+				(directory) => path.dirname(directory) === root,
+			);
+		} else {
+			const entries = yield* Effect.tryPromise({
+				try: () => fs.promises.readdir(asyncDirRoot, { withFileTypes: true }),
+				catch: (error) => error,
+			}).pipe(Effect.catch((error) => (errnoCode(error) === "ENOENT" ? Effect.succeed([]) : Effect.fail(error))));
+			directories = entries
+				.filter((entry) => entry.isDirectory() && entry.name !== "." && entry.name !== "..")
+				.map((entry) => path.join(asyncDirRoot, entry.name));
+		}
+		const statuses = yield* Effect.forEach(
+			directories,
+			(asyncDir) =>
+				readRunStatus(asyncDir).pipe(
+					Effect.flatMap((observedStatus) =>
+						observedStatus ? recoverLegacyFinalReports(observedStatus) : Effect.succeed(undefined),
+					),
+					Effect.map((status) => {
+						if (!status) return undefined;
+						const sessionId = normalizeSessionId(status.sessionId, status.runId);
+						return sessionId ? { asyncDir, sessionId, status } : undefined;
+					}),
+					Effect.catch((error) =>
+						Effect.sync(() => {
+							reportAgentDiagnostic(
+								`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`,
+								error,
+							);
+							return undefined;
+						}),
+					),
+				),
+			{ concurrency: RESTORE_READ_CONCURRENCY },
 		);
-	} else {
-		let entries: fs.Dirent[];
-		try {
-			entries = await fs.promises.readdir(asyncDirRoot, { withFileTypes: true });
-		} catch (error) {
-			if (errnoCode(error) === "ENOENT") return [];
-			throw error;
-		}
-		directories = entries
-			.filter((entry) => entry.isDirectory() && entry.name !== "." && entry.name !== "..")
-			.map((entry) => path.join(asyncDirRoot, entry.name));
-	}
-	const statuses = await mapConcurrent(directories, RESTORE_READ_CONCURRENCY, async (asyncDir) => {
-		if (signal.aborted) return undefined;
-		try {
-			const observedStatus = await readRunStatus(asyncDir);
-			if (!observedStatus || signal.aborted) return undefined;
-			const status = await recoverLegacyFinalReports(observedStatus);
-			const sessionId = normalizeSessionId(status.sessionId, status.runId);
-			return sessionId ? { asyncDir, sessionId, status } : undefined;
-		} catch (error) {
-			reportAgentDiagnostic(`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`, error);
-			return undefined;
-		}
+		const observed = statuses.filter((value) => value !== undefined);
+		const active = observed.filter(({ status }) => status.state === "queued" || status.state === "running");
+		const terminal = observed
+			.filter(({ status }) => status.state !== "queued" && status.state !== "running")
+			.sort(
+				(left, right) =>
+					(right.status.lastUpdate ?? right.status.endedAt ?? right.status.startedAt) -
+					(left.status.lastUpdate ?? left.status.endedAt ?? left.status.startedAt),
+			)
+			.slice(0, MAX_RECENT_AGENT_JOBS);
+		return [...active, ...terminal];
 	});
-	const observed = statuses.filter((value) => value !== undefined);
-	const active = observed.filter(({ status }) => status.state === "queued" || status.state === "running");
-	const terminal = observed
-		.filter(({ status }) => status.state !== "queued" && status.state !== "running")
-		.sort(
-			(left, right) =>
-				(right.status.lastUpdate ?? right.status.endedAt ?? right.status.startedAt) -
-				(left.status.lastUpdate ?? left.status.endedAt ?? left.status.startedAt),
-		)
-		.slice(0, MAX_RECENT_AGENT_JOBS);
-	return [...active, ...terminal];
 }

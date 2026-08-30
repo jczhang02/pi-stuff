@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
-import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { tryAcquireKernelClaimAsync } from "../shared/durable-claim.ts";
 import { assertPrivateDirectory, readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
@@ -39,7 +38,7 @@ export interface PrepareSessionGovernorCompatibilityInput {
 	readonly legacyRootDir?: string;
 	readonly now?: () => number;
 	readonly isPidAlive?: (pid: number) => Promise<boolean | undefined> | boolean | undefined;
-	readonly inspectWriterLiveness?: (asyncDir: string) => Promise<boolean | undefined> | boolean | undefined;
+	readonly inspectWriterLiveness: (asyncDir: string) => Promise<boolean | undefined> | boolean | undefined;
 	readonly readStatus?: (asyncDir: string) => Promise<ReturnType<typeof readStatus>> | ReturnType<typeof readStatus>;
 	/** Deterministic seams for pre-v2 lock detection tests. */
 	readonly legacyLockOptions?: {
@@ -279,7 +278,7 @@ async function classifyLegacyLeases(
 ): Promise<LegacyClassification> {
 	if (snapshot.leases.length === 0) return { kind: "no-leases" };
 	const inspectStatus = input.readStatus ?? readStatusAsync;
-	const inspectWriter = input.inspectWriterLiveness ?? inspectWriterProcessLivenessAsync;
+	const inspectWriter = input.inspectWriterLiveness;
 	const isPidAlive = input.isPidAlive ?? explicitPidState;
 	let foreign = 0;
 	let currentDead = 0;

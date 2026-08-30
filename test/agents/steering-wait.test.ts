@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Effect } from "effect";
 import {
 	createSteeringStatus,
 	recordSteeringRequest,
@@ -18,22 +19,25 @@ describe("steering acknowledgement polling", () => {
 		let reads = 0;
 		let sleeps = 0;
 
-		const result = await waitForSteeringAction(
-			{ asyncDir: "/runtime", sourceRunId: "run-1", requestId: "steer-1", timeoutMs: 100 },
-			{
-				readSteeringStatus: () => {
-					reads += 1;
-					if (reads === 1) {
-						throw new Error("Failed to inspect status", {
-							cause: new OwnedFileChangedDuringReadError("/runtime/status.json"),
-						});
-					}
-					return status;
+		const result = await Effect.runPromise(
+			waitForSteeringAction(
+				{ asyncDir: "/runtime", sourceRunId: "run-1", requestId: "steer-1", timeoutMs: 100 },
+				{
+					readSteeringStatus: () => {
+						reads += 1;
+						if (reads === 1) {
+							throw new Error("Failed to inspect status", {
+								cause: new OwnedFileChangedDuringReadError("/runtime/status.json"),
+							});
+						}
+						return status;
+					},
+					sleep: () =>
+						Effect.sync(() => {
+							sleeps += 1;
+						}),
 				},
-				sleep: async () => {
-					sleeps += 1;
-				},
-			},
+			),
 		);
 
 		expect(result).toMatchObject({
@@ -48,13 +52,15 @@ describe("steering acknowledgement polling", () => {
 
 	test("does not hide a non-transient status error", async () => {
 		await expect(
-			waitForSteeringAction(
-				{ asyncDir: "/runtime", sourceRunId: "run-1", requestId: "steer-1", timeoutMs: 100 },
-				{
-					readSteeringStatus: () => {
-						throw new Error("unsafe status path");
+			Effect.runPromise(
+				waitForSteeringAction(
+					{ asyncDir: "/runtime", sourceRunId: "run-1", requestId: "steer-1", timeoutMs: 100 },
+					{
+						readSteeringStatus: () => {
+							throw new Error("unsafe status path");
+						},
 					},
-				},
+				),
 			),
 		).rejects.toThrow("unsafe status path");
 	});

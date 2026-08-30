@@ -86,12 +86,7 @@ export class AsyncJobObserver {
 		observation.control ||= kind.control === true;
 		if (observation.runningTask) return;
 		const expectedGeneration = this.options.generation();
-		const task = this.options.effects.start(
-			Effect.tryPromise({
-				try: (signal) => this.observeNative(job, observation, expectedGeneration, signal),
-				catch: (error) => error,
-			}),
-		);
+		const task = this.options.effects.start(this.observeEffect(job, observation, expectedGeneration));
 		observation.runningTask = task;
 		void task.result.then((exit) => {
 			if (observation.runningTask !== task) return;
@@ -111,34 +106,34 @@ export class AsyncJobObserver {
 		});
 	}
 
-	private async observeNative(
+	private observeEffect(
 		job: AsyncJobState,
 		observation: JobObservation,
 		expectedGeneration: number,
-		signal: AbortSignal,
-	): Promise<boolean> {
-		let changed = false;
-		do {
-			signal.throwIfAborted();
-			const readStatus = observation.status;
-			const readControl = observation.control;
-			observation.status = false;
-			observation.control = false;
-			if (readControl) {
-				const control = await readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
-				changed ||= control.changed;
-				observation.control ||= control.more;
-			}
-			if (readStatus) {
-				const observedStatus = await this.options.readRunStatus(job.asyncDir);
-				const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
-				if (status && status.runId === job.asyncId && this.current(job, expectedGeneration)) {
-					this.options.onStatus(job, status);
-					changed = true;
+	): Effect.Effect<boolean, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			let changed = false;
+			do {
+				const readStatus = observation.status;
+				const readControl = observation.control;
+				observation.status = false;
+				observation.control = false;
+				if (readControl) {
+					const control = yield* readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
+					changed ||= control.changed;
+					observation.control ||= control.more;
 				}
-			}
-		} while (this.current(job, expectedGeneration) && (observation.status || observation.control));
-		return changed;
+				if (readStatus) {
+					const observedStatus = yield* this.options.readRunStatus(job.asyncDir);
+					const status = observedStatus ? yield* recoverLegacyFinalReports(observedStatus) : null;
+					if (status && status.runId === job.asyncId && this.current(job, expectedGeneration)) {
+						this.options.onStatus(job, status);
+						changed = true;
+					}
+				}
+			} while (this.current(job, expectedGeneration) && (observation.status || observation.control));
+			return changed;
+		});
 	}
 
 	noteIpcStatus(asyncId: string): void {

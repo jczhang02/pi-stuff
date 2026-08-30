@@ -110,12 +110,7 @@ class ResultWatcher {
 
 	private startProcessing(file: string, triggerTurn: boolean): void {
 		const token = Symbol(file);
-		const task = this.effects.start(
-			Effect.tryPromise({
-				try: (signal) => this.processor.handleResult(file, triggerTurn, signal),
-				catch: (error) => error,
-			}),
-		);
+		const task = this.effects.start(this.processor.handleResult(file, triggerTurn));
 		this.processingResults.set(file, { token, task });
 		void task.result.then(() => {
 			if (this.processingResults.get(file)?.token === token) this.processingResults.delete(file);

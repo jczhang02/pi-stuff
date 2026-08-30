@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
@@ -527,13 +528,15 @@ async function steerRun(
 			`Failed to steer Agent ${job.asyncId}: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
-	const waited = await waitForSteeringAction({
-		asyncDir: job.asyncDir,
-		sourceRunId: job.asyncId,
-		requestId,
-		timeoutMs: 3_000,
-		signal,
-	});
+	const waited = await Effect.runPromise(
+		waitForSteeringAction({
+			asyncDir: job.asyncDir,
+			sourceRunId: job.asyncId,
+			requestId,
+			timeoutMs: 3_000,
+			signal,
+		}),
+	);
 	const fallbackTargets = targetIndexes.map((childIndex) => ({
 		index: childIndex,
 		state: steps[childIndex]?.status === "pending" ? ("scheduled" as const) : ("routed" as const),

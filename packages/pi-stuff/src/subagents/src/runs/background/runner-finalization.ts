@@ -1,6 +1,7 @@
 /** Commit worktree, nested-run, result, process, and status evidence for a completed run. */
 
 import * as path from "node:path";
+import { Effect } from "effect";
 import { runtimeErrorCode } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
@@ -76,24 +77,27 @@ function collectWorktreeEvidence(input: FinalizationInput): BackgroundCompletion
 	return evidence;
 }
 
-async function projectNestedCompletion(config: BackgroundRunnerConfig, status: RunnerStatus) {
-	let nestedChildren: NestedRunSummary[] | undefined;
-	let committed = false;
-	if (config.nestedRoute) {
-		try {
-			const registry = await projectNestedEventsAuthoritatively(config.nestedRoute);
-			nestedChildren = registry.children.filter((child) => child.parentRunId === config.id);
+function projectNestedCompletion(
+	config: BackgroundRunnerConfig,
+	status: RunnerStatus,
+): Effect.Effect<{ nestedChildren: NestedRunSummary[] | undefined; committed: boolean }> {
+	const nestedRoute = config.nestedRoute;
+	if (!nestedRoute) return Effect.succeed({ nestedChildren: undefined, committed: false });
+	return Effect.tryPromise({
+		try: () => projectNestedEventsAuthoritatively(nestedRoute),
+		catch: (error) => error,
+	}).pipe(
+		Effect.map((registry) => {
+			const nestedChildren = registry.children.filter((child) => child.parentRunId === config.id);
 			if (nestedWorkIncludesUser(nestedChildren)) {
 				config.parentRunOrigin = "user";
 				status.parentRunOrigin = "user";
 			}
 			attachRootChildrenToSteps(config.id, status.steps, nestedChildren);
-			committed = true;
-		} catch {
-			// The event stream remains available for later projection.
-		}
-	}
-	return { nestedChildren, committed };
+			return { nestedChildren, committed: true };
+		}),
+		Effect.catch(() => Effect.succeed({ nestedChildren: undefined, committed: false })),
+	);
 }
 
 function applyCompletionStatus(input: FinalizationInput, completion: BackgroundCompletion, endedAt: number): void {
@@ -113,35 +117,44 @@ function applyCompletionStatus(input: FinalizationInput, completion: BackgroundC
 	status.outputFile = taskList(config.work).length === 1 ? path.join(config.asyncDir, "output-0.log") : undefined;
 }
 
-async function commitResult(
+function commitResult(
 	input: FinalizationInput,
 	completion: BackgroundCompletion,
 	endedAt: number,
-): Promise<void> {
+): Effect.Effect<void, unknown> {
 	const { config, status, control, hooks } = input;
-	await hooks.beforeFinalPersistence?.();
-	try {
-		closeSteerInbox(config.asyncDir, completion.state);
-	} catch (error) {
-		reportAgentDiagnostic(`Failed to close steering inbox for '${config.id}' during finalization:`, error);
-	}
-	try {
-		processSteerRequestsFromDir(steerRequestsDir(config.asyncDir), (request) => {
-			control.onSteer(request);
-			return undefined;
+	return Effect.gen(function* () {
+		if (hooks.beforeFinalPersistence) {
+			yield* Effect.tryPromise({ try: async () => hooks.beforeFinalPersistence?.(), catch: (error) => error });
+		}
+		yield* Effect.try({
+			try: () => {
+				try {
+					closeSteerInbox(config.asyncDir, completion.state);
+				} catch (error) {
+					reportAgentDiagnostic(`Failed to close steering inbox for '${config.id}' during finalization:`, error);
+				}
+				try {
+					processSteerRequestsFromDir(steerRequestsDir(config.asyncDir), (request) => {
+						control.onSteer(request);
+						return undefined;
+					});
+				} catch (error) {
+					reportAgentDiagnostic(`Failed to scan final steering requests for '${config.id}':`, error);
+				}
+				if (status.parentRunOrigin === "user") completion.parentRunOrigin = "user";
+				try {
+					processSteerAcks(config.asyncDir, (ack) => control.onSteerAck(ack));
+				} catch (error) {
+					reportAgentDiagnostic(`Failed to scan final steering acknowledgments for '${config.id}':`, error);
+				}
+				failUndeliveredSteering(status, input.eventsPath, completion.state, endedAt);
+				hooks.beforeResultPersistence?.();
+				writePrivateAtomicJson(config.resultPath, completion);
+			},
+			catch: (error) => error,
 		});
-	} catch (error) {
-		reportAgentDiagnostic(`Failed to scan final steering requests for '${config.id}':`, error);
-	}
-	if (status.parentRunOrigin === "user") completion.parentRunOrigin = "user";
-	try {
-		processSteerAcks(config.asyncDir, (ack) => control.onSteerAck(ack));
-	} catch (error) {
-		reportAgentDiagnostic(`Failed to scan final steering acknowledgments for '${config.id}':`, error);
-	}
-	failUndeliveredSteering(status, input.eventsPath, completion.state, endedAt);
-	hooks.beforeResultPersistence?.();
-	writePrivateAtomicJson(config.resultPath, completion);
+	});
 }
 
 function writeTerminalCandidate(config: BackgroundRunnerConfig, results: BackgroundTaskResult[]): void {
@@ -214,19 +227,23 @@ function settleNestedRoute(input: FinalizationInput, endedAt: number): void {
 	}
 }
 
-export async function finalizeConfiguredRun(input: FinalizationInput): Promise<{ nestedProjectionCommitted: boolean }> {
-	const worktree = collectWorktreeEvidence(input);
-	const endedAt = Date.now();
-	reconcileUnfinishedSteps(input.status, input.results, input.eventsPath, endedAt);
-	const nested = await projectNestedCompletion(input.config, input.status);
-	const extras: Pick<BackgroundCompletion, "nestedChildren" | "worktree"> = {};
-	if (nested.committed) extras.nestedChildren = nested.nestedChildren ?? [];
-	if (worktree) extras.worktree = worktree;
-	const completion = createBackgroundCompletion(input.config, input.results, input.startedAt, endedAt, extras);
-	applyCompletionStatus(input, completion, endedAt);
-	await commitResult(input, completion, endedAt);
-	writeTerminalCandidate(input.config, input.results);
-	persistTerminalStatus(input, completion, endedAt);
-	settleNestedRoute(input, endedAt);
-	return { nestedProjectionCommitted: nested.committed };
+export function finalizeConfiguredRun(
+	input: FinalizationInput,
+): Effect.Effect<{ nestedProjectionCommitted: boolean }, unknown> {
+	return Effect.gen(function* () {
+		const worktree = collectWorktreeEvidence(input);
+		const endedAt = Date.now();
+		reconcileUnfinishedSteps(input.status, input.results, input.eventsPath, endedAt);
+		const nested = yield* projectNestedCompletion(input.config, input.status);
+		const extras: Pick<BackgroundCompletion, "nestedChildren" | "worktree"> = {};
+		if (nested.committed) extras.nestedChildren = nested.nestedChildren ?? [];
+		if (worktree) extras.worktree = worktree;
+		const completion = createBackgroundCompletion(input.config, input.results, input.startedAt, endedAt, extras);
+		applyCompletionStatus(input, completion, endedAt);
+		yield* commitResult(input, completion, endedAt);
+		writeTerminalCandidate(input.config, input.results);
+		persistTerminalStatus(input, completion, endedAt);
+		settleNestedRoute(input, endedAt);
+		return { nestedProjectionCommitted: nested.committed };
+	});
 }

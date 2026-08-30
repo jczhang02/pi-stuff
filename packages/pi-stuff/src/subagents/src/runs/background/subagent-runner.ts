@@ -20,7 +20,6 @@ import { finalizeNestedRouteRoot } from "../shared/nested-events.ts";
 import {
 	type BackgroundRunnerConfig,
 	type BackgroundRunnerWork,
-	type BackgroundTaskResult,
 	MAX_BACKGROUND_TASKS,
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
@@ -34,6 +33,7 @@ import { finalizeConfiguredRun } from "./runner-finalization.ts";
 import { appendDiagnosticEvent, boundRunResultOutputs } from "./runner-output.ts";
 import {
 	failedResult,
+	installStatusPublisher,
 	runBackgroundWork,
 	setStatusUpdateObserver,
 	taskList,
@@ -57,7 +57,7 @@ export {
 	ponytailWriterEnvironmentOverrides,
 } from "./writer-process-lifecycle.ts";
 
-async function runConfiguredWork(
+function runConfiguredWork(
 	config: BackgroundRunnerConfig,
 	onWriterProcess?: (index: number, writer: WriterRuntimeState) => void,
 	beforeFinalPersistence?: () => void | Promise<void>,
@@ -67,75 +67,81 @@ async function runConfiguredWork(
 	const startedAt = config.startedAt ?? Date.now();
 	const statusPath = path.join(config.asyncDir, "status.json");
 	const eventsPath = path.join(config.asyncDir, "events.jsonl");
-	fs.mkdirSync(config.asyncDir, { recursive: true });
 	const status = createInitialStatus(config, startedAt);
-	writeStatus(statusPath, status);
-	appendDiagnosticEvent(eventsPath, {
-		type: "subagent.run.started",
-		ts: startedAt,
-		runId: config.id,
-		mode: config.work.mode,
-		agents: taskList(config.work).map((task) => task.agent),
-	});
-
 	const control = new BackgroundRunControl(config, status, statusPath, eventsPath);
 	return Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
-				yield* control.install();
-				return yield* Effect.tryPromise({
-					try: async () => {
-						let worktreeSetup: WorktreeSetup | undefined;
-						let results: BackgroundTaskResult[];
-						try {
-							if (config.work.mode === "parallel" && config.work.group.worktree) {
-								worktreeSetup = createWorktrees(config.cwd, config.id, config.work.group.tasks.length, {
-									agents: config.work.group.tasks.map((task) => task.agent),
-								});
-							}
-							results = await runBackgroundWork(
-								config.work,
-								async (task, index) => {
-									try {
-										return await runResolvedTask({
-											config,
-											task,
-											index,
-											taskCwd: worktreeSetup?.worktrees[index]?.agentCwd ?? task.cwd,
-											status,
-											statusPath,
-											eventsPath,
-											activeControls: control.activeControls,
-											consumeScheduledStop: (index) => control.consumeScheduledStop(index),
-											onWriterProcess: onWriterProcess
-												? (writer) => onWriterProcess(index, writer)
-												: undefined,
-										});
-									} catch (error) {
-										terminalizeRejectedStep(status, statusPath, eventsPath, index, error);
-										throw error;
-									}
-								},
-								{ signal: control.signal },
-							);
-							results = boundRunResultOutputs(results);
-						} catch (error) {
-							const message = error instanceof Error ? error.message : String(error);
-							results = taskList(config.work).map((task) => failedResult(task, message));
-						}
-						return finalizeConfiguredRun({
-							config,
-							status,
-							statusPath,
-							eventsPath,
-							startedAt,
-							results,
-							worktreeSetup,
-							control,
-							hooks: { beforeFinalPersistence, beforeWorktreeEvidence, beforeResultPersistence },
+				yield* installStatusPublisher();
+				yield* Effect.try({
+					try: () => {
+						fs.mkdirSync(config.asyncDir, { recursive: true });
+						writeStatus(statusPath, status);
+						appendDiagnosticEvent(eventsPath, {
+							type: "subagent.run.started",
+							ts: startedAt,
+							runId: config.id,
+							mode: config.work.mode,
+							agents: taskList(config.work).map((task) => task.agent),
 						});
 					},
 					catch: (error) => error,
+				});
+				yield* control.install();
+				let worktreeSetup: WorktreeSetup | undefined;
+				const results = yield* Effect.gen(function* () {
+					if (config.work.mode === "parallel" && config.work.group.worktree) {
+						const group = config.work.group;
+						worktreeSetup = yield* Effect.try({
+							try: () =>
+								createWorktrees(config.cwd, config.id, group.tasks.length, {
+									agents: group.tasks.map((task) => task.agent),
+								}),
+							catch: (error) => error,
+						});
+					}
+					const taskResults = yield* runBackgroundWork(
+						config.work,
+						(task, index) =>
+							Effect.tryPromise({
+								try: () =>
+									runResolvedTask({
+										config,
+										task,
+										index,
+										taskCwd: worktreeSetup?.worktrees[index]?.agentCwd ?? task.cwd,
+										status,
+										statusPath,
+										eventsPath,
+										activeControls: control.activeControls,
+										consumeScheduledStop: (index) => control.consumeScheduledStop(index),
+										onWriterProcess: onWriterProcess ? (writer) => onWriterProcess(index, writer) : undefined,
+									}),
+								catch: (error) => error,
+							}).pipe(
+								Effect.tapError((error) =>
+									Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
+								),
+							),
+						{ terminalCause: () => control.preStartTerminalCause() },
+					);
+					return yield* Effect.try({ try: () => boundRunResultOutputs(taskResults), catch: (error) => error });
+				}).pipe(
+					Effect.catch((error) => {
+						const message = error instanceof Error ? error.message : String(error);
+						return Effect.succeed(taskList(config.work).map((task) => failedResult(task, message)));
+					}),
+				);
+				return yield* finalizeConfiguredRun({
+					config,
+					status,
+					statusPath,
+					eventsPath,
+					startedAt,
+					results,
+					worktreeSetup,
+					control,
+					hooks: { beforeFinalPersistence, beforeWorktreeEvidence, beforeResultPersistence },
 				});
 			}),
 		),

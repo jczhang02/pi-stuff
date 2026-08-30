@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
+import type { BackgroundEffectOwner, BackgroundEffectTask } from "../runs/background/background-effect-owner.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, type tryAcquireDurableClaim, tryAcquireKernelClaim } from "../shared/durable-claim.ts";
 import { sessionArtifactMatches } from "../shared/session-identity.ts";
@@ -388,8 +390,7 @@ interface NativeSupervisorChannelOptions {
 
 class NativeSupervisorParent {
 	readonly pending = new Map<string, PendingSupervisorRequest>();
-	private poller: ReturnType<typeof setInterval> | undefined;
-	private pollInFlight = false;
+	private pollTask: BackgroundEffectTask<void, never> | undefined;
 	private channelScanEntries: string[] = [];
 	private channelScanOffset = 0;
 	private lifecycleGeneration = 0;
@@ -400,16 +401,23 @@ class NativeSupervisorParent {
 	private readonly deliveryDispatches = new Map<string, object>();
 	private readonly acquireDeliveryClaim: typeof tryAcquireDurableClaim;
 	private readonly afterReplyPublish: ((replyPath: string) => void) | undefined;
+	private readonly effects: BackgroundEffectOwner;
 	private readonly pi: ExtensionAPI;
 	private readonly state: SubagentState;
 
-	constructor(pi: ExtensionAPI, state: SubagentState, options: NativeSupervisorChannelOptions) {
+	constructor(
+		pi: ExtensionAPI,
+		state: SubagentState,
+		effects: BackgroundEffectOwner,
+		options: NativeSupervisorChannelOptions,
+	) {
 		this.pi = pi;
 		this.state = state;
+		this.effects = effects;
 		this.acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireKernelClaim;
 		this.afterReplyPublish = options.afterReplyPublish;
 		pi.on("before_agent_start", () => {
-			if (this.poller) this.registerParentIntercomFallback();
+			if (this.pollTask) this.registerParentIntercomFallback();
 		});
 	}
 
@@ -481,7 +489,7 @@ class NativeSupervisorParent {
 	}
 
 	private isPollCurrent(ctx: ExtensionContext, generation: number): boolean {
-		return this.poller !== undefined && this.lifecycleGeneration === generation && this.state.lastUiContext === ctx;
+		return this.pollTask !== undefined && this.lifecycleGeneration === generation && this.state.lastUiContext === ctx;
 	}
 
 	private releaseMissingDeliveryClaims(): void {
@@ -653,50 +661,56 @@ class NativeSupervisorParent {
 	}
 
 	private async poll(): Promise<void> {
-		if (this.pollInFlight) return;
-		this.pollInFlight = true;
-		try {
-			const ctx = this.state.lastUiContext;
-			if (!ctx) return;
-			const pollGeneration = this.lifecycleGeneration;
-			refreshPendingRequests(this.pending, this.state, ctx);
-			this.releaseMissingDeliveryClaims();
-			const now = Date.now();
-			const requestFiles = await this.scanRequestFiles();
-			if (!this.isPollCurrent(ctx, pollGeneration)) {
-				this.resetChannelScan();
-				return;
+		const ctx = this.state.lastUiContext;
+		if (!ctx) return;
+		const pollGeneration = this.lifecycleGeneration;
+		refreshPendingRequests(this.pending, this.state, ctx);
+		this.releaseMissingDeliveryClaims();
+		const now = Date.now();
+		const requestFiles = await this.scanRequestFiles();
+		if (!this.isPollCurrent(ctx, pollGeneration)) {
+			this.resetChannelScan();
+			return;
+		}
+		for (const { channelDir, file } of requestFiles) {
+			if (!this.isPollCurrent(ctx, pollGeneration)) return;
+			try {
+				if (!(await this.processRequestFile(ctx, pollGeneration, now, channelDir, file))) return;
+			} catch (error) {
+				reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
 			}
-			for (const { channelDir, file } of requestFiles) {
-				if (!this.isPollCurrent(ctx, pollGeneration)) return;
-				try {
-					if (!(await this.processRequestFile(ctx, pollGeneration, now, channelDir, file))) return;
-				} catch (error) {
-					reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
-				}
-			}
-		} catch (error) {
-			reportAgentDiagnostic("Native supervisor channel poll failed; the next interval will retry:", error);
-		} finally {
-			this.pollInFlight = false;
 		}
 	}
 
+	private pollEffect(): Effect.Effect<void, never> {
+		return Effect.tryPromise({ try: () => this.poll(), catch: (error) => error }).pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					reportAgentDiagnostic("Native supervisor channel poll failed; the next interval will retry:", error);
+				}),
+			),
+		);
+	}
+
 	async start(): Promise<void> {
-		if (this.poller) return;
+		if (this.pollTask) return;
 		this.lifecycleGeneration += 1;
 		this.registerPrimaryParentTool();
-		this.poller = setInterval(() => void this.poll(), CHANNEL_POLL_MS);
-		this.poller.unref?.();
-		await this.poll();
+		const initial = this.effects.start(this.pollEffect());
+		this.pollTask = initial;
+		await initial.result;
+		if (this.pollTask !== initial) return;
+		this.pollTask = this.effects.start(
+			Effect.forever(Effect.sleep(CHANNEL_POLL_MS).pipe(Effect.andThen(this.pollEffect()))),
+		);
 	}
 
 	private stop(): void {
 		this.lifecycleGeneration += 1;
 		this.persistedIndexGeneration = -1;
 		this.persistedRequestIds.clear();
-		if (this.poller) clearInterval(this.poller);
-		this.poller = undefined;
+		if (this.pollTask) void this.pollTask.interrupt();
+		this.pollTask = undefined;
 		this.resetChannelScan();
 		this.pending.clear();
 		// In-flight dispatches retain their claims until their stale completion; idle claims are released now.
@@ -715,9 +729,10 @@ class NativeSupervisorParent {
 export function createNativeSupervisorChannel(
 	pi: ExtensionAPI,
 	state: SubagentState,
+	effects: BackgroundEffectOwner,
 	options: NativeSupervisorChannelOptions = {},
 ) {
-	const parent = new NativeSupervisorParent(pi, state, options);
+	const parent = new NativeSupervisorParent(pi, state, effects, options);
 	return {
 		start: () => parent.start(),
 		pause: () => parent.pause(),

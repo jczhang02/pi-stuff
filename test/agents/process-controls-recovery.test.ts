@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeFunction, isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
@@ -435,14 +436,16 @@ test(
 					targetIndex: 0,
 					source: "process-acceptance",
 				});
-				const steering = await waitForSteeringAction({
-					asyncDir,
-					sourceRunId: runId,
-					requestId,
-					// The request is durable: a busy CI runner may acknowledge it after the
-					// foreground command's short user-facing wait has returned "pending".
-					timeoutMs: 12_000,
-				});
+				const steering = await Effect.runPromise(
+					waitForSteeringAction({
+						asyncDir,
+						sourceRunId: runId,
+						requestId,
+						// The request is durable: a busy CI runner may acknowledge it after the
+						// foreground command's short user-facing wait has returned "pending".
+						timeoutMs: 12_000,
+					}),
+				);
 				expect(steering).toMatchObject({
 					state: "delivered",
 					targets: [{ index: 0, state: "delivered" }],

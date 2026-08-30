@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { projectCurrentContext } from "../../../context-management/index.js";
 import {
 	type CommandDialogCoordinator,
@@ -17,6 +18,7 @@ import { createNativeSupervisorChannel } from "../intercom/native-supervisor-cha
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
 import { BackgroundEffectOwner } from "../runs/background/background-effect-owner.ts";
 import { createResultWatcher } from "../runs/background/result-watcher.ts";
+import { inspectWriterProcessLivenessEffect } from "../runs/background/writer-process-registry.ts";
 import { createSubagentExecutor } from "../runs/foreground/subagent-executor.ts";
 import { resolvePiLaunchToolPlan, SUBAGENT_CHILD_ENV } from "../runs/shared/pi-args.ts";
 import {
@@ -24,7 +26,10 @@ import {
 	createDurableAgentExecutionCoordinator,
 } from "../runtime/agent-execution-coordinator.ts";
 import { maintainAgentRuntime } from "../runtime/runtime-maintenance.ts";
-import { prepareSessionGovernorCompatibility } from "../runtime/session-governor-compatibility.ts";
+import {
+	type PrepareSessionGovernorCompatibilityInput,
+	prepareSessionGovernorCompatibility,
+} from "../runtime/session-governor-compatibility.ts";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
@@ -40,6 +45,7 @@ import {
 	RESULTS_DIR,
 	SESSION_GOVERNOR_ROOT,
 	type SubagentState,
+	TEMP_ROOT_DIR,
 } from "../shared/types.ts";
 import { type AgentDialogOptions, openAgentDialog } from "../ui/agent-dialog.ts";
 import { AgentRoster, type AgentRosterOptions } from "../ui/agent-roster.ts";
@@ -63,6 +69,9 @@ import { type AgentToolRosterEntry, buildSubagentToolDescription } from "./tool-
 export { loadConfig } from "./config.ts";
 
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
+
+const inspectWriterLiveness = (directory: string): Promise<boolean | undefined> =>
+	Effect.runPromise(inspectWriterProcessLivenessEffect(directory));
 
 interface RootExecutorInput {
 	readonly codeModeProviderTools?: readonly string[] | undefined;
@@ -130,11 +139,12 @@ const PRODUCTION_DEPENDENCIES = {
 				maxTotal: config.maxAgentsPerSession,
 			},
 		}),
-	prepareGovernorCompatibility: prepareSessionGovernorCompatibility,
+	prepareGovernorCompatibility: (input: Omit<PrepareSessionGovernorCompatibilityInput, "inspectWriterLiveness">) =>
+		prepareSessionGovernorCompatibility({ ...input, inspectWriterLiveness }),
 	createRoster: (current: CurrentAgents, options: AgentRosterOptions): ExtensionRootRoster =>
 		new AgentRoster(current, options),
-	createSupervisor: (pi: ExtensionAPI, state: SubagentState): RootSupervisor =>
-		createNativeSupervisorChannel(pi, state),
+	createSupervisor: (pi: ExtensionAPI, state: SubagentState, effects: BackgroundEffectOwner): RootSupervisor =>
+		createNativeSupervisorChannel(pi, state, effects),
 	createTracker: (
 		pi: ExtensionAPI,
 		state: SubagentState,
@@ -152,7 +162,7 @@ const PRODUCTION_DEPENDENCIES = {
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
 	loadConfiguration: loadConfig,
 	maintainRuntime: async (): Promise<void> => {
-		await maintainAgentRuntime();
+		await maintainAgentRuntime(TEMP_ROOT_DIR, { inspectWriterLiveness });
 		await maintainAgentArtifacts(DEFAULT_ARTIFACT_CONFIG.cleanupDays);
 	},
 	monotonicNow: () => performance.now(),
@@ -397,7 +407,7 @@ export default function registerSubagentExtension(
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state, () => current.refresh(), backgroundEffects);
-	const supervisor = deps.createSupervisor(pi, state);
+	const supervisor = deps.createSupervisor(pi, state, backgroundEffects);
 	const notifier = installCompletionHandling(pi, state, coordinator);
 	const watcher = deps.createWatcher({ notifier, pi, state }, backgroundEffects);
 	let agentRoster: AgentToolRosterEntry[] = [];

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { SubagentRunMode } from "../../shared/types.ts";
 import type { BackgroundCompletion } from "./runner-state.ts";
 
@@ -26,16 +27,9 @@ export type CompletionNotification = Partial<
 	nestedChildren?: unknown[];
 };
 
-export async function deliverNotificationWithAbort(
+export function deliverNotification(
 	notifier: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> },
 	completion: CompletionNotification,
-	signal: AbortSignal,
-): Promise<boolean> {
-	if (signal.aborted) return false;
-	return Promise.race([
-		notifier.deliver(completion, signal),
-		new Promise<boolean>((resolve) => {
-			signal.addEventListener("abort", () => resolve(false), { once: true });
-		}),
-	]);
+): Effect.Effect<boolean, unknown> {
+	return Effect.tryPromise({ try: (signal) => notifier.deliver(completion, signal), catch: (error) => error });
 }

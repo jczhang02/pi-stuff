@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createSyntheticSourceInfo, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
-	createNativeSupervisorChannel,
+	createNativeSupervisorChannel as createNativeSupervisorChannelNative,
 	garbageCollectSupervisorChannel,
 	resolveSupervisorChannelDir,
 } from "../../packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.js";
@@ -12,8 +12,19 @@ import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/s
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/index.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
+import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
 
 const directories: string[] = [];
+
+type NativeSupervisorChannelOptions = NonNullable<Parameters<typeof createNativeSupervisorChannelNative>[3]>;
+
+function createNativeSupervisorChannel(
+	pi: ExtensionAPI,
+	state: SubagentState,
+	options: NativeSupervisorChannelOptions = {},
+) {
+	return createNativeSupervisorChannelNative(pi, state, createTestBackgroundEffectOwner(), options);
+}
 
 interface SupervisorRequestFixture {
 	readonly agent: string;

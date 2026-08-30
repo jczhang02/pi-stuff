@@ -2,8 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
-import { maintainAgentRuntime } from "../../packages/pi-stuff/src/subagents/src/runtime/runtime-maintenance.js";
+import { Effect } from "effect";
+import {
+	initializeWriterProcessRegistry,
+	inspectWriterProcessLivenessEffect,
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
+import { maintainAgentRuntime as maintainAgentRuntimeNative } from "../../packages/pi-stuff/src/subagents/src/runtime/runtime-maintenance.js";
 import {
 	shardedDurableClaimName,
 	tryAcquireKernelClaim,
@@ -11,6 +15,13 @@ import {
 import { readProcessStartIdentity } from "../../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 
 const roots = new Set<string>();
+
+function maintainAgentRuntime(root?: string, options: { readonly now?: number } = {}) {
+	return maintainAgentRuntimeNative(root, {
+		...options,
+		inspectWriterLiveness: (directory) => Effect.runPromise(inspectWriterProcessLivenessEffect(directory)),
+	});
+}
 
 afterEach(() => {
 	for (const root of roots) fs.rmSync(root, { recursive: true, force: true });

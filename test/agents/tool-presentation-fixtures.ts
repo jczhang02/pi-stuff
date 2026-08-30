@@ -28,7 +28,7 @@ import {
 } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
 import {
-	createNativeSupervisorChannel,
+	createNativeSupervisorChannel as createNativeSupervisorChannelNative,
 	registerNativeSupervisorClient,
 	resolveSupervisorChannelDir,
 } from "../../packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.js";
@@ -79,10 +79,15 @@ import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contr
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { testTheme } from "../fixtures/extension-context.js";
 import { isWellFormed } from "../fixtures/terminal.js";
+import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
 const theme = testTheme;
+const createNativeSupervisorChannel = (
+	pi: Parameters<typeof createNativeSupervisorChannelNative>[0],
+	state: Parameters<typeof createNativeSupervisorChannelNative>[1],
+) => createNativeSupervisorChannelNative(pi, state, createTestBackgroundEffectOwner());
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 type LifecycleResult = object | undefined | Promise<object | undefined>;
