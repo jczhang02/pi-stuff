@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
 import {
 	createEventBus,
 	type ExtensionAPI,
@@ -7,6 +7,7 @@ import {
 	type ExtensionEvent,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	installSessionNamingCapability,
 	type SessionNamingHost,
@@ -25,7 +26,7 @@ const SETTINGS: SessionNamingSettings = {
 	fallbackModels: [],
 };
 
-type Listener = (event: ExtensionEvent, ctx: ExtensionContext) => void;
+type Listener = (event: ExtensionEvent, ctx: ExtensionContext) => Promise<void> | undefined;
 
 const ZERO_USAGE = {
 	input: 0,
@@ -34,6 +35,19 @@ const ZERO_USAGE = {
 	cacheWrite: 0,
 	totalTokens: 0,
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+const FIXTURE_MODEL: Model<Api> = {
+	api: "openai-completions",
+	baseUrl: "https://fixture.invalid",
+	contextWindow: 100_000,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	id: "naming",
+	input: ["text"],
+	maxTokens: 4_096,
+	name: "Naming fixture",
+	provider: "fixture",
+	reasoning: false,
 };
 
 function message(role: "assistant" | "user", content: string, id: string): SessionEntry {
@@ -52,7 +66,22 @@ function message(role: "assistant" | "user", content: string, id: string): Sessi
 	return { ...base, type: "message", message: assistant };
 }
 
-function hostHarness() {
+function response(text: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "openai-completions",
+		provider: "fixture",
+		model: "naming",
+		usage: ZERO_USAGE,
+		stopReason: "stop",
+		timestamp: 3,
+	};
+}
+
+function hostHarness(
+	complete?: (model: Model<Api>, context: Context, options?: ModelsApiStreamOptions<Api>) => Promise<AssistantMessage>,
+) {
 	const lifecycle = new Map<string, Listener[]>();
 	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
 	const eventBus = createEventBus();
@@ -71,15 +100,18 @@ function hostHarness() {
 	const notices: string[] = [];
 	let name: string | undefined;
 	const extensionContext = createExtensionCommandContext({
+		model: complete ? FIXTURE_MODEL : undefined,
 		sessionManager: { getBranch: () => entries },
 		ui: { notify: (message) => notices.push(message) },
 	});
 	Object.assign(extensionContext.modelRegistry, {
-		complete: async () => {
-			throw new Error("The local fallback does not call the fixture registry");
-		},
+		complete:
+			complete ??
+			(async () => {
+				throw new Error("The local fallback does not call the fixture registry");
+			}),
 		find: () => undefined,
-		hasConfiguredAuth: () => false,
+		hasConfiguredAuth: () => complete !== undefined,
 	});
 	// SAFETY: this event adapter records Host callbacks without changing their arguments or results.
 	const on = ((event: string, listener: Listener) => {
@@ -109,15 +141,15 @@ function hostHarness() {
 			name = next;
 		},
 	} satisfies SessionNamingHost;
-	const emitLifecycle = (event: string, ctx: ExtensionContext = extensionContext): void => {
+	const emitLifecycle = async (event: string, ctx: ExtensionContext = extensionContext): Promise<void> => {
 		// SAFETY: these handlers do not inspect the event payload in the exercised lifecycle cases.
 		const fixtureEvent = { type: event } as ExtensionEvent;
-		for (const listener of lifecycle.get(event) ?? []) listener(fixtureEvent, ctx);
+		for (const listener of lifecycle.get(event) ?? []) await listener(fixtureEvent, ctx);
 	};
-	const emitSessionInfoChanged = (name: string, ctx: ExtensionContext = extensionContext): void => {
+	const emitSessionInfoChanged = async (name: string, ctx: ExtensionContext = extensionContext): Promise<void> => {
 		// SAFETY: The fixture supplies the exact Host event fields read by Session Naming.
 		const event = { type: "session_info_changed", name } as ExtensionEvent;
-		for (const listener of lifecycle.get("session_info_changed") ?? []) listener(event, ctx);
+		for (const listener of lifecycle.get("session_info_changed") ?? []) await listener(event, ctx);
 	};
 	const emitSettled = (): void => {
 		const settledEvent = subscribedChannels.find((event) => event.includes("user-agent-run-settled"));
@@ -152,7 +184,7 @@ async function waitForName(read: () => string | undefined): Promise<string | und
 	for (let attempt = 0; attempt < 20; attempt += 1) {
 		const value = read();
 		if (value) return value;
-		await Promise.resolve();
+		await Bun.sleep(1);
 	}
 	return read();
 }
@@ -161,8 +193,8 @@ describe("Session Naming Extension lifecycle", () => {
 	test("names a parent Session only at the shared direct-user settled boundary", async () => {
 		const host = hostHarness();
 		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
-		host.emitLifecycle("session_start");
-		host.emitLifecycle("agent_settled");
+		await host.emitLifecycle("session_start");
+		await host.emitLifecycle("agent_settled");
 		await Promise.resolve();
 		expect(host.name()).toBeUndefined();
 
@@ -187,9 +219,9 @@ describe("Session Naming Extension lifecycle", () => {
 		const host = hostHarness();
 		const settings = SessionNamingSettingsStore.memory(SETTINGS);
 		installSessionNamingCapability(host.pi, settings, {});
-		host.emitLifecycle("session_start");
+		await host.emitLifecycle("session_start");
 
-		await settings.update({ enabled: false });
+		await Effect.runPromise(settings.update({ enabled: false }));
 		host.emitSettled();
 		await Promise.resolve();
 		expect(host.name()).toBeUndefined();
@@ -205,7 +237,7 @@ describe("Session Naming Extension lifecycle", () => {
 	test("does not automatically rename a Child Agent Session", async () => {
 		const host = hostHarness();
 		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), { PI_SUBAGENT_CHILD: "1" });
-		host.emitLifecycle("session_start");
+		await host.emitLifecycle("session_start");
 		host.emitSettled();
 
 		await Promise.resolve();
@@ -215,12 +247,43 @@ describe("Session Naming Extension lifecycle", () => {
 	test("ignores name events from a replaced Session context", async () => {
 		const host = hostHarness();
 		installSessionNamingCapability(host.pi, SessionNamingSettingsStore.memory(SETTINGS), {});
-		host.emitLifecycle("session_start");
+		await host.emitLifecycle("session_start");
 		const replacementContext: ExtensionContext = { ...host.context };
-		host.emitLifecycle("session_start", replacementContext);
+		await host.emitLifecycle("session_start", replacementContext);
 
 		const entryCount = host.entries.length;
-		host.emitSessionInfoChanged("stale Session name", host.context);
+		await host.emitSessionInfoChanged("stale Session name", host.context);
 		expect(host.entries).toHaveLength(entryCount);
 	});
+
+	for (const ending of ["Session replacement", "settings rebuild"] as const) {
+		test(`interrupts a pending generation on ${ending} and rejects its late result`, async () => {
+			const pending = Promise.withResolvers<AssistantMessage>();
+			const started = Promise.withResolvers<void>();
+			let providerSignal: AbortSignal | undefined;
+			const host = hostHarness((_model, _context, options) => {
+				providerSignal = options?.signal;
+				started.resolve();
+				return pending.promise;
+			});
+			const settings = SessionNamingSettingsStore.memory(SETTINGS);
+			installSessionNamingCapability(host.pi, settings, {});
+			await host.emitLifecycle("session_start");
+			host.emitSettled();
+			await started.promise;
+
+			if (ending === "Session replacement") {
+				await host.emitLifecycle("session_start", { ...host.context });
+			} else {
+				await Effect.runPromise(settings.update({ enabled: false }));
+			}
+			for (let attempt = 0; attempt < 20 && !providerSignal?.aborted; attempt += 1) await Promise.resolve();
+			expect(providerSignal?.aborted).toBe(true);
+
+			pending.resolve(response("Stale Session Name"));
+			await Promise.resolve();
+			expect(host.name()).toBeUndefined();
+			expect(host.entries).toHaveLength(2);
+		});
+	}
 });

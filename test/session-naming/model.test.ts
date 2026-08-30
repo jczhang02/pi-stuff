@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, AssistantMessage, Context, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
+import { Cause, Effect, Exit } from "effect";
 import {
 	buildModelChain,
 	generateSessionName,
@@ -55,6 +56,10 @@ function settings(overrides: Partial<SessionNamingSettings> = {}): SessionNaming
 	};
 }
 
+function run<Value, ErrorType>(program: Effect.Effect<Value, ErrorType>): Promise<Value> {
+	return Effect.runPromise(program);
+}
+
 describe("Session Naming model selection", () => {
 	test("skips a non-English result for the next configured model", async () => {
 		const primary = model("fixture", "primary");
@@ -76,12 +81,13 @@ describe("Session Naming model selection", () => {
 		} satisfies SessionNamingModelContext;
 
 		expect(
-			await generateSessionName(
-				ctx,
-				settings({ model: "fixture/primary", fallbackModels: ["fixture/backup"] }),
-				[{ role: "user", content: "修复会话命名" }],
-				"旧会话名称",
-				new AbortController().signal,
+			await run(
+				generateSessionName(
+					ctx,
+					settings({ model: "fixture/primary", fallbackModels: ["fixture/backup"] }),
+					[{ role: "user", content: "修复会话命名" }],
+					"旧会话名称",
+				),
 			),
 		).toEqual({ name: "Session Naming Fix", source: "ai" });
 	});
@@ -128,12 +134,13 @@ describe("Session Naming generation", () => {
 		} satisfies SessionNamingModelContext;
 
 		expect(
-			await generateSessionName(
-				ctx,
-				settings(),
-				[{ role: "user", content: "修复 api_key=do-not-send-this 会话命名" }],
-				"Existing Session Name",
-				new AbortController().signal,
+			await run(
+				generateSessionName(
+					ctx,
+					settings(),
+					[{ role: "user", content: "修复 api_key=do-not-send-this 会话命名" }],
+					"Existing Session Name",
+				),
 			),
 		).toEqual({ name: "Session Naming Safety", source: "ai" });
 		expect(calls).toHaveLength(1);
@@ -160,45 +167,51 @@ describe("Session Naming generation", () => {
 		} satisfies SessionNamingModelContext;
 
 		expect(
-			await generateSessionName(
-				ctx,
-				settings(),
-				[{ role: "user", content: "Please repair automatic Session naming" }],
-				undefined,
-				new AbortController().signal,
+			await run(
+				generateSessionName(
+					ctx,
+					settings(),
+					[{ role: "user", content: "Please repair automatic Session naming" }],
+					undefined,
+				),
 			),
 		).toEqual({ name: "repair automatic Session", source: "fallback" });
 		expect(
-			await generateSessionName(
-				ctx,
-				settings(),
-				[{ role: "user", content: "修复 OAuth 会话命名" }],
-				undefined,
-				new AbortController().signal,
-			),
+			await run(generateSessionName(ctx, settings(), [{ role: "user", content: "修复 OAuth 会话命名" }], undefined)),
 		).toBeUndefined();
 	});
 
-	test("stops when the lifecycle aborts a provider that ignores its signal", async () => {
+	test("interrupts a provider operation when its lifecycle ends", async () => {
 		const selected = model("fixture", "primary");
+		const started = Promise.withResolvers<void>();
+		let providerSignal: AbortSignal | undefined;
 		const ctx = {
 			model: selected,
 			modelRegistry: {
 				find: () => undefined,
 				hasConfiguredAuth: () => true,
-				complete: () => new Promise<AssistantMessage>(() => undefined),
+				complete: (_model: Model<Api>, _context: Context, options?: ModelsApiStreamOptions<Api>) => {
+					providerSignal = options?.signal;
+					started.resolve();
+					return new Promise<AssistantMessage>(() => undefined);
+				},
 			},
 		} satisfies SessionNamingModelContext;
 		const abort = new AbortController();
-		const naming = generateSessionName(
-			ctx,
-			settings(),
-			[{ role: "user", content: "Repair a hanging naming provider" }],
-			undefined,
-			abort.signal,
+		const naming = Effect.runPromiseExit(
+			generateSessionName(
+				ctx,
+				settings(),
+				[{ role: "user", content: "Repair a hanging naming provider" }],
+				undefined,
+			),
+			{ signal: abort.signal },
 		);
 
+		await started.promise;
 		abort.abort(new Error("Session ended"));
-		expect(await naming).toBeUndefined();
+		const exit = await naming;
+		expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+		expect(providerSignal?.aborted).toBe(true);
 	});
 });

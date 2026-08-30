@@ -36,6 +36,10 @@ export interface SessionNamingSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
 }
 
+export interface SessionNamingSettingsActions {
+	update(patch: SessionNamingSettingsPatch): Promise<void>;
+}
+
 function settingsHint(width: number, selectingModel: boolean): string {
 	const candidates = selectingModel
 		? [
@@ -257,6 +261,7 @@ function settingPatch(id: string, value: string): SessionNamingSettingsPatch | u
 }
 
 class SessionNamingSettingsDialog implements CommandDialogComponent {
+	private readonly actions: SessionNamingSettingsActions;
 	private readonly context: CommandDialogViewContext<void>;
 	private disposed = false;
 	private error = "";
@@ -271,8 +276,10 @@ class SessionNamingSettingsDialog implements CommandDialogComponent {
 	constructor(
 		context: CommandDialogViewContext<void>,
 		settings: SessionNamingSettingsStore,
+		actions: SessionNamingSettingsActions,
 		options: SessionNamingSettingsViewOptions,
 	) {
+		this.actions = actions;
 		this.context = context;
 		this.options = options;
 		this.settings = settings;
@@ -340,7 +347,7 @@ class SessionNamingSettingsDialog implements CommandDialogComponent {
 		const generation = (this.generations.get(id) ?? 0) + 1;
 		this.generations.set(id, generation);
 		this.error = "";
-		void this.settings.update(patch).catch((error) => {
+		void this.actions.update(patch).catch((error) => {
 			if (this.generations.get(id) !== generation) return;
 			const message = oneLine(String(error)) || "Unable to save Session Naming setting.";
 			if (this.disposed) {
@@ -378,10 +385,11 @@ class SessionNamingSettingsDialog implements CommandDialogComponent {
 
 export function createSessionNamingSettingsView(
 	settings: SessionNamingSettingsStore,
+	actions: SessionNamingSettingsActions,
 	options: SessionNamingSettingsViewOptions = {},
 ): CommandDialogView<void> {
 	return {
 		priority: "normal",
-		create: (context) => new SessionNamingSettingsDialog(context, settings, options),
+		create: (context) => new SessionNamingSettingsDialog(context, settings, actions, options),
 	};
 }

@@ -1,10 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import {
 	type CommandDialogCoordinatorHost,
 	getCommandDialogCoordinator,
 	listenForUserAgentRunSettled,
 } from "../conversation-ui/index.js";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
+import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";
 import { SessionNamingController } from "./controller.js";
 import { generateSessionName } from "./model.js";
 import { SessionNamingSettingsStore } from "./settings.js";
@@ -30,12 +32,24 @@ function createController(
 		appendMarker(marker: RenameMarker) {
 			pi.appendEntry(SESSION_NAMING_STATE_ENTRY_TYPE, marker);
 		},
-		generate: (messages, currentName, signal) => generateSessionName(ctx, current, messages, currentName, signal),
+		generate: (messages, currentName) => generateSessionName(ctx, current, messages, currentName),
 		getBranch: () => ctx.sessionManager.getBranch(),
 		getSessionName: () => pi.getSessionName(),
 		now: Date.now,
 		setSessionName: (name) => pi.setSessionName(name),
 	});
+}
+
+async function runOperation<Value, ErrorType>(
+	foundation: EffectFoundation,
+	operation: EffectScopeOwner,
+	program: Effect.Effect<Value, ErrorType>,
+): Promise<Value | undefined> {
+	const exit = await foundation.run(operation, program);
+	await foundation.close(operation, exit);
+	if (Exit.isSuccess(exit)) return exit.value;
+	if (Cause.hasInterrupts(exit.cause)) return undefined;
+	throw Cause.squash(exit.cause);
 }
 
 function availableNamingModelChoices(ctx: ExtensionContext): SessionNamingModelChoice[] {
@@ -53,21 +67,45 @@ export function installSessionNamingCapability(
 	settings: SessionNamingSettingsStore,
 	environment: NodeJS.ProcessEnv = process.env,
 ): void {
+	const foundation = installEffectFoundation(pi);
 	const dialogs = getCommandDialogCoordinator(pi);
 	let controller: SessionNamingController | undefined;
 	let sessionContext: ExtensionContext | undefined;
-	let active = true;
-	const childSession = isChildAgentSession(environment);
+	let activeOperation: EffectScopeOwner | undefined;
+	const cancelOperation = async (): Promise<void> => {
+		const operation = activeOperation;
+		if (!operation) return;
+		await foundation.close(operation, Exit.interrupt());
+		if (activeOperation === operation) activeOperation = undefined;
+	};
+	const runNaming = async (
+		target: SessionNamingController,
+		ctx: ExtensionContext,
+		program: Effect.Effect<string | undefined>,
+	): Promise<string | undefined> => {
+		const session = foundation.sessionFor(ctx.sessionManager);
+		if (!session || !foundation.isCurrent(session) || target !== controller) return undefined;
+		const operation = foundation.forkOperation(session);
+		activeOperation = operation;
+		try {
+			return await runOperation(foundation, operation, program);
+		} catch {
+			return undefined;
+		} finally {
+			if (activeOperation === operation) activeOperation = undefined;
+		}
+	};
 	const rebuildController = () => {
-		if (!active || !sessionContext) return;
+		if (!sessionContext) return;
 		controller?.shutdown();
+		void cancelOperation();
 		controller = createController(pi, sessionContext, settings);
 		controller.restore();
 	};
 	const stopListeningForSettings = settings.subscribe(rebuildController);
 	const stopListeningForUserAgentRunSettled = listenForUserAgentRunSettled(pi, (ctx) => {
-		if (!active || childSession || ctx !== sessionContext) return;
-		void controller?.handleSettled();
+		if (isChildAgentSession(environment) || ctx !== sessionContext || !controller || activeOperation) return;
+		void runNaming(controller, ctx, controller.handleSettled());
 	});
 
 	pi.registerCommand("autoname", {
@@ -88,10 +126,20 @@ export function installSessionNamingCapability(
 				}
 				await dialogs.show(
 					ctx,
-					createSessionNamingSettingsView(settings, {
-						modelChoices: availableNamingModelChoices(ctx),
-						onPersistenceError: (message) => ctx.ui.notify(message, "error"),
-					}),
+					createSessionNamingSettingsView(
+						settings,
+						{
+							update: async (patch) => {
+								const session = foundation.sessionFor(ctx.sessionManager);
+								if (!session || !foundation.isCurrent(session)) return;
+								await runOperation(foundation, foundation.forkOperation(session), settings.update(patch));
+							},
+						},
+						{
+							modelChoices: availableNamingModelChoices(ctx),
+							onPersistenceError: (message) => ctx.ui.notify(message, "error"),
+						},
+					),
 				);
 				return;
 			}
@@ -103,7 +151,9 @@ export function installSessionNamingCapability(
 				ctx.ui.notify("Session Naming is not ready.", "warning");
 				return;
 			}
-			const name = await controller.renameManually();
+			const target = controller;
+			await cancelOperation();
+			const name = await runNaming(target, ctx, target.renameManually());
 			ctx.ui.notify(
 				name ? `Session named: ${name}` : "Could not generate a Session name.",
 				name ? "info" : "warning",
@@ -113,24 +163,26 @@ export function installSessionNamingCapability(
 
 	pi.on("session_start", (_event, ctx) => {
 		controller?.shutdown();
+		void cancelOperation();
 		sessionContext = ctx;
 		controller = createController(pi, ctx, settings);
 		controller.restore();
 	});
 	pi.on("session_info_changed", (event, ctx) => {
-		if (ctx === sessionContext) controller?.observeSessionNameChange(event.name);
+		if (ctx !== sessionContext || !controller) return;
+		if (controller.observeSessionNameChange(event.name)) void cancelOperation();
 	});
 	pi.on("session_shutdown", async () => {
-		active = false;
 		stopListeningForSettings();
 		stopListeningForUserAgentRunSettled();
 		controller?.shutdown();
+		await cancelOperation();
 		controller = undefined;
 		sessionContext = undefined;
-		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
+		await Effect.runPromise(settings.whenIdle().pipe(Effect.timeoutOption(HOST_SHUTDOWN_GRACE_MS), Effect.asVoid));
 	});
 }
 
 export default async function piStuffSessionNaming(pi: ExtensionAPI): Promise<void> {
-	installSessionNamingCapability(pi, await SessionNamingSettingsStore.load());
+	installSessionNamingCapability(pi, await Effect.runPromise(SessionNamingSettingsStore.load()));
 }

@@ -1,4 +1,5 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { GeneratedSessionName } from "./model.js";
 import type { NamingMessage } from "./prompt.js";
 import type { SessionNamingSettings } from "./settings.js";
@@ -17,8 +18,7 @@ export interface SessionNamingControllerHost {
 	generate(
 		messages: readonly NamingMessage[],
 		currentName: string | undefined,
-		signal: AbortSignal,
-	): Promise<GeneratedSessionName | undefined>;
+	): Effect.Effect<GeneratedSessionName | undefined, Error>;
 	getBranch(): readonly SessionEntry[];
 	getSessionName(): string | undefined;
 	now(): number;
@@ -26,7 +26,6 @@ export interface SessionNamingControllerHost {
 }
 
 export class SessionNamingController {
-	private activeAbort: AbortController | undefined;
 	private generation = 0;
 	private readonly host: SessionNamingControllerHost;
 	private lastGeneratedName: string | undefined;
@@ -75,81 +74,90 @@ export class SessionNamingController {
 		return this.state;
 	}
 
-	async handleSettled(): Promise<string | undefined> {
-		if (!this.settings.enabled || this.state === "running") return undefined;
-		if (this.settings.respectManualName && this.manualName) return undefined;
-		const existingName = this.host.getSessionName()?.trim();
-		if (this.state === "unnamed" || this.state === "failed" || this.state === "fallback" || !existingName) {
-			return this.rename("initial");
-		}
-		const cooldownMs = this.settings.cooldownMinutes * 60_000;
-		if (this.host.now() - this.lastRenameTime >= cooldownMs) return this.rename("periodic");
-		return undefined;
+	handleSettled(): Effect.Effect<string | undefined> {
+		return Effect.suspend(() => {
+			if (!this.settings.enabled || this.state === "running") return Effect.succeed(undefined);
+			if (this.settings.respectManualName && this.manualName) return Effect.succeed(undefined);
+			const existingName = this.host.getSessionName()?.trim();
+			if (this.state === "unnamed" || this.state === "failed" || this.state === "fallback" || !existingName) {
+				return this.rename("initial");
+			}
+			const cooldownMs = this.settings.cooldownMinutes * 60_000;
+			return this.host.now() - this.lastRenameTime >= cooldownMs
+				? this.rename("periodic")
+				: Effect.succeed(undefined);
+		});
 	}
 
-	async renameManually(): Promise<string | undefined> {
+	renameManually(): Effect.Effect<string | undefined> {
 		return this.rename("forced");
 	}
 
-	observeSessionNameChange(name: string | undefined): void {
+	observeSessionNameChange(name: string | undefined): boolean {
 		const normalized = name?.trim();
-		if (normalized && normalized === this.lastGeneratedName) return;
+		if (normalized && normalized === this.lastGeneratedName) return false;
 		this.lastGeneratedName = undefined;
-		if (this.activeAbort) {
-			this.generation += 1;
-			this.activeAbort.abort(new Error("Session name changed by the user"));
-			this.activeAbort = undefined;
-		}
+		this.generation += 1;
 		if (!normalized) {
 			this.manualName = undefined;
 			if (this.settings.enabled) this.state = "unnamed";
-			return;
+			return true;
 		}
 		this.manualName = normalized;
 		this.lastRenameTime = this.host.now();
 		this.state = this.settings.enabled ? "named" : "disabled";
 		this.host.appendMarker({ name: normalized, source: "user", timestamp: this.lastRenameTime });
+		return true;
 	}
 
 	shutdown(): void {
 		this.generation += 1;
-		this.activeAbort?.abort(new Error("Session Naming stopped"));
-		this.activeAbort = undefined;
 		this.state = "disabled";
 	}
 
-	private async rename(mode: RenameMode): Promise<string | undefined> {
-		this.activeAbort?.abort(new Error("Superseded Session naming request"));
-		const abort = new AbortController();
-		this.activeAbort = abort;
-		const generation = ++this.generation;
-		this.state = "running";
-		try {
-			const entries = this.host.getBranch();
-			const currentName = this.host.getSessionName()?.trim();
-			const result = await this.host.generate(
-				namingMessages(entries, mode === "initial"),
-				currentName,
-				abort.signal,
+	private rename(mode: RenameMode): Effect.Effect<string | undefined> {
+		return Effect.suspend(() => {
+			const generation = ++this.generation;
+			this.state = "running";
+			return Effect.gen({ self: this }, function* () {
+				const input = yield* Effect.try({
+					try: () => ({
+						currentName: this.host.getSessionName()?.trim(),
+						messages: namingMessages(this.host.getBranch(), mode === "initial"),
+					}),
+					catch: normalizeError,
+				});
+				const result = yield* this.host.generate(input.messages, input.currentName);
+				if (generation !== this.generation) return undefined;
+				if (!result) {
+					this.state = this.settings.enabled ? "failed" : "disabled";
+					return undefined;
+				}
+				return yield* Effect.try({
+					try: () => {
+						const { name, source } = result;
+						this.lastGeneratedName = name;
+						this.manualName = undefined;
+						if (this.host.getSessionName()?.trim() !== name) this.host.setSessionName(name);
+						this.lastRenameTime = this.host.now();
+						this.host.appendMarker({ mode, name, source, timestamp: this.lastRenameTime });
+						this.state = this.settings.enabled ? (source === "fallback" ? "fallback" : "named") : "disabled";
+						return name;
+					},
+					catch: normalizeError,
+				});
+			}).pipe(
+				Effect.catch(() =>
+					Effect.sync(() => {
+						if (generation === this.generation) this.state = this.settings.enabled ? "failed" : "disabled";
+						return undefined;
+					}),
+				),
 			);
-			if (abort.signal.aborted || generation !== this.generation) return undefined;
-			if (!result) {
-				this.state = this.settings.enabled ? "failed" : "disabled";
-				return undefined;
-			}
-			const { name, source } = result;
-			this.lastGeneratedName = name;
-			this.manualName = undefined;
-			if (this.host.getSessionName()?.trim() !== name) this.host.setSessionName(name);
-			this.lastRenameTime = this.host.now();
-			this.host.appendMarker({ mode, name, source, timestamp: this.lastRenameTime });
-			this.state = this.settings.enabled ? (source === "fallback" ? "fallback" : "named") : "disabled";
-			return name;
-		} catch {
-			if (generation === this.generation) this.state = this.settings.enabled ? "failed" : "disabled";
-			return undefined;
-		} finally {
-			if (generation === this.generation) this.activeAbort = undefined;
-		}
+		});
 	}
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

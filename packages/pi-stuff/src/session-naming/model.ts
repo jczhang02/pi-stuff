@@ -1,4 +1,5 @@
 import type { Api, AssistantMessage, Context, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
+import { Effect, Option } from "effect";
 import type { NamingMessage } from "./prompt.js";
 import { assistantText, buildNamingPrompt, cleanModelName, fallbackName, isHighQualityName } from "./prompt.js";
 import type { SessionNamingSettings } from "./settings.js";
@@ -10,11 +11,6 @@ const TOTAL_TIMEOUT_MS = 30_000;
 export interface GeneratedSessionName {
 	readonly name: string;
 	readonly source: "ai" | "fallback";
-}
-
-interface AttemptSignal {
-	dispose(): void;
-	readonly signal: AbortSignal;
 }
 
 export interface SessionNamingModelContext {
@@ -54,79 +50,77 @@ export function buildModelChain(ctx: SessionNamingModelContext, settings: Sessio
 	return result;
 }
 
-function attemptSignal(parent: AbortSignal, timeoutMs: number): AttemptSignal {
-	const controller = new AbortController();
-	const abortFromParent = (): void => controller.abort(parent.reason);
-	if (parent.aborted) abortFromParent();
-	else parent.addEventListener("abort", abortFromParent, { once: true });
-	const timeout = setTimeout(() => controller.abort(new Error("Session naming request timed out")), timeoutMs);
-	return {
-		dispose() {
-			clearTimeout(timeout);
-			parent.removeEventListener("abort", abortFromParent);
-		},
-		signal: controller.signal,
-	};
+function generateWithModel(
+	ctx: SessionNamingModelContext,
+	model: Model<Api>,
+	prompt: ReturnType<typeof buildNamingPrompt>,
+): Effect.Effect<GeneratedSessionName | undefined> {
+	return Effect.tryPromise({
+		try: (signal) =>
+			ctx.modelRegistry.complete(
+				model,
+				{
+					systemPrompt: prompt.systemPrompt,
+					messages: [{ role: "user", content: prompt.userPrompt, timestamp: Date.now() }],
+				},
+				{ cacheRetention: "none", maxTokens: MAX_OUTPUT_TOKENS, signal },
+			),
+		catch: normalizeError,
+	}).pipe(
+		Effect.map((response) => {
+			const text = assistantText(response);
+			const candidate = text ? cleanModelName(text) : undefined;
+			return candidate && isHighQualityName(candidate) ? ({ name: candidate, source: "ai" } as const) : undefined;
+		}),
+		Effect.timeoutOption(PER_ATTEMPT_TIMEOUT_MS),
+		Effect.catch(() => Effect.succeed(Option.none())),
+		Effect.map(Option.getOrUndefined),
+	);
 }
 
-function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-	if (signal.aborted) return Promise.reject(signal.reason);
-	return new Promise<T>((resolve, reject) => {
-		const aborted = (): void => reject(signal.reason);
-		signal.addEventListener("abort", aborted, { once: true });
-		promise.then(
-			(value) => {
-				signal.removeEventListener("abort", aborted);
-				resolve(value);
-			},
-			(cause: unknown) => {
-				signal.removeEventListener("abort", aborted);
-				reject(cause);
-			},
-		);
+function generateWithModels(
+	ctx: SessionNamingModelContext,
+	settings: SessionNamingSettings,
+	prompt: ReturnType<typeof buildNamingPrompt>,
+): Effect.Effect<GeneratedSessionName | undefined, Error> {
+	return Effect.gen(function* () {
+		const models = yield* Effect.try({
+			try: () => buildModelChain(ctx, settings),
+			catch: normalizeError,
+		});
+		for (const model of models) {
+			const configured = yield* Effect.try({
+				try: () => ctx.modelRegistry.hasConfiguredAuth(model),
+				catch: normalizeError,
+			});
+			if (!configured) continue;
+			const generated = yield* generateWithModel(ctx, model, prompt);
+			if (generated) return generated;
+		}
+		return undefined;
 	});
 }
 
-export async function generateSessionName(
+export function generateSessionName(
 	ctx: SessionNamingModelContext,
 	settings: SessionNamingSettings,
 	messages: readonly NamingMessage[],
 	currentName: string | undefined,
-	signal: AbortSignal,
-	clock: () => number = Date.now,
-): Promise<GeneratedSessionName | undefined> {
-	if (messages.length === 0 || signal.aborted) return undefined;
-	const prompt = buildNamingPrompt(messages, currentName);
-	const startedAt = clock();
-	for (const model of buildModelChain(ctx, settings)) {
-		if (signal.aborted) return undefined;
-		const remaining = TOTAL_TIMEOUT_MS - (clock() - startedAt);
-		if (remaining <= 0) break;
-		if (!ctx.modelRegistry.hasConfiguredAuth(model)) continue;
-		const attempt = attemptSignal(signal, Math.min(PER_ATTEMPT_TIMEOUT_MS, remaining));
-		try {
-			const response = await awaitWithSignal(
-				ctx.modelRegistry.complete(
-					model,
-					{
-						systemPrompt: prompt.systemPrompt,
-						messages: [{ role: "user", content: prompt.userPrompt, timestamp: clock() }],
-					},
-					{ cacheRetention: "none", maxTokens: MAX_OUTPUT_TOKENS, signal: attempt.signal },
-				),
-				attempt.signal,
-			);
-			if (attempt.signal.aborted) continue;
-			const text = assistantText(response);
-			const candidate = text ? cleanModelName(text) : undefined;
-			if (candidate && isHighQualityName(candidate)) return { name: candidate, source: "ai" };
-		} catch {
-			// Naming is best-effort. Try the next configured model, then the local fallback.
-		} finally {
-			attempt.dispose();
-		}
-	}
-	if (signal.aborted) return undefined;
-	const fallback = fallbackName(messages);
-	return fallback && isHighQualityName(fallback) ? { name: fallback, source: "fallback" } : undefined;
+): Effect.Effect<GeneratedSessionName | undefined, Error> {
+	if (messages.length === 0) return Effect.succeed(undefined);
+	return Effect.gen(function* () {
+		const prompt = yield* Effect.try({
+			try: () => buildNamingPrompt(messages, currentName),
+			catch: normalizeError,
+		});
+		const timed = yield* generateWithModels(ctx, settings, prompt).pipe(Effect.timeoutOption(TOTAL_TIMEOUT_MS));
+		const generated = Option.getOrUndefined(timed);
+		if (generated) return generated;
+		const fallback = fallbackName(messages);
+		return fallback && isHighQualityName(fallback) ? { name: fallback, source: "fallback" } : undefined;
+	});
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

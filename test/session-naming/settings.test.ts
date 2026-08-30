@@ -2,10 +2,10 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { resetDiagnosticProcessState } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 import {
 	DEFAULT_SESSION_NAMING_SETTINGS,
-	loadSessionNamingSettings,
 	parseSessionNamingSettings,
 	SessionNamingSettingsStore,
 } from "../../packages/pi-stuff/src/session-naming/settings.js";
@@ -22,7 +22,8 @@ test("loads defaults without creating the merged settings file", async () => {
 	roots.push(root);
 	const path = join(root, "pi-stuff.json");
 
-	expect(await loadSessionNamingSettings(path)).toEqual(DEFAULT_SESSION_NAMING_SETTINGS);
+	const store = await Effect.runPromise(SessionNamingSettingsStore.load(path));
+	expect(store.get()).toEqual(DEFAULT_SESSION_NAMING_SETTINGS);
 	expect(await Bun.file(path).exists()).toBe(false);
 });
 
@@ -61,14 +62,14 @@ test("persists concurrent Dialog changes without clobbering advanced settings or
 			},
 		}),
 	);
-	const store = await SessionNamingSettingsStore.load(path);
+	const store = await Effect.runPromise(SessionNamingSettingsStore.load(path));
 	const observed: boolean[] = [];
 	const unsubscribe = store.subscribe((settings) => observed.push(settings.enabled));
 
 	await Promise.all([
-		store.update({ enabled: false }),
-		store.update({ cooldownMinutes: 30 }),
-		store.update({ respectManualName: true }),
+		Effect.runPromise(store.update({ enabled: false })),
+		Effect.runPromise(store.update({ cooldownMinutes: 30 })),
+		Effect.runPromise(store.update({ respectManualName: true })),
 	]);
 	unsubscribe();
 	const persisted = JSON.parse(await Bun.file(path).text());
@@ -102,7 +103,7 @@ test("sets and clears the fixed model without clobbering newer fallback settings
 			},
 		}),
 	);
-	const store = await SessionNamingSettingsStore.load(path);
+	const store = await Effect.runPromise(SessionNamingSettingsStore.load(path));
 
 	await writeFile(
 		path,
@@ -115,8 +116,8 @@ test("sets and clears the fixed model without clobbering newer fallback settings
 			},
 		}),
 	);
-	await store.update({ model: "fixture/secondary" });
-	await store.update({ model: null });
+	await Effect.runPromise(store.update({ model: "fixture/secondary" }));
+	await Effect.runPromise(store.update({ model: null }));
 
 	const persisted = JSON.parse(await Bun.file(path).text());
 	expect(store.get().model).toBeUndefined();
@@ -131,9 +132,9 @@ test("falls back as one namespace when merged settings are malformed", async () 
 	const path = join(root, "pi-stuff.json");
 	const invalid = '{"sessionNaming":{"schemaVersion":1,"enabled":"yes"}}\n';
 	await writeFile(path, invalid);
-	const store = await SessionNamingSettingsStore.load(path);
+	const store = await Effect.runPromise(SessionNamingSettingsStore.load(path));
 
 	expect(store.get()).toEqual(DEFAULT_SESSION_NAMING_SETTINGS);
-	await expect(store.update({ enabled: false })).rejects.toThrow("valid Session Naming settings");
+	await expect(Effect.runPromise(store.update({ enabled: false }))).rejects.toThrow("valid Session Naming settings");
 	expect(await Bun.file(path).text()).toBe(invalid);
 });

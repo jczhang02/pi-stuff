@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import { Effect } from "effect";
 import type {
 	CommandDialogComponent,
 	CommandDialogViewContext,
@@ -26,7 +27,11 @@ const MODEL_CHOICES = [
 ] as const;
 
 function createDialog(settings: SessionNamingSettingsStore): CommandDialogComponent {
-	const view = createSessionNamingSettingsView(settings, { modelChoices: MODEL_CHOICES });
+	const view = createSessionNamingSettingsView(
+		settings,
+		{ update: (patch) => Effect.runPromise(settings.update(patch)) },
+		{ modelChoices: MODEL_CHOICES },
+	);
 	const context = {
 		close: () => {},
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
@@ -81,17 +86,17 @@ describe("Session Naming settings Dialog", () => {
 		const dialog = createDialog(settings);
 
 		dialog.handleInput?.("\r");
-		await settings.whenIdle();
+		await Effect.runPromise(settings.whenIdle());
 		expect(settings.get().enabled).toBe(false);
 
 		dialog.handleInput?.("\x1b[B");
 		dialog.handleInput?.("\r");
-		await settings.whenIdle();
+		await Effect.runPromise(settings.whenIdle());
 		expect(settings.get().cooldownMinutes).toBe(30);
 
 		dialog.handleInput?.("\x1b[B");
 		dialog.handleInput?.("\r");
-		await settings.whenIdle();
+		await Effect.runPromise(settings.whenIdle());
 		expect(settings.get().respectManualName).toBe(true);
 
 		dialog.handleInput?.("\x1b[B");
@@ -106,13 +111,13 @@ describe("Session Naming settings Dialog", () => {
 		expect(text).toContain("fixture/backup");
 		expect(text).not.toContain("fixture/primary");
 		dialog.handleInput?.("\r");
-		await settings.whenIdle();
+		await Effect.runPromise(settings.whenIdle());
 		expect(settings.get().model).toBe("fixture/backup");
 
 		dialog.handleInput?.("\r");
 		for (const character of "session") dialog.handleInput?.(character);
 		dialog.handleInput?.("\r");
-		await settings.whenIdle();
+		await Effect.runPromise(settings.whenIdle());
 		expect(settings.get().model).toBeUndefined();
 		dialog.dispose?.();
 	});

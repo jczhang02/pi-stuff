@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { SessionNamingController } from "../../packages/pi-stuff/src/session-naming/controller.js";
 import type { GeneratedSessionName } from "../../packages/pi-stuff/src/session-naming/model.js";
 import type { SessionNamingSettings } from "../../packages/pi-stuff/src/session-naming/settings.js";
@@ -25,6 +26,10 @@ const ZERO_USAGE = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 let entrySequence = 0;
+
+function run<Value, ErrorType>(program: Effect.Effect<Value, ErrorType>): Promise<Value> {
+	return Effect.runPromise(program);
+}
 
 function message(role: "assistant" | "user", content: string): SessionEntry {
 	entrySequence += 1;
@@ -67,10 +72,11 @@ function harness(overrides: Partial<SessionNamingSettings> = {}) {
 					data: marker,
 				});
 			},
-			async generate(_messages, currentName) {
-				requestedCurrentNames.push(currentName);
-				return generated.shift();
-			},
+			generate: (_messages, currentName) =>
+				Effect.sync(() => {
+					requestedCurrentNames.push(currentName);
+					return generated.shift();
+				}),
 			getBranch: () => branch,
 			getSessionName: () => name,
 			now: () => now,
@@ -100,7 +106,7 @@ test("names the first settled direct-user exchange and persists branch state", a
 	state.generated.push({ name: "Automatic Session Naming", source: "ai" });
 	state.controller.restore();
 
-	expect(await state.controller.handleSettled()).toBe("Automatic Session Naming");
+	expect(await run(state.controller.handleSettled())).toBe("Automatic Session Naming");
 	expect(state.name()).toBe("Automatic Session Naming");
 	expect(state.markers).toEqual([
 		{ mode: "initial", source: "ai", timestamp: 1_000, name: "Automatic Session Naming" },
@@ -112,11 +118,11 @@ test("refreshes only after the cooldown", async () => {
 	const state = harness();
 	state.generated.push({ name: "Initial Name", source: "ai" }, { name: "Refreshed Name", source: "ai" });
 	state.controller.restore();
-	await state.controller.handleSettled();
+	await run(state.controller.handleSettled());
 	state.setNow(600_999);
-	expect(await state.controller.handleSettled()).toBeUndefined();
+	expect(await run(state.controller.handleSettled())).toBeUndefined();
 	state.setNow(601_000);
-	expect(await state.controller.handleSettled()).toBe("Refreshed Name");
+	expect(await run(state.controller.handleSettled())).toBe("Refreshed Name");
 	expect(state.requestedCurrentNames).toEqual([undefined, "Initial Name"]);
 	expect(state.markers.at(-1)?.mode).toBe("periodic");
 });
@@ -133,7 +139,7 @@ test("persists observed manual names and respects them after resume", async () =
 	second.generated.push({ name: "Should Not Be Used", source: "ai" });
 	second.controller.restore();
 
-	expect(await second.controller.handleSettled()).toBeUndefined();
+	expect(await run(second.controller.handleSettled())).toBeUndefined();
 	expect(second.name()).toBe("Manual Session Name");
 });
 
@@ -168,10 +174,10 @@ for (const respectManualName of [false, true]) {
 			state.setNow(601_000);
 
 			if (respectManualName) {
-				expect(await state.controller.handleSettled()).toBeUndefined();
+				expect(await run(state.controller.handleSettled())).toBeUndefined();
 				expect(state.name()).toBe("Existing manual name");
 			} else {
-				expect(await state.controller.handleSettled()).toBe("Periodic replacement");
+				expect(await run(state.controller.handleSettled())).toBe("Periodic replacement");
 				expect(state.markers.at(-1)?.mode).toBe("periodic");
 			}
 		});
@@ -182,7 +188,7 @@ test("records a manual return to a previously generated name", async () => {
 	const state = harness({ respectManualName: true });
 	state.generated.push({ name: "Generated name", source: "ai" });
 	state.controller.restore();
-	await state.controller.handleSettled();
+	await run(state.controller.handleSettled());
 
 	state.setName("Different manual name");
 	state.controller.observeSessionNameChange("Different manual name");
@@ -191,20 +197,20 @@ test("records a manual return to a previously generated name", async () => {
 
 	expect(state.markers.map((marker) => marker.source)).toEqual(["ai", "user", "user"]);
 	expect(state.markers.at(-1)?.name).toBe("Generated name");
-	expect(await state.controller.handleSettled()).toBeUndefined();
+	expect(await run(state.controller.handleSettled())).toBeUndefined();
 });
 
 test("returns to unnamed state when the native Session name is cleared", async () => {
 	const state = harness();
 	state.generated.push({ name: "Generated name", source: "ai" }, { name: "Replacement name", source: "ai" });
 	state.controller.restore();
-	await state.controller.handleSettled();
+	await run(state.controller.handleSettled());
 
 	state.setName(undefined);
 	state.controller.observeSessionNameChange(undefined);
 
 	expect(state.controller.getState()).toBe("unnamed");
-	expect(await state.controller.handleSettled()).toBe("Replacement name");
+	expect(await run(state.controller.handleSettled())).toBe("Replacement name");
 });
 
 test("marks /autoname as forced generation rather than an observed manual name", async () => {
@@ -212,7 +218,7 @@ test("marks /autoname as forced generation rather than an observed manual name",
 	state.generated.push({ name: "Forced Session Name", source: "ai" });
 	state.controller.restore();
 
-	expect(await state.controller.renameManually()).toBe("Forced Session Name");
+	expect(await run(state.controller.renameManually())).toBe("Forced Session Name");
 	expect(state.markers.at(-1)?.mode).toBe("forced");
 });
 
@@ -221,8 +227,8 @@ test("keeps explicit /autoname available when automatic naming is off", async ()
 	state.generated.push({ name: "Explicit Session Name", source: "ai" });
 	state.controller.restore();
 
-	expect(await state.controller.handleSettled()).toBeUndefined();
-	expect(await state.controller.renameManually()).toBe("Explicit Session Name");
+	expect(await run(state.controller.handleSettled())).toBeUndefined();
+	expect(await run(state.controller.renameManually())).toBe("Explicit Session Name");
 	expect(state.name()).toBe("Explicit Session Name");
 	expect(state.controller.getState()).toBe("disabled");
 	expect(state.markers.at(-1)?.mode).toBe("forced");
@@ -233,9 +239,9 @@ test("retries a failed automatic name on the next settled user run", async () =>
 	state.generated.push(undefined, { name: "Recovered Session Name", source: "ai" });
 	state.controller.restore();
 
-	expect(await state.controller.handleSettled()).toBeUndefined();
+	expect(await run(state.controller.handleSettled())).toBeUndefined();
 	expect(state.controller.getState()).toBe("failed");
-	expect(await state.controller.handleSettled()).toBe("Recovered Session Name");
+	expect(await run(state.controller.handleSettled())).toBe("Recovered Session Name");
 });
 
 test("retries an automatic fallback on the next settled user run", async () => {
@@ -243,25 +249,23 @@ test("retries an automatic fallback on the next settled user run", async () => {
 	state.generated.push({ name: "Local Fallback", source: "fallback" }, { name: "Semantic Name", source: "ai" });
 	state.controller.restore();
 
-	expect(await state.controller.handleSettled()).toBe("Local Fallback");
+	expect(await run(state.controller.handleSettled())).toBe("Local Fallback");
 	expect(state.controller.getState()).toBe("fallback");
-	expect(await state.controller.handleSettled()).toBe("Semantic Name");
+	expect(await run(state.controller.handleSettled())).toBe("Semantic Name");
 	expect(state.controller.getState()).toBe("named");
 });
 
-test("aborts and ignores an automatic result superseded by /autoname", async () => {
+test("ignores an automatic result superseded by /autoname", async () => {
 	let name: string | undefined;
 	const markers: RenameMarker[] = [];
-	const pending: {
-		resolve: (result: GeneratedSessionName) => void;
-		signal: AbortSignal;
-	}[] = [];
+	const pending = [
+		Promise.withResolvers<GeneratedSessionName | undefined>(),
+		Promise.withResolvers<GeneratedSessionName | undefined>(),
+	];
+	let requestIndex = 0;
 	const controller = new SessionNamingController(SETTINGS, {
 		appendMarker: (marker) => markers.push(marker),
-		generate: (_messages, _currentName, signal) =>
-			new Promise((resolve) => {
-				pending.push({ resolve, signal });
-			}),
+		generate: () => Effect.promise(() => pending[requestIndex++]?.promise ?? Promise.resolve(undefined)),
 		getBranch: () => [message("user", "Name this Session"), message("assistant", "Done")],
 		getSessionName: () => name,
 		now: () => 1_000,
@@ -271,11 +275,10 @@ test("aborts and ignores an automatic result superseded by /autoname", async () 
 	});
 	controller.restore();
 
-	const automatic = controller.handleSettled();
+	const automatic = run(controller.handleSettled());
 	await Promise.resolve();
-	const forced = controller.renameManually();
+	const forced = run(controller.renameManually());
 	await Promise.resolve();
-	expect(pending[0]?.signal.aborted).toBe(true);
 	pending[0]?.resolve({ name: "Stale Name", source: "ai" });
 	pending[1]?.resolve({ name: "Current Name", source: "ai" });
 
@@ -286,19 +289,13 @@ test("aborts and ignores an automatic result superseded by /autoname", async () 
 	expect(markers[0]?.mode).toBe("forced");
 });
 
-test("aborts and ignores an automatic result superseded by a native manual name", async () => {
+test("ignores an automatic result superseded by a native manual name", async () => {
 	let name: string | undefined;
 	const markers: RenameMarker[] = [];
-	const pending: {
-		resolve: (result: GeneratedSessionName) => void;
-		signal: AbortSignal;
-	}[] = [];
+	const pending = Promise.withResolvers<GeneratedSessionName | undefined>();
 	const controller = new SessionNamingController(SETTINGS, {
 		appendMarker: (marker) => markers.push(marker),
-		generate: (_messages, _currentName, signal) =>
-			new Promise((resolve) => {
-				pending.push({ resolve, signal });
-			}),
+		generate: () => Effect.promise(() => pending.promise),
 		getBranch: () => [message("user", "Name this Session"), message("assistant", "Done")],
 		getSessionName: () => name,
 		now: () => 1_000,
@@ -308,12 +305,11 @@ test("aborts and ignores an automatic result superseded by a native manual name"
 	});
 	controller.restore();
 
-	const automatic = controller.handleSettled();
+	const automatic = run(controller.handleSettled());
 	await Promise.resolve();
 	name = "Manual release review";
 	controller.observeSessionNameChange(name);
-	expect(pending[0]?.signal.aborted).toBeTrue();
-	pending[0]?.resolve({ name: "Stale automatic name", source: "ai" });
+	pending.resolve({ name: "Stale automatic name", source: "ai" });
 
 	expect(await automatic).toBeUndefined();
 	expect(name).toBe("Manual release review");

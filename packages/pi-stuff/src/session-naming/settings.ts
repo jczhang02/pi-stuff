@@ -1,9 +1,10 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { mergedSettingsPath, NamespacedSettingsStore } from "../shared/settings-io/index.js";
-import { acquireSettingsLock } from "../shared/settings-io/lock.js";
+import { EffectNamespacedSettingsStore, mergedSettingsPath } from "../shared/settings-io/index.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 
 export const SESSION_NAMING_NAMESPACE = "sessionNaming";
 const MAX_COOLDOWN_MINUTES = 24 * 60;
@@ -111,28 +112,30 @@ function reportSettingsDiagnostic(diagnostic: Parameters<typeof reportDiagnostic
 
 /** Startup is read-only; only a direct update from the settings Dialog persists this namespace. */
 export class SessionNamingSettingsStore {
-	private readonly store: NamespacedSettingsStore<SessionNamingRecord>;
+	private readonly store: EffectNamespacedSettingsStore<SessionNamingRecord>;
 
-	private constructor(store: NamespacedSettingsStore<SessionNamingRecord>) {
+	private constructor(store: EffectNamespacedSettingsStore<SessionNamingRecord>) {
 		this.store = store;
 	}
 
-	static async load(path = mergedSettingsPath(getAgentDir())): Promise<SessionNamingSettingsStore> {
-		const store = await NamespacedSettingsStore.load<SessionNamingRecord>(
-			SESSION_NAMING_NAMESPACE,
-			toRecord(DEFAULT_SESSION_NAMING_SETTINGS),
-			normalizeRecord,
-			{
-				acquireLock: acquireSettingsLock,
-				path,
-				reportDiagnostic: reportSettingsDiagnostic,
-			},
+	static load(path = mergedSettingsPath(getAgentDir())): Effect.Effect<SessionNamingSettingsStore, Error> {
+		return Effect.map(
+			EffectNamespacedSettingsStore.load(
+				SESSION_NAMING_NAMESPACE,
+				toRecord(DEFAULT_SESSION_NAMING_SETTINGS),
+				normalizeRecord,
+				{
+					acquireLock: acquireSettingsLockEffect,
+					path,
+					reportDiagnostic: reportSettingsDiagnostic,
+				},
+			),
+			(store) => new SessionNamingSettingsStore(store),
 		);
-		return new SessionNamingSettingsStore(store);
 	}
 
 	static memory(settings: SessionNamingSettings = DEFAULT_SESSION_NAMING_SETTINGS): SessionNamingSettingsStore {
-		return new SessionNamingSettingsStore(NamespacedSettingsStore.memory(toRecord(settings)));
+		return new SessionNamingSettingsStore(EffectNamespacedSettingsStore.memory(toRecord(settings)));
 	}
 
 	get(): SessionNamingSettings {
@@ -143,25 +146,21 @@ export class SessionNamingSettingsStore {
 		return this.store.subscribe((record) => listener(parseSessionNamingSettings(record)));
 	}
 
-	async update(patch: SessionNamingSettingsPatch): Promise<void> {
-		await this.store.updateWith((current) => {
-			const record: SessionNamingRecord = { ...current };
-			if (patch.cooldownMinutes !== undefined) record.cooldownMinutes = patch.cooldownMinutes;
-			if (patch.enabled !== undefined) record.enabled = patch.enabled;
-			if (patch.model === null) delete record.model;
-			else if (patch.model !== undefined) record.model = patch.model;
-			if (patch.respectManualName !== undefined) record.respectManualName = patch.respectManualName;
-			return normalizeRecord(record);
-		});
+	update(patch: SessionNamingSettingsPatch): Effect.Effect<void, Error> {
+		return Effect.asVoid(
+			this.store.updateWith((current) => {
+				const record: SessionNamingRecord = { ...current };
+				if (patch.cooldownMinutes !== undefined) record.cooldownMinutes = patch.cooldownMinutes;
+				if (patch.enabled !== undefined) record.enabled = patch.enabled;
+				if (patch.model === null) delete record.model;
+				else if (patch.model !== undefined) record.model = patch.model;
+				if (patch.respectManualName !== undefined) record.respectManualName = patch.respectManualName;
+				return normalizeRecord(record);
+			}),
+		);
 	}
 
-	async whenIdle(): Promise<void> {
-		await this.store.whenIdle();
+	whenIdle(): Effect.Effect<void> {
+		return this.store.whenIdle();
 	}
-}
-
-export async function loadSessionNamingSettings(
-	path = mergedSettingsPath(getAgentDir()),
-): Promise<SessionNamingSettings> {
-	return (await SessionNamingSettingsStore.load(path)).get();
 }
