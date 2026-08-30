@@ -7,8 +7,6 @@ import {
 	matchesKey,
 	parseKey,
 	type TUI,
-	truncateToWidth,
-	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { Effect } from "effect";
 import type { FooterTailComponent } from "../../../conversation-ui/index.js";
@@ -16,19 +14,13 @@ import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../sh
 import type { AgentEffectOwner, AgentEffectTask } from "../runtime/agent-effect-owner.ts";
 import type { AgentRow, AgentSessionSnapshot, CurrentAgentsView } from "../session/current-agents.js";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import { boundedTerminalLine } from "../shared/display-description.js";
+import { isTerminalAgentRow, renderAgentRoster } from "./agent-roster-render.ts";
+
+export { fitAgentDescription } from "./agent-roster-render.ts";
 
 const WIDGET_KEY = "pi-stuff-agent-roster";
-const NORMAL_CHILD_LIMIT = 5;
-const NARROW_CHILD_LIMIT = 4;
-const NARROW_WIDTH = 64;
 const ELAPSED_REFRESH_MS = 1_000;
 const TERMINAL_LINGER_MS = 30_000;
-const CONTEXT_WARNING_PERCENT = 70;
-const CONTEXT_ERROR_PERCENT = 90;
-
-const LIVE_STATUSES = new Set(["queued", "resuming", "running", "stopping", "waiting_supervisor"]);
-const TERMINAL_STATUSES = new Set(["agent_stopped", "completed", "crashed", "failed", "user_cancelled"]);
 
 type RosterUi = Pick<ExtensionUIContext, "getEditorText" | "notify" | "onTerminalInput" | "setWidget">;
 
@@ -154,7 +146,7 @@ export class AgentRoster {
 	private rows(): readonly AgentRow[] {
 		const now = this.now();
 		return this.snapshotValue.rows.filter((row) => {
-			if (!isTerminal(row)) return true;
+			if (!isTerminalAgentRow(row)) return true;
 			if (this.dismissedTerminalKeys.has(row.key)) return false;
 			const startedAt = this.terminalStartedAt.get(row.key) ?? now;
 			return now - startedAt < TERMINAL_LINGER_MS;
@@ -170,7 +162,7 @@ export class AgentRoster {
 			}
 		}
 		for (const row of this.snapshotValue.rows) {
-			if (!isTerminal(row)) {
+			if (!isTerminalAgentRow(row)) {
 				this.terminalStartedAt.delete(row.key);
 				this.dismissedTerminalKeys.delete(row.key);
 				continue;
@@ -184,7 +176,10 @@ export class AgentRoster {
 	private orderedRows(): readonly AgentRow[] {
 		return this.rows()
 			.map((row, index): IndexedRow => ({ index, row }))
-			.sort((left, right) => rowPriority(left.row) - rowPriority(right.row) || left.index - right.index)
+			.sort(
+				(left, right) =>
+					Number(isTerminalAgentRow(left.row)) - Number(isTerminalAgentRow(right.row)) || left.index - right.index,
+			)
 			.map(({ row }) => row);
 	}
 
@@ -259,7 +254,7 @@ export class AgentRoster {
 		const now = this.now();
 		let nextExpiry = Number.POSITIVE_INFINITY;
 		for (const row of this.snapshotValue.rows) {
-			if (!isTerminal(row)) continue;
+			if (!isTerminalAgentRow(row)) continue;
 			const startedAt = this.terminalStartedAt.get(row.key);
 			if (startedAt === undefined) continue;
 			const expiresAt = startedAt + TERMINAL_LINGER_MS;
@@ -376,7 +371,7 @@ export class AgentRoster {
 	private controlSelected(): void {
 		const row = this.rows().find((candidate) => candidate.key === this.selectedKey);
 		if (!row) return;
-		if (isTerminal(row)) {
+		if (isTerminalAgentRow(row)) {
 			this.dismissedTerminalKeys.add(row.key);
 			this.reconcileSelection();
 			this.syncRegistration();
@@ -394,65 +389,8 @@ export class AgentRoster {
 	}
 
 	private render(theme: Theme, width: number): string[] {
-		const ordered = this.orderedRows();
-		if (ordered.length === 0) return [];
-		const renderWidth = Math.max(1, width);
-		const limit = renderWidth <= NARROW_WIDTH ? NARROW_CHILD_LIMIT : NORMAL_CHILD_LIMIT;
-		const visible = visibleRows(ordered, limit, this.navigationActive ? this.selectedKey : "main");
-		const hidden = ordered.length - visible.length;
-		const lines = this.navigationActive ? [this.renderHint(theme, renderWidth)] : [];
-		lines.push(
-			this.renderMain(theme, renderWidth),
-			...visible.map((row) => renderAgentRow(row, this.rowMarker(row, theme), theme, renderWidth, this.now())),
-		);
-		if (hidden > 0) lines.push(truncateToWidth(theme.fg("dim", `… +${hidden} more`), renderWidth, ""));
-		return lines;
+		return renderAgentRoster(this.orderedRows(), this.navigationActive, this.selectedKey, theme, width, this.now());
 	}
-
-	private renderHint(theme: Theme, width: number): string {
-		const selected = this.rows().find((row) => row.key === this.selectedKey);
-		const action = selected ? (isTerminal(selected) ? "dismiss" : "stop") : undefined;
-		const hint =
-			width <= NARROW_WIDTH
-				? `↑/↓ · Enter${action ? ` · x ${action}` : ""} · Esc`
-				: `↑/↓ select · Enter view${action ? ` · x ${action}` : ""} · Esc return`;
-		return truncateToWidth(theme.fg("dim", hint), width, "");
-	}
-
-	private renderMain(theme: Theme, width: number): string {
-		const marker = this.selectedMarker("main", theme);
-		return truncateToWidth(`${marker} ${theme.fg("text", "main")}`, width, "");
-	}
-
-	private selectedMarker(key: string, theme: Theme): string {
-		if (this.navigationActive) {
-			return this.selectedKey === key ? theme.fg("accent", "●") : theme.fg("muted", "○");
-		}
-		return key === "main" ? theme.fg("text", "●") : theme.fg("muted", "○");
-	}
-
-	private rowMarker(row: AgentRow, theme: Theme): string {
-		return this.selectedMarker(row.key, theme);
-	}
-}
-
-function visibleRows(rows: readonly AgentRow[], limit: number, selectedKey: string): AgentRow[] {
-	if (rows.length <= limit) return [...rows];
-	const visible = rows.slice(0, limit);
-	if (selectedKey === "main" || visible.some((row) => row.key === selectedKey)) return visible;
-	const selected = rows.find((row) => row.key === selectedKey);
-	if (!selected) return visible;
-	visible[visible.length - 1] = selected;
-	const order = new Map(rows.map((row, index) => [row.key, index]));
-	return visible.sort((left, right) => (order.get(left.key) ?? 0) - (order.get(right.key) ?? 0));
-}
-
-function rowPriority(row: AgentRow): number {
-	return LIVE_STATUSES.has(row.status) ? 0 : 1;
-}
-
-function isTerminal(row: AgentRow): boolean {
-	return TERMINAL_STATUSES.has(row.status);
 }
 
 function isEditorComponent<Value>(
@@ -486,92 +424,6 @@ function decodePrintable(data: string): string | undefined {
 	if ([...data].length !== 1) return undefined;
 	const codePoint = data.codePointAt(0);
 	return codePoint !== undefined && codePoint >= 32 && codePoint !== 127 ? data : undefined;
-}
-
-function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: number, now: number): string {
-	const name = boundedTerminalLine(row.name) || "agent";
-	const description = boundedTerminalLine(row.description ?? row.task);
-	const state = styledState(row, theme, now);
-	const context = styledContextUsage(row, theme);
-	const markerPrefix = `${marker} `;
-	let right = context ? context + theme.fg("dim", " · ") + state : state;
-	if (context && visibleWidth(markerPrefix) + visibleWidth(name) + 2 + visibleWidth(right) > width) {
-		right = state;
-	}
-	const rightWidth = visibleWidth(right);
-	const leftWidth = Math.max(1, width - (rightWidth > 0 ? rightWidth + 2 : 0));
-	const plainPrefixWidth = visibleWidth(markerPrefix);
-	const nameBudget = Math.max(1, leftWidth - plainPrefixWidth);
-	const boundedName = truncateToWidth(name, nameBudget, "…");
-	const styledName = theme.fg("text", boundedName);
-	const descriptionBudget = Math.max(0, leftWidth - plainPrefixWidth - visibleWidth(styledName) - 2);
-	const fittedDescription = fitAgentDescription(description, descriptionBudget);
-	const left = truncateToWidth(
-		`${markerPrefix}${styledName}${fittedDescription ? `  ${theme.fg("muted", fittedDescription)}` : ""}`,
-		leftWidth,
-		"",
-	);
-	if (rightWidth === 0) return truncateToWidth(left, width, "");
-	const gap = Math.max(2, width - visibleWidth(left) - rightWidth);
-	return truncateToWidth(`${left}${" ".repeat(gap)}${right}`, width, "");
-}
-
-function styledContextUsage(row: AgentRow, theme: Theme): string {
-	const usage = row.contextUsage;
-	if (!usage || usage.contextWindow <= 0 || usage.tokens < 0) return "";
-	const percent = (usage.tokens / usage.contextWindow) * 100;
-	if (!Number.isFinite(percent)) return "";
-	const rounded = Math.round(percent);
-	const label = percent > 0 && percent < 1 ? "<1%" : rounded > 999 ? ">999%" : `${String(Math.max(0, rounded))}%`;
-	const color = percent > CONTEXT_ERROR_PERCENT ? "error" : percent > CONTEXT_WARNING_PERCENT ? "warning" : "muted";
-	return theme.fg(color, label);
-}
-
-function styledState(row: AgentRow, theme: Theme, now: number): string {
-	const elapsed = elapsedText(row, now);
-	switch (row.status) {
-		case "queued":
-			return theme.fg("muted", "queued");
-		case "waiting_supervisor":
-			return theme.fg("warning", "waiting");
-		case "stopping":
-			return theme.fg("muted", "stopping");
-		case "resuming":
-			return theme.fg("muted", "resuming");
-		case "completed":
-			return theme.fg("muted", elapsed ? `done · ${elapsed}` : "done");
-		case "failed":
-			return theme.fg("error", elapsed ? `failed · ${elapsed}` : "failed");
-		case "crashed":
-			return theme.fg("error", elapsed ? `crashed · ${elapsed}` : "crashed");
-		case "agent_stopped":
-			return theme.fg("muted", elapsed ? `stopped · ${elapsed}` : "stopped");
-		case "user_cancelled":
-			return theme.fg("muted", elapsed ? `cancelled · ${elapsed}` : "cancelled");
-		case "running":
-			return theme.fg("muted", elapsed || "running");
-	}
-}
-
-function elapsedText(row: AgentRow, now: number): string {
-	const elapsedMs =
-		!isTerminal(row) && isRuntimeNumber(row.startedAt) && Number.isFinite(row.startedAt)
-			? now - row.startedAt
-			: isRuntimeNumber(row.elapsedMs) && Number.isFinite(row.elapsedMs)
-				? row.elapsedMs
-				: undefined;
-	if (elapsedMs === undefined) return "";
-	const seconds = Math.max(0, Math.floor(elapsedMs / 1_000));
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-/** Keep a description only when the complete short label remains readable. */
-export function fitAgentDescription(description: string, availableWidth: number): string {
-	const safe = boundedTerminalLine(description);
-	return safe && visibleWidth(safe) <= availableWidth ? safe : "";
 }
 
 function errorMessage<ErrorValue>(error: ErrorValue): string {
