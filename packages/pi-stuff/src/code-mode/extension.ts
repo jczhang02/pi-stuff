@@ -280,7 +280,7 @@ export function registerCodeModeContextProjection(pi: Pick<ExtensionAPI, "on">):
 export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeModeOptions): void {
 	const connector = new SuiteCodeModeConnector(options.registry);
 	const ledger = new CodeModeSessionLedger(pi);
-	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(), ledger);
+	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(options.effects), ledger);
 	const controls = new CodeModeControls(pi, options, connector, ledger, runtime);
 	registerSuiteToolEnvelope(pi, createCodeModeDefinition(runtime), {
 		decode: decodeCodeModeOperations,

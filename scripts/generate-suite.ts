@@ -240,12 +240,12 @@ interface CapabilityInstallation {
 		`export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 \tmarkLifecyclePhase("suite.factory.start");
 \tconst suiteApi = installSuiteSessionReadiness(pi);
-\tinstallEffectFoundation(suiteApi, { deferShutdown: true });
+\t${hasCodeMode ? "const effects = " : ""}installEffectFoundation(suiteApi, { deferShutdown: true });
 ${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(suiteApi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(suiteApi);\n" : ""}${sharesCodeModeState ? '\tconst resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");\n' : ""}\tfor (const capability of createCapabilities(options${sharesCodeModeState ? ", resolveCodeModeEnabled" : ""})) {
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.start\`);
 \t\tawait capability.install(${toolNames.length > 0 ? "registrations.api" : "suiteApi"});
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.end\`);
-\t}${hasCodeMode ? `\n\tmarkLifecyclePhase("capability.code-mode.start");\n\tcodeMode(registrations.api, {\n\t\tregistry: registrations.registry,\n\t\tsurface: registrations.surface,\n\t});\n\tmarkLifecyclePhase("capability.code-mode.end");` : ""}
+\t}${hasCodeMode ? `\n\tmarkLifecyclePhase("capability.code-mode.start");\n\tcodeMode(registrations.api, {\n\t\teffects,\n\t\tregistry: registrations.registry,\n\t\tsurface: registrations.surface,\n\t});\n\tmarkLifecyclePhase("capability.code-mode.end");` : ""}
 ${toolNames.length > 0 ? `\n\tconfigureSuiteToolReplay(registrations.api, registrations.toolNames${replayToolNames.length > 0 ? ", REPLAY_SUITE_TOOL_NAMES" : ""});` : ""}
 \tpi.on("session_start", (_event, ctx) => {
 ${toolNames.length > 0 ? `\t\ttry {\n\t\t\t${coverageCall};\n\t\t} catch (error) {\n\t\t\trejectSuiteSessionReadiness(pi, ctx);\n\t\t\tthrow error;\n\t\t}\n\t\tmarkSuiteSessionReady(pi, ctx);` : "\t\tmarkSuiteSessionReady(pi, ctx);"}

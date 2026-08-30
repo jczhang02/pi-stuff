@@ -66,6 +66,7 @@ test("writes one ordered Extension from internal Capability Modules", async () =
 	expect(generatedRuntime).toContain('{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options) },');
 	expect(generatedRuntime).toContain('{ id: "btw", install: btw },');
 	expect(generatedRuntime).toContain("const suiteApi = installSuiteSessionReadiness(pi);");
+	expect(generatedRuntime).not.toContain("const effects =");
 	expect(generatedRuntime).toContain("await capability.install(suiteApi);");
 	expect(generatedRuntime).toContain("markSuiteSessionReady(pi, ctx);");
 	expect(generatedRuntime).toContain('markLifecyclePhase("suite.factory.end");');
@@ -173,6 +174,7 @@ test("wires Code Mode after ordinary capabilities with the shared Tool registry"
 	expect(generated).toContain('{ id: "tool-display", install: toolDisplay },');
 	expect(generated).toContain("\tregisterCodeModeContextProjection(suiteApi);");
 	expect(generated).toContain(`\tcodeMode(registrations.api, {
+\t\teffects,
 \t\tregistry: registrations.registry,
 \t\tsurface: registrations.surface,
 \t});`);

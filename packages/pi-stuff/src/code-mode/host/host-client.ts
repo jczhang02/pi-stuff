@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { Cause, Deferred, Effect, Exit } from "effect";
 import { type JsonInputValue, parseJsonValue } from "../../shared/json-value.js";
 import type {
 	CodeModeExecuteOptions,
@@ -28,8 +29,7 @@ const STARTUP_TIMEOUT_MS = 10_000;
 
 interface Pending {
 	context?: ExecutorContext;
-	reject(error: Error): void;
-	resolve(value: JsonInputValue): void;
+	resume(effect: Effect.Effect<JsonInputValue, Error>): void;
 	tools?: Map<string, SuiteSandboxTool>;
 }
 
@@ -67,7 +67,7 @@ export class CodeModeHostClient {
 	private readonly initial = new Map<number, Pending>();
 	private readonly pending = new Map<number, Pending>();
 	private queuedWriteBytes = 0;
-	private ready: Promise<void> | undefined;
+	private ready: Deferred.Deferred<void, Error> | undefined;
 	private requestId = 0;
 	private readonly sessionId = randomUUID();
 	private stderr = "";
@@ -78,70 +78,93 @@ export class CodeModeHostClient {
 		this.startupTimeoutMs = startupTimeoutMs;
 	}
 
-	async start(signal?: AbortSignal): Promise<void> {
-		throwIfAborted(signal);
-		const ready = this.ready ?? this.startProcess();
-		this.ready ??= ready;
-		try {
-			await waitForStartup(ready, this.startupTimeoutMs, signal);
-		} catch (error) {
-			this.failAll(error instanceof Error ? error : new Error(String(error)));
-			throw error;
-		}
+	start(): Effect.Effect<void, Error> {
+		return Effect.suspend(() => {
+			const current = this.ready;
+			const ready = current ?? Deferred.makeUnsafe<void, Error>();
+			const ownsStartup = current === undefined;
+			if (ownsStartup) this.ready = ready;
+			const startup = ownsStartup ? this.startProcess() : Deferred.await(ready);
+			return startup.pipe(
+				Effect.timeout(this.startupTimeoutMs),
+				Effect.mapError((error) =>
+					Cause.isTimeoutError(error)
+						? new Error(`Code Mode host startup timed out after ${String(this.startupTimeoutMs)} ms`)
+						: error,
+				),
+				Effect.onExit((exit) =>
+					Effect.sync(() => {
+						if (Exit.isSuccess(exit)) {
+							if (ownsStartup) Deferred.doneUnsafe(ready, Effect.void);
+							return;
+						}
+						const failure = Cause.hasInterruptsOnly(exit.cause)
+							? codeModeAbortError()
+							: normalizeError(Cause.squash(exit.cause));
+						if (ownsStartup) Deferred.doneUnsafe(ready, Effect.fail(failure));
+						this.failAll(failure);
+					}),
+				),
+			);
+		});
 	}
 
-	async execute(options: CodeModeExecuteOptions): Promise<RuntimeResponse> {
-		throwIfAborted(options.signal);
-		await this.start(options.signal);
-		throwIfAborted(options.signal);
-		const id = ++this.requestId;
-		const initial = new Promise<JsonInputValue>((resolve, reject) => this.initial.set(id, { reject, resolve }));
-		void initial.catch(() => undefined);
-		const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
-		const started = this.requestWithId(
-			id,
-			{
-				method: "session/execute",
-				request: {
-					enabled_tools: options.tools.map(toWireToolDefinition),
-					max_output_tokens: MAX_OUTPUT_TOKENS,
-					source: options.source,
-					tool_call_id: options.context.toolCallId ?? `codemode-${String(id)}`,
-					yield_time_ms: DEFAULT_EXEC_YIELD_MS,
-				},
-				sessionId: this.sessionId,
-			},
-			options.context,
-			tools,
-		);
+	execute(options: CodeModeExecuteOptions): Effect.Effect<RuntimeResponse, Error> {
+		let id: number | undefined;
 		let cellId: string | undefined;
-		const abort = (): void => this.cancelOperation(id, options.context, cellId);
-		options.signal?.addEventListener("abort", abort, { once: true });
-		try {
-			cellId = executionCellId(await started);
-			if (options.signal?.aborted) {
-				abort();
-				throw abortError();
-			}
-			return this.delegateRuntime.attach(parseRuntimeResponse(await initial));
-		} catch (error) {
-			this.rejectOperation(id, error instanceof Error ? error : new Error(String(error)));
-			throw error;
-		} finally {
-			options.signal?.removeEventListener("abort", abort);
-		}
+		let initialPending: Pending | undefined;
+		return Effect.gen({ self: this }, function* () {
+			yield* this.start();
+			id = ++this.requestId;
+			const initial = Deferred.makeUnsafe<JsonInputValue, Error>();
+			initialPending = { resume: (effect) => Deferred.doneUnsafe(initial, effect) };
+			this.initial.set(id, initialPending);
+			const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
+			cellId = executionCellId(
+				yield* this.requestWithId(
+					id,
+					{
+						method: "session/execute",
+						request: {
+							enabled_tools: options.tools.map(toWireToolDefinition),
+							max_output_tokens: MAX_OUTPUT_TOKENS,
+							source: options.source,
+							tool_call_id: options.context.toolCallId ?? `codemode-${String(id)}`,
+							yield_time_ms: DEFAULT_EXEC_YIELD_MS,
+						},
+						sessionId: this.sessionId,
+					},
+					options.context,
+					tools,
+				),
+			);
+			return this.delegateRuntime.attach(parseRuntimeResponse(yield* Deferred.await(initial)));
+		}).pipe(
+			Effect.tapError((error) =>
+				Effect.sync(() => {
+					if (id !== undefined) this.rejectOperation(id, error);
+				}),
+			),
+			Effect.onInterrupt(() =>
+				Effect.sync(() => {
+					if (id !== undefined) this.cancelOperation(id, options.context, cellId);
+				}),
+			),
+			Effect.ensuring(
+				Effect.sync(() => {
+					if (id !== undefined && this.initial.get(id) === initialPending) this.initial.delete(id);
+				}),
+			),
+		);
 	}
 
-	async wait(cellId: string, yieldTimeMs: number, options: CodeModeWaitOptions): Promise<RuntimeResponse> {
-		throwIfAborted(options.signal);
-		await this.start(options.signal);
-		throwIfAborted(options.signal);
-		this.delegateRuntime.updateCellContext(cellId, options.context);
-		const id = ++this.requestId;
-		const abort = (): void => this.cancelOperation(id, options.context, cellId);
-		options.signal?.addEventListener("abort", abort, { once: true });
-		try {
-			const value = await this.requestWithId(
+	wait(cellId: string, yieldTimeMs: number, options: CodeModeWaitOptions): Effect.Effect<RuntimeResponse, Error> {
+		let id: number | undefined;
+		return Effect.gen({ self: this }, function* () {
+			yield* this.start();
+			this.delegateRuntime.updateCellContext(cellId, options.context);
+			id = ++this.requestId;
+			const value = yield* this.requestWithId(
 				id,
 				{
 					method: "session/wait",
@@ -151,30 +174,37 @@ export class CodeModeHostClient {
 				options.context,
 			);
 			const response = runtimeOutcome(value);
-			if (!response) throw new Error("Code Mode host returned an invalid wait outcome");
+			if (!response) return yield* Effect.fail(new Error("Code Mode host returned an invalid wait outcome"));
 			return this.delegateRuntime.attach(parseRuntimeResponse(response));
-		} finally {
-			options.signal?.removeEventListener("abort", abort);
-		}
+		}).pipe(
+			Effect.onInterrupt(() =>
+				Effect.sync(() => {
+					if (id !== undefined) this.cancelOperation(id, options.context, cellId);
+				}),
+			),
+		);
 	}
 
-	async shutdown(): Promise<void> {
-		const child = this.child;
-		if (!child) return;
-		try {
-			await Promise.race([
-				this.request({ method: "session/shutdown", sessionId: this.sessionId }),
-				new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS)),
-			]);
-		} catch {
-			// Process teardown below is authoritative.
-		}
-		child.kill();
-		this.failAll(new Error("Code Mode host shut down"));
+	shutdown(): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			const child = this.child;
+			if (!child) return Effect.void;
+			return this.request({ method: "session/shutdown", sessionId: this.sessionId }).pipe(
+				Effect.timeoutOption(SHUTDOWN_GRACE_MS),
+				Effect.catch(() => Effect.void),
+				Effect.asVoid,
+				Effect.ensuring(
+					Effect.sync(() => {
+						child.kill();
+						this.failAll(new Error("Code Mode host shut down"));
+					}),
+				),
+			);
+		});
 	}
 
 	private cancelOperation(id: number, context: ExecutorContext, cellId?: string): void {
-		const error = abortError();
+		const error = codeModeAbortError();
 		try {
 			this.send({ id, type: "operation/cancel" });
 			if (!cellId) this.cancelled.add(id);
@@ -183,52 +213,82 @@ export class CodeModeHostClient {
 		}
 		this.rejectOperation(id, error);
 		// The outer Pi Tool has no model-facing wait handle after cancellation.
-		if (cellId) void this.terminate(cellId, context).catch(() => undefined);
+		if (cellId) {
+			try {
+				this.terminate(cellId, context);
+			} catch {
+				// Host teardown is already authoritative.
+			}
+		}
 	}
 
-	private async terminate(cellId: string, context?: ExecutorContext): Promise<void> {
-		await this.start();
+	private terminate(cellId: string, context?: ExecutorContext): void {
 		if (context) this.delegateRuntime.updateCellContext(cellId, context);
-		await this.request({ cellId, method: "session/terminate", sessionId: this.sessionId }, context);
+		const id = ++this.requestId;
+		const pending: Pending = { resume: () => undefined };
+		this.pending.set(id, pending);
+		try {
+			this.send({
+				id,
+				request: { cellId, method: "session/terminate", sessionId: this.sessionId },
+				type: "operation/request",
+			});
+		} catch (error) {
+			if (this.pending.get(id) === pending) this.pending.delete(id);
+			throw error;
+		}
 	}
 
-	private async startProcess(): Promise<void> {
-		const child = spawn(this.binary, [], { shell: false, stdio: ["pipe", "pipe", "pipe"] });
-		this.child = child;
-		this.buffer = Buffer.alloc(0);
-		this.stderr = "";
-		child.stdout.on("data", (chunk: Buffer) => {
-			if (this.child === child) this.onData(chunk);
+	private startProcess(): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const child = yield* Effect.try({
+				try: () => spawn(this.binary, [], { shell: false, stdio: ["pipe", "pipe", "pipe"] }),
+				catch: normalizeError,
+			});
+			this.child = child;
+			this.buffer = Buffer.alloc(0);
+			this.stderr = "";
+			child.stdout.on("data", (chunk: Buffer) => {
+				if (this.child === child) this.onData(chunk);
+			});
+			child.stderr.on("data", (chunk: Buffer) => {
+				if (this.child === child) this.stderr = (this.stderr + chunk.toString()).slice(-16_384);
+			});
+			child.on("error", (error) => {
+				if (this.child === child)
+					this.failAll(new CodeModeHostLostError(`Code Mode host failed: ${error.message}`, { cause: error }));
+			});
+			child.on("close", (code) => {
+				if (this.child !== child) return;
+				this.failAll(
+					new CodeModeHostLostError(
+						`Code Mode host exited with code ${code ?? "unknown"}${this.stderr.trim() ? `: ${this.stderr.trim()}` : ""}`,
+					),
+				);
+			});
+			yield* Effect.callback<JsonInputValue, Error>((resume) => {
+				const pending: Pending = { resume };
+				this.pending.set(0, pending);
+				try {
+					this.send({
+						optionalCapabilities: [],
+						requiredCapabilities: [],
+						supportedVersions: [1],
+						type: "connection/hello",
+					});
+				} catch (error) {
+					if (this.pending.get(0) === pending) this.pending.delete(0);
+					resume(Effect.fail(normalizeError(error)));
+				}
+				return Effect.sync(() => {
+					if (this.pending.get(0) === pending) this.pending.delete(0);
+				});
+			}).pipe(Effect.asVoid);
+			yield* this.request({ method: "session/open", sessionId: this.sessionId });
 		});
-		child.stderr.on("data", (chunk: Buffer) => {
-			if (this.child === child) this.stderr = (this.stderr + chunk.toString()).slice(-16_384);
-		});
-		child.on("error", (error) => {
-			if (this.child === child)
-				this.failAll(new CodeModeHostLostError(`Code Mode host failed: ${error.message}`, { cause: error }));
-		});
-		child.on("close", (code) => {
-			if (this.child !== child) return;
-			this.failAll(
-				new CodeModeHostLostError(
-					`Code Mode host exited with code ${code ?? "unknown"}${this.stderr.trim() ? `: ${this.stderr.trim()}` : ""}`,
-				),
-			);
-		});
-		const handshake = new Promise<void>((resolve, reject) =>
-			this.pending.set(0, { reject, resolve: () => resolve() }),
-		);
-		this.send({
-			optionalCapabilities: [],
-			requiredCapabilities: [],
-			supportedVersions: [1],
-			type: "connection/hello",
-		});
-		await handshake;
-		await this.request({ method: "session/open", sessionId: this.sessionId });
 	}
 
-	private request(request: HostOperationRequest, context?: ExecutorContext): Promise<JsonInputValue> {
+	private request(request: HostOperationRequest, context?: ExecutorContext): Effect.Effect<JsonInputValue, Error> {
 		return this.requestWithId(++this.requestId, request, context);
 	}
 
@@ -237,28 +297,31 @@ export class CodeModeHostClient {
 		request: HostOperationRequest,
 		context?: ExecutorContext,
 		tools?: Map<string, SuiteSandboxTool>,
-	): Promise<JsonInputValue> {
-		return new Promise((resolve, reject) => {
-			const pending: Pending = { reject, resolve };
+	): Effect.Effect<JsonInputValue, Error> {
+		return Effect.callback((resume) => {
+			const pending: Pending = { resume };
 			if (context) pending.context = context;
 			if (tools) pending.tools = tools;
 			this.pending.set(id, pending);
 			try {
 				this.send({ id, request, type: "operation/request" });
 			} catch (error) {
-				this.pending.delete(id);
-				reject(error instanceof Error ? error : new Error(String(error)));
+				if (this.pending.get(id) === pending) this.pending.delete(id);
+				resume(Effect.fail(normalizeError(error)));
 			}
+			return Effect.sync(() => {
+				if (this.pending.get(id) === pending) this.pending.delete(id);
+			});
 		});
 	}
 
 	private rejectOperation(id: number, error: Error): void {
 		const pending = this.pending.get(id);
 		this.pending.delete(id);
-		pending?.reject(error);
+		pending?.resume(Effect.fail(error));
 		const initial = this.initial.get(id);
 		this.initial.delete(id);
-		initial?.reject(error);
+		initial?.resume(Effect.fail(error));
 	}
 
 	private send(message: HostOutboundMessage): void {
@@ -305,13 +368,13 @@ export class CodeModeHostClient {
 		if (message.type === "connection/ready") {
 			const pending = this.pending.get(0);
 			this.pending.delete(0);
-			pending?.resolve(undefined);
+			pending?.resume(Effect.succeed(undefined));
 			return;
 		}
 		if (message.type === "connection/rejected") {
 			const pending = this.pending.get(0);
 			this.pending.delete(0);
-			pending?.reject(new Error(`Code Mode handshake rejected: ${JSON.stringify(message.reason)}`));
+			pending?.resume(Effect.fail(new Error(`Code Mode handshake rejected: ${JSON.stringify(message.reason)}`)));
 			return;
 		}
 		if (message.type === "operation/response") {
@@ -320,25 +383,31 @@ export class CodeModeHostClient {
 			if (!pending) {
 				if (this.cancelled.delete(message.id) && message.result.status === "ok") {
 					const cellId = executionCellId(message.result.value);
-					if (cellId) void this.terminate(cellId).catch(() => undefined);
+					if (cellId) {
+						try {
+							this.terminate(cellId);
+						} catch {
+							// Host teardown is already authoritative.
+						}
+					}
 				}
 				return;
 			}
 			if (message.result.status === "error") {
-				pending.reject(new Error(message.result.message));
+				pending.resume(Effect.fail(new Error(message.result.message)));
 				return;
 			}
 			const cellId = executionCellId(message.result.value);
 			if (cellId && pending.context) this.delegateRuntime.bindCell(cellId, pending.context, pending.tools);
-			pending.resolve(message.result.value);
+			pending.resume(Effect.succeed(message.result.value));
 			return;
 		}
 		if (message.type === "execute/initialResponse") {
 			const pending = this.initial.get(message.id);
 			this.initial.delete(message.id);
 			if (!pending) return;
-			if (message.result.status === "error") pending.reject(new Error(message.result.message));
-			else pending.resolve(message.result.value);
+			if (message.result.status === "error") pending.resume(Effect.fail(new Error(message.result.message)));
+			else pending.resume(Effect.succeed(message.result.value));
 			return;
 		}
 		if (message.type === "delegate/request") {
@@ -353,7 +422,7 @@ export class CodeModeHostClient {
 	}
 
 	private failAll(error: Error): void {
-		for (const pending of [...this.pending.values(), ...this.initial.values()]) pending.reject(error);
+		for (const pending of [...this.pending.values(), ...this.initial.values()]) pending.resume(Effect.fail(error));
 		this.cancelled.clear();
 		this.pending.clear();
 		this.initial.clear();
@@ -366,35 +435,12 @@ export class CodeModeHostClient {
 	}
 }
 
-function abortError(): Error {
+export function codeModeAbortError(): Error {
 	const error = new Error("Code Mode operation aborted");
 	error.name = "AbortError";
 	return error;
 }
 
-function throwIfAborted(signal?: AbortSignal): void {
-	if (signal?.aborted) throw abortError();
-}
-
-async function waitForStartup(ready: Promise<void>, timeoutMs: number, signal?: AbortSignal): Promise<void> {
-	let timeout: ReturnType<typeof setTimeout> | undefined;
-	let onAbort: (() => void) | undefined;
-	const deadline = new Promise<never>((_resolve, reject) => {
-		timeout = setTimeout(
-			() => reject(new Error(`Code Mode host startup timed out after ${String(timeoutMs)} ms`)),
-			timeoutMs,
-		);
-	});
-	const aborted = signal
-		? new Promise<never>((_resolve, reject) => {
-				onAbort = () => reject(abortError());
-				signal.addEventListener("abort", onAbort, { once: true });
-			})
-		: undefined;
-	try {
-		await Promise.race(aborted ? [ready, deadline, aborted] : [ready, deadline]);
-	} finally {
-		if (timeout) clearTimeout(timeout);
-		if (onAbort) signal?.removeEventListener("abort", onAbort);
-	}
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

@@ -7,12 +7,19 @@ import { CodeModeSessionLedger } from "../../packages/pi-stuff/src/code-mode/led
 import type { RuntimeResponse, SuiteSandboxTool } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import { CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
 import { V8CodeModeExecutor } from "../../packages/pi-stuff/src/code-mode/v8-executor.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const realTest = process.env["PI_STUFF_CODE_MODE_REAL"] === "1" ? test : test.skip;
 
+async function v8Executor(): Promise<V8CodeModeExecutor> {
+	const effects = new EffectFoundation();
+	await effects.startSession();
+	return new V8CodeModeExecutor(effects);
+}
+
 realTest("the certified V8 host executes a real Connector call and returns its trace", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const tool: SuiteSandboxTool = {
 		description: "Return one fixture value",
 		inputSchema: Type.Object({ value: Type.String() }),
@@ -59,7 +66,7 @@ realTest("the certified V8 host executes a real Connector call and returns its t
 });
 
 realTest("the certified V8 host accepts a complete image Tool result through image", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const image = {
 		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
 		mimeType: "image/png",
@@ -100,7 +107,7 @@ realTest("the certified V8 host accepts a complete image Tool result through ima
 });
 
 realTest("the certified V8 host cannot persist malformed image helper output", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const registry: SuiteToolDefinitionRegistry = {
 		catalog: () => [],
 		compensate: async () => false,
@@ -132,7 +139,7 @@ realTest("the certified V8 host cannot persist malformed image helper output", a
 });
 
 realTest("the certified V8 host exposes a delegated Tool literally named bash", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const tool: SuiteSandboxTool = {
 		description: "Return a Bash fixture without running a process",
 		inputSchema: Type.Object({ command: Type.String() }),
@@ -162,7 +169,7 @@ realTest("the certified V8 host exposes a delegated Tool literally named bash", 
 });
 
 realTest("the Cloudflare async-arrow form returns once and never duplicates explicit output", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const tool: SuiteSandboxTool = {
 		description: "Return two text blocks",
 		inputSchema: Type.Object({}),
@@ -207,7 +214,7 @@ realTest("the Cloudflare async-arrow form returns once and never duplicates expl
 });
 
 realTest("the certified V8 host settles a Tool result whose text looks like cancellation", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const tool: SuiteSandboxTool = {
 		description: "Return a deterministic cancellation-looking fixture",
 		inputSchema: Type.Object({}),
@@ -248,7 +255,7 @@ realTest("the certified V8 host settles a Tool result whose text looks like canc
 });
 
 realTest("the certified V8 host settles a rejected delegated Tool call", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const tool: SuiteSandboxTool = {
 		description: "Reject deterministically",
 		inputSchema: Type.Object({}),
@@ -280,7 +287,7 @@ realTest("the certified V8 host settles a rejected delegated Tool call", async (
 });
 
 realTest("explicit nested Tool errors stop uncaught code and remain catchable", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	let followUps = 0;
 	const definitions = new Map<string, ToolDefinition>([
 		[
@@ -357,7 +364,7 @@ realTest("explicit nested Tool errors stop uncaught code and remain catchable", 
 });
 
 realTest("the certified V8 host runs durable steps and saved snippets with binary and bigint values", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
@@ -432,7 +439,7 @@ realTest("the certified V8 host runs durable steps and saved snippets with binar
 });
 
 realTest("the certified V8 host pauses an approval-required Tool and executes it once after approval", async () => {
-	const executor = new V8CodeModeExecutor();
+	const executor = await v8Executor();
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {

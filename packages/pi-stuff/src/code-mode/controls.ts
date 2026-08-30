@@ -6,6 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
+import type { EffectFoundation } from "../shared/effect-foundation.js";
 import {
 	type SuiteToolDefinitionRegistry,
 	type SuiteToolRegistrationHost,
@@ -35,6 +36,7 @@ const USAGE =
 	"Usage: /codemode [on|off|global on|global off|history|pending|approve <execution-id>|reject <execution-id> <seq>|snippets|save <execution-id> <name> [description]|delete <name>|abandon <execution-id>|rollback <execution-id>|expire]";
 
 export interface PiStuffCodeModeOptions {
+	readonly effects: EffectFoundation;
 	readonly registry: SuiteToolDefinitionRegistry;
 	readonly surface: SuiteToolSurfaceController;
 }

@@ -162,7 +162,7 @@ const REPLAY_SUITE_TOOL_NAMES = [
 export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 	markLifecyclePhase("suite.factory.start");
 	const suiteApi = installSuiteSessionReadiness(pi);
-	installEffectFoundation(suiteApi, { deferShutdown: true });
+	const effects = installEffectFoundation(suiteApi, { deferShutdown: true });
 	const registrations = createSuiteToolRegistrationTracker(suiteApi);
 	registerCodeModeContextProjection(suiteApi);
 	const resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");
@@ -173,6 +173,7 @@ export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallatio
 	}
 	markLifecyclePhase("capability.code-mode.start");
 	codeMode(registrations.api, {
+		effects,
 		registry: registrations.registry,
 		surface: registrations.surface,
 	});

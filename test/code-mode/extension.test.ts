@@ -15,6 +15,7 @@ import {
 	readCodeModeProjectEnabled,
 	writeCodeModeProjectEnabled,
 } from "../../packages/pi-stuff/src/code-mode/settings.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type {
 	SuiteToolDefinitionRegistry,
@@ -69,7 +70,7 @@ function loadExtension(surface: SuiteToolSurfaceController) {
 		sendMessage: () => undefined,
 	};
 	const { api } = createSuiteToolRegistrationTracker({ ...hostApi, getAllTools: () => [] });
-	piStuffCodeMode(api, { registry, surface });
+	piStuffCodeMode(api, { effects: new EffectFoundation(), registry, surface });
 	return { api, commands, events, tools };
 }
 
