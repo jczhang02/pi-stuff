@@ -33,9 +33,11 @@ import {
 	transitionGoal,
 } from "./runtime.js";
 import { withGoalSettingsLock } from "./settings.js";
+import { showGoalSettings } from "./settings-ui.js";
 
 interface GoalCommandRegistrationOptions {
 	readonly onProjectionNeeded: () => void;
+	readonly runMenu: (ctx: ExtensionCommandContext, program: ReturnType<typeof showGoalManager>) => Promise<void>;
 	readonly settingsPath: string | undefined;
 }
 
@@ -86,16 +88,22 @@ async function dispatchGoalCommand(
 		return;
 	}
 	if (result.kind === "show" && args.trim() === "") {
-		await showGoalManager(runtime, commands, ctx, async (menuCtx) => {
-			const { showGoalSettings } = await import("./settings-ui.js");
-			return showGoalSettings(runtime, menuCtx, {
-				settingsPath: options.settingsPath,
-				withLock: process.versions["bun"] !== undefined ? withGoalSettingsLock : undefined,
-				onQueueUnfrozen: async (settingsCtx) => {
-					await commands.resumeQueueAfterUnfreeze(settingsCtx);
-				},
-			});
-		});
+		if (ctx.mode !== "tui") {
+			commands.showGoal(ctx);
+			return;
+		}
+		await options.runMenu(
+			ctx,
+			showGoalManager(runtime, commands, ctx, (menuCtx) =>
+				showGoalSettings(runtime, menuCtx, {
+					settingsPath: options.settingsPath,
+					withLock: process.versions["bun"] !== undefined ? withGoalSettingsLock : undefined,
+					onQueueUnfrozen: async (settingsCtx) => {
+						await commands.resumeQueueAfterUnfreeze(settingsCtx);
+					},
+				}),
+			),
+		);
 		return;
 	}
 	if (runtime.queueFrozen) {

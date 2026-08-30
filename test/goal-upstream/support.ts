@@ -68,7 +68,11 @@ type MockSelectorFactory = (
 
 export interface MockContextOverrides {
 	abort?: () => void;
-	confirm?: (title: string, message: string) => Promise<boolean>;
+	confirm?: (
+		title: string,
+		message: string,
+		dialogOptions?: { readonly signal?: AbortSignal | undefined },
+	) => Promise<boolean>;
 	custom?: <Factory, Options>(factory: Factory, options?: Options) => Promise<MockValue>;
 	cwd?: string;
 	editor?: (title: string, initial: string) => Promise<string | undefined>;
@@ -76,15 +80,24 @@ export interface MockContextOverrides {
 	getContextUsage?: () => MockValue;
 	hasPendingMessages?: () => boolean;
 	hasUI?: boolean;
-	input?: (title: string, placeholder: string) => Promise<MockValue>;
+	input?: (
+		title: string,
+		placeholder: string,
+		dialogOptions?: { readonly signal?: AbortSignal | undefined },
+	) => Promise<MockValue>;
 	isIdle?: () => boolean;
 	isProjectTrusted?: () => boolean;
 	mode?: string;
 	model?: MockValue;
 	modelRegistry?: object;
 	reload?: () => Promise<void>;
-	select?: (title: string, options: string[]) => Promise<string | undefined>;
+	select?: (
+		title: string,
+		options: string[],
+		dialogOptions?: { readonly signal?: AbortSignal | undefined },
+	) => Promise<string | undefined>;
 	sessionManager?: object;
+	signal?: AbortSignal | undefined;
 	terminalRows?: number;
 	waitForIdle?: () => Promise<void>;
 }
@@ -276,7 +289,9 @@ export function createMockPi(options: MockPiOptions = {}) {
 		events,
 		emitHostEvent,
 		callEvent(name: string, ...args: unknown[]) {
-			return events.get(name)?.[0]?.(...args);
+			const handlers = events.get(name) ?? [];
+			if (name !== "session_start") return handlers[0]?.(...args);
+			return Promise.all(handlers.map((handler) => handler(...args))).then((results) => results[0]);
 		},
 		eventBus,
 		tools,

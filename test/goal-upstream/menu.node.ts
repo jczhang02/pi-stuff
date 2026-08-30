@@ -1,15 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import {
 	buildGoalMenuState,
 	GOAL_MENU_ACTIONS,
 	safeGoalMenuText,
-	showGoalManager,
+	showGoalManager as showGoalManagerEffect,
 } from "../../packages/pi-stuff/src/goal/src/menu.js";
 import type { ActiveGoal, PendingQueueAction } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { createGoal, transitionGoal } from "../../packages/pi-stuff/src/goal/src/runtime.js";
 import { DEFAULT_GOAL_SETTINGS } from "../../packages/pi-stuff/src/goal/src/settings.js";
 import { createMockContext, createMockPi } from "./support.js";
+
+async function showGoalManager(
+	runtime: Parameters<typeof showGoalManagerEffect>[0],
+	commands: Parameters<typeof showGoalManagerEffect>[1],
+	ctx: Parameters<typeof showGoalManagerEffect>[2],
+	showSettings: (ctx: ExtensionCommandContext) => Promise<void>,
+): Promise<void> {
+	await Effect.runPromise(
+		showGoalManagerEffect(runtime, commands, ctx, (settingsCtx) =>
+			Effect.tryPromise({ try: () => showSettings(settingsCtx), catch: (error) => error }),
+		),
+	);
+}
 
 function runtime(goal?: ActiveGoal) {
 	return {
@@ -155,6 +170,56 @@ test("menu cancellation has no side effects and clear requires an exact preview"
 
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
+	assert.equal(tracked.calls.length, 0);
+});
+
+test("caller interruption closes a nested interactive wait without invoking a Goal action", async () => {
+	const state = runtime(createGoal("keep this objective", undefined, 0));
+	const tracked = commands();
+	const caller = new AbortController();
+	const opened = Promise.withResolvers<AbortSignal>();
+	const context = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		select: async () => GOAL_MENU_ACTIONS.clear,
+		confirm: async (_title, _message, dialogOptions) => {
+			const signal = dialogOptions?.signal;
+			assert.ok(signal);
+			opened.resolve(signal);
+			await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+			return true;
+		},
+	});
+
+	// SAFETY: this test double supplies every GoalCommandController member exercised by the menu.
+	const running = Effect.runPromiseExit(
+		showGoalManagerEffect(state, tracked.controller as never, context.ctx, () => Effect.void),
+		{ signal: caller.signal },
+	);
+	const menuSignal = await opened.promise;
+	caller.abort(new DOMException("caller cancelled", "AbortError"));
+	const exit = await running;
+
+	assert.equal(menuSignal.aborted, true);
+	assert.equal(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause), true);
+	assert.equal(tracked.calls.length, 0);
+});
+
+test("a stale menu generation cannot invoke the selected Goal action", async () => {
+	const state = { ...runtime(), menuGeneration: 0 };
+	const tracked = commands();
+	const context = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		select: async () => {
+			state.menuGeneration += 1;
+			return GOAL_MENU_ACTIONS.start;
+		},
+	});
+
+	// SAFETY: this test double supplies every GoalCommandController member exercised by the menu.
+	await Effect.runPromise(showGoalManagerEffect(state, tracked.controller as never, context.ctx, () => Effect.void));
+
 	assert.equal(tracked.calls.length, 0);
 });
 

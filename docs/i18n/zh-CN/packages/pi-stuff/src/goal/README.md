@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 820a3ce913dda4a9847663f9959d45d147a5ef1cb3fe6e748f343d58dfb318be -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: eee67cc76b7811f5bb0551e352e79d98af4453bb80b6aaeb8f0761b820cd8c21 -->
 
 # Goal 模块
 
@@ -17,6 +17,8 @@ Goal 能力在当前 Pi 会话中保持一个目标活跃，直到模型用 `goa
 ```
 
 不带参数的 `/goal` 打开套件全宽命令对话框。它使用 Pi 原生 SettingsList 交互，绝不创建浮动窗口或软件包自有状态栏。当前 Goal 向共享对话 UI 状态栏贡献一个条件片段；没有 Goal 时不显示。活跃状态渲染 ` goal used/budget elapsed`，并在可见时刷新活跃经过时间。暂停、阻塞或因限制停止、完成状态分别保留 Nerd Font ``、`` 和 `` 语义。启动、替换、恢复和更新 TUI 提示使用普通对话记录 `•` 标记并突出操作标签；RPC 和无头提示保持纯文本。Goal 工作只从 Pi 完全稳定的空闲边界继续，因此重试、压缩、引导和排队用户工作会先稳定，再进入下一自动轮次。
+
+每次交互调用都在当前 Pi 会话拥有的 Effect 操作 Scope 中运行。中断只关闭原生 UI 等待；Goal 的代际防护会拒绝过期菜单结果，而继续与终态仍只由 Goal 决定。
 
 实验性多 Goal 模式最多保留 64 个等待目标，使每份持久会话状态有界。
 

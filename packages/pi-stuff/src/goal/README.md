@@ -26,6 +26,10 @@ Transcript `•` record marker with an emphasized action label; RPC and headless
 Pi's fully settled idle boundary, so retries, compaction, steering, and queued user work settle before the next automatic
 turn.
 
+Each interactive invocation runs in an Effect operation Scope owned by the current Pi Session. Interruption dismisses
+only the native UI wait; Goal's generation fence rejects stale menu outcomes, and Goal remains the sole authority for
+continuation and terminal state.
+
 Experimental multi-Goal mode keeps at most 64 waiting Goals so each persisted Session state remains bounded.
 
 Automatic continuation is unlimited for ordinary use by default. A non-disableable emergency backstop pauses only

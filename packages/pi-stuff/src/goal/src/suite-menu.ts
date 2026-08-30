@@ -8,6 +8,7 @@ import {
 	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { Effect } from "effect";
 import {
 	type CommandDialogComponent,
 	type CommandDialogViewContext,
@@ -26,6 +27,11 @@ type MenuActionResult<ScreenId extends string> =
 	| MenuTransition<ScreenId>
 	| { kind: "rejected"; error?: unknown }
 	| undefined;
+
+type MenuActionValue<ScreenId extends string> =
+	| MenuActionResult<ScreenId>
+	| Promise<MenuActionResult<ScreenId>>
+	| Effect.Effect<MenuActionResult<ScreenId>, unknown>;
 
 interface MenuActionContext<State> {
 	readonly ctx: ExtensionCommandContext;
@@ -82,10 +88,7 @@ type MenuScreen<ScreenId extends string, ActionId extends string> =
 	| SettingsScreen<ActionId>;
 
 export interface MenuDefinition<State, ScreenId extends string, ActionId extends string> {
-	readonly actions: Record<
-		ActionId,
-		(context: MenuActionContext<State>) => MenuActionResult<ScreenId> | Promise<MenuActionResult<ScreenId>>
-	>;
+	readonly actions: Record<ActionId, (context: MenuActionContext<State>) => MenuActionValue<ScreenId>>;
 	readonly screens: Record<ScreenId, (context: { readonly state: State }) => MenuScreen<ScreenId, ActionId>>;
 	readonly start: ScreenId;
 }
@@ -97,7 +100,6 @@ export interface RunMenuOptions<State> {
 	}) => State | Promise<State>;
 	readonly isCurrent?: () => boolean;
 	readonly pi?: ExtensionAPI | undefined;
-	readonly signal?: AbortSignal | undefined;
 }
 
 export type RunMenuResult =
@@ -126,87 +128,105 @@ export function defineMenu<
 	return definition;
 }
 
-export async function runMenu<State, ScreenId extends string, ActionId extends string>(
+export function runMenu<State, ScreenId extends string, ActionId extends string>(
 	ctx: ExtensionCommandContext,
 	definition: MenuDefinition<State, ScreenId, ActionId>,
 	options: RunMenuOptions<State>,
-): Promise<RunMenuResult> {
-	if (ctx.mode !== "tui" || !ctx.hasUI) return { kind: "unsupported", mode: ctx.mode };
-	const controller = new AbortController();
-	const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
-	const stack: ScreenId[] = [definition.start];
-	let closeReason: "back" | "close" = "close";
+): Effect.Effect<RunMenuResult> {
+	if (ctx.mode !== "tui" || !ctx.hasUI) return Effect.succeed({ kind: "unsupported", mode: ctx.mode });
+	return Effect.scoped(
+		Effect.gen(function* () {
+			const signal = yield* Effect.abortSignal;
+			const stack: ScreenId[] = [definition.start];
+			let closeReason: "back" | "close" = "close";
 
-	try {
-		while (stack.length > 0) {
-			if (!isCurrent(options, signal)) return { kind: "stale" };
-			const current = stack.at(-1);
-			if (current === undefined) break;
-			const state = await options.getState({ ctx, signal });
-			if (!isCurrent(options, signal)) return { kind: "stale" };
-			const factory = definition.screens[current];
-			if (!factory) throw new Error(`Menu requested unknown screen: ${current}`);
-			const screen = factory({ state });
-			const event = options.pi
-				? await showSuiteScreen(options.pi, ctx, screen, signal)
-				: await showLegacyScreen(ctx, screen, signal);
-			if (!isCurrent(options, signal)) return { kind: "stale" };
+			while (stack.length > 0) {
+				if (!isCurrent(options)) return { kind: "stale" } as const;
+				const current = stack.at(-1);
+				if (current === undefined) break;
+				const state = yield* menuPromise(() => options.getState({ ctx, signal }));
+				if (!isCurrent(options)) return { kind: "stale" } as const;
+				const factory = definition.screens[current];
+				if (!factory) return yield* Effect.fail(new Error(`Menu requested unknown screen: ${current}`));
+				const screen = yield* Effect.try({
+					try: () => factory({ state }),
+					catch: (error) => error,
+				});
+				const event = yield* menuPromise(() =>
+					options.pi ? showSuiteScreen(options.pi, ctx, screen, signal) : showLegacyScreen(ctx, screen, signal),
+				);
+				if (!isCurrent(options)) return { kind: "stale" } as const;
 
-			if (!event || event.kind === "cancel") {
-				const transition = screen.hint ?? "back";
-				if (transition === "close" || stack.length === 1) {
-					closeReason = transition;
-					break;
-				}
-				stack.pop();
-				continue;
-			}
-
-			if (screen.kind === "detail") continue;
-			if (screen.kind === "actions" && event.kind === "activate") {
-				const item = screen.items.find((candidate) => candidate.id === event.itemId);
-				if (!item || item.disabled) continue;
-				if ("close" in item) {
-					closeReason = "close";
-					break;
-				}
-				if ("to" in item && item.to !== undefined) {
-					stack.push(item.to);
+				if (!event || event.kind === "cancel") {
+					const transition = screen.hint ?? "back";
+					if (transition === "close" || stack.length === 1) {
+						closeReason = transition;
+						break;
+					}
+					stack.pop();
 					continue;
 				}
-				if ("action" in item && item.action !== undefined) {
-					const result = await definition.actions[item.action]({
-						ctx,
-						itemId: item.id,
-						signal,
-						state,
-					});
+
+				if (screen.kind === "detail") continue;
+				if (screen.kind === "actions" && event.kind === "activate") {
+					const item = screen.items.find((candidate) => candidate.id === event.itemId);
+					if (!item || item.disabled) continue;
+					if ("close" in item) {
+						closeReason = "close";
+						break;
+					}
+					if ("to" in item && item.to !== undefined) {
+						stack.push(item.to);
+						continue;
+					}
+					const action = "action" in item ? item.action : undefined;
+					if (action !== undefined) {
+						const result = yield* menuAction(() =>
+							definition.actions[action]({ ctx, itemId: item.id, signal, state }),
+						);
+						if (applyTransition(stack, result)) break;
+					}
+					continue;
+				}
+
+				if (screen.kind === "settings" && event.kind === "setting") {
+					const item = screen.items.find((candidate) => candidate.id === event.itemId);
+					if (!item || item.disabled) continue;
+					const result = yield* menuAction(() =>
+						definition.actions[item.action]({
+							ctx,
+							itemId: item.id,
+							signal,
+							state,
+							value: event.value,
+						}),
+					);
 					if (applyTransition(stack, result)) break;
 				}
-				continue;
 			}
+			return { kind: "closed", reason: closeReason } as const;
+		}).pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					if (!isCurrent(options)) return { kind: "stale" } as const;
+					ctx.ui.notify(`Goal dialog failed: ${formatError(error)}`, "error");
+					return { kind: "error", error } as const;
+				}),
+			),
+		),
+	);
+}
 
-			if (screen.kind === "settings" && event.kind === "setting") {
-				const item = screen.items.find((candidate) => candidate.id === event.itemId);
-				if (!item || item.disabled) continue;
-				const result = await definition.actions[item.action]({
-					ctx,
-					itemId: item.id,
-					signal,
-					state,
-					value: event.value,
-				});
-				if (applyTransition(stack, result)) break;
-			}
-		}
-		return { kind: "closed", reason: closeReason };
-	} catch (error) {
-		if (!isCurrent(options, signal)) return { kind: "stale" };
-		ctx.ui.notify(`Goal dialog failed: ${formatError(error)}`, "error");
-		return { kind: "error", error };
-	} finally {
-		controller.abort(new DOMException("Goal menu closed", "AbortError"));
-	}
+function menuPromise<Value>(operation: () => Value | PromiseLike<Value>): Effect.Effect<Value, unknown> {
+	return Effect.tryPromise({ try: () => Promise.resolve(operation()), catch: (error) => error });
+}
+
+function menuAction<ScreenId extends string>(
+	operation: () => MenuActionValue<ScreenId>,
+): Effect.Effect<MenuActionResult<ScreenId>, unknown> {
+	return Effect.try({ try: operation, catch: (error) => error }).pipe(
+		Effect.flatMap((value) => (Effect.isEffect(value) ? value : menuPromise(() => value))),
+	);
 }
 
 function applyTransition<ScreenId extends string>(stack: ScreenId[], result: MenuActionResult<ScreenId>): boolean {
@@ -221,8 +241,8 @@ function applyTransition<ScreenId extends string>(stack: ScreenId[], result: Men
 	return false;
 }
 
-function isCurrent<State>(options: RunMenuOptions<State>, signal: AbortSignal): boolean {
-	return !signal.aborted && (options.isCurrent?.() ?? true);
+function isCurrent<State>(options: RunMenuOptions<State>): boolean {
+	return options.isCurrent?.() ?? true;
 }
 
 async function showSuiteScreen<ScreenId extends string, ActionId extends string>(

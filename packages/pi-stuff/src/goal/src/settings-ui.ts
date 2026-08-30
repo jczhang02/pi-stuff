@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { checkpointGoalActiveTime } from "./accounting.js";
 import { abortCurrentTurn, EMERGENCY_AUTOMATIC_TURN_LIMIT, type GoalRuntime } from "./runtime.js";
 import { GOAL_SETTINGS_FILE, type GoalSettings, saveGoalSettings } from "./settings.js";
@@ -111,7 +112,7 @@ function goalSettingsActions(
 			previewGoalIds.set("noProgressTurns", runtime.activeGoal?.id ?? null);
 			return { kind: "to", screen: "no-progress" };
 		},
-		"choose-automatic": async ({ itemId }) =>
+		"choose-automatic": async ({ itemId, signal }) =>
 			applyLimitChoice(
 				runtime,
 				ctx,
@@ -120,8 +121,9 @@ function goalSettingsActions(
 				"automaticTurns",
 				itemId,
 				previewGoalIds.get("automaticTurns") ?? null,
+				signal,
 			),
-		"choose-no-progress": async ({ itemId }) =>
+		"choose-no-progress": async ({ itemId, signal }) =>
 			applyLimitChoice(
 				runtime,
 				ctx,
@@ -130,6 +132,7 @@ function goalSettingsActions(
 				"noProgressTurns",
 				itemId,
 				previewGoalIds.get("noProgressTurns") ?? null,
+				signal,
 			),
 		"set-visibility": async ({ value }) => {
 			const nextVisibility = value === "Always" ? "always" : "after-first-goal";
@@ -147,10 +150,10 @@ function goalSettingsActions(
 				return { kind: "rejected" };
 			}
 		},
-		"set-queue": async ({ value }) => {
+		"set-queue": async ({ signal, value }) => {
 			const enabled = value === "Experimental";
 			if (enabled === runtime.settings.experimental.goals) return { kind: "stay" };
-			const next = await nextQueueSettings(runtime, ctx, enabled);
+			const next = await nextQueueSettings(runtime, ctx, enabled, signal);
 			if (!next) return { kind: "rejected" };
 			const wasFrozen = runtime.queueFrozen;
 			try {
@@ -187,15 +190,16 @@ function goalSettingsActions(
 		},
 	};
 }
-export async function showGoalSettings(
+export function showGoalSettings(
 	runtime: GoalRuntime,
 	ctx: ExtensionCommandContext,
 	options: GoalSettingsUiOptions = {},
-) {
+): Effect.Effect<void> {
 	const settingsPath = options.settingsPath ?? join(getAgentDir(), GOAL_SETTINGS_FILE);
 	if (ctx.mode !== "tui") {
-		ctx.ui.notify(`Edit pi-goal settings manually: ${safeTerminalText(settingsPath)}`, "info");
-		return;
+		return Effect.sync(() =>
+			ctx.ui.notify(`Edit pi-goal settings manually: ${safeTerminalText(settingsPath)}`, "info"),
+		);
 	}
 	const generation = runtime.menuGeneration;
 	const invalid = runtime.settingsLoadIssue?.kind === "invalid";
@@ -205,12 +209,11 @@ export async function showGoalSettings(
 		screens: goalSettingsScreens(runtime, settingsPath),
 		actions: goalSettingsActions(runtime, ctx, options, settingsPath, previewGoalIds),
 	});
-	await runMenu(ctx, menu, {
+	return runMenu(ctx, menu, {
 		getState: () => undefined,
 		pi: runtime.pi,
-		signal: runtime.menuController.signal,
-		isCurrent: () => generation === runtime.menuGeneration && !runtime.menuController.signal.aborted,
-	});
+		isCurrent: () => generation === runtime.menuGeneration,
+	}).pipe(Effect.asVoid);
 }
 
 function limitChoiceScreen(runtime: GoalRuntime, field: LimitField, action: "choose-automatic" | "choose-no-progress") {
@@ -284,6 +287,7 @@ async function applyLimitChoice(
 	field: LimitField,
 	itemId: string,
 	activeGoalId: string | null,
+	signal: AbortSignal,
 ) {
 	if (!isLimitSelection(itemId)) return { kind: "rejected" as const };
 	if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
@@ -291,13 +295,13 @@ async function applyLimitChoice(
 		return { kind: "rejected" as const };
 	}
 	const previous = runtime.settings.continuationLimits[field];
-	const limit = await resolveLimitSelection(field, itemId, previous, ctx);
+	const limit = await resolveLimitSelection(field, itemId, previous, ctx, signal);
 	if (limit === undefined || limit === previous) return { kind: "back" as const };
 	if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
 		ctx.ui.notify("The active goal changed while editing the safety setting. No settings were changed.", "warning");
 		return { kind: "rejected" as const };
 	}
-	const confirmation = await confirmLowerActiveLimit(runtime, ctx, field, limit);
+	const confirmation = await confirmLowerActiveLimit(runtime, ctx, field, limit, signal);
 	if (!confirmation.apply) return { kind: "rejected" as const };
 	if (confirmation.goalId !== undefined && runtime.activeGoal?.id !== confirmation.goalId) {
 		ctx.ui.notify("The active goal changed while confirming the limit. No settings were changed.", "warning");
@@ -391,6 +395,7 @@ async function resolveLimitSelection(
 	selection: LimitSelection,
 	previous: number | null,
 	ctx: ExtensionCommandContext,
+	signal: AbortSignal,
 ): Promise<number | null | undefined> {
 	if (selection === "unlimited" || selection === "off") return null;
 	while (true) {
@@ -399,6 +404,7 @@ async function resolveLimitSelection(
 				? "Maximum automatic responses (whole number greater than 0)"
 				: "Repeated-run threshold (whole number greater than 0)",
 			previous === null ? "Positive whole number" : String(previous),
+			{ signal },
 		);
 		if (raw === undefined) return undefined;
 		const parsed = parseGoalLimit(raw);
@@ -410,12 +416,18 @@ async function resolveLimitSelection(
 	}
 }
 
-async function nextQueueSettings(runtime: GoalRuntime, ctx: ExtensionCommandContext, enabled: boolean) {
+async function nextQueueSettings(
+	runtime: GoalRuntime,
+	ctx: ExtensionCommandContext,
+	enabled: boolean,
+	signal: AbortSignal,
+) {
 	if (runtime.settings.experimental.goals === enabled) return undefined;
 	if (enabled && !runtime.settings.experimental.goals) {
 		const confirmed = await ctx.ui.confirm(
 			"Enable experimental goal queue?",
 			"Queue behavior and persisted state may change between releases. Existing single-goal behavior remains available.",
+			{ signal },
 		);
 		if (!confirmed) return undefined;
 	}
@@ -425,6 +437,7 @@ async function nextQueueSettings(runtime: GoalRuntime, ctx: ExtensionCommandCont
 		!(await ctx.ui.confirm(
 			"Freeze ordered goal queue?",
 			`Disabling the experiment preserves ${retainedGoalCount(runtime)} goal(s) but freezes automatic work until the setting is re-enabled. No goal data will be deleted.`,
+			{ signal },
 		))
 	) {
 		return undefined;
@@ -509,6 +522,7 @@ async function confirmLowerActiveLimit(
 	ctx: ExtensionCommandContext,
 	field: LimitField,
 	limit: number | null,
+	signal: AbortSignal,
 ) {
 	const goal = runtime.activeGoal;
 	if (goal?.status !== "active" || limit === null) return { apply: true };
@@ -518,6 +532,7 @@ async function confirmLowerActiveLimit(
 		apply: await ctx.ui.confirm(
 			"Apply limit and pause now?",
 			`The active goal has already used ${used}. Setting this limit to ${limit} will pause it immediately without deleting progress.`,
+			{ signal },
 		),
 		goalId: goal.id,
 	};

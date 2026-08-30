@@ -37,6 +37,36 @@ test("run event listener failures do not interrupt persistence or sibling listen
 	assert.equal(lastPersistedGoal(mock)?.status, "active");
 });
 
+test("caller cancellation interrupts the owned Goal menu operation without starting a goal", async () => {
+	const mock = createMockPi({ activeTools: ["read", "bash"] });
+	registerGoal(mock);
+	const caller = new AbortController();
+	const opened = Promise.withResolvers<void>();
+	const context = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		signal: caller.signal,
+		select: async () => {
+			opened.resolve();
+			await new Promise<void>((resolve) => caller.signal.addEventListener("abort", () => resolve(), { once: true }));
+			return "Start a goal…";
+		},
+	});
+	await mock.callEvent("session_start", {}, context.ctx);
+
+	const running = mock.commands.get("goal")?.handler("", context.ctx);
+	await opened.promise;
+	caller.abort(new DOMException("caller cancelled", "AbortError"));
+	await running;
+
+	assert.equal(lastPersistedGoal(mock), undefined);
+	assert.equal(mock.sentUserMessages.length, 0);
+	assert.equal(
+		context.notifications.some((notice) => /Goal dialog failed/.test(notice.message)),
+		false,
+	);
+});
+
 test("disabling RPC rejects new starts while the accepted run can drain", async () => {
 	const settingsPath = join(SETTINGS_DIRECTORY, "draining.json");
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always","rpc":{"enabled":true}}}\n');
@@ -141,8 +171,6 @@ test("session replacement invalidates old run ownership and terminal details", a
 		() => undefined,
 		firstContext.ctx,
 	);
-	mock.emitHostEvent("session_shutdown", {}, firstContext.ctx);
-
 	const restoredGoal = {
 		id: "restored-manual-goal",
 		text: "restored task",
@@ -158,7 +186,7 @@ test("session replacement invalidates old run ownership and terminal details", a
 	const secondContext = createMockContext({
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
-	mock.callEvent("session_start", {}, secondContext.ctx);
+	await mock.callEvent("session_start", {}, secondContext.ctx);
 	const staleEvents = observeRun(mock, "old-run");
 	cancelRun(mock, "old-run");
 	await flush();

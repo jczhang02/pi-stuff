@@ -156,7 +156,6 @@ export class GoalRuntime extends GoalToolPolicy {
 	guardAbortGoalId: string | undefined;
 	staleGoalToolCallsBlocked = false;
 	menuGeneration = 0;
-	menuController = new AbortController();
 
 	readonly prompts: GoalPromptOwnership;
 
@@ -193,15 +192,8 @@ export class GoalRuntime extends GoalToolPolicy {
 		}
 	}
 
-	replaceMenuSession() {
+	invalidateMenuSession() {
 		this.menuGeneration += 1;
-		this.menuController.abort(new DOMException("Goal session replaced", "AbortError"));
-		this.menuController = new AbortController();
-	}
-
-	closeMenuSession() {
-		this.menuGeneration += 1;
-		this.menuController.abort(new DOMException("Goal session shut down", "AbortError"));
 	}
 
 	canRecordGoalUsage(goalId?: string) {

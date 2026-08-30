@@ -2,13 +2,16 @@ import type {
 	AgentEndEvent,
 	ContextEvent,
 	ExtensionAPI,
+	ExtensionCommandContext,
 	ExtensionContext,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
+import { Cause, type Effect, Exit } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { whenSuiteSessionReady } from "../../conversation-ui/index.js";
+import { type EffectFoundation, installEffectFoundation } from "../../shared/effect-foundation.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { currentTokenTotal } from "./accounting.js";
 import { GoalCommandController, registerGoalCommand } from "./commands.js";
@@ -95,7 +98,7 @@ function clearGoalSessionWork(runtime: GoalRuntime): void {
 
 function resetGoalSession(lifecycle: GoalLifecycle): void {
 	const { runtime } = lifecycle;
-	runtime.replaceMenuSession();
+	runtime.invalidateMenuSession();
 	runtime.clearCompletionStatusTimer();
 	clearGoalSessionWork(runtime);
 	runtime.clearTerminalDetails();
@@ -252,7 +255,7 @@ function shutdownGoalSession(lifecycle: GoalLifecycle, ctx: ExtensionContext): v
 	lifecycle.turnActive = false;
 	compaction.clear();
 	runController.unbindSession();
-	runtime.closeMenuSession();
+	runtime.invalidateMenuSession();
 	if (runtime.activeGoal) {
 		if (!runtime.queueFrozen && runtime.activeGoal.status === "active") {
 			runtime.recordGoalUsage(runtime.activeGoal, ctx, false);
@@ -659,9 +662,26 @@ function registerGoalAgentHandlers(lifecycle: GoalLifecycle): void {
 	});
 }
 
+async function runGoalMenuOperation(
+	foundation: EffectFoundation,
+	ctx: ExtensionCommandContext,
+	program: Effect.Effect<void>,
+): Promise<void> {
+	const session = foundation.sessionFor(ctx.sessionManager) ?? foundation.currentSession();
+	if (!session || !foundation.isCurrent(session)) {
+		throw new Error("Goal menu is unavailable before Session start.");
+	}
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program, { signal: ctx.signal });
+	await foundation.close(operation, exit);
+	if (ctx.signal?.aborted || (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause))) return;
+	if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+}
+
 // Cohesion justification: command, tool, continuation, and lifecycle handlers coordinate one
 // guarded Goal state machine whose ordering and stale-turn invariants share the same closures.
 function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
+	const effects = installEffectFoundation(pi);
 	const runtime = new GoalRuntime(pi);
 	const commands = new GoalCommandController(runtime);
 	const compaction = new GoalCompactionCoordinator(runtime, commands);
@@ -687,6 +707,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		onProjectionNeeded: () => {
 			lifecycle.goalProjectionNeeded = true;
 		},
+		runMenu: (ctx, program) => runGoalMenuOperation(effects, ctx, program),
 		settingsPath: options.settingsPath,
 	});
 	registerGoalSessionHandlers(lifecycle);

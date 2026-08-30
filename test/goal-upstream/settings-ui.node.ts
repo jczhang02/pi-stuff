@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { GoalCommandController } from "../../packages/pi-stuff/src/goal/src/commands.js";
 import { createGoal, GoalRuntime } from "../../packages/pi-stuff/src/goal/src/runtime.js";
 import { DEFAULT_GOAL_SETTINGS, type GoalSettings } from "../../packages/pi-stuff/src/goal/src/settings.js";
@@ -8,12 +9,16 @@ import {
 	applyGoalSettings,
 	formatGoalLimit,
 	parseGoalLimit,
-	showGoalSettings,
+	showGoalSettings as showGoalSettingsEffect,
 } from "../../packages/pi-stuff/src/goal/src/settings-ui.js";
 import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createMockContext, createMockPi } from "./support.js";
 
 initTheme("dark", false);
+
+function showGoalSettings(...args: Parameters<typeof showGoalSettingsEffect>): Promise<void> {
+	return Effect.runPromise(showGoalSettingsEffect(...args));
+}
 
 function runtime() {
 	const mock = createMockPi({ activeTools: ["read"] });
