@@ -3,7 +3,19 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Cause, Effect, Exit } from "effect";
+import { CodeModeEffectOwner } from "../../packages/pi-stuff/src/code-mode/host/effect-owner.js";
 import { CodeModeHostClient } from "../../packages/pi-stuff/src/code-mode/host/host-client.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
+
+async function hostClient(path: string, startupTimeoutMs?: number): Promise<CodeModeHostClient> {
+	const foundation = new EffectFoundation();
+	const session = await foundation.startSession();
+	return new CodeModeHostClient(
+		path,
+		new CodeModeEffectOwner(foundation, foundation.forkCapability(session)),
+		startupTimeoutMs,
+	);
+}
 
 async function hangingHost(): Promise<{ readonly directory: string; readonly path: string }> {
 	const directory = await mkdtemp(join(tmpdir(), "pi-stuff-code-mode-host-client-"));
@@ -89,7 +101,7 @@ async function scriptedHost(
 
 test("a host that never handshakes is bounded and torn down", async () => {
 	const fixture = await hangingHost();
-	const client = new CodeModeHostClient(fixture.path, 30);
+	const client = await hostClient(fixture.path, 30);
 	try {
 		await expect(Effect.runPromise(client.start())).rejects.toThrow("startup timed out after 30 ms");
 	} finally {
@@ -100,7 +112,7 @@ test("a host that never handshakes is bounded and torn down", async () => {
 
 test("host startup follows the outer Tool cancellation signal", async () => {
 	const fixture = await hangingHost();
-	const client = new CodeModeHostClient(fixture.path, 5_000);
+	const client = await hostClient(fixture.path, 5_000);
 	const controller = new AbortController();
 	setTimeout(() => controller.abort(), 20);
 	try {
@@ -114,7 +126,7 @@ test("host startup follows the outer Tool cancellation signal", async () => {
 
 test("a cell created after cancellation is terminated when its response arrives", async () => {
 	const fixture = await scriptedHost("late-cell");
-	const client = new CodeModeHostClient(fixture.path);
+	const client = await hostClient(fixture.path);
 	const controller = new AbortController();
 	try {
 		await Effect.runPromise(client.start());
@@ -144,7 +156,7 @@ test("a cell created after cancellation is terminated when its response arrives"
 
 test("lazy startup accepts fragmented and coalesced protocol frames", async () => {
 	const fixture = await scriptedHost("stream");
-	const client = new CodeModeHostClient(fixture.path);
+	const client = await hostClient(fixture.path);
 	try {
 		const response = await Effect.runPromise(
 			client.execute({ context: { cwd: "/project" }, source: "return 1", tools: [] }),
@@ -162,7 +174,7 @@ test("lazy startup accepts fragmented and coalesced protocol frames", async () =
 
 test("a malformed Host frame fails pending work and permits startup retry", async () => {
 	const fixture = await scriptedHost("malformed");
-	const client = new CodeModeHostClient(fixture.path);
+	const client = await hostClient(fixture.path);
 	try {
 		await expect(
 			Effect.runPromise(client.execute({ context: { cwd: "/project" }, source: "return 1", tools: [] })),
@@ -176,7 +188,7 @@ test("a malformed Host frame fails pending work and permits startup retry", asyn
 
 test("Host loss rejects a pending request with the typed lifecycle error", async () => {
 	const fixture = await scriptedHost("lost");
-	const client = new CodeModeHostClient(fixture.path);
+	const client = await hostClient(fixture.path);
 	try {
 		await expect(
 			Effect.runPromise(client.execute({ context: { cwd: "/project" }, source: "return 1", tools: [] })),
@@ -189,7 +201,7 @@ test("Host loss rejects a pending request with the typed lifecycle error", async
 
 test("shutdown remains bounded when the Host ignores it", async () => {
 	const fixture = await scriptedHost("ignore-shutdown");
-	const client = new CodeModeHostClient(fixture.path);
+	const client = await hostClient(fixture.path);
 	try {
 		await Effect.runPromise(client.start());
 		const startedAt = performance.now();

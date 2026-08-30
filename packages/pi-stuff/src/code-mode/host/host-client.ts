@@ -10,6 +10,7 @@ import type {
 	SuiteSandboxTool,
 } from "../protocol.js";
 import { CodeModeDelegateRuntime } from "./delegate-runtime.js";
+import type { CodeModeEffectOwner } from "./effect-owner.js";
 import {
 	DEFAULT_EXEC_YIELD_MS,
 	type DelegateResponseMessage,
@@ -63,7 +64,7 @@ export class CodeModeHostClient {
 	private buffer = Buffer.alloc(0);
 	private readonly cancelled = new Set<number>();
 	private child: ChildProcessWithoutNullStreams | undefined;
-	private readonly delegateRuntime = new CodeModeDelegateRuntime((message) => this.send(message));
+	private readonly delegateRuntime: CodeModeDelegateRuntime;
 	private readonly initial = new Map<number, Pending>();
 	private readonly pending = new Map<number, Pending>();
 	private queuedWriteBytes = 0;
@@ -73,8 +74,9 @@ export class CodeModeHostClient {
 	private stderr = "";
 	private readonly startupTimeoutMs: number;
 
-	constructor(binary: string, startupTimeoutMs = STARTUP_TIMEOUT_MS) {
+	constructor(binary: string, effects: CodeModeEffectOwner, startupTimeoutMs = STARTUP_TIMEOUT_MS) {
 		this.binary = binary;
+		this.delegateRuntime = new CodeModeDelegateRuntime((message) => this.send(message), effects);
 		this.startupTimeoutMs = startupTimeoutMs;
 	}
 

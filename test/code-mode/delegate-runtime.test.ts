@@ -2,12 +2,22 @@ import { expect, test } from "bun:test";
 import { Type } from "typebox";
 import { isCodemodeObject, requireCodemodeValue } from "../../packages/pi-stuff/src/code-mode/cloudflare/codec.js";
 import { CodeModeDelegateRuntime } from "../../packages/pi-stuff/src/code-mode/host/delegate-runtime.js";
+import { CodeModeEffectOwner } from "../../packages/pi-stuff/src/code-mode/host/effect-owner.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
+
+async function delegateRuntime(
+	send: ConstructorParameters<typeof CodeModeDelegateRuntime>[0],
+): Promise<CodeModeDelegateRuntime> {
+	const foundation = new EffectFoundation();
+	const session = await foundation.startSession();
+	return new CodeModeDelegateRuntime(send, new CodeModeEffectOwner(foundation, foundation.forkCapability(session)));
+}
 
 test("delegate transport preserves binary and bigint values across the JSON host boundary", async () => {
 	const responses: unknown[] = [];
 	const updates: unknown[] = [];
 	let received: unknown;
-	const runtime = new CodeModeDelegateRuntime((message) => {
+	const runtime = await delegateRuntime((message) => {
 		JSON.stringify(message);
 		responses.push(message);
 	});
@@ -79,7 +89,7 @@ test("delegate transport preserves binary and bigint values across the JSON host
 test("non-Error thrown values still settle the trace and V8 request", async () => {
 	const responses: unknown[] = [];
 	const updates: unknown[] = [];
-	const runtime = new CodeModeDelegateRuntime((message) => {
+	const runtime = await delegateRuntime((message) => {
 		JSON.stringify(message);
 		responses.push(message);
 	});
@@ -124,7 +134,7 @@ test("non-Error thrown values still settle the trace and V8 request", async () =
 
 test("malformed transport input returns an error response", async () => {
 	const responses: unknown[] = [];
-	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	const runtime = await delegateRuntime((message) => responses.push(message));
 	runtime.bindCell(
 		"cell-malformed-input",
 		{ cwd: "/project" },
@@ -169,7 +179,7 @@ test("a durable approval decision pauses before the nested Tool can execute", as
 	const responses: unknown[] = [];
 	const updates: unknown[] = [];
 	let effects = 0;
-	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	const runtime = await delegateRuntime((message) => responses.push(message));
 	runtime.bindCell(
 		"cell-approval",
 		{
@@ -224,7 +234,7 @@ test("a durable approval decision pauses before the nested Tool can execute", as
 test("a failed durable success record is settled as an error instead of staying in flight", async () => {
 	const responses: unknown[] = [];
 	const settlements: string[] = [];
-	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	const runtime = await delegateRuntime((message) => responses.push(message));
 	runtime.bindCell(
 		"cell-ledger-failure",
 		{
@@ -279,7 +289,7 @@ test("an unserializable Tool result settles as an error before durable success",
 	const settlements: string[] = [];
 	const cyclic: unknown[] = [];
 	cyclic.push(cyclic);
-	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	const runtime = await delegateRuntime((message) => responses.push(message));
 	runtime.bindCell(
 		"cell-unserializable-result",
 		{
@@ -334,13 +344,87 @@ test("an unserializable Tool result settles as an error before durable success",
 	runtime.clear();
 });
 
+test("a trace setup failure settles the durable Tool plan before responding", async () => {
+	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
+	const settlements: string[] = [];
+	let invocations = 0;
+	const runtime = await delegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-duplicate-trace",
+		{
+			beginToolCall: () => ({
+				attempt: 0,
+				executionId: "cm-duplicate-trace",
+				id: "cm-duplicate-trace:0",
+				sequence: 0,
+			}),
+			completeToolCall: (_plan, settlement) => settlements.push(settlement.status),
+			cwd: "/project",
+		},
+		new Map([
+			[
+				"fixture",
+				{
+					description: "duplicate trace fixture",
+					inputSchema: Type.Object({}),
+					invoke: async () => {
+						invocations += 1;
+						return true;
+					},
+					name: "fixture",
+					usage: "tools.fixture({})",
+				},
+			],
+		]),
+	);
+	for (const id of [13, 14]) {
+		runtime.handleRequest({
+			id,
+			request: {
+				invocation: {
+					cell_id: "cell-duplicate-trace",
+					input: {},
+					runtime_tool_call_id: `nested-${String(id)}`,
+					tool_name: { name: "fixture" },
+				},
+				type: "tool/invoke",
+			},
+		});
+	}
+	for (let attempt = 0; attempt < 20 && responses.length < 2; attempt += 1) await Bun.sleep(1);
+
+	expect(invocations).toBe(1);
+	expect(settlements.filter((status) => status === "error")).toHaveLength(1);
+	expect(settlements.filter((status) => status === "success")).toHaveLength(1);
+	expect(responses.find((response) => response.id === 14)?.result).toEqual({
+		message: "Duplicate Code Mode nested Tool call ID: cm-duplicate-trace:0",
+		status: "error",
+	});
+	runtime.clear();
+});
+
 test("hidden nested Tools count against the per-execution safety bound", async () => {
 	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
 	let invocations = 0;
-	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	let sequence = 0;
+	const settlements: string[] = [];
+	const runtime = await delegateRuntime((message) => responses.push(message));
 	runtime.bindCell(
 		"cell-hidden-limit",
-		{ cwd: "/project" },
+		{
+			beginToolCall: () => {
+				const current = sequence;
+				sequence += 1;
+				return {
+					attempt: 0,
+					executionId: "cm-hidden-limit",
+					id: `cm-hidden-limit:${String(current)}`,
+					sequence: current,
+				};
+			},
+			completeToolCall: (_plan, settlement) => settlements.push(settlement.status),
+			cwd: "/project",
+		},
 		new Map([
 			[
 				"hidden",
@@ -376,6 +460,8 @@ test("hidden nested Tools count against the per-execution safety bound", async (
 
 	expect(invocations).toBe(768);
 	expect(responses).toHaveLength(769);
+	expect(settlements.filter((status) => status === "success")).toHaveLength(768);
+	expect(settlements.filter((status) => status === "error")).toHaveLength(1);
 	expect(responses.find((response) => response.id === 769)?.result).toEqual({
 		message: "Code Mode supports at most 768 nested Tool calls per execution",
 		status: "error",

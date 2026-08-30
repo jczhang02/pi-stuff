@@ -9,6 +9,7 @@ import type {
 	ExtensionEvent,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import {
@@ -70,8 +71,9 @@ function loadExtension(surface: SuiteToolSurfaceController) {
 		sendMessage: () => undefined,
 	};
 	const { api } = createSuiteToolRegistrationTracker({ ...hostApi, getAllTools: () => [] });
-	piStuffCodeMode(api, { effects: new EffectFoundation(), registry, surface });
-	return { api, commands, events, tools };
+	const effects = new EffectFoundation();
+	piStuffCodeMode(api, { effects, registry, surface });
+	return { api, commands, effects, events, tools };
 }
 
 function context(cwd: string, trusted = true): ExtensionCommandContext & { notifications: string[] } {
@@ -85,8 +87,9 @@ function context(cwd: string, trusted = true): ExtensionCommandContext & { notif
 	return Object.assign(base, { notifications });
 }
 
-async function sessionStart(events: Map<string, EventHandler[]>, ctx: ExtensionContext): Promise<void> {
-	for (const handler of events.get("session_start") ?? []) {
+async function sessionStart(loaded: ReturnType<typeof loadExtension>, ctx: ExtensionContext): Promise<void> {
+	await loaded.effects.startSession(ctx.sessionManager);
+	for (const handler of loaded.events.get("session_start") ?? []) {
 		await handler({ reason: "startup", type: "session_start" }, ctx);
 	}
 }
@@ -401,7 +404,7 @@ test("Code Mode preserves failed reloads and rolls back failed setting writes", 
 		const first = await project();
 		const second = await project();
 		process.env["PI_CODING_AGENT_DIR"] = await project();
-		await writeCodeModeProjectEnabled(first, true);
+		await Effect.runPromise(writeCodeModeProjectEnabled(first, true));
 		let enabled = false;
 		const surface: SuiteToolSurfaceController = {
 			disableEnvelope: () => {
@@ -413,26 +416,29 @@ test("Code Mode preserves failed reloads and rolls back failed setting writes", 
 			isEnvelopeEnabled: () => enabled,
 		};
 		const loaded = loadExtension(surface);
-		await sessionStart(loaded.events, context(first));
+		await sessionStart(loaded, context(first));
 		expect(enabled).toBe(true);
 		const command = loaded.commands.get("codemode");
 		if (!command) throw new Error("missing /codemode command");
 		const agentDir = process.env["PI_CODING_AGENT_DIR"];
 		if (!agentDir) throw new Error("missing Agent directory");
-		await writeCodeModeProjectEnabled(first, false);
+		await Effect.runPromise(writeCodeModeProjectEnabled(first, false));
 		await writeFile(join(agentDir, "pi-stuff.json"), '{"codeMode":{"enabled":"invalid"}}\n');
-		await expect(sessionStart(loaded.events, context(first))).rejects.toThrow('"enabled" must be a boolean');
+		await expect(sessionStart(loaded, context(first))).rejects.toThrow('"enabled" must be a boolean');
 		await writeFile(join(agentDir, "pi-stuff.json"), "{}\n");
 		await command.handler("global on", context(first));
 		expect(enabled).toBe(true);
-		await Promise.all([writeCodeModeProjectEnabled(first, true), writeFile(join(agentDir, "pi-stuff.json"), "{}\n")]);
-		await sessionStart(loaded.events, context(second));
+		await Promise.all([
+			Effect.runPromise(writeCodeModeProjectEnabled(first, true)),
+			writeFile(join(agentDir, "pi-stuff.json"), "{}\n"),
+		]);
+		await sessionStart(loaded, context(second));
 		expect(enabled).toBe(false);
 
 		const secondContext = context(second);
 		await command.handler("on", secondContext);
 		expect(enabled).toBe(true);
-		expect(await readCodeModeProjectEnabled(second)).toBe(true);
+		expect(await Effect.runPromise(readCodeModeProjectEnabled(second))).toBe(true);
 
 		let reloaded = false;
 		const next = loadExtension({
@@ -444,7 +450,7 @@ test("Code Mode preserves failed reloads and rolls back failed setting writes", 
 			},
 			isEnvelopeEnabled: () => reloaded,
 		});
-		await sessionStart(next.events, context(second));
+		await sessionStart(next, context(second));
 		expect(reloaded).toBe(true);
 
 		process.env["PI_STUFF_CODE_MODE_FROZEN"] = "off";
@@ -458,7 +464,7 @@ test("Code Mode preserves failed reloads and rolls back failed setting writes", 
 			},
 			isEnvelopeEnabled: () => childEnabled,
 		});
-		await sessionStart(child.events, context(second));
+		await sessionStart(child, context(second));
 		expect(childEnabled).toBe(false);
 		delete process.env["PI_STUFF_CODE_MODE_FROZEN"];
 
@@ -468,7 +474,7 @@ test("Code Mode preserves failed reloads and rolls back failed setting writes", 
 		expect(enabled).toBe(true);
 		expect(secondContext.notifications.at(-1)).toContain("Unable to save Code Mode project settings");
 
-		await sessionStart(loaded.events, context(first, false));
+		await sessionStart(loaded, context(first, false));
 		expect(enabled).toBe(false);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];

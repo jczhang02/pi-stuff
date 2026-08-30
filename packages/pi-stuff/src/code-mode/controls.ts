@@ -4,6 +4,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit, Semaphore } from "effect";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
 import type { EffectFoundation } from "../shared/effect-foundation.js";
@@ -128,7 +129,7 @@ export class CodeModeControls {
 	private globalEnabled: boolean | undefined;
 	private projectBinding: string | undefined;
 	private projectEnabled: boolean | undefined;
-	private settingsOperation = Promise.resolve();
+	private readonly settingsGate = Semaphore.makeUnsafe(1);
 
 	constructor(
 		pi: CodeModeHost,
@@ -168,7 +169,7 @@ export class CodeModeControls {
 	}
 
 	bindProject(context: ExtensionContext, force = false): Promise<void> {
-		return this.serialize(() => this.loadProject(context, force));
+		return this.runSettings(this.settingsGate.withPermit(this.loadProject(context, force)));
 	}
 
 	private applySettings(): void {
@@ -186,58 +187,76 @@ export class CodeModeControls {
 		this.apply();
 	}
 
-	private serialize<Value>(operation: () => Promise<Value>): Promise<Value> {
-		const result = this.settingsOperation.then(operation, operation);
-		this.settingsOperation = result.then(
-			() => undefined,
-			() => undefined,
-		);
-		return result;
-	}
-
-	private async loadProject(context: ExtensionContext, force: boolean): Promise<void> {
+	private loadProject(context: ExtensionContext, force: boolean): Effect.Effect<void, Error> {
 		const key = `${context.isProjectTrusted() ? "trusted" : "untrusted"}\0${context.cwd}`;
-		if (!force && this.projectBinding === key) return;
+		if (!force && this.projectBinding === key) return Effect.void;
 		const previousBinding = this.projectBinding;
-		try {
-			const projectEnabled =
-				this.frozenEnabled === undefined && context.isProjectTrusted()
-					? await readCodeModeProjectEnabled(context.cwd)
-					: undefined;
-			const globalEnabled = this.frozenEnabled === undefined ? await readCodeModeGlobalEnabled() : undefined;
-			this.projectBinding = key;
-			this.projectEnabled = projectEnabled;
-			this.globalEnabled = globalEnabled;
-			this.applySettings();
-		} catch (error) {
-			if (previousBinding !== key) {
-				this.projectBinding = undefined;
-				this.projectEnabled = undefined;
-				this.globalEnabled = undefined;
+		return Effect.catch(
+			Effect.gen({ self: this }, function* () {
+				const projectEnabled =
+					this.frozenEnabled === undefined && context.isProjectTrusted()
+						? yield* readCodeModeProjectEnabled(context.cwd)
+						: undefined;
+				const globalEnabled = this.frozenEnabled === undefined ? yield* readCodeModeGlobalEnabled() : undefined;
+				this.projectBinding = key;
+				this.projectEnabled = projectEnabled;
+				this.globalEnabled = globalEnabled;
 				this.applySettings();
-			}
-			throw error;
-		}
+			}),
+			(error) => {
+				if (previousBinding !== key) {
+					this.projectBinding = undefined;
+					this.projectEnabled = undefined;
+					this.globalEnabled = undefined;
+					this.applySettings();
+				}
+				return Effect.fail(error);
+			},
+		);
 	}
 
 	private persistProject(context: ExtensionContext, value: boolean | undefined): Promise<void> {
-		return this.serialize(async () => {
-			if (!context.isProjectTrusted())
-				throw new Error("Code Mode cannot persist settings for an untrusted project.");
-			await this.loadProject(context, false);
-			await writeCodeModeProjectEnabled(context.cwd, value);
-			this.projectEnabled = value;
-			this.applySettings();
-		});
+		return this.runSettings(
+			this.settingsGate.withPermit(
+				Effect.gen({ self: this }, function* () {
+					if (!context.isProjectTrusted()) {
+						return yield* Effect.fail(new Error("Code Mode cannot persist settings for an untrusted project."));
+					}
+					yield* this.loadProject(context, false);
+					yield* writeCodeModeProjectEnabled(context.cwd, value);
+					this.projectEnabled = value;
+					this.applySettings();
+				}),
+			),
+		);
 	}
 
 	private persistGlobal(context: ExtensionContext, value: boolean): Promise<void> {
-		return this.serialize(async () => {
-			await this.loadProject(context, false);
-			await writeCodeModeGlobalEnabled(value);
-			this.globalEnabled = value;
-			this.applySettings();
-		});
+		return this.runSettings(
+			this.settingsGate.withPermit(
+				Effect.gen({ self: this }, function* () {
+					yield* this.loadProject(context, false);
+					yield* writeCodeModeGlobalEnabled(value);
+					this.globalEnabled = value;
+					this.applySettings();
+				}),
+			),
+		);
+	}
+
+	private async runSettings<Value>(program: Effect.Effect<Value, Error>): Promise<Value> {
+		const foundation = this.options.effects;
+		const session = foundation.currentSession();
+		if (!session) throw new Error("Code Mode settings are unavailable before Session start.");
+		const operation = foundation.forkOperation(session);
+		const exit = await foundation.run(operation, program);
+		await foundation.close(operation, exit);
+		if (Exit.isFailure(exit)) {
+			if (Cause.hasInterrupts(exit.cause)) throw new Error("Code Mode settings operation was cancelled.");
+			throw Cause.squash(exit.cause);
+		}
+		if (!foundation.isCurrent(session)) throw new Error("Code Mode settings operation was cancelled.");
+		return exit.value;
 	}
 
 	private async showDialog(context: ExtensionCommandContext): Promise<void> {

@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { Effect, type Scope } from "effect";
 import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
@@ -10,6 +11,7 @@ import type {
 	RuntimeToolTrace,
 	SuiteSandboxTool,
 } from "../protocol.js";
+import type { CodeModeEffectOwner, CodeModeEffectTask } from "./effect-owner.js";
 import type { DelegateRequestMessage, DelegateResponseMessage, HostResult } from "./host-protocol.js";
 import { CodeModeTraceStore } from "./trace-store.js";
 
@@ -17,6 +19,23 @@ const MAX_NOTIFICATION_CHARS = 16_384;
 const MAX_NOTIFICATIONS_PER_CELL = 100;
 
 type SendMessage = (message: DelegateResponseMessage) => void;
+
+interface PreparedDelegateToolCall {
+	readonly cellId: string;
+	readonly context: ExecutorContext;
+	readonly hidden: boolean;
+	readonly input: CodemodeValue;
+	readonly messageId: number;
+	readonly nestedContext: ExecutorContext;
+	readonly plan: RuntimeToolCallPlan | undefined;
+	readonly tool: SuiteSandboxTool;
+	readonly trace: RuntimeToolTrace;
+}
+
+interface PreparedDelegateRequest {
+	cancel(): void;
+	readonly program: Effect.Effect<void, never, Scope.Scope>;
+}
 
 function resultFromValue(value: CodemodeValue): AgentToolResult<unknown> {
 	if (isRuntimeObject(value) && value !== null && "content" in value && Array.isArray(value["content"])) {
@@ -57,59 +76,93 @@ function encodeTransportValue(value: CodemodeValue): JsonValue | undefined {
 
 export class CodeModeDelegateRuntime {
 	private readonly cellContexts = new Map<string, ExecutorContext>();
+	private readonly cellScopes = new Map<string, CodeModeEffectTask>();
 	private readonly cellTools = new Map<string, Map<string, SuiteSandboxTool>>();
-	private readonly cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	private readonly controllers = new Map<number, AbortController>();
+	private readonly cleanupTasks = new Map<string, CodeModeEffectTask>();
+	private readonly effects: CodeModeEffectOwner;
 	private readonly notifications = new Map<string, string[]>();
+	private readonly requests = new Map<number, CodeModeEffectTask>();
 	private readonly send: SendMessage;
 	private readonly traces = new CodeModeTraceStore();
 
-	constructor(send: SendMessage) {
+	constructor(send: SendMessage, effects: CodeModeEffectOwner) {
+		this.effects = effects;
 		this.send = send;
 	}
 
 	bindCell(cellId: string, context: ExecutorContext, tools?: Map<string, SuiteSandboxTool>): void {
+		this.ensureCellScope(cellId);
 		this.cellContexts.set(cellId, context);
 		if (tools) this.cellTools.set(cellId, tools);
 	}
 
 	updateCellContext(cellId: string, context: ExecutorContext): void {
+		this.ensureCellScope(cellId);
 		this.cellContexts.set(cellId, context);
 	}
 
 	closeCell(cellId: string): void {
 		this.cellContexts.delete(cellId);
 		this.cellTools.delete(cellId);
-		const previous = this.cleanupTimers.get(cellId);
-		if (previous) clearTimeout(previous);
-		this.cleanupTimers.set(
-			cellId,
-			setTimeout(() => {
-				this.cleanupTimers.delete(cellId);
-				this.notifications.delete(cellId);
-				this.traces.delete(cellId);
-			}, 1_000),
+		this.cellScopes.get(cellId)?.interrupt();
+		this.cellScopes.delete(cellId);
+		this.cleanupTasks.get(cellId)?.interrupt();
+		const cleanup = this.effects.open();
+		this.cleanupTasks.set(cellId, cleanup);
+		cleanup.run(
+			Effect.sleep(1_000).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						this.notifications.delete(cellId);
+						this.traces.delete(cellId);
+					}),
+				),
+				Effect.ensuring(
+					Effect.sync(() => {
+						if (this.cleanupTasks.get(cellId) === cleanup) this.cleanupTasks.delete(cellId);
+					}),
+				),
+			),
 		);
 	}
 
 	cancel(id: number): void {
-		const controller = this.controllers.get(id);
-		this.controllers.delete(id);
-		controller?.abort();
+		const request = this.requests.get(id);
+		this.requests.delete(id);
+		request?.interrupt();
 	}
 
 	handleRequest(message: DelegateRequestMessage): void {
-		if (this.controllers.has(message.id))
-			throw new Error(`Duplicate Code Mode delegate request: ${String(message.id)}`);
-		const controller = new AbortController();
-		this.controllers.set(message.id, controller);
-		void this.invoke(message, controller);
+		if (this.requests.has(message.id)) throw new Error(`Duplicate Code Mode delegate request: ${String(message.id)}`);
+		const request = this.effects.open();
+		this.requests.set(message.id, request);
+		try {
+			const prepared = this.prepareRequest(message);
+			if (!prepared) {
+				this.requests.delete(message.id);
+				request.interrupt();
+				return;
+			}
+			request.run(
+				prepared.program.pipe(
+					Effect.ensuring(
+						Effect.sync(() => {
+							if (this.requests.get(message.id) === request) this.requests.delete(message.id);
+						}),
+					),
+				),
+				prepared.cancel,
+			);
+		} catch (error) {
+			this.requests.delete(message.id);
+			request.interrupt();
+			throw error;
+		}
 	}
 
 	attach(response: RuntimeResponse): RuntimeResponse {
-		const cleanup = this.cleanupTimers.get(response.cellId);
-		if (cleanup) clearTimeout(cleanup);
-		this.cleanupTimers.delete(response.cellId);
+		this.cleanupTasks.get(response.cellId)?.interrupt();
+		this.cleanupTasks.delete(response.cellId);
 		const notifications = this.notifications.get(response.cellId) ?? [];
 		this.notifications.delete(response.cellId);
 		const traced = this.traces.attach(response);
@@ -125,17 +178,20 @@ export class CodeModeDelegateRuntime {
 	}
 
 	clear(): void {
-		for (const controller of this.controllers.values()) controller.abort();
-		this.controllers.clear();
+		const requests = [...this.requests.values()];
+		this.requests.clear();
+		for (const request of requests) request.interrupt();
+		for (const cell of this.cellScopes.values()) cell.interrupt();
+		this.cellScopes.clear();
 		this.cellContexts.clear();
 		this.cellTools.clear();
 		this.notifications.clear();
 		this.traces.clear();
-		for (const timer of this.cleanupTimers.values()) clearTimeout(timer);
-		this.cleanupTimers.clear();
+		for (const cleanup of this.cleanupTasks.values()) cleanup.interrupt();
+		this.cleanupTasks.clear();
 	}
 
-	private async invoke(message: DelegateRequestMessage, controller: AbortController): Promise<void> {
+	private prepareRequest(message: DelegateRequestMessage): PreparedDelegateRequest | undefined {
 		const request = message.request;
 		if (request.type === "notification/send") {
 			this.handleNotification(message.id, request);
@@ -151,7 +207,6 @@ export class CodeModeDelegateRuntime {
 				message: !tool ? `Unknown Suite Tool: ${name}` : "Code Mode cell context is unavailable",
 				status: "error",
 			});
-			this.controllers.delete(message.id);
 			return;
 		}
 		let input: CodemodeValue;
@@ -166,11 +221,19 @@ export class CodeModeDelegateRuntime {
 				? { id: plan?.id ?? invocation.runtime_tool_call_id, input, name, status: "running" }
 				: this.traces.start(cellId, plan?.id ?? invocation.runtime_tool_call_id, name, input, plan);
 		} catch (error) {
+			let failure = normalizeError(error);
+			if (plan && !plan.pause && !plan.replay) {
+				const result = resultFromValue(failure.message);
+				try {
+					context.completeToolCall?.(plan, { message: failure.message, result, status: "error" });
+				} catch (ledgerError) {
+					failure = new Error(`${failure.message}; ledger update failed: ${normalizeError(ledgerError).message}`);
+				}
+			}
 			this.respond(message.id, {
-				message: error instanceof Error ? error.message : String(error),
+				message: failure.message,
 				status: "error",
 			});
-			this.controllers.delete(message.id);
 			return;
 		}
 		const nestedContext: ExecutorContext = {
@@ -191,7 +254,6 @@ export class CodeModeDelegateRuntime {
 			trace.status = "pending";
 			if (!hidden) this.traces.emit(cellId, trace, context);
 			this.respond(message.id, { message: plan.pause.message, status: "error" });
-			this.controllers.delete(message.id);
 			return;
 		}
 		if (plan?.replay) {
@@ -207,51 +269,97 @@ export class CodeModeDelegateRuntime {
 					? { status: "ok", value: { result: encodeTransportValue(plan.replay.value), type: "tool/result" } }
 					: { message: plan.replay.message, status: "error" },
 			);
-			this.controllers.delete(message.id);
 			return;
 		}
+		return this.invokeTool({
+			cellId,
+			context,
+			hidden,
+			input,
+			messageId: message.id,
+			nestedContext,
+			plan,
+			tool,
+			trace,
+		});
+	}
+
+	private invokeTool(call: PreparedDelegateToolCall): PreparedDelegateRequest {
+		let finished = false;
 		let settlementAttempted = false;
-		try {
-			const value = await tool.invoke(input, nestedContext, controller.signal);
-			const transportValue = encodeTransportValue(value);
-			trace.result ??= resultFromValue(value);
-			trace.status = "done";
-			if (plan) {
-				context.completeToolCall?.(plan, { result: trace.result, status: "success", value });
-				settlementAttempted = true;
-			}
-			if (!hidden) this.traces.emit(cellId, trace, context);
-			const serializationError = this.respond(message.id, {
-				status: "ok",
-				value: { result: transportValue, type: "tool/result" },
-			});
-			if (serializationError) {
-				trace.status = "error";
-				trace.error = serializationError.message;
-				if (!hidden) this.traces.emit(cellId, trace, context);
-			}
-		} catch (error) {
-			if (error instanceof SuiteToolInvocationError) trace.result = error.result;
-			trace.result ??= resultFromValue(error instanceof Error ? error.message : String(error));
-			trace.status = controller.signal.aborted ? "cancelled" : "error";
-			trace.error = error instanceof Error ? error.message : String(error);
-			if (plan && !settlementAttempted) {
+		let operationSignal: AbortSignal | undefined;
+		const settleFailure = (cause: unknown, cancelled: boolean): void => {
+			if (finished) return;
+			finished = true;
+			const error = normalizeError(cause);
+			if (error instanceof SuiteToolInvocationError) call.trace.result = error.result;
+			call.trace.result ??= resultFromValue(error.message);
+			call.trace.status = cancelled ? "cancelled" : "error";
+			call.trace.error = error.message;
+			if (call.plan && !settlementAttempted) {
 				settlementAttempted = true;
 				try {
-					context.completeToolCall?.(plan, {
-						message: trace.error,
-						result: trace.result,
+					call.context.completeToolCall?.(call.plan, {
+						message: call.trace.error,
+						result: call.trace.result,
 						status: "error",
 					});
 				} catch (ledgerError) {
-					trace.error = `${trace.error}; ledger update failed: ${ledgerError instanceof Error ? ledgerError.message : String(ledgerError)}`;
+					call.trace.error = `${call.trace.error}; ledger update failed: ${
+						ledgerError instanceof Error ? ledgerError.message : String(ledgerError)
+					}`;
 				}
 			}
-			if (!hidden) this.traces.emit(cellId, trace, context);
-			this.respond(message.id, { message: trace.error, status: "error" });
-		} finally {
-			this.controllers.delete(message.id);
-		}
+			if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
+			this.respond(call.messageId, { message: call.trace.error, status: "error" });
+		};
+		const cancel = (): void => {
+			settleFailure(operationSignal?.reason ?? new DOMException("This operation was aborted", "AbortError"), true);
+		};
+		const program = Effect.tryPromise({
+			try: (signal) => {
+				operationSignal = signal;
+				return call.tool.invoke(call.input, call.nestedContext, signal);
+			},
+			catch: normalizeError,
+		}).pipe(
+			Effect.flatMap((value) =>
+				Effect.try({
+					try: () => {
+						const transportValue = encodeTransportValue(value);
+						call.trace.result ??= resultFromValue(value);
+						call.trace.status = "done";
+						if (call.plan) {
+							call.context.completeToolCall?.(call.plan, {
+								result: call.trace.result,
+								status: "success",
+								value,
+							});
+							settlementAttempted = true;
+						}
+						if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
+						const serializationError = this.respond(call.messageId, {
+							status: "ok",
+							value: { result: transportValue, type: "tool/result" },
+						});
+						if (serializationError) {
+							call.trace.status = "error";
+							call.trace.error = serializationError.message;
+							if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
+						}
+						finished = true;
+					},
+					catch: normalizeError,
+				}),
+			),
+			Effect.catch((error) => Effect.sync(() => settleFailure(error, false))),
+			Effect.onInterrupt(() => Effect.sync(cancel)),
+		);
+		return { cancel, program };
+	}
+
+	private ensureCellScope(cellId: string): void {
+		if (!this.cellScopes.has(cellId)) this.cellScopes.set(cellId, this.effects.open());
 	}
 
 	private handleNotification(
@@ -260,7 +368,6 @@ export class CodeModeDelegateRuntime {
 	): void {
 		if (!this.cellContexts.has(request.cellId)) {
 			this.respond(id, { message: "Code Mode notification cell is unavailable", status: "error" });
-			this.controllers.delete(id);
 			return;
 		}
 		const notifications = this.notifications.get(request.cellId) ?? [];
@@ -270,7 +377,6 @@ export class CodeModeDelegateRuntime {
 		}
 		this.notifications.set(request.cellId, notifications);
 		this.respond(id, { status: "ok", value: { type: "notification/delivered" } });
-		this.controllers.delete(id);
 	}
 
 	private respond(id: number, result: HostResult): Error | undefined {
@@ -293,4 +399,8 @@ export class CodeModeDelegateRuntime {
 			return failure;
 		}
 	}
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

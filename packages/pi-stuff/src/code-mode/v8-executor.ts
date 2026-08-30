@@ -2,6 +2,7 @@ import { Cause, Effect, Exit, type Scope, Semaphore } from "effect";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import type { EffectFoundation, EffectScopeOwner } from "../shared/effect-foundation.js";
 import { ensureCodeModeHostBinary } from "./host/binary.js";
+import { CodeModeEffectOwner } from "./host/effect-owner.js";
 import { CodeModeHostClient, codeModeAbortError } from "./host/host-client.js";
 import type { CodeModeExecuteOptions, CodeModeWaitOptions, RuntimeResponse } from "./protocol.js";
 import type { CodeModeExecutor } from "./runtime.js";
@@ -42,7 +43,11 @@ export class V8CodeModeExecutor implements CodeModeExecutor {
 					Effect.tryPromise({
 						try: (signal) => ensureCodeModeHostBinary(signal),
 						catch: normalizeError,
-					}).pipe(Effect.map((binary) => new CodeModeHostClient(binary))),
+					}).pipe(
+						Effect.map(
+							(binary) => new CodeModeHostClient(binary, new CodeModeEffectOwner(this.foundation, capability)),
+						),
+					),
 					(client) =>
 						client.shutdown().pipe(
 							Effect.ensuring(

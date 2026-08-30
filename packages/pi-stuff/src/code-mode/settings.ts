@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
-import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
-import { mergeNamespaceRecordLocked, withSettingsLock } from "../shared/settings-io/lock.js";
+import { mergeNamespaceRecordEffect, readNamespaceEffect } from "../shared/settings-io/file.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
+import { mergedSettingsPath, resolveSettingsLockPath } from "../shared/settings-io/paths.js";
 
 const PROJECT_SETTINGS_DIRECTORY = ".pi";
 const PROJECT_SETTINGS_FILE = "code-mode.json";
@@ -23,43 +25,119 @@ export function codeModeProjectSettingsPath(cwd: string): string {
 	return join(cwd, PROJECT_SETTINGS_DIRECTORY, PROJECT_SETTINGS_FILE);
 }
 
-async function readRawSettings(path: string): Promise<JsonInputObject | undefined> {
-	let value: JsonInputValue;
-	try {
-		value = parseJsonValue(await readFile(path, "utf8"));
-	} catch (error) {
-		if (isMissingFile(error)) return undefined;
-		throw new Error(
-			`Unable to read Code Mode project settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+function readRawSettings(path: string): Effect.Effect<JsonInputObject | undefined, Error> {
+	return Effect.gen(function* () {
+		const content = yield* Effect.catch(
+			Effect.tryPromise({
+				try: () => readFile(path, "utf8"),
+				catch: normalizeError,
+			}),
+			(error) =>
+				isMissingFile(error)
+					? Effect.succeed(undefined)
+					: Effect.fail(new Error(`Unable to read Code Mode project settings at ${path}: ${error.message}`)),
 		);
-	}
-	if (!isRecord(value)) throw new Error(`Invalid Code Mode project settings at ${path}: expected a JSON object`);
-	return value;
+		if (content === undefined) return undefined;
+		const value: JsonInputValue = yield* Effect.try({
+			try: () => parseJsonValue(content),
+			catch: (error) =>
+				new Error(`Unable to read Code Mode project settings at ${path}: ${normalizeError(error).message}`),
+		});
+		if (!isRecord(value)) {
+			return yield* Effect.fail(new Error(`Invalid Code Mode project settings at ${path}: expected a JSON object`));
+		}
+		return value;
+	});
 }
 
 /** Read-only: a missing file or omitted value falls back to the process default. */
-export async function readCodeModeProjectEnabled(cwd: string): Promise<boolean | undefined> {
+export function readCodeModeProjectEnabled(cwd: string): Effect.Effect<boolean | undefined, Error> {
 	const path = codeModeProjectSettingsPath(cwd);
-	const value = await readRawSettings(path);
-	if (!value || value["enabled"] === undefined) return undefined;
-	if (!isRuntimeBoolean(value["enabled"])) {
-		throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
-	}
-	return value["enabled"];
+	return Effect.flatMap(readRawSettings(path), (value) =>
+		Effect.try({
+			try: () => {
+				if (!value || value["enabled"] === undefined) return undefined;
+				if (!isRuntimeBoolean(value["enabled"])) {
+					throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
+				}
+				return value["enabled"];
+			},
+			catch: normalizeError,
+		}),
+	);
 }
 
 /** Explicit user actions only: preserve unknown fields and replace the file atomically. */
-export async function writeCodeModeProjectEnabled(cwd: string, enabled: boolean | undefined): Promise<void> {
+export function writeCodeModeProjectEnabled(cwd: string, enabled: boolean | undefined): Effect.Effect<void, Error> {
 	const path = codeModeProjectSettingsPath(cwd);
-	try {
-		await withSettingsLock(path, "Code Mode project", async () => {
-			const current = (await readRawSettings(path)) ?? {};
-			if (current["enabled"] !== undefined && !isRuntimeBoolean(current["enabled"])) {
-				throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
-			}
-			const next = { ...current };
-			if (enabled === undefined) delete next["enabled"];
-			else next["enabled"] = enabled;
+	const persist = Effect.gen(function* () {
+		const current = (yield* readRawSettings(path)) ?? {};
+		const next = yield* Effect.try({
+			try: () => {
+				if (current["enabled"] !== undefined && !isRuntimeBoolean(current["enabled"])) {
+					throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
+				}
+				const updated = { ...current };
+				if (enabled === undefined) delete updated["enabled"];
+				else updated["enabled"] = enabled;
+				return updated;
+			},
+			catch: normalizeError,
+		});
+		yield* writeRawSettings(path, next);
+	});
+	return Effect.mapError(
+		Effect.scoped(
+			Effect.gen(function* () {
+				yield* acquireSettingsLockEffect(resolveSettingsLockPath(path), "Code Mode project");
+				yield* Effect.uninterruptible(persist);
+			}),
+		),
+		(error) =>
+			/^(Invalid|Unable to)/u.test(error.message)
+				? error
+				: new Error(`Unable to save Code Mode project settings at ${path}: ${error.message}`),
+	);
+}
+
+/**
+ * Global Code Mode default, stored as the `codeMode.enabled` namespace in the
+ * single merged settings file (`<agentDir>/pi-stuff.json`). Read-only until an
+ * explicit `/codemode global on|off` writes it. A missing namespace returns
+ * `undefined` so the caller can fall back to the process default.
+ */
+export function readCodeModeGlobalEnabled(agentDirectory = getAgentDir()): Effect.Effect<boolean | undefined, Error> {
+	return Effect.flatMap(readNamespaceEffect(mergedSettingsPath(agentDirectory), CODE_MODE_NAMESPACE), (namespace) =>
+		Effect.try({
+			try: () => {
+				if (namespace === undefined || namespace["enabled"] === undefined) return undefined;
+				if (!isRuntimeBoolean(namespace["enabled"])) {
+					throw new Error(`Invalid Code Mode global settings: "enabled" must be a boolean`);
+				}
+				return namespace["enabled"];
+			},
+			catch: normalizeError,
+		}),
+	);
+}
+
+/** Explicit user action only: writes `codeMode.enabled` into the merged file. */
+export function writeCodeModeGlobalEnabled(
+	enabled: boolean,
+	agentDirectory = getAgentDir(),
+): Effect.Effect<void, Error> {
+	const path = mergedSettingsPath(agentDirectory);
+	return Effect.scoped(
+		Effect.gen(function* () {
+			yield* acquireSettingsLockEffect(resolveSettingsLockPath(path), "Code Mode");
+			yield* Effect.uninterruptible(mergeNamespaceRecordEffect(path, CODE_MODE_NAMESPACE, { enabled }));
+		}),
+	);
+}
+
+function writeRawSettings(path: string, next: JsonInputObject): Effect.Effect<void, Error> {
+	return Effect.tryPromise({
+		try: async () => {
 			if (Object.keys(next).length === 0) {
 				await rm(path, { force: true });
 				return;
@@ -75,35 +153,14 @@ export async function writeCodeModeProjectEnabled(cwd: string, enabled: boolean 
 				await rename(temporaryPath, path);
 			} catch (error) {
 				await rm(temporaryPath, { force: true }).catch(() => undefined);
-				throw new Error(
-					`Unable to save Code Mode project settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
-				);
+				throw error;
 			}
-		});
-	} catch (error) {
-		if (error instanceof Error && /^(Invalid|Unable to)/u.test(error.message)) throw error;
-		throw new Error(
-			`Unable to save Code Mode project settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
+		},
+		catch: (error) =>
+			new Error(`Unable to save Code Mode project settings at ${path}: ${normalizeError(error).message}`),
+	});
 }
 
-/**
- * Global Code Mode default, stored as the `codeMode.enabled` namespace in the
- * single merged settings file (`<agentDir>/pi-stuff.json`). Read-only until an
- * explicit `/codemode global on|off` writes it. A missing namespace returns
- * `undefined` so the caller can fall back to the process default.
- */
-export async function readCodeModeGlobalEnabled(agentDirectory = getAgentDir()): Promise<boolean | undefined> {
-	const namespace = await readNamespace(mergedSettingsPath(agentDirectory), CODE_MODE_NAMESPACE);
-	if (namespace === undefined || namespace["enabled"] === undefined) return undefined;
-	if (!isRuntimeBoolean(namespace["enabled"])) {
-		throw new Error(`Invalid Code Mode global settings: "enabled" must be a boolean`);
-	}
-	return namespace["enabled"];
-}
-
-/** Explicit user action only: writes `codeMode.enabled` into the merged file. */
-export async function writeCodeModeGlobalEnabled(enabled: boolean, agentDirectory = getAgentDir()): Promise<void> {
-	await mergeNamespaceRecordLocked(mergedSettingsPath(agentDirectory), CODE_MODE_NAMESPACE, { enabled }, "Code Mode");
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }
