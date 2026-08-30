@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 9d84f96aa920e69a291be5a356d2c95d18a538b0e1d92f3ce22cc8a9d09c1df3 -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 76edee87afa215bc786ed6d76316224e8ed2e47cd7ce50a2b9b995a4aafab2eb -->
 
 # Tool Display 模块
 
@@ -9,6 +9,8 @@ Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 `registration.ts` 负责套件工具装饰、Activity 覆盖和历史重放绑定；`index.ts` 负责有序宿主事件投影生命周期；`registration-tracker.ts` 负责工具注册表与活跃界面投影；`envelope-projection.ts` 负责嵌套工具解码和普通协议投影；`group-projection.ts` 负责对话记录分组与结果关联；`activity-presentation.ts` 负责实时行协调，`activity-query-projection.ts` 负责摘要与工具详情，`bash-operation-presentation.ts` 负责 Bash 行；`registered-tool-renderer.ts` 负责行/详情发布；`activity-clock.ts` 负责运行标记。`ToolUiRuntime` 仍是唯一公开实时投影外观。
 
 `activity-model.ts` 负责 Activity 词汇，`activity.ts` 保留公开外观与 Bash 分类，`retrieval-groups.ts` 规划对话记录成员关系，`activity-summary-format.ts` 负责纯摘要措辞。
+
+同一宿主事件总线上的每个 Pi facade 都会同步发现同一个 `ToolUiRuntime` 与 Effect foundation。每个 Session 都在一个 Capability Scope 中获取可移除的工具运行计时器设置注册与设置订阅；Session 替换会在下一次注册前释放上一代资源，最终关闭只释放一次。由于宿主无法注销 Pi 命令与事件注册，它们仍由安装生命周期负责；其既有 runtime 与 generation fence 会阻止陈旧投影工作。
 
 ## 日常使用
 

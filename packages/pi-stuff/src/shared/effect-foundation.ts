@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Effect, Exit, Fiber, Option, Scope } from "effect";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -6,6 +6,7 @@ import { getHostSharedResource } from "./host-resource.js";
 const EFFECT_FOUNDATION_DISCOVERY_EVENT = "@jczhang02/pi-stuff/effect-foundation-discovery/v1";
 const FOUNDATIONS = new WeakMap<object, EffectFoundation>();
 const SCOPE = Symbol("PiStuffEffectScope");
+type HostSessionManager = ExtensionContext["sessionManager"];
 
 export type EffectScopeKind = "session" | "capability" | "operation";
 
@@ -25,6 +26,7 @@ export class EffectFoundation {
 	private closed = false;
 	private generation = 0;
 	private session: EffectScopeOwner | undefined;
+	private readonly sessions = new WeakMap<HostSessionManager, EffectScopeOwner>();
 	private shutdownResult: Promise<boolean> | undefined;
 
 	constructor(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS) {
@@ -35,19 +37,25 @@ export class EffectFoundation {
 		return this.session;
 	}
 
-	async startSession(): Promise<EffectScopeOwner> {
+	sessionFor(key: HostSessionManager): EffectScopeOwner | undefined {
+		return this.sessions.get(key);
+	}
+
+	async startSession(key?: HostSessionManager): Promise<EffectScopeOwner> {
 		if (this.closed) throw new Error("Effect foundation is closed.");
 		const previous = this.session;
 		this.generation += 1;
 		const finalizers = previous ? Scope.closeUnsafe(previous[SCOPE], Exit.interrupt()) : undefined;
-		const session = owner("session", this.generation, Scope.forkUnsafe(this.root, "sequential"));
+		const session = owner("session", this.generation, Scope.forkUnsafe(this.root, "parallel"));
 		this.session = session;
+		if (key) this.sessions.set(key, session);
 		if (finalizers) await this.settleFinalizers(finalizers, this.shutdownGraceMs);
 		return session;
 	}
 
-	forkCapability(): EffectScopeOwner {
-		return this.fork("capability", this.requireSession());
+	forkCapability(parent: EffectScopeOwner = this.requireSession()): EffectScopeOwner {
+		if (parent.kind !== "session") throw new Error("A Capability Scope requires a Session Scope.");
+		return this.fork("capability", parent);
 	}
 
 	forkOperation(parent: EffectScopeOwner = this.requireSession()): EffectScopeOwner {
@@ -123,8 +131,8 @@ export function installEffectFoundation(pi: ExtensionAPI): EffectFoundation {
 		EFFECT_FOUNDATION_DISCOVERY_EVENT,
 		() => {
 			const foundation = new EffectFoundation();
-			pi.on("session_start", async () => {
-				await foundation.startSession();
+			pi.on("session_start", async (_event, ctx) => {
+				await foundation.startSession(ctx.sessionManager);
 			});
 			pi.on("session_shutdown", async () => {
 				await foundation.shutdown();

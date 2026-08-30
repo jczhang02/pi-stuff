@@ -2,11 +2,14 @@ import { expect, test } from "bun:test";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
+	SessionEntry,
 	SessionShutdownEvent,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Effect, Exit } from "effect";
+import { ensureUiSettingsCommand } from "../packages/pi-stuff/src/conversation-ui/index.js";
 import { EffectFoundation, installEffectFoundation } from "../packages/pi-stuff/src/shared/effect-foundation.js";
+import piStuffTools, { getToolUiRuntime } from "../packages/pi-stuff/src/tool-display/index.js";
 import { captureExtensionHandlers, createExtensionApi } from "./fixtures/extension-api.js";
 import { createExtensionContext } from "./fixtures/extension-context.js";
 
@@ -34,9 +37,24 @@ class HostEventBus {
 		return createExtensionApi({ events, on: captureExtensionHandlers(this.lifecycle) });
 	}
 
-	async fire(event: LifecycleEvent): Promise<void> {
-		for (const handler of this.lifecycle.get(event.type) ?? []) await handler(event, createExtensionContext());
+	async fire(event: LifecycleEvent, context = createExtensionContext()): Promise<void> {
+		for (const handler of this.lifecycle.get(event.type) ?? []) await handler(event, context);
 	}
+
+	handlerCount(type: LifecycleEvent["type"]): number {
+		return this.lifecycle.get(type)?.length ?? 0;
+	}
+}
+
+function contextWithPrompt(prompt: string): ExtensionContext {
+	const entry: SessionEntry = {
+		id: prompt,
+		message: { content: prompt, role: "user", timestamp: 1 },
+		parentId: null,
+		timestamp: "2026-08-30T00:00:00.000Z",
+		type: "message",
+	};
+	return createExtensionContext({ sessionManager: { getBranch: () => [entry] } });
 }
 
 test("one Host event bus shares a foundation and invalidates replaced Session work", async () => {
@@ -67,6 +85,57 @@ test("one Host event bus shares a foundation and invalidates replaced Session wo
 	expect(Exit.hasInterrupts(await running)).toBeTrue();
 
 	await host.fire({ reason: "quit", type: "session_shutdown" });
+});
+
+test("one Host event bus shares and hands off Session-owned Tool UI resources", async () => {
+	const host = new HostEventBus();
+	const owner = host.facade();
+	const duplicate = host.facade();
+	const foundation = installEffectFoundation(owner);
+	await piStuffTools(owner);
+	const startHandlers = host.handlerCount("session_start");
+	await piStuffTools(duplicate);
+
+	expect(installEffectFoundation(duplicate)).toBe(foundation);
+	const runtime = getToolUiRuntime(owner);
+	expect(getToolUiRuntime(duplicate)).toBe(runtime);
+	expect(host.handlerCount("session_start")).toBe(startHandlers);
+	const settings = ensureUiSettingsCommand(owner);
+	expect(settings.list().map(({ id }) => id)).toEqual([]);
+
+	await host.fire({ reason: "startup", type: "session_start" });
+	const first = settings.list()[0];
+	expect(first?.id).toBe("toolRunningTimer");
+	const projections: (readonly unknown[])[] = [];
+	const resetProjection = runtime.resetProjection.bind(runtime);
+	runtime.resetProjection = (messages) => {
+		projections.push(messages);
+		resetProjection(messages);
+	};
+	const release = Promise.withResolvers<void>();
+	await foundation.run(
+		foundation.forkOperation(),
+		Effect.addFinalizer(() => Effect.promise(() => release.promise)),
+	);
+	const supersededContext = contextWithPrompt("superseded");
+	const currentContext = contextWithPrompt("current");
+	const supersededStart = host.fire({ reason: "resume", type: "session_start" }, supersededContext);
+	await host.fire({ reason: "resume", type: "session_start" }, currentContext);
+	release.resolve();
+	await supersededStart;
+	const replacement = settings.list()[0];
+	expect(replacement?.id).toBe("toolRunningTimer");
+	expect(replacement).not.toBe(first);
+	const superseded = foundation.sessionFor(supersededContext.sessionManager);
+	const current = foundation.sessionFor(currentContext.sessionManager);
+	expect(superseded && foundation.isCurrent(superseded)).toBeFalse();
+	expect(current && foundation.isCurrent(current)).toBeTrue();
+	expect(projections.at(-1)?.[0]).toMatchObject({ content: "current", role: "user" });
+
+	await host.fire({ reason: "quit", type: "session_shutdown" });
+	expect(settings.list()).toEqual([]);
+	await host.fire({ reason: "quit", type: "session_shutdown" });
+	expect(settings.list()).toEqual([]);
 });
 
 test("the newest concurrent Session start remains current", async () => {
@@ -111,4 +180,22 @@ test("owned Scope finalizers run once and Host shutdown stays bounded", async ()
 	);
 	const shutdown = await Promise.race([foundation.shutdown(), Bun.sleep(250).then(() => "hung" as const)]);
 	expect(shutdown).toBeFalse();
+});
+
+test("one hung operation cannot block a sibling Capability release", async () => {
+	const foundation = new EffectFoundation(5);
+	await foundation.startSession();
+	let releases = 0;
+	await foundation.run(
+		foundation.forkCapability(),
+		Effect.acquireRelease(Effect.void, () => Effect.sync(() => releases++)),
+	);
+	await foundation.run(
+		foundation.forkOperation(),
+		Effect.addFinalizer(() => Effect.never),
+	);
+
+	await foundation.startSession();
+	expect(releases).toBe(1);
+	await foundation.shutdown();
 });

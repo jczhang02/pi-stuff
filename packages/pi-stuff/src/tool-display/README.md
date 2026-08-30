@@ -18,6 +18,12 @@ remains the single public live-projection facade.
 `activity-model.ts` owns Activity vocabulary, `activity.ts` preserves the public facade and Bash classification,
 `retrieval-groups.ts` plans transcript membership, and `activity-summary-format.ts` owns pure summary wording.
 
+Every Pi facade over one Host event bus discovers the same `ToolUiRuntime` and Effect foundation synchronously. Each
+Session acquires the removable Tool-running-timer setting registration and settings subscription in one Capability
+Scope; replacement releases the prior generation before the next registration, and final shutdown releases it once.
+Pi commands and event registrations remain installation-owned because the Host cannot unregister them; their existing
+runtime and generation fences prevent stale projection work.
+
 ## Daily use
 
 - Every continuous native Read, Grep/Find, or List segment is one **Retrieval Group**, beginning with the first eligible

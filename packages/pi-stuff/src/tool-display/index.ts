@@ -3,12 +3,14 @@ import {
 	type ExtensionContext,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit, Semaphore } from "effect";
 import {
 	ensureUiSettingsCommand,
 	getCommandDialogCoordinator,
 	getHostSharedResource,
+	type UiSettingRegistry,
 } from "../conversation-ui/index.js";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
 import { registerHistoricalSuiteToolDefinitions } from "./registration.js";
@@ -66,6 +68,48 @@ function currentTranscript(ctx: ExtensionContext): CurrentTranscript {
 type InstalledToolUiRuntime = ReturnType<typeof installToolUiRuntime>;
 type ResumeToolHandoff = ReturnType<typeof consumeResumeToolHandoff>;
 
+function acquireToolUiSessionResources(
+	registry: UiSettingRegistry,
+	runtime: InstalledToolUiRuntime,
+	settings: ToolUiSettingsStore,
+	isCurrent: () => boolean,
+	resourceGate: Semaphore.Semaphore,
+) {
+	return Effect.gen(function* () {
+		// Scope finalizers are LIFO: remove observers before awaiting persistence.
+		yield* Effect.addFinalizer(() => Effect.promise(() => settings.whenIdle()));
+		yield* Effect.acquireRelease(resourceGate.take(1), () => resourceGate.release(1));
+		yield* Effect.acquireRelease(
+			Effect.sync(() =>
+				settings.subscribe(() => {
+					if (isCurrent()) runtime.syncTimers();
+				}),
+			),
+			(unsubscribe) => Effect.sync(unsubscribe),
+		);
+		yield* Effect.acquireRelease(
+			Effect.sync(() =>
+				registry.register({
+					description: "Show elapsed time while long-running tools work",
+					get: () => String(settings.get().liveElapsed),
+					id: "toolRunningTimer",
+					label: "Tool running timer",
+					order: 50,
+					set: async (value) => {
+						if (value !== "true" && value !== "false") {
+							throw new Error(`Invalid toolRunningTimer value: ${value}`);
+						}
+						await settings.setLiveElapsed(value === "true");
+					},
+					subscribe: (listener) => settings.subscribe(() => listener()),
+					values: ["true", "false"],
+				}),
+			),
+			(unregister) => Effect.sync(unregister),
+		);
+	});
+}
+
 function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRuntime, ctx: ExtensionContext): void {
 	const transcript = currentTranscript(ctx);
 	const activeTools = pi.getActiveTools();
@@ -73,12 +117,19 @@ function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRun
 	runtime.resetProjection(transcript.messages);
 }
 
+function isCurrentToolSession(foundation: EffectFoundation, ctx: ExtensionContext): boolean {
+	const session = foundation.sessionFor(ctx.sessionManager);
+	return Boolean(session && foundation.isCurrent(session));
+}
+
 function registerToolProjectionEvents(
 	pi: ExtensionAPI,
 	runtime: InstalledToolUiRuntime,
 	resumeHandoff: ResumeToolHandoff,
+	foundation: EffectFoundation,
 ): void {
 	pi.on("session_start", (_event, ctx) => {
+		if (!isCurrentToolSession(foundation, ctx)) return;
 		const transcript = currentTranscript(ctx);
 		const replayOnlyNames = new Set(runtime.replayOnlyTools());
 		registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
@@ -196,6 +247,7 @@ export {
 export { formatElapsed } from "./tool-text.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
+	const foundation = installEffectFoundation(pi);
 	const lifecycle = getHostSharedResource<ToolLifecycleState>(
 		pi.events,
 		toolLifecycleStates(),
@@ -212,19 +264,26 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		const settings = await ToolUiSettingsStore.load();
 		const runtime = installToolUiRuntime(pi, settings);
 		if (resumeHandoff) runtime.stageResumeToolDefinitions(resumeHandoff.toolDefinitions);
-		const unsubscribeSettings = settings.subscribe(() => runtime.syncTimers());
-		const unregisterUiSetting = ensureUiSettingsCommand(pi).register({
-			description: "Show elapsed time while long-running tools work",
-			get: () => String(settings.get().liveElapsed),
-			id: "toolRunningTimer",
-			label: "Tool running timer",
-			order: 50,
-			set: async (value) => {
-				if (value !== "true" && value !== "false") throw new Error(`Invalid toolRunningTimer value: ${value}`);
-				await settings.setLiveElapsed(value === "true");
-			},
-			subscribe: (listener) => settings.subscribe(() => listener()),
-			values: ["true", "false"],
+		const uiSettings = ensureUiSettingsCommand(pi);
+		const resourceGate = Semaphore.makeUnsafe(1);
+		pi.on("session_start", async (_event, ctx) => {
+			const session = foundation.sessionFor(ctx.sessionManager);
+			if (!session) throw new Error("Tool UI Session Scope was not initialized.");
+			if (!foundation.isCurrent(session)) return;
+			const capability = foundation.forkCapability(session);
+			const exit = await foundation.run(
+				capability,
+				acquireToolUiSessionResources(
+					uiSettings,
+					runtime,
+					settings,
+					() => foundation.isCurrent(capability),
+					resourceGate,
+				),
+			);
+			if (Exit.isSuccess(exit)) return;
+			await foundation.close(capability, exit);
+			if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
 		});
 		pi.registerCommand("tools", {
 			description: "Inspect current-session Tool operations",
@@ -250,10 +309,8 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			},
 		});
 
-		registerToolProjectionEvents(pi, runtime, resumeHandoff);
-		pi.on("session_shutdown", async (event) => {
-			unsubscribeSettings();
-			unregisterUiSetting();
+		registerToolProjectionEvents(pi, runtime, resumeHandoff, foundation);
+		pi.on("session_shutdown", (event) => {
 			if (event.reason === "reload") {
 				runtime.prepareReload(pi.getActiveTools().filter((name) => BUILTIN_TOOL_NAMES.has(name)));
 			} else {
@@ -266,7 +323,6 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				runtime.suspend();
 			}
 			releaseToolLifecycle(lifecycle, activation);
-			await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 		});
 	} catch (error) {
 		releaseToolLifecycle(lifecycle, activation);
