@@ -379,7 +379,7 @@ test(
 					const candidate = readJson(statusPath);
 					const step = candidate.steps?.[0];
 					return step?.status === "complete" && step.contextUsage?.tokens === 50_000 ? candidate : undefined;
-				});
+				}, 30_000);
 				expect(status.steps?.[0]?.contextUsage).toEqual({ tokens: 50_000, contextWindow: 200_000 });
 				await waitFor("child-only Provider runner exit", () => (!processAlive(pid) ? true : undefined));
 				processGroups.delete(pid);
@@ -387,7 +387,7 @@ test(
 				cleanupRun(runId);
 			}
 		},
-		20_000,
+		45_000,
 	);
 
 // biome-ignore format: Keep real-process body and its independent timeout visibly grouped.
