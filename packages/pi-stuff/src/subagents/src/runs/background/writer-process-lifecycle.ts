@@ -2,16 +2,16 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";
 import { parseJsonValue } from "../../../../shared/json-value.js";
-import { runtimeErrorCode } from "../../../../shared/runtime-type.js";
+import { isRuntimeNumber, runtimeErrorCode } from "../../../../shared/runtime-type.js";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import {
 	identityBoundProcessLiveness,
 	type ProcessStartIdentityPollOptions,
-	pollProcessStartIdentity,
 	probeProcessLiveness,
 	processExists,
 	readProcessStartIdentity,
@@ -22,6 +22,42 @@ import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 
 export const BACKGROUND_RUNNER_SENTINEL_ENV = "PI_STUFF_BACKGROUND_RUNNER";
 export const BACKGROUND_RUNNER_CONFIG_ENV = "PI_STUFF_BACKGROUND_RUNNER_CONFIG";
+
+interface ChildWithKill {
+	pid?: number | undefined;
+	kill(signal?: NodeJS.Signals | number): boolean;
+}
+
+export function trySignalChild(
+	child: ChildWithKill,
+	signal: NodeJS.Signals,
+	expectedProcessStartIdentity?: string,
+): boolean {
+	if (process.platform !== "win32" && isRuntimeNumber(child.pid)) {
+		if (!expectedProcessStartIdentity) return false;
+		const currentIdentity = readProcessStartIdentity(child.pid);
+		if (currentIdentity && currentIdentity !== expectedProcessStartIdentity) return false;
+		if (!currentIdentity) {
+			try {
+				process.kill(child.pid, 0);
+			} catch {}
+			// A numeric PGID alone cannot prove continuity with the captured writer.
+			return false;
+		}
+		try {
+			process.kill(-child.pid, signal);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	if (process.platform !== "win32") return false;
+	try {
+		return child.kill(signal);
+	} catch {
+		return false;
+	}
+}
 
 /** Runner identity must never leak into a Pi writer process. */
 export function ponytailWriterEnvironmentOverrides(mode: BackgroundRunnerConfig["ponytailMode"]) {
@@ -146,30 +182,42 @@ function ownedWriterProcessGroupAlive(pid: number, expectedProcessStartIdentity?
 	return identityBoundProcessLiveness(pid, expectedProcessStartIdentity, writerProcessGroupAlive(pid));
 }
 
-export async function captureWriterProcessStartIdentity(
+export function captureWriterProcessStartIdentity(
 	pid: number,
 	options: ProcessStartIdentityPollOptions = {},
-): Promise<string | undefined> {
-	return pollProcessStartIdentity(pid, processExists, options);
+): Effect.Effect<string | undefined> {
+	const read = options.read ?? readProcessStartIdentity;
+	return Effect.gen(function* () {
+		const deadline = Date.now() + (options.timeoutMs ?? 250);
+		do {
+			const identity = read(pid);
+			if (identity) return identity;
+			if (!processExists(pid) || Date.now() >= deadline) return undefined;
+			yield* Effect.sleep(options.intervalMs ?? 20);
+		} while (Date.now() <= deadline);
+		return undefined;
+	});
 }
 
-export async function closeWriterProcessGroup(pid: number, expectedProcessStartIdentity?: string): Promise<boolean> {
-	if (process.platform === "win32") return true;
-	for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-		const state = ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity);
-		if (state === false) return true;
-		if (state === undefined) return false;
-		try {
-			process.kill(-pid, signal);
-		} catch (error) {
-			if (runtimeErrorCode(error) === "ESRCH") return true;
-			return false;
+export function closeWriterProcessGroup(pid: number, expectedProcessStartIdentity?: string): Effect.Effect<boolean> {
+	if (process.platform === "win32") return Effect.succeed(true);
+	return Effect.gen(function* () {
+		for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+			const state = ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity);
+			if (state === false) return true;
+			if (state === undefined) return false;
+			try {
+				process.kill(-pid, signal);
+			} catch (error) {
+				if (runtimeErrorCode(error) === "ESRCH") return true;
+				return false;
+			}
+			const deadline = Date.now() + 500;
+			while (Date.now() < deadline) {
+				if (ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false) return true;
+				yield* Effect.sleep(20);
+			}
 		}
-		const deadline = Date.now() + 500;
-		while (Date.now() < deadline) {
-			if (ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false) return true;
-			await new Promise<void>((resolve) => setTimeout(resolve, 20));
-		}
-	}
-	return ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false;
+		return ownedWriterProcessGroupAlive(pid, expectedProcessStartIdentity) === false;
+	});
 }

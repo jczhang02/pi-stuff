@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { Effect } from "effect";
 import {
 	ASYNC_DIR,
 	buildWriterSpawnCommand,
@@ -39,18 +40,21 @@ test("keeps the Host event loop responsive while concurrent writer identities be
 		heartbeat += 1;
 	}, 1);
 	try {
-		const identities = await Promise.all(
-			Array.from({ length: 20 }, (_, index) => {
-				let attempts = 0;
-				return captureWriterProcessStartIdentity(process.pid, {
-					intervalMs: 5,
-					read: () => {
-						attempts += 1;
-						return attempts >= 3 ? `writer-${String(index)}` : undefined;
-					},
-					timeoutMs: 100,
-				});
-			}),
+		const identities = await Effect.runPromise(
+			Effect.all(
+				Array.from({ length: 20 }, (_, index) => {
+					let attempts = 0;
+					return captureWriterProcessStartIdentity(process.pid, {
+						intervalMs: 5,
+						read: () => {
+							attempts += 1;
+							return attempts >= 3 ? `writer-${String(index)}` : undefined;
+						},
+						timeoutMs: 100,
+					});
+				}),
+				{ concurrency: "unbounded" },
+			),
 		);
 		expect(identities).toEqual(Array.from({ length: 20 }, (_, index) => `writer-${String(index)}`));
 		expect(heartbeat).toBeGreaterThan(0);

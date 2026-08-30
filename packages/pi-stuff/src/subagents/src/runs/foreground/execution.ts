@@ -3,6 +3,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { Effect } from "effect";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
@@ -71,7 +72,7 @@ const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	requestStop(asyncDir) {
 		deliverStopRequest({ asyncDir, source: "foreground-cancel" });
 	},
-	reapWriters: reapOrphanWriterProcesses,
+	reapWriters: (asyncDir) => Effect.runPromise(reapOrphanWriterProcesses(asyncDir)),
 	writeStatus: writePrivateAtomicJson,
 };
 

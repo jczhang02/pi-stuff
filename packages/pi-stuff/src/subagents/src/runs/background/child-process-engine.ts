@@ -4,10 +4,10 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect, Queue } from "effect";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import type { AgentContextUsage, ProtocolOutputLimit, TurnBudgetState, Usage } from "../../shared/types.ts";
 import type { ChildProtocolMessage } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
@@ -28,6 +28,7 @@ import {
 	closeWriterProcessGroup,
 	ponytailWriterEnvironmentOverrides,
 	readWriterSupervisorDisposition,
+	trySignalChild,
 } from "./writer-process-lifecycle.ts";
 import { reapOrphanWriterProcesses, type WriterRuntimeState } from "./writer-process-registry.ts";
 
@@ -63,6 +64,9 @@ export interface ChildRuntimeControl {
 
 type ChildTerminalCause = "pause" | "timeout" | "stop" | "turn-budget" | "protocol" | "setup";
 type WriterControlCommand = "cancel-finalize" | "finalize" | "proceed" | "terminate-sigint" | "terminate-sigterm";
+type ChildLifecycleEvent =
+	| { readonly type: "close"; readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }
+	| { readonly type: "wake" };
 
 export interface ChildProcessEngineInput {
 	config: BackgroundRunnerConfig;
@@ -132,6 +136,12 @@ function buildChildLaunch(input: ChildProcessEngineInput) {
 	return { built, spawnSpec: getPiSpawnCommand(built.args, deps) };
 }
 
+function bestEffort(action: () => void): void {
+	try {
+		action();
+	} catch {}
+}
+
 export class ChildProcessEngine {
 	private readonly input: ChildProcessEngineInput;
 	private readonly startedAt = Date.now();
@@ -152,7 +162,7 @@ export class ChildProcessEngine {
 	private writerPid!: number;
 	private writerProcessStartIdentity!: string;
 	private protocol!: ChildProtocolRuntime;
-	private clearGuard: (() => void) | undefined;
+	private lifecycleEvents!: Queue.Queue<ChildLifecycleEvent>;
 	private runtimeControl: ChildRuntimeControl | undefined;
 	private writerProcessBindingError: unknown;
 	private terminalCause: ChildTerminalCause | undefined;
@@ -162,9 +172,13 @@ export class ChildProcessEngine {
 	private finalDrainEvidence = false;
 	private finalDrainSignalSent = false;
 	private finalDrainHardKillSignalSent = false;
-	private finalDrainTimer: NodeJS.Timeout | undefined;
-	private finalDrainHardKillTimer: NodeJS.Timeout | undefined;
-	private terminationHardKillTimer: NodeJS.Timeout | undefined;
+	private finalDrainAt: number | undefined;
+	private finalDrainHardKillAt: number | undefined;
+	private terminationHardKillAt: number | undefined;
+	private stdioIdleAt: number | undefined;
+	private stdioHardAt: number | undefined;
+	private stdoutEnded = false;
+	private stderrEnded = false;
 
 	constructor(input: ChildProcessEngineInput) {
 		this.input = input;
@@ -187,16 +201,16 @@ export class ChildProcessEngine {
 					};
 	}
 
-	async run(): Promise<ChildProcessResult> {
-		await this.spawnWriter();
-		this.bindWriter();
-		this.installRuntime();
-		return await new Promise((resolve, reject) => {
-			this.child.on("close", (exitCode, signal) => {
-				void this.handleClose(exitCode, signal).then(resolve, reject);
-			});
-			this.releaseStartupGate();
-		});
+	run(): Effect.Effect<ChildProcessResult, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			this.lifecycleEvents = yield* Queue.unbounded<ChildLifecycleEvent>();
+			yield* Effect.try({ try: () => this.spawnWriter(), catch: (error) => error });
+			yield* this.captureWriterIdentity();
+			this.bindWriter();
+			this.installRuntime();
+			yield* Effect.try({ try: () => this.releaseStartupGate(), catch: (error) => error });
+			return yield* this.awaitClose();
+		}).pipe(Effect.ensuring(Effect.sync(() => this.teardown())));
 	}
 
 	private removeWriterControl(): void {
@@ -221,7 +235,7 @@ export class ChildProcessEngine {
 		cleanupTempDir(this.built.tempDir);
 	}
 
-	private async spawnWriter(): Promise<void> {
+	private spawnWriter(): void {
 		try {
 			this.input.onWriterProcess?.({ state: "spawning" });
 		} catch (error) {
@@ -254,37 +268,38 @@ export class ChildProcessEngine {
 			});
 			this.child.on("error", (error) => {
 				this.forcedError ??= `Agent writer supervisor failed to start: ${error.message}`;
+				this.clearStdioDeadlines();
+				this.wakeLifecycle();
 			});
 		} catch (error) {
 			this.rollBackLaunch();
 			throw error;
 		}
-		await this.captureWriterIdentity();
 	}
 
-	private async captureWriterIdentity(): Promise<void> {
-		const pid = this.child.pid;
-		const identity = isRuntimeNumber(pid) ? await captureWriterProcessStartIdentity(pid) : undefined;
-		if (!isRuntimeNumber(pid) || !identity) {
-			try {
-				this.child.kill("SIGKILL");
-			} catch {}
-			this.rollBackLaunch();
-			throw new Error("Agent writer process has no stable process-start identity.");
-		}
-		this.writerPid = pid;
-		this.writerProcessStartIdentity = identity;
-		const { stdin, stdout, stderr } = this.child;
-		if (!stdin || !stdout || !stderr) {
-			trySignalChild(this.child, "SIGTERM", identity);
-			this.rollBackLaunch();
-			throw new Error("Agent writer process did not expose stdout and stderr pipes.");
-		}
-		this.childStdin = stdin;
-		this.childStdout = stdout;
-		this.childStderr = stderr;
-		this.childStdin.on("error", (error: Error) => {
-			this.writerControlError ??= error;
+	private captureWriterIdentity(): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const pid = this.child.pid;
+			const identity = isRuntimeNumber(pid) ? yield* captureWriterProcessStartIdentity(pid) : undefined;
+			if (!isRuntimeNumber(pid) || !identity) {
+				bestEffort(() => this.child.kill("SIGKILL"));
+				this.rollBackLaunch();
+				return yield* Effect.fail(new Error("Agent writer process has no stable process-start identity."));
+			}
+			this.writerPid = pid;
+			this.writerProcessStartIdentity = identity;
+			const { stdin, stdout, stderr } = this.child;
+			if (!stdin || !stdout || !stderr) {
+				trySignalChild(this.child, "SIGTERM", identity);
+				this.rollBackLaunch();
+				return yield* Effect.fail(new Error("Agent writer process did not expose stdout and stderr pipes."));
+			}
+			this.childStdin = stdin;
+			this.childStdout = stdout;
+			this.childStderr = stderr;
+			this.childStdin.on("error", (error: Error) => {
+				this.writerControlError ??= error;
+			});
 		});
 	}
 
@@ -352,22 +367,27 @@ export class ChildProcessEngine {
 	}
 
 	private cancelFinalDrain(preserveSemanticEvidence = false): void {
-		if (this.finalDrainTimer) clearTimeout(this.finalDrainTimer);
-		this.finalDrainTimer = undefined;
+		this.finalDrainAt = undefined;
 		const signalWasSent = this.finalDrainSignalSent || this.finalDrainHardKillSignalSent;
 		if (signalWasSent && this.writerSpawn.gated) {
 			const queued = this.sendSupervisorControl("cancel-finalize", (delivered) => {
 				if (!delivered || this.settled) return;
-				if (this.finalDrainHardKillTimer) clearTimeout(this.finalDrainHardKillTimer);
-				this.finalDrainHardKillTimer = undefined;
+				this.finalDrainHardKillAt = undefined;
 				if (!preserveSemanticEvidence) this.clearFinalDrainEvidence();
+				this.wakeLifecycle();
 			});
-			if (queued) return;
+			if (queued) {
+				this.wakeLifecycle();
+				return;
+			}
 		}
-		if (preserveSemanticEvidence && signalWasSent) return;
-		if (this.finalDrainHardKillTimer) clearTimeout(this.finalDrainHardKillTimer);
-		this.finalDrainHardKillTimer = undefined;
+		if (preserveSemanticEvidence && signalWasSent) {
+			this.wakeLifecycle();
+			return;
+		}
+		this.finalDrainHardKillAt = undefined;
 		this.clearFinalDrainEvidence();
+		this.wakeLifecycle();
 	}
 
 	private clearFinalDrainEvidence(): void {
@@ -377,15 +397,8 @@ export class ChildProcessEngine {
 	}
 
 	private armTerminationHardKill(): void {
-		if (this.terminationHardKillTimer) clearTimeout(this.terminationHardKillTimer);
-		this.terminationHardKillTimer = setTimeout(() => {
-			this.terminationHardKillTimer = undefined;
-			if (!this.settled) {
-				const signal = this.writerSpawn.gated ? "SIGTERM" : "SIGKILL";
-				trySignalChild(this.child, signal, this.writerProcessStartIdentity);
-			}
-		}, 8_000);
-		this.terminationHardKillTimer.unref?.();
+		this.terminationHardKillAt = Date.now() + 8_000;
+		this.wakeLifecycle();
 	}
 
 	private claimTerminalCause(cause: ChildTerminalCause): boolean {
@@ -409,14 +422,14 @@ export class ChildProcessEngine {
 
 	private startFinalDrain(evidence: boolean): void {
 		this.finalDrainEvidence = evidence;
-		if (this.childExited || this.finalDrainTimer || this.finalDrainSignalSent || this.settled || this.terminalCause)
+		if (this.childExited || this.finalDrainAt || this.finalDrainSignalSent || this.settled || this.terminalCause)
 			return;
-		this.finalDrainTimer = setTimeout(() => this.requestFinalDrain(), 1_000);
-		this.finalDrainTimer.unref?.();
+		this.finalDrainAt = Date.now() + 1_000;
+		this.wakeLifecycle();
 	}
 
 	private requestFinalDrain(): void {
-		this.finalDrainTimer = undefined;
+		this.finalDrainAt = undefined;
 		if (this.settled) return;
 		const requested = this.writerSpawn.gated
 			? this.sendSupervisorControl("finalize", (delivered) => {
@@ -440,17 +453,8 @@ export class ChildProcessEngine {
 	}
 
 	private armFinalDrainWatchdog(): void {
-		this.finalDrainHardKillTimer = setTimeout(
-			() => {
-				this.finalDrainHardKillTimer = undefined;
-				const signal = this.writerSpawn.gated ? "SIGTERM" : "SIGKILL";
-				if (!this.settled && trySignalChild(this.child, signal, this.writerProcessStartIdentity)) {
-					this.finalDrainHardKillSignalSent = signal === "SIGKILL";
-				}
-			},
-			this.writerSpawn.gated ? 8_000 : 3_000,
-		);
-		this.finalDrainHardKillTimer.unref?.();
+		this.finalDrainHardKillAt = Date.now() + (this.writerSpawn.gated ? 8_000 : 3_000);
+		this.wakeLifecycle();
 	}
 
 	private terminateProtocol(cause: "protocol" | "turn-budget", error: string, signal: "SIGINT" | "SIGTERM"): boolean {
@@ -463,7 +467,6 @@ export class ChildProcessEngine {
 	}
 
 	private installRuntime(): void {
-		this.clearGuard = attachPostExitStdioGuard(this.child, { idleMs: 2_000, hardMs: 8_000 });
 		this.runtimeControl = {
 			state: "running",
 			interrupt: (kind) => this.terminate(kind),
@@ -485,10 +488,116 @@ export class ChildProcessEngine {
 			cancelFinalDrain: () => this.cancelFinalDrain(),
 			terminate: (cause, error, signal) => this.terminateProtocol(cause, error, signal),
 		});
-		this.childStdout.on("data", (chunk: Buffer) => this.protocol.pushStdout(chunk));
-		this.childStderr.on("data", (chunk: Buffer) => this.protocol.pushStderr(chunk));
+		this.childStdout.on("data", (chunk: Buffer) => {
+			this.protocol.pushStdout(chunk);
+			this.recordStdioActivity();
+		});
+		this.childStderr.on("data", (chunk: Buffer) => {
+			this.protocol.pushStderr(chunk);
+			this.recordStdioActivity();
+		});
+		this.childStdout.on("end", () => this.markStdioEnd("stdout"));
+		this.childStderr.on("end", () => this.markStdioEnd("stderr"));
 		this.child.on("exit", () => {
 			this.childExited = true;
+			const exitedAt = Date.now();
+			this.stdioIdleAt = exitedAt + 2_000;
+			this.stdioHardAt = exitedAt + 8_000;
+			this.wakeLifecycle();
+		});
+		this.child.on("close", (exitCode, signal) => {
+			this.clearStdioDeadlines();
+			Queue.offerUnsafe(this.lifecycleEvents, { type: "close", exitCode, signal });
+		});
+	}
+
+	private wakeLifecycle(): void {
+		if (this.lifecycleEvents) Queue.offerUnsafe(this.lifecycleEvents, { type: "wake" });
+	}
+
+	private recordStdioActivity(): void {
+		if (!this.childExited) return;
+		this.stdioIdleAt = Date.now() + 2_000;
+		this.wakeLifecycle();
+	}
+
+	private markStdioEnd(stream: "stdout" | "stderr"): void {
+		if (stream === "stdout") this.stdoutEnded = true;
+		else this.stderrEnded = true;
+		if (this.stdoutEnded && this.stderrEnded) this.clearStdioDeadlines();
+		this.wakeLifecycle();
+	}
+
+	private clearStdioDeadlines(): void {
+		this.stdioIdleAt = undefined;
+		this.stdioHardAt = undefined;
+	}
+
+	private destroyUnendedStdio(): void {
+		if (!this.stdoutEnded) bestEffort(() => this.childStdout.destroy());
+		if (!this.stderrEnded) bestEffort(() => this.childStderr.destroy());
+	}
+
+	private nextLifecycleDeadline(): number | undefined {
+		let deadline: number | undefined;
+		for (const candidate of [
+			this.finalDrainAt,
+			this.finalDrainHardKillAt,
+			this.terminationHardKillAt,
+			this.stdioIdleAt,
+			this.stdioHardAt,
+		]) {
+			if (candidate !== undefined && (deadline === undefined || candidate < deadline)) deadline = candidate;
+		}
+		return deadline;
+	}
+
+	private processLifecycleDeadlines(): void {
+		const now = Date.now();
+		if (this.finalDrainAt !== undefined && this.finalDrainAt <= now) {
+			this.finalDrainAt = undefined;
+			this.requestFinalDrain();
+		}
+		if (this.finalDrainHardKillAt !== undefined && this.finalDrainHardKillAt <= now) {
+			this.finalDrainHardKillAt = undefined;
+			const signal = this.writerSpawn.gated ? "SIGTERM" : "SIGKILL";
+			if (!this.settled && trySignalChild(this.child, signal, this.writerProcessStartIdentity)) {
+				this.finalDrainHardKillSignalSent = signal === "SIGKILL";
+			}
+		}
+		if (this.terminationHardKillAt !== undefined && this.terminationHardKillAt <= now) {
+			this.terminationHardKillAt = undefined;
+			if (!this.settled) {
+				const signal = this.writerSpawn.gated ? "SIGTERM" : "SIGKILL";
+				trySignalChild(this.child, signal, this.writerProcessStartIdentity);
+			}
+		}
+		if (this.stdioIdleAt !== undefined && this.stdioIdleAt <= now) {
+			this.stdioIdleAt = undefined;
+			this.destroyUnendedStdio();
+		}
+		if (this.stdioHardAt !== undefined && this.stdioHardAt <= now) {
+			this.stdioHardAt = undefined;
+			this.destroyUnendedStdio();
+		}
+	}
+
+	private awaitClose(): Effect.Effect<ChildProcessResult> {
+		return Effect.gen({ self: this }, function* () {
+			for (;;) {
+				const deadline = this.nextLifecycleDeadline();
+				const event =
+					deadline === undefined
+						? yield* Queue.take(this.lifecycleEvents)
+						: yield* Effect.raceFirst(
+								Queue.take(this.lifecycleEvents),
+								Effect.sleep(Math.max(0, deadline - Date.now())).pipe(
+									Effect.as<ChildLifecycleEvent>({ type: "wake" }),
+								),
+							);
+				if (event.type === "close") return yield* this.handleClose(event.exitCode, event.signal);
+				this.processLifecycleDeadlines();
+			}
 		});
 	}
 
@@ -521,25 +630,30 @@ export class ChildProcessEngine {
 		this.armTerminationHardKill();
 	}
 
-	private async recoverWriterGroup(): Promise<void> {
-		let groupClosed = await closeWriterProcessGroup(this.writerPid, this.writerProcessStartIdentity);
-		if (!groupClosed && this.writerSpawn.gated) {
-			groupClosed = (await reapOrphanWriterProcesses(this.input.config.asyncDir)).remaining === 0;
-		}
-		if (!groupClosed) {
-			this.forcedError ??= "Agent writer process group did not terminate; recovery ownership was retained.";
-			return;
-		}
-		try {
-			this.input.onWriterProcess?.({ state: "none" });
-		} catch (error) {
-			reportAgentDiagnostic(`Failed to clear writer process identity for Agent child ${this.input.index}:`, error);
-		}
-		try {
-			fs.rmSync(this.groupMemberProofPath, { force: true });
-		} catch {
-			// The registry is already clear; proof cleanup is best effort.
-		}
+	private recoverWriterGroup(): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			let groupClosed = yield* closeWriterProcessGroup(this.writerPid, this.writerProcessStartIdentity);
+			if (!groupClosed && this.writerSpawn.gated) {
+				groupClosed = (yield* reapOrphanWriterProcesses(this.input.config.asyncDir)).remaining === 0;
+			}
+			if (!groupClosed) {
+				this.forcedError ??= "Agent writer process group did not terminate; recovery ownership was retained.";
+				return;
+			}
+			try {
+				this.input.onWriterProcess?.({ state: "none" });
+			} catch (error) {
+				reportAgentDiagnostic(
+					`Failed to clear writer process identity for Agent child ${this.input.index}:`,
+					error,
+				);
+			}
+			try {
+				fs.rmSync(this.groupMemberProofPath, { force: true });
+			} catch {
+				// The registry is already clear; proof cleanup is best effort.
+			}
+		});
 	}
 
 	private readSupervisorDisposition() {
@@ -654,36 +768,25 @@ export class ChildProcessEngine {
 		};
 	}
 
-	private async handleClose(exitCode: number | null, signal: NodeJS.Signals | null): Promise<ChildProcessResult> {
-		this.input.activeControls.delete(this.input.index);
-		try {
-			await this.recoverWriterGroup();
+	private handleClose(exitCode: number | null, signal: NodeJS.Signals | null): Effect.Effect<ChildProcessResult> {
+		return Effect.gen({ self: this }, function* () {
+			this.input.activeControls.delete(this.input.index);
+			yield* this.recoverWriterGroup();
 			this.protocol.end();
 			this.settled = true;
 			const snapshot = this.protocol.snapshot();
 			return this.buildResult(snapshot, this.observeTerminal(exitCode, signal, snapshot));
-		} finally {
-			this.teardown();
-		}
+		});
 	}
 
 	private teardown(): void {
 		this.input.activeControls.delete(this.input.index);
-		if (this.finalDrainTimer) clearTimeout(this.finalDrainTimer);
-		if (this.finalDrainHardKillTimer) clearTimeout(this.finalDrainHardKillTimer);
-		if (this.terminationHardKillTimer) clearTimeout(this.terminationHardKillTimer);
-		this.finalDrainTimer = undefined;
-		this.finalDrainHardKillTimer = undefined;
-		this.terminationHardKillTimer = undefined;
-		try {
-			this.clearGuard?.();
-		} catch {}
-		try {
-			this.protocol.end();
-		} catch {}
-		try {
-			cleanupTempDir(this.built.tempDir);
-		} catch {}
+		this.finalDrainAt = undefined;
+		this.finalDrainHardKillAt = undefined;
+		this.terminationHardKillAt = undefined;
+		this.clearStdioDeadlines();
+		bestEffort(() => this.protocol.end());
+		bestEffort(() => cleanupTempDir(this.built.tempDir));
 		this.removeWriterControl();
 		this.settled = true;
 	}

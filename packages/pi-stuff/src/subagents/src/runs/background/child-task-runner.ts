@@ -3,6 +3,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
+import { Effect } from "effect";
 import { formatOutputArtifactContent, getArtifactPaths, withArtifactGroupWriteClaim } from "../../shared/artifacts.ts";
 import { writePrivateAtomicText } from "../../shared/atomic-json.ts";
 import { createChildTranscriptWriter } from "../../shared/child-transcript.ts";
@@ -271,26 +272,28 @@ async function runAttempts(
 			clearStaleContextUsage(input, statusStep);
 			let run: ChildProcessResult;
 			try {
-				run = await new ChildProcessEngine({
-					config: input.config,
-					task: input.task,
-					index: input.index,
-					model: candidate,
-					taskCwd: input.taskCwd,
-					sessionDir: childSessionDir,
-					outputFile,
-					transcript: transcript.writer,
-					artifactJsonlPath:
-						transcript.artifactPaths && input.config.artifactConfig?.includeJsonl !== false
-							? transcript.artifactPaths.jsonlPath
-							: undefined,
-					statusStep,
-					statusPath: input.statusPath,
-					status: input.status,
-					activeControls: input.activeControls,
-					consumeScheduledStop: () => input.consumeScheduledStop(input.index),
-					onWriterProcess: input.onWriterProcess,
-				}).run();
+				run = await Effect.runPromise(
+					new ChildProcessEngine({
+						config: input.config,
+						task: input.task,
+						index: input.index,
+						model: candidate,
+						taskCwd: input.taskCwd,
+						sessionDir: childSessionDir,
+						outputFile,
+						transcript: transcript.writer,
+						artifactJsonlPath:
+							transcript.artifactPaths && input.config.artifactConfig?.includeJsonl !== false
+								? transcript.artifactPaths.jsonlPath
+								: undefined,
+						statusStep,
+						statusPath: input.statusPath,
+						status: input.status,
+						activeControls: input.activeControls,
+						consumeScheduledStop: () => input.consumeScheduledStop(input.index),
+						onWriterProcess: input.onWriterProcess,
+					}).run(),
+				);
 			} catch (error) {
 				const failed = failedLaunch(error instanceof Error ? error.message : String(error), candidate);
 				summary.attempts.push(failed.attempt);

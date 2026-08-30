@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	runtimeErrorCode as errorCode,
@@ -316,27 +317,29 @@ export function terminateOrphanWriterProcesses(asyncDir: string, kill: ProcessKi
  * later TERM -> KILL -> absence probes that a terminating runner cannot defer to
  * a future Host/session poll.
  */
-export async function reapOrphanWriterProcesses(
+export function reapOrphanWriterProcesses(
 	asyncDir: string,
 	options: {
 		readonly kill?: ProcessKillFn;
 		readonly timeoutMs?: number;
 		readonly pollIntervalMs?: number;
 	} = {},
-): Promise<{ remaining: number; terminated: number }> {
+): Effect.Effect<{ remaining: number; terminated: number }> {
 	const kill = options.kill ?? process.kill;
 	const timeoutMs = Math.max(250, options.timeoutMs ?? 2_000);
 	const pollIntervalMs = Math.max(10, Math.min(options.pollIntervalMs ?? 25, timeoutMs));
-	const startedAt = Date.now();
-	let terminated = 0;
-	let result = terminateOrphanWriterProcesses(asyncDir, kill, startedAt);
-	terminated += result.terminated;
-	while (result.remaining > 0 && Date.now() - startedAt < timeoutMs) {
-		await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
-		result = terminateOrphanWriterProcesses(asyncDir, kill);
+	return Effect.gen(function* () {
+		const startedAt = Date.now();
+		let terminated = 0;
+		let result = terminateOrphanWriterProcesses(asyncDir, kill, startedAt);
 		terminated += result.terminated;
-	}
-	return { remaining: result.remaining, terminated };
+		while (result.remaining > 0 && Date.now() - startedAt < timeoutMs) {
+			yield* Effect.sleep(pollIntervalMs);
+			result = terminateOrphanWriterProcesses(asyncDir, kill);
+			terminated += result.terminated;
+		}
+		return { remaining: result.remaining, terminated };
+	});
 }
 
 function readWriterProcessRegistry(asyncDir: string): WriterProcessRegistry | undefined {

@@ -2,13 +2,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
+import { Cause, Effect, Fiber, Queue } from "effect";
 import { Guard } from "typebox/guard";
-
-const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-const MAX_OUTPUT_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
-const MAX_PROTOCOL_LINE_BYTES = 16 * 1024 * 1024;
-const POST_EXIT_OUTPUT_IDLE_MS = 2_000;
-const POST_EXIT_OUTPUT_HARD_MS = 8_000;
+import {
+	createBoundedPipeForwarder,
+	POST_EXIT_OUTPUT_HARD_MS,
+	POST_EXIT_OUTPUT_IDLE_MS,
+} from "./writer-protocol-forwarder.mjs";
 
 function isRuntimeNumber(value) {
 	return (
@@ -125,342 +125,158 @@ function signalMembers(signal, source) {
 	return true;
 }
 
-function delay(milliseconds) {
-	return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function maxOutputBytes() {
-	const parsed = Number(process.env[MAX_OUTPUT_BYTES_ENV]);
-	return Number.isFinite(parsed) && parsed >= 1
-		? Math.min(Math.floor(parsed), Number.MAX_SAFE_INTEGER - 1)
-		: DEFAULT_MAX_OUTPUT_BYTES;
-}
-
-function projectProtocolLine(line) {
-	let event;
-	try {
-		event = JSON.parse(line.toString("utf8"));
-	} catch {
-		return line;
-	}
-	if (!event || !Guard.IsObject(event) || Array.isArray(event) || !Guard.IsString(event.type)) return line;
-	if (event.type === "message_start" || event.type === "message_update" || event.type === "turn_end") {
-		return Buffer.from(JSON.stringify({ type: event.type }));
-	}
-	if (event.type === "agent_end") {
-		const projected = { type: event.type };
-		if (event.willRetry === true) projected.willRetry = true;
-		return Buffer.from(JSON.stringify(projected));
-	}
-	if (event.type === "tool_execution_update" || event.type === "tool_execution_end") {
-		const projected = { type: event.type };
-		if (Guard.IsString(event.toolCallId)) projected.toolCallId = event.toolCallId;
-		if (Guard.IsString(event.toolName)) projected.toolName = event.toolName;
-		if (Guard.IsBoolean(event.isError)) projected.isError = event.isError;
-		return Buffer.from(JSON.stringify(projected));
-	}
-	return line;
-}
-
-function createBoundedPipeForwarder(source, destination, onLimit, projectProtocol = false) {
-	const limitBytes = maxOutputBytes();
-	const lineLimitBytes = Math.min(MAX_PROTOCOL_LINE_BYTES, limitBytes);
-	let observedBytes = 0;
-	let forwardedBytes = 0;
-	let limitReported = false;
-	let lastReadAt = Date.now();
-	const forward = async (chunk) => {
-		observedBytes += chunk.length;
-		if (observedBytes > limitBytes && !limitReported) {
-			limitReported = true;
-			onLimit(observedBytes);
-		}
-		// Forward one byte beyond the configured bound so the runner's own
-		// protocol authority deterministically observes overflow. Continue
-		// draining and discarding after that point so neither memory nor disk is
-		// an unbounded buffer while the process group is being reaped.
-		const remaining = Math.max(0, limitBytes + 1 - forwardedBytes);
-		if (remaining === 0) return;
-		const forwarded = chunk.subarray(0, Math.min(chunk.length, remaining));
-		forwardedBytes += forwarded.length;
-		await new Promise((resolve, reject) => {
-			destination.write(forwarded, (error) => {
-				if (error) reject(error);
-				else resolve();
-			});
-		});
-	};
-	const done = (async () => {
-		if (!projectProtocol) {
-			for await (const value of source) {
-				lastReadAt = Date.now();
-				await forward(Buffer.isBuffer(value) ? value : Buffer.from(value));
-			}
-			return;
-		}
-
-		let pending = [];
-		let pendingBytes = 0;
-		const flushLine = async (terminated) => {
-			const line = pendingBytes > 0 ? Buffer.concat(pending, pendingBytes) : Buffer.alloc(0);
-			pending = [];
-			pendingBytes = 0;
-			const projected = projectProtocolLine(line);
-			await forward(terminated ? Buffer.concat([projected, Buffer.from("\n")], projected.length + 1) : projected);
+function createControlChannel(input) {
+	return Effect.gen(function* () {
+		const events = yield* Queue.unbounded();
+		let buffer = "";
+		let ended = false;
+		const finish = () => {
+			if (ended) return;
+			ended = true;
+			if (buffer) Queue.offerUnsafe(events, { done: false, value: buffer });
+			buffer = "";
+			Queue.offerUnsafe(events, { done: true, value: undefined });
 		};
-		const append = async (segment) => {
-			if (segment.length === 0) return true;
-			const nextBytes = pendingBytes + segment.length;
-			if (nextBytes <= lineLimitBytes) {
-				pending.push(segment);
-				pendingBytes = nextBytes;
-				return true;
-			}
-			const accepted = Math.max(0, lineLimitBytes + 1 - pendingBytes);
-			if (accepted > 0) {
-				pending.push(segment.subarray(0, accepted));
-				pendingBytes += accepted;
-			}
-			limitReported = true;
-			onLimit(nextBytes);
-			await forward(Buffer.concat(pending, pendingBytes));
-			pending = [];
-			pendingBytes = 0;
-			return false;
-		};
-
-		for await (const value of source) {
-			lastReadAt = Date.now();
-			if (limitReported) continue;
-			const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
-			let start = 0;
-			for (let index = 0; index < chunk.length; index++) {
-				if (chunk[index] !== 0x0a) continue;
-				if (!(await append(chunk.subarray(start, index)))) break;
-				await flushLine(true);
-				start = index + 1;
-			}
-			if (!limitReported) await append(chunk.subarray(start));
-		}
-		if (!limitReported && pendingBytes > 0) await flushLine(false);
-	})();
-	return {
-		close() {
-			try {
-				source.destroy();
-			} catch {
-				// The read side may already be terminal.
-			}
-		},
-		done,
-		lastReadAt: () => lastReadAt,
-	};
-}
-
-function armPostExitOutputDrain(forwarders) {
-	const exitedAt = Date.now();
-	const hardDeadline = exitedAt + POST_EXIT_OUTPUT_HARD_MS;
-	let cancelled = false;
-	let timer;
-	void (async () => {
-		for (;;) {
-			if (cancelled) return;
-			const now = Date.now();
-			const lastActivity = Math.max(exitedAt, ...forwarders.map((forwarder) => forwarder.lastReadAt()));
-			if (now >= hardDeadline || now - lastActivity >= POST_EXIT_OUTPUT_IDLE_MS) {
-				for (const forwarder of forwarders) forwarder.close();
+		input.setEncoding("utf8");
+		input.on("data", (chunk) => {
+			if (ended) return;
+			buffer += chunk;
+			if (buffer.length > 4_096) {
+				finish();
 				return;
 			}
-			await new Promise((resolve) => {
-				timer = setTimeout(
-					resolve,
-					Math.min(100, hardDeadline - now, POST_EXIT_OUTPUT_IDLE_MS - (now - lastActivity)),
-				);
-				timer.unref?.();
-			});
-		}
-	})();
-	return () => {
-		cancelled = true;
-		if (timer) clearTimeout(timer);
-	};
-}
-
-function createControlChannel(input) {
-	const lines = [];
-	const waiters = [];
-	let buffer = "";
-	let ended = false;
-	const deliver = () => {
-		while (lines.length > 0 && waiters.length > 0) {
-			const resolve = waiters.shift();
-			resolve({ done: false, value: lines.shift() });
-		}
-		if (!ended) return;
-		while (waiters.length > 0) waiters.shift()({ done: true, value: undefined });
-	};
-	const finish = () => {
-		if (ended) return;
-		ended = true;
-		if (buffer) lines.push(buffer);
-		buffer = "";
-		deliver();
-	};
-	input.setEncoding("utf8");
-	input.on("data", (chunk) => {
-		if (ended) return;
-		buffer += chunk;
-		if (buffer.length > 4_096) {
-			finish();
-			return;
-		}
-		for (;;) {
-			const newline = buffer.indexOf("\n");
-			if (newline < 0) break;
-			lines.push(buffer.slice(0, newline).replace(/\r$/u, ""));
-			buffer = buffer.slice(newline + 1);
-		}
-		deliver();
+			for (;;) {
+				const newline = buffer.indexOf("\n");
+				if (newline < 0) break;
+				Queue.offerUnsafe(events, { done: false, value: buffer.slice(0, newline).replace(/\r$/u, "") });
+				buffer = buffer.slice(newline + 1);
+			}
+		});
+		input.once("end", finish);
+		input.once("close", finish);
+		input.once("error", finish);
+		input.resume();
+		return {
+			next: () => Queue.take(events),
+			close() {
+				finish();
+				input.pause();
+				input.destroy();
+			},
+		};
 	});
-	input.once("end", finish);
-	input.once("close", finish);
-	input.once("error", finish);
-	input.resume();
-	return {
-		next() {
-			if (lines.length > 0) return Promise.resolve({ done: false, value: lines.shift() });
-			if (ended) return Promise.resolve({ done: true, value: undefined });
-			return new Promise((resolve) => waiters.push(resolve));
-		},
-		close() {
-			finish();
-			input.pause();
-			input.destroy();
-		},
-	};
 }
 
 function createFileControlChannel(filePath, token, parentPid, parentStarted) {
-	let lineCursor = 0;
-	let lastSequence = 0;
-	let closed = false;
-	let changed = true;
-	let wake;
-	let watcher;
-	try {
-		watcher = watch(filePath, () => {
-			changed = true;
-			wake?.();
-			wake = undefined;
-		});
-	} catch {
-		// The bounded liveness fallback below also observes appended commands.
-	}
-	const waitForChange = async () => {
-		if (changed) {
-			changed = false;
-			return;
+	return Effect.gen(function* () {
+		const changes = yield* Queue.sliding(1);
+		let lineCursor = 0;
+		let lastSequence = 0;
+		let closed = false;
+		let changed = true;
+		let watcher;
+		try {
+			watcher = watch(filePath, () => {
+				changed = true;
+				Queue.offerUnsafe(changes, undefined);
+			});
+		} catch {
+			// The bounded liveness fallback below also observes appended commands.
 		}
-		await Promise.race([
-			new Promise((resolve) => {
-				wake = resolve;
-			}),
-			delay(250),
-		]);
-		wake = undefined;
-	};
-	const invalid = () => {
-		closed = true;
-		watcher?.close();
-		return { done: false, value: "invalid" };
-	};
-	return {
-		async next() {
-			while (!closed) {
-				if (processStartIdentity(parentPid) !== parentStarted) return { done: true, value: undefined };
-				try {
-					const content = readFileSync(filePath, "utf8");
-					if (content.length > 64 * 1024) return invalid();
-					const lines = content.split("\n");
-					const completeLineCount = lines.length - 1;
-					while (lineCursor < completeLineCount) {
-						const line = lines[lineCursor++];
-						let record;
-						try {
-							record = JSON.parse(line);
-						} catch {
-							return invalid();
-						}
-						if (
-							record?.version !== 1 ||
-							record.token !== token ||
-							!Number.isSafeInteger(record.sequence) ||
-							record.sequence <= lastSequence ||
-							!Guard.IsString(record.command)
-						) {
-							return invalid();
-						}
-						lastSequence = record.sequence;
-						return { done: false, value: record.command };
-					}
-				} catch (error) {
-					if (!error || !Guard.IsObject(error) || error.code !== "ENOENT") {
-						return invalid();
-					}
-				}
-				await waitForChange();
+		const waitForChange = () => {
+			if (changed) {
+				changed = false;
+				return Effect.void;
 			}
-			return { done: true, value: undefined };
-		},
-		close() {
+			return Effect.raceFirst(Queue.take(changes), Effect.sleep(250)).pipe(Effect.asVoid);
+		};
+		const invalid = () => {
 			closed = true;
 			watcher?.close();
-			wake?.();
-			wake = undefined;
-		},
-	};
+			return { done: false, value: "invalid" };
+		};
+		return {
+			next: () =>
+				Effect.gen(function* () {
+					while (!closed) {
+						if (processStartIdentity(parentPid) !== parentStarted) return { done: true, value: undefined };
+						try {
+							const content = readFileSync(filePath, "utf8");
+							if (content.length > 64 * 1024) return invalid();
+							const lines = content.split("\n");
+							const completeLineCount = lines.length - 1;
+							while (lineCursor < completeLineCount) {
+								const line = lines[lineCursor++];
+								let record;
+								try {
+									record = JSON.parse(line);
+								} catch {
+									return invalid();
+								}
+								if (
+									record?.version !== 1 ||
+									record.token !== token ||
+									!Number.isSafeInteger(record.sequence) ||
+									record.sequence <= lastSequence ||
+									!Guard.IsString(record.command)
+								) {
+									return invalid();
+								}
+								lastSequence = record.sequence;
+								return { done: false, value: record.command };
+							}
+						} catch (error) {
+							if (!error || !Guard.IsObject(error) || error.code !== "ENOENT") return invalid();
+						}
+						yield* waitForChange();
+					}
+					return { done: true, value: undefined };
+				}),
+			close() {
+				closed = true;
+				watcher?.close();
+				Queue.offerUnsafe(changes, undefined);
+			},
+		};
+	});
 }
 
-async function captureStartIdentity(pid, timeoutMs = 250) {
+function captureStartIdentity(pid, timeoutMs = 250) {
 	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		const identity = processStartIdentity(pid);
-		if (identity) return identity;
-		if (!processExists(pid) || Date.now() >= deadline) return undefined;
-		await delay(20);
-	}
+	return Effect.gen(function* () {
+		for (;;) {
+			const identity = processStartIdentity(pid);
+			if (identity) return identity;
+			if (!processExists(pid) || Date.now() >= deadline) return undefined;
+			yield* Effect.sleep(20);
+		}
+	});
 }
 
 const encoded = process.argv[2];
 if (!encoded) throw new Error("Agent writer supervisor requires a launch envelope.");
 const envelope = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
-const controlLines =
-	Guard.IsString(envelope.controlPath) && Guard.IsString(envelope.controlToken)
-		? createFileControlChannel(
-				envelope.controlPath,
-				envelope.controlToken,
-				envelope.parentPid,
-				envelope.parentStarted,
-			)
-		: createControlChannel(process.stdin);
-const controlIterator = controlLines;
-const startupControl = await controlIterator.next();
-if (startupControl.done || startupControl.value.trim() !== "proceed") process.exit(125);
-if (processStartIdentity(envelope.parentPid) !== envelope.parentStarted) process.exit(125);
 
 let child;
 let childStarted;
-let childExit;
-let childOutputForwarding = Promise.resolve();
+let controlLines;
+let lifecycleEvents;
+let outputFibers = [];
 let childOutputError;
 let terminationSignal;
 let pendingStop;
 let settled = false;
-let parentTimer;
-let terminationForceTimer;
-let finalizationForceTimer;
+let parentCheckAt;
+let terminationForceAt;
+let terminationForceArmed = false;
+let terminationForceSource;
+let finalizationForceAt;
 let finalizationActive = false;
 const managerSignalsByMember = new Map();
+
+function wakeLifecycle() {
+	if (lifecycleEvents) Queue.offerUnsafe(lifecycleEvents, { type: "wake" });
+}
 
 function memberKey(member) {
 	return `${member.pid}:${member.started}`;
@@ -547,49 +363,34 @@ function requestStop(signal, source = "termination") {
 		return;
 	}
 	finalizationActive = false;
-	if (finalizationForceTimer) clearTimeout(finalizationForceTimer);
-	finalizationForceTimer = undefined;
+	finalizationForceAt = undefined;
 	forgetManagerSignalSource("finalization");
 	signalMembers(childSignal, source);
-	if (!terminationForceTimer) {
-		terminationForceTimer = setTimeout(() => signalMembers("SIGKILL", source), 3_000);
-		terminationForceTimer.unref?.();
+	if (!terminationForceArmed) {
+		terminationForceArmed = true;
+		terminationForceSource = source;
+		terminationForceAt = Date.now() + 3_000;
 	}
+	wakeLifecycle();
 }
 
 function requestFinalization() {
 	if (terminationSignal || finalizationActive || settled) return;
 	finalizationActive = true;
 	signalMembers("SIGTERM", "finalization");
-	finalizationForceTimer = setTimeout(() => {
-		finalizationForceTimer = undefined;
-		if (finalizationActive && !settled) signalMembers("SIGKILL", "finalization");
-	}, 3_000);
-	finalizationForceTimer.unref?.();
+	finalizationForceAt = Date.now() + 3_000;
+	wakeLifecycle();
 }
 
 function cancelFinalization() {
 	if (terminationSignal || settled) return;
 	finalizationActive = false;
-	if (finalizationForceTimer) clearTimeout(finalizationForceTimer);
-	finalizationForceTimer = undefined;
+	finalizationForceAt = undefined;
 	// Cancellation stops the future hard-kill, but cannot erase a SIGTERM that
 	// was already delivered to this exact process identity. Retaining that
 	// causal history distinguishes a delayed response to our signal from an
 	// unrelated external signal of a different kind.
-}
-
-async function consumeControls() {
-	for (;;) {
-		const next = await controlIterator.next();
-		if (next.done) return;
-		const command = next.value.trim();
-		if (command === "finalize") requestFinalization();
-		else if (command === "cancel-finalize") cancelFinalization();
-		else if (command === "terminate-sigint") requestStop("SIGINT", "termination");
-		else if (command === "terminate-sigterm") requestStop("SIGTERM", "termination");
-		else requestStop("SIGTERM", "external");
-	}
+	wakeLifecycle();
 }
 
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
@@ -599,175 +400,283 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
 	process.on(signal, () => requestStop(signal, "external"));
 }
 
-async function reapMembers() {
-	let termRequested = false;
-	let nextKillAt = 0;
-	for (;;) {
-		let members;
-		try {
-			members = groupMembers();
-		} catch {
-			// Never turn a transient group scan failure into false proof of exit.
-			// The live supervisor remains the authenticated PGID anchor and retries.
-			await delay(250);
-			continue;
-		}
-		if (members.length === 0) return true;
-		if (!termRequested) {
-			signalMembers("SIGTERM", "reap");
-			termRequested = true;
-			await delay(150);
-			continue;
-		}
-		if (Date.now() >= nextKillAt) {
-			signalMembers("SIGKILL", "reap");
-			nextKillAt = Date.now() + 1_000;
-		}
-		await delay(100);
-	}
+function handleControlCommand(command) {
+	if (command === "finalize") requestFinalization();
+	else if (command === "cancel-finalize") cancelFinalization();
+	else if (command === "terminate-sigint") requestStop("SIGINT", "termination");
+	else if (command === "terminate-sigterm") requestStop("SIGTERM", "termination");
+	else requestStop("SIGTERM", "external");
 }
 
-async function settle(code, signal) {
-	if (settled) return;
+function nextLifecycleDeadline(postExitAt, forwarders) {
+	let deadline;
+	const postExitDeadline =
+		postExitAt === undefined
+			? undefined
+			: Math.min(
+					postExitAt + POST_EXIT_OUTPUT_HARD_MS,
+					Math.max(postExitAt, ...forwarders.map((forwarder) => forwarder.lastReadAt())) +
+						POST_EXIT_OUTPUT_IDLE_MS,
+				);
+	for (const candidate of [parentCheckAt, terminationForceAt, finalizationForceAt, postExitDeadline]) {
+		if (candidate !== undefined && (deadline === undefined || candidate < deadline)) deadline = candidate;
+	}
+	return deadline;
+}
+
+function processLifecycleDeadlines(postExitAt, forwarders) {
+	const now = Date.now();
+	if (terminationForceAt !== undefined && terminationForceAt <= now) {
+		terminationForceAt = undefined;
+		signalMembers("SIGKILL", terminationForceSource ?? "termination");
+	}
+	if (finalizationForceAt !== undefined && finalizationForceAt <= now) {
+		finalizationForceAt = undefined;
+		if (finalizationActive && !settled) signalMembers("SIGKILL", "finalization");
+	}
+	if (parentCheckAt !== undefined && parentCheckAt <= now) {
+		if (processStartIdentity(envelope.parentPid) !== envelope.parentStarted) requestStop("SIGTERM", "external");
+		parentCheckAt = now + 250;
+	}
+	if (postExitAt !== undefined) {
+		const lastActivity = Math.max(postExitAt, ...forwarders.map((forwarder) => forwarder.lastReadAt()));
+		if (now >= postExitAt + POST_EXIT_OUTPUT_HARD_MS || now - lastActivity >= POST_EXIT_OUTPUT_IDLE_MS) {
+			for (const forwarder of forwarders) forwarder.close();
+			return undefined;
+		}
+	}
+	return postExitAt;
+}
+
+function awaitChildClose(forwarders) {
+	return Effect.gen(function* () {
+		let childExitTuple;
+		let controlOpen = true;
+		let postExitAt;
+		for (;;) {
+			let wait = Queue.take(lifecycleEvents);
+			if (controlOpen) {
+				wait = Effect.raceFirst(
+					wait,
+					controlLines.next().pipe(Effect.map((value) => ({ type: "control", value }))),
+				);
+			}
+			const deadline = nextLifecycleDeadline(postExitAt, forwarders);
+			if (deadline !== undefined) {
+				wait = Effect.raceFirst(
+					wait,
+					Effect.sleep(Math.max(0, deadline - Date.now())).pipe(Effect.as({ type: "wake" })),
+				);
+			}
+			const event = yield* wait;
+			if (event.type === "close") return childExitTuple ?? event;
+			if (event.type === "error") {
+				childExitTuple = { code: 1, error: event.error, signal: null };
+				postExitAt = Date.now();
+			} else if (event.type === "exit") {
+				childExitTuple = { code: event.code, signal: event.signal };
+				postExitAt = Date.now();
+			} else if (event.type === "control") {
+				if (event.value.done) controlOpen = false;
+				else handleControlCommand(event.value.value.trim());
+			}
+			postExitAt = processLifecycleDeadlines(postExitAt, forwarders);
+		}
+	});
+}
+
+function reapMembers() {
+	return Effect.gen(function* () {
+		let termRequested = false;
+		let nextKillAt = 0;
+		for (;;) {
+			let members;
+			try {
+				members = groupMembers();
+			} catch {
+				// Never turn a transient group scan failure into false proof of exit.
+				// The live supervisor remains the authenticated PGID anchor and retries.
+				yield* Effect.sleep(250);
+				continue;
+			}
+			if (members.length === 0) return true;
+			if (!termRequested) {
+				signalMembers("SIGTERM", "reap");
+				termRequested = true;
+				yield* Effect.sleep(150);
+				continue;
+			}
+			if (Date.now() >= nextKillAt) {
+				signalMembers("SIGKILL", "reap");
+				nextKillAt = Date.now() + 1_000;
+			}
+			yield* Effect.sleep(100);
+		}
+	});
+}
+
+function settle(code, signal) {
+	if (settled) return Effect.void;
 	settled = true;
-	if (parentTimer) clearInterval(parentTimer);
-	if (terminationForceTimer) clearTimeout(terminationForceTimer);
-	if (finalizationForceTimer) clearTimeout(finalizationForceTimer);
-	controlLines.close();
-	// `readline.close()` stops line parsing but does not close the inherited pipe.
-	// Keeping that stdin handle referenced prevents Bun/Node from exiting after
-	// the writer has settled, so the parent runner never observes `close`.
-	if (!Guard.IsString(envelope.controlPath)) {
-		process.stdin.pause();
-		process.stdin.destroy();
-	}
-	const reaped = await reapMembers();
-	await childOutputForwarding;
-	const observedSignal = signal ?? signalFromExitCode(code);
-	// Preserve an unexpected external signal. A prior manager SIGTERM does not
-	// authorize us to relabel a later external SIGKILL as manager-owned. Only a
-	// signal actually sent to this exact child process identity establishes that
-	// provenance; when it does, report the initiating manager signal so the
-	// parent can recognize its own final-drain sequence.
-	const managerSource = managerSignalSourceForChild(observedSignal);
-	const signalCode =
-		managerSource === "termination"
-			? (terminationSignal ?? observedSignal)
-			: managerSource === "finalization"
-				? "SIGTERM"
-				: observedSignal;
-	const signalNumber = Guard.IsString(signalCode) ? osConstants.signals[signalCode] : undefined;
-	try {
-		const disposition = {
-			version: 1,
-			supervisorPid: process.pid,
-			supervisorProcessStartIdentity: processStartIdentity(process.pid),
-			childPid: child?.pid,
-			childProcessStartIdentity: childStarted,
-			exitCode: isRuntimeNumber(code) ? code : null,
-			// Keep the child's raw exit tuple authoritative. `observedSignal` may be
-			// inferred from an explicit 128+N exit code solely for provenance.
-			signal: signal ?? null,
-			origin:
-				managerSource === "termination"
-					? "manager-request"
-					: managerSource === "finalization"
-						? "manager-final-drain"
-						: observedSignal
-							? "external"
-							: null,
-			reaped,
-		};
-		if (childOutputError) {
-			disposition.outputForwardingError = String(
-				childOutputError instanceof Error ? childOutputError.message : childOutputError,
-			).slice(0, 1_000);
+	parentCheckAt = undefined;
+	terminationForceAt = undefined;
+	finalizationForceAt = undefined;
+	controlLines?.close();
+	return Effect.gen(function* () {
+		// `readline.close()` stops line parsing but does not close the inherited pipe.
+		// Keeping that stdin handle referenced prevents Bun/Node from exiting after
+		// the writer has settled, so the parent runner never observes `close`.
+		if (!Guard.IsString(envelope.controlPath)) {
+			process.stdin.pause();
+			process.stdin.destroy();
 		}
-		writeTerminalDisposition(disposition);
-	} catch (error) {
-		process.stderr.write(
-			`Agent writer supervisor failed to persist terminal disposition: ${error instanceof Error ? error.message : String(error)}\n`,
-		);
-	}
-	const supervisorExitCode =
-		!reaped || childOutputError ? 1 : signalNumber ? 128 + signalNumber : isRuntimeNumber(code) ? code : 1;
-	// Let inherited stdout/stderr drain after the child exit. Calling
-	// `process.exit()` here can close the shared pipe before a fast Pi writer's
-	// final JSON frames reach the parent runner.
-	process.exitCode = supervisorExitCode;
+		const reaped = yield* reapMembers();
+		for (const fiber of outputFibers) yield* Fiber.join(fiber);
+		const observedSignal = signal ?? signalFromExitCode(code);
+		// Preserve an unexpected external signal. A prior manager SIGTERM does not
+		// authorize us to relabel a later external SIGKILL as manager-owned. Only a
+		// signal actually sent to this exact child process identity establishes that
+		// provenance; when it does, report the initiating manager signal so the
+		// parent can recognize its own final-drain sequence.
+		const managerSource = managerSignalSourceForChild(observedSignal);
+		const signalCode =
+			managerSource === "termination"
+				? (terminationSignal ?? observedSignal)
+				: managerSource === "finalization"
+					? "SIGTERM"
+					: observedSignal;
+		const signalNumber = Guard.IsString(signalCode) ? osConstants.signals[signalCode] : undefined;
+		try {
+			const disposition = {
+				version: 1,
+				supervisorPid: process.pid,
+				supervisorProcessStartIdentity: processStartIdentity(process.pid),
+				childPid: child?.pid,
+				childProcessStartIdentity: childStarted,
+				exitCode: isRuntimeNumber(code) ? code : null,
+				// Keep the child's raw exit tuple authoritative. `observedSignal` may be
+				// inferred from an explicit 128+N exit code solely for provenance.
+				signal: signal ?? null,
+				origin:
+					managerSource === "termination"
+						? "manager-request"
+						: managerSource === "finalization"
+							? "manager-final-drain"
+							: observedSignal
+								? "external"
+								: null,
+				reaped,
+			};
+			if (childOutputError) {
+				disposition.outputForwardingError = String(
+					childOutputError instanceof Error ? childOutputError.message : childOutputError,
+				).slice(0, 1_000);
+			}
+			writeTerminalDisposition(disposition);
+		} catch (error) {
+			process.stderr.write(
+				`Agent writer supervisor failed to persist terminal disposition: ${error instanceof Error ? error.message : String(error)}\n`,
+			);
+		}
+		const supervisorExitCode =
+			!reaped || childOutputError ? 1 : signalNumber ? 128 + signalNumber : isRuntimeNumber(code) ? code : 1;
+		// Let inherited stdout/stderr drain after the child exit. Calling
+		// `process.exit()` here can close the shared pipe before a fast Pi writer's
+		// final JSON frames reach the parent runner.
+		process.exitCode = supervisorExitCode;
+	});
 }
 
-try {
-	child = spawn(envelope.command, envelope.args, {
-		cwd: process.cwd(),
-		detached: false,
-		env: process.env,
-		stdio: ["ignore", "pipe", "pipe"],
-		windowsHide: true,
-	});
-	if (!child.stdout || !child.stderr) throw new Error("Agent writer supervisor failed to open child output pipes.");
-	let outputForwarders = [];
-	let childExitTuple;
-	let cancelPostExitDrain = () => {};
-	childExit = new Promise((resolve) => {
-		child.once("error", (error) => {
-			cancelPostExitDrain();
-			cancelPostExitDrain = armPostExitOutputDrain(outputForwarders);
-			resolve({ code: 1, error, signal: null });
+function supervise() {
+	return Effect.gen(function* () {
+		lifecycleEvents = yield* Queue.unbounded();
+		controlLines = yield* Guard.IsString(envelope.controlPath) && Guard.IsString(envelope.controlToken)
+			? createFileControlChannel(
+					envelope.controlPath,
+					envelope.controlToken,
+					envelope.parentPid,
+					envelope.parentStarted,
+				)
+			: createControlChannel(process.stdin);
+		const startupControl = yield* controlLines.next();
+		if (startupControl.done || startupControl.value.trim() !== "proceed") process.exit(125);
+		if (processStartIdentity(envelope.parentPid) !== envelope.parentStarted) process.exit(125);
+
+		child = spawn(envelope.command, envelope.args, {
+			cwd: process.cwd(),
+			detached: false,
+			env: process.env,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
 		});
-		// Start a bounded drain only after process exit. A normal child reaches
-		// `close` immediately and retains every final output byte; an escaped
-		// descendant that inherited the pipes cannot block completion forever.
-		child.once("exit", (code, signal) => {
-			childExitTuple = { code, signal };
-			cancelPostExitDrain();
-			cancelPostExitDrain = armPostExitOutputDrain(outputForwarders);
-		});
-		child.once("close", (code, signal) => {
-			cancelPostExitDrain();
-			resolve(childExitTuple ?? { code, signal });
-		});
-	});
-	const stdoutForwarder = createBoundedPipeForwarder(
-		child.stdout,
-		process.stdout,
-		() => requestStop("SIGTERM", "termination"),
-		true,
-	);
-	const stderrForwarder = createBoundedPipeForwarder(child.stderr, process.stderr, () =>
-		requestStop("SIGTERM", "termination"),
-	);
-	outputForwarders = [stdoutForwarder, stderrForwarder];
-	childOutputForwarding = Promise.all([stdoutForwarder.done, stderrForwarder.done]).then(
-		() => undefined,
-		(error) => {
-			childOutputError = error;
-			requestStop("SIGTERM", "external");
-		},
-	);
-	childStarted = child.pid ? await captureStartIdentity(child.pid) : undefined;
-	if (!child.pid || !childStarted) {
-		try {
-			child.kill("SIGKILL");
-		} catch {}
-		await settle(1, "SIGKILL");
-	} else {
+		if (!child.stdout || !child.stderr) {
+			throw new Error("Agent writer supervisor failed to open child output pipes.");
+		}
+		child.once("error", (error) => Queue.offerUnsafe(lifecycleEvents, { type: "error", error }));
+		child.once("exit", (code, signal) => Queue.offerUnsafe(lifecycleEvents, { type: "exit", code, signal }));
+		child.once("close", (code, signal) => Queue.offerUnsafe(lifecycleEvents, { type: "close", code, signal }));
+
+		const stdoutForwarder = createBoundedPipeForwarder(
+			child.stdout,
+			process.stdout,
+			() => requestStop("SIGTERM", "termination"),
+			true,
+			wakeLifecycle,
+		);
+		const stderrForwarder = createBoundedPipeForwarder(
+			child.stderr,
+			process.stderr,
+			() => requestStop("SIGTERM", "termination"),
+			false,
+			wakeLifecycle,
+		);
+		const outputForwarders = [stdoutForwarder, stderrForwarder];
+		outputFibers = [];
+		for (const forwarder of outputForwarders) {
+			outputFibers.push(
+				yield* Effect.forkScoped(
+					forwarder.run.pipe(
+						Effect.catch((error) =>
+							Effect.sync(() => {
+								childOutputError ??= error;
+								requestStop("SIGTERM", "external");
+							}),
+						),
+					),
+				),
+			);
+		}
+
+		childStarted = child.pid ? yield* captureStartIdentity(child.pid) : undefined;
+		if (!child.pid || !childStarted) {
+			try {
+				child.kill("SIGKILL");
+			} catch {}
+			yield* settle(1, "SIGKILL");
+			return;
+		}
 		writeGroupMemberProof();
-		void consumeControls();
 		if (pendingStop) {
 			const stop = pendingStop;
 			pendingStop = undefined;
 			requestStop(stop.signal, stop.source);
 		} else if (terminationSignal) requestStop(terminationSignal);
-		parentTimer = setInterval(() => {
-			if (processStartIdentity(envelope.parentPid) !== envelope.parentStarted) requestStop("SIGTERM", "external");
-		}, 250);
-		parentTimer.unref?.();
-		const result = await childExit;
+		else parentCheckAt = Date.now() + 250;
+		const result = yield* awaitChildClose(outputForwarders);
 		if (result.error) process.stderr.write(`Agent writer spawn failed: ${result.error.message}\n`);
-		await settle(result.code, result.signal);
-	}
-} catch (error) {
-	process.stderr.write(`Agent writer supervisor failed: ${error instanceof Error ? error.message : String(error)}\n`);
-	await settle(1, null);
+		yield* settle(result.code, result.signal);
+	});
 }
+
+const supervisor = supervise().pipe(
+	Effect.catchCause((cause) => {
+		const error = Cause.squash(cause);
+		return Effect.sync(() => {
+			process.stderr.write(
+				`Agent writer supervisor failed: ${error instanceof Error ? error.message : String(error)}\n`,
+			);
+		}).pipe(Effect.andThen(settle(1, null)));
+	}),
+);
+
+await Effect.runPromise(Effect.scoped(supervisor));
