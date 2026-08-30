@@ -11,7 +11,7 @@ const PROVIDER = "pi-stuff-agents-execution-matrix";
 const MODEL = "fixture-model";
 const AGENT = "matrix-agent";
 const FANOUT_AGENT = "matrix-fanout-agent";
-const CHILD_DELAY_MS = 1_200;
+const CHILD_DELAY_MS = 5_000;
 const LONG_TOOL_ROUNDS = 8;
 const LONG_TOOL_RESULT = [
 	"MATRIX_LONG_TOOL_RESULT_START",
