@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: preregistered; no V5 Provider request or outcome exists.
+Status: completed exactly once; passed with the preregistered non-inferiority claim.
 
 This is a new independent study for Bead `ps-1gd`. It does not retry, replace, exclude, or reuse a sample from the
 retained [first benchmark](skill-discovery-benchmark-20260830.md),
@@ -158,6 +158,30 @@ No V5 Session or Provider request may start until the manifest, runner, observer
 committed, independently reviewed, encoded in a signed Run Lock, and audited against a clean worktree. After that
 lock, the runner executes the 90 Sessions exactly once. A failed observation is retained; it is never retried or
 replaced. The sanitized report is committed regardless of pass or failure.
+
+## Retained outcome
+
+The signed Run Lock was executed exactly once for all 90 scheduled Sessions, with no retry, replacement, exclusion,
+or early stop. It completed at `2026-08-30T12:41:17.133Z`. The sanitized report is
+[`docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json`](../reports/skill-discovery-startup-bounded-confirmation-20260830.json),
+SHA-256 `9710e519b125fc328affca7665c395aea2b2f830b68698f600f550694d4ac6a7`.
+
+- Raw Pi passed 30/30 Sessions.
+- Pi Stuff off passed 30/30 Sessions.
+- Pi Stuff on passed 30/30 Sessions.
+- Every on-arm Session passed the strict direct-read endpoint: 30/30 saw the exact catalog, selected the target
+  automatically, made the exact target its first relevant operation through nested `tools.read`, made no
+  `tool_search` or other detour, matched the required Skill/resource hashes, and returned the exact answer.
+
+All 90 observations retained `failureClass: "none"` and `timeoutPhase: "none"`. There were zero process, Provider,
+instrumentation, prompt-boundary, protected-file, safety, or report-privacy violations. Every locked Host, Package,
+source, manifest, schedule, Context, timeout-policy, Provider/model, and Provider-Tool invariant passed.
+
+Each arm's Wilson 95% interval was `[0.8865, 1]`. Both off-minus-Raw and on-minus-off differences were `0`, with
+whole-triad bootstrap interval `[0, 0]`. Each McNemar table contained 30 both-succeeded pairs, no discordant pair, and
+`p = 1`. The frozen verdict therefore passed as `non-inferior-under-preregistered-gate`. It did not satisfy the
+separate improvement criterion because there were no favorable discordant pairs; this is parity evidence, not an
+improvement claim.
 
 ## Public-data policy
 

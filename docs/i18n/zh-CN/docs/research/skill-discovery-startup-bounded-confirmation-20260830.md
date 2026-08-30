@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-startup-bounded-confirmation-20260830.md; translation-source-sha256: 1290afe41fcd2b4347f4692fe9653d3d40d21d3a62d0b24b1fa4b8ff75b922ec -->
+<!-- translation-source: docs/research/skill-discovery-startup-bounded-confirmation-20260830.md; translation-source-sha256: 8f514ea37e34372fc0ccce41a710b489a2624bdca9b4aaa11ec33144185a368b -->
 
 # Skill Discovery 启动边界真实模型确认预注册
 
 日期：2026-08-30
 
-状态：已预注册；尚不存在任何 V5 Provider 请求或结果。
+状态：已严格执行一次；通过预注册的 non-inferiority claim。
 
 这是 Bead `ps-1gd` 的全新独立研究。它不会重试、替换、排除或复用已保留的
 [首次 benchmark](../../../../../docs/research/skill-discovery-benchmark-20260830.md)、
@@ -151,6 +151,29 @@ Improvement 还要求 favorable discordant pair 多于 unfavorable，且 exact t
 在 manifest、runner、observer、timeout policy 与 report path 已提交、经过独立审查、写入签名 Run Lock，并
 对 clean worktree 完成审计前，不得启动任何 V5 Session 或 Provider 请求。Lock 完成后，runner 严格执行一次
 90 个 Session。失败 observation 必须保留，不能重试或替换。无论通过还是失败，都提交 sanitized report。
+
+## 保留结果
+
+已签名的 Run Lock 严格执行一次，覆盖计划中的全部 90 个 Session；没有重试、替换、排除或提前停止。
+研究于 `2026-08-30T12:41:17.133Z` 完成。脱敏报告为
+[`docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json`](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)，
+SHA-256 `9710e519b125fc328affca7665c395aea2b2f830b68698f600f550694d4ac6a7`。
+
+- Raw Pi 通过 30/30 个 Session。
+- Pi Stuff off 通过 30/30 个 Session。
+- Pi Stuff on 通过 30/30 个 Session。
+- 所有 on-arm Session 都通过了严格 direct-read endpoint：30/30 看见精确 catalog，自动选择目标，通过嵌套
+  `tools.read` 把精确目标作为第一个相关操作，没有 `tool_search` 或其他绕路，匹配所需 Skill/resource hash，
+  并返回精确答案。
+
+全部 90 个 observation 的 `failureClass` 与 `timeoutPhase` 都为 `"none"`。Process、Provider、instrumentation、
+prompt-boundary、protected-file、safety 与 report-privacy violation 均为零。所有锁定的 Host、Package、source、
+manifest、schedule、Context、timeout-policy、Provider/model 与 Provider-Tool invariant 全部通过。
+
+每个 arm 的 Wilson 95% interval 均为 `[0.8865, 1]`。Off-minus-Raw 与 on-minus-off 差值都为 `0`，whole-triad
+bootstrap interval 均为 `[0, 0]`。两个 McNemar table 都包含 30 个 both-succeeded pair，没有 discordant pair，
+`p = 1`。因此，冻结 verdict 以 `non-inferior-under-preregistered-gate` 通过。由于不存在 favorable discordant
+pair，它没有满足独立的 improvement criterion；这是 parity 证据，不是 improvement claim。
 
 ## 公开数据政策
 

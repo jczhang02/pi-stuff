@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 07fb9f208a98a618f691ea68ed7689b8040fe850e48dcf3aefed5154e2ed3be3 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7dedb69af615b70c1858aa7931eb39b4ea323d22fd09bc615e4c75fb636cf971 -->
 
 # 报告
 
@@ -8,6 +8,10 @@
 
 ## 保留报告
 
+- [Skill Discovery 启动边界真实模型确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)——
+  Raw/off/on 各 30/30，通过预注册的 non-inferiority gate；30 个 Code Mode Session 全部直接使用选中 Skill，
+  timeout 与 safety violation 均为零；方法与解释见其
+  [预注册](../../../../../docs/research/skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离真实模型确认](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)——
   保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但 4 个 Suite
   Session 在 Provider 请求前超时；解释见其
