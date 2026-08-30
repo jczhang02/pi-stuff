@@ -314,8 +314,13 @@ function bashOutputLines(model: BashOperationRowModel) {
 			truncated: model.outputTruncated === true,
 		};
 	}
-	if (model.state === "cancelled" && !lines.some((line) => /\b(?:interrupt|abort|cancel)/iu.test(line))) {
-		lines.unshift("Interrupted");
+	if (model.state === "cancelled") {
+		const cancellationLine = lines.at(-1)?.trim();
+		if (cancellationLine === "Command aborted" || cancellationLine === "Operation aborted") {
+			lines = lines.slice(0, -1);
+			while (lines.at(-1)?.trim() === "") lines.pop();
+		}
+		if (!lines.some((line) => line.trim() === "Interrupted")) lines.unshift("Interrupted");
 	}
 	const terminal = lines.at(-1)?.trim() ?? "";
 	const exit = /^Command exited with code (\d+)$/u.exec(terminal);

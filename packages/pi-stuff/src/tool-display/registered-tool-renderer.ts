@@ -97,7 +97,12 @@ function presentationSummary<TArgs extends ToolArguments, TDetails>(
 	try {
 		if (!presentation.summarize) return fallback;
 		const summary = oneLine(presentation.summarize(args, result, state, durationMs));
-		return summary ? { fromResult: false, text: summary } : fallback;
+		if (!summary) return fallback;
+		const resultSummary = terminalSummary(result, state, true);
+		return {
+			fromResult: state === "success" && resultSummary.fromResult && resultSummary.text === summary,
+			text: summary,
+		};
 	} catch {
 		return fallback;
 	}

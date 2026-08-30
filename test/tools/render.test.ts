@@ -255,6 +255,17 @@ test("renders Claude-style Bash no-output and explicit failure states", () => {
 	});
 	expect(cancelled.render(80)).toEqual([" • Bash(sleep 30)", "  ⎿  Interrupted"]);
 
+	const hostCancelled = new CachedToolRow(theme, {
+		active: false,
+		command: "printf partial; sleep 30",
+		expandable: true,
+		expanded: false,
+		kind: "bash-operation",
+		output: "partial\n\nOperation aborted",
+		state: "cancelled",
+	});
+	expect(hostCancelled.render(80)).toEqual([" • Bash(printf partial; sleep 30)", "  ⎿  Interrupted", "     partial"]);
+
 	const timedOut = new CachedToolRow(theme, {
 		active: false,
 		command: "curl https://example.invalid",
