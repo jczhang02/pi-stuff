@@ -183,7 +183,9 @@ test("/tools pages the Activity list with Space", () => {
 	first.dispose?.();
 
 	const paged = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
-	expect(paged.render(64).join("\n")).toContain("? keys");
+	const overflow = paged.render(64).join("\n");
+	expect(overflow).toContain("b/Space page");
+	expect(overflow).not.toContain("PgUp/PgDn page");
 	paged.handleInput?.(" ");
 	paged.handleInput?.("\r");
 	const pagedTarget = paged

@@ -17,7 +17,8 @@ those custom entries when that session resumes.
 Answered exchanges support history switching, scrolling, copy, clear, and `f`. Promotion waits for the main Agent to
 become idle, then opens a new Pi session whose formal user and assistant turns are the selected BTW question and
 answer. The original session remains unchanged apart from its invisible display-history entry. Space, Enter, and Esc
-dismiss the focused surface; Esc is the advertised close key.
+do not share a close action: only Esc dismisses the focused surface, while Space pages overflowing answers and Enter
+remains available to the reading surface.
 
 Clearing earlier history is a two-step inline action inside the same Command Dialog: `x` asks for confirmation, `y`
 commits it, and Esc cancels. It never opens a floating confirmation window. At low terminal heights the selected
@@ -44,18 +45,19 @@ lines, the selected question is emphasized, and its Markdown answer follows dire
 
   The generated declaration file was stale, so TypeScript read an old API shape.
 
-  ←/→ switch · ↑/↓ scroll · c copy · f fork
+  ←/→ switch · b/Space page · c copy · f fork
   x clear history · ? keys · Esc close
 ```
 
 There is no `BTW` title, lifecycle label, `Answer` section, list/detail transition, card, or split pane. Pending work is
 shown by the answer loader; a failure appears in the answer flow. A blank successful answer says `(empty answer)`, and
 bare `/btw` with no retained exchange shows the neutral muted guidance
-`No previous /btw exchange in this session.` rather than an error.
+`Ask a question with /btw <question>.` and no preceding history-absence sentence.
 
 Left and Right switch retained exchanges. Pi's configured Up and Down actions scroll by three lines, with
 Ctrl+P/Ctrl+N as read-only aliases; PageUp/PageDown and `b`/Space scroll one visible page, and Home/End jump to the top
-or bottom. Enter and Space no longer close the reading surface. `?` opens contextual key help. A streaming answer
+or bottom. The Footer shows `b/Space page` only while the answer overflows; PageUp/PageDown remain in contextual help.
+Enter and Space do not close the reading surface. `?` opens contextual key help. A streaming answer
 follows its tail only while the reader remains at the bottom. `c` and `f` apply
 only to a successful exchange. `x` appears only when earlier history exists and keeps the inline confirmation inside
 the same surface.

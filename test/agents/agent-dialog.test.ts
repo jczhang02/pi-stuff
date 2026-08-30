@@ -245,6 +245,8 @@ test("is a normal full-width view with a bounded 64-column list", () => {
 	expect(rendered.join("\n")).toContain("Agents");
 	expect(rendered.join("\n")).toContain("○");
 	expect(rendered.join("\n")).toContain("later");
+	expect(rendered.join("\n")).toContain("b/Space page");
+	expect(rendered.join("\n")).not.toContain("PgUp/PgDn page");
 	expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 	expect(rendered.length).toBeLessThanOrEqual(28);
 	expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);

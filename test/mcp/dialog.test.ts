@@ -128,7 +128,9 @@ test("uses the shared list aliases without turning Space into a server toggle", 
 		tui: new TestTui(10),
 	});
 
-	component.render(64);
+	const overflow = component.render(64).join("\n");
+	expect(overflow).toContain("b/Space page");
+	expect(overflow).not.toContain("PgUp/PgDn page");
 	component.handleInput?.(" ");
 	expect(component.render(64).join("\n")).toContain("› ○ server-3");
 	expect(result).toBeUndefined();
@@ -557,6 +559,12 @@ test("makes Setup discoverable from the server list", () => {
 	});
 
 	expect(component.render(64).join("\n")).toContain("s setup");
+	expect(component.render(64).join("\n")).not.toContain("b/Space page");
+	component.handleInput?.("?");
+	const help = component.render(64).join("\n");
+	expect(help).toMatch(/\bs\s+Open MCP setup/u);
+	expect(help).not.toMatch(/\bS\s+Open MCP setup/u);
+	component.handleInput?.("\u001b");
 	component.handleInput?.("s");
 	expect(result).toEqual({ action: "setup" });
 	component.dispose?.();

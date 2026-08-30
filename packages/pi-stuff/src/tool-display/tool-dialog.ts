@@ -18,6 +18,7 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogSectionHeading,
 	fitFixedCommandDialogRows,
@@ -423,8 +424,14 @@ class ToolDialogComponent implements CommandDialogComponent {
 			if (this.isSplit()) activityHints.push("Tab pane");
 			activityHints.push(`${confirm} details`);
 		}
-		const footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
-		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		let footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
+		let viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		const page = commandDialogReadOnlyPageHint(this.groups.length > viewportRows);
+		if (page) {
+			activityHints.splice(1, 0, page);
+			footer = hintLines(theme, width, [...activityHints, "? keys", `${cancel} close`]);
+			viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		}
 		this.lastListViewportRows = Math.max(1, viewportRows);
 		const selectedIndex = Math.max(
 			0,
@@ -525,8 +532,6 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const fixedRows = 5 + (showCalls ? members.length + 2 : 0);
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		let viewportRows = Math.max(0, maximumRows - fixedRows - 1);
 		let footer = hintLines(this.context.theme, width, [
@@ -544,11 +549,12 @@ class ToolDialogComponent implements CommandDialogComponent {
 				viewportRows > 0 && document.length > viewportRows
 					? ` · ${String(offset + 1)}–${String(rangeEnd)}/${String(document.length)}`
 					: "";
+			const page = commandDialogReadOnlyPageHint(document.length > viewportRows, range);
 			const nextFooter = hintLines(this.context.theme, width, [
 				...(showCalls
 					? [`${up}/${down} call ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`]
 					: []),
-				...(document.length > viewportRows ? [`${pageUp}/${pageDown} page${range}`] : []),
+				...(page ? [page] : []),
 				...(this.isSplit() ? ["Tab pane"] : []),
 				this.detailRepresentation === "formatted" ? "r raw" : "r formatted",
 				"? keys",

@@ -54,11 +54,11 @@ function renderedSummary(
 	const row = tool?.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
+	const resultRow = tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,
 	} as never);
-	return row?.render(100).join("\n") ?? "";
+	return [...(row?.render(100) ?? []), ...(resultRow?.render(100) ?? [])].join("\n");
 }
 
 test("successful TaskUpdate calls stay silent but remain inspectable", () => {
@@ -89,6 +89,39 @@ test("successful TaskUpdate calls stay silent but remain inspectable", () => {
 	expect(noOp).toBe("");
 	expect(updated).toBe("");
 	expect(getToolUiRuntime(api).listGroups()).toHaveLength(2);
+});
+
+test("Expanded Task success keeps the summary once and any additional evidence", () => {
+	for (const [id, name, args, summary] of [
+		[
+			"create",
+			"TaskCreate",
+			{ description: "Ship the repair", subject: "Ship repair" },
+			"Task #1 created successfully: Ship repair",
+		],
+		["update", "TaskUpdate", { status: "completed", taskId: "1" }, "Task 1 updated: status"],
+		["no-op", "TaskUpdate", { status: "completed", taskId: "1" }, "Task #1 already matches the requested values"],
+	] as const) {
+		const { api, tools } = registeredTools();
+		const output = renderedSummary(
+			api,
+			tools.get(name),
+			args,
+			{
+				content: [
+					{ text: summary, type: "text" },
+					{ text: "Additional task evidence", type: "text" },
+				],
+				details: {},
+			},
+			`expanded-${id}`,
+			undefined,
+			true,
+		);
+
+		expect(output.split(summary)).toHaveLength(2);
+		expect(output).toContain("Additional task evidence");
+	}
 });
 
 test("successful TaskList calls stay silent but remain inspectable", () => {

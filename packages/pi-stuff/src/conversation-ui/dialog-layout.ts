@@ -93,6 +93,10 @@ export function commandDialogScrollOffset(
 	return Math.max(0, Math.min(boundedMaximum, current + delta));
 }
 
+export function commandDialogReadOnlyPageHint(hasOverflow: boolean, suffix = ""): string | undefined {
+	return hasOverflow ? `b/Space page${suffix}` : undefined;
+}
+
 export function matchesCommandDialogCancel(
 	data: string,
 	keybindings: Pick<CommandDialogKeybindings, "matches">,

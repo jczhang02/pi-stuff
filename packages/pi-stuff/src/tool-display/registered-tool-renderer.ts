@@ -32,7 +32,7 @@ import { buildToolResultLines, capDetailLines, classifyTerminalState, oneLine } 
 
 export function formattedResultLines(result: AgentToolResult<unknown>, summary: ToolSummaryProjection): string[] {
 	const lines = buildToolResultLines(result);
-	if (!summary.fromResult || !lines[0] || oneLine(lines[0]) !== oneLine(summary.text)) return lines;
+	if (!lines[0] || oneLine(lines[0]) !== oneLine(summary.text)) return lines;
 	return lines.slice(1);
 }
 

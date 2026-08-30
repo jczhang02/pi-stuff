@@ -111,9 +111,10 @@ test("shows an empty /btw history as neutral guidance", () => {
 		} as Theme,
 	});
 	const output = result.controller.render(80).join("\n");
-	expect(output).toContain("No previous /btw exchange in this session.");
-	expect(colors).toContainEqual({ color: "muted", text: "No previous /btw exchange in this session." });
-	expect(colors).not.toContainEqual({ color: "error", text: "No previous /btw exchange in this session." });
+	expect(output).toContain("Ask a question with /btw <question>.");
+	expect(output).not.toContain("No previous /btw exchange");
+	expect(colors).toContainEqual({ color: "muted", text: "Ask a question with /btw <question>." });
+	expect(colors).not.toContainEqual({ color: "error", text: "Ask a question with /btw <question>." });
 	result.controller.dispose();
 });
 
@@ -313,6 +314,8 @@ test("accepts both PageUp and b for page scrolling", () => {
 		});
 		result.terminal.rows = 12;
 		const tail = result.controller.render(64).join("\n");
+		expect(tail).toContain("b/Space page");
+		expect(tail).not.toContain("PgUp/PgDn page");
 		result.controller.handleInput(key);
 		const earlier = result.controller.render(64).join("\n");
 		expect(earlier).not.toBe(tail);

@@ -262,7 +262,10 @@ describe("/diagnostics Command Dialog", () => {
 		const channel = new DiagnosticChannel();
 		for (let index = 1; index <= 12; index += 1) report(channel, index);
 		const component = createDiagnosticsView(channel).create(dialogHarness().context);
-		expect(component.render(80).join("\n")).toContain("Issue 12");
+		const overflow = component.render(80).join("\n");
+		expect(overflow).toContain("Issue 12");
+		expect(overflow).toContain("b/Space page");
+		expect(overflow).not.toContain("PgUp/PgDn page");
 		component.handleInput?.(" ");
 		expect(component.render(80).join("\n")).toContain("Issue 4");
 		component.dispose?.();

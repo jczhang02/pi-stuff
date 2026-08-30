@@ -10,6 +10,7 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogSectionHeading,
 	fitCommandDialogRows,
@@ -480,8 +481,6 @@ class McpControlDialog implements CommandDialogComponent {
 	private renderFooter(width: number, overflow: boolean): string[] {
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		if (this.confirmation) {
@@ -491,9 +490,10 @@ class McpControlDialog implements CommandDialogComponent {
 				`${cancel} back`,
 			]);
 		}
+		const page = commandDialogReadOnlyPageHint(this.screen === "servers" && overflow);
 		return commandDialogHintLines(this.context.theme, width, [
 			`${up}/${down} navigate`,
-			...(this.screen === "servers" && overflow ? [`${pageUp}/${pageDown} page`] : []),
+			...(page ? [page] : []),
 			`${confirm} ${this.screen === "servers" ? "manage" : "run"}`,
 			...(this.screen === "servers" ? ["s setup"] : []),
 			"? keys",
@@ -504,7 +504,7 @@ class McpControlDialog implements CommandDialogComponent {
 	private keyHelp(): readonly CommandDialogKeyHelpEntry[] {
 		if (this.screen === "servers") {
 			return commandDialogListKeyHelp(this.context.keybindings, "server", [
-				{ keys: "S", description: "Open MCP setup" },
+				{ keys: "s", description: "Open MCP setup" },
 				{ keys: "Ctrl+R", description: "Reconnect selected server" },
 				{ keys: "Ctrl+A", description: "Authenticate selected OAuth server" },
 			]);

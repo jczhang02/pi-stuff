@@ -70,6 +70,7 @@ export {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
 	commandDialogSectionHeading,

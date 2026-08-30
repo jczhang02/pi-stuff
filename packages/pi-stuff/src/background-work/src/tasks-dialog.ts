@@ -10,6 +10,7 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
 	commandDialogSectionHeading,
@@ -367,12 +368,18 @@ class TasksDialogComponent implements CommandDialogComponent {
 			"? keys",
 			`${cancel} close`,
 		];
-		const footer = hint(theme, width, baseHints);
+		let footer = hint(theme, width, baseHints);
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
 			: commandDialogRows(this.context);
 		const preferred = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const page = commandDialogReadOnlyPageHint(this.rows.length > viewport);
+		if (page) {
+			baseHints.splice(1, 0, page);
+			footer = hint(theme, width, baseHints);
+			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		}
 		this.lastListViewportRows = Math.max(1, viewport);
 		const selectedIndex = Math.max(
 			0,
@@ -411,8 +418,6 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const theme = this.context.theme;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
@@ -427,9 +432,10 @@ class TasksDialogComponent implements CommandDialogComponent {
 		]);
 		let fixedRows = 7 + footer.length + (this.note ? 1 : 0);
 		if (document.length > Math.max(0, maximum - fixedRows)) {
+			const page = commandDialogReadOnlyPageHint(true);
 			footer = hint(theme, width, [
 				`${up}/${down} scroll`,
-				`${pageUp}/${pageDown} page`,
+				...(page ? [page] : []),
 				...(this.isSplit() ? ["Tab pane"] : []),
 				...(row.status !== "stopping" ? ["x stop"] : []),
 				"? keys",

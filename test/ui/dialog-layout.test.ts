@@ -6,6 +6,7 @@ import {
 	commandDialogListIndex,
 	commandDialogListKeyHelp,
 	commandDialogNavigation,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
 	fitCommandDialogRows,
@@ -58,6 +59,15 @@ test("shared navigation clamps lists and scrollable documents", () => {
 	expect(commandDialogListIndex(7, 10, 4, "home")).toBe(0);
 	expect(commandDialogScrollOffset(6, 20, 8, "pageUp")).toBe(0);
 	expect(commandDialogScrollOffset(6, 20, 8, "end")).toBe(20);
+});
+
+test("read-only footers prefer compact page aliases only when content overflows", () => {
+	expect(commandDialogReadOnlyPageHint(false)).toBeUndefined();
+	expect(commandDialogReadOnlyPageHint(true)).toBe("b/Space page");
+	expect(commandDialogReadOnlyPageHint(true, " · 9–16/30")).toBe("b/Space page · 9–16/30");
+
+	const help = commandDialogListKeyHelp(new KeybindingsManager(TUI_KEYBINDINGS), "item");
+	expect(help).toContainEqual({ keys: "PgUp/PgDn, b/Space", description: "Previous/next page" });
 });
 
 test("key help keeps configured compact-keyboard aliases visible when space allows", () => {

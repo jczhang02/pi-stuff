@@ -7,6 +7,7 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
 	commandDialogSectionHeading,
@@ -226,12 +227,15 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		const footer = hint(theme, width, [
-			...(this.records.length > 0 ? [`${up}/${down} select`, `${confirm} details`, "c clear"] : []),
-			"? keys",
-			`${cancel} close`,
-		]);
-		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const actions = this.records.length > 0 ? [`${up}/${down} select`, `${confirm} details`, "c clear"] : [];
+		let footer = hint(theme, width, [...actions, "? keys", `${cancel} close`]);
+		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const page = commandDialogReadOnlyPageHint(this.records.length > viewport);
+		if (page) {
+			actions.splice(1, 0, page);
+			footer = hint(theme, width, [...actions, "? keys", `${cancel} close`]);
+			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		}
 		const selectedIndex = Math.max(
 			0,
 			this.records.findIndex((record) => record.id === this.selectedId),
@@ -271,18 +275,12 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const document = this.detailDocument(record);
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		let footer = hint(theme, width, [`${up}/${down} scroll`, "? keys", `${cancel} back`]);
 		let viewport = Math.max(0, maximum - 8 - footer.length);
 		if (document.length > viewport) {
-			footer = hint(theme, width, [
-				`${up}/${down} scroll`,
-				`${pageUp}/${pageDown} page`,
-				"? keys",
-				`${cancel} back`,
-			]);
+			const page = commandDialogReadOnlyPageHint(true);
+			footer = hint(theme, width, [`${up}/${down} scroll`, ...(page ? [page] : []), "? keys", `${cancel} back`]);
 			viewport = Math.max(0, maximum - 8 - footer.length);
 		}
 		const maxOffset = Math.max(0, document.length - viewport);

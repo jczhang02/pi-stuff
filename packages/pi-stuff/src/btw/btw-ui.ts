@@ -16,6 +16,7 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
 	createMarkdownRenderer,
@@ -30,6 +31,7 @@ import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 const GUTTER = "  ";
 const COPY_FEEDBACK_MS = 2_000;
 const SCROLL_STEP = 3;
+const EMPTY_GUIDANCE = "Ask a question with /btw <question>.";
 
 type DisplayState = "empty" | "pending" | "success" | "error";
 
@@ -155,7 +157,7 @@ export class BtwDialogController implements Component {
 				question: "",
 				answer: "",
 				state: options.error === undefined ? "empty" : "error",
-				error: options.error ?? "No previous /btw exchange in this session.",
+				error: options.error ?? EMPTY_GUIDANCE,
 				timestamp: Date.now(),
 				contextTrimmed: false,
 				response: undefined,
@@ -457,7 +459,7 @@ export class BtwDialogController implements Component {
 		if (exchange.state === "pending") {
 			lines.push(...this.loader.render(Math.max(1, width)));
 		} else if (exchange.state === "empty") {
-			const empty = stripTerminalControls(exchange.error ?? "No previous /btw exchange in this session.");
+			const empty = stripTerminalControls(exchange.error ?? EMPTY_GUIDANCE);
 			lines.push(...wrapTextWithAnsi(this.theme.fg("muted", empty), Math.max(1, width)));
 		} else if (exchange.state === "error") {
 			const error = stripTerminalControls(exchange.error ?? "Unknown /btw error");
@@ -478,10 +480,9 @@ export class BtwDialogController implements Component {
 			];
 		}
 		const hints: string[] = [];
-		const up = commandDialogPrimaryKey(this.keybindings, "tui.select.up", "↑");
-		const down = commandDialogPrimaryKey(this.keybindings, "tui.select.down", "↓");
 		if (this.exchanges.length > 1) hints.push("←/→ to switch");
-		if (maxScroll > 0) hints.push(`${up}/${down} scroll`);
+		const page = commandDialogReadOnlyPageHint(maxScroll > 0);
+		if (page) hints.push(page);
 		if (exchange.state === "success") hints.push("c to copy", "f to fork");
 		if (this.hasEarlier()) hints.push("x to clear history");
 		hints.push("? keys", `${cancel} close`);

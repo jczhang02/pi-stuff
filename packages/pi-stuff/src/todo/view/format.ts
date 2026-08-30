@@ -7,6 +7,7 @@ export type OverlayTaskId = string;
 
 /** Structural view input kept independent from persistence-only task fields. */
 export interface OverlayTask {
+	readonly activeForm?: string;
 	readonly id: OverlayTaskId;
 	readonly subject: string;
 	readonly status: TaskStatus;
@@ -41,6 +42,11 @@ function compareTaskIds(left: OverlayTask, right: OverlayTask): number {
 /** Remove terminal commands and collapse user-controlled content to one row. */
 function singleLine(value: string): string {
 	return sanitizeTerminalText(value).replace(/\s+/gu, " ").trim();
+}
+
+function taskText(task: OverlayTask): string {
+	const active = task.status === "in_progress" ? singleLine(task.activeForm ?? "") : "";
+	return active || singleLine(task.subject) || UNTITLED_TASK;
 }
 
 /**
@@ -112,7 +118,7 @@ function fitOptionalSubject(subject: string, width: number): string {
 export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width = Number.POSITIVE_INFINITY): string {
 	const { task, openBlockers } = row;
 	const glyph = overlayStatusGlyph(task.status, openBlockers.length > 0, theme);
-	const text = singleLine(task.subject) || UNTITLED_TASK;
+	const text = taskText(task);
 	let subject: string;
 	if (task.status === "completed" || task.status === "deleted") {
 		subject = theme.strikethrough(theme.fg("dim", text));
@@ -146,7 +152,7 @@ export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], the
 export function formatCollapsedNextLine(next: OverlayTaskRow | undefined, theme: Theme): string {
 	const label = theme.fg("muted", "Next:");
 	if (!next) return `${label} ${theme.fg("dim", "all tasks complete")}`;
-	const subject = singleLine(next.task.subject) || UNTITLED_TASK;
+	const subject = taskText(next.task);
 	if (next.openBlockers.length > 0) {
 		return `${label} ${theme.fg("warning", "□")} ${theme.fg("muted", subject)}`;
 	}

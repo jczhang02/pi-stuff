@@ -207,7 +207,9 @@ test("pages a long task list with Space", () => {
 	}));
 	const ui = harness();
 	const component = createTasksDialogView(runtime).create(ui.context);
-	expect(component.render(64).join("\n")).toContain("? keys");
+	const overflow = component.render(64).join("\n");
+	expect(overflow).toContain("b/Space page");
+	expect(overflow).not.toContain("PgUp/PgDn page");
 	component.handleInput?.(" ");
 	component.handleInput?.("\r");
 	expect(component.render(64).join("\n")).toContain("Task 7");

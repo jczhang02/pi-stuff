@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 7018be9edd6bf5a68f3ff81c423d00adacf0fbf3e30667062b3de9f342525586 -->
+<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 19448efe700799aa60a3d520e0982bbbb3849db7816e333feaba45156f7a9236 -->
 
 # BTW 模块
 
@@ -10,7 +10,7 @@ Pi Stuff 的一次性 `/btw` 能力。
 
 成功交互存储为不可见、不进入上下文的 Pi 自定义条目。它们可跨进程重启和恢复保留，但不会被 `/clear`、新会话或分叉会话继承。保留受实际会话生命周期、1,000 次交互和 8 MiB 限制。会话关闭时释放进程局部副本；该会话恢复时从自定义条目重建。
 
-已回答交互支持历史切换、滚动、复制、清除和 `f`。提升会等待主 Agent 空闲，再打开一个新 Pi 会话，把选定 BTW 问题和回答作为正式用户与 Assistant 轮次。原会话除不可见显示历史条目外保持不变。Space、Enter 和 Esc 关闭聚焦界面；Esc 是界面注明的关闭键。
+已回答交互支持历史切换、滚动、复制、清除和 `f`。提升会等待主 Agent 空闲，再打开一个新 Pi 会话，把选定 BTW 问题和回答作为正式用户与 Assistant 轮次。原会话除不可见显示历史条目外保持不变。Space、Enter 和 Esc 不再共享关闭动作：只有 Esc 关闭聚焦界面；回答溢出时 Space 用于翻页，Enter 保留给阅读界面。
 
 清除较早历史是在同一个命令对话框中的两步行内操作：`x` 请求确认，`y` 提交，Esc 取消。它绝不打开浮动确认窗口。终端高度较小时，选中问题或错误和 Escape 提示优先于回答历史保持可见。
 
@@ -31,12 +31,12 @@ Pi 没有公开的无对话记录宿主模型调用接缝。因此 `/btw` 使用
 
   生成的声明文件已经过期，因此 TypeScript 读到了旧 API 形态。
 
-  ←/→ 切换 · ↑/↓ 滚动 · c 复制 · f 分叉
+  ←/→ 切换 · b/Space 翻页 · c 复制 · f 分叉
   x 清除历史 · ? 按键 · Esc 关闭
 ```
 
-不存在 `BTW` 标题、生命周期标签、`Answer` 小节、列表/详情切换、卡片或分栏。待处理工作由回答加载器显示；失败出现在回答流程中。空白成功回答显示 `(empty answer)`；不带参数的 `/btw` 且没有保留交互时，以 muted neutral guidance 显示 `No previous /btw exchange in this session.`，而不是 error。
+不存在 `BTW` 标题、生命周期标签、`Answer` 小节、列表/详情切换、卡片或分栏。待处理工作由回答加载器显示；失败出现在回答流程中。空白成功回答显示 `(empty answer)`；不带参数的 `/btw` 且没有保留交互时，只以 muted neutral guidance 显示 `Ask a question with /btw <question>.`，不在前面添加不存在历史记录的说明。
 
-Left 和 Right 切换保留交互。Pi 配置的上、下操作每次滚动三行，Ctrl+P/Ctrl+N 是只读别名；PageUp/PageDown 和 `b`/Space 每次滚动一个可见页面，Home/End 跳到顶部或底部。Enter 和 Space 不再关闭阅读界面。`?` 打开上下文按键帮助。只有读者仍在底部时，流式回答才跟随尾部。`c` 和 `f` 只适用于成功交互。`x` 只在存在较早历史时出现，并把行内确认留在同一个界面。
+Left 和 Right 切换保留交互。Pi 配置的上、下操作每次滚动三行，Ctrl+P/Ctrl+N 是只读别名；PageUp/PageDown 和 `b`/Space 每次滚动一个可见页面，Home/End 跳到顶部或底部。只有回答溢出时，Footer 才显示 `b/Space page`；PageUp/PageDown 保留在上下文按键帮助中。Enter 和 Space 不关闭阅读界面。`?` 打开上下文按键帮助。只有读者仍在底部时，流式回答才跟随尾部。`c` 和 `f` 只适用于成功交互。`x` 只在存在较早历史时出现，并把行内确认留在同一个界面。
 
 无对话记录上下文投影、无工具 Provider 调用、逐调用中止信号、持久不可见显示历史、边界、清理、原会话保留和会话隔离均保持不变。聚焦测试和真实 PTY 验证器覆盖历史切换、流式输出、清除确认、复制/分叉控制、分页别名、低高度适配及精确草稿/框架恢复。
