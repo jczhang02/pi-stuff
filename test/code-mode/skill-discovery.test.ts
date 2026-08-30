@@ -93,6 +93,8 @@ test("Code Mode preserves the Host Skill catalog through the Context prompt seam
 	expect(prompt).toContain("<name>target-skill</name>");
 	expect(prompt).toContain("<description>target-skill description</description>");
 	expect(prompt).toContain("<location>/agent/skills/target-skill/SKILL.md</location>");
+	expect(prompt).toContain("call codemode directly and use tools.read");
+	expect(prompt).toContain("do not call tool_search or scan first");
 	expect(prompt).not.toContain("hidden-skill");
 	expect(prompt.match(/<name>target-skill<\/name>/gu)).toHaveLength(1);
 

@@ -28,9 +28,10 @@ text(pkg.packageManager);
 
 When the Code Mode envelope hides top-level `read` while virtual Read remains active, Code Mode preserves the Host's
 enabled Skill Discovery catalog through Context Management. It projects the Host-provided Skill snapshot with Pi's
-public formatter; after choosing a Skill, the model reads its `SKILL.md` through `tools.read`. Direct mode, Code Mode
-off, and an inactive virtual Read remain unchanged. Provider-only continuations may reuse the current Session's
-snapshot; an unprimed provider-only first turn contributes no catalog and never rescans Skill resources.
+public formatter, then bridges the formatter's ordinary Read instruction to a direct `codemode` `tools.read` call so
+the model does not search for the already-known Read method or scan before loading the selected `SKILL.md`. Direct
+mode, Code Mode off, and an inactive virtual Read remain unchanged. Provider-only continuations may reuse the current
+Session's snapshot; an unprimed provider-only first turn contributes no catalog and never rescans Skill resources.
 
 - `tools` contains every currently active Pi Stuff Package-owned Tool, including Tools activated after Code Mode was
   enabled.

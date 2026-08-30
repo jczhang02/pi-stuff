@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: 2d8f6decc149ff94cf733a44b074a9fc2a23a43ddc7b4f71ef6838bf480cab15 -->
+<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: 0094dcd2db3a4d5410352e4026bbcbb6e32c3c68f62c10ca407ce99f14473513 -->
 
 # `code-mode`
 
@@ -15,7 +15,7 @@ const pkg = await tools.read({ path: "package.json" });
 text(pkg.packageManager);
 ```
 
-当代码模式封装隐藏顶层 `read`、而虚拟 Read 仍处于活跃状态时，代码模式会通过 Context Management 保留宿主已启用的 Skill Discovery 目录。它使用宿主提供的 Skill 快照和 Pi 的公开格式化器进行投影；模型选定 Skill 后，通过 `tools.read` 读取对应 `SKILL.md`。直接模式、关闭代码模式以及虚拟 Read 未激活时的行为不变。仅 Provider 的继续轮次可以复用当前会话快照；若首轮只有 Provider 请求且尚未取得快照，则不贡献目录，也不会重新扫描 Skill 资源。
+当代码模式封装隐藏顶层 `read`、而虚拟 Read 仍处于活跃状态时，代码模式会通过 Context Management 保留宿主已启用的 Skill Discovery 目录。它使用宿主提供的 Skill 快照和 Pi 的公开格式化器进行投影，再把格式化器的普通 Read 指令桥接到直接的 `codemode` `tools.read` 调用，使模型在加载所选 `SKILL.md` 前不为已知 Read 方法进行搜索或扫描。直接模式、关闭代码模式以及虚拟 Read 未激活时的行为不变。仅 Provider 的继续轮次可以复用当前会话快照；若首轮只有 Provider 请求且尚未取得快照，则不贡献目录，也不会重新扫描 Skill 资源。
 
 - `tools` 包含当前所有活跃且由 Pi Stuff 软件包负责的工具，包括启用代码模式后才激活的工具。
 - 等待每个 `tools.*` 调用。稳定结构化内容直接返回；文本 JSON 会解析；其他文字以字符串返回。显式工具 `isError: true` 结果会拒绝调用；未捕获拒绝会停止执行，普通 JavaScript `try/catch` 是恢复机制。

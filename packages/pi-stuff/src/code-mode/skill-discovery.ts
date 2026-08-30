@@ -3,11 +3,14 @@ import { registerContextPromptContributor } from "../context-management/index.js
 import { CODE_MODE_TOOL_NAME, type PiStuffCodeModeOptions } from "./controls.js";
 
 const READ_TOOL_NAME = "read";
+const CODE_MODE_READ_BRIDGE =
+	"After selecting a Skill, call codemode directly and use tools.read on that entry's exact <location>. " +
+	"tools.read is already available for Skill reads; do not call tool_search or scan first.";
 
 function catalog(skills: Skill[] | undefined): string | undefined {
 	if (!skills) return undefined;
-	const prompt = formatSkillsForPrompt(skills);
-	return prompt.trim() ? prompt : undefined;
+	const prompt = formatSkillsForPrompt(skills).trim();
+	return prompt ? `${prompt}\n\n${CODE_MODE_READ_BRIDGE}` : undefined;
 }
 
 export function registerCodeModeSkillDiscovery(
