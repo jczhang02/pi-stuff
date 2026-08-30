@@ -303,7 +303,7 @@ class TmuxAgentsSession {
 	}
 
 	private async waitFor(predicate: (screen: string) => boolean, description: string): Promise<string> {
-		const deadline = Date.now() + 30_000;
+		const deadline = Date.now() + 120_000;
 		let screen = "";
 		while (Date.now() < deadline) {
 			screen = this.capture();

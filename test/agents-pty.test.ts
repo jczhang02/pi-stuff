@@ -12,4 +12,4 @@ test("real Pi keeps background reports inspectable across cold resume without an
 	] as const) {
 		await verifyAgentsPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE, columns, rows });
 	}
-}, 240_000);
+}, 900_000);

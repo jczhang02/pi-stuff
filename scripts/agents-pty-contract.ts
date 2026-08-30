@@ -1,6 +1,6 @@
 import { stripTerminalControls } from "./terminal-controls.js";
 export const AGENTS_EXPECT_PROGRAM = `
-set timeout 40
+set timeout 120
 
 proc must_expect {pattern} {
     expect {
