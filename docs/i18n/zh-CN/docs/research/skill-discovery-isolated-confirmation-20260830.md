@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: 391d16cde69d6b24f2f86fd6530b59d815f322049f3b5c56f1af66e76e58841a -->
+<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: dabe2ee0720bdb9c92cef734e42a72c0d3d635acd1b050c1a86ce5df0a47fad3 -->
 
 # Skill Discovery 隔离真实模型确认预注册
 
 日期：2026-08-30
 
-状态：设计已完成，Run Lock 尚未冻结；尚未产生 isolated-confirmation Session、Provider 请求或结果。
+状态：设计与 Run Lock 已冻结；尚未产生 isolated-confirmation Session、Provider 请求或结果。
 
 这是 Bead `ps-1gd` 的全新独立研究。它不会替换或复用已保留的
 [首次 benchmark](../../../../../docs/research/skill-discovery-benchmark-20260830.md)、
@@ -52,9 +52,9 @@ Native Context 隔离是评估控制，不是产品改动，也不对 Magic Cont
 one-turn Session 禁用可选 derived Context engine；三个 arm 仍全部使用 Pi 原生 prompt、Session 与 compaction
 行为。
 
-## Run Lock 合同
+## Run Lock
 
-在签名提交包含完整 Run Lock 之前，不得发出任何 Provider 请求。Run Lock 将冻结：
+完整的结果产生前 Run Lock 冻结：
 
 - Provider `openai-codex`、model `gpt-5.6-sol`、reasoning `xhigh` 与 Context mode `native`；
 - candidate commit `518af59db690bd7751ae6e08db9a6750fa411894` 与 Package tree
@@ -62,6 +62,19 @@ one-turn Session 禁用可选 derived Context engine；三个 arm 仍全部使�
 - 认证 Pi 0.84.4 Linux x64 release executable SHA-256
   `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`，大小 104,511,616 bytes；
 - 每个 runner source、只测量 observer、immutable manifest、精确 schedule 与 sanitized report path。
+
+锁定输入精确为：
+
+- `scripts/benchmark-skill-discovery.ts`：`028cc81e87a6a98cd8e55b1bffe358a683ee07ba99f54876e367ecb08d4521f1`；
+- `scripts/pi-rpc-client.ts`：`75182f6d2a3cbf3a4369921e94063ef6153eacb95dc683397d95b1d943e09eff`；
+- `scripts/skill-discovery-benchmark-core.ts`：`b340cb21f27bd0316327c1071674e973053099450050e46f9d3bbd835c7dca9a`；
+- `scripts/skill-discovery-benchmark-evidence.ts`：`b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`；
+- `scripts/skill-discovery-benchmark-report.ts`：`72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`；
+- `scripts/skill-discovery-benchmark-session.ts`：`8b50248861e8f54a920b40f7ded6da0372d132b4d95bff873daec2210e6b31d4`；
+- observer `test/fixtures/skill-discovery-benchmark-observer.ts`：
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`；
+- manifest `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl`：
+  `aa2f80b2c05be84ac6231aa14aa3b3a25179120430489ad91eb87116fa08aec9`。
 
 新 manifest 路径为 `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl`；Run Lock 路径为
 `test/fixtures/skill-discovery-isolated-confirmation-run-lock.json`；报告目标为

@@ -2,8 +2,7 @@
 
 Date: 2026-08-30
 
-Status: design complete; Run Lock not yet frozen; no isolated-confirmation Session, Provider request, or outcome has
-been produced.
+Status: design and Run Lock frozen; no isolated-confirmation Session, Provider request, or outcome has been produced.
 
 This is a new, independent study for Bead `ps-1gd`. It does not replace or reuse samples from the retained
 [first benchmark](skill-discovery-benchmark-20260830.md),
@@ -50,9 +49,9 @@ Native Context isolation is an evaluation control, not a product change or a cla
 only the optional derived Context engine for these synthetic one-turn Sessions. All three arms still use Pi's native
 prompt, Session, and compaction behavior.
 
-## Run Lock contract
+## Run Lock
 
-No Provider request may be made until a signed commit contains the complete Run Lock. It will freeze:
+The complete pre-outcome Run Lock freezes:
 
 - Provider `openai-codex`, model `gpt-5.6-sol`, reasoning `xhigh`, and Context mode `native`;
 - candidate commit `518af59db690bd7751ae6e08db9a6750fa411894` and Package tree
@@ -60,6 +59,19 @@ No Provider request may be made until a signed commit contains the complete Run 
 - certified Pi 0.84.4 Linux x64 release executable SHA-256
   `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`, size 104,511,616 bytes;
 - every runner source, the measurement-only observer, immutable manifest, exact schedule, and sanitized report path.
+
+Exact locked inputs are:
+
+- `scripts/benchmark-skill-discovery.ts`: `028cc81e87a6a98cd8e55b1bffe358a683ee07ba99f54876e367ecb08d4521f1`;
+- `scripts/pi-rpc-client.ts`: `75182f6d2a3cbf3a4369921e94063ef6153eacb95dc683397d95b1d943e09eff`;
+- `scripts/skill-discovery-benchmark-core.ts`: `b340cb21f27bd0316327c1071674e973053099450050e46f9d3bbd835c7dca9a`;
+- `scripts/skill-discovery-benchmark-evidence.ts`: `b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`;
+- `scripts/skill-discovery-benchmark-report.ts`: `72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`;
+- `scripts/skill-discovery-benchmark-session.ts`: `8b50248861e8f54a920b40f7ded6da0372d132b4d95bff873daec2210e6b31d4`;
+- observer `test/fixtures/skill-discovery-benchmark-observer.ts`:
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`;
+- manifest `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl`:
+  `aa2f80b2c05be84ac6231aa14aa3b3a25179120430489ad91eb87116fa08aec9`.
 
 The new manifest path is `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl`; the Run Lock path is
 `test/fixtures/skill-discovery-isolated-confirmation-run-lock.json`; the report destination is
