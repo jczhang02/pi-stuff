@@ -20,7 +20,7 @@ import {
 	SUBAGENT_CONTROL_EVENT,
 	SUBAGENT_STEERING_NOTICE_EVENT,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 
 type StateInput = Pick<
 	SubagentState,
@@ -96,7 +96,7 @@ function createAsyncJobTracker(
 ) {
 	return createOwnedAsyncJobTracker(pi, state, asyncDirRoot, {
 		...options,
-		effects: createTestBackgroundEffectOwner(),
+		effects: createTestAgentEffectOwner(),
 	});
 }
 

@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
 import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
-import { BackgroundEffectOwner } from "../../packages/pi-stuff/src/subagents/src/runs/background/background-effect-owner.js";
+import { AgentEffectOwner } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-effect-owner.js";
 
-test("closes the previous Background Work scope before replacing it", async () => {
+test("closes the previous Agent Capability scope before replacing it", async () => {
 	const foundation = new EffectFoundation(1_000);
 	// SAFETY: EffectFoundation keys Session identity only; this test never reads Host SessionManager members.
 	const sessionManager = {} as ExtensionContext["sessionManager"];
 	await foundation.startSession(sessionManager);
-	const owner = new BackgroundEffectOwner(foundation);
+	const owner = new AgentEffectOwner(foundation);
 	await owner.startSession(sessionManager);
 	let active = 0;
 	owner.start(

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 import {
 	Check,
 	COMPLETION_EVENT_SCHEMA,
@@ -137,7 +137,7 @@ test("does not let an old epoch release a restarted delivery attempt", async () 
 	const state = createResultWatcherState();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
-		effects: createTestBackgroundEffectOwner(),
+		effects: createTestAgentEffectOwner(),
 		notifier: {
 			deliver: async () => {
 				calls += 1;
@@ -234,7 +234,7 @@ test("restores nested user takeover attribution before emitting a cold completio
 		60_000,
 		{
 			asyncDirRoot,
-			effects: createTestBackgroundEffectOwner(),
+			effects: createTestAgentEffectOwner(),
 			notifier: {
 				deliver: async (notification) => {
 					notifications.push(notification);

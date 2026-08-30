@@ -2,6 +2,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Cause, Effect, Exit } from "effect";
 import { isFiniteRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import type { AgentEffectOwner, AgentEffectTask } from "../../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
@@ -16,12 +17,11 @@ import { isTerminalAsyncState as isTerminalJobStatus, readStatusAsync } from "..
 import { hasLiveNestedDescendants } from "../shared/nested-events.ts";
 import { AsyncJobObserver } from "./async-job-observer.ts";
 import { type AsyncStatusReader, MAX_RECENT_AGENT_JOBS, scanRestorableAsyncJobs } from "./async-job-recovery.ts";
-import type { BackgroundEffectOwner, BackgroundEffectTask } from "./background-effect-owner.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 
 interface AsyncJobTrackerOptions {
 	completionRetentionMs?: number;
-	effects: BackgroundEffectOwner;
+	effects: AgentEffectOwner;
 	/** Used only when native file observation is unavailable. */
 	pollIntervalMs?: number;
 	onRefresh?: () => void;
@@ -30,7 +30,7 @@ interface AsyncJobTrackerOptions {
 
 interface RestoreInFlight {
 	readonly generation: number;
-	readonly task: BackgroundEffectTask<void, unknown>;
+	readonly task: AgentEffectTask<void, unknown>;
 }
 
 function rememberRecentAgentJob(state: SubagentState, job: AsyncJobState): void {
@@ -53,13 +53,13 @@ class AsyncJobTracker {
 	private readonly state: SubagentState;
 	private readonly asyncDirRoot: string;
 	private readonly completionRetentionMs: number;
-	private readonly effects: BackgroundEffectOwner;
+	private readonly effects: AgentEffectOwner;
 	private readonly onRefresh: (() => void) | undefined;
 	private readonly observer: AsyncJobObserver;
 	private readonly readRunStatus: AsyncStatusReader;
 	private trackerGeneration = 0;
 	private refreshScheduled = false;
-	private readonly cleanupTasks = new Map<string, BackgroundEffectTask<void, never>>();
+	private readonly cleanupTasks = new Map<string, AgentEffectTask<void, never>>();
 	private restoreInFlight: RestoreInFlight | undefined;
 	private restoredGeneration = -1;
 
@@ -131,7 +131,7 @@ class AsyncJobTracker {
 	private scheduleCleanup(job: AsyncJobState): void {
 		this.cancelCleanup(job.asyncId);
 		const expectedGeneration = this.trackerGeneration;
-		let task!: BackgroundEffectTask<void, never>;
+		let task!: AgentEffectTask<void, never>;
 		task = this.effects.start(
 			Effect.sleep(this.completionRetentionMs).pipe(
 				Effect.andThen(
@@ -455,7 +455,7 @@ class AsyncJobTracker {
 		return this.restorePromise(task);
 	};
 
-	private restorePromise(task: BackgroundEffectTask<void, unknown>): Promise<void> {
+	private restorePromise(task: AgentEffectTask<void, unknown>): Promise<void> {
 		return task.result.then((exit) => {
 			if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return;
 			throw Cause.squash(exit.cause);

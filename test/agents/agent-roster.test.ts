@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { Effect } from "effect";
 import type {
 	AgentRow,
 	AgentSessionSnapshot,
@@ -15,6 +16,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/ui/agent-roster.js";
 import { testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 
 type InputResult = { consume?: boolean; data?: string } | undefined;
 type InputHandler = (data: string) => InputResult;
@@ -172,6 +174,7 @@ function setup(rows: readonly AgentRow[], options: Partial<AgentRosterOptions> =
 	const ui = new UiHarness();
 	const opened: string[] = [];
 	const roster = new AgentRoster(current.asCurrentAgents(), {
+		effects: createTestAgentEffectOwner(),
 		onOpen: (key) => {
 			opened.push(key);
 		},
@@ -200,30 +203,33 @@ function containsBidiFormatControl(value: string): boolean {
 
 class FakeClock {
 	now = 1_000;
-	private readonly timers = new Map<ReturnType<typeof setTimeout>, { callback: () => void; dueAt: number }>();
+	private nextId = 0;
+	private readonly sleepers = new Map<
+		number,
+		{ readonly dueAt: number; readonly resume: (effect: Effect.Effect<void>) => void }
+	>();
 
-	readonly clearTimeout = (timer: ReturnType<typeof setTimeout>): void => {
-		clearTimeout(timer);
-		this.timers.delete(timer);
-	};
+	readonly sleep = (delayMs: number): Effect.Effect<void> =>
+		Effect.callback((resume) => {
+			const id = ++this.nextId;
+			this.sleepers.set(id, { dueAt: this.now + delayMs, resume });
+			return Effect.sync(() => this.sleepers.delete(id));
+		});
 
-	readonly setTimeout = (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> => {
-		const timer = setTimeout(() => {}, 2_147_483_647);
-		timer.unref?.();
-		this.timers.set(timer, { callback, dueAt: this.now + delayMs });
-		return timer;
-	};
-
-	advance(ms: number): void {
-		this.now += ms;
+	async advance(ms: number): Promise<void> {
+		const target = this.now + ms;
 		for (;;) {
-			const due = [...this.timers.entries()]
-				.filter(([, timer]) => timer.dueAt <= this.now)
+			const due = [...this.sleepers.entries()]
+				.filter(([, sleeper]) => sleeper.dueAt <= target)
 				.sort((left, right) => left[1].dueAt - right[1].dueAt)[0];
-			if (!due) return;
-			clearTimeout(due[0]);
-			this.timers.delete(due[0]);
-			due[1].callback();
+			if (!due) {
+				this.now = target;
+				return;
+			}
+			this.now = due[1].dueAt;
+			this.sleepers.delete(due[0]);
+			due[1].resume(Effect.void);
+			await Bun.sleep(0);
 		}
 	}
 }
@@ -378,7 +384,10 @@ test("shows current Agent context pressure and drops it before identity on narro
 		}),
 	]);
 	const ui = new UiHarness();
-	const roster = new AgentRoster(current.asCurrentAgents(), { onOpen: () => {} });
+	const roster = new AgentRoster(current.asCurrentAgents(), {
+		effects: createTestAgentEffectOwner(),
+		onOpen: () => {},
+	});
 	roster.setContext(ui.context());
 	roster.setFooterHosted(true);
 	const tail = roster.createFooterTail(ui.tui, recordingTheme);
@@ -429,7 +438,7 @@ test("removes terminal controls while preserving CJK names, tasks, and the right
 	result.roster.dispose();
 });
 
-test("lingers terminal rows for 30 seconds while live rows never expire", () => {
+test("lingers terminal rows for 30 seconds while live rows never expire", async () => {
 	const clock = new FakeClock();
 	const terminal = row("finished", "completed", {
 		description: "Review sample output",
@@ -438,22 +447,40 @@ test("lingers terminal rows for 30 seconds while live rows never expire", () => 
 	});
 	const live = row("live", "running", { description: "Watch build", startedAt: clock.now });
 	const result = setup([terminal, live], {
-		clearTimeout: clock.clearTimeout,
 		now: () => clock.now,
-		setTimeout: clock.setTimeout,
+		sleep: clock.sleep,
 	});
 
 	expect(result.ui.render(64).join("\n")).toContain("finished");
-	clock.advance(29_999);
+	await clock.advance(29_999);
 	expect(result.ui.render(64).join("\n")).toContain("finished");
-	clock.advance(1);
+	await clock.advance(1);
 	const afterExpiry = result.ui.render(64).join("\n");
 	expect(afterExpiry).not.toContain("finished");
 	expect(afterExpiry).toContain("live");
 	expect(result.current.snapshot().rows.some(({ key }) => key === "finished")).toBe(true);
-	clock.advance(60_000);
+	await clock.advance(60_000);
 	expect(result.ui.render(64).join("\n")).toContain("live");
 	result.roster.dispose();
+});
+
+test("stops elapsed refresh work when the roster is disposed", async () => {
+	const clock = new FakeClock();
+	const result = setup([row("live", "running", { startedAt: clock.now })], {
+		now: () => clock.now,
+		sleep: clock.sleep,
+	});
+	await Bun.sleep(0);
+	const initialRequests = result.ui.tui.renderRequests;
+
+	await clock.advance(1_000);
+	expect(result.ui.tui.renderRequests).toBeGreaterThan(initialRequests);
+	result.roster.dispose();
+	await Bun.sleep(0);
+	const disposedRequests = result.ui.tui.renderRequests;
+
+	await clock.advance(1_000);
+	expect(result.ui.tui.renderRequests).toBe(disposedRequests);
 });
 
 test("omits an already-old terminal row on the first roster frame without deleting detail state", () => {
@@ -464,9 +491,8 @@ test("omits an already-old terminal row on the first roster frame without deleti
 		endedAt: clock.now - 30_000,
 	});
 	const result = setup([oldTerminal], {
-		clearTimeout: clock.clearTimeout,
 		now: () => clock.now,
-		setTimeout: clock.setTimeout,
+		sleep: clock.sleep,
 	});
 
 	expect(result.ui.render(64)).toEqual([]);
@@ -475,16 +501,15 @@ test("omits an already-old terminal row on the first roster frame without deleti
 	result.roster.dispose();
 });
 
-test("settles a running row to an unmistakable completed state and freezes elapsed time", () => {
+test("settles a running row to an unmistakable completed state and freezes elapsed time", async () => {
 	const clock = new FakeClock();
 	const running = row("reviewer", "running", {
 		description: "Review sample output",
 		startedAt: clock.now - 18_000,
 	});
 	const result = setup([running], {
-		clearTimeout: clock.clearTimeout,
 		now: () => clock.now,
-		setTimeout: clock.setTimeout,
+		sleep: clock.sleep,
 	});
 	expect(lineFor(result.ui.render(100), "reviewer")).toMatch(/\s{2,}18s$/u);
 	if (running.startedAt == null) throw new Error("Expected running start time");
@@ -505,7 +530,7 @@ test("settles a running row to an unmistakable completed state and freezes elaps
 		expect(agentLine).toMatch(/\S\s{2,}done · 18s$/);
 		expect(visibleWidth(agentLine)).toBeLessThanOrEqual(width);
 	}
-	clock.advance(5_000);
+	await clock.advance(5_000);
 	expect(lineFor(result.ui.render(100), "reviewer")).toEndWith("done · 18s");
 	result.roster.dispose();
 

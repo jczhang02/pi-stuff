@@ -79,7 +79,7 @@ import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contr
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { testTheme } from "../fixtures/extension-context.js";
 import { isWellFormed } from "../fixtures/terminal.js";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
@@ -87,7 +87,7 @@ const theme = testTheme;
 const createNativeSupervisorChannel = (
 	pi: Parameters<typeof createNativeSupervisorChannelNative>[0],
 	state: Parameters<typeof createNativeSupervisorChannelNative>[1],
-) => createNativeSupervisorChannelNative(pi, state, createTestBackgroundEffectOwner());
+) => createNativeSupervisorChannelNative(pi, state, createTestAgentEffectOwner());
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 type LifecycleResult = object | undefined | Promise<object | undefined>;

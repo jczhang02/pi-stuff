@@ -16,7 +16,7 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 
 const temporaryDirectories: string[] = [];
 const INTERCOM_PAYLOAD_SCHEMA = Type.Object(
@@ -111,7 +111,7 @@ export function createResultWatcherState(currentSessionId = "root-session"): Res
 }
 
 export function createRecordingResultWatcher(resultsDir: string, options: RecordingResultWatcherOptions = {}) {
-	const { effects = createTestBackgroundEffectOwner(), events = INERT_INTERCOM_BUS, sessionId, ...deps } = options;
+	const { effects = createTestAgentEffectOwner(), events = INERT_INTERCOM_BUS, sessionId, ...deps } = options;
 	const delivered: CompletionNotification[] = [];
 	const state = createResultWatcherState(sessionId);
 	const watcher = createResultWatcher({ events }, state, resultsDir, 60_000, {

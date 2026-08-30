@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { Cause, Effect, Exit } from "effect";
 import { isRuntimeString } from "../../../../shared/runtime-type.js";
+import type { AgentEffectOwner, AgentEffectTask } from "../../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import {
 	type AsyncJobState,
@@ -19,18 +20,17 @@ import {
 	recoverLegacyFinalReports,
 	type TrackerEventRecord,
 } from "./async-job-recovery.ts";
-import type { BackgroundEffectOwner, BackgroundEffectTask } from "./background-effect-owner.ts";
 
 const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
 
 interface JobObservation {
 	control: boolean;
-	fallbackTask?: BackgroundEffectTask<void, never>;
+	fallbackTask?: AgentEffectTask<void, never>;
 	lastIpcStatusAt?: number;
-	retryTask?: BackgroundEffectTask<void, never>;
-	runningTask?: BackgroundEffectTask<boolean, unknown>;
+	retryTask?: AgentEffectTask<void, never>;
+	runningTask?: AgentEffectTask<boolean, unknown>;
 	status: boolean;
-	statusFallbackTask?: BackgroundEffectTask<void, never>;
+	statusFallbackTask?: AgentEffectTask<void, never>;
 	watcher?: fs.FSWatcher;
 }
 
@@ -47,7 +47,7 @@ interface AsyncJobObserverOptions {
 	readonly onStatus: (job: AsyncJobState, status: AsyncStatus) => void;
 	readonly pollIntervalMs: number;
 	readonly readRunStatus: AsyncStatusReader;
-	readonly effects: BackgroundEffectOwner;
+	readonly effects: AgentEffectOwner;
 }
 
 /** Owns native observation, polling fallback, and durable control-event delivery for async jobs. */

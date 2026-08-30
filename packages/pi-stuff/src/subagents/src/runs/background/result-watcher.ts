@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Effect } from "effect";
+import type { AgentEffectOwner, AgentEffectTask } from "../../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
 import {
@@ -11,7 +12,6 @@ import {
 import { ASYNC_DIR, type IntercomEventBus, RESULTS_DIR, type SubagentState } from "../../shared/types.ts";
 import { isNotFoundError as isNotFound, resolveWatchPath } from "../../shared/utils.ts";
 import { projectNestedEventsAuthoritatively } from "../shared/nested-events.ts";
-import type { BackgroundEffectOwner, BackgroundEffectTask } from "./background-effect-owner.ts";
 import type { CompletionNotification } from "./notify.ts";
 import { ResultProcessor } from "./result-processing.ts";
 
@@ -25,7 +25,7 @@ type ResultWatcherFs = Pick<typeof fs, "existsSync" | "realpathSync" | "watch">;
 
 type ResultWatcherDeps = {
 	acquireClaim?: typeof tryAcquireKernelClaim;
-	effects: BackgroundEffectOwner;
+	effects: AgentEffectOwner;
 	fs?: ResultWatcherFs;
 	notifier?: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> };
 	asyncDirRoot?: string;
@@ -46,19 +46,19 @@ function shouldPoll(cause: unknown): boolean {
 class ResultWatcher {
 	private readonly resultsDir: string;
 	private readonly fsApi: ResultWatcherFs;
-	private readonly effects: BackgroundEffectOwner;
+	private readonly effects: AgentEffectOwner;
 	private readonly pendingTriggerTurn = new Map<string, boolean>();
 	private readonly processor: ResultProcessor;
-	private readonly delayedResults = new Map<string, BackgroundEffectTask<void, never>>();
+	private readonly delayedResults = new Map<string, AgentEffectTask<void, never>>();
 	private readonly processingResults = new Map<
 		string,
-		{ readonly token: symbol; readonly task: BackgroundEffectTask<void, unknown> }
+		{ readonly token: symbol; readonly task: AgentEffectTask<void, unknown> }
 	>();
-	private pollTask: BackgroundEffectTask<void, never> | undefined;
+	private pollTask: AgentEffectTask<void, never> | undefined;
 	private primeTriggerTurn = true;
-	private primeTask: BackgroundEffectTask<void, unknown> | undefined;
-	private restartTask: BackgroundEffectTask<void, never> | undefined;
-	private safetyScanTask: BackgroundEffectTask<void, never> | undefined;
+	private primeTask: AgentEffectTask<void, unknown> | undefined;
+	private restartTask: AgentEffectTask<void, never> | undefined;
+	private safetyScanTask: AgentEffectTask<void, never> | undefined;
 	private watcher: fs.FSWatcher | undefined;
 
 	constructor(
@@ -91,7 +91,7 @@ class ResultWatcher {
 	private scheduleResult(file: string, triggerTurn: boolean, delayMs = 0): void {
 		this.pendingTriggerTurn.set(file, (this.pendingTriggerTurn.get(file) ?? true) && triggerTurn);
 		if (this.delayedResults.has(file)) return;
-		let delayed!: BackgroundEffectTask<void, never>;
+		let delayed!: AgentEffectTask<void, never>;
 		delayed = this.effects.start(
 			Effect.sleep(delayMs).pipe(
 				Effect.andThen(

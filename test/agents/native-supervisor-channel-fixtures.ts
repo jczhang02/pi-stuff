@@ -12,7 +12,7 @@ import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/s
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/index.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
 
 const directories: string[] = [];
 
@@ -23,7 +23,7 @@ function createNativeSupervisorChannel(
 	state: SubagentState,
 	options: NativeSupervisorChannelOptions = {},
 ) {
-	return createNativeSupervisorChannelNative(pi, state, createTestBackgroundEffectOwner(), options);
+	return createNativeSupervisorChannelNative(pi, state, createTestAgentEffectOwner(), options);
 }
 
 interface SupervisorRequestFixture {

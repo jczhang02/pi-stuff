@@ -34,7 +34,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { createExtensionApi } from "../fixtures/extension-api.ts";
-import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.ts";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.ts";
 import { CONTEXT_USAGE_PROVIDER_EXTENSION_PATH } from "./fixtures/context-usage-provider.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
@@ -594,7 +594,7 @@ test(
 
 				const restoredState = stateForSession(sessionId);
 				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR, {
-					effects: createTestBackgroundEffectOwner(),
+					effects: createTestAgentEffectOwner(),
 				});
 				await tracker.restoreActiveJobs();
 				const rows = new CurrentAgents(restoredState, {

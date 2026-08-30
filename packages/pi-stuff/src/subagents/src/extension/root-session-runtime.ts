@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { isRuntimeFunction } from "../../../shared/runtime-type.js";
-import type { BackgroundEffectOwner } from "../runs/background/background-effect-owner.ts";
 import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
 import {
 	PI_STUFF_AGENT_PATH_ENV,
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_SESSION_ENV,
 } from "../runs/shared/pi-args.ts";
+import type { AgentEffectOwner, AgentEffectTask } from "../runtime/agent-effect-owner.ts";
 import { type AgentExecutionCoordinatorPort, parseAgentOwnerPath } from "../runtime/agent-execution-coordinator.ts";
 import type { PrepareSessionGovernorCompatibilityInput } from "../runtime/session-governor-compatibility.ts";
 import {
@@ -52,7 +53,7 @@ export interface RootSupervisor {
 }
 
 interface RootSessionRuntimeInput {
-	readonly backgroundEffects: BackgroundEffectOwner;
+	readonly effects: AgentEffectOwner;
 	readonly bindContext: (ctx: ExtensionContext) => void;
 	readonly clearGlobalCleanup: () => void;
 	readonly config: PiStuffAgentsConfig;
@@ -109,8 +110,7 @@ export class RootSessionRuntime {
 	private governorCompatibilityError: string | undefined;
 	private governorCompatibilityCheck: { epoch: number; promise: Promise<void> } | undefined;
 	private governorCompatibilityScope: ReturnType<typeof buildSessionGovernorCompatibilityScope> | undefined;
-	private maintenanceTimer: ReturnType<typeof setTimeout> | undefined;
-	private maintenanceInFlight = false;
+	private maintenanceTask: AgentEffectTask<void, never> | undefined;
 	private nextMaintenanceAt = 0;
 	private ephemeralSessionNonce = randomUUID();
 
@@ -234,28 +234,41 @@ export class RootSessionRuntime {
 	}
 
 	scheduleMaintenance(): void {
-		if (this.maintenanceTimer || this.maintenanceInFlight || !this.active) return;
+		if (this.maintenanceTask || !this.active) return;
 		if (this.input.monotonicNow() < this.nextMaintenanceAt) return;
-		this.maintenanceTimer = setTimeout(() => {
-			this.maintenanceTimer = undefined;
-			if (!this.active) return;
-			this.maintenanceInFlight = true;
-			void Promise.resolve()
-				.then(() => this.input.maintainRuntime())
-				.then(
-					() => {
-						this.nextMaintenanceAt = this.input.monotonicNow() + MAINTENANCE_SUCCESS_INTERVAL_MS;
-					},
-					(error) => {
-						this.nextMaintenanceAt = this.input.monotonicNow() + MAINTENANCE_FAILURE_RETRY_MS;
-						reportAgentDiagnostic("Failed to maintain completed Agent runtime data:", error);
-					},
-				)
-				.finally(() => {
-					this.maintenanceInFlight = false;
-				});
-		}, 0);
-		this.maintenanceTimer.unref?.();
+		let task!: AgentEffectTask<void, never>;
+		try {
+			task = this.input.effects.start(
+				Effect.sleep(0).pipe(
+					Effect.andThen(
+						Effect.tryPromise({
+							try: async () => this.input.maintainRuntime(),
+							catch: (error) => error,
+						}).pipe(
+							Effect.tap(() =>
+								Effect.sync(() => {
+									this.nextMaintenanceAt = this.input.monotonicNow() + MAINTENANCE_SUCCESS_INTERVAL_MS;
+								}),
+							),
+							Effect.catch((error) =>
+								Effect.sync(() => {
+									this.nextMaintenanceAt = this.input.monotonicNow() + MAINTENANCE_FAILURE_RETRY_MS;
+									reportAgentDiagnostic("Failed to maintain completed Agent runtime data:", error);
+								}),
+							),
+						),
+					),
+					Effect.ensuring(
+						Effect.sync(() => {
+							if (this.maintenanceTask === task) this.maintenanceTask = undefined;
+						}),
+					),
+				),
+			);
+			this.maintenanceTask = task;
+		} catch (error) {
+			reportAgentDiagnostic("Failed to schedule Agent runtime maintenance:", error);
+		}
 	}
 
 	async startSession(ctx: ExtensionContext): Promise<void> {
@@ -263,7 +276,7 @@ export class RootSessionRuntime {
 		await this.input.previousCleanup;
 		if (!this.active) return;
 		this.resetSessionRuntime();
-		await this.input.backgroundEffects.startSession(ctx.sessionManager);
+		await this.input.effects.startSession(ctx.sessionManager);
 		if (!this.active) return;
 		const epoch = this.sessionEpoch;
 		const state = this.input.state;
@@ -297,13 +310,11 @@ export class RootSessionRuntime {
 		if (!this.active) return;
 		this.active = false;
 		this.sessionEpoch += 1;
-		if (this.maintenanceTimer) clearTimeout(this.maintenanceTimer);
-		this.maintenanceTimer = undefined;
 		this.input.watcher.stopResultWatcher();
 		this.watcherStarted = false;
 		this.input.disposeRuntimeEvents();
 		this.input.tracker.resetJobs();
-		await this.input.backgroundEffects.stop();
+		await this.input.effects.stop();
 		const state = this.input.state;
 		state.asyncJobs.clear();
 		state.recentAgentJobs?.clear();

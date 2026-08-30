@@ -6,7 +6,7 @@ import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.j
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
-import type { BackgroundEffectOwner, BackgroundEffectTask } from "../runs/background/background-effect-owner.ts";
+import type { AgentEffectOwner, AgentEffectTask } from "../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, type tryAcquireDurableClaim, tryAcquireKernelClaim } from "../shared/durable-claim.ts";
 import { sessionArtifactMatches } from "../shared/session-identity.ts";
@@ -390,7 +390,7 @@ interface NativeSupervisorChannelOptions {
 
 class NativeSupervisorParent {
 	readonly pending = new Map<string, PendingSupervisorRequest>();
-	private pollTask: BackgroundEffectTask<void, never> | undefined;
+	private pollTask: AgentEffectTask<void, never> | undefined;
 	private channelScanEntries: string[] = [];
 	private channelScanOffset = 0;
 	private lifecycleGeneration = 0;
@@ -401,14 +401,14 @@ class NativeSupervisorParent {
 	private readonly deliveryDispatches = new Map<string, object>();
 	private readonly acquireDeliveryClaim: typeof tryAcquireDurableClaim;
 	private readonly afterReplyPublish: ((replyPath: string) => void) | undefined;
-	private readonly effects: BackgroundEffectOwner;
+	private readonly effects: AgentEffectOwner;
 	private readonly pi: ExtensionAPI;
 	private readonly state: SubagentState;
 
 	constructor(
 		pi: ExtensionAPI,
 		state: SubagentState,
-		effects: BackgroundEffectOwner,
+		effects: AgentEffectOwner,
 		options: NativeSupervisorChannelOptions,
 	) {
 		this.pi = pi;
@@ -729,7 +729,7 @@ class NativeSupervisorParent {
 export function createNativeSupervisorChannel(
 	pi: ExtensionAPI,
 	state: SubagentState,
-	effects: BackgroundEffectOwner,
+	effects: AgentEffectOwner,
 	options: NativeSupervisorChannelOptions = {},
 ) {
 	const parent = new NativeSupervisorParent(pi, state, effects, options);

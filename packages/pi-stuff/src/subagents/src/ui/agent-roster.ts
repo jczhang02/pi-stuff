@@ -10,9 +10,12 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { Effect } from "effect";
 import type { FooterTailComponent } from "../../../conversation-ui/index.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
+import type { AgentEffectOwner, AgentEffectTask } from "../runtime/agent-effect-owner.ts";
 import type { AgentRow, AgentSessionSnapshot, CurrentAgentsView } from "../session/current-agents.js";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { boundedTerminalLine } from "../shared/display-description.js";
 
 const WIDGET_KEY = "pi-stuff-agent-roster";
@@ -35,10 +38,10 @@ export interface AgentRosterContext {
 }
 
 export interface AgentRosterOptions {
+	readonly effects: Pick<AgentEffectOwner, "start">;
 	readonly onOpen: (key: string) => Promise<void> | void;
 	readonly now?: () => number;
-	readonly setTimeout?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
-	readonly clearTimeout?: (timer: ReturnType<typeof setTimeout>) => void;
+	readonly sleep?: (delayMs: number) => Effect.Effect<void>;
 }
 
 interface IndexedRow {
@@ -49,17 +52,17 @@ interface IndexedRow {
 /** Claude-style projection of the current session's direct children. */
 export class AgentRoster {
 	private readonly current: CurrentAgentsView;
-	private readonly clearTimeout: NonNullable<AgentRosterOptions["clearTimeout"]>;
 	private readonly dismissedTerminalKeys = new Set<string>();
+	private readonly effects: AgentRosterOptions["effects"];
 	private readonly now: () => number;
 	private readonly onOpen: AgentRosterOptions["onOpen"];
-	private readonly setTimeout: NonNullable<AgentRosterOptions["setTimeout"]>;
+	private readonly sleep: NonNullable<AgentRosterOptions["sleep"]>;
 	private readonly terminalStartedAt = new Map<string, number>();
 	private readonly unsubscribeCurrent: () => void;
 	private context: AgentRosterContext | undefined;
 	private inputUnsubscribe: (() => void) | undefined;
-	private refreshTimer: ReturnType<typeof setInterval> | undefined;
-	private lingerTimer: ReturnType<typeof setTimeout> | undefined;
+	private refreshTask: AgentEffectTask<void, never> | undefined;
+	private lingerTask: AgentEffectTask<void, never> | undefined;
 	private snapshotValue: AgentSessionSnapshot;
 	private suppressed = false;
 	private navigationActive = false;
@@ -71,10 +74,10 @@ export class AgentRoster {
 
 	constructor(current: CurrentAgentsView, options: AgentRosterOptions) {
 		this.current = current;
+		this.effects = options.effects;
 		this.onOpen = options.onOpen;
 		this.now = options.now ?? Date.now;
-		this.setTimeout = options.setTimeout ?? setTimeout;
-		this.clearTimeout = options.clearTimeout ?? clearTimeout;
+		this.sleep = options.sleep ?? Effect.sleep;
 		this.snapshotValue = current.snapshot();
 		this.reconcileTerminalStarts();
 		this.unsubscribeCurrent = current.subscribe((snapshot) => {
@@ -221,16 +224,16 @@ export class AgentRoster {
 			this.widgetRegistered = true;
 		}
 		if (this.footerHosted) this.clearWidget();
-		this.syncRefreshTimer();
-		this.syncLingerTimer();
+		this.syncRefreshTask();
+		this.syncLingerTask();
 		this.requestRender();
 	}
 
 	private clearRegistration(): void {
-		if (this.refreshTimer) clearInterval(this.refreshTimer);
-		this.refreshTimer = undefined;
-		if (this.lingerTimer) this.clearTimeout(this.lingerTimer);
-		this.lingerTimer = undefined;
+		if (this.refreshTask) void this.refreshTask.interrupt();
+		this.refreshTask = undefined;
+		if (this.lingerTask) void this.lingerTask.interrupt();
+		this.lingerTask = undefined;
 		this.inputUnsubscribe?.();
 		this.inputUnsubscribe = undefined;
 		this.clearWidget();
@@ -250,9 +253,9 @@ export class AgentRoster {
 		return this.footerAttachment?.tui ?? this.widgetTui;
 	}
 
-	private syncLingerTimer(): void {
-		if (this.lingerTimer) this.clearTimeout(this.lingerTimer);
-		this.lingerTimer = undefined;
+	private syncLingerTask(): void {
+		if (this.lingerTask) void this.lingerTask.interrupt();
+		this.lingerTask = undefined;
 		const now = this.now();
 		let nextExpiry = Number.POSITIVE_INFINITY;
 		for (const row of this.snapshotValue.rows) {
@@ -263,29 +266,44 @@ export class AgentRoster {
 			if (expiresAt > now) nextExpiry = Math.min(nextExpiry, expiresAt);
 		}
 		if (!Number.isFinite(nextExpiry)) return;
-		this.lingerTimer = this.setTimeout(
-			() => {
-				this.lingerTimer = undefined;
-				this.reconcileSelection();
-				this.syncRegistration();
-			},
-			Math.max(0, nextExpiry - now),
+		let task: AgentEffectTask<void, never> | undefined;
+		task = this.startTask(
+			this.sleep(Math.max(0, nextExpiry - now)).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						if (this.lingerTask !== task) return;
+						this.lingerTask = undefined;
+						this.reconcileSelection();
+						this.syncRegistration();
+					}),
+				),
+			),
 		);
-		this.lingerTimer.unref?.();
+		if (task) this.lingerTask = task;
 	}
 
-	private syncRefreshTimer(): void {
+	private syncRefreshTask(): void {
 		const hasRunningElapsed = this.rows().some(
 			(row) => row.status === "running" && isRuntimeNumber(row.startedAt) && Number.isFinite(row.startedAt),
 		);
 		if (!hasRunningElapsed) {
-			if (this.refreshTimer) clearInterval(this.refreshTimer);
-			this.refreshTimer = undefined;
+			if (this.refreshTask) void this.refreshTask.interrupt();
+			this.refreshTask = undefined;
 			return;
 		}
-		if (this.refreshTimer) return;
-		this.refreshTimer = setInterval(() => this.requestRender(), ELAPSED_REFRESH_MS);
-		this.refreshTimer.unref?.();
+		if (this.refreshTask) return;
+		this.refreshTask = this.startTask(
+			Effect.forever(this.sleep(ELAPSED_REFRESH_MS).pipe(Effect.andThen(Effect.sync(() => this.requestRender())))),
+		);
+	}
+
+	private startTask(program: Effect.Effect<void>): AgentEffectTask<void, never> | undefined {
+		try {
+			return this.effects.start(program);
+		} catch (error) {
+			reportAgentDiagnostic("Failed to schedule Agent roster refresh:", error);
+			return undefined;
+		}
 	}
 
 	private handleInput(data: string): { consume?: boolean } | undefined {
