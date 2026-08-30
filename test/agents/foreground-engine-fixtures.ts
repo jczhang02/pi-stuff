@@ -107,12 +107,8 @@ function state(): SubagentState {
 		foregroundRuns: new Map(),
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
-		cleanupTimers: new Map(),
 		lastUiContext: null,
 		completionSeen: new Map(),
-		watcher: null,
-		watcherRestartTimer: null,
-		resultFileCoalescer: { schedule: () => false, clear: () => {} },
 	};
 }
 

@@ -120,15 +120,8 @@ function createChildSafeState(): SubagentState {
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		pendingForegroundControlNotices: new Map(),
-		cleanupTimers: new Map(),
 		lastUiContext: null,
 		completionSeen: new Map(),
-		watcher: null,
-		watcherRestartTimer: null,
-		resultFileCoalescer: {
-			schedule: () => false,
-			clear: () => {},
-		},
 	};
 }
 

@@ -33,6 +33,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { createExtensionApi } from "../fixtures/extension-api.ts";
+import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.ts";
 import { CONTEXT_USAGE_PROVIDER_EXTENSION_PATH } from "./fixtures/context-usage-provider.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
@@ -303,12 +304,8 @@ function stateForSession(sessionId: string): SubagentState {
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		pendingForegroundControlNotices: new Map(),
-		cleanupTimers: new Map(),
 		lastUiContext: null,
 		completionSeen: new Map(),
-		watcher: null,
-		watcherRestartTimer: null,
-		resultFileCoalescer: { schedule: () => false, clear: () => {} },
 	};
 }
 
@@ -593,7 +590,9 @@ test(
 				processGroups.delete(pid);
 
 				const restoredState = stateForSession(sessionId);
-				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR);
+				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR, {
+					effects: createTestBackgroundEffectOwner(),
+				});
 				await tracker.restoreActiveJobs();
 				const rows = new CurrentAgents(restoredState, {
 					inspect: () => true,

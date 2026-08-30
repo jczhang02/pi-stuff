@@ -76,7 +76,6 @@ export interface ResultProcessorOptions {
 }
 
 interface LoadedResult {
-	controller: AbortController;
 	data: JsonObject & ResultFileData & { sessionId: string };
 	file: string;
 	nestedChildren: NestedRunSummary[] | undefined;
@@ -87,6 +86,7 @@ interface LoadedResult {
 	runId: string;
 	epoch: number;
 	statusChildren: NestedRunSummary[] | undefined;
+	signal: AbortSignal;
 	terminalStatusReady: boolean;
 	triggerTurn: boolean;
 }
@@ -100,7 +100,7 @@ interface CompletionProjection {
 
 export class ResultProcessor {
 	private readonly options: ResultProcessorOptions;
-	private readonly processing = new Map<string, { token: symbol; controller: AbortController }>();
+	private readonly processing = new Map<string, symbol>();
 	private readonly deliveredPendingStatus = new Set<string>();
 	private readonly statusRepairRetryDelay = new Map<string, number>();
 	private readonly statusRepairLastLog = new Map<string, number>();
@@ -129,7 +129,6 @@ export class ResultProcessor {
 	stop(): void {
 		this.activeSessionId = undefined;
 		this.deliveryEpoch += 1;
-		for (const attempt of this.processing.values()) attempt.controller.abort();
 		this.processing.clear();
 		this.deliveredPendingStatus.clear();
 		this.statusRepairRetryDelay.clear();
@@ -261,9 +260,11 @@ export class ResultProcessor {
 		resultPath: string,
 		attemptEpoch: number,
 		triggerTurn: boolean,
-		controller: AbortController,
+		signal: AbortSignal,
 	): Promise<LoadedResult | null> {
+		signal.throwIfAborted();
 		const resultSnapshot = await this.options.readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES);
+		signal.throwIfAborted();
 		const rawResult = resultSnapshot.text;
 		const data: JsonObject & ResultFileData = parseJsonObject(rawResult);
 		this.processRetryDelay.delete(file);
@@ -336,7 +337,6 @@ export class ResultProcessor {
 			}
 		}
 		return {
-			controller,
 			data: sessionData,
 			file,
 			nestedChildren,
@@ -347,6 +347,7 @@ export class ResultProcessor {
 			runId,
 			epoch,
 			statusChildren,
+			signal,
 			terminalStatusReady,
 			triggerTurn,
 		};
@@ -452,7 +453,7 @@ export class ResultProcessor {
 		delivery: ResultDeliveryState,
 		projection: CompletionProjection,
 	): Promise<void> {
-		const { controller, data, file, resultPath, runId, epoch, terminalStatusReady, triggerTurn } = loaded;
+		const { data, file, resultPath, runId, epoch, signal, terminalStatusReady, triggerTurn } = loaded;
 		const { completionKey } = delivery;
 		const { completion, intercomTarget, mode, normalizedChildren } = projection;
 		const { notifier, pi, resultsDir, state, completionTtlMs } = this.options;
@@ -495,7 +496,7 @@ export class ResultProcessor {
 		if (!this.ownsSession(data.sessionId, runId, epoch)) return;
 		completion.intercomDelivered = intercomDelivered;
 		if (!deliveryState.notificationAccepted) {
-			const accepted = await deliverNotificationWithAbort(notifier, completion, controller.signal);
+			const accepted = await deliverNotificationWithAbort(notifier, completion, signal);
 			if (!accepted) {
 				if (this.ownsSession(data.sessionId, runId, epoch))
 					this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
@@ -530,7 +531,8 @@ export class ResultProcessor {
 		await this.removeDeliveredResult(loaded, completionKey);
 	}
 
-	readonly handleResult = async (file: string, triggerTurn: boolean): Promise<void> => {
+	readonly handleResult = async (file: string, triggerTurn: boolean, signal: AbortSignal): Promise<void> => {
+		signal.throwIfAborted();
 		if (path.basename(file) !== file || !file.endsWith(".json")) {
 			this.reportStatusRepair(file, `Ignoring unsafe subagent result entry '${file}'.`);
 			return;
@@ -546,16 +548,15 @@ export class ResultProcessor {
 		}
 		const attemptEpoch = this.deliveryEpoch;
 		const token = Symbol(file);
-		const controller = new AbortController();
 		let durableClaim: DurableClaim | undefined;
-		this.processing.set(file, { token, controller });
+		this.processing.set(file, token);
 		try {
 			durableClaim = this.options.acquireClaim(resultsDir, deliveryClaimName(file));
 			if (!durableClaim) {
 				this.options.scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 				return;
 			}
-			const loaded = await this.loadResult(file, resultPath, attemptEpoch, triggerTurn, controller);
+			const loaded = await this.loadResult(file, resultPath, attemptEpoch, triggerTurn, signal);
 			if (!loaded) return;
 			const { completionTtlMs, state } = this.options;
 			const completionKey = buildCompletionKey(loaded.data, `result:${file}`);
@@ -626,7 +627,7 @@ export class ResultProcessor {
 				reportAgentDiagnostic(`Failed to release subagent result claim for '${resultPath}':`, releaseError);
 			}
 			// A restarted attempt may already own this file; never clear its lock.
-			if (this.processing.get(file)?.token === token) this.processing.delete(file);
+			if (this.processing.get(file) === token) this.processing.delete(file);
 		}
 	};
 }

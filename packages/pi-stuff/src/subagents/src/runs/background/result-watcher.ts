@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Effect } from "effect";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
-import { createFileCoalescer } from "../../shared/file-coalescer.ts";
 import {
 	errnoCode,
 	type OwnedFileSnapshot,
@@ -11,6 +11,7 @@ import {
 import { ASYNC_DIR, type IntercomEventBus, RESULTS_DIR, type SubagentState } from "../../shared/types.ts";
 import { isNotFoundError as isNotFound, resolveWatchPath } from "../../shared/utils.ts";
 import { projectNestedEventsAuthoritatively } from "../shared/nested-events.ts";
+import type { BackgroundEffectOwner, BackgroundEffectTask } from "./background-effect-owner.ts";
 import type { CompletionNotification } from "./notify.ts";
 import { ResultProcessor } from "./result-processing.ts";
 
@@ -18,20 +19,13 @@ const WATCHER_RESTART_DELAY_MS = 3000;
 const POLL_INTERVAL_MS = 3000;
 const RETRY_DELAY_MS = 100;
 
-export type ResultWatcherState = Pick<
-	SubagentState,
-	| "completionSeen"
-	| "currentSessionId"
-	| "currentSessionScope"
-	| "resultFileCoalescer"
-	| "watcher"
-	| "watcherRestartTimer"
->;
+export type ResultWatcherState = Pick<SubagentState, "completionSeen" | "currentSessionId" | "currentSessionScope">;
 
 type ResultWatcherFs = Pick<typeof fs, "existsSync" | "realpathSync" | "watch">;
 
 type ResultWatcherDeps = {
 	acquireClaim?: typeof tryAcquireKernelClaim;
+	effects: BackgroundEffectOwner;
 	fs?: ResultWatcherFs;
 	notifier?: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> };
 	asyncDirRoot?: string;
@@ -50,12 +44,22 @@ function shouldPoll(cause: unknown): boolean {
 }
 
 class ResultWatcher {
-	private readonly state: ResultWatcherState;
 	private readonly resultsDir: string;
 	private readonly fsApi: ResultWatcherFs;
+	private readonly effects: BackgroundEffectOwner;
 	private readonly pendingTriggerTurn = new Map<string, boolean>();
 	private readonly processor: ResultProcessor;
-	private safetyScanTimer: ReturnType<typeof setInterval> | undefined;
+	private readonly delayedResults = new Map<string, BackgroundEffectTask<void, never>>();
+	private readonly processingResults = new Map<
+		string,
+		{ readonly token: symbol; readonly task: BackgroundEffectTask<void, unknown> }
+	>();
+	private pollTask: BackgroundEffectTask<void, never> | undefined;
+	private primeTriggerTurn = true;
+	private primeTask: BackgroundEffectTask<void, unknown> | undefined;
+	private restartTask: BackgroundEffectTask<void, never> | undefined;
+	private safetyScanTask: BackgroundEffectTask<void, never> | undefined;
+	private watcher: fs.FSWatcher | undefined;
 
 	constructor(
 		pi: { events: IntercomEventBus },
@@ -64,9 +68,9 @@ class ResultWatcher {
 		completionTtlMs: number,
 		deps: ResultWatcherDeps,
 	) {
-		this.state = state;
 		this.resultsDir = resultsDir;
 		this.fsApi = deps.fs ?? fs;
+		this.effects = deps.effects;
 		const asyncDirRoot =
 			deps.asyncDirRoot ??
 			(path.resolve(resultsDir) === path.resolve(RESULTS_DIR) ? ASYNC_DIR : path.dirname(path.resolve(resultsDir)));
@@ -82,85 +86,131 @@ class ResultWatcher {
 			projectNestedEvents: deps.projectNestedEvents ?? projectNestedEventsAuthoritatively,
 			scheduleResult: (file, triggerTurn, delayMs) => this.scheduleResult(file, triggerTurn, delayMs),
 		});
-		state.resultFileCoalescer = createFileCoalescer((file) => {
-			const triggerTurn = this.pendingTriggerTurn.get(file) !== false;
-			this.pendingTriggerTurn.delete(file);
-			void this.processor.handleResult(file, triggerTurn);
-		}, 50);
 	}
 
 	private scheduleResult(file: string, triggerTurn: boolean, delayMs = 0): void {
 		this.pendingTriggerTurn.set(file, (this.pendingTriggerTurn.get(file) ?? true) && triggerTurn);
-		this.state.resultFileCoalescer.schedule(file, delayMs);
+		if (this.delayedResults.has(file)) return;
+		let delayed!: BackgroundEffectTask<void, never>;
+		delayed = this.effects.start(
+			Effect.sleep(delayMs).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						if (this.delayedResults.get(file) !== delayed) return;
+						this.delayedResults.delete(file);
+						const shouldTriggerTurn = this.pendingTriggerTurn.get(file) !== false;
+						this.pendingTriggerTurn.delete(file);
+						this.startProcessing(file, shouldTriggerTurn);
+					}),
+				),
+			),
+		);
+		this.delayedResults.set(file, delayed);
+	}
+
+	private startProcessing(file: string, triggerTurn: boolean): void {
+		const token = Symbol(file);
+		const task = this.effects.start(
+			Effect.tryPromise({
+				try: (signal) => this.processor.handleResult(file, triggerTurn, signal),
+				catch: (error) => error,
+			}),
+		);
+		this.processingResults.set(file, { token, task });
+		void task.result.then(() => {
+			if (this.processingResults.get(file)?.token === token) this.processingResults.delete(file);
+		});
 	}
 
 	readonly primeExistingResults = (options: { triggerTurn?: boolean } = {}): void => {
 		const triggerTurn = options.triggerTurn !== false;
-		void fs.promises
-			.readdir(this.resultsDir)
-			.then((files) => {
-				for (const file of files) if (file.endsWith(".json")) this.scheduleResult(file, triggerTurn);
-			})
-			.catch((error) => {
-				if (!isNotFound(error))
-					reportAgentDiagnostic(`Failed to scan subagent result directory '${this.resultsDir}':`, error);
-			});
+		this.primeTriggerTurn &&= triggerTurn;
+		if (this.primeTask) return;
+		const task = this.effects.start(
+			Effect.tryPromise({ try: () => fs.promises.readdir(this.resultsDir), catch: (error) => error }).pipe(
+				Effect.catch((error) =>
+					Effect.sync(() => {
+						if (!isNotFound(error))
+							reportAgentDiagnostic(`Failed to scan subagent result directory '${this.resultsDir}':`, error);
+						// SAFETY: this failure branch deliberately projects the same mutable string-list type as readdir.
+						return [] as string[];
+					}),
+				),
+				Effect.flatMap((files) =>
+					Effect.sync(() => {
+						const shouldTriggerTurn = this.primeTriggerTurn;
+						this.primeTriggerTurn = true;
+						for (const file of files) if (file.endsWith(".json")) this.scheduleResult(file, shouldTriggerTurn);
+					}),
+				),
+			),
+		);
+		this.primeTask = task;
+		void task.result.then(() => {
+			if (this.primeTask === task) this.primeTask = undefined;
+		});
 	};
 
 	private startPolling(cause: unknown): boolean {
-		this.state.watcher?.close();
-		this.state.watcher = null;
-		if (this.safetyScanTimer) clearInterval(this.safetyScanTimer);
-		this.safetyScanTimer = undefined;
-		if (this.state.watcherRestartTimer) return true;
+		this.watcher?.close();
+		this.watcher = undefined;
+		if (this.safetyScanTask) void this.safetyScanTask.interrupt();
+		this.safetyScanTask = undefined;
+		if (this.pollTask) return true;
 		reportAgentDiagnostic(
 			`Subagent result watcher for '${this.resultsDir}' fell back to polling because native fs.watch is unavailable (${errnoCode(cause) ?? "unknown error"}).`,
 		);
 		this.primeExistingResults();
-		this.state.watcherRestartTimer = setInterval(this.primeExistingResults, POLL_INTERVAL_MS);
-		this.state.watcherRestartTimer.unref?.();
+		this.pollTask = this.effects.start(this.scanLoop());
 		return true;
 	}
 
 	private scheduleRestart(): void {
-		if (this.state.watcherRestartTimer) return;
-		this.state.watcherRestartTimer = setTimeout(() => {
-			this.state.watcherRestartTimer = null;
-			if (this.processor.activeSessionId === undefined) return;
-			try {
-				if (this.startResultWatcher()) this.primeExistingResults();
-				else this.scheduleRestart();
-			} catch (error) {
-				if (shouldPoll(error)) {
-					this.startPolling(error);
-					return;
-				}
-				reportAgentDiagnostic(`Failed to restart subagent result watcher for '${this.resultsDir}':`, error);
-				this.scheduleRestart();
-			}
-		}, WATCHER_RESTART_DELAY_MS);
-		this.state.watcherRestartTimer.unref?.();
+		if (this.restartTask || this.pollTask) return;
+		this.restartTask = this.effects.start(
+			Effect.sleep(WATCHER_RESTART_DELAY_MS).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						this.restartTask = undefined;
+						if (this.processor.activeSessionId === undefined) return;
+						try {
+							if (this.startResultWatcher()) this.primeExistingResults();
+							else this.scheduleRestart();
+						} catch (error) {
+							if (shouldPoll(error)) {
+								this.startPolling(error);
+								return;
+							}
+							reportAgentDiagnostic(
+								`Failed to restart subagent result watcher for '${this.resultsDir}':`,
+								error,
+							);
+							this.scheduleRestart();
+						}
+					}),
+				),
+			),
+		);
 	}
 
 	readonly startResultWatcher = (): boolean => {
-		if (this.state.watcher) return true;
+		if (this.watcher) return true;
 		this.processor.activate();
-		if (this.state.watcherRestartTimer) {
-			clearTimeout(this.state.watcherRestartTimer);
-			clearInterval(this.state.watcherRestartTimer);
-			this.state.watcherRestartTimer = null;
-		}
+		if (this.restartTask) void this.restartTask.interrupt();
+		this.restartTask = undefined;
+		if (this.pollTask) void this.pollTask.interrupt();
+		this.pollTask = undefined;
 		if (!this.fsApi.existsSync(this.resultsDir)) {
 			this.scheduleRestart();
 			return false;
 		}
 		try {
 			const watchDir = resolveWatchPath(this.resultsDir, this.fsApi.realpathSync.native);
-			this.state.watcher = this.fsApi.watch(watchDir, (event, file) => {
+			this.watcher = this.fsApi.watch(watchDir, (event, file) => {
 				if (event !== "rename") return;
 				if (!file) {
-					this.state.watcher?.close();
-					this.state.watcher = null;
+					this.watcher?.close();
+					this.watcher = undefined;
 					this.scheduleRestart();
 					return;
 				}
@@ -170,23 +220,20 @@ class ResultWatcher {
 				this.processor.forgetIgnoredResult(resultFile);
 				this.scheduleResult(resultFile, true, resultFile === fileName ? undefined : RETRY_DELAY_MS);
 			});
-			if (!this.safetyScanTimer) {
-				this.safetyScanTimer = setInterval(this.primeExistingResults, POLL_INTERVAL_MS);
-				this.safetyScanTimer.unref?.();
-			}
-			this.state.watcher.on("error", (error) => {
+			this.safetyScanTask ??= this.effects.start(this.scanLoop());
+			this.watcher.on("error", (error) => {
 				if (shouldPoll(error)) return this.startPolling(error);
 				reportAgentDiagnostic(`Subagent result watcher failed for '${this.resultsDir}':`, error);
-				this.state.watcher?.close();
-				this.state.watcher = null;
+				this.watcher?.close();
+				this.watcher = undefined;
 				this.scheduleRestart();
 			});
-			this.state.watcher.unref?.();
+			this.watcher.unref?.();
 			return true;
 		} catch (error) {
 			if (shouldPoll(error)) return this.startPolling(error);
 			reportAgentDiagnostic(`Failed to start subagent result watcher for '${this.resultsDir}':`, error);
-			this.state.watcher = null;
+			this.watcher = undefined;
 			this.scheduleRestart();
 			return false;
 		}
@@ -194,18 +241,31 @@ class ResultWatcher {
 
 	readonly stopResultWatcher = (): void => {
 		this.processor.stop();
-		this.state.watcher?.close();
-		this.state.watcher = null;
-		if (this.state.watcherRestartTimer) {
-			clearTimeout(this.state.watcherRestartTimer);
-			clearInterval(this.state.watcherRestartTimer);
+		this.watcher?.close();
+		this.watcher = undefined;
+		for (const task of [this.restartTask, this.pollTask, this.primeTask, this.safetyScanTask]) {
+			if (task) void task.interrupt();
 		}
-		this.state.watcherRestartTimer = null;
-		if (this.safetyScanTimer) clearInterval(this.safetyScanTimer);
-		this.safetyScanTimer = undefined;
-		this.state.resultFileCoalescer.clear();
+		this.restartTask = undefined;
+		this.pollTask = undefined;
+		this.primeTask = undefined;
+		this.primeTriggerTurn = true;
+		this.safetyScanTask = undefined;
+		for (const task of this.delayedResults.values()) void task.interrupt();
+		for (const { task } of this.processingResults.values()) void task.interrupt();
+		this.delayedResults.clear();
+		this.processingResults.clear();
 		this.pendingTriggerTurn.clear();
 	};
+
+	private scanLoop(): Effect.Effect<void, never> {
+		return Effect.gen({ self: this }, function* () {
+			while (true) {
+				yield* Effect.sleep(POLL_INTERVAL_MS);
+				yield* Effect.sync(() => this.primeExistingResults());
+			}
+		});
+	}
 }
 
 /**
@@ -218,7 +278,7 @@ export function createResultWatcher(
 	state: ResultWatcherState,
 	resultsDir: string,
 	completionTtlMs: number,
-	deps: ResultWatcherDeps = {},
+	deps: ResultWatcherDeps,
 ) {
 	return new ResultWatcher(pi, state, resultsDir, completionTtlMs, deps);
 }

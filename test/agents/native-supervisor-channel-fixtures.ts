@@ -79,7 +79,6 @@ function harness(input: HarnessInput) {
 	});
 	const state: SubagentState = {
 		baseCwd: ctx.cwd,
-		cleanupTimers: new Map(),
 		completionSeen: new Map(),
 		currentSessionId: input.primary,
 		currentSessionScope: {
@@ -96,9 +95,6 @@ function harness(input: HarnessInput) {
 		foregroundRuns: new Map(),
 		asyncJobs: new Map(),
 		recentAgentJobs: new Map(),
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
 	};
 	const api = createExtensionApi({
 		getActiveTools: () => [...activeTools],

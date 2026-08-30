@@ -47,7 +47,6 @@ test("native parent and child communication tools use the shared Tool row", asyn
 	const state: SubagentState = {
 		asyncJobs: new Map(),
 		baseCwd: "",
-		cleanupTimers: new Map(),
 		completionSeen: new Map(),
 		currentSessionId: null,
 		foregroundControls: new Map(),
@@ -55,9 +54,6 @@ test("native parent and child communication tools use the shared Tool row", asyn
 		lastForegroundControlId: null,
 		lastUiContext: null,
 		recentAgentJobs: new Map(),
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
 	};
 	const channel = createNativeSupervisorChannel(parent.api, state);
 	channel.start();

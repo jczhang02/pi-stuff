@@ -9,11 +9,13 @@ import {
 	getCommandDialogCoordinator,
 	readCurrentAgentWorkOrigin,
 } from "../../../conversation-ui/index.js";
+import { installEffectFoundation } from "../../../shared/effect-foundation.js";
 import { isRuntimeFunction } from "../../../shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
+import { BackgroundEffectOwner } from "../runs/background/background-effect-owner.ts";
 import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import { createSubagentExecutor } from "../runs/foreground/subagent-executor.ts";
 import { resolvePiLaunchToolPlan, SUBAGENT_CHILD_ENV } from "../runs/shared/pi-args.ts";
@@ -133,10 +135,15 @@ const PRODUCTION_DEPENDENCIES = {
 		new AgentRoster(current, options),
 	createSupervisor: (pi: ExtensionAPI, state: SubagentState): RootSupervisor =>
 		createNativeSupervisorChannel(pi, state),
-	createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void): RootTracker =>
-		createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh }),
-	createWatcher: ({ notifier, pi, state }: RootWatcherInput): RootWatcher =>
+	createTracker: (
+		pi: ExtensionAPI,
+		state: SubagentState,
+		onRefresh: () => void,
+		effects: BackgroundEffectOwner,
+	): RootTracker => createAsyncJobTracker(pi, state, ASYNC_DIR, { effects, onRefresh }),
+	createWatcher: ({ notifier, pi, state }: RootWatcherInput, effects: BackgroundEffectOwner): RootWatcher =>
 		createResultWatcher(pi, state, RESULTS_DIR, 10 * 60 * 1_000, {
+			effects,
 			notifier,
 		}),
 	discoverAgents,
@@ -172,15 +179,8 @@ function createState(): SubagentState {
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		pendingForegroundControlNotices: new Map(),
-		cleanupTimers: new Map(),
 		lastUiContext: null,
 		completionSeen: new Map(),
-		watcher: null,
-		watcherRestartTimer: null,
-		resultFileCoalescer: {
-			schedule: () => false,
-			clear: () => {},
-		},
 	};
 	return state;
 }
@@ -369,6 +369,7 @@ export default function registerSubagentExtension(
 	const previousCleanupPromise = retirePreviousRoot(globalStore);
 	const config = deps.loadConfiguration();
 	const state = createState();
+	const backgroundEffects = new BackgroundEffectOwner(installEffectFoundation(pi, { deferShutdown: true }));
 	const coordinator = deps.getCoordinator(pi);
 	let runtime!: RootSessionRuntime;
 	let executePublicAgent!: ExecutePublicAgent;
@@ -395,14 +396,15 @@ export default function registerSubagentExtension(
 		discoverAgents: deps.discoverAgents,
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
-	const tracker = deps.createTracker(pi, state, () => current.refresh());
+	const tracker = deps.createTracker(pi, state, () => current.refresh(), backgroundEffects);
 	const supervisor = deps.createSupervisor(pi, state);
 	const notifier = installCompletionHandling(pi, state, coordinator);
-	const watcher = deps.createWatcher({ notifier, pi, state });
+	const watcher = deps.createWatcher({ notifier, pi, state }, backgroundEffects);
 	let agentRoster: AgentToolRosterEntry[] = [];
 	let disposeRuntimeEvents = (): void => {};
 	let cleanup!: () => Promise<void>;
 	runtime = new RootSessionRuntime({
+		backgroundEffects,
 		bindContext: (ctx) => surface.bindContext(ctx),
 		clearGlobalCleanup: () => {
 			if (globalStore[RUNTIME_CLEANUP_KEY] === cleanup) delete globalStore[RUNTIME_CLEANUP_KEY];

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createAsyncJobTracker } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-job-tracker.js";
+import { createAsyncJobTracker as createOwnedAsyncJobTracker } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-job-tracker.js";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
@@ -20,6 +20,7 @@ import {
 	SUBAGENT_CONTROL_EVENT,
 	SUBAGENT_STEERING_NOTICE_EVENT,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { createTestBackgroundEffectOwner } from "./background-effect-owner-fixture.js";
 
 type StateInput = Pick<
 	SubagentState,
@@ -76,7 +77,6 @@ function createState(sessionId = "root-session"): StateInput {
 function createFullState(sessionId: string): SubagentState {
 	return {
 		baseCwd: "",
-		cleanupTimers: new Map(),
 		completionSeen: new Map(),
 		currentSessionId: sessionId,
 		asyncJobs: new Map(),
@@ -85,10 +85,19 @@ function createFullState(sessionId: string): SubagentState {
 		lastForegroundControlId: null,
 		lastUiContext: null,
 		recentAgentJobs: new Map(),
-		resultFileCoalescer: { clear: () => {}, schedule: () => false },
-		watcher: null,
-		watcherRestartTimer: null,
 	};
+}
+
+function createAsyncJobTracker(
+	pi: Parameters<typeof createOwnedAsyncJobTracker>[0],
+	state: Parameters<typeof createOwnedAsyncJobTracker>[1],
+	asyncDirRoot: string,
+	options: Omit<Parameters<typeof createOwnedAsyncJobTracker>[3], "effects"> = {},
+) {
+	return createOwnedAsyncJobTracker(pi, state, asyncDirRoot, {
+		...options,
+		effects: createTestBackgroundEffectOwner(),
+	});
 }
 
 function asyncJob(id: string, status: AsyncJobState["status"], overrides: Partial<AsyncJobState> = {}): AsyncJobState {

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { Cause, Effect, Exit } from "effect";
 import { isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import {
@@ -18,17 +19,18 @@ import {
 	recoverLegacyFinalReports,
 	type TrackerEventRecord,
 } from "./async-job-recovery.ts";
+import type { BackgroundEffectOwner, BackgroundEffectTask } from "./background-effect-owner.ts";
 
 const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
 
 interface JobObservation {
 	control: boolean;
-	fallbackTimer?: ReturnType<typeof setInterval>;
+	fallbackTask?: BackgroundEffectTask<void, never>;
 	lastIpcStatusAt?: number;
-	retryTimer?: ReturnType<typeof setTimeout>;
-	running: boolean;
+	retryTask?: BackgroundEffectTask<void, never>;
+	runningTask?: BackgroundEffectTask<boolean, unknown>;
 	status: boolean;
-	statusFallbackTimer?: ReturnType<typeof setTimeout>;
+	statusFallbackTask?: BackgroundEffectTask<void, never>;
 	watcher?: fs.FSWatcher;
 }
 
@@ -45,6 +47,7 @@ interface AsyncJobObserverOptions {
 	readonly onStatus: (job: AsyncJobState, status: AsyncStatus) => void;
 	readonly pollIntervalMs: number;
 	readonly readRunStatus: AsyncStatusReader;
+	readonly effects: BackgroundEffectOwner;
 }
 
 /** Owns native observation, polling fallback, and durable control-event delivery for async jobs. */
@@ -59,12 +62,12 @@ export class AsyncJobObserver {
 
 	ensure(job: AsyncJobState): void {
 		const observation = this.observationFor(job.asyncId);
-		if (observation.watcher || observation.fallbackTimer) return;
+		if (observation.watcher || observation.fallbackTask) return;
 		try {
 			const watcher = fs.watch(job.asyncDir, (_event, filename) => {
 				if (!this.options.isCurrentJob(job)) return;
 				const name = filename?.toString();
-				if (!name || name === "events.jsonl") void this.observe(job, { control: true });
+				if (!name || name === "events.jsonl") this.observe(job, { control: true });
 				if (!name || name === "status.json" || name === "process-terminal.json") {
 					this.scheduleStatusWatchFallback(job);
 				}
@@ -77,52 +80,65 @@ export class AsyncJobObserver {
 		}
 	}
 
-	async observe(job: AsyncJobState, kind: ObservationKind): Promise<void> {
+	observe(job: AsyncJobState, kind: ObservationKind): void {
 		const observation = this.observationFor(job.asyncId);
 		observation.status ||= kind.status === true;
 		observation.control ||= kind.control === true;
-		if (observation.running) return;
-		observation.running = true;
+		if (observation.runningTask) return;
 		const expectedGeneration = this.options.generation();
-		let changed = false;
-		try {
-			do {
-				const readStatus = observation.status;
-				const readControl = observation.control;
-				observation.status = false;
-				observation.control = false;
-				if (readControl) {
-					const control = await readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
-					changed ||= control.changed;
-					observation.control ||= control.more;
-				}
-				if (readStatus) {
-					const observedStatus = await this.options.readRunStatus(job.asyncDir);
-					const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
-					if (status && status.runId === job.asyncId && this.current(job, expectedGeneration)) {
-						this.options.onStatus(job, status);
-						changed = true;
-					}
-				}
-			} while (this.current(job, expectedGeneration) && (observation.status || observation.control));
-		} catch (error) {
-			if (this.current(job, expectedGeneration)) {
+		const task = this.options.effects.start(
+			Effect.tryPromise({
+				try: (signal) => this.observeNative(job, observation, expectedGeneration, signal),
+				catch: (error) => error,
+			}),
+		);
+		observation.runningTask = task;
+		void task.result.then((exit) => {
+			if (observation.runningTask !== task) return;
+			delete observation.runningTask;
+			if (Exit.isSuccess(exit)) {
+				if (exit.value && this.current(job, expectedGeneration)) this.options.onRefresh();
+			} else if (!Cause.hasInterruptsOnly(exit.cause) && this.current(job, expectedGeneration)) {
 				reportAgentDiagnostic(
 					`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
-					error,
+					Cause.squash(exit.cause),
 				);
-				if (!observation.retryTimer) {
-					observation.retryTimer = setTimeout(() => {
-						delete observation.retryTimer;
-						void this.observe(job, { status: true, control: true });
-					}, this.options.pollIntervalMs);
-					observation.retryTimer.unref?.();
+				this.scheduleRetry(job, observation);
+			}
+			if (this.current(job, expectedGeneration) && (observation.status || observation.control)) {
+				this.observe(job, {});
+			}
+		});
+	}
+
+	private async observeNative(
+		job: AsyncJobState,
+		observation: JobObservation,
+		expectedGeneration: number,
+		signal: AbortSignal,
+	): Promise<boolean> {
+		let changed = false;
+		do {
+			signal.throwIfAborted();
+			const readStatus = observation.status;
+			const readControl = observation.control;
+			observation.status = false;
+			observation.control = false;
+			if (readControl) {
+				const control = await readNewAsyncControlEvents(job, (line) => this.handleControlLine(job, line));
+				changed ||= control.changed;
+				observation.control ||= control.more;
+			}
+			if (readStatus) {
+				const observedStatus = await this.options.readRunStatus(job.asyncDir);
+				const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
+				if (status && status.runId === job.asyncId && this.current(job, expectedGeneration)) {
+					this.options.onStatus(job, status);
+					changed = true;
 				}
 			}
-		} finally {
-			observation.running = false;
-			if (changed && this.current(job, expectedGeneration)) this.options.onRefresh();
-		}
+		} while (this.current(job, expectedGeneration) && (observation.status || observation.control));
+		return changed;
 	}
 
 	noteIpcStatus(asyncId: string): void {
@@ -132,9 +148,10 @@ export class AsyncJobObserver {
 	stop(asyncId: string): void {
 		const observation = this.observations.get(asyncId);
 		observation?.watcher?.close();
-		if (observation?.fallbackTimer) clearInterval(observation.fallbackTimer);
-		if (observation?.statusFallbackTimer) clearTimeout(observation.statusFallbackTimer);
-		if (observation?.retryTimer) clearTimeout(observation.retryTimer);
+		if (observation?.fallbackTask) void observation.fallbackTask.interrupt();
+		if (observation?.statusFallbackTask) void observation.statusFallbackTask.interrupt();
+		if (observation?.retryTask) void observation.retryTask.interrupt();
+		if (observation?.runningTask) void observation.runningTask.interrupt();
 		this.observations.delete(asyncId);
 	}
 
@@ -144,7 +161,7 @@ export class AsyncJobObserver {
 	}
 
 	private observationFor(asyncId: string): JobObservation {
-		const observation = this.observations.get(asyncId) ?? { running: false, status: false, control: false };
+		const observation = this.observations.get(asyncId) ?? { status: false, control: false };
 		this.observations.set(asyncId, observation);
 		return observation;
 	}
@@ -231,28 +248,48 @@ export class AsyncJobObserver {
 		const observation = this.observationFor(job.asyncId);
 		observation.watcher?.close();
 		delete observation.watcher;
-		if (observation.fallbackTimer) return;
+		if (observation.fallbackTask) return;
 		reportAgentDiagnostic(
 			`Agent status observation for '${job.asyncId}' fell back to asynchronous reconciliation:`,
 			cause,
 		);
-		const timer = setInterval(
-			() => void this.observe(job, { status: true, control: true }),
-			this.options.pollIntervalMs,
+		observation.fallbackTask = this.options.effects.start(
+			Effect.gen({ self: this }, function* () {
+				while (true) {
+					yield* Effect.sleep(this.options.pollIntervalMs);
+					yield* Effect.sync(() => this.observe(job, { status: true, control: true }));
+				}
+			}),
 		);
-		timer.unref?.();
-		observation.fallbackTimer = timer;
 	}
 
 	private scheduleStatusWatchFallback(job: AsyncJobState): void {
 		const observation = this.observationFor(job.asyncId);
-		if (observation.statusFallbackTimer) return;
-		const timer = setTimeout(() => {
-			delete observation.statusFallbackTimer;
-			if (Date.now() - (observation.lastIpcStatusAt ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
-			void this.observe(job, { status: true });
-		}, STATUS_WATCH_FALLBACK_DELAY_MS);
-		timer.unref?.();
-		observation.statusFallbackTimer = timer;
+		if (observation.statusFallbackTask) return;
+		observation.statusFallbackTask = this.options.effects.start(
+			Effect.sleep(STATUS_WATCH_FALLBACK_DELAY_MS).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						delete observation.statusFallbackTask;
+						if (Date.now() - (observation.lastIpcStatusAt ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
+						this.observe(job, { status: true });
+					}),
+				),
+			),
+		);
+	}
+
+	private scheduleRetry(job: AsyncJobState, observation: JobObservation): void {
+		if (observation.retryTask) return;
+		observation.retryTask = this.options.effects.start(
+			Effect.sleep(this.options.pollIntervalMs).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						delete observation.retryTask;
+						this.observe(job, { status: true, control: true });
+					}),
+				),
+			),
+		);
 	}
 }

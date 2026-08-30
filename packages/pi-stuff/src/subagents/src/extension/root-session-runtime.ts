@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRuntimeFunction } from "../../../shared/runtime-type.js";
+import type { BackgroundEffectOwner } from "../runs/background/background-effect-owner.ts";
 import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
 import {
 	PI_STUFF_AGENT_PATH_ENV,
@@ -51,6 +52,7 @@ export interface RootSupervisor {
 }
 
 interface RootSessionRuntimeInput {
+	readonly backgroundEffects: BackgroundEffectOwner;
 	readonly bindContext: (ctx: ExtensionContext) => void;
 	readonly clearGlobalCleanup: () => void;
 	readonly config: PiStuffAgentsConfig;
@@ -91,11 +93,6 @@ function hasLiveWork(state: SubagentState): boolean {
 			(Boolean(run.asyncDir) && run.children.some((child) => child.status === "detached")) ||
 			run.children.some((child) => hasLiveNestedDescendants(child.children)),
 	);
-}
-
-function clearTimerMap(state: SubagentState): void {
-	for (const timer of state.cleanupTimers.values()) clearTimeout(timer);
-	state.cleanupTimers.clear();
 }
 
 /** Owns current-Session activation, recovery, compatibility, and teardown state. */
@@ -266,6 +263,7 @@ export class RootSessionRuntime {
 		await this.input.previousCleanup;
 		if (!this.active) return;
 		this.resetSessionRuntime();
+		this.input.backgroundEffects.startSession(ctx.sessionManager);
 		const epoch = this.sessionEpoch;
 		const state = this.input.state;
 		state.baseCwd = ctx.cwd;
@@ -304,9 +302,8 @@ export class RootSessionRuntime {
 		this.watcherStarted = false;
 		this.input.disposeRuntimeEvents();
 		this.input.tracker.resetJobs();
+		await this.input.backgroundEffects.stop();
 		const state = this.input.state;
-		clearTimerMap(state);
-		state.resultFileCoalescer.clear();
 		state.asyncJobs.clear();
 		state.recentAgentJobs?.clear();
 		state.foregroundRuns?.clear();

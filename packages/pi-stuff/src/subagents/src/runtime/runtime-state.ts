@@ -1,6 +1,5 @@
 /** In-memory foreground and extension runtime state. */
 
-import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AsyncJobState } from "../runs/background/async-contract.ts";
 import type { NestedRouteInfo, NestedRunSummary } from "../runs/shared/nested-contract.ts";
@@ -99,13 +98,6 @@ export interface SubagentState {
 	foregroundControls: Map<string, ForegroundRunControl>;
 	lastForegroundControlId: string | null;
 	pendingForegroundControlNotices?: Map<string, ReturnType<typeof setTimeout>>;
-	cleanupTimers: Map<string, ReturnType<typeof setTimeout>>;
 	lastUiContext: ExtensionContext | null;
 	completionSeen: Map<string, number>;
-	watcher: FSWatcher | null;
-	watcherRestartTimer: ReturnType<typeof setTimeout> | null;
-	resultFileCoalescer: {
-		schedule(file: string, delayMs?: number): boolean;
-		clear(): void;
-	};
 }

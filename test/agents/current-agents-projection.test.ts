@@ -431,7 +431,6 @@ test("retains the last live state across a transient status observer failure", a
 		});
 		while (attempts < 1) await Bun.sleep(5);
 		expect(state.asyncJobs.get("observer-retry")?.status).not.toBe("failed");
-		expect(state.cleanupTimers.has("observer-retry")).toBe(false);
 		while (attempts < 2 || state.asyncJobs.get("observer-retry")?.status !== "running") await Bun.sleep(5);
 		expect(state.asyncJobs.get("observer-retry")?.status).toBe("running");
 	} finally {
@@ -497,7 +496,6 @@ test("never revives semantic completion from an older running status snapshot", 
 			},
 		});
 		expect(state.asyncJobs.get("terminal-monotonic")?.status).toBe("complete");
-		expect(state.cleanupTimers.has("terminal-monotonic")).toBeFalse();
 		tracker.handleProcessTerminal({
 			version: 1,
 			state: "observed",
