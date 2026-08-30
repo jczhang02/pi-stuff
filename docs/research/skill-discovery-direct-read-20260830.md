@@ -2,7 +2,8 @@
 
 Date: 2026-08-30
 
-Status: design and Run Lock frozen; no direct-read Session, Provider request, or outcome has been produced.
+Status: completed exactly once; retained as a failed study because two Suite Sessions timed out before any Provider
+request.
 
 This is a new, independent study for Bead `ps-1gd`. It does not replace or reuse samples from the retained
 [first benchmark](skill-discovery-benchmark-20260830.md) or
@@ -131,6 +132,33 @@ The study passes only if:
 
 Improvement additionally requires more favorable than unfavorable discordant pairs and exact two-sided McNemar
 `p <= 0.05`. Otherwise the strongest passing claim is non-inferiority under this exact frozen study.
+
+## Retained outcome
+
+The signed Run Lock was executed exactly once for all 90 scheduled Sessions, with no retry, replacement, exclusion,
+or early stop. The sanitized report is
+[`docs/reports/skill-discovery-direct-read-20260830.json`](../reports/skill-discovery-direct-read-20260830.json),
+SHA-256 `5217d70e612b5e8e52d9ea7cc3b5948a48ab486c09fccddab35f091c5fdc8733`.
+
+- Raw Pi passed 30/30 Sessions.
+- Pi Stuff off passed 29/30 Sessions.
+- Pi Stuff on passed 29/30 Sessions.
+- Every completed on-arm Session passed the strict direct-read endpoint: 29/29 saw the exact catalog, selected the
+  target automatically, made the exact target its first relevant operation through nested `tools.read`, made no
+  `tool_search` or other detour, matched required hashes, and returned the exact answer.
+
+The matched `direct-meta-04` off and on Sessions timed out after 65,622 ms and 65,164 ms respectively, before any
+Provider request or Tool call; the raw Session for the same task passed. Those two retained observations caused two
+instrumentation and prompt-boundary violations, failed the Provider-Tool hard invariant, and made the observed rate
+ordering `30/30 > 29/30 = 29/30`. The frozen verdict is therefore `failed`. The on-minus-off paired difference was
+exactly zero with bootstrap interval `[0, 0]`; that descriptive result does not override the failed hard gate.
+
+Post-outcome code-path inspection found the same confound as the earlier confirmation: Pi's RPC prompt response waits
+for prompt preflight, which includes Pi Stuff's `before_agent_start` handlers. A fresh direct RPC input starts the
+optional Magic Context Worker in both Suite arms, and that initialization path has no internal deadline; raw Pi does
+not load it. The sanitized report did not retain the exact timed-out RPC phase, so this evidence identifies a strong
+shared-runner confound rather than proving the precise stalled await. This study remains unchanged and failed. A later
+study must preregister native Context isolation before producing any new outcome.
 
 ## Public-data policy
 

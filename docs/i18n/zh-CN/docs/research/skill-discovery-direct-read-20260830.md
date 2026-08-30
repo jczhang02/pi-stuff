@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-direct-read-20260830.md; translation-source-sha256: 873bd26a7baf9def4c990c2b6d8c5b04d3dfb302e9c640fce25b50e27fdcf896 -->
+<!-- translation-source: docs/research/skill-discovery-direct-read-20260830.md; translation-source-sha256: ecb09b6c28dbc88d55a1f3a4cb85e37bbb0683c2ee75d12d12266663b31577c4 -->
 
 # Skill Discovery 直接读取真实模型预注册
 
 日期：2026-08-30
 
-状态：研究设计与 Run Lock 已冻结；尚未产生 direct-read Session、Provider 请求或结果。
+状态：已严格执行一次；由于两个 Suite Session 在发出任何 Provider 请求前超时，本研究作为失败研究保留。
 
 这是 Bead `ps-1gd` 的全新独立研究。它不会替换或复用已保留的
 [首次 benchmark](../../../../../docs/research/skill-discovery-benchmark-20260830.md)与
@@ -130,6 +130,33 @@ McNemar 报告全部四个 paired cell。
 
 Improvement 还要求 favorable discordant pair 多于 unfavorable，且 exact two-sided McNemar `p <= 0.05`。
 否则，通过后允许的最强表述是本次精确冻结研究下的 non-inferiority。
+
+## 保留结果
+
+已签名的 Run Lock 严格执行一次，覆盖计划中的全部 90 个 Session；没有重试、替换、排除或提前停止。
+脱敏报告为
+[`docs/reports/skill-discovery-direct-read-20260830.json`](../../../../../docs/reports/skill-discovery-direct-read-20260830.json)，
+SHA-256 `5217d70e612b5e8e52d9ea7cc3b5948a48ab486c09fccddab35f091c5fdc8733`。
+
+- Raw Pi 通过 30/30 个 Session。
+- Pi Stuff off 通过 29/30 个 Session。
+- Pi Stuff on 通过 29/30 个 Session。
+- 所有完成的 on-arm Session 都通过了严格 direct-read endpoint：29/29 看见精确 catalog，自动选择目标，
+  通过嵌套 `tools.read` 把精确目标作为第一个相关操作，没有 `tool_search` 或其他绕路，匹配所需 hash，
+  并返回精确答案。
+
+匹配的 `direct-meta-04` off 与 on Session 分别在 65,622 ms 和 65,164 ms 后超时；在此之前没有任何
+Provider 请求或 Tool call，同一任务的 raw Session 则通过。这两个保留观察造成 2 个 instrumentation 与
+prompt-boundary violation，使 Provider-Tool hard invariant 失败，并令观察成功率排序成为
+`30/30 > 29/30 = 29/30`。因此，冻结 verdict 为 `failed`。on-minus-off 的配对差值严格为零，bootstrap
+区间为 `[0, 0]`；该描述性结果不能覆盖失败的 hard gate。
+
+结果产生后的代码路径检查发现了与此前 confirmation 相同的混杂因素：Pi 的 RPC prompt response 会等待
+prompt preflight，而 preflight 包含 Pi Stuff 的 `before_agent_start` handler。fresh direct RPC input 会在两个
+Suite arm 中启动可选的 Magic Context Worker；该初始化路径没有内部 deadline，raw Pi 则不会加载它。
+脱敏报告没有保留发生超时的精确 RPC phase，因此这份证据识别出一个很强的共享 runner 混杂因素，但不能
+证明具体卡住的是哪一个 await。本研究保持原样且判定失败。后续研究必须在产生任何新结果前预注册 native
+Context 隔离。
 
 ## 公开数据政策
 

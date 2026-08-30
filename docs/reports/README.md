@@ -9,6 +9,10 @@ evidence. Current engineering authority is indexed in [`docs/README.md`](../READ
 
 ## Retained reports
 
+- [Skill Discovery direct-read real-model study](skill-discovery-direct-read-20260830.json) — retained failed hard
+  gate; all 29 completed Code Mode Sessions passed direct Skill use, while one matched off/on pair timed out before a
+  Provider request; interpretation is recorded in its
+  [preregistration](../research/skill-discovery-direct-read-20260830.md)
 - [Skill Discovery real-model confirmation](skill-discovery-confirmation-20260830.json) — retained failed behavioral
   gate; interpretation is recorded in its [preregistration](../research/skill-discovery-confirmation-20260830.md)
 - [Skill Discovery real-model benchmark](skill-discovery-benchmark-20260830.json) — retained failed instrumentation
