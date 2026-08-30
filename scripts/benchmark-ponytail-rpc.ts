@@ -5,6 +5,7 @@ const ROOT = resolve(import.meta.dir, "..");
 const PONYTAIL_PACKAGE = join(ROOT, "packages/pi-stuff");
 const OBSERVER_EXTENSION = join(ROOT, "test/fixtures/ponytail-benchmark-observer.ts");
 const COMMAND_TIMEOUT_MS = 60_000;
+const HOST_STARTUP_TIMEOUT_MS = 5 * 60_000;
 const CASE_TIMEOUT_MS = 15 * 60_000;
 
 export const PONYTAIL_BENCHMARK_PROVIDER = "jcapi";
@@ -71,6 +72,7 @@ export class PonytailBenchmarkRpc extends PiRpcClient {
 			environment: buildPonytailBenchmarkEnvironment(process.env, runtime, temporary, observerLog),
 			failurePrefix: "Ponytail behavior benchmark failed",
 			settleTimeoutMs: CASE_TIMEOUT_MS,
+			startupTimeoutMs: HOST_STARTUP_TIMEOUT_MS,
 		});
 	}
 }

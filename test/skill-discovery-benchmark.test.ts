@@ -47,6 +47,7 @@ function successfulObservations(): SkillDiscoveryObservation[] {
 			skillHashExact: true,
 			taskId: task.id,
 			timedOut: false,
+			timeoutPhase: "none" as const,
 			tokenTotal: 1,
 			toolCalls: 1,
 		})),

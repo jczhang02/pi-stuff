@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: 76b57763b68562d275517e86b970ea0eb01cfceed3943745b5dcae98d3c70009 -->
+<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: c70cae0be111e46f26a8baef2d80ebf46abc34ddc2c6a76ed26e6202d47c782f -->
 
 # Skill Discovery 隔离真实模型确认预注册
 
@@ -171,6 +171,30 @@ Native Context 隔离没有消除反复出现的 Suite-only、Provider 前 timeo
 的诊断并不充分。报告仍无法区分最初的 RPC startup/configuration command 与 prompt preflight。本研究保持
 原样且判定失败。开始另一项研究前，共享 runner 必须记录 bounded timeout phase，并用不触发 Provider 的
 真实 Host probe 定位受影响边界。
+
+## 结果后的 timeout 诊断
+
+记录于 2026-08-30 保留结果产生之后。本诊断不能修改、排除或追溯重分类任何 V4 observation。共享 RPC
+client 现在会区分 command timeout 与 settlement timeout；未来每个 timeout 都由 benchmark 保留为有界 phase：
+`setup`、`prompt-preflight`、`settlement`、`evidence` 或 `unknown`。
+
+一个无 authentication、无 prompt、offline 的 probe 使用同一个认证 Pi executable，并通过相同 Extension
+路径加载候选 Package。它只发出 `get_state`、`set_auto_retry(false)` 与 `set_auto_compaction(false)`，因此
+不会发出 Provider 请求。顺序执行的 Raw/off/on arm 中，第一次 `get_state` response 分别耗时 1,088 ms、
+24,967 ms 与 25,464 ms；每个 arm 中，之后两条 configuration command 都只耗时 2–24 ms。第二个 Suite-off
+probe 在其他仓库检查占满 Host 时运行：Suite cold startup 耗时 34,307 ms，之后两条 configuration command
+合计只耗时 26 ms。
+
+因此，受影响边界是第一次 RPC response：旧的 60 秒 general command budget 同时包含了完整 Pi process 与
+Suite Extension cold startup。外部 CPU 竞争可能在 prompt preflight 或任何 Provider request 之前耗尽该
+budget，精确匹配 V4 的 4 次 61–65 秒 failure。证据不支持 Magic Context、Skill selection、Code Mode、
+prompt preflight 或 Agent settlement 是这 4 次 timeout 的原因。
+
+共享 benchmark client 现在显式表达该 protocol boundary。`getInitialState` 使用 5 分钟 Host-startup budget；
+之后的 RPC command 保留 60 秒 budget，Agent settlement 保留 15 分钟。真实 Host regression 把 ordinary
+command budget 设为 1 秒来证明二者分离：34,307 ms 的 Suite startup 通过独立 startup budget 成功，之后的
+command 仍在 ordinary budget 内完成。该修复保证未来测量有效，但不会改变冻结的 V4 failure。任何成功率
+结论都必须来自新的独立 Run Lock 研究。
 
 ## 公开数据政策
 

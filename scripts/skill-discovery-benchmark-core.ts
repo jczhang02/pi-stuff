@@ -6,6 +6,7 @@ export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_902;
 
 export type SkillDiscoveryArm = (typeof ARMS)[number];
 export type SkillDiscoveryFamily = "instruction" | "metadata" | "relative-resource";
+export type SkillDiscoveryTimeoutPhase = "evidence" | "none" | "prompt-preflight" | "settlement" | "setup" | "unknown";
 export type SkillDiscoveryFailureClass =
 	| "answer"
 	| "catalog"
@@ -77,6 +78,7 @@ export interface SkillDiscoveryObservation {
 	readonly skillHashExact: boolean;
 	readonly taskId: string;
 	readonly timedOut: boolean;
+	readonly timeoutPhase: SkillDiscoveryTimeoutPhase;
 	readonly tokenTotal: number;
 	readonly toolCalls: number;
 }

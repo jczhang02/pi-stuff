@@ -5,12 +5,13 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import type { JsonSourceObject, JsonSourceValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { PiRpcClient } from "./pi-rpc-client.js";
+import { PiRpcClient, PiRpcTimeoutError } from "./pi-rpc-client.js";
 import type {
 	SkillDiscoveryArm,
 	SkillDiscoveryFailureClass,
 	SkillDiscoveryManifestTask,
 	SkillDiscoveryObservation,
+	SkillDiscoveryTimeoutPhase,
 } from "./skill-discovery-benchmark-core.js";
 import {
 	analyzeSkillDiscoveryMessages,
@@ -21,7 +22,21 @@ const DIRECT_PROVIDER_TOOLS = ["bash", "find", "grep", "ls", "read"] as const;
 const CODE_MODE_PROVIDER_TOOLS = ["codemode", "tool_search"] as const;
 export const SKILL_DISCOVERY_TOOL_ALLOWLIST = [...DIRECT_PROVIDER_TOOLS, ...CODE_MODE_PROVIDER_TOOLS] as const;
 const COMMAND_TIMEOUT_MS = 60_000;
+const HOST_STARTUP_TIMEOUT_MS = 5 * 60_000;
 const SESSION_TIMEOUT_MS = 15 * 60_000;
+const COMMAND_TIMEOUT_PHASES = {
+	get_last_assistant_text: "evidence",
+	get_messages: "evidence",
+	get_session_stats: "evidence",
+	get_state: "setup",
+	prompt: "prompt-preflight",
+	set_auto_compaction: "setup",
+	set_auto_retry: "setup",
+} as const satisfies Readonly<Record<string, SkillDiscoveryTimeoutPhase>>;
+
+function isKnownCommand(command: string | undefined): command is keyof typeof COMMAND_TIMEOUT_PHASES {
+	return command !== undefined && Object.hasOwn(COMMAND_TIMEOUT_PHASES, command);
+}
 
 const PROVIDER_OBSERVATION_SCHEMA = Type.Object({
 	catalogBlocks: Type.Integer(),
@@ -81,6 +96,7 @@ interface SessionCapture {
 	readonly state: JsonSourceValue | undefined;
 	readonly stats: JsonSourceValue | undefined;
 	readonly timedOut: boolean;
+	readonly timeoutPhase: SkillDiscoveryTimeoutPhase;
 }
 
 interface FailureInput {
@@ -324,6 +340,7 @@ async function captureSession(
 		executable: options.piBinary,
 		failurePrefix: "Skill Discovery benchmark failed",
 		settleTimeoutMs: SESSION_TIMEOUT_MS,
+		startupTimeoutMs: HOST_STARTUP_TIMEOUT_MS,
 	});
 	let messages: JsonSourceValue | undefined;
 	let finalText: JsonSourceValue | undefined;
@@ -331,9 +348,10 @@ async function captureSession(
 	let stats: JsonSourceValue | undefined;
 	let processFailure = false;
 	let timedOut = false;
+	let timeoutPhase: SkillDiscoveryTimeoutPhase = "none";
 	let caughtProviderFailure = false;
 	try {
-		state = (await rpc.command({ type: "get_state" }))["data"];
+		state = (await rpc.getInitialState())["data"];
 		await rpc.command({ type: "set_auto_retry", enabled: false });
 		await rpc.command({ type: "set_auto_compaction", enabled: false });
 		await rpc.promptAndSettle(options.task.prompt);
@@ -342,7 +360,14 @@ async function captureSession(
 		stats = (await rpc.command({ type: "get_session_stats" }))["data"];
 	} catch (error) {
 		const detail = `${error instanceof Error ? error.message : String(error)}\n${rpc.stderr()}`;
-		timedOut = /timed out|timeout/iu.test(detail);
+		timedOut = error instanceof PiRpcTimeoutError || /timed out|timeout/iu.test(detail);
+		if (error instanceof PiRpcTimeoutError) {
+			if (error.phase === "settlement") timeoutPhase = "settlement";
+			else if (isKnownCommand(error.command)) timeoutPhase = COMMAND_TIMEOUT_PHASES[error.command];
+			else timeoutPhase = "unknown";
+		} else if (timedOut) {
+			timeoutPhase = "unknown";
+		}
 		caughtProviderFailure = /provider|rate.?limit|authentication|oauth|\b401\b|\b429\b/iu.test(detail);
 		processFailure = !timedOut && !caughtProviderFailure;
 	} finally {
@@ -361,6 +386,7 @@ async function captureSession(
 		state,
 		stats,
 		timedOut,
+		timeoutPhase,
 	};
 }
 
@@ -487,6 +513,7 @@ async function measureSession(
 		skillHashExact: analysis.skillHashExact,
 		taskId: options.task.id,
 		timedOut: capture.timedOut,
+		timeoutPhase: capture.timeoutPhase,
 		tokenTotal,
 		toolCalls: analysis.toolCalls,
 	};

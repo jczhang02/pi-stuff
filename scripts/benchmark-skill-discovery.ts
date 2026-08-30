@@ -231,6 +231,7 @@ function failedObservation(
 		skillHashExact: false,
 		taskId: task.id,
 		timedOut: false,
+		timeoutPhase: "none",
 		tokenTotal: 0,
 		toolCalls: 0,
 	};

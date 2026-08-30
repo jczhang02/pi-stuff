@@ -172,6 +172,32 @@ Magic-Context-specific diagnosis was insufficient. The report still cannot disti
 commands from prompt preflight. This study remains unchanged and failed. Before another study, the shared runner must
 record a bounded timeout phase and a no-Provider real-Host probe must identify the affected boundary.
 
+## Post-outcome timeout diagnosis
+
+Recorded after the retained outcome on 2026-08-30. This diagnosis cannot alter, exclude, or retrospectively reclassify
+any V4 observation. The shared RPC client now identifies command versus settlement timeouts and the benchmark retains
+the bounded phase `setup`, `prompt-preflight`, `settlement`, `evidence`, or `unknown` for every future timeout.
+
+A no-authentication, no-prompt, offline probe used the same certified Pi executable and loaded the candidate Package
+through the same Extension path. It issued only `get_state`, `set_auto_retry(false)`, and
+`set_auto_compaction(false)`, so it made no Provider request. In sequential Raw/off/on arms, the first `get_state`
+response took 1,088 ms, 24,967 ms, and 25,464 ms respectively. The two later configuration commands took only 2–24
+ms in every arm. A second Suite-off probe ran while other repository checks saturated the Host: Suite cold startup
+took 34,307 ms, then both configuration commands completed in 26 ms total.
+
+The affected boundary is therefore the first RPC response: the old 60-second general command budget also included
+the complete Pi process and Suite Extension cold startup. External CPU contention could exhaust that budget before
+prompt preflight or any Provider request, exactly matching V4's four 61–65 second failures. The evidence does not
+support Magic Context, Skill selection, Code Mode, prompt preflight, or Agent settlement as the cause of those four
+timeouts.
+
+The shared benchmark client now expresses that protocol boundary explicitly. `getInitialState` uses a five-minute
+Host-startup budget; later RPC commands retain the 60-second budget and Agent settlement retains 15 minutes. A
+real-Host regression proved the separation by setting the ordinary command budget to one second: the 34,307 ms Suite
+startup passed through the independent startup budget, and the later commands still completed under the ordinary
+budget. This fixes future measurement validity but leaves the frozen V4 failure intact. A new independently locked
+study is required for any success-rate claim.
+
 ## Public-data policy
 
 The observer inspects Provider payloads and Tool lifecycles only in memory. The sanitized report may retain synthetic
