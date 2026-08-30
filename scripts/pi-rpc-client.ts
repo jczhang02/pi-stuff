@@ -44,11 +44,13 @@ export class PiRpcClient {
 	readonly events: JsonSourceObject[] = [];
 	private buffer = "";
 	private closePromise: Promise<void> | undefined;
+	private closing = false;
 	private readonly decoder = new StringDecoder("utf8");
 	private errorOutput = "";
 	private readonly options: PiRpcClientOptions;
 	private processFailed = false;
 	private requestSequence = 0;
+	private terminalFailure: string | undefined;
 	private readonly waiters = new Set<RpcWaiter>();
 	private readonly child;
 
@@ -61,17 +63,21 @@ export class PiRpcClient {
 		});
 		this.child.once("error", () => {
 			this.processFailed = true;
-			this.rejectWaiters("Pi RPC process error");
+			this.recordTerminalFailure("Pi RPC process error");
 		});
+		this.child.stdin.on("error", () => this.recordTerminalFailure("Pi RPC stdin error"));
 		this.child.stdout.on("data", (chunk: Buffer) => this.readStdout(chunk));
 		this.child.stderr.on("data", (chunk: Buffer) => {
 			this.errorOutput = (this.errorOutput + chunk.toString("utf8")).slice(-12_000);
 		});
-		this.child.once("exit", (code) => this.rejectWaiters(`Pi RPC exited unexpectedly with ${String(code)}`));
+		this.child.once("exit", (code) => {
+			if (!this.closing) this.recordTerminalFailure(`Pi RPC exited unexpectedly with ${String(code)}`);
+		});
 	}
 
 	async command(payload: JsonInputObject, timeoutMs = this.options.commandTimeoutMs): Promise<JsonSourceObject> {
-		if (this.processFailed) this.fail("Pi RPC process error");
+		if (this.terminalFailure) this.fail(this.terminalFailure);
+		if (this.closing) this.fail("Pi RPC process is closed");
 		const command = isRuntimeString(payload["type"]) ? payload["type"] : "unknown";
 		const requestId = `request-${String(++this.requestSequence)}`;
 		const pending = this.waitFor(
@@ -105,6 +111,7 @@ export class PiRpcClient {
 	}
 
 	close(): Promise<void> {
+		this.closing = true;
 		this.closePromise ??= this.closeProcess();
 		return this.closePromise;
 	}
@@ -141,6 +148,11 @@ export class PiRpcClient {
 				this.rejectWaiters("Pi RPC emitted malformed JSON");
 			}
 		}
+	}
+
+	private recordTerminalFailure(message: string): void {
+		this.terminalFailure ??= message;
+		this.rejectWaiters(this.terminalFailure);
 	}
 
 	private rejectWaiters(message: string): void {

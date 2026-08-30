@@ -18,6 +18,22 @@ test("RPC spawn failures reject commands without crashing", async () => {
 	await expect(rpc.close()).resolves.toBeUndefined();
 }, 7_000);
 
+test("RPC process exits reject later commands immediately", async () => {
+	const rpc = new PiRpcClient({
+		arguments: ["-e", "setTimeout(() => process.exit(0), 20)"],
+		commandTimeoutMs: 1_000,
+		cwd: process.cwd(),
+		environment: process.env,
+		executable: process.execPath,
+		failurePrefix: "RPC exit test",
+		settleTimeoutMs: 1_000,
+		startupTimeoutMs: 1_000,
+	});
+	await expect(rpc.getInitialState()).rejects.toThrow("Pi RPC exited unexpectedly with 0");
+	await expect(rpc.command({ type: "get_state" })).rejects.toThrow("Pi RPC exited unexpectedly with 0");
+	await expect(rpc.close()).resolves.toBeUndefined();
+}, 7_000);
+
 test("initial state uses the Host startup budget", async () => {
 	const rpc = new PiRpcClient({
 		arguments: [
@@ -74,4 +90,5 @@ test("RPC close accepts an intentional signal exit", async () => {
 		startupTimeoutMs: 1_000,
 	});
 	await expect(rpc.close()).resolves.toBeUndefined();
+	await expect(rpc.command({ type: "get_state" })).rejects.toThrow("Pi RPC process is closed");
 }, 7_000);
