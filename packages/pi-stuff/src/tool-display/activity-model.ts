@@ -80,7 +80,7 @@ export interface ToolActivityMetadata<TArgs extends object, TDetails> {
 	/** Every semantic category this Tool may contribute. Empty is valid only for declared infrastructure. */
 	readonly categories: readonly ToolActivityCategory[];
 	readonly classify: (input: ToolActivityClassifierInput<TArgs, TDetails>) => readonly ToolActivityItem[];
-	/** Successful calls intentionally contribute no compact clause. */
+	/** Calls stay out of the compact transcript while running and after success; issues remain visible. */
 	readonly silentSuccess?: boolean;
 	/** Optional semantic description for an exceptional result. */
 	readonly summarizeIssue?: (

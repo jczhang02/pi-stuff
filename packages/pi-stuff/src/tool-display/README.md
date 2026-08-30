@@ -69,9 +69,10 @@ remains the single public live-projection facade.
   terminal state, and useful duration; expansion shows each member and bounded foreground result evidence. A background
   launch and its later model-invisible completion row remain separate chronological events, while `/agents` remains the
   live control and full-evidence authority.
-- Successful Task calls stay compact-silent because Todo owns their visible state. Successful `tool_search` and
-  `ctx_reduce` calls are silent and transparent to retrieval. All remain inspectable through `Ctrl+O` and `/tools`;
-  an issue in any of them becomes an independent Tool Activity and closes retrieval on both sides.
+- Task, `tool_search`, and `ctx_reduce` calls stay absent from the compact Transcript from invocation through success;
+  Todo owns Task state, while the two infrastructure calls remain transparent to retrieval. All remain inspectable
+  through `Ctrl+O` and `/tools`; an error, rejection, or cancellation becomes an independent Tool Activity and closes
+  retrieval on both sides.
 - Pi's global `Ctrl+O` restores eligible calls, existing Tool-specific renderers, successful Task and infrastructure
   calls, and Logical Thinking Runs in persisted source order. `/tools [group-or-member-id]` keeps Tool Activity as its
   first-level unit: List rows expose Tool identity, bounded operation identity, optional verified non-state evidence,

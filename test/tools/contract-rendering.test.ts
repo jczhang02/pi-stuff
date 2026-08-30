@@ -38,6 +38,40 @@ test("decoration preserves execution and projects one Tool immediately", async (
 	expect(renderLines(rendered.callComponent).join("\n")).toContain("Read 1 file");
 });
 
+test("silent-success Tools stay compact while running but remain expandable", () => {
+	const harness = apiHarness();
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "quiet infrastructure fixture",
+			execute: async () => ({ content: [{ type: "text", text: "done" }], details: {} }),
+			label: "Quiet",
+			name: "quiet",
+			parameters: Params,
+		},
+		{
+			...presentation("read-file"),
+			activity: { ...presentation("read-file").activity, silentSuccess: true },
+		},
+	);
+	const tool = harness.tools.get("quiet");
+	if (!tool) throw new Error("missing quiet Tool");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("quiet-1", "quiet", "context"))]);
+	const args = { value: "context" };
+	const state = {};
+	const collapsed = renderContext(state, args, { toolCallId: "quiet-1" });
+	const component = tool.renderCall?.(args, theme, collapsed);
+	if (!component) throw new Error("missing quiet call component");
+	expect(renderLines(component)).toEqual([]);
+
+	tool.renderCall?.(args, theme, { ...collapsed, expanded: true });
+	expect(renderLines(component)).not.toEqual([]);
+	tool.renderCall?.(args, theme, collapsed);
+	expect(renderLines(component)).toEqual([]);
+	expect(runtime.listGroups()).toHaveLength(1);
+});
+
 test("settled Host redraws build detail only while globally expanded", () => {
 	const harness = apiHarness();
 	let detailBuilds = 0;

@@ -247,6 +247,7 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 			activity: {
 				categories: ["search-tool"],
 				classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+				silentSuccess: true,
 			},
 		},
 	);
@@ -264,6 +265,11 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 	const context = renderContext(state, { value: "" }, { toolCallId: "search-1" });
 	const callComponent = searchTool.renderCall?.(args, theme, context);
 	if (!callComponent) throw new Error("missing tool_search call component");
+	expect(renderLines(callComponent)).toEqual([]);
+	searchTool.renderCall?.(args, theme, { ...context, expanded: true });
+	expect(renderLines(callComponent).join("\n")).toContain("Tool Search");
+	searchTool.renderCall?.(args, theme, context);
+	expect(renderLines(callComponent)).toEqual([]);
 	const resultComponent = searchTool.renderResult?.(
 		{
 			content: [{ type: "text", text: '{"results":[{"path":"tools.read"}],"definitions":["LARGE"]}' }],

@@ -63,6 +63,7 @@ export const CODE_MODE_SEARCH_PRESENTATION: SuiteToolPresentation<{ readonly que
 	activity: {
 		categories: ["search-tool"],
 		classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+		silentSuccess: true,
 	},
 	detailLines: (_args, result) => {
 		const paths = result.details.paths;

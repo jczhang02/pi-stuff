@@ -229,7 +229,16 @@ function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 		cwd: context.cwd,
 		name: tool.name,
 	};
-	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
+	const visible = context.expanded || presentation.activity.silentSuccess !== true;
+	runtime.presentRow(
+		context.toolCallId,
+		state.component,
+		model,
+		visible,
+		context.invalidate,
+		context.expanded,
+		metadata,
+	);
 	if (startLiveEffects) {
 		state.liveEffectsStarted = true;
 		runtime.startTimer(context.toolCallId, context.invalidate, (visible) =>

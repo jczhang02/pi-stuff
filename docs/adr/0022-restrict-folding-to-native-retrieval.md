@@ -36,11 +36,13 @@ observed folding retrieval across multiple detailed Thinking runs.
 
 Failed, rejected, and cancelled native retrieval remains in its group. The compact summary exposes the issue count and
 first bounded reason, while Ctrl+O restores the owning invocation. Silent infrastructure calls such as `tool_search`
-and `ctx_reduce` remain transparent to continuity and recoverable in details when successful. An infrastructure issue
-becomes an independent Tool Activity and closes retrieval on both sides.
+and `ctx_reduce` stay absent from the compact Transcript from invocation through success, remain transparent to
+continuity, and remain recoverable in details. An infrastructure issue becomes an independent Tool Activity and closes
+retrieval on both sides.
 
-Successful Task calls remain absent from the default Transcript because Todo owns their visible state. Ctrl+O and
-`/tools` retain the individual calls. A Task error, rejection, or cancellation becomes an independent Tool Activity.
+Task calls stay absent from the default Transcript from invocation through success because Todo owns their visible
+state. Ctrl+O and `/tools` retain the individual calls. A Task error, rejection, or cancellation becomes an independent
+Tool Activity.
 A successful text-only Code Mode execution with no nested Tool or media row is absent from both the Conversation
 Transcript and ordinary `/tools`; its Session, ledger, and model-visible result stay unchanged. Standalone media from
 Code Mode remains Host-rendered without a textual Code Mode row. Nested Tools and media remain their own visible
@@ -77,9 +79,10 @@ keeps its existing surface and creates the ordinary Narrative Boundary. Pi Stuff
 projection. An error, rejection, or cancellation uses one Envelope Fallback Row only when no nested Tool or media
 activity already owns that outcome.
 
-A successful isolated infrastructure call remains absent from the compact Transcript but is recoverable through both
-Ctrl+O and `/tools`. Ctrl+O remains the global detailed Transcript: it restores Retrieval Group members, successful
-Task and infrastructure calls, and existing Tool-specific renderers in original source order alongside Logical
+A successful isolated infrastructure call remains absent from the compact Transcript for its complete running and
+successful lifecycle but is recoverable through both Ctrl+O and `/tools`. Ctrl+O remains the global detailed
+Transcript: it restores Retrieval Group members, successful Task and infrastructure calls, and existing Tool-specific
+renderers in original source order alongside Logical
 Thinking Runs. It does not restore a deliberately hidden successful pure-JavaScript Code Mode envelope or replace
 formatted details with protocol dumps.
 

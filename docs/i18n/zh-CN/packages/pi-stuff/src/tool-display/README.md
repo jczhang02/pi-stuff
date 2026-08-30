@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 4e64bd23e3eb54760340b5700abd9917c465d414d48be438bc3853b0f7ac5583 -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 9effa053e97fd46c0d10fb2fd30d94254ac27afa238d542446185dd9f0fb6335 -->
 
 # Tool Display 模块
 
@@ -22,7 +22,7 @@ Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 - 每次 Bash 调用都按源码顺序成为独立 `Bash(<command>)` Operation Block，包括只读命令。命令在 Compact 下限制为两行/160 代码单元；输出显示三行后给出有界省略提示；running、empty、stderr、exit、cancellation、rejection 和 failure 都保持明确。之后的 empty Host abort record 只会把紧邻且仍 in-flight 的 direct Bash call settle 为 cancelled，保留 partial output，并抑制第二个 fallback error；exit code 128 本身仍是 error。
 - `Write(path)` 显示 `N lines written` 和语法高亮的最终内容，而不是 diff。Compact 显示十行及 `… +N lines (ctrl+o to expand)`，Expanded 上限为 240 行和 24 KiB。`Edit(path)` 显示精确 `+A/-D` 统计和带 old/new 行号的高亮 diff。`Patch(path)` 或 `Patch(N files)` 显示总计与逐文件 `M/A/D/R` 统计及有界 changed-line evidence；纯 rename 显示 `renamed without content changes`。存在证据时不重复通用成功 prose。
 - `subagent` Tool 使用 Agent Lifecycle Row，而不是 Operation Block。Foreground row 标识 Agent、Task、终态和有意义的 duration；Expanded 列出每个 member 和有界 foreground result evidence。Background launch 与随后模型不可见的 completion row 保持为两个 chronological event；`/agents` 继续负责 live control 与完整 evidence。
-- 成功 Task 调用保持紧凑静默，因为 Todo 负责其可见状态。成功 `tool_search` 和 `ctx_reduce` 调用静默且对检索连续性透明。全部调用仍可通过 `Ctrl+O` 与 `/tools` 检查；其中任何问题都会成为独立工具活动，并关闭两侧检索。
+- Task、`tool_search` 和 `ctx_reduce` 调用从开始到成功都不出现在紧凑对话记录中；Todo 负责 Task 状态，两个基础设施调用则对检索保持透明。全部调用仍可通过 `Ctrl+O` 与 `/tools` 检查；错误、拒绝或取消会成为独立工具活动，并关闭两侧检索。
 - Pi 全局 `Ctrl+O` 按持久源码顺序恢复合格调用、现有工具特定渲染器、成功 Task 与基础设施调用，以及逻辑 Thinking 运行。`/tools [group-or-member-id]` 保持以工具活动为第一级单元：List row 显示 Tool identity、有界 operation identity、可选且已验证的非状态 evidence，以及明确的图标加文字 state；若通用 outcome 只是重复该 state，则省略。检索组暴露有序 `Calls`，独立活动保持单项。Detail 使用 Command/Output、Change/Diff、Files/Diff、Task/Result、Invocation/Result 或 Code/Error 等 Tool-specific semantic section；可用时 image block 使用 Pi 原生 image component。Up/Down 选择成员，PageUp/PageDown 滚动，Home/End 跳转，`r` 切换 Formatted 与 Raw，Escape 逐层退出 Dialog。
 - 工具渲染是全函数：历史工具定义缺失、可选元数据异常或呈现 Hook 抛错时，在源码位置提供一条有界通用行。嵌套封装工具和媒体保留其所属渲染器。只有未被其他界面表示的外层错误、拒绝或取消才得到一行封装回退；没有嵌套工具或媒体行的成功纯 JavaScript 代码模式保持不显示。
 - 封装重放为 Raw 详情保留原始参数，并在 Activity 分类、语义详情和渲染前应用工具当前 `prepareArguments` 兼容垫片。历史结果可能省略 `details`；可选异常元数据会被忽略，不会丢弃操作。嵌套结果 Hook 添加的仅控制 `<system-reminder>` 块不会成为代码模式业务输出；所属外层宿主结果仍是控制消息传输边界。嵌套流式输出立即到达调用方；信息更新 Hook 逐个运行，Hook 落后时只保留最新待处理更新，而最终工具结果仍是权威。
