@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: c9331977c9b5746504934c79f82d142148a5f527a709b98c9034b64f59ae6b34 -->
+<!-- translation-source: docs/research/skill-discovery-benchmark-20260830.md; translation-source-sha256: 8edceb1a167b770843d1a2904b2a55985d2da5069510f7f6ef5be48c8e1c8108 -->
 
 # Skill Discovery 真实模型 benchmark 预注册
 
 日期：2026-08-30
 
-状态：研究设计已冻结；Run Lock 尚未完成；尚未产生任何 benchmark Session、Provider 请求或结果。
+状态：研究设计与 Run Lock 均已冻结；尚未产生任何 benchmark Session、Provider 请求或结果。
 
 本文档在实现或查看结果前，冻结 Bead `ps-1gd` 的研究设计。该 benchmark 要回答 Pi Stuff 是否保留 Raw Pi
 的自动 Skill 使用行为，以及启用代码模式是否带来进一步退化。它是手动认证 benchmark，不属于 CI 或
@@ -24,13 +24,24 @@ Capability Contract Acceptance。底层机制的发布门槛仍是确定性测�
 
 ## Run Lock
 
-在一次结果产生前的 amendment 用精确值替换以下每一项之前，不得发起任何 live call：
+结果产生前的 Run Lock 已完成：
 
-- Provider、model 与 reasoning 配置：与 `ps-1gd` 受控复现完全相同的精确配置。
-- 候选 Package commit 与 tree：两个 Pi Stuff arm 共用一个 clean、immutable tree。
-- runner 与只测量 observer 的路径和 SHA-256。
-- 已生成 task manifest 的路径和 SHA-256。
-- 已清理的报告目标。
+- Provider `openai-codex`、model `gpt-5.6-sol`、reasoning `xhigh`。
+- Candidate commit `faeb674303fdd969a96c190826ebcacf5af5b4c1`；Package tree
+  `261e1fb3719913a8ca7ed6f62281de3e122cd34c`。
+- Runner sources：
+  - `scripts/benchmark-skill-discovery.ts`：`0a7d26a7fcfdb5f67af20b38a245bae1239409ba91edca6b33d97d0fbd1fd82a`；
+  - `scripts/pi-rpc-client.ts`：`bad75a34475d04209580df6fc68acda606eab87606cd711ac8b449065509eb1e`；
+  - `scripts/skill-discovery-benchmark-core.ts`：`4adf0ff5a35dc34b79d5ddaca65c33f93782e4620e95408960ddb9c3898d51a8`；
+  - `scripts/skill-discovery-benchmark-evidence.ts`：`b92fc647053c2a5ef047f3e35649ff96f12978f68254497fb093f99b2a25df0a`；
+  - `scripts/skill-discovery-benchmark-report.ts`：`72b2c606b2dd8ac7741da24eb22f313604f67d8c316e9522a24791600b0e31c9`；
+  - `scripts/skill-discovery-benchmark-session.ts`：`cdabf7392b99c2f63ba08e59d303e6a5e20bcc56239b859258d9fc612122a1bf`。
+- 只测量 observer `test/fixtures/skill-discovery-benchmark-observer.ts`：
+  `c7ad035b166ff99950c3138c033e991f6d5ea97b6a3f84d158b3ae34fc7fa705`。
+- Immutable manifest `test/fixtures/skill-discovery-benchmark-manifest.jsonl`：
+  `07e79e7b89c6477d1f780ccf88c4d064df4a80e1e7fee822d767da388aed2172`。
+- Run Lock `test/fixtures/skill-discovery-benchmark-run-lock.json`。
+- Sanitized report destination `docs/reports/skill-discovery-benchmark-20260830.json`。
 
 Candidate commit 标识 Package source，而不是必然更晚、用于记录 Run Lock 的 commit。为避免自引用 commit
 hash，preflight 要求该 commit 与 clean execution tree 都解析到完全相同的 locked Package tree，并独立计算
