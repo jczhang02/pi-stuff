@@ -69,22 +69,25 @@ export type GoalTool = {
 	}>;
 };
 
-export const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+export async function flush() {
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 export function registerGoal(mock: ReturnType<typeof createMockPi>, settingsPath = ENABLED_SETTINGS_PATH) {
 	mock.rawPi.setActiveTools([...new Set([...mock.rawPi.getActiveTools(), "goal_complete", "goal_blocked"])]);
 	runtimeByPi.set(mock.pi, goal(mock.pi, { settingsPath }));
 }
 
-export function bindSession(mock: ReturnType<typeof createMockPi>, context = createMockContext()) {
-	mock.callEvent("session_start", {}, context.ctx);
+export async function bindSession(mock: ReturnType<typeof createMockPi>, context = createMockContext()) {
+	await mock.callEvent("session_start", {}, context.ctx);
 	return context;
 }
 
-export function createRunHarness(context = createMockContext(), settingsPath = ENABLED_SETTINGS_PATH) {
+export async function createRunHarness(context = createMockContext(), settingsPath = ENABLED_SETTINGS_PATH) {
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
 	registerGoal(mock, settingsPath);
-	return [mock, bindSession(mock, context)] as const;
+	return [mock, await bindSession(mock, context)] as const;
 }
 
 export function runEventChannel(runId: string) {

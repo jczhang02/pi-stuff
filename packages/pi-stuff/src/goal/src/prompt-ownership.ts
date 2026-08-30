@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -98,27 +99,29 @@ export class GoalPromptOwnership {
 		this.pendingNonGoalInputs = [];
 	}
 
-	async sendOwnedGoalPrompt(
+	sendOwnedGoalPrompt(
 		ctx: StatusContext,
 		goalId: string,
 		prompt: string,
 		options: GoalPromptDeliveryOptions,
 		isGoalActive: () => boolean,
-	) {
-		const { isCurrent, resetSafetyEpoch = true, userDriven = false } = options;
-		const ownsPrompt = () => isGoalActive() && (isCurrent?.() ?? true);
-		const pending = this.rememberPendingGoalPrompt(
-			goalId,
-			prompt,
-			resetSafetyEpoch,
-			userDriven ? "manual" : "automatic",
-		);
-		const sent = await sendPrompt(this.pi, ctx, pending.prompt, userDriven, ownsPrompt);
-		if (!sent || !ownsPrompt()) {
-			this.pendingGoalPromptMarkers.delete(pending.marker);
-			return false;
-		}
-		return true;
+	): Effect.Effect<boolean> {
+		return Effect.gen({ self: this }, function* () {
+			const { isCurrent, resetSafetyEpoch = true, userDriven = false } = options;
+			const ownsPrompt = () => isGoalActive() && (isCurrent?.() ?? true);
+			const pending = this.rememberPendingGoalPrompt(
+				goalId,
+				prompt,
+				resetSafetyEpoch,
+				userDriven ? "manual" : "automatic",
+			);
+			const sent = yield* sendPrompt(this.pi, ctx, pending.prompt, userDriven, ownsPrompt);
+			if (!sent || !ownsPrompt()) {
+				this.pendingGoalPromptMarkers.delete(pending.marker);
+				return false;
+			}
+			return true;
+		});
 	}
 
 	private rememberPendingGoalPrompt(goalId: string, prompt: string, resetSafetyEpoch: boolean, origin: GoalRunOrigin) {
@@ -288,21 +291,23 @@ function inputFingerprint(prompt: string) {
 	return createHash("sha256").update(prompt, "utf8").digest("hex");
 }
 
-async function sendPrompt(
+function sendPrompt(
 	pi: ExtensionAPI,
 	ctx: StatusContext,
 	prompt: string,
 	userDriven: boolean,
 	isCurrent?: () => boolean,
-) {
-	try {
-		return await sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent);
-	} catch (error) {
-		if (!isCurrent || isCurrent()) {
-			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
-		}
-		return false;
-	}
+): Effect.Effect<boolean> {
+	return sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent).pipe(
+		Effect.catch((error) =>
+			Effect.sync(() => {
+				if (!isCurrent || isCurrent()) {
+					ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
+				}
+				return false;
+			}),
+		),
+	);
 }
 
 export function sendHiddenGoalPrompt(
@@ -319,10 +324,14 @@ export function sendHiddenGoalPrompt(
 		},
 		userDriven ? "user" : "automatic",
 	);
-	return sendSuiteAgentMessage(
-		pi,
-		userDriven ? withDirectUserActivation(message) : message,
-		{ deliverAs: "followUp", triggerTurn: true },
-		isCurrent,
-	);
+	return Effect.tryPromise({
+		try: () =>
+			sendSuiteAgentMessage(
+				pi,
+				userDriven ? withDirectUserActivation(message) : message,
+				{ deliverAs: "followUp", triggerTurn: true },
+				isCurrent,
+			),
+		catch: (error) => error,
+	});
 }

@@ -406,7 +406,7 @@ test("goal_blocked rejects calls without an active goal", async () => {
 	const mock = createMockPi();
 	registerGoal(mock.pi);
 	const context = createMockContext();
-	mock.callEvent("session_start", {}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 	const blockerTool = requireGoalTool(mock, "goal_blocked");
 
 	const result = await blockerTool.execute(

@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect, type Scope } from "effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import {
@@ -10,8 +9,13 @@ import {
 	type JsonInputValue,
 	parseJsonValue,
 } from "../../shared/json-value.js";
-import { readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
+import { readTextFileEffect } from "../../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
+import {
+	EffectNamespacedSettingsStore,
+	type EffectNamespaceStoreOptions,
+	type NamespaceRecord,
+} from "../../shared/settings-io/store.js";
 
 export const GOAL_SETTINGS_FILE = "pi-stuff.json";
 const GOAL_NAMESPACE = "goal";
@@ -65,18 +69,54 @@ export const DEFAULT_GOAL_SETTINGS: GoalSettings = {
 	continuationLimits: { automaticTurns: null, noProgressTurns: null },
 };
 
-export type GoalSettingsLoadResult =
-	| { kind: "missing" }
-	| { kind: "invalid"; reason: string }
-	| { kind: "loaded"; settings: GoalSettings };
+export interface GoalSettingsLoadIssue {
+	readonly kind: "invalid";
+	readonly reason: string;
+}
 
-export type GoalSettingsLoadIssue = Extract<GoalSettingsLoadResult, { kind: "invalid" }>;
+export class GoalSettingsStore {
+	private readonly store: EffectNamespacedSettingsStore<NamespaceRecord>;
+	readonly loadIssue: GoalSettingsLoadIssue | undefined;
 
-interface GoalSettingsSaveFileSystem {
-	mkdirSync: typeof mkdirSync;
-	writeFileSync: typeof writeFileSync;
-	renameSync: typeof renameSync;
-	rmSync: typeof rmSync;
+	private constructor(store: EffectNamespacedSettingsStore<NamespaceRecord>, loadIssue?: GoalSettingsLoadIssue) {
+		this.store = store;
+		this.loadIssue = loadIssue;
+	}
+
+	static load(settingsPath = mergedSettingsPath(getAgentDir())): Effect.Effect<GoalSettingsStore, Error> {
+		let loadIssue: GoalSettingsLoadIssue | undefined;
+		const options: EffectNamespaceStoreOptions = {
+			path: settingsPath,
+			legacyPath: join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE),
+			legacyReader: (legacyPath) =>
+				Effect.flatMap(readTextFileEffect(legacyPath), (content) =>
+					Effect.try({
+						try: () => normalizeGoalSettingsRecord(parseJsonValue(content)),
+						catch: toError,
+					}),
+				),
+			reportDiagnostic: ({ details, error }) => {
+				loadIssue = { kind: "invalid", reason: `${details}: ${formatError(error)}` };
+			},
+		};
+		const storeOptions = Object.hasOwn(process.versions, "bun")
+			? { ...options, acquireLock: acquireGoalSettingsLock }
+			: options;
+		return EffectNamespacedSettingsStore.load<NamespaceRecord>(
+			GOAL_NAMESPACE,
+			goalSettingsRecord(DEFAULT_GOAL_SETTINGS),
+			normalizeGoalSettingsRecord,
+			storeOptions,
+		).pipe(Effect.map((store) => new GoalSettingsStore(store, loadIssue)));
+	}
+
+	get(): GoalSettings {
+		return normalizeGoalSettings(this.store.get()) ?? DEFAULT_GOAL_SETTINGS;
+	}
+
+	replace(settings: GoalSettings): Effect.Effect<void, Error> {
+		return Effect.asVoid(this.store.updateWith((current) => goalSettingsRecord(settings, current)));
+	}
 }
 
 export function normalizeGoalSettings<Value>(value: Value): GoalSettings | undefined {
@@ -95,113 +135,44 @@ export function normalizeGoalSettings<Value>(value: Value): GoalSettings | undef
 	};
 }
 
-export function saveGoalSettings(
-	settings: GoalSettings,
-	settingsPath = mergedSettingsPath(getAgentDir()),
-	overrides: Partial<GoalSettingsSaveFileSystem> = {},
-) {
-	const normalized = normalizeGoalSettings(settings);
-	if (!normalized) throw new Error("Refusing to save invalid pi-goal settings.");
-
-	let existingNamespace: JsonInputObject = {};
-	let existingDocument: JsonInputObject = {};
-	try {
-		existingDocument = readSettingsFileSync(settingsPath);
-		const file = ownRecord(existingDocument[GOAL_NAMESPACE]);
-		if (file !== undefined) {
-			const validated = normalizeGoalSettings(file);
-			if (!validated) throw new Error(`${settingsPath}: invalid settings shape`);
-			existingNamespace = ownRecord(file) ?? {};
-		}
-	} catch (error) {
-		if (!isNodeError(error) || error.code !== "ENOENT") {
-			throw new Error(`Cannot save invalid settings file: ${formatError(error)}`);
-		}
-	}
-
-	const experimental = ownRecord(existingNamespace["experimental"]) ?? {};
-	const rpc = ownRecord(existingNamespace["rpc"]) ?? {};
-	const continuationLimits = ownRecord(existingNamespace["continuationLimits"]) ?? {};
-	const document = {
-		...existingNamespace,
-		toolVisibility: normalized.toolVisibility,
-		experimental: { ...experimental, goals: normalized.experimental.goals },
-		rpc: { ...rpc, enabled: normalized.rpc.enabled },
-		continuationLimits: {
-			...continuationLimits,
-			automaticTurns: normalized.continuationLimits.automaticTurns,
-			noProgressTurns: normalized.continuationLimits.noProgressTurns,
-		},
-	};
-	const temporaryPath = join(dirname(settingsPath), `.${basename(settingsPath)}.${randomUUID()}.tmp`);
-	const fs = { mkdirSync, writeFileSync, renameSync, rmSync, ...overrides };
-	try {
-		fs.mkdirSync(dirname(settingsPath), { recursive: true });
-		fs.writeFileSync(
-			temporaryPath,
-			`${JSON.stringify({ ...existingDocument, [GOAL_NAMESPACE]: document }, null, "\t")}\n`,
-			{
-				encoding: "utf8",
-				flag: "wx",
-				mode: 0o600,
-			},
-		);
-		fs.renameSync(temporaryPath, settingsPath);
-	} finally {
-		try {
-			fs.rmSync(temporaryPath, { force: true });
-		} catch {
-			// Best-effort cleanup must not replace the save result.
-		}
-	}
-}
-
-export async function withGoalSettingsLock<Value>(
-	settingsPath: string,
-	operation: () => Value | Promise<Value>,
-): Promise<Value> {
-	const { withSettingsLock } = await import("../../shared/settings-io/lock.js");
-	return withSettingsLock(settingsPath, "Goal", operation);
-}
-
-export function readGoalSettings(settingsPath = mergedSettingsPath(getAgentDir())): GoalSettingsLoadResult {
-	try {
-		const namespace = readNamespaceSync(settingsPath, GOAL_NAMESPACE);
-		if (namespace !== undefined) return normalizeLoadedGoalSettings(namespace, settingsPath);
-	} catch (error: unknown) {
-		if (!isNodeError(error) || error.code !== "ENOENT") {
-			return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
-		}
-	}
-
-	const legacyPath = join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE);
-	try {
-		return normalizeLoadedGoalSettings(parseJsonValue(readFileSync(legacyPath, "utf8")), legacyPath);
-	} catch (error: unknown) {
-		if (isNodeError(error) && error.code === "ENOENT") return { kind: "missing" };
-		return { kind: "invalid", reason: `${legacyPath}: ${formatError(error)}` };
-	}
-}
-
-function normalizeLoadedGoalSettings(namespace: JsonInputValue, sourcePath: string): GoalSettingsLoadResult {
-	try {
-		const settings = normalizeGoalSettings(namespace);
-		return settings
-			? { kind: "loaded", settings }
-			: { kind: "invalid", reason: `${sourcePath}: invalid settings shape` };
-	} catch (error: unknown) {
-		return { kind: "invalid", reason: `${sourcePath}: ${formatError(error)}` };
-	}
-}
-
 function ownRecord(value: JsonInputValue): JsonInputObject | undefined {
 	return isJsonInputObject(value) ? value : undefined;
 }
 
-function isNodeError(cause: unknown): cause is NodeJS.ErrnoException {
-	return cause instanceof Error && "code" in cause;
+function normalizeGoalSettingsRecord<Value>(value: Value): NamespaceRecord {
+	const settings = normalizeGoalSettings(value);
+	if (!settings) throw new Error("invalid settings shape");
+	return goalSettingsRecord(settings, isJsonInputObject(value) ? value : {});
+}
+
+function goalSettingsRecord(settings: GoalSettings, current: NamespaceRecord = {}): NamespaceRecord {
+	return {
+		...current,
+		toolVisibility: settings.toolVisibility,
+		experimental: { ...ownRecord(current["experimental"]), goals: settings.experimental.goals },
+		rpc: { ...ownRecord(current["rpc"]), enabled: settings.rpc.enabled },
+		continuationLimits: {
+			...ownRecord(current["continuationLimits"]),
+			automaticTurns: settings.continuationLimits.automaticTurns,
+			noProgressTurns: settings.continuationLimits.noProgressTurns,
+		},
+	};
+}
+
+function acquireGoalSettingsLock(lockPath: string, _owner: string): Effect.Effect<void, Error, Scope.Scope> {
+	return Effect.flatMap(
+		Effect.tryPromise({
+			try: () => import("../../shared/settings-io/lock.js"),
+			catch: toError,
+		}),
+		({ acquireSettingsLockEffect }) => acquireSettingsLockEffect(lockPath, "Goal"),
+	);
 }
 
 function formatError(cause: unknown) {
 	return cause instanceof Error ? cause.message : String(cause);
+}
+
+function toError(cause: unknown) {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

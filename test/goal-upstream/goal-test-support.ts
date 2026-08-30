@@ -119,7 +119,7 @@ export function registerGoalWithSettingsPath(pi: Parameters<typeof goal>[0], set
 	runtimeByPi.set(pi, goal(pi, { settingsPath }));
 }
 
-export function createGoalHarness(
+export async function createGoalHarness(
 	activeTools: string[] = [],
 	toolVisibility: "always" | "after-first-goal" = "always",
 	contextOverrides: MockContextOverrides = {},
@@ -127,7 +127,7 @@ export function createGoalHarness(
 	const mock = createMockPi({ activeTools });
 	registerGoal(mock.pi, toolVisibility);
 	const context = createMockContext(contextOverrides);
-	mock.callEvent("session_start", {}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 	return [mock, context] as const;
 }
 
@@ -232,7 +232,7 @@ export function requireGoalTool(mock: ReturnType<typeof createMockPi>, name: str
 	return tool as GoalTool;
 }
 
-export function restoreGoalForTest(
+export async function restoreGoalForTest(
 	status: "active" | "paused" | "blocked" | "usage_limited" | "budget_limited",
 	overrides: {
 		tokenBudget?: number;
@@ -265,7 +265,7 @@ export function restoreGoalForTest(
 	return restoreStoredGoalForTest(sessionGoal, [], toolVisibility, contextOverrides);
 }
 
-export function restoreStoredGoalForTest(
+export async function restoreStoredGoalForTest(
 	sessionGoal: StoredGoal,
 	extraEntries: unknown[] = [],
 	toolVisibility: "always" | "after-first-goal" = "always",
@@ -287,7 +287,7 @@ export function restoreStoredGoalForTest(
 		...contextOverrides,
 		sessionManager: { getBranch: () => branch, getEntries: () => branch },
 	});
-	mock.callEvent("session_start", {}, context.ctx);
+	await mock.callEvent("session_start", {}, context.ctx);
 	return { mock, ...context, sessionGoal };
 }
 

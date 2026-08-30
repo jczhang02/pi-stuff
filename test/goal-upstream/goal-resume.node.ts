@@ -21,7 +21,7 @@ import {
 
 test("session persistence restores stopped states with resumable command hints", async () => {
 	for (const status of ["paused", "blocked", "usage_limited", "budget_limited"] as const) {
-		const restored = restoreGoalForTest(status);
+		const restored = await restoreGoalForTest(status);
 		assert.equal(goalStatusSnapshot(restored.mock.pi)?.status, status);
 
 		await restored.mock.commands.get("goal")?.handler("", restored.ctx);
@@ -32,7 +32,7 @@ test("session persistence restores stopped states with resumable command hints",
 
 test("resume safely reactivates every resumable stopped status and rotates goal_id", async () => {
 	for (const status of ["paused", "blocked", "usage_limited", "budget_limited"] as const) {
-		const restored = restoreGoalForTest(status);
+		const restored = await restoreGoalForTest(status);
 		const beforeResume = restored.sessionGoal;
 
 		await restored.mock.commands.get("goal")?.handler("resume", restored.ctx);
@@ -67,7 +67,7 @@ test("safety epochs reset on successful resume and active edit", async () => {
 		lastToolFreeOutputFingerprint: "a".repeat(64),
 		safetyPauseCause: "no_progress" as const,
 	};
-	const resumed = restoreGoalForTest("paused", safety);
+	const resumed = await restoreGoalForTest("paused", safety);
 	await resumed.mock.commands.get("goal")?.handler("resume", resumed.ctx);
 	assert.deepEqual(pickSafetyState(requireLastGoal(resumed.mock)), safety);
 	resumed.mock.callEvent(
@@ -115,12 +115,12 @@ test("queued resume and active edit persist a reset that survives reload", async
 		lastToolFreeOutputFingerprint: "d".repeat(64),
 		safetyPauseCause: "continuation_limit" as const,
 	};
-	const resumed = restoreGoalForTest("paused", safety);
+	const resumed = await restoreGoalForTest("paused", safety);
 	await resumed.mock.commands.get("goal")?.handler("resume", resumed.ctx);
 	const queuedResume = requireLastGoal(resumed.mock);
 	assert.deepEqual(pickSafetyState(queuedResume), safety);
 
-	const reloadedResume = restoreStoredGoalForTest(queuedResume, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
+	const reloadedResume = await restoreStoredGoalForTest(queuedResume, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
 	assert.equal(lastGoalStatus(reloadedResume.mock), "active");
 	assert.deepEqual(pickSafetyState(requireLastGoal(reloadedResume.mock)), {
 		automaticModelTurns: 0,
@@ -138,12 +138,12 @@ test("queued resume and active edit persist a reset that survives reload", async
 		activeStartedAt: Date.now(),
 		safetyResetPending: undefined,
 	};
-	const edited = restoreStoredGoalForTest(activeGoal);
+	const edited = await restoreStoredGoalForTest(activeGoal);
 	await edited.mock.commands.get("goal")?.handler("edit revised after reload", edited.ctx);
 	const queuedEdit = requireLastGoal(edited.mock);
 	assert.deepEqual(pickSafetyState(queuedEdit), editSafety);
 
-	const reloadedEdit = restoreStoredGoalForTest(queuedEdit, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
+	const reloadedEdit = await restoreStoredGoalForTest(queuedEdit, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
 	assert.equal(lastGoalStatus(reloadedEdit.mock), "active");
 	assert.deepEqual(pickSafetyState(requireLastGoal(reloadedEdit.mock)), {
 		automaticModelTurns: 0,
@@ -160,7 +160,7 @@ test("stopped input and failed resume preserve the exact safety epoch", async ()
 		lastToolFreeOutputFingerprint: "c".repeat(64),
 		safetyPauseCause: "continuation_limit" as const,
 	};
-	const restored = restoreGoalForTest("paused", safety);
+	const restored = await restoreGoalForTest("paused", safety);
 	restored.mock.callEvent("input", { source: "interactive", text: "what happened?" }, restored.ctx);
 	assert.deepEqual(pickSafetyState(requireLastGoal(restored.mock)), safety);
 
@@ -296,7 +296,7 @@ test("resume rejects active goals and exhausted budgets without rotating goal_id
 	assert.equal(active.mock.sentUserMessages.length, activeMessageCount);
 
 	for (const status of ["paused", "blocked", "usage_limited", "budget_limited"] as const) {
-		const exhausted = restoreGoalForTest(status, { tokensUsed: 10 });
+		const exhausted = await restoreGoalForTest(status, { tokensUsed: 10 });
 		await exhausted.mock.commands.get("goal")?.handler("resume", exhausted.ctx);
 		assert.match(exhausted.notifications.at(-1)?.message ?? "", /still reached/i);
 		exhausted.mock.emitHostEvent("session_shutdown", {}, exhausted.ctx);
@@ -307,7 +307,7 @@ test("resume rejects active goals and exhausted budgets without rotating goal_id
 });
 
 test("failed resume delivery restores the stopped state and original goal_id", async () => {
-	const restored = restoreGoalForTest("blocked");
+	const restored = await restoreGoalForTest("blocked");
 	restored.mock.rawPi.sendUserMessage = () => {
 		throw new Error("runtime became busy");
 	};
@@ -330,7 +330,7 @@ test("failed resume delivery restores the stopped state and original goal_id", a
 });
 
 test("resume stays stopped when another policy hides terminal tools", async () => {
-	const restored = restoreGoalForTest("paused");
+	const restored = await restoreGoalForTest("paused");
 	const originalId = restored.sessionGoal.id;
 	const originalSetActiveTools = restored.mock.rawPi.setActiveTools.bind(restored.mock.rawPi);
 	originalSetActiveTools(["read", "bash"]);
@@ -344,7 +344,7 @@ test("resume stays stopped when another policy hides terminal tools", async () =
 });
 
 test("after-first-goal resume can restore tools after a restrictive mode exits", async () => {
-	const restored = restoreGoalForTest("paused", {}, "after-first-goal");
+	const restored = await restoreGoalForTest("paused", {}, "after-first-goal");
 	restored.mock.rawPi.setActiveTools(["read", "bash"]);
 
 	await restored.mock.commands.get("goal")?.handler("resume", restored.ctx);
@@ -371,7 +371,7 @@ test("failed start delivery clears a new goal and restores a replaced stopped go
 	const freshMock = createMockPi();
 	registerGoal(freshMock.pi);
 	const freshContext = createMockContext();
-	freshMock.callEvent("session_start", {}, freshContext.ctx);
+	await freshMock.callEvent("session_start", {}, freshContext.ctx);
 	freshMock.rawPi.sendUserMessage = () => {
 		throw new Error("start delivery failed");
 	};
@@ -449,7 +449,7 @@ test("failed active edit delivery restores and pauses the prior goal", async () 
 
 test("editing paused, blocked, or usage-limited goals preserves their stopped state", async () => {
 	for (const status of ["paused", "blocked", "usage_limited"] as const) {
-		const restored = restoreGoalForTest(status);
+		const restored = await restoreGoalForTest(status);
 		const oldId = restored.sessionGoal.id;
 		await restored.mock.commands.get("goal")?.handler("edit --tokens 20 revised objective", restored.ctx);
 
@@ -471,7 +471,7 @@ test("editing paused, blocked, or usage-limited goals preserves their stopped st
 
 test("pause remains active-only for new stopped statuses", async () => {
 	for (const status of ["blocked", "usage_limited", "budget_limited"] as const) {
-		const restored = restoreGoalForTest(status);
+		const restored = await restoreGoalForTest(status);
 		await restored.mock.commands.get("goal")?.handler("pause", restored.ctx);
 		assert.match(restored.notifications.at(-1)?.message ?? "", /only active goals can be paused/i);
 		assert.equal(goalStatusSnapshot(restored.mock.pi)?.status, status);

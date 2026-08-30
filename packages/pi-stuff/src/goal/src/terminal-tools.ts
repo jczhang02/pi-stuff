@@ -1,4 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -87,6 +88,11 @@ const GOAL_BLOCKED_PARAMETERS = Type.Object({
 type GoalCompleteParams = Static<typeof GOAL_COMPLETE_PARAMETERS>;
 type GoalBlockedParams = Static<typeof GOAL_BLOCKED_PARAMETERS>;
 
+interface GoalTerminalToolOptions {
+	readonly run: <A>(ctx: ExtensionContext, program: Effect.Effect<A, unknown>) => Promise<A>;
+	readonly showCompletionStatus: (ctx: ExtensionContext, timeUsedSeconds: number) => void;
+}
+
 function hasPendingSkipForGoal(runtime: GoalRuntime, goalId: string): boolean {
 	return (
 		runtime.pendingQueueAction?.kind === "advance" &&
@@ -95,105 +101,112 @@ function hasPendingSkipForGoal(runtime: GoalRuntime, goalId: string): boolean {
 	);
 }
 
-async function executeGoalComplete(runtime: GoalRuntime, params: GoalCompleteParams, ctx: ExtensionContext) {
-	const completedGoal = runtime.activeGoal;
-	const goal = completedGoal?.text ?? "unknown goal";
-	const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
-	const summary = isRuntimeString(params.summary) ? params.summary.trim() : "";
-	const evidence = Array.isArray(params.evidence)
-		? params.evidence.map((item) =>
-				Check(GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA, item)
-					? { requirement: item.requirement.trim(), proof: item.proof.trim() }
-					: { requirement: "", proof: "" },
-			)
-		: [];
-	const details = { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails;
-	const reject = (reason: string, terminate = false) => {
-		const rejection = `Goal completion rejected: ${reason}.`;
-		ctx.ui.notify(rejection, "warning");
-		const result = { content: [{ type: "text" as const, text: rejection }], details };
-		return terminate ? { ...result, terminate: true as const } : result;
-	};
-	const complete = (text: string) => ({
-		content: [{ type: "text" as const, text }],
-		details,
-		terminate: true as const,
-	});
+function executeGoalComplete(
+	runtime: GoalRuntime,
+	params: GoalCompleteParams,
+	ctx: ExtensionContext,
+	showCompletionStatus: GoalTerminalToolOptions["showCompletionStatus"],
+) {
+	return Effect.gen(function* () {
+		const completedGoal = runtime.activeGoal;
+		const goal = completedGoal?.text ?? "unknown goal";
+		const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
+		const summary = isRuntimeString(params.summary) ? params.summary.trim() : "";
+		const evidence = Array.isArray(params.evidence)
+			? params.evidence.map((item) =>
+					Check(GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA, item)
+						? { requirement: item.requirement.trim(), proof: item.proof.trim() }
+						: { requirement: "", proof: "" },
+				)
+			: [];
+		const details = { goal, goal_id: requestedGoalId, summary, evidence } satisfies GoalCompleteDetails;
+		const reject = (reason: string, terminate = false) => {
+			const rejection = `Goal completion rejected: ${reason}.`;
+			ctx.ui.notify(rejection, "warning");
+			const result = { content: [{ type: "text" as const, text: rejection }], details };
+			return terminate ? { ...result, terminate: true as const } : result;
+		};
+		const complete = (text: string) => ({
+			content: [{ type: "text" as const, text }],
+			details,
+			terminate: true as const,
+		});
 
-	if (!completedGoal) return reject("no active goal");
-	const completingDuringBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
-	if (!runtime.canRecordGoalUsage() && !completingDuringBudgetWrapUp) {
-		return reject("current run does not own the active goal");
-	}
-	if (hasPendingSkipForGoal(runtime, completedGoal.id)) {
-		runtime.recordGoalUsage(completedGoal, ctx);
-		runtime.persistGoal(completedGoal);
-		runtime.clearBudgetWrapUp();
-		return reject("goal is queued to be skipped", true);
-	}
-	const staleGoalRejection = goalIdRejectionReason(completedGoal, requestedGoalId);
-	if (staleGoalRejection) {
-		if (completingDuringBudgetWrapUp) {
+		if (!completedGoal) return reject("no active goal");
+		const completingDuringBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
+		if (!runtime.canRecordGoalUsage() && !completingDuringBudgetWrapUp) {
+			return reject("current run does not own the active goal");
+		}
+		if (hasPendingSkipForGoal(runtime, completedGoal.id)) {
 			runtime.recordGoalUsage(completedGoal, ctx);
 			runtime.persistGoal(completedGoal);
 			runtime.clearBudgetWrapUp();
+			return reject("goal is queued to be skipped", true);
 		}
-		return reject(staleGoalRejection, completingDuringBudgetWrapUp);
-	}
-	if (completedGoal.status !== "active" && !completingDuringBudgetWrapUp) {
-		return reject(`goal is ${completedGoal.status}, not active`);
-	}
+		const staleGoalRejection = goalIdRejectionReason(completedGoal, requestedGoalId);
+		if (staleGoalRejection) {
+			if (completingDuringBudgetWrapUp) {
+				runtime.recordGoalUsage(completedGoal, ctx);
+				runtime.persistGoal(completedGoal);
+				runtime.clearBudgetWrapUp();
+			}
+			return reject(staleGoalRejection, completingDuringBudgetWrapUp);
+		}
+		if (completedGoal.status !== "active" && !completingDuringBudgetWrapUp) {
+			return reject(`goal is ${completedGoal.status}, not active`);
+		}
 
-	const rejectionReason = !summary
-		? "summary is empty"
-		: summary.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH
-			? "summary is too long"
-			: isContradictoryCompletionSummary(summary)
-				? "summary says the goal is not complete"
-				: evidence.length > MAX_COMPLETION_EVIDENCE_ITEMS
-					? "too many completion evidence entries"
-					: evidence.some(
-								(item) =>
-									item.requirement.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH ||
-									item.proof.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
-							)
-						? "completion evidence is too long"
-						: completionEvidenceRejectionReason(summary, evidence);
-	if (rejectionReason) {
-		runtime.recordGoalUsage(completedGoal, ctx);
-		runtime.persistGoal(completedGoal);
-		if (completingDuringBudgetWrapUp) runtime.clearBudgetWrapUp();
-		return reject(rejectionReason, completingDuringBudgetWrapUp);
-	}
+		const rejectionReason = !summary
+			? "summary is empty"
+			: summary.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH
+				? "summary is too long"
+				: isContradictoryCompletionSummary(summary)
+					? "summary says the goal is not complete"
+					: evidence.length > MAX_COMPLETION_EVIDENCE_ITEMS
+						? "too many completion evidence entries"
+						: evidence.some(
+									(item) =>
+										item.requirement.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH ||
+										item.proof.length > MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
+								)
+							? "completion evidence is too long"
+							: completionEvidenceRejectionReason(summary, evidence);
+		if (rejectionReason) {
+			runtime.recordGoalUsage(completedGoal, ctx);
+			runtime.persistGoal(completedGoal);
+			if (completingDuringBudgetWrapUp) runtime.clearBudgetWrapUp();
+			return reject(rejectionReason, completingDuringBudgetWrapUp);
+		}
 
-	runtime.activeGoal = transitionGoal(completedGoal, "complete");
-	runtime.setCompletionSummary(runtime.activeGoal.id, summary);
-	runtime.recordGoalUsage(runtime.activeGoal, ctx);
-	if (runtime.pendingQueueAction?.kind === "prioritize") {
+		runtime.activeGoal = transitionGoal(completedGoal, "complete");
+		runtime.setCompletionSummary(runtime.activeGoal.id, summary);
+		runtime.recordGoalUsage(runtime.activeGoal, ctx);
+		if (runtime.pendingQueueAction?.kind === "prioritize") {
+			runtime.persistGoal(runtime.activeGoal);
+			runtime.publishPresentationStatus(runtime.activeGoal);
+			return complete(`Goal complete: ${summary}`);
+		}
+		if (runtime.queuedGoals.length > 0) {
+			runtime.pendingQueueAction = {
+				kind: "advance",
+				goalId: runtime.activeGoal.id,
+				reason: "complete",
+				completedText: goal,
+			};
+			runtime.persistGoal(runtime.activeGoal);
+			runtime.publishPresentationStatus(runtime.activeGoal);
+			return complete(`Goal complete: ${summary}\nNext goal queued: ${runtime.queuedGoals[0]?.text}`);
+		}
+		const completedTimeUsedSeconds = runtime.activeGoal.timeUsedSeconds;
 		runtime.persistGoal(runtime.activeGoal);
 		runtime.publishPresentationStatus(runtime.activeGoal);
+		yield* runtime.clearActiveGoal(ctx);
+		showCompletionStatus(ctx, completedTimeUsedSeconds);
 		return complete(`Goal complete: ${summary}`);
-	}
-	if (runtime.queuedGoals.length > 0) {
-		runtime.pendingQueueAction = {
-			kind: "advance",
-			goalId: runtime.activeGoal.id,
-			reason: "complete",
-			completedText: goal,
-		};
-		runtime.persistGoal(runtime.activeGoal);
-		runtime.publishPresentationStatus(runtime.activeGoal);
-		return complete(`Goal complete: ${summary}\nNext goal queued: ${runtime.queuedGoals[0]?.text}`);
-	}
-	const completedTimeUsedSeconds = runtime.activeGoal.timeUsedSeconds;
-	runtime.persistGoal(runtime.activeGoal);
-	runtime.publishPresentationStatus(runtime.activeGoal);
-	await runtime.clearActiveGoal(ctx);
-	runtime.showCompletionStatus(ctx, completedTimeUsedSeconds);
-	return complete(`Goal complete: ${summary}`);
+	});
 }
 
-async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx: ExtensionContext) {
+function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParams, ctx: ExtensionContext) {
 	const blockedGoal = runtime.activeGoal;
 	const goal = blockedGoal?.text ?? "unknown goal";
 	const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
@@ -272,7 +285,11 @@ async function executeGoalBlocked(runtime: GoalRuntime, params: GoalBlockedParam
 	};
 }
 
-export function registerGoalTerminalTools(pi: ExtensionAPI, runtime: GoalRuntime): void {
+export function registerGoalTerminalTools(
+	pi: ExtensionAPI,
+	runtime: GoalRuntime,
+	options: GoalTerminalToolOptions,
+): void {
 	const goalCompleteTool = defineTool({
 		name: GOAL_COMPLETE_TOOL,
 		label: "Goal Complete",
@@ -287,7 +304,8 @@ export function registerGoalTerminalTools(pi: ExtensionAPI, runtime: GoalRuntime
 			"Call goal_complete only after the requested goal is fully implemented, verified, and no known required work remains; otherwise keep working.",
 		],
 		parameters: GOAL_COMPLETE_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) => executeGoalComplete(runtime, params, ctx),
+		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
+			options.run(ctx, executeGoalComplete(runtime, params, ctx, options.showCompletionStatus)),
 	});
 
 	const goalBlockedTool = defineTool({
@@ -305,7 +323,11 @@ export function registerGoalTerminalTools(pi: ExtensionAPI, runtime: GoalRuntime
 			"Pass goal_blocked the exact current goal_id; never reuse a goal_id from an older, stopped, replaced, or cleared goal turn.",
 		],
 		parameters: GOAL_BLOCKED_PARAMETERS,
-		execute: (_toolCallId, params, _signal, _onUpdate, ctx) => executeGoalBlocked(runtime, params, ctx),
+		execute: (_toolCallId, params, _signal, _onUpdate, ctx) =>
+			options.run(
+				ctx,
+				Effect.sync(() => executeGoalBlocked(runtime, params, ctx)),
+			),
 	});
 
 	registerSuiteOwnedTool(pi, goalCompleteTool, goalCompletePresentation());

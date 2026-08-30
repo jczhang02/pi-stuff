@@ -217,7 +217,7 @@ test("goal completion settles the active clock before clearing state", async (t)
 	});
 });
 
-test("session reload immediately limits an active goal whose persisted usage is exhausted", () => {
+test("session reload immediately limits an active goal whose persisted usage is exhausted", async () => {
 	const sessionGoal: StoredGoal = {
 		id: "restored-exhausted-active",
 		text: "restore exhausted active",
@@ -230,13 +230,13 @@ test("session reload immediately limits an active goal whose persisted usage is 
 		timeUsedSeconds: 4,
 		baselineTokens: 0,
 	};
-	const restored = restoreStoredGoalForTest(sessionGoal, [assistantUsageEntry({ totalTokens: 12 })]);
+	const restored = await restoreStoredGoalForTest(sessionGoal, [assistantUsageEntry({ totalTokens: 12 })]);
 	assert.equal(lastGoalStatus(restored.mock), "budget_limited");
 	assert.equal(requireLastGoal(restored.mock).tokensUsed, 12);
 	assert.equal(restored.mock.sentMessages.length, 0);
 });
 
-test("session reload pauses an active goal already at the automatic response limit", () => {
+test("session reload pauses an active goal already at the automatic response limit", async () => {
 	const sessionGoal: StoredGoal = {
 		id: "restored-at-automatic-limit",
 		text: "restore bounded active goal",
@@ -250,7 +250,7 @@ test("session reload pauses an active goal already at the automatic response lim
 		automaticModelTurns: 3,
 		toolFreeRepeatCount: 0,
 	};
-	const restored = restoreStoredGoalForTest(sessionGoal, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
+	const restored = await restoreStoredGoalForTest(sessionGoal, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
 	assert.equal(lastGoalStatus(restored.mock), "paused");
 	assert.equal(requireLastGoal(restored.mock).safetyPauseCause, "continuation_limit");
 	assert.equal(restored.mock.sentUserMessages.length, 0);
@@ -268,18 +268,19 @@ test("active idle Goal automatically continues after reload", async () => {
 		timeUsedSeconds: 4,
 		baselineTokens: 0,
 	};
-	const restored = restoreStoredGoalForTest(sessionGoal, [], "always", {
+	const restored = await restoreStoredGoalForTest(sessionGoal, [], "always", {
 		isIdle: () => true,
 		hasPendingMessages: () => false,
 	});
 	assert.equal(restored.mock.sentUserMessages.length, 0);
 	await restored.mock.callEvent("session_start", { reason: "reload" }, restored.ctx);
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(restored.mock.sentUserMessages.length, 1);
 	assert.match(restored.mock.sentUserMessages[0]?.text ?? "", /pi-goal-continuation:/);
 	assertPromptHasGoalId(restored.mock.sentUserMessages[0]?.text ?? "", sessionGoal.id);
 });
 
-test("unlimited settings retain a non-disableable emergency automatic-turn backstop", () => {
+test("unlimited settings retain a non-disableable emergency automatic-turn backstop", async () => {
 	const sessionGoal: StoredGoal = {
 		id: "restored-at-emergency-limit",
 		text: "stop catastrophic automatic runaway",
@@ -293,13 +294,13 @@ test("unlimited settings retain a non-disableable emergency automatic-turn backs
 		automaticModelTurns: EMERGENCY_AUTOMATIC_TURN_LIMIT,
 		toolFreeRepeatCount: 0,
 	};
-	const restored = restoreStoredGoalForTest(sessionGoal);
+	const restored = await restoreStoredGoalForTest(sessionGoal);
 	assert.equal(lastGoalStatus(restored.mock), "paused");
 	assert.equal(requireLastGoal(restored.mock).safetyPauseCause, "runaway_backstop");
 	assert.equal(restored.mock.sentUserMessages.length, 0);
 });
 
-test("session reload pauses an active goal already at the no-progress limit", () => {
+test("session reload pauses an active goal already at the no-progress limit", async () => {
 	const sessionGoal: StoredGoal = {
 		id: "restored-at-no-progress-limit",
 		text: "restore stalled active goal",
@@ -314,14 +315,14 @@ test("session reload pauses an active goal already at the no-progress limit", ()
 		toolFreeRepeatCount: 3,
 		lastToolFreeOutputFingerprint: "d".repeat(64),
 	};
-	const restored = restoreStoredGoalForTest(sessionGoal, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
+	const restored = await restoreStoredGoalForTest(sessionGoal, [], "always", {}, LOW_LIMITS_SETTINGS_PATH);
 	assert.equal(lastGoalStatus(restored.mock), "paused");
 	assert.equal(requireLastGoal(restored.mock).safetyPauseCause, "no_progress");
 	assert.equal(restored.mock.sentUserMessages.length, 0);
 });
 
-test("session reload drops malformed persisted budgets instead of limiting the goal", () => {
-	const restored = restoreStoredGoalForTest({
+test("session reload drops malformed persisted budgets instead of limiting the goal", async () => {
+	const restored = await restoreStoredGoalForTest({
 		id: "restored-malformed-budget",
 		text: "restore malformed budget",
 		status: "active",
@@ -341,7 +342,7 @@ test("session reload drops malformed persisted budgets instead of limiting the g
 test("legacy active-time state migrates without counting offline or reload time", async (t) => {
 	let now = 100_000;
 	t.mock.method(Date, "now", () => now);
-	const legacy = restoreGoalForTest("active", { timeUsedSeconds: 4 });
+	const legacy = await restoreGoalForTest("active", { timeUsedSeconds: 4 });
 
 	now += 2_000;
 	await legacy.mock.commands.get("goal")?.handler("", legacy.ctx);
@@ -355,7 +356,7 @@ test("legacy active-time state migrates without counting offline or reload time"
 	assert.equal(suspended.activeStartedAt, undefined);
 
 	now += 100_000;
-	const reloaded = restoreStoredGoalForTest(suspended);
+	const reloaded = await restoreStoredGoalForTest(suspended);
 	now += 2_000;
 	await reloaded.mock.commands.get("goal")?.handler("", reloaded.ctx);
 	assert.equal(requireLastGoal(reloaded.mock).timeUsedSeconds, 11);

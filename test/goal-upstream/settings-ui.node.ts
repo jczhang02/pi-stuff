@@ -20,6 +20,10 @@ function showGoalSettings(...args: Parameters<typeof showGoalSettingsEffect>): P
 	return Effect.runPromise(showGoalSettingsEffect(...args));
 }
 
+function applySettings(...args: Parameters<typeof applyGoalSettings>): Promise<void> {
+	return Effect.runPromise(applyGoalSettings(...args));
+}
+
 function runtime() {
 	const mock = createMockPi({ activeTools: ["read"] });
 	// SAFETY: this test controls the value and supplies every GoalRuntime member exercised by this case.
@@ -45,7 +49,7 @@ test("goal setting custom limits accept only safe whole numbers greater than zer
 	assert.equal(formatGoalLimit(null), "Unlimited");
 });
 
-test("applyGoalSettings saves before committing runtime settings and enforces lower limits", () => {
+test("applyGoalSettings saves before committing runtime settings and enforces lower limits", async () => {
 	const state = runtime();
 	let saved: GoalSettings | undefined;
 	let enforced = 0;
@@ -60,9 +64,10 @@ test("applyGoalSettings saves before committing runtime settings and enforces lo
 	const context = createMockContext();
 
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	applyGoalSettings(state as never, next, context.ctx, {
+	await applySettings(state as never, next, context.ctx, {
 		save(settings: GoalSettings) {
 			saved = structuredClone(settings);
+			return Effect.void;
 		},
 	});
 
@@ -71,7 +76,7 @@ test("applyGoalSettings saves before committing runtime settings and enforces lo
 	assert.equal(enforced, 1);
 });
 
-test("applyGoalSettings restores effective tool policy when persistence fails", () => {
+test("applyGoalSettings restores effective tool policy when persistence fails", async () => {
 	const state = runtime();
 	const before = structuredClone(state.visibility);
 	const next: GoalSettings = {
@@ -80,21 +85,20 @@ test("applyGoalSettings restores effective tool policy when persistence fails", 
 	};
 	const context = createMockContext();
 
-	assert.throws(
-		() =>
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-			applyGoalSettings(state as never, next, context.ctx, {
-				save() {
-					throw new Error("disk full");
-				},
-			}),
+	await assert.rejects(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+		applySettings(state as never, next, context.ctx, {
+			save() {
+				return Effect.fail(new Error("disk full"));
+			},
+		}),
 		/disk full/,
 	);
 	assert.deepEqual(state.settings, DEFAULT_GOAL_SETTINGS);
 	assert.deepEqual(state.visibility, before);
 });
 
-test("applyGoalSettings rolls back file and effective state after runtime application fails", () => {
+test("applyGoalSettings rolls back file and effective state after runtime application fails", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = {
@@ -113,13 +117,13 @@ test("applyGoalSettings rolls back file and effective state after runtime applic
 	};
 	const context = createMockContext({ mode: "tui", hasUI: true });
 
-	assert.throws(
-		() =>
-			applyGoalSettings(state, next, context.ctx, {
-				save(settings) {
-					saved.push(structuredClone(settings));
-				},
-			}),
+	await assert.rejects(
+		applySettings(state, next, context.ctx, {
+			save(settings) {
+				saved.push(structuredClone(settings));
+				return Effect.void;
+			},
+		}),
 		/stale context/,
 	);
 	assert.deepEqual(saved, [next, previous]);
@@ -128,7 +132,7 @@ test("applyGoalSettings rolls back file and effective state after runtime applic
 	assert.equal(state.activeGoal?.status, "active");
 });
 
-test("disabling a retained queue pauses and aborts in-flight Goal work", () => {
+test("disabling a retained queue pauses and aborts in-flight Goal work", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = {
@@ -147,7 +151,7 @@ test("disabling a retained queue pauses and aborts in-flight Goal work", () => {
 	});
 	const next = { ...structuredClone(state.settings), experimental: { goals: false } };
 
-	applyGoalSettings(state, next, context.ctx, { save() {} });
+	await applySettings(state, next, context.ctx, { save: () => Effect.void });
 
 	assert.equal(aborts, 1);
 	assert.equal(state.queueFrozen, true);
@@ -157,7 +161,7 @@ test("disabling a retained queue pauses and aborts in-flight Goal work", () => {
 	assert.equal(state.staleGoalToolCallsBlocked, true);
 });
 
-test("freezing a queue preserves an unrelated in-flight run", () => {
+test("freezing a queue preserves an unrelated in-flight run", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = {
@@ -175,7 +179,7 @@ test("freezing a queue preserves an unrelated in-flight run", () => {
 	});
 	const next = { ...structuredClone(state.settings), experimental: { goals: false } };
 
-	applyGoalSettings(state, next, context.ctx, { save() {} });
+	await applySettings(state, next, context.ctx, { save: () => Effect.void });
 
 	assert.equal(aborts, 0);
 	assert.equal(state.queueFrozen, true);
@@ -186,7 +190,7 @@ test("freezing a queue preserves an unrelated in-flight run", () => {
 	assert.equal(state.staleGoalToolCallsBlocked, false);
 });
 
-test("revealing lazy Goal tools rejects a busy unrelated run", () => {
+test("revealing lazy Goal tools rejects a busy unrelated run", async () => {
 	const state = runtime();
 	state.settings = {
 		...structuredClone(DEFAULT_GOAL_SETTINGS),
@@ -197,13 +201,13 @@ test("revealing lazy Goal tools rejects a busy unrelated run", () => {
 	let saves = 0;
 	const context = createMockContext({ mode: "tui", hasUI: true, isIdle: () => false });
 
-	assert.throws(
-		() =>
-			applyGoalSettings(state, next, context.ctx, {
-				save() {
-					saves++;
-				},
-			}),
+	await assert.rejects(
+		applySettings(state, next, context.ctx, {
+			save() {
+				saves++;
+				return Effect.void;
+			},
+		}),
 		/wait for Pi to become idle/i,
 	);
 	assert.equal(saves, 0);
@@ -211,7 +215,7 @@ test("revealing lazy Goal tools rejects a busy unrelated run", () => {
 	assert.deepEqual(state.visibility, before);
 });
 
-test("hiding always-visible Goal tools rejects a busy unrelated run", () => {
+test("hiding always-visible Goal tools rejects a busy unrelated run", async () => {
 	const mock = createMockPi({ activeTools: ["read", "goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = structuredClone(DEFAULT_GOAL_SETTINGS);
@@ -223,13 +227,13 @@ test("hiding always-visible Goal tools rejects a busy unrelated run", () => {
 	let saves = 0;
 	const context = createMockContext({ mode: "tui", hasUI: true, isIdle: () => false });
 
-	assert.throws(
-		() =>
-			applyGoalSettings(state, next, context.ctx, {
-				save() {
-					saves++;
-				},
-			}),
+	await assert.rejects(
+		applySettings(state, next, context.ctx, {
+			save() {
+				saves++;
+				return Effect.void;
+			},
+		}),
 		/wait for Pi to become idle/i,
 	);
 	assert.equal(saves, 0);
@@ -237,7 +241,7 @@ test("hiding always-visible Goal tools rejects a busy unrelated run", () => {
 	assert.deepEqual(state.snapshotGoalToolVisibility(), before);
 });
 
-test("lowering the no-progress limit pauses and aborts in-flight Goal work", () => {
+test("lowering the no-progress limit pauses and aborts in-flight Goal work", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = {
@@ -258,14 +262,14 @@ test("lowering the no-progress limit pauses and aborts in-flight Goal work", () 
 		continuationLimits: { automaticTurns: 25, noProgressTurns: 3 },
 	};
 
-	applyGoalSettings(state, next, context.ctx, { save() {} });
+	await applySettings(state, next, context.ctx, { save: () => Effect.void });
 
 	assert.equal(aborts, 1);
 	assert.equal(state.activeGoal?.status, "paused");
 	assert.equal(state.activeGoal?.safetyPauseCause, "no_progress");
 });
 
-test("lowering a reached limit preserves an unrelated in-flight run", () => {
+test("lowering a reached limit preserves an unrelated in-flight run", async () => {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
 	const state = new GoalRuntime(mock.pi);
 	state.settings = {
@@ -286,7 +290,7 @@ test("lowering a reached limit preserves an unrelated in-flight run", () => {
 		continuationLimits: { automaticTurns: 25, noProgressTurns: 3 },
 	};
 
-	applyGoalSettings(state, next, context.ctx, { save() {} });
+	await applySettings(state, next, context.ctx, { save: () => Effect.void });
 
 	assert.equal(aborts, 0);
 	assert.equal(state.agentRunGoalId, null);
@@ -309,7 +313,7 @@ test("replacement confirmation does not replace a goal that changed while open",
 	});
 	const controller = new GoalCommandController(state);
 
-	await controller.startGoal("new objective", undefined, context.ctx);
+	await Effect.runPromise(controller.startGoal("new objective", undefined, context.ctx));
 
 	assert.equal(state.activeGoal?.id, replacement.id);
 	assert.equal(mock.sentUserMessages.length, 0);
@@ -332,7 +336,7 @@ test("replacement confirmation sanitizes terminal controls without changing goal
 	});
 	const controller = new GoalCommandController(state);
 
-	await controller.startGoal("new\u009b31m objective", undefined, context.ctx);
+	await Effect.runPromise(controller.startGoal("new\u009b31m objective", undefined, context.ctx));
 
 	for (const control of ["\u0007", "\u001b", "\u009b"]) {
 		assert.equal(preview.includes(control), false);
@@ -360,8 +364,8 @@ test("unfreezing waits for an aborted frozen run to settle before dispatching", 
 	const enabled = { ...structuredClone(state.settings), experimental: { goals: true } };
 	const controller = new GoalCommandController(state);
 
-	applyGoalSettings(state, enabled, context.ctx, { save() {} });
-	const dispatchedEarly = await controller.resumeQueueAfterUnfreeze(context.ctx);
+	await applySettings(state, enabled, context.ctx, { save: () => Effect.void });
+	const dispatchedEarly = await Effect.runPromise(controller.resumeQueueAfterUnfreeze(context.ctx));
 
 	assert.equal(dispatchedEarly, false);
 	assert.equal(state.queueFrozen, true);
@@ -370,7 +374,7 @@ test("unfreezing waits for an aborted frozen run to settle before dispatching", 
 
 	state.clearSettledSafetyTracking();
 	state.queueFreezeAwaitingSettle = false;
-	const dispatchedAfterSettle = await controller.resumeQueueAfterUnfreeze(context.ctx);
+	const dispatchedAfterSettle = await Effect.runPromise(controller.resumeQueueAfterUnfreeze(context.ctx));
 
 	assert.equal(dispatchedAfterSettle, true);
 	assert.equal(state.queueFrozen, false);
@@ -391,7 +395,7 @@ test("unfreezing an active retained queue dispatches Goal work immediately", asy
 	const controller = new GoalCommandController(state);
 	const context = createMockContext({ mode: "tui", hasUI: true, isIdle: () => true });
 
-	const dispatched = await controller.resumeQueueAfterUnfreeze(context.ctx);
+	const dispatched = await Effect.runPromise(controller.resumeQueueAfterUnfreeze(context.ctx));
 
 	assert.equal(dispatched, true);
 	assert.equal(mock.sentUserMessages.length, 1);
@@ -410,7 +414,7 @@ test("unfreezing a pending priority dispatches it at the idle boundary", async (
 	const controller = new GoalCommandController(state);
 	const context = createMockContext({ mode: "tui", hasUI: true, isIdle: () => true });
 
-	const dispatched = await controller.resumeQueueAfterUnfreeze(context.ctx);
+	const dispatched = await Effect.runPromise(controller.resumeQueueAfterUnfreeze(context.ctx));
 
 	assert.equal(dispatched, true);
 	assert.equal(state.pendingQueueAction, undefined);
@@ -457,6 +461,7 @@ test("Managed run RPC setting defaults off and saves immediately", async () => {
 		settingsPath: "/tmp/pi-goal.json",
 		save(settings) {
 			saved = structuredClone(settings);
+			return Effect.void;
 		},
 	});
 
@@ -483,6 +488,7 @@ test("Managed run RPC setting disables immediately", async () => {
 		settingsPath: "/tmp/pi-goal.json",
 		save(settings) {
 			saved = structuredClone(settings);
+			return Effect.void;
 		},
 	});
 
@@ -503,7 +509,7 @@ test("Managed run RPC setting rolls back when save fails", async () => {
 	await showGoalSettings(state, context.ctx, {
 		settingsPath: "/tmp/pi-goal.json",
 		save() {
-			throw new Error("disk full");
+			return Effect.fail(new Error("disk full"));
 		},
 	});
 
@@ -524,6 +530,7 @@ test("standard Goal tools setting saves and applies immediately", async () => {
 		settingsPath: "/tmp/pi-goal.json",
 		save(settings) {
 			saved = structuredClone(settings);
+			return Effect.void;
 		},
 	});
 	assert.equal(saved?.toolVisibility, "after-first-goal");

@@ -43,6 +43,7 @@ export async function createHarness(overrides: MockContextOverrides = {}, enable
 	runtimeByPi.set(mock.pi, runtime);
 	const context = createMockContext(overrides);
 	await mock.callEvent("session_start", {}, context.ctx);
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	return {
 		mock,
 		...context,

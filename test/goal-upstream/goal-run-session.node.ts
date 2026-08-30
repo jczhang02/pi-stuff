@@ -21,7 +21,7 @@ import {
 import { createMockContext, createMockPi } from "./support.js";
 
 test("run event listener failures do not interrupt persistence or sibling listeners", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	mock.eventBus.on(runEventChannel("listener-run"), () => {
 		throw new Error("observer failed");
 	});
@@ -70,7 +70,7 @@ test("caller cancellation interrupts the owned Goal menu operation without start
 test("disabling RPC rejects new starts while the accepted run can drain", async () => {
 	const settingsPath = join(SETTINGS_DIRECTORY, "draining.json");
 	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always","rpc":{"enabled":true}}}\n');
-	const [mock] = createRunHarness(createMockContext(), settingsPath);
+	const [mock] = await createRunHarness(createMockContext(), settingsPath);
 	const acceptedEvents = observeRun(mock, "draining-run");
 	startRun(mock, "draining-run");
 	await flush();
@@ -104,7 +104,7 @@ test("disabling RPC rejects new starts while the accepted run can drain", async 
 });
 
 test("shutdown cancels a queued terminal publication from the old session", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const events = observeRun(mock, "shutdown-terminal");
 	startRun(mock, "shutdown-terminal");
 	await flush();
@@ -125,9 +125,10 @@ test("shutdown invalidates a start continuation still awaiting kickoff delivery"
 	const kickoff = Promise.withResolvers<void>();
 	mock.rawPi.sendUserMessage = () => kickoff.promise;
 	registerGoal(mock);
-	const firstContext = bindSession(mock);
+	const firstContext = await bindSession(mock);
 	const events = observeRun(mock, "shutdown-pending");
 	startRun(mock, "shutdown-pending");
+	await flush();
 	assert.deepEqual(
 		states(events).map((event) => event.status),
 		["active"],
@@ -149,7 +150,7 @@ test("shutdown invalidates a start continuation still awaiting kickoff delivery"
 });
 
 test("session replacement invalidates old run ownership and terminal details", async () => {
-	const [mock, firstContext] = createRunHarness();
+	const [mock, firstContext] = await createRunHarness();
 	const firstEvents = observeRun(mock, "old-run");
 	startRun(mock, "old-run");
 	await flush();
@@ -200,7 +201,7 @@ test("session replacement invalidates old run ownership and terminal details", a
 });
 
 test("removed RPC, global state, and versioned channels are inert", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const oldReplies: unknown[] = [];
 	const oldStates: unknown[] = [];
 	const versionedEvents: unknown[] = [];

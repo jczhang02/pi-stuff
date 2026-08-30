@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
@@ -139,6 +140,7 @@ export class GoalRuntime extends GoalToolPolicy {
 	activeGoal: ActiveGoal | undefined;
 	/** Terminal details captured for the matching persisted-state snapshot. */
 	private terminalDetails: GoalTerminalDetails | undefined;
+	private cancelCompletionStatus: () => void = () => undefined;
 	private goalStateSink: ((snapshot: GoalStateSnapshot) => void) | undefined;
 	private deferredSessionStartState: GoalStateEntryData | undefined;
 	private sessionStartReadOnly = false;
@@ -146,7 +148,6 @@ export class GoalRuntime extends GoalToolPolicy {
 	pendingQueueAction: PendingQueueAction | undefined;
 	queueFrozen = false;
 	queueFreezeAwaitingSettle = false;
-	completionStatusTimer: NodeJS.Timeout | undefined;
 	goalRecovery: GoalRecovery | undefined;
 	budgetWrapUp: BudgetWrapUp | undefined;
 	/** `null` marks a run that must not be charged to the active goal. */
@@ -166,6 +167,10 @@ export class GoalRuntime extends GoalToolPolicy {
 
 	setGoalStateSink(sink: ((snapshot: GoalStateSnapshot) => void) | undefined) {
 		this.goalStateSink = sink;
+	}
+
+	setCompletionStatusCancellation(cancel: () => void) {
+		this.cancelCompletionStatus = cancel;
 	}
 
 	beginReadOnlySessionStart() {
@@ -259,41 +264,47 @@ export class GoalRuntime extends GoalToolPolicy {
 		return true;
 	}
 
-	async dispatchContinuationIfSettled(ctx: StatusContext): Promise<boolean> {
-		const intent = this.prompts.continuationIntent;
-		if (!intent) return false;
-		if (this.activeGoal?.status === "active" && !this.goalToolsAvailable()) {
-			this.pauseGoalForUnavailableTools(ctx);
-			return false;
-		}
-		if (!this.activeGoal || this.activeGoal.id !== intent.goalId || this.activeGoal.status !== "active") {
-			this.prompts.continuationIntent = undefined;
-			return false;
-		}
-		if (this.enforceAutomaticTurnLimit(ctx, false) || this.enforceNoProgressLimit(ctx)) {
-			return false;
-		}
-		if (ctx.isIdle?.() !== true || hasPendingMessages(ctx)) return false;
+	dispatchContinuationIfSettled(ctx: StatusContext): Effect.Effect<boolean> {
+		return Effect.suspend(() => {
+			const intent = this.prompts.continuationIntent;
+			if (!intent) return Effect.succeed(false);
+			if (this.activeGoal?.status === "active" && !this.goalToolsAvailable()) {
+				this.pauseGoalForUnavailableTools(ctx);
+				return Effect.succeed(false);
+			}
+			if (!this.activeGoal || this.activeGoal.id !== intent.goalId || this.activeGoal.status !== "active") {
+				this.prompts.continuationIntent = undefined;
+				return Effect.succeed(false);
+			}
+			if (this.enforceAutomaticTurnLimit(ctx, false) || this.enforceNoProgressLimit(ctx)) {
+				return Effect.succeed(false);
+			}
+			if (ctx.isIdle?.() !== true || hasPendingMessages(ctx)) return Effect.succeed(false);
 
-		this.prompts.continuationIntent = undefined;
-		this.prompts.continuationDelivery = intent;
-		try {
-			const delivered = await sendHiddenGoalPrompt(this.pi, intent.prompt);
-			if (delivered) return true;
-			if (this.prompts.continuationDelivery?.marker === intent.marker) {
-				this.prompts.continuationDelivery = undefined;
-			}
-			return false;
-		} catch (error) {
-			if (this.prompts.continuationDelivery?.marker === intent.marker) {
-				this.prompts.continuationDelivery = undefined;
-			}
-			if (this.activeGoal?.id === intent.goalId && this.activeGoal.status === "active") {
-				this.prompts.continuationIntent = intent;
-			}
-			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
-			return false;
-		}
+			this.prompts.continuationIntent = undefined;
+			this.prompts.continuationDelivery = intent;
+			return sendHiddenGoalPrompt(this.pi, intent.prompt).pipe(
+				Effect.map((delivered) => {
+					if (delivered) return true;
+					if (this.prompts.continuationDelivery?.marker === intent.marker) {
+						this.prompts.continuationDelivery = undefined;
+					}
+					return false;
+				}),
+				Effect.catch((error) =>
+					Effect.sync(() => {
+						if (this.prompts.continuationDelivery?.marker === intent.marker) {
+							this.prompts.continuationDelivery = undefined;
+						}
+						if (this.activeGoal?.id === intent.goalId && this.activeGoal.status === "active") {
+							this.prompts.continuationIntent = intent;
+						}
+						ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
+						return false;
+					}),
+				),
+			);
+		});
 	}
 
 	publishPresentationStatus(goal: ActiveGoal | undefined) {
@@ -359,44 +370,52 @@ export class GoalRuntime extends GoalToolPolicy {
 		return this.isActiveBudgetWrapUpMessage(message);
 	}
 
-	queueBudgetWrapUp(ctx: StatusContext, goal: ActiveGoal) {
+	queueBudgetWrapUp(ctx: StatusContext, goal: ActiveGoal): Effect.Effect<void> {
 		if (!this.budgetWrapUp || this.budgetWrapUp.goalId !== goal.id) {
 			this.budgetWrapUp = { goalId: goal.id, delivered: false };
 		}
-		if (this.budgetWrapUp.delivered) return true;
+		if (this.budgetWrapUp.delivered) return Effect.void;
 		const pendingWrapUp = this.budgetWrapUp;
 		pendingWrapUp.delivered = true;
 		const isCurrent = () =>
 			this.budgetWrapUp === pendingWrapUp &&
 			this.activeGoal?.id === goal.id &&
 			this.activeGoal.status === "budget_limited";
-		void sendSuiteAgentMessage(
-			this.pi,
-			withAgentWorkOrigin(
-				{
-					customType: BUDGET_WRAP_UP_MESSAGE_TYPE,
-					content: BUDGET_WRAP_UP_PROMPT,
-					display: true,
-					details: { goalId: goal.id },
-				},
-				"automatic",
+		return Effect.tryPromise({
+			try: () =>
+				sendSuiteAgentMessage(
+					this.pi,
+					withAgentWorkOrigin(
+						{
+							customType: BUDGET_WRAP_UP_MESSAGE_TYPE,
+							content: BUDGET_WRAP_UP_PROMPT,
+							display: true,
+							details: { goalId: goal.id },
+						},
+						"automatic",
+					),
+					{ deliverAs: "steer" },
+					isCurrent,
+				),
+			catch: (error) => error,
+		}).pipe(
+			Effect.tap((accepted) =>
+				Effect.sync(() => {
+					if (!accepted && this.budgetWrapUp === pendingWrapUp) pendingWrapUp.delivered = false;
+				}),
 			),
-			{ deliverAs: "steer" },
-			isCurrent,
-		).then(
-			(accepted) => {
-				if (!accepted && this.budgetWrapUp === pendingWrapUp) pendingWrapUp.delivered = false;
-			},
-			(error) => {
-				if (!isCurrent()) return;
-				pendingWrapUp.delivered = false;
-				ctx.ui.notify(`Goal budget wrap-up failed: ${formatError(error)}`, "error");
-			},
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					if (!isCurrent()) return;
+					pendingWrapUp.delivered = false;
+					ctx.ui.notify(`Goal budget wrap-up failed: ${formatError(error)}`, "error");
+				}),
+			),
+			Effect.asVoid,
 		);
-		return true;
 	}
 
-	limitActiveGoalForBudget(ctx: StatusContext, sendWrapUp: boolean) {
+	limitActiveGoalForBudget(ctx: StatusContext) {
 		const goal = this.activeGoal;
 		if (goal?.status !== "active" || goal.tokenBudget === undefined || goal.tokensUsed < goal.tokenBudget) {
 			return false;
@@ -409,7 +428,6 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.setTerminalReason(this.activeGoal.id, `token budget reached (${formatBudget(this.activeGoal)})`);
 		this.persistGoal(this.activeGoal);
 		ctx.ui.notify(`Goal token budget reached: ${formatBudget(this.activeGoal)}`, "warning");
-		if (sendWrapUp) this.queueBudgetWrapUp(ctx, this.activeGoal);
 		return true;
 	}
 
@@ -543,12 +561,7 @@ export class GoalRuntime extends GoalToolPolicy {
 		);
 	}
 
-	async sendOwnedGoalPrompt(
-		ctx: StatusContext,
-		goalId: string,
-		prompt: string,
-		options: GoalPromptDeliveryOptions = {},
-	) {
+	sendOwnedGoalPrompt(ctx: StatusContext, goalId: string, prompt: string, options: GoalPromptDeliveryOptions = {}) {
 		return this.prompts.sendOwnedGoalPrompt(
 			ctx,
 			goalId,
@@ -570,7 +583,7 @@ export class GoalRuntime extends GoalToolPolicy {
 	}
 
 	persistGoal(goal: ActiveGoal) {
-		this.clearCompletionStatusTimer();
+		this.cancelCompletionStatus();
 		if (!isTerminalGoalStatus(goal.status) || this.terminalDetails?.goalId !== goal.id) {
 			this.clearTerminalDetails();
 		}
@@ -584,18 +597,20 @@ export class GoalRuntime extends GoalToolPolicy {
 		}
 	}
 
-	async clearPersistedGoal(cwd: string, clearedGoal?: ActiveGoal, reason = "goal cleared"): Promise<void> {
-		this.persistGoalState(serializeGoalState(undefined, [], undefined));
-		if (clearedGoal) {
-			this.publishGoalState({
-				goalId: clearedGoal.id,
-				status: "cleared",
-				reason,
-			});
-		}
-		this.clearTerminalDetails();
-		this.clearPresentationStatus();
-		await clearLegacyPersistedGoal(cwd);
+	clearPersistedGoal(cwd: string, clearedGoal?: ActiveGoal, reason = "goal cleared"): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			this.persistGoalState(serializeGoalState(undefined, [], undefined));
+			if (clearedGoal) {
+				this.publishGoalState({
+					goalId: clearedGoal.id,
+					status: "cleared",
+					reason,
+				});
+			}
+			this.clearTerminalDetails();
+			this.clearPresentationStatus();
+			yield* clearLegacyPersistedGoal(cwd);
+		});
 	}
 
 	private persistGoalState(state: GoalStateEntryData) {
@@ -607,21 +622,23 @@ export class GoalRuntime extends GoalToolPolicy {
 		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, state);
 	}
 
-	async clearActiveGoal(ctx: StatusContext, reason = "goal cleared"): Promise<void> {
-		const clearedGoal = this.activeGoal;
-		this.prompts.cancelContinuationWork();
-		this.goalRecovery = undefined;
-		this.clearBudgetWrapUp();
-		this.clearStaleGoalToolCallBlock();
-		this.activeGoal = undefined;
-		this.queuedGoals = [];
-		this.pendingQueueAction = undefined;
-		this.queueFrozen = false;
-		this.queueFreezeAwaitingSettle = false;
-		await this.clearPersistedGoal(ctx.cwd, clearedGoal, reason);
-		// Do not clear goalToolsUnlocked: after first activation, keep tools visible
-		// for the rest of this extension runtime to avoid repeated goal-tool schema
-		// churn within the same runtime.
+	clearActiveGoal(ctx: StatusContext, reason = "goal cleared"): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const clearedGoal = this.activeGoal;
+			this.prompts.cancelContinuationWork();
+			this.goalRecovery = undefined;
+			this.clearBudgetWrapUp();
+			this.clearStaleGoalToolCallBlock();
+			this.activeGoal = undefined;
+			this.queuedGoals = [];
+			this.pendingQueueAction = undefined;
+			this.queueFrozen = false;
+			this.queueFreezeAwaitingSettle = false;
+			yield* this.clearPersistedGoal(ctx.cwd, clearedGoal, reason);
+			// Do not clear goalToolsUnlocked: after first activation, keep tools visible
+			// for the rest of this extension runtime to avoid repeated goal-tool schema
+			// churn within the same runtime.
+		});
 	}
 
 	prepareGoalToolsForActivation(ctx: StatusContext) {
@@ -680,19 +697,9 @@ export class GoalRuntime extends GoalToolPolicy {
 		return true;
 	}
 
-	showCompletionStatus(_ctx: StatusContext, timeUsedSeconds = 0) {
-		this.clearCompletionStatusTimer();
+	showCompletionStatus(timeUsedSeconds = 0) {
+		this.cancelCompletionStatus();
 		getGoalStatusChannel(this.pi).publish({ status: "complete", timeUsedSeconds, tokensUsed: 0 });
-		this.completionStatusTimer = setTimeout(() => {
-			this.completionStatusTimer = undefined;
-			this.clearPresentationStatus();
-		}, 8_000);
-	}
-
-	clearCompletionStatusTimer() {
-		if (!this.completionStatusTimer) return;
-		clearTimeout(this.completionStatusTimer);
-		this.completionStatusTimer = undefined;
 	}
 }
 

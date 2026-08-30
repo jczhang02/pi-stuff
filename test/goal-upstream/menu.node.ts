@@ -44,19 +44,25 @@ function commands() {
 		(name: string) =>
 		(...args: unknown[]) =>
 			calls.push({ name, args });
+	const recordEffect =
+		(name: string) =>
+		(...args: unknown[]) =>
+			Effect.sync(() => {
+				calls.push({ name, args });
+			});
 	return {
 		calls,
 		controller: {
-			startGoal: record("startGoal"),
+			startGoal: recordEffect("startGoal"),
 			pauseGoal: record("pauseGoal"),
-			resumeGoal: record("resumeGoal"),
-			clearGoal: record("clearGoal"),
-			editGoal: record("editGoal"),
+			resumeGoal: recordEffect("resumeGoal"),
+			clearGoal: recordEffect("clearGoal"),
+			editGoal: recordEffect("editGoal"),
 			showGoal: record("showGoal"),
-			addGoal: record("addGoal"),
-			prioritizeGoal: record("prioritizeGoal"),
-			dropLastGoal: record("dropLastGoal"),
-			skipGoal: record("skipGoal"),
+			addGoal: recordEffect("addGoal"),
+			prioritizeGoal: recordEffect("prioritizeGoal"),
+			dropLastGoal: recordEffect("dropLastGoal"),
+			skipGoal: recordEffect("skipGoal"),
 		},
 	};
 }

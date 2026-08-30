@@ -1,14 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { validateObjective } from "./command.js";
 import type { GoalCommandController } from "./commands.js";
-import {
-	formatError,
-	type GoalRuntime,
-	type GoalStateSnapshot,
-	isTerminalGoalStatus,
-	type StatusContext,
-} from "./runtime.js";
+import { formatError, type GoalRuntime, type GoalStateSnapshot, isTerminalGoalStatus } from "./runtime.js";
 
 const GOAL_RUN_START_CHANNEL = "pi-goal:start";
 const GOAL_RUN_CANCEL_CHANNEL = "pi-goal:cancel";
@@ -58,8 +53,10 @@ interface GoalRunPayloadRecord {
 
 interface BoundSession {
 	generation: number;
-	ctx: StatusContext;
+	ctx: ExtensionContext;
 }
+
+type GoalRunScheduler = (ctx: ExtensionContext, program: Effect.Effect<void, unknown>) => void;
 
 interface ManagedRun {
 	runId: string;
@@ -146,6 +143,7 @@ export class GoalRunController {
 	private generation = 0;
 	private session: BoundSession | undefined;
 	private run: ManagedRun | undefined;
+	private schedule: GoalRunScheduler | undefined;
 	private readonly usedRunIds = new Set<string>();
 
 	constructor(runtime: GoalRuntime, commands: GoalCommandController) {
@@ -154,16 +152,25 @@ export class GoalRunController {
 		this.runtime.setGoalStateSink((snapshot) => this.handleGoalState(snapshot));
 	}
 
-	register(pi: ExtensionAPI) {
+	register(pi: ExtensionAPI, schedule: GoalRunScheduler) {
+		this.schedule = schedule;
 		pi.events.on(GOAL_RUN_START_CHANNEL, (data) => {
-			if (isPayloadRecord(data)) void this.handleStart(data);
+			if (!isPayloadRecord(data)) return;
+			const runId = parseRunId(data);
+			if (!runId) return;
+			const session = this.session;
+			if (!session) {
+				this.emitError(runId, "start", "NO_ACTIVE_SESSION", "No active pi-goal session.");
+				return;
+			}
+			schedule(session.ctx, this.handleStart(data));
 		});
 		pi.events.on(GOAL_RUN_CANCEL_CHANNEL, (data) => {
 			if (isPayloadRecord(data)) this.handleCancel(data);
 		});
 	}
 
-	bindSession(ctx: StatusContext) {
+	bindSession(ctx: ExtensionContext) {
 		this.generation += 1;
 		this.session = { generation: this.generation, ctx };
 		this.closeCurrentRun();
@@ -177,79 +184,87 @@ export class GoalRunController {
 		this.usedRunIds.clear();
 	}
 
-	private async handleStart(data: GoalRunPayloadRecord) {
-		const runId = parseRunId(data);
-		if (!runId) return;
-		const session = this.session;
-		if (!session) {
-			this.emitError(runId, "start", "NO_ACTIVE_SESSION", "No active pi-goal session.");
-			return;
-		}
-		if (!this.runtime.settings.rpc.enabled) {
-			this.emitError(runId, "start", "RPC_DISABLED", "Managed run RPC is disabled.");
-			return;
-		}
-		if (this.usedRunIds.has(runId)) {
-			this.emitError(runId, "start", "RUN_ID_IN_USE", "runId was already used in this session.");
-			return;
-		}
-		const parsed = parseStartPayload(data);
-		if (isRuntimeString(parsed)) {
-			this.emitError(runId, "start", "INVALID_REQUEST", parsed);
-			return;
-		}
-		if (this.session !== session || this.generation !== session.generation) {
-			this.emitError(runId, "start", "SUPERSEDED", "The pi-goal session changed while validating the request.");
-			return;
-		}
-		if (this.usedRunIds.has(runId)) {
-			this.emitError(runId, "start", "RUN_ID_IN_USE", "runId was already used in this session.");
-			return;
-		}
-		if (this.runtime.activeGoal || (this.run && !this.run.closed)) {
-			this.emitError(runId, "start", "GOAL_ALREADY_EXISTS", "A Goal already exists.");
-			return;
-		}
-
-		const run: ManagedRun = {
-			runId,
-			generation: session.generation,
-			closed: false,
-			cancelRequested: false,
-		};
-		this.run = run;
-		this.usedRunIds.add(runId);
-
-		try {
-			await this.commands.startGoal(
-				parsed.objective,
-				parsed.tokenBudget,
-				session.ctx,
-				(goal) => {
-					if (this.ownsRun(run, session.generation)) run.goalId = goal.id;
-				},
-				() => this.ownsRun(run, session.generation),
-			);
-		} catch (error) {
-			if (this.ownsRun(run, session.generation)) {
-				this.closeCurrentRun();
-				this.emitError(runId, "start", "ACTIVATION_FAILED", `Goal activation failed: ${formatError(error)}`);
+	private handleStart(data: GoalRunPayloadRecord): Effect.Effect<void, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			const runId = parseRunId(data);
+			if (!runId) return;
+			const session = this.session;
+			if (!session) {
+				this.emitError(runId, "start", "NO_ACTIVE_SESSION", "No active pi-goal session.");
+				return;
 			}
-			return;
-		}
+			if (!this.runtime.settings.rpc.enabled) {
+				this.emitError(runId, "start", "RPC_DISABLED", "Managed run RPC is disabled.");
+				return;
+			}
+			if (this.usedRunIds.has(runId)) {
+				this.emitError(runId, "start", "RUN_ID_IN_USE", "runId was already used in this session.");
+				return;
+			}
+			const parsed = parseStartPayload(data);
+			if (isRuntimeString(parsed)) {
+				this.emitError(runId, "start", "INVALID_REQUEST", parsed);
+				return;
+			}
+			if (this.session !== session || this.generation !== session.generation) {
+				this.emitError(runId, "start", "SUPERSEDED", "The pi-goal session changed while validating the request.");
+				return;
+			}
+			if (this.usedRunIds.has(runId)) {
+				this.emitError(runId, "start", "RUN_ID_IN_USE", "runId was already used in this session.");
+				return;
+			}
+			if (this.runtime.activeGoal || (this.run && !this.run.closed)) {
+				this.emitError(runId, "start", "GOAL_ALREADY_EXISTS", "A Goal already exists.");
+				return;
+			}
 
-		if (!this.ownsRun(run, session.generation)) return;
-		if (!run.goalId) {
-			this.closeCurrentRun();
-			this.emitError(runId, "start", "ACTIVATION_FAILED", "Goal activation did not create a Goal.");
-			return;
-		}
-		if (currentActiveGoal(this.runtime)?.id !== run.goalId) {
-			this.closeCurrentRun();
-			this.emitError(runId, "start", "SUPERSEDED", "The managed Goal was superseded.");
-			return;
-		}
-		if (run.cancelRequested) this.cancelActiveRun(run, session, run.cancelReason);
+			const run: ManagedRun = {
+				runId,
+				generation: session.generation,
+				closed: false,
+				cancelRequested: false,
+			};
+			this.run = run;
+			this.usedRunIds.add(runId);
+
+			const activation = yield* Effect.exit(
+				this.commands.startGoal(
+					parsed.objective,
+					parsed.tokenBudget,
+					session.ctx,
+					(goal) => {
+						if (this.ownsRun(run, session.generation)) run.goalId = goal.id;
+					},
+					() => this.ownsRun(run, session.generation),
+				),
+			);
+			if (Exit.isFailure(activation)) {
+				if (this.ownsRun(run, session.generation)) {
+					this.closeCurrentRun();
+					this.emitError(
+						runId,
+						"start",
+						"ACTIVATION_FAILED",
+						`Goal activation failed: ${formatError(Cause.squash(activation.cause))}`,
+					);
+				}
+				return;
+			}
+
+			if (!this.ownsRun(run, session.generation)) return;
+			if (!run.goalId) {
+				this.closeCurrentRun();
+				this.emitError(runId, "start", "ACTIVATION_FAILED", "Goal activation did not create a Goal.");
+				return;
+			}
+			if (currentActiveGoal(this.runtime)?.id !== run.goalId) {
+				this.closeCurrentRun();
+				this.emitError(runId, "start", "SUPERSEDED", "The managed Goal was superseded.");
+				return;
+			}
+			if (run.cancelRequested) this.cancelActiveRun(run, session, run.cancelReason);
+		});
 	}
 
 	private handleCancel(data: GoalRunPayloadRecord) {
@@ -337,10 +352,16 @@ export class GoalRunController {
 		// Active stays synchronous so a listener can cancel before kickoff. Terminal
 		// publication waits until the transition finishes, preventing listener work
 		// from being overwritten by the old transition's remaining UI or cleanup.
-		queueMicrotask(() => {
-			if (this.generation !== generation) return;
-			this.runtime.pi.events.emit(goalRunEventChannel(run.runId), event);
-		});
+		const session = this.session;
+		if (!session || !this.schedule) return;
+		this.schedule(
+			session.ctx,
+			Effect.sync(() => {
+				if (this.generation === generation) {
+					this.runtime.pi.events.emit(goalRunEventChannel(run.runId), event);
+				}
+			}),
+		);
 	}
 
 	private emitError(runId: string, operation: "start" | "cancel", code: GoalRunErrorCode, message: string) {

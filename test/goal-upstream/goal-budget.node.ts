@@ -164,6 +164,7 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 	const toolEnd = budgeted.mock.events.get("tool_execution_end")?.[0];
 	await toolEnd?.({ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false }, budgeted.ctx);
 	await toolEnd?.({ toolCallId: "tool-2", toolName: "read", result: {}, isError: false }, budgeted.ctx);
+	await new Promise<void>((resolve) => setImmediate(resolve));
 
 	assert.equal(lastGoalStatus(budgeted.mock), "budget_limited");
 	assert.equal(requireLastGoal(budgeted.mock).tokensUsed, 12);
@@ -312,13 +313,14 @@ test("failed budget wrap-up delivery retries once without duplicate accepted mes
 
 	const toolEnd = budgeted.mock.events.get("tool_execution_end")?.[0];
 	await toolEnd?.({ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false }, budgeted.ctx);
-	await Promise.resolve();
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(lastGoalStatus(budgeted.mock), "budget_limited");
 	assert.equal(budgeted.mock.sentMessages.length, 0);
 	assert.match(budgeted.notifications.at(-1)?.message ?? "", /queue unavailable/i);
 
 	await toolEnd?.({ toolCallId: "tool-2", toolName: "read", result: {}, isError: false }, budgeted.ctx);
 	await toolEnd?.({ toolCallId: "tool-3", toolName: "read", result: {}, isError: false }, budgeted.ctx);
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(attempts, 2);
 	assert.equal(budgeted.mock.sentMessages.length, 1);
 });
@@ -338,7 +340,7 @@ test("a cleared Goal cannot deliver a budget wrap-up still awaiting Suite prepar
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
-	await Promise.resolve();
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	await budgeted.mock.commands.get("goal")?.handler("clear", budgeted.ctx);
 	preparation.resolve();
 	await new Promise<void>((resolve) => setImmediate(resolve));
@@ -445,6 +447,7 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const queuedWrapUp = budgeted.mock.sentMessages[0]?.message;
 	assert.ok(isRuntimeObject(queuedWrapUp) && queuedWrapUp !== null && !Array.isArray(queuedWrapUp));

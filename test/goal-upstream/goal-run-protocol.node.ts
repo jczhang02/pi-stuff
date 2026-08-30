@@ -32,7 +32,7 @@ test("managed run RPC is disabled when settings are missing, invalid, or explici
 		["invalid", INVALID_SETTINGS_PATH],
 		["explicit", DISABLED_SETTINGS_PATH],
 	] as const) {
-		const [mock] = createRunHarness(createMockContext(), settingsPath);
+		const [mock] = await createRunHarness(createMockContext(), settingsPath);
 		const runId = `disabled-${name}`;
 		const events = observeRun(mock, runId);
 
@@ -60,7 +60,7 @@ test("start reports no active session before bind and after shutdown", async () 
 		["NO_ACTIVE_SESSION"],
 	);
 
-	const context = bindSession(mock);
+	const context = await bindSession(mock);
 	mock.emitHostEvent("session_shutdown", {}, context.ctx);
 	const afterEvents = observeRun(mock, "after-session");
 	startRun(mock, "after-session");
@@ -72,7 +72,7 @@ test("start reports no active session before bind and after shutdown", async () 
 });
 
 test("enabled start emits run-scoped active state and delivers kickoff", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	const events = observeRun(mock, "run-start");
 
 	startRun(mock, "run-start", { objective: "  ship the feature  ", tokenBudget: 50_000 });
@@ -91,7 +91,7 @@ test("enabled start emits run-scoped active state and delivers kickoff", async (
 });
 
 test("unsafe or missing run ids are ignored without creating channel injection", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	for (const runId of ["", ":other-channel", "with space", "x".repeat(129)]) {
 		startRun(mock, runId);
 	}
@@ -111,7 +111,7 @@ test("valid run ids receive structured request validation errors", async () => {
 		{ runId: "string-budget", overrides: { tokenBudget: "100" } },
 	];
 	for (const { runId, overrides } of invalidPayloads) {
-		const [mock] = createRunHarness();
+		const [mock] = await createRunHarness();
 		const events = observeRun(mock, runId);
 		startRun(mock, runId, overrides);
 		await flush();
@@ -124,7 +124,7 @@ test("valid run ids receive structured request validation errors", async () => {
 });
 
 test("payload access failures are contained as invalid requests", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	const startEvents = observeRun(mock, "throwing-start");
 	const throwingStart = {
 		runId: "throwing-start",
@@ -168,7 +168,7 @@ test("payload access failures are contained as invalid requests", async () => {
 });
 
 test("payload evaluation cannot revive a replaced session", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const events = observeRun(mock, "session-changing-payload");
 	const payload = {
 		runId: "session-changing-payload",
@@ -191,7 +191,7 @@ test("payload evaluation cannot revive a replaced session", async () => {
 
 test("start rejects a pre-existing manual goal without replacement confirmation", async () => {
 	let confirmations = 0;
-	const [mock, context] = createRunHarness(
+	const [mock, context] = await createRunHarness(
 		createMockContext({
 			confirm: async () => {
 				confirmations++;
@@ -215,7 +215,7 @@ test("start rejects a pre-existing manual goal without replacement confirmation"
 });
 
 test("duplicate run ids are rejected without starting twice", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	const events = observeRun(mock, "duplicate-run");
 	startRun(mock, "duplicate-run");
 	await flush();
@@ -236,7 +236,7 @@ test("duplicate run ids are rejected without starting twice", async () => {
 
 test("cancel pauses only the matching managed run", async () => {
 	let aborts = 0;
-	const [mock] = createRunHarness(createMockContext({ abort: () => aborts++ }));
+	const [mock] = await createRunHarness(createMockContext({ abort: () => aborts++ }));
 	const events = observeRun(mock, "cancel-run");
 	startRun(mock, "cancel-run");
 	await flush();
@@ -254,7 +254,7 @@ test("cancel pauses only the matching managed run", async () => {
 });
 
 test("cancel during the first active event prevents kickoff delivery", async () => {
-	const [mock] = createRunHarness();
+	const [mock] = await createRunHarness();
 	const events = observeRun(mock, "cancel-before-kickoff");
 	mock.eventBus.on(runEventChannel("cancel-before-kickoff"), (data) => {
 		// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
@@ -277,7 +277,7 @@ test("cancel during the first active event prevents kickoff delivery", async () 
 });
 
 test("unknown, stale, and manual runs cannot be cancelled", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	await mock.commands.get("goal")?.handler("manual goal", context.ctx);
 	const events = observeRun(mock, "not-owned");
 
@@ -296,7 +296,7 @@ test("cancel rejects malformed reasons without mutating the run", async () => {
 		[42, "number"],
 		["x".repeat(1_001), "string"],
 	] as const) {
-		const [mock] = createRunHarness();
+		const [mock] = await createRunHarness();
 		const runId = `bad-reason-${reasonType}`;
 		const events = observeRun(mock, runId);
 		startRun(mock, runId);
@@ -314,7 +314,7 @@ test("cancel rejects malformed reasons without mutating the run", async () => {
 });
 
 test("manual edits terminate the prior managed run as superseded", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const events = observeRun(mock, "edited-run");
 	startRun(mock, "edited-run", { objective: "managed objective" });
 	await flush();
@@ -334,7 +334,7 @@ test("manual edits terminate the prior managed run as superseded", async () => {
 });
 
 test("completion emits one terminal event with summary and suppresses clear duplication", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const events = observeRun(mock, "complete-run");
 	startRun(mock, "complete-run");
 	await flush();
@@ -348,6 +348,7 @@ test("completion emits one terminal event with summary and suppresses clear dupl
 		() => undefined,
 		context.ctx,
 	);
+	await flush();
 
 	assert.deepEqual(
 		states(events).map((event) => event.status),
@@ -365,7 +366,7 @@ test("completion emits one terminal event with summary and suppresses clear dupl
 });
 
 test("a completion listener can start the next managed run", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const firstEvents = observeRun(mock, "chained-first");
 	const secondEvents = observeRun(mock, "chained-second");
 	mock.eventBus.on(runEventChannel("chained-first"), (data) => {
@@ -403,7 +404,7 @@ test("a completion listener can start the next managed run", async () => {
 });
 
 test("terminal listeners cannot make stale pause work mutate a replacement", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const firstEvents = observeRun(mock, "pause-first");
 	const secondEvents = observeRun(mock, "pause-second");
 	mock.eventBus.on(runEventChannel("pause-first"), (data) => {
@@ -436,7 +437,7 @@ test("terminal listeners cannot make stale pause work mutate a replacement", asy
 });
 
 test("blocked and usage-limited transitions preserve terminal reasons", async () => {
-	const [blockedMock, blockedContext] = createRunHarness();
+	const [blockedMock, blockedContext] = await createRunHarness();
 	const blockedEvents = observeRun(blockedMock, "blocked-run");
 	startRun(blockedMock, "blocked-run");
 	await flush();
@@ -458,10 +459,11 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 		() => undefined,
 		blockedContext.ctx,
 	);
+	await flush();
 	assert.equal(states(blockedEvents).at(-1)?.status, "blocked");
 	assert.match(states(blockedEvents).at(-1)?.reason ?? "", /credentials/i);
 
-	const [usageMock, usageContext] = createRunHarness();
+	const [usageMock, usageContext] = await createRunHarness();
 	const usageEvents = observeRun(usageMock, "usage-run");
 	startRun(usageMock, "usage-run");
 	await flush();
@@ -485,7 +487,7 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 
 test("budget exhaustion emits the budget-limited terminal state", async () => {
 	const branch: Array<ReturnType<typeof assistantUsageEntry>> = [];
-	const [mock, context] = createRunHarness(
+	const [mock, context] = await createRunHarness(
 		createMockContext({
 			sessionManager: { getBranch: () => branch, getEntries: () => branch },
 		}),
@@ -500,6 +502,7 @@ test("budget exhaustion emits the budget-limited terminal state", async () => {
 		{ toolCallId: "budget-tool", toolName: "bash", result: {}, isError: false },
 		context.ctx,
 	);
+	await flush();
 
 	assert.deepEqual(
 		states(events).map((event) => event.status),
@@ -509,12 +512,13 @@ test("budget exhaustion emits the budget-limited terminal state", async () => {
 });
 
 test("manual clear emits one cleared terminal event for its managed run", async () => {
-	const [mock, context] = createRunHarness();
+	const [mock, context] = await createRunHarness();
 	const events = observeRun(mock, "clear-run");
 	startRun(mock, "clear-run");
 	await flush();
 
 	await mock.commands.get("goal")?.handler("clear", context.ctx);
+	await flush();
 
 	assert.deepEqual(
 		states(events).map((event) => event.status),
@@ -529,7 +533,7 @@ test("failed kickoff emits active then one cleared rollback event", async () => 
 		throw new Error("kickoff failed");
 	};
 	registerGoal(mock);
-	bindSession(mock);
+	await bindSession(mock);
 	const events = observeRun(mock, "failed-kickoff");
 
 	startRun(mock, "failed-kickoff");
@@ -548,9 +552,10 @@ test("a pending start cannot emit for a replacement run after supersession", asy
 	const kickoff = Promise.withResolvers<void>();
 	mock.rawPi.sendUserMessage = () => kickoff.promise;
 	registerGoal(mock);
-	const context = bindSession(mock);
+	const context = await bindSession(mock);
 	const firstEvents = observeRun(mock, "first-run");
 	startRun(mock, "first-run");
+	await flush();
 	await mock.commands.get("goal")?.handler("clear", context.ctx);
 
 	mock.rawPi.sendUserMessage = () => undefined;

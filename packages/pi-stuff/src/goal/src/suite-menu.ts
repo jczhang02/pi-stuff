@@ -30,7 +30,6 @@ type MenuActionResult<ScreenId extends string> =
 
 type MenuActionValue<ScreenId extends string> =
 	| MenuActionResult<ScreenId>
-	| Promise<MenuActionResult<ScreenId>>
 	| Effect.Effect<MenuActionResult<ScreenId>, unknown>;
 
 interface MenuActionContext<State> {
@@ -94,10 +93,7 @@ export interface MenuDefinition<State, ScreenId extends string, ActionId extends
 }
 
 export interface RunMenuOptions<State> {
-	readonly getState: (context: {
-		readonly ctx: ExtensionCommandContext;
-		readonly signal: AbortSignal;
-	}) => State | Promise<State>;
+	readonly getState: (context: { readonly ctx: ExtensionCommandContext; readonly signal: AbortSignal }) => State;
 	readonly isCurrent?: () => boolean;
 	readonly pi?: ExtensionAPI | undefined;
 }
@@ -144,7 +140,10 @@ export function runMenu<State, ScreenId extends string, ActionId extends string>
 				if (!isCurrent(options)) return { kind: "stale" } as const;
 				const current = stack.at(-1);
 				if (current === undefined) break;
-				const state = yield* menuPromise(() => options.getState({ ctx, signal }));
+				const state = yield* Effect.try({
+					try: () => options.getState({ ctx, signal }),
+					catch: (error) => error,
+				});
 				if (!isCurrent(options)) return { kind: "stale" } as const;
 				const factory = definition.screens[current];
 				if (!factory) return yield* Effect.fail(new Error(`Menu requested unknown screen: ${current}`));
@@ -152,7 +151,7 @@ export function runMenu<State, ScreenId extends string, ActionId extends string>
 					try: () => factory({ state }),
 					catch: (error) => error,
 				});
-				const event = yield* menuPromise(() =>
+				const event = yield* menuWait(() =>
 					options.pi ? showSuiteScreen(options.pi, ctx, screen, signal) : showLegacyScreen(ctx, screen, signal),
 				);
 				if (!isCurrent(options)) return { kind: "stale" } as const;
@@ -217,7 +216,7 @@ export function runMenu<State, ScreenId extends string, ActionId extends string>
 	);
 }
 
-function menuPromise<Value>(operation: () => Value | PromiseLike<Value>): Effect.Effect<Value, unknown> {
+export function menuWait<Value>(operation: () => Value | PromiseLike<Value>): Effect.Effect<Value, unknown> {
 	return Effect.tryPromise({ try: () => Promise.resolve(operation()), catch: (error) => error });
 }
 
@@ -225,7 +224,7 @@ function menuAction<ScreenId extends string>(
 	operation: () => MenuActionValue<ScreenId>,
 ): Effect.Effect<MenuActionResult<ScreenId>, unknown> {
 	return Effect.try({ try: operation, catch: (error) => error }).pipe(
-		Effect.flatMap((value) => (Effect.isEffect(value) ? value : menuPromise(() => value))),
+		Effect.flatMap((value) => (Effect.isEffect(value) ? value : Effect.succeed(value))),
 	);
 }
 

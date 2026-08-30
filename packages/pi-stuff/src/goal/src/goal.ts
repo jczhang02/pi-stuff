@@ -4,21 +4,23 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
-	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, type Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
-import { whenSuiteSessionReady } from "../../conversation-ui/index.js";
-import { type EffectFoundation, installEffectFoundation } from "../../shared/effect-foundation.js";
+import {
+	type EffectFoundation,
+	type EffectScopeOwner,
+	installEffectFoundation,
+} from "../../shared/effect-foundation.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { currentTokenTotal } from "./accounting.js";
-import { GoalCommandController, registerGoalCommand } from "./commands.js";
+import { registerGoalCommand } from "./command-registration.js";
+import { GoalCommandController } from "./commands.js";
 import { GoalCompactionCoordinator } from "./compaction.js";
-import { type ActiveGoal, loadGoalStateFromSession } from "./persistence.js";
-import { buildGoalPrompt, buildGoalSystemPrompt } from "./prompts.js";
-import { activateQueuedGoal } from "./queue.js";
+import type { ActiveGoal } from "./persistence.js";
+import { buildGoalSystemPrompt } from "./prompts.js";
 import { GoalRunController } from "./run-protocol.js";
 import {
 	type AssistantMessageLike,
@@ -41,7 +43,8 @@ import {
 	truncateNotification,
 } from "./runtime.js";
 import { hasAssistantToolCall } from "./safety.js";
-import { DEFAULT_GOAL_SETTINGS, readGoalSettings } from "./settings.js";
+import { type GoalSessionLifecycle, shutdownGoalSession, startGoalSession } from "./session.js";
+import type { GoalSettingsStore } from "./settings.js";
 import { registerGoalTerminalTools } from "./terminal-tools.js";
 
 // goal.ts remains the Pi-facing composition root because lifecycle-event registration is
@@ -52,21 +55,22 @@ interface GoalOptions {
 	settingsPath?: string;
 }
 
-interface GoalLifecycle {
+interface GoalLifecycle extends GoalSessionLifecycle {
 	readonly commands: GoalCommandController;
 	readonly compaction: GoalCompactionCoordinator;
+	readonly effects: EffectFoundation;
 	goalProjectionNeeded: boolean;
 	readonly options: GoalOptions;
 	readonly pi: ExtensionAPI;
 	readonly runController: GoalRunController;
 	readonly runtime: GoalRuntime;
+	settingsStore: GoalSettingsStore | undefined;
+	readonly tasks: Partial<Record<GoalTask, EffectScopeOwner>>;
 	turnActive: boolean;
 }
 
-type StartupDispatch = () => Promise<void>;
-
-const EXPERIMENTAL_GOALS_WARNING =
-	"Experimental ordered goals are enabled for pi-goal. Queue behavior and persisted state may change.";
+const GOAL_TASKS = ["compaction-recovery", "completion-status", "startup"] as const;
+type GoalTask = (typeof GOAL_TASKS)[number];
 const MESSAGE_ENVELOPE_SCHEMA = Type.Object(
 	{
 		content: Type.Optional(Type.Unknown()),
@@ -82,200 +86,120 @@ const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 
-function clearGoalSessionWork(runtime: GoalRuntime): void {
-	runtime.prompts.clearContinuationTracking();
-	runtime.prompts.clearPendingGoalPrompts();
-	runtime.clearAgentRun();
-	runtime.guardAbortGoalId = undefined;
-	runtime.goalRecovery = undefined;
-	runtime.clearBudgetWrapUp();
-	runtime.clearStaleGoalToolCallBlock();
-	runtime.queuedGoals = [];
-	runtime.pendingQueueAction = undefined;
-	runtime.queueFrozen = false;
-	runtime.queueFreezeAwaitingSettle = false;
+function goalSessionScope(lifecycle: GoalLifecycle, ctx: Pick<ExtensionContext, "sessionManager">) {
+	return lifecycle.effects.sessionFor(ctx.sessionManager) ?? lifecycle.effects.currentSession();
 }
 
-function resetGoalSession(lifecycle: GoalLifecycle): void {
-	const { runtime } = lifecycle;
-	runtime.invalidateMenuSession();
-	runtime.clearCompletionStatusTimer();
-	clearGoalSessionWork(runtime);
-	runtime.clearTerminalDetails();
-}
-
-function loadGoalSessionSettings(
+async function runGoalOperation<A, E>(
 	lifecycle: GoalLifecycle,
-	ctx: ExtensionContext,
-	previousToolVisibility: GoalRuntime["settings"]["toolVisibility"],
-): void {
-	const { options, runtime } = lifecycle;
-	const apply = (result: ReturnType<typeof readGoalSettings>): void => {
-		runtime.settings = result.kind === "loaded" ? result.settings : DEFAULT_GOAL_SETTINGS;
-		runtime.settingsLoadIssue = result.kind === "invalid" ? result : undefined;
-		if (result.kind === "invalid") {
-			ctx.ui.notify(`pi-goal settings ignored: ${result.reason}. Using default settings.`, "warning");
-		}
-		if (runtime.settings.experimental.goals) ctx.ui.notify(EXPERIMENTAL_GOALS_WARNING, "warning");
-		if (runtime.settings.toolVisibility === "after-first-goal" && previousToolVisibility === "always") {
-			runtime.goalToolsUnlocked = false;
-		}
-		if (runtime.settings.toolVisibility !== "always") return;
-		if (runtime.goalToolsHiddenByPolicy.size > 0) {
-			try {
-				runtime.restoreGoalToolsHiddenByPolicy();
-			} catch (error) {
-				ctx.ui.notify(`Could not restore always-visible goal tools: ${formatError(error)}`, "error");
-			}
-		}
-		runtime.goalToolsUnlocked = true;
-	};
-	apply(readGoalSettings(options.settingsPath));
+	ctx: Pick<ExtensionContext, "sessionManager">,
+	program: Effect.Effect<A, E>,
+	signal?: AbortSignal,
+): Promise<Exit.Exit<A, E>> {
+	const session = goalSessionScope(lifecycle, ctx);
+	if (!session || !lifecycle.effects.isCurrent(session)) {
+		throw new Error("Goal is unavailable before Session start.");
+	}
+	const operation = lifecycle.effects.forkOperation(session);
+	const exit = await lifecycle.effects.run(operation, program, signal ? { signal } : undefined);
+	await lifecycle.effects.close(operation, exit);
+	return exit;
 }
 
-function restoreActiveGoalSession(
+async function runGoalEffect<A, E>(
 	lifecycle: GoalLifecycle,
-	ctx: ExtensionContext,
-	startRestoredQueuedGoal: boolean,
-	reloaded: boolean,
-): StartupDispatch | undefined {
-	const { pi, runtime } = lifecycle;
-	if (runtime.activeGoal?.status === "active" && runtime.activeGoal.safetyResetPending) {
-		runtime.activeGoal = resetGoalSafetyEpoch(runtime.activeGoal);
-	}
-	if (runtime.activeGoal?.status === "active") {
-		runtime.recordGoalUsage(runtime.activeGoal, ctx);
-		if (runtime.limitActiveGoalForBudget(ctx, false)) return;
-		if (runtime.enforceAutomaticTurnLimit(ctx, false) || runtime.enforceNoProgressLimit(ctx)) return;
-	}
-	if (runtime.settings.toolVisibility === "after-first-goal") {
-		// A restrictive earlier session_start policy wins; lazy visibility does not widen it.
-		runtime.goalToolsUnlocked = true;
-		runtime.goalToolsHiddenByPolicy.clear();
-	}
-	if (runtime.activeGoal?.status === "active" && !runtime.goalToolsAvailable()) {
-		runtime.pauseGoalForUnavailableTools(ctx, false);
-		return;
-	}
-	if (!runtime.activeGoal) return;
-	runtime.persistGoal(runtime.activeGoal);
-	if (startRestoredQueuedGoal) {
-		const restoredGoal = runtime.activeGoal;
-		return async () => {
-			if (!(await whenSuiteSessionReady(pi, ctx))) return;
-			if (runtime.activeGoal?.id !== restoredGoal.id || runtime.activeGoal.status !== "active") return;
-			const sent = await runtime.sendOwnedGoalPrompt(ctx, restoredGoal.id, buildGoalPrompt(restoredGoal), {
-				resetSafetyEpoch: false,
-			});
-			if (!sent && runtime.activeGoal?.id === restoredGoal.id) {
-				runtime.activeGoal = transitionGoal(restoredGoal, "paused");
-				runtime.blockStaleGoalToolCalls();
-				runtime.persistGoal(runtime.activeGoal);
-			}
-		};
-	}
-	if (runtime.activeGoal.status !== "active" || !reloaded) return;
-	runtime.prompts.requestContinuation(runtime.activeGoal);
-	return async () => {
-		if (await whenSuiteSessionReady(pi, ctx)) await runtime.dispatchContinuationIfSettled(ctx);
-	};
+	ctx: Pick<ExtensionContext, "sessionManager">,
+	program: Effect.Effect<A, E>,
+): Promise<A> {
+	const exit = await runGoalOperation(lifecycle, ctx, program);
+	if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+	return exit.value;
 }
 
-function restoreGoalSession(
+async function runGoalCommandEffect(
 	lifecycle: GoalLifecycle,
-	ctx: ExtensionContext,
-	reloaded: boolean,
-): StartupDispatch | undefined {
-	const { commands, pi, runController, runtime } = lifecycle;
-	const loaded = loadGoalStateFromSession(ctx);
-	lifecycle.goalProjectionNeeded = loaded.source !== "none";
-	runtime.activeGoal = loaded.goal;
-	runtime.queuedGoals = loaded.queue;
-	runtime.pendingQueueAction = loaded.pendingAction;
-	runtime.queueFrozen = loaded.hasExperimentalQueueState && !runtime.settings.experimental.goals;
-	runController.bindSession(ctx);
-	if (runtime.queueFrozen) {
-		if (runtime.activeGoal) runtime.persistGoal(runtime.activeGoal);
-		runtime.publishPresentationStatus(runtime.activeGoal);
-		ctx.ui.notify(
-			"An experimental goal queue is frozen because experimental.goals is disabled. Re-enable it and run /reload to continue, or use /goal clear.",
-			"warning",
-		);
-		return;
-	}
-
-	let startRestoredQueuedGoal = false;
-	if (runtime.activeGoal?.status === "queued" && !runtime.pendingQueueAction) {
-		runtime.activeGoal = activateQueuedGoal(runtime.activeGoal, currentTokenTotal(ctx));
-		startRestoredQueuedGoal = runtime.activeGoal.status === "active";
-	}
-	if (runtime.pendingQueueAction) {
-		if (runtime.activeGoal) {
-			runtime.persistGoal(runtime.activeGoal);
-		} else runtime.clearPresentationStatus();
-		return async () => {
-			if (await whenSuiteSessionReady(pi, ctx)) await commands.dispatchPendingQueueActionIfSettled(ctx);
-		};
-	}
-	if (runtime.activeGoal) return restoreActiveGoalSession(lifecycle, ctx, startRestoredQueuedGoal, reloaded);
-	if (runtime.settings.toolVisibility === "after-first-goal" && !runtime.goalToolsUnlocked) {
-		runtime.hideGoalToolsIfLocked();
-	}
-	runtime.clearPresentationStatus();
-}
-
-async function startGoalSession(
-	lifecycle: GoalLifecycle,
-	event: SessionStartEvent,
-	ctx: ExtensionContext,
+	ctx: ExtensionCommandContext,
+	program: Effect.Effect<void, unknown>,
+	cancellable: boolean,
 ): Promise<void> {
-	const { runtime } = lifecycle;
-	lifecycle.goalProjectionNeeded = false;
-	lifecycle.turnActive = false;
-	runtime.beginReadOnlySessionStart();
-	let dispatchAfterSuiteReady: StartupDispatch | undefined;
-	try {
-		const previousToolVisibility = runtime.settings.toolVisibility;
-		resetGoalSession(lifecycle);
-		loadGoalSessionSettings(lifecycle, ctx, previousToolVisibility);
-		dispatchAfterSuiteReady = restoreGoalSession(lifecycle, ctx, event.reason === "reload");
-	} finally {
-		runtime.endReadOnlySessionStart();
-		if (dispatchAfterSuiteReady) {
-			void dispatchAfterSuiteReady().catch((error) => {
-				ctx.ui.notify(`Goal startup continuation failed: ${formatError(error)}`, "error");
-			});
-		}
-	}
+	const exit = await runGoalOperation(lifecycle, ctx, program, cancellable ? ctx.signal : undefined);
+	if (cancellable && (ctx.signal?.aborted || (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)))) return;
+	if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
 }
 
-function shutdownGoalSession(lifecycle: GoalLifecycle, ctx: ExtensionContext): void {
-	const { compaction, runController, runtime } = lifecycle;
-	lifecycle.goalProjectionNeeded = false;
-	lifecycle.turnActive = false;
-	compaction.clear();
-	runController.unbindSession();
-	runtime.invalidateMenuSession();
-	if (runtime.activeGoal) {
-		if (!runtime.queueFrozen && runtime.activeGoal.status === "active") {
-			runtime.recordGoalUsage(runtime.activeGoal, ctx, false);
-		}
-		runtime.persistGoal(runtime.activeGoal);
-	}
-	clearGoalSessionWork(runtime);
-	runtime.activeGoal = undefined;
-	runtime.clearPresentationStatus();
-	runtime.clearCompletionStatusTimer();
-	runtime.clearTerminalDetails();
+function cancelGoalTask(lifecycle: GoalLifecycle, task: GoalTask): void {
+	const owner = lifecycle.tasks[task];
+	if (!owner) return;
+	delete lifecycle.tasks[task];
+	void lifecycle.effects.close(owner, Exit.interrupt()).catch(() => undefined);
+}
+
+function cancelGoalTasks(lifecycle: GoalLifecycle): void {
+	for (const task of GOAL_TASKS) cancelGoalTask(lifecycle, task);
+}
+
+function startGoalTask(
+	lifecycle: GoalLifecycle,
+	task: GoalTask,
+	ctx: ExtensionContext,
+	program: Effect.Effect<void, unknown>,
+	onFailure?: (message: string) => void,
+): void {
+	cancelGoalTask(lifecycle, task);
+	const session = goalSessionScope(lifecycle, ctx);
+	if (!session || !lifecycle.effects.isCurrent(session)) return;
+	const operation = lifecycle.effects.forkOperation(session);
+	lifecycle.tasks[task] = operation;
+	void lifecycle.effects
+		.run(operation, program)
+		.then(async (exit) => {
+			const current = lifecycle.tasks[task] === operation;
+			if (current) delete lifecycle.tasks[task];
+			await lifecycle.effects.close(operation, exit);
+			if (current && Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) {
+				onFailure?.(formatError(Cause.squash(exit.cause)));
+			}
+		})
+		.catch((error) => onFailure?.(formatError(error)));
+}
+
+function scheduleGoalEffect(
+	lifecycle: GoalLifecycle,
+	ctx: ExtensionContext,
+	program: Effect.Effect<void, unknown>,
+): void {
+	void runGoalEffect(lifecycle, ctx, program).catch(() => undefined);
 }
 
 function registerGoalSessionHandlers(lifecycle: GoalLifecycle): void {
 	const { compaction, pi } = lifecycle;
-	pi.on("session_start", (event, ctx) => startGoalSession(lifecycle, event, ctx));
-	pi.on("session_shutdown", (_event, ctx) => shutdownGoalSession(lifecycle, ctx));
-	pi.on("session_before_compact", (event, ctx) => compaction.before(event, ctx));
-	pi.on("session_compact_failed", (event, ctx) => compaction.failed(event, ctx));
-	pi.on("session_compact", (event, ctx) => compaction.complete(event, ctx));
+	pi.on("session_start", async (event, ctx) => {
+		cancelGoalTasks(lifecycle);
+		compaction.clear();
+		const startup = await runGoalEffect(lifecycle, ctx, startGoalSession(lifecycle, event, ctx));
+		if (startup) {
+			startGoalTask(lifecycle, "startup", ctx, startup, (message) => {
+				ctx.ui.notify(`Goal startup continuation failed: ${message}`, "error");
+			});
+		}
+	});
+	pi.on("session_shutdown", (_event, ctx) => {
+		cancelGoalTasks(lifecycle);
+		compaction.clear();
+		shutdownGoalSession(lifecycle, ctx);
+	});
+	pi.on("session_before_compact", (event, ctx) => {
+		cancelGoalTask(lifecycle, "compaction-recovery");
+		return compaction.before(event, ctx);
+	});
+	pi.on("session_compact_failed", (event, ctx) => {
+		const recovery = compaction.failed(event, ctx);
+		if (recovery) startGoalTask(lifecycle, "compaction-recovery", ctx, recovery);
+	});
+	pi.on("session_compact", (event, ctx) => {
+		cancelGoalTask(lifecycle, "compaction-recovery");
+		return runGoalEffect(lifecycle, ctx, compaction.complete(event, ctx));
+	});
 }
 
 function prepareNonGoalDelivery(lifecycle: GoalLifecycle, resetSafetyEpoch: boolean, origin?: GoalRunOrigin): void {
@@ -490,13 +414,16 @@ function registerGoalToolHandlers(lifecycle: GoalLifecycle): void {
 			runtime.budgetWrapUp?.goalId === runtime.activeGoal.id &&
 			!runtime.budgetWrapUp.delivered
 		) {
-			runtime.queueBudgetWrapUp(ctx, runtime.activeGoal);
+			scheduleGoalEffect(lifecycle, ctx, runtime.queueBudgetWrapUp(ctx, runtime.activeGoal));
 			return;
 		}
 		if (runtime.activeGoal?.status !== "active") return;
 		if (!runtime.recordGoalUsage(runtime.activeGoal, ctx)) return;
 		runtime.persistGoal(runtime.activeGoal);
-		if (runtime.limitActiveGoalForBudget(ctx, true)) return;
+		if (runtime.limitActiveGoalForBudget(ctx)) {
+			scheduleGoalEffect(lifecycle, ctx, runtime.queueBudgetWrapUp(ctx, runtime.activeGoal));
+			return;
+		}
 		if (!runtime.goalToolsAvailable()) runtime.pauseGoalForUnavailableTools(ctx);
 	});
 
@@ -579,7 +506,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 	if (finalAssistant?.stopReason === "error") {
 		if (isRetryableGoalInterruption(finalAssistant)) {
 			if (run.origin === "automatic" && runtime.enforceAutomaticTurnLimit(ctx, true)) return;
-			if (runtime.limitActiveGoalForBudget(ctx, false)) return;
+			if (runtime.limitActiveGoalForBudget(ctx)) return;
 			if (!runtime.goalToolsAvailable()) {
 				runtime.pauseGoalForUnavailableTools(ctx);
 				return;
@@ -612,7 +539,7 @@ function handleGoalAgentEnd(lifecycle: GoalLifecycle, event: AgentEndEvent, ctx:
 	}
 
 	runtime.clearGoalRecoveryForGoal(goalId);
-	if (runtime.limitActiveGoalForBudget(ctx, false)) return;
+	if (runtime.limitActiveGoalForBudget(ctx)) return;
 	if (!runtime.goalToolsAvailable()) {
 		runtime.pauseGoalForUnavailableTools(ctx);
 		return;
@@ -647,35 +574,27 @@ function registerGoalAgentHandlers(lifecycle: GoalLifecycle): void {
 		if (!runtime.queueFrozen) runtime.recordAutomaticTurn(ctx, event.message);
 	});
 	pi.on("agent_end", (event, ctx) => handleGoalAgentEnd(lifecycle, event, ctx));
-	pi.on("agent_settled", async (_event, ctx) => {
+	pi.on("agent_settled", (_event, ctx) => {
 		lifecycle.turnActive = false;
-		if (runtime.queueFrozen) {
-			runtime.clearSettledSafetyTracking();
-			runtime.queueFreezeAwaitingSettle = false;
-			if (runtime.settings.experimental.goals) await commands.resumeQueueAfterUnfreeze(ctx);
-			return;
-		}
-		runtime.finalizeSettledRecovery(ctx);
-		const dispatched = runtime.pendingQueueAction ? await commands.dispatchPendingQueueActionIfSettled(ctx) : false;
-		if (!dispatched) await runtime.dispatchContinuationIfSettled(ctx);
-		runtime.clearSettledSafetyTracking();
+		return runGoalEffect(
+			lifecycle,
+			ctx,
+			Effect.gen(function* () {
+				if (runtime.queueFrozen) {
+					runtime.clearSettledSafetyTracking();
+					runtime.queueFreezeAwaitingSettle = false;
+					if (runtime.settings.experimental.goals) yield* commands.resumeQueueAfterUnfreeze(ctx);
+					return;
+				}
+				runtime.finalizeSettledRecovery(ctx);
+				const dispatched = runtime.pendingQueueAction
+					? yield* commands.dispatchPendingQueueActionIfSettled(ctx)
+					: false;
+				if (!dispatched) yield* runtime.dispatchContinuationIfSettled(ctx);
+				runtime.clearSettledSafetyTracking();
+			}),
+		);
 	});
-}
-
-async function runGoalMenuOperation(
-	foundation: EffectFoundation,
-	ctx: ExtensionCommandContext,
-	program: Effect.Effect<void>,
-): Promise<void> {
-	const session = foundation.sessionFor(ctx.sessionManager) ?? foundation.currentSession();
-	if (!session || !foundation.isCurrent(session)) {
-		throw new Error("Goal menu is unavailable before Session start.");
-	}
-	const operation = foundation.forkOperation(session);
-	const exit = await foundation.run(operation, program, { signal: ctx.signal });
-	await foundation.close(operation, exit);
-	if (ctx.signal?.aborted || (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause))) return;
-	if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
 }
 
 // Cohesion justification: command, tool, continuation, and lifecycle handlers coordinate one
@@ -689,16 +608,31 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const lifecycle: GoalLifecycle = {
 		commands,
 		compaction,
+		effects,
 		goalProjectionNeeded: false,
 		options,
 		pi,
 		runController,
 		runtime,
+		settingsStore: undefined,
+		tasks: {},
 		turnActive: false,
 	};
-	runController.register(pi);
+	runtime.setCompletionStatusCancellation(() => cancelGoalTask(lifecycle, "completion-status"));
+	runController.register(pi, (ctx, program) => scheduleGoalEffect(lifecycle, ctx, program));
 
-	registerGoalTerminalTools(pi, runtime);
+	registerGoalTerminalTools(pi, runtime, {
+		run: (ctx, program) => runGoalEffect(lifecycle, ctx, program),
+		showCompletionStatus: (ctx, timeUsedSeconds) => {
+			runtime.showCompletionStatus(timeUsedSeconds);
+			startGoalTask(
+				lifecycle,
+				"completion-status",
+				ctx,
+				Effect.sleep(8_000).pipe(Effect.andThen(Effect.sync(() => runtime.clearPresentationStatus()))),
+			);
+		},
+	});
 	// Do not touch the active tool set during factory registration: ExtensionAPI
 	// actions are unbound until the session binds the runtime. session_start applies
 	// baseline visibility once actions work; later hooks only enforce goal safety.
@@ -707,8 +641,9 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		onProjectionNeeded: () => {
 			lifecycle.goalProjectionNeeded = true;
 		},
-		runMenu: (ctx, program) => runGoalMenuOperation(effects, ctx, program),
+		run: (ctx, program, cancellable) => runGoalCommandEffect(lifecycle, ctx, program, cancellable),
 		settingsPath: options.settingsPath,
+		settingsStore: () => lifecycle.settingsStore,
 	});
 	registerGoalSessionHandlers(lifecycle);
 	registerGoalInputHandlers(lifecycle);

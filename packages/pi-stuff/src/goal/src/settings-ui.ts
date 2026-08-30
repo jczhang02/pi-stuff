@@ -3,18 +3,18 @@ import { type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-co
 import { Effect } from "effect";
 import { checkpointGoalActiveTime } from "./accounting.js";
 import { abortCurrentTurn, EMERGENCY_AUTOMATIC_TURN_LIMIT, type GoalRuntime } from "./runtime.js";
-import { GOAL_SETTINGS_FILE, type GoalSettings, saveGoalSettings } from "./settings.js";
-import { defineMenu, type MenuDefinition, runMenu } from "./suite-menu.js";
+import { GOAL_SETTINGS_FILE, type GoalSettings, type GoalSettingsStore } from "./settings.js";
+import { defineMenu, type MenuDefinition, menuWait, runMenu } from "./suite-menu.js";
 
 interface GoalSettingsUiOptions {
 	settingsPath?: string | undefined;
-	save?: (settings: GoalSettings, settingsPath: string) => void;
-	onQueueUnfrozen?: (ctx: ExtensionCommandContext) => Promise<void>;
-	withLock?: (<Value>(settingsPath: string, operation: () => Value | Promise<Value>) => Promise<Value>) | undefined;
+	save?: (settings: GoalSettings, settingsPath: string) => Effect.Effect<void, unknown>;
+	onQueueUnfrozen?: (ctx: ExtensionCommandContext) => Effect.Effect<boolean, unknown>;
+	store?: GoalSettingsStore | undefined;
 }
 
 interface GoalSettingsApplyOptions {
-	save?: (settings: GoalSettings) => void;
+	save?: (settings: GoalSettings) => Effect.Effect<void, unknown>;
 }
 
 type LimitField = "automaticTurns" | "noProgressTurns";
@@ -104,15 +104,15 @@ function goalSettingsActions(
 	previewGoalIds: Map<LimitField, string | null>,
 ): GoalSettingsMenuDefinition["actions"] {
 	return {
-		"open-automatic": async () => {
+		"open-automatic": () => {
 			previewGoalIds.set("automaticTurns", runtime.activeGoal?.id ?? null);
 			return { kind: "to", screen: "automatic" };
 		},
-		"open-no-progress": async () => {
+		"open-no-progress": () => {
 			previewGoalIds.set("noProgressTurns", runtime.activeGoal?.id ?? null);
 			return { kind: "to", screen: "no-progress" };
 		},
-		"choose-automatic": async ({ itemId, signal }) =>
+		"choose-automatic": ({ itemId, signal }) =>
 			applyLimitChoice(
 				runtime,
 				ctx,
@@ -123,7 +123,7 @@ function goalSettingsActions(
 				previewGoalIds.get("automaticTurns") ?? null,
 				signal,
 			),
-		"choose-no-progress": async ({ itemId, signal }) =>
+		"choose-no-progress": ({ itemId, signal }) =>
 			applyLimitChoice(
 				runtime,
 				ctx,
@@ -134,59 +134,53 @@ function goalSettingsActions(
 				previewGoalIds.get("noProgressTurns") ?? null,
 				signal,
 			),
-		"set-visibility": async ({ value }) => {
+		"set-visibility": ({ value }) => {
 			const nextVisibility = value === "Always" ? "always" : "after-first-goal";
 			if (nextVisibility === runtime.settings.toolVisibility) return { kind: "stay" };
-			try {
+			return Effect.gen(function* () {
 				const next = {
 					...structuredClone(runtime.settings),
 					toolVisibility: nextVisibility,
 				} satisfies GoalSettings;
-				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+				yield* applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 				ctx.ui.notify(`Goal tools: ${value}.`, "info");
-				return { kind: "stay" };
-			} catch (error) {
-				notifySettingsFailure(ctx, settingsPath, error);
-				return { kind: "rejected" };
-			}
+				return { kind: "stay" as const };
+			}).pipe(Effect.catch((error) => rejectedSettings(ctx, settingsPath, error)));
 		},
-		"set-queue": async ({ signal, value }) => {
+		"set-queue": ({ signal, value }) => {
 			const enabled = value === "Experimental";
 			if (enabled === runtime.settings.experimental.goals) return { kind: "stay" };
-			const next = await nextQueueSettings(runtime, ctx, enabled, signal);
-			if (!next) return { kind: "rejected" };
-			const wasFrozen = runtime.queueFrozen;
-			try {
-				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+			return Effect.gen(function* () {
+				const next = yield* nextQueueSettings(runtime, ctx, enabled, signal);
+				if (!next) return { kind: "rejected" as const };
+				const wasFrozen = runtime.queueFrozen;
+				yield* applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 				if (wasFrozen && !runtime.queueFrozen) {
-					try {
-						await options.onQueueUnfrozen?.(ctx);
-					} catch (error) {
-						ctx.ui.notify(
-							`Goal queue enabled, but automatic resume failed: ${safeTerminalText(formatError(error))}. Reopen /goal to retry.`,
-							"warning",
+					const resume = options.onQueueUnfrozen?.(ctx);
+					if (resume) {
+						yield* Effect.catch(Effect.asVoid(resume), (error) =>
+							Effect.sync(() => {
+								ctx.ui.notify(
+									`Goal queue enabled, but automatic resume failed: ${safeTerminalText(formatError(error))}. Reopen /goal to retry.`,
+									"warning",
+								);
+							}),
 						);
 					}
 				}
 				ctx.ui.notify(`Ordered goal queue: ${enabled ? "Experimental" : "Off"}.`, "info");
-				return { kind: "stay" };
-			} catch (error) {
-				notifySettingsFailure(ctx, settingsPath, error);
-				return { kind: "rejected" };
-			}
+				return { kind: "stay" as const };
+			}).pipe(Effect.catch((error) => rejectedSettings(ctx, settingsPath, error)));
 		},
-		"set-rpc": async ({ value }) => {
+		"set-rpc": ({ value }) => {
 			const enabled = value === "On";
 			if (enabled === runtime.settings.rpc.enabled) return { kind: "stay" };
-			try {
+			return Effect.gen(function* () {
 				const next = { ...structuredClone(runtime.settings), rpc: { enabled } } satisfies GoalSettings;
-				await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
+				yield* applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 				ctx.ui.notify(`Managed run RPC: ${enabled ? "On" : "Off"}.`, "info");
-				return { kind: "stay" };
-			} catch (error) {
-				notifySettingsFailure(ctx, settingsPath, error);
-				return { kind: "rejected" };
-			}
+				return { kind: "stay" as const };
+			}).pipe(Effect.catch((error) => rejectedSettings(ctx, settingsPath, error)));
 		},
 	};
 }
@@ -279,7 +273,7 @@ function limitChoices(
 	];
 }
 
-async function applyLimitChoice(
+function applyLimitChoice(
 	runtime: GoalRuntime,
 	ctx: ExtensionCommandContext,
 	options: GoalSettingsUiOptions,
@@ -289,47 +283,50 @@ async function applyLimitChoice(
 	activeGoalId: string | null,
 	signal: AbortSignal,
 ) {
-	if (!isLimitSelection(itemId)) return { kind: "rejected" as const };
-	if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
-		ctx.ui.notify("The active goal changed while the safety setting was open. No settings were changed.", "warning");
-		return { kind: "rejected" as const };
-	}
-	const previous = runtime.settings.continuationLimits[field];
-	const limit = await resolveLimitSelection(field, itemId, previous, ctx, signal);
-	if (limit === undefined || limit === previous) return { kind: "back" as const };
-	if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
-		ctx.ui.notify("The active goal changed while editing the safety setting. No settings were changed.", "warning");
-		return { kind: "rejected" as const };
-	}
-	const confirmation = await confirmLowerActiveLimit(runtime, ctx, field, limit, signal);
-	if (!confirmation.apply) return { kind: "rejected" as const };
-	if (confirmation.goalId !== undefined && runtime.activeGoal?.id !== confirmation.goalId) {
-		ctx.ui.notify("The active goal changed while confirming the limit. No settings were changed.", "warning");
-		return { kind: "rejected" as const };
-	}
-	try {
-		await applySavedGoalSettings(runtime, withLimit(runtime.settings, field, limit), ctx, options, settingsPath);
+	return Effect.gen(function* () {
+		if (!isLimitSelection(itemId)) return { kind: "rejected" as const };
+		if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
+			ctx.ui.notify(
+				"The active goal changed while the safety setting was open. No settings were changed.",
+				"warning",
+			);
+			return { kind: "rejected" as const };
+		}
+		const previous = runtime.settings.continuationLimits[field];
+		const limit = yield* resolveLimitSelection(field, itemId, previous, ctx, signal);
+		if (limit === undefined || limit === previous) return { kind: "back" as const };
+		if ((runtime.activeGoal?.id ?? null) !== activeGoalId) {
+			ctx.ui.notify(
+				"The active goal changed while editing the safety setting. No settings were changed.",
+				"warning",
+			);
+			return { kind: "rejected" as const };
+		}
+		const confirmation = yield* confirmLowerActiveLimit(runtime, ctx, field, limit, signal);
+		if (!confirmation.apply) return { kind: "rejected" as const };
+		if ("goalId" in confirmation && runtime.activeGoal?.id !== confirmation.goalId) {
+			ctx.ui.notify("The active goal changed while confirming the limit. No settings were changed.", "warning");
+			return { kind: "rejected" as const };
+		}
+		yield* applySavedGoalSettings(runtime, withLimit(runtime.settings, field, limit), ctx, options, settingsPath);
 		ctx.ui.notify(formatLimitSuccess(field, limit), "info");
 		return { kind: "back" as const };
-	} catch (error) {
-		notifySettingsFailure(ctx, settingsPath, error);
-		return { kind: "rejected" as const };
-	}
+	}).pipe(Effect.catch((error) => rejectedSettings(ctx, settingsPath, error)));
 }
 
-async function applySavedGoalSettings(
+function applySavedGoalSettings(
 	runtime: GoalRuntime,
 	next: GoalSettings,
 	ctx: ExtensionCommandContext,
 	options: GoalSettingsUiOptions,
 	settingsPath: string,
-): Promise<void> {
-	const apply = () =>
-		applyGoalSettings(runtime, next, ctx, {
-			save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
-		});
-	if (options.withLock) await options.withLock(settingsPath, apply);
-	else apply();
+) {
+	const save = options.save
+		? (settings: GoalSettings) => options.save?.(settings, settingsPath) ?? Effect.void
+		: options.store
+			? (settings: GoalSettings) => options.store?.replace(settings) ?? Effect.void
+			: () => Effect.fail(new Error(`Goal settings are unavailable before Session start: ${settingsPath}`));
+	return applyGoalSettings(runtime, next, ctx, { save });
 }
 
 export function applyGoalSettings(
@@ -337,46 +334,54 @@ export function applyGoalSettings(
 	next: GoalSettings,
 	ctx: ExtensionCommandContext,
 	options: GoalSettingsApplyOptions = {},
-) {
-	const snapshot = runtime.snapshotSettingsApplicationState();
-	let fileSaved = false;
-	try {
-		runtime.settings = structuredClone(next);
-		applyToolVisibility(runtime, snapshot.settings, next, ctx);
-		options.save?.(next);
-		fileSaved = options.save !== undefined;
-		applyQueueSetting(runtime, ctx);
-		const activeGoalId = runtime.activeGoal?.id;
-		const abortOwnedRun = activeGoalId !== undefined && runtime.agentRunGoalId === activeGoalId;
-		const pausedByAutomaticLimit = runtime.enforceAutomaticTurnLimit(ctx, abortOwnedRun);
-		if (!pausedByAutomaticLimit) runtime.enforceNoProgressLimit(ctx, abortOwnedRun);
-	} catch (error) {
-		const rollbackErrors: unknown[] = [];
-		try {
-			runtime.restoreSettingsApplicationState(snapshot);
-		} catch (rollbackError) {
-			rollbackErrors.push(rollbackError);
-		}
-		if (fileSaved) {
-			try {
-				options.save?.(snapshot.settings);
-			} catch (rollbackError) {
-				rollbackErrors.push(rollbackError);
+): Effect.Effect<void, unknown> {
+	return Effect.suspend(() => {
+		const snapshot = runtime.snapshotSettingsApplicationState();
+		let fileSaved = false;
+		const apply = Effect.gen(function* () {
+			yield* settingsTry(() => {
+				runtime.settings = structuredClone(next);
+				applyToolVisibility(runtime, snapshot.settings, next, ctx);
+			});
+			if (options.save) {
+				yield* options.save(next);
+				fileSaved = true;
 			}
-			try {
-				restorePersistedRuntime(runtime);
-			} catch (rollbackError) {
-				rollbackErrors.push(rollbackError);
-			}
-		}
-		if (rollbackErrors.length > 0) {
-			throw new AggregateError(
-				[error, ...rollbackErrors],
-				`pi-goal settings application failed and rollback was incomplete: ${formatError(error)}`,
-			);
-		}
-		throw error;
-	}
+			yield* settingsTry(() => {
+				applyQueueSetting(runtime, ctx);
+				const activeGoalId = runtime.activeGoal?.id;
+				const abortOwnedRun = activeGoalId !== undefined && runtime.agentRunGoalId === activeGoalId;
+				const pausedByAutomaticLimit = runtime.enforceAutomaticTurnLimit(ctx, abortOwnedRun);
+				if (!pausedByAutomaticLimit) runtime.enforceNoProgressLimit(ctx, abortOwnedRun);
+			});
+		});
+		return apply.pipe(
+			Effect.catch((error) =>
+				Effect.gen(function* () {
+					const rollbackErrors: unknown[] = [];
+					const record = (program: Effect.Effect<void, unknown>) =>
+						Effect.catch(program, (rollbackError) =>
+							Effect.sync(() => {
+								rollbackErrors.push(rollbackError);
+							}),
+						);
+					yield* record(settingsTry(() => runtime.restoreSettingsApplicationState(snapshot)));
+					if (fileSaved && options.save) {
+						yield* record(options.save(snapshot.settings));
+						yield* record(settingsTry(() => restorePersistedRuntime(runtime)));
+					}
+					return yield* Effect.fail(
+						rollbackErrors.length > 0
+							? new AggregateError(
+									[error, ...rollbackErrors],
+									`pi-goal settings application failed and rollback was incomplete: ${formatError(error)}`,
+								)
+							: error,
+					);
+				}),
+			),
+		);
+	});
 }
 
 export function parseGoalLimit(value: string): number | undefined {
@@ -390,62 +395,67 @@ export function formatGoalLimit(value: number | null) {
 	return value === null ? "Unlimited" : String(value);
 }
 
-async function resolveLimitSelection(
+function resolveLimitSelection(
 	field: LimitField,
 	selection: LimitSelection,
 	previous: number | null,
 	ctx: ExtensionCommandContext,
 	signal: AbortSignal,
-): Promise<number | null | undefined> {
-	if (selection === "unlimited" || selection === "off") return null;
-	while (true) {
-		const raw = await ctx.ui.input(
-			field === "automaticTurns"
-				? "Maximum automatic responses (whole number greater than 0)"
-				: "Repeated-run threshold (whole number greater than 0)",
-			previous === null ? "Positive whole number" : String(previous),
-			{ signal },
-		);
-		if (raw === undefined) return undefined;
-		const parsed = parseGoalLimit(raw);
-		if (parsed !== undefined) return parsed;
-		ctx.ui.notify(
-			`Enter a whole number greater than 0. Choose ${field === "automaticTurns" ? "Unlimited" : "Off"} from the previous screen if you do not want a limit.`,
-			"warning",
-		);
-	}
+) {
+	if (selection === "unlimited" || selection === "off") return Effect.succeed(null);
+	return Effect.gen(function* () {
+		while (true) {
+			const raw = yield* menuWait(() =>
+				ctx.ui.input(
+					field === "automaticTurns"
+						? "Maximum automatic responses (whole number greater than 0)"
+						: "Repeated-run threshold (whole number greater than 0)",
+					previous === null ? "Positive whole number" : String(previous),
+					{ signal },
+				),
+			);
+			if (raw === undefined) return undefined;
+			const parsed = parseGoalLimit(raw);
+			if (parsed !== undefined) return parsed;
+			ctx.ui.notify(
+				`Enter a whole number greater than 0. Choose ${field === "automaticTurns" ? "Unlimited" : "Off"} from the previous screen if you do not want a limit.`,
+				"warning",
+			);
+		}
+	});
 }
 
-async function nextQueueSettings(
-	runtime: GoalRuntime,
-	ctx: ExtensionCommandContext,
-	enabled: boolean,
-	signal: AbortSignal,
-) {
-	if (runtime.settings.experimental.goals === enabled) return undefined;
-	if (enabled && !runtime.settings.experimental.goals) {
-		const confirmed = await ctx.ui.confirm(
-			"Enable experimental goal queue?",
-			"Queue behavior and persisted state may change between releases. Existing single-goal behavior remains available.",
-			{ signal },
-		);
-		if (!confirmed) return undefined;
-	}
-	if (
-		!enabled &&
-		(runtime.queuedGoals.length > 0 || runtime.pendingQueueAction !== undefined) &&
-		!(await ctx.ui.confirm(
-			"Freeze ordered goal queue?",
-			`Disabling the experiment preserves ${retainedGoalCount(runtime)} goal(s) but freezes automatic work until the setting is re-enabled. No goal data will be deleted.`,
-			{ signal },
-		))
-	) {
-		return undefined;
-	}
-	return {
-		...structuredClone(runtime.settings),
-		experimental: { goals: enabled },
-	} satisfies GoalSettings;
+function nextQueueSettings(runtime: GoalRuntime, ctx: ExtensionCommandContext, enabled: boolean, signal: AbortSignal) {
+	return Effect.gen(function* () {
+		if (runtime.settings.experimental.goals === enabled) return undefined;
+		if (enabled && !runtime.settings.experimental.goals) {
+			const confirmed = yield* menuWait(() =>
+				ctx.ui.confirm(
+					"Enable experimental goal queue?",
+					"Queue behavior and persisted state may change between releases. Existing single-goal behavior remains available.",
+					{ signal },
+				),
+			);
+			if (!confirmed) return undefined;
+		}
+		if (
+			!enabled &&
+			(runtime.queuedGoals.length > 0 || runtime.pendingQueueAction !== undefined) &&
+			!(yield* menuWait(() =>
+				ctx.ui.confirm(
+					"Freeze ordered goal queue?",
+					`Disabling the experiment preserves ${retainedGoalCount(runtime)} goal(s) but freezes automatic work until the setting is re-enabled. No goal data will be deleted.`,
+					{ signal },
+				),
+			))
+		) {
+			return undefined;
+		}
+		return {
+			...structuredClone(runtime.settings),
+			experimental: { goals: enabled },
+		} satisfies GoalSettings;
+	});
 }
 
 function applyToolVisibility(
@@ -517,7 +527,7 @@ function restorePersistedRuntime(runtime: GoalRuntime) {
 	runtime.clearPresentationStatus();
 }
 
-async function confirmLowerActiveLimit(
+function confirmLowerActiveLimit(
 	runtime: GoalRuntime,
 	ctx: ExtensionCommandContext,
 	field: LimitField,
@@ -525,17 +535,19 @@ async function confirmLowerActiveLimit(
 	signal: AbortSignal,
 ) {
 	const goal = runtime.activeGoal;
-	if (goal?.status !== "active" || limit === null) return { apply: true };
+	if (goal?.status !== "active" || limit === null) return Effect.succeed({ apply: true });
 	const used = field === "automaticTurns" ? goal.automaticModelTurns : goal.toolFreeRepeatCount;
-	if (used < limit) return { apply: true };
-	return {
-		apply: await ctx.ui.confirm(
-			"Apply limit and pause now?",
-			`The active goal has already used ${used}. Setting this limit to ${limit} will pause it immediately without deleting progress.`,
-			{ signal },
+	if (used < limit) return Effect.succeed({ apply: true });
+	return Effect.map(
+		menuWait(() =>
+			ctx.ui.confirm(
+				"Apply limit and pause now?",
+				`The active goal has already used ${used}. Setting this limit to ${limit} will pause it immediately without deleting progress.`,
+				{ signal },
+			),
 		),
-		goalId: goal.id,
-	};
+		(apply) => ({ apply, goalId: goal.id }),
+	);
 }
 
 function withLimit(settings: GoalSettings, field: LimitField, value: number | null): GoalSettings {
@@ -594,6 +606,17 @@ function notifySettingsFailure<Failure>(ctx: ExtensionCommandContext, settingsPa
 			: `Could not save Goal settings; the previous value remains. Check ${path} and retry: ${detail}`,
 		"error",
 	);
+}
+
+function rejectedSettings<Failure>(ctx: ExtensionCommandContext, settingsPath: string, error: Failure) {
+	return Effect.sync(() => {
+		notifySettingsFailure(ctx, settingsPath, error);
+		return { kind: "rejected" as const };
+	});
+}
+
+function settingsTry(operation: () => void): Effect.Effect<void, unknown> {
+	return Effect.try({ try: operation, catch: (error) => error });
 }
 
 function safeTerminalText(value: string) {

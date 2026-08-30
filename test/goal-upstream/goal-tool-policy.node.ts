@@ -16,7 +16,7 @@ import {
 
 test("an active goal pauses without aborting an unrelated restrictive turn", async () => {
 	let aborts = 0;
-	const [mock, context] = createGoalHarness(
+	const [mock, context] = await createGoalHarness(
 		["read", "bash", "scrape", "goal_complete", "goal_blocked"],
 		"after-first-goal",
 		{ abort: () => aborts++ },
@@ -71,7 +71,7 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 
 	await t.test("resume", async () => {
 		let aborts = 0;
-		const resumed = restoreGoalForTest("paused", {}, "always", { abort: () => aborts++ });
+		const resumed = await restoreGoalForTest("paused", {}, "always", { abort: () => aborts++ });
 		await resumed.mock.commands.get("goal")?.handler("resume", resumed.ctx);
 		const resumePrompt = resumed.mock.sentUserMessages.at(-1)?.text ?? "";
 		resumed.mock.rawPi.setActiveTools(["read", "bash"]);
@@ -97,7 +97,10 @@ test("missing goal tools abort kickoff, resume, and active-edit prompts", async 
 });
 
 test("a later restrictive tool policy pauses the goal at agent_end without continuation", async () => {
-	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
+	const [mock, context] = await createGoalHarness(
+		["read", "bash", "goal_complete", "goal_blocked"],
+		"after-first-goal",
+	);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
 	const promptResult = mock.callEvent(
@@ -119,8 +122,11 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 });
 
-test("after-first-goal does not fight another extension that exposes locked tools", () => {
-	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
+test("after-first-goal does not fight another extension that exposes locked tools", async () => {
+	const [mock, context] = await createGoalHarness(
+		["read", "bash", "goal_complete", "goal_blocked"],
+		"after-first-goal",
+	);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
 	mock.rawPi.setActiveTools(["read", "bash", "goal_complete", "goal_blocked", "scrape"]);
@@ -128,7 +134,7 @@ test("after-first-goal does not fight another extension that exposes locked tool
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked", "scrape"]);
 });
 
-test("restored active goal applies budget limits before unavailable-tool pauses", () => {
+test("restored active goal applies budget limits before unavailable-tool pauses", async () => {
 	for (const [tokensUsed, expectedStatus, expectedNotice] of [
 		[5, "paused", /goal tools.*paused/i],
 		[100, "budget_limited", /token budget reached/i],
@@ -160,7 +166,7 @@ test("restored active goal applies budget limits before unavailable-tool pauses"
 			sessionManager: { getBranch: () => branch, getEntries: () => branch },
 		});
 
-		mock.callEvent("session_start", {}, context.ctx);
+		await mock.callEvent("session_start", {}, context.ctx);
 
 		assert.equal(lastGoalStatus(mock), expectedStatus);
 		assert.equal(mock.sentUserMessages.length, 0);
@@ -169,7 +175,7 @@ test("restored active goal applies budget limits before unavailable-tool pauses"
 });
 
 test("always visibility respects a restrictive policy when starting a goal", async () => {
-	const [mock, context] = createGoalHarness();
+	const [mock, context] = await createGoalHarness();
 	mock.rawPi.setActiveTools(["read", "bash"]);
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
@@ -181,7 +187,7 @@ test("always visibility respects a restrictive policy when starting a goal", asy
 });
 
 test("after-first-goal does not widen a restrictive active turn", async () => {
-	const [mock, context] = createGoalHarness([], "after-first-goal", { isIdle: () => false });
+	const [mock, context] = await createGoalHarness([], "after-first-goal", { isIdle: () => false });
 
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
 
@@ -205,7 +211,7 @@ test("failed replacement activation pauses an existing active goal without termi
 });
 
 test("start fails without committing a goal when goal tools cannot become active", async () => {
-	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal");
+	const [mock, context] = await createGoalHarness(["read", "bash"], "after-first-goal");
 
 	const originalSetActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
 	mock.rawPi.setActiveTools = (names: string[]) => {
@@ -221,7 +227,7 @@ test("start fails without committing a goal when goal tools cannot become active
 });
 
 test("failed first prompt delivery restores the locked tool set", async () => {
-	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal");
+	const [mock, context] = await createGoalHarness(["read", "bash"], "after-first-goal");
 
 	const sendUserMessage = mock.rawPi.sendUserMessage.bind(mock.rawPi);
 	mock.rawPi.sendUserMessage = () => {
@@ -238,7 +244,10 @@ test("failed first prompt delivery restores the locked tool set", async () => {
 });
 
 test("failed first prompt delivery preserves a preexisting external goal-tool set", async () => {
-	const [mock, context] = createGoalHarness(["read", "bash", "goal_complete", "goal_blocked"], "after-first-goal");
+	const [mock, context] = await createGoalHarness(
+		["read", "bash", "goal_complete", "goal_blocked"],
+		"after-first-goal",
+	);
 	// Another extension exposes both terminal tools while pi-goal remains locked.
 	mock.rawPi.setActiveTools(["read", "goal_complete", "goal_blocked", "scrape"]);
 	mock.rawPi.sendUserMessage = () => {
@@ -253,7 +262,7 @@ test("failed first prompt delivery preserves a preexisting external goal-tool se
 
 test("failed lazy reactivation deliveries restore the restrictive tool set", async (t) => {
 	await t.test("stopped-goal replacement", async () => {
-		const replaced = restoreGoalForTest("paused", {}, "after-first-goal");
+		const replaced = await restoreGoalForTest("paused", {}, "after-first-goal");
 		const original = requireLastGoal(replaced.mock);
 		replaced.mock.rawPi.setActiveTools(["read", "bash"]);
 		replaced.mock.rawPi.sendUserMessage = () => {
@@ -268,7 +277,7 @@ test("failed lazy reactivation deliveries restore the restrictive tool set", asy
 	});
 
 	await t.test("resume", async () => {
-		const resumed = restoreGoalForTest("paused", {}, "after-first-goal");
+		const resumed = await restoreGoalForTest("paused", {}, "after-first-goal");
 		const original = requireLastGoal(resumed.mock);
 		resumed.mock.rawPi.setActiveTools(["read", "bash"]);
 		resumed.mock.rawPi.sendUserMessage = () => {
@@ -283,7 +292,7 @@ test("failed lazy reactivation deliveries restore the restrictive tool set", asy
 	});
 
 	await t.test("budget-increase edit", async () => {
-		const edited = restoreGoalForTest("budget_limited", {}, "after-first-goal");
+		const edited = await restoreGoalForTest("budget_limited", {}, "after-first-goal");
 		const original = requireLastGoal(edited.mock);
 		edited.mock.rawPi.setActiveTools(["read", "bash"]);
 		edited.mock.rawPi.sendUserMessage = () => {
@@ -300,7 +309,7 @@ test("failed lazy reactivation deliveries restore the restrictive tool set", asy
 
 test("a stale first kickoff cannot run or roll back a newer replacement", async () => {
 	let aborts = 0;
-	const [mock, context] = createGoalHarness(["read", "bash"], "after-first-goal", {
+	const [mock, context] = await createGoalHarness(["read", "bash"], "after-first-goal", {
 		abort: () => aborts++,
 	});
 	const sentPrompts: string[] = [];
@@ -332,7 +341,7 @@ test("a stale first kickoff cannot run or roll back a newer replacement", async 
 });
 
 test("a cleared Goal cannot deliver a kickoff still awaiting Suite preparation", async () => {
-	const [mock, context] = createGoalHarness(["goal_complete", "goal_blocked"]);
+	const [mock, context] = await createGoalHarness(["goal_complete", "goal_blocked"]);
 	const preparation = Promise.withResolvers<void>();
 	const unregister = registerSuiteAgentMessagePreparation(mock.pi, { prepare: () => preparation.promise });
 

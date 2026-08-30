@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Effect } from "effect";
 import {
 	type ActiveGoal,
 	createGoal,
@@ -493,7 +494,10 @@ test("owned Goal prompt attribution remains lossless beyond the former marker li
 	const context = createMockContext();
 	for (let index = 0; index < 32; index += 1) {
 		runtime.activeGoal = { ...createGoal(`goal ${index}`, undefined, 0), id: `goal-${index}` };
-		assert.equal(await runtime.sendOwnedGoalPrompt(context.ctx, `goal-${index}`, `owned prompt ${index}`), true);
+		assert.equal(
+			await Effect.runPromise(runtime.sendOwnedGoalPrompt(context.ctx, `goal-${index}`, `owned prompt ${index}`)),
+			true,
+		);
 	}
 
 	const oldestPrompt = mock.sentUserMessages[0]?.text;
