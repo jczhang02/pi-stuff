@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const ARMS = ["raw", "off", "on"] as const;
 export const BOOTSTRAP_ITERATIONS = 20_000;
-export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_830;
+export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_831;
 
 export type SkillDiscoveryArm = (typeof ARMS)[number];
 export type SkillDiscoveryFamily = "instruction" | "metadata" | "relative-resource";
@@ -124,40 +124,40 @@ const ARM_PERMUTATIONS = [
 
 const SUBJECTS = {
 	metadata: [
-		"amber compass calibration record",
-		"cedar barometer calibration record",
-		"cobalt chronometer calibration record",
-		"copper sextant calibration record",
-		"ivory altimeter calibration record",
-		"jade hygrometer calibration record",
-		"ochre gyroscope calibration record",
-		"silver anemometer calibration record",
-		"violet spectrometer calibration record",
-		"walnut odometer calibration record",
+		"bronze inclinometer service ledger",
+		"carmine dosimeter service ledger",
+		"ebony flowmeter service ledger",
+		"flax tachometer service ledger",
+		"garnet voltmeter service ledger",
+		"hazel manometer service ledger",
+		"linen pyrometer service ledger",
+		"maroon luxmeter service ledger",
+		"nickel salinometer service ledger",
+		"topaz ammeter service ledger",
 	],
 	instruction: [
-		"lilac relay dispatch",
-		"maple beacon dispatch",
-		"navy turbine dispatch",
-		"opal router dispatch",
-		"pearl winch dispatch",
-		"quartz sensor dispatch",
-		"rust valve dispatch",
-		"saffron motor dispatch",
-		"teal switch dispatch",
-		"umber crane dispatch",
+		"azure coupler routing",
+		"brass inverter routing",
+		"crimson feeder routing",
+		"dune actuator routing",
+		"emerald chiller routing",
+		"graphite mixer routing",
+		"honey pump routing",
+		"ink compressor routing",
+		"juniper solenoid routing",
+		"khaki hoist routing",
 	],
 	"relative-resource": [
-		"polar beacon inventory",
-		"alpine radio inventory",
-		"birch lantern inventory",
-		"coral anchor inventory",
-		"delta turbine inventory",
-		"elm transponder inventory",
-		"frost compass inventory",
-		"granite sensor inventory",
-		"harbor relay inventory",
-		"indigo valve inventory",
+		"autumn sonar registry",
+		"basalt modem registry",
+		"cloud spindle registry",
+		"dusk repeater registry",
+		"ember rudder registry",
+		"fern oscillator registry",
+		"glacier switchboard registry",
+		"hemlock antenna registry",
+		"iris gearbox registry",
+		"jasper probe registry",
 	],
 } as const satisfies Readonly<Record<SkillDiscoveryFamily, readonly string[]>>;
 
@@ -201,7 +201,7 @@ function targetBody(family: SkillDiscoveryFamily, index: number): string {
 		return "Reply with the frontmatter verification-token exactly, with no explanation or formatting.";
 	if (family === "instruction") {
 		const serial = String(index + 1).padStart(2, "0");
-		return `Join the fragments \`INST\`, \`CURRENT\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
+		return `Join the fragments \`INST\`, \`CONFIRM\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
 	}
 	return "Read `references/answer.txt` relative to this directory and reply with its trimmed contents only.";
 }
@@ -218,15 +218,15 @@ function decoySkill(name: string, description: string, variant: "archived" | "dr
 function makeTask(family: SkillDiscoveryFamily, subject: string, index: number): SkillDiscoveryManifestTask {
 	const serial = String(index + 1).padStart(2, "0");
 	const familyPrefix = family === "metadata" ? "meta" : family === "instruction" ? "inst" : "resource";
-	const id = `${familyPrefix}-${serial}`;
-	const name = `sd-${familyPrefix}-${slug(subject)}`;
+	const id = `confirm-${familyPrefix}-${serial}`;
+	const name = `sd-confirm-${familyPrefix}-${slug(subject)}`;
 	const description = targetDescription(family, subject);
 	const expectedToken =
 		family === "metadata"
-			? `META_CURRENT_${serial}`
+			? `META_CONFIRM_${serial}`
 			: family === "instruction"
-				? `INST_CURRENT_${serial}`
-				: `RESOURCE_CURRENT_${serial}`;
+				? `INST_CONFIRM_${serial}`
+				: `RESOURCE_CONFIRM_${serial}`;
 	const target: SkillDiscoveryManifestSkill = {
 		description,
 		name,

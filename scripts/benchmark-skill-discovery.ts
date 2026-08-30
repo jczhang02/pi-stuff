@@ -29,10 +29,10 @@ const ROOT = resolve(import.meta.dir, "..");
 const PROVIDER = "openai-codex";
 const MODEL = "gpt-5.6-sol";
 const REASONING = "xhigh";
-const MANIFEST_PATH = "test/fixtures/skill-discovery-benchmark-manifest.jsonl";
+const MANIFEST_PATH = "test/fixtures/skill-discovery-confirmation-manifest.jsonl";
 const OBSERVER_PATH = "test/fixtures/skill-discovery-benchmark-observer.ts";
-const LOCK_PATH = "test/fixtures/skill-discovery-benchmark-run-lock.json";
-const REPORT_PATH = "docs/reports/skill-discovery-benchmark-20260830.json";
+const LOCK_PATH = "test/fixtures/skill-discovery-confirmation-run-lock.json";
+const REPORT_PATH = "docs/reports/skill-discovery-confirmation-20260830.json";
 const PACKAGE_EXTENSION = "packages/pi-stuff/index.ts";
 const RUNNER_SOURCES = [
 	"scripts/benchmark-skill-discovery.ts",
@@ -268,7 +268,7 @@ async function writeReport(
 		observations,
 		plan: { bootstrapIterations: 20_000, seed: manifest.seed, sessions: 90, tasks: 30 },
 		schemaVersion: 1,
-		study: "skill-discovery-real-model-benchmark",
+		study: "skill-discovery-real-model-confirmation",
 	};
 	const reportValue = requireJsonInputValue(report, "Skill Discovery benchmark report");
 	assertSanitizedSkillDiscoveryReport(reportValue, manifest, [benchmarkRoot]);

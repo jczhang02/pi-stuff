@@ -15,6 +15,7 @@ import {
 } from "../scripts/skill-discovery-benchmark-core.js";
 import { analyzeSkillDiscoveryMessages } from "../scripts/skill-discovery-benchmark-evidence.js";
 import { assertSanitizedSkillDiscoveryReport } from "../scripts/skill-discovery-benchmark-report.js";
+import { SKILL_DISCOVERY_TOOL_ALLOWLIST } from "../scripts/skill-discovery-benchmark-session.js";
 import { skillDiscoveryProviderToolNames, skillEntryCount } from "./fixtures/skill-discovery-benchmark-observer.js";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -54,7 +55,7 @@ function successfulObservations(): SkillDiscoveryObservation[] {
 
 test("freezes thirty triads and six arm permutations five times each", () => {
 	const manifest = createSkillDiscoveryManifest();
-	expect(manifest.seed).toBe(20_260_830);
+	expect(manifest.seed).toBe(20_260_831);
 	expect(manifest.tasks).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.id))).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.expectedToken))).toHaveLength(30);
@@ -78,13 +79,17 @@ test("freezes thirty triads and six arm permutations five times each", () => {
 	expect([...orders.values()].sort()).toEqual([5, 5, 5, 5, 5, 5]);
 });
 
+test("allows both direct and Code Mode surfaces through the Host strict Tool allowlist", () => {
+	expect(SKILL_DISCOVERY_TOOL_ALLOWLIST).toEqual(["bash", "find", "grep", "ls", "read", "codemode", "tool_search"]);
+});
+
 test("parses only the exact deterministic manifest", () => {
 	const text = serializeSkillDiscoveryManifest();
-	expect(readFileSync(new URL("fixtures/skill-discovery-benchmark-manifest.jsonl", import.meta.url), "utf8")).toBe(
+	expect(readFileSync(new URL("fixtures/skill-discovery-confirmation-manifest.jsonl", import.meta.url), "utf8")).toBe(
 		text,
 	);
 	expect(parseSkillDiscoveryManifest(text)).toEqual(createSkillDiscoveryManifest());
-	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260830', '"seed":1'))).toThrow(
+	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260831', '"seed":1'))).toThrow(
 		"manifest does not match",
 	);
 	expect(() => parseSkillDiscoveryManifest(`${text}not-json\n`)).toThrow("not valid JSON Lines");
@@ -307,7 +312,7 @@ test("uses Wilson intervals, whole-triad bootstrap, and exact two-sided McNemar"
 		difference: 1,
 		interval95: [1, 1],
 		iterations: BOOTSTRAP_ITERATIONS,
-		seed: 20_260_830,
+		seed: 20_260_831,
 	});
 	expect(
 		exactMcNemar([

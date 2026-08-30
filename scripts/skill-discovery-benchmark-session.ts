@@ -19,6 +19,7 @@ import {
 
 const DIRECT_PROVIDER_TOOLS = ["bash", "find", "grep", "ls", "read"] as const;
 const CODE_MODE_PROVIDER_TOOLS = ["codemode", "tool_search"] as const;
+export const SKILL_DISCOVERY_TOOL_ALLOWLIST = [...DIRECT_PROVIDER_TOOLS, ...CODE_MODE_PROVIDER_TOOLS] as const;
 const COMMAND_TIMEOUT_MS = 60_000;
 const SESSION_TIMEOUT_MS = 15 * 60_000;
 
@@ -292,7 +293,7 @@ async function captureSession(
 		"--extension",
 		options.observerExtension,
 		"--tools",
-		DIRECT_PROVIDER_TOOLS.join(","),
+		SKILL_DISCOVERY_TOOL_ALLOWLIST.join(","),
 		"--provider",
 		options.provider,
 		"--model",
