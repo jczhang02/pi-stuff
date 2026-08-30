@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: bf947245d6170ce2fb01dd517f9bd90b53ee5388619818d16e6886b8713d8bfe -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 07fb9f208a98a618f691ea68ed7689b8040fe850e48dcf3aefed5154e2ed3be3 -->
 
 # 报告
 
@@ -8,6 +8,10 @@
 
 ## 保留报告
 
+- [Skill Discovery 隔离真实模型确认](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)——
+  保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但 4 个 Suite
+  Session 在 Provider 请求前超时；解释见其
+  [预注册](../../../../../docs/research/skill-discovery-isolated-confirmation-20260830.md)
 - [Skill Discovery direct-read 真实模型研究](../../../../../docs/reports/skill-discovery-direct-read-20260830.json)——
   保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但一个匹配的
   off/on pair 在 Provider 请求前超时；解释见其

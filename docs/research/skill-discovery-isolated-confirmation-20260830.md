@@ -2,7 +2,8 @@
 
 Date: 2026-08-30
 
-Status: design and Run Lock frozen; no isolated-confirmation Session, Provider request, or outcome has been produced.
+Status: completed exactly once; retained as a failed study because four Suite Sessions timed out before any Provider
+request.
 
 This is a new, independent study for Bead `ps-1gd`. It does not replace or reuse samples from the retained
 [first benchmark](skill-discovery-benchmark-20260830.md),
@@ -141,6 +142,35 @@ The study passes only if:
 
 Improvement additionally requires more favorable than unfavorable discordant pairs and exact two-sided McNemar
 `p <= 0.05`. Otherwise the strongest passing claim is non-inferiority under this exact frozen study.
+
+## Retained outcome
+
+The signed Run Lock was executed exactly once for all 90 scheduled Sessions, with no retry, replacement, exclusion,
+or early stop. The sanitized report is
+[`docs/reports/skill-discovery-isolated-confirmation-20260830.json`](../reports/skill-discovery-isolated-confirmation-20260830.json),
+SHA-256 `91fc30c82ba481aafdcd023d8247b9588dfe4608ad0c72e53e6be88c83cbe8f5`.
+
+- Raw Pi passed 30/30 Sessions.
+- Pi Stuff off passed 27/30 Sessions.
+- Pi Stuff on passed 29/30 Sessions.
+- Every completed on-arm Session passed the strict direct-read endpoint: 29/29 saw the exact catalog, selected the
+  target automatically, made the exact target its first relevant operation through nested `tools.read`, made no
+  `tool_search` or other detour, matched required hashes, and returned the exact answer.
+
+Four Suite observations timed out between 61,650 ms and 65,163 ms with zero Provider requests, Tool calls, and tokens:
+the matched off/on pair for `isolated-resource-05`, plus off for `isolated-inst-05` and `isolated-inst-07`. Their raw
+peers passed, and the on peers for both unmatched off failures passed. Those observations caused four instrumentation
+and prompt-boundary violations, failed the Provider-Tool hard invariant, and made the observed ordering
+`30/30 > 27/30 < 29/30`. The frozen verdict is therefore `failed`.
+
+The descriptive on-minus-off difference was `+0.0667` with bootstrap interval `[0, 0.1667]`; McNemar had two favorable
+and zero unfavorable pairs with `p = 0.5`. This supports Code Mode parity among completed Sessions but cannot override
+the failed hard gate. There were no safety, protected-file, or report-privacy violations.
+
+Native Context isolation did not remove the repeated Suite-only pre-Provider timeout shape, so the earlier
+Magic-Context-specific diagnosis was insufficient. The report still cannot distinguish initial RPC startup/configuration
+commands from prompt preflight. This study remains unchanged and failed. Before another study, the shared runner must
+record a bounded timeout phase and a no-Provider real-Host probe must identify the affected boundary.
 
 ## Public-data policy
 

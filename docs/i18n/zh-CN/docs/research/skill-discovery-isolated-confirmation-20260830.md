@@ -1,10 +1,10 @@
-<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: dabe2ee0720bdb9c92cef734e42a72c0d3d635acd1b050c1a86ce5df0a47fad3 -->
+<!-- translation-source: docs/research/skill-discovery-isolated-confirmation-20260830.md; translation-source-sha256: 76b57763b68562d275517e86b970ea0eb01cfceed3943745b5dcae98d3c70009 -->
 
 # Skill Discovery 隔离真实模型确认预注册
 
 日期：2026-08-30
 
-状态：设计与 Run Lock 已冻结；尚未产生 isolated-confirmation Session、Provider 请求或结果。
+状态：已严格执行一次；由于 4 个 Suite Session 在发出任何 Provider 请求前超时，本研究作为失败研究保留。
 
 这是 Bead `ps-1gd` 的全新独立研究。它不会替换或复用已保留的
 [首次 benchmark](../../../../../docs/research/skill-discovery-benchmark-20260830.md)、
@@ -142,6 +142,35 @@ McNemar 报告全部四个 paired cell。
 
 Improvement 还要求 favorable discordant pair 多于 unfavorable，且 exact two-sided McNemar `p <= 0.05`。
 否则，通过后允许的最强表述是本次精确冻结研究下的 non-inferiority。
+
+## 保留结果
+
+已签名的 Run Lock 严格执行一次，覆盖计划中的全部 90 个 Session；没有重试、替换、排除或提前停止。
+脱敏报告为
+[`docs/reports/skill-discovery-isolated-confirmation-20260830.json`](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)，
+SHA-256 `91fc30c82ba481aafdcd023d8247b9588dfe4608ad0c72e53e6be88c83cbe8f5`。
+
+- Raw Pi 通过 30/30 个 Session。
+- Pi Stuff off 通过 27/30 个 Session。
+- Pi Stuff on 通过 29/30 个 Session。
+- 所有完成的 on-arm Session 都通过了严格 direct-read endpoint：29/29 看见精确 catalog，自动选择目标，
+  通过嵌套 `tools.read` 把精确目标作为第一个相关操作，没有 `tool_search` 或其他绕路，匹配所需 hash，
+  并返回精确答案。
+
+4 个 Suite observation 在 61,650 ms 至 65,163 ms 之间超时，Provider request、Tool call 与 token 均为零：
+`isolated-resource-05` 的匹配 off/on pair，以及 `isolated-inst-05` 与 `isolated-inst-07` 的 off。它们的 raw
+peer 全部通过，两个不匹配 off failure 的 on peer 也通过。这些观察造成 4 个 instrumentation 与
+prompt-boundary violation，使 Provider-Tool hard invariant 失败，并令观察排序成为
+`30/30 > 27/30 < 29/30`。因此，冻结 verdict 为 `failed`。
+
+描述性的 on-minus-off 差值为 `+0.0667`，bootstrap 区间为 `[0, 0.1667]`；McNemar 有 2 个 favorable、
+0 个 unfavorable pair，`p = 0.5`。这支持已完成 Session 中的 Code Mode parity，但不能覆盖失败的 hard
+gate。本研究没有 safety、protected-file 或 report-privacy violation。
+
+Native Context 隔离没有消除反复出现的 Suite-only、Provider 前 timeout 形态，因此先前针对 Magic Context
+的诊断并不充分。报告仍无法区分最初的 RPC startup/configuration command 与 prompt preflight。本研究保持
+原样且判定失败。开始另一项研究前，共享 runner 必须记录 bounded timeout phase，并用不触发 Provider 的
+真实 Host probe 定位受影响边界。
 
 ## 公开数据政策
 
