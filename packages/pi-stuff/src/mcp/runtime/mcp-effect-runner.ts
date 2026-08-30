@@ -5,6 +5,36 @@ export type McpEffectRunner = <Value, ErrorValue>(
 	signal?: AbortSignal,
 ) => Promise<Value>;
 
+function abortReason(signal: AbortSignal): Error {
+	return signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason));
+}
+
+function failOnAbort(signal: AbortSignal): Effect.Effect<never, Error> {
+	return Effect.callback<never, Error>((resume) => {
+		const abort = () => resume(Effect.fail(abortReason(signal)));
+		if (signal.aborted) {
+			abort();
+			return;
+		}
+		signal.addEventListener("abort", abort, { once: true });
+		return Effect.sync(() => signal.removeEventListener("abort", abort));
+	});
+}
+
+export function mcpNativePromise<Value>(
+	request: (signal: AbortSignal) => PromiseLike<Value>,
+	signal?: AbortSignal,
+): Effect.Effect<Value, Error> {
+	return Effect.suspend(() => {
+		if (signal?.aborted) return Effect.fail(abortReason(signal));
+		const native = Effect.tryPromise({
+			try: (effectSignal) => request(signal ? AbortSignal.any([signal, effectSignal]) : effectSignal),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		return signal ? Effect.raceFirst(native, failOnAbort(signal)) : native;
+	});
+}
+
 /** Project an MCP Effect back into the Promise and AbortSignal contract owned by Pi. */
 export const runMcpEffect: McpEffectRunner = async (program, signal) => {
 	const exit = await Effect.runPromiseExit(program, { signal });

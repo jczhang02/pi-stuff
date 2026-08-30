@@ -10,9 +10,11 @@ Direct Tools, JavaScript batching, prompts, Apps, sampling, and elicitation are 
 retained behind flags.
 
 `implementation.ts` keeps one per-factory adapter state and wires ordered session, Command, and gateway Tool phases.
-`init.ts` owns state construction and startup projection; `server-manager.ts` owns connection identity and
-post-connect disposal. `mcp-http-transport.ts` owns native HTTP negotiation and failed-acquisition cleanup, while
-`mcp-effect-runner.ts` projects its Effects to the existing Promise and `AbortSignal` contract at the Pi-facing seam.
+`runtime-owner.ts` owns the runtime Scope; `server-manager.ts` owns Fiber-backed single-flight connection identity and
+per-connection child Scopes; `metadata-discovery.ts` owns bounded tool and resource pagination. Lifecycle and gateway
+operations compose as Effects, while `mcp-effect-runner.ts` projects them to the existing Promise and `AbortSignal`
+contracts at Pi-facing seams. Temporary Session and Command compatibility projections are inventoried for removal by
+their owning migration. `mcp-http-transport.ts` owns native HTTP negotiation and failed-acquisition cleanup.
 `config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe loading, narrow writes, and
 its compatibility exports.
 
@@ -33,6 +35,9 @@ snapshots and exact write previews without mutating that state.
   remain native.
 - Endpoint classification keeps manual redirects, a 5-second deadline per request, a 64 KiB response-body limit, and
   guaranteed response cancellation. Effect interruption closes a failed connection acquisition exactly once.
+- The runtime Scope owns connection-attempt Fibers, OAuth shutdown, health checks, and each live connection's child
+  Scope. Closing interrupts pending acquisition before running the native session, Client, Transport, and trace
+  cleanup protocols.
 - A configured `rmcp-mux` socket is a trusted shared endpoint. Pi Stuff owns only its client connection and never
   starts, adopts, restarts, or stops the mux daemon or upstream process.
 - Enabled `eager` and `keep-alive` servers may initialize for a programmatic Host without `session_start`; a later

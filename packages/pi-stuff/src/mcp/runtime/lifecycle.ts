@@ -1,4 +1,5 @@
-import { isRuntimeFunction, isRuntimeNumber } from "../../shared/runtime-type.js";
+import { Effect, type Scope } from "effect";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { logger } from "./logger.ts";
 import { hasPendingAuth } from "./mcp-auth-flow.ts";
 import type { McpServerManager } from "./server-manager.ts";
@@ -15,14 +16,10 @@ export class McpLifecycleManager {
 	private allServers = new Map<string, ServerDefinition>();
 	private serverSettings = new Map<string, { idleTimeout?: number }>();
 	private globalIdleTimeout = 10 * 60 * 1000;
-	private healthCheckInterval: NodeJS.Timeout | undefined;
 	private onReconnect: ReconnectCallback | undefined;
 	private onReconnectFailure: ReconnectFailureCallback | undefined;
 	private onIdleShutdown: ((serverName: string) => void) | undefined;
-	private activeHealthCheck: Promise<void> | undefined;
-	private shutdownPromise: Promise<void> | undefined;
 	private stopped = false;
-	private removeHealthAbortListener: (() => void) | undefined;
 
 	constructor(manager: McpServerManager, hasPendingAuthForServer = hasPendingAuth) {
 		this.manager = manager;
@@ -56,75 +53,87 @@ export class McpLifecycleManager {
 		this.onIdleShutdown = callback;
 	}
 
-	startHealthChecks(signalOrInterval?: AbortSignal | number, maybeIntervalMs = 30000): void {
+	startHealthChecks(
+		signalOrInterval?: AbortSignal | number,
+		maybeIntervalMs = 30000,
+	): Effect.Effect<void, never, Scope.Scope> {
 		const signal = isRuntimeNumber(signalOrInterval) ? undefined : signalOrInterval;
 		const intervalMs = isRuntimeNumber(signalOrInterval) ? signalOrInterval : maybeIntervalMs;
 		this.stopped = false;
 		if (signal?.aborted) {
 			this.stopped = true;
-			return;
+			return Effect.void;
 		}
-		const stop = () => {
-			this.stopped = true;
-			if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
-			this.healthCheckInterval = undefined;
-		};
-		signal?.addEventListener("abort", stop, { once: true });
-		this.removeHealthAbortListener = () => signal?.removeEventListener("abort", stop);
-		this.healthCheckInterval = setInterval(() => {
-			if (this.stopped || signal?.aborted || this.activeHealthCheck) return;
-			const check = this.checkConnections(signal)
-				.catch((error) => {
+		const iteration = Effect.sleep(Math.max(0, intervalMs)).pipe(
+			Effect.andThen(this.checkConnections(signal)),
+			Effect.catch((error) =>
+				Effect.sync(() => {
 					logger.error(
 						"MCP: Health check failed",
 						error instanceof Error ? error : new Error(formatTerminalError(error)),
 					);
-				})
-				.finally(() => {
-					if (this.activeHealthCheck === check) this.activeHealthCheck = undefined;
-				});
-			this.activeHealthCheck = check;
-		}, intervalMs);
-		this.healthCheckInterval.unref();
+				}),
+			),
+		);
+		let loop: Effect.Effect<void, never> = Effect.forever(iteration);
+		if (signal) {
+			const aborted = Effect.callback<void>((resume) => {
+				const stop = () => {
+					this.stopped = true;
+					resume(Effect.void);
+				};
+				if (signal.aborted) {
+					stop();
+					return;
+				}
+				signal.addEventListener("abort", stop, { once: true });
+				return Effect.sync(() => signal.removeEventListener("abort", stop));
+			});
+			loop = Effect.raceFirst(loop, aborted);
+		}
+		return Effect.forkScoped(loop).pipe(Effect.asVoid);
 	}
 
-	private async checkConnections(signal?: AbortSignal): Promise<void> {
-		if (this.stopped || signal?.aborted) return;
-		for (const [name, definition] of this.keepAliveServers) {
-			if (isServerDisabled(definition)) continue;
-			const connection = this.manager.getConnection(name);
-			if (connection?.status !== "connected") {
+	private checkConnections(signal?: AbortSignal): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			if (this.stopped || signal?.aborted) return;
+			for (const [name, definition] of this.keepAliveServers) {
+				if (isServerDisabled(definition)) continue;
+				const connection = this.manager.getConnection(name);
+				if (connection?.status === "connected") continue;
 				if (this.hasPendingAuthForServer(name)) {
 					logger.debug(`Skipping reconnect for ${name} while OAuth authorization is pending`);
 					continue;
 				}
-				try {
-					await this.manager.connect(name, definition, signal);
-					if (this.stopped || signal?.aborted) return;
+				const outcome = yield* this.manager.connectEffect(name, definition, signal).pipe(
+					Effect.map(() => ({ ok: true as const })),
+					Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+				);
+				if (this.stopped || signal?.aborted) return;
+				if (outcome.ok) {
 					logger.debug(`Reconnected to ${name}`);
 					this.onReconnect?.(name);
-				} catch (error) {
+					continue;
+				}
+				this.onReconnectFailure?.(name, outcome.error);
+				const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+				logger.error(
+					`MCP: Failed to reconnect to ${name}`,
+					outcome.error instanceof Error ? outcome.error : new Error(sanitizeTerminalText(message)),
+					{ server: name },
+				);
+			}
+
+			for (const [name] of this.allServers) {
+				if (this.keepAliveServers.has(name)) continue;
+				const timeout = this.getIdleTimeout(name);
+				if (timeout > 0 && this.manager.isIdle(name, timeout)) {
+					yield* this.manager.closeEffect(name);
 					if (this.stopped || signal?.aborted) return;
-					this.onReconnectFailure?.(name, error);
-					const message = error instanceof Error ? error.message : String(error);
-					logger.error(
-						`MCP: Failed to reconnect to ${name}`,
-						error instanceof Error ? error : new Error(sanitizeTerminalText(message)),
-						{ server: name },
-					);
+					this.onIdleShutdown?.(name);
 				}
 			}
-		}
-
-		for (const [name] of this.allServers) {
-			if (this.keepAliveServers.has(name)) continue;
-			const timeout = this.getIdleTimeout(name);
-			if (timeout > 0 && this.manager.isIdle(name, timeout)) {
-				await this.manager.close(name);
-				if (this.stopped || signal?.aborted) return;
-				this.onIdleShutdown?.(name);
-			}
-		}
+		});
 	}
 
 	private getIdleTimeout(name: string): number {
@@ -133,25 +142,13 @@ export class McpLifecycleManager {
 		return this.globalIdleTimeout;
 	}
 
-	async gracefulShutdown(): Promise<void> {
-		if (this.shutdownPromise) return this.shutdownPromise;
-		this.shutdownPromise = this.shutdownOnce();
-		return this.shutdownPromise;
-	}
-
-	private async shutdownOnce(): Promise<void> {
-		this.stopped = true;
-		if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
-		this.healthCheckInterval = undefined;
-		this.removeHealthAbortListener?.();
-		this.removeHealthAbortListener = undefined;
-		await this.activeHealthCheck;
-		this.activeHealthCheck = undefined;
-		this.onReconnect = undefined;
-		this.onReconnectFailure = undefined;
-		this.onIdleShutdown = undefined;
-		if (isRuntimeFunction(this.manager.closeAll)) {
-			await this.manager.closeAll();
-		}
+	gracefulShutdown(): Effect.Effect<void, Error> {
+		return Effect.suspend(() => {
+			this.stopped = true;
+			this.onReconnect = undefined;
+			this.onReconnectFailure = undefined;
+			this.onIdleShutdown = undefined;
+			return this.manager.closeAllEffect();
+		});
 	}
 }

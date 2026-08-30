@@ -1,5 +1,6 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../../lifecycle-deadline.js";
+import { Cause, Effect, Exit, Scope } from "effect";
+import { HOST_SHUTDOWN_GRACE_MS } from "../../lifecycle-deadline.js";
 import { readHostProxyProperty } from "../../shared/host-proxy.js";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeObject } from "../../shared/runtime-type.js";
@@ -8,16 +9,17 @@ import { formatTerminalError } from "./utils.ts";
 
 export interface McpRuntimeOwner {
 	readonly signal: AbortSignal;
+	readonly scope: Scope.Closeable;
 	isActive(): boolean;
-	addCleanup(cleanup: () => void | Promise<void>): void;
-	stop(reason?: string): Promise<void>;
+	addCleanup(cleanup: () => void | Promise<void>): Effect.Effect<void>;
+	addFinalizer(finalizer: Effect.Effect<unknown>): Effect.Effect<void>;
+	stop(reason?: string): Effect.Effect<void>;
 	throwIfInactive(): void;
 }
 
 export function createMcpRuntimeOwner(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS): McpRuntimeOwner {
 	const controller = new AbortController();
-	const cleanups: Array<() => void | Promise<void>> = [];
-	let stopPromise: Promise<void> | undefined;
+	const scope = Scope.makeUnsafe("sequential");
 
 	const reportCleanupFailure = <ErrorValue>(error: ErrorValue, late: boolean) => {
 		logger.error(
@@ -28,34 +30,33 @@ export function createMcpRuntimeOwner(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS):
 
 	return {
 		signal: controller.signal,
+		scope,
 		isActive: () => !controller.signal.aborted,
+		addFinalizer: (finalizer) => Scope.addFinalizer(scope, finalizer),
 		addCleanup: (cleanup) => {
-			if (controller.signal.aborted) {
-				void Promise.resolve()
-					.then(cleanup)
-					.catch((error) => reportCleanupFailure(error, true));
-				return;
-			}
-			cleanups.push(cleanup);
+			const late = controller.signal.aborted;
+			const finalizer = Effect.tryPromise({
+				try: () => Promise.resolve(cleanup()),
+				catch: (error) => (error instanceof Error ? error : new Error(formatTerminalError(error))),
+			}).pipe(
+				Effect.catch((error) => (late ? Effect.sync(() => reportCleanupFailure(error, true)) : Effect.die(error))),
+			);
+			return Scope.addFinalizer(scope, finalizer);
 		},
-		stop: (reason = "MCP extension runtime stopped") => {
-			if (stopPromise) return stopPromise;
-			controller.abort(new Error(reason));
-			const pendingCleanups = cleanups
-				.splice(0)
-				.reverse()
-				.map((cleanup) => Promise.resolve().then(cleanup));
-			const cleanup = Promise.allSettled(pendingCleanups).then((results) => {
-				const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-				if (failures.length > 0) {
-					const aggregate = new AggregateError(failures, "MCP runtime cleanup failed");
-					logger.error("MCP: runtime cleanup failed", aggregate);
-					throw aggregate;
-				}
-			});
-			stopPromise = settleWithin(cleanup, shutdownGraceMs).then(() => undefined);
-			return stopPromise;
-		},
+		stop: (reason = "MCP extension runtime stopped") =>
+			Effect.suspend(() => {
+				if (!controller.signal.aborted) controller.abort(new Error(reason));
+				const finalizers = Scope.closeUnsafe(scope, Exit.interrupt());
+				if (!finalizers) return Effect.void;
+				return Effect.exit(finalizers).pipe(
+					Effect.tap((exit) => {
+						if (Exit.isSuccess(exit)) return Effect.void;
+						return Effect.sync(() => reportCleanupFailure(Cause.squash(exit.cause), false));
+					}),
+					Effect.timeoutOption(Math.max(0, shutdownGraceMs)),
+					Effect.asVoid,
+				);
+			}),
 		throwIfInactive: () => controller.signal.throwIfAborted(),
 	};
 }

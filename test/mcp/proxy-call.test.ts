@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
 import { executeCall } from "../../packages/pi-stuff/src/mcp/runtime/proxy-call.js";
 import type { McpServerManager, ServerConnection } from "../../packages/pi-stuff/src/mcp/runtime/server-manager.js";
 import type { McpExtensionState } from "../../packages/pi-stuff/src/mcp/runtime/state.js";
@@ -59,7 +60,7 @@ test("MCP proxy call executes a resolved tool and balances activity ownership", 
 		return { content: [{ type: "text", text: "ok" }] };
 	});
 
-	const result = await executeCall(fixture.state, fixture.tool.name, { value: "hello" });
+	const result = await runMcpEffect(executeCall(fixture.state, fixture.tool.name, { value: "hello" }));
 
 	expect(received).toEqual({ name: "echo", arguments: { value: "hello" } });
 	expect(result.content).toEqual([{ type: "text", text: "ok" }]);
@@ -72,7 +73,7 @@ test("MCP proxy call releases activity ownership after a rejected tool call", as
 		throw new Error("boom");
 	});
 
-	const result = await executeCall(fixture.state, fixture.tool.name);
+	const result = await runMcpEffect(executeCall(fixture.state, fixture.tool.name));
 
 	expect(result.details).toMatchObject({ mode: "call", error: "call_failed", message: "boom" });
 	expect(fixture.activity).toEqual({ events: ["touch", "increment", "decrement", "touch"], inFlight: 0 });
@@ -81,7 +82,7 @@ test("MCP proxy call releases activity ownership after a rejected tool call", as
 test("MCP proxy call reports authentication required before invoking a cached tool", async () => {
 	const fixture = harness(async () => ({ content: [] }), "needs-auth");
 
-	const result = await executeCall(fixture.state, fixture.tool.name);
+	const result = await runMcpEffect(executeCall(fixture.state, fixture.tool.name));
 
 	expect(result.details).toMatchObject({ mode: "call", error: "auth_required", server: "demo", tool: "echo" });
 	expect(fixture.activity).toEqual({ events: [], inFlight: 0 });

@@ -1,8 +1,8 @@
 import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { Cause, Effect, Exit } from "effect";
 import { type JsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
-import { abortable, throwIfAborted } from "./abort.ts";
 import {
 	clearFailure,
 	getFailureAgeSeconds,
@@ -11,6 +11,7 @@ import {
 	recordFailure,
 	updateStatusBar,
 } from "./init.ts";
+import { mcpNativePromise } from "./mcp-effect-runner.ts";
 import { guardedMcpDetails, guardMcpOutput, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
 import {
 	attemptAutoAuth,
@@ -75,24 +76,28 @@ class McpCall {
 		this.serverOverride = serverOverride;
 		this.getPiTools = getPiTools;
 		this.ownedSignal = combineAbortSignals(state.owner?.signal, signal);
-		throwIfAborted(this.ownedSignal);
+		this.ownedSignal?.throwIfAborted();
 		this.serverName = serverOverride;
 		this.prefixMode = state.config.settings?.toolPrefix ?? "server";
 	}
 
-	async run(): Promise<ProxyToolResult> {
-		const resolutionError = await this.resolveTarget();
-		if (resolutionError) return resolutionError;
-		if (!this.serverName || !this.toolMeta) throw new Error("MCP call target was not resolved");
-		const { serverName, toolMeta } = this;
-		this.callIdentity = toolMeta.resourceUri
-			? { server: serverName, resourceUri: toolMeta.resourceUri }
-			: { server: serverName, tool: toolMeta.originalName };
+	run(): Effect.Effect<ProxyToolResult, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const resolutionError = yield* this.resolveTarget();
+			if (resolutionError) return resolutionError;
+			if (!this.serverName || !this.toolMeta) {
+				return yield* Effect.fail(new Error("MCP call target was not resolved"));
+			}
+			const { serverName, toolMeta } = this;
+			this.callIdentity = toolMeta.resourceUri
+				? { server: serverName, resourceUri: toolMeta.resourceUri }
+				: { server: serverName, tool: toolMeta.originalName };
 
-		const connectionError = await this.ensureConnection();
-		if (connectionError) return connectionError;
-		const approvalError = await this.ensureApproval();
-		return approvalError ?? this.executeRequest();
+			const connectionError = yield* this.ensureConnection();
+			if (connectionError) return connectionError;
+			const approvalError = yield* this.ensureApproval();
+			return approvalError ?? (yield* this.executeRequest());
+		});
 	}
 
 	private target() {
@@ -114,14 +119,16 @@ class McpCall {
 		);
 	}
 
-	private async resolveTarget(): Promise<ProxyToolResult | undefined> {
+	private resolveTarget(): Effect.Effect<ProxyToolResult | undefined, Error> {
 		const cachedError = this.resolveCachedTarget();
-		if (cachedError) return cachedError;
-		const explicitError = await this.resolveExplicitTarget();
-		if (explicitError) return explicitError;
-		const prefixError = await this.resolvePrefixedTarget();
-		if (prefixError) return prefixError;
-		if (!this.serverName || !this.toolMeta) return this.unresolvedTargetResult();
+		if (cachedError) return Effect.succeed(cachedError);
+		return Effect.gen({ self: this }, function* () {
+			const explicitError = yield* this.resolveExplicitTarget();
+			if (explicitError) return explicitError;
+			const prefixError = yield* this.resolvePrefixedTarget();
+			if (prefixError) return prefixError;
+			return !this.serverName || !this.toolMeta ? this.unresolvedTargetResult() : undefined;
+		});
 	}
 
 	private resolveCachedTarget(): ProxyToolResult | undefined {
@@ -154,45 +161,49 @@ class McpCall {
 		if (disabledMatch) return this.disabledResult(disabledMatch.serverName, disabledMatch.toolMeta);
 	}
 
-	private async resolveExplicitTarget(): Promise<ProxyToolResult | undefined> {
+	private resolveExplicitTarget(): Effect.Effect<ProxyToolResult | undefined, Error> {
 		const serverName = this.serverName;
-		if (!serverName || this.toolMeta) return;
-		const connected = await this.connect(serverName);
-		if (connected) {
-			this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
-			if (!this.toolMeta && this.autoAuthSucceeded) return this.afterReconnectResult(serverName);
-			return;
-		}
-		if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
-			return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
-		}
-		return this.backoffResult(serverName, { server: serverName, requestedTool: this.toolName });
+		if (!serverName || this.toolMeta) return Effect.succeed(undefined);
+		return Effect.gen({ self: this }, function* () {
+			const connected = yield* this.connect(serverName);
+			if (connected) {
+				this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
+				if (!this.toolMeta && this.autoAuthSucceeded) return this.afterReconnectResult(serverName);
+				return undefined;
+			}
+			if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
+				return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
+			}
+			return this.backoffResult(serverName, { server: serverName, requestedTool: this.toolName });
+		});
 	}
 
-	private async resolvePrefixedTarget(): Promise<ProxyToolResult | undefined> {
-		if (this.serverName || this.toolMeta || this.prefixMode === "none") return;
+	private resolvePrefixedTarget(): Effect.Effect<ProxyToolResult | undefined, Error> {
+		if (this.serverName || this.toolMeta || this.prefixMode === "none") return Effect.succeed(undefined);
 		const candidates = Object.keys(this.state.config.mcpServers)
 			.filter((name) => !isServerDisabled(this.state.config.mcpServers[name]))
 			.map((name) => ({ name, prefix: getServerPrefix(name, this.prefixMode) }))
 			.filter(({ prefix }) => prefix && this.toolName.startsWith(`${prefix}_`))
 			.sort((left, right) => right.prefix.length - left.prefix.length);
 
-		for (const { name: serverName } of candidates) {
-			const connection = this.state.manager.getConnection(serverName);
-			if (getFailureAgeSeconds(this.state, serverName) !== null && connection?.status !== "needs-auth") continue;
+		return Effect.gen({ self: this }, function* () {
+			for (const { name: serverName } of candidates) {
+				const connection = this.state.manager.getConnection(serverName);
+				if (getFailureAgeSeconds(this.state, serverName) !== null && connection?.status !== "needs-auth") continue;
 
-			const connected = await this.connect(serverName);
-			if (this.autoAuthFailure) {
-				return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
+				const connected = yield* this.connect(serverName);
+				if (this.autoAuthFailure) {
+					return this.authRequired(serverName, { server: serverName, requestedTool: this.toolName });
+				}
+				if (!connected) continue;
+				this.prefixMatchedServer ??= serverName;
+				this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
+				if (this.toolMeta) {
+					this.serverName = serverName;
+					return undefined;
+				}
 			}
-			if (!connected) continue;
-			this.prefixMatchedServer ??= serverName;
-			this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
-			if (this.toolMeta) {
-				this.serverName = serverName;
-				return;
-			}
-		}
+		});
 	}
 
 	private unresolvedTargetResult(): ProxyToolResult {
@@ -223,22 +234,30 @@ class McpCall {
 		});
 	}
 
-	private async autoAuthenticate(serverName: string): Promise<boolean> {
-		if (this.autoAuthAttempted) return false;
+	private autoAuthenticate(serverName: string): Effect.Effect<boolean, Error> {
+		if (this.autoAuthAttempted) return Effect.succeed(false);
 		this.autoAuthAttempted = true;
-		const result = await attemptAutoAuth(this.state, serverName, this.ownedSignal);
-		this.autoAuthFailure = result.status === "failed" ? result.message : undefined;
-		this.autoAuthSucceeded = result.status === "success";
-		return this.autoAuthSucceeded;
+		return mcpNativePromise(
+			(effectSignal) => attemptAutoAuth(this.state, serverName, effectSignal),
+			this.ownedSignal,
+		).pipe(
+			Effect.map((result) => {
+				this.autoAuthFailure = result.status === "failed" ? result.message : undefined;
+				this.autoAuthSucceeded = result.status === "success";
+				return this.autoAuthSucceeded;
+			}),
+		);
 	}
 
-	private async connect(serverName: string, reason?: string): Promise<boolean> {
-		if (await lazyConnect(this.state, serverName, this.ownedSignal, reason)) return true;
-		if (this.state.manager.getConnection(serverName)?.status !== "needs-auth") return false;
-		if (!(await this.autoAuthenticate(serverName))) return false;
-		await this.state.manager.close(serverName);
-		clearFailure(this.state, serverName);
-		return lazyConnect(this.state, serverName, this.ownedSignal, reason);
+	private connect(serverName: string, reason?: string): Effect.Effect<boolean, Error> {
+		return Effect.gen({ self: this }, function* () {
+			if (yield* lazyConnect(this.state, serverName, this.ownedSignal, reason)) return true;
+			if (this.state.manager.getConnection(serverName)?.status !== "needs-auth") return false;
+			if (!(yield* this.autoAuthenticate(serverName))) return false;
+			yield* this.state.manager.closeEffect(serverName);
+			clearFailure(this.state, serverName);
+			return yield* lazyConnect(this.state, serverName, this.ownedSignal, reason);
+		});
 	}
 
 	private authRequired(serverName: string, details: JsonInputObject): ProxyToolResult {
@@ -268,91 +287,103 @@ class McpCall {
 		);
 	}
 
-	private async ensureConnection(): Promise<ProxyToolResult | undefined> {
+	private ensureConnection(): Effect.Effect<ProxyToolResult | undefined, Error> {
 		const { callIdentity, serverName } = this.target();
 		const connection = this.state.manager.getConnection(serverName);
-		if (connection?.status === "connected") return;
+		if (connection?.status === "connected") return Effect.succeed(undefined);
 		const backoff = connection?.status === "needs-auth" ? undefined : this.backoffResult(serverName, callIdentity);
-		if (backoff) return backoff;
+		if (backoff) return Effect.succeed(backoff);
 
 		const definition = this.state.config.mcpServers[serverName];
 		if (!definition) {
-			return textResult(`Server "${serverName}" not connected`, {
-				error: "server_not_connected",
-				...callIdentity,
-			});
+			return Effect.succeed(
+				textResult(`Server "${serverName}" not connected`, {
+					error: "server_not_connected",
+					...callIdentity,
+				}),
+			);
 		}
 
-		try {
-			if (!(await this.connect(serverName, "proxy-call-reconnect"))) {
-				if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
-					return this.authRequired(serverName, callIdentity);
+		return Effect.exit(this.connect(serverName, "proxy-call-reconnect")).pipe(
+			Effect.map((exit) => {
+				if (Exit.isFailure(exit)) {
+					const failure = Cause.squash(exit.cause);
+					const error = failure instanceof Error ? failure : new Error(String(failure));
+					if (!isAbortError(error, this.ownedSignal)) recordFailure(this.state, serverName, error.message);
+					updateStatusBar(this.state);
+					return textResult(`Failed to connect to "${serverName}": ${error.message}`, {
+						error: isAbortError(error, this.ownedSignal) ? "aborted" : "connect_failed",
+						...callIdentity,
+						message: error.message,
+					});
 				}
-				const message = getFailureMessage(this.state, serverName) ?? `Server "${serverName}" did not connect.`;
-				return textResult(`Failed to connect to "${serverName}": ${message}`, {
-					error: "connect_failed",
-					...callIdentity,
-					message,
-				});
-			}
-			this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
-			if (!this.toolMeta) {
+				if (!exit.value) {
+					if (this.autoAuthFailure || this.state.manager.getConnection(serverName)?.status === "needs-auth") {
+						return this.authRequired(serverName, callIdentity);
+					}
+					const message = getFailureMessage(this.state, serverName) ?? `Server "${serverName}" did not connect.`;
+					return textResult(`Failed to connect to "${serverName}": ${message}`, {
+						error: "connect_failed",
+						...callIdentity,
+						message,
+					});
+				}
+				this.toolMeta = findToolByName(this.state.toolMetadata.get(serverName), this.toolName);
+				if (this.toolMeta) return undefined;
 				const available = getToolNames(this.state, serverName);
 				const hint =
 					available.length > 0
 						? `Available tools on "${serverName}": ${available.join(", ")}`
 						: `Server "${serverName}" has no tools.`;
 				return this.afterReconnectResult(serverName, hint);
-			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			if (!isAbortError(error, this.ownedSignal)) recordFailure(this.state, serverName, message);
-			updateStatusBar(this.state);
-			return textResult(`Failed to connect to "${serverName}": ${message}`, {
-				error: isAbortError(error, this.ownedSignal) ? "aborted" : "connect_failed",
-				...callIdentity,
-				message,
-			});
-		}
+			}),
+		);
 	}
 
-	private async ensureApproval(): Promise<ProxyToolResult | undefined> {
+	private ensureApproval(): Effect.Effect<ProxyToolResult | undefined, Error> {
 		const { serverName, toolMeta } = this.target();
 		if (isServerDisabled(this.state.config.mcpServers[serverName])) {
-			return this.disabledResult(serverName, toolMeta);
+			return Effect.succeed(this.disabledResult(serverName, toolMeta));
 		}
-		const approval = await ensureToolCallApproved(this.state, serverName, toolMeta, this.args, this.ownedSignal);
-		if (approval.ok) return;
-		const denied = approval.reason === "denied";
-		const message = denied
-			? `The user declined approval to run MCP tool "${toolMeta.originalName}" on server "${serverName}".`
-			: `MCP tool "${toolMeta.originalName}" on server "${serverName}" is approval-gated and requires an interactive session.`;
-		return textResult(message, {
-			error: denied ? "approval_denied" : "approval_required",
-			server: serverName,
-			tool: toolMeta.originalName,
+		return ensureToolCallApproved(this.state, serverName, toolMeta, this.args, this.ownedSignal).pipe(
+			Effect.map((approval) => {
+				if (approval.ok) return undefined;
+				const denied = approval.reason === "denied";
+				const message = denied
+					? `The user declined approval to run MCP tool "${toolMeta.originalName}" on server "${serverName}".`
+					: `MCP tool "${toolMeta.originalName}" on server "${serverName}" is approval-gated and requires an interactive session.`;
+				return textResult(message, {
+					error: denied ? "approval_denied" : "approval_required",
+					server: serverName,
+					tool: toolMeta.originalName,
+				});
+			}),
+		);
+	}
+
+	private recoverAuthConnection(): Effect.Effect<ServerConnection | undefined, Error> {
+		const { serverName } = this.target();
+		const current = this.state.manager.getConnection(serverName);
+		if (current?.status === "connected") return Effect.succeed(current);
+		return Effect.gen({ self: this }, function* () {
+			if (!(yield* this.autoAuthenticate(serverName))) {
+				if (this.autoAuthFailure) {
+					return yield* Effect.fail(new SessionRecoveryAuthRequiredError(serverName, this.autoAuthFailure));
+				}
+				return this.state.manager.getConnection(serverName);
+			}
+
+			const definition = this.state.config.mcpServers[serverName];
+			if (!definition) return undefined;
+			const afterAuth = this.state.manager.getConnection(serverName);
+			if (afterAuth?.status === "connected") return afterAuth;
+			if (afterAuth?.status === "needs-auth") yield* this.state.manager.closeEffect(serverName);
+			clearFailure(this.state, serverName);
+			return yield* this.state.manager.connectEffect(serverName, definition, this.ownedSignal);
 		});
 	}
 
-	private async recoverAuthConnection(): Promise<ServerConnection | undefined> {
-		const { serverName } = this.target();
-		const current = this.state.manager.getConnection(serverName);
-		if (current?.status === "connected") return current;
-		if (!(await this.autoAuthenticate(serverName))) {
-			if (this.autoAuthFailure) throw new SessionRecoveryAuthRequiredError(serverName, this.autoAuthFailure);
-			return this.state.manager.getConnection(serverName);
-		}
-
-		const definition = this.state.config.mcpServers[serverName];
-		if (!definition) return;
-		const afterAuth = this.state.manager.getConnection(serverName);
-		if (afterAuth?.status === "connected") return afterAuth;
-		if (afterAuth?.status === "needs-auth") await this.state.manager.close(serverName);
-		clearFailure(this.state, serverName);
-		return this.state.manager.connect(serverName, definition, this.ownedSignal);
-	}
-
-	private async executeRequest(): Promise<ProxyToolResult> {
+	private executeRequest(): Effect.Effect<ProxyToolResult, Error> {
 		const { serverName, toolMeta } = this.target();
 		const requestOptions =
 			this.state.manager.getRequestOptions?.(serverName, this.ownedSignal) ??
@@ -364,126 +395,155 @@ class McpCall {
 			onNeedsAuth: () => this.recoverAuthConnection(),
 		};
 		if (this.ownedSignal) recoveryDeps.signal = this.ownedSignal;
-
-		try {
-			this.state.manager.touch(serverName);
-			this.state.manager.incrementInFlight(serverName);
-			return toolMeta.resourceUri
-				? await this.readResource(toolMeta.resourceUri, recoveryDeps, requestOptions, outputGuardOptions)
-				: await this.callTool(recoveryDeps, requestOptions, outputGuardOptions);
-		} catch (error) {
-			const aborted = isAbortError(error, this.ownedSignal);
-			const failure = error instanceof Error ? error : new Error(String(error));
-			return await this.failure(failure, aborted, outputGuardOptions);
-		} finally {
-			this.state.manager.decrementInFlight(serverName);
-			this.state.manager.touch(serverName);
-		}
+		const request = Effect.acquireUseRelease(
+			Effect.sync(() => {
+				this.state.manager.touch(serverName);
+				this.state.manager.incrementInFlight(serverName);
+			}),
+			() =>
+				toolMeta.resourceUri
+					? this.readResource(toolMeta.resourceUri, recoveryDeps, requestOptions, outputGuardOptions)
+					: this.callTool(recoveryDeps, requestOptions, outputGuardOptions),
+			() =>
+				Effect.sync(() => {
+					this.state.manager.decrementInFlight(serverName);
+					this.state.manager.touch(serverName);
+				}),
+		);
+		return request.pipe(
+			Effect.catchCause((cause) => {
+				const failure = Cause.squash(cause);
+				const error = failure instanceof Error ? failure : new Error(String(failure));
+				return this.failure(error, isAbortError(error, this.ownedSignal), outputGuardOptions);
+			}),
+		);
 	}
 
-	private async readResource(
+	private readResource(
 		resourceUri: string,
 		recoveryDeps: SessionRecoveryDeps,
 		requestOptions: RequestOptions | undefined,
 		outputGuardOptions: GuardOptions,
-	): Promise<ProxyToolResult> {
+	): Effect.Effect<ProxyToolResult, Error> {
 		const { callIdentity, serverName } = this.target();
-		const result = await withSessionRecovery<ReadResourceResult>(recoveryDeps, serverName, (connection) =>
-			connection.client.readResource({ uri: resourceUri }, requestOptions),
-		);
-		const content = (result.contents ?? []).map((item) => ({
-			type: "text" as const,
-			text:
-				"text" in item
-					? item.text
-					: "blob" in item
-						? `[Binary data: ${item.mimeType ?? "unknown"}]`
-						: JSON.stringify(item),
-		}));
-		const guarded = await guardMcpOutput(
-			content.length > 0 ? content : [{ type: "text", text: "(empty resource)" }],
-			outputGuardOptions,
-		);
-		return {
-			content: guarded.content,
-			details: { mode: "call", ...callIdentity, ...guardedMcpDetails(guarded) },
-		};
-	}
-
-	private async callTool(
-		recoveryDeps: SessionRecoveryDeps,
-		requestOptions: RequestOptions | undefined,
-		outputGuardOptions: GuardOptions,
-	): Promise<ProxyToolResult> {
-		const { callIdentity, serverName, toolMeta } = this.target();
-		const result = await withSessionRecovery<McpCallToolResponse>(recoveryDeps, serverName, (connection) =>
-			abortable(
-				connection.client.callTool(
-					{ name: toolMeta.originalName, arguments: this.args ?? {} },
-					undefined,
-					requestOptions,
+		const ownedSignal = this.ownedSignal;
+		return Effect.gen(function* () {
+			const result = yield* withSessionRecovery<ReadResourceResult>(recoveryDeps, serverName, (connection) =>
+				mcpNativePromise(
+					(effectSignal) =>
+						connection.client.readResource({ uri: resourceUri }, { ...requestOptions, signal: effectSignal }),
+					ownedSignal,
 				),
-				this.ownedSignal,
-			),
-		);
-		if (!isImmediateCallToolResult(result)) {
-			throw new Error("MCP task-based tool results are not supported by the proxy tool");
-		}
-		const rawMcpResult = requireJsonInputValue(result, "MCP tool result");
-		if (result.isError) {
-			const content = transformMcpContent(result.content);
-			const schemaText = toolMeta.inputSchema
-				? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}`
-				: "";
-			const guarded = await guardMcpOutput(
-				content.length > 0 ? content : [{ type: "text", text: "(empty result)" }],
-				{
-					...outputGuardOptions,
-					prefix: "Error: ",
-					suffix: schemaText,
-					emptyTextFallback: "Tool execution failed",
-					rawMcpResult,
-				},
+			);
+			const content = (result.contents ?? []).map((item) => ({
+				type: "text" as const,
+				text:
+					"text" in item
+						? item.text
+						: "blob" in item
+							? `[Binary data: ${item.mimeType ?? "unknown"}]`
+							: JSON.stringify(item),
+			}));
+			const guarded = yield* mcpNativePromise(() =>
+				guardMcpOutput(
+					content.length > 0 ? content : [{ type: "text", text: "(empty resource)" }],
+					outputGuardOptions,
+				),
 			);
 			return {
 				content: guarded.content,
-				details: { mode: "call", error: "tool_error", ...callIdentity, ...guardedMcpDetails(guarded) },
+				details: { mode: "call", ...callIdentity, ...guardedMcpDetails(guarded) },
 			};
-		}
-
-		const content = resolveMcpResultContent(result);
-		const guarded = await guardMcpOutput(content.length > 0 ? content : [{ type: "text", text: "(empty result)" }], {
-			...outputGuardOptions,
-			rawMcpResult,
 		});
-		return {
-			content: guarded.content,
-			details: { mode: "call", ...guardedMcpDetails(guarded), ...callIdentity },
-		};
 	}
 
-	private async failure(error: Error, aborted: boolean, guardOptions: GuardOptions): Promise<ProxyToolResult> {
+	private callTool(
+		recoveryDeps: SessionRecoveryDeps,
+		requestOptions: RequestOptions | undefined,
+		outputGuardOptions: GuardOptions,
+	): Effect.Effect<ProxyToolResult, Error> {
+		const { callIdentity, serverName, toolMeta } = this.target();
+		const ownedSignal = this.ownedSignal;
+		const args = this.args;
+		return Effect.gen(function* () {
+			const result = yield* withSessionRecovery<McpCallToolResponse>(recoveryDeps, serverName, (connection) =>
+				mcpNativePromise(
+					(effectSignal) =>
+						connection.client.callTool({ name: toolMeta.originalName, arguments: args ?? {} }, undefined, {
+							...requestOptions,
+							signal: effectSignal,
+						}),
+					ownedSignal,
+				),
+			);
+			if (!isImmediateCallToolResult(result)) {
+				return yield* Effect.fail(new Error("MCP task-based tool results are not supported by the proxy tool"));
+			}
+			const rawMcpResult = yield* Effect.try({
+				try: () => requireJsonInputValue(result, "MCP tool result"),
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			});
+			if (result.isError) {
+				const content = transformMcpContent(result.content);
+				const schemaText = toolMeta.inputSchema
+					? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}`
+					: "";
+				const guarded = yield* mcpNativePromise(() =>
+					guardMcpOutput(content.length > 0 ? content : [{ type: "text", text: "(empty result)" }], {
+						...outputGuardOptions,
+						prefix: "Error: ",
+						suffix: schemaText,
+						emptyTextFallback: "Tool execution failed",
+						rawMcpResult,
+					}),
+				);
+				return {
+					content: guarded.content,
+					details: { mode: "call", error: "tool_error", ...callIdentity, ...guardedMcpDetails(guarded) },
+				};
+			}
+
+			const content = resolveMcpResultContent(result);
+			const guarded = yield* mcpNativePromise(() =>
+				guardMcpOutput(content.length > 0 ? content : [{ type: "text", text: "(empty result)" }], {
+					...outputGuardOptions,
+					rawMcpResult,
+				}),
+			);
+			return {
+				content: guarded.content,
+				details: { mode: "call", ...guardedMcpDetails(guarded), ...callIdentity },
+			};
+		});
+	}
+
+	private failure(error: Error, aborted: boolean, guardOptions: GuardOptions): Effect.Effect<ProxyToolResult, Error> {
 		const { callIdentity, serverName, toolMeta } = this.target();
 		if (error instanceof SessionRecoveryAuthRequiredError) {
 			const message = error.authMessage ?? getAuthRequiredMessage(this.state, serverName);
-			return authRequiredResult(message, { ...callIdentity, autoAuthAttempted: this.autoAuthAttempted });
+			return Effect.succeed(
+				authRequiredResult(message, { ...callIdentity, autoAuthAttempted: this.autoAuthAttempted }),
+			);
 		}
 		const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
-		const guarded = await guardMcpOutput([{ type: "text", text: error.message }], {
-			...guardOptions,
-			prefix: "Failed to call tool: ",
-			suffix: schemaText,
-		});
-		return {
-			content: guarded.content,
-			details: {
-				mode: "call",
-				error: aborted ? "aborted" : "call_failed",
-				...callIdentity,
-				message: guarded.outputGuard ? "output truncated; see outputGuard.fullOutputPath" : error.message,
-				...guardedMcpDetails(guarded),
-			},
-		};
+		return mcpNativePromise(() =>
+			guardMcpOutput([{ type: "text", text: error.message }], {
+				...guardOptions,
+				prefix: "Failed to call tool: ",
+				suffix: schemaText,
+			}),
+		).pipe(
+			Effect.map((guarded) => ({
+				content: guarded.content,
+				details: {
+					mode: "call",
+					error: aborted ? "aborted" : "call_failed",
+					...callIdentity,
+					message: guarded.outputGuard ? "output truncated; see outputGuard.fullOutputPath" : error.message,
+					...guardedMcpDetails(guarded),
+				},
+			})),
+		);
 	}
 }
 
@@ -494,6 +554,9 @@ export function executeCall(
 	serverOverride?: string,
 	getPiTools?: () => ToolInfo[],
 	signal?: AbortSignal,
-): Promise<ProxyToolResult> {
-	return new McpCall(state, toolName, args, serverOverride, getPiTools, signal).run();
+): Effect.Effect<ProxyToolResult, Error> {
+	return Effect.try({
+		try: () => new McpCall(state, toolName, args, serverOverride, getPiTools, signal),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(Effect.flatMap((call) => call.run()));
 }

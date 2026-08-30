@@ -39,21 +39,6 @@ export async function openPath(pi: ExtensionAPI, targetPath: string): Promise<vo
 	}
 }
 
-export async function parallelLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-	const results: R[] = [];
-	const entries = items.entries();
-
-	async function worker() {
-		for (const [index, item] of entries) results[index] = await fn(item);
-	}
-
-	const workers = Array(Math.min(limit, items.length))
-		.fill(null)
-		.map(() => worker());
-	await Promise.all(workers);
-	return results;
-}
-
 export function getConfigPathFromArgv(): string | undefined {
 	const idx = process.argv.indexOf("--mcp-config");
 	if (idx >= 0 && idx + 1 < process.argv.length) {
@@ -206,6 +191,47 @@ export function resolveBearerToken(
 
 export function sanitizeTerminalText(text: string): string {
 	return sanitizeUntrustedTerminalText(text).replace(/\s+/gu, " ").trim();
+}
+
+const MAX_CAPTURED_STDERR_BYTES = 8 * 1024;
+const MAX_CAPTURED_STDERR_LINES = 3;
+
+function boundedStderrChunk(chunk: Buffer | string): Buffer {
+	if (Buffer.isBuffer(chunk)) {
+		const start = Math.max(0, chunk.byteLength - MAX_CAPTURED_STDERR_BYTES);
+		return Buffer.from(chunk.subarray(start));
+	}
+
+	// Limit string conversion before encoding; Buffer.from(largeString) would
+	// otherwise allocate the entire stderr event before applying the cap.
+	const suffix = chunk.length > MAX_CAPTURED_STDERR_BYTES ? chunk.slice(-MAX_CAPTURED_STDERR_BYTES) : chunk;
+	const bytes = Buffer.from(suffix, "utf8");
+	return bytes.byteLength > MAX_CAPTURED_STDERR_BYTES
+		? Buffer.from(bytes.subarray(bytes.byteLength - MAX_CAPTURED_STDERR_BYTES))
+		: bytes;
+}
+
+export function appendStderrTail(tail: Buffer, chunk: Buffer | string): Buffer {
+	const bytes = boundedStderrChunk(chunk);
+	if (bytes.length === 0) return tail;
+	if (tail.length === 0) return bytes;
+	const combined = Buffer.concat([tail, bytes]);
+	return combined.length > MAX_CAPTURED_STDERR_BYTES
+		? Buffer.from(combined.subarray(combined.length - MAX_CAPTURED_STDERR_BYTES))
+		: combined;
+}
+
+export function withStderrTail<ErrorValue>(error: ErrorValue, stderrTail: Buffer): Error {
+	const reportedError = error instanceof Error ? error : new Error(String(error));
+	const lines = stderrTail
+		.toString("utf8")
+		.trim()
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+	if (lines.length === 0) return reportedError;
+	const detail = lines.slice(-MAX_CAPTURED_STDERR_LINES).join(" — ");
+	return new Error(`${reportedError.message} (${detail})`, { cause: reportedError });
 }
 
 export function formatTerminalError<Value>(error: Value): string {

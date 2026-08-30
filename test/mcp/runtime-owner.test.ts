@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
+import { mcpNativePromise, runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
 import { connectClient } from "../../packages/pi-stuff/src/mcp/runtime/mcp-http-transport.js";
 import { createMcpRuntimeOwner } from "../../packages/pi-stuff/src/mcp/runtime/runtime-owner.js";
 import type { Transport } from "../../packages/pi-stuff/src/mcp/runtime/types.js";
@@ -7,13 +7,23 @@ import type { Transport } from "../../packages/pi-stuff/src/mcp/runtime/types.js
 describe("MCP runtime ownership", () => {
 	test("aborts immediately and bounds cleanup that ignores cancellation", async () => {
 		const owner = createMcpRuntimeOwner(10);
-		owner.addCleanup(async () => new Promise(() => undefined));
+		await runMcpEffect(owner.addCleanup(() => new Promise(() => undefined)));
 
 		const startedAt = performance.now();
-		await owner.stop("test shutdown");
+		await runMcpEffect(owner.stop("test shutdown"));
 
 		expect(owner.signal.aborted).toBeTrue();
 		expect(performance.now() - startedAt).toBeLessThan(100);
+	});
+
+	test("interrupts a native Promise that ignores its supplied signal", async () => {
+		const controller = new AbortController();
+		const pending = runMcpEffect(mcpNativePromise(() => new Promise(() => undefined), controller.signal));
+		const reason = new Error("external abort");
+
+		controller.abort(reason);
+
+		await expect(pending).rejects.toBe(reason);
 	});
 
 	test("closes an in-progress client transport when its owner aborts", async () => {

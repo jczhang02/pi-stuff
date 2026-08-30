@@ -173,8 +173,11 @@ async function shutdownMcpState(
 		flushError = error instanceof Error ? error : new Error(String(error));
 	}
 	try {
-		if (currentState.owner && currentState.owner !== stoppedOwner) await currentState.owner.stop(reason);
-		else if (!currentState.owner) await currentState.lifecycle.gracefulShutdown();
+		if (currentState.owner && currentState.owner !== stoppedOwner) {
+			await runMcpEffect(currentState.owner.stop(reason));
+		} else if (!currentState.owner) {
+			await runMcpEffect(currentState.lifecycle.gracefulShutdown());
+		}
 	} catch (error) {
 		if (!flushError) throw error;
 		logger.error(
@@ -238,7 +241,7 @@ function startMcpInitialization(
 			runtime.initPromise = null;
 			if (runtime.state) return;
 			try {
-				await Promise.all([owner.stop("MCP initialization failed"), shutdownOAuth(oauthRuntime)]);
+				await Promise.all([runMcpEffect(owner.stop("MCP initialization failed")), shutdownOAuth(oauthRuntime)]);
 			} catch (cleanupError) {
 				logger.error(
 					"MCP: failed to clean rejected initialization",
@@ -294,7 +297,7 @@ async function cleanupMcpSession(
 	timeoutMessage: string,
 	failureMessage: string,
 ): Promise<void> {
-	const stopOwner = detached.owner?.stop(stopReason) ?? Promise.resolve();
+	const stopOwner = detached.owner ? runMcpEffect(detached.owner.stop(stopReason)) : Promise.resolve();
 	try {
 		const cleanup = await awaitWithTimeout(
 			Promise.all([
@@ -609,7 +612,9 @@ async function executeMcpProxyTool(
 	const authResult = executeMcpAuthAction(state, params, parsedArgs, signal);
 	if (authResult !== undefined) return authResult;
 	if (params.tool)
-		return executeCall(state, params.tool, parsedArgs, params.server, () => runtime.pi.getAllTools(), signal);
+		return runMcpEffect(
+			executeCall(state, params.tool, parsedArgs, params.server, () => runtime.pi.getAllTools(), signal),
+		);
 	if (params.connect) return executeConnect(state, params.connect, signal);
 	if (params.describe) return executeDescribe(state, params.describe);
 	if (params.instructions) return executeInstructions(state, params.instructions);

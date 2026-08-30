@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect, Scope } from "effect";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { throwIfAborted } from "./abort.ts";
 import { cloneMcpConfig, loadMcpConfig } from "./config.ts";
 import { McpLifecycleManager } from "./lifecycle.ts";
 import { logger } from "./logger.ts";
@@ -38,7 +38,7 @@ import {
 	type ToolMetadata,
 	type ToolPrefix,
 } from "./types.ts";
-import { formatMcpStatus, parallelLimit, sanitizeTerminalText } from "./utils.ts";
+import { formatMcpStatus, sanitizeTerminalText } from "./utils.ts";
 
 const FAILURE_BACKOFF_MS = 60 * 1000;
 const MAX_FAILURE_MESSAGE_CHARS = 8 * 1024;
@@ -163,6 +163,7 @@ function prepareMcpServers(
 
 async function connectStartupServers(
 	state: McpExtensionState,
+	runEffect: McpEffectRunner,
 	startupServers: [string, ServerDefinition][],
 	prefix: ToolPrefix,
 	ui: McpOwnedUi | undefined,
@@ -170,31 +171,39 @@ async function connectStartupServers(
 	runtimeSignal: AbortSignal,
 ): Promise<boolean> {
 	const { manager, owner, resourceCounts, serverInstructions, toolMetadata } = state;
-	const results = await parallelLimit(startupServers, 10, async ([name, definition]) => {
-		try {
-			const connection = await manager.connect(name, definition, runtimeSignal);
-			if (connection.status === "needs-auth") {
-				return {
-					name,
-					definition,
-					connection: null,
-					error: `OAuth authentication required. Run /mcp auth ${name}.`,
-				};
-			}
-			return { name, definition, connection, error: null };
-		} catch (error) {
-			if (isAbortError(error, runtimeSignal)) {
-				if (owner.signal.aborted) throw error;
-				return { name, definition, connection: null, error: null };
-			}
-			return {
-				name,
-				definition,
-				connection: null,
-				error: error instanceof Error ? error.message : String(error),
-			};
-		}
-	});
+	const results = await runEffect(
+		Effect.forEach(
+			startupServers,
+			([name, definition]) =>
+				manager.connectEffect(name, definition, runtimeSignal).pipe(
+					Effect.map((connection) =>
+						connection.status === "needs-auth"
+							? {
+									name,
+									definition,
+									connection: null,
+									error: `OAuth authentication required. Run /mcp auth ${name}.`,
+								}
+							: { name, definition, connection, error: null },
+					),
+					Effect.catch((error) => {
+						if (isAbortError(error, runtimeSignal) && owner.signal.aborted) return Effect.fail(error);
+						return Effect.succeed({
+							name,
+							definition,
+							connection: null,
+							error: isAbortError(error, runtimeSignal)
+								? null
+								: error instanceof Error
+									? error.message
+									: String(error),
+						});
+					}),
+				),
+			{ concurrency: 10 },
+		),
+		owner.signal,
+	);
 	if (initialSignal?.aborted) return false;
 	owner.throwIfInactive();
 
@@ -264,7 +273,7 @@ export async function initializeMcp(
 
 	const ownsOAuthRuntime = options.oauthRuntime === undefined;
 	const oauthRuntime = options.oauthRuntime ?? createOAuthRuntime(owner.signal);
-	const manager = new McpServerManager(runEffect, cwd);
+	const manager = await runEffect(McpServerManager.make(runEffect, owner, cwd), owner.signal);
 	manager.setRuntimeSignal?.(owner.signal);
 	manager.setOAuthRuntime?.(oauthRuntime);
 	manager.setDefaultRequestTimeoutMs(config.settings?.requestTimeoutMs);
@@ -296,7 +305,12 @@ export async function initializeMcp(
 	};
 	if (ui !== undefined) state.ui = ui;
 	if (options.statusEvents !== undefined) state.statusEvents = options.statusEvents;
-	if (ownsOAuthRuntime) owner.addCleanup(() => shutdownOAuth(oauthRuntime));
+	if (ownsOAuthRuntime) {
+		await runEffect(
+			owner.addCleanup(() => shutdownOAuth(oauthRuntime)),
+			owner.signal,
+		);
+	}
 	manager.setMetadataListChangedListener?.((serverName, reason) => {
 		if (!owner.isActive()) return;
 		updateServerMetadata(state, serverName);
@@ -304,12 +318,20 @@ export async function initializeMcp(
 		notifyToolMetadataUpdated(state, serverName, reason);
 		updateStatusBar(state);
 	});
-	owner.addCleanup(() => lifecycle.gracefulShutdown());
+	await runEffect(owner.addFinalizer(lifecycle.gracefulShutdown().pipe(Effect.orDie)), owner.signal);
 
 	const startup = prepareMcpServers(state, ui, options.deferStartupConnections);
 	if (!startup) return state;
 	if (
-		!(await connectStartupServers(state, startup.startupServers, startup.prefix, ui, initialSignal, runtimeSignal))
+		!(await connectStartupServers(
+			state,
+			runEffect,
+			startup.startupServers,
+			startup.prefix,
+			ui,
+			initialSignal,
+			runtimeSignal,
+		))
 	) {
 		return state;
 	}
@@ -338,7 +360,7 @@ export async function initializeMcp(
 	});
 
 	owner.throwIfInactive();
-	lifecycle.startHealthChecks(runtimeSignal);
+	await runEffect(Scope.provide(owner.scope)(lifecycle.startHealthChecks(runtimeSignal)), owner.signal);
 	if (config.settings?.mcpFooterStatus === "off") {
 		ui?.setStatus("mcp", undefined);
 	}
@@ -492,56 +514,59 @@ export function getFailureMessage(state: McpExtensionState, serverName: string):
 	return state.failureMessages?.get(serverName) ?? null;
 }
 
-export async function lazyConnect(
+export function lazyConnect(
 	state: McpExtensionState,
 	serverName: string,
 	signal?: AbortSignal,
 	reason = "lazy-connect",
-): Promise<boolean> {
+): Effect.Effect<boolean, Error> {
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
-	throwIfAborted(ownedSignal);
-	const connection = state.manager.getConnection(serverName);
-	if (connection?.status === "needs-auth") {
-		return false;
-	}
-	if (connection?.status === "connected") {
-		updateServerMetadata(state, serverName);
-		markKeepAliveAfterConnect(state, serverName);
-		return true;
-	}
+	return Effect.try({
+		try: () => ownedSignal?.throwIfAborted(),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	}).pipe(
+		Effect.andThen(
+			Effect.gen(function* () {
+				const connection = state.manager.getConnection(serverName);
+				if (connection?.status === "needs-auth") return false;
+				if (connection?.status === "connected") {
+					updateServerMetadata(state, serverName);
+					markKeepAliveAfterConnect(state, serverName);
+					return true;
+				}
 
-	const failedAgo = getFailureAgeSeconds(state, serverName);
-	if (failedAgo !== null) return false;
+				if (getFailureAgeSeconds(state, serverName) !== null) return false;
+				const definition = state.config.mcpServers[serverName];
+				if (!definition || isServerDisabled(definition)) return false;
 
-	const definition = state.config.mcpServers[serverName];
-	if (!definition || isServerDisabled(definition)) return false;
-
-	try {
-		if (state.ui) {
-			const status = formatMcpStatus(state.config, `connecting to ${serverName}...`);
-			state.ui.setStatus("mcp", status);
-		}
-		const newConnection = await state.manager.connect(serverName, definition, ownedSignal);
-		if (newConnection.status === "needs-auth") {
-			return false;
-		}
-		clearFailure(state, serverName);
-		updateServerMetadata(state, serverName);
-		updateMetadataCache(state, serverName);
-		notifyToolMetadataUpdated(state, serverName, reason);
-		markKeepAliveAfterConnect(state, serverName);
-		updateStatusBar(state);
-		return true;
-	} catch (error) {
-		if (isAbortError(error, ownedSignal)) {
-			throwIfAborted(ownedSignal);
-		}
-		const message = error instanceof Error ? error.message : String(error);
-		recordFailure(state, serverName, message);
-		logger.debug(`MCP: lazy connect failed for ${serverName}: ${sanitizeTerminalText(message)}`);
-		updateStatusBar(state);
-		return false;
-	}
+				if (state.ui) {
+					const status = formatMcpStatus(state.config, `connecting to ${serverName}...`);
+					state.ui.setStatus("mcp", status);
+				}
+				const newConnection = yield* state.manager.connectEffect(serverName, definition, ownedSignal);
+				if (newConnection.status === "needs-auth") return false;
+				clearFailure(state, serverName);
+				updateServerMetadata(state, serverName);
+				updateMetadataCache(state, serverName);
+				notifyToolMetadataUpdated(state, serverName, reason);
+				markKeepAliveAfterConnect(state, serverName);
+				updateStatusBar(state);
+				return true;
+			}),
+		),
+		Effect.catch((error) => {
+			if (ownedSignal?.aborted) {
+				return Effect.fail(ownedSignal.reason instanceof Error ? ownedSignal.reason : error);
+			}
+			return Effect.sync(() => {
+				const message = error instanceof Error ? error.message : String(error);
+				recordFailure(state, serverName, message);
+				logger.debug(`MCP: lazy connect failed for ${serverName}: ${sanitizeTerminalText(message)}`);
+				updateStatusBar(state);
+				return false;
+			});
+		}),
+	);
 }
 
 function getEffectiveIdleTimeoutMinutes(state: McpExtensionState, serverName: string): number {

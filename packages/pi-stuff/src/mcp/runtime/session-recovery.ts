@@ -22,7 +22,7 @@
 //   - treat AbortError/cancellation as a session failure
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { throwIfAborted } from "./abort.ts";
+import { Cause, Effect, Exit } from "effect";
 import { logger } from "./logger.ts";
 import type { McpServerManager, ServerConnection } from "./server-manager.ts";
 import { isServerDisabled, type McpConfig } from "./types.ts";
@@ -84,7 +84,14 @@ export interface SessionRecoveryDeps {
 	manager: McpServerManager;
 	config: McpConfig;
 	signal?: AbortSignal;
-	onNeedsAuth?: (serverName: string) => Promise<ServerConnection | undefined>;
+	onNeedsAuth?: (serverName: string) => Effect.Effect<ServerConnection | undefined, Error>;
+}
+
+function checkSignal(signal?: AbortSignal): Effect.Effect<void, Error> {
+	return Effect.try({
+		try: () => signal?.throwIfAborted(),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
 }
 
 /**
@@ -98,58 +105,44 @@ export interface SessionRecoveryDeps {
  * server having been removed from config in the meantime — propagates
  * unchanged through the caller's existing error handling.
  */
-export async function withSessionRecovery<T>(
+export function withSessionRecovery<T>(
 	deps: SessionRecoveryDeps,
 	serverName: string,
-	fn: (conn: ServerConnection) => Promise<T>,
-): Promise<T> {
-	if (isServerDisabled(deps.config.mcpServers[serverName])) {
-		throw new Error(`MCP server "${serverName}" is disabled`);
-	}
-	const connection = deps.manager.getConnection(serverName);
-	if (!connection) {
-		throw new Error(`Server "${serverName}" is not connected`);
-	}
-
-	const hadSessionId = hasSessionId(connection);
-
-	try {
-		return await fn(connection);
-	} catch (err) {
-		if (!isTerminatedSession(err, hadSessionId)) {
-			throw err;
+	fn: (conn: ServerConnection) => Effect.Effect<T, Error>,
+): Effect.Effect<T, Error> {
+	return Effect.gen(function* () {
+		if (isServerDisabled(deps.config.mcpServers[serverName])) {
+			return yield* Effect.fail(new Error(`MCP server "${serverName}" is disabled`));
 		}
+		const connection = deps.manager.getConnection(serverName);
+		if (!connection) return yield* Effect.fail(new Error(`Server "${serverName}" is not connected`));
+
+		const hadSessionId = hasSessionId(connection);
+		const first = yield* Effect.exit(fn(connection));
+		if (Exit.isSuccess(first)) return first.value;
+		const original = Cause.squash(first.cause);
+		const error = original instanceof Error ? original : new Error(String(original));
+		if (!isTerminatedSession(original, hadSessionId)) return yield* Effect.fail(error);
 
 		// Re-read the live definition rather than reusing the stale
-		// connection's definition, in case config changed since connect. If the
-		// server was removed from config in the meantime there is nothing to
-		// reconnect to, so surface the original error.
+		// connection's definition, in case config changed since connect.
 		const definition = deps.config.mcpServers[serverName];
-		if (!definition) {
-			throw err;
-		}
+		if (!definition) return yield* Effect.fail(error);
 
-		throwIfAborted(deps.signal);
-		logger.debug(`MCP session for "${serverName}" expired; reconnecting`, {
-			server: serverName,
-		});
-		let freshConnection = deps.signal
-			? await deps.manager.reconnect(serverName, definition, connection, deps.signal)
-			: await deps.manager.reconnect(serverName, definition, connection);
-		throwIfAborted(deps.signal);
+		yield* checkSignal(deps.signal);
+		logger.debug(`MCP session for "${serverName}" expired; reconnecting`, { server: serverName });
+		let freshConnection = yield* deps.manager.reconnectEffect(serverName, definition, connection, deps.signal);
+		yield* checkSignal(deps.signal);
 
 		if (freshConnection.status === "needs-auth") {
-			freshConnection = (await deps.onNeedsAuth?.(serverName)) ?? freshConnection;
-			throwIfAborted(deps.signal);
+			const recovered = deps.onNeedsAuth ? yield* deps.onNeedsAuth(serverName) : undefined;
+			freshConnection = recovered ?? freshConnection;
+			yield* checkSignal(deps.signal);
 		}
-
 		if (freshConnection.status === "needs-auth") {
-			throw new SessionRecoveryAuthRequiredError(serverName);
+			return yield* Effect.fail(new SessionRecoveryAuthRequiredError(serverName));
 		}
-		if (freshConnection.status !== "connected") {
-			throw err;
-		}
-
-		return fn(freshConnection);
-	}
+		if (freshConnection.status !== "connected") return yield* Effect.fail(error);
+		return yield* fn(freshConnection);
+	});
 }
