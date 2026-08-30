@@ -1,3 +1,4 @@
+import { Cause, Effect } from "effect";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { getWebConfigPath } from "../settings.ts";
 
@@ -27,6 +28,28 @@ export function normalizeHeaders(headers: Readonly<Record<string, string | null>
 export function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
 	const timeout = AbortSignal.timeout(timeoutMs);
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+export function nativePromise<Value>(
+	request: (signal: AbortSignal) => PromiseLike<Value>,
+	signal?: AbortSignal,
+): Effect.Effect<Value, Error> {
+	return Effect.tryPromise({
+		try: (effectSignal) => request(signal ? AbortSignal.any([signal, effectSignal]) : effectSignal),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
+export function nativeRequest<Value>(
+	request: (signal: AbortSignal) => PromiseLike<Value>,
+	timeoutMs: number,
+	signal?: AbortSignal,
+	onTimeout: () => Error = () => new DOMException("The operation timed out.", "TimeoutError"),
+): Effect.Effect<Value, Error> {
+	return nativePromise(request, signal).pipe(
+		Effect.timeout(Math.max(0, timeoutMs)),
+		Effect.mapError((error) => (Cause.isTimeoutError(error) ? onTimeout() : error)),
+	);
 }
 
 export function formatSearchSources(

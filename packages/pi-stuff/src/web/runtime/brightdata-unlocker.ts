@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
@@ -5,7 +6,7 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { fetchRemoteUrl, type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise, nativeRequest } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request";
@@ -135,13 +136,13 @@ function unlockerBody(url: string, zone: string): JsonInputObject {
 	};
 }
 
-async function brightDataRequest(
+async function brightDataRequestNative(
 	url: string,
 	zone: string,
-	signal: AbortSignal | undefined,
+	apiKey: string,
+	signal: AbortSignal,
 	options: BrightDataExtractOptions | undefined,
 ): Promise<string> {
-	const apiKey = await getApiKey(signal);
 	const headers = new Headers({
 		"Content-Type": "application/json",
 		Authorization: `Bearer ${apiKey}`,
@@ -154,7 +155,7 @@ async function brightDataRequest(
 				method: "POST",
 				headers,
 				body: JSON.stringify(unlockerBody(url, zone)),
-				signal: requestSignal(signal, options?.timeoutMs ?? EXTRACT_TIMEOUT_MS),
+				signal,
 			},
 			options,
 		);
@@ -179,6 +180,20 @@ async function brightDataRequest(
 	}
 }
 
+function brightDataRequest(
+	url: string,
+	zone: string,
+	apiKey: string,
+	signal: AbortSignal | undefined,
+	options: BrightDataExtractOptions | undefined,
+) {
+	return nativeRequest(
+		(requestSignal) => brightDataRequestNative(url, zone, apiKey, requestSignal, options),
+		options?.timeoutMs ?? EXTRACT_TIMEOUT_MS,
+		signal,
+	);
+}
+
 function headingTitle(text: string): string {
 	const match = text.match(/^#{1,2}\s+(.+)/m);
 	if (!match) return "";
@@ -194,18 +209,20 @@ export function isBrightDataUnlockerAvailable(): boolean {
 	});
 }
 
-export async function extractWithBrightDataUnlocker(
-	url: string,
-	signal?: AbortSignal,
-	options?: BrightDataExtractOptions,
-): Promise<ExtractedContent | null> {
-	const zone = requireZone();
-	await validateRemoteUrl(url, ssrfOptions(options));
-	const raw = await brightDataRequest(url, zone, signal, options);
-	// Bright Data bills a successful request whatever its length, so short
-	// content is returned rather than discarded: a paywall stub or consent page
-	// is a useful answer, and silently dropping it would hide the spend.
-	const content = raw.trim();
-	if (!content) return null;
-	return { url, title: headingTitle(content), content, error: null };
+export function extractWithBrightDataUnlocker(url: string, signal?: AbortSignal, options?: BrightDataExtractOptions) {
+	return Effect.gen(function* () {
+		const zone = yield* Effect.try({
+			try: requireZone,
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		yield* nativePromise(() => validateRemoteUrl(url, ssrfOptions(options)));
+		const apiKey = yield* nativePromise(getApiKey, signal);
+		const raw = yield* brightDataRequest(url, zone, apiKey, signal, options);
+		// Bright Data bills a successful request whatever its length, so short
+		// content is returned rather than discarded: a paywall stub or consent page
+		// is a useful answer, and silently dropping it would hide the spend.
+		const content = raw.trim();
+		if (!content) return null;
+		return { url, title: headingTitle(content), content, error: null } satisfies ExtractedContent;
+	});
 }

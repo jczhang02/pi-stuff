@@ -22,5 +22,8 @@ user SSRF configuration remains authoritative. Pi Stuff also replaces the snapsh
 with the Package-owned Web settings reader and derives dispatch, availability, labels, and safe automatic routing from
 one typed provider registry. Content retrieval now runs as a Session-owned Effect operation with native timeout,
 interruption, bounded stream finalization, stable three-way URL concurrency, interruptible GitHub subprocesses, and
-Effect-owned PDF parsing and persistence. Deterministic URL, parsing, and rendering helpers remain ordinary
-TypeScript; the parent Web adapter remains the sole runner.
+Effect-owned PDF parsing and persistence. Standard stateless provider search, per-request timeout, selected-provider
+fan-out, partial-success aggregation, and fallback also run as one Session-owned Effect operation. Provider fetches
+remain narrow native adapters, while deterministic request shaping, codecs, ranking, filtering, URL, parsing, and
+rendering helpers remain ordinary TypeScript; the parent Web adapter remains the sole runner and commits results only
+for the current Session.

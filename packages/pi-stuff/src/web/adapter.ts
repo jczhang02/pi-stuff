@@ -104,27 +104,29 @@ export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host): Host
 	});
 }
 
-export async function runWebContentOperation<A, E>(
+export async function runWebContentOperation<A, E, Result>(
 	foundation: EffectFoundation,
 	ctx: ExtensionContext,
 	program: Effect.Effect<A, E>,
+	handlers: { readonly interrupted?: () => Result; readonly success: (value: A) => Result },
 	signal?: AbortSignal | undefined,
-): Promise<A> {
+): Promise<Result> {
 	const session = foundation.sessionFor(ctx.sessionManager);
 	if (!session || !foundation.isCurrent(session)) {
-		throw new WebContentSessionError("Web content fetch is unavailable before Session start.");
+		throw new WebContentSessionError("Web operation is unavailable before Session start.");
 	}
 	const operation = foundation.forkOperation(session);
 	const exit = await foundation.run(operation, program, { signal });
 	await foundation.close(operation, exit);
-	if (!foundation.isCurrent(session))
-		throw new WebContentSessionError("Web content fetch belongs to a stale Session.");
-	if (signal?.aborted) throw new DOMException("This operation was aborted", "AbortError");
+	if (!foundation.isCurrent(session)) throw new WebContentSessionError("Web operation belongs to a stale Session.");
+	if (signal?.aborted || (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause))) {
+		if (handlers.interrupted) return handlers.interrupted();
+		throw new DOMException("This operation was aborted", "AbortError");
+	}
 	if (Exit.isFailure(exit)) {
-		if (Cause.hasInterrupts(exit.cause)) throw new DOMException("This operation was aborted", "AbortError");
 		throw Cause.squash(exit.cause);
 	}
-	return exit.value;
+	return handlers.success(exit.value);
 }
 
 /** Installation performs configuration reads only; all external work stays Tool-triggered. */
@@ -134,6 +136,7 @@ export function installWebCapability(pi: WebCapabilityHost): void {
 	const fakeIpCompatibility = new FakeIpCompatibility();
 	piWebAccess(createWebAdapterApi(pi), {
 		prepareFetch: (input) => fakeIpCompatibility.prepare(input),
-		runContentOperation: (ctx, program, signal) => runWebContentOperation(foundation, ctx, program, signal),
+		runContentOperation: (ctx, program, handlers, signal) =>
+			runWebContentOperation(foundation, ctx, program, handlers, signal),
 	});
 }

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import {
@@ -8,7 +9,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
-import { formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, nativePromise, nativeRequest, normalizeCount } from "./utils.ts";
 
 const BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -94,8 +95,12 @@ export function isBraveAvailable(): boolean {
 	});
 }
 
-export async function searchWithBrave(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
+async function searchWithBraveRequest(
+	query: string,
+	options: SearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults = normalizeCount(options.numResults);
 	const domainFilters = normalizeDomainFilters(options.domainFilter);
 	const searchQuery = buildBraveQuery(query, options.domainFilter);
@@ -125,9 +130,7 @@ export async function searchWithBrave(query: string, options: SearchOptions = {}
 				Accept: "application/json",
 				"Accept-Encoding": "gzip",
 			},
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 
 		if (!response.ok) {
@@ -158,4 +161,16 @@ export async function searchWithBrave(query: string, options: SearchOptions = {}
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
 	}
+}
+
+export function searchWithBrave(query: string, options: SearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithBraveRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
 }

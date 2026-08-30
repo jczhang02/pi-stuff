@@ -8,6 +8,7 @@ import { readWebConfig } from "./config.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { isGeminiApiAvailable } from "./gemini-api.ts";
 import { extractPDFViaGemini } from "./gemini-pdf-extract.ts";
+import { nativePromise } from "./utils.ts";
 
 export interface PDFExtractResult {
 	title: string;
@@ -32,13 +33,6 @@ export const MAX_PDF_MAX_SIZE_MB = 50;
 const DEFAULT_MAX_PAGES = 100;
 const DEFAULT_OUTPUT_DIR = join(tmpdir(), "pi-web-pdf");
 const PAGE_MARKER_PATTERN = /^<!-- Page (\d+) -->$/gm;
-
-function nativePromise<Value>(operation: (signal: AbortSignal) => PromiseLike<Value>): Effect.Effect<Value, Error> {
-	return Effect.tryPromise({
-		try: operation,
-		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-	});
-}
 
 export function loadPDFConfig(): PDFConfig {
 	const root = readWebConfig();

@@ -143,27 +143,55 @@ describe("Pi Stuff Web fork boundary", () => {
 		expect(properties.offset.minimum).toBe(0);
 		expect(tool.renderShell).toBe("self");
 	});
+});
 
-	test("runs content work in the current Session operation and maps cancellation", async () => {
-		const foundation = new EffectFoundation();
+test("runs Web work in the current Session operation and guards result projection", async () => {
+	const foundation = new EffectFoundation();
+	// SAFETY: Foundation ownership uses Session Manager identity only; no Session methods are exercised here.
+	const sessionManager = {} as ExtensionContext["sessionManager"];
+	await foundation.startSession(sessionManager);
+	// SAFETY: The runner reads only sessionManager from this focused Host context fixture.
+	const ctx = { sessionManager } as ExtensionContext;
+	try {
+		await expect(
+			runWebContentOperation(foundation, ctx, Effect.succeed("ok"), { success: (value) => value }),
+		).resolves.toBe("ok");
+		const controller = new AbortController();
+		const cancelled = runWebContentOperation(
+			foundation,
+			ctx,
+			Effect.never,
+			{ success: (value) => value },
+			controller.signal,
+		);
+		controller.abort();
+		await expect(cancelled).rejects.toThrow("aborted");
+
+		const projectedController = new AbortController();
+		const projected = runWebContentOperation(
+			foundation,
+			ctx,
+			Effect.never,
+			{ interrupted: () => "cancelled", success: (value) => value },
+			projectedController.signal,
+		);
+		projectedController.abort();
+		await expect(projected).resolves.toBe("cancelled");
+
+		let published = false;
+		const stale = runWebContentOperation(foundation, ctx, Effect.never, {
+			interrupted: () => {
+				published = true;
+			},
+			success: () => {
+				published = true;
+			},
+		});
 		// SAFETY: Foundation ownership uses Session Manager identity only; no Session methods are exercised here.
-		const sessionManager = {} as ExtensionContext["sessionManager"];
-		await foundation.startSession(sessionManager);
-		// SAFETY: The runner reads only sessionManager from this focused Host context fixture.
-		const ctx = { sessionManager } as ExtensionContext;
-		try {
-			await expect(runWebContentOperation(foundation, ctx, Effect.succeed("ok"))).resolves.toBe("ok");
-			const controller = new AbortController();
-			const cancelled = runWebContentOperation(foundation, ctx, Effect.never, controller.signal);
-			controller.abort();
-			await expect(cancelled).rejects.toThrow("aborted");
-
-			const stale = runWebContentOperation(foundation, ctx, Effect.never);
-			// SAFETY: Foundation ownership uses Session Manager identity only; no Session methods are exercised here.
-			await foundation.startSession({} as ExtensionContext["sessionManager"]);
-			await expect(stale).rejects.toBeInstanceOf(WebContentSessionError);
-		} finally {
-			await foundation.shutdown();
-		}
-	});
+		await foundation.startSession({} as ExtensionContext["sessionManager"]);
+		await expect(stale).rejects.toBeInstanceOf(WebContentSessionError);
+		expect(published).toBe(false);
+	} finally {
+		await foundation.shutdown();
+	}
 });

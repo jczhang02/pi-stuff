@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
@@ -10,7 +11,7 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, nativePromise, nativeRequest, normalizeCount } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -369,14 +370,13 @@ export function isBrightDataAvailable(): boolean {
 	}
 }
 
-export async function searchWithBrightData(
+async function searchWithBrightDataRequest(
 	query: string,
-	options: BrightDataSearchOptions = {},
+	options: BrightDataSearchOptions,
+	zone: string,
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	// Zone before key: a config mistake must not spawn a `!command` credential
-	// resolver, and must not reach a billable endpoint.
-	const zone = requireSerpZone();
-	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
 	const filters = partitionProviderDomains(options.domainFilter);
 	const searchQuery = buildSearchQuery(query, filters);
@@ -401,7 +401,7 @@ export async function searchWithBrightData(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -456,4 +456,21 @@ export async function searchWithBrightData(
 	const results = mapResults(data.organic, numResults, filters);
 	// A SERP zone returns ranked links, so assemble the answer from its sources.
 	return { answer: formatSearchSources(results), results };
+}
+
+export function searchWithBrightData(query: string, options: BrightDataSearchOptions = {}) {
+	return Effect.gen(function* () {
+		// Zone before key: a config mistake must not spawn a `!command` credential
+		// resolver, and must not reach a billable endpoint.
+		const zone = yield* Effect.try({
+			try: requireSerpZone,
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		const apiKey = yield* nativePromise(requireApiKey, options.signal);
+		return yield* nativeRequest(
+			(signal) => searchWithBrightDataRequest(query, options, zone, apiKey, signal),
+			SEARCH_TIMEOUT_MS,
+			options.signal,
+		);
+	});
 }

@@ -22,10 +22,14 @@ It delegates raw, image, PDF, text, HTML, and RSC interpretation to focused hand
 parsing as ordinary TypeScript. `github-api.ts` is the interruptible native `gh` adapter, and `pdf-extract.ts` is the
 native PDF parser/filesystem adapter; returned temporary Markdown files intentionally outlive the operation so Pi can
 read them afterward. The parent adapter is the only Effect runner and fences storage/publication to the current
-Session. Extraction-provider Promise bridges are temporary, explicitly inventoried against `ps-pby.10` or
+Session. The remaining model-backed extraction Promise bridges are temporary, explicitly inventoried against
 `ps-pby.11`, and share this one content path rather than creating a second runtime.
 
-`gemini-search.ts` owns one typed provider registry and the routing policy built from it. Each provider is declared
-once with its dispatch, availability, label, and automatic-routing metadata. Gemini API and browser transports remain
-inside `gemini-api.ts` and `gemini-web.ts`; extraction providers keep their separate content contract. Every provider
-reads the already-parsed Web namespace from the parent settings module rather than reparsing credential-bearing JSON.
+`gemini-search.ts` owns one typed Effect provider registry and the routing policy built from it. Standard stateless API
+providers return Effects without starting runners; their direct fetches stay in provider-owned native adapters while
+request shaping, decoding, ranking, filtering, and result presentation remain ordinary TypeScript. Selected-provider
+fan-out preserves input order, partial successes, provider diagnostics, and safe automatic fallback. Temporary
+model-backed and stateful provider bridges are explicitly assigned to `ps-pby.11`. Gemini API and browser transports
+remain inside `gemini-api.ts` and `gemini-web.ts`; extraction providers keep their separate content contract. Every
+provider reads the already-parsed Web namespace from the parent settings module rather than reparsing
+credential-bearing JSON.

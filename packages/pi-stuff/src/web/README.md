@@ -21,13 +21,17 @@ owner of their bounded model-facing schemas across the parent adapter and privat
 Direct provider API and gateway requests reject redirects before credentials
 or request bodies can be forwarded to another origin.
 
-Each `fetch_content` call runs as one Session-owned Effect operation from the
-parent adapter. The operation includes lazy fake-IP preparation, remote-target
-validation, redirect-safe fetching, the existing 30-second timeout, bounded
+Each `web_search` and `fetch_content` call runs as one Session-owned Effect
+operation from the parent adapter. Standard stateless search providers keep
+their credentials and wire protocols in narrow native adapters while Effect
+owns request timeout, interruption, provider routing, partial-success
+aggregation, and fallback. Content retrieval additionally includes lazy
+fake-IP preparation, remote-target validation, redirect-safe fetching, bounded
 response reads, extraction, and at most three concurrent URLs in input order.
-Interruption cancels the active native request or response reader, and a stale
-Session cannot store or publish the completed result. URL policy, content
-parsing, rendering, and deterministic extraction remain ordinary TypeScript.
+Interruption cancels active native work, and the adapter commits storage and
+publication only after confirming that the Session is still current. Request
+shaping, codecs, URL policy, parsing, rendering, ranking, and deterministic
+extraction remain ordinary TypeScript.
 
 Provider include/exclude values share one Suite-owned domain normalizer. It
 accepts URL-shaped host input, rejects literal IPs and single-label hosts, and

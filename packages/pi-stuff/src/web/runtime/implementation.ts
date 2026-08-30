@@ -27,7 +27,7 @@ import {
 	type StoredSearchData,
 	storeResult,
 } from "./storage.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise } from "./utils.ts";
 
 export type PiWebAccessHost = Pick<ExtensionAPI, "appendEntry" | "on" | "registerTool">;
 
@@ -35,11 +35,12 @@ export class WebContentSessionError extends Error {}
 
 export interface WebRuntimeEffectOptions {
 	readonly prepareFetch: (input: WebFetchInput) => Effect.Effect<void, Error>;
-	readonly runContentOperation: <A, E>(
+	readonly runContentOperation: <A, E, Result>(
 		ctx: ExtensionContext,
 		program: Effect.Effect<A, E>,
+		handlers: { readonly interrupted?: () => Result; readonly success: (value: A) => Result },
 		signal?: AbortSignal | undefined,
-	) => Promise<A>;
+	) => Promise<Result>;
 }
 
 export { configureRuntimeSsrfDefaults, type RuntimeSsrfDefaults } from "./ssrf-protection.ts";
@@ -47,10 +48,9 @@ export { configureRuntimeSsrfDefaults, type RuntimeSsrfDefaults } from "./ssrf-p
 const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
 function fetchAllContent(urls: string[], options?: ExtractOptions): Effect.Effect<ExtractedContent[], Error> {
-	return Effect.tryPromise({
-		try: () => import("./extract.ts"),
-		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-	}).pipe(Effect.flatMap((extractModule) => extractModule.fetchAllContent(urls, options)));
+	return nativePromise(() => import("./extract.ts")).pipe(
+		Effect.flatMap((extractModule) => extractModule.fetchAllContent(urls, options)),
+	);
 }
 
 function resolveFindMode(value: JsonInputValue): FindMode {
@@ -287,42 +287,54 @@ async function executeSearch(
 			details: { error: "No query provided" },
 		};
 	}
-	const results: QueryResultData[] = [];
 	const provider = resolveRequestedProvider(params.provider);
 	const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
-	for (const [index, query] of queryList.entries()) {
-		onUpdate?.({
-			content: [{ type: "text", text: `Searching ${index + 1}/${queryList.length}: "${query}"...` }],
-			details: { phase: "search", progress: index / queryList.length, currentQuery: query },
-		});
-		try {
-			const response = await search(query, {
+	const program = Effect.gen(function* () {
+		const results: QueryResultData[] = [];
+		for (const [index, query] of queryList.entries()) {
+			yield* Effect.sync(() =>
+				onUpdate?.({
+					content: [{ type: "text", text: `Searching ${index + 1}/${queryList.length}: "${query}"...` }],
+					details: { phase: "search", progress: index / queryList.length, currentQuery: query },
+				}),
+			);
+			const outcome = yield* search(query, {
 				provider,
 				numResults: params.numResults,
 				recencyFilter,
 				domainFilter: params.domainFilter,
-				signal,
 				extensionContext: ctx,
-			});
-			results.push({
-				query,
-				answer: response.answer,
-				results: response.results,
-				error: null,
-				provider: response.provider,
-			});
-		} catch (err) {
-			if (signal?.aborted || isAbortError(err)) throw err;
+			}).pipe(
+				Effect.map((response) => ({ ok: true as const, response })),
+				Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+			);
+			if (outcome.ok) {
+				results.push({
+					query,
+					answer: outcome.response.answer,
+					results: outcome.response.results,
+					error: null,
+					provider: outcome.response.provider,
+				});
+				continue;
+			}
+			if (isAbortError(outcome.error)) return yield* Effect.fail(outcome.error);
 			results.push({
 				query,
 				answer: "",
 				results: [],
-				error: errorMessage(err),
+				error: errorMessage(outcome.error),
 				provider: Array.isArray(provider) ? "all" : provider,
 			});
 		}
-	}
-	return buildSearchReturn(runtime, queryList, results);
+		return results;
+	});
+	return runtime.effects.runContentOperation(
+		ctx,
+		program,
+		{ success: (results) => buildSearchReturn(runtime, queryList, results) },
+		signal,
+	);
 }
 
 function singleFetchResult(
@@ -427,27 +439,26 @@ async function executeFetch(
 		content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
 		details: { phase: "fetch", progress: 0 },
 	});
-	let results: ExtractedContent[];
-	try {
-		results = await runtime.effects.runContentOperation(
-			ctx,
-			Effect.andThen(runtime.effects.prepareFetch({ urls: urlList }), fetchAllContent(urlList, options)),
-			signal,
-		);
-	} catch (error) {
-		if (error instanceof WebContentSessionError) throw error;
-		if (!signal?.aborted && !isAbortError(error)) throw error;
-		results = urlList.map((url) => ({ url, title: "", content: "", error: "Aborted" }));
-	}
-	const responseId = storeAndPublish(runtime, {
-		id: generateId(),
-		type: "fetch",
-		timestamp: Date.now(),
-		urls: stripThumbnails(results),
-	});
-	return urlList.length === 1
-		? singleFetchResult(runtime, urlList, results[0], options, responseId)
-		: multipleFetchResult(runtime, urlList, results, responseId);
+	const project = (results: ExtractedContent[]) => {
+		const responseId = storeAndPublish(runtime, {
+			id: generateId(),
+			type: "fetch",
+			timestamp: Date.now(),
+			urls: stripThumbnails(results),
+		});
+		return urlList.length === 1
+			? singleFetchResult(runtime, urlList, results[0], options, responseId)
+			: multipleFetchResult(runtime, urlList, results, responseId);
+	};
+	return runtime.effects.runContentOperation(
+		ctx,
+		Effect.andThen(runtime.effects.prepareFetch({ urls: urlList }), fetchAllContent(urlList, options)),
+		{
+			interrupted: () => project(urlList.map((url) => ({ url, title: "", content: "", error: "Aborted" }))),
+			success: project,
+		},
+		signal,
+	);
 }
 
 function storedSearchResult(queries: QueryResultData[], params: WebContentParams): AgentToolResult<JsonInputObject> {

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { isJsonInputObject, type JsonInputValue, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import {
@@ -9,7 +10,14 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const SERPBASE_API_URL = "https://api.serpbase.dev/google/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -115,8 +123,12 @@ export function isSerpBaseAvailable(): boolean {
 	});
 }
 
-export async function searchWithSerpBase(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await requireApiKey(options.signal);
+async function searchWithSerpBaseRequest(
+	query: string,
+	options: SearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults = normalizeCount(options.numResults, 10);
 	const filters = partitionProviderDomains(options.domainFilter);
 	const url = new URL(SERPBASE_API_URL);
@@ -132,9 +144,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		response = await fetch(url, {
 			redirect: "error",
 			headers: { Accept: "application/json" },
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -169,4 +179,16 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		if (results.length >= numResults) break;
 	}
 	return { answer: formatSearchSources(results), results };
+}
+
+export function searchWithSerpBase(query: string, options: SearchOptions = {}) {
+	return nativePromise(requireApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithSerpBaseRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
 }

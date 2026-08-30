@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -6,7 +7,7 @@ import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath, requestSignal } from "./utils.ts";
+import { getWebSearchConfigPath, nativePromise, nativeRequest } from "./utils.ts";
 
 const EXA_ANSWER_URL = "https://api.exa.ai/answer";
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
@@ -157,7 +158,7 @@ function toSearchResponse(
 	return response;
 }
 
-export async function callExaMcp(toolName: string, args: JsonInputObject, signal?: AbortSignal): Promise<string> {
+async function callExaMcpNative(toolName: string, args: JsonInputObject, signal: AbortSignal): Promise<string> {
 	const response = await fetch(`${EXA_MCP_URL}?tools=${toolName}`, {
 		method: "POST",
 		redirect: "error",
@@ -175,7 +176,7 @@ export async function callExaMcp(toolName: string, args: JsonInputObject, signal
 				arguments: args,
 			},
 		}),
-		signal: requestSignal(signal, 60_000),
+		signal,
 	});
 
 	if (!response.ok) {
@@ -245,6 +246,10 @@ export async function callExaMcp(toolName: string, args: JsonInputObject, signal
 	}
 
 	return text;
+}
+
+export function callExaMcp(toolName: string, args: JsonInputObject, signal?: AbortSignal) {
+	return nativeRequest((requestSignal) => callExaMcpNative(toolName, args, requestSignal), 60_000, signal);
 }
 
 function parseMcpResults(text: string): McpParsedResult[] | null {
@@ -337,88 +342,85 @@ function parseJsonMcpResults(text: string): JsonInputValue {
  * Calls one Exa MCP search tool and normalizes its payload. `web_search_advanced_exa`
  * returns the raw Exa search JSON; `web_search_exa` returns a formatted text block.
  */
-async function searchWithExaMcpTool(
+function searchWithExaMcpTool(
 	tool: string,
 	args: JsonInputObject,
 	options: ExaSearchOptions,
-): Promise<SearchResponse | null> {
-	const text = await callExaMcp(tool, args, options.signal);
+): Effect.Effect<SearchResponse | null, Error> {
+	return callExaMcp(tool, args, options.signal).pipe(
+		Effect.map((text) => {
+			const jsonResults = parseJsonMcpResults(text);
+			if (jsonResults) {
+				return toSearchResponse(
+					buildAnswerFromSearchResults(jsonResults),
+					mapResults(jsonResults),
+					options.includeContent ? mapInlineContent(jsonResults) : null,
+				);
+			}
 
-	const jsonResults = parseJsonMcpResults(text);
-	if (jsonResults) {
-		return toSearchResponse(
-			buildAnswerFromSearchResults(jsonResults),
-			mapResults(jsonResults),
-			options.includeContent ? mapInlineContent(jsonResults) : null,
-		);
-	}
-
-	const textResults = parseMcpResults(text);
-	if (!textResults) return null;
-
-	return toSearchResponse(
-		buildAnswerFromMcpResults(textResults),
-		mapResults(textResults),
-		options.includeContent ? mapMcpInlineContent(textResults) : null,
+			const textResults = parseMcpResults(text);
+			if (!textResults) return null;
+			return toSearchResponse(
+				buildAnswerFromMcpResults(textResults),
+				mapResults(textResults),
+				options.includeContent ? mapMcpInlineContent(textResults) : null,
+			);
+		}),
 	);
 }
 
 /** Filtered searches need the advanced tool, which not every deployment exposes. */
-async function searchWithFilteredExaMcp(
+function searchWithFilteredExaMcp(
 	query: string,
 	options: ExaSearchOptions,
 	basicArgs: JsonInputObject,
-): Promise<SearchResponse | null> {
-	try {
-		return await searchWithExaMcpTool(
-			EXA_MCP_ADVANCED_TOOL,
-			{
-				...exaSearchArgs(query, options),
-				enableHighlights: true,
-				textMaxCharacters: options.includeContent ? 50000 : 3000,
-			},
-			options,
-		);
-	} catch (err) {
-		if (isAbortMessage(err instanceof Error ? err.message : String(err))) throw err;
-		// The basic tool ignores every argument except query/numResults, so the
-		// filters degrade into the query text.
-		return searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
-	}
+): Effect.Effect<SearchResponse | null, Error> {
+	return searchWithExaMcpTool(
+		EXA_MCP_ADVANCED_TOOL,
+		{
+			...exaSearchArgs(query, options),
+			enableHighlights: true,
+			textMaxCharacters: options.includeContent ? 50000 : 3000,
+		},
+		options,
+	).pipe(
+		Effect.catch((error) => {
+			if (isAbortMessage(error.message)) return Effect.fail(error);
+			// The basic tool ignores every argument except query/numResults, so the
+			// filters degrade into the query text.
+			return searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
+		}),
+	);
 }
 
-async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse | null> {
+function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Effect.Effect<SearchResponse | null, Error> {
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const basicArgs = { query: buildMcpQuery(query, options), numResults: options.numResults ?? 5 };
 	const filtered = !!options.includeContent || !!options.recencyFilter || !!options.domainFilter?.length;
-
-	try {
-		const response = filtered
-			? await searchWithFilteredExaMcp(query, options, basicArgs)
-			: await searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
-		activityMonitor.logComplete(activityId, 200);
-		return response;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (isAbortMessage(message)) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
-	}
+	const request = filtered
+		? searchWithFilteredExaMcp(query, options, basicArgs)
+		: searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
+	return request.pipe(
+		Effect.tap(() => Effect.sync(() => activityMonitor.logComplete(activityId, 200))),
+		Effect.catch((error) => {
+			if (isAbortMessage(error.message)) activityMonitor.logComplete(activityId, 0);
+			else activityMonitor.logError(activityId, error.message);
+			return Effect.fail(error);
+		}),
+		Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+	);
 }
 
 export function isExaAvailable(): boolean {
 	return true;
 }
 
-export async function searchWithExa(query: string, options: ExaSearchOptions = {}): Promise<ExaSearchResult> {
-	const apiKey = await getApiKey(options.signal);
-	if (!apiKey) {
-		return searchWithExaMcp(query, options);
-	}
-
+async function searchWithExaApiRequest(
+	query: string,
+	options: ExaSearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<ExaSearchResult> {
 	const useSearch =
 		options.includeContent ||
 		!!options.recencyFilter ||
@@ -434,7 +436,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 				redirect: "error",
 				headers: exaApiHeaders(apiKey),
 				body: JSON.stringify({ query }),
-				signal: requestSignal(options.signal, 60_000),
+				signal,
 			});
 
 			if (!response.ok) {
@@ -459,7 +461,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 				...exaSearchArgs(query, options),
 				contents: options.includeContent ? { text: true, highlights: true } : { highlights: true },
 			}),
-			signal: requestSignal(options.signal, 60_000),
+			signal,
 		});
 
 		if (!response.ok) {
@@ -487,4 +489,14 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 		if (redactedMessage === message) throw err;
 		throw new Error(redactedMessage);
 	}
+}
+
+export function searchWithExa(query: string, options: ExaSearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			apiKey
+				? nativeRequest((signal) => searchWithExaApiRequest(query, options, apiKey, signal), 60_000, options.signal)
+				: searchWithExaMcp(query, options),
+		),
+	);
 }

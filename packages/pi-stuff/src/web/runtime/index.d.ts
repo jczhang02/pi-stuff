@@ -13,11 +13,12 @@ export class WebContentSessionError extends Error {}
 
 export interface WebRuntimeEffectOptions {
 	readonly prepareFetch: (input: WebFetchInput) => Effect<void, Error>;
-	readonly runContentOperation: <A, E>(
+	readonly runContentOperation: <A, E, Result>(
 		ctx: ExtensionContext,
 		program: Effect<A, E>,
+		handlers: { readonly interrupted?: () => Result; readonly success: (value: A) => Result },
 		signal?: AbortSignal | undefined,
-	) => Promise<A>;
+	) => Promise<Result>;
 }
 
 export function configureRuntimeSsrfDefaults(defaults?: RuntimeSsrfDefaults): void;

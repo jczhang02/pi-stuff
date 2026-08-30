@@ -9,7 +9,7 @@ import { activityMonitor } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
-import { formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import { formatSearchSources, getWebSearchConfigPath, nativeRequest, normalizeCount } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -132,7 +132,11 @@ export function isSearXNGAvailable(): boolean {
 	return true;
 }
 
-export async function searchWithSearXNG(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+async function searchWithSearXNGRequest(
+	query: string,
+	options: SearchOptions,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const baseUrl = requireBaseUrl();
 	const numResults = normalizeCount(options.numResults);
 	const filters = normalizeDomainFilters(options.domainFilter);
@@ -151,9 +155,7 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 			{
 				method: "GET",
 				headers,
-				signal: options.signal
-					? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-					: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+				signal,
 			},
 			{
 				...loadSsrfConfig(),
@@ -205,4 +207,12 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 		else activityMonitor.logError(activityId, message);
 		throw err;
 	}
+}
+
+export function searchWithSearXNG(query: string, options: SearchOptions = {}) {
+	return nativeRequest(
+		(signal) => searchWithSearXNGRequest(query, options, signal),
+		SEARCH_TIMEOUT_MS,
+		options.signal,
+	);
 }

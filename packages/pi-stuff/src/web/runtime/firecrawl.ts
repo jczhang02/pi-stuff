@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
@@ -6,7 +7,7 @@ import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { fetchRemoteUrl, type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError, requestSignal } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise, nativeRequest } from "./utils.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const DEFAULT_API_VERSION = "v2";
@@ -151,15 +152,15 @@ function scrapeBody(url: string): JsonInputObject {
 	return body;
 }
 
-async function firecrawlFetch(
+async function firecrawlFetchNative(
 	endpoint: string,
 	body: JsonInputObject,
-	signal: AbortSignal | undefined,
+	baseUrl: string,
+	version: FirecrawlApiVersion,
+	apiKey: string | null,
+	signal: AbortSignal,
 	options: FirecrawlExtractOptions | undefined,
 ): Promise<JsonInputObject> {
-	const baseUrl = requireBaseUrl();
-	const version = getApiVersion();
-	const apiKey = await getApiKey(signal);
 	const headers = new Headers({ "Content-Type": "application/json" });
 	if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
 	const requestUrl = `${baseUrl}/${version}/${endpoint}`;
@@ -171,7 +172,7 @@ async function firecrawlFetch(
 				method: "POST",
 				headers,
 				body: JSON.stringify(body),
-				signal: requestSignal(signal, options?.timeoutMs ?? EXTRACT_TIMEOUT_MS),
+				signal,
 			},
 			options,
 		);
@@ -208,30 +209,45 @@ export function isFirecrawlAvailable(): boolean {
 	return getBaseUrl() !== null;
 }
 
-export async function extractWithFirecrawl(
-	url: string,
-	signal?: AbortSignal,
-	options?: FirecrawlExtractOptions,
-): Promise<ExtractedContent | null> {
-	requireBaseUrl();
-	await validateRemoteUrl(url, ssrfOptions(options));
-	const envelope = await firecrawlFetch("scrape", scrapeBody(url), signal, options);
-	const data = envelope["data"];
-	if (!isJsonInputObject(data)) {
-		throw new Error("Firecrawl scrape returned an unexpected data shape");
-	}
-	if (!isRuntimeString(data["markdown"])) {
-		throw new Error("Firecrawl scrape returned markdown in an unexpected shape");
-	}
-	const content = data["markdown"].trim();
-	if (!content) return null;
-	const metadata = isJsonInputObject(data["metadata"]) ? data["metadata"] : undefined;
-	const metadataTitle = metadata?.["title"];
-	const title =
-		isRuntimeString(metadataTitle) && metadataTitle.trim()
-			? metadataTitle.trim()
-			: isRuntimeString(data["title"])
-				? data["title"].trim()
-				: "";
-	return { url, title, content, error: null };
+export function extractWithFirecrawl(url: string, signal?: AbortSignal, options?: FirecrawlExtractOptions) {
+	return Effect.gen(function* () {
+		const baseUrl = yield* Effect.try({
+			try: requireBaseUrl,
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		yield* nativePromise(() => validateRemoteUrl(url, ssrfOptions(options)));
+		const { body, version } = yield* Effect.try({
+			try: () => ({ body: scrapeBody(url), version: getApiVersion() }),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		const apiKey = yield* nativePromise(getApiKey, signal);
+		const envelope = yield* nativeRequest(
+			(requestSignal) => firecrawlFetchNative("scrape", body, baseUrl, version, apiKey, requestSignal, options),
+			options?.timeoutMs ?? EXTRACT_TIMEOUT_MS,
+			signal,
+		);
+		return yield* Effect.try({
+			try: () => {
+				const data = envelope["data"];
+				if (!isJsonInputObject(data)) {
+					throw new Error("Firecrawl scrape returned an unexpected data shape");
+				}
+				if (!isRuntimeString(data["markdown"])) {
+					throw new Error("Firecrawl scrape returned markdown in an unexpected shape");
+				}
+				const content = data["markdown"].trim();
+				if (!content) return null;
+				const metadata = isJsonInputObject(data["metadata"]) ? data["metadata"] : undefined;
+				const metadataTitle = metadata?.["title"];
+				const title =
+					isRuntimeString(metadataTitle) && metadataTitle.trim()
+						? metadataTitle.trim()
+						: isRuntimeString(data["title"])
+							? data["title"].trim()
+							: "";
+				return { url, title, content, error: null } satisfies ExtractedContent;
+			},
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+	});
 }

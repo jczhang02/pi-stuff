@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -11,7 +12,14 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -144,8 +152,12 @@ export function isSerpdiveAvailable(): boolean {
 	});
 }
 
-export async function searchWithSerpdive(query: string, options: SerpdiveSearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await requireApiKey(options.signal);
+async function searchWithSerpdiveRequest(
+	query: string,
+	options: SerpdiveSearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults = normalizeCount(options.numResults);
 	const filters = partitionProviderDomains(options.domainFilter);
 	const model = resolveModel();
@@ -171,7 +183,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -204,4 +216,16 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 		if (inlineContent.length > 0) result.inlineContent = inlineContent;
 	}
 	return result;
+}
+
+export function searchWithSerpdive(query: string, options: SerpdiveSearchOptions = {}) {
+	return nativePromise(requireApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithSerpdiveRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
 }

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -7,7 +8,14 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
 const QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents";
@@ -105,13 +113,12 @@ function buildContentsBody(urls: string[], options: ExtractOptions = {}): JsonIn
 	};
 }
 
-async function queritJsonRequest(
+async function queritJsonRequestNative(
 	label: "Search" | "Contents",
 	url: string,
 	apiKey: string,
 	body: JsonInputObject,
-	timeoutMs: number,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<JsonInputObject> {
 	let response: Response;
 	try {
@@ -124,21 +131,10 @@ async function queritJsonRequest(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal, timeoutMs),
+			signal,
 		});
 	} catch (err) {
 		const message = errorMessage(err);
-		const isRequestAbort =
-			err instanceof Error
-				? err.name === "AbortError" || err.name === "TimeoutError" || /abort|timeout/i.test(message)
-				: /abort|timeout/i.test(message);
-		if (!signal?.aborted && isRequestAbort) {
-			const timeoutError = new Error(
-				`Querit ${label} API request timed out after ${Math.ceil(timeoutMs / 1_000)} seconds`,
-			);
-			timeoutError.name = "TimeoutError";
-			throw timeoutError;
-		}
 		const redactedMessage = redactCredential(message, apiKey);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
@@ -155,6 +151,26 @@ async function queritJsonRequest(
 	} catch (err) {
 		throw new Error(`Querit ${label} API returned invalid JSON: ${errorMessage(err)}`);
 	}
+}
+
+function queritJsonRequest(
+	label: "Search" | "Contents",
+	url: string,
+	apiKey: string,
+	body: JsonInputObject,
+	timeoutMs: number,
+	signal?: AbortSignal,
+) {
+	return nativeRequest(
+		(requestSignal) => queritJsonRequestNative(label, url, apiKey, body, requestSignal),
+		timeoutMs,
+		signal,
+		() => {
+			const error = new Error(`Querit ${label} API request timed out after ${Math.ceil(timeoutMs / 1_000)} seconds`);
+			error.name = "TimeoutError";
+			return error;
+		},
+	);
 }
 
 function assertApiSuccess(label: "Search" | "Contents", data: JsonInputObject): void {
@@ -224,106 +240,127 @@ function failedContentStatus(data: JsonInputObject, result: JsonInputObject | un
 	return isJsonInputObject(status) && status.status === "failed";
 }
 
-async function fetchContentsBatch(
+function fetchContentsBatch(
 	urls: string[],
 	apiKey: string,
 	signal?: AbortSignal,
 	options: ExtractOptions = {},
-): Promise<JsonInputObject> {
-	const data = await queritJsonRequest(
+): Effect.Effect<JsonInputObject, Error> {
+	return queritJsonRequest(
 		"Contents",
 		QUERIT_CONTENTS_URL,
 		apiKey,
 		buildContentsBody(urls, options),
 		normalizeTimeoutMs(options.timeoutMs),
 		signal,
+	).pipe(
+		Effect.flatMap((data) =>
+			Effect.try({
+				try: () => {
+					assertApiSuccess("Contents", data);
+					if (!Array.isArray(data["results"]) || !Array.isArray(data["statuses"])) {
+						throw new Error("Querit Contents API returned an unexpected response shape");
+					}
+					return data;
+				},
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}),
+		),
 	);
-	assertApiSuccess("Contents", data);
-	if (!Array.isArray(data["results"]) || !Array.isArray(data["statuses"])) {
-		throw new Error("Querit Contents API returned an unexpected response shape");
-	}
-	return data;
 }
 
-async function fetchInlineContent(urls: string[], apiKey: string, signal?: AbortSignal): Promise<ExtractedContent[]> {
-	const content: ExtractedContent[] = [];
-	for (let offset = 0; offset < urls.length; offset += MAX_CONTENT_URLS) {
-		const batch = urls.slice(offset, offset + MAX_CONTENT_URLS);
-		const data = await fetchContentsBatch(batch, apiKey, signal);
-		for (const [index, requestedUrl] of batch.entries()) {
-			const result = findContentResult(data, requestedUrl, index, batch.length);
-			const mapped = mapContentResult(result, requestedUrl);
-			if (mapped) content.push(mapped);
-		}
-	}
-	return content;
-}
-
-export async function searchWithQuerit(query: string, options: QueritSearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
-	const activityId = activityMonitor.logStart({ type: "api", query });
-	try {
-		const data = await queritJsonRequest(
-			"Search",
-			QUERIT_SEARCH_URL,
-			apiKey,
-			buildSearchBody(query, options),
-			SEARCH_TIMEOUT_MS,
-			options.signal,
-		);
-		assertApiSuccess("Search", data);
-		const results = mapSearchResults(data);
-		const response: SearchResponse = { answer: formatSearchSources(results), results };
-		if (options.includeContent && results.length > 0) {
-			const inlineContent = await fetchInlineContent(
-				results.map((result) => result.url),
-				apiKey,
-				options.signal,
-			);
-			if (inlineContent.length > 0) response.inlineContent = inlineContent;
-		}
-		activityMonitor.logComplete(activityId, 200);
-		return response;
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (options.signal?.aborted) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
-	}
-}
-
-export async function extractWithQuerit(
-	url: string,
+function fetchInlineContent(
+	urls: string[],
+	apiKey: string,
 	signal?: AbortSignal,
-	options: ExtractOptions = {},
-): Promise<ExtractedContent | null> {
-	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
-	try {
-		const data = await fetchContentsBatch([url], apiKey, signal, options);
-		const result = findContentResult(data, url, 0, 1);
-		const mapped = mapContentResult(result, url);
-		if (mapped) {
-			activityMonitor.logComplete(activityId, 200);
-			return mapped;
+): Effect.Effect<ExtractedContent[], Error> {
+	return Effect.gen(function* () {
+		const content: ExtractedContent[] = [];
+		for (let offset = 0; offset < urls.length; offset += MAX_CONTENT_URLS) {
+			const batch = urls.slice(offset, offset + MAX_CONTENT_URLS);
+			const data = yield* fetchContentsBatch(batch, apiKey, signal);
+			for (const [index, requestedUrl] of batch.entries()) {
+				const result = findContentResult(data, requestedUrl, index, batch.length);
+				const mapped = mapContentResult(result, requestedUrl);
+				if (mapped) content.push(mapped);
+			}
 		}
-		if (failedContentStatus(data, result, 0)) {
-			throw new Error(`Querit Contents API failed to crawl ${url}`);
-		}
-		activityMonitor.logComplete(activityId, 200);
-		return null;
-	} catch (err) {
-		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (signal?.aborted) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
-	}
+		return content;
+	});
+}
+
+function queritActivityError(activityId: string, error: Error, apiKey: string, signal?: AbortSignal): Error {
+	const redactedMessage = redactCredential(error.message, apiKey);
+	if (signal?.aborted) activityMonitor.logComplete(activityId, 0);
+	else activityMonitor.logError(activityId, redactedMessage);
+	if (redactedMessage === error.message) return error;
+	const redactedError = new Error(redactedMessage);
+	redactedError.name = error.name;
+	return redactedError;
+}
+
+export function searchWithQuerit(query: string, options: QueritSearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) => {
+			const activityId = activityMonitor.logStart({ type: "api", query });
+			return Effect.gen(function* () {
+				const data = yield* queritJsonRequest(
+					"Search",
+					QUERIT_SEARCH_URL,
+					apiKey,
+					buildSearchBody(query, options),
+					SEARCH_TIMEOUT_MS,
+					options.signal,
+				);
+				const response: SearchResponse = yield* Effect.try({
+					try: () => {
+						assertApiSuccess("Search", data);
+						const results = mapSearchResults(data);
+						return { answer: formatSearchSources(results), results } satisfies SearchResponse;
+					},
+					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				});
+				if (options.includeContent && response.results.length > 0) {
+					const inlineContent = yield* fetchInlineContent(
+						response.results.map((result) => result.url),
+						apiKey,
+						options.signal,
+					);
+					if (inlineContent.length > 0) response.inlineContent = inlineContent;
+				}
+				activityMonitor.logComplete(activityId, 200);
+				return response;
+			}).pipe(
+				Effect.catch((error) => Effect.fail(queritActivityError(activityId, error, apiKey, options.signal))),
+				Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+			);
+		}),
+	);
+}
+
+export function extractWithQuerit(url: string, signal?: AbortSignal, options: ExtractOptions = {}) {
+	return nativePromise(getApiKey, signal).pipe(
+		Effect.flatMap((apiKey) => {
+			const activityId = activityMonitor.logStart({ type: "fetch", url });
+			return fetchContentsBatch([url], apiKey, signal, options).pipe(
+				Effect.flatMap((data) =>
+					Effect.try({
+						try: () => {
+							const result = findContentResult(data, url, 0, 1);
+							const mapped = mapContentResult(result, url);
+							if (mapped) return mapped;
+							if (failedContentStatus(data, result, 0)) {
+								throw new Error(`Querit Contents API failed to crawl ${url}`);
+							}
+							return null;
+						},
+						catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+					}),
+				),
+				Effect.tap(() => Effect.sync(() => activityMonitor.logComplete(activityId, 200))),
+				Effect.catch((error) => Effect.fail(queritActivityError(activityId, error, apiKey, signal))),
+				Effect.onInterrupt(() => Effect.sync(() => activityMonitor.logComplete(activityId, 0))),
+			);
+		}),
+	);
 }

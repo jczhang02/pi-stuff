@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -6,7 +7,7 @@ import { readWebConfig } from "./config.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, normalizeCount } from "./utils.ts";
+import { errorMessage, formatSearchSources, nativePromise, nativeRequest, normalizeCount } from "./utils.ts";
 
 const ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search";
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -82,11 +83,12 @@ export function isAnySearchAvailable(): boolean {
 	return true;
 }
 
-export async function searchWithAnySearch(
+async function searchWithAnySearchRequest(
 	query: string,
-	options: AnySearchSearchOptions = {},
+	options: AnySearchSearchOptions,
+	apiKey: string | null,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
 	const body = { query, max_results: numResults };
 	const activityId = activityMonitor.logStart({ type: "api", query });
@@ -100,9 +102,7 @@ export async function searchWithAnySearch(
 			redirect: "error",
 			headers,
 			body: JSON.stringify(body),
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -145,4 +145,16 @@ export async function searchWithAnySearch(
 		if (inlineContent.length > 0) mapped.inlineContent = inlineContent;
 	}
 	return mapped;
+}
+
+export function searchWithAnySearch(query: string, options: AnySearchSearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithAnySearchRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
 }

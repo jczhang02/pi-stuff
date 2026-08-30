@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
@@ -28,7 +29,7 @@ import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
 import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
 import { isTinyFishAvailable, searchWithTinyFish } from "./tinyfish.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise } from "./utils.ts";
 import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
 
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -37,91 +38,132 @@ interface ProviderRuntimeOptions extends SearchOptions {
 	extensionContext?: ExtensionContext;
 }
 
-type ProviderSearch = (query: string, options: ProviderRuntimeOptions) => Promise<SearchResponse | null>;
+type ProviderSearch = (query: string, options: ProviderRuntimeOptions) => Effect.Effect<SearchResponse | null, Error>;
+type ProviderAvailability = (options: ProviderRuntimeOptions) => Effect.Effect<boolean, Error>;
 
 interface SearchProviderDefinition<Provider extends string = string> {
 	readonly id: Provider;
 	readonly label: string;
 	readonly search: ProviderSearch;
-	readonly available: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
-	readonly automaticAvailable?: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+	readonly available: ProviderAvailability;
+	readonly automaticAvailable?: ProviderAvailability;
 	readonly catchAutomaticAvailabilityError?: boolean;
 	readonly automaticPriority?: number;
 	readonly automaticSearch?: ProviderSearch;
-	readonly aggregateAvailable?: (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+	readonly aggregateAvailable?: ProviderAvailability;
 	readonly aggregateEmptyResultMessage?: string;
 	readonly aggregateSearch?: ProviderSearch;
 	readonly emptyResultMessage?: string;
 	readonly stopAutomaticOnCredentialError?: boolean;
 }
 
+type LegacyProviderSearch = (query: string, options: ProviderRuntimeOptions) => Promise<SearchResponse | null>;
+type LegacyProviderAvailability = (options: ProviderRuntimeOptions) => boolean | Promise<boolean>;
+
+function legacyProviderSearch(search: LegacyProviderSearch): ProviderSearch {
+	return (query, options) => nativePromise((signal) => search(query, { ...options, signal }), options.signal);
+}
+
+function legacyProviderAvailability(available: LegacyProviderAvailability): ProviderAvailability {
+	return (options) => nativePromise(async (signal) => await available({ ...options, signal }), options.signal);
+}
+
+function providerAvailability(available: (options: ProviderRuntimeOptions) => boolean): ProviderAvailability {
+	return (options) =>
+		Effect.try({
+			try: () => available(options),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+}
+
 const SEARCH_PROVIDER_DEFINITIONS = [
 	{
 		id: "openai",
 		label: "OpenAI",
-		search: (query, options) => searchWithOpenAI(query, options, options.extensionContext),
-		available: (options) => isOpenAISearchAvailable(options.extensionContext),
-		automaticAvailable: async (options) =>
-			shouldTryOpenAIInAuto(options) && (await isOpenAISearchAvailable(options.extensionContext)),
+		search: legacyProviderSearch((query, options) => searchWithOpenAI(query, options, options.extensionContext)),
+		available: legacyProviderAvailability((options) => isOpenAISearchAvailable(options.extensionContext)),
+		automaticAvailable: legacyProviderAvailability(
+			async (options) => shouldTryOpenAIInAuto(options) && (await isOpenAISearchAvailable(options.extensionContext)),
+		),
 		catchAutomaticAvailabilityError: true,
 		automaticPriority: 1,
 	},
-	{ id: "brave", label: "Brave", search: searchWithBrave, available: isBraveAvailable, automaticPriority: 3 },
+	{
+		id: "brave",
+		label: "Brave",
+		search: searchWithBrave,
+		available: providerAvailability(isBraveAvailable),
+		automaticPriority: 3,
+	},
 	{
 		id: "parallel",
 		label: "Parallel",
 		search: searchWithParallel,
-		available: isParallelAvailable,
+		available: providerAvailability(isParallelAvailable),
 		automaticPriority: 4,
 	},
 	{
 		id: "tinyfish",
 		label: "TinyFish",
-		search: searchWithTinyFish,
-		available: isTinyFishAvailable,
+		search: legacyProviderSearch(searchWithTinyFish),
+		available: providerAvailability(isTinyFishAvailable),
 		automaticPriority: 5,
 	},
 	{
 		id: "search1api",
 		label: "Search1API",
 		search: searchWithSearch1API,
-		available: isSearch1APIAvailable,
+		available: providerAvailability(isSearch1APIAvailable),
 		automaticPriority: 6,
 	},
 	{
 		id: "searchinfinity",
 		label: "Searchinfinity",
 		search: searchWithSearchinfinity,
-		available: isSearchinfinityAvailable,
+		available: providerAvailability(isSearchinfinityAvailable),
 		automaticPriority: 7,
 	},
-	{ id: "querit", label: "Querit", search: searchWithQuerit, available: isQueritAvailable, automaticPriority: 8 },
-	{ id: "tavily", label: "Tavily", search: searchWithTavily, available: isTavilyAvailable, automaticPriority: 9 },
+	{
+		id: "querit",
+		label: "Querit",
+		search: searchWithQuerit,
+		available: providerAvailability(isQueritAvailable),
+		automaticPriority: 8,
+	},
+	{
+		id: "tavily",
+		label: "Tavily",
+		search: searchWithTavily,
+		available: providerAvailability(isTavilyAvailable),
+		automaticPriority: 9,
+	},
 	{
 		id: "searxng",
 		label: "SearXNG",
 		search: searchWithSearXNG,
-		available: isSearXNGAvailable,
+		available: providerAvailability(isSearXNGAvailable),
 		automaticPriority: 0,
 	},
 	{
 		id: "perplexity",
 		label: "Perplexity",
-		search: searchWithPerplexity,
-		available: isPerplexityAvailable,
+		search: legacyProviderSearch(searchWithPerplexity),
+		available: providerAvailability(isPerplexityAvailable),
 		automaticPriority: 13,
 	},
 	{
 		id: "gemini",
 		label: "Gemini",
-		search: (query, options) => searchWithGemini(query, options, true),
-		available: async () => isGeminiApiAvailable() || Boolean(await isGeminiWebAvailable()),
-		automaticAvailable: () => true,
+		search: legacyProviderSearch((query, options) => searchWithGemini(query, options, true)),
+		available: legacyProviderAvailability(
+			async () => isGeminiApiAvailable() || Boolean(await isGeminiWebAvailable()),
+		),
+		automaticAvailable: providerAvailability(() => true),
 		automaticPriority: 14,
-		automaticSearch: (query, options) => searchWithGemini(query, options, false),
-		aggregateAvailable: isGeminiApiAvailable,
+		automaticSearch: legacyProviderSearch((query, options) => searchWithGemini(query, options, false)),
+		aggregateAvailable: providerAvailability(isGeminiApiAvailable),
 		aggregateEmptyResultMessage: "Gemini API search returned no results.",
-		aggregateSearch: searchWithGeminiApi,
+		aggregateSearch: legacyProviderSearch(searchWithGeminiApi),
 		emptyResultMessage:
 			"Gemini search unavailable. Either:\n" +
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
@@ -132,7 +174,7 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 		id: "exa",
 		label: "Exa",
 		search: searchWithExa,
-		available: isExaAvailable,
+		available: providerAvailability(isExaAvailable),
 		automaticPriority: 2,
 		emptyResultMessage: "Exa search returned no results.",
 		stopAutomaticOnCredentialError: true,
@@ -141,26 +183,47 @@ const SEARCH_PROVIDER_DEFINITIONS = [
 		id: "serpdive",
 		label: "SERPdive",
 		search: searchWithSerpdive,
-		available: isSerpdiveAvailable,
+		available: providerAvailability(isSerpdiveAvailable),
 		automaticPriority: 10,
 	},
-	{ id: "kagi", label: "Kagi", search: searchWithKagi, available: isKagiAvailable, automaticPriority: 11 },
+	{
+		id: "kagi",
+		label: "Kagi",
+		search: searchWithKagi,
+		available: providerAvailability(isKagiAvailable),
+		automaticPriority: 11,
+	},
 	{
 		id: "ollama",
 		label: "Ollama",
-		search: searchWithOllama,
-		available: isOllamaAvailable,
+		search: legacyProviderSearch(searchWithOllama),
+		available: providerAvailability(isOllamaAvailable),
 		automaticPriority: 12,
 	},
-	{ id: "anysearch", label: "AnySearch", search: searchWithAnySearch, available: isAnySearchAvailable },
+	{
+		id: "anysearch",
+		label: "AnySearch",
+		search: searchWithAnySearch,
+		available: providerAvailability(isAnySearchAvailable),
+	},
 	{
 		id: "xai",
 		label: "xAI",
-		search: (query, options) => searchWithXai(query, options, options.extensionContext),
-		available: (options) => isXaiSearchAvailable(options.extensionContext),
+		search: legacyProviderSearch((query, options) => searchWithXai(query, options, options.extensionContext)),
+		available: legacyProviderAvailability((options) => isXaiSearchAvailable(options.extensionContext)),
 	},
-	{ id: "brightdata", label: "Bright Data", search: searchWithBrightData, available: isBrightDataAvailable },
-	{ id: "serpbase", label: "SerpBase", search: searchWithSerpBase, available: isSerpBaseAvailable },
+	{
+		id: "brightdata",
+		label: "Bright Data",
+		search: searchWithBrightData,
+		available: providerAvailability(isBrightDataAvailable),
+	},
+	{
+		id: "serpbase",
+		label: "SerpBase",
+		search: searchWithSerpBase,
+		available: providerAvailability(isSerpBaseAvailable),
+	},
 ] as const satisfies readonly SearchProviderDefinition[];
 
 export type ResolvedSearchProvider = (typeof SEARCH_PROVIDER_DEFINITIONS)[number]["id"];
@@ -418,21 +481,29 @@ function providerDefinition(provider: ResolvedSearchProvider): SearchProviderDef
 	return definition;
 }
 
-async function searchWithResolvedProvider(
+function searchWithResolvedProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
-): Promise<ProviderSearchResponse> {
+): Effect.Effect<ProviderSearchResponse, Error> {
 	const definition = providerDefinition(provider);
-	const result = await definition.search(query, options);
-	if (result) return { ...result, provider };
-	throw new Error(definition.emptyResultMessage ?? `${definition.label} search returned no results.`);
+	return definition
+		.search(query, options)
+		.pipe(
+			Effect.flatMap((result) =>
+				result
+					? Effect.succeed({ ...result, provider })
+					: Effect.fail(
+							new Error(definition.emptyResultMessage ?? `${definition.label} search returned no results.`),
+						),
+			),
+		);
 }
 
-async function isResolvedProviderAvailable(
+function isResolvedProviderAvailable(
 	provider: ResolvedSearchProvider,
 	options: FullSearchOptions,
-): Promise<boolean> {
+): Effect.Effect<boolean, Error> {
 	return providerDefinition(provider).available(options);
 }
 
@@ -440,180 +511,215 @@ function providerLabel(provider: ResolvedSearchProvider): string {
 	return providerDefinition(provider).label;
 }
 
-async function searchWithAllProvider(
+function searchWithAllProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
-): Promise<ProviderSearchResponse> {
+): Effect.Effect<ProviderSearchResponse, Error> {
 	const definition = providerDefinition(provider);
-	const result = await (definition.aggregateSearch ?? definition.search)(query, options);
-	if (result) return { ...result, provider };
-	throw new Error(
-		definition.aggregateEmptyResultMessage ??
-			definition.emptyResultMessage ??
-			`${definition.label} search returned no results.`,
+	return (definition.aggregateSearch ?? definition.search)(query, options).pipe(
+		Effect.flatMap((result) =>
+			result
+				? Effect.succeed({ ...result, provider })
+				: Effect.fail(
+						new Error(
+							definition.aggregateEmptyResultMessage ??
+								definition.emptyResultMessage ??
+								`${definition.label} search returned no results.`,
+						),
+					),
+		),
 	);
 }
 
-async function searchWithProviders(
+type Settled<Value> = { readonly ok: true; readonly value: Value } | { readonly error: Error; readonly ok: false };
+
+function settle<Value>(effect: Effect.Effect<Value, Error>): Effect.Effect<Settled<Value>> {
+	return effect.pipe(
+		Effect.map((value) => ({ ok: true as const, value })),
+		Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+	);
+}
+
+function searchWithProviders(
 	query: string,
 	options: FullSearchOptions,
 	selectedProviders?: ResolvedSearchProvider[],
-): Promise<AttributedSearchResponse> {
-	const providers =
-		selectedProviders ??
-		(
-			await Promise.all(
-				AUTOMATIC_PROVIDER_DEFINITIONS.map(async (definition) => ({
-					provider: definition.id,
-					available: await (definition.aggregateAvailable ?? definition.available)(options),
-				})),
-			)
-		)
-			.filter((entry) => entry.available)
-			.map((entry) => entry.provider);
-	if (providers.length === 0) {
-		throw new Error(
-			'No configured search provider available for provider "all". AnySearch, xAI, Bright Data, and SerpBase are excluded.',
-		);
-	}
-
-	const settled = await Promise.allSettled(
-		providers.map((provider) =>
-			selectedProviders
-				? searchWithResolvedProvider(provider, query, options)
-				: searchWithAllProvider(provider, query, options),
-		),
-	);
-	if (options.signal?.aborted) throw new Error("Aborted");
-
-	const successes: ProviderSearchResponse[] = [];
-	const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
-	for (const [index, outcome] of settled.entries()) {
-		const provider = providers[index];
-		if (!provider) throw new Error("Search provider result did not match its request");
-		if (outcome.status === "fulfilled") {
-			successes.push(outcome.value);
-		} else {
-			failures.push({ provider, error: errorMessage(outcome.reason) });
+): Effect.Effect<AttributedSearchResponse, Error> {
+	return Effect.gen(function* () {
+		const providers =
+			selectedProviders ??
+			(yield* Effect.forEach(
+				AUTOMATIC_PROVIDER_DEFINITIONS,
+				(definition) =>
+					(definition.aggregateAvailable ?? definition.available)(options).pipe(
+						Effect.map((available) => ({ available, provider: definition.id })),
+					),
+				{ concurrency: "unbounded" },
+			))
+				.filter((entry) => entry.available)
+				.map((entry) => entry.provider);
+		if (providers.length === 0) {
+			return yield* Effect.fail(
+				new Error(
+					'No configured search provider available for provider "all". AnySearch, xAI, Bright Data, and SerpBase are excluded.',
+				),
+			);
 		}
-	}
-	if (successes.length === 0) {
-		const label = selectedProviders ? "Selected-provider" : "All-provider";
-		throw new Error(
-			`${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`,
+
+		const outcomes = yield* Effect.forEach(
+			providers,
+			(provider) =>
+				settle(
+					selectedProviders
+						? searchWithResolvedProvider(provider, query, options)
+						: searchWithAllProvider(provider, query, options),
+				),
+			{ concurrency: "unbounded" },
 		);
-	}
-
-	const results: SearchResult[] = [];
-	const seenResultUrls = new Set<string>();
-	const inlineContent: NonNullable<SearchResponse["inlineContent"]> = [];
-	const seenInlineUrls = new Set<string>();
-	for (const response of successes) {
-		for (const result of response.results) {
-			if (seenResultUrls.has(result.url)) continue;
-			seenResultUrls.add(result.url);
-			results.push(result);
+		const successes: ProviderSearchResponse[] = [];
+		const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
+		for (const [index, outcome] of outcomes.entries()) {
+			const provider = providers[index];
+			if (!provider) throw new Error("Search provider result did not match its request");
+			if (outcome.ok) successes.push(outcome.value);
+			else failures.push({ provider, error: errorMessage(outcome.error) });
 		}
-		for (const content of response.inlineContent ?? []) {
-			if (seenInlineUrls.has(content.url)) continue;
-			seenInlineUrls.add(content.url);
-			inlineContent.push(content);
+		if (successes.length === 0) {
+			const label = selectedProviders ? "Selected-provider" : "All-provider";
+			return yield* Effect.fail(
+				new Error(
+					`${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`,
+				),
+			);
 		}
-	}
 
-	const answerSections = successes.map(
-		(response) => `## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`,
-	);
-	if (failures.length > 0) {
-		answerSections.push(
-			`## Provider errors\n\n${failures.map(({ provider, error }) => `- **${providerLabel(provider)}:** ${error}`).join("\n")}`,
+		const results: SearchResult[] = [];
+		const seenResultUrls = new Set<string>();
+		const inlineContent: NonNullable<SearchResponse["inlineContent"]> = [];
+		const seenInlineUrls = new Set<string>();
+		for (const response of successes) {
+			for (const result of response.results) {
+				if (seenResultUrls.has(result.url)) continue;
+				seenResultUrls.add(result.url);
+				results.push(result);
+			}
+			for (const content of response.inlineContent ?? []) {
+				if (seenInlineUrls.has(content.url)) continue;
+				seenInlineUrls.add(content.url);
+				inlineContent.push(content);
+			}
+		}
+
+		const answerSections = successes.map(
+			(response) => `## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`,
 		);
-	}
+		if (failures.length > 0) {
+			answerSections.push(
+				`## Provider errors\n\n${failures.map(({ provider, error }) => `- **${providerLabel(provider)}:** ${error}`).join("\n")}`,
+			);
+		}
 
-	const response: AttributedSearchResponse = {
-		provider: "all",
-		answer: answerSections.join("\n\n"),
-		results,
-		providerResponses: successes,
-	};
-	if (failures.length > 0) response.providerErrors = failures;
-	if (inlineContent.length > 0) response.inlineContent = inlineContent;
-	return response;
+		const response: AttributedSearchResponse = {
+			provider: "all",
+			answer: answerSections.join("\n\n"),
+			results,
+			providerResponses: successes,
+		};
+		if (failures.length > 0) response.providerErrors = failures;
+		if (inlineContent.length > 0) response.inlineContent = inlineContent;
+		return response;
+	});
 }
 
-async function searchWithConfiguredRouting(
+function searchWithConfiguredRouting(
 	query: string,
 	options: FullSearchOptions,
 	routing: SearchRoutingConfig,
-): Promise<AttributedSearchResponse> {
-	const diagnostics: string[] = [];
-	for (const provider of routing.providers) {
-		if (!(await isResolvedProviderAvailable(provider, options))) {
-			diagnostics.push(`${provider}: unavailable`);
-			continue;
-		}
-		try {
-			return await searchWithResolvedProvider(provider, query, options);
-		} catch (err) {
-			const classified = classifyProviderError(provider, err);
-			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`);
+): Effect.Effect<AttributedSearchResponse, Error> {
+	return Effect.gen(function* () {
+		const diagnostics: string[] = [];
+		for (const provider of routing.providers) {
+			if (!(yield* isResolvedProviderAvailable(provider, options))) {
+				diagnostics.push(`${provider}: unavailable`);
+				continue;
+			}
+			const outcome = yield* settle(searchWithResolvedProvider(provider, query, options));
+			if (outcome.ok) return outcome.value;
+			const classified = classifyProviderError(provider, outcome.error);
+			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(outcome.error)}`);
 			if (!isRoutingFallbackKind(classified.kind) || !routing.fallbackOn.includes(classified.kind)) {
-				throw classified;
+				return yield* Effect.fail(classified);
 			}
 		}
-	}
-	throw new Error(`Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`);
+		return yield* Effect.fail(new Error(`Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`));
+	});
 }
 
-export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
-	const config = getSearchConfig();
-	const provider =
-		options.provider === undefined || options.provider === "auto" ? config.searchProvider : options.provider;
-	if (Array.isArray(provider)) {
-		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"));
-	}
-	if (provider === "all") return searchWithProviders(query, options);
-	if (provider !== "auto") return searchWithResolvedProvider(provider, query, options);
-	if (!config.searchProviderConfigured && config.searchRouting) {
-		return searchWithConfiguredRouting(query, options, config.searchRouting);
-	}
-
-	const fallbackErrors: string[] = [];
-	for (const definition of AUTOMATIC_PROVIDER_DEFINITIONS) {
-		const available = definition.automaticAvailable ?? definition.available;
-		try {
-			if (!(await available(options))) continue;
-		} catch (err) {
-			if (!definition.catchAutomaticAvailabilityError || isAbortError(err)) throw err;
-			fallbackErrors.push(`${definition.label}: ${errorMessage(err)}`);
-			continue;
+export function search(query: string, options: FullSearchOptions = {}): Effect.Effect<AttributedSearchResponse, Error> {
+	return Effect.gen(function* () {
+		const { config, provider } = yield* Effect.try({
+			try: () => {
+				const config = getSearchConfig();
+				const provider =
+					options.provider === undefined || options.provider === "auto" ? config.searchProvider : options.provider;
+				return { config, provider };
+			},
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		if (Array.isArray(provider)) {
+			const providers = yield* Effect.try({
+				try: () => normalizeResolvedProviderList(provider, "provider"),
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			});
+			return yield* searchWithProviders(query, options, providers);
 		}
-		try {
-			const result = await (definition.automaticSearch ?? definition.search)(query, options);
-			if (result) return { ...result, provider: definition.id };
-		} catch (err) {
-			if (
-				isAbortError(err) ||
-				(definition.stopAutomaticOnCredentialError && err instanceof CredentialResolutionError)
-			) {
-				throw err;
+		if (provider === "all") return yield* searchWithProviders(query, options);
+		if (provider !== "auto") return yield* searchWithResolvedProvider(provider, query, options);
+		if (!config.searchProviderConfigured && config.searchRouting) {
+			return yield* searchWithConfiguredRouting(query, options, config.searchRouting);
+		}
+
+		const fallbackErrors: string[] = [];
+		for (const definition of AUTOMATIC_PROVIDER_DEFINITIONS) {
+			const available = definition.automaticAvailable ?? definition.available;
+			const availability = yield* settle(available(options));
+			if (!availability.ok) {
+				if (!definition.catchAutomaticAvailabilityError || isAbortError(availability.error)) {
+					return yield* Effect.fail(availability.error);
+				}
+				fallbackErrors.push(`${definition.label}: ${errorMessage(availability.error)}`);
+				continue;
 			}
-			fallbackErrors.push(`${definition.label}: ${errorMessage(err)}`);
+			if (!availability.value) continue;
+			const outcome = yield* settle((definition.automaticSearch ?? definition.search)(query, options));
+			if (outcome.ok) {
+				if (outcome.value) return { ...outcome.value, provider: definition.id };
+				continue;
+			}
+			if (
+				isAbortError(outcome.error) ||
+				(definition.stopAutomaticOnCredentialError && outcome.error instanceof CredentialResolutionError)
+			) {
+				return yield* Effect.fail(outcome.error);
+			}
+			fallbackErrors.push(`${definition.label}: ${errorMessage(outcome.error)}`);
 		}
-	}
 
-	if (fallbackErrors.length > 0) {
-		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
-	}
+		if (fallbackErrors.length > 0) {
+			return yield* Effect.fail(new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`));
+		}
 
-	throw new Error(
-		"No search provider available. Either:\n" +
-			"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
-			`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
-			"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
-			"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
-			"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
-			'  6. Explicitly select provider: "anysearch" for anonymous AnySearch, "xai" for Grok, "brightdata" with brightdataSerpZone for paid Bright Data SERP, or "serpbase" with serpbaseApiKey for paid Google SERP',
-	);
+		return yield* Effect.fail(
+			new Error(
+				"No search provider available. Either:\n" +
+					"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
+					`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
+					"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
+					"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
+					"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
+					'  6. Explicitly select provider: "anysearch" for anonymous AnySearch, "xai" for Grok, "brightdata" with brightdataSerpZone for paid Bright Data SERP, or "serpbase" with serpbaseApiKey for paid Google SERP',
+			),
+		);
+	});
 }

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
@@ -7,7 +8,7 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, getWebSearchConfigPath, requestSignal } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, nativePromise, nativeRequest } from "./utils.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
@@ -290,42 +291,54 @@ function hasExtractUrlError(errors: JsonInputValue, url: string): boolean {
 	});
 }
 
-async function fetchAndMapExtractResult(
+function fetchAndMapExtractResult(
 	url: string,
 	body: JsonInputObject,
 	signal?: AbortSignal,
-): Promise<{ mapped: ExtractedContent | null; result: V1ExtractResult | undefined }> {
-	const data = await parallelFetch(PARALLEL_EXTRACT_URL, body, signal);
-	if (hasExtractUrlError(data["errors"], url)) return { mapped: null, result: undefined };
-	const result = findExtractResult(parseExtractResults(data["results"]), url);
-	return { mapped: mapExtractResult(result), result };
+): Effect.Effect<{ mapped: ExtractedContent | null; result: V1ExtractResult | undefined }, Error> {
+	return parallelFetch(PARALLEL_EXTRACT_URL, body, signal).pipe(
+		Effect.map((data) => {
+			if (hasExtractUrlError(data["errors"], url)) return { mapped: null, result: undefined };
+			const result = findExtractResult(parseExtractResults(data["results"]), url);
+			return { mapped: mapExtractResult(result), result };
+		}),
+	);
 }
 
-export async function searchWithParallel(query: string, options: ParallelSearchOptions = {}): Promise<SearchResponse> {
-	const data = await parallelFetch(PARALLEL_SEARCH_URL, buildSearchRequestBody(query, options), options.signal);
-	const results = parseSearchResults(data["results"]);
-	const response: SearchResponse = {
-		answer: buildAnswerFromExcerpts(results),
-		results: mapSearchResults(results),
-	};
-	if (options.includeContent) {
-		const inlineContent = mapInlineContent(results);
-		if (inlineContent.length > 0) response.inlineContent = inlineContent;
-	}
-	return response;
+export function searchWithParallel(query: string, options: ParallelSearchOptions = {}) {
+	return parallelFetch(PARALLEL_SEARCH_URL, buildSearchRequestBody(query, options), options.signal).pipe(
+		Effect.map((data) => {
+			const results = parseSearchResults(data["results"]);
+			const response: SearchResponse = {
+				answer: buildAnswerFromExcerpts(results),
+				results: mapSearchResults(results),
+			};
+			if (options.includeContent) {
+				const inlineContent = mapInlineContent(results);
+				if (inlineContent.length > 0) response.inlineContent = inlineContent;
+			}
+			return response;
+		}),
+	);
 }
 
-export async function extractWithParallel(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
-	const initial = await fetchAndMapExtractResult(url, buildExtractRequestBody(url), signal);
-	if (initial.mapped) return initial.mapped;
-	if (!initial.result || resolveExtractContent(initial.result).length >= MIN_USEFUL_CONTENT) return null;
+export function extractWithParallel(url: string, signal?: AbortSignal) {
+	return Effect.gen(function* () {
+		const initial = yield* fetchAndMapExtractResult(url, buildExtractRequestBody(url), signal);
+		if (initial.mapped) return initial.mapped;
+		if (!initial.result || resolveExtractContent(initial.result).length >= MIN_USEFUL_CONTENT) return null;
 
-	const retry = await fetchAndMapExtractResult(url, buildExtractRequestBody(url, true), signal);
-	return retry.mapped;
+		const retry = yield* fetchAndMapExtractResult(url, buildExtractRequestBody(url, true), signal);
+		return retry.mapped;
+	});
 }
 
-async function parallelFetch(url: string, body: JsonInputObject, signal?: AbortSignal): Promise<JsonInputObject> {
-	const apiKey = await getApiKey(signal);
+async function parallelFetchNative(
+	url: string,
+	body: JsonInputObject,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<JsonInputObject> {
 	const activityId = activityMonitor.logStart(activityContext(url, body));
 	let response: Response;
 	try {
@@ -337,7 +350,7 @@ async function parallelFetch(url: string, body: JsonInputObject, signal?: AbortS
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal, SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -357,4 +370,16 @@ async function parallelFetch(url: string, body: JsonInputObject, signal?: AbortS
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Parallel API returned invalid JSON: ${errorMessage(err)}`);
 	}
+}
+
+function parallelFetch(url: string, body: JsonInputObject, signal?: AbortSignal) {
+	return nativePromise(getApiKey, signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(requestSignal) => parallelFetchNative(url, body, apiKey, requestSignal),
+				SEARCH_TIMEOUT_MS,
+				signal,
+			),
+		),
+	);
 }

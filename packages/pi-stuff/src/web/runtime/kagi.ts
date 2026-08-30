@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
@@ -13,7 +14,14 @@ import {
 	type SsrfConfig,
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const KAGI_SEARCH_URL = "https://kagi.com/api/v0/search";
 const KAGI_EXTRACT_URL = "https://kagi.com/api/v1/extract";
@@ -141,8 +149,12 @@ export function isKagiAvailable(): boolean {
 	});
 }
 
-export async function searchWithKagi(query: string, options: KagiSearchOptions = {}): Promise<SearchResponse> {
-	const apiKey = await requireApiKey(options.signal);
+async function searchWithKagiRequest(
+	query: string,
+	options: KagiSearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<SearchResponse> {
 	const numResults = normalizeCount(options.numResults);
 	const url = new URL(KAGI_SEARCH_URL);
 	url.searchParams.set("q", query);
@@ -153,9 +165,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 		response = await fetch(url, {
 			redirect: "error",
 			headers: { Authorization: `Bot ${apiKey}`, Accept: "application/json" },
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
@@ -184,25 +194,29 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	return mapped;
 }
 
+export function searchWithKagi(query: string, options: KagiSearchOptions = {}) {
+	return nativePromise(requireApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithKagiRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
+}
+
 export function isKagiExtractAvailable(): boolean {
 	return isKagiAvailable();
 }
 
-export async function extractWithKagi(
+async function extractWithKagiRequest(
 	url: string,
-	signal?: AbortSignal,
-	options: KagiExtractOptions = {},
+	ssrf: SsrfConfig,
+	options: KagiExtractOptions,
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const ssrf = options.ssrf ?? loadSsrfConfig();
-	const domainPolicy = loadFetchContentDomainPolicy();
-	const validationOptions = {
-		allowRanges: ssrf.allowRanges,
-		trustEnvProxy: ssrf.trustEnvProxy,
-		domainPolicy,
-	};
-	if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
-	await validateRemoteUrl(url, validationOptions);
-	const apiKey = await requireApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "api", query: `kagi extract: ${url}` });
 	let response: Response;
 	try {
@@ -221,9 +235,7 @@ export async function extractWithKagi(
 				method: "POST",
 				headers: { Authorization: `Bot ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 				body: JSON.stringify({ urls: [url] }),
-				signal: signal
-					? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal])
-					: AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
+				signal,
 			},
 			remoteOptions,
 		);
@@ -245,4 +257,29 @@ export async function extractWithKagi(
 	const parsed = parseExtractResponse(rawData, url);
 	activityMonitor.logComplete(activityId, response.status);
 	return parsed;
+}
+
+export function extractWithKagi(url: string, signal?: AbortSignal, options: KagiExtractOptions = {}) {
+	return Effect.gen(function* () {
+		const { ssrf, validationOptions } = yield* Effect.try({
+			try: () => {
+				const ssrf = options.ssrf ?? loadSsrfConfig();
+				const validationOptions = {
+					allowRanges: ssrf.allowRanges,
+					trustEnvProxy: ssrf.trustEnvProxy,
+					domainPolicy: loadFetchContentDomainPolicy(),
+				};
+				if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
+				return { ssrf, validationOptions };
+			},
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		yield* nativePromise(() => validateRemoteUrl(url, validationOptions));
+		const apiKey = yield* nativePromise(requireApiKey, signal);
+		return yield* nativeRequest(
+			(requestSignal) => extractWithKagiRequest(url, ssrf, options, apiKey, requestSignal),
+			options.timeoutMs ?? SEARCH_TIMEOUT_MS,
+			signal,
+		);
+	});
 }

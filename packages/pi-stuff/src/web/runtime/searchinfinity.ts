@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -6,7 +7,14 @@ import { activityMonitor, throwRedactedActivityError } from "./activity.ts";
 import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
@@ -91,7 +99,7 @@ function businessErrorStatus(codeN: number | undefined, code: string, message: s
 async function searchinfinityJsonRequest(
 	apiKey: string,
 	body: JsonInputObject,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<JsonInputObject> {
 	let response: Response;
 	try {
@@ -103,7 +111,7 @@ async function searchinfinityJsonRequest(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal, SEARCH_TIMEOUT_MS),
+			signal,
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -161,14 +169,15 @@ function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	});
 }
 
-export async function searchWithSearchinfinity(
+async function searchWithSearchinfinityRequest(
 	query: string,
-	options: SearchinfinitySearchOptions = {},
+	options: SearchinfinitySearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
-		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), options.signal);
+		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), signal);
 		const resultEnvelope = isJsonInputObject(data["Result"]) ? data["Result"] : undefined;
 		const results = mapSearchResults(resultEnvelope?.["WebResults"]);
 		const response: SearchResponse = { answer: formatSearchSources(results), results };
@@ -177,4 +186,16 @@ export async function searchWithSearchinfinity(
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
 	}
+}
+
+export function searchWithSearchinfinity(query: string, options: SearchinfinitySearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithSearchinfinityRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
 }

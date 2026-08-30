@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
@@ -7,7 +8,14 @@ import { readWebConfig } from "./config.ts";
 import { hasCredentialSource, redactCredential, requireCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { errorMessage, formatSearchSources, getWebSearchConfigPath, normalizeCount, requestSignal } from "./utils.ts";
+import {
+	errorMessage,
+	formatSearchSources,
+	getWebSearchConfigPath,
+	nativePromise,
+	nativeRequest,
+	normalizeCount,
+} from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
@@ -77,8 +85,7 @@ async function search1APIJsonRequest(
 	url: string,
 	apiKey: string,
 	body: JsonInputObject,
-	timeoutMs: number,
-	signal?: AbortSignal,
+	signal: AbortSignal,
 ): Promise<JsonInputObject> {
 	let response: Response;
 	try {
@@ -90,7 +97,7 @@ async function search1APIJsonRequest(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal, timeoutMs),
+			signal,
 		});
 	} catch (err) {
 		const message = errorMessage(err);
@@ -147,11 +154,12 @@ function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	});
 }
 
-export async function searchWithSearch1API(
+async function searchWithSearch1APIRequest(
 	query: string,
-	options: Search1APISearchOptions = {},
+	options: Search1APISearchOptions,
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<SearchResponse> {
-	const apiKey = await getApiKey(options.signal);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await search1APIJsonRequest(
@@ -159,8 +167,7 @@ export async function searchWithSearch1API(
 			SEARCH1API_SEARCH_URL,
 			apiKey,
 			buildSearchBody(query, options),
-			SEARCH_TIMEOUT_MS,
-			options.signal,
+			signal,
 		);
 		const results = mapSearchResults(data["results"]);
 		const response: SearchResponse = { answer: formatSearchSources(results), results };
@@ -175,24 +182,26 @@ export async function searchWithSearch1API(
 	}
 }
 
-export async function extractWithSearch1API(
+export function searchWithSearch1API(query: string, options: Search1APISearchOptions = {}) {
+	return nativePromise(getApiKey, options.signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest(
+				(signal) => searchWithSearch1APIRequest(query, options, apiKey, signal),
+				SEARCH_TIMEOUT_MS,
+				options.signal,
+			),
+		),
+	);
+}
+
+async function extractWithSearch1APIRequest(
 	url: string,
-	signal?: AbortSignal,
-	options: ExtractOptions = {},
+	apiKey: string,
+	signal: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const apiKey = await getApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
-		const data = await search1APIJsonRequest(
-			"Crawl",
-			SEARCH1API_CRAWL_URL,
-			apiKey,
-			{ url },
-			isRuntimeNumber(options.timeoutMs) && Number.isFinite(options.timeoutMs)
-				? Math.max(1, Math.floor(options.timeoutMs))
-				: CRAWL_TIMEOUT_MS,
-			signal,
-		);
+		const data = await search1APIJsonRequest("Crawl", SEARCH1API_CRAWL_URL, apiKey, { url }, signal);
 		const result = data["results"];
 		if (!isJsonInputObject(result)) {
 			throw new Error("Search1API Crawl API returned an unexpected response shape");
@@ -212,4 +221,16 @@ export async function extractWithSearch1API(
 	} catch (error) {
 		throwRedactedActivityError(activityId, error, apiKey);
 	}
+}
+
+export function extractWithSearch1API(url: string, signal?: AbortSignal, options: ExtractOptions = {}) {
+	const timeoutMs =
+		isRuntimeNumber(options.timeoutMs) && Number.isFinite(options.timeoutMs)
+			? Math.max(1, Math.floor(options.timeoutMs))
+			: CRAWL_TIMEOUT_MS;
+	return nativePromise(getApiKey, signal).pipe(
+		Effect.flatMap((apiKey) =>
+			nativeRequest((requestSignal) => extractWithSearch1APIRequest(url, apiKey, requestSignal), timeoutMs, signal),
+		),
+	);
 }

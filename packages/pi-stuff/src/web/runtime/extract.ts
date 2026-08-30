@@ -26,7 +26,7 @@ import {
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
 import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
-import { errorMessage, getWebSearchConfigPath, isAbortError } from "./utils.ts";
+import { errorMessage, getWebSearchConfigPath, isAbortError, nativePromise } from "./utils.ts";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const CONCURRENT_LIMIT = 3;
@@ -62,13 +62,6 @@ const turndown = new TurndownService({
 	headingStyle: "atx",
 	codeBlockStyle: "fenced",
 });
-
-function nativePromise<Value>(operation: (signal: AbortSignal) => PromiseLike<Value>): Effect.Effect<Value, Error> {
-	return Effect.tryPromise({
-		try: operation,
-		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-	});
-}
 
 export interface ExtractedContent {
 	url: string;
@@ -165,7 +158,7 @@ function appendLinks(result: ExtractedContent, declaredLinks: DeclaredWebLink[])
 	return { ...result, content: appendDeclaredWebLinks(result.content, declaredLinks) };
 }
 
-function contentFallbacks(url: string, options: ExtractOptions | undefined) {
+function contentFallbacks(url: string, options: ExtractOptions | undefined): readonly ContentFallback[] {
 	const ssrfOptions = () => {
 		const ssrf = loadSsrfConfig();
 		return { timeoutMs: options?.timeoutMs, lookup: options?.lookup, ssrf };
@@ -173,7 +166,7 @@ function contentFallbacks(url: string, options: ExtractOptions | undefined) {
 	return [
 		{
 			available: isFirecrawlAvailable,
-			extract: nativePromise((signal) => extractWithFirecrawl(url, signal, ssrfOptions())),
+			extract: extractWithFirecrawl(url, undefined, ssrfOptions()),
 			label: "Firecrawl",
 		},
 		{ available: () => true, extract: extractWithJinaReader(url, options?.lookup) },
@@ -184,17 +177,17 @@ function contentFallbacks(url: string, options: ExtractOptions | undefined) {
 		},
 		{
 			available: isSearch1APIAvailable,
-			extract: nativePromise((signal) => extractWithSearch1API(url, signal, options)),
+			extract: extractWithSearch1API(url, undefined, options),
 			label: "Search1API",
 		},
 		{
 			available: isQueritAvailable,
-			extract: nativePromise((signal) => extractWithQuerit(url, signal, options)),
+			extract: extractWithQuerit(url, undefined, options),
 			label: "Querit",
 		},
 		{
 			available: isKagiExtractAvailable,
-			extract: nativePromise((signal) => extractWithKagi(url, signal, ssrfOptions())),
+			extract: extractWithKagi(url, undefined, ssrfOptions()),
 			label: "Kagi",
 		},
 		{
@@ -204,12 +197,12 @@ function contentFallbacks(url: string, options: ExtractOptions | undefined) {
 		},
 		{
 			available: isParallelAvailable,
-			extract: nativePromise((signal) => extractWithParallel(url, signal)),
+			extract: extractWithParallel(url),
 			label: "Parallel",
 		},
 		{
 			available: isBrightDataUnlockerAvailable,
-			extract: nativePromise((signal) => extractWithBrightDataUnlocker(url, signal, ssrfOptions())),
+			extract: extractWithBrightDataUnlocker(url, undefined, ssrfOptions()),
 			label: "Bright Data",
 		},
 	] satisfies readonly ContentFallback[];

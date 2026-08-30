@@ -36,7 +36,8 @@ function installWeb(agentDirectory: string): string[] {
 	};
 	const effects: WebRuntimeEffectOptions = {
 		prepareFetch: () => Effect.void,
-		runContentOperation: (_ctx, program, signal) => Effect.runPromise(program, { signal }),
+		runContentOperation: async (_ctx, program, handlers, signal) =>
+			handlers.success(await Effect.runPromise(program, { signal })),
 	};
 	piWebAccess(host, effects);
 	return tools;
