@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: a2ee586b2251003811e56ab919c3cdd9973edcf1b8edcf1300c1921ab8f116c6 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 6142cb6a3204bee649598391c0e7c03a5e5491dde8ec1b86d7feb40cad5610d6 -->
 # 研究
 
 此目录包含有日期的调查、测量、比较和决策输入。每个文件都是针对其所述仓库快照和源代码修订版本的证据，而不是当前产品或兼容性契约。
@@ -11,6 +11,7 @@
 
 - [Code Mode：Cloudflare/OpenAI 设计](code-mode-cloudflare-openai-design-20260815.md)
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
+- [Skill Discovery 启动边界真实模型确认](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离真实模型确认](skill-discovery-isolated-confirmation-20260830.md)
 - [Skill Discovery 直接读取真实模型研究](skill-discovery-direct-read-20260830.md)
 - [Skill Discovery 真实模型 confirmation](skill-discovery-confirmation-20260830.md)

@@ -21,9 +21,11 @@ import {
 const DIRECT_PROVIDER_TOOLS = ["bash", "find", "grep", "ls", "read"] as const;
 const CODE_MODE_PROVIDER_TOOLS = ["codemode", "tool_search"] as const;
 export const SKILL_DISCOVERY_TOOL_ALLOWLIST = [...DIRECT_PROVIDER_TOOLS, ...CODE_MODE_PROVIDER_TOOLS] as const;
-const COMMAND_TIMEOUT_MS = 60_000;
-const HOST_STARTUP_TIMEOUT_MS = 5 * 60_000;
-const SESSION_TIMEOUT_MS = 15 * 60_000;
+export const SKILL_DISCOVERY_TIMEOUTS = {
+	commandMs: 60_000,
+	settlementMs: 15 * 60_000,
+	startupMs: 5 * 60_000,
+} as const;
 const COMMAND_TIMEOUT_PHASES = {
 	get_last_assistant_text: "evidence",
 	get_messages: "evidence",
@@ -327,7 +329,7 @@ async function captureSession(
 	];
 	const rpc = new PiRpcClient({
 		arguments: arguments_,
-		commandTimeoutMs: COMMAND_TIMEOUT_MS,
+		commandTimeoutMs: SKILL_DISCOVERY_TIMEOUTS.commandMs,
 		cwd: directories.project,
 		environment: benchmarkEnvironment(
 			process.env,
@@ -339,8 +341,8 @@ async function captureSession(
 		),
 		executable: options.piBinary,
 		failurePrefix: "Skill Discovery benchmark failed",
-		settleTimeoutMs: SESSION_TIMEOUT_MS,
-		startupTimeoutMs: HOST_STARTUP_TIMEOUT_MS,
+		settleTimeoutMs: SKILL_DISCOVERY_TIMEOUTS.settlementMs,
+		startupTimeoutMs: SKILL_DISCOVERY_TIMEOUTS.startupMs,
 	});
 	let messages: JsonSourceValue | undefined;
 	let finalText: JsonSourceValue | undefined;

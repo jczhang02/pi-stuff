@@ -15,7 +15,10 @@ import {
 } from "../scripts/skill-discovery-benchmark-core.js";
 import { analyzeSkillDiscoveryMessages } from "../scripts/skill-discovery-benchmark-evidence.js";
 import { assertSanitizedSkillDiscoveryReport } from "../scripts/skill-discovery-benchmark-report.js";
-import { SKILL_DISCOVERY_TOOL_ALLOWLIST } from "../scripts/skill-discovery-benchmark-session.js";
+import {
+	SKILL_DISCOVERY_TIMEOUTS,
+	SKILL_DISCOVERY_TOOL_ALLOWLIST,
+} from "../scripts/skill-discovery-benchmark-session.js";
 import { skillDiscoveryProviderToolNames, skillEntryCount } from "./fixtures/skill-discovery-benchmark-observer.js";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -56,7 +59,7 @@ function successfulObservations(): SkillDiscoveryObservation[] {
 
 test("freezes thirty triads and six arm permutations five times each", () => {
 	const manifest = createSkillDiscoveryManifest();
-	expect(manifest.seed).toBe(20_260_902);
+	expect(manifest.seed).toBe(20_260_903);
 	expect(manifest.tasks).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.id))).toHaveLength(30);
 	expect(new Set(manifest.tasks.map((task) => task.expectedToken))).toHaveLength(30);
@@ -65,9 +68,9 @@ test("freezes thirty triads and six arm permutations five times each", () => {
 	}
 	const orders = new Map<string, number>();
 	for (const task of manifest.tasks) {
-		expect(task.id).toStartWith("isolated-");
-		expect(task.target.name).toStartWith("sd-isolated-");
-		expect(task.expectedToken).toContain("_ISOLATED_");
+		expect(task.id).toStartWith("bounded-");
+		expect(task.target.name).toStartWith("sd-bounded-");
+		expect(task.expectedToken).toContain("_BOUNDED_");
 		expect([...task.armOrder].sort()).toEqual([...ARMS].sort());
 		const key = task.armOrder.join(",");
 		orders.set(key, (orders.get(key) ?? 0) + 1);
@@ -83,17 +86,37 @@ test("freezes thirty triads and six arm permutations five times each", () => {
 	expect([...orders.values()].sort()).toEqual([5, 5, 5, 5, 5, 5]);
 });
 
+test("uses identities absent from every retained Skill Discovery manifest", () => {
+	const retained = [
+		"skill-discovery-benchmark-manifest.jsonl",
+		"skill-discovery-confirmation-manifest.jsonl",
+		"skill-discovery-direct-read-manifest.jsonl",
+		"skill-discovery-isolated-confirmation-manifest.jsonl",
+	]
+		.map((name) => readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8"))
+		.join("\n");
+	for (const task of createSkillDiscoveryManifest().tasks) {
+		for (const identity of [task.id, task.prompt, task.expectedToken, task.target.name]) {
+			expect(retained).not.toContain(JSON.stringify(identity));
+		}
+	}
+});
+
 test("allows both direct and Code Mode surfaces through the Host strict Tool allowlist", () => {
 	expect(SKILL_DISCOVERY_TOOL_ALLOWLIST).toEqual(["bash", "find", "grep", "ls", "read", "codemode", "tool_search"]);
+	expect(SKILL_DISCOVERY_TIMEOUTS).toEqual({ commandMs: 60_000, settlementMs: 900_000, startupMs: 300_000 });
 });
 
 test("parses only the exact deterministic manifest", () => {
 	const text = serializeSkillDiscoveryManifest();
 	expect(
-		readFileSync(new URL("fixtures/skill-discovery-isolated-confirmation-manifest.jsonl", import.meta.url), "utf8"),
+		readFileSync(
+			new URL("fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl", import.meta.url),
+			"utf8",
+		),
 	).toBe(text);
 	expect(parseSkillDiscoveryManifest(text)).toEqual(createSkillDiscoveryManifest());
-	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260902', '"seed":1'))).toThrow(
+	expect(() => parseSkillDiscoveryManifest(text.replace('"seed":20260903', '"seed":1'))).toThrow(
 		"manifest does not match",
 	);
 	expect(() => parseSkillDiscoveryManifest(`${text}not-json\n`)).toThrow("not valid JSON Lines");
@@ -316,7 +339,7 @@ test("uses Wilson intervals, whole-triad bootstrap, and exact two-sided McNemar"
 		difference: 1,
 		interval95: [1, 1],
 		iterations: BOOTSTRAP_ITERATIONS,
-		seed: 20_260_902,
+		seed: 20_260_903,
 	});
 	expect(
 		exactMcNemar([

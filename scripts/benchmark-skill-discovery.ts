@@ -22,7 +22,7 @@ import {
 	serializeSkillDiscoveryManifest,
 } from "./skill-discovery-benchmark-core.js";
 import { assertSanitizedSkillDiscoveryReport } from "./skill-discovery-benchmark-report.js";
-import { runSkillDiscoverySession } from "./skill-discovery-benchmark-session.js";
+import { runSkillDiscoverySession, SKILL_DISCOVERY_TIMEOUTS } from "./skill-discovery-benchmark-session.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -30,10 +30,10 @@ const PROVIDER = "openai-codex";
 const MODEL = "gpt-5.6-sol";
 const REASONING = "xhigh";
 const CONTEXT_MODE = "native";
-const MANIFEST_PATH = "test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl";
+const MANIFEST_PATH = "test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl";
 const OBSERVER_PATH = "test/fixtures/skill-discovery-benchmark-observer.ts";
-const LOCK_PATH = "test/fixtures/skill-discovery-isolated-confirmation-run-lock.json";
-const REPORT_PATH = "docs/reports/skill-discovery-isolated-confirmation-20260830.json";
+const LOCK_PATH = "test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json";
+const REPORT_PATH = "docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json";
 const PACKAGE_EXTENSION = "packages/pi-stuff/index.ts";
 const RUNNER_SOURCES = [
 	"scripts/benchmark-skill-discovery.ts",
@@ -67,6 +67,11 @@ const RUN_LOCK_SCHEMA = Type.Object({
 	reportPath: Type.String(),
 	runnerSources: Type.Array(LOCKED_SOURCE_SCHEMA),
 	schemaVersion: Type.Literal(1),
+	timeouts: Type.Object({
+		commandMs: Type.Literal(SKILL_DISCOVERY_TIMEOUTS.commandMs),
+		settlementMs: Type.Literal(SKILL_DISCOVERY_TIMEOUTS.settlementMs),
+		startupMs: Type.Literal(SKILL_DISCOVERY_TIMEOUTS.startupMs),
+	}),
 });
 const AUTH_CHECK_SCHEMA = Type.Object(
 	{ provider: Type.String(), status: Type.String() },
@@ -269,11 +274,12 @@ async function writeReport(
 			provider: PROVIDER,
 			reasoning: REASONING,
 			runnerSources: lock.runnerSources,
+			timeouts: lock.timeouts,
 		},
 		observations,
 		plan: { bootstrapIterations: 20_000, seed: manifest.seed, sessions: 90, tasks: 30 },
 		schemaVersion: 1,
-		study: "skill-discovery-real-model-isolated-confirmation",
+		study: "skill-discovery-real-model-startup-bounded-confirmation",
 	};
 	const reportValue = requireJsonInputValue(report, "Skill Discovery benchmark report");
 	assertSanitizedSkillDiscoveryReport(reportValue, manifest, [benchmarkRoot]);

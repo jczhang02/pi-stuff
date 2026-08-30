@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const ARMS = ["raw", "off", "on"] as const;
 export const BOOTSTRAP_ITERATIONS = 20_000;
-export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_902;
+export const SKILL_DISCOVERY_BENCHMARK_SEED = 20_260_903;
 
 export type SkillDiscoveryArm = (typeof ARMS)[number];
 export type SkillDiscoveryFamily = "instruction" | "metadata" | "relative-resource";
@@ -126,40 +126,40 @@ const ARM_PERMUTATIONS = [
 
 const SUBJECTS = {
 	metadata: [
-		"amber anemometer audit register",
-		"bronze calorimeter audit register",
-		"cobalt densitometer audit register",
-		"dune electrometer audit register",
-		"emerald fluorometer audit register",
-		"garnet gravimeter audit register",
-		"hazel hygrometer audit register",
-		"ivory interferometer audit register",
-		"jade luxmeter audit register",
-		"lilac manometer audit register",
+		"alpine tachometer verification ledger",
+		"birch voltmeter verification ledger",
+		"cerise viscometer verification ledger",
+		"driftwood wattmeter verification ledger",
+		"ecru magnetometer verification ledger",
+		"fern odometer verification ledger",
+		"ginger photometer verification ledger",
+		"harbor radiometer verification ledger",
+		"iris spectrometer verification ledger",
+		"juniper thermocouple verification ledger",
 	],
 	instruction: [
-		"maple alternator calibration",
-		"nickel compressor calibration",
-		"ochre diffuser calibration",
-		"pearl evaporator calibration",
-		"quartz feeder calibration",
-		"russet gearbox calibration",
-		"saffron inverter calibration",
-		"teal kiln calibration",
-		"umber mixer calibration",
-		"violet nozzle calibration",
+		"kelp actuator alignment",
+		"lapis blower alignment",
+		"moss condenser alignment",
+		"nutmeg desiccator alignment",
+		"onyx extractor alignment",
+		"plum fan alignment",
+		"reed heat exchanger alignment",
+		"slate injector alignment",
+		"topaz junction box alignment",
+		"ultramarine louver alignment",
 	],
 	"relative-resource": [
-		"willow oscillator archive",
-		"xanthic pump archive",
-		"yellow quench valve archive",
-		"zircon relay archive",
-		"apricot solenoid archive",
-		"basalt throttle archive",
-		"coral uplink archive",
-		"foghorn vaporizer archive",
-		"granite waveform archive",
-		"heather yaw sensor archive",
+		"verdant modulator dossier",
+		"wheat transducer dossier",
+		"yarrow ultrasonic probe dossier",
+		"zinc vacuum gauge dossier",
+		"acorn wind tunnel dossier",
+		"briar x-ray detector dossier",
+		"clover yield monitor dossier",
+		"dogwood zero-crossing relay dossier",
+		"ember acoustic sensor dossier",
+		"fir battery cycler dossier",
 	],
 } as const satisfies Readonly<Record<SkillDiscoveryFamily, readonly string[]>>;
 
@@ -203,7 +203,7 @@ function targetBody(family: SkillDiscoveryFamily, index: number): string {
 		return "Reply with the frontmatter verification-token exactly, with no explanation or formatting.";
 	if (family === "instruction") {
 		const serial = String(index + 1).padStart(2, "0");
-		return `Join the fragments \`INST\`, \`ISOLATED\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
+		return `Join the fragments \`INST\`, \`BOUNDED\`, and \`${serial}\` with underscores, preserving order and capitalization. Reply with only the result.`;
 	}
 	return "Read `references/answer.txt` relative to this directory and reply with its trimmed contents only.";
 }
@@ -220,15 +220,15 @@ function decoySkill(name: string, description: string, variant: "archived" | "dr
 function makeTask(family: SkillDiscoveryFamily, subject: string, index: number): SkillDiscoveryManifestTask {
 	const serial = String(index + 1).padStart(2, "0");
 	const familyPrefix = family === "metadata" ? "meta" : family === "instruction" ? "inst" : "resource";
-	const id = `isolated-${familyPrefix}-${serial}`;
-	const name = `sd-isolated-${familyPrefix}-${slug(subject)}`;
+	const id = `bounded-${familyPrefix}-${serial}`;
+	const name = `sd-bounded-${familyPrefix}-${slug(subject)}`;
 	const description = targetDescription(family, subject);
 	const expectedToken =
 		family === "metadata"
-			? `META_ISOLATED_${serial}`
+			? `META_BOUNDED_${serial}`
 			: family === "instruction"
-				? `INST_ISOLATED_${serial}`
-				: `RESOURCE_ISOLATED_${serial}`;
+				? `INST_BOUNDED_${serial}`
+				: `RESOURCE_BOUNDED_${serial}`;
 	const target: SkillDiscoveryManifestSkill = {
 		description,
 		name,
