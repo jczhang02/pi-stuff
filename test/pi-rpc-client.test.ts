@@ -1,5 +1,22 @@
 import { expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PiRpcClient, PiRpcTimeoutError } from "../scripts/pi-rpc-client.js";
+
+test("RPC spawn failures reject commands without crashing", async () => {
+	const rpc = new PiRpcClient({
+		arguments: [],
+		commandTimeoutMs: 1_000,
+		cwd: process.cwd(),
+		environment: process.env,
+		executable: join(tmpdir(), `missing-pi-rpc-${String(process.pid)}`),
+		failurePrefix: "RPC spawn test",
+		settleTimeoutMs: 1_000,
+		startupTimeoutMs: 1_000,
+	});
+	await expect(rpc.getInitialState()).rejects.toThrow("Pi RPC process error");
+	await expect(rpc.close()).resolves.toBeUndefined();
+}, 7_000);
 
 test("initial state uses the Host startup budget", async () => {
 	const rpc = new PiRpcClient({

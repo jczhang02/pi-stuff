@@ -47,6 +47,7 @@ export class PiRpcClient {
 	private readonly decoder = new StringDecoder("utf8");
 	private errorOutput = "";
 	private readonly options: PiRpcClientOptions;
+	private processFailed = false;
 	private requestSequence = 0;
 	private readonly waiters = new Set<RpcWaiter>();
 	private readonly child;
@@ -58,6 +59,10 @@ export class PiRpcClient {
 			env: options.environment,
 			stdio: ["pipe", "pipe", "pipe"],
 		});
+		this.child.once("error", () => {
+			this.processFailed = true;
+			this.rejectWaiters("Pi RPC process error");
+		});
 		this.child.stdout.on("data", (chunk: Buffer) => this.readStdout(chunk));
 		this.child.stderr.on("data", (chunk: Buffer) => {
 			this.errorOutput = (this.errorOutput + chunk.toString("utf8")).slice(-12_000);
@@ -66,6 +71,7 @@ export class PiRpcClient {
 	}
 
 	async command(payload: JsonInputObject, timeoutMs = this.options.commandTimeoutMs): Promise<JsonSourceObject> {
+		if (this.processFailed) this.fail("Pi RPC process error");
 		const command = isRuntimeString(payload["type"]) ? payload["type"] : "unknown";
 		const requestId = `request-${String(++this.requestSequence)}`;
 		const pending = this.waitFor(
@@ -182,7 +188,7 @@ export class PiRpcClient {
 	}
 
 	private processExited(): boolean {
-		return this.child.exitCode !== null || this.child.signalCode !== null;
+		return this.processFailed || this.child.exitCode !== null || this.child.signalCode !== null;
 	}
 
 	private async signalAndWait(signal: NodeJS.Signals): Promise<void> {
