@@ -8,7 +8,7 @@ import { createJsonSchemaValidator } from "./json-schema-validator.ts";
 import { logger } from "./logger.ts";
 import type { AuthStorageOptions } from "./mcp-auth.ts";
 import { type McpOAuthRuntime, supportsOAuth } from "./mcp-auth-flow.ts";
-import { type McpEffectRunner, mcpNativePromise } from "./mcp-effect-runner.ts";
+import { mcpNativePromise } from "./mcp-effect-runner.ts";
 import {
 	connectClient,
 	createHttpTransport,
@@ -80,7 +80,6 @@ function interruptFiberFailures<Value>(fibers: Array<Fiber.Fiber<Value, Error>>)
 export class McpServerManager {
 	private readonly defaultCwd: string | undefined;
 	private readonly ownerScope: Scope.Closeable;
-	private readonly runEffect: McpEffectRunner;
 	private readonly connectFibers: FiberMap.FiberMap<string, ServerConnection, Error>;
 	private readonly reconnectFibers: FiberMap.FiberMap<string, ServerConnection, Error>;
 	private readonly closeFibers: FiberMap.FiberMap<string, void, Error>;
@@ -98,14 +97,12 @@ export class McpServerManager {
 
 	/** Default cwd for stdio servers without an explicit config `cwd`. */
 	private constructor(
-		runEffect: McpEffectRunner,
 		ownerScope: Scope.Closeable,
 		connectFibers: FiberMap.FiberMap<string, ServerConnection, Error>,
 		reconnectFibers: FiberMap.FiberMap<string, ServerConnection, Error>,
 		closeFibers: FiberMap.FiberMap<string, void, Error>,
 		defaultCwd?: string,
 	) {
-		this.runEffect = runEffect;
 		this.ownerScope = ownerScope;
 		this.connectFibers = connectFibers;
 		this.reconnectFibers = reconnectFibers;
@@ -113,24 +110,13 @@ export class McpServerManager {
 		this.defaultCwd = defaultCwd;
 	}
 
-	static make(
-		runEffect: McpEffectRunner,
-		owner: McpRuntimeOwner,
-		defaultCwd?: string,
-	): Effect.Effect<McpServerManager> {
+	static make(owner: McpRuntimeOwner, defaultCwd?: string): Effect.Effect<McpServerManager> {
 		return Scope.provide(owner.scope)(
 			Effect.gen(function* () {
 				const connectFibers = yield* FiberMap.make<string, ServerConnection, Error>();
 				const reconnectFibers = yield* FiberMap.make<string, ServerConnection, Error>();
 				const closeFibers = yield* FiberMap.make<string, void, Error>();
-				return new McpServerManager(
-					runEffect,
-					owner.scope,
-					connectFibers,
-					reconnectFibers,
-					closeFibers,
-					defaultCwd,
-				);
+				return new McpServerManager(owner.scope, connectFibers, reconnectFibers, closeFibers, defaultCwd);
 			}),
 		);
 	}
@@ -215,10 +201,6 @@ export class McpServerManager {
 		});
 	}
 
-	connect(name: string, definition: ServerDefinition, signal?: AbortSignal): Promise<ServerConnection> {
-		return this.runEffect(this.connectEffect(name, definition, signal), signal);
-	}
-
 	connectEffect(
 		name: string,
 		definition: ServerDefinition,
@@ -274,15 +256,6 @@ export class McpServerManager {
 	 * reconnect (or an unrelated connect()) already replaced it with a fresh
 	 * connection, that fresh connection is returned untouched.
 	 */
-	reconnect(
-		name: string,
-		definition: ServerDefinition,
-		staleConnection: ServerConnection,
-		signal?: AbortSignal,
-	): Promise<ServerConnection> {
-		return this.runEffect(this.reconnectEffect(name, definition, staleConnection, signal), signal);
-	}
-
 	reconnectEffect(
 		name: string,
 		definition: ServerDefinition,
@@ -613,10 +586,6 @@ export class McpServerManager {
 		this.metadataListChangedListener?.(serverName, "resources-list-changed");
 	}
 
-	close(name: string): Promise<void> {
-		return this.runEffect(this.closeEffect(name));
-	}
-
 	closeEffect(name: string): Effect.Effect<void, Error> {
 		return this.singleFlight(this.closeFibers, name, this.closeOnce(name));
 	}
@@ -669,10 +638,6 @@ export class McpServerManager {
 					: Effect.void;
 			}),
 		);
-	}
-
-	closeAll(): Promise<void> {
-		return this.runEffect(this.closeAllEffect());
 	}
 
 	closeAllEffect(): Effect.Effect<void, Error> {

@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { throwIfAborted } from "./abort.ts";
 import {
@@ -18,6 +19,7 @@ import {
 	startAuth,
 	supportsOAuth,
 } from "./mcp-auth-flow.ts";
+import { mcpNativePromise } from "./mcp-effect-runner.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { paginate, rankSuggestions, rankToolMatches } from "./search-ranking.ts";
 import type { McpExtensionState } from "./state.ts";
@@ -58,6 +60,13 @@ function authOptions(state: McpExtensionState, signal?: AbortSignal): Authentica
 	};
 	if (signal) options.signal = signal;
 	return options;
+}
+
+function ensureNotAborted(signal?: AbortSignal): Effect.Effect<void, Error> {
+	return Effect.try({
+		try: () => throwIfAborted(signal),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
 }
 
 export function getAuthRequiredMessage(
@@ -110,54 +119,55 @@ function formatManualAuthInstructions(serverName: string, authorizationUrl: stri
 		.join("\n");
 }
 
-export async function attemptAutoAuth(
+export function attemptAutoAuth(
 	state: McpExtensionState,
 	serverName: string,
 	signal?: AbortSignal,
-): Promise<AutoAuthResult> {
-	if (state.config.settings?.autoAuth !== true) {
-		return { status: "skipped" };
-	}
+): Effect.Effect<AutoAuthResult, Error> {
+	return Effect.gen(function* () {
+		if (state.config.settings?.autoAuth !== true) return { status: "skipped" } as const;
 
-	const definition = state.config.mcpServers[serverName];
-	if (!definition || isServerDisabled(definition) || !supportsOAuth(definition)) {
-		return { status: "skipped" };
-	}
+		const definition = state.config.mcpServers[serverName];
+		if (!definition || isServerDisabled(definition) || !supportsOAuth(definition)) {
+			return { status: "skipped" } as const;
+		}
 
-	let serverUrl: string | undefined;
-	try {
-		serverUrl = resolveServerUrl(definition);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { status: "failed", message: getAuthFailedMessage(state, serverName, message) };
-	}
-	if (!serverUrl) {
-		return { status: "skipped" };
-	}
+		let serverUrl: string | undefined;
+		try {
+			serverUrl = resolveServerUrl(definition);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return { status: "failed", message: getAuthFailedMessage(state, serverName, message) } as const;
+		}
+		if (!serverUrl) return { status: "skipped" } as const;
 
-	const grantType = definition.oauth ? (definition.oauth.grantType ?? "authorization_code") : "authorization_code";
-	if (!state.ui && grantType !== "client_credentials") {
-		return {
-			status: "failed",
-			message: getAuthRequiredMessage(
-				state,
-				serverName,
-				`Server "${serverName}" requires OAuth authentication. Run mcp({ action: "auth-start", server: "${serverName}" }) to get a browser URL, or /mcp auth ${serverName} in an interactive local session.`,
-			),
-		};
-	}
+		const grantType = definition.oauth ? (definition.oauth.grantType ?? "authorization_code") : "authorization_code";
+		if (!state.ui && grantType !== "client_credentials") {
+			return {
+				status: "failed",
+				message: getAuthRequiredMessage(
+					state,
+					serverName,
+					`Server "${serverName}" requires OAuth authentication. Run mcp({ action: "auth-start", server: "${serverName}" }) to get a browser URL, or /mcp auth ${serverName} in an interactive local session.`,
+				),
+			} as const;
+		}
 
-	try {
-		await authenticate(serverName, serverUrl, definition, authOptions(state, signal));
-		return { status: "success" };
-	} catch (error) {
-		if (isAbortError(error, signal)) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			status: "failed",
-			message: getAuthFailedMessage(state, serverName, message),
-		};
-	}
+		yield* mcpNativePromise(
+			(effectSignal) => authenticate(serverName, serverUrl, definition, authOptions(state, effectSignal)),
+			signal,
+		);
+		return { status: "success" } as const;
+	}).pipe(
+		Effect.catch((error) => {
+			if (isAbortError(error, signal)) return Effect.fail(error);
+			const message = error instanceof Error ? error.message : String(error);
+			return Effect.succeed({
+				status: "failed" as const,
+				message: getAuthFailedMessage(state, serverName, message),
+			});
+		}),
+	);
 }
 
 export function executeStatus(state: McpExtensionState): ProxyToolResult {
@@ -220,86 +230,106 @@ export function executeStatus(state: McpExtensionState): ProxyToolResult {
 	return proxyTextResult("status", text.trim(), { servers, totalTools, connectedCount, disabledCount });
 }
 
-export async function executeAuthStart(
+export function executeAuthStart(
 	state: McpExtensionState,
 	serverName: string,
 	signal?: AbortSignal,
-): Promise<ProxyToolResult> {
+): Effect.Effect<ProxyToolResult, Error> {
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
-	throwIfAborted(ownedSignal);
-	const definition = state.config.mcpServers[serverName];
-	if (!definition) return missingServerResult("auth-start", serverName);
-	if (isServerDisabled(definition)) return disabledResult("auth-start", serverName);
+	return ensureNotAborted(ownedSignal).pipe(
+		Effect.andThen(
+			Effect.gen(function* () {
+				const definition = state.config.mcpServers[serverName];
+				if (!definition) return missingServerResult("auth-start", serverName);
+				if (isServerDisabled(definition)) return disabledResult("auth-start", serverName);
 
-	try {
-		const serverUrl = resolveServerUrl(definition);
-		if (!serverUrl || !supportsOAuth(definition)) {
-			return proxyTextResult("auth-start", `Server "${serverName}" is not configured for OAuth over HTTP.`, {
-				error: "oauth_not_supported",
-				server: serverName,
-			});
-		}
+				const serverUrl = resolveServerUrl(definition);
+				if (!serverUrl || !supportsOAuth(definition)) {
+					return proxyTextResult("auth-start", `Server "${serverName}" is not configured for OAuth over HTTP.`, {
+						error: "oauth_not_supported",
+						server: serverName,
+					});
+				}
 
-		const { authorizationUrl } = await startAuth(serverName, serverUrl, definition, authOptions(state, ownedSignal));
-		if (!authorizationUrl) {
-			return proxyTextResult("auth-start", `OAuth authentication successful for "${serverName}".`, {
-				server: serverName,
-				authenticated: true,
-			});
-		}
+				const { authorizationUrl } = yield* mcpNativePromise(
+					(effectSignal) => startAuth(serverName, serverUrl, definition, authOptions(state, effectSignal)),
+					ownedSignal,
+				);
+				if (!authorizationUrl) {
+					return proxyTextResult("auth-start", `OAuth authentication successful for "${serverName}".`, {
+						server: serverName,
+						authenticated: true,
+					});
+				}
 
-		return proxyTextResult("auth-start", formatManualAuthInstructions(serverName, authorizationUrl), {
-			server: serverName,
-			authorizationUrl,
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return proxyTextResult("auth-start", `Failed to start OAuth for "${serverName}": ${message}`, {
-			error: "auth_start_failed",
-			server: serverName,
-			message,
-		});
-	}
+				return proxyTextResult("auth-start", formatManualAuthInstructions(serverName, authorizationUrl), {
+					server: serverName,
+					authorizationUrl,
+				});
+			}).pipe(
+				Effect.catch((error) => {
+					const message = error instanceof Error ? error.message : String(error);
+					return Effect.succeed(
+						proxyTextResult("auth-start", `Failed to start OAuth for "${serverName}": ${message}`, {
+							error: "auth_start_failed",
+							server: serverName,
+							message,
+						}),
+					);
+				}),
+			),
+		),
+	);
 }
 
-export async function executeAuthComplete(
+export function executeAuthComplete(
 	state: McpExtensionState,
 	serverName: string,
 	input: string,
 	signal?: AbortSignal,
-): Promise<ProxyToolResult> {
+): Effect.Effect<ProxyToolResult, Error> {
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
-	throwIfAborted(ownedSignal);
-	const definition = state.config.mcpServers[serverName];
-	if (!definition) return missingServerResult("auth-complete", serverName);
-	if (isServerDisabled(definition)) return disabledResult("auth-complete", serverName);
+	return ensureNotAborted(ownedSignal).pipe(
+		Effect.andThen(
+			Effect.gen(function* () {
+				const definition = state.config.mcpServers[serverName];
+				if (!definition) return missingServerResult("auth-complete", serverName);
+				if (isServerDisabled(definition)) return disabledResult("auth-complete", serverName);
 
-	try {
-		const status = await completeAuthFromInput(serverName, input, authOptions(state, ownedSignal));
-		if (status !== "authenticated") {
-			return proxyTextResult("auth-complete", `OAuth authentication did not complete for "${serverName}".`, {
-				error: "not_authenticated",
-				server: serverName,
-				status,
-			});
-		}
+				const status = yield* mcpNativePromise(
+					(effectSignal) => completeAuthFromInput(serverName, input, authOptions(state, effectSignal)),
+					ownedSignal,
+				);
+				if (status !== "authenticated") {
+					return proxyTextResult("auth-complete", `OAuth authentication did not complete for "${serverName}".`, {
+						error: "not_authenticated",
+						server: serverName,
+						status,
+					});
+				}
 
-		await state.manager.close(serverName);
-		clearFailure(state, serverName);
-		updateStatusBar(state);
-		return proxyTextResult(
-			"auth-complete",
-			`OAuth authentication successful for "${serverName}". Run mcp({ connect: "${serverName}" }) to connect with the new token.`,
-			{ server: serverName, authenticated: true },
-		);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return proxyTextResult("auth-complete", `Failed to complete OAuth for "${serverName}": ${message}`, {
-			error: "auth_complete_failed",
-			server: serverName,
-			message,
-		});
-	}
+				yield* state.manager.closeEffect(serverName);
+				clearFailure(state, serverName);
+				updateStatusBar(state);
+				return proxyTextResult(
+					"auth-complete",
+					`OAuth authentication successful for "${serverName}". Run mcp({ connect: "${serverName}" }) to connect with the new token.`,
+					{ server: serverName, authenticated: true },
+				);
+			}).pipe(
+				Effect.catch((error) => {
+					const message = error instanceof Error ? error.message : String(error);
+					return Effect.succeed(
+						proxyTextResult("auth-complete", `Failed to complete OAuth for "${serverName}": ${message}`, {
+							error: "auth_complete_failed",
+							server: serverName,
+							message,
+						}),
+					);
+				}),
+			),
+		),
+	);
 }
 
 export function executeDescribe(state: McpExtensionState, toolName: string): ProxyToolResult {
@@ -526,66 +556,71 @@ export function executeInstructions(state: McpExtensionState, server: string): P
 	);
 }
 
-export async function executeConnect(
+export function executeConnect(
 	state: McpExtensionState,
 	serverName: string,
 	signal?: AbortSignal,
-): Promise<ProxyToolResult> {
+): Effect.Effect<ProxyToolResult, Error> {
 	const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
-	throwIfAborted(ownedSignal);
-	const definition = state.config.mcpServers[serverName];
-	if (!definition) return missingServerResult("connect", serverName);
-	if (isServerDisabled(definition)) return disabledResult("connect", serverName);
+	return ensureNotAborted(ownedSignal).pipe(
+		Effect.andThen(
+			Effect.gen(function* () {
+				const definition = state.config.mcpServers[serverName];
+				if (!definition) return missingServerResult("connect", serverName);
+				if (isServerDisabled(definition)) return disabledResult("connect", serverName);
 
-	try {
-		if (state.ui) {
-			state.ui.setStatus("mcp", formatMcpStatus(state.config, `connecting to ${serverName}...`));
-		}
-		const currentConnection = state.manager.getConnection(serverName);
-		let connection =
-			currentConnection?.status === "connected"
-				? await state.manager.reconnect(serverName, definition, currentConnection, ownedSignal)
-				: await state.manager.connect(serverName, definition, ownedSignal);
-		if (connection.status === "needs-auth") {
-			const autoAuth = await attemptAutoAuth(state, serverName, ownedSignal);
-			if (autoAuth.status === "failed") {
-				return proxyTextResult("connect", autoAuth.message, {
-					error: "auth_required",
-					server: serverName,
-					message: autoAuth.message,
-				});
-			}
-			if (autoAuth.status === "success") {
-				await state.manager.close(serverName);
-				throwIfAborted(ownedSignal);
-				connection = ownedSignal
-					? await state.manager.connect(serverName, definition, ownedSignal)
-					: await state.manager.connect(serverName, definition);
-			}
-			if (connection.status === "needs-auth") {
-				const message = getAuthRequiredMessage(state, serverName);
-				return proxyTextResult("connect", message, {
-					error: "auth_required",
-					server: serverName,
-					message,
-				});
-			}
-		}
-		clearFailure(state, serverName);
-		updateServerMetadata(state, serverName);
-		updateMetadataCache(state, serverName);
-		notifyToolMetadataUpdated(state, serverName, "proxy-connect");
-		markKeepAliveAfterConnect(state, serverName);
-		updateStatusBar(state);
-		return executeList(state, serverName);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (!isAbortError(error, ownedSignal)) recordFailure(state, serverName, message);
-		updateStatusBar(state);
-		return proxyTextResult("connect", `Failed to connect to "${serverName}": ${message}`, {
-			error: isAbortError(error, ownedSignal) ? "aborted" : "connect_failed",
-			server: serverName,
-			message,
-		});
-	}
+				if (state.ui) {
+					state.ui.setStatus("mcp", formatMcpStatus(state.config, `connecting to ${serverName}...`));
+				}
+				const currentConnection = state.manager.getConnection(serverName);
+				let connection =
+					currentConnection?.status === "connected"
+						? yield* state.manager.reconnectEffect(serverName, definition, currentConnection, ownedSignal)
+						: yield* state.manager.connectEffect(serverName, definition, ownedSignal);
+				if (connection.status === "needs-auth") {
+					const autoAuth = yield* attemptAutoAuth(state, serverName, ownedSignal);
+					if (autoAuth.status === "failed") {
+						return proxyTextResult("connect", autoAuth.message, {
+							error: "auth_required",
+							server: serverName,
+							message: autoAuth.message,
+						});
+					}
+					if (autoAuth.status === "success") {
+						yield* state.manager.closeEffect(serverName);
+						yield* ensureNotAborted(ownedSignal);
+						connection = yield* state.manager.connectEffect(serverName, definition, ownedSignal);
+					}
+					if (connection.status === "needs-auth") {
+						const message = getAuthRequiredMessage(state, serverName);
+						return proxyTextResult("connect", message, {
+							error: "auth_required",
+							server: serverName,
+							message,
+						});
+					}
+				}
+				clearFailure(state, serverName);
+				updateServerMetadata(state, serverName);
+				updateMetadataCache(state, serverName);
+				notifyToolMetadataUpdated(state, serverName, "proxy-connect");
+				markKeepAliveAfterConnect(state, serverName);
+				updateStatusBar(state);
+				return executeList(state, serverName);
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.sync(() => {
+						const message = error instanceof Error ? error.message : String(error);
+						if (!isAbortError(error, ownedSignal)) recordFailure(state, serverName, message);
+						updateStatusBar(state);
+						return proxyTextResult("connect", `Failed to connect to "${serverName}": ${message}`, {
+							error: isAbortError(error, ownedSignal) ? "aborted" : "connect_failed",
+							server: serverName,
+							message,
+						});
+					}),
+				),
+			),
+		),
+	);
 }

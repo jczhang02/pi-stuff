@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit } from "effect";
 import {
 	ensureCompatibilityImports,
 	getMcpDiscoverySummary,
@@ -22,6 +23,7 @@ import {
 } from "./init.ts";
 import { getAuthStorageOptions } from "./mcp-auth.ts";
 import { authenticate, type McpOAuthRuntime, removeAuth, supportsOAuth } from "./mcp-auth-flow.ts";
+import { mcpNativePromise, runMcpEffect } from "./mcp-effect-runner.ts";
 import { loadOnboardingState, markSetupCompleted as persistSetupCompleted } from "./onboarding-state.ts";
 import { isAbortError } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
@@ -33,7 +35,7 @@ export type McpCommandContext = Pick<ExtensionContext, "cwd" | "hasUI" | "signal
 	ui: ExtensionContext["ui"] | undefined;
 };
 
-export async function showStatus(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
+export function showStatus(state: McpExtensionState, ctx: McpCommandContext): void {
 	const ui = ctx.ui;
 	if (!ctx.hasUI || !ui) return;
 
@@ -80,36 +82,30 @@ export async function showStatus(state: McpExtensionState, ctx: McpCommandContex
 	ui.notify(lines.join("\n"), "info");
 }
 
-export async function reconnectServer(
+export function reconnectServer(
 	state: McpExtensionState,
 	ctx: McpCommandContext,
 	name: string,
-): Promise<boolean> {
-	const definition = state.config.mcpServers[name];
-	const ui = ctx.hasUI ? ctx.ui : undefined;
-	const signal = state.owner?.signal;
-	if (!definition) {
-		if (ui) {
-			ui.notify(`Server "${name}" not found in config`, "error");
+): Effect.Effect<boolean, Error> {
+	return Effect.gen(function* () {
+		const definition = state.config.mcpServers[name];
+		const ui = ctx.hasUI ? ctx.ui : undefined;
+		const signal = state.owner?.signal;
+		if (!definition) {
+			ui?.notify(`Server "${name}" not found in config`, "error");
+			return false;
 		}
-		return false;
-	}
-	if (isServerDisabled(definition)) {
-		if (ui) ui.notify(`MCP: ${name} is disabled. Run /mcp enable ${name}, then /reload.`, "warning");
-		return false;
-	}
+		if (isServerDisabled(definition)) {
+			ui?.notify(`MCP: ${name} is disabled. Run /mcp enable ${name}, then /reload.`, "warning");
+			return false;
+		}
 
-	try {
-		await state.manager.close(name);
+		yield* state.manager.closeEffect(name);
 		state.owner?.throwIfInactive();
-		const connection = signal
-			? await state.manager.connect(name, definition, signal)
-			: await state.manager.connect(name, definition);
+		const connection = yield* state.manager.connectEffect(name, definition, signal);
 		state.owner?.throwIfInactive();
 		if (connection.status === "needs-auth") {
-			if (ui) {
-				ui.notify(`MCP: ${name} requires OAuth. Run /mcp auth ${name} first.`, "warning");
-			}
+			ui?.notify(`MCP: ${name} requires OAuth. Run /mcp auth ${name} first.`, "warning");
 			updateStatusBar(state);
 			return false;
 		}
@@ -123,11 +119,8 @@ export async function reconnectServer(
 			prefix,
 		);
 		state.toolMetadata.set(name, metadata);
-		if (connection.instructions) {
-			state.serverInstructions.set(name, connection.instructions);
-		} else {
-			state.serverInstructions.delete(name);
-		}
+		if (connection.instructions) state.serverInstructions.set(name, connection.instructions);
+		else state.serverInstructions.delete(name);
 		updateMetadataCache(state, name);
 		notifyToolMetadataUpdated(state, name, "command-reconnect");
 		markKeepAliveAfterConnect(state, name);
@@ -138,79 +131,81 @@ export async function reconnectServer(
 				`MCP: Reconnected to ${name} (${connection.tools.length} tools, ${connection.resources.length} resources)`,
 				"info",
 			);
-			if (failedTools.length > 0) {
-				ui.notify(`MCP: ${name} - ${failedTools.length} tools skipped`, "warning");
-			}
+			if (failedTools.length > 0) ui.notify(`MCP: ${name} - ${failedTools.length} tools skipped`, "warning");
 		}
 		updateStatusBar(state);
 		return true;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (isAbortError(error, signal)) throw error;
-		recordFailure(state, name, message);
-		if (ui) {
-			ui.notify(`MCP: Failed to reconnect to ${name}: ${sanitizeTerminalText(message)}`, "error");
-		}
-		updateStatusBar(state);
-		return false;
-	}
+	}).pipe(
+		Effect.catch((error) => {
+			const signal = state.owner?.signal;
+			if (isAbortError(error, signal)) return Effect.fail(error);
+			return Effect.sync(() => {
+				const message = error instanceof Error ? error.message : String(error);
+				recordFailure(state, name, message);
+				if (ctx.hasUI) {
+					ctx.ui?.notify(`MCP: Failed to reconnect to ${name}: ${sanitizeTerminalText(message)}`, "error");
+				}
+				updateStatusBar(state);
+				return false;
+			});
+		}),
+	);
 }
 
-export async function reconnectServers(
+export function reconnectServers(
 	state: McpExtensionState,
 	ctx: McpCommandContext,
 	targetServer?: string,
-): Promise<boolean> {
-	if (targetServer && !state.config.mcpServers[targetServer]) {
-		if (ctx.hasUI) ctx.ui?.notify(`Server "${targetServer}" not found in config`, "error");
-		return false;
-	}
+): Effect.Effect<boolean, Error> {
+	return Effect.gen(function* () {
+		if (targetServer && !state.config.mcpServers[targetServer]) {
+			if (ctx.hasUI) ctx.ui?.notify(`Server "${targetServer}" not found in config`, "error");
+			return false;
+		}
 
-	const names = targetServer ? [targetServer] : Object.keys(state.config.mcpServers);
-	let succeeded = true;
-	for (const name of names) {
-		succeeded = (await reconnectServer(state, ctx, name)) && succeeded;
-	}
+		const names = targetServer ? [targetServer] : Object.keys(state.config.mcpServers);
+		let succeeded = true;
+		for (const name of names) succeeded = (yield* reconnectServer(state, ctx, name)) && succeeded;
 
-	updateStatusBar(state);
-	return succeeded;
+		updateStatusBar(state);
+		return succeeded;
+	});
 }
 
-export async function authenticateServer(
+export function authenticateServer(
 	serverName: string,
 	config: McpConfig,
 	ctx: McpCommandContext,
 	signal?: AbortSignal,
 	runtime?: McpOAuthRuntime,
-): Promise<McpAuthResult> {
+): Effect.Effect<McpAuthResult, Error> {
 	const ui = ctx.hasUI ? ctx.ui : undefined;
 	const cwd = ctx.cwd;
-	signal ??= ctx.signal;
-	if (!ui) return { ok: false, message: "OAuth authentication requires an interactive session." };
+	const ownedSignal = signal ?? ctx.signal;
+	return Effect.gen(function* () {
+		if (!ui) return { ok: false, message: "OAuth authentication requires an interactive session." };
 
-	const definition = config.mcpServers[serverName];
-	if (!definition) {
-		const message = `Server "${serverName}" not found in config`;
-		ui.notify(message, "error");
-		return { ok: false, message };
-	}
-	if (isServerDisabled(definition)) {
-		const message = `Server "${serverName}" is disabled. Run /mcp enable ${serverName}, then /reload.`;
-		ui.notify(message, "warning");
-		return { ok: false, message };
-	}
+		const definition = config.mcpServers[serverName];
+		if (!definition) {
+			const message = `Server "${serverName}" not found in config`;
+			ui.notify(message, "error");
+			return { ok: false, message };
+		}
+		if (isServerDisabled(definition)) {
+			const message = `Server "${serverName}" is disabled. Run /mcp enable ${serverName}, then /reload.`;
+			ui.notify(message, "warning");
+			return { ok: false, message };
+		}
+		if (!supportsOAuth(definition)) {
+			const message = `Server "${serverName}" does not use OAuth authentication. Set "auth": "oauth" or omit auth for auto-detection.`;
+			ui.notify(
+				`Server "${serverName}" does not use OAuth authentication.\n` +
+					`Set "auth": "oauth" or omit auth for auto-detection.`,
+				"error",
+			);
+			return { ok: false, message };
+		}
 
-	if (!supportsOAuth(definition)) {
-		const message = `Server "${serverName}" does not use OAuth authentication. Set "auth": "oauth" or omit auth for auto-detection.`;
-		ui.notify(
-			`Server "${serverName}" does not use OAuth authentication.\n` +
-				`Set "auth": "oauth" or omit auth for auto-detection.`,
-			"error",
-		);
-		return { ok: false, message };
-	}
-
-	try {
 		const serverUrl = resolveServerUrl(definition);
 		if (!serverUrl) {
 			const message = `Server "${serverName}" has no URL configured (OAuth requires HTTP transport)`;
@@ -220,163 +215,203 @@ export async function authenticateServer(
 
 		ui.setStatus("mcp-oauth", `Authenticating ${serverName}...`);
 		const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
-		const authOptions: NonNullable<Parameters<typeof authenticate>[3]> = {
-			onAuthorizationUrl: (authorizationUrl) => {
-				ui.notify(
-					`Open this URL to authenticate ${serverName}:\n\n${authorizationUrl}\n\n` +
-						"After approving, return to Pi; the local callback will complete automatically.",
-					"info",
-				);
-			},
-		};
-		if (signal !== undefined) authOptions.signal = signal;
-		if (runtime !== undefined) authOptions.runtime = runtime;
-		if (authStorageOptions.baseDir) authOptions.authStorageOptions = authStorageOptions;
-		const status = await authenticate(serverName, serverUrl, definition, authOptions);
-		if (signal?.aborted) signal.throwIfAborted();
+		const status = yield* mcpNativePromise((effectSignal) => {
+			const authOptions: NonNullable<Parameters<typeof authenticate>[3]> = {
+				onAuthorizationUrl: (authorizationUrl) => {
+					ui.notify(
+						`Open this URL to authenticate ${serverName}:\n\n${authorizationUrl}\n\n` +
+							"After approving, return to Pi; the local callback will complete automatically.",
+						"info",
+					);
+				},
+				signal: effectSignal,
+			};
+			if (runtime !== undefined) authOptions.runtime = runtime;
+			if (authStorageOptions.baseDir) authOptions.authStorageOptions = authStorageOptions;
+			return authenticate(serverName, serverUrl, definition, authOptions);
+		}, ownedSignal);
 
 		if (status === "authenticated") {
 			const message = `OAuth authentication successful for "${serverName}".`;
 			ui.notify(message, "info");
 			return { ok: true, message };
 		}
-
 		const message = `OAuth authentication failed for "${serverName}".`;
 		ui.notify(message, "error");
 		return { ok: false, message };
-	} catch (error) {
-		if (signal?.aborted) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		ui.notify(`Failed to authenticate "${serverName}": ${message}`, "error");
-		return { ok: false, message };
-	} finally {
-		if (!signal?.aborted) ui.setStatus("mcp-oauth", undefined);
-	}
+	}).pipe(
+		Effect.catch((error) => {
+			if (ownedSignal?.aborted) return Effect.fail(error);
+			return Effect.sync(() => {
+				const message = error instanceof Error ? error.message : String(error);
+				ui?.notify(`Failed to authenticate "${serverName}": ${message}`, "error");
+				return { ok: false, message };
+			});
+		}),
+		Effect.ensuring(Effect.sync(() => (!ownedSignal?.aborted ? ui?.setStatus("mcp-oauth", undefined) : undefined))),
+	);
 }
 
-export async function logoutServer(
+export function logoutServer(
 	serverName: string,
 	state: McpExtensionState,
 	ctx: McpCommandContext,
-): Promise<{ ok: boolean; message: string }> {
-	const definition = state.config.mcpServers[serverName];
-	const ui = ctx.hasUI ? ctx.ui : undefined;
-	if (!definition) {
-		const message = `Server "${serverName}" not found in config`;
-		if (ui) ui.notify(message, "error");
-		return { ok: false, message };
-	}
-
-	const signal = state.owner?.signal;
-	try {
-		await removeAuth(serverName, {
-			authStorageOptions: state.authStorageOptions,
-			signal,
-			runtime: state.oauthRuntime,
-		});
-	} catch (error) {
-		if (isAbortError(error, signal)) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		if (ui) {
-			ui.notify(`Failed to clear OAuth credentials for "${serverName}": ${sanitizeTerminalText(message)}`, "error");
+): Effect.Effect<{ ok: boolean; message: string }, Error> {
+	return Effect.gen(function* () {
+		const definition = state.config.mcpServers[serverName];
+		const ui = ctx.hasUI ? ctx.ui : undefined;
+		if (!definition) {
+			const message = `Server "${serverName}" not found in config`;
+			ui?.notify(message, "error");
+			return { ok: false, message };
 		}
-		return { ok: false, message };
-	}
 
-	state.owner?.throwIfInactive();
-	try {
-		await state.manager.close(serverName);
-	} catch (error) {
-		if (isAbortError(error, signal)) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		if (ui) {
-			ui.notify(
+		const signal = state.owner?.signal;
+		const removed = yield* Effect.exit(
+			mcpNativePromise(
+				(effectSignal) =>
+					removeAuth(serverName, {
+						authStorageOptions: state.authStorageOptions,
+						signal: effectSignal,
+						runtime: state.oauthRuntime,
+					}),
+				signal,
+			),
+		);
+		if (Exit.isFailure(removed)) {
+			const error = Cause.squash(removed.cause);
+			if (isAbortError(error, signal)) {
+				return yield* Effect.fail(error instanceof Error ? error : new Error(String(error)));
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			ui?.notify(`Failed to clear OAuth credentials for "${serverName}": ${sanitizeTerminalText(message)}`, "error");
+			return { ok: false, message };
+		}
+
+		state.owner?.throwIfInactive();
+		const closed = yield* Effect.exit(state.manager.closeEffect(serverName));
+		if (Exit.isFailure(closed)) {
+			const error = Cause.squash(closed.cause);
+			if (isAbortError(error, signal)) {
+				return yield* Effect.fail(error instanceof Error ? error : new Error(String(error)));
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			ui?.notify(
 				`OAuth credentials were cleared for "${serverName}", but its connection could not be closed: ${sanitizeTerminalText(message)}`,
 				"error",
 			);
+			return { ok: false, message };
 		}
-		return { ok: false, message };
-	}
 
-	state.owner?.throwIfInactive();
-	updateStatusBar(state);
-
-	const message = `OAuth credentials cleared for "${serverName}". Run /mcp auth ${serverName} to authenticate again.`;
-	if (ui) ui.notify(message, "info");
-	return { ok: true, message };
+		state.owner?.throwIfInactive();
+		updateStatusBar(state);
+		const message = `OAuth credentials cleared for "${serverName}". Run /mcp auth ${serverName} to authenticate again.`;
+		ui?.notify(message, "info");
+		return { ok: true, message };
+	});
 }
 
 export interface PanelFlowResult {
 	configChanged: boolean;
 }
 
-export async function openMcpSetup(
+export function openMcpSetup(
 	state: McpExtensionState,
 	pi: ExtensionAPI,
 	ctx: McpCommandContext,
 	configOverridePath?: string,
 	mode: "empty" | "setup" = "setup",
-): Promise<PanelFlowResult> {
-	const ui = ctx.ui;
-	if (!ctx.hasUI || !ui) return { configChanged: false };
-	if (state.programmaticConfig) {
-		ui.notify("MCP setup is unavailable when config is supplied by createMcpAdapter().", "info");
-		return { configChanged: false };
-	}
+): Effect.Effect<PanelFlowResult, Error> {
+	return Effect.gen(function* () {
+		const ui = ctx.ui;
+		if (!ctx.hasUI || !ui) return { configChanged: false };
+		if (state.programmaticConfig) {
+			ui.notify("MCP setup is unavailable when config is supplied by createMcpAdapter().", "info");
+			return { configChanged: false };
+		}
 
-	const discovery = getMcpDiscoverySummary(configOverridePath, ctx.cwd);
-	const onboardingState = loadOnboardingState();
-	const { createMcpSetupPanel } = await import("./mcp-setup-panel.ts");
-	let configChanged = false;
+		const load = <Value>(read: () => Value) =>
+			Effect.try({ try: read, catch: (error) => (error instanceof Error ? error : new Error(String(error))) });
+		const discovery = yield* load(() => getMcpDiscoverySummary(configOverridePath, ctx.cwd));
+		const onboardingState = yield* load(loadOnboardingState);
+		const { createMcpSetupPanel } = yield* mcpNativePromise(() => import("./mcp-setup-panel.ts"), state.owner.signal);
+		let configChanged = false;
 
-	const callbacks = {
-		previewImports: (imports: ImportKind[]) => previewCompatibilityImports(imports, configOverridePath),
-		previewStarterProject: () => previewStarterProjectConfig(ctx.cwd),
-		previewRepoPrompt: () => {
-			const repoPrompt = getMcpDiscoverySummary(configOverridePath, ctx.cwd).repoPrompt;
-			if (!repoPrompt.entry || !repoPrompt.targetPath || !repoPrompt.serverName) return null;
-			return previewSharedServerEntry(repoPrompt.targetPath, repoPrompt.serverName, repoPrompt.entry);
-		},
-		previewKnownServer: (preset: KnownServerPreset) =>
-			previewSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry),
-		adoptImports: async (imports: ImportKind[]) => {
-			const result = await ensureCompatibilityImports(imports, configOverridePath);
-			if (result.added.length > 0) configChanged = true;
-			return result;
-		},
-		scaffoldProjectConfig: async () => {
-			const path = await writeStarterProjectConfig(ctx.cwd);
-			configChanged = true;
-			return { path };
-		},
-		addRepoPrompt: async () => {
-			const repoPrompt = getMcpDiscoverySummary(configOverridePath, ctx.cwd).repoPrompt;
-			if (!repoPrompt.entry || !repoPrompt.targetPath || !repoPrompt.serverName) {
-				throw new Error("RepoPrompt is not available to add from this setup screen.");
-			}
-			const path = await writeSharedServerEntry(repoPrompt.targetPath, repoPrompt.serverName, repoPrompt.entry);
-			configChanged = true;
-			return { path, serverName: repoPrompt.serverName };
-		},
-		addKnownServer: async (preset: KnownServerPreset) => {
-			const path = await writeSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry);
-			configChanged = true;
-			return { path, serverName: preset.name };
-		},
-		openPath: async (targetPath: string) => {
-			await openPath(pi, targetPath);
-		},
-		markSetupCompleted: () => {
-			persistSetupCompleted();
-		},
-	};
+		const callbacks = {
+			previewImports: (imports: ImportKind[]) => previewCompatibilityImports(imports, configOverridePath),
+			previewStarterProject: () => previewStarterProjectConfig(ctx.cwd),
+			previewRepoPrompt: () => {
+				const repoPrompt = getMcpDiscoverySummary(configOverridePath, ctx.cwd).repoPrompt;
+				if (!repoPrompt.entry || !repoPrompt.targetPath || !repoPrompt.serverName) return null;
+				return previewSharedServerEntry(repoPrompt.targetPath, repoPrompt.serverName, repoPrompt.entry);
+			},
+			previewKnownServer: (preset: KnownServerPreset) =>
+				previewSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry),
+			adoptImports: (imports: ImportKind[]) =>
+				runMcpEffect(
+					Effect.tap(ensureCompatibilityImports(imports, configOverridePath), (result) =>
+						Effect.sync(() => {
+							if (result.added.length > 0) configChanged = true;
+						}),
+					),
+					state.owner.signal,
+				),
+			scaffoldProjectConfig: () =>
+				runMcpEffect(
+					Effect.map(writeStarterProjectConfig(ctx.cwd), (path) => {
+						configChanged = true;
+						return { path };
+					}),
+					state.owner.signal,
+				),
+			addRepoPrompt: () => {
+				const repoPrompt = getMcpDiscoverySummary(configOverridePath, ctx.cwd).repoPrompt;
+				if (!repoPrompt.entry || !repoPrompt.targetPath || !repoPrompt.serverName) {
+					return runMcpEffect(
+						Effect.fail(new Error("RepoPrompt is not available to add from this setup screen.")),
+						state.owner.signal,
+					);
+				}
+				const { entry, serverName, targetPath } = repoPrompt;
+				return runMcpEffect(
+					Effect.map(writeSharedServerEntry(targetPath, serverName, entry), (path) => {
+						configChanged = true;
+						return { path, serverName };
+					}),
+					state.owner.signal,
+				);
+			},
+			addKnownServer: (preset: KnownServerPreset) =>
+				runMcpEffect(
+					Effect.map(writeSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry), (path) => {
+						configChanged = true;
+						return { path, serverName: preset.name };
+					}),
+					state.owner.signal,
+				),
+			openPath: (targetPath: string) =>
+				runMcpEffect(
+					mcpNativePromise(() => openPath(pi, targetPath), state.owner.signal),
+					state.owner.signal,
+				),
+			markSetupCompleted: () =>
+				runMcpEffect(
+					load(() => {
+						persistSetupCompleted();
+					}),
+					state.owner.signal,
+				),
+		};
 
-	return new Promise<PanelFlowResult>((resolve) => {
-		ui.custom((tui, theme, keybindings, done) => {
-			return createMcpSetupPanel(discovery, callbacks, { mode, onboardingState, keybindings }, tui, theme, () => {
-				done(undefined);
-				resolve({ configChanged });
-			});
-		});
+		yield* mcpNativePromise(
+			() =>
+				ui.custom((tui, theme, keybindings, done) =>
+					createMcpSetupPanel(discovery, callbacks, { mode, onboardingState, keybindings }, tui, theme, () =>
+						done(undefined),
+					),
+				),
+			state.owner.signal,
+		);
+		return { configChanged };
 	});
 }

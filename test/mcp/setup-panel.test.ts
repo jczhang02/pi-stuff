@@ -36,7 +36,7 @@ function callbacks(scaffoldProjectConfig: SetupPanelCallbacks["scaffoldProjectCo
 		addKnownServer: async () => ({ path: "/project/.mcp.json", serverName: "known" }),
 		addRepoPrompt: async () => ({ path: "/project/.mcp.json", serverName: "repoprompt" }),
 		adoptImports: async () => ({ added: [], path: "/agent/mcp.json" }),
-		markSetupCompleted: () => undefined,
+		markSetupCompleted: async () => undefined,
 		openPath: async () => undefined,
 		previewImports: () => preview,
 		previewKnownServer: () => preview,

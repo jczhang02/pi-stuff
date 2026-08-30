@@ -13,7 +13,7 @@ import { isJsonSourceValue } from "../../packages/pi-stuff/src/shared/json-value
 
 async function createManager() {
 	const owner = createMcpRuntimeOwner();
-	const manager = await runMcpEffect(McpServerManager.make(runMcpEffect, owner));
+	const manager = await runMcpEffect(McpServerManager.make(owner));
 	return { manager, owner };
 }
 
@@ -50,14 +50,16 @@ test("MCP connection rejects advertised resources that cannot be listed", async 
 	const { manager } = await createManager();
 	try {
 		await expect(
-			manager.connect("broken-resources", {
-				command: process.execPath,
-				args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
-				env: { PI_STUFF_MCP_RESOURCES_ERROR: "1" },
-			}),
+			runMcpEffect(
+				manager.connectEffect("broken-resources", {
+					command: process.execPath,
+					args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+					env: { PI_STUFF_MCP_RESOURCES_ERROR: "1" },
+				}),
+			),
 		).rejects.toThrow("resource listing failed");
 	} finally {
-		await manager.closeAll();
+		await runMcpEffect(manager.closeAllEffect());
 	}
 });
 
@@ -66,28 +68,32 @@ test("MCP connection bounds server-controlled metadata pagination and entries", 
 		const { manager } = await createManager();
 		try {
 			await expect(
-				manager.connect(`looping-${kind}`, {
-					command: process.execPath,
-					args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
-					env: { PI_STUFF_MCP_METADATA_LOOP: kind },
-				}),
+				runMcpEffect(
+					manager.connectEffect(`looping-${kind}`, {
+						command: process.execPath,
+						args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+						env: { PI_STUFF_MCP_METADATA_LOOP: kind },
+					}),
+				),
 			).rejects.toThrow("metadata exceeded 100 pages");
 		} finally {
-			await manager.closeAll();
+			await runMcpEffect(manager.closeAllEffect());
 		}
 	}
 
 	const { manager } = await createManager();
 	try {
 		await expect(
-			manager.connect("oversized-tools", {
-				command: process.execPath,
-				args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
-				env: { PI_STUFF_MCP_OVERSIZED_METADATA: "1" },
-			}),
+			runMcpEffect(
+				manager.connectEffect("oversized-tools", {
+					command: process.execPath,
+					args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
+					env: { PI_STUFF_MCP_OVERSIZED_METADATA: "1" },
+				}),
+			),
 		).rejects.toThrow("metadata exceeded 10000 entries");
 	} finally {
-		await manager.closeAll();
+		await runMcpEffect(manager.closeAllEffect());
 	}
 });
 
@@ -98,22 +104,24 @@ test("MCP manager isolates failed servers and single-flights reconnect", async (
 		args: [join(import.meta.dir, "../fixtures/mcp/stdio-server.mjs")],
 	};
 	try {
-		const stale = await manager.connect("healthy", definition);
+		const stale = await runMcpEffect(manager.connectEffect("healthy", definition));
 		await expect(
-			manager.connect("broken", {
-				...definition,
-				env: { PI_STUFF_MCP_RESOURCES_ERROR: "1" },
-			}),
+			runMcpEffect(
+				manager.connectEffect("broken", {
+					...definition,
+					env: { PI_STUFF_MCP_RESOURCES_ERROR: "1" },
+				}),
+			),
 		).rejects.toThrow("resource listing failed");
 		expect(manager.getConnection("healthy")).toBe(stale);
 
 		const [first, second] = await Promise.all([
-			manager.reconnect("healthy", definition, stale),
-			manager.reconnect("healthy", definition, stale),
+			runMcpEffect(manager.reconnectEffect("healthy", definition, stale)),
+			runMcpEffect(manager.reconnectEffect("healthy", definition, stale)),
 		]);
 		expect(first).toBe(second);
 		expect(first).not.toBe(stale);
 	} finally {
-		await manager.closeAll();
+		await runMcpEffect(manager.closeAllEffect());
 	}
 });

@@ -24,7 +24,7 @@ export interface SetupPanelCallbacks extends SetupPreviewCallbacks {
 	addRepoPrompt: () => Promise<{ path: string; serverName: string }>;
 	addKnownServer: (preset: KnownServerPreset) => Promise<{ path: string; serverName: string }>;
 	openPath: (path: string) => Promise<void>;
-	markSetupCompleted: () => void;
+	markSetupCompleted: () => Promise<void>;
 }
 
 export interface SetupPanelOptions {
@@ -365,7 +365,7 @@ export class McpSetupPanel {
 		if (action.id === "scaffold-project") {
 			await this.runBusy(async () => {
 				const result = await this.callbacks.scaffoldProjectConfig();
-				this.callbacks.markSetupCompleted();
+				await this.callbacks.markSetupCompleted();
 				this.notice = {
 					text: `Wrote starter config to ${result.path}. Pi will reload after this panel closes.`,
 					tone: "success",
@@ -376,7 +376,7 @@ export class McpSetupPanel {
 		if (action.id === "add-repoprompt") {
 			await this.runBusy(async () => {
 				const result = await this.callbacks.addRepoPrompt();
-				this.callbacks.markSetupCompleted();
+				await this.callbacks.markSetupCompleted();
 				this.notice = {
 					text: `Added ${result.serverName} to ${result.path}. Pi will reload after this panel closes.`,
 					tone: "success",
@@ -388,7 +388,7 @@ export class McpSetupPanel {
 			const preset = action.preset;
 			await this.runBusy(async () => {
 				const result = await this.callbacks.addKnownServer(preset);
-				this.callbacks.markSetupCompleted();
+				await this.callbacks.markSetupCompleted();
 				this.notice = {
 					text: `Added ${result.serverName} to ${result.path}. Pi will reload after this panel closes.`,
 					tone: "success",
@@ -415,7 +415,7 @@ export class McpSetupPanel {
 
 		await this.runBusy(async () => {
 			const result = await this.callbacks.adoptImports(selected);
-			this.callbacks.markSetupCompleted();
+			await this.callbacks.markSetupCompleted();
 			this.notice =
 				result.added.length > 0
 					? {

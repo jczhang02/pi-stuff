@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: bb16ec5101922f0d3bb60cc3b67ed71e21f5705a7498277a24310f0e93df828a -->
+<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: 7f6b973ca63f90ac714cac79840f418e4bf0558d8f25f5c7ee84ff865870ba26 -->
 
 # 已吸收的 MCP 实现
 
@@ -6,7 +6,7 @@
 
 Pi Stuff 负责父目录中面向用户的代理工具和命令对话框。本实现提供配置、传输、发现、OAuth、生命周期、输出防护和协议处理。精确来源、完整性记录、许可证和维护差异见 [`UPSTREAM.md`](./UPSTREAM.md)。直接工具、JavaScript 批处理、Prompts、Apps、Sampling 和 Elicitation 被有意删除，而不是藏在标志后。
 
-`implementation.ts` 为每个工厂维护一个适配器状态，并连接有序的会话、命令和网关工具阶段。`runtime-owner.ts` 负责运行时 Scope；`server-manager.ts` 负责由 Fiber 支持的连接单航班身份和逐连接子 Scope；`metadata-discovery.ts` 负责有界的工具与资源分页。生命周期与网关操作组合为 Effect，`mcp-effect-runner.ts` 则在面向 Pi 的边界把它们投影回既有的 Promise 与 `AbortSignal` 约定。临时的会话和命令兼容投影已登记，并由其所属迁移删除。`mcp-http-transport.ts` 负责原生 HTTP 协商与获取失败时的清理。`config-sources.ts` 负责路径与宿主配置发现；`config.ts` 负责优先级安全的加载、范围狭窄的写入及其兼容导出。
+`implementation.ts` 为每个工厂维护一个适配器状态，从共享 Effect Foundation 的会话 Scope 派生能力 Scope，并串联有序的会话、命令和网关工具阶段。`runtime-owner.ts` 负责 MCP 运行时 Scope；`server-manager.ts` 负责由 Fiber 支持的连接单航班身份和逐连接子 Scope；`metadata-discovery.ts` 负责有界的工具与资源分页。生命周期、会话、命令和网关操作均组合为 Effect，`mcp-effect-runner.ts` 只在面向 Pi 的边界把它们投影回既有的 Promise 与 `AbortSignal` 约定。`mcp-http-transport.ts` 负责原生 HTTP 协商与获取失败时的清理。`config-sources.ts` 负责路径与宿主配置发现；`config.ts` 负责优先级安全的 Effect 加载与范围狭窄的写入；`config-persistence.ts` 负责由 Effect Scope 管理的写锁与原子替换。
 
 `mcp-setup-panel.ts` 负责设置交互、写入和生命周期状态。`mcp-setup-panel-view.ts` 渲染不可变快照与精确写入预览，不修改该状态。
 
@@ -18,6 +18,8 @@ Pi Stuff 负责父目录中面向用户的代理工具和命令对话框。本�
 - HTTP 连接先探测 Streamable HTTP；遇到隐式 OAuth 挑战时使用原生 SDK Provider 重试一次；只有非认证类协议失败才回退到原生 SSE。SDK Client 与 Transport 身份保持原生。
 - 端点分类继续采用手动重定向、每次请求 5 秒截止时间和 64 KiB 响应体上限，并保证取消响应体。Effect 中断会且只会关闭一次获取失败的连接。
 - 运行时 Scope 负责连接尝试 Fiber、OAuth 关闭、健康检查以及每个活动连接的子 Scope。关闭时先中断待完成的获取，再执行原生会话、Client、Transport 和追踪清理协议。
+- 每个宿主会话只有一个状态发布代际。权限交接会发布空快照，过期的初始化或清理无法向更新的会话发布状态。
+- 配置发现、预览和 Codec 仍是同步原生适配器。加载与修改工作流组合为 Effect，每次修改都会获取共享设置锁。
 - 配置的 `rmcp-mux` Socket 是受信共享端点。Pi Stuff 只负责客户端连接，绝不启动、接管、重启或停止 mux 守护进程或上游进程。
 - 已启用的 `eager` 和 `keep-alive` 服务器可以在没有 `session_start` 的程序化宿主中初始化；之后会话负责的运行时会取代该加载期运行时。
 - 返回的 `structuredContent` 会依据公布的 JSON Schema draft-07 或 2020-12 `outputSchema` 校验。

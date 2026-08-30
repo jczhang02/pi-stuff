@@ -21,7 +21,9 @@ import {
 	type McpAdapterHost,
 	routeMcpCustomUiThroughCommandDialog,
 } from "../../packages/pi-stuff/src/mcp/adapter.js";
-import { createMcpAdapter } from "../../packages/pi-stuff/src/mcp/runtime/index.js";
+import { createMcpAdapter, MCP_STATUS_EVENT } from "../../packages/pi-stuff/src/mcp/runtime/index.js";
+import { parseMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/status-store.js";
+import { isJsonSourceValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createExtensionContext, testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
@@ -50,7 +52,7 @@ const McpGatewayParameters = Type.Object(
 	{ additionalProperties: true },
 );
 type Tool = ToolDefinition<typeof Parameters, unknown>;
-type Handler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined;
+type Handler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 
 function harness() {
 	const handlers = new Map<string, Handler[]>();
@@ -83,6 +85,18 @@ function upstreamTool(name: string, execute: Tool["execute"]): Tool {
 	return { description: name, execute, label: name, name, parameters: Parameters };
 }
 
+async function dispatch(handlers: Map<string, Handler[]>, event: ExtensionEvent, ctx: ExtensionContext): Promise<void> {
+	for (const handler of handlers.get(event.type) ?? []) await handler(event, ctx);
+}
+
+async function waitFor(check: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 50; attempt++) {
+		if (check()) return;
+		await Bun.sleep(5);
+	}
+	throw new Error("MCP lifecycle did not settle");
+}
+
 function registry(tools: Map<string, ToolDefinition>): SuiteToolDefinitionRegistry {
 	return {
 		catalog: () => [...tools.values()].map((definition) => ({ definition })),
@@ -106,6 +120,35 @@ test("runs the pinned runtime through the maintained gateway boundary", () => {
 	expect([...fixture.tools.keys()]).toEqual(["mcp"]);
 	expect(Object.keys(commands)).toEqual(["mcp"]);
 	expect([...fixture.handlers.keys()].sort()).toEqual(["session_shutdown", "session_start", "tool_result"]);
+});
+
+test("hands status authority to the newest MCP Session and drains shutdown", async () => {
+	const fixture = harness();
+	const snapshots: NonNullable<ReturnType<typeof parseMcpStatusSnapshot>>[] = [];
+	const unsubscribe = fixture.pi.events.on(MCP_STATUS_EVENT, (value) => {
+		if (!isJsonSourceValue(value)) return;
+		const snapshot = parseMcpStatusSnapshot(value);
+		if (snapshot) snapshots.push(snapshot);
+	});
+	createMcpAdapter({
+		config: { mcpServers: { docs: { command: "unused", disabled: true } } },
+		deferStartupConnections: true,
+	})(createMcpAdapterApi(fixture.pi, {}));
+
+	const first = createExtensionContext();
+	await dispatch(fixture.handlers, { reason: "startup", type: "session_start" }, first);
+	await waitFor(() => snapshots.at(-1)?.servers[0]?.name === "docs");
+
+	const second = createExtensionContext();
+	await dispatch(fixture.handlers, { reason: "new", type: "session_start" }, second);
+	await waitFor(() => snapshots.at(-1)?.servers[0]?.name === "docs");
+	await Bun.sleep(20);
+	expect(snapshots.at(-1)?.servers.map(({ name }) => name)).toEqual(["docs"]);
+	expect(snapshots.filter((snapshot) => snapshot.servers[0]?.name === "docs")).toHaveLength(2);
+
+	await dispatch(fixture.handlers, { reason: "quit", type: "session_shutdown" }, second);
+	expect(snapshots.at(-1)?.servers).toEqual([]);
+	unsubscribe?.();
 });
 
 test("retains one gateway and bounds server-only discovery", async () => {

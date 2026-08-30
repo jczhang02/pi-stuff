@@ -7,7 +7,6 @@ import { McpLifecycleManager } from "./lifecycle.ts";
 import { logger } from "./logger.ts";
 import { getAuthStorageOptions } from "./mcp-auth.ts";
 import { createOAuthRuntime, hasPendingAuth, type McpOAuthRuntime, shutdownOAuth } from "./mcp-auth-flow.ts";
-import type { McpEffectRunner } from "./mcp-effect-runner.ts";
 import { publishMcpStatusSnapshot } from "./mcp-status.ts";
 import {
 	computeServerHash,
@@ -109,7 +108,6 @@ function prepareMcpServers(
 		if (allServerEntries.length > 0 && ui) {
 			ui.notify(`MCP: All ${allServerEntries.length} server(s) are disabled`, "info");
 		}
-		publishMcpStatusSnapshot(state);
 		return;
 	}
 
@@ -161,18 +159,17 @@ function prepareMcpServers(
 	return { prefix, startupServers };
 }
 
-async function connectStartupServers(
+function connectStartupServers(
 	state: McpExtensionState,
-	runEffect: McpEffectRunner,
 	startupServers: [string, ServerDefinition][],
 	prefix: ToolPrefix,
 	ui: McpOwnedUi | undefined,
 	initialSignal: AbortSignal | undefined,
 	runtimeSignal: AbortSignal,
-): Promise<boolean> {
-	const { manager, owner, resourceCounts, serverInstructions, toolMetadata } = state;
-	const results = await runEffect(
-		Effect.forEach(
+): Effect.Effect<boolean, Error> {
+	return Effect.gen(function* () {
+		const { manager, owner, resourceCounts, serverInstructions, toolMetadata } = state;
+		const results = yield* Effect.forEach(
 			startupServers,
 			([name, definition]) =>
 				manager.connectEffect(name, definition, runtimeSignal).pipe(
@@ -201,172 +198,168 @@ async function connectStartupServers(
 					}),
 				),
 			{ concurrency: 10 },
-		),
-		owner.signal,
-	);
-	if (initialSignal?.aborted) return false;
-	owner.throwIfInactive();
-
-	for (const { name, definition, connection, error } of results) {
+		);
+		if (initialSignal?.aborted) return false;
 		owner.throwIfInactive();
-		if (error || !connection) {
-			if (initialSignal?.aborted) continue;
-			if (error) recordFailure(state, name, error);
-			const displayError = sanitizeTerminalText(error ?? "Unknown connection failure");
-			ui?.notify(`MCP: Failed to connect to ${name}: ${displayError}`, "error");
-			logger.error(`MCP: Failed to connect to ${name}`, new Error(displayError), { server: name });
-			continue;
+
+		for (const { name, definition, connection, error } of results) {
+			owner.throwIfInactive();
+			if (error || !connection) {
+				if (initialSignal?.aborted) continue;
+				if (error) recordFailure(state, name, error);
+				const displayError = sanitizeTerminalText(error ?? "Unknown connection failure");
+				ui?.notify(`MCP: Failed to connect to ${name}: ${displayError}`, "error");
+				logger.error(`MCP: Failed to connect to ${name}`, new Error(displayError), { server: name });
+				continue;
+			}
+
+			const { metadata, failedTools } = buildToolMetadata(
+				connection.tools,
+				connection.resources,
+				definition,
+				name,
+				prefix,
+			);
+			toolMetadata.set(name, metadata);
+			resourceCounts.set(name, connection.resources.length);
+			if (connection.instructions) serverInstructions.set(name, connection.instructions);
+			else serverInstructions.delete(name);
+			updateMetadataCache(state, name);
+			notifyToolMetadataUpdated(state, name, "startup");
+			markKeepAliveAfterConnect(state, name);
+			if (failedTools.length > 0) ui?.notify(`MCP: ${name} - ${failedTools.length} tools skipped`, "warning");
 		}
 
-		const { metadata, failedTools } = buildToolMetadata(
-			connection.tools,
-			connection.resources,
-			definition,
-			name,
-			prefix,
-		);
-		toolMetadata.set(name, metadata);
-		resourceCounts.set(name, connection.resources.length);
-		if (connection.instructions) serverInstructions.set(name, connection.instructions);
-		else serverInstructions.delete(name);
-		updateMetadataCache(state, name);
-		notifyToolMetadataUpdated(state, name, "startup");
-		markKeepAliveAfterConnect(state, name);
-		if (failedTools.length > 0) ui?.notify(`MCP: ${name} - ${failedTools.length} tools skipped`, "warning");
-	}
-
-	const connectedCount = results.filter((result) => result.connection).length;
-	const failedCount = results.filter((result) => result.error).length;
-	if (ui && connectedCount > 0) {
-		const totalTools = totalToolCount(state);
-		const message =
-			failedCount > 0
-				? `MCP: ${connectedCount}/${startupServers.length} servers connected (${totalTools} tools)`
-				: `MCP: ${connectedCount} servers connected (${totalTools} tools)`;
-		ui.notify(message, "info");
-	}
-	return true;
+		const connectedCount = results.filter((result) => result.connection).length;
+		const failedCount = results.filter((result) => result.error).length;
+		if (ui && connectedCount > 0) {
+			const totalTools = totalToolCount(state);
+			const message =
+				failedCount > 0
+					? `MCP: ${connectedCount}/${startupServers.length} servers connected (${totalTools} tools)`
+					: `MCP: ${connectedCount} servers connected (${totalTools} tools)`;
+			ui.notify(message, "info");
+		}
+		return true;
+	});
 }
 
-export async function initializeMcp(
+export function initializeMcp(
 	pi: ExtensionAPI,
 	ctx: McpInitializationContext,
-	runEffect: McpEffectRunner,
 	owner: McpRuntimeOwner = createMcpRuntimeOwner(),
 	options: McpInitializationOptions = {},
-): Promise<McpExtensionState> {
-	// Pi guards ExtensionContext getters after reload. Snapshot all values that
-	// can be used by asynchronous work before the first await.
-	const configFlag = options.config === undefined ? pi.getFlag("mcp-config") : undefined;
-	const configPath =
-		options.config !== undefined
-			? undefined
-			: (options.configPath ?? (isRuntimeString(configFlag) ? configFlag : undefined));
-	const cwd = ctx.cwd;
-	const hasUI = ctx.hasUI;
-	const rawUi = hasUI ? ctx.ui : undefined;
-	const initialSignal = ctx.signal;
-	const ui = rawUi ? createOwnedUi(rawUi, owner) : undefined;
-	const runtimeSignal = combineAbortSignals(owner.signal, initialSignal);
-	const config = options.config !== undefined ? cloneMcpConfig(options.config) : loadMcpConfig(configPath, cwd);
-	const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
+): Effect.Effect<McpExtensionState, Error> {
+	return Effect.gen(function* () {
+		// Pi guards ExtensionContext getters after reload. Snapshot all values that
+		// can be used by asynchronous work before the first await.
+		const configFlag = options.config === undefined ? pi.getFlag("mcp-config") : undefined;
+		const configPath =
+			options.config !== undefined
+				? undefined
+				: (options.configPath ?? (isRuntimeString(configFlag) ? configFlag : undefined));
+		const cwd = ctx.cwd;
+		const hasUI = ctx.hasUI;
+		const rawUi = hasUI ? ctx.ui : undefined;
+		const initialSignal = ctx.signal;
+		const ui = rawUi ? createOwnedUi(rawUi, owner) : undefined;
+		const runtimeSignal = combineAbortSignals(owner.signal, initialSignal);
+		const config =
+			options.config !== undefined ? cloneMcpConfig(options.config) : yield* loadMcpConfig(configPath, cwd);
+		const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
 
-	const ownsOAuthRuntime = options.oauthRuntime === undefined;
-	const oauthRuntime = options.oauthRuntime ?? createOAuthRuntime(owner.signal);
-	const manager = await runEffect(McpServerManager.make(runEffect, owner, cwd), owner.signal);
-	manager.setRuntimeSignal?.(owner.signal);
-	manager.setOAuthRuntime?.(oauthRuntime);
-	manager.setDefaultRequestTimeoutMs(config.settings?.requestTimeoutMs);
-	manager.setTraceConfig?.(config.settings?.trace);
-	manager.setAuthStorageOptions(authStorageOptions);
-	const lifecycle = new McpLifecycleManager(manager, (serverName) =>
-		hasPendingAuth(serverName, undefined, oauthRuntime),
-	);
-	const toolMetadata = new Map<string, ToolMetadata[]>();
-	const resourceCounts = new Map<string, number>();
-	const serverInstructions = new Map<string, string>();
-	const failureTracker = new Map<string, number>();
-	const failureMessages = new Map<string, string>();
-	const approvedToolCalls = new Map<string, true>();
-	const state: McpExtensionState = {
-		owner,
-		manager,
-		lifecycle,
-		toolMetadata,
-		resourceCounts,
-		serverInstructions,
-		config,
-		programmaticConfig: options.config !== undefined,
-		oauthRuntime,
-		authStorageOptions,
-		failureTracker,
-		failureMessages,
-		approvedToolCalls,
-	};
-	if (ui !== undefined) state.ui = ui;
-	if (options.statusEvents !== undefined) state.statusEvents = options.statusEvents;
-	if (ownsOAuthRuntime) {
-		await runEffect(
-			owner.addCleanup(() => shutdownOAuth(oauthRuntime)),
-			owner.signal,
+		const ownsOAuthRuntime = options.oauthRuntime === undefined;
+		const oauthRuntime = options.oauthRuntime ?? createOAuthRuntime(owner.signal);
+		const manager = yield* McpServerManager.make(owner, cwd);
+		manager.setRuntimeSignal?.(owner.signal);
+		manager.setOAuthRuntime?.(oauthRuntime);
+		manager.setDefaultRequestTimeoutMs(config.settings?.requestTimeoutMs);
+		manager.setTraceConfig?.(config.settings?.trace);
+		manager.setAuthStorageOptions(authStorageOptions);
+		const lifecycle = new McpLifecycleManager(manager, (serverName) =>
+			hasPendingAuth(serverName, undefined, oauthRuntime),
 		);
-	}
-	manager.setMetadataListChangedListener?.((serverName, reason) => {
-		if (!owner.isActive()) return;
-		updateServerMetadata(state, serverName);
-		updateMetadataCache(state, serverName, { preserveEmptyResources: false });
-		notifyToolMetadataUpdated(state, serverName, reason);
-		updateStatusBar(state);
-	});
-	await runEffect(owner.addFinalizer(lifecycle.gracefulShutdown().pipe(Effect.orDie)), owner.signal);
+		const toolMetadata = new Map<string, ToolMetadata[]>();
+		const resourceCounts = new Map<string, number>();
+		const serverInstructions = new Map<string, string>();
+		const failureTracker = new Map<string, number>();
+		const failureMessages = new Map<string, string>();
+		const approvedToolCalls = new Map<string, true>();
+		const state: McpExtensionState = {
+			owner,
+			manager,
+			lifecycle,
+			toolMetadata,
+			resourceCounts,
+			serverInstructions,
+			config,
+			programmaticConfig: options.config !== undefined,
+			oauthRuntime,
+			authStorageOptions,
+			failureTracker,
+			failureMessages,
+			approvedToolCalls,
+		};
+		if (ui !== undefined) state.ui = ui;
+		if (options.statusEvents !== undefined) state.statusEvents = options.statusEvents;
+		if (ownsOAuthRuntime) {
+			yield* owner.addCleanup(() => shutdownOAuth(oauthRuntime));
+		}
+		manager.setMetadataListChangedListener?.((serverName, reason) => {
+			if (!owner.isActive()) return;
+			updateServerMetadata(state, serverName);
+			updateMetadataCache(state, serverName, { preserveEmptyResources: false });
+			notifyToolMetadataUpdated(state, serverName, reason);
+			updateStatusBar(state);
+		});
+		yield* owner.addFinalizer(lifecycle.gracefulShutdown().pipe(Effect.orDie));
+		yield* owner.addFinalizer(Effect.sync(() => flushMetadataCache(state)));
 
-	const startup = prepareMcpServers(state, ui, options.deferStartupConnections);
-	if (!startup) return state;
-	if (
-		!(await connectStartupServers(
-			state,
-			runEffect,
-			startup.startupServers,
-			startup.prefix,
-			ui,
-			initialSignal,
-			runtimeSignal,
-		))
-	) {
+		const startup = prepareMcpServers(state, ui, options.deferStartupConnections);
+		if (!startup) return state;
+		if (
+			!(yield* connectStartupServers(
+				state,
+				startup.startupServers,
+				startup.prefix,
+				ui,
+				initialSignal,
+				runtimeSignal,
+			))
+		) {
+			return state;
+		}
+
+		lifecycle.setReconnectCallback((serverName) => {
+			if (!owner.isActive()) return;
+			updateServerMetadata(state, serverName);
+			updateMetadataCache(state, serverName);
+			notifyToolMetadataUpdated(state, serverName, "lifecycle-reconnect");
+			clearFailure(state, serverName);
+			updateStatusBar(state);
+		});
+
+		lifecycle.setReconnectFailureCallback((serverName, error) => {
+			if (!owner.isActive()) return;
+			const message = error instanceof Error ? error.message : String(error);
+			recordFailure(state, serverName, message);
+			updateStatusBar(state);
+		});
+
+		lifecycle.setIdleShutdownCallback((serverName) => {
+			if (!owner.isActive()) return;
+			const idleMinutes = getEffectiveIdleTimeoutMinutes(state, serverName);
+			logger.debug(`${serverName} shut down (idle ${idleMinutes}m)`);
+			updateStatusBar(state);
+		});
+
+		owner.throwIfInactive();
+		yield* Scope.provide(owner.scope)(lifecycle.startHealthChecks(runtimeSignal));
+		if (config.settings?.mcpFooterStatus === "off") {
+			ui?.setStatus("mcp", undefined);
+		}
 		return state;
-	}
-
-	lifecycle.setReconnectCallback((serverName) => {
-		if (!owner.isActive()) return;
-		updateServerMetadata(state, serverName);
-		updateMetadataCache(state, serverName);
-		notifyToolMetadataUpdated(state, serverName, "lifecycle-reconnect");
-		clearFailure(state, serverName);
-		updateStatusBar(state);
 	});
-
-	lifecycle.setReconnectFailureCallback((serverName, error) => {
-		if (!owner.isActive()) return;
-		const message = error instanceof Error ? error.message : String(error);
-		recordFailure(state, serverName, message);
-		updateStatusBar(state);
-	});
-
-	lifecycle.setIdleShutdownCallback((serverName) => {
-		if (!owner.isActive()) return;
-		const idleMinutes = getEffectiveIdleTimeoutMinutes(state, serverName);
-		logger.debug(`${serverName} shut down (idle ${idleMinutes}m)`);
-		updateStatusBar(state);
-	});
-
-	owner.throwIfInactive();
-	await runEffect(Scope.provide(owner.scope)(lifecycle.startHealthChecks(runtimeSignal)), owner.signal);
-	if (config.settings?.mcpFooterStatus === "off") {
-		ui?.setStatus("mcp", undefined);
-	}
-	publishMcpStatusSnapshot(state);
-
-	return state;
 }
 
 export function markKeepAliveAfterConnect(state: McpExtensionState, serverName: string): void {

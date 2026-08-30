@@ -9,14 +9,14 @@ configuration, transports, discovery, OAuth, lifecycle, output guarding, and pro
 Direct Tools, JavaScript batching, prompts, Apps, sampling, and elicitation are intentionally absent rather than
 retained behind flags.
 
-`implementation.ts` keeps one per-factory adapter state and wires ordered session, Command, and gateway Tool phases.
-`runtime-owner.ts` owns the runtime Scope; `server-manager.ts` owns Fiber-backed single-flight connection identity and
-per-connection child Scopes; `metadata-discovery.ts` owns bounded tool and resource pagination. Lifecycle and gateway
-operations compose as Effects, while `mcp-effect-runner.ts` projects them to the existing Promise and `AbortSignal`
-contracts at Pi-facing seams. Temporary Session and Command compatibility projections are inventoried for removal by
-their owning migration. `mcp-http-transport.ts` owns native HTTP negotiation and failed-acquisition cleanup.
-`config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe loading, narrow writes, and
-its compatibility exports.
+`implementation.ts` keeps one per-factory adapter state, forks its Capability Scope from the shared Effect Foundation's
+Session Scope, and wires ordered Session, Command, and gateway Tool phases. `runtime-owner.ts` owns the MCP runtime
+Scope; `server-manager.ts` owns Fiber-backed single-flight connection identity and per-connection child Scopes;
+`metadata-discovery.ts` owns bounded tool and resource pagination. Lifecycle, Session, Command, and gateway operations
+compose as Effects, while `mcp-effect-runner.ts` projects them to the existing Promise and `AbortSignal` contracts only
+at Pi-facing seams. `mcp-http-transport.ts` owns native HTTP negotiation and failed-acquisition cleanup.
+`config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe Effect loading and narrow
+writes; `config-persistence.ts` owns Effect-scoped write locks and atomic replacement.
 
 `mcp-setup-panel.ts` owns setup interaction, writes, and lifecycle state. `mcp-setup-panel-view.ts` renders immutable
 snapshots and exact write previews without mutating that state.
@@ -38,6 +38,10 @@ snapshots and exact write previews without mutating that state.
 - The runtime Scope owns connection-attempt Fibers, OAuth shutdown, health checks, and each live connection's child
   Scope. Closing interrupts pending acquisition before running the native session, Client, Transport, and trace
   cleanup protocols.
+- Each Host Session has one status-publication generation. Authority handoff publishes an empty snapshot, and stale
+  initialization or cleanup cannot publish into the newer Session.
+- Configuration discovery, previews, and codecs remain synchronous native adapters. Loading and mutation workflows
+  compose as Effects, and every mutation acquires the shared settings lock.
 - A configured `rmcp-mux` socket is a trusted shared endpoint. Pi Stuff owns only its client connection and never
   starts, adopts, restarts, or stops the mux daemon or upstream process.
 - Enabled `eager` and `keep-alive` servers may initialize for a programmatic Host without `session_start`; a later

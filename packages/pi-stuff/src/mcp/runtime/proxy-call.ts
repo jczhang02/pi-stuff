@@ -237,10 +237,7 @@ class McpCall {
 	private autoAuthenticate(serverName: string): Effect.Effect<boolean, Error> {
 		if (this.autoAuthAttempted) return Effect.succeed(false);
 		this.autoAuthAttempted = true;
-		return mcpNativePromise(
-			(effectSignal) => attemptAutoAuth(this.state, serverName, effectSignal),
-			this.ownedSignal,
-		).pipe(
+		return attemptAutoAuth(this.state, serverName, this.ownedSignal).pipe(
 			Effect.map((result) => {
 				this.autoAuthFailure = result.status === "failed" ? result.message : undefined;
 				this.autoAuthSucceeded = result.status === "success";

@@ -14,6 +14,7 @@ import {
 	writeStarterProjectConfig,
 } from "../../packages/pi-stuff/src/mcp/runtime/config.js";
 import { parseMcpCommand } from "../../packages/pi-stuff/src/mcp/runtime/implementation.js";
+import { runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
 import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const MCP_CONFIG_DOCUMENT_SCHEMA = Type.Object(
@@ -93,7 +94,9 @@ test("does not inherit URL-bound credentials when a higher-precedence source cha
 			JSON.stringify({ mcpServers: { [serverName]: { url: "https://new.example/mcp" } } }),
 		);
 
-		expect(loadMcpConfig(globalPath, cwd).mcpServers[serverName]).toEqual({ url: "https://new.example/mcp" });
+		expect((await runMcpEffect(loadMcpConfig(globalPath, cwd))).mcpServers[serverName]).toEqual({
+			url: "https://new.example/mcp",
+		});
 	} finally {
 		await rm(cwd, { force: true, recursive: true });
 	}
@@ -106,7 +109,7 @@ test("keeps server state writes project-local when a custom global config is loa
 	const customDocument = { mcpServers: { docs: { command: "docs-mcp", disabled: true } } };
 	try {
 		await writeFile(customPath, `${JSON.stringify(customDocument)}\n`);
-		const result = await writeProjectServerDisabledOverride(customPath, cwd, "docs", false);
+		const result = await runMcpEffect(writeProjectServerDisabledOverride(customPath, cwd, "docs", false));
 		expect(result).toEqual({ changed: true, path: projectPath });
 		expect(JSON.parse(await readFile(customPath, "utf8"))).toEqual(customDocument);
 		expect(JSON.parse(await readFile(projectPath, "utf8"))).toEqual({
@@ -127,7 +130,9 @@ test("does not treat the project override or its alias as a lower config source"
 		await symlink(projectPath, aliasPath);
 		for (const configPath of [projectPath, aliasPath]) {
 			await writeFile(projectPath, '{"mcpServers":{"docs":{"disabled":true}}}\n');
-			expect((await writeProjectServerDisabledOverride(configPath, cwd, "docs", false)).changed).toBe(true);
+			expect((await runMcpEffect(writeProjectServerDisabledOverride(configPath, cwd, "docs", false))).changed).toBe(
+				true,
+			);
 			expect(JSON.parse(await readFile(projectPath, "utf8"))).toEqual({ mcpServers: {} });
 		}
 	} finally {
@@ -141,13 +146,13 @@ test("persists a server connection policy in the project MCP override", async ()
 	try {
 		await mkdir(join(cwd, ".pi"));
 		await writeFile(path, '{"mcpServers":{"docs":{"disabled":false}},"settings":{"toolPrefix":"server"}}\n');
-		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).changed).toBe(true);
-		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).changed).toBe(false);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).changed).toBe(true);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).changed).toBe(false);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			mcpServers: { docs: { disabled: false, lifecycle: "keep-alive" } },
 			settings: { toolPrefix: "server" },
 		});
-		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "lazy")).changed).toBe(true);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "lazy"))).changed).toBe(true);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			mcpServers: { docs: { disabled: false, lifecycle: "lazy" } },
 			settings: { toolPrefix: "server" },
@@ -161,9 +166,11 @@ test("creates the first project override and preserves special server names", as
 	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
 	const path = join(cwd, ".pi/mcp.json");
 	try {
-		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).changed).toBe(true);
-		expect((await writeProjectServerLifecycleOverride(cwd, "__proto__", "keep-alive")).changed).toBe(true);
-		expect((await writeProjectServerLifecycleOverride(cwd, "toString", "lazy")).changed).toBe(true);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).changed).toBe(true);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "__proto__", "keep-alive"))).changed).toBe(
+			true,
+		);
+		expect((await runMcpEffect(writeProjectServerLifecycleOverride(cwd, "toString", "lazy"))).changed).toBe(true);
 		const document = JSON.parse(await readFile(path, "utf8"));
 		expect(Check(MCP_CONFIG_DOCUMENT_SCHEMA, document)).toBe(true);
 		if (!Check(MCP_CONFIG_DOCUMENT_SCHEMA, document)) throw new Error("Expected an MCP config document");
@@ -187,7 +194,7 @@ test("loads special server names as own properties without changing map prototyp
 			path,
 			'{"mcpServers":{"__proto__":{"command":"proto-mcp"},"toString":{"command":"string-mcp"}}}\n',
 		);
-		const servers = loadMcpConfig(path, cwd).mcpServers;
+		const servers = (await runMcpEffect(loadMcpConfig(path, cwd))).mcpServers;
 		expect(Object.getPrototypeOf(servers)).toBe(Object.prototype);
 		expect(Object.hasOwn(servers, "__proto__")).toBe(true);
 		expect(Object.hasOwn(servers, "toString")).toBe(true);
@@ -205,7 +212,7 @@ test("refuses to write a project override through a symlink", async () => {
 		await mkdir(join(cwd, ".pi"));
 		await writeFile(target, '{"mcpServers":{}}\n');
 		await symlink(target, path);
-		expect(() => writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).toThrow(
+		await expect(runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).rejects.toThrow(
 			"Refusing to write project MCP config through a symbolic link",
 		);
 		expect((await lstat(path)).isSymbolicLink()).toBe(true);
@@ -220,7 +227,7 @@ test("refuses a project override whose parent symlink escapes the project", asyn
 	const outside = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-outside-"));
 	try {
 		await symlink(outside, join(cwd, ".pi"));
-		expect(() => writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).toThrow(
+		await expect(runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).rejects.toThrow(
 			"Refusing to write project MCP config through a symbolic link",
 		);
 		expect(await Bun.file(join(outside, "mcp.json")).exists()).toBe(false);
@@ -239,7 +246,7 @@ test("pins the validated project config directory while waiting for its lock", a
 	try {
 		await mkdir(projectDirectory);
 		release = await acquireSettingsLock(join(projectDirectory, "mcp.json.lock"), "MCP race test");
-		const pendingWrite = writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive");
+		const pendingWrite = runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"));
 		await new Promise((resolve) => setTimeout(resolve, 30));
 		await rename(projectDirectory, pinnedDirectory);
 		await symlink(outside, projectDirectory);
@@ -266,8 +273,8 @@ test("locks a shared config symlink and its resolved target as one file", async 
 		await writeFile(target, '{"mcpServers":{}}\n');
 		await symlink(target, path);
 		await Promise.all([
-			writeSharedServerEntry(path, "docs", { command: "docs-mcp" }),
-			writeSharedServerEntry(target, "browser", { command: "browser-mcp" }),
+			runMcpEffect(writeSharedServerEntry(path, "docs", { command: "docs-mcp" })),
+			runMcpEffect(writeSharedServerEntry(target, "browser", { command: "browser-mcp" })),
 		]);
 		expect((await lstat(path)).isSymbolicLink()).toBe(true);
 		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({
@@ -286,8 +293,8 @@ test("merges concurrent server additions without losing either entry", async () 
 	const path = join(cwd, ".mcp.json");
 	try {
 		await Promise.all([
-			writeSharedServerEntry(path, "docs", { url: "https://docs.example/mcp" }),
-			writeSharedServerEntry(path, "browser", { command: "browser-mcp" }),
+			runMcpEffect(writeSharedServerEntry(path, "docs", { url: "https://docs.example/mcp" })),
+			runMcpEffect(writeSharedServerEntry(path, "browser", { command: "browser-mcp" })),
 		]);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			mcpServers: {
@@ -305,7 +312,9 @@ test("starter setup never replaces a config created after its preview", async ()
 	const path = join(cwd, ".mcp.json");
 	try {
 		await writeFile(path, '{"mcpServers":{"docs":{"url":"https://docs.example/mcp"}}}\n');
-		await expect(writeStarterProjectConfig(cwd)).rejects.toThrow("Refusing to replace existing MCP config");
+		await expect(runMcpEffect(writeStarterProjectConfig(cwd))).rejects.toThrow(
+			"Refusing to replace existing MCP config",
+		);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			mcpServers: { docs: { url: "https://docs.example/mcp" } },
 		});
@@ -320,7 +329,7 @@ test("refuses to overwrite a malformed project MCP override", async () => {
 	try {
 		await mkdir(join(cwd, ".pi"));
 		await writeFile(path, "not json\n");
-		await expect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).rejects.toThrow(
+		await expect(runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"))).rejects.toThrow(
 			"Failed to read project MCP override",
 		);
 		expect(await readFile(path, "utf8")).toBe("not json\n");
@@ -335,18 +344,20 @@ test("refuses to overwrite malformed shared MCP configuration", async () => {
 	const piPath = join(cwd, "mcp.json");
 	try {
 		await writeFile(sharedPath, "not json\n");
-		await expect(writeSharedServerEntry(sharedPath, "docs", { command: "docs-mcp" })).rejects.toThrow(
+		await expect(runMcpEffect(writeSharedServerEntry(sharedPath, "docs", { command: "docs-mcp" }))).rejects.toThrow(
 			"Failed to read MCP config",
 		);
 		expect(await readFile(sharedPath, "utf8")).toBe("not json\n");
 		await writeFile(sharedPath, '{"mcpServers":[]}\n');
-		await expect(writeSharedServerEntry(sharedPath, "docs", { command: "docs-mcp" })).rejects.toThrow(
+		await expect(runMcpEffect(writeSharedServerEntry(sharedPath, "docs", { command: "docs-mcp" }))).rejects.toThrow(
 			"mcpServers must be an object",
 		);
 		expect(await readFile(sharedPath, "utf8")).toBe('{"mcpServers":[]}\n');
 
 		await writeFile(piPath, "[]\n");
-		await expect(ensureCompatibilityImports(["cursor"], piPath)).rejects.toThrow("Failed to read MCP config");
+		await expect(runMcpEffect(ensureCompatibilityImports(["cursor"], piPath))).rejects.toThrow(
+			"Failed to read MCP config",
+		);
 		expect(await readFile(piPath, "utf8")).toBe("[]\n");
 	} finally {
 		await rm(cwd, { force: true, recursive: true });

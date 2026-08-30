@@ -2,6 +2,7 @@
 
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { Effect } from "effect";
 import {
 	isJsonInputObject,
 	type JsonInputObject,
@@ -61,7 +62,14 @@ export function cloneMcpConfig(config: McpConfig): McpConfig {
 	return structuredClone(config);
 }
 
-export function loadMcpConfig(overridePath?: string, cwd = process.cwd()): McpConfig {
+export function loadMcpConfig(overridePath?: string, cwd = process.cwd()): Effect.Effect<McpConfig, Error> {
+	return Effect.try({
+		try: () => loadMcpConfigValue(overridePath, cwd),
+		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+	});
+}
+
+function loadMcpConfigValue(overridePath?: string, cwd = process.cwd()): McpConfig {
 	const sources = readConfigSources(overridePath, cwd);
 	const hostConfigDiscovery = getConfiguredHostConfigDiscovery(sources);
 	// Host files are a lower-precedence fallback. This ordering means an opt-in
@@ -215,7 +223,7 @@ export function writeProjectServerDisabledOverride(
 	cwd: string,
 	serverName: string,
 	disabled: boolean,
-): Promise<ServerDisabledOverrideResult> {
+): Effect.Effect<ServerDisabledOverrideResult, Error> {
 	return withProjectConfigWriteLock(getProjectPiConfigPath(cwd), cwd, (writePath) =>
 		writeProjectServerDisabledOverrideUnlocked(globalConfigPath, cwd, writePath, serverName, disabled),
 	);
@@ -272,7 +280,7 @@ export function writeProjectServerLifecycleOverride(
 	cwd: string,
 	serverName: string,
 	lifecycle: "keep-alive" | "lazy",
-): Promise<ServerDisabledOverrideResult> {
+): Effect.Effect<ServerDisabledOverrideResult, Error> {
 	return withProjectConfigWriteLock(getProjectPiConfigPath(cwd), cwd, (writePath) => {
 		const override = readProjectServerOverride(writePath, getProjectPiConfigPath(cwd), serverName);
 		return writeProjectServerOverride(override, serverName, { ...override.existing, lifecycle });
@@ -294,7 +302,7 @@ export function previewCompatibilityImports(importKinds: ImportKind[], overrideP
 export function ensureCompatibilityImports(
 	importKinds: ImportKind[],
 	overridePath?: string,
-): Promise<{ path: string; added: ImportKind[] }> {
+): Effect.Effect<{ path: string; added: ImportKind[] }, Error> {
 	const targetPath = getPiGlobalConfigPath(overridePath);
 	return withConfigWriteLock(targetPath, (writePath) => {
 		const raw = readRawConfigObject(writePath);
@@ -318,7 +326,7 @@ export function previewStarterProjectConfig(cwd = process.cwd()): ConfigWritePre
 	return buildConfigWritePreview(targetPath, nextRaw);
 }
 
-export function writeStarterProjectConfig(cwd = process.cwd()): Promise<string> {
+export function writeStarterProjectConfig(cwd = process.cwd()): Effect.Effect<string, Error> {
 	const targetPath = getProjectConfigPath(cwd);
 	return withConfigWriteLock(targetPath, (writePath) => {
 		if (existsSync(targetPath)) throw new Error(`Refusing to replace existing MCP config at ${targetPath}`);
@@ -336,7 +344,11 @@ export function previewSharedServerEntry(filePath: string, serverName: string, e
 	return buildConfigWritePreview(filePath, nextRaw);
 }
 
-export function writeSharedServerEntry(filePath: string, serverName: string, entry: ServerEntry): Promise<string> {
+export function writeSharedServerEntry(
+	filePath: string,
+	serverName: string,
+	entry: ServerEntry,
+): Effect.Effect<string, Error> {
 	return withConfigWriteLock(filePath, (writePath) => {
 		const raw = readRawConfigObject(writePath);
 		const servers = getServersObject(raw);

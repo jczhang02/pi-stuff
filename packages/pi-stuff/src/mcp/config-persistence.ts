@@ -14,9 +14,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { Effect } from "effect";
 import stripJsonComments from "strip-json-comments";
 import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../shared/json-value.js";
-import { withSettingsLock } from "../shared/settings-io/lock.ts";
+import { acquireSettingsLockEffect, resolveSettingsLockPath } from "../shared/settings-io/lock.ts";
 
 const MAX_EXACT_DIFF_LINE_PAIRS = 250_000;
 const MAX_CONFIG_PREVIEW_BYTES = 1_000_000;
@@ -213,37 +214,72 @@ export function writeRawConfigObject(filePath: string, raw: JsonInputObject): vo
 	}
 }
 
-export function withConfigWriteLock<T>(filePath: string, write: (writePath: string) => T): Promise<T> {
-	const writePath = resolveConfigWritePath(filePath);
-	return withSettingsLock(writePath, "MCP config", () => write(writePath));
+export function withConfigWriteLock<T>(filePath: string, write: (writePath: string) => T): Effect.Effect<T, Error> {
+	return Effect.gen(function* () {
+		const writePath = yield* Effect.try({
+			try: () => resolveConfigWritePath(filePath),
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		});
+		return yield* Effect.scoped(
+			acquireSettingsLockEffect(resolveSettingsLockPath(writePath), "MCP config").pipe(
+				Effect.andThen(
+					Effect.try({
+						try: () => write(writePath),
+						catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+					}),
+				),
+			),
+		);
+	});
 }
 
-export async function withProjectConfigWriteLock<T>(
+export function withProjectConfigWriteLock<T>(
 	filePath: string,
 	cwd: string,
-	write: (writePath: string) => T | Promise<T>,
-): Promise<T> {
-	for (const candidate of [dirname(filePath), filePath]) {
-		if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink()) {
-			throw new Error(`Refusing to write project MCP config through a symbolic link at ${candidate}`);
-		}
-	}
-	const writePath = resolveConfigWritePath(filePath);
-	const projectRoot = realpathSync(cwd);
-	const projectRelative = relative(projectRoot, writePath);
-	if (projectRelative === ".." || projectRelative.startsWith(`..${sep}`) || isAbsolute(projectRelative)) {
-		throw new Error(`Project MCP config escapes the project root: ${filePath}`);
-	}
-	const directoryDescriptor = openSync(
-		dirname(writePath),
-		constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+	write: (writePath: string) => T,
+): Effect.Effect<T, Error> {
+	return Effect.acquireUseRelease(
+		Effect.try({
+			try: () => {
+				for (const candidate of [dirname(filePath), filePath]) {
+					if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink()) {
+						throw new Error(`Refusing to write project MCP config through a symbolic link at ${candidate}`);
+					}
+				}
+				const writePath = resolveConfigWritePath(filePath);
+				const projectRoot = realpathSync(cwd);
+				const projectRelative = relative(projectRoot, writePath);
+				if (projectRelative === ".." || projectRelative.startsWith(`..${sep}`) || isAbsolute(projectRelative)) {
+					throw new Error(`Project MCP config escapes the project root: ${filePath}`);
+				}
+				const descriptor = openSync(
+					dirname(writePath),
+					constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+				);
+				return {
+					descriptor,
+					pinnedWritePath: join("/proc/self/fd", String(descriptor), basename(writePath)),
+				};
+			},
+			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+		}),
+		({ pinnedWritePath }) =>
+			Effect.scoped(
+				acquireSettingsLockEffect(resolveSettingsLockPath(pinnedWritePath), "MCP project config").pipe(
+					Effect.andThen(
+						Effect.try({
+							try: () => write(pinnedWritePath),
+							catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+						}),
+					),
+				),
+			),
+		({ descriptor }) =>
+			Effect.try({
+				try: () => closeSync(descriptor),
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}),
 	);
-	const pinnedWritePath = join("/proc/self/fd", String(directoryDescriptor), basename(writePath));
-	try {
-		return await withSettingsLock(pinnedWritePath, "MCP project config", () => write(pinnedWritePath));
-	} finally {
-		closeSync(directoryDescriptor);
-	}
 }
 
 export function readProjectServerOverride(
