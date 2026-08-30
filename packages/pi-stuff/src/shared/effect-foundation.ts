@@ -16,6 +16,10 @@ export interface EffectScopeOwner {
 	readonly [SCOPE]: Scope.Closeable;
 }
 
+export interface EffectFoundationInstallationOptions {
+	readonly deferShutdown?: boolean;
+}
+
 function owner(kind: EffectScopeKind, generation: number, scope: Scope.Closeable): EffectScopeOwner {
 	return { generation, kind, [SCOPE]: scope };
 }
@@ -25,6 +29,7 @@ export class EffectFoundation {
 	private readonly shutdownGraceMs: number;
 	private closed = false;
 	private generation = 0;
+	private hostShutdownInstalled = false;
 	private session: EffectScopeOwner | undefined;
 	private readonly sessions = new WeakMap<HostSessionManager, EffectScopeOwner>();
 	private shutdownResult: Promise<boolean> | undefined;
@@ -102,6 +107,19 @@ export class EffectFoundation {
 		return this.shutdownResult;
 	}
 
+	installHostShutdown(pi: ExtensionAPI): void {
+		if (this.hostShutdownInstalled) return;
+		this.hostShutdownInstalled = true;
+		try {
+			pi.on("session_shutdown", async () => {
+				await this.shutdown();
+			});
+		} catch (error) {
+			this.hostShutdownInstalled = false;
+			throw error;
+		}
+	}
+
 	private fork(kind: "capability" | "operation", parent: EffectScopeOwner): EffectScopeOwner {
 		if (!this.isCurrent(parent)) throw new Error(`Cannot create ${kind} Scope from a stale owner.`);
 		return owner(kind, parent.generation, Scope.forkUnsafe(parent[SCOPE], "sequential"));
@@ -124,7 +142,10 @@ export class EffectFoundation {
 }
 
 /** Install or discover the Effect foundation owned by this Host event bus. */
-export function installEffectFoundation(pi: ExtensionAPI): EffectFoundation {
+export function installEffectFoundation(
+	pi: ExtensionAPI,
+	options: EffectFoundationInstallationOptions = {},
+): EffectFoundation {
 	return getHostSharedResource(
 		pi.events,
 		FOUNDATIONS,
@@ -134,11 +155,16 @@ export function installEffectFoundation(pi: ExtensionAPI): EffectFoundation {
 			pi.on("session_start", async (_event, ctx) => {
 				await foundation.startSession(ctx.sessionManager);
 			});
-			pi.on("session_shutdown", async () => {
-				await foundation.shutdown();
-			});
+			if (!options.deferShutdown) foundation.installHostShutdown(pi);
 			return foundation;
 		},
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
+}
+
+/** Register the Suite's final shutdown hook after Capability protocol handlers. */
+export function completeEffectFoundationInstallation(pi: ExtensionAPI): EffectFoundation {
+	const foundation = installEffectFoundation(pi, { deferShutdown: true });
+	foundation.installHostShutdown(pi);
+	return foundation;
 }

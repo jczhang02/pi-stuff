@@ -38,8 +38,10 @@ Capability retains its own lifecycle policy.
 `index.ts` is the Pi-facing wiring and public facade; `runtime.ts` remains the one lifecycle and activation authority.
 `activity.ts` owns persistent Context Activity, `command-runtime.ts` owns `/ctx` dispatch, and
 `tool-presentation.ts` owns Magic Tool presentation. `projection.ts` owns projection cache and in-flight work, while
-`projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains the Worker/Host adapter,
-event schemas, quiet Host proxy, and retryable module loader.
+`projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains event schemas, the quiet Host
+proxy, and the retryable module loader. `magic-worker-client.ts` owns Pi registration, Session
+projection, and the Effect runner boundary; `magic-worker-transport.ts` owns native Worker acquisition, request
+correlation, cancellation, and release.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one
 temporary audited dependency patch so the engine resolves and preloads its installed `ai-tokenizer` in standalone Pi,
@@ -72,11 +74,18 @@ commands remain registered in Pi and cross the boundary as immutable, field-scop
 snapshots. The Worker receives one full Session snapshot when it first binds the
 Session, after a detected branch discontinuity, and for explicit history-rebuild
 commands. Ordinary Context projection and persistence send at most one new leaf,
-so long Sessions are not cloned again on every prompt. Fatal Worker errors return
-the Capability to native Context immediately, and Host-owned shutdown terminates
-the Worker after a bounded grace period even when its request queue is stuck. The
-Host references the Worker only while a request is pending, so an idle engine
-cannot prevent print or RPC processes from reaching their normal exit path.
+so long Sessions are not cloned again on every prompt. The current Session's
+Effect Capability Scope owns Worker acquisition and initialization, and one
+operation Scope owns each event, Tool, or command request. Interruption removes the pending request and emits the native
+cancellation message; Bun bundling, Worker messaging, Worker-side
+`AbortController`, synchronous shared-memory effects, and termination remain the
+narrow native adapter. Fatal Worker errors return the Capability to native Context
+immediately. Host shutdown gives the official handler one bounded grace period
+before the Suite's final Effect hook interrupts remaining requests, terminates the
+Worker exactly once even when its serialized queue is stuck, and revokes the
+in-memory URL. The Host references the Worker only while a request is pending, so
+an idle engine cannot prevent print or RPC processes from reaching their normal
+exit path.
 The narrowly enumerated Host effects and lifecycle contract are recorded in
 [ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md).
 

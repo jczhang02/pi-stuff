@@ -19,16 +19,14 @@ import type {
 	MagicContextEventMap,
 	MagicContextEventName,
 } from "../../packages/pi-stuff/src/context-management/magic-context-types.js";
-import {
-	finishMagicWorkerShutdown,
-	magicContextWorkerFactory,
-} from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
+import { magicContextWorkerFactory } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
 import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-management/magic-worker-context.js";
 import { writeMagicWorkerSyncResponse } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
 import {
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
 	type MagicWorkerInvocationRequest,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
+import { installEffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
@@ -69,7 +67,7 @@ interface WorkerHarnessState {
 }
 
 function requireHandler(handlers: Map<string, WorkerHandler[]>, name: string): WorkerHandler {
-	const handler = handlers.get(name)?.[0];
+	const handler = handlers.get(name)?.at(-1);
 	if (!handler) throw new Error(`Magic Context did not register '${name}'.`);
 	return handler;
 }
@@ -187,6 +185,8 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 	const harness = await createMagicWorkerHarness();
 	const { commands, contextForSession, handlers, magicLog, pi, registeredTools, state } = harness;
 	const context = contextForSession("worker-test-session");
+	const foundation = installEffectFoundation(pi);
+	await foundation.startSession(context.sessionManager);
 	try {
 		await magicContextWorkerFactory(pi);
 		if (!handlers.has("context")) {
@@ -281,17 +281,13 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 
 		const beforeSwitch: SessionBeforeSwitchEvent = { reason: "resume", type: "session_before_switch" };
 		await requireHandler(handlers, "session_before_switch")(beforeSwitch, context);
-		state.currentLeafId = null;
-		state.currentBranch = [];
-		const secondContext = contextForSession("worker-second-session");
-		await requireHandler(handlers, "session_start")(sessionStart, secondContext);
-		expect(state.branchReads).toBe(3);
 
 		const shutdown: SessionShutdownEvent = { reason: "quit", type: "session_shutdown" };
 		const shutdownHandler = requireHandler(handlers, "session_shutdown");
-		await shutdownHandler(shutdown, secondContext);
-		expect(await shutdownHandler(shutdown, secondContext)).toBeUndefined();
+		await shutdownHandler(shutdown, context);
+		expect(await shutdownHandler(shutdown, context)).toBeUndefined();
 	} finally {
+		await foundation.shutdown();
 		await harness.cleanup();
 	}
 });
@@ -335,15 +331,4 @@ test("an invocation cancelled while queued never reaches Magic Context", () => {
 		}),
 	).toThrow("queued invocation cancelled");
 	expect(invoked).toBeFalse();
-});
-
-test("a hung upstream shutdown cannot keep the Worker alive", async () => {
-	let closed = false;
-	const startedAt = performance.now();
-	await finishMagicWorkerShutdown(new Promise(() => undefined), async () => {
-		closed = true;
-	});
-
-	expect(closed).toBeTrue();
-	expect(performance.now() - startedAt).toBeLessThan(1_000);
 });

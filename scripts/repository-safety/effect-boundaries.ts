@@ -56,12 +56,21 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 	governedSources: [
 		"packages/pi-stuff/src/codex/index.ts",
 		"packages/pi-stuff/src/codex/usage.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
 		"packages/pi-stuff/src/tool-display/index.ts",
 	],
-	nativeAdapters: ["packages/pi-stuff/src/codex/usage.ts"],
+	nativeAdapters: [
+		"packages/pi-stuff/src/codex/usage.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
+	],
 	runnerAdapters: [
 		"packages/pi-stuff/src/codex/index.ts",
+		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
 		"packages/pi-stuff/src/tool-display/index.ts",
 	],

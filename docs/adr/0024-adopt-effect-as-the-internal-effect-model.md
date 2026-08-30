@@ -44,6 +44,10 @@ remaining finalizers so final Host shutdown can join them within the existing gr
 old work from publishing into the new Session. Host registrations that Pi cannot unregister remain outside resource
 acquisition and keep those fences.
 
+Suite composition registers the foundation's Session-start owner before Capability installers, then registers its final
+Host-shutdown hook after their protocol handlers. A Capability can therefore complete its established graceful native
+shutdown before Scope finalization interrupts remaining work and releases its resources.
+
 No Fiber is allowed to outlive an operation without an explicit owner. Work that intentionally continues beyond its
 initiating call is forked into its Session or Capability Scope rather than into a detached global or daemon Scope. The
 existing lifecycle owner still decides cancellation, terminal policy, and generation validity.

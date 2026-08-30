@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: df13a79d1c1fbc5ef72d844e5adc5519cd85006ba3d42c025b055e4d8a49007c -->
+<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 2c814ea2e6331b5e0789bff8f7ba03d38c3892038af51b9b3b45debfe4af9a6f -->
 
 ---
 status: proposed
@@ -38,6 +38,10 @@ helper 继承该 Scope，纯 helper 不创建 Scope。
 等待政策。每项能力保留既有合同：需要时，激活流程可以等待自己的旧资源清理；否则可让清理在后台
 完成。foundation 会跟踪剩余 finalizer，使宿主最终关闭时能够在既有宽限期内汇合它们。generation
 fence 阻止旧工作向新会话发布。Pi 无法注销的宿主注册留在资源获取之外，并继续使用这些 fence。
+
+Suite composition 在 Capability 安装器之前注册 foundation 的 Session-start owner，随后在这些安装器的协议
+处理器之后注册最终 Host-shutdown hook。因此，Capability 可以先完成既有的优雅原生关闭，再由 Scope
+finalization 中断剩余工作并释放其资源。
 
 任何 Fiber 都不得在没有明确所有者的情况下越过一次 operation 继续存活。有意在发起调用结束后继续
 运行的工作必须 fork 到所属会话或能力 Scope，而不是脱离所有者的全局或 daemon Scope。既有生命周期

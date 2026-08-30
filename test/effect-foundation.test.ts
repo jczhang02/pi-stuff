@@ -8,7 +8,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Effect, Exit } from "effect";
 import { ensureUiSettingsCommand } from "../packages/pi-stuff/src/conversation-ui/index.js";
-import { EffectFoundation, installEffectFoundation } from "../packages/pi-stuff/src/shared/effect-foundation.js";
+import {
+	completeEffectFoundationInstallation,
+	EffectFoundation,
+	installEffectFoundation,
+} from "../packages/pi-stuff/src/shared/effect-foundation.js";
 import piStuffTools, { getToolUiRuntime } from "../packages/pi-stuff/src/tool-display/index.js";
 import { captureExtensionHandlers, createExtensionApi } from "./fixtures/extension-api.js";
 import { createExtensionContext } from "./fixtures/extension-context.js";
@@ -180,6 +184,26 @@ test("owned Scope finalizers run once and Host shutdown stays bounded", async ()
 	);
 	const shutdown = await Promise.race([foundation.shutdown(), Bun.sleep(250).then(() => "hung" as const)]);
 	expect(shutdown).toBeFalse();
+});
+
+test("Suite shutdown lets Capability protocols finish before Scope finalizers", async () => {
+	const host = new HostEventBus();
+	const pi = host.facade();
+	const foundation = installEffectFoundation(pi, { deferShutdown: true });
+	const context = createExtensionContext();
+	await host.fire({ reason: "startup", type: "session_start" }, context);
+	const order: string[] = [];
+	await foundation.run(
+		foundation.forkCapability(),
+		Effect.addFinalizer(() => Effect.sync(() => order.push("scope-finalizer"))),
+	);
+	pi.on("session_shutdown", () => {
+		order.push("capability-protocol");
+	});
+	completeEffectFoundationInstallation(pi);
+
+	await host.fire({ reason: "quit", type: "session_shutdown" }, context);
+	expect(order).toEqual(["capability-protocol", "scope-finalizer"]);
 });
 
 test("one hung operation cannot block a sibling Capability release", async () => {
