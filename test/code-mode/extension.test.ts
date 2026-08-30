@@ -3,10 +3,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+	BeforeAgentStartEvent,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionEvent,
+	Skill,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
@@ -15,6 +17,10 @@ import {
 	readCodeModeProjectEnabled,
 	writeCodeModeProjectEnabled,
 } from "../../packages/pi-stuff/src/code-mode/settings.js";
+import {
+	applyContextPromptContributions,
+	__test as promptContributionsTest,
+} from "../../packages/pi-stuff/src/context-management/prompt-contributions.js";
 import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type {
 	SuiteToolDefinitionRegistry,
@@ -41,6 +47,7 @@ const registry: SuiteToolDefinitionRegistry = {
 };
 
 afterEach(async () => {
+	promptContributionsTest.clear();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
@@ -50,7 +57,7 @@ async function project(): Promise<string> {
 	return root;
 }
 
-function loadExtension(surface: SuiteToolSurfaceController) {
+function loadExtension(surface: SuiteToolSurfaceController, definitionRegistry = registry) {
 	const commands = new Map<string, Command>();
 	const events = new Map<string, EventHandler[]>();
 	const { host, tools } = toolRegistrationHarness();
@@ -69,7 +76,7 @@ function loadExtension(surface: SuiteToolSurfaceController) {
 		sendMessage: () => undefined,
 	};
 	const { api } = createSuiteToolRegistrationTracker({ ...hostApi, getAllTools: () => [] });
-	piStuffCodeMode(api, { registry, surface });
+	piStuffCodeMode(api, { registry: definitionRegistry, surface });
 	return { api, commands, events, tools };
 }
 
@@ -106,6 +113,39 @@ test("model guidance discovers image Tools with a short query and returns their 
 	expect(search.parameters).toMatchObject({
 		properties: { query: { description: 'Short intent phrase, e.g. "view image"' } },
 	});
+});
+
+test("the installed Code Mode extension contributes Host Skill Discovery", async () => {
+	const loaded = loadExtension(
+		{
+			disableEnvelope: () => {},
+			enableEnvelope: () => {},
+			isEnvelopeEnabled: (name) => name === "codemode",
+		},
+		{ ...registry, isActive: (name) => name === "read" },
+	);
+	// SAFETY: this fixture supplies every Skill field read by Pi's public formatter.
+	const target = {
+		baseDir: "/agent/skills",
+		description: "target description",
+		disableModelInvocation: false,
+		filePath: "/agent/skills/target/SKILL.md",
+		name: "target",
+		sourceInfo: { path: "/agent/skills/target/SKILL.md", source: "user" },
+	} as Skill;
+	// SAFETY: this fixture supplies every event field read by the public contribution seam.
+	const event = {
+		prompt: "task",
+		systemPrompt: "Host",
+		systemPromptOptions: {
+			cwd: "/workspace",
+			selectedTools: ["codemode", "tool_search"],
+			skills: [target],
+		},
+		type: "before_agent_start",
+	} as BeforeAgentStartEvent;
+	const projected = await applyContextPromptContributions(loaded.api, event, context("/workspace"));
+	expect(projected?.systemPrompt).toContain("<name>target</name>");
 });
 
 test("bare /codemode owns the interactive dialog path and status is no longer a command", async () => {

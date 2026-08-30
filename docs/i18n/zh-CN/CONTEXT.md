@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: acb23cec47f996612d1cdcdcba93f2e64b3aadbdab721134c29e069c44be2b85 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 2ed37fd8bf7186106d6e437a84aa2d5c957f0fe77c3887e0036bf0fa510aeee6 -->
 
 # Pi Stuff
 
@@ -68,6 +68,11 @@ _避免使用_：console warning、transcript message、notification log
 **Runtime Resource**：
 Host 通过 Pi Package 契约发现的 Extension、Skill、Prompt Template 或 Theme。
 _避免使用_：asset、plugin file
+
+**Skill Discovery**：
+由 Host 拥有、位于模型上下文中的已启用且允许模型调用的 Skill 目录，展示每项 Skill 的名称、描述和位置，
+使 Agent 可以选择并读取匹配的 Skill。它只展示 Skill 元数据，不会预先读取 Skill 正文。
+_避免使用_：Skill search、eager Skill loading
 
 **RTK Runtime**：
 独立安装并经过认证的 RTK 可执行文件。它的 CLI 负责 RTK 命令改写与输出优化；Suite 只适配 Host，不复制其

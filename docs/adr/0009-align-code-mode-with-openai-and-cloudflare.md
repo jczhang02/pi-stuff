@@ -30,6 +30,14 @@ When Code Mode is on:
 When Code Mode is off, Pi receives the exact original Tool list and order. Code Mode changes visibility only. It does
 not grant a Tool new authority, bypass its validation, or decide whether its effect is safe to repeat.
 
+Tool virtualization must not weaken Host-owned Skill Discovery. When `read` remains active in Code Mode's virtual
+Tool set and the Host supplies Skill Discovery inputs for an Agent start, the Provider prompt receives the same
+Host-loaded, model-invocable Skill names, descriptions, and locations as direct mode. Later provider-only
+continuations may reuse that Host snapshot. A provider-only automatic first turn with no Host snapshot fails open
+rather than rediscovering Skills or depending on Host internals. Code Mode adapts the catalog through Context
+Management and Pi's public formatter; it does not expose top-level `read` or change `--no-skills`, resource enablement,
+`disable-model-invocation`, explicit `/skill`, or custom-prompt behavior.
+
 ### Configuration and dialog
 
 Code Mode uses one boolean value with this precedence, from highest to lowest:
@@ -181,6 +189,8 @@ keep Package-owned Tool schemas outside the envelope.
 
 - When Code Mode is on, Package-owned Tool schemas leave the provider surface without changing Tool authority,
   validation, lifecycle, or visible results.
+- The full envelope preserves Host-owned Skill Discovery from Host-supplied Skill snapshots whenever virtual Read
+  remains active; only the invocation path changes to nested `tools.read`.
 - The Suite maintains one active Tool catalog and one invocation seam for direct and nested calls.
 - Project overrides remain isolated while one Pi-visible global default avoids repeating the same choice per project.
 - Durable approval and recovery state prevents ambiguous effects from being repeated automatically.

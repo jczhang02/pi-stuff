@@ -13,6 +13,7 @@ to find its current Module. Current authority is indexed in [`docs/README.md`](.
 
 - [Code Mode: Cloudflare/OpenAI design](code-mode-cloudflare-openai-design-20260815.md)
 - [Code Mode image benchmark](code-mode-image-benchmark-20260827.md)
+- [Skill Discovery real-model benchmark](skill-discovery-benchmark-20260830.md)
 - [Repository code-volume reduction](code-volume-reduction-20260823.md)
 - [Live-only Thoughts feasibility](live-only-thoughts-feasibility-20260813.md)
 - [Pi latest Markdown transform](pi-latest-markdown-transform-20260820.md)
