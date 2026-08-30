@@ -5,35 +5,30 @@ import {
 	type NotificationClock,
 	NotificationRuntime,
 	type NotificationRuntimeSettings,
-	type NotificationTimer,
 	reduceWorkCycle,
 } from "../../packages/pi-stuff/src/notification/runtime.ts";
 
 class FakeClock implements NotificationClock {
 	private current = 0;
-	private readonly timers = new Set<NotificationTimer & { at: number; callback: () => void; cancelled: boolean }>();
-	unrefCount = 0;
+	private readonly timers = new Set<{ at: number; callback: () => void; cancelled: boolean }>();
+	cancelCount = 0;
 
 	now(): number {
 		return this.current;
 	}
 
-	setTimeout(callback: () => void, delayMs: number): NotificationTimer {
+	schedule(callback: () => void, delayMs: number): () => void {
 		const timer = {
 			at: this.current + delayMs,
 			callback,
 			cancelled: false,
-			unref: () => {
-				this.unrefCount += 1;
-			},
 		};
 		this.timers.add(timer);
-		return timer;
-	}
-
-	clearTimeout(timer: NotificationTimer): void {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		(timer as { cancelled: boolean }).cancelled = true;
+		return () => {
+			if (timer.cancelled) return;
+			timer.cancelled = true;
+			this.cancelCount += 1;
+		};
 	}
 
 	advance(milliseconds: number): void {
@@ -212,6 +207,7 @@ test("session replacement, reload, or shutdown releases a pending alert", () => 
 	runtime.observe({ type: "assistant_finalized", stopReason: "stop" });
 	runtime.observe({ type: "agent_settled" });
 	runtime.dispose();
+	expect(clock.cancelCount).toBe(1);
 	clock.advance(10_000);
 
 	expect(alerts).toEqual([]);
@@ -354,7 +350,7 @@ test("short, automatic, disabled, and outcome-disabled work remains silent", () 
 	}
 });
 
-test("a pending timer is unreferenced and a failed quiet check degrades silently", () => {
+test("a failed quiet check and delivery degrade silently", () => {
 	const { clock, runtime } = notificationFixture(
 		{ minimumDurationMs: 0 },
 		() => {
@@ -368,7 +364,6 @@ test("a pending timer is unreferenced and a failed quiet check degrades silently
 	runtime.observe({ type: "user_work" });
 	runtime.observe({ stopReason: "stop", type: "assistant_finalized" });
 	runtime.observe({ type: "agent_settled" });
-	expect(clock.unrefCount).toBe(1);
 	expect(() => clock.advance(2_000)).not.toThrow();
 
 	const { clock: deliveryClock, runtime: deliveryRuntime } = notificationFixture(

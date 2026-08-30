@@ -8,7 +8,7 @@ import {
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
 import { boundTerminalLine } from "../tool-display/index.js";
-import type { NotificationSettings, NotificationSettingsStore } from "./settings.js";
+import type { NotificationSettings, NotificationSettingsChanges, NotificationSettingsStore } from "./settings.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
@@ -21,6 +21,10 @@ const ON_OFF_VALUES = ["on", "off"] as const;
 export interface NotificationSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
 	readonly onTest?: () => void;
+}
+
+export interface NotificationSettingsActions {
+	update(patch: NotificationSettingsChanges): Promise<void>;
 }
 
 function settingsHint(width: number): string {
@@ -132,6 +136,7 @@ function settingPatch(id: string, value: string): Partial<Omit<NotificationSetti
 }
 
 class NotificationSettingsDialog implements CommandDialogComponent {
+	private readonly actions: NotificationSettingsActions;
 	private readonly context: CommandDialogViewContext<void>;
 	private disposed = false;
 	private error = "";
@@ -144,8 +149,10 @@ class NotificationSettingsDialog implements CommandDialogComponent {
 	constructor(
 		context: CommandDialogViewContext<void>,
 		settings: NotificationSettingsStore,
+		actions: NotificationSettingsActions,
 		options: NotificationSettingsViewOptions,
 	) {
+		this.actions = actions;
 		this.context = context;
 		this.options = options;
 		this.settings = settings;
@@ -214,7 +221,7 @@ class NotificationSettingsDialog implements CommandDialogComponent {
 		const generation = (this.generations.get(id) ?? 0) + 1;
 		this.generations.set(id, generation);
 		this.error = "";
-		void this.settings.update(patch).catch((error) => {
+		void this.actions.update(patch).catch((error) => {
 			if (this.generations.get(id) !== generation) return;
 			const message = boundTerminalLine(String(error), 160) || "Unable to save Notification setting.";
 			if (this.disposed) {
@@ -237,10 +244,11 @@ class NotificationSettingsDialog implements CommandDialogComponent {
 
 export function createNotificationSettingsView(
 	settings: NotificationSettingsStore,
+	actions: NotificationSettingsActions,
 	options: NotificationSettingsViewOptions = {},
 ): CommandDialogView<void> {
 	return {
 		priority: "normal",
-		create: (context) => new NotificationSettingsDialog(context, settings, options),
+		create: (context) => new NotificationSettingsDialog(context, settings, actions, options),
 	};
 }

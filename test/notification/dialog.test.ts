@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { createNotificationSettingsView } from "../../packages/pi-stuff/src/notification/notification-settings-dialog.ts";
 import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notification/settings.ts";
@@ -27,7 +28,11 @@ test("Notification settings use one owned native Command Dialog", async () => {
 		theme,
 		tui: { terminal },
 	} as CommandDialogViewContext<void>;
-	const component = createNotificationSettingsView(settings, { onTest: () => (tests += 1) }).create(context);
+	const component = createNotificationSettingsView(
+		settings,
+		{ update: (patch) => Effect.runPromise(settings.update(patch)) },
+		{ onTest: () => (tests += 1) },
+	).create(context);
 
 	const initial = component.render(72).join("\n");
 	expect(initial).toContain("Notifications");

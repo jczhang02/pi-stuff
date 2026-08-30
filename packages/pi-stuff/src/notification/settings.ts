@@ -1,11 +1,16 @@
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isJsonInputValue, type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { mergedSettingsPath, mergeNamespaceRecord, NamespacedSettingsStore } from "../shared/settings-io/index.js";
-import { acquireSettingsLock } from "../shared/settings-io/lock.js";
+import {
+	EffectNamespacedSettingsStore,
+	type EffectNamespaceStoreOptions,
+	mergedSettingsPath,
+	readTextFileEffect,
+} from "../shared/settings-io/index.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 import type { TerminalDeliveryMode } from "./transport.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-notification.json";
@@ -38,8 +43,8 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 	tmuxNotification: true,
 };
 
-type SettingsWriter = (path: string, settings: NotificationSettings) => Promise<void>;
-type SettingsChanges = {
+export type NotificationSettingsWriter = (path: string, settings: NotificationSettings) => Effect.Effect<void, Error>;
+export type NotificationSettingsChanges = {
 	-readonly [Id in Exclude<keyof NotificationSettings, "schemaVersion">]?: NotificationSettings[Id];
 };
 
@@ -113,17 +118,17 @@ function parseSettings(value: JsonInputValue): NotificationSettings {
 	};
 }
 
-async function writeSettings(path: string, settings: NotificationSettings): Promise<void> {
-	await mergeNamespaceRecord(path, NOTIFICATION_NAMESPACE, toRecord(settings));
-}
-
 /** Read the legacy `pi-stuff-notification.json` without mutating user configuration. */
-async function readLegacySettings(path: string): Promise<NotificationSettings | undefined> {
-	try {
-		return parseSettings(parseJsonValue(await readFile(path, "utf8")));
-	} catch {
-		return undefined;
-	}
+function readLegacySettings(path: string): Effect.Effect<NotificationSettings | undefined> {
+	return Effect.catch(
+		Effect.flatMap(readTextFileEffect(path), (content) =>
+			Effect.try({
+				try: () => parseSettings(parseJsonValue(content)),
+				catch: normalizeError,
+			}),
+		),
+		() => Effect.succeed(undefined),
+	);
 }
 
 function toRecord(settings: NotificationSettings): NotificationSettingsRecord {
@@ -146,37 +151,43 @@ function reportSettingsDiagnostic(diagnostic: Parameters<typeof reportDiagnostic
 
 /** Loading is read-only; only direct user updates create the settings file. */
 export class NotificationSettingsStore {
-	private readonly store: NamespacedSettingsStore<NotificationSettingsRecord>;
+	private readonly store: EffectNamespacedSettingsStore<NotificationSettingsRecord>;
 
-	private constructor(store: NamespacedSettingsStore<NotificationSettingsRecord>) {
+	private constructor(store: EffectNamespacedSettingsStore<NotificationSettingsRecord>) {
 		this.store = store;
 	}
 
-	static async load(
+	static load(
 		path = mergedSettingsPath(getAgentDir()),
-		writer: SettingsWriter = writeSettings,
-	): Promise<NotificationSettingsStore> {
-		const store = await NamespacedSettingsStore.load<NotificationSettingsRecord>(
-			NOTIFICATION_NAMESPACE,
-			toRecord(DEFAULT_NOTIFICATION_SETTINGS),
-			normalizeRecord,
-			{
-				acquireLock: acquireSettingsLock,
-				legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
-				legacyReader: async (legacyPath) => {
-					const settings = await readLegacySettings(legacyPath);
-					return settings ? toRecord(settings) : undefined;
-				},
-				path,
-				reportDiagnostic: reportSettingsDiagnostic,
-				writer: async (settingsPath, _namespace, record) => writer(settingsPath, parseSettings(record)),
-			},
+		writer?: NotificationSettingsWriter,
+	): Effect.Effect<NotificationSettingsStore, Error> {
+		const options: EffectNamespaceStoreOptions = {
+			acquireLock: acquireSettingsLockEffect,
+			legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
+			legacyReader: (legacyPath) =>
+				Effect.map(readLegacySettings(legacyPath), (settings) => (settings ? toRecord(settings) : undefined)),
+			path,
+			reportDiagnostic: reportSettingsDiagnostic,
+		};
+		if (writer) {
+			Object.assign(options, {
+				writer: (settingsPath: string, _namespace: string, record: JsonInputObject) =>
+					writer(settingsPath, parseSettings(record)),
+			});
+		}
+		return Effect.map(
+			EffectNamespacedSettingsStore.load(
+				NOTIFICATION_NAMESPACE,
+				toRecord(DEFAULT_NOTIFICATION_SETTINGS),
+				normalizeRecord,
+				options,
+			),
+			(store) => new NotificationSettingsStore(store),
 		);
-		return new NotificationSettingsStore(store);
 	}
 
 	static memory(value: NotificationSettings = DEFAULT_NOTIFICATION_SETTINGS): NotificationSettingsStore {
-		return new NotificationSettingsStore(NamespacedSettingsStore.memory(toRecord(value)));
+		return new NotificationSettingsStore(EffectNamespacedSettingsStore.memory(toRecord(value)));
 	}
 
 	get(): NotificationSettings {
@@ -187,11 +198,15 @@ export class NotificationSettingsStore {
 		return this.store.subscribe((record) => listener(parseSettings(record)));
 	}
 
-	async update(patch: SettingsChanges): Promise<void> {
-		await this.store.updateWith((current) => normalizeRecord({ ...current, ...patch }));
+	update(patch: NotificationSettingsChanges): Effect.Effect<void, Error> {
+		return Effect.asVoid(this.store.updateWith((current) => normalizeRecord({ ...current, ...patch })));
 	}
 
-	async whenIdle(): Promise<void> {
-		await this.store.whenIdle();
+	whenIdle(): Effect.Effect<void> {
+		return this.store.whenIdle();
 	}
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

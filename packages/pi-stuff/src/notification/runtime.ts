@@ -1,11 +1,6 @@
-export interface NotificationTimer {
-	unref?(): void;
-}
-
 export interface NotificationClock {
 	now(): number;
-	setTimeout(callback: () => void, delayMs: number): NotificationTimer;
-	clearTimeout(timer: NotificationTimer): void;
+	schedule(callback: () => void, delayMs: number): () => void;
 }
 
 export interface NotificationRuntimeSettings {
@@ -165,7 +160,7 @@ export class NotificationRuntime {
 	private readonly isQuiet: () => boolean;
 	private readonly notify: (alert: NotificationAlert) => void;
 	private state: WorkCycleState = createWorkCycleState();
-	private timer: NotificationTimer | undefined;
+	private cancelTimer: (() => void) | undefined;
 
 	constructor(options: {
 		readonly clock: NotificationClock;
@@ -195,10 +190,10 @@ export class NotificationRuntime {
 				? { now: this.clock.now(), type: event.type }
 				: event,
 		);
-		if (this.timer && (this.state.generation !== previous.generation || this.state.status !== "pending")) {
+		if (this.cancelTimer && (this.state.generation !== previous.generation || this.state.status !== "pending")) {
 			this.clearTimer();
 		}
-		if (event.type !== "agent_settled" || this.state.status !== "pending" || this.timer) return;
+		if (event.type !== "agent_settled" || this.state.status !== "pending" || this.cancelTimer) return;
 		if (!this.state.includesUserWork) {
 			this.state = reduceWorkCycle(this.state, { type: "clear" });
 			return;
@@ -207,15 +202,16 @@ export class NotificationRuntime {
 	}
 
 	private clearTimer(): void {
-		if (!this.timer) return;
-		this.clock.clearTimeout(this.timer);
-		this.timer = undefined;
+		const cancel = this.cancelTimer;
+		this.cancelTimer = undefined;
+		cancel?.();
 	}
 
 	private schedule(cycle: PendingWorkCycle): void {
 		const delayMs = this.getSettings().gracePeriodMs;
-		const timer = this.clock.setTimeout(() => {
-			if (this.timer === timer) this.timer = undefined;
+		const cancel = this.clock.schedule(() => {
+			if (this.cancelTimer !== cancel) return;
+			this.cancelTimer = undefined;
 			let quiet = false;
 			try {
 				quiet = this.isQuiet();
@@ -250,7 +246,6 @@ export class NotificationRuntime {
 				// Notification delivery is observational and cannot fail Agent work.
 			}
 		}, delayMs);
-		this.timer = timer;
-		timer.unref?.();
+		this.cancelTimer = cancel;
 	}
 }

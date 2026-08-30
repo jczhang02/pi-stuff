@@ -6,11 +6,13 @@ import type {
 	TerminalInputHandler,
 } from "@earendil-works/pi-coding-agent";
 import { createEventBus } from "@earendil-works/pi-coding-agent";
+import { listenForAgentWorkOriginQueries } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import { getUiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	installNotificationCapability,
 	type NotificationHost,
 } from "../../packages/pi-stuff/src/notification/index.js";
+import type { NotificationClock } from "../../packages/pi-stuff/src/notification/runtime.js";
 import {
 	DEFAULT_NOTIFICATION_SETTINGS,
 	NotificationSettingsStore,
@@ -52,7 +54,22 @@ function harness(): NotificationHarness {
 test("Notification owns a dedicated settings command and releases its terminal observer", async () => {
 	const host = harness();
 	const settings = NotificationSettingsStore.memory(DEFAULT_NOTIFICATION_SETTINGS);
-	await installNotificationCapability(host.api, settings);
+	let cancelledTimers = 0;
+	let scheduledTimers = 0;
+	const clock: NotificationClock = {
+		now: () => 0,
+		schedule: () => {
+			scheduledTimers += 1;
+			let cancelled = false;
+			return () => {
+				if (cancelled) return;
+				cancelled = true;
+				cancelledTimers += 1;
+			};
+		},
+	};
+	const removeOrigin = listenForAgentWorkOriginQueries(host.api, () => "user");
+	await installNotificationCapability(host.api, settings, clock);
 
 	expect(getUiSettingRegistry(host.api).list()).toEqual([]);
 	expect(host.commands.has("notifications")).toBeTrue();
@@ -72,6 +89,7 @@ test("Notification owns a dedicated settings command and releases its terminal o
 	expect(notices).toEqual(["/notifications requires interactive TUI mode."]);
 
 	let terminalInput: TerminalInputHandler | undefined;
+	let terminalObserverRemovals = 0;
 	const context = createExtensionContext({
 		cwd: "/project",
 		hasPendingMessages: () => false,
@@ -84,6 +102,7 @@ test("Notification owns a dedicated settings command and releases its terminal o
 			onTerminalInput: (handler: TerminalInputHandler) => {
 				terminalInput = handler;
 				return () => {
+					terminalObserverRemovals += 1;
 					if (terminalInput === handler) terminalInput = undefined;
 				};
 			},
@@ -94,9 +113,28 @@ test("Notification owns a dedicated settings command and releases its terminal o
 	}
 	expect(terminalInput).toBeFunction();
 	expect(host.handlers.get("agent_settled")).toHaveLength(1);
+	for (const handler of host.handlers.get("agent_start") ?? []) {
+		await handler({ type: "agent_start" }, context);
+	}
+	for (const handler of host.handlers.get("message_start") ?? []) {
+		await handler({ message: { content: "work", role: "user", timestamp: 0 }, type: "message_start" }, context);
+	}
+	for (const handler of host.handlers.get("agent_settled") ?? []) {
+		await handler({ type: "agent_settled" }, context);
+	}
+	expect(scheduledTimers).toBe(1);
+	for (const handler of host.handlers.get("session_start") ?? []) {
+		await handler({ reason: "new", type: "session_start" }, context);
+	}
+	expect(cancelledTimers).toBe(1);
+	expect(terminalObserverRemovals).toBe(1);
+	expect(terminalInput).toBeFunction();
+	expect(host.handlers.get("agent_settled")).toHaveLength(1);
 
 	for (const handler of host.handlers.get("session_shutdown") ?? []) {
 		await handler({ reason: "quit", type: "session_shutdown" }, context);
 	}
 	expect(terminalInput).toBeUndefined();
+	expect(terminalObserverRemovals).toBe(2);
+	removeOrigin();
 });

@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import {
 	DEFAULT_NOTIFICATION_SETTINGS,
 	NotificationSettingsStore,
@@ -17,7 +18,7 @@ test("defaults stay in memory until a user changes a setting", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
 	roots.push(root);
 	const path = join(root, "notification.json");
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 
 	expect(store.get()).toEqual({
 		completionAlerts: true,
@@ -33,7 +34,7 @@ test("defaults stay in memory until a user changes a setting", async () => {
 	});
 	await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
-	await store.update({ enabled: false });
+	await Effect.runPromise(store.update({ enabled: false }));
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: { ...store.get(), enabled: false } });
 	expect((await stat(path)).mode & 0o777).toBe(0o600);
 	expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
@@ -56,11 +57,11 @@ test("schema 2 settings gain tmux notifications without a startup write", async 
 	};
 	await writeFile(path, `${JSON.stringify({ notification: versionTwo })}\n`);
 
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 
 	expect(store.get()).toEqual({ ...versionTwo, schemaVersion: 3, tmuxNotification: true });
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: versionTwo });
-	await store.update({ tmuxNotification: false });
+	await Effect.runPromise(store.update({ tmuxNotification: false }));
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: store.get() });
 });
 
@@ -71,18 +72,25 @@ test("two failed queued updates restore the last durable settings", async () => 
 	let writes = 0;
 	const { promise: firstWriteStarted, resolve: reportFirstWriteStarted } = Promise.withResolvers<void>();
 	const { promise: firstWriteRelease, resolve: releaseFirstWrite } = Promise.withResolvers<void>();
-	const store = await NotificationSettingsStore.load(path, async () => {
-		writes += 1;
-		if (writes === 1) {
-			reportFirstWriteStarted();
-			await firstWriteRelease;
-		}
-		throw new Error(`settings write ${String(writes)} failed`);
-	});
+	const store = await Effect.runPromise(
+		NotificationSettingsStore.load(path, () =>
+			Effect.tryPromise({
+				try: async () => {
+					writes += 1;
+					if (writes === 1) {
+						reportFirstWriteStarted();
+						await firstWriteRelease;
+					}
+					throw new Error(`settings write ${String(writes)} failed`);
+				},
+				catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			}),
+		),
+	);
 
-	const first = store.update({ enabled: false });
+	const first = Effect.runPromise(store.update({ enabled: false }));
 	await firstWriteStarted;
-	const second = store.update({ terminalBell: true });
+	const second = Effect.runPromise(store.update({ terminalBell: true }));
 	releaseFirstWrite();
 	const results = await Promise.allSettled([first, second]);
 
@@ -96,12 +104,15 @@ test("independent stores apply patches to the latest durable settings", async ()
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
 	roots.push(root);
 	const path = join(root, "notification.json");
-	const first = await NotificationSettingsStore.load(path);
-	const second = await NotificationSettingsStore.load(path);
+	const first = await Effect.runPromise(NotificationSettingsStore.load(path));
+	const second = await Effect.runPromise(NotificationSettingsStore.load(path));
 
-	await Promise.all([first.update({ enabled: false }), second.update({ terminalBell: true })]);
+	await Promise.all([
+		Effect.runPromise(first.update({ enabled: false })),
+		Effect.runPromise(second.update({ terminalBell: true })),
+	]);
 
-	expect((await NotificationSettingsStore.load(path)).get()).toEqual({
+	expect((await Effect.runPromise(NotificationSettingsStore.load(path))).get()).toEqual({
 		...DEFAULT_NOTIFICATION_SETTINGS,
 		enabled: false,
 		terminalBell: true,
@@ -112,23 +123,26 @@ test("overlapping updates to one field retain the latest requested value", async
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
 	roots.push(root);
 	const path = join(root, "notification.json");
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 
-	await Promise.all([store.update({ enabled: false }), store.update({ enabled: true })]);
+	await Promise.all([
+		Effect.runPromise(store.update({ enabled: false })),
+		Effect.runPromise(store.update({ enabled: true })),
+	]);
 
 	expect(store.get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
-	expect((await NotificationSettingsStore.load(path)).get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
+	expect((await Effect.runPromise(NotificationSettingsStore.load(path))).get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
 });
 
 test("unchanged updates do not write or notify", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
 	roots.push(root);
 	const path = join(root, "notification.json");
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 	const seen: boolean[] = [];
 	store.subscribe((settings) => seen.push(settings.enabled));
 
-	await store.update({ enabled: true });
+	await Effect.runPromise(store.update({ enabled: true }));
 
 	expect(seen).toEqual([]);
 	await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -150,7 +164,7 @@ test("legacy sound settings migrate in memory and persist only after direct inpu
 	};
 	await writeFile(path, `${JSON.stringify({ notification: legacy })}\n`);
 
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 
 	expect(store.get()).toEqual({
 		completionAlerts: true,
@@ -166,7 +180,7 @@ test("legacy sound settings migrate in memory and persist only after direct inpu
 	});
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: legacy });
 
-	await store.update({ responsePreview: true });
+	await Effect.runPromise(store.update({ responsePreview: true }));
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 		notification: { ...store.get(), responsePreview: true },
 	});
@@ -179,13 +193,13 @@ test("the legacy Notification file stays read-only until direct input", async ()
 	const legacyPath = join(root, "pi-stuff-notification.json");
 	await writeFile(legacyPath, `${JSON.stringify(DEFAULT_NOTIFICATION_SETTINGS)}\n`);
 
-	const store = await NotificationSettingsStore.load(path);
+	const store = await Effect.runPromise(NotificationSettingsStore.load(path));
 
 	expect(store.get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
 	await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 	expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
 
-	await store.update({ responsePreview: true });
+	await Effect.runPromise(store.update({ responsePreview: true }));
 	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 		notification: { ...DEFAULT_NOTIFICATION_SETTINGS, responsePreview: true },
 	});
