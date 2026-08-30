@@ -15,7 +15,7 @@ test("Agent Tool rows use short targets and honest lifecycle summaries", () => {
 	const presentation = createAgentToolPresentation();
 	const fullTask = "Inspect /tmp/pi-run/deep/sample.txt and verify every checksum without changing the file.";
 	expect(presentation.target?.({ agent: "reviewer", description: "Verify sample checksums", task: fullTask })).toBe(
-		"reviewer · Verify sample checksums",
+		"launch · reviewer · Verify sample checksums",
 	);
 	expect(
 		presentation.target?.({
@@ -24,7 +24,7 @@ test("Agent Tool rows use short targets and honest lifecycle summaries", () => {
 				{ agent: "writer", description: "Update fixture docs", task: "Update every relevant fixture document." },
 			],
 		}),
-	).toBe("reviewer · 复核样本 🧪, writer · Update fixture docs");
+	).toBe("launch · reviewer · 复核样本 🧪, writer · Update fixture docs");
 	expect(
 		presentation.target?.({
 			tasks: [
@@ -35,7 +35,10 @@ test("Agent Tool rows use short targets and honest lifecycle summaries", () => {
 				{ agent: "reviewer", task: "Inspect the partial payload." },
 			],
 		}),
-	).toBe("reviewer · Inspect the partial payload.");
+	).toBe("launch · reviewer · Inspect the partial payload.");
+	expect(presentation.target?.({ agent: "reviewer", foreground: true, task: "Review" })).toBe(
+		"run · reviewer · Review",
+	);
 	expect(presentation.target?.({})).toBe("");
 	const longReport = {
 		content: [
@@ -88,8 +91,14 @@ test("Agent expansion lists full member tasks and bounds foreground evidence thr
 		"tester · Run the complete test matrix. · launched",
 	]);
 	const foreground = {
-		content: [{ type: "text" as const, text: "Verified the implementation.\nAll checks passed." }],
+		content: [
+			{
+				type: "text" as const,
+				text: "Agent reviewer completed.\nVerified the implementation.\nAll checks passed.",
+			},
+		],
 		// SAFETY: this fixture supplies the exact Agent result fields read by presentation.
+		// SAFETY: this fixture supplies the exact public Agent result fields read by presentation.
 		details: {
 			mode: "single",
 			results: [{ agent: "reviewer", error: undefined, exitCode: 0, task: "Review the complete change." }],
@@ -107,6 +116,33 @@ test("Agent expansion lists full member tasks and bounds foreground evidence thr
 		"Verified the implementation.",
 		"All checks passed.",
 	]);
+	expect(
+		presentation.detailSections?.({ agent: "reviewer", foreground: true, task: "Review" }, foreground, "success"),
+	).toEqual([
+		{ lines: ["reviewer · Review · finished"], title: "Task" },
+		{ lines: ["Verified the implementation.", "All checks passed."], title: "Result" },
+	]);
+
+	const grouped = {
+		content: [
+			{
+				type: "text" as const,
+				text: "1. reviewer — completed\nReview evidence.\n\n2. tester — completed\nTest evidence.",
+			},
+		],
+		// SAFETY: this fixture supplies the exact public Agent result fields read by presentation.
+		details: {
+			mode: "parallel",
+			results: [
+				{ agent: "reviewer", exitCode: 0, task: "Review the complete change." },
+				{ agent: "tester", exitCode: 0, task: "Run the complete test matrix." },
+			],
+		} as never,
+	};
+	const groupedDetail = presentation.detailLines?.({ ...parallelArgs, foreground: true }, grouped, "success") ?? [];
+	expect(groupedDetail.join("\n")).toContain("Review evidence.");
+	expect(groupedDetail.join("\n")).toContain("Test evidence.");
+	expect(groupedDetail.join("\n")).not.toMatch(/\d+\..+completed/u);
 });
 
 test("Agent Tool activities reflect launches, refusals, and foreground runs", () => {
@@ -169,7 +205,7 @@ test("Agent Tool activities reflect launches, refusals, and foreground runs", ()
 		{
 			category: "launch-agent",
 			count: 3,
-			target: "reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
+			target: "launch · reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
 		},
 	]);
 	expect(presentation.summarize?.(parallelArgs, launched, "success", 18_000)).toBe("3 launched");
@@ -184,7 +220,7 @@ test("Agent Tool activities reflect launches, refusals, and foreground runs", ()
 		{
 			category: "run-agent",
 			count: 2,
-			target: "reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
+			target: "run · reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
 		},
 	]);
 	expect(

@@ -16,6 +16,7 @@ import type {
 	ToolSummaryProjection,
 } from "./contract.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
+import { normalizeOperationIssueReason } from "./operation-block-evidence.js";
 import {
 	EMBEDDED_HOST_IMAGE_KEYS,
 	EMBEDDED_TOOL_RESULT,
@@ -257,12 +258,15 @@ function renderEnvelopeFallback(
 ): Component {
 	if (envelope.name === "codemode" && isIssueState(state)) {
 		const code = isRuntimeString(args["code"]) ? args["code"] : "";
-		const reason = oneLine(
-			result.content
-				.filter((item): item is { readonly text: string; readonly type: "text" } => item.type === "text")
-				.flatMap((item) => item.text.split(/\r?\n/u))
-				.find((line) => line.trim().length > 0) ?? state,
-		);
+		const reason =
+			normalizeOperationIssueReason(
+				oneLine(
+					result.content
+						.filter((item): item is { readonly text: string; readonly type: "text" } => item.type === "text")
+						.flatMap((item) => item.text.split(/\r?\n/u))
+						.find((line) => line.trim().length > 0) ?? state,
+				),
+			) || state;
 		const label = state === "rejected" ? "Rejected" : state === "cancelled" ? "Cancelled" : "Error";
 		return new CachedToolRow(theme, {
 			active: false,

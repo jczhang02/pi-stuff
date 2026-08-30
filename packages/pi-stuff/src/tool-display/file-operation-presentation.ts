@@ -10,6 +10,7 @@ import {
 	operationDetailString,
 	operationDetailStrings,
 	operationIssueLine,
+	operationLineCount,
 } from "./operation-block-evidence.js";
 import type { OperationBlockRowModel, OperationEvidenceLine } from "./operation-block-renderer.js";
 import { oneLine } from "./tool-text.js";
@@ -24,7 +25,8 @@ function filePath(member: PlannedToolActivityMember): string {
 	return (
 		operationArgument(member.args, "path") ||
 		operationArgument(member.args, "file_path") ||
-		operationArgument(member.args, "value")
+		operationArgument(member.args, "value") ||
+		member.id
 	);
 }
 
@@ -42,7 +44,10 @@ function writeModel(
 	if (state === "running") {
 		return baseOperationBlockModel("Write", path, state, expanded, [{ kind: "outcome", text: "Writing…" }]);
 	}
-	const verified = state === "success" ? operationArgument(member.args, "content") : verifiedWriteContent(result);
+	const verified =
+		state === "success"
+			? (verifiedWriteContent(result) ?? operationArgument(member.args, "content"))
+			: verifiedWriteContent(result);
 	if (verified === undefined) {
 		const evidence =
 			state === "success"
@@ -54,8 +59,8 @@ function writeModel(
 	const preview = boundedOperationLines(lines, expanded, 10);
 	const partial =
 		state === "success"
-			? `${String(lines.length)} lines written`
-			: `Partial write · ${String(lines.length)} lines verified`;
+			? `${operationLineCount(lines.length)} written`
+			: `Partial write · ${operationLineCount(lines.length)} verified`;
 	const evidence: OperationEvidenceLine[] = [{ kind: "outcome", text: partial }];
 	evidence.push(...preview.visible.map((text, index) => ({ kind: "source" as const, newLine: index + 1, text })));
 	if (preview.omitted > 0) {
@@ -160,7 +165,7 @@ function patchIdentity(input: string, result: AgentToolResult<unknown> | undefin
 	if (rename.length === 1) return rename[0]?.newPath ?? rename[0]?.path ?? "";
 	const targets = structuredPatchFiles(result).map((file) => file.path);
 	const paths = targets.length > 0 ? targets : patchTargets(input);
-	return paths.length === 1 ? (paths[0] ?? "") : `${String(paths.length)} files`;
+	return paths.length === 0 ? "" : paths.length === 1 ? (paths[0] ?? "") : `${String(paths.length)} files`;
 }
 
 function patchModel(
@@ -170,7 +175,7 @@ function patchModel(
 	expanded: boolean,
 ): OperationBlockRowModel {
 	const input = patchInput(member);
-	const identity = patchIdentity(input, result);
+	const identity = patchIdentity(input, result) || member.id;
 	if (state === "running") {
 		return baseOperationBlockModel("Patch", identity, state, expanded, [{ kind: "outcome", text: "Applying…" }]);
 	}

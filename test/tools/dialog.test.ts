@@ -370,6 +370,38 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 	component.dispose?.();
 });
 
+test("/tools retains bounded operation identity and removes state-equivalent evidence", () => {
+	const runtime = new ToolUiRuntime();
+	runtime.registerActivity("subagent", { categories: ["run-agent"], classify: () => [] });
+	runtime.registerDetailPresentation("subagent", {
+		label: () => "Agent",
+		summary: () => "finished · 18s",
+		target: () => "run · reviewer · inspect the complete implementation",
+	});
+	runtime.markRendererAttached("subagent");
+	runtime.indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "agent-run", name: "subagent", arguments: {} }],
+			},
+			{ role: "toolResult", toolCallId: "agent-run", content: [{ type: "text", text: "report" }], details: {} },
+		],
+		true,
+	);
+	const component = createToolDialogView(runtime).create(contextHarness().context);
+	const wide = component.render(90).find((line) => line.includes("Agent")) ?? "";
+	expect(wide).toContain("run");
+	expect(wide).toContain("18s");
+	expect(wide).not.toContain("finished");
+	expect(wide.match(/\bsuccess\b/gu)).toHaveLength(1);
+	const narrow = component.render(42).find((line) => line.includes("Agent")) ?? "";
+	expect(narrow).toContain("run");
+	expect(narrow).not.toContain("finished");
+	expect(narrow).toContain("success");
+	component.dispose?.();
+});
+
 test("/tools keeps list and detail visible on wide terminals", () => {
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const focusTheme = {
@@ -383,7 +415,7 @@ test("/tools keeps list and detail visible on wide terminals", () => {
 	expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
 	expect(lines).toHaveLength(18);
 	expect(lines[0]).toBe("━".repeat(100));
-	expect(lines.slice(1).every((line) => Bun.stripANSI(line)[36] === "┃")).toBe(true);
+	expect(lines.slice(1).every((line) => Bun.stripANSI(line)[52] === "┃")).toBe(true);
 	expect(Bun.stripANSI(output)).not.toContain("│");
 	expect(lines[1]?.split("┃")[0]).toContain("\u001b[35mTools\u001b[0m");
 	expect(lines[1]?.split("┃")[1]).not.toContain("\u001b[35mTools /");

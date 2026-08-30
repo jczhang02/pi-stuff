@@ -428,7 +428,7 @@ const CODE_MODE_FALLBACK_SCENARIOS = [
 	},
 	{
 		additional: ["stack"],
-		content: [{ type: "text" as const, text: "\u001B[31mcolored failure\u001B[0m\nstack" }],
+		content: [{ type: "text" as const, text: "\u001B[31mError: colored failure\u001B[0m\nstack" }],
 		id: "outer-sanitized",
 		isError: true,
 		rawExpected: "stack",

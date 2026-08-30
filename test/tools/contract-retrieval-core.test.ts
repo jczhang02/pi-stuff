@@ -173,6 +173,58 @@ test("Bash partial results update in place and the final output wins", () => {
 	]);
 });
 
+test("an adjacent empty Host abort settles only the in-flight Bash and retains partial output", () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	const command = "printf partial; sleep 30";
+	const args = { value: command };
+	const state = {};
+	const context = renderContext(state, args, { toolCallId: "cancelled-bash" });
+	runtime.indexMessages([assistant(bashCall("cancelled-bash", command))], false);
+	runtime.observeToolExecutionStart("cancelled-bash");
+	const component = bash.renderCall?.(args, theme, context);
+	if (!component) throw new Error("missing cancellable Bash component");
+	const partial = { content: [{ type: "text" as const, text: "partial" }], details: { source: "bash" } };
+	runtime.observeToolExecutionUpdate("cancelled-bash", partial);
+	runtime.indexMessage({ role: "assistant", content: [], stopReason: "aborted" });
+
+	expect(renderLines(component)).toEqual([" • Bash(printf partial; sleep 30)", "  ⎿  Interrupted", "     partial"]);
+	expect(runtime.resolveGroup("cancelled-bash")).toMatchObject({ state: "cancelled" });
+	expect(runtime.groupActivities("cancelled-bash")[0]).toMatchObject({ state: "cancelled" });
+	bash.renderCall?.(args, theme, { ...context, expanded: true });
+	expect(
+		renderLines(component)
+			.join("\n")
+			.match(/Interrupted/gu),
+	).toHaveLength(1);
+	expect(renderLines(component).join("\n")).not.toContain("Error:");
+
+	const replay = new ToolUiRuntime();
+	replay.registerActivity("bash", presentation("run-command").activity);
+	replay.markRendererAttached("bash");
+	replay.indexMessages(
+		[assistant(bashCall("replayed-cancel", command)), { role: "assistant", content: [], stopReason: "aborted" }],
+		true,
+	);
+	expect(replay.resolveGroup("replayed-cancel")).toMatchObject({ state: "cancelled" });
+});
+
+test("Bash exit code 128 remains an error without adjacent Host abort evidence", () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	const command = "exit 128";
+	runtime.indexMessages(
+		[assistant(bashCall("exit-128", command)), result("exit-128", "Command exited with code 128", true)],
+		true,
+	);
+	const rendered = settle(bash, "exit-128", command, true, true, "Command exited with code 128");
+	expect(rendered.callLines.join("\n")).toContain("Error: Exit code 128");
+	expect(rendered.callLines.join("\n")).not.toContain("Interrupted");
+	expect(runtime.resolveGroup("exit-128")).toMatchObject({ state: "error" });
+});
+
 test("replaying Pi's Bash partial renderer pass settles after one invalidation", async () => {
 	const harness = apiHarness();
 	const bash = toolFromHarness(harness, "bash", "run-command");

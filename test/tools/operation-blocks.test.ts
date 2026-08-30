@@ -52,11 +52,11 @@ function renderSettled(
 	const component = tool.renderCall?.(args, theme, context as never);
 	if (!component) throw new Error(`missing ${tool.name} call renderer`);
 	// SAFETY: the result fixture follows the registered Tool's public result contract.
-	tool.renderResult?.(result as never, { expanded: options.expanded === true, isPartial: false }, theme, {
+	const body = tool.renderResult?.(result as never, { expanded: options.expanded === true, isPartial: false }, theme, {
 		...context,
 		lastComponent: component,
 	} as never);
-	return component.render(120);
+	return [...component.render(120), ...(body?.render(120) ?? [])];
 }
 
 function renderRunning(tool: ToolDefinition, runtime: ToolUiRuntime, id: string, args: ToolArguments): string {
@@ -120,6 +120,27 @@ test("Write shows result-authorized final content with compact and expanded boun
 	);
 	expect(expanded).toContain("12 │ const value12 = 12;");
 	expect(expanded).not.toContain("ctrl+o to expand");
+});
+
+test("Write prefers verified result content and uses singular line grammar", () => {
+	const { runtime, tools } = builtins();
+	const write = tools.get("write");
+	if (!write) throw new Error("missing Write Tool");
+	const output = renderSettled(
+		write,
+		runtime,
+		"write-verified",
+		{ content: "unverified invocation content", path: "src/verified.ts" },
+		{
+			content: [{ type: "text", text: "Successfully wrote content" }],
+			details: { finalContent: "verified final content" },
+		},
+		{ expanded: true },
+	).join("\n");
+	expect(output).toContain("1 line written");
+	expect(output).toContain("verified final content");
+	expect(output).not.toContain("unverified invocation content");
+	expect(output).not.toContain("Successfully wrote content");
 });
 
 test("Edit shows verified exact statistics and old/new line gutters", () => {
@@ -228,13 +249,32 @@ test("Background output is the only Background Operation Block", () => {
 		"background-output",
 		{ action: "output", task_id: "shell-7" },
 		{
-			content: [{ type: "text", text: "first\nsecond\nthird\nfourth" }],
+			content: [
+				{
+					type: "text",
+					text: 'Background command "tests" completed\n\nfirst\nsecond\nthird\nfourth',
+				},
+			],
 			details: { action: "output", status: "read", taskId: "shell-7" },
 		},
+		{ expanded: true },
 	).join("\n");
 	expect(output).toContain("Background(shell-7)");
 	expect(output).toContain("4 lines read");
-	expect(output).toContain("… +1 lines (ctrl+o to expand)");
+	expect(output.match(/first/gu)).toHaveLength(1);
+	expect(output).not.toContain('Background command "tests" completed');
+
+	const singular = renderSettled(
+		background,
+		runtime,
+		"background-singular",
+		{ action: "output", task_id: "shell-8" },
+		{
+			content: [{ type: "text", text: "only output line" }],
+			details: { action: "output", status: "read", taskId: "shell-8" },
+		},
+	).join("\n");
+	expect(singular).toContain("1 line read");
 
 	const list = renderSettled(
 		background,
@@ -265,6 +305,49 @@ test("mutation issues do not invent evidence from invocation arguments", () => {
 	expect(output).toContain("Write(src/fail.ts)");
 	expect(output).toContain("Cancelled: Operation aborted");
 	expect(output).not.toContain("must not appear");
+});
+
+test("Operation Blocks keep a non-empty protocol identity when arguments omit one", () => {
+	const builtinsRegistration = builtins();
+	const write = builtinsRegistration.tools.get("write");
+	if (!write) throw new Error("missing Write Tool");
+	expect(
+		renderSettled(
+			write,
+			builtinsRegistration.runtime,
+			"write-call",
+			{ content: "verified" },
+			{ content: [{ type: "text", text: "written" }], details: undefined },
+		).join("\n"),
+	).toContain("Write(write-call)");
+
+	const codexRegistration = toolRegistrationHarness();
+	registerCodexTools(codexRegistration.host);
+	const patch = codexRegistration.tools.get("apply_patch");
+	if (!patch) throw new Error("missing Patch Tool");
+	expect(
+		renderSettled(
+			patch,
+			getToolUiRuntime(codexRegistration.host),
+			"patch-call",
+			{},
+			{ content: [{ type: "text", text: "patched" }], details: {} },
+		).join("\n"),
+	).toContain("Patch(patch-call)");
+
+	const workRegistration = toolRegistrationHarness();
+	registerWorkTools(workRegistration.host, { current: () => undefined }, { includeBash: false });
+	const background = workRegistration.tools.get("background");
+	if (!background) throw new Error("missing Background Tool");
+	expect(
+		renderSettled(
+			background,
+			getToolUiRuntime(workRegistration.host),
+			"background-call",
+			{ action: "output" },
+			{ content: [{ type: "text", text: "output" }], details: { action: "output", status: "read" } },
+		).join("\n"),
+	).toContain("Background(background-call)");
 });
 
 test("every new Operation Block member materializes while running and names terminal issue kinds", () => {

@@ -47,7 +47,7 @@ export function classifyRetrievalGroupInvocation(
 		: "boundary";
 }
 
-interface ToolTranscriptRecord {
+export interface ToolTranscriptRecord {
 	readonly arguments?: unknown;
 	readonly content?: unknown;
 	readonly details?: unknown;
@@ -127,6 +127,30 @@ function assistantTerminalState(message: ToolTranscriptRecord): "cancelled" | "e
 	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
 }
 
+/** Pi records a direct Tool cancellation as a later empty aborted assistant message. */
+export function directBashCancelledByHostAbort(
+	previous: ToolTranscriptRecord,
+	current: ToolTranscriptRecord,
+): Omit<PlannedToolActivityMember, "result"> | undefined {
+	if (
+		current.role !== "assistant" ||
+		assistantTerminalState(current) !== "cancelled" ||
+		!Array.isArray(current.content) ||
+		current.content.length !== 0 ||
+		previous.role !== "assistant" ||
+		assistantTerminalState(previous) !== undefined ||
+		!Array.isArray(previous.content)
+	) {
+		return undefined;
+	}
+	for (let index = previous.content.length - 1; index >= 0; index -= 1) {
+		const call = toolCall(previous.content[index]);
+		if (call) return call.name === "bash" ? call : undefined;
+		if (hasVisibleText(previous.content[index]) || hasVisibleThinking(previous.content[index])) return undefined;
+	}
+	return undefined;
+}
+
 /**
  * Derive display-only Retrieval Groups from the current model-visible message order.
  * Tool results are transparent; visible Thinking runs, prose, user-visible context,
@@ -141,6 +165,14 @@ export function planRetrievalGroups(
 	for (const message of messages) {
 		const parsed = toolResult(message);
 		if (parsed) results.set(parsed.id, parsed.result);
+	}
+	const hostCancelledBash = new Set<string>();
+	for (let index = 1; index < messages.length; index += 1) {
+		const previous = messages[index - 1];
+		const current = messages[index];
+		const call =
+			isRecord(previous) && isRecord(current) ? directBashCancelledByHostAbort(previous, current) : undefined;
+		if (call && !results.has(call.id)) hostCancelledBash.add(call.id);
 	}
 
 	const groups: PlannedRetrievalGroup[] = [];
@@ -183,9 +215,10 @@ export function planRetrievalGroups(
 			const call = toolCall(block);
 			if (!call) continue;
 			const result = results.get(call.id);
+			const settledState = terminalState ?? (hostCancelledBash.has(call.id) ? "cancelled" : undefined);
 			const member = {
 				...call,
-				...(result ? { result } : terminalState ? { terminalState } : {}),
+				...(result ? { result } : settledState ? { terminalState: settledState } : {}),
 			};
 			const disposition = classifyInvocation(call.name, call.args);
 			if (disposition === "boundary") {

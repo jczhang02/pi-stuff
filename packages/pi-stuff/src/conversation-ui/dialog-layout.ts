@@ -356,9 +356,14 @@ export function renderCommandDialogSplit(
 	renderLeft: (width: number) => readonly string[],
 	renderRight: (width: number) => readonly string[],
 	preferredLeftWidth = 36,
+	minimumLeftWidth = 30,
+	minimumRightWidth = 30,
 ): string[] {
 	const totalWidth = Math.max(1, Math.floor(width));
-	const leftWidth = Math.min(preferredLeftWidth, Math.max(30, Math.floor(totalWidth * 0.38)));
+	const leftWidth = Math.min(
+		Math.max(1, totalWidth - 1),
+		Math.max(minimumLeftWidth, Math.min(preferredLeftWidth, totalWidth - minimumRightWidth - 1)),
+	);
 	const rightWidth = Math.max(1, totalWidth - leftWidth - 1);
 	const left = renderLeft(leftWidth);
 	const right = renderRight(rightWidth);

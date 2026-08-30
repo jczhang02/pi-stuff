@@ -24,6 +24,14 @@ export function operationResultText(result: AgentToolResult<unknown> | undefined
 	);
 }
 
+export function operationLineCount(count: number): string {
+	return `${String(count)} ${count === 1 ? "line" : "lines"}`;
+}
+
+export function normalizeOperationIssueReason(value: string): string {
+	return value.replace(/^(?:Cancelled|Error|Rejected):\s*/iu, "").trim();
+}
+
 export function operationIssueLine(
 	state: ToolActivityState,
 	result: AgentToolResult<unknown> | undefined,
@@ -31,7 +39,7 @@ export function operationIssueLine(
 	const raw = operationResultText(result)
 		.split(/\r?\n/u)
 		.find((line) => line.trim().length > 0);
-	const reason = oneLine(raw ?? state) || state;
+	const reason = normalizeOperationIssueReason(oneLine(raw ?? state)) || state;
 	if (state === "rejected") return { kind: "outcome", text: `Rejected: ${reason}`, tone: "warning" };
 	if (state === "cancelled") return { kind: "outcome", text: `Cancelled: ${reason}`, tone: "warning" };
 	return { kind: "outcome", text: `Error: ${reason}`, tone: "error" };

@@ -70,6 +70,41 @@ function callCount(count: number): string {
 	return `${String(count)} ${count === 1 ? "call" : "calls"}`;
 }
 
+const STATE_EQUIVALENT_EVIDENCE =
+	/^(?:cancelled|checked|completed|done|error|failed|finished|launched|rejected|resumed|running|sent|stopped|success|working)$/iu;
+const STATE_PREFIXED_EVIDENCE =
+	/^(?:cancelled|checked|completed|done|error|failed|finished|launched|rejected|resumed|running|sent|stopped|success|working)(?:(?::|\s+in)\s*|\s+)(.+)$/iu;
+
+function nonStateEvidence(value: string): string {
+	return value
+		.split(/\s*·\s*/u)
+		.flatMap((part) => {
+			if (STATE_EQUIVALENT_EVIDENCE.test(part)) return [];
+			return [part.match(STATE_PREFIXED_EVIDENCE)?.[1] ?? part];
+		})
+		.filter(Boolean)
+		.join(" · ");
+}
+
+function fitActivityIdentity(label: string, operation: string, width: number): string {
+	if (!operation) return truncateToWidth(label, width, "…");
+	const separator = " · ";
+	const available = width - visibleWidth(separator);
+	if (available < 2) return truncateToWidth(`${label} ${operation}`, width, "…");
+	const labelWidth = visibleWidth(label);
+	const operationWidth = visibleWidth(operation);
+	let labelBudget = Math.min(labelWidth, Math.max(1, Math.floor(available / 2)));
+	let operationBudget = available - labelBudget;
+	if (operationWidth < operationBudget) {
+		labelBudget = Math.min(labelWidth, labelBudget + operationBudget - operationWidth);
+		operationBudget = available - labelBudget;
+	} else if (labelWidth < labelBudget) {
+		operationBudget += labelBudget - labelWidth;
+		labelBudget = labelWidth;
+	}
+	return `${truncateToWidth(label, labelBudget, "…")}${separator}${truncateToWidth(operation, operationBudget, "…")}`;
+}
+
 function activityRow(theme: Theme, group: ToolActivityView, selected: boolean, width: number): string {
 	const cursor = selected ? theme.fg("accent", "›") : " ";
 	const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
@@ -80,25 +115,29 @@ function activityRow(theme: Theme, group: ToolActivityView, selected: boolean, w
 	const outcomeText = oneLine(group.outcome ?? "");
 	const operationText = oneLine(group.operation ?? "");
 	const outcomeOwnsIdentity = outcomeText.toLocaleLowerCase().startsWith(`${labelText.toLocaleLowerCase()} `);
-	const semanticOutcome = outcomeOwnsIdentity
-		? outcomeText
-				.slice(labelText.length)
-				.replace(/^\s*·\s*/u, "")
-				.trim()
-		: outcomeText;
-	const essential = semanticOutcome && semanticOutcome !== labelText ? `${labelText} · ${semanticOutcome}` : labelText;
-	const withOperation = operationText
-		? `${labelText} · ${operationText}${semanticOutcome ? ` · ${semanticOutcome}` : ""}`
-		: essential;
+	const semanticOutcome = nonStateEvidence(
+		outcomeOwnsIdentity
+			? outcomeText
+					.slice(labelText.length)
+					.replace(/^\s*·\s*/u, "")
+					.trim()
+			: outcomeText,
+	);
+	const identity = operationText ? `${labelText} · ${operationText}` : labelText;
+	const complete = semanticOutcome ? `${identity} · ${semanticOutcome}` : identity;
 	const countText = group.memberIds.length > 1 ? ` · ${callCount(group.memberIds.length)}` : "";
 	let suffix = baseSuffix;
 	let contentWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
-	if (countText && visibleWidth(essential) + visibleWidth(countText) <= contentWidth) {
+	if (countText && visibleWidth(identity) + visibleWidth(countText) <= contentWidth) {
 		suffix = `${baseSuffix}${theme.fg("dim", countText)}`;
 		contentWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
 	}
-	const content = visibleWidth(withOperation) <= contentWidth ? withOperation : essential;
-	const summary = truncateToWidth(content, contentWidth, "…");
+	const summary =
+		visibleWidth(complete) <= contentWidth
+			? complete
+			: visibleWidth(identity) <= contentWidth
+				? identity
+				: fitActivityIdentity(labelText, operationText, contentWidth);
 	const label = selected ? theme.bold(summary) : summary;
 	const gap = Math.max(1, width - visibleWidth(prefix) - visibleWidth(label) - visibleWidth(suffix));
 	return `${prefix}${label}${" ".repeat(gap)}${suffix}`;
@@ -323,6 +362,9 @@ class ToolDialogComponent implements CommandDialogComponent {
 			width,
 			(leftWidth) => this.renderList(leftWidth, this.splitFocus === "left"),
 			(rightWidth) => this.renderDetail(rightWidth, this.splitFocus === "right"),
+			52,
+			42,
+			42,
 		);
 	}
 

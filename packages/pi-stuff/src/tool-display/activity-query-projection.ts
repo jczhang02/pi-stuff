@@ -120,14 +120,14 @@ export class ToolActivityQueryProjection {
 			return standalone && start === 0 && requested > 0 ? [standalone] : [];
 		}
 		return group.members.slice(start, start + requested).map((member) => {
-			return this.source.activities.get(member.id) ?? this.activityFromPlan(member);
+			return this.activityForMember(member);
 		});
 	}
 
 	toolActivityDetail(toolCallId: string, mode: ToolActivityDetailMode): ToolActivityDetailView | undefined {
 		const member = this.source.groupSource().member(toolCallId);
 		const binding = this.source.bindingFor(toolCallId);
-		const activity = this.source.activities.get(toolCallId) ?? (member ? this.activityFromPlan(member) : undefined);
+		const activity = member ? this.activityForMember(member) : this.source.activities.get(toolCallId);
 		if (!activity) return undefined;
 		const args = member?.args ?? binding?.metadata.args ?? {};
 		const rawArgs = this.source.envelopes.rawArgumentsFor(toolCallId) ?? args;
@@ -281,6 +281,21 @@ export class ToolActivityQueryProjection {
 		};
 	}
 
+	private activityForMember(member: PlannedToolActivityMember): ToolActivity {
+		const stored = this.source.activities.get(member.id);
+		if (!member.result && !member.terminalState) return stored ?? this.activityFromPlan(member);
+		const settled = this.activityFromPlan(member);
+		return stored
+			? {
+					...settled,
+					detailLines: stored.detailLines,
+					durationMs: stored.durationMs,
+					sequence: stored.sequence,
+					startedAt: stored.startedAt,
+				}
+			: settled;
+	}
+
 	private allGroupViews(): Array<ToolActivityView & { order: number }> {
 		const groups = this.source.groupSource().groupsInOrder();
 		const grouped = groups
@@ -311,7 +326,7 @@ export class ToolActivityQueryProjection {
 		if (group.standalone) {
 			const member = group.members[0];
 			if (!member) return undefined;
-			const activity = this.source.activities.get(member.id) ?? this.activityFromPlan(member);
+			const activity = this.activityForMember(member);
 			if (member.name === "codemode" && activity.state === "success") return undefined;
 			return {
 				id: group.leaderId,
@@ -327,9 +342,7 @@ export class ToolActivityQueryProjection {
 			};
 		}
 		const summary = this.source.groupSummary(group);
-		const members = group.members.map(
-			(member) => this.source.activities.get(member.id) ?? this.activityFromPlan(member),
-		);
+		const members = group.members.map((member) => this.activityForMember(member));
 		const labels = new Set(members.map((activity) => activity.label));
 		const states = group.members.map((member) => this.summaryMember(member).state);
 		const state = states.every((candidate) => candidate === "rejected")

@@ -25,6 +25,7 @@ import type {
 	ToolUiRuntime,
 } from "./contract.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
+import { isOperationBlockMember } from "./operation-block-presentation.js";
 import { SUITE_ACTIVITY_RENDERER, type SuiteActivityRendererMarker } from "./registration-tracker.js";
 import { CachedToolRow, EmptyToolComponent, type ToolRowModel } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
@@ -504,7 +505,7 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 				renderOptions.expanded,
 				typed.showImages,
 				theme,
-				tool.name === "bash",
+				tool.name === "bash" || isOperationBlockMember(tool.name, args),
 				Object.getOwnPropertyDescriptor(typed, EMBEDDED_TOOL_RESULT)?.value === true,
 				embeddedHostImageKeys instanceof Map ? embeddedHostImageKeys : undefined,
 			);

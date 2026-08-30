@@ -74,13 +74,16 @@ function label(params: AgentPresentationParams): string {
 
 function target(params: AgentPresentationParams): string {
 	if (action(params)) return boundedTerminalLine(params.id);
-	if (Array.isArray(params.tasks) && params.tasks.length > 0)
-		return params.tasks
-			.slice(0, 32)
-			.map((task) => launchTarget(task?.agent, task?.description, task?.task))
-			.filter(Boolean)
-			.join(", ");
-	return launchTarget(params.agent, params.description, params.task);
+	const operation = params.foreground === true ? "run" : "launch";
+	const identity =
+		Array.isArray(params.tasks) && params.tasks.length > 0
+			? params.tasks
+					.slice(0, 32)
+					.map((task) => launchTarget(task?.agent, task?.description, task?.task))
+					.filter(Boolean)
+					.join(", ")
+			: launchTarget(params.agent, params.description, params.task);
+	return identity ? `${operation} · ${identity}` : "";
 }
 
 function usefulDuration(params: AgentPresentationParams, durationMs: number | undefined): string {
@@ -124,6 +127,17 @@ function resultLines(result: AgentToolResult<Details>): string[] {
 	return result.content.flatMap((entry) => (entry.type === "text" ? entry.text.split(/\r?\n/u) : []));
 }
 
+function foregroundEvidence(result: AgentToolResult<Details>): string[] {
+	const lines = resultLines(result).filter(
+		(line) =>
+			!/^Agent .+ (?:completed|failed|status unknown|stopped)\.$/u.test(line) &&
+			!/^\d+\. .+ — (?:completed|failed|status unknown|stopped)$/u.test(line),
+	);
+	while (lines[0]?.trim() === "") lines.shift();
+	while (lines.at(-1)?.trim() === "") lines.pop();
+	return lines.filter((line, index) => line.trim() || lines[index - 1]?.trim());
+}
+
 function detailLines(
 	params: AgentPresentationParams,
 	result: AgentToolResult<Details>,
@@ -136,7 +150,7 @@ function detailLines(
 		params.foreground === true && state === "success" ? "finished" : state === "success" ? "launched" : state,
 	);
 	if (params.foreground !== true && state === "success") return tasks;
-	const output = resultLines(result);
+	const output = params.foreground === true ? foregroundEvidence(result) : resultLines(result);
 	return output.length > 0 ? [...tasks, "", ...output] : tasks;
 }
 
@@ -161,6 +175,32 @@ export function createAgentToolPresentation(): SuiteToolPresentation<AgentPresen
 			summarizeIssue: (_args, result, state) => firstText(result) || state,
 		},
 		detailLines,
+		detailSections: (params, result, state) => {
+			const operation = action(params);
+			const tasks = operation
+				? [`${operation}${boundedTerminalLine(params.id) ? ` · ${boundedTerminalLine(params.id)}` : ""}`]
+				: taskRows(
+						params,
+						result,
+						state === "success" ? (params.foreground === true ? "finished" : "launched") : state,
+					);
+			const output = params.foreground === true ? foregroundEvidence(result) : resultLines(result);
+			const sections = [{ lines: tasks, title: "Task" }];
+			if (output.length > 0 && (params.foreground === true || state !== "success")) {
+				sections.push({
+					lines: output,
+					title:
+						state === "success"
+							? "Result"
+							: state === "error"
+								? "Error"
+								: state === "rejected"
+									? "Rejection"
+									: "Cancellation",
+				});
+			}
+			return sections;
+		},
 		label,
 		resultIsError: (params, result) => {
 			if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) return true;

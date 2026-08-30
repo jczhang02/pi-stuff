@@ -7,6 +7,7 @@ import {
 	logicalOperationLines,
 	operationArgument,
 	operationIssueLine,
+	operationLineCount,
 	operationResultText,
 } from "./operation-block-evidence.js";
 import type { OperationBlockRowModel, OperationEvidenceLine } from "./operation-block-renderer.js";
@@ -17,14 +18,18 @@ export function backgroundOperationBlockModel(
 	state: ToolActivityState,
 	expanded: boolean,
 ): OperationBlockRowModel {
-	const id = operationArgument(member.args, "task_id") || operationArgument(member.args, "taskId");
+	const id = operationArgument(member.args, "task_id") || operationArgument(member.args, "taskId") || member.id;
 	if (state === "running") {
 		return baseOperationBlockModel("Background", id, state, expanded, [{ kind: "outcome", text: "Reading output…" }]);
 	}
 	if (state !== "success") {
 		return baseOperationBlockModel("Background", id, state, expanded, [operationIssueLine(state, result)]);
 	}
-	const text = operationResultText(result).trim();
+	const raw = operationResultText(result).trim();
+	const lifecycle = raw.match(
+		/^(?:Background command|Monitor) ".+" (?:completed|exceeded the output limit and was stopped|failed(?: \(exit -?\d+\))?|stopped|timed out)(?:(?:\r?\n){2}([\s\S]*))?$/u,
+	);
+	const text = (lifecycle?.[1] ?? (lifecycle ? "" : raw)).trim();
 	if (!text || /^\(no output yet\)$/iu.test(text)) {
 		return baseOperationBlockModel("Background", id, state, expanded, [
 			{ kind: "outcome", text: "No output yet.", tone: "muted" },
@@ -33,7 +38,7 @@ export function backgroundOperationBlockModel(
 	const lines = logicalOperationLines(text);
 	const preview = boundedOperationLines(lines, expanded, 3);
 	const evidence: OperationEvidenceLine[] = [
-		{ kind: "outcome", text: `${String(lines.length)} lines read` },
+		{ kind: "outcome", text: `${operationLineCount(lines.length)} read` },
 		...preview.visible.map((line) => ({ kind: "meta" as const, text: line, tone: "muted" as const })),
 	];
 	if (preview.omitted > 0) {

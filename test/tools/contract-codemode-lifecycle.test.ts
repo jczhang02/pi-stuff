@@ -69,6 +69,9 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 		},
 	];
 	runtime.observeEnvelopeResult("codemode", "outer-live", { operations });
+	expect(runtime.resolveGroup("nested-live")).toMatchObject({ state: "success" });
+	expect(runtime.groupActivities("nested-live")[0]).toMatchObject({ state: "success" });
+	expect(runtime.toolActivityDetail("nested-live", "formatted")?.activity).toMatchObject({ state: "success" });
 	const settled = envelope.renderResult?.(
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
