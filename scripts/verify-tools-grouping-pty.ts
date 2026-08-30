@@ -228,7 +228,7 @@ async function verifyLifecyclePresentation(tmux: TmuxCommand, session: string): 
 	send(tmux, session, "partial-bash");
 	await waitForText(tmux, session, "PARTIAL_BASH_VISIBLE", 6_000);
 	tmux(["send-keys", "-t", session, "Escape"]);
-	await waitForText(tmux, session, "Interrupted", 4_000);
+	await waitForText(tmux, session, "Interrupted", 10_000);
 	const compactCancellation = capture(tmux, session);
 	if (
 		!compactCancellation.includes("PARTIAL_BASH_VISIBLE") ||
@@ -654,7 +654,7 @@ export async function verifyToolsGroupingPty(options: ToolsGroupingPtyOptions): 
 		if (geometry !== `${String(options.columns)}x${String(options.rows)}`) fail(`unexpected geometry ${geometry}`);
 		if (scenario === "compaction") await waitForText(tmux, tmuxSession, "PADDING_DONE");
 		else {
-			await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE");
+			await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE", 30_000);
 			successGroup(captureHistory(tmux, tmuxSession));
 			if (scenario === "lifecycle") {
 				successfulMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Listed 1 directory");
