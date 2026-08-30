@@ -39,9 +39,10 @@ export class EffectFoundation {
 		if (this.closed) throw new Error("Effect foundation is closed.");
 		const previous = this.session;
 		this.generation += 1;
+		const finalizers = previous ? Scope.closeUnsafe(previous[SCOPE], Exit.interrupt()) : undefined;
 		const session = owner("session", this.generation, Scope.forkUnsafe(this.root, "sequential"));
 		this.session = session;
-		if (previous) await this.close(previous, Exit.interrupt(), this.shutdownGraceMs);
+		if (finalizers) await this.settleFinalizers(finalizers, this.shutdownGraceMs);
 		return session;
 	}
 
