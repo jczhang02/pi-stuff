@@ -34,6 +34,11 @@ remains the single public live-projection facade.
   state style distinguish reading, loaded, and failure while settled `loaded` remains muted. It is one row rather than
   native `[skill]` or Operation Block grammar. Direct Read, nested Code Mode projection, and replay use the same
   identity; `/tools` Formatted preserves the Skill identity while Raw preserves the underlying Read protocol.
+- A compact generic Tool Activity reserves identity and useful summary/state before its optional target. The target
+  receives the actual remaining terminal-cell budget: whenever another meaningful complete grapheme fits with the
+  ellipsis, it is shown rather than suppressed by a fixed minimum width or whole-token threshold. Latin text may end
+  mid-token; at most one cell may remain when the next grapheme is double-width and cannot fit exactly. This adds no
+  padding and does not replace the distinct Retrieval Group, Operation Block, or Agent Lifecycle fitting rules.
 - Assistant prose, user input, visible model-context Custom Messages, turn completion, automatic continuation, and a
   newly visible Logical Thinking Run after Tool activity close the current Retrieval Group. Streaming updates within
   the same Logical Thinking Run, Tool results, hidden state, and branch or compaction metadata do not.

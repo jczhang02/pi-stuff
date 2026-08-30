@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: db374876ed2f59c459d077a84b3d614b7367e3ec9af6ab49b77e9bddbb447dec -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 30067a2194f0f663f3a6d242a52761ddc8d8f1451ad3a123b40b6206b7f486de -->
 
 # Tool Display 模块
 
@@ -14,6 +14,7 @@ Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 
 - 每一段连续原生 Read、Grep/Find 或 List 都是一个 **检索组**，从第一个合格调用开始，但 resolved basename 恰好为 `SKILL.md` 的 Read 除外。其余合格集合是封闭的：Bash、Web、MCP、媒体、修改、Agent、Task、后台工作、Goal、未知和第三方工具都是独立工具活动，并关闭检索。
 - exact resolved `SKILL.md` Read 是一个独立的 `Skill <name>` Tool Activity，name 从其 resolved parent directory 派生。`Skill <name>` 是高对比度主要身份；普通 semantic Tool marker 与 state style 区分 reading、loaded 和 failure，settled `loaded` 保持 muted。它只占一行，不使用原生 `[skill]` 或 Operation Block grammar。Direct Read、nested Code Mode projection 与 replay 使用同一 identity；`/tools` Formatted 保留 Skill identity，Raw 保留底层 Read protocol。
+- Compact generic Tool Activity 先为 identity 与有用的 summary/state 保留空间，再把实际剩余 terminal-cell budget 交给 optional target。只要还能与 ellipsis 一起容纳另一个有意义的完整 grapheme，就必须继续显示，不能因固定最小宽度或 whole-token threshold 而省略。Latin text 可以在 token 中间结束；只有下一个 double-width grapheme 无法精确放入时，最多允许剩余一个 cell。该规则不增加 padding，也不替代 Retrieval Group、Operation Block 或 Agent Lifecycle 各自的 fitting rule。
 - Assistant 说明文字、用户输入、模型上下文可见自定义消息、轮次完成、自动继续，以及工具活动后新出现的可见逻辑 Thinking 运行都会关闭当前检索组。同一个逻辑 Thinking 运行内的流式更新、工具结果、隐藏状态、分支或压缩元数据不会关闭。
 - 成功稳定或活跃的检索组恰好占一行物理终端。Search、Read、List 分句固定按该顺序排列；Read 统计唯一规范路径，Search 与 List 统计调用次数。活跃行使用现在时、省略展开提示，并可行内增加已启用的经过时间与稳定目标。宽度变窄时，先删除目标，再删除经过时间，之后才截断语义摘要。稳定行省略目标和经过时间，只有不换行即可容纳时才显示 `(ctrl+o to expand)`。用户可见计数使用正确的单复数，包括使用 `1 line` 而不是 `1 lines`。
 - 失败、被拒绝和已取消的原生检索留在其检索组。唯一两行紧凑例外会在第一行保留状态特定问题计数，并在一行子项显示第一个有界原因；其余原因可通过展开查看。
