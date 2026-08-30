@@ -1,8 +1,14 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { getHostSharedResource, hasDirectUserActivation, reportDiagnostic } from "../conversation-ui/index.js";
+import { Effect } from "effect";
+import {
+	getHostSharedResource,
+	hasDirectUserActivation,
+	registerSuiteAgentMessagePreparation,
+	reportDiagnostic,
+} from "../conversation-ui/index.js";
 import { type MagicContextPreparation, type MagicContextPreparationOptions, prepareMagicContext } from "./config.js";
-import { createMagicModuleSource, type MagicModule, type NativeCompactionSettings } from "./magic-runtime.js";
+import type { MagicModule, NativeCompactionSettings } from "./magic-runtime.js";
 import { loadMagicContextWorker } from "./magic-worker-client.js";
 import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
 import { estimateProjectionTokens, extractMagicProjection, formatProjection, nativeProjection } from "./projection.js";
@@ -43,6 +49,7 @@ function capabilityRegistry(): ContextCapabilityRegistry {
 		[key: symbol]: ContextCapabilityRegistry | undefined;
 	};
 	root[CONTEXT_CAPABILITY_REGISTRY] ??= {
+		capabilities: new WeakMap(),
 		contexts: new WeakMap(),
 		owners: new WeakMap(),
 		runtimes: new Set(),
@@ -58,8 +65,16 @@ function nativeCapability(): ContextCapability {
 	};
 }
 
+function readNativeCompactionSettings(ctx: ExtensionContext): NativeCompactionSettings {
+	return SettingsManager.create(ctx.cwd, getAgentDir(), {
+		projectTrusted: ctx.isProjectTrusted(),
+	}).getCompactionSettings();
+}
+
 export function getContextCapability(ctx: ExtensionContext): ContextCapability {
-	return capabilityRegistry().contexts.get(ctx.sessionManager) ?? nativeCapability();
+	const registry = capabilityRegistry();
+	const runtime = registry.contexts.get(ctx.sessionManager);
+	return (runtime && registry.capabilities.get(runtime)) ?? nativeCapability();
 }
 
 export async function projectCurrentContext(
@@ -69,7 +84,26 @@ export async function projectCurrentContext(
 ): Promise<ContextProjection> {
 	const registry = capabilityRegistry();
 	const runtime = registry.contexts.get(ctx.sessionManager);
-	return (runtime ?? nativeCapability()).projectCurrentContext(audience, ctx, options);
+	const capability = runtime ? registry.capabilities.get(runtime) : undefined;
+	return (capability ?? nativeCapability()).projectCurrentContext(audience, ctx, options);
+}
+
+async function runContextOwned(ctx: ExtensionContext, program: Effect.Effect<void>): Promise<void> {
+	// These callbacks acknowledge before their work settles, so the current Pi
+	// Session signal—not a detached Fiber—owns interruption.
+	try {
+		await Effect.runPromise(program, { signal: ctx.signal });
+	} catch (error) {
+		if (ctx.signal?.aborted) return;
+		reportDiagnostic({
+			capability: "Context",
+			error,
+			key: "owned-effect",
+			severity: "error",
+			summary: "A Session-owned Context operation failed",
+			visibility: "silent",
+		});
+	}
 }
 
 export default async function piStuffContext(
@@ -78,9 +112,15 @@ export default async function piStuffContext(
 ): Promise<void> {
 	const registry = capabilityRegistry();
 	const magicSubagent = dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1");
-	const magicModules = createMagicModuleSource(dependencies.loadMagicContext ?? loadMagicContextWorker);
 	let created = false;
-	const runtime = getHostSharedResource(
+	let runtime: ContextCapabilityRuntime;
+	const boundary = {
+		activate: (ctx: ExtensionContext, trigger: Parameters<ContextCapability["activate"]>[1]) =>
+			Effect.runPromise(runtime.activate(ctx, trigger)),
+		committedFailure: (cause: unknown, ctx: ExtensionContext) =>
+			runContextOwned(ctx, runtime.handleCommittedFailure(cause, ctx)),
+	};
+	runtime = getHostSharedResource(
 		pi.events,
 		registry.owners,
 		CONTEXT_CAPABILITY_DISCOVERY_EVENT,
@@ -89,33 +129,45 @@ export default async function piStuffContext(
 			return new ContextCapabilityRuntime(
 				pi,
 				{
-					magicModules,
+					loadMagicContext: dependencies.loadMagicContext ?? loadMagicContextWorker,
 					magicSubagent,
-					readNativeCompactionSettings:
-						dependencies.readNativeCompactionSettings ??
-						((ctx) =>
-							SettingsManager.create(ctx.cwd, getAgentDir(), {
-								projectTrusted: ctx.isProjectTrusted(),
-							}).getCompactionSettings()),
+					readNativeCompactionSettings: dependencies.readNativeCompactionSettings ?? readNativeCompactionSettings,
 					prepareMagicContext:
 						dependencies.prepareMagicContext ??
 						(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
 				},
 				registry,
+				boundary,
 			);
 		},
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
 	if (!created) return;
 	registry.runtimes.add(runtime);
-	pi.on("session_shutdown", (event, ctx) => runtime.dispose(event, ctx));
+	registry.capabilities.set(runtime, {
+		status: () => runtime.status(),
+		activate: boundary.activate,
+		projectCurrentContext: (audience, ctx, options) =>
+			Effect.runPromise(runtime.projectCurrentContext(audience, ctx, options)),
+	});
+	const unregisterSuiteAgentMessagePreparation = registerSuiteAgentMessagePreparation(pi, {
+		prepare: (origin, options) => Effect.runPromise(runtime.prepareSuiteAgentMessage(origin, options)),
+		stage: (options) => {
+			const token = runtime.stageSuiteCustomContextGuidance(options);
+			return token ? () => runtime.cancelSuiteCustomContextGuidance(token) : undefined;
+		},
+	});
+	pi.on("session_shutdown", (event, ctx) => {
+		unregisterSuiteAgentMessagePreparation();
+		return Effect.runPromise(runtime.dispose(event, ctx));
+	});
 	runtime.registerToolHandoffs();
 
-	pi.on("session_start", (event, ctx) => runtime.startSession(event, ctx));
+	pi.on("session_start", (event, ctx) => Effect.runPromise(runtime.startSession(event, ctx)));
 	pi.on("context", async (event, ctx) => {
 		const interactivePaint = runtime.yieldForInteractivePaint();
 		if (interactivePaint && !(await interactivePaint)) return;
-		return runtime.projectMagicContext(event, ctx);
+		return Effect.runPromise(runtime.projectMagicContext(event, ctx));
 	});
 	pi.on("session_compact", () => runtime.invalidateProjection());
 	pi.on("session_tree", () => {
@@ -128,7 +180,7 @@ export default async function piStuffContext(
 		// before_agent_start boundary so a display-only or rejected continuation
 		// cannot initialize or write Magic Context state. Direct user input starts
 		// activation without delaying the Host's input acknowledgement.
-		if (event.source !== "extension") void runtime.activate(ctx, "input");
+		if (event.source !== "extension") void runContextOwned(ctx, runtime.activate(ctx, "input"));
 	});
 	pi.on("message_start", async (event, ctx) => {
 		if (event.message.role !== "custom") return;
@@ -139,19 +191,20 @@ export default async function piStuffContext(
 			// A real Pi Host supplies this boundary. A partial third-party wrapper
 			// fails toward preserving context for accepted custom Agent work.
 		}
-		await runtime.activate(ctx, hasDirectUserActivation(event.message) ? "input" : "automatic-turn");
+		await boundary.activate(ctx, hasDirectUserActivation(event.message) ? "input" : "automatic-turn");
 	});
 	// Pi checks compaction after input interception but before before_agent_start.
 	// This lightweight gate joins the activation already started by input, so an
 	// immediate first submission can paint without allowing native compaction to
 	// race ahead of Magic Context.
 	pi.on("session_before_compact", async (_event, ctx) => {
-		await runtime.activate(ctx, "input");
+		await boundary.activate(ctx, "input");
 		runtime.yieldExtremeOverflowToNative(ctx);
 	});
 	pi.on("before_agent_start", async (event, ctx) => {
-		await runtime.activate(ctx, "automatic-turn");
-		await runtime.preflightExtremeOverflow(ctx);
+		await Effect.runPromise(
+			runtime.activate(ctx, "automatic-turn").pipe(Effect.andThen(runtime.preflightExtremeOverflow(ctx))),
+		);
 		return applyContextPromptContributions(pi, event, ctx);
 	});
 	let providerPromptDiagnosticReported = false;
@@ -177,7 +230,7 @@ export { registerContextPromptContributor } from "./prompt-contributions.js";
 export const __test = {
 	clear(): void {
 		const registry = capabilityRegistry();
-		for (const runtime of registry.runtimes) void runtime.dispose();
+		for (const runtime of registry.runtimes) void Effect.runPromise(runtime.dispose());
 		// SAFETY: this package-owned symbol slot contains only ContextCapabilityRegistry.
 		const root = globalThis as { [key: symbol]: ContextCapabilityRegistry | undefined };
 		delete root[CONTEXT_CAPABILITY_REGISTRY];

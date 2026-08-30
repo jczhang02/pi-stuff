@@ -153,7 +153,7 @@ test("invalidates a cached Magic projection when the next prompt is submitted", 
 	expect(second.text).not.toContain("first turn");
 });
 
-test("coalesces concurrent projections and rejects an invalidated in-flight result", async () => {
+test("coalesces concurrent projections and releases joiners when invalidated", async () => {
 	const handlers: Handlers = new Map();
 	let transforms = 0;
 	const { promise: firstGate, resolve: releaseFirst } = Promise.withResolvers<void>();
@@ -194,12 +194,10 @@ test("coalesces concurrent projections and rejects an invalidated in-flight resu
 	const fresh = projectCurrentContext("agent-fresh", ctx);
 	await secondEntered;
 	expect(transforms).toBe(2);
+	expect(await joined).toEqual({ source: "native", text: "", truncated: false });
 
 	releaseFirst?.();
-	expect(await Promise.all([first, joined])).toEqual([
-		{ source: "native", text: "", truncated: false },
-		{ source: "native", text: "", truncated: false },
-	]);
+	expect(await first).toEqual({ source: "native", text: "", truncated: false });
 	releaseSecond?.();
 	expect(await fresh).toMatchObject({ source: "magic-context", text: expect.stringContaining("turn-2") });
 	expect(await projectCurrentContext("agent-fresh", ctx)).toMatchObject({

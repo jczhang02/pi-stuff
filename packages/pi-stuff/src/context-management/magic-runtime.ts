@@ -78,18 +78,13 @@ export type LooseEventHandler = (
 type MagicFactory = (pi: ExtensionAPI, onFatal?: (cause: unknown) => void) => Promise<void> | void;
 export type MagicModule = { default: MagicFactory };
 
-export interface MagicModuleSource {
-	invalidate(): void;
-	load(): Promise<MagicModule>;
-}
-
 export interface NativeCompactionSettings {
 	readonly enabled: boolean;
 	readonly reserveTokens: number;
 }
 
 export interface ContextRuntimeDependencies {
-	readonly magicModules: MagicModuleSource;
+	readonly loadMagicContext: () => Promise<MagicModule>;
 	readonly magicSubagent: () => boolean;
 	readonly readNativeCompactionSettings: (ctx: ExtensionContext) => NativeCompactionSettings | undefined;
 	readonly prepareMagicContext: (
@@ -126,26 +121,6 @@ export function addCompactMagicContextMessage(messages: readonly AgentMessage[])
 	const projected = [...messages];
 	projected.splice(Math.max(0, projected.length - 1), 0, guidance);
 	return projected;
-}
-
-export function createMagicModuleSource(loader: () => Promise<MagicModule>): MagicModuleSource {
-	let cached: Promise<MagicModule> | undefined;
-	return {
-		invalidate: () => (cached = undefined),
-		load: () => {
-			if (!cached) {
-				let current!: Promise<MagicModule>;
-				current = Promise.resolve()
-					.then(loader)
-					.catch((error) => {
-						if (cached === current) cached = undefined;
-						throw error;
-					});
-				cached = current;
-			}
-			return cached;
-		},
-	};
 }
 
 export function quietMagicContext(

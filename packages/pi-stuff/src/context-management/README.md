@@ -35,13 +35,24 @@ Tools, or Agent delegations, block Tools or Suite-authored messages, or decide
 whether Pi, Goal, or Agents should pause, stop, complete, or fail. Each owning
 Capability retains its own lifecycle policy.
 
-`index.ts` is the Pi-facing wiring and public facade; `runtime.ts` remains the one lifecycle and activation authority.
+`index.ts` is the Pi-facing wiring, public facade, and Effect runner for Host-side activation and projection;
+`runtime.ts` remains the one lifecycle and activation authority.
 `activity.ts` owns persistent Context Activity, `command-runtime.ts` owns `/ctx` dispatch, and
 `tool-presentation.ts` owns Magic Tool presentation. `projection.ts` owns projection cache and in-flight work, while
-`projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains event schemas, the quiet Host
-proxy, and the retryable module loader. `magic-worker-client.ts` owns Pi registration, Session
-projection, and the Effect runner boundary; `magic-worker-transport.ts` owns native Worker acquisition, request
+`projection-format.ts` owns bounded native/Magic projection. `magic-runtime.ts` contains event schemas and the quiet
+Host proxy. `magic-worker-client.ts` is the Pi-facing Worker adapter and owns Worker
+registration, Session projection, and its scoped runner boundary; `magic-worker-transport.ts` owns native Worker acquisition, request
 correlation, cancellation, and release.
+
+Activation, Session-start serialization, committed-engine cleanup, and projection flights use Effect primitives rather
+than Promise-owned queues. One activation `Deferred` is shared by concurrent callers, and the stronger direct-use
+trigger wins before a deferred automatic activation releases its joiners. Activation stages registrations, replays the
+captured Session start, and commits only after the complete plan succeeds; failure runs staged shutdown handlers and
+keeps Pi native Context authoritative. Projection callers share one generation-keyed `Deferred`; invalidation completes
+its joiners with native fallback before clearing the published flight, and generation fences reject its late result. The
+only fire-and-continue programs—direct
+input prewarming and committed fatal cleanup—are started by `index.ts` under the current Pi Session signal; every other
+Effect program is joined by the Pi callback or public facade that initiated it.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.40.0`. The repository applies one
 temporary audited dependency patch so the engine resolves and preloads its installed `ai-tokenizer` in standalone Pi,

@@ -64,9 +64,12 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/codex/index.ts",
 		"packages/pi-stuff/src/codex/settings.ts",
 		"packages/pi-stuff/src/codex/usage.ts",
+		"packages/pi-stuff/src/context-management/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
+		"packages/pi-stuff/src/context-management/projection.ts",
+		"packages/pi-stuff/src/context-management/runtime.ts",
 		"packages/pi-stuff/src/mcp/config-persistence.ts",
 		"packages/pi-stuff/src/mcp/runtime/commands.ts",
 		"packages/pi-stuff/src/mcp/runtime/config-codecs.ts",
@@ -136,6 +139,8 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
+		"packages/pi-stuff/src/context-management/projection.ts",
+		"packages/pi-stuff/src/context-management/runtime.ts",
 		"packages/pi-stuff/src/mcp/config-persistence.ts",
 		"packages/pi-stuff/src/mcp/runtime/config-codecs.ts",
 		"packages/pi-stuff/src/mcp/runtime/config-sources.ts",
@@ -189,6 +194,7 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 	],
 	runnerAdapters: [
 		"packages/pi-stuff/src/codex/index.ts",
+		"packages/pi-stuff/src/context-management/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.ts",
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
@@ -197,6 +203,11 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/adapter.ts",
 	],
 	transitionCompatibility: [
+		{
+			contractionTicket: "ps-pby.16",
+			path: "packages/pi-stuff/src/context-management/runtime.ts",
+			symbols: ["nativeCompactionPreflight", "preflightNativeCustomTurn", "yieldForInteractivePaint"],
+		},
 		{
 			contractionTicket: "ps-pby.32",
 			path: "packages/pi-stuff/src/shared/settings-io/file.ts",

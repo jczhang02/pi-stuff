@@ -9,14 +9,14 @@ import type {
 	SessionStartEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { Deferred, Effect, Semaphore } from "effect";
 import { Check } from "typebox/value";
 import {
 	beginSuiteNativeCompactionPreflight,
-	registerSuiteAgentMessagePreparation,
 	reportDiagnostic,
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { isRuntimeObject, isRuntimeSymbol } from "../shared/runtime-type.js";
 import { registerSuiteOwnedTool, registerSuiteToolActivityMetadata } from "../tool-display/index.js";
 import { MAGIC_TOOL_LABELS, MAGIC_TOOL_NAME_SET, MAGIC_TOOL_NAMES } from "./activity.js";
@@ -65,23 +65,44 @@ export interface ContextCapability {
 
 export interface ContextCapabilityRegistry {
 	readonly contexts: WeakMap<object, ContextCapabilityRuntime>;
+	readonly capabilities: WeakMap<ContextCapabilityRuntime, ContextCapability>;
 	readonly owners: WeakMap<object, ContextCapabilityRuntime>;
 	readonly runtimes: Set<ContextCapabilityRuntime>;
+}
+
+interface ContextRuntimeBoundary {
+	readonly activate: (ctx: ExtensionContext, trigger: ContextActivationTrigger) => Promise<ContextStatusSnapshot>;
+	readonly committedFailure: (cause: unknown, ctx: ExtensionContext) => Promise<void>;
+}
+
+type SharedFlight<A> = { readonly deferred: Deferred.Deferred<A> };
+
+interface ActivationFlight extends SharedFlight<ContextStatusSnapshot> {
+	readonly trigger: ContextActivationTrigger;
+	retryTrigger?: ContextActivationTrigger;
+}
+
+function nativeEffect<A>(operation: () => A | PromiseLike<A>): Effect.Effect<A, unknown> {
+	return Effect.tryPromise({ try: async () => operation(), catch: (error) => error });
+}
+
+function nativeStatus(trigger: ContextActivationTrigger): ContextStatusSnapshot {
+	return { state: "native", engine: "native", trigger };
 }
 
 function ownerKey(pi: ExtensionAPI): object {
 	return isRuntimeObject(pi.events) && pi.events !== null ? pi.events : pi;
 }
 
-export class ContextCapabilityRuntime implements ContextCapability {
+export class ContextCapabilityRuntime {
 	private readonly pi: ExtensionAPI;
 	private readonly dependencies: ContextRuntimeDependencies;
 	private state: ContextStatusSnapshot = { state: "dormant", engine: "native" };
-	private activation: Promise<ContextStatusSnapshot> | undefined;
-	private activationTrigger: ContextActivationTrigger | undefined;
-	private cleanup: Promise<void> | undefined;
-	private sessionStartQueue: Promise<void> | undefined;
+	private activation: ActivationFlight | undefined;
+	private cleanup: SharedFlight<void> | undefined;
+	private readonly sessionStarts = Semaphore.makeUnsafe(1);
 	private generation = 0;
+	private readonly boundary: ContextRuntimeBoundary;
 	private readonly commandRuntime: ContextCommandRuntime;
 	private readonly magicCommands = new Map<string, MagicCommandDefinition>();
 	private magicContextHandler: MagicContextHandler | undefined;
@@ -100,19 +121,24 @@ export class ContextCapabilityRuntime implements ContextCapability {
 	private interactivePaintPending = false;
 	private magicPromptInstalledForSession = false;
 	private readonly suiteCustomContextGuidance = new Set<symbol>();
-	private readonly unregisterSuiteAgentMessagePreparation: () => void;
 
-	constructor(pi: ExtensionAPI, dependencies: ContextRuntimeDependencies, registry: ContextCapabilityRegistry) {
+	constructor(
+		pi: ExtensionAPI,
+		dependencies: ContextRuntimeDependencies,
+		registry: ContextCapabilityRegistry,
+		boundary: ContextRuntimeBoundary,
+	) {
 		this.pi = pi;
+		this.boundary = boundary;
 		this.commandRuntime = new ContextCommandRuntime(pi, {
-			activate: (ctx) => this.activate(ctx, "input").then(() => undefined),
+			activate: (ctx) => this.boundary.activate(ctx, "input").then(() => undefined),
 			commands: this.magicCommands,
 			currentContext: () => this.sessionContext,
 			error: () => this.state.error,
 			quietContext: magicCommandContext,
 		});
 		this.projectionRuntime = new ContextProjectionRuntime({
-			activate: (ctx) => this.activate(ctx, "projection").then(() => undefined),
+			activate: (ctx) => this.activate(ctx, "projection").pipe(Effect.asVoid),
 			current: () => ({
 				active: this.state.state === "active",
 				generation: this.generation,
@@ -131,13 +157,6 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		this.dependencies = dependencies;
 		this.registry = registry;
 		this.owner = ownerKey(pi);
-		this.unregisterSuiteAgentMessagePreparation = registerSuiteAgentMessagePreparation(pi, {
-			prepare: (origin, options) => this.prepareSuiteAgentMessage(origin, options),
-			stage: (options) => {
-				const token = this.stageSuiteCustomContextGuidance(options);
-				return token ? () => this.cancelSuiteCustomContextGuidance(token) : undefined;
-			},
-		});
 	}
 
 	status(): ContextStatusSnapshot {
@@ -231,36 +250,29 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		if (this.magicTools.size > 0) this.activateMagicTools();
 	}
 
-	async startSession(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
-		const previous = this.sessionStartQueue ?? Promise.resolve();
-		let tracked: Promise<void>;
-		tracked = previous
-			.catch(() => undefined)
-			.then(() => this.startSessionNow(event, ctx))
-			.finally(() => {
-				if (this.sessionStartQueue === tracked) this.sessionStartQueue = undefined;
-			});
-		this.sessionStartQueue = tracked;
-		return tracked;
+	startSession(event: SessionStartEvent, ctx: ExtensionContext): Effect.Effect<void> {
+		return this.sessionStarts.withPermit(this.startSessionNow(event, ctx));
 	}
 
-	private async startSessionNow(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
-		if (this.disposed) return;
-		const forwardsToActiveMagic = this.state.state === "active" && this.magicContextHandler !== undefined;
-		this.captureSessionStart(event, ctx);
-		if (!forwardsToActiveMagic) {
-			await this.activate(ctx, "startup");
-			return;
-		}
-		const generation = this.generation;
-		try {
-			for (const handler of this.magicSessionStartHandlers) {
-				await handler(event, quietMagicContext(ctx));
-				if (!this.isCurrentGeneration(generation)) return;
-			}
-		} catch (error) {
-			if (this.isCurrentGeneration(generation)) await this.degradeCommittedMagic(error, ctx);
-		}
+	private startSessionNow(event: SessionStartEvent, ctx: ExtensionContext): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (this.disposed) return Effect.void;
+			const forwardsToActiveMagic = this.state.state === "active" && this.magicContextHandler !== undefined;
+			this.captureSessionStart(event, ctx);
+			if (!forwardsToActiveMagic) return this.activate(ctx, "startup").pipe(Effect.asVoid);
+			const generation = this.generation;
+			const handlers = this.magicSessionStartHandlers;
+			return Effect.gen({ self: this }, function* () {
+				for (const handler of handlers) {
+					yield* nativeEffect(() => handler(event, quietMagicContext(ctx)));
+					if (!this.isCurrentGeneration(generation)) return;
+				}
+			}).pipe(
+				Effect.catch((error) =>
+					this.isCurrentGeneration(generation) ? this.handleCommittedFailure(error, ctx) : Effect.void,
+				),
+			);
+		});
 	}
 
 	invalidateProjection(): void {
@@ -287,112 +299,135 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		return true;
 	}
 
-	async preflightExtremeOverflow(ctx: ExtensionContext): Promise<void> {
-		if (!this.yieldExtremeOverflowToNative(ctx)) return;
-		await this.preflightNativeCustomTurn(ctx, false);
+	preflightExtremeOverflow(ctx: ExtensionContext): Effect.Effect<void> {
+		if (!this.yieldExtremeOverflowToNative(ctx)) return Effect.void;
+		return nativeEffect(() => this.preflightNativeCustomTurn(ctx, false)).pipe(Effect.ignore);
 	}
 
-	async dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Promise<void> {
-		if (this.disposed) return;
-		this.disposed = true;
-		const trigger = this.state.trigger;
-		this.state =
-			trigger === undefined ? { state: "native", engine: "native" } : { state: "native", engine: "native", trigger };
-		this.suiteCustomContextGuidance.clear();
-		this.sessionContext = undefined;
-		this.generation++;
-		this.magicSessionStartHandlers = [];
-		this.unregisterSuiteAgentMessagePreparation();
-		if (event && ctx) this.shutdown = { event, ctx };
-		this.projectionRuntime.invalidate(true);
-		for (const key of this.ownedContexts) {
-			if (this.registry.contexts.get(key) === this) this.registry.contexts.delete(key);
-		}
-		this.ownedContexts.clear();
-		if (this.registry.owners.get(this.owner) === this) this.registry.owners.delete(this.owner);
-		this.registry.runtimes.delete(this);
-		const handlers = this.magicShutdownHandlers.splice(0);
-		const shutdownHandlers =
-			event && ctx
-				? Promise.allSettled(
-						handlers.map((handler) => Promise.resolve().then(() => handler(event, quietMagicContext(ctx)))),
-					)
-				: undefined;
-		const pending = [
-			this.activation,
-			this.sessionStartQueue,
-			this.nativeCompactionPreflight,
-			shutdownHandlers,
-			this.cleanup,
-		].filter((operation) => operation !== undefined);
-		await settleWithin(Promise.allSettled(pending), HOST_SHUTDOWN_GRACE_MS);
-	}
-
-	async activate(ctx: ExtensionContext, trigger: ContextActivationTrigger): Promise<ContextStatusSnapshot> {
-		if (this.disposed) return { state: "native", engine: "native" };
-		if (this.cleanup) {
-			await this.cleanup;
-			if (this.disposed) return { state: "native", engine: "native" };
-			return this.activate(ctx, trigger);
-		}
-		if (this.dependencies.magicSubagent()) {
-			this.state = { state: "native", engine: "native", trigger };
-			return this.status();
-		}
-		if (this.state.state === "active" || this.state.state === "native") return this.status();
-		if (this.magicContextHandler) return this.status();
-		if (this.activation) {
-			const joinedTrigger = this.activationTrigger;
-			const result = await this.activation;
-			if (
-				trigger !== "automatic-turn" &&
-				joinedTrigger === "automatic-turn" &&
-				result.state === "dormant" &&
-				!this.disposed
-			) {
-				return this.activate(ctx, trigger);
+	dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (this.disposed) return Effect.void;
+			this.disposed = true;
+			const trigger = this.state.trigger;
+			this.state =
+				trigger === undefined
+					? { state: "native", engine: "native" }
+					: { state: "native", engine: "native", trigger };
+			this.suiteCustomContextGuidance.clear();
+			this.sessionContext = undefined;
+			this.generation++;
+			this.magicSessionStartHandlers = [];
+			if (event && ctx) this.shutdown = { event, ctx };
+			this.projectionRuntime.invalidate(true);
+			for (const key of this.ownedContexts) {
+				if (this.registry.contexts.get(key) === this) this.registry.contexts.delete(key);
 			}
-			return result;
-		}
-
-		this.state = { state: "loading", engine: "native", trigger };
-		const generation = ++this.generation;
-		const sessionStart = this.sessionStart ? { ...this.sessionStart } : undefined;
-		let tracked: Promise<ContextStatusSnapshot>;
-		tracked = this.startMagicContext(ctx, trigger, generation, sessionStart).finally(() => {
-			if (this.activation !== tracked) return;
-			this.activation = undefined;
-			this.activationTrigger = undefined;
+			this.ownedContexts.clear();
+			if (this.registry.owners.get(this.owner) === this) this.registry.owners.delete(this.owner);
+			this.registry.runtimes.delete(this);
+			const activation = this.activation;
+			const cleanup = this.cleanup;
+			const preflight = this.nativeCompactionPreflight;
+			const handlers = this.magicShutdownHandlers.splice(0);
+			const pending = [
+				activation ? Deferred.await(activation.deferred).pipe(Effect.asVoid) : Effect.void,
+				cleanup ? Deferred.await(cleanup.deferred) : Effect.void,
+				preflight ? Effect.promise(() => preflight) : Effect.void,
+				this.sessionStarts.withPermit(Effect.void),
+				event && ctx
+					? Effect.forEach(
+							handlers,
+							(handler) => nativeEffect(() => handler(event, quietMagicContext(ctx))).pipe(Effect.ignore),
+							{ concurrency: "unbounded", discard: true },
+						)
+					: Effect.void,
+			];
+			return Effect.all(pending, { concurrency: "unbounded", discard: true }).pipe(
+				Effect.timeoutOption(HOST_SHUTDOWN_GRACE_MS),
+				Effect.asVoid,
+			);
 		});
-		this.activationTrigger = trigger;
-		this.activation = tracked;
-		return this.activation;
 	}
 
-	async prepareSuiteAgentMessage(
+	activate(ctx: ExtensionContext, trigger: ContextActivationTrigger): Effect.Effect<ContextStatusSnapshot> {
+		return Effect.suspend(() => {
+			if (this.disposed) return Effect.succeed({ state: "native", engine: "native" });
+			const cleanup = this.cleanup;
+			if (cleanup) {
+				return Deferred.await(cleanup.deferred).pipe(Effect.flatMap(() => this.activate(ctx, trigger)));
+			}
+			if (this.dependencies.magicSubagent()) {
+				this.state = { state: "native", engine: "native", trigger };
+				return Effect.succeed(this.status());
+			}
+			if (this.state.state === "active" || this.state.state === "native") return Effect.succeed(this.status());
+			if (this.magicContextHandler) return Effect.succeed(this.status());
+			const current = this.activation;
+			if (current) {
+				if (trigger !== "automatic-turn" && current.trigger === "automatic-turn") current.retryTrigger = trigger;
+				return Deferred.await(current.deferred).pipe(
+					Effect.flatMap((result) =>
+						trigger !== "automatic-turn" &&
+						current.trigger === "automatic-turn" &&
+						result.state === "dormant" &&
+						!this.disposed
+							? this.activate(ctx, trigger)
+							: Effect.succeed(result),
+					),
+				);
+			}
+
+			this.state = { state: "loading", engine: "native", trigger };
+			const generation = ++this.generation;
+			const sessionStart = this.sessionStart ? { ...this.sessionStart } : undefined;
+			const flight: ActivationFlight = {
+				deferred: Deferred.makeUnsafe<ContextStatusSnapshot>(),
+				trigger,
+			};
+			this.activation = flight;
+			return this.startMagicContext(ctx, trigger, generation, sessionStart).pipe(
+				Effect.flatMap((result) => {
+					const retryTrigger = flight.retryTrigger;
+					if (retryTrigger && result.state === "dormant" && !this.disposed) {
+						if (this.activation === flight) this.activation = undefined;
+						return this.activate(ctx, retryTrigger);
+					}
+					return Effect.succeed(result);
+				}),
+				Effect.onExit((exit) => Deferred.done(flight.deferred, exit)),
+				Effect.ensuring(
+					Effect.sync(() => {
+						if (this.activation === flight) this.activation = undefined;
+					}),
+				),
+			);
+		});
+	}
+
+	prepareSuiteAgentMessage(
 		activation: "automatic" | "direct-user",
 		options: SuiteAgentMessageOptions,
-	): Promise<void> {
+	): Effect.Effect<void> {
 		const ctx = this.sessionContext;
-		if (!ctx) return;
+		if (!ctx) return Effect.void;
 		let idle = false;
 		try {
 			idle = ctx.isIdle();
 		} catch {
 			// A partial Host context must fail toward preserving model context.
 		}
-		let startsOrJoinsAgentWork = options?.triggerTurn === true;
-		if (!startsOrJoinsAgentWork) {
-			startsOrJoinsAgentWork = !idle;
-		}
-		if (!startsOrJoinsAgentWork) return;
-		await this.activate(ctx, activation === "direct-user" ? "input" : "automatic-turn");
-		if (options?.triggerTurn === true && idle && this.state.state !== "active") {
-			await this.preflightNativeCustomTurn(ctx);
-		}
+		const startsOrJoinsAgentWork = options?.triggerTurn === true || !idle;
+		if (!startsOrJoinsAgentWork) return Effect.void;
+		return this.activate(ctx, activation === "direct-user" ? "input" : "automatic-turn").pipe(
+			Effect.flatMap(() =>
+				options?.triggerTurn === true && idle && this.state.state !== "active"
+					? nativeEffect(() => this.preflightNativeCustomTurn(ctx)).pipe(Effect.ignore)
+					: Effect.void,
+			),
+		);
 	}
 
-	private stageSuiteCustomContextGuidance(options: SuiteAgentMessageOptions): symbol | undefined {
+	stageSuiteCustomContextGuidance(options: SuiteAgentMessageOptions): symbol | undefined {
 		if (options?.triggerTurn !== true || this.state.state !== "active" || this.magicPromptInstalledForSession) {
 			return undefined;
 		}
@@ -406,7 +441,7 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		return token;
 	}
 
-	private cancelSuiteCustomContextGuidance(token: symbol): void {
+	cancelSuiteCustomContextGuidance(token: symbol): void {
 		this.suiteCustomContextGuidance.delete(token);
 	}
 
@@ -483,57 +518,60 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		await tracked;
 	}
 
-	async projectCurrentContext(
+	projectCurrentContext(
 		audience: ContextProjectionAudience,
 		ctx: ExtensionContext,
 		options?: ContextProjectionOptions,
-	): Promise<ContextProjection> {
+	): Effect.Effect<ContextProjection> {
 		return this.projectionRuntime.projectCurrent(audience, ctx, options);
 	}
 
-	private async startMagicContext(
+	private startMagicContext(
 		ctx: ExtensionContext,
 		trigger: ContextActivationTrigger,
 		generation: number,
 		sessionStart: SessionStartEvent | undefined,
-	): Promise<ContextStatusSnapshot> {
+	): Effect.Effect<ContextStatusSnapshot> {
 		const plan: MagicRegistrationPlan = { commands: new Map(), handlers: [], tools: [], shutdownComplete: false };
 		let committed = false;
-		try {
-			const preparation = await this.dependencies.prepareMagicContext(ctx, {
-				allowConfigurationMutation: trigger !== "automatic-turn" && trigger !== "startup",
-			});
+		const transaction = Effect.gen({ self: this }, function* () {
+			const preparation = yield* nativeEffect(() =>
+				this.dependencies.prepareMagicContext(ctx, {
+					allowConfigurationMutation: trigger !== "automatic-turn" && trigger !== "startup",
+				}),
+			);
 			if (preparation === "deferred") {
-				if (!this.isCurrentGeneration(generation)) return { state: "native", engine: "native", trigger };
+				if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
 				this.state = { state: "dormant", engine: "native" };
 				return this.status();
 			}
-			const module = await this.dependencies.magicModules.load();
+			const module = yield* nativeEffect(() => this.dependencies.loadMagicContext());
 			if (!this.isCurrentGeneration(generation)) {
-				await this.rollbackRegistrationPlan(plan, ctx);
-				return { state: "native", engine: "native", trigger };
+				yield* this.rollbackRegistrationPlan(plan, ctx);
+				return nativeStatus(trigger);
 			}
 			const magicPi = magicPiAdapter(this.pi, plan, (data) => this.commandRuntime.captureStatus(data));
-			await module.default(magicPi, (cause) => {
-				if (!committed || !this.isCurrentGeneration(generation)) return;
-				void this.degradeCommittedMagic(cause, ctx);
-			});
+			yield* nativeEffect(() =>
+				module.default(magicPi, (cause) => {
+					if (!committed || !this.isCurrentGeneration(generation)) return;
+					void this.boundary.committedFailure(cause, ctx);
+				}),
+			);
 			if (!this.isCurrentGeneration(generation)) {
-				await this.rollbackRegistrationPlan(plan, ctx);
-				return { state: "native", engine: "native", trigger };
+				yield* this.rollbackRegistrationPlan(plan, ctx);
+				return nativeStatus(trigger);
 			}
 			// Session startup is part of the activation transaction. Running it before
 			// commit lets a partial upstream startup fail open without leaving Magic
 			// registered as the active Context owner.
-			await this.replaySessionStart(plan, sessionStart, ctx);
+			yield* this.replaySessionStart(plan, sessionStart, ctx);
 			if (!this.isCurrentGeneration(generation)) {
-				await this.rollbackRegistrationPlan(plan, ctx);
-				return { state: "native", engine: "native", trigger };
+				yield* this.rollbackRegistrationPlan(plan, ctx);
+				return nativeStatus(trigger);
 			}
 			if (!plan.contextHandler) {
-				await this.rollbackRegistrationPlan(plan, ctx);
-				if (!this.isCurrentGeneration(generation)) return { state: "native", engine: "native", trigger };
-				this.dependencies.magicModules.invalidate();
+				yield* this.rollbackRegistrationPlan(plan, ctx);
+				if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
 				this.deactivateToolHandoffs();
 				this.setDegraded(
 					"Magic Context did not register its context adapter; Pi native context remains active.",
@@ -541,80 +579,103 @@ export class ContextCapabilityRuntime implements ContextCapability {
 				);
 				return this.status();
 			}
-			this.commitRegistrationPlan(plan, generation);
+			yield* Effect.try({
+				try: () => this.commitRegistrationPlan(plan, generation),
+				catch: (error) => error,
+			});
 			committed = true;
 			this.state = { state: "active", engine: "magic-context", trigger };
 			return this.status();
-		} catch (error) {
-			await this.rollbackRegistrationPlan(plan, ctx);
-			if (!this.isCurrentGeneration(generation)) return { state: "native", engine: "native", trigger };
-			this.dependencies.magicModules.invalidate();
-			this.magicContextHandler = undefined;
-			this.deactivateToolHandoffs();
-			this.setDegraded(error, trigger);
-			return this.status();
-		}
+		});
+		return transaction.pipe(
+			Effect.catch((error) =>
+				this.rollbackRegistrationPlan(plan, ctx).pipe(
+					Effect.map(() => {
+						if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
+						this.magicContextHandler = undefined;
+						this.deactivateToolHandoffs();
+						this.setDegraded(error, trigger);
+						return this.status();
+					}),
+				),
+			),
+		);
 	}
 
-	private async replaySessionStart(
+	private replaySessionStart(
 		plan: MagicRegistrationPlan,
 		event: SessionStartEvent | undefined,
 		ctx: ExtensionContext,
-	): Promise<void> {
-		if (!event) return;
-		for (const staged of plan.handlers) {
-			if (staged.event === "session_start") await staged.handler(event, quietMagicContext(ctx));
-		}
+	): Effect.Effect<void, unknown> {
+		if (!event) return Effect.void;
+		return Effect.forEach(
+			plan.handlers,
+			(staged) =>
+				staged.event === "session_start"
+					? nativeEffect(() => staged.handler(event, quietMagicContext(ctx))).pipe(Effect.asVoid)
+					: Effect.void,
+			{ discard: true },
+		);
 	}
 
-	private async degradeCommittedMagic(cause: unknown, ctx: ExtensionContext): Promise<void> {
-		const generation = ++this.generation;
-		this.projectionRuntime.invalidate(true);
-		this.commandRuntime.clearActive();
-		this.magicCommands.clear();
-		this.magicContextHandler = undefined;
-		this.magicSessionStartHandlers = [];
-		this.magicTools.clear();
-		this.deactivateToolHandoffs();
-		this.dependencies.magicModules.invalidate();
-		const handlers = this.magicShutdownHandlers.splice(0);
-		this.state = { state: "loading", engine: "native", trigger: "startup" };
-		let cleanup: Promise<void>;
-		cleanup = Promise.resolve()
-			.then(async () => {
-				for (const handler of handlers) {
-					try {
-						await handler({ type: "session_shutdown", reason: "reload" }, quietMagicContext(ctx));
-					} catch {
-						// Native fallback must survive optional engine cleanup failures.
-					}
-				}
-			})
-			.finally(() => {
-				if (this.cleanup === cleanup) this.cleanup = undefined;
-			});
-		this.cleanup = cleanup;
-		await cleanup;
-		if (!this.isCurrentGeneration(generation)) return;
-		this.setDegraded(cause, "startup");
+	handleCommittedFailure(cause: unknown, ctx: ExtensionContext): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (this.disposed) return Effect.void;
+			const current = this.cleanup;
+			if (current) return Deferred.await(current.deferred);
+			const generation = ++this.generation;
+			this.projectionRuntime.invalidate(true);
+			this.commandRuntime.clearActive();
+			this.magicCommands.clear();
+			this.magicContextHandler = undefined;
+			this.magicSessionStartHandlers = [];
+			this.magicTools.clear();
+			this.deactivateToolHandoffs();
+			const handlers = this.magicShutdownHandlers.splice(0);
+			this.state = { state: "loading", engine: "native", trigger: "startup" };
+			const cleanup = { deferred: Deferred.makeUnsafe<void>() };
+			this.cleanup = cleanup;
+			return Effect.forEach(
+				handlers,
+				(handler) =>
+					nativeEffect(() => handler({ type: "session_shutdown", reason: "reload" }, quietMagicContext(ctx))).pipe(
+						Effect.ignore,
+					),
+				{ discard: true },
+			).pipe(
+				Effect.tap(() =>
+					Effect.sync(() => {
+						if (this.isCurrentGeneration(generation)) this.setDegraded(cause, "startup");
+					}),
+				),
+				Effect.onExit((exit) => Deferred.done(cleanup.deferred, exit)),
+				Effect.ensuring(
+					Effect.sync(() => {
+						if (this.cleanup === cleanup) this.cleanup = undefined;
+					}),
+				),
+			);
+		});
 	}
 
 	private isCurrentGeneration(generation: number): boolean {
 		return !this.disposed && this.generation === generation;
 	}
 
-	private async rollbackRegistrationPlan(plan: MagicRegistrationPlan, ctx: ExtensionContext): Promise<void> {
-		if (plan.shutdownComplete) return;
-		plan.shutdownComplete = true;
-		const event: SessionShutdownEvent = this.shutdown?.event ?? { type: "session_shutdown", reason: "reload" };
-		for (const { event: name, handler } of plan.handlers) {
-			if (name !== "session_shutdown") continue;
-			try {
-				await handler(event, quietMagicContext(this.shutdown?.ctx ?? ctx));
-			} catch {
-				// A failed optional engine must not prevent native fallback.
-			}
-		}
+	private rollbackRegistrationPlan(plan: MagicRegistrationPlan, ctx: ExtensionContext): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (plan.shutdownComplete) return Effect.void;
+			plan.shutdownComplete = true;
+			const event: SessionShutdownEvent = this.shutdown?.event ?? { type: "session_shutdown", reason: "reload" };
+			return Effect.forEach(
+				plan.handlers,
+				({ event: name, handler }) =>
+					name === "session_shutdown"
+						? nativeEffect(() => handler(event, quietMagicContext(this.shutdown?.ctx ?? ctx))).pipe(Effect.ignore)
+						: Effect.void,
+				{ discard: true },
+			);
+		});
 	}
 
 	private commitRegistrationPlan(plan: MagicRegistrationPlan, generation: number): void {
@@ -642,14 +703,17 @@ export class ContextCapabilityRuntime implements ContextCapability {
 		);
 	}
 
-	async projectMagicContext(event: ContextEvent, ctx: ExtensionContext): Promise<MagicContextEventResult | undefined> {
-		const attempt = await this.projectionRuntime.projectMagicEvent(event, ctx);
-		if (!attempt?.full) return attempt?.result;
-		if (!this.consumeSuiteCustomContextGuidance()) return attempt.result;
-		return {
-			...attempt.result,
-			messages: addCompactMagicContextMessage(attempt.result?.messages ?? event.messages),
-		};
+	projectMagicContext(event: ContextEvent, ctx: ExtensionContext): Effect.Effect<MagicContextEventResult | undefined> {
+		return this.projectionRuntime.projectMagicEvent(event, ctx).pipe(
+			Effect.map((attempt) => {
+				if (!attempt?.full) return attempt?.result;
+				if (!this.consumeSuiteCustomContextGuidance()) return attempt.result;
+				return {
+					...attempt.result,
+					messages: addCompactMagicContextMessage(attempt.result?.messages ?? event.messages),
+				};
+			}),
+		);
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {
@@ -709,7 +773,7 @@ export class ContextCapabilityRuntime implements ContextCapability {
 					if (!contributed?.systemPrompt) return result;
 					return { ...beforeAgentResult, systemPrompt: contributed.systemPrompt };
 				} catch (error) {
-					if (this.isCurrentGeneration(generation)) await this.degradeCommittedMagic(error, ctx);
+					if (this.isCurrentGeneration(generation)) await this.boundary.committedFailure(error, ctx);
 					return;
 				}
 			});
@@ -721,7 +785,7 @@ export class ContextCapabilityRuntime implements ContextCapability {
 				const result = await handler(rawEvent, quietMagicContext(ctx));
 				return this.isCurrentGeneration(generation) ? result : undefined;
 			} catch (error) {
-				if (this.isCurrentGeneration(generation)) await this.degradeCommittedMagic(error, ctx);
+				if (this.isCurrentGeneration(generation)) await this.boundary.committedFailure(error, ctx);
 				return;
 			}
 		});

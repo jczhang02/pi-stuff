@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 39d661587ab60311797a9670bf0f73910917a36b3157507fd9c353a581c0675a -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 8041549b2332454028b5e2f1ff077365ea7dc0c2587a5bbc8a8543c3b5c66c4e -->
 
 # Context Management 模块
 
@@ -10,7 +10,9 @@ Magic Context 0.40 会把扁平用户级 Historian 与 Dreamer 执行设置迁�
 
 上下文管理不会创建任务锚点，不统计通用 Provider 轮次、工具或 Agent 委派，不阻止工具或套件发起消息，也不决定 Pi、Goal 或 Agents 是否应暂停、停止、完成或失败。每项所属能力保留自己的生命周期政策。
 
-`index.ts` 是面向 Pi 的布线与公开外观；`runtime.ts` 仍是唯一生命周期与激活权威。`activity.ts` 负责持久上下文活动，`command-runtime.ts` 负责 `/ctx` 分派，`tool-presentation.ts` 负责 Magic 工具呈现。`projection.ts` 负责投影缓存与进行中工作，`projection-format.ts` 负责有界原生/Magic 投影。`magic-runtime.ts` 包含事件 Schema、安静宿主代理和可重试模块加载器。`magic-worker-client.ts` 负责 Pi 注册、Session 投影与 Effect runner 边界；`magic-worker-transport.ts` 负责原生 Worker 获取、请求关联、取消与释放。
+`index.ts` 是面向 Pi 的布线与公开外观，也是宿主侧激活和投影的 Effect runner；`runtime.ts` 仍是唯一生命周期与激活权威。`activity.ts` 负责持久上下文活动，`command-runtime.ts` 负责 `/ctx` 分派，`tool-presentation.ts` 负责 Magic 工具呈现。`projection.ts` 负责投影缓存与进行中工作，`projection-format.ts` 负责有界原生/Magic 投影。`magic-runtime.ts` 包含事件 Schema 和安静宿主代理。`magic-worker-client.ts` 是面向 Pi 的 Worker 适配器，负责 Worker 注册、Session 投影及其带 Scope 的 runner 边界；`magic-worker-transport.ts` 负责原生 Worker 获取、请求关联、取消与释放。
+
+激活、Session 启动串行化、已提交引擎清理和投影 flight 都使用 Effect 原语，不再使用 Promise 自建队列。并发调用者共享一个激活 `Deferred`；若自动激活被延后，更强的直接使用触发会在释放等待者前胜出。激活会暂存注册、重放捕获的 Session 启动，并且只有完整计划成功后才提交；失败时运行暂存的关闭处理器，并继续让 Pi 原生 Context 保持权威。投影调用者共享按代际与键标识的 `Deferred`；失效会先让等待者回退到原生投影，再清除已发布的 flight，代际围栏则拒绝它的迟到结果。仅有两类启动后继续运行的程序——直接输入预热和已提交引擎的致命故障清理——由 `index.ts` 在当前 Pi Session signal 下启动；其他所有 Effect 程序都由发起它们的 Pi 回调或公开外观等待完成。
 
 外部引擎依赖固定为 `@cortexkit/pi-magic-context@0.40.0`。仓库应用一个临时且经过审查的依赖补丁，使引擎在独立 Pi 中解析并预加载已安装 `ai-tokenizer`，并避免只为内容哈希而重新分词图像载荷；[UPSTREAM.md](./UPSTREAM.md) 记录补丁和删除触发条件。适配器抑制上游 Todo、状态栏、公告、命令和辅助 UI，同时在套件负责的 `/ctx` 分派器后保留五个维护处理器。它还会在官方引擎处理 `before_agent_start` 前，提供紧凑的面向 Provider 行为约定。因此引擎继续进行自己的提示词缓存处理，但跳过更长的默认指引；历史语义、检索、归约、记忆、笔记和开放回退行为保持不变。
 
