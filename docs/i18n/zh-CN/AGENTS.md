@@ -1,4 +1,4 @@
-<!-- translation-source: AGENTS.md; translation-source-sha256: dade524590386e02c7d9e12c789f8bdd2f14179cae0d413e3f75cd8a43f50962 -->
+<!-- translation-source: AGENTS.md; translation-source-sha256: c11a049650c1c4081da24cdce63f0ca0959959e64be3d77064f05d2c792dafb4 -->
 
 # 仓库指令
 
@@ -26,6 +26,7 @@
 - 显然且可逆的仓库内决定可直接做。只有当范围、权限或实质产品决定确实依赖用户时，才在对话中提出一个
   简短问题，不使用问题 widget。
 - 让长时间工作保持可观察。Agent 负责聚焦检查和有代表性的真实 Host 验收；不要把例行验证交还用户。
+- 测试范围要与风险相称：只写保护真实行为或已确认回归所需的最小聚焦覆盖，不写重复、推测性或臃肿测试。
 - 每次代码变更都必须针对完整最终 diff，通过 `docs/code-quality.md` 中的 Thermo-Nuclear 完成审查。
   小型隔离变更需要一次聚焦且无发现的 review。广泛、跨 Capability、架构、全仓库质量/重构/
   源码精简或 Release 风险工作，需要独立 reviewer 反复审查完整受影响范围，直到连续两轮都无发现。
@@ -53,7 +54,8 @@
   声称公开 seam 已认证。
 - 不要仅凭 ancestry 推断已合并。报告 merge 或清理状态前，检查相关 patch 或 commit、每个关联 worktree 的
   tracked/untracked 状态以及目标分支。
-- 在相关聚焦检查后频繁提交小而完整的 checkpoint；不要把无关工作堆进一个 commit。使用带签名的
+- worktree 的变更合并后，先确认其中没有 tracked 或 untracked 工作，再及时删除该 worktree。
+- 在相关聚焦检查后及时提交并推送小而完整的 checkpoint；不要把无关工作堆进一个 commit。使用带签名的
   Conventional Commit。
 - 人工英文 Markdown 是权威来源。行为、契约、术语、兼容性或流程改变时，在同一次变更中更新负责它的当前
   文档。每份保留的英文 Markdown 都在 `docs/i18n/zh-CN/<仓库路径>` 下拥有镜像，记录源路径与原始源文件
