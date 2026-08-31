@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Adopt Effect as the internal effect model
@@ -11,9 +11,9 @@ provision, and shutdown through Capability-owned Promise and `AbortSignal` mecha
 right domain authorities, but their execution semantics recur across Background Work, Agents, Context Management,
 Code Mode, MCP, Web, and other effectful Modules.
 
-The proposal is evaluated as a behavior-preserving, merge-quality implementation in an isolated worktree. It is not
-accepted merely because the migration can be completed: the final implementation still requires repository review,
-certification, and an explicit go/no-go decision.
+The proposal was evaluated as a behavior-preserving, merge-quality implementation in an isolated worktree. Completing
+the migration alone did not accept it: the final implementation also required repository review, certification, and
+an explicit go/no-go decision.
 
 ## Decision
 
@@ -108,11 +108,16 @@ inventory. The audit rejects an Effect wrapper that leaves the complete former l
 
 The intended ownership tree is Pi Host, Suite installation Scope, Pi Session Scope, Capability Scope, then operation
 Scope and Fiber. Effect types stay inside the Package and do not replace Pi's public Extension, Session, Tool, UI,
-Provider, or Agent contracts. The proposal remains unaccepted until the complete migration demonstrates parity and
-passes the repository's final architecture, quality, real-Host, and packaging evidence.
+Provider, or Agent contracts. The complete migration demonstrated parity and passed the repository's final
+architecture, quality, real-Host, and packaging evidence, so this decision was accepted on 2026-08-31.
 
-The final go/no-go decision requires every existing Capability contract, focused check, complete repository check,
-representative real-Host acceptance path, and two consecutive whole-scope Thermo-Nuclear reviews to pass. The evidence
-reports source lines, mutable lifecycle state, branching, startup, resident memory, archive size, and typecheck time.
-No mechanical line-reduction target decides the result, but an implementation that only adds wrappers and Layers
-without removing lifecycle state or mechanisms fails the architectural test.
+The final go/no-go decision passed every existing Capability contract, focused check, complete repository check,
+representative real-Host acceptance path, and two consecutive whole-scope Thermo-Nuclear reviews. The evidence reports
+source lines, mutable lifecycle state, branching, startup, resident memory, archive size, and typecheck time. No
+mechanical line-reduction target decided the result: the migration replaced former lifecycle mechanisms instead of
+leaving them under wrappers and Layers. The performance follow-up records a 6.2% faster real-Host startup, a 13.9%
+faster direct Suite import, 8.7% lower import RSS, and effectively unchanged shutdown versus the pre-Effect baseline.
+Cold uncached checking remains 7.4% slower; native incremental state cuts unchanged repeat checks by about 77%, while
+further cold-check reductions require a declaration/build boundary or upstream TypeScript/Effect work. See
+[`docs/reports/pi-stuff-lifecycle-performance.md`](../reports/pi-stuff-lifecycle-performance.md) for the complete
+measurements and rejected optimization candidates.

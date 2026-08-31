@@ -1,7 +1,7 @@
-<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 8c398faa9ee96a1d0b786b40502720c1e2d1662f091e65456754a520a8374267 -->
+<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 6c22afeda1c277d7cb621090aa4f6e752f4dc7ee3dd78b1af6bd5031e566a16e -->
 
 ---
-status: proposed
+status: accepted
 ---
 
 # 采用 Effect 作为内部副作用模型
@@ -12,8 +12,8 @@ Pi Stuff 目前通过各能力自有的 Promise 与 `AbortSignal` 机制表达�
 依赖提供和关闭。这些机制保留了正确的领域权威，但其执行语义在后台工作、Agents、上下文管理、
 Code Mode、MCP、Web 及其他包含副作用的模块中反复出现。
 
-本提案将在隔离 worktree 中以保持行为、达到可合并质量为目标进行评估。迁移能够完成并不等于提案被
-接受：最终实现仍须完成仓库审查、认证和一次明确的 go/no-go 决策。
+本提案已在隔离 worktree 中以保持行为、达到可合并质量为目标完成评估。仅完成迁移并不等于提案被
+接受：最终实现还必须完成仓库审查、认证和一次明确的 go/no-go 决策。
 
 ## 决策
 
@@ -96,10 +96,14 @@ runner 仅限于面向 Pi 的适配器，而直接 Promise 构造、abort contro
 
 预期的所有权树依次为 Pi 宿主、Suite 安装 Scope、Pi 会话 Scope、能力 Scope，再到 operation Scope
 和 Fiber。Effect 类型留在软件包内部，不替代 Pi 的公开 Extension、会话、工具、UI、Provider 或
-Agent 合同。在完整迁移证明行为等价并通过仓库最终架构、质量、真实宿主和打包证据之前，本提案不会
-转为接受状态。
+Agent 合同。完整迁移已经证明行为等价，并通过仓库最终架构、质量、真实宿主和打包证据，因此本决策
+于 2026-08-31 转为接受状态。
 
-最终 go/no-go 决策要求所有既有能力合同、聚焦检查、完整仓库检查、代表性真实宿主验收路径，以及
-连续两轮全范围 Thermo-Nuclear review 全部通过。证据报告源码行数、可变生命周期状态、分支、启动、
-常驻内存、归档大小和类型检查时间。机械的行数降幅不决定结果，但如果实现只增加 wrapper 与 Layer，
-却没有删除生命周期状态或机制，则无法通过架构测试。
+最终 go/no-go 决策通过了所有既有能力合同、聚焦检查、完整仓库检查、代表性真实宿主验收路径，以及
+连续两轮全范围 Thermo-Nuclear review。证据报告源码行数、可变生命周期状态、分支、启动、常驻内存、
+归档大小和类型检查时间。机械的行数降幅没有决定结果：迁移替换了原有生命周期机制，而不是把它们
+留在 wrapper 与 Layer 之下。性能跟进相对 Effect 引入前基线记录到：真实宿主启动加快 6.2%，Suite
+直接导入加快 13.9%，导入 RSS 降低 8.7%，关闭耗时基本不变。冷启动且无缓存的类型检查仍慢 7.4%；
+原生增量状态把无变更的重复检查缩短约 77%，而继续降低冷检查耗时需要声明/构建边界，或依赖上游
+TypeScript/Effect 改进。完整测量和被否决的优化候选见
+[`docs/reports/pi-stuff-lifecycle-performance.md`](../reports/pi-stuff-lifecycle-performance.md)。
