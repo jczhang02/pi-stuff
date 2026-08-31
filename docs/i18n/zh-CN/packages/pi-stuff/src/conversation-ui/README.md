@@ -1,153 +1,32 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 799a686f1efbd9ff28bfe16772d9ed6847c26c51f719c9640d1b66464113a7b7 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 0062d605a2bc535901768951cc218f66bfbce648f29b8403791795cca2ced2de -->
 
-# Conversation UI 模块
+# Conversation UI
 
-Pi Stuff 套件的统一呈现层。它保持 Pi 为宿主，并增加响应式状态栏、欢迎标题、实时 Thought 与围栏可视化投影、输入增强、一个 `/ui` 设置界面，以及聚焦套件命令共用的非浮动命令对话框。
+[English](../../../../../../../packages/pi-stuff/src/conversation-ui/README.md)
 
-## 日常 UI
+Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦 Command Dialog 的共享呈现层。
 
-### 状态栏
+## 快速开始
 
-状态栏恰好由一行图标引导状态和一行可选先前提示词组成。状态行在顶级组之间使用柔和中点分隔，并按以下稳定顺序排列：模型、Thinking、条件 `fast`、工作目录、Git、Context 百分比、缓存命中率、计量成本或 Codex 每周额度、条件当前 Goal、条件 Ponytail 模式。Git 分支跟踪和文件状态共享一个视觉组，以空格分隔。它有意省略 token 窗口计数和普通 Agent 工作时间。MCP、Agents、Todo、BTW 与工具活动等能力状态留在各自聚焦界面，不增加状态栏片段。Ponytail 是范围狭窄的例外：`󱖿 <mode>` 是其唯一持久模式权威；`off` 或显式隐藏偏好时消失，绝不表示 Agent 活动。
-
-没有当前 Goal 时，Goal 片段不显示。活跃 Goal 渲染 ` goal used/budget elapsed`，例如 ` goal 0/40k 13m`，并在可见时每秒刷新活跃经过时间。暂停使用 ``，阻塞及用量或预算限制状态使用 ``，有界完成投影使用 ``；完整状态文字与语义颜色保持可见。暂停或隐藏时间不计入；非活跃、被抑制、已清除和已处置界面不保留刷新计时器。Goal 只通过共享宿主通道发布呈现快照；状态栏仍是唯一持久 Goal 呈现权威。
-
-自动密度先把长字段切换为紧凑形式，再删除完整的低优先级片段。它绝不让状态行换行，也不留下截断字段碎片。模型和 Context 最先保留，之后按已接受优先级保留 cwd、分支、Thinking、额度、文件状态、`fast` 和缓存。受限的脏 Git 状态把文件变更汇总为 `󰏫N`；分支跟踪仍通过 `` 和 `` 标记保持可归属。
-
-启用时，先前提示词始终限制为一行。柔和 `` 提示占据与模型图标相同的第一个视觉列。两行都保留一个标记单元和一个稳定间隙，因此拉丁文字、中文、日文、韩文与 emoji 从同一终端列开始。提示词文字使用可读的次级 `muted` token，而不是装饰性 `dim` token。持久 Skill 展开和已识别的行内或多个 `/skill:*` 命令会还原为提交任务加紧凑 Skill 徽章；Skill XML、指令和本地路径绝不会进入预览。
-
-两行状态栏中的每个语义图标和状态标记都使用 [`DESIGN.md`](../../../../DESIGN.md) 定义的固定 Nerd Font 语法。不存在 Unicode 或 ASCII 回退、终端检测、环境变量覆盖或 `/ui` 图标模式。`·` 分隔符和 `…` 截断标记继续作为标点。颜色只来自 Pi 语义主题 token。
-
-缓存值是活跃分支所有成功 Assistant 消息的累计命中率：`cacheRead / (input + cacheRead + cacheWrite)`。失败或中止消息与压缩元数据不影响命中率或成本。分母为零、上下文不可用，以及非推理模型的 Thinking 都省略。订阅模型同时省略成本和原 `(sub)` 标签。
-
-控制器消费增量会话快照和显式刷新的 Git 快照。因此布局与渲染本身不会启动子进程或遍历原始会话历史；两种数据源都保持有界，并能各自从宿主状态不可用中恢复。
-
-对于 `openai-codex`，成本始终替换为观察到的每周剩余百分比。Fast 模式活跃时，`fast` 位于原页脚中 Thinking 与工作目录之间的位置；每周额度仍位于缓存之后。内部 Codex 模块通过 `getCodexStatusChannel(pi)` 发布快照；状态栏不进行认证或网络工作。
-
-真实数据到达前，每周额度保持隐藏；只有 Fast 模式启用时才显示 `fast`。共享通道以 Pi 扩展事件总线为键，因此后加载、物理分离的能力副本仍会收敛到一个观察者身份。用户驱动的交互式 Codex Agent 运行达到运行后观察使用的同一个真正空闲边界后，Codex 能力会刷新一次快照，不使用计时器。自动工作、非 Codex 运行、导入和启动都不请求用量；重叠运行后刷新合并成一次尾随请求。
-
-会话导入和启动不探测 Git。用户驱动的 Agent 轮次，包括归属于它的后台 Agent 完成，会请求一次有界、只读、无锁状态刷新，把计数绑定到测量的工作目录和分支。自动扩展工作绝不请求。跨分支或 cwd 变化时，过期计数消失；禁用状态栏会停止未来探测。活跃探测期间到达的请求合并成一次尾随测量，因此不会丢失最新状态，突发也保持有界。异步 `agent_settled` 处理器仍在决定是否继续时，Pi 会把自己暴露为空闲；套件因此会保留刷新请求，直到最后观察到的稳定达到真正空闲边界，避免探测与 Goal 继续重叠。
-
-归属遵循 Pi 实际消息传输，而不是排队接受。用户后续消息因此保持待处理，不会重标正在进行的 Agent 工作；它在自己的 `message_start` 边界成为用户工作。直接交互和 RPC 引导只有 Pi 传输消息时才提升活跃工作，因此后续输入处理器仍可拒绝它们而不改变归属。套件负责的 UI 引导在宿主发送被接受后立即提升。套件发起的 Goal、Web、MCP、后台工作和 Supervisor 消息携带内存中的用户/自动标记，因此由这些轮次启动的 Agents 继承正确来源，而标记不会进入持久会话 JSON。独立非持久标记识别直接命令、提示词或 UI/RPC 操作。因此历史用户归属可以跨异步后台工作或 Curator 完成保留，又不会把之后自动唤醒授予首次使用配置权限。
-
-显式套件 UI 工作使用带标记自定义消息，经 Pi 公开 `sendMessage` 接缝发送，而不是尝试标注发出即忘的 `sendUserMessage` 输入分派。待处理传输归属跟随 Pi 自己的队列，不设任意项数上限，因此大型已接受引导/后续积压在传输或 Agent 运行边界清除前保持无损。Pi 在分开加载的扩展之间没有输入后 Hook；如果后续扩展留下转换后无法关联的混合用户/自动记录，整个含糊传输类别会被丢弃并归为自动。这会有意损失一次纯装饰性用户 Git 刷新，而不是允许自动工作触发刷新。
-
-Pi 0.84.4 RPC `clear_queue` 会返回被移除的 steering 与 follow-up 消息，但不会发出 Extension event。因此 Conversation UI 无法在同一时刻删除对应的观察性记录。若之后的自动消息遇到这些过期用户记录，现有 mixed-origin 规则会清空完整镜像并 fail closed 为 automatic。Suite 不包装 `clear_queue`，也不维护第二套 Host 队列。
-
-同一个共享宿主接缝会在套件自定义 Agent 工作被接受前准备 Context，并在每个异步准备边界后重新检查发起会话或 Goal。聚合套件启动使用 `conversation-ui` 负责的模块局部就绪门槛：观察所有能力 `session_start` 处理器，任何失败都会拒绝该代际，只有完整套件成功稳定后才释放已恢复 Goal 工作。
-
-窄宽度下它会减少低优先级信息；自动补全或命令对话框负责输入区时会消失。它不重复 Agent、Todo、BTW、MCP 或工具活动。
-
-### 欢迎标题
-
-启动标题遵循观察到的 Claude Code 2.1.197 卡片几何，同时保留 Pi Stuff 自己的身份和内容。强调色 Pi 标记按官方 pi.dev 几何重建：普通尺寸为 8×4，低于 48 列或高度不超过 18 行时为完整 4×2。它选择紧凑标记，而不是裁切大标记，并始终在标记下保留一行有效空白。82 列及以上时，卡片使用固定 52 单元身份列加响应式指引列；低于该宽度时变为居中单列卡片，并删除指引与清单，而不是让它们换行。它属于 Pi 普通回滚区，不是浮动窗口。
-
-### 输入增强
-
-已识别命令和 Skill 会被高亮，但不改变编辑器文字或宽度。行内 Slash 自动补全会在其他位置的斜杠文字后复用 Pi 原生模糊结果，只保留 Skill，并插入规范 `/skill:<name>` 形式，同时保留 Pi 原生编辑器、补全 Provider 和按键绑定。
-
-### 实时 Thoughts
-
-通过 Pi 公开 Markdown 转换 Hook，流式和稳定 Thinking 投影为一行有界文字，以 U+2217 `∗ thoughts:` 开头。单单元星号运算符在文字轴上保持视觉居中，不恢复 U+273B 的过大重量。空段落、标题、列表项和独立强调会开始新语义块；只有当前块保持可见，因此连续模型 Thoughts 会替换同一行，而不是在一行上累计。窄行保留可读动作词和最新尾部，不会从单词中间截断。投影只用于显示：完整原始 Thinking 保留在模型上下文和会话数据。旧宿主缺少这一必需渲染 API 时，Pi Stuff 会明确失败，而不是静默显示不同 UI。保持 Pi 原生 **Hide thinking blocks** 设置关闭，使转换后的实时行能够渲染。
-
-### 对话记录标记
-
-普通套件负责的对话记录使用一个小型 U+2022 `•` 标记，包括 Assistant 说明文字、工具活动、Goal 启动/替换/恢复/更新信息提示、Agent 结果和后台工作结果；较大状态点保留给 Fleetview、对话框、Todo、MCP、诊断与选择状态等交互控制。该标记识别一条对话记录，而不是 Goal 生命周期状态；完整 Goal 操作标签与语义颜色承载该含义。每条 Assistant 文本消息恰好得到一个外层标记，包括结构化 Markdown。后续段落、标题、列表、引用、表格和围栏代码留在消息级正文内，并保留 Markdown 层级。该投影只用于显示，不重写 Assistant 文字、会话记录、复制/导出源码或 Provider 上下文。
-
-### 围栏可视化
-
-用户或 Assistant Markdown 中完整的 `chart` 和 `tree` 围栏代码块会得到只用于显示的终端投影。Thinking 继续完全由实时 Thoughts 负责。Pi Stuff 不增加 Provider 指令来请求这些格式，也不改变会话中存储或发送回 Provider 的消息。
-
-图表使用一个 `type`、可选 `title`、可选 `data:` 标记和有界行：
-
-```chart
-type: bar
-title: Monthly net change
-data:
-Jan -8
-Feb 5
-Mar 12
+```text
+/ui
 ```
 
-受支持类型为 `bar`（`histogram` 是别名）、`line`、`scatter`、`sparkline` 和 `heatmap`。普通序列最多接受 64 个点。热力图最多接受 32 行，每行 64 个值。图表源码限制为 12,000 字符，至少需要 24 个图表内容单元，渲染宽度绝不超过 80。宿主 Markdown 代码缩进保留额外两个单元；Assistant 消息再为外层标记保留两个单元。
+使用交互列表配置 Statusline、latest prompt、Welcome header、输入高亮、行内 slash 补全与 Tool running timer。
 
-树每层恰好使用两个空格：
+## 亮点
 
-```tree
-Pi Stuff
-  conversation-ui
-    chart
-    tree
-  tools
-```
+- 具有稳定 model、工作区、Context、用量、Goal 与 Ponytail 分组的响应式 Statusline。
+- 单行 latest-prompt 预览与紧凑 Skill 标签。
+- 原生编辑器输入高亮与 slash 补全。
+- 仅用于显示的实时 Thought，以及 `chart` 或 `tree` Markdown 投影。
+- 关闭后恢复编辑器草稿的全宽 Command Dialog。
+- 通过 `/diagnostics` 查看有界 Suite 诊断。
 
-树要求一个根节点，拒绝制表符、奇数缩进、空节点、层级跳跃和多个根节点，并限制为 12,000 字符、256 个节点与 32 层。标签使用 Pi TUI 终端单元宽度测量，包括中文、日文、韩文与 emoji。如果任一树行无法在不截断标签的情况下容纳，原围栏保持可见。
+## 文档
 
-反引号和波浪号围栏都接受。每条 Markdown 消息最多投影 16 个有效块；之后的块保持普通围栏。未知、异常、不安全、不完整、超限、嵌套或过窄的块也保持普通围栏代码。静态分派器属于现有唯一对话 Markdown 转换器；不是插件 API 或设置。设计与来源见 ADR 0017 和 `UPSTREAM.md`。普通路径性能通过以下命令验证：
+- [Conversation UI 指南](../../../../docs/capabilities/conversation-ui.md)
+- [设置参考](../../../../docs/reference/settings.md#ui)
+- [命令参考](../../../../docs/reference/commands.md#界面与查看)
+- [共享 UI 契约](../../../../DESIGN.md)
 
-```bash
-bun run benchmark:conversation-markdown -- --baseline-root <baseline> --candidate-root <candidate>
-```
-
-命令从每个仓库根目录加载转换器和固定宿主 Markdown 运行时。它单独报告功能渲染，只在可重复普通路径回归时失败。
-
-### 诊断
-
-能力模块通过本模块报告结构化诊断，不直接写入宿主终端。普通状态留在所属界面，仅维护的清理或重试信息保持静默。需要用户处理的问题最多在编辑器上方显示一条不抢焦点的行，例如 `● Pi Stuff · Background Work needs attention · /diagnostics`。重复失败会合并而不是堆叠，多项活跃问题会折叠为一个计数。
-
-`/diagnostics` 打开共享全宽命令对话框，显示有界当前进程历史、发生次数、详情和存在时的建议能力命令。它在所有宽度下保持单列。Enter 打开一条记录；`c` 清除历史；Escape 先返回列表，再恢复精确编辑器草稿和套件框架。打开对话框或开始下一条提示词会确认单行提示，但不删除历史。
-
-诊断绝不进入会话历史、模型上下文、状态栏或独立持久层。详情有界，终端控制字符会删除，常见 token 和 API Key 会遮盖。重启 Pi 会清除该检查历史；能力负责的持久状态不受影响。
-
-## `/ui`
-
-`/ui` 在共享命令对话框内打开一个可搜索的 Pi 原生 `SettingsList`。它只负责呈现设置；行为设置留在受影响能力中。在完整套件中包含七项设置：
-
-| 设置 | 效果 | 生效时间 |
-| --- | --- | --- |
-| 状态栏 | 在编辑器下显示会话上下文 | 立即 |
-| 状态栏密度 | 选择自动、完整或紧凑响应式详情 | 立即 |
-| 最新提示词 | 状态栏空间允许时显示最新提示词 | 立即 |
-| 欢迎标题 | 显示启动指引与清单 | 下次启动 |
-| 输入高亮 | 输入时设置已识别命令与 Skill 样式 | 立即 |
-| 行内 Slash 自动补全 | 在斜杠文字后建议宿主排名的 Skill | 立即 |
-| 工具运行计时器 | 显示长时间运行工具操作的经过时间 | 立即 |
-
-Tools 能力通过共享设置注册表贡献计时器。原 `/tool-settings` 命令已删除。只有在 `/ui` 中显式变更后才写设置文件；打开套件不会写入。并发变更共享一个内核持有的文件租约，因此进程退出会释放所有权，不删除或替换另一个 Pi 进程的锁；残留锁文件是安全的并会复用。
-
-## 命令对话框
-
-该模块为独立负责的能力提供一个全宽非浮动聚焦界面，不把它们相互耦合。`blocking` 视图会在同一个 Pi 组件中抢占活跃 `normal` 视图；阻塞请求按 FIFO 运行，之后恢复精确普通组件。
-
-`command-dialog.ts` 负责协调器队列和宿主恢复状态。焦点委派、页脚组合和宿主发现留在聚焦内部适配器后；`index.ts` 仍是能力外观和生命周期组合根。
-
-不带参数的 `/ponytail` 使用该界面作为会话模式、已保存默认值、呈现偏好和专用 Skill 的单一控制面。设置变化会更新打开的概览，不产生对话记录提示；启动 Skill 会关闭对话框并使用 Pi 原生 Skill 展开。环境变量覆盖保持生效且只读，对话框会报告并写入分离的已保存值。打开与关闭对话框会抑制并恢复组合页脚和精确编辑器草稿。
-
-所有套件命令对话框使用一个高度适配规则。普通尺寸下布局保持不变。严重高度压力下，先保留语义标题或当前状态、选中行或附加错误、Escape/返回页脚；之后才把剩余行用于周边内容。这样每个聚焦界面在已验证的 24×16 下限仍可操作，无需引入浮层。
-
-同一个协调器负责一个组合页脚接缝。状态栏仍是主要页脚，套件能力可以在其下注册有序尾部。Fleetview 因此无需分叉 Pi 宿主即可留在两行状态栏下方；独立软件包可以保留原生回退。对话框对组合页脚整体执行抑制与恢复，而创建、渲染、失效和处置失败仍按区段隔离。
-
-```ts
-import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
-
-const dialogs = getCommandDialogCoordinator(pi);
-const unregister = dialogs.registerChrome("todo", {
-	setSuppressed: (suppressed) => todoOverlay.setSuppressed(suppressed),
-});
-
-await dialogs.show(ctx, {
-	priority: "normal",
-	create: ({ signal, tui, theme, keybindings, requestRender, close }) =>
-		new CapabilityDialog({ signal, tui, theme, keybindings, requestRender, close }),
-});
-
-unregister();
-```
-
-对话框打开时，协调器保存并清空编辑器草稿，安装空页脚，隐藏工作行，并抑制已注册套件框架。最终视图关闭或 `session_shutdown` 关闭宿主后，它恢复相同自有状态。非 TUI 上下文中的 `show()` 不挂载视图即完成。
-
-挂载、抢占和恢复视图使用 Pi TUI 差分重绘。它们不清除渲染器缓存或重放对话记录；能力仍可在有具体需要时通过 `requestRender(true)` 请求显式强制重绘。
-
-协调器通过 `setWorkingVisible(ctx, visible)` 负责套件期望的工作行可见性。Pi 为页脚和工作行提供公开 Setter，但没有 Getter，因此精确恢复覆盖通过本软件包负责的状态。Pi Stuff 加载后，第三方扩展不应独立替换这些界面。
-
-模块使用 Pi 语义主题 token，不创建浮动窗口或对话记录条目。`dim` 只用于分隔符、快捷键、已完成或过期元数据及其他可安全省略装饰；必需的次级身份与状态使用 `muted`，主要内容使用 `text` 或相关 success/warning/error token。

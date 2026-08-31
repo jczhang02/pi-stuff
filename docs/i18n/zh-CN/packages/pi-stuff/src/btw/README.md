@@ -1,42 +1,34 @@
-<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 19448efe700799aa60a3d520e0982bbbb3849db7816e333feaba45156f7a9236 -->
+<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 6fa334d4e839290f06b518a1722ed8ffcd4e7bda60e625df90478290f1d79b9f -->
 
-# BTW 模块
+# BTW
 
-Pi Stuff 的一次性 `/btw` 能力。
+[English](../../../../../../../packages/pi-stuff/src/btw/README.md)
 
-`/btw <question>` 打开共享全宽非浮动命令对话框，并在主 Agent 继续运行时，从活跃模型流式生成一个不使用工具的回答。关闭后恢复编辑器草稿和普通套件框架。
+在聚焦 dialog 中提出一个不使用 Tool 的支线问题，不改变主 conversation。
 
-日常旁支问题绝不会成为主对话记录或模型上下文中的消息。BTW 接收 Pi 已完成且感知压缩的上下文，包括文字、图像、工具调用和工具结果；未完成的 Assistant 部分会排除。每次旁路调用都有自己的中止信号和 `tools: []`。
-
-成功交互存储为不可见、不进入上下文的 Pi 自定义条目。它们可跨进程重启和恢复保留，但不会被 `/clear`、新会话或分叉会话继承。保留受实际会话生命周期、1,000 次交互和 8 MiB 限制。会话关闭时释放进程局部副本；该会话恢复时从自定义条目重建。
-
-已回答交互支持历史切换、滚动、复制、清除和 `f`。提升会等待主 Agent 空闲，再打开一个新 Pi 会话，把选定 BTW 问题和回答作为正式用户与 Assistant 轮次。原会话除不可见显示历史条目外保持不变。Space、Enter 和 Esc 不再共享关闭动作：只有 Esc 关闭聚焦界面；回答溢出时 Space 用于翻页，Enter 保留给阅读界面。
-
-清除较早历史是在同一个命令对话框中的两步行内操作：`x` 请求确认，`y` 提交，Esc 取消。它绝不打开浮动确认窗口。终端高度较小时，选中问题或错误和 Escape 提示优先于回答历史保持可见。
-
-实现派生自 `@juicesharp/rpiv-btw`；见 [UPSTREAM.md](./UPSTREAM.md)。
-
-Pi 没有公开的无对话记录宿主模型调用接缝。因此 `/btw` 使用活跃模型已注册的 Provider 和模型注册表认证，但不运行 Provider 生命周期/上下文钩子，也不继承宿主重试与传输设置。
-
-## `/btw` 可读性约定
-
-**决策更新：** 2026-08-17
-**状态：** 已于 2026-08-18 实现。
-
-该界面在 Pi 原生命令对话框生命周期内遵循观察到的 Claude Code 形态。一条连续粗顶线在所有宽度下引出单列阅读流程。最多五个近期问题以安静的 `/btw` 行出现，选中问题突出显示，其 Markdown 回答紧随其后：
+## 快速开始
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  /btw 为什么类型检查失败？
-
-  生成的声明文件已经过期，因此 TypeScript 读到了旧 API 形态。
-
-  ←/→ 切换 · b/Space 翻页 · c 复制 · f 分叉
-  x 清除历史 · ? 按键 · Esc 关闭
+/btw Why did the typecheck fail?
 ```
 
-不存在 `BTW` 标题、生命周期标签、`Answer` 小节、列表/详情切换、卡片或分栏。待处理工作由回答加载器显示；失败出现在回答流程中。空白成功回答显示 `(empty answer)`；不带参数的 `/btw` 且没有保留交互时，只以 muted neutral guidance 显示 `Ask a question with /btw <question>.`，不在前面添加不存在历史记录的说明。
+阅读流式回答，再按 Escape 返回编辑器。使用 Left 和 Right 重看保留的回答，按 `c` 复制，或按 `f`
+把 exchange 提升为新的 Pi Session。
 
-Left 和 Right 切换保留交互。Pi 配置的上、下操作每次滚动三行，Ctrl+P/Ctrl+N 是只读别名；PageUp/PageDown 和 `b`/Space 每次滚动一个可见页面，Home/End 跳到顶部或底部。只有回答溢出时，Footer 才显示 `b/Space page`；PageUp/PageDown 保留在上下文按键帮助中。Enter 和 Space 不关闭阅读界面。`?` 打开上下文按键帮助。只有读者仍在底部时，流式回答才跟随尾部。`c` 和 `f` 只适用于成功交互。`x` 只在存在较早历史时出现，并把行内确认留在同一个界面。
+## 亮点
 
-无对话记录上下文投影、无工具 Provider 调用、逐调用中止信号、持久不可见显示历史、边界、清理、原会话保留和会话隔离均保持不变。聚焦测试和真实 PTY 验证器覆盖历史切换、流式输出、清除确认、复制/分叉控制、分页别名、低高度适配及精确草稿/框架恢复。
+- 使用 Pi 已完成、感知 compaction 的 context，并排除未完成 Assistant 输出。
+- 在活动 model 上运行，使用独立 abort signal，不提供 Tool。
+- 支线回答流式生成时，主 Agent 继续工作。
+- 使用所属 Session 保存有界、不可见的 history。
+- 把有用 exchange 提升为新 Session 中的普通 User 与 Assistant turn。
+- 在任何终端宽度都使用一个响应式单栏 Command Dialog。
+
+## 文档
+
+- [BTW 指南](../../../../docs/capabilities/btw.md)
+- [命令参考](../../../../docs/reference/commands.md#session-与支线问题)
+- [Conversation UI 指南](../../../../docs/capabilities/conversation-ui.md)
+- [共享 UI 契约](../../../../DESIGN.md)
+- [上游参考](UPSTREAM.md)
+

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 8f4b5498daa205714957375f680fb9e6343fcae1fcda34ce34bbc798b04adf6b -->
+<!-- translation-source: docs/README.md; translation-source-sha256: bb9566a0d5c9c94ddc0d01897c779f841925a2eb8f6cecfd56243fbcb3fff905 -->
 
 # 工程文档
 
@@ -53,24 +53,24 @@
 
 ## Capability 文档
 
-| 领域 | 当前文档 |
-| --- | --- |
-| Conversation UI | [`conversation-ui`](../packages/pi-stuff/src/conversation-ui/README.md) |
-| Session Naming | [`session-naming`](../packages/pi-stuff/src/session-naming/README.md) |
-| Tool Display | [`tool-display`](../packages/pi-stuff/src/tool-display/README.md) |
-| RTK | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
-| Codex Runtime | [`codex`](../packages/pi-stuff/src/codex/README.md) |
-| Goal | [`goal`](../packages/pi-stuff/src/goal/README.md) |
-| Context Management | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
-| Ponytail | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
-| Web | [`web`](../packages/pi-stuff/src/web/README.md) |
-| MCP | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
-| Background Work | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
-| Agents | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
-| Todo | [`todo`](../packages/pi-stuff/src/todo/README.md) |
-| BTW | [`btw`](../packages/pi-stuff/src/btw/README.md) |
-| Notification | [`notification`](../packages/pi-stuff/src/notification/README.md) |
-| Code Mode | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |
+| 领域 | 指南 | Module 契约 |
+| --- | --- | --- |
+| Conversation UI | [指南](capabilities/conversation-ui.md) | [`conversation-ui`](../packages/pi-stuff/src/conversation-ui/README.md) |
+| Session Naming | [指南](capabilities/session-naming.md) | [`session-naming`](../packages/pi-stuff/src/session-naming/README.md) |
+| Tool Display | [指南](capabilities/tool-display.md) | [`tool-display`](../packages/pi-stuff/src/tool-display/README.md) |
+| RTK | — | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
+| Codex Runtime | — | [`codex`](../packages/pi-stuff/src/codex/README.md) |
+| Goal | — | [`goal`](../packages/pi-stuff/src/goal/README.md) |
+| Context Management | — | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
+| Ponytail | — | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
+| Web | — | [`web`](../packages/pi-stuff/src/web/README.md) |
+| MCP | — | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
+| Background Work | — | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
+| Agents | — | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
+| Todo | — | [`todo`](../packages/pi-stuff/src/todo/README.md) |
+| BTW | [指南](capabilities/btw.md) | [`btw`](../packages/pi-stuff/src/btw/README.md) |
+| Notification | [指南](capabilities/notification.md) | [`notification`](../packages/pi-stuff/src/notification/README.md) |
+| Code Mode | — | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |
 
 ## 当前 ADR 索引
 
