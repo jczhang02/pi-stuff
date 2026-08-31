@@ -9,6 +9,10 @@ not code and remain outside code checks.
 
 - Every tracked code directory participates in Biome, Oxlint with the anti-slop rules, strict TypeScript where
   applicable, and unused-file/dependency analysis. Do not grant directory-wide or provenance-based exemptions.
+- When Effect is a direct dependency, Oxlint also enables `anti-slop-effect/no-service-constructor-imports`. It rejects
+  relative project imports of named `make<Capability>` service constructors from runtime Source so Layers remain the
+  composition seam. Package-alias, default, and namespace imports are outside this rule; the repository-safety Effect
+  boundary audit remains the authority for runners and native effects.
 - TypeScript profiles may differ only where their runtime needs different libraries, module resolution, or targets.
   They must not disable the shared strictness, unused-code, indexed-access, optional-property, override, side-effect,
   or erasable-syntax rules.

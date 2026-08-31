@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: 047377f627e312a2da640a06d9e4d5606e275da6d738fe6dad1543da2c97179b -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: eb93b108a9f6461c8992af6ff94223e2223a087a06e036403662544fa22d7fa1 -->
 
 # Repository-owned Source 质量标准
 
@@ -10,6 +10,10 @@ prototype、脚本和质量工具代码都适用同一可维护性标准。来�
 
 - 每个被跟踪的代码目录都必须参与 Biome、带 anti-slop 规则的 Oxlint、适用时的严格 TypeScript，以及未使用
   文件和依赖分析。不得按目录或来源提供整体豁免。
+- 当 Effect 是直接依赖时，Oxlint 还会启用 `anti-slop-effect/no-service-constructor-imports`。它禁止运行时
+  Source 通过相对路径导入具名 `make<Capability>` service constructor，使 Layer 保持为组合边界。package alias、
+  default import 与 namespace import 不在此规则覆盖范围内；runner 与原生副作用仍以 repository-safety 的 Effect
+  边界审计为权威。
 - TypeScript profile 只能因为运行时需要不同的 library、module resolution 或 target 而不同。不得关闭共享
   的严格性、未使用代码、索引访问、可选属性、override、副作用导入或 erasable syntax 规则。
 - 仓库 typecheck 会在 `node_modules/.cache/pi-stuff/typecheck/` 下为每个 profile 保存一份 TypeScript 增量状态。

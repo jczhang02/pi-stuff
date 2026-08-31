@@ -59,7 +59,6 @@
 			".": {
 				"entry": [
 					"scripts/*.ts",
-					"tools/oxlint/anti-slop/effect/index.ts",
 					"test/**/*.test.ts",
 					"test/goal-upstream/**/*.node.ts",
 					"test/goal-upstream/ui-node-shim.ts",

@@ -22,6 +22,8 @@ const RULES = [
 ] as const;
 
 const INVALID_FIXTURE = `
+import { makeFixtureService } from "./fixture-service.ts";
+
 declare const callable: (...args: string[]) => string;
 declare const receiver: { value: string };
 declare const argumentsList: string[];
@@ -41,7 +43,7 @@ function returnsUnknown(): unknown { return receiver; }
 type HiddenUnknown = unknown;
 type UnsafeDictionary = Record<string, unknown>;
 const assertionWithoutSafety = receiver as { value: string };
-void [chained, conditionalSpread, narrowed, shape, assertionWithoutSafety];
+void [makeFixtureService, chained, conditionalSpread, narrowed, shape, assertionWithoutSafety];
 `;
 
 const VALID_FIXTURE = `
@@ -87,9 +89,12 @@ test("repository Oxlint config wires every anti-slop rule with positive and nega
 		const diagnostics = `${invalid.stdout.toString()}\n${invalid.stderr.toString()}`;
 		expect(invalid.exitCode).not.toBe(0);
 		for (const rule of RULES) expect(diagnostics).toContain(`anti-slop(${rule})`);
+		expect(diagnostics).toContain("anti-slop-effect(no-service-constructor-imports)");
 
 		const valid = run(validPath);
-		expect(`${valid.stdout.toString()}\n${valid.stderr.toString()}`).not.toContain("anti-slop(");
+		const validDiagnostics = `${valid.stdout.toString()}\n${valid.stderr.toString()}`;
+		expect(validDiagnostics).not.toContain("anti-slop(");
+		expect(validDiagnostics).not.toContain("anti-slop-effect(");
 		expect(valid.exitCode).toBe(0);
 	} finally {
 		await rm(directory, { force: true, recursive: true });
