@@ -65,6 +65,20 @@ async function waitFor(tmux: Tmux, session: string, expected: string): Promise<v
 	);
 }
 
+async function captureSettledScreen(tmux: Tmux, session: string): Promise<{ plain: string; styled: string }> {
+	const started = Date.now();
+	let previous: string | undefined;
+	while (Date.now() - started < TIMEOUT_MS) {
+		const plain = await capture(tmux, session);
+		if (previous !== undefined && plain === previous && !plain.includes("Working...")) {
+			return { plain, styled: await capture(tmux, session, true) };
+		}
+		previous = plain;
+		await Bun.sleep(100);
+	}
+	throw new Error(`TUI did not settle after completion:\n${previous ?? "<closed>"}`);
+}
+
 function activityBlock(plainScreen: string, styledScreen: string, marker = "read 1 file"): string {
 	const plainLines = plainScreen.split("\n");
 	const index = plainLines.findIndex((line) => line.toLowerCase().includes(marker));
@@ -263,15 +277,13 @@ async function runArm(
 		const activityMarker = scenario === "cancel" ? "bash(" : scenario === "media" ? "read 3 files" : "read 1 file";
 		if (launchMode === "resume") {
 			await waitFor(tmux, session, activityMarker);
-			const plain = await capture(tmux, session);
-			const styled = await capture(tmux, session, true);
+			const { plain, styled } = await captureSettledScreen(tmux, session);
 			return { activity: activityBlock(plain, styled, activityMarker), screen: plain };
 		}
 		await tmux(["send-keys", "-t", session, "-l", "--", "VERIFY_TOOL_UI"]);
 		await submit(scenario !== "cancel");
 		await waitFor(tmux, session, "VERIFY_COMPLETE");
-		const plain = await capture(tmux, session);
-		const styled = await capture(tmux, session, true);
+		const { plain, styled } = await captureSettledScreen(tmux, session);
 		return { activity: activityBlock(plain, styled, activityMarker), screen: plain };
 	} finally {
 		await stopArm(tmux, session, socket);
