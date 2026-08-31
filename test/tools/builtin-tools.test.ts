@@ -186,9 +186,9 @@ test("exact SKILL.md reads present one standalone Skill activity with Read evide
 	expect(runtime.resolveGroup("skill")).toMatchObject({
 		label: "Skill demo",
 		memberIds: ["skill"],
-		outcome: "loading",
+		outcome: "reading",
 		state: "running",
-		summary: "Skill demo · loading",
+		summary: "Skill demo · reading",
 	});
 	expect(runtime.resolveGroup("before")).toMatchObject({ memberIds: ["before"] });
 	expect(runtime.resolveGroup("after")).toMatchObject({ memberIds: ["after"] });
@@ -224,7 +224,7 @@ test("exact SKILL.md reads present one standalone Skill activity with Read evide
 	runtime.observeEnvelopeResult("codemode", "outer-skill", { operations });
 	expect(runtime.resolveGroup("nested-skill")).toMatchObject({
 		label: "Skill nested",
-		outcome: "loading",
+		outcome: "reading",
 		state: "running",
 	});
 	operations = [
@@ -249,4 +249,38 @@ test("exact SKILL.md reads present one standalone Skill activity with Read evide
 	expect(nestedRaw).toContain("Tool name: read");
 	expect(nestedRaw).toContain('{"path": "skills/nested/SKILL.md"}');
 	runtime.clear();
+});
+
+test("exact SKILL.md read failures use the accepted Skill copy", () => {
+	const { host: pi } = toolRegistrationHarness();
+	registerBuiltins(pi, "/project", {
+		autoResizeImages: true,
+		shellCommandPrefix: undefined,
+		shellPath: undefined,
+	});
+	const runtime = getToolUiRuntime(pi);
+	runtime.indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [
+					{ type: "toolCall", id: "skill-error", name: "read", arguments: { path: "skills/demo/SKILL.md" } },
+				],
+			},
+			{
+				role: "toolResult",
+				toolCallId: "skill-error",
+				content: [{ type: "text", text: "ENOENT" }],
+				details: {},
+				isError: true,
+			},
+		],
+		true,
+	);
+	expect(runtime.resolveGroup("skill-error")).toMatchObject({
+		label: "Skill demo",
+		outcome: "Failed to read SKILL.md",
+		state: "error",
+		summary: "Skill demo · Failed to read SKILL.md",
+	});
 });

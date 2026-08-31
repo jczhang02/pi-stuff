@@ -102,11 +102,12 @@ function registerReadBuiltin(
 				const skill = skillReadName(cwd, args);
 				return skill ? `Skill ${skill}` : "Read";
 			},
-			runningSummary: (args) => (skillReadName(cwd, args) ? "loading" : "reading"),
-			summarize: (args, result, state, durationMs) =>
-				skillReadName(cwd, args) && state === "success"
-					? "loaded"
-					: summarizeBuiltin("read", args, result, state, durationMs),
+			runningSummary: "reading",
+			summarize: (args, result, state, durationMs) => {
+				if (!skillReadName(cwd, args)) return summarizeBuiltin("read", args, result, state, durationMs);
+				if (state === "success") return "loaded";
+				return state === "error" ? "Failed to read SKILL.md" : state;
+			},
 			target: (args) => (skillReadName(cwd, args) ? "" : describeBuiltinTarget("read", args)),
 		},
 		PROGRAMMATIC_READ,
