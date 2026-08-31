@@ -12,7 +12,7 @@
 			"!**/.artifacts",
 			"!**/.beads",
 			"!**/.pi-subagents",
-			"!docs/reports/**/*.{css,html}",
+			"!docs/reports/**/*.{css,html,json}",
 			"!bun.lock"
 		]
 	},

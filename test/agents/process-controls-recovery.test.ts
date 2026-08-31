@@ -374,12 +374,16 @@ test(
 				if (!asyncDir) throw new Error("Context usage launch did not return asyncDir.");
 				const pid = runnerPid(events, runId);
 				const statusPath = path.join(asyncDir, "status.json");
-				const status = await waitFor("child-only Provider context usage", () => {
-					if (!fs.existsSync(statusPath)) return undefined;
-					const candidate = readJson(statusPath);
-					const step = candidate.steps?.[0];
-					return step?.status === "complete" && step.contextUsage?.tokens === 50_000 ? candidate : undefined;
-				}, 30_000);
+				const status = await waitFor(
+					"child-only Provider context usage",
+					() => {
+						if (!fs.existsSync(statusPath)) return undefined;
+						const candidate = readJson(statusPath);
+						const step = candidate.steps?.[0];
+						return step?.status === "complete" && step.contextUsage?.tokens === 50_000 ? candidate : undefined;
+					},
+					30_000,
+				);
 				expect(status.steps?.[0]?.contextUsage).toEqual({ tokens: 50_000, contextWindow: 200_000 });
 				await waitFor("child-only Provider runner exit", () => (!processAlive(pid) ? true : undefined));
 				processGroups.delete(pid);

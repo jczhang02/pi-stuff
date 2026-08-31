@@ -15,6 +15,7 @@
 		"benchmark:code-mode-image": "bun scripts/benchmark-code-mode-image.ts",
 		"benchmark:conversation-markdown": "bun scripts/benchmark-conversation-markdown.ts",
 		"benchmark:ponytail": "bun scripts/benchmark-ponytail.ts",
+		"benchmark:skill-discovery": "bun scripts/benchmark-skill-discovery.ts",
 		"benchmark:lifecycle": "bun scripts/benchmark-lifecycle.ts --acceptance --trace --long-tools 6500 --long-tool-bytes 8192",
 		"benchmark:tool-activity": "bun scripts/benchmark-tool-activity.ts",
 		"ci:acceptance-scope": "bun scripts/ci-acceptance-scope.ts",

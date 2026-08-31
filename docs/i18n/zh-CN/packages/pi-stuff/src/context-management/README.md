@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: b1db36aa06111e5202e5554d277c656f48565fdeff60c8acd5976fd2cff9e68c -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 29c24527a0687286a1d1078e22a7f129b11b9c29f3d7d4fba42e5086a64cc1e4 -->
 
 # Context Management 模块
 
@@ -14,7 +14,7 @@ Magic Context 0.40 会把扁平用户级 Historian 与 Dreamer 执行设置迁�
 
 外部引擎依赖固定为 `@cortexkit/pi-magic-context@0.40.0`。仓库应用一个临时且经过审查的依赖补丁，使引擎在独立 Pi 中解析并预加载已安装 `ai-tokenizer`，并避免只为内容哈希而重新分词图像载荷；[UPSTREAM.md](./UPSTREAM.md) 记录补丁和删除触发条件。适配器抑制上游 Todo、状态栏、公告、命令和辅助 UI，同时在套件负责的 `/ctx` 分派器后保留五个维护处理器。它还会在官方引擎处理 `before_agent_start` 前，提供紧凑的面向 Provider 行为约定。因此引擎继续进行自己的提示词缓存处理，但跳过更长的默认指引；历史语义、检索、归约、记忆、笔记和开放回退行为保持不变。
 
-Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献由标记分隔并幂等协调：宿主/基础提示词在前，Magic Context 随后，已注册能力指令最后。Provider 请求回退覆盖 Pi 在没有 `before_agent_start` 时启动的继续轮次，它会重写已知 Anthropic、OpenAI、Google、Bedrock 和 Mistral 系统提示词载荷形态。遇到不受支持载荷时，开放通过并发送一条静默诊断，不修改未知请求形态。Ponytail 注册在最后的有序位置：需要时，其代码模式 Skill 目录位于当前模式指令之前。Ponytail 的常驻贡献独立于 Context 的 8,000 字符直接模式约定进行测量与限制。
+Context 还负责其他能力使用的有序系统提示词贡献接缝。贡献由标记分隔并幂等协调：宿主/基础提示词在前，Magic Context 随后，已注册能力指令最后。Provider 请求回退覆盖 Pi 在没有 `before_agent_start` 时启动的继续轮次，它会重写已知 Anthropic、OpenAI、Google、Bedrock 和 Mistral 系统提示词载荷形态。遇到不受支持载荷时，开放通过并发送一条静默诊断，不修改未知请求形态。当代码模式封装隐藏顶层 Read、而虚拟 Read 仍处于活跃状态时，代码模式会在 Ponytail 之前贡献宿主 Skill Discovery 目录。Ponytail 仍是最后的有序贡献：其紧凑的活跃模式 Skill 目录位于当前模式指令之前。Ponytail 的常驻贡献独立于 Context 的 8,000 字符直接模式约定进行测量与限制。
 
 适配器在激活期间把固定引擎打包成内存 Worker 产物，因为已验证的独立 Pi 二进制文件无法解析其外部 Worker 模块图。不把任何包写入磁盘。宿主事件、工具和命令仍注册在 Pi 中，并以不可变、字段受限快照跨越边界。Worker 首次绑定会话、检测到分支不连续后，以及执行显式历史重建命令时，会接收一份完整会话快照。普通上下文投影和持久化至多发送一个新叶节点，因此长会话不会在每次提示词时再次克隆。致命 Worker 错误会立即让该能力返回原生 Context；宿主负责的关闭会在有界宽限期后终止 Worker，即使其请求队列卡住。只有请求待处理时，宿主才引用 Worker，因此空闲引擎不会阻止 Print 或 RPC 进程走到普通退出路径。范围狭窄、逐项列举的宿主副作用和生命周期约定记录在 [ADR 0019](../../../../docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md)。
 

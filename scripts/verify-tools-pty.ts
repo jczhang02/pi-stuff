@@ -46,7 +46,21 @@ function parseRequestRecords(contents: string): RequestRecord[] {
 		});
 }
 
-const WAIT_FOR_QUIET_PROGRAM = `
+const PTY_EXPECT_HELPERS = `
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
 proc discard_pending_output {} {
     set discarded ""
     expect -timeout 0 {
@@ -83,22 +97,7 @@ proc wait_for_quiet {} {
 
 const EXPECT_PROGRAM = `
 set timeout 25
-
-proc must_expect {pattern} {
-    expect {
-        -exact $pattern {}
-        timeout {
-            puts stderr "Timed out waiting for: $pattern"
-            exit 2
-        }
-        eof {
-            puts stderr "Reached EOF while waiting for: $pattern"
-            exit 3
-        }
-    }
-}
-
-${WAIT_FOR_QUIET_PROGRAM}
+${PTY_EXPECT_HELPERS}
 
 proc send_and_expect {keys pattern} {
     discard_pending_output
@@ -209,22 +208,7 @@ expect {
 
 const ACTIVE_PARITY_EXPECT_PROGRAM = `
 set timeout 25
-
-proc must_expect {pattern} {
-    expect {
-        -exact $pattern {}
-        timeout {
-            puts stderr "Timed out waiting for: $pattern"
-            exit 2
-        }
-        eof {
-            puts stderr "Reached EOF while waiting for: $pattern"
-            exit 3
-        }
-    }
-}
-
-${WAIT_FOR_QUIET_PROGRAM}
+${PTY_EXPECT_HELPERS}
 
 spawn -noecho script -qefc $env(PI_STUFF_TOOLS_ACTIVE_RUNNER) /dev/null
 must_expect "TOOLS_PROBE_DONE"
@@ -232,6 +216,7 @@ wait_for_quiet
 send -- "/reload\\r"
 must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
+wait_for_quiet
 send -- "probe after reload\\r"
 must_expect "TOOLS_PROBE_DONE"
 wait_for_quiet

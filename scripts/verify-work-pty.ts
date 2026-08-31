@@ -36,8 +36,21 @@ spawn -noecho script -qefc $env(PI_STUFF_WORK_PTY_RUNNER) /dev/null
 set work_pty $spawn_out(slave,name)
 must_expect "foreground.pid; sleep 30"
 after 1000
-send -- "\\002"
-must_expect "CTRL_B_CONTINUED"
+set detached 0
+set continued 0
+set timeout 1
+for {set attempt 0} {$attempt < 4 && !$detached && !$continued} {incr attempt} {
+    send -- "\\002"
+    expect {
+        -exact "Command manually moved to background task" { set detached 1 }
+        -exact "CTRL_B_CONTINUED" { set continued 1 }
+        timeout {}
+        eof { puts stderr "Reached EOF while detaching foreground Bash"; exit 3 }
+    }
+}
+set timeout 25
+if {!$detached && !$continued} { puts stderr "Ctrl+B did not detach foreground Bash"; exit 2 }
+if {!$continued} { must_expect "CTRL_B_CONTINUED" }
 send -- "/tasks\r"
 must_expect "Tasks"
 must_expect "Shell"

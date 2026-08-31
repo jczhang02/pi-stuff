@@ -26,6 +26,13 @@ const pkg = await tools.read({ path: "package.json" });
 text(pkg.packageManager);
 ```
 
+When the Code Mode envelope hides top-level `read` while virtual Read remains active, Code Mode preserves the Host's
+enabled Skill Discovery catalog through Context Management. It projects the Host-provided Skill snapshot with Pi's
+public formatter, then bridges the formatter's ordinary Read instruction to a direct `codemode` `tools.read` call so
+the model does not search for the already-known Read method or scan before loading the selected `SKILL.md`. Direct
+mode, Code Mode off, and an inactive virtual Read remain unchanged. Provider-only continuations may reuse the current
+Session's snapshot; an unprimed provider-only first turn contributes no catalog and never rescans Skill resources.
+
 - `tools` contains every currently active Pi Stuff Package-owned Tool, including Tools activated after Code Mode was
   enabled.
 - Await every `tools.*` call. Stable structured content is returned directly; textual JSON is parsed; other text is

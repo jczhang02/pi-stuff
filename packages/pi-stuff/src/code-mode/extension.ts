@@ -19,6 +19,7 @@ import {
 } from "./presentation.js";
 import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
 import { projectCodeModeSearchResponse } from "./search-response.js";
+import { registerCodeModeSkillDiscovery } from "./skill-discovery.js";
 import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export type { CodeModeHost, PiStuffCodeModeOptions } from "./controls.js";
@@ -283,6 +284,7 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 	const ledger = new CodeModeSessionLedger(pi);
 	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(), ledger);
 	const controls = new CodeModeControls(pi, options, connector, ledger, runtime);
+	registerCodeModeSkillDiscovery(pi, options);
 	registerSuiteToolEnvelope(pi, createCodeModeDefinition(runtime), {
 		decode: decodeCodeModeOperations,
 		media: decodeCodeModeMediaSegments,

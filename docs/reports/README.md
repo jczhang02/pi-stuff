@@ -10,6 +10,22 @@ evidence. Current engineering authority is indexed in [`docs/README.md`](../READ
 ## Retained reports
 
 - [Terminal-Bench 2.1 Pi Stuff latency comparison](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
+- [Skill Discovery startup-bounded real-model confirmation](skill-discovery-startup-bounded-confirmation-20260830.json)
+  — passed the preregistered non-inferiority gate with Raw/off/on each 30/30, all 30 Code Mode Sessions using the
+  selected Skill directly, and zero timeout or safety violation; method and interpretation are recorded in its
+  [preregistration](../research/skill-discovery-startup-bounded-confirmation-20260830.md)
+- [Skill Discovery isolated real-model confirmation](skill-discovery-isolated-confirmation-20260830.json) — retained
+  failed hard gate; all 29 completed Code Mode Sessions passed direct Skill use, while four Suite Sessions timed out
+  before a Provider request; interpretation is recorded in its
+  [preregistration](../research/skill-discovery-isolated-confirmation-20260830.md)
+- [Skill Discovery direct-read real-model study](skill-discovery-direct-read-20260830.json) — retained failed hard
+  gate; all 29 completed Code Mode Sessions passed direct Skill use, while one matched off/on pair timed out before a
+  Provider request; interpretation is recorded in its
+  [preregistration](../research/skill-discovery-direct-read-20260830.md)
+- [Skill Discovery real-model confirmation](skill-discovery-confirmation-20260830.json) — retained failed behavioral
+  gate; interpretation is recorded in its [preregistration](../research/skill-discovery-confirmation-20260830.md)
+- [Skill Discovery real-model benchmark](skill-discovery-benchmark-20260830.json) — retained failed instrumentation
+  study; interpretation is recorded in its [preregistration](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md) with its retained
   [screenshots](assets/pi-stuff-0.3.0/)

@@ -12,12 +12,18 @@ const BENCHMARK_ENV = "PI_STUFF_CODE_MODE_FIXTURE_BENCHMARK";
 const HIDE_RESULT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_HIDE_RESULT";
 const LEGACY_SURFACE_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LEGACY_SURFACE";
 const SCENARIO_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SCENARIO";
+const SKILL_PATH_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SKILL_PATH";
+const SKILL_NAME = "code-mode-real-skill";
+const SKILL_DESCRIPTION = "Verify that Code Mode preserves native Skill Discovery.";
+const SKILL_BODY_TOKEN = "CODE_MODE_SKILL_BODY_OK";
 const assistant = createAssistantMessage(PROVIDER, MODEL);
 const textStream = createTextStream(assistant);
 
 function codeModeStream() {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistant([], "pending");
+	const skillPath = process.env[SKILL_PATH_ENV];
+	const skillRead = skillPath ? `const skill = await tools.read({ path: ${JSON.stringify(skillPath)} });\n` : "";
 	const codeModeCall = {
 		arguments: {
 			code:
@@ -31,7 +37,7 @@ function codeModeStream() {
 text(String(cancelled));`
 						: process.env[SCENARIO_ENV] === "media"
 							? 'await Promise.all([tools.read({ path: "pixel.png" }), tools.read({ path: "README.md", limit: 1 }), tools.read({ path: "pixel-copy.png" })]); text("MEDIA_OK");'
-							: `const matches = await codemode.search("read file");
+							: `${skillRead}const matches = await codemode.search("read file");
 const selected = matches.results.find((entry) => entry.method === "read");
 if (!selected) throw new Error("read not found");
 const docs = await codemode.describe(selected.path);
@@ -41,6 +47,7 @@ await tools.background({ action: "list" });
 await tools.subagent({ action: "status" });
 text(JSON.stringify({
   packageManager: pkg.packageManager,
+  skillLoaded: ${skillPath ? `String(skill).includes(${JSON.stringify(SKILL_BODY_TOKEN)})` : "undefined"},
   typed: docs.types.includes("path")
 }));`,
 		},
@@ -172,7 +179,14 @@ function fixtureStream(context: Context) {
 	const logPath = process.env[LOG_ENV];
 	if (logPath) {
 		const schemaChars = JSON.stringify(context.tools ?? []).length;
-		const systemPromptChars = context.systemPrompt?.length ?? 0;
+		const systemPrompt = context.systemPrompt ?? "";
+		const systemPromptChars = systemPrompt.length;
+		const expectedSkillPath = process.env[SKILL_PATH_ENV];
+		const skillCatalogExact =
+			expectedSkillPath !== undefined &&
+			systemPrompt.split(`<name>${SKILL_NAME}</name>`).length === 2 &&
+			systemPrompt.split(`<description>${SKILL_DESCRIPTION}</description>`).length === 2 &&
+			systemPrompt.split(`<location>${expectedSkillPath}</location>`).length === 2;
 		const messageTokens = context.messages.reduce((total, message) => total + estimateTokens(message), 0);
 		appendFileSync(
 			logPath,
@@ -185,6 +199,7 @@ function fixtureStream(context: Context) {
 						? result.content.filter((part) => part.type === "image").length
 						: 0,
 				schemaChars,
+				skillCatalogExact,
 				systemPromptChars,
 				toolNames,
 			})}\n`,
