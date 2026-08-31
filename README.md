@@ -209,6 +209,7 @@ Codex comparison is descriptive because it was not a matched task-and-environmen
 | [Research report](docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) · [简体中文](docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) | Method, results, limitations, and root-cause analysis |
 | [Sanitized results](docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json) | Per-trial evidence, summary statistics, and retained-artifact hashes |
 | [Frozen protocol](benchmarks/terminal-bench-2.1/latency-study.json) | Preregistered tasks, arms, execution caps, and analysis rules |
+| [Frozen source manifest](benchmarks/terminal-bench-2.1/manifest.json) | Byte-exact task population referenced by the protocol and result hash; historical adapter fields are provenance, not runnable configuration |
 
 ## Development
 
