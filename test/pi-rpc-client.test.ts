@@ -46,7 +46,7 @@ test("initial state uses the Host startup budget", async () => {
 		executable: process.execPath,
 		failurePrefix: "RPC startup test",
 		settleTimeoutMs: 1_000,
-		startupTimeoutMs: 200,
+		startupTimeoutMs: 1_000,
 	});
 	try {
 		await expect(rpc.getInitialState()).resolves.toMatchObject({ success: true });

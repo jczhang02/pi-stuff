@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { THOUGHT_PHASES } from "../test/fixtures/ui-pty-provider.js";
+import { THOUGHT_PHASES, TODO_PTY_READY } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as flow from "./ui-pty-interactions.js";
 import * as pty from "./ui-pty-session.js";
@@ -312,7 +312,7 @@ async function verifyWideRestart(paths: pty.CasePaths, options: UiPtyVerificatio
 	try {
 		await restarted.start();
 		await flow.waitForFixtureRecords(paths.log, "inventory", 2);
-		await pty.delay(150);
+		await restarted.waitForText(TODO_PTY_READY);
 		const resumedHistory = await pty.pageToTranscriptText(restarted, "FENCED_TREE_ROOT");
 		if (!resumedHistory.includes("├── conversation-ui-with-a-long-label") || !/[▁▂▃▄▅▆▇█]/u.test(resumedHistory)) {
 			pty.fail("resumed Session did not re-project canonical chart/tree fence source");
