@@ -1,42 +1,37 @@
 # Reports
 
-This directory preserves dated acceptance, design, and performance evidence. A title such as "current state" means
-current at the date in that filename or report; it is not a standing compatibility claim.
+[Simplified Chinese](../i18n/zh-CN/docs/reports/README.md)
 
-Use [`docs/compatibility.md`](../compatibility.md) for the current certified Host and toolchain. Historical machine
-paths, versions, screenshots, and hashes remain unchanged because they identify the environment that produced the
-evidence. Current engineering authority is indexed in [`docs/README.md`](../README.md).
+Dated acceptance, design, and performance evidence for Pi Stuff. Use the
+[compatibility guide](../compatibility.md) for the current certified environment and the
+[documentation index](../README.md) for current behavior.
 
-## Retained reports
+## Benchmarks and acceptance
 
-- [Terminal-Bench 2.1 Pi Stuff latency comparison](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
-- [Skill Discovery startup-bounded real-model confirmation](skill-discovery-startup-bounded-confirmation-20260830.json)
-  — passed the preregistered non-inferiority gate with Raw/off/on each 30/30, all 30 Code Mode Sessions using the
-  selected Skill directly, and zero timeout or safety violation; method and interpretation are recorded in its
+- [Terminal-Bench 2.1 latency comparison](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
+- [Skill Discovery startup-bounded confirmation](skill-discovery-startup-bounded-confirmation-20260830.json) and its
   [preregistration](../research/skill-discovery-startup-bounded-confirmation-20260830.md)
-- [Skill Discovery isolated real-model confirmation](skill-discovery-isolated-confirmation-20260830.json) — retained
-  failed hard gate; all 29 completed Code Mode Sessions passed direct Skill use, while four Suite Sessions timed out
-  before a Provider request; interpretation is recorded in its
+- [Skill Discovery isolated confirmation](skill-discovery-isolated-confirmation-20260830.json) and its
   [preregistration](../research/skill-discovery-isolated-confirmation-20260830.md)
-- [Skill Discovery direct-read real-model study](skill-discovery-direct-read-20260830.json) — retained failed hard
-  gate; all 29 completed Code Mode Sessions passed direct Skill use, while one matched off/on pair timed out before a
-  Provider request; interpretation is recorded in its
+- [Skill Discovery direct-read study](skill-discovery-direct-read-20260830.json) and its
   [preregistration](../research/skill-discovery-direct-read-20260830.md)
-- [Skill Discovery real-model confirmation](skill-discovery-confirmation-20260830.json) — retained failed behavioral
-  gate; interpretation is recorded in its [preregistration](../research/skill-discovery-confirmation-20260830.md)
-- [Skill Discovery real-model benchmark](skill-discovery-benchmark-20260830.json) — retained failed instrumentation
-  study; interpretation is recorded in its [preregistration](../research/skill-discovery-benchmark-20260830.md)
+- [Skill Discovery confirmation](skill-discovery-confirmation-20260830.json) and its
+  [preregistration](../research/skill-discovery-confirmation-20260830.md)
+- [Skill Discovery benchmark](skill-discovery-benchmark-20260830.json) and its
+  [preregistration](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)
-- [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md) with its retained
+- [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md) and retained
   [screenshots](assets/pi-stuff-0.3.0/)
+
+## Design and migration
+
 - [Single-Package migration](single-package-migration.md)
 - [Lifecycle performance](pi-stuff-lifecycle-performance.md)
 - [Context submission concurrency](context-submit-concurrency-research-2026-08-14.md)
 - [UI review](pi-stuff-ui-review-2026-08-05.md)
 - [Tool-folding rationale](tool-folding-comparison-20260806/design_rationale.md)
 - [Dialog image handoff](dialog-readability-20260817/image-handoff.md)
-- [0.3.0 execution checklist](pi-stuff-0.3.0-execution-checklist.zh-CN.md) — historical Chinese-only record
+- [0.3.0 execution checklist](pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
-Raw JSON, ANSI, text, and image evidence stays beside the report or benchmark that owns it. Redundant rendered HTML,
-PDF, CSS, and duplicated image bundles are not a second documentation lane and are removed when their Markdown or raw
-source remains sufficient.
+Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. Historical versions, paths, and hashes
+remain unchanged so the recorded environment stays identifiable.

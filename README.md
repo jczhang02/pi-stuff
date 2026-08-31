@@ -2,63 +2,39 @@
 
 # Pi Stuff
 
-**A conversation-first capability suite for the native [Pi coding agent](https://github.com/earendil-works/pi).**
+**A calmer, more capable Pi coding workflow.**
 
-One local Pi Package for compact Tool activity, durable work, focused side flows, and lazy integrations—without
-replacing Pi.
+Pi Stuff brings focused interface, work, context, and integration capabilities to the native
+[Pi coding agent](https://github.com/earendil-works/pi).
 
-English · [简体中文](docs/i18n/zh-CN/README.md) · [Engineering wiki](docs/README.md)
+[简体中文](docs/i18n/zh-CN/README.md) · [Documentation](docs/README.md)
 
-[![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/jczhang02/pi-stuff/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/github/license/jczhang02/pi-stuff?style=flat-square)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/jczhang02/pi-stuff?style=flat-square)](https://github.com/jczhang02/pi-stuff/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/jczhang02/pi-stuff?style=flat-square)](https://github.com/jczhang02/pi-stuff/network/members)
+[![Last commit](https://img.shields.io/github/last-commit/jczhang02/pi-stuff?style=flat-square)](https://github.com/jczhang02/pi-stuff/commits/main)
+
+[![Pi 0.84.4](https://img.shields.io/badge/Pi-0.84.4-89b4fa?style=flat-square)](docs/compatibility.md)
+[![Bun 1.4.0](https://img.shields.io/badge/Bun-1.4.0-f9e2af?style=flat-square&logo=bun&logoColor=1e1e2e)](docs/compatibility.md)
+[![TypeScript 5.9.3](https://img.shields.io/badge/TypeScript-5.9.3-3178c6?style=flat-square&logo=typescript&logoColor=white)](docs/compatibility.md)
+[![Linux x64](https://img.shields.io/badge/Linux-x64-fab387?style=flat-square&logo=linux&logoColor=1e1e2e)](docs/compatibility.md)
 
 </div>
 
-## Interface
+## About
 
-These visual captures were recorded in Ghostty `1.3.1` on Pi `0.84.1`; they are historical UI evidence, not the
-current Host certification. Click an image for the full-resolution view.
+Pi Stuff keeps everyday work inside Pi while making the conversation easier to read and longer tasks easier to run.
+It adds four practical layers:
 
-**Welcome and shared Statusline**
+- A quiet, readable interface for conversation, Tool activity, and Session names.
+- Goals, background tasks, delegated Agents, and Todo tracking that keep work moving.
+- Side questions and notifications that do not interrupt the main thread.
+- Optional Context, Web, MCP, RTK, Codex, and Code Mode integrations when a workflow needs them.
 
-[![Pi Stuff Welcome card and shared Statusline](docs/assets/readme/pi-stuff-welcome.png)](docs/assets/readme/pi-stuff-welcome.png)
+## Getting started
 
-| Native `/ui` settings | Compact Tool activity and Todo |
-| :---: | :---: |
-| [![Pi Stuff native UI settings](docs/assets/readme/pi-stuff-ui-settings.png)](docs/assets/readme/pi-stuff-ui-settings.png) | [![Pi Stuff compact Tool activity and Todo](docs/assets/readme/pi-stuff-tool-activity.png)](docs/assets/readme/pi-stuff-tool-activity.png) |
-
-## What is Pi Stuff?
-
-Pi Stuff assembles a personal set of capabilities into one ordinary Pi Package. Pi remains the **Host** and continues
-to own the CLI, TUI, sessions, settings, Package loading, and model interaction. Pi Stuff adds one ordered **Suite**
-through Pi's native Extension interface.
-
-The result is a denser, quieter coding workflow:
-
-- **Conversation-first UI** — a responsive Welcome card, one bounded Statusline, live Thought projection, terminal
-  `chart`/`tree` fences, input highlighting, and full-width Pi-native Command Dialogs.
-- **Compact Tool activity** — continuous native Read, Grep/Find, and List work becomes one semantic Retrieval Group;
-  other Tools stay independent, while `Ctrl+O` and `/tools` restore the underlying detail.
-- **Semantic Session names** — the first settled direct-user exchange receives a bounded model-generated name;
-  `/autoname` refreshes it explicitly, `/autoname settings` controls routine policy and the primary model, and automatic naming never takes over Child Agent Sessions.
-- **Durable objectives and plans** — Goal can continue one evidence-gated objective, while Todo keeps recoverable
-  session tasks in a bounded checklist.
-- **Current-session parallel work** — Background Shells, one-shot Monitors, and foreground or background Agents stay
-  inspectable without becoming a second scheduler or runtime.
-- **Side questions without transcript noise** — `/btw` answers a focused question outside the main conversation and
-  restores the original editor draft when closed.
-- **Settled-work attention** — terminal-native alerts arrive only after user-started Agent work genuinely settles and
-  its Agent Work Duration crosses the configured threshold, excluding time spent waiting for a Pi UI prompt.
-- **Bounded integrations** — configured Context initializes before editor readiness; unconfigured Context, Web, MCP,
-  RTK, Codex controls, and optional Code Mode activate only when needed and fail safely when unavailable.
-
-Pi Stuff is maintained as a private, local-only Package. It is not published to npm, and its Capability Modules are
-not independently installable products.
-
-## Quick start
-
-For the certified path, use the Pi `0.84.4` Linux x64 Host built from upstream
-`b79e4cc834970cca69daebffab7df1da7d1e52c4`. A matching version string alone does not establish certification.
+Install [Pi 0.84.4](docs/compatibility.md), clone the repository, and install the Package:
 
 ```bash
 git clone https://github.com/jczhang02/pi-stuff.git
@@ -67,176 +43,75 @@ pi install ./packages/pi-stuff
 pi
 ```
 
-`pi install` lets Pi add the Package to the user-owned Settings Layer. Pi Stuff does not install itself or mutate Pi
-settings during import or startup.
+Open `/ui` to tune the interface, start durable work with `/goal`, or ask a side question with `/btw`.
+The [getting-started guide](docs/getting-started.md) covers the first session and optional setup.
 
-Once Pi starts, these are useful entry points:
+## Usage
 
-| Command | Purpose |
+| What you want | Start with | Learn more |
+| --- | --- | --- |
+| A calmer conversation | `/ui`, automatic Session names, compact Tool activity | [Interface guides](docs/README.md#capability-guides) |
+| Work that keeps moving | `/goal`, `/tasks`, `/agents`, Todo Tools | [Work guides](docs/README.md#capability-guides) |
+| Questions and alerts off the main path | `/btw`, `/notifications` | [Flow guides](docs/README.md#capability-guides) |
+| More context and connected tools | `/ctx`, Web, MCP, RTK, Codex, Code Mode | [Integration guides](docs/README.md#capability-guides) |
+
+The [command reference](docs/reference/commands.md) lists every slash command. The
+[settings reference](docs/reference/settings.md) covers optional configuration without turning installation into a
+configuration project.
+
+## Documentation
+
+| Guide | Use it for |
 | --- | --- |
-| `/ui` | Configure the Statusline, Welcome card, input presentation, and Tool timer |
-| `/ctx` | Inspect Context status and run guided history maintenance |
-| `/notifications` | Configure and test completion and failure notifications |
-| `/autoname` · `/autoname settings` | Regenerate the current Session name or configure automatic naming policy and its primary model |
-| `/goal <objective>` | Start persistent, evidence-gated work toward one session objective |
-| `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
-| `/tasks` | Inspect and control Background Shells and Monitors |
-| `/agents` | Inspect and control current-session Agents |
-| `/tools` | Inspect Retrieval Group members and independent Tool Activities |
-| `/diagnostics` | Review bounded, redacted Suite problems from the current process |
-| `/codex` | Inspect Codex usage and Fast mode when using a supported Codex model |
-| `/mcp` | Inspect lazily configured MCP servers |
-| `/rtk` | Verify or configure optional RTK command rewriting |
-| `/codemode` | Inspect effective Code Mode and manage trusted-project overrides or the global default |
+| [Getting started](docs/getting-started.md) | Installation and a first Pi Stuff session |
+| [Capability guides](docs/README.md#capability-guides) | Task-oriented guides for every capability |
+| [Commands](docs/reference/commands.md) | Slash-command lookup |
+| [Settings](docs/reference/settings.md) | Optional configuration |
+| [Themes](docs/reference/themes.md) | Bundled Catppuccin themes |
+| [Troubleshooting](docs/troubleshooting.md) | Common setup and runtime problems |
+| [Architecture](docs/architecture.md) | How the Suite fits together |
+| [Compatibility](docs/compatibility.md) | Certified Host and toolchain versions |
 
-Inside tmux, terminal-native notifications require `set -g allow-passthrough on`. Pi Stuff wraps notification
-protocols for tmux, and `Tmux notification` exclusively controls attention BELs. Turning it on adds BEL without
-replacing a supported system notification, or falls back to BEL when `auto` cannot identify a visual protocol. Turning
-it off preserves supported system notifications and suppresses BEL, including explicit `bell` delivery. Pi Stuff does
-not mutate user-owned tmux settings.
+## Contributing
 
-This notification passthrough setting does not enable or certify inline image rendering inside tmux. Image display
-remains a Pi Host, terminal-protocol, and multiplexer-capability concern.
-
-Notification `auto` delivery selects Kitty OSC 99, Ghostty OSC 777, or OSC 9 for iTerm2 and WezTerm. Response previews
-are off by default because desktop notification history may be visible outside Pi. Outside tmux, the optional
-terminal-bell setting adds BEL; the terminal, not Pi Stuff, decides how BEL sounds or appears.
-
-External services, authentication, MCP declarations, Magic Context configuration, and the RTK executable remain
-optional and user-owned. Their absence does not prevent ordinary Pi turns.
-
-## Architecture
-
-[![Animated Pi Stuff architecture: user-owned settings and input flow through the Pi Host into one local Pi Stuff Package and its ordered Capability Modules](docs/assets/readme/pi-stuff-architecture.gif)](docs/assets/readme/pi-stuff-architecture.png)
-
-The architecture has three deliberate layers:
-
-1. **Pi Host** owns the CLI, TUI, sessions, settings, Package loader, and model loop.
-2. **`@jczhang02/pi-stuff`** exports one default Extension factory. Its generated entry follows the order declared in
-   [`packages/pi-stuff/suite.json`](packages/pi-stuff/suite.json).
-3. **Capability Modules** each own one coherent behavior inside the Package. `conversation-ui` provides shared
-   presentation and Host-lifecycle coordination; `tool-display` provides the shared Tool presentation contract.
-
-Import stays pure. Session startup does not access the network, launch subprocesses, mutate Host settings, or create,
-rewrite, or migrate user configuration. Under [ADR 0007](docs/adr/0007-initialize-configured-context-before-editor-readiness.md),
-a recognized, migration-free Context configuration may initialize rebuildable derived SQLite state before editor
-readiness. Required initialization failures propagate instead of leaving a silently partial Suite.
-
-### Capability map
-
-The ordered Suite currently contains:
-
-| Capability Module | What it contributes |
-| --- | --- |
-| `conversation-ui` | Welcome, Statusline, live Thoughts, `chart`/`tree` fence projection, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
-| `session-naming` | Bounded semantic Session names after settled direct-user work, branch-local ownership state, and `/autoname` policy/model controls |
-| `tool-display` | Compact Retrieval Groups, independent Tool Activities, native expansion, `/tools`, and deterministic resume reconstruction |
-| `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
-| `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
-| `goal` | One persistent session objective with automatic continuation and evidence-gated completion or blocking |
-| `context-management` | Configured Magic Context integration, the `/ctx` control center, and Pi JSONL as the raw session authority |
-| `ponytail` | Feature-complete Ponytail fork with persistent modes, six Skills, shared Statusline state, and a `/ponytail` control dialog |
-| `web` | Bounded Web search, public HTTP(S) reading, PDF extraction, and continuation retrieval |
-| `mcp` | One lazy MCP gateway with explicit authentication and stdio/HTTP transports |
-| `background-work` | Current-session Background Shells, one-shot Monitors, and `/tasks` management |
-| `subagents` | Foreground and background Agents, a compact roster, and `/agents` inspection |
-| `todo` | Branch-replayable Task Tools and a bounded checklist above Pi's editor |
-| `btw` | One-shot side questions that do not enter the main transcript or model context |
-| `notification` | Delayed terminal-native alerts for settled user-started Agent work that crosses its prompt-excluding Agent Work Duration threshold |
-| `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through `codemode` and `tool_search` |
-
-These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication
-lifecycle.
-
-### Context controls
-
-`/ctx` opens Pi Stuff's full-width Context dialog. It shows current usage, compartments, memories, notes, Historian
-state, pending drops, and available maintenance actions. The same actions are available as typed subcommands:
-
-```text
-/ctx status
-/ctx flush
-/ctx wrapup [messages-to-keep]
-/ctx recomp [start-end]
-/ctx upgrade
-```
-
-Maintenance progress and results use Context Activity rows in the Session transcript. They remain available after
-resume but never enter model context. Magic Context remains the data and execution authority; its Header, Footer,
-Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
-
-### Ponytail controls
-
-`/ponytail` opens the full-width control dialog for the current Session mode, default mode, Statusline visibility,
-startup notification, and specialized Skills. Direct commands remain available, including `/ponytail full`,
-`/ponytail default lite`, and the upstream-compatible `/ponytail-review` through `/ponytail-help` aliases. The shared
-Statusline shows the selected mode as the Nerd Font `󱖿 <mode>` identity; Agent activity remains in the Working Row.
-`off` contributes no
-Ponytail instructions or model-visible Ponytail Skills, while explicit Skill commands remain available.
-
-## Themes
-
-The Package includes `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, and `catppuccin-mocha`. Select a
-theme in Pi's `/settings` menu or set its name in Pi's `settings.json`. Pi retains control of terminal-color fallback and
-the user's theme choice.
-
-## Compatibility and status
-
-| Contract | Certified profile |
-| --- | --- |
-| Pi Host | `0.84.4`, upstream `b79e4cc834970cca69daebffab7df1da7d1e52c4` |
-| Pi Host binary | Audited upstream Linux x64 release SHA-256 |
-| Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
-| Pi Host embedded Bun runtime | `1.3.14` |
-| Repository Bun toolchain | `1.4.0` |
-| TypeScript | `5.9.3` |
-| Optional RTK runtime | Official `0.45.0`, certified Linux x64 release binary only |
-
-Compatibility with other Pi builds is not claimed. A Pi upgrade is a coordinated repository change that updates the
-pinned Host source profile, development types, and public-seam acceptance checks together. See the full
-[`compatibility contract`](docs/compatibility.md).
-
-## Benchmark evidence
-
-A preregistered local timing study ran 12 Terminal-Bench 2.1 tasks twice with Pi Stuff Code Mode off and twice with it
-on (48 trials total). Arithmetic mean whole-trial latency was 602.6 seconds with Code Mode off and 535.4 seconds with
-it on; the estimated Code Mode effect was inconclusive. Agent/provider trajectories and long-tail timeouts dominated
-the observed runtime, while cold Pi module import averaged 40.5 seconds in fresh benchmark containers. The public
-Codex comparison is descriptive because it was not a matched task-and-environment A/B test.
-
-| Artifact | Purpose |
-| --- | --- |
-| [Research report](docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) · [简体中文](docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) | Method, results, limitations, and root-cause analysis |
-| [Sanitized results](docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json) | Per-trial evidence, summary statistics, and retained-artifact hashes |
-| [Frozen protocol](docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json) | Preregistered tasks, arms, execution caps, and analysis rules |
-| [Frozen source manifest snapshot](docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json) | Byte-exact task population referenced by the protocol and result hash; historical adapter fields are provenance, not runnable configuration |
-
-## Development
-
-Install the frozen dependency graph and run the complete repository check:
-
-```bash
-bun install --frozen-lockfile --ignore-scripts
-bun run check
-```
-
-The check covers formatting, type surfaces, tests, unused code, generated Suite composition, repository safety, Tool
-Activity performance, and verification of the extracted local Package against the certified Pi Host release. CI
-downloads that release, verifies its exact binary hash, and runs acceptance without external network access.
-
-Maintainer documentation is indexed in [`docs/README.md`](docs/README.md). Before changing behavior, read
-[`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in [`CONTEXT.md`](CONTEXT.md),
-[`DESIGN.md`](DESIGN.md) for visible surfaces, [`code-quality.md`](docs/code-quality.md) for repository-owned Source,
-and the relevant records under [`docs/adr/`](docs/adr/). Engineering work follows the
-[repository rules](AGENTS.md) and [Beads workflow](docs/agents/issue-tracker.md), and is mirrored to
-[GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
+Install dependencies with `bun install --frozen-lockfile`, make a focused change, and run `bun run check` before
+opening a pull request. See the [contribution guide](.github/CONTRIBUTING.md) for the complete workflow.
 
 ## Security
 
-Pi Extensions execute with the user's operating-system permissions. Pi Stuff does not add a permission or command-
-interception layer. Review the source before installation and use [private vulnerability reporting](.github/SECURITY.md) for
-security issues.
+Pi Extensions run with the current user's operating-system permissions. Review Extension source before installation
+and report vulnerabilities through the private channel in the [security policy](.github/SECURITY.md).
+
+## Acknowledgments
+
+### Product and visual references
+
+- [Pi](https://github.com/earendil-works/pi) provides the native Agent Host and extension surface.
+- [Ghostty](https://github.com/ghostty-org/ghostty) is the terminal used for the documentation screenshots.
+- [Catppuccin](https://github.com/catppuccin/catppuccin) supplies the palette behind the bundled themes.
+- [Best README Template](https://github.com/othneildrew/Best-README-Template) informed the README structure.
+- [Claude Code](https://github.com/anthropics/claude-code) informed transcript hierarchy and background-work UI.
+- [`agent-first-screenshots`](https://github.com/different-ai/openwork) informed screenshot framing and presentation.
+- [OpenAI Codex](https://github.com/openai/codex) informed Codex integration and the Code Mode runtime.
+- [Cloudflare Code Mode](https://developers.cloudflare.com/agents/tools/codemode/) informed Code Mode compatibility.
+
+### Upstream projects and forks
+
+- [`pi-background-tasks`](https://github.com/ismailsaleekh/pi-background-tasks) informed Background Work.
+- [`rpiv-mono`](https://github.com/juicesharp/rpiv-mono) informed BTW and Todo.
+- [`howaboua-pi-stuff`](https://github.com/IgorWarzocha/howaboua-pi-stuff) informed Conversation UI, Codex, and Code Mode.
+- [Magic Context](https://github.com/cortexkit/magic-context) powers Context Management.
+- [`pi-subagents`](https://github.com/nicobailon/pi-subagents) informed delegated Agent execution.
+- [`pi-rtk-optimizer`](https://github.com/MasuRii/pi-rtk-optimizer) informed RTK command rewriting.
+- [Ponytail](https://github.com/DietrichGebert/ponytail) supplies the anti-overengineering workflow.
+- [`pi-extensions` / `pi-goal`](https://github.com/narumiruna/pi-extensions) informed Goal.
+- [`pi-tidy-tools`](https://github.com/mikeyobrien/pi-tidy-tools) informed compact Tool display.
+- [`pi-autoname`](https://github.com/ssdiwu/pi-autoname) informed automatic Session naming.
+- [`pi-mcp-adapter`](https://github.com/nicobailon/pi-mcp-adapter) informed the MCP runtime.
+- [`pi-web-access`](https://github.com/nicobailon/pi-web-access) informed the Web runtime.
+
+Source provenance and license details remain in Module-local `UPSTREAM.md` and `THIRD_PARTY_NOTICES.md` files.
 
 ## License
 
-[MIT](LICENSE) © 2026 JC Zhang. Absorbed third-party source retains its adjacent license and provenance records.
+Distributed under the [MIT License](LICENSE).
