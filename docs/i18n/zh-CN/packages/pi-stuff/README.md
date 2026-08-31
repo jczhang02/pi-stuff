@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 0a3815c64391ef3f9c9a4cfa8b93259128448662ff2469ed65b81ec055f5b700 -->
+<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 13f3a2283228dbd69ed328b7a1c4051225f1baacf87f55a494e52c40fba9e08b -->
 
 # `@jczhang02/pi-stuff`
 
@@ -8,10 +8,10 @@ Pi Stuff Package 为 Pi 加入界面、工作、上下文和集成能力。
 
 <p align="center">
   <a href="../../../../assets/readme/package/suite.png">
-    <img src="../../../../assets/readme/package/suite.png" alt="带有 Session 级 Todo 的 Pi Stuff 对话" width="100%">
+    <img src="../../../../assets/readme/package/suite.png" alt="Ghostty 中的 Pi Stuff 统一界面设置" width="100%">
   </a>
   <br>
-  <em>Suite 把对话、Tool 和 Session 级 Todo 放在同一个 Pi 界面中。</em>
+  <em>共享 UI 对话框在原生 Pi 界面中集中管理 Suite 的显示设置。</em>
 </p>
 
 ## 能力

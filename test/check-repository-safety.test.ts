@@ -80,28 +80,39 @@ async function writeFixture(root: string, path: string, content: string | Uint8A
 	await writeFile(absolutePath, content);
 }
 
-function readmeScreenshotAssetPath(sourcePath: string): string {
-	return `docs/assets/readme/fixtures/${sourcePath.replaceAll("/", "-")}.png`;
+function readmeScreenshotAssetPath(sourcePath: string, index = 0): string {
+	const suffix = index === 0 ? "" : `-${String(index + 1)}`;
+	return `docs/assets/readme/fixtures/${sourcePath.replaceAll("/", "-")}${suffix}.png`;
 }
 
-function readmeScreenshotBlock(sourcePath: string): string {
-	const link = `/${readmeScreenshotAssetPath(sourcePath)}`;
+function readmeScreenshotBlock(sourcePath: string, index = 0): string {
+	const link = `/${readmeScreenshotAssetPath(sourcePath, index)}`;
 	return `<p align="center">\n  <a href="${link}">\n    <img src="${link}" alt="Fixture screenshot" width="100%">\n  </a>\n  <br>\n  <em>Fixture caption.</em>\n</p>`;
 }
 
-function pngHeader(width = 1600, height = 900): Buffer {
-	const png = Buffer.alloc(24);
+function pngHeader(width = 1600, height = 900, marker = ""): Buffer {
+	const png = Buffer.alloc(24 + Buffer.byteLength(marker));
 	Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
 	png.writeUInt32BE(13, 8);
 	png.write("IHDR", 12, "ascii");
 	png.writeUInt32BE(width, 16);
 	png.writeUInt32BE(height, 20);
+	Buffer.from(marker).copy(png, 24);
 	return png;
 }
 
-async function writeReadmeFixture(root: string, sourcePath: string, content: string): Promise<void> {
-	await writeFixture(root, readmeScreenshotAssetPath(sourcePath), pngHeader());
-	await writeFixture(root, sourcePath, `${content.trimEnd()}\n\n${readmeScreenshotBlock(sourcePath)}\n`);
+async function writeReadmeFixture(root: string, sourcePath: string, content: string, count = 1): Promise<void> {
+	const blocks = Array.from({ length: count }, (_, index) => readmeScreenshotBlock(sourcePath, index));
+	await Promise.all(
+		blocks.map((_, index) =>
+			writeFixture(
+				root,
+				readmeScreenshotAssetPath(sourcePath, index),
+				pngHeader(1600, 900, `${sourcePath}:${index}`),
+			),
+		),
+	);
+	await writeFixture(root, sourcePath, `${content.trimEnd()}\n\n${blocks.join("\n\n")}\n`);
 }
 
 async function writeTranslationFixture(root: string, sourcePath: string, body = "# 中文镜像\n"): Promise<void> {
@@ -125,18 +136,20 @@ async function writeDocumentationFixture(root: string): Promise<readonly string[
 		"docs/reports/README.md": "# Reports\n\n[Report](report.md)\n",
 		"docs/reports/report.md": "# Report\n",
 	} as const;
-	await writeReadmeFixture(root, "README.md", "Repository documentation.\n");
+	await writeReadmeFixture(root, "README.md", "Repository documentation.\n", 3);
+	await writeReadmeFixture(root, "packages/pi-stuff/README.md", "# Package\n", 2);
 	for (const [path, content] of Object.entries(documents)) {
 		if (path.endsWith("/README.md")) await writeReadmeFixture(root, path, content);
 		else await writeFixture(root, path, content);
 	}
-	const sources = ["README.md", ...Object.keys(documents)];
+	const sources = ["README.md", "packages/pi-stuff/README.md", ...Object.keys(documents)];
 	for (const source of sources) {
+		const screenshotCount = source === "README.md" ? 3 : source === "packages/pi-stuff/README.md" ? 2 : 1;
 		await writeTranslationFixture(
 			root,
 			source,
 			source === "README.md" || source.endsWith("/README.md")
-				? `${readmeScreenshotBlock(source)}\n\n# 中文镜像\n`
+				? `${Array.from({ length: screenshotCount }, (_, index) => readmeScreenshotBlock(source, index)).join("\n\n")}\n\n# 中文镜像\n`
 				: "# 中文镜像\n",
 		);
 	}
@@ -193,7 +206,10 @@ test("enforces README screenshot ownership, dimensions, mirrors, and orphan clea
 	const root = await createRepository();
 	await writeDocumentationFixture(root);
 	const rootAsset = readmeScreenshotAssetPath("README.md");
-	await writeFixture(root, rootAsset, pngHeader(800, 600));
+	const rootBlocks = [readmeScreenshotBlock("README.md"), readmeScreenshotBlock("README.md", 1)].join("\n\n");
+	await writeFixture(root, "README.md", `Repository documentation.\n\n${rootBlocks}\n`);
+	await writeTranslationFixture(root, "README.md", `${rootBlocks}\n\n# 中文镜像\n`);
+	await writeFixture(root, rootAsset, pngHeader(800, 600, "README.md:0"));
 	await writeFixture(
 		root,
 		"docs/README.md",
@@ -207,12 +223,31 @@ test("enforces README screenshot ownership, dimensions, mirrors, and orphan clea
 		"docs/reports/README.md",
 		`${readmeScreenshotBlock("README.md")}\n\n# 中文镜像\n`,
 	);
-	await writeFixture(root, "docs/assets/readme/fixtures/orphan.png", pngHeader());
+	await writeReadmeFixture(root, "packages/pi-stuff/README.md", "# Package\n");
+	await writeTranslationFixture(
+		root,
+		"packages/pi-stuff/README.md",
+		`${readmeScreenshotBlock("packages/pi-stuff/README.md")}\n\n# 中文镜像\n`,
+	);
+	const duplicateContent = pngHeader(1600, 900, "duplicate-content");
+	await writeFixture(root, readmeScreenshotAssetPath("docs/reports/README.md"), duplicateContent);
+	await writeFixture(root, readmeScreenshotAssetPath("packages/pi-stuff/README.md"), duplicateContent);
+	await writeFixture(root, "docs/assets/readme/fixtures/orphan.png", pngHeader(1600, 900, "orphan"));
 
 	const findings = await auditRepositoryFiles(root);
 	expect(findings).toContainEqual({ path: "README.md", rule: "readme-screenshot-size:800x600" });
+	expect(findings).toContainEqual({ path: "README.md", rule: "readme-screenshot-count:2/3" });
 	expect(findings).toContainEqual({ path: "docs/README.md", rule: "readme-screenshot-reused:README.md" });
 	expect(findings).toContainEqual({ path: "docs/research/README.md", rule: "readme-screenshot-missing" });
+	expect(findings).toContainEqual({ path: "docs/research/README.md", rule: "readme-screenshot-count:0/1" });
+	expect(findings).toContainEqual({
+		path: "packages/pi-stuff/README.md",
+		rule: "readme-screenshot-count:1/2",
+	});
+	expect(findings).toContainEqual({
+		path: "packages/pi-stuff/README.md",
+		rule: `readme-screenshot-duplicate-content:${readmeScreenshotAssetPath("docs/reports/README.md")}`,
+	});
 	expect(findings).toContainEqual({
 		path: "docs/i18n/zh-CN/docs/reports/README.md",
 		rule: "readme-screenshot-translation-mismatch",

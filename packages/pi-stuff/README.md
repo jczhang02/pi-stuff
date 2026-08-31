@@ -6,10 +6,10 @@ The Pi Stuff Package adds focused interface, work, context, and integration capa
 
 <p align="center">
   <a href="../../docs/assets/readme/package/suite.png">
-    <img src="../../docs/assets/readme/package/suite.png" alt="Pi Stuff conversation with a Session-scale Todo" width="100%">
+    <img src="../../docs/assets/readme/package/suite.png" alt="Pi Stuff unified UI settings in Ghostty" width="100%">
   </a>
   <br>
-  <em>The Suite combines conversation, Tools, and a Session-scale Todo in one Pi surface.</em>
+  <em>The shared UI dialog keeps Suite presentation settings in one native Pi surface.</em>
 </p>
 
 ## Capabilities

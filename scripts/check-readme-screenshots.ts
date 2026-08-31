@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -21,7 +22,10 @@ function screenshotTargets(path: string, markdown: string, resolveTarget: Resolv
 	}));
 }
 
-async function pngDimensions(root: string, path: string): Promise<readonly [number, number] | undefined> {
+async function pngMetadata(
+	root: string,
+	path: string,
+): Promise<{ readonly height: number; readonly sha256: string; readonly width: number } | undefined> {
 	try {
 		const png = await readFile(join(root, path));
 		if (
@@ -31,7 +35,11 @@ async function pngDimensions(root: string, path: string): Promise<readonly [numb
 		) {
 			return undefined;
 		}
-		return [png.readUInt32BE(16), png.readUInt32BE(20)];
+		return {
+			height: png.readUInt32BE(20),
+			sha256: createHash("sha256").update(png).digest("hex"),
+			width: png.readUInt32BE(16),
+		};
 	} catch {
 		return undefined;
 	}
@@ -48,11 +56,19 @@ export async function auditReadmeScreenshots(
 	);
 	const findings: ReadmeScreenshotFinding[] = [];
 	const owners = new Map<string, string>();
+	const contentOwners = new Map<string, string>();
 	const used = new Set<string>();
-	const dimensions = new Map<string, readonly [number, number] | undefined>();
+	const metadata = new Map<string, Awaited<ReturnType<typeof pngMetadata>>>();
 	for (const path of readmes) {
 		const screenshots = screenshotTargets(path, markdown.get(path) ?? "", resolveTarget);
+		const expectedCount = path === "README.md" ? 3 : path === "packages/pi-stuff/README.md" ? 2 : 1;
 		if (screenshots.length === 0) findings.push({ path, rule: "readme-screenshot-missing" });
+		if (screenshots.length !== expectedCount) {
+			findings.push({
+				path,
+				rule: `readme-screenshot-count:${String(screenshots.length)}/${String(expectedCount)}`,
+			});
+		}
 		const sourceTargets = new Set<string>();
 		for (const screenshot of screenshots) {
 			if (screenshot.href !== screenshot.src) findings.push({ path, rule: "readme-screenshot-link-mismatch" });
@@ -70,11 +86,17 @@ export async function auditReadmeScreenshots(
 				findings.push({ path, rule: "readme-screenshot-must-be-png" });
 				continue;
 			}
-			if (!dimensions.has(target)) dimensions.set(target, await pngDimensions(root, target));
-			const size = dimensions.get(target);
-			if (!size) findings.push({ path, rule: `readme-screenshot-missing-or-invalid:${target}` });
-			else if (size[0] !== 1600 || size[1] !== 900) {
-				findings.push({ path, rule: `readme-screenshot-size:${String(size[0])}x${String(size[1])}` });
+			if (!metadata.has(target)) metadata.set(target, await pngMetadata(root, target));
+			const png = metadata.get(target);
+			if (!png) findings.push({ path, rule: `readme-screenshot-missing-or-invalid:${target}` });
+			else {
+				if (png.width !== 1600 || png.height !== 900) {
+					findings.push({ path, rule: `readme-screenshot-size:${String(png.width)}x${String(png.height)}` });
+				}
+				const contentOwner = contentOwners.get(png.sha256);
+				if (contentOwner) {
+					findings.push({ path, rule: `readme-screenshot-duplicate-content:${contentOwner}` });
+				} else contentOwners.set(png.sha256, target);
 			}
 		}
 		const mirrorPath = `docs/i18n/zh-CN/${path}`;
