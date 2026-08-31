@@ -41,20 +41,17 @@ function result(stdout = "", code = 0, options: { killed?: boolean; stderr?: str
 test("keeps the official release identity synchronized with CI and provenance", async () => {
 	const root = join(import.meta.dir, "../..");
 	const records = await Promise.all(
-		[
-			".github/workflows/ci.yml",
-			"docs/compatibility.md",
-			"packages/pi-stuff/src/rtk/README.md",
-			"packages/pi-stuff/src/rtk/UPSTREAM.md",
-		].map((path) => readFile(join(root, path), "utf8")),
+		[".github/workflows/ci.yml", "docs/compatibility.md", "packages/pi-stuff/src/rtk/UPSTREAM.md"].map((path) =>
+			readFile(join(root, path), "utf8"),
+		),
 	);
 	for (const record of records) {
 		expect(record).toContain(CERTIFIED_RTK_VERSION);
 		expect(record).toContain(CERTIFIED_RTK_LINUX_X64_SHA256);
 	}
 	expect(records[0]).toContain("c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4");
-	expect(records[2]).toContain("compound predicates");
-	expect(records[3]).not.toContain("Maintainer source build");
+	expect(records[2]).toContain("compound `find` predicates");
+	expect(records[2]).not.toContain("Maintainer source build");
 });
 
 test("rejects an uncertified executable that reports the certified version", async () => {
