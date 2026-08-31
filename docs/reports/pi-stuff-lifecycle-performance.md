@@ -1,9 +1,94 @@
 # Pi Stuff lifecycle performance
 
-> **Current disposition (2026-08-29):** this report preserves measured Pi 0.84.1 and 0.84.2 lifecycle evidence. The
-> certified Host is now Pi 0.84.3; [`docs/compatibility.md`](../compatibility.md) is authoritative for its identity.
-> Benchmark schema 6 and the regression budgets at the end remain executable repository checks, but the historical
-> measurements below are not relabeled as 0.84.3 results.
+> **Current disposition (2026-08-31):** the certified Host is Pi 0.84.4; [`docs/compatibility.md`](../compatibility.md)
+> is authoritative for its identity. This report now includes the performance-only Effect v4 follow-up below. It also
+> preserves measured Pi 0.84.1 and 0.84.2 lifecycle evidence: benchmark schema 6 and the regression budgets at the end
+> remain executable repository checks, but historical measurements are not relabeled as Pi 0.84.4 results.
+
+## Effect v4 performance follow-up (2026-08-31)
+
+Bead `ps-a6b` investigated whether adopting Effect v4 had created a practical performance blocker and kept optimizing
+until the remaining safe candidates were negligible, negative, or required a lifecycle/architecture trade-off. This
+follow-up deliberately evaluates performance only; Effect release status is outside its scope.
+
+The comparison uses the pre-Effect commit `d45db1a7` and the final optimized branch on the same machine with Bun 1.4.0.
+Real-Host samples use the certified Pi 0.84.4 binary, one warmup, seven fresh-process samples, a 100×32 PTY, and the
+deterministic fixture Provider. Control and candidate runs were bracketed where scheduler drift could affect the
+result. Direct import and TypeScript measurements alternated clean pre-Effect and candidate worktrees.
+
+### Retained optimizations
+
+| Checkpoint | Smallest retained change | Measured reason to keep it |
+| --- | --- | --- |
+| `9e6c573` | Cache Jiti transforms by complete Source fingerprint across explicit changed-source refreshes. | Fixed-path refresh fell from 7,810 ms to 1,371–1,398 ms; real Pi changed-source reload p50 fell from 7,054 ms to 6,562 ms without accepting stale Source. |
+| `c07c414` | Import each Effect namespace through `effect/<Module>` instead of the root barrel. | Pi startup p50 fell 7.6%, traced module-graph time 8.0%, direct import 2.7%, direct-import RSS 4.8%, and the measured warm five-profile typecheck 7.8%. |
+| `cfe1c7b` | Load the Subagents execution engine at the first Agent request while keeping registration and lifecycle ownership eager. | Pi module-graph time fell 4.8% and startup 2.4%; direct import fell 1.8% and RSS 2.2%. First engine activation cost 7.67 ms on the path that uses it. |
+| `dba59da` | Load Web search providers inside the first non-empty search Session effect. | Pi module-graph time fell 4.4–6.8% and startup 1.2–4.2%; the first provider load cost 4.99 ms and about 1,600 KiB only when search was used. |
+| `644dc23` | Defer MCP command/proxy handlers, SDK transports, AJV, OAuth, and browser handoff until the first owning MCP action. | Fifteen alternating direct-import pairs improved 12.5% and RSS 8.7%; bracketed Pi module-graph time improved 6.9–7.6% and startup 4.4–5.0%. Immediate stdio use merely moved about 70 ms of SDK work to connection and was roughly flat end to end. |
+| `13ecb01` | Replace the shared `Effect.gen` fork/join wrapper with direct `Effect.flatMap`. | Package checking instantiated 168 fewer types. Seven alternating 10,000-run batches reduced the microbenchmark median from 29.23 ms to 21.78 ms, about 0.75 microseconds per shared `EffectFoundation.run` call, while deleting generator machinery. |
+| `73f555c` | Give each of the five strict TypeScript profiles its own ignored native incremental-state file. | An unchanged repeat fell from a 39.99-second cache-building pass to 9.16 and 9.02 seconds. A shared-core edit correctly forced a 39.10-second recheck, and an injected type error was detected before the probe was removed. No diagnostic was disabled. |
+
+### Final pre-Effect comparison
+
+The real-Host module-graph interval below runs from `suite.wrapper.imported` to `suite.module-imported`; the factory
+interval is `suite.factory.start` to `suite.factory.end`. Values are seven-sample p50 milliseconds.
+
+| Measurement | Pre-Effect | Final optimized branch | Difference |
+| --- | ---: | ---: | ---: |
+| Real Pi fresh startup | 3,125.71 | 2,931.32 | −194.39 (−6.2%) |
+| Traced Suite module graph | 1,952.83 | 1,784.68 | −168.15 (−8.6%) |
+| Suite factory after import | 16.88 | 18.26 | +1.38 ms |
+| Real Pi shutdown | 100.31 | 100.64 | +0.33 ms |
+
+The shutdown difference is not a measurable regression. In the earlier current/control/current bracket, the mean
+current-minus-control 95% interval was −0.90 to +10.20 ms, and the second current-minus-first-current interval was
+−5.13 to +8.40 ms. The final p50 is effectively equal to the pre-Effect control. The factory retains about 1.4 ms of
+Effect ownership work, but the smaller import graph more than repays it before the editor becomes ready.
+
+Fifteen final alternating fresh-process imports of `suite-runtime.ts` independently confirmed the graph result. Import
+p50/p95 changed from 630.47/717.09 ms to 542.90/591.26 ms; maximum-RSS p50 changed from 147,892 KiB to 135,080 KiB.
+The final branch therefore imports 13.9% faster while using 8.7% less peak resident memory than the pre-Effect branch.
+
+The shipped Tool Activity benchmark remains clean: 20,000 activity calls took a 7.25 ms median, 1,000 formatted
+expansions 2.51 ms, 200 streaming-tail updates 2.13 ms, and shipped exploration 1.03 ms. The Conversation Markdown
+benchmark's initial 0.02 ms `thinking-32k` movement did not reproduce in an independent same-machine rerun (1.553 ms
+pre-Effect versus 1.550 ms final), and the relevant Source was byte-identical. A Ponytail real-Host run completed all
+18 Pi lifecycles without reproducing its earlier process-exit race, but the external model made no Tool call in any
+case; that run was invalid behavior evidence and is not used as a performance result.
+
+### Remaining frontier
+
+Cold, uncached TypeScript checking is the one retained development regression. Five alternating complete pairs measured
+36.18 seconds pre-Effect and 38.84 seconds after the runtime optimizations, a 2.66-second or 7.4% increase. Three
+alternating per-profile pairs reproduced the same broad cost rather than one isolated hotspot:
+
+| TypeScript profile | Pre-Effect p50 | Effect p50 | Difference |
+| --- | ---: | ---: | ---: |
+| Root | 10.49 s | 11.38 s | +8.5% |
+| RTK | 4.40 s | 4.74 s | +7.6% |
+| Agents | 6.56 s | 7.15 s | +9.0% |
+| Agents tests | 7.26 s | 7.81 s | +7.5% |
+| Package | 7.53 s | 8.08 s | +7.3% |
+
+Compiler diagnostics attribute the shared pressure to roughly 117 more files and 165,504 more declaration lines in
+the root program, repeated across five independent `tsc` processes. `skipLibCheck` is already enabled. A TypeScript
+trace exhausted both the default heap and a 6 GiB heap without producing a source hotspot. Adding an explicit type to
+the shared foundation increased instantiations by 17 and was reverted; the direct fork/join simplification above saved
+only 168 of about 3.28 million instantiations. Native incremental state removes about 77% from unchanged repeat checks
+and often reuses work after local edits, but intentionally does not hide the clean-check cost.
+
+The runtime frontier is similarly bounded by direct experiments. Removing MCP entirely left only a 21.4 ms and about
+2.4 MiB theoretical import ceiling while deleting its eager status, keep-alive, and shutdown semantics. Removing Goal
+entirely exposed only 13.2 ms and about 2.6 MiB; the safe Goal UI split and combined settings/dialog splits made import
+time worse. Code Mode executor, Subagents tokenizer, MCP dialog/OAuth slices, and other smaller lazy-import prototypes
+were neutral, noisy, or negative and were reverted. Factory installation is only about 18 ms total, and no remaining
+Capability owns a distinct safe 5–10 ms or 1 MiB closure.
+
+Further cold-typecheck gains now require a declaration/build boundary or upstream TypeScript/Effect work; parallel
+checking risks several concurrent 1+ GiB compiler processes, while project references require emitted declaration
+state and conflict with the Source-only Package lane. Further startup gains require changing eager ownership semantics
+or adding dynamic-import boundaries whose measured overhead exceeds the code they defer. Those are architecture or
+correctness trades, not unclaimed low-risk optimizations, so this follow-up stops at the practical performance frontier.
 
 ## Scope
 

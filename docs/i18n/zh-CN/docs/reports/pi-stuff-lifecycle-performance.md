@@ -1,8 +1,85 @@
-<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: ed4c6622ae42bfcb0552ec89463aa6c89ab696baf92e28e4c63130da295c327a -->
+<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: 0b99310deb05dd19288f47227202222a720fe314a0dc8e48d5ffa2b4dccd508e -->
 
 # Pi Stuff 生命周期性能
 
-> **当前处置（2026-08-29）：** 本报告保留 Pi 0.84.1 与 0.84.2 的生命周期测量证据。已验证宿主现在是 Pi 0.84.3；其身份以 [`docs/compatibility.md`](../compatibility.md) 为准。Schema 6 基准和文末回归预算仍是可执行仓库检查，但下方历史测量不会重新标为 0.84.3 结果。
+> **当前处置（2026-08-31）：** 已验证宿主为 Pi 0.84.4；其身份以 [`docs/compatibility.md`](../compatibility.md)
+> 为准。本报告现已加入下方 Effect v4 纯性能后续，同时保留 Pi 0.84.1 与 0.84.2 的生命周期测量证据：Schema 6
+> 基准和文末回归预算仍是可执行仓库检查，但历史测量不会重新标为 Pi 0.84.4 结果。
+
+## Effect v4 性能后续（2026-08-31）
+
+Bead `ps-a6b` 调查采用 Effect v4 是否造成了实际性能阻碍，并持续优化，直到剩余安全候选项收益可忽略、结果为负，
+或必须牺牲生命周期/架构约束。本后续只评价性能，不讨论 Effect 的发布状态。
+
+对比使用同一台机器上的 Effect 前提交 `d45db1a7` 与最终优化分支，运行时均为 Bun 1.4.0。真实宿主样本使用已验证
+Pi 0.84.4 二进制、一次预热、七个全新进程样本、100×32 PTY 和确定性用例 Provider。调度抖动可能影响结果时，
+对照与候选采用夹心顺序；直接导入和 TypeScript 测量在干净的 Effect 前/候选 worktree 间交替执行。
+
+### 保留的优化
+
+| 检查点 | 保留的最小改动 | 保留它的测量依据 |
+| --- | --- | --- |
+| `9e6c573` | 显式源码变化刷新时，按完整 Source 指纹跨刷新缓存 Jiti 转译。 | 固定路径刷新从 7,810 ms 降至 1,371–1,398 ms；真实 Pi 源码变化重载 p50 从 7,054 ms 降至 6,562 ms，且不接受过期 Source。 |
+| `c07c414` | 每个 Effect 命名空间从 `effect/<Module>` 导入，不再经过根 barrel。 | Pi 启动 p50 降低 7.6%，跟踪模块图 8.0%，直接导入 2.7%，直接导入 RSS 4.8%，测得的暖机五 profile typecheck 7.8%。 |
+| `cfe1c7b` | 注册与生命周期 ownership 保持急切，只在第一次 Agent 请求时加载 Subagents 执行引擎。 | Pi 模块图降低 4.8%，启动降低 2.4%；直接导入降低 1.8%，RSS 降低 2.2%。首次引擎激活只在使用路径付出 7.67 ms。 |
+| `dba59da` | 在第一次非空搜索的 Session effect 内加载 Web 搜索 Provider。 | Pi 模块图降低 4.4–6.8%，启动降低 1.2–4.2%；首次 Provider 加载只在搜索时付出 4.99 ms 和约 1,600 KiB。 |
+| `644dc23` | 把 MCP 命令/代理处理器、SDK transport、AJV、OAuth 与浏览器交接延迟到第一次归属 MCP 的动作。 | 15 对交替直接导入改善 12.5%，RSS 改善 8.7%；夹心 Pi 模块图改善 6.9–7.6%，启动改善 4.4–5.0%。立即使用 stdio 只是把约 70 ms SDK 工作移到连接阶段，端到端大致不变。 |
+| `13ecb01` | 用直接 `Effect.flatMap` 取代共享 `Effect.gen` fork/join wrapper。 | Package 检查减少 168 次类型实例化。七轮交替、每轮 10,000 次的微基准中位数从 29.23 ms 降至 21.78 ms，每次共享 `EffectFoundation.run` 约省 0.75 微秒，同时删掉生成器机制。 |
+| `73f555c` | 为五个严格 TypeScript profile 各自提供一份被忽略的原生增量状态文件。 | 无变化复查从 39.99 秒建缓存降至 9.16 和 9.02 秒。共享核心编辑会正确触发 39.10 秒重查，注入的类型错误也被检测到，之后才移除探针。没有关闭任何诊断。 |
+
+### 最终与 Effect 前的对比
+
+下方真实宿主“模块图”区间为 `suite.wrapper.imported` 到 `suite.module-imported`，“工厂”区间为
+`suite.factory.start` 到 `suite.factory.end`。数值均为七样本 p50 毫秒。
+
+| 测量 | Effect 前 | 最终优化分支 | 差异 |
+| --- | ---: | ---: | ---: |
+| 真实 Pi 全新启动 | 3,125.71 | 2,931.32 | −194.39（−6.2%） |
+| 跟踪 Suite 模块图 | 1,952.83 | 1,784.68 | −168.15（−8.6%） |
+| 导入后的 Suite 工厂 | 16.88 | 18.26 | +1.38 ms |
+| 真实 Pi 关闭 | 100.31 | 100.64 | +0.33 ms |
+
+关闭差异不是可测回归。在较早的当前/对照/当前夹心测量中，当前减对照的均值 95% 区间为 −0.90 到 +10.20 ms，
+第二次当前减第一次当前的区间为 −5.13 到 +8.40 ms；最终 p50 与 Effect 前对照实际上相同。工厂保留约 1.4 ms
+Effect ownership 工作，但更小的导入图在编辑器 ready 前已经把它完全赚回。
+
+最终又以 15 对交替全新进程直接导入 `suite-runtime.ts`，独立确认了模块图结果。导入 p50/p95 从
+630.47/717.09 ms 变为 542.90/591.26 ms；最大 RSS p50 从 147,892 KiB 变为 135,080 KiB。因此最终分支比
+Effect 前分支导入快 13.9%，峰值常驻内存少 8.7%。
+
+已交付的 Tool Activity 基准保持干净：20,000 次活动调用中位数 7.25 ms，1,000 次格式化展开 2.51 ms，
+200 次流式尾部更新 2.13 ms，已交付探索 1.03 ms。Conversation Markdown 基准最初出现的 0.02 ms
+`thinking-32k` 变化未在同机独立重跑中复现（Effect 前 1.553 ms，最终 1.550 ms），相关 Source 也逐字节相同。
+一次 Ponytail 真实宿主运行完成了全部 18 个 Pi 生命周期，未复现此前的进程退出竞态，但外部模型在任何 case 中
+都没有调用 Tool；该运行的行为证据无效，因此不作为性能结果。
+
+### 剩余边界
+
+冷态、无缓存 TypeScript 检查是唯一保留的开发回归。五对交替完整测量中，Effect 前为 36.18 秒，运行时优化后为
+38.84 秒，增加 2.66 秒或 7.4%。每个 profile 各三对交替测量复现的是广泛成本，而非一个孤立热点：
+
+| TypeScript profile | Effect 前 p50 | Effect p50 | 差异 |
+| --- | ---: | ---: | ---: |
+| Root | 10.49 s | 11.38 s | +8.5% |
+| RTK | 4.40 s | 4.74 s | +7.6% |
+| Agents | 6.56 s | 7.15 s | +9.0% |
+| Agents tests | 7.26 s | 7.81 s | +7.5% |
+| Package | 7.53 s | 8.08 s | +7.3% |
+
+编译器诊断把共享压力归因于根程序新增约 117 个文件和 165,504 行声明，并由五个独立 `tsc` 进程重复处理。
+`skipLibCheck` 已启用。TypeScript trace 在默认堆与 6 GiB 堆下都耗尽内存，未能产出源码热点。给共享 foundation
+补显式类型反而增加 17 次实例化，因此撤回；上方直接 fork/join 简化也只从约 328 万次实例化中省了 168 次。
+原生增量状态能从无变化复查中消除约 77%，并经常在本地编辑后复用工作，但刻意不隐藏干净检查成本。
+
+运行时边界也已被直接实验圈定。完整移除 MCP，只剩 21.4 ms 和约 2.4 MiB 的理论导入上限，却会删除其急切状态、
+keep-alive 与关闭语义。完整移除 Goal 只暴露 13.2 ms 和约 2.6 MiB；安全 Goal UI 拆分及组合设置/对话框拆分都使
+导入更慢。Code Mode executor、Subagents tokenizer、MCP 对话框/OAuth 切片和其他更小的延迟导入原型均为中性、
+噪声或负收益，已经撤回。工厂安装总计只有约 18 ms，剩余 Capability 中没有独立且安全的 5–10 ms 或 1 MiB 闭包。
+
+继续改善冷 typecheck 现在需要声明/构建边界或上游 TypeScript/Effect 工作；并行检查会让多个 1+ GiB 编译器进程
+同时驻留，而 project reference 需要发射声明状态，与只交付 Source 的 Package 通道冲突。继续改善启动则需要改变
+急切 ownership 语义，或增加实测开销超过被延迟代码的动态导入边界。这些属于架构或正确性取舍，不是尚未领取的
+低风险优化，因此本后续在实际性能边界处停止。
 
 ## 范围
 
