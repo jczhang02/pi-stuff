@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { getHostSharedResource } from "../shared/host-resource.js";

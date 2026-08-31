@@ -1,6 +1,7 @@
 /** Own live stop, timeout, interrupt, and steering control for one background run. */
 
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { SteeringTargetState, SteeringTargetStatus } from "../../shared/types.ts";
 import { projectNestedEvents, resolveNestedAsyncDir } from "../shared/nested-events.ts";

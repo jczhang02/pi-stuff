@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isJsonInputObject, type JsonInputValue, requireJsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";

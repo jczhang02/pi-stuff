@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { getPonytailMode } from "../../../../ponytail/state.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";

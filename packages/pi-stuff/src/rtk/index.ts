@@ -1,5 +1,7 @@
 import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";

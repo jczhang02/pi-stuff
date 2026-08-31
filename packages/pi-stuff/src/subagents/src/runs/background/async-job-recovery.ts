@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";

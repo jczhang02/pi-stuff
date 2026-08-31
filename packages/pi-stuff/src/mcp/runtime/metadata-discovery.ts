@@ -1,7 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Resource, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isJsonInputObject, type JsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import { mcpNativePromise } from "./mcp-effect-runner.ts";
 import type { McpResource, McpTool } from "./types.ts";

@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isJsonInputValue, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";

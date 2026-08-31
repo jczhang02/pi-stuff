@@ -17,7 +17,9 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect, Queue, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";

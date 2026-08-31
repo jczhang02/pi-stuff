@@ -1,6 +1,7 @@
 /** Bounded, backpressured projection from one Pi writer stream to its runner. */
 
-import { Effect, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { Guard } from "typebox/guard";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;

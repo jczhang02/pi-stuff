@@ -484,7 +484,7 @@ test("confines Effect runners to governed Pi-facing adapters across aliases", as
 		root,
 		"packages/pi-stuff/src/shared/effect-foundation.ts",
 		[
-			'import { Effect } from "effect";',
+			'import * as Effect from "effect/Effect";',
 			"const { runPromise: execute } = Effect;",
 			"void Effect.runPromise(Effect.void);",
 			"void execute(Effect.void);",
@@ -512,6 +512,20 @@ test("confines Effect runners to governed Pi-facing adapters across aliases", as
 		{ path: rejectedPath, rule: "effect-runner-outside-adapter:runPromiseExit:6" },
 		{ path: rejectedPath, rule: "effect-runner-outside-adapter:runSync:7" },
 	]);
+});
+
+test("requires public Effect subpath imports in production source", () => {
+	const path = "packages/pi-stuff/src/codex/usage.ts";
+	const inventory = {
+		governedSources: [path],
+		nativeAdapters: [],
+		runnerAdapters: [],
+	} satisfies EffectBoundaryInventory;
+
+	expect(auditEffectBoundarySource(path, 'import { Effect } from "effect";\n', inventory)).toEqual([
+		{ path, rule: "effect-root-import:1" },
+	]);
+	expect(auditEffectBoundarySource(path, 'import * as Effect from "effect/Effect";\n', inventory)).toEqual([]);
 });
 
 test("confines native effects to explicit adapters and resolves import and destructuring aliases", () => {

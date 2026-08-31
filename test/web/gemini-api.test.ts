@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { fetchGeminiApi, searchWithGeminiApi } from "../../packages/pi-stuff/src/web/runtime/gemini-api.ts";
 
 const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];

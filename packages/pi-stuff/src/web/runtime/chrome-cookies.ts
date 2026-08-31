@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSyn
 import { homedir, platform, tmpdir } from "node:os";
 import { isAbsolute, join, sep } from "node:path";
 import type { SQLOutputValue } from "node:sqlite";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";

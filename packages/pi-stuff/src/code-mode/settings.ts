@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
 import { mergeNamespaceRecordEffect, readNamespaceEffect } from "../shared/settings-io/file.js";

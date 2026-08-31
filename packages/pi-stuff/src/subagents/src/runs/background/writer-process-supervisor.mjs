@@ -2,7 +2,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { Cause, Effect, Fiber, Queue } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
 import { Guard } from "typebox/guard";
 import {
 	createBoundedPipeForwarder,

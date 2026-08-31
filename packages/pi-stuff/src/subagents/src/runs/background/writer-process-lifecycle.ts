@@ -2,7 +2,7 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { PONYTAIL_CHILD_MODE_ENV } from "../../../../ponytail/types.js";

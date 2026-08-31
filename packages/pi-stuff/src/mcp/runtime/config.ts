@@ -2,7 +2,7 @@
 
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	isJsonInputObject,
 	type JsonInputObject,

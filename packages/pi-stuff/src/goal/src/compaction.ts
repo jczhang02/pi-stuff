@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isSuiteNativeCompactionPreflight } from "../../conversation-ui/index.js";
 import type { GoalCommandController } from "./commands.js";
 import { loadGoalStateFromSession } from "./persistence.js";

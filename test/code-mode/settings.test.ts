@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	codeModeProjectSettingsPath,
 	readCodeModeGlobalEnabled,

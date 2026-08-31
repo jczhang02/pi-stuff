@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isOwnedFileChangedDuringReadError } from "../../shared/private-directory.ts";
 import type {
 	AsyncStatus,

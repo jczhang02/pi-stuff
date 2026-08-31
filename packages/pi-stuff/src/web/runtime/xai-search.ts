@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";

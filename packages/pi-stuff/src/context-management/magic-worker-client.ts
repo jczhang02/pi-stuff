@@ -6,7 +6,9 @@ import type {
 	ExtensionEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { Type } from "typebox";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";

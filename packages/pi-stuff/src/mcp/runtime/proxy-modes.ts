@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { throwIfAborted } from "./abort.ts";
 import {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isRuntimeFunction } from "../../../shared/runtime-type.js";
 import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
 import {

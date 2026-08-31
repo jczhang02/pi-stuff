@@ -1,5 +1,5 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { GeneratedSessionName } from "./model.js";
 import type { NamingMessage } from "./prompt.js";
 import type { SessionNamingSettings } from "./settings.js";

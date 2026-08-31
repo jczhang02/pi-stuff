@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { GoalCommandController } from "../../packages/pi-stuff/src/goal/src/commands.js";
 import { createGoal, GoalRuntime } from "../../packages/pi-stuff/src/goal/src/runtime.js";
 import { DEFAULT_GOAL_SETTINGS, type GoalSettings } from "../../packages/pi-stuff/src/goal/src/settings.js";

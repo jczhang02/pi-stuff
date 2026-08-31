@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Effect, Option, Semaphore } from "effect";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import { boundTerminalLine } from "../tool-display/index.js";
 
 const RESOLVE_TIMEOUT_MS = 600;

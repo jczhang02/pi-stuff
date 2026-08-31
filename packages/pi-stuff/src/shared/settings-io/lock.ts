@@ -13,7 +13,8 @@ import { constants } from "node:fs";
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { resolveSettingsLockPath } from "./paths.js";
 
 export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";

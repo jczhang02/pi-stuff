@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfig } from "./config.ts";

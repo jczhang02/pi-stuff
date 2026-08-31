@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { withWebConfigSnapshot } from "../../packages/pi-stuff/src/web/runtime/config.ts";
 import { extractWithFirecrawl } from "../../packages/pi-stuff/src/web/runtime/firecrawl.ts";
 import { search } from "../../packages/pi-stuff/src/web/runtime/gemini-search.ts";

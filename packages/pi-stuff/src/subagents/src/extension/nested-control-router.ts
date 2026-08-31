@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { deliverStopRequest, requestAsyncSteer } from "../runs/background/control-channel.ts";
 import { waitForSteeringAction } from "../runs/background/steering.ts";

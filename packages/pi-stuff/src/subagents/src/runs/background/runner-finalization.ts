@@ -1,7 +1,7 @@
 /** Commit worktree, nested-run, result, process, and status evidence for a completed run. */
 
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { runtimeErrorCode } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";

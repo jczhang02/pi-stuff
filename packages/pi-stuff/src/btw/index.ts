@@ -1,6 +1,8 @@
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { Cause, type Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import type * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import {
 	type CommandDialogCoordinatorHost,
 	type CommandDialogView,

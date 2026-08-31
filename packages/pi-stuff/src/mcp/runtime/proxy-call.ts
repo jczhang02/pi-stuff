@@ -1,7 +1,9 @@
 import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { type JsonInputObject, requireJsonInputValue } from "../../shared/json-value.js";
 import {
 	clearFailure,

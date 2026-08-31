@@ -1,5 +1,5 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type Static, type TSchema, Type } from "typebox";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityMetadata, ToolArguments } from "./activity.js";

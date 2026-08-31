@@ -1,6 +1,7 @@
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { Readability } from "@mozilla/readability";
-import { Cause, Effect } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { isRuntimeString } from "../../shared/runtime-type.js";

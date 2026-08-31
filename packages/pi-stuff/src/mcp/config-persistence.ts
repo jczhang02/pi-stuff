@@ -14,7 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import stripJsonComments from "strip-json-comments";
 import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../shared/json-value.js";
 import { acquireSettingsLockEffect, resolveSettingsLockPath } from "../shared/settings-io/lock.ts";

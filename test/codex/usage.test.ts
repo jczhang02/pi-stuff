@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { CodexAccountContext } from "../../packages/pi-stuff/src/codex/account.js";
 import { runCodexUsageOperation } from "../../packages/pi-stuff/src/codex/index.js";
 import {

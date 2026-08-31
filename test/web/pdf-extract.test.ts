@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { extractPDFToMarkdown } from "../../packages/pi-stuff/src/web/runtime/pdf-extract.ts";
 
 function onePagePdf(text: string): ArrayBuffer {

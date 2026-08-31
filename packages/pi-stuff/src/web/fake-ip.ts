@@ -1,6 +1,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { Deferred, Effect } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import { configureRuntimeSsrfDefaults } from "./runtime/index.js";
 import type { WebFetchInput } from "./url-policy.js";
 

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { AgentEffectOwner, AgentEffectTask } from "../../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { tryAcquireKernelClaim } from "../../shared/durable-claim.ts";

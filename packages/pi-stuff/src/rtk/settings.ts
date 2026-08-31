@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeFunction, isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";

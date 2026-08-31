@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import {
 	buildGoalMenuState,
 	GOAL_MENU_ACTIONS,

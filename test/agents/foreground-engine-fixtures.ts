@@ -9,7 +9,7 @@ import {
 	type SessionEntry,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import type { executeAsyncSingle } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-execution.js";
 import { steerRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";

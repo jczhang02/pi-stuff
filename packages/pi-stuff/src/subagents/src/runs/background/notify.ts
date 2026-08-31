@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { SubagentRunMode } from "../../shared/types.ts";
 import type { BackgroundCompletion } from "./runner-state.ts";
 

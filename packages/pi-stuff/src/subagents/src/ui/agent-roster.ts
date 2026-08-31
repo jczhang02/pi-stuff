@@ -8,7 +8,7 @@ import {
 	parseKey,
 	type TUI,
 } from "@earendil-works/pi-tui";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { FooterTailComponent } from "../../../conversation-ui/index.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentEffectOwner, AgentEffectTask } from "../runtime/agent-effect-owner.ts";

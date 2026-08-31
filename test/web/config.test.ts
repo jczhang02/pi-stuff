@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import * as runtimeConfig from "../../packages/pi-stuff/src/web/runtime/config.js";
 import piWebAccess, {
 	type PiWebAccessHost,

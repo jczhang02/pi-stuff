@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Effect } from "effect";
+import type * as Effect from "effect/Effect";
 import type { SettingsRecord } from "../../shared/settings-io/index.ts";
 import type { WebFetchInput } from "../url-policy.ts";
 

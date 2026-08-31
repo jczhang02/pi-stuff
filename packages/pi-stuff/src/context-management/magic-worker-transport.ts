@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import type { JsonInputValue } from "../shared/json-value.js";
 import { magicWorkerError, magicWorkerErrorMessage } from "./magic-worker-host.js";
 import {

@@ -17,7 +17,7 @@ import type {
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 export interface BtwTransportContext {
 	readonly modelRegistry: Pick<

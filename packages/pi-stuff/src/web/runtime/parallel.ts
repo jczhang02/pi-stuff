@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";

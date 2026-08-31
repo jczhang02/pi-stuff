@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { isFiniteRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { AgentEffectOwner, AgentEffectTask } from "../../runtime/agent-effect-owner.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";

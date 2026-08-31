@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { Effect, Exit } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import {
 	MAGIC_WORKER_PROTOCOL_VERSION,
 	type MagicWorkerInvocationRequest,

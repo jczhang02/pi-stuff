@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputObject } from "../../shared/json-value.js";
 import { boundTerminalLine, boundTerminalText } from "../../tool-display/index.js";
 import { mcpNativePromise } from "./mcp-effect-runner.ts";

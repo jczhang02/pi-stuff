@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";

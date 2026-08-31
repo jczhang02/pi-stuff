@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { RtkSettingsStore } from "../../packages/pi-stuff/src/rtk/settings.js";
 import { mergeNamespaceRecordEffect } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 

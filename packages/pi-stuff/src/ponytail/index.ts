@@ -5,7 +5,9 @@ import {
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { registerContextPromptContributor } from "../context-management/index.js";
 import {
 	createPonytailDialogView,

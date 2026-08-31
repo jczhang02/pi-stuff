@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isRuntimeBoolean, isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import {

@@ -23,6 +23,8 @@ in Effect. Deterministic pure computation, domain state, codecs, formatting, and
 TypeScript so purity stays visible in Module interfaces. This mandate applies to Package production runtime Source,
 not its test harnesses, benchmarks, build tools, repository checks, or documentation. Those sources remain subject to
 the same repository quality policy but may use native effects to exercise and inspect the public runtime contract.
+Production Source imports only the required Effect namespaces through public `effect/<Module>` subpaths. The root
+barrel and internal paths remain outside the production contract because the Suite executes TypeScript source directly.
 
 Pi remains the Host. Effect owns execution mechanics only; Pi, Goal, Agents, Background Work, Context Management, and
 the other Capability owners retain their existing lifecycle authority, durable state, terminal policy, and visible

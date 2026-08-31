@@ -3,7 +3,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { formatOutputArtifactContent, getArtifactPaths, withArtifactGroupWriteClaim } from "../../shared/artifacts.ts";
 import { writePrivateAtomicText } from "../../shared/atomic-json.ts";
 import { createChildTranscriptWriter } from "../../shared/child-transcript.ts";

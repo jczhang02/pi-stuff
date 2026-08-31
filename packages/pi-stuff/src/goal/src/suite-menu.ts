@@ -8,7 +8,7 @@ import {
 	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	type CommandDialogComponent,
 	type CommandDialogViewContext,

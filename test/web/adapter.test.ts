@@ -5,7 +5,7 @@ import {
 	type ExtensionContext,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";

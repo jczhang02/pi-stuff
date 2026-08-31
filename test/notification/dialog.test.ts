@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { createNotificationSettingsView } from "../../packages/pi-stuff/src/notification/notification-settings-dialog.ts";
 import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notification/settings.ts";

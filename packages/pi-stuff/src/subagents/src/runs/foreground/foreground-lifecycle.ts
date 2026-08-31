@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Effect, Fiber, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import type * as Scope from "effect/Scope";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import {

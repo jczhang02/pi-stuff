@@ -22,7 +22,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { projectCurrentContext } from "../context-management/index.js";
 import { fitBranch } from "./btw-budget.js";
 import { assistantMessageText } from "./btw-messages.js";

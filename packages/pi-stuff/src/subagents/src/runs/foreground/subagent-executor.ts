@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import { getArtifactsDir } from "../../shared/artifacts.ts";

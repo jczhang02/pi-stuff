@@ -376,6 +376,7 @@ type NativeNamespace = "child-process" | "filesystem" | "filesystem-promises" | 
 
 interface SourceBindings {
 	effectImportLine: number | undefined;
+	effectRootImportLine: number | undefined;
 	readonly effectNamespaces: Set<string>;
 	readonly effectPackageNamespaces: Set<string>;
 	readonly runnerFunctions: Map<string, string>;
@@ -430,6 +431,7 @@ function addNativeImport(bindings: SourceBindings, namespace: NativeNamespace, o
 function collectImports(sourceFile: ts.SourceFile): SourceBindings {
 	const bindings: SourceBindings = {
 		effectImportLine: undefined,
+		effectRootImportLine: undefined,
 		effectNamespaces: new Set(),
 		effectPackageNamespaces: new Set(),
 		runnerFunctions: new Map(),
@@ -444,6 +446,7 @@ function collectImports(sourceFile: ts.SourceFile): SourceBindings {
 		if (!moduleName || !clause) continue;
 		if (EFFECT_MODULE_PATTERN.test(moduleName)) {
 			bindings.effectImportLine ??= sourceLine(sourceFile, statement);
+			if (moduleName === "effect") bindings.effectRootImportLine ??= sourceLine(sourceFile, statement);
 			if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
 				const local = clause.namedBindings.name.text;
 				(moduleName === "effect" ? bindings.effectPackageNamespaces : bindings.effectNamespaces).add(local);
@@ -612,6 +615,9 @@ export function auditEffectBoundarySource(
 	const governed = inventory.governedSources.includes(path);
 	collectAliases(sourceFile, bindings);
 	const findings: EffectBoundaryFinding[] = [];
+	if (bindings.effectRootImportLine !== undefined) {
+		findings.push({ path, rule: `effect-root-import:${String(bindings.effectRootImportLine)}` });
+	}
 	if (!governed && bindings.effectImportLine !== undefined) {
 		findings.push({ path, rule: `effect-source-not-governed:${String(bindings.effectImportLine)}` });
 	}

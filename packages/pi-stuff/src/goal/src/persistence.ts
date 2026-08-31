@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { readSettingsFileSync, writeSettingsFileSync } from "../../shared/settings-io/file.js";

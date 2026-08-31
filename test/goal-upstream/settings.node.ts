@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	DEFAULT_GOAL_SETTINGS,
 	type GoalSettings,

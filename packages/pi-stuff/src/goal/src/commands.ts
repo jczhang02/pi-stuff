@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { TRANSCRIPT_MARKER } from "../../conversation-ui/transcript.js";
 import { checkpointGoalActiveTime, currentTokenTotal } from "./accounting.js";
 import { validateObjective } from "./command.js";

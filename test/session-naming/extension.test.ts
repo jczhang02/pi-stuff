@@ -7,7 +7,7 @@ import {
 	type ExtensionEvent,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	installSessionNamingCapability,
 	type SessionNamingHost,

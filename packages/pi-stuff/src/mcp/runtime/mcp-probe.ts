@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 
 const PROBE_TIMEOUT_MS = 5_000;

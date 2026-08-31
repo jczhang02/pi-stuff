@@ -9,7 +9,9 @@ import type {
 	SessionStartEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Deferred, Effect, Semaphore } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Semaphore from "effect/Semaphore";
 import { Check } from "typebox/value";
 import {
 	beginSuiteNativeCompactionPreflight,
@@ -45,7 +47,6 @@ import { magicToolPresentation } from "./tool-presentation.js";
 
 export type ContextActivationTrigger = "startup" | "input" | "automatic-turn" | "projection";
 export type ContextCapabilityState = "dormant" | "loading" | "active" | "native" | "degraded";
-
 export interface ContextStatusSnapshot {
 	readonly state: ContextCapabilityState;
 	readonly engine: "magic-context" | "native";

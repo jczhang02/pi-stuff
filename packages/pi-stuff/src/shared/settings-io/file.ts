@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type JsonInputObject, type JsonInputValue, type JsonValue, parseJsonValue } from "../json-value.js";
 import { isRuntimeObject } from "../runtime-type.js";
 

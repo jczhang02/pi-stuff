@@ -1,6 +1,9 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { Cause, Deferred, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { type JsonInputValue, parseJsonValue } from "../../shared/json-value.js";
 import type {
 	CodeModeExecuteOptions,

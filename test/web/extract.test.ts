@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { extractContent, fetchAllContent } from "../../packages/pi-stuff/src/web/runtime/extract.ts";
 
 const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];

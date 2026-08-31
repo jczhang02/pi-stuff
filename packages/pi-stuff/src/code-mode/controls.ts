@@ -4,7 +4,10 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Semaphore } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Semaphore from "effect/Semaphore";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
 import type { EffectFoundation } from "../shared/effect-foundation.js";

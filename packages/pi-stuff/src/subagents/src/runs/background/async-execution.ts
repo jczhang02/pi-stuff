@@ -1,7 +1,7 @@
 /** Build and launch detached single-Agent or parallel-Agent runs. */
 
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";

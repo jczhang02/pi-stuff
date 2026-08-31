@@ -22,7 +22,9 @@
 //   - treat AbortError/cancellation as a session failure
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { logger } from "./logger.ts";
 import type { McpServerManager, ServerConnection } from "./server-manager.ts";
 import { isServerDisabled, type McpConfig } from "./types.ts";

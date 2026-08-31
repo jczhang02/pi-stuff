@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { readTextFileEffect } from "../shared/settings-io/index.js";
 import { normalizePonytailMode, PONYTAIL_DEFAULT_MODE, type PonytailMode } from "./types.js";
 

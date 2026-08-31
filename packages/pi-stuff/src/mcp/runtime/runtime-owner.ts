@@ -1,5 +1,8 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Scope } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import { HOST_SHUTDOWN_GRACE_MS } from "../../lifecycle-deadline.js";
 import { readHostProxyProperty } from "../../shared/host-proxy.js";
 import type { JsonInputValue } from "../../shared/json-value.js";

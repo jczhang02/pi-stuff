@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { type Static, type TSchema, Type } from "typebox";
 import { Check } from "typebox/value";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";

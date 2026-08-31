@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { whenSuiteSessionReady } from "../../conversation-ui/index.js";
 import { currentTokenTotal } from "./accounting.js";
 import type { GoalCommandController } from "./commands.js";

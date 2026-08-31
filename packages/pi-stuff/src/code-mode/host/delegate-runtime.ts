@@ -1,5 +1,6 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";

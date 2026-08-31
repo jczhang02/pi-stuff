@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeFunction } from "../shared/runtime-type.js";

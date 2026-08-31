@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { installEffectFoundation } from "../shared/effect-foundation.js";

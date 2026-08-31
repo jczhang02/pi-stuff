@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: c2b4fffcfc57dd56a25b4938cd4aad1b18ee134f65aae96950821f5bc83d8799 -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: 1efa7b18ae936fd5fc937172d0bdd7828f446fc76cb28b4512f26b40f68725a9 -->
 
 # Repository-owned Source 质量标准
 
@@ -18,8 +18,9 @@ prototype、脚本和质量工具代码都适用同一可维护性标准。来�
   上限。它检查已跟踪文件和未忽略的未跟踪文件，但排除已删除文件、二进制资产、正文和报告产物。
 - 同一检查也负责 Effect 迁移边界清单。导入 Effect 的生产 Source 必须纳入治理；Effect runner 只能出现在清单
   所列且已治理的 Pi-facing adapter 中，所有 Package 生产 Source 默认禁止直接使用原生副作用。狭窄的纯原生
-  adapter 可以独立列入清单而无需导入 Effect。清单项必须是确切且存在的 Source 路径；重复项和缺失路径都会使
-  检查失败。每次迁移只扩展已治理集合，不能形成目录级质量豁免。
+  adapter 可以独立列入清单而无需导入 Effect。生产 Source 必须通过公开的 `effect/<Module>` 子路径导入每个
+  Effect namespace；禁止根 barrel，避免直接加载源码和类型检查时遍历无关 Effect 模块。清单项必须是确切且存在
+  的 Source 路径；重复项和缺失路径都会使检查失败。每次迁移只扩展已治理集合，不能形成目录级质量豁免。
 - 拆分文件必须减少同时承担的职责、可变状态、分支或概念。把原有复杂度搬进机械命名的碎片并不满足标准。
 - 代码质量工作要报告前后物理行数。行数是审查证据，不是验收配额：应调查无法解释的 Capability 增长，并优先
   删除重复、分支、wrapper、兼容层或状态。当变更形成更深的 Module，或保留必要的说明、验证、安全、数据完整性、

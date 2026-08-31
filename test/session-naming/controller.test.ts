@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { SessionNamingController } from "../../packages/pi-stuff/src/session-naming/controller.js";
 import type { GeneratedSessionName } from "../../packages/pi-stuff/src/session-naming/model.js";
 import type { SessionNamingSettings } from "../../packages/pi-stuff/src/session-naming/settings.js";

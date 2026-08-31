@@ -1,6 +1,9 @@
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Effect, Fiber, Queue, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolArguments } from "./activity.js";
 import type { SuiteToolInvocation, SuiteToolInvocationResult } from "./contract.js";

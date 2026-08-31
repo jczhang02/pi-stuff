@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { JsonInputValue } from "../../shared/json-value.js";
 import { isJsonInputObject, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";

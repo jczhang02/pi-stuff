@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import {

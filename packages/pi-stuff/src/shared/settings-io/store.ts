@@ -1,7 +1,9 @@
 /** Effect-owned per-namespace settings over the single merged settings file. */
 
 import { isDeepStrictEqual } from "node:util";
-import { Effect, type Scope, Semaphore } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import { isRuntimeString } from "../runtime-type.js";
 import {
 	mergeNamespaceRecordEffect,

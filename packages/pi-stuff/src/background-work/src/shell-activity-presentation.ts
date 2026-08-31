@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";

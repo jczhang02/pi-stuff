@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { parseJsonValue } from "../../../shared/json-value.js";

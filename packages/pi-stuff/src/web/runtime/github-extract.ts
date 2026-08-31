@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { ExtractedContent } from "./extract.ts";
 import { fetchViaApi } from "./github-api.ts";
 

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { isRuntimeString } from "../../shared/runtime-type.js";

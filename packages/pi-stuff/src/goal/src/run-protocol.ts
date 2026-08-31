@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { validateObjective } from "./command.js";
 import type { GoalCommandController } from "./commands.js";

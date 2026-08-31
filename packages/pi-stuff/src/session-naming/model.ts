@@ -1,5 +1,6 @@
 import type { Api, AssistantMessage, Context, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
-import { Effect, Option } from "effect";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type { NamingMessage } from "./prompt.js";
 import { assistantText, buildNamingPrompt, cleanModelName, fallbackName, isHighQualityName } from "./prompt.js";
 import type { SessionNamingSettings } from "./settings.js";

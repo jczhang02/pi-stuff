@@ -5,7 +5,9 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";

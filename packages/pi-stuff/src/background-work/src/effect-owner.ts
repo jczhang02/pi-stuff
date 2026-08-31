@@ -1,4 +1,7 @@
-import { Cause, type Effect, Exit, type Scope } from "effect";
+import * as Cause from "effect/Cause";
+import type * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import type * as Scope from "effect/Scope";
 import type { EffectFoundation, EffectScopeOwner } from "../../shared/effect-foundation.js";
 
 export interface BackgroundWorkEffectTask<A, E> {

@@ -2,7 +2,14 @@ import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/ind
 import { StdioClientTransport, type StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Resource, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { Cause, Effect, Exit, Fiber, FiberMap, Option, Scope, Semaphore } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FiberMap from "effect/FiberMap";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { createJsonSchemaValidator } from "./json-schema-validator.ts";
 import { logger } from "./logger.ts";

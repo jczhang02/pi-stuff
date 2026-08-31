@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 2c814ea2e6331b5e0789bff8f7ba03d38c3892038af51b9b3b45debfe4af9a6f -->
+<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 8c398faa9ee96a1d0b786b40502720c1e2d1662f091e65456754a520a8374267 -->
 
 ---
 status: proposed
@@ -22,6 +22,8 @@ Code Mode、MCP、Web 及其他包含副作用的模块中反复出现。
 codec、格式化和投影继续使用普通 TypeScript，使模块接口中的纯度保持可见。这项要求适用于软件包的
 生产运行时 Source，不包括测试工具、基准、构建工具、仓库检查或文档。这些 Source 仍遵守相同仓库质量
 政策，但可以使用原生副作用来运行和观察公开运行时合同。
+生产 Source 只通过公开的 `effect/<Module>` 子路径导入实际需要的 Effect namespace。由于套件直接执行
+TypeScript 源码，根 barrel 与内部路径不属于生产合同。
 
 Pi 仍是宿主。Effect 只拥有执行机制；Pi、Goal、Agents、后台工作、上下文管理及其他能力所有者继续
 拥有既有的生命周期权威、持久状态、终止政策和可见结果。Pi、Bun、Worker、子进程、文件系统、网络

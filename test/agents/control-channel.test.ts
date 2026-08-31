@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Effect, Fiber } from "effect";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import {
 	consumeStopRequests,
 	deliverInterruptRequest,

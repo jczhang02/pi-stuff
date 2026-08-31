@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	CERTIFIED_RTK_LINUX_X64_SHA256,
 	CERTIFIED_RTK_VERSION,

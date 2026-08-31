@@ -1,7 +1,9 @@
 /** Project background work, task results, and published run status. */
 
 import * as path from "node:path";
-import { Effect, Queue, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { isRuntimeFunction } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";

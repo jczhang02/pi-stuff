@@ -1,5 +1,8 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Option } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import { Type } from "typebox";
 import { HOST_SHUTDOWN_GRACE_MS } from "../../lifecycle-deadline.js";
 import {

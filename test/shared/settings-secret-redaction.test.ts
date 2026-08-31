@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { readSettingsFileEffect } from "../../packages/pi-stuff/src/shared/settings-io/file.js";
 
 test("malformed merged settings never quote credential bytes in parser errors", async () => {

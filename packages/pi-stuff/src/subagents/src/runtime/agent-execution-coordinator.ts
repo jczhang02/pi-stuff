@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isRuntimeFunction, isRuntimeString } from "../../../shared/runtime-type.js";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
 import type { AgentEffectOwner } from "./agent-effect-owner.ts";

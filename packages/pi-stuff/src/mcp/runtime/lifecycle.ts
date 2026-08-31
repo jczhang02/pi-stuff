@@ -1,4 +1,5 @@
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { logger } from "./logger.ts";
 import { hasPendingAuth } from "./mcp-auth-flow.ts";

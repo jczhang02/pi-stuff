@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { queryGeminiApiWithInlineData } from "./gemini-api.ts";
 
 const PDF_MIME_TYPE = "application/pdf";

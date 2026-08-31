@@ -6,7 +6,8 @@ import type {
 	SessionShutdownEvent,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { Effect, Exit } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { ensureUiSettingsCommand } from "../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	completeEffectFoundationInstallation,

@@ -1,5 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect, Exit, Fiber, Option, Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { getHostSharedResource } from "./host-resource.js";
 

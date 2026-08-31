@@ -7,7 +7,9 @@ import {
 	StreamableHTTPError,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import { Cause, Effect, Exit } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { isRuntimeFunction } from "../../shared/runtime-type.js";
 import { logger } from "./logger.ts";
 import type { AuthStorageOptions } from "./mcp-auth.ts";

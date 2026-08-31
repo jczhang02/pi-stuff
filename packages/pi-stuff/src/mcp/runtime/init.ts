@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect, Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Scope from "effect/Scope";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { cloneMcpConfig, loadMcpConfig } from "./config.ts";
 import { McpLifecycleManager } from "./lifecycle.ts";

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";

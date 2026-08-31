@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { AgentEffectOwner } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-effect-owner.js";
 

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { completeGoalArguments, parseCommand } from "./command.js";
 import type { GoalCommandController } from "./commands.js";

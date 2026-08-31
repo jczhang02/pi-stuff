@@ -1,5 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Option } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import type { BackgroundWorkEffectTask } from "./effect-owner.js";

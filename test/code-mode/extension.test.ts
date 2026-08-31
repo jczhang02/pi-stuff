@@ -9,7 +9,7 @@ import type {
 	ExtensionEvent,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import {

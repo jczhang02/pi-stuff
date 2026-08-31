@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { reportWebDiagnostic } from "./diagnostics.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { GitHubUrlInfo } from "./github-extract.ts";

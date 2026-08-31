@@ -20,9 +20,11 @@ not code and remain outside code checks.
   binary assets, prose, and report artifacts.
 - The same check owns the Effect migration boundary inventory. Production Source that imports Effect must be governed;
   Effect runners are allowed only in listed governed Pi-facing adapters, and direct native effects are denied by
-  default across all Package production Source. A narrow native-only adapter may be listed independently without
-  importing Effect. Inventory entries are exact existing Source paths: duplicates and missing paths fail the check,
-  and each migration expands the governed set without creating a directory-wide quality exemption.
+  default across all Package production Source. Production Source imports each Effect namespace through its public
+  `effect/<Module>` subpath; the root barrel is denied so direct-source loading and typechecking do not traverse
+  unrelated Effect modules. A narrow native-only adapter may be listed independently without importing Effect.
+  Inventory entries are exact existing Source paths: duplicates and missing paths fail the check, and each migration
+  expands the governed set without creating a directory-wide quality exemption.
 - Splitting a file must reduce responsibilities, mutable state, branching, or concepts held at once. Moving unchanged
   complexity into mechanically named fragments does not satisfy the standard.
 - Code-quality work reports before-and-after physical line counts. Treat the counts as review evidence, not an

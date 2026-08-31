@@ -1,4 +1,5 @@
-import { Deferred, Effect } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import type { AgentEffectOwner, AgentEffectTask } from "./agent-effect-owner.ts";
 
 const RETRY_DELAYS_MS = [25, 100, 500, 2_000] as const;

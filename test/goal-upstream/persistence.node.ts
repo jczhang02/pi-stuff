@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import {
 	type ActiveGoal,
 	clearLegacyPersistedGoal,

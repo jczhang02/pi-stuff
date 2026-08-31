@@ -2,7 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { errnoCode } from "../../shared/private-directory.ts";

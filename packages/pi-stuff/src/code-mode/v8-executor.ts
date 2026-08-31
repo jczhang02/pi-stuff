@@ -1,4 +1,8 @@
-import { Cause, Effect, Exit, type Scope, Semaphore } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import type * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import type { EffectFoundation, EffectScopeOwner } from "../shared/effect-foundation.js";
 import { ensureCodeModeHostBinary } from "./host/binary.js";

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type {
 	AgentRow,
 	AgentSessionSnapshot,

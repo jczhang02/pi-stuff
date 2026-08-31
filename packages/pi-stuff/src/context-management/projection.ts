@@ -1,5 +1,6 @@
 import type { ContextEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Deferred, Effect } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import {
 	type AgentMessage,
 	type ContextProjection,

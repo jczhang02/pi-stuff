@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { Deferred, Effect } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import { Guard } from "typebox/guard";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 

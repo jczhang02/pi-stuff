@@ -15,7 +15,7 @@ import type {
 	SessionStartEvent,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type {
 	MagicContextEventMap,
 	MagicContextEventName,

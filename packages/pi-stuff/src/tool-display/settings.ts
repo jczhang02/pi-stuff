@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect, type Scope } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { type JsonInputObject, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";

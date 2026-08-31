@@ -2,7 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { normalizePonytailMode } from "../../../../ponytail/types.js";
 import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {

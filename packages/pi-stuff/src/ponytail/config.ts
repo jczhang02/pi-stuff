@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { isJsonInputObject, type JsonInputObject, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean } from "../shared/runtime-type.js";
 import {

@@ -1,6 +1,8 @@
 import { rmSync } from "node:fs";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { Deferred, Effect, Option } from "effect";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";

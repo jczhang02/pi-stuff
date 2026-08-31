@@ -3,7 +3,10 @@ import {
 	type ExtensionContext,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Queue } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Queue from "effect/Queue";
 import {
 	ensureUiSettingsCommand,
 	getCommandDialogCoordinator,
