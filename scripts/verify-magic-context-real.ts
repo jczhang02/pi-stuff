@@ -144,12 +144,13 @@ function acceptancePaths(workspace: string) {
 type AcceptancePaths = ReturnType<typeof acceptancePaths>;
 
 function environment(paths: AcceptancePaths): NodeJS.ProcessEnv {
-	return {
+	const isolated: NodeJS.ProcessEnv = {
 		...process.env,
 		HOME: paths.home,
 		LANG: "C.UTF-8",
 		LC_ALL: "C.UTF-8",
 		MAGIC_CONTEXT_LOG_PATH: paths.magicLog,
+		MAGIC_CONTEXT_TEST_DATA_DIR: paths.data,
 		NO_COLOR: "1",
 		PI_CODING_AGENT_DIR: paths.agent,
 		PI_OFFLINE: "1",
@@ -158,9 +159,10 @@ function environment(paths: AcceptancePaths): NodeJS.ProcessEnv {
 		TERM: "dumb",
 		XDG_CACHE_HOME: paths.cache,
 		XDG_CONFIG_HOME: paths.xdgConfig,
-		XDG_DATA_HOME: paths.data,
 		XDG_STATE_HOME: paths.state,
 	};
+	delete isolated["XDG_DATA_HOME"];
+	return isolated;
 }
 
 async function writePressureFiles(projectDirectory: string): Promise<string[]> {
