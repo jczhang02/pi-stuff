@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 38d3667c0b0476ae8ca928c6b0f018cecebbc18fb4fad44882a7e332c90d9b31 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f4c332e8b300a6b267ff009521430b51d30737bbb4802364301a0a0da186df3b -->
 
 # Subagents 模块
 
@@ -9,6 +9,8 @@ Pi Stuff 当前会话的前台与后台 Agents。
 公开 `subagent` 工具使用内部工具显示约定，因此其运行中与终态行遵循和宿主工具相同的紧凑语法。完整 Agent 检查与控制仍位于 `/agents`。
 
 `extension/index.ts` 是宿主组合根。`extension/public-agent-execution.ts` 负责受治理的公开启动事务，`extension/runtime-events.ts` 负责当前会话事件过滤与拆卸，`extension/completion-handling.ts` 负责持久完成传输和历史会话渲染。
+
+工具与命令注册、会话事件所有权、恢复和拆卸仍然立即建立。前台与后台执行模块图只在首次公开 Agent 请求时加载一次，因此空闲会话不承担这部分导入成本，同时 Pi 仍会在启动就绪前获得完整 Agent 约定。
 
 Pi Stuff 不交付 Agent 定义。启动会选择已安装 Pi 软件包、用户 `agents` 目录或当前项目 `.pi/agents` 目录提供的 Agent。同名时，项目定义覆盖用户定义，用户定义覆盖软件包定义。
 

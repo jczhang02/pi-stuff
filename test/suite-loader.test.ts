@@ -132,23 +132,31 @@ describe("loadSuiteRuntime", () => {
 });
 
 describe("importFreshSuiteRuntime", () => {
-	test("re-evaluates changed nested source while reusing cached transforms", async () => {
+	test("re-evaluates changed static and dynamic source while reusing cached transforms", async () => {
 		const sourceRoot = await createSourceRoot('export const version = "first";\n');
 		const runtimePath = join(sourceRoot, "runtime.ts");
 		await writeFile(
 			runtimePath,
-			'import { version } from "./nested/runtime.ts";\nexport { version };\nexport function installPiStuff(): void {}\n',
+			'import { version } from "./nested/runtime.ts";\nexport { version };\nexport async function readDynamicVersion(): Promise<string> { return (await import("./nested/runtime.ts")).version; }\nexport function installPiStuff(): void {}\n',
 		);
 		const previousCacheHome = process.env["XDG_CACHE_HOME"];
 		process.env["XDG_CACHE_HOME"] = join(sourceRoot, "cache");
 
 		try {
-			const first = await importFreshSuiteRuntime(runtimePath);
+			// SAFETY: the fixture source above defines readDynamicVersion with this exact signature.
+			const first = (await importFreshSuiteRuntime(runtimePath)) as SuiteRuntimeModule & {
+				readDynamicVersion: () => Promise<string>;
+			};
+			expect(await first.readDynamicVersion()).toBe("first");
 			await writeFile(join(sourceRoot, "nested", "runtime.ts"), 'export const version = "second";\n');
-			const second = await importFreshSuiteRuntime(runtimePath);
+			// SAFETY: the refreshed fixture retains the same runtime export contract.
+			const second = (await importFreshSuiteRuntime(runtimePath)) as SuiteRuntimeModule & {
+				readDynamicVersion: () => Promise<string>;
+			};
 
 			expect(first).toHaveProperty("version", "first");
 			expect(second).toHaveProperty("version", "second");
+			expect(await second.readDynamicVersion()).toBe("second");
 			expect(await readdir(join(sourceRoot, "cache", "pi-stuff", "jiti"))).not.toHaveLength(0);
 		} finally {
 			if (previousCacheHome === undefined) delete process.env["XDG_CACHE_HOME"];

@@ -15,6 +15,10 @@ compact grammar as Host Tools. Full Agent inspection and control remains in `/ag
 launch transaction, `extension/runtime-events.ts` owns current-Session event filtering and teardown, and
 `extension/completion-handling.ts` owns durable completion delivery plus historical Session rendering.
 
+Tool and command registration, Session event ownership, recovery, and teardown remain eager. The foreground and
+background execution graph loads once on the first public Agent request, so an idle Session does not pay that import
+cost while Pi still receives the complete Agent contract before startup readiness.
+
 Pi Stuff ships no Agent definitions. Launches select an Agent supplied by an installed Pi Package, the user's
 `agents` directory, or the current project's `.pi/agents` directory. When names collide, project definitions override
 user definitions, and user definitions override Package definitions.

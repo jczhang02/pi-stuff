@@ -18,7 +18,6 @@ import { createNativeSupervisorChannel } from "../intercom/native-supervisor-cha
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
 import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import { inspectWriterProcessLivenessEffect } from "../runs/background/writer-process-registry.ts";
-import { createSubagentExecutor } from "../runs/foreground/subagent-executor.ts";
 import { resolvePiLaunchToolPlan, SUBAGENT_CHILD_ENV } from "../runs/shared/pi-args.ts";
 import { AgentEffectOwner } from "../runtime/agent-effect-owner.ts";
 import type { AgentExecutionCoordinatorPort } from "../runtime/agent-execution-coordinator.ts";
@@ -54,6 +53,7 @@ import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
 import { agentResultText, normalizePublicAgentParams, type PublicAgentParams } from "./product-executor.ts";
 import {
 	type ExecutePublicAgent,
+	loadSubagentExecutorModule,
 	type PublicAgentEngine,
 	type PublicAgentExecutionRuntime,
 	projectPublicAgentFailure,
@@ -115,19 +115,36 @@ const PRODUCTION_DEPENDENCIES = {
 		projectContext,
 		resolveCodeModeEnabled,
 		state,
-	}: RootExecutorInput): PublicAgentEngine =>
-		createSubagentExecutor({
-			pi,
-			state,
-			asyncByDefault: true,
-			getSubagentSessionRoot,
-			discoverAgents: discoverAgentDefinitions,
-			projectContext,
-			childBaseExtensionPath,
-			codeModeProviderTools,
-			resolveCodeModeEnabled,
-			onForegroundStatus,
-		}),
+	}: RootExecutorInput): PublicAgentEngine => {
+		let executorPromise: Promise<PublicAgentEngine> | undefined;
+		return {
+			async execute(...args: Parameters<PublicAgentEngine["execute"]>) {
+				if (!executorPromise) {
+					executorPromise = loadSubagentExecutorModule()
+						.then(({ createSubagentExecutor }) =>
+							createSubagentExecutor({
+								pi,
+								state,
+								asyncByDefault: true,
+								getSubagentSessionRoot,
+								discoverAgents: discoverAgentDefinitions,
+								projectContext,
+								childBaseExtensionPath,
+								codeModeProviderTools,
+								resolveCodeModeEnabled,
+								onForegroundStatus,
+							}),
+						)
+						.catch((error) => {
+							executorPromise = undefined;
+							throw error;
+						});
+				}
+				const executor = await executorPromise;
+				return executor.execute(...args);
+			},
+		};
+	},
 	createGovernorCoordinator: (config: PiStuffAgentsConfig, effects: AgentEffectOwner): AgentExecutionCoordinatorPort =>
 		createDurableAgentExecutionCoordinator({
 			effects,
