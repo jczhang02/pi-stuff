@@ -83,10 +83,7 @@ export class EffectFoundation {
 		options?: Effect.RunOptions,
 	): Promise<Exit.Exit<A, E>> {
 		if (!this.isCurrent(scope)) return Promise.resolve(Exit.interrupt());
-		const attached = Effect.gen(function* () {
-			const fiber = yield* Effect.forkIn(Scope.provide(scope[SCOPE])(program), scope[SCOPE]);
-			return yield* Fiber.join(fiber);
-		});
+		const attached = Effect.flatMap(Effect.forkIn(Scope.provide(scope[SCOPE])(program), scope[SCOPE]), Fiber.join);
 		return Effect.runPromiseExit(attached, options);
 	}
 
