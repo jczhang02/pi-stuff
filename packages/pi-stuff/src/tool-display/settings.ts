@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Effect } from "effect";
+import { Effect, type Scope } from "effect";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { type JsonInputObject, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
@@ -11,7 +11,6 @@ import {
 	mergedSettingsPath,
 	readTextFileEffect,
 } from "../shared/settings-io/index.js";
-import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-tools.json";
 const TOOLS_NAMESPACE = "tools";
@@ -59,7 +58,7 @@ export class ToolUiSettingsStore {
 		const options: EffectNamespaceStoreOptions = {
 			path,
 			legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
-			acquireLock: acquireSettingsLockEffect,
+			acquireLock: acquireToolSettingsLock,
 			legacyReader: (legacyPath: string) =>
 				Effect.catch(
 					Effect.flatMap(readTextFileEffect(legacyPath), (content) =>
@@ -109,4 +108,14 @@ export class ToolUiSettingsStore {
 
 function normalizeError(cause: unknown): Error {
 	return cause instanceof Error ? cause : new Error(String(cause));
+}
+
+function acquireToolSettingsLock(lockPath: string, _owner: string): Effect.Effect<void, Error, Scope.Scope> {
+	return Effect.flatMap(
+		Effect.tryPromise({
+			try: () => import("../shared/settings-io/lock.js"),
+			catch: normalizeError,
+		}),
+		({ acquireSettingsLockEffect }) => acquireSettingsLockEffect(lockPath, "Tools"),
+	);
 }
