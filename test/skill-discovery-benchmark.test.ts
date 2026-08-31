@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { canAdvanceBenchmarkAuthentication } from "../scripts/benchmark-skill-discovery.js";
 import {
 	ARMS,
 	BOOTSTRAP_ITERATIONS,
@@ -105,6 +106,12 @@ test("uses identities absent from every retained Skill Discovery manifest", () =
 test("allows both direct and Code Mode surfaces through the Host strict Tool allowlist", () => {
 	expect(SKILL_DISCOVERY_TOOL_ALLOWLIST).toEqual(["bash", "find", "grep", "ls", "read", "codemode", "tool_search"]);
 	expect(SKILL_DISCOVERY_TIMEOUTS).toEqual({ commandMs: 60_000, settlementMs: 900_000, startupMs: 300_000 });
+});
+
+test("advances benchmark authentication only after a completed safety check", () => {
+	expect(canAdvanceBenchmarkAuthentication(false, false)).toBe(false);
+	expect(canAdvanceBenchmarkAuthentication(true, true)).toBe(false);
+	expect(canAdvanceBenchmarkAuthentication(true, false)).toBe(true);
 });
 
 test("parses only the exact deterministic manifest", () => {

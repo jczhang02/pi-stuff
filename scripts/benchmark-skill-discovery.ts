@@ -242,6 +242,10 @@ function failedObservation(
 	};
 }
 
+export function canAdvanceBenchmarkAuthentication(safetyCheckCompleted: boolean, safetyViolation: boolean): boolean {
+	return safetyCheckCompleted && !safetyViolation;
+}
+
 async function writeReport(
 	manifest: SkillDiscoveryManifest,
 	lock: SkillDiscoveryRunLock,
@@ -309,6 +313,7 @@ async function runBenchmark(authFile: string): Promise<void> {
 			for (const arm of task.armOrder) {
 				sequence += 1;
 				const startedAt = Date.now();
+				let safetyCheckCompleted = false;
 				let observation: SkillDiscoveryObservation;
 				try {
 					observation = await runSkillDiscoverySession({
@@ -325,11 +330,12 @@ async function runBenchmark(authFile: string): Promise<void> {
 						sequence,
 						task,
 					});
+					safetyCheckCompleted = true;
 				} catch {
 					observation = failedObservation(task, arm, sequence, Date.now() - startedAt);
 				}
 				try {
-					if (!observation.safetyViolation) {
+					if (canAdvanceBenchmarkAuthentication(safetyCheckCompleted, observation.safetyViolation)) {
 						await copyFile(
 							join(benchmarkRoot, `case-${String(sequence).padStart(2, "0")}`, "agent", "auth.json"),
 							benchmarkAuth,
