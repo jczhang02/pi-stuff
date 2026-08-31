@@ -1,11 +1,11 @@
 import {
-	type BeforeAgentStartEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
 	getAgentDir,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { Cause, Effect, Exit } from "effect";
 import { registerContextPromptContributor } from "../context-management/index.js";
 import {
 	createPonytailDialogView,
@@ -14,8 +14,10 @@ import {
 	type PonytailDialogSnapshot,
 	reportDiagnostic,
 } from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
+import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";
 import { isJsonInputObject } from "../shared/json-value.js";
-import { PonytailConfigStore, type PonytailSettingsPatch } from "./config.js";
+import { type PonytailSettingsPatch, PonytailSettingsStore } from "./config.js";
 import { preparePonytailInstructions } from "./instructions.js";
 import { PonytailPromptRenderer } from "./prompt.js";
 import { type PonytailRuntimeRegistry, ponytailRuntimeRegistry } from "./state.js";
@@ -28,7 +30,6 @@ import {
 	PONYTAIL_MODES,
 	PONYTAIL_SESSION_ENTRY_TYPE,
 	PONYTAIL_SPECIALIZED_SKILLS,
-	type PonytailEffectiveSettings,
 	type PonytailMode,
 	type PonytailSpecializedSkill,
 } from "./types.js";
@@ -54,59 +55,77 @@ export function newestPonytailBranchMode(entries: readonly SessionEntry[]): Pony
 	return undefined;
 }
 
-function activationMode(settings: PonytailEffectiveSettings): PonytailMode {
-	return settings.defaultMode === "off" ? PONYTAIL_DEFAULT_MODE : settings.defaultMode;
-}
-
-function sessionIdentity(ctx: ExtensionContext): string | undefined {
-	return ctx.sessionManager.getSessionId() ?? ctx.sessionManager.getSessionFile() ?? undefined;
+async function runPonytailOperation<Value, ErrorType>(
+	foundation: EffectFoundation,
+	ctx: ExtensionContext,
+	program: (session: EffectScopeOwner) => Effect.Effect<Value, ErrorType>,
+): Promise<Value | undefined> {
+	const session = foundation.sessionFor(ctx.sessionManager);
+	if (!session || !foundation.isCurrent(session)) return undefined;
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program(session));
+	await foundation.close(operation, exit);
+	if (Exit.isSuccess(exit)) return foundation.isCurrent(session) ? exit.value : undefined;
+	if (Cause.hasInterrupts(exit.cause)) return undefined;
+	throw Cause.squash(exit.cause);
 }
 
 class PonytailRuntime {
-	private readonly config: PonytailConfigStore;
+	private readonly foundation: EffectFoundation;
 	private readonly pi: ExtensionAPI;
 	private readonly prompt: PonytailPromptRenderer;
 	private readonly registry: PonytailRuntimeRegistry;
 	private readonly releasePrompt: () => void;
 	private mode: PonytailMode = PONYTAIL_DEFAULT_MODE;
-	private settings: PonytailEffectiveSettings;
+	private settingsStore = PonytailSettingsStore.memory();
+	private settings = this.settingsStore.get();
 	private lastSettingsError: string | undefined;
 	private disposed = false;
 
-	constructor(pi: ExtensionAPI, registry: PonytailRuntimeRegistry) {
-		preparePonytailInstructions();
+	constructor(pi: ExtensionAPI, registry: PonytailRuntimeRegistry, foundation: EffectFoundation) {
+		this.foundation = foundation;
 		this.pi = pi;
 		this.registry = registry;
-		this.config = new PonytailConfigStore(getAgentDir());
 		this.prompt = new PonytailPromptRenderer();
-		this.settings = this.config.read();
 		this.releasePrompt = registerContextPromptContributor(pi, {
 			id: "ponytail",
 			order: 300,
-			renderAgent: (event) => this.renderAgentPrompt(event),
+			renderAgent: (event) => this.prompt.renderAgent(event, this.mode),
 			renderProvider: () => this.prompt.renderProvider(this.mode),
 		});
 	}
 
 	install(): void {
-		this.pi.on("session_start", (_event, ctx) => this.startSession(ctx));
-		this.pi.on("session_tree", (_event, ctx) => this.restoreBranchMode(ctx));
+		this.pi.on("session_start", (_event, ctx) =>
+			runPonytailOperation(this.foundation, ctx, (session) => this.startSession(ctx, session)).then(() => undefined),
+		);
+		this.pi.on("session_tree", (_event, ctx) =>
+			runPonytailOperation(this.foundation, ctx, (session) => this.restoreBranchMode(ctx, session)).then(
+				() => undefined,
+			),
+		);
 		this.pi.on("input", async (event, ctx) => {
 			if (event.source !== "extension" && isPonytailDeactivationCommand(event.text)) {
-				await this.setMode("off", ctx, false);
+				await runPonytailOperation(this.foundation, ctx, (session) => this.setMode("off", ctx, false, session));
 			}
 			return { action: "continue" };
 		});
-		this.pi.on("session_shutdown", (_event, ctx) => this.shutdown(ctx));
+		this.pi.on("session_shutdown", (_event, ctx) => Effect.runPromise(this.shutdown(ctx)));
 		this.pi.registerCommand("ponytail", {
 			description: "Configure Ponytail's KISS mode and open its control dialog",
 			getArgumentCompletions: (prefix) => this.completions(prefix),
-			handler: (args, ctx) => this.handleCommand(args, ctx),
+			handler: async (args, ctx) => {
+				await runPonytailOperation(this.foundation, ctx, (session) => this.handleCommand(args, ctx, session));
+			},
 		});
 		for (const skill of PONYTAIL_SPECIALIZED_SKILLS) {
 			this.pi.registerCommand(skill, {
 				description: `Run the ${skill} Skill`,
-				handler: (args, ctx) => this.launchSkill(skill, ctx, args),
+				handler: async (args, ctx) => {
+					await runPonytailOperation(this.foundation, ctx, (session) =>
+						this.launchSkill(skill, ctx, session, args),
+					);
+				},
 			});
 		}
 	}
@@ -115,164 +134,229 @@ class PonytailRuntime {
 		return this.mode;
 	}
 
-	private renderAgentPrompt(event: BeforeAgentStartEvent): string | undefined {
-		return this.prompt.renderAgent(event, this.mode);
-	}
-
-	private startSession(ctx: ExtensionContext): void {
-		this.settings = this.config.read();
-		this.reportSettingsError();
-		this.restoreBranchMode(ctx);
-		const identity = sessionIdentity(ctx);
-		if (
-			ctx.hasUI &&
-			this.mode !== "off" &&
-			!this.settings.quietStartup &&
-			identity &&
-			!this.registry.startupNotified.has(identity)
-		) {
-			this.registry.startupNotified.add(identity);
-			ctx.ui.notify(`Ponytail active · ${this.mode} mode`, "info");
-		}
-	}
-
-	private restoreBranchMode(ctx: ExtensionContext): void {
-		const restored = newestPonytailBranchMode(ctx.sessionManager.getBranch());
-		this.mode = restored ?? inheritedPonytailMode() ?? this.settings.defaultMode;
-		this.syncStatus(ctx);
-	}
-
-	private async setMode(mode: PonytailMode, ctx: ExtensionContext, notify: boolean): Promise<void> {
-		this.mode = mode;
-		this.pi.appendEntry(PONYTAIL_SESSION_ENTRY_TYPE, { mode });
-		this.syncStatus(ctx);
-		if (notify) ctx.ui.notify(`Ponytail mode: ${mode}`, "info");
-	}
-
-	private async updateSettings(patch: PonytailSettingsPatch, ctx: ExtensionContext): Promise<void> {
-		this.settings = await this.config.write(patch);
-		this.reportSettingsError();
-		this.syncStatus(ctx);
-	}
-
-	private syncStatus(ctx: ExtensionContext): void {
-		ctx.ui.setStatus(
-			PONYTAIL_STATUS_KEY,
-			this.settings.hideStatus || this.mode === "off" ? undefined : `${PONYTAIL_ICON} ${this.mode}`,
-		);
-	}
-
-	private reportSettingsError(): void {
-		if (!this.settings.error || this.settings.error === this.lastSettingsError) return;
-		this.lastSettingsError = this.settings.error;
-		reportDiagnostic({
-			capability: "Ponytail",
-			key: "settings",
-			severity: "warning",
-			summary: "Ponytail configuration is invalid; safe defaults are active.",
-			details: this.settings.error,
-			visibility: "silent",
+	private startSession(ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const settingsStore = yield* PonytailSettingsStore.load(getAgentDir());
+			if (!this.isLive(session)) return;
+			this.settingsStore = settingsStore;
+			this.settings = settingsStore.get();
+			yield* this.reportSettingsError(session);
+			yield* this.restoreBranchMode(ctx, session);
+			if (!this.isLive(session)) return;
+			const identity = ctx.sessionManager.getSessionId() ?? ctx.sessionManager.getSessionFile() ?? undefined;
+			if (
+				ctx.hasUI &&
+				this.mode !== "off" &&
+				!this.settings.quietStartup &&
+				identity &&
+				!this.registry.startupNotified.has(identity)
+			) {
+				yield* Effect.sync(() => {
+					if (!this.isLive(session)) return;
+					this.registry.startupNotified.add(identity);
+					ctx.ui.notify(`Ponytail active · ${this.mode} mode`, "info");
+				});
+			}
 		});
 	}
 
-	private async handleCommand(args: string, ctx: ExtensionContext): Promise<void> {
-		const tokens = args.trim().toLowerCase().split(/\s+/u).filter(Boolean);
-		if (tokens.length === 0) {
-			await this.showDialog(ctx);
-			return;
-		}
-		const head = tokens[0];
-		const directMode = normalizePonytailMode(head);
-		if (directMode && tokens.length === 1) {
-			await this.setMode(directMode, ctx, true);
-			return;
-		}
-		if (head === "on" && tokens.length === 1) {
-			await this.setMode(activationMode(this.settings), ctx, true);
-			return;
-		}
-		if (head === "status" && tokens.length === 1) {
-			ctx.ui.notify(this.statusText(), "info");
-			return;
-		}
-		if (head === "default" && tokens.length === 2) {
-			const mode = normalizePonytailMode(tokens[1]);
-			if (!mode) return this.usage(ctx);
-			try {
-				await this.updateSettings({ defaultMode: mode }, ctx);
-				ctx.ui.notify(
-					this.settings.defaultModeOverridden
-						? `Saved default ${mode}; PONYTAIL_DEFAULT_MODE keeps ${this.settings.defaultMode} effective.`
-						: `Ponytail default: ${mode}`,
-					"info",
-				);
-			} catch (error) {
-				this.writeError(ctx, error);
-			}
-			return;
-		}
-		if (head === "status" && tokens.length === 2 && (tokens[1] === "show" || tokens[1] === "hide")) {
-			try {
-				await this.updateSettings({ hideStatus: tokens[1] === "hide" }, ctx);
-				ctx.ui.notify(
-					this.settings.hideStatusOverridden
-						? "Saved Statusline preference; PONYTAIL_HIDE_STATUS remains effective."
-						: `Ponytail Statusline: ${tokens[1] === "hide" ? "hidden" : "shown"}`,
-					"info",
-				);
-			} catch (error) {
-				this.writeError(ctx, error);
-			}
-			return;
-		}
-		if (head === "startup" && tokens.length === 2 && (tokens[1] === "show" || tokens[1] === "quiet")) {
-			try {
-				await this.updateSettings({ quietStartup: tokens[1] === "quiet" }, ctx);
-				ctx.ui.notify(
-					this.settings.quietStartupOverridden
-						? "Saved startup preference; PONYTAIL_QUIET_STARTUP remains effective."
-						: `Ponytail startup notification: ${tokens[1]}`,
-					"info",
-				);
-			} catch (error) {
-				this.writeError(ctx, error);
-			}
-			return;
-		}
-		this.usage(ctx);
+	private restoreBranchMode(ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			if (!this.isLive(session)) return;
+			const restored = newestPonytailBranchMode(ctx.sessionManager.getBranch());
+			this.mode = restored ?? inheritedPonytailMode() ?? this.settings.defaultMode;
+			yield* this.syncStatus(ctx, session);
+		});
 	}
 
-	private async showDialog(ctx: ExtensionContext): Promise<void> {
-		if (ctx.mode !== "tui" || !ctx.hasUI) {
-			ctx.ui.notify("The Ponytail dialog is available in interactive TUI sessions.", "warning");
-			return;
-		}
-		const skill = await getCommandDialogCoordinator(this.pi).show<PonytailSpecializedSkill>(
-			ctx,
-			createPonytailDialogView(this.dialogSnapshot(), {
-				apply: (action) => this.applyDialogAction(action, ctx),
-			}),
+	private setMode(
+		mode: PonytailMode,
+		ctx: ExtensionContext,
+		notify: boolean,
+		session: EffectScopeOwner,
+	): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			if (!this.isLive(session)) return;
+			this.mode = mode;
+			yield* Effect.sync(() => {
+				if (this.isLive(session)) this.pi.appendEntry(PONYTAIL_SESSION_ENTRY_TYPE, { mode });
+			});
+			yield* this.syncStatus(ctx, session);
+			if (notify) yield* this.notify(ctx, session, () => `Ponytail mode: ${mode}`, "info");
+		});
+	}
+
+	private updateSettings(
+		patch: PonytailSettingsPatch,
+		ctx: ExtensionContext,
+		session: EffectScopeOwner,
+	): Effect.Effect<void, Error> {
+		return Effect.gen({ self: this }, function* () {
+			const settings = yield* this.settingsStore.update(patch);
+			if (!this.isLive(session)) return;
+			this.settings = settings;
+			yield* this.reportSettingsError(session);
+			yield* this.syncStatus(ctx, session);
+		});
+	}
+
+	private syncStatus(ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void> {
+		return Effect.sync(() => {
+			if (!this.isLive(session)) return;
+			ctx.ui.setStatus(
+				PONYTAIL_STATUS_KEY,
+				this.settings.hideStatus || this.mode === "off" ? undefined : `${PONYTAIL_ICON} ${this.mode}`,
+			);
+		});
+	}
+
+	private reportSettingsError(session: EffectScopeOwner): Effect.Effect<void> {
+		return Effect.sync(() => {
+			if (!this.isLive(session)) return;
+			if (!this.settings.error || this.settings.error === this.lastSettingsError) return;
+			this.lastSettingsError = this.settings.error;
+			reportDiagnostic({
+				capability: "Ponytail",
+				key: "settings",
+				severity: "warning",
+				summary: "Ponytail configuration is invalid; safe defaults are active.",
+				details: this.settings.error,
+				visibility: "silent",
+			});
+		});
+	}
+
+	private handleCommand(args: string, ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void, Error> {
+		return Effect.suspend(() => {
+			const tokens = args.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+			if (tokens.length === 0) return this.showDialog(ctx, session);
+			const head = tokens[0];
+			const directMode = normalizePonytailMode(head);
+			if (directMode && tokens.length === 1) return this.setMode(directMode, ctx, true, session);
+			if (head === "on" && tokens.length === 1) {
+				return this.setMode(
+					this.settings.defaultMode === "off" ? PONYTAIL_DEFAULT_MODE : this.settings.defaultMode,
+					ctx,
+					true,
+					session,
+				);
+			}
+			if (head === "status" && tokens.length === 1) {
+				return this.notify(ctx, session, () => this.statusText(), "info");
+			}
+			if (head === "default" && tokens.length === 2) {
+				const mode = normalizePonytailMode(tokens[1]);
+				return mode
+					? this.persistSetting(
+							{ defaultMode: mode },
+							ctx,
+							() =>
+								this.settings.defaultModeOverridden
+									? `Saved default ${mode}; PONYTAIL_DEFAULT_MODE keeps ${this.settings.defaultMode} effective.`
+									: `Ponytail default: ${mode}`,
+							session,
+						)
+					: this.usage(ctx, session);
+			}
+			if (head === "status" && tokens.length === 2 && (tokens[1] === "show" || tokens[1] === "hide")) {
+				const hidden = tokens[1] === "hide";
+				return this.persistSetting(
+					{ hideStatus: hidden },
+					ctx,
+					() =>
+						this.settings.hideStatusOverridden
+							? "Saved Statusline preference; PONYTAIL_HIDE_STATUS remains effective."
+							: `Ponytail Statusline: ${hidden ? "hidden" : "shown"}`,
+					session,
+				);
+			}
+			if (head === "startup" && tokens.length === 2 && (tokens[1] === "show" || tokens[1] === "quiet")) {
+				const quiet = tokens[1] === "quiet";
+				return this.persistSetting(
+					{ quietStartup: quiet },
+					ctx,
+					() =>
+						this.settings.quietStartupOverridden
+							? "Saved startup preference; PONYTAIL_QUIET_STARTUP remains effective."
+							: `Ponytail startup notification: ${quiet ? "quiet" : "show"}`,
+					session,
+				);
+			}
+			return this.usage(ctx, session);
+		});
+	}
+
+	private persistSetting(
+		patch: PonytailSettingsPatch,
+		ctx: ExtensionContext,
+		message: () => string,
+		session: EffectScopeOwner,
+	): Effect.Effect<void> {
+		return this.updateSettings(patch, ctx, session).pipe(
+			Effect.andThen(this.notify(ctx, session, message, "info")),
+			Effect.catch((error) => this.writeError(ctx, session, error)),
 		);
-		if (skill) await this.launchSkill(skill, ctx);
 	}
 
-	private async applyDialogAction(
+	private showDialog(ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void, Error> {
+		if (ctx.mode !== "tui" || !ctx.hasUI) {
+			return this.notify(
+				ctx,
+				session,
+				() => "The Ponytail dialog is available in interactive TUI sessions.",
+				"warning",
+			);
+		}
+		return Effect.tryPromise({
+			try: () => {
+				if (!this.isLive(session)) return Promise.resolve(undefined);
+				return getCommandDialogCoordinator(this.pi).show<PonytailSpecializedSkill>(
+					ctx,
+					createPonytailDialogView(this.dialogSnapshot(), {
+						apply: async (action) => {
+							if (!this.isLive(session)) throw new Error("Ponytail settings action was cancelled.");
+							const snapshot = await runPonytailOperation(this.foundation, ctx, (actionSession) =>
+								this.applyDialogAction(action, ctx, actionSession),
+							);
+							if (!snapshot) throw new Error("Ponytail settings action was cancelled.");
+							return snapshot;
+						},
+					}),
+				);
+			},
+			catch: normalizeError,
+		}).pipe(Effect.flatMap((skill) => (skill ? this.launchSkill(skill, ctx, session) : Effect.void)));
+	}
+
+	private applyDialogAction(
 		action: PonytailDialogAction,
 		ctx: ExtensionContext,
-	): Promise<PonytailDialogSnapshot> {
-		if (action.type === "set-mode") await this.setMode(action.mode, ctx, false);
-		else if (action.type === "set-default") await this.updateSettings({ defaultMode: action.mode }, ctx);
-		else if (action.type === "set-status") await this.updateSettings({ hideStatus: action.hide }, ctx);
-		else await this.updateSettings({ quietStartup: action.quiet }, ctx);
-		return this.dialogSnapshot();
+		session: EffectScopeOwner,
+	): Effect.Effect<PonytailDialogSnapshot, Error> {
+		const update =
+			action.type === "set-mode"
+				? this.setMode(action.mode, ctx, false, session)
+				: action.type === "set-default"
+					? this.updateSettings({ defaultMode: action.mode }, ctx, session)
+					: action.type === "set-status"
+						? this.updateSettings({ hideStatus: action.hide }, ctx, session)
+						: this.updateSettings({ quietStartup: action.quiet }, ctx, session);
+		return Effect.map(update, () => this.dialogSnapshot());
 	}
 
-	private launchSkill(skill: PonytailSpecializedSkill, ctx: ExtensionContext, args = ""): Promise<void> {
-		const suffix = args.trim();
-		const content = `/skill:${skill}${suffix ? ` ${suffix}` : ""}`;
-		if (ctx.isIdle()) this.pi.sendUserMessage(content, { expandPromptTemplates: true });
-		else this.pi.sendUserMessage(content, { deliverAs: "followUp", expandPromptTemplates: true });
-		return Promise.resolve();
+	private launchSkill(
+		skill: PonytailSpecializedSkill,
+		ctx: ExtensionContext,
+		session: EffectScopeOwner,
+		args = "",
+	): Effect.Effect<void> {
+		return Effect.sync(() => {
+			if (!this.isLive(session)) return;
+			const suffix = args.trim();
+			const content = `/skill:${skill}${suffix ? ` ${suffix}` : ""}`;
+			if (ctx.isIdle()) this.pi.sendUserMessage(content, { expandPromptTemplates: true });
+			else this.pi.sendUserMessage(content, { deliverAs: "followUp", expandPromptTemplates: true });
+		});
 	}
 
 	private dialogSnapshot(): PonytailDialogSnapshot {
@@ -296,15 +380,36 @@ class PonytailRuntime {
 		return `Ponytail · mode ${this.mode} · default ${this.settings.defaultMode} · Statusline ${this.settings.hideStatus ? "hidden" : "shown"} · startup ${this.settings.quietStartup ? "quiet" : "shown"}`;
 	}
 
-	private writeError<ErrorValue>(ctx: ExtensionContext, error: ErrorValue): void {
-		ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+	private notify(
+		ctx: ExtensionContext,
+		session: EffectScopeOwner,
+		message: () => string,
+		level: "error" | "info" | "warning",
+	): Effect.Effect<void> {
+		return Effect.sync(() => {
+			if (this.isLive(session)) ctx.ui.notify(message(), level);
+		});
 	}
 
-	private usage(ctx: ExtensionContext): void {
-		ctx.ui.notify(
-			"Usage: /ponytail [on|off|lite|full|ultra|status [show|hide]|startup [show|quiet]|default <mode>]",
+	private writeError<ErrorValue>(
+		ctx: ExtensionContext,
+		session: EffectScopeOwner,
+		error: ErrorValue,
+	): Effect.Effect<void> {
+		return this.notify(ctx, session, () => (error instanceof Error ? error.message : String(error)), "error");
+	}
+
+	private usage(ctx: ExtensionContext, session: EffectScopeOwner): Effect.Effect<void> {
+		return this.notify(
+			ctx,
+			session,
+			() => "Usage: /ponytail [on|off|lite|full|ultra|status [show|hide]|startup [show|quiet]|default <mode>]",
 			"warning",
 		);
+	}
+
+	private isLive(session: EffectScopeOwner): boolean {
+		return !this.disposed && this.foundation.isCurrent(session);
 	}
 
 	private completions(prefix: string): AutocompleteItem[] | null {
@@ -323,23 +428,36 @@ class PonytailRuntime {
 		return matches.length > 0 ? matches.map((item) => ({ ...item, label: item.value })) : null;
 	}
 
-	private shutdown(ctx: ExtensionContext): void {
-		if (this.disposed) return;
-		this.disposed = true;
-		this.releasePrompt();
-		ctx.ui.setStatus(PONYTAIL_STATUS_KEY, undefined);
-		// SAFETY: Pi's events surface is the stable object identity shared by duplicate ExtensionAPI wrappers.
-		const owner = this.pi.events as object;
-		if (this.registry.owners.get(owner) === this) this.registry.owners.delete(owner);
+	private shutdown(ctx: ExtensionContext): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			const disposed = yield* Effect.sync(() => {
+				if (this.disposed) return true;
+				this.disposed = true;
+				this.releasePrompt();
+				ctx.ui.setStatus(PONYTAIL_STATUS_KEY, undefined);
+				// SAFETY: Pi's events surface is the stable object identity shared by duplicate ExtensionAPI wrappers.
+				const owner = this.pi.events as object;
+				if (this.registry.owners.get(owner) === this) this.registry.owners.delete(owner);
+				return false;
+			});
+			if (disposed) return;
+			yield* this.settingsStore.whenIdle().pipe(Effect.timeoutOption(HOST_SHUTDOWN_GRACE_MS), Effect.asVoid);
+		});
 	}
 }
 
-export default function ponytailCapability(pi: ExtensionAPI): void {
+export default async function ponytailCapability(pi: ExtensionAPI): Promise<void> {
 	const registry = ponytailRuntimeRegistry();
 	// SAFETY: Pi's events surface is the stable object identity shared by duplicate ExtensionAPI wrappers.
 	const owner = pi.events as object;
 	if (registry.owners.has(owner)) return;
-	const runtime = new PonytailRuntime(pi, registry);
+	await Effect.runPromise(preparePonytailInstructions());
+	if (registry.owners.has(owner)) return;
+	const runtime = new PonytailRuntime(pi, registry, installEffectFoundation(pi));
 	registry.owners.set(owner, runtime);
 	runtime.install();
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

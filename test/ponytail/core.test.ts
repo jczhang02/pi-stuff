@@ -4,10 +4,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PonytailConfigStore } from "../../packages/pi-stuff/src/ponytail/config.js";
+import { Effect } from "effect";
+import { PonytailSettingsStore } from "../../packages/pi-stuff/src/ponytail/config.js";
 import {
 	filterPonytailSkillBodyForMode,
 	getPonytailInstructions,
+	preparePonytailInstructions,
 } from "../../packages/pi-stuff/src/ponytail/instructions.js";
 import { isPonytailDeactivationCommand, normalizePonytailMode } from "../../packages/pi-stuff/src/ponytail/types.js";
 
@@ -33,20 +35,29 @@ afterEach(() => {
 });
 
 describe("Ponytail configuration", () => {
-	test("resolves environment, merged, legacy, and defaults in order", () => {
+	test("resolves environment, merged, legacy, and defaults in order", async () => {
 		const files = fixture();
 		writeJson(files.legacyPath, { defaultMode: "lite", hideStatus: true, quietStartup: true });
-		const legacy = new PonytailConfigStore(files.agentDir, { env: {}, legacyPath: files.legacyPath }).read();
-		expect(legacy).toMatchObject({ defaultMode: "lite", hideStatus: true, quietStartup: true, source: "legacy" });
+		const legacy = await Effect.runPromise(
+			PonytailSettingsStore.load(files.agentDir, { env: {}, legacyPath: files.legacyPath }),
+		);
+		expect(legacy.get()).toMatchObject({
+			defaultMode: "lite",
+			hideStatus: true,
+			quietStartup: true,
+			source: "legacy",
+		});
 
 		writeJson(path.join(files.agentDir, "pi-stuff.json"), {
 			ponytail: { defaultMode: "ultra", hideStatus: false, quietStartup: false },
 		});
-		const merged = new PonytailConfigStore(files.agentDir, {
-			env: { PONYTAIL_DEFAULT_MODE: "lite", PONYTAIL_HIDE_STATUS: "yes", PONYTAIL_QUIET_STARTUP: "0" },
-			legacyPath: files.legacyPath,
-		}).read();
-		expect(merged).toMatchObject({
+		const merged = await Effect.runPromise(
+			PonytailSettingsStore.load(files.agentDir, {
+				env: { PONYTAIL_DEFAULT_MODE: "lite", PONYTAIL_HIDE_STATUS: "yes", PONYTAIL_QUIET_STARTUP: "0" },
+				legacyPath: files.legacyPath,
+			}),
+		);
+		expect(merged.get()).toMatchObject({
 			defaultMode: "lite",
 			defaultModeOverridden: true,
 			hideStatus: true,
@@ -63,14 +74,16 @@ describe("Ponytail configuration", () => {
 		fs.mkdirSync(files.agentDir, { recursive: true });
 		const mergedPath = path.join(files.agentDir, "pi-stuff.json");
 		fs.writeFileSync(mergedPath, "{broken");
-		const store = new PonytailConfigStore(files.agentDir, { env: {}, legacyPath: files.legacyPath });
-		expect(store.read()).toMatchObject({
+		const store = await Effect.runPromise(
+			PonytailSettingsStore.load(files.agentDir, { env: {}, legacyPath: files.legacyPath }),
+		);
+		expect(store.get()).toMatchObject({
 			defaultMode: "full",
 			hideStatus: false,
 			source: "defaults",
 			writable: false,
 		});
-		await expect(store.write({ defaultMode: "lite" })).rejects.toThrow();
+		await expect(Effect.runPromise(store.update({ defaultMode: "lite" }))).rejects.toThrow();
 		expect(fs.readFileSync(mergedPath, "utf8")).toBe("{broken");
 	});
 
@@ -78,9 +91,13 @@ describe("Ponytail configuration", () => {
 		const files = fixture();
 		const mergedPath = path.join(files.agentDir, "pi-stuff.json");
 		writeJson(mergedPath, { ponytail: { defaultMode: "review" }, untouched: true });
-		const store = new PonytailConfigStore(files.agentDir, { env: {}, legacyPath: files.legacyPath });
-		expect(store.read()).toMatchObject({ defaultMode: "full", source: "defaults", writable: false });
-		await expect(store.write({ hideStatus: true })).rejects.toThrow(/invalid ponytail namespace/i);
+		const store = await Effect.runPromise(
+			PonytailSettingsStore.load(files.agentDir, { env: {}, legacyPath: files.legacyPath }),
+		);
+		expect(store.get()).toMatchObject({ defaultMode: "full", source: "defaults", writable: false });
+		await expect(Effect.runPromise(store.update({ hideStatus: true }))).rejects.toThrow(
+			/invalid ponytail namespace/i,
+		);
 		expect(JSON.parse(fs.readFileSync(mergedPath, "utf8"))).toEqual({
 			ponytail: { defaultMode: "review" },
 			untouched: true,
@@ -91,8 +108,10 @@ describe("Ponytail configuration", () => {
 		const files = fixture();
 		writeJson(files.legacyPath, { defaultMode: "lite", hideStatus: true, quietStartup: true });
 		writeJson(path.join(files.agentDir, "pi-stuff.json"), { ui: { transcript: true } });
-		const store = new PonytailConfigStore(files.agentDir, { env: {}, legacyPath: files.legacyPath });
-		const next = await store.write({ defaultMode: "ultra" });
+		const store = await Effect.runPromise(
+			PonytailSettingsStore.load(files.agentDir, { env: {}, legacyPath: files.legacyPath }),
+		);
+		const next = await Effect.runPromise(store.update({ defaultMode: "ultra" }));
 		expect(next).toMatchObject({ defaultMode: "ultra", hideStatus: true, quietStartup: true, source: "merged" });
 		expect(JSON.parse(fs.readFileSync(path.join(files.agentDir, "pi-stuff.json"), "utf8"))).toEqual({
 			ui: { transcript: true },
@@ -126,7 +145,8 @@ describe("Ponytail instructions", () => {
 		expect(filtered).toContain("ordinary prose survives");
 	});
 
-	test("loads the canonical Skill and keeps review out of runtime modes", () => {
+	test("loads the canonical Skill and keeps review out of runtime modes", async () => {
+		expect(await Effect.runPromise(preparePonytailInstructions())).toContain("name: ponytail");
 		const instructions = getPonytailInstructions("ultra");
 		expect(instructions).toContain("PONYTAIL MODE ACTIVE — level: ultra");
 		expect(instructions).toContain("YAGNI extremist");

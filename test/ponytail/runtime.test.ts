@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -8,15 +8,24 @@ import type {
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 import { applyContextPromptContributions } from "../../packages/pi-stuff/src/context-management/prompt-contributions.js";
+import {
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	getCommandDialogCoordinator,
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import ponytailCapability, {
 	getPonytailMode,
 	newestPonytailBranchMode,
 } from "../../packages/pi-stuff/src/ponytail/index.js";
-import { PONYTAIL_SESSION_ENTRY_TYPE } from "../../packages/pi-stuff/src/ponytail/types.js";
+import {
+	PONYTAIL_SESSION_ENTRY_TYPE,
+	type PonytailSpecializedSkill,
+} from "../../packages/pi-stuff/src/ponytail/types.js";
 import { isJsonInputObject, type JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
-import { createExtensionCommandContext } from "../fixtures/extension-context.js";
+import { createExtensionCommandContext, testTheme } from "../fixtures/extension-context.js";
 
 type HandlerResult = { readonly action: "continue" } | undefined;
 type Handler = (event: JsonInputValue, ctx: ExtensionContext) => HandlerResult | Promise<HandlerResult>;
@@ -32,7 +41,7 @@ function entry(mode: JsonInputValue): SessionEntry {
 	return { type: "custom", customType: PONYTAIL_SESSION_ENTRY_TYPE, data: { mode } } as SessionEntry;
 }
 
-function harness(
+async function harness(
 	options: { entries?: SessionEntry[]; settings?: JsonInputValue; activeTools?: string[]; idle?: boolean } = {},
 ) {
 	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-ponytail-runtime-"));
@@ -75,7 +84,7 @@ function harness(
 			setStatus: (_key, value) => statuses.push(value),
 		},
 	});
-	ponytailCapability(host);
+	await ponytailCapability(host);
 	const emit = async (name: string, event: JsonInputValue = {}) => {
 		const results: HandlerResult[] = [];
 		for (const handler of handlers.get(name) ?? []) results.push(await handler(event, context));
@@ -102,7 +111,7 @@ afterEach(async () => {
 describe("Ponytail Session runtime", () => {
 	test("restores the newest valid branch entry before inherited and configured modes", async () => {
 		process.env["PI_STUFF_PONYTAIL_MODE"] = "ultra";
-		const h = harness({
+		const h = await harness({
 			entries: [entry("lite"), entry("review"), entry("off")],
 			settings: { ponytail: { defaultMode: "full", hideStatus: false, quietStartup: false } },
 		});
@@ -114,11 +123,11 @@ describe("Ponytail Session runtime", () => {
 
 	test("inherits explicit off and otherwise uses the configured default", async () => {
 		process.env["PI_STUFF_PONYTAIL_MODE"] = "off";
-		const inherited = harness();
+		const inherited = await harness();
 		await inherited.emit("session_start");
 		expect(getPonytailMode(inherited.pi)).toBe("off");
 		delete process.env["PI_STUFF_PONYTAIL_MODE"];
-		const configured = harness({
+		const configured = await harness({
 			settings: { ponytail: { defaultMode: "lite", hideStatus: false, quietStartup: true } },
 		});
 		await configured.emit("session_start");
@@ -127,7 +136,7 @@ describe("Ponytail Session runtime", () => {
 	});
 
 	test("persists direct modes while review remains a Skill rather than a mode", async () => {
-		const h = harness();
+		const h = await harness();
 		await h.emit("session_start");
 		const command = h.commands.get("ponytail");
 		expect(command).toBeDefined();
@@ -140,7 +149,7 @@ describe("Ponytail Session runtime", () => {
 	});
 
 	test("applies direct default, visibility, startup, and activation commands", async () => {
-		const h = harness();
+		const h = await harness();
 		await h.emit("session_start");
 		const command = h.commands.get("ponytail");
 		await command?.handler("default lite", h.ctx);
@@ -155,9 +164,74 @@ describe("Ponytail Session runtime", () => {
 			ponytail: { defaultMode: "lite", hideStatus: true, quietStartup: true },
 		});
 	});
+});
+
+describe("Ponytail runtime adapters", () => {
+	test("reports a failed settings write without changing the invalid namespace", async () => {
+		const settings = { ponytail: { defaultMode: "review" }, untouched: true };
+		const h = await harness({ settings });
+		await h.emit("session_start");
+		await h.commands.get("ponytail")?.handler("status hide", h.ctx);
+
+		expect(h.notifications.at(-1)).toEqual({
+			level: "error",
+			message: "Cannot update the invalid ponytail namespace in pi-stuff.json.",
+		});
+		expect(JSON.parse(fs.readFileSync(path.join(h.agentDir, "pi-stuff.json"), "utf8"))).toEqual(settings);
+		expect(h.statuses.at(-1)).toBe("󱖿 full");
+	});
+
+	test("rejects an open Dialog action after its Session is replaced", async () => {
+		const h = await harness();
+		await h.emit("session_start");
+		const coordinator = getCommandDialogCoordinator(h.pi);
+		const shown = Promise.withResolvers<PonytailSpecializedSkill | undefined>();
+		const opened = Promise.withResolvers<void>();
+		let captured: CommandDialogView<PonytailSpecializedSkill> | undefined;
+		const showPonytailDialog = (_ctx: ExtensionContext, view: CommandDialogView<PonytailSpecializedSkill>) => {
+			captured = view;
+			opened.resolve();
+			return shown.promise;
+		};
+		// SAFETY: this spy observes only the Ponytail command's coordinator call and resolves its declared Skill result.
+		const show = spyOn(coordinator, "show").mockImplementation(showPonytailDialog as typeof coordinator.show);
+		cleanups.push(async () => {
+			shown.resolve(undefined);
+			show.mockRestore();
+		});
+
+		const opening = h.commands.get("ponytail")?.handler("", h.ctx);
+		await opened.promise;
+		const staleView = captured;
+		if (!staleView) throw new Error("Ponytail Dialog did not open");
+		await h.emit("session_start");
+		await opening;
+		let renders = 0;
+		const component = staleView.create({
+			close: () => undefined,
+			// SAFETY: the Ponytail Dialog delegates keys to SelectList and does not query Host keybindings directly.
+			keybindings: {} as CommandDialogViewContext["keybindings"],
+			requestRender: () => {
+				renders += 1;
+			},
+			signal: new AbortController().signal,
+			theme: testTheme,
+			// SAFETY: commandDialogRows reads only the controlled terminal row count from this TUI fixture.
+			tui: { terminal: { rows: 24 } } as TUI,
+		});
+		component.handleInput?.("\r");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\r");
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(h.appended).toHaveLength(0);
+		expect(getPonytailMode(h.pi)).toBe("full");
+		expect(renders).toBeGreaterThan(0);
+	});
 
 	test("keeps the five upstream command aliases and Skill delivery semantics", async () => {
-		const idle = harness();
+		const idle = await harness();
 		await idle.emit("session_start");
 		for (const name of ["ponytail-review", "ponytail-audit", "ponytail-debt", "ponytail-gain", "ponytail-help"]) {
 			expect(idle.commands.has(name)).toBeTrue();
@@ -169,7 +243,7 @@ describe("Ponytail Session runtime", () => {
 				options: { expandPromptTemplates: true },
 			},
 		]);
-		const streaming = harness({ idle: false });
+		const streaming = await harness({ idle: false });
 		await streaming.emit("session_start");
 		await streaming.commands.get("ponytail-audit")?.handler("", streaming.ctx);
 		expect(streaming.sent[0]).toEqual({
@@ -179,7 +253,7 @@ describe("Ponytail Session runtime", () => {
 	});
 
 	test("recognizes only direct natural-language deactivation requests", async () => {
-		const h = harness();
+		const h = await harness();
 		await h.emit("session_start");
 		await h.emit("input", { source: "interactive", text: "stop ponytail" });
 		expect(getPonytailMode(h.pi)).toBe("off");
@@ -191,7 +265,7 @@ describe("Ponytail Session runtime", () => {
 	});
 
 	test("deduplicates startup notification and prompt projection", async () => {
-		const h = harness();
+		const h = await harness();
 		await h.emit("session_start");
 		await h.emit("session_start");
 		expect(h.notifications.filter((item) => item.message.startsWith("Ponytail active"))).toHaveLength(1);

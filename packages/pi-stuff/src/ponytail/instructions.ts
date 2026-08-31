@@ -1,6 +1,7 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
+import { readTextFileEffect } from "../shared/settings-io/index.js";
 import { normalizePonytailMode, PONYTAIL_DEFAULT_MODE, type PonytailMode } from "./types.js";
 
 const SKILL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "skills", "ponytail", "SKILL.md");
@@ -45,9 +46,12 @@ export function filterPonytailSkillBodyForMode(body: string, mode: PonytailMode)
 }
 
 /** Load the reviewed upstream Skill once so missing Package resources still fail during initialization. */
-export function preparePonytailInstructions(): string {
-	canonicalSkill ??= fs.readFileSync(SKILL_PATH, "utf8");
-	return canonicalSkill;
+export function preparePonytailInstructions(): Effect.Effect<string, Error> {
+	if (canonicalSkill !== undefined) return Effect.succeed(canonicalSkill);
+	return Effect.map(readTextFileEffect(SKILL_PATH), (skill) => {
+		canonicalSkill = skill;
+		return skill;
+	});
 }
 
 /** Project the compact standing policy; the complete upstream rules remain available through /skill:ponytail. */
