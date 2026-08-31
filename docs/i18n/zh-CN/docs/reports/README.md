@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: c63fd3b74e5c5b1c19fa7daacfb138774d429af97cffa78d1483b471b17f7797 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 960b548edc1f8b5efbbaca6ac0de0f7c2093156261b1870180f89ad0a660d1ac -->
 
 # 报告
 
@@ -41,9 +41,5 @@
 - [Tool 折叠理由](tool-folding-comparison-20260806/design_rationale.md)
 - [Dialog 图像交接](dialog-readability-20260817/image-handoff.md)
 - [0.3.0 执行清单](../../../../../docs/reports/pi-stuff-0.3.0-execution-checklist.zh-CN.md)
-
-## 仓库快照
-
-- [已跟踪非代码文件清单](tracked-non-code-inventory-2026-08-31.md)
 
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。

@@ -1,48 +1,58 @@
-# Tracked non-code file inventory
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 5e587080d50fac46b4e1c090a373276542cbcd0bcd74d4bd8e384a59b1adb26d -->
 
-[Simplified Chinese](../i18n/zh-CN/docs/reports/tracked-non-code-inventory-2026-08-31.md)
+# 非代码文件检查清单
 
-Snapshot taken on 2026-08-31 from the `docs/readme-rewrite` worktree. Paths are repository-relative and sorted
-lexicographically within each group.
+[English](../../../NON_CODE_FILES.md)
 
-## Scope
+## 这份文件有什么用
 
-- Source of truth: the final tracked file set reported by `git ls-files`, including this report and its Chinese mirror.
-- Included: prose and documentation, structured configuration and data, text captures, locks, patches, checksums,
-  upstream metadata, repository metadata, ownership metadata, and license text.
-- Excluded as code: TypeScript, JavaScript, shell scripts, and native executables.
-- Excluded as images: PNG files.
-- Machine state, caches, ignored files, and untracked files are outside this inventory.
+把代码和截图放到一边后，仓库里还有哪些文件需要检查？这份清单就是答案。整理或审查文档、配置、元数据、
+许可证和测试数据时，可以照着它逐项核对，避免漏掉文件。
 
-## Summary
+图片不列在这里。源码、脚本和原生可执行文件继续按代码检查。
 
-| Kind | Files |
+下面这些路径是 2026-08-31 从 `docs/readme-rewrite` worktree 取得的快照。所有路径均相对于仓库根目录，并在
+各组内按字典序排列。
+
+## 范围
+
+- 以最终 `git ls-files` 结果为准，包含本清单及其中文镜像。
+- 纳入文档与其他文字材料、结构化配置与数据、文本记录、锁文件、补丁、校验和、上游元数据、仓库元数据、
+  所有权元数据及许可证文本。
+- 代码排除项：TypeScript、JavaScript、shell 脚本及原生可执行文件。
+- 图片排除项：PNG 文件。
+- 机器状态、缓存、被忽略文件及未跟踪文件不在本清单范围内。
+
+## 汇总
+
+| 类型 | 文件数 |
 | --- | ---: |
-| Markdown (`.md`) | 265 |
-| JSON (`.json`) | 39 |
-| JSON Lines (`.jsonl`) | 5 |
-| YAML (`.yml`) | 6 |
-| Text (`.txt`) | 7 |
-| ANSI text captures (`.ansi`) | 2 |
-| Lockfile (`.lock`) | 1 |
-| Patch (`.patch`) | 1 |
-| Checksum metadata (`.sha256`) | 1 |
-| Upstream metadata (`.upstream`) | 1 |
-| Hidden repository metadata | 4 |
-| Ownership metadata | 1 |
-| Extensionless license files | 19 |
-| **Included non-code files** | **352** |
-| Excluded code or executable files | 936 |
-| Excluded image files | 35 |
-| **Final tracked files** | **1323** |
+| Markdown（`.md`） | 265 |
+| JSON（`.json`） | 39 |
+| JSON Lines（`.jsonl`） | 5 |
+| YAML（`.yml`） | 6 |
+| 文本（`.txt`） | 7 |
+| ANSI 文本记录（`.ansi`） | 2 |
+| 锁文件（`.lock`） | 1 |
+| 补丁（`.patch`） | 1 |
+| 校验和元数据（`.sha256`） | 1 |
+| 上游元数据（`.upstream`） | 1 |
+| 隐藏仓库元数据 | 4 |
+| 所有权元数据 | 1 |
+| 无扩展名许可证文件 | 19 |
+| **纳入的非代码文件** | **352** |
+| 排除的代码或可执行文件 | 936 |
+| 排除的图片文件 | 35 |
+| **最终 tracked 文件总数** | **1323** |
 
-## Markdown (`.md`)
+## Markdown（`.md`）
 
 - `.github/CONTRIBUTING.md`
 - `.github/SECURITY.md`
 - `AGENTS.md`
 - `CONTEXT.md`
 - `DESIGN.md`
+- `NON_CODE_FILES.md`
 - `README.md`
 - `docs/README.md`
 - `docs/adr/0001-keep-pi-as-the-host.md`
@@ -88,6 +98,7 @@ lexicographically within each group.
 - `docs/i18n/zh-CN/AGENTS.md`
 - `docs/i18n/zh-CN/CONTEXT.md`
 - `docs/i18n/zh-CN/DESIGN.md`
+- `docs/i18n/zh-CN/NON_CODE_FILES.md`
 - `docs/i18n/zh-CN/README.md`
 - `docs/i18n/zh-CN/docs/README.md`
 - `docs/i18n/zh-CN/docs/adr/0001-keep-pi-as-the-host.md`
@@ -145,7 +156,6 @@ lexicographically within each group.
 - `docs/i18n/zh-CN/docs/reports/single-package-migration.md`
 - `docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md`
 - `docs/i18n/zh-CN/docs/reports/tool-folding-comparison-20260806/design_rationale.md`
-- `docs/i18n/zh-CN/docs/reports/tracked-non-code-inventory-2026-08-31.md`
 - `docs/i18n/zh-CN/docs/research/README.md`
 - `docs/i18n/zh-CN/docs/research/agent-activity-ui-reference.md`
 - `docs/i18n/zh-CN/docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md`
@@ -228,7 +238,6 @@ lexicographically within each group.
 - `docs/reports/single-package-migration.md`
 - `docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md`
 - `docs/reports/tool-folding-comparison-20260806/design_rationale.md`
-- `docs/reports/tracked-non-code-inventory-2026-08-31.md`
 - `docs/research/README.md`
 - `docs/research/agent-activity-ui-reference.md`
 - `docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md`
@@ -304,7 +313,7 @@ lexicographically within each group.
 - `packages/pi-stuff/src/web/runtime/UPSTREAM.md`
 - `packages/pi-stuff/themes/README.md`
 
-## JSON (`.json`)
+## JSON（`.json`）
 
 - `.oxlintrc.json`
 - `biome.json`
@@ -346,7 +355,7 @@ lexicographically within each group.
 - `test/fixtures/smoke-package/package.json`
 - `tsconfig.json`
 
-## JSON Lines (`.jsonl`)
+## JSON Lines（`.jsonl`）
 
 - `test/fixtures/skill-discovery-benchmark-manifest.jsonl`
 - `test/fixtures/skill-discovery-confirmation-manifest.jsonl`
@@ -354,7 +363,7 @@ lexicographically within each group.
 - `test/fixtures/skill-discovery-isolated-confirmation-manifest.jsonl`
 - `test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl`
 
-## YAML (`.yml`)
+## YAML（`.yml`）
 
 - `.github/ISSUE_TEMPLATE/bug.yml`
 - `.github/ISSUE_TEMPLATE/config.yml`
@@ -363,7 +372,7 @@ lexicographically within each group.
 - `.github/workflows/ci.yml`
 - `.github/workflows/pi-upstream-watch.yml`
 
-## Text (`.txt`)
+## 文本（`.txt`）
 
 - `docs/reports/code-mode-image-20260827/ui/pi-code-mode.txt`
 - `docs/reports/code-mode-image-20260827/ui/pi-direct.txt`
@@ -373,39 +382,39 @@ lexicographically within each group.
 - `packages/pi-stuff/src/codex/LICENSES/Apache-2.0.txt`
 - `packages/pi-stuff/src/conversation-ui/LICENSES/Howaboua-MIT.txt`
 
-## ANSI text captures (`.ansi`)
+## ANSI 文本记录（`.ansi`）
 
 - `docs/reports/code-mode-image-20260827/ui/pi-code-mode.ansi`
 - `docs/reports/code-mode-image-20260827/ui/pi-direct.ansi`
 
-## Lockfile (`.lock`)
+## 锁文件（`.lock`）
 
 - `bun.lock`
 
-## Patch (`.patch`)
+## 补丁（`.patch`）
 
 - `patches/@cortexkit%2Fpi-magic-context@0.40.0.patch`
 
-## Checksum metadata (`.sha256`)
+## 校验和元数据（`.sha256`）
 
 - `packages/pi-stuff/src/ponytail/UPSTREAM.sha256`
 
-## Upstream metadata (`.upstream`)
+## 上游元数据（`.upstream`）
 
 - `packages/pi-stuff/src/ponytail/LICENSE.upstream`
 
-## Hidden repository metadata
+## 隐藏仓库元数据
 
 - `.bun-version`
 - `.editorconfig`
 - `.gitattributes`
 - `.gitignore`
 
-## Ownership metadata
+## 所有权元数据
 
 - `.github/CODEOWNERS`
 
-## Extensionless license files
+## 无扩展名许可证文件
 
 - `LICENSE`
 - `packages/pi-stuff/LICENSE`
@@ -426,4 +435,3 @@ lexicographically within each group.
 - `packages/pi-stuff/src/web/LICENSE`
 - `packages/pi-stuff/src/web/runtime/LICENSE`
 - `packages/pi-stuff/themes/LICENSE`
-
