@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { UiSettingsStore } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
-import { mergeNamespaceRecord } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
+import { mergeNamespaceRecordEffect } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 
 const [settingsPath, barrierPath, activeWriterPath, overlapPath, workerId] = process.argv.slice(2);
 if (!settingsPath || !barrierPath || !activeWriterPath || !overlapPath || !workerId) {
@@ -23,7 +23,7 @@ const store = await Effect.runPromise(
 				}
 				try {
 					await Bun.sleep(40);
-					await mergeNamespaceRecord(path, namespace, settings);
+					await Effect.runPromise(mergeNamespaceRecordEffect(path, namespace, settings));
 				} finally {
 					if (ownsMarker) await rm(activeWriterPath, { force: true, recursive: true });
 				}

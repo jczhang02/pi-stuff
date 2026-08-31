@@ -40,22 +40,19 @@ A new `packages/pi-stuff/src/shared/settings-io/` module owns all persistence co
 - `paths.ts` — pure path helpers (`mergedSettingsPath`, `resolveSettingsLockPath`, `MERGED_SETTINGS_FILE`). This file
   imports no runtime capabilities, so it is safe to load in Node-only module graphs (compiled Goal upstream tests run
   under Node).
-- `file.ts` — the narrow native filesystem adapter. It retains asynchronous compatibility functions and the
-  synchronous variants required by Goal's hot-path load, and exposes Effect readers and atomic namespace merge for
-  migrated consumers. Reads and writes use plain JSON (`JSON.parse` / `JSON.stringify`); the file is a plain
+- `file.ts` — the narrow native filesystem adapter. Its Effect readers and atomic namespace merge wrap private
+  asynchronous filesystem operations. Only the synchronous read/write primitives used by Goal's explicit legacy-state
+  cleanup remain exported. Reads and writes use plain JSON (`JSON.parse` / `JSON.stringify`); the file is a plain
   `pi-stuff.json` with no comment support. Writers emit tab-indented JSON for deterministic machine output.
-- `lock.ts` — the `flock`-based exclusive lock and locked merge helpers, factored from the legacy
+- `lock.ts` — the `flock`-based exclusive lock, factored from the legacy
   per-Capability locks. It imports `bun:ffi`, so it is **not** re-exported through the `index.js` barrel. Bun-based
   Capability writers import it directly; Goal reaches it only through a dynamic production adapter. This keeps
   `bun:ffi` out of Node-only module graphs; Capability modules included in Goal's upstream Node profile load it only
-  from Bun-only write paths. Its Effect resource keeps lock polling cancellable and always closes the acquired file
-  handle when its Scope ends.
+  from Bun-only write paths. The native lease primitive remains inside this adapter; its Effect resource keeps lock
+  polling cancellable and always closes the acquired file handle when its Scope ends.
 - `store.ts` — `EffectNamespacedSettingsStore<T>`, which owns serialized commits, namespace reads and writes,
   subscription, diagnostics, and read-only legacy fallback. Persistence is uninterruptible only for the short locked
   read/merge/atomic-rename critical section.
-- `promise-store.ts` — the temporary Promise runner adapter for unmigrated settings consumers. Its exported symbol and
-  the remaining asynchronous filesystem and lock exports are recorded in the repository Effect transition inventory
-  for removal by contraction ticket `ps-pby.32`.
 
 ### Single-file lock
 
@@ -100,6 +97,8 @@ values are neither persisted nor retained beyond that provider operation.
   the same lock as a write from another, but this is a low-frequency path and the cost is negligible.
 - Effect-owned settings mutations queue through one store gate. A failed mutation leaves the live value unchanged,
   releases the file lock, and does not poison later mutations or the idle drain.
+- The shared settings barrel exposes Effect operations rather than a Promise runner API; native Promises stay private
+  to the filesystem and lock adapters.
 - `bun:ffi` (the flock lock) is isolated to `lock.ts` and is not pulled into the barrel export, so compiled Goal
   upstream tests that run under Node do not load it.
 - `schemaVersion` remains per-namespace (each Capability owns its own versioning and migration logic). There is no

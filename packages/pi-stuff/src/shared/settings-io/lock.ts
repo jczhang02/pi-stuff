@@ -14,7 +14,6 @@ import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Effect, type Scope } from "effect";
-import { mergeNamespaceRecord, type SettingsRecord } from "./file.js";
 import { resolveSettingsLockPath } from "./paths.js";
 
 export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
@@ -44,7 +43,7 @@ function tryAcquireFileLock(fileDescriptor: number): boolean {
 	return flockLibrary.symbols.flock(fileDescriptor, FLOCK_EXCLUSIVE_NONBLOCKING) === 0;
 }
 
-export async function acquireSettingsLock(
+export async function acquireSettingsLockNative(
 	lockPath = resolveSettingsLockPath(),
 	owner = "pi-stuff",
 	signal?: AbortSignal,
@@ -91,32 +90,10 @@ export function acquireSettingsLockEffect(
 ): Effect.Effect<void, Error, Scope.Scope> {
 	return Effect.acquireRelease(
 		Effect.tryPromise({
-			try: (signal) => acquireSettingsLock(lockPath, owner, signal),
+			try: (signal) => acquireSettingsLockNative(lockPath, owner, signal),
 			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 		}),
 		(release) => Effect.promise(release),
 		{ interruptible: true },
 	).pipe(Effect.asVoid);
-}
-
-export async function withSettingsLock<Value>(
-	settingsPath: string,
-	owner: string,
-	operation: () => Value | Promise<Value>,
-): Promise<Value> {
-	const release = await acquireSettingsLock(resolveSettingsLockPath(settingsPath), owner);
-	try {
-		return await operation();
-	} finally {
-		await release();
-	}
-}
-
-export function mergeNamespaceRecordLocked(
-	path: string,
-	namespace: string,
-	next: SettingsRecord,
-	owner: string,
-): Promise<SettingsRecord> {
-	return withSettingsLock(path, owner, () => mergeNamespaceRecord(path, namespace, next));
 }

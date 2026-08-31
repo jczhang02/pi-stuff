@@ -15,7 +15,7 @@ import {
 } from "../../packages/pi-stuff/src/mcp/runtime/config.js";
 import { parseMcpCommand } from "../../packages/pi-stuff/src/mcp/runtime/implementation.js";
 import { runMcpEffect } from "../../packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.js";
-import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+import { acquireSettingsLockNative } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const MCP_CONFIG_DOCUMENT_SCHEMA = Type.Object(
 	{
@@ -245,7 +245,7 @@ test("pins the validated project config directory while waiting for its lock", a
 	let release: (() => Promise<void>) | undefined;
 	try {
 		await mkdir(projectDirectory);
-		release = await acquireSettingsLock(join(projectDirectory, "mcp.json.lock"), "MCP race test");
+		release = await acquireSettingsLockNative(join(projectDirectory, "mcp.json.lock"), "MCP race test");
 		const pendingWrite = runMcpEffect(writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive"));
 		await new Promise((resolve) => setTimeout(resolve, 30));
 		await rename(projectDirectory, pinnedDirectory);

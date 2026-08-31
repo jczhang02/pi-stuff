@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { RtkSettingsStore } from "../../packages/pi-stuff/src/rtk/settings.js";
-import { writeSettingsFile } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
+import { mergeNamespaceRecordEffect } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 
 const roots: string[] = [];
 
@@ -20,9 +20,14 @@ test("RTK settings discard unknown persisted keys", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-rtk-settings-"));
 	roots.push(root);
 	const path = join(root, "pi-stuff.json");
-	await writeSettingsFile(path, {
-		rtk: { outputProjection: false, rewriteCommands: true, schemaVersion: 1, future: "ignored" },
-	});
+	await run(
+		mergeNamespaceRecordEffect(path, "rtk", {
+			outputProjection: false,
+			rewriteCommands: true,
+			schemaVersion: 1,
+			future: "ignored",
+		}),
+	);
 
 	expect((await run(RtkSettingsStore.load(path))).get()).toEqual({
 		outputProjection: false,
@@ -72,7 +77,13 @@ test("a failed RTK settings write leaves the live value unchanged", async () => 
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-rtk-settings-"));
 	roots.push(root);
 	const path = join(root, "pi-stuff.json");
-	await writeSettingsFile(path, { rtk: { outputProjection: true, rewriteCommands: true, schemaVersion: 1 } });
+	await run(
+		mergeNamespaceRecordEffect(path, "rtk", {
+			outputProjection: true,
+			rewriteCommands: true,
+			schemaVersion: 1,
+		}),
+	);
 	const store = await run(RtkSettingsStore.load(path));
 	let notifications = 0;
 	store.subscribe(() => {

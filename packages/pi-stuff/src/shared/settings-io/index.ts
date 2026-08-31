@@ -12,33 +12,19 @@
  */
 
 export {
-	mergeNamespaceRecord,
 	mergeNamespaceRecordEffect,
-	mergeNamespaceRecordSync,
-	readNamespace,
 	readNamespaceEffect,
-	readNamespaceSync,
-	readSettingsFile,
 	readSettingsFileEffect,
-	readSettingsFileSync,
 	readTextFileEffect,
 	SettingsFormatError,
 	SettingsNamespaceError,
 	type SettingsRecord,
-	writeSettingsFile,
-	writeSettingsFileSync,
 } from "./file.js";
-// `acquireSettingsLock` (lock.js) is NOT re-exported here. It imports `bun:ffi`
+// `acquireSettingsLockNative` (lock.js) is NOT re-exported here. It imports `bun:ffi`
 // and must not be pulled into Node-only module graphs (e.g. compiled Goal
 // upstream tests). Consumers that need the lock import it directly from
 // `./lock.js`.
 export { MERGED_SETTINGS_FILE, mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
-export {
-	NamespacedSettingsStore,
-	type NamespaceLegacyReader,
-	type NamespaceStoreOptions,
-	type NamespaceWriter,
-} from "./promise-store.js";
 export {
 	EffectNamespacedSettingsStore,
 	type EffectNamespaceLegacyReader,

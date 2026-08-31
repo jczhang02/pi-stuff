@@ -3,7 +3,7 @@ import { access, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { mergeNamespaceRecord, writeSettingsFile } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
+import { mergeNamespaceRecordEffect } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 import { ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 function deferred() {
@@ -50,7 +50,7 @@ test("Tool settings startup reads the legacy file without migrating it", async (
 
 test("Tool settings preserve sibling namespaces", async () => {
 	await withTemporarySettings(async (path) => {
-		await writeSettingsFile(path, { ui: { statusline: true } });
+		await run(mergeNamespaceRecordEffect(path, "ui", { statusline: true }));
 		const store = await run(ToolUiSettingsStore.load(path));
 
 		await run(store.setLiveElapsed(false));
@@ -86,13 +86,10 @@ test("whenIdle waits for an active settings write", async () => {
 		const release = deferred();
 		const store = await run(
 			ToolUiSettingsStore.load(path, (settingsPath, namespace, record) =>
-				Effect.tryPromise({
-					try: async () => {
-						started.resolve();
-						await release.promise;
-						await mergeNamespaceRecord(settingsPath, namespace, record);
-					},
-					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				Effect.gen(function* () {
+					yield* Effect.sync(() => started.resolve());
+					yield* Effect.promise(() => release.promise);
+					yield* mergeNamespaceRecordEffect(settingsPath, namespace, record);
 				}),
 			),
 		);

@@ -3,7 +3,7 @@
  *
  * These are split from `lock.ts` so runtimes that only need the path (e.g. Node
  * running compiled Goal upstream tests) do not load `bun:ffi`. The FFI-based
- * `acquireSettingsLock` lives in `lock.ts`.
+ * `acquireSettingsLockNative` lives in `lock.ts`.
  */
 
 import { join } from "node:path";

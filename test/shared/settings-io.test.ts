@@ -7,16 +7,19 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import {
 	EffectNamespacedSettingsStore,
-	mergeNamespaceRecord,
-	NamespacedSettingsStore,
-	readNamespace,
-	readSettingsFile,
+	mergeNamespaceRecordEffect,
+	readNamespaceEffect,
+	readSettingsFileEffect,
 	SettingsFormatError,
-	writeSettingsFile,
+	type SettingsRecord,
 } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
-import { acquireSettingsLock, acquireSettingsLockEffect } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+import {
+	acquireSettingsLockEffect,
+	acquireSettingsLockNative,
+} from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const roots: string[] = [];
+const run = Effect.runPromise;
 
 async function dir(): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-settings-io-"));
@@ -33,24 +36,28 @@ async function fileExists(path: string): Promise<boolean> {
 	}
 }
 
+async function writeSettingsFixture(path: string, record: SettingsRecord): Promise<void> {
+	await Bun.write(path, JSON.stringify(record));
+}
+
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
-test("readSettingsFile returns {} for a missing file", async () => {
+test("readSettingsFileEffect returns {} for a missing file", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	expect(await readSettingsFile(path)).toEqual({});
+	expect(await run(readSettingsFileEffect(path))).toEqual({});
 });
 
-test("readSettingsFile identifies invalid settings content", async () => {
+test("readSettingsFileEffect identifies invalid settings content", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	await Bun.write(path, "{");
-	await expect(readSettingsFile(path)).rejects.toBeInstanceOf(SettingsFormatError);
+	await expect(run(readSettingsFileEffect(path))).rejects.toBeInstanceOf(SettingsFormatError);
 });
 
-test("writeSettingsFile writes tab-indented JSON", async () => {
+test("mergeNamespaceRecordEffect writes tab-indented JSON", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { ui: { statusline: true } });
+	await run(mergeNamespaceRecordEffect(path, "ui", { statusline: true }));
 	const content = await readFile(path, "utf8");
 	expect(content).toBe('{\n\t"ui": {\n\t\t"statusline": true\n\t}\n}\n');
 });
@@ -62,29 +69,32 @@ test("settings locks refuse symlinks without changing their targets", async () =
 	await Bun.write(target, "preserve me\n");
 	await symlink(target, lockPath);
 
-	await expect(acquireSettingsLock(lockPath, "test settings")).rejects.toThrow();
+	await expect(acquireSettingsLockNative(lockPath, "test settings")).rejects.toThrow();
 	expect(await readFile(target, "utf8")).toBe("preserve me\n");
 });
 
-test("mergeNamespaceRecord preserves sibling namespaces", async () => {
+test("mergeNamespaceRecordEffect preserves sibling namespaces", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { ui: { statusline: true }, tools: { liveElapsed: false } });
-	const merged = await mergeNamespaceRecord(path, "ui", { statusline: false });
+	await writeSettingsFixture(path, { ui: { statusline: true }, tools: { liveElapsed: false } });
+	const merged = await run(mergeNamespaceRecordEffect(path, "ui", { statusline: false }));
 	expect(merged).toEqual({ ui: { statusline: false }, tools: { liveElapsed: false } });
-	expect(await readSettingsFile(path)).toEqual({ ui: { statusline: false }, tools: { liveElapsed: false } });
+	expect(await run(readSettingsFileEffect(path))).toEqual({
+		ui: { statusline: false },
+		tools: { liveElapsed: false },
+	});
 });
 
-test("readNamespace returns undefined for a missing namespace", async () => {
+test("readNamespaceEffect returns undefined for a missing namespace", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { ui: { statusline: true } });
-	expect(await readNamespace(path, "ui")).toEqual({ statusline: true });
-	expect(await readNamespace(path, "tools")).toBeUndefined();
+	await writeSettingsFixture(path, { ui: { statusline: true } });
+	expect(await run(readNamespaceEffect(path, "ui"))).toEqual({ statusline: true });
+	expect(await run(readNamespaceEffect(path, "tools"))).toBeUndefined();
 });
 
-test("readNamespace rejects a malformed namespace", async () => {
+test("readNamespaceEffect rejects a malformed namespace", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { codeMode: true });
-	await expect(readNamespace(path, "codeMode")).rejects.toThrow("is not a JSON object");
+	await writeSettingsFixture(path, { codeMode: true });
+	await expect(run(readNamespaceEffect(path, "codeMode"))).rejects.toThrow("is not a JSON object");
 });
 
 const TEST_SETTINGS_SCHEMA = Type.Object({ count: Type.Number(), enabled: Type.Boolean() });
@@ -95,149 +105,165 @@ function normalize<Value>(value: Value): TestSettings {
 	return value;
 }
 
-test("NamespacedSettingsStore loads defaults when the namespace is absent", async () => {
+test("EffectNamespacedSettingsStore loads defaults when the namespace is absent", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, { path }),
+	);
 	expect(store.get()).toEqual({ enabled: false, count: 0 });
 });
 
-test("NamespacedSettingsStore reports invalid initial values and leaves them untouched", async () => {
+test("EffectNamespacedSettingsStore reports invalid initial values and leaves them untouched", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { codex: { enabled: "invalid", count: 3 } });
+	await writeSettingsFixture(path, { codex: { enabled: "invalid", count: 3 } });
 	const diagnostics: string[] = [];
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-		reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic.key),
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path,
+			reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic.key),
+		}),
+	);
 
 	expect(store.get()).toEqual({ enabled: false, count: 0 });
 	expect(diagnostics).toEqual(["invalid-settings"]);
-	await expect(store.update({ enabled: true })).rejects.toThrow("expected enabled boolean and count number");
-	expect(await readNamespace(path, "codex")).toEqual({ enabled: "invalid", count: 3 });
+	await expect(run(store.update({ enabled: true }))).rejects.toThrow("expected enabled boolean and count number");
+	expect(await run(readNamespaceEffect(path, "codex"))).toEqual({ enabled: "invalid", count: 3 });
 });
 
-test("NamespacedSettingsStore update persists under the whole-file lock and preserves siblings", async () => {
+test("EffectNamespacedSettingsStore update persists under the whole-file lock and preserves siblings", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { ui: { statusline: true } });
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
-	await store.update({ enabled: true });
+	await writeSettingsFixture(path, { ui: { statusline: true } });
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path,
+			acquireLock: acquireSettingsLockEffect,
+		}),
+	);
+	await run(store.update({ enabled: true }));
 	expect(store.get()).toEqual({ enabled: true, count: 0 });
-	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 0 });
+	expect(await run(readNamespaceEffect(path, "codex"))).toEqual({ enabled: true, count: 0 });
 	// Sibling namespace survives the locked write.
-	expect(await readNamespace(path, "ui")).toEqual({ statusline: true });
+	expect(await run(readNamespaceEffect(path, "ui"))).toEqual({ statusline: true });
 });
 
-test("NamespacedSettingsStore updateWith computes from the latest persisted namespace", async () => {
+test("EffectNamespacedSettingsStore updateWith computes from the latest persisted namespace", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
-	await writeSettingsFile(path, { codex: { enabled: false, count: 6 }, ui: { statusline: true } });
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, { path }),
+	);
+	await writeSettingsFixture(path, { codex: { enabled: false, count: 6 }, ui: { statusline: true } });
 
-	await store.updateWith((current) => ({ enabled: true, count: current.count + 1 }));
+	await run(store.updateWith((current) => ({ enabled: true, count: current.count + 1 })));
 
 	expect(store.get()).toEqual({ enabled: true, count: 7 });
-	expect(await readSettingsFile(path)).toEqual({
+	expect(await run(readSettingsFileEffect(path))).toEqual({
 		codex: { enabled: true, count: 7 },
 		ui: { statusline: true },
 	});
 });
 
-test("NamespacedSettingsStore replace writes the whole namespace wholesale", async () => {
+test("EffectNamespacedSettingsStore replace writes the whole namespace wholesale", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
-	await store.replace({ enabled: true, count: 7 });
-	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 7 });
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, { path }),
+	);
+	await run(store.replace({ enabled: true, count: 7 }));
+	expect(await run(readNamespaceEffect(path, "codex"))).toEqual({ enabled: true, count: 7 });
 });
 
-test("NamespacedSettingsStore replace repairs an invalid namespace and preserves siblings", async () => {
+test("EffectNamespacedSettingsStore replace repairs an invalid namespace and preserves siblings", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { codex: { enabled: false, count: 0 }, ui: { statusline: true } });
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
-	await writeSettingsFile(path, { codex: { enabled: "invalid" }, ui: { statusline: true } });
-	await store.replace({ enabled: true, count: 7 });
+	await writeSettingsFixture(path, { codex: { enabled: false, count: 0 }, ui: { statusline: true } });
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, { path }),
+	);
+	await writeSettingsFixture(path, { codex: { enabled: "invalid" }, ui: { statusline: true } });
+	await run(store.replace({ enabled: true, count: 7 }));
 	expect(store.get()).toEqual({ enabled: true, count: 7 });
-	expect(await readSettingsFile(path)).toEqual({
+	expect(await run(readSettingsFileEffect(path))).toEqual({
 		codex: { enabled: true, count: 7 },
 		ui: { statusline: true },
 	});
 });
 
-test("NamespacedSettingsStore keeps a legacy fallback read-only until direct input", async () => {
+test("EffectNamespacedSettingsStore keeps a legacy fallback read-only until direct input", async () => {
 	const root = await dir();
 	const mergedPath = join(root, "pi-stuff.json");
 	const legacyPath = join(root, "pi-stuff-codex.json");
 	await Bun.write(legacyPath, JSON.stringify({ fast: true }));
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path: mergedPath,
-		legacyPath,
-		legacyReader: async (source) => {
-			const raw = JSON.parse(await readFile(source, "utf8"));
-			return { enabled: raw["fast"] === true, count: 1 };
-		},
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path: mergedPath,
+			legacyPath,
+			legacyReader: (source) =>
+				Effect.tryPromise({
+					try: async () => {
+						const raw = JSON.parse(await readFile(source, "utf8"));
+						return { enabled: raw["fast"] === true, count: 1 };
+					},
+					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				}),
+		}),
+	);
 	expect(store.get()).toEqual({ enabled: true, count: 1 });
-	expect(await readNamespace(mergedPath, "codex")).toBeUndefined();
+	expect(await run(readNamespaceEffect(mergedPath, "codex"))).toBeUndefined();
 	expect(await fileExists(legacyPath)).toBe(true);
 
-	await store.replace({ enabled: false, count: 2 });
-	expect(await readNamespace(mergedPath, "codex")).toEqual({ enabled: false, count: 2 });
+	await run(store.replace({ enabled: false, count: 2 }));
+	expect(await run(readNamespaceEffect(mergedPath, "codex"))).toEqual({ enabled: false, count: 2 });
 	expect(await fileExists(legacyPath)).toBe(true);
 });
 
-test("NamespacedSettingsStore keeps the merged namespace authoritative over stale legacy settings", async () => {
+test("EffectNamespacedSettingsStore keeps the merged namespace authoritative over stale legacy settings", async () => {
 	const root = await dir();
 	const mergedPath = join(root, "pi-stuff.json");
 	const legacyPath = join(root, "pi-stuff-codex.json");
-	await writeSettingsFile(mergedPath, { codex: { enabled: false, count: 7 } });
+	await writeSettingsFixture(mergedPath, { codex: { enabled: false, count: 7 } });
 	await Bun.write(legacyPath, JSON.stringify({ fast: true }));
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path: mergedPath,
-		legacyPath,
-		legacyReader: async () => ({ enabled: true, count: 1 }),
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path: mergedPath,
+			legacyPath,
+			legacyReader: () => Effect.succeed({ enabled: true, count: 1 }),
+		}),
+	);
 	expect(store.get()).toEqual({ enabled: false, count: 7 });
 	expect(await fileExists(legacyPath)).toBe(true);
 });
 
-test("NamespacedSettingsStore memory store does not touch disk", async () => {
-	const store = NamespacedSettingsStore.memory<TestSettings>({ enabled: false, count: 0 });
-	await store.update({ enabled: true });
+test("EffectNamespacedSettingsStore memory store does not touch disk", async () => {
+	const store = EffectNamespacedSettingsStore.memory<TestSettings>({ enabled: false, count: 0 });
+	await run(store.update({ enabled: true }));
 	expect(store.get()).toEqual({ enabled: true, count: 0 });
 });
 
-test("NamespacedSettingsStore subscribers receive updated values", async () => {
+test("EffectNamespacedSettingsStore subscribers receive updated values", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, { path }),
+	);
 	const seen: TestSettings[] = [];
 	store.subscribe((value) => seen.push(value));
-	await store.update({ enabled: true });
+	await run(store.update({ enabled: true }));
 	expect(seen).toEqual([{ enabled: true, count: 0 }]);
 });
 
-test("NamespacedSettingsStore skips unchanged writes and notifications", async () => {
+test("EffectNamespacedSettingsStore skips unchanged writes and notifications", async () => {
 	const path = join(await dir(), "pi-stuff.json");
 	let writes = 0;
-	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
-		path,
-		writer: async () => {
-			writes += 1;
-		},
-	});
+	const store = await run(
+		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+			path,
+			writer: () =>
+				Effect.sync(() => {
+					writes += 1;
+				}),
+		}),
+	);
 	const seen: TestSettings[] = [];
 	store.subscribe((value) => seen.push(value));
 
-	await store.update({ enabled: false });
+	await run(store.update({ enabled: false }));
 
 	expect(writes).toBe(0);
 	expect(seen).toEqual([]);
@@ -245,8 +271,8 @@ test("NamespacedSettingsStore skips unchanged writes and notifications", async (
 
 test("EffectNamespacedSettingsStore serializes queued updates from the latest persisted namespace", async () => {
 	const path = join(await dir(), "pi-stuff.json");
-	await writeSettingsFile(path, { ui: { statusline: true } });
-	const store = await Effect.runPromise(
+	await writeSettingsFixture(path, { ui: { statusline: true } });
+	const store = await run(
 		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
 			path,
 			acquireLock: acquireSettingsLockEffect,
@@ -254,14 +280,12 @@ test("EffectNamespacedSettingsStore serializes queued updates from the latest pe
 	);
 
 	await Promise.all(
-		Array.from({ length: 12 }, () =>
-			Effect.runPromise(store.updateWith((current) => ({ ...current, count: current.count + 1 }))),
-		),
+		Array.from({ length: 12 }, () => run(store.updateWith((current) => ({ ...current, count: current.count + 1 })))),
 	);
-	await Effect.runPromise(store.whenIdle());
+	await run(store.whenIdle());
 
 	expect(store.get()).toEqual({ enabled: false, count: 12 });
-	expect(await readSettingsFile(path)).toEqual({
+	expect(await run(readSettingsFileEffect(path))).toEqual({
 		codex: { enabled: false, count: 12 },
 		ui: { statusline: true },
 	});
@@ -270,7 +294,7 @@ test("EffectNamespacedSettingsStore serializes queued updates from the latest pe
 test("EffectNamespacedSettingsStore preserves legacy fallback diagnostics", async () => {
 	const root = await dir();
 	const diagnostics: string[] = [];
-	const store = await Effect.runPromise(
+	const store = await run(
 		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
 			path: join(root, "pi-stuff.json"),
 			legacyPath: join(root, "legacy.json"),
@@ -287,38 +311,35 @@ test("an interrupted Effect mutation finishes its atomic write and live-state co
 	const path = join(await dir(), "pi-stuff.json");
 	const persisted = Promise.withResolvers<void>();
 	const finish = Promise.withResolvers<void>();
-	const store = await Effect.runPromise(
+	const store = await run(
 		EffectNamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
 			path,
 			acquireLock: acquireSettingsLockEffect,
 			writer: (settingsPath, namespace, record) =>
-				Effect.tryPromise({
-					try: async () => {
-						await mergeNamespaceRecord(settingsPath, namespace, record);
-						persisted.resolve();
-						await finish.promise;
-					},
-					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				Effect.gen(function* () {
+					yield* mergeNamespaceRecordEffect(settingsPath, namespace, record);
+					yield* Effect.sync(() => persisted.resolve());
+					yield* Effect.promise(() => finish.promise);
 				}),
 		}),
 	);
 	const controller = new AbortController();
-	const update = Effect.runPromise(store.replace({ enabled: true, count: 1 }), { signal: controller.signal });
+	const update = run(store.replace({ enabled: true, count: 1 }), { signal: controller.signal });
 	await persisted.promise;
 	controller.abort(new Error("cancel after persistence"));
 	finish.resolve();
 
 	await expect(update).rejects.toThrow();
-	await Effect.runPromise(store.whenIdle());
+	await run(store.whenIdle());
 	expect(store.get()).toEqual({ enabled: true, count: 1 });
-	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 1 });
+	expect(await run(readNamespaceEffect(path, "codex"))).toEqual({ enabled: true, count: 1 });
 });
 
 test("cancelling an Effect settings-lock waiter closes its native handle", async () => {
 	const lockPath = join(await dir(), "pi-stuff.json.lock");
-	const release = await acquireSettingsLock(lockPath, "holder");
+	const release = await acquireSettingsLockNative(lockPath, "holder");
 	const controller = new AbortController();
-	const waiting = Effect.runPromise(Effect.scoped(acquireSettingsLockEffect(lockPath, "waiter")), {
+	const waiting = run(Effect.scoped(acquireSettingsLockEffect(lockPath, "waiter")), {
 		signal: controller.signal,
 	});
 	await Bun.sleep(20);
@@ -326,6 +347,6 @@ test("cancelling an Effect settings-lock waiter closes its native handle", async
 	await expect(waiting).rejects.toThrow();
 	await release();
 
-	const releaseAfterCancellation = await acquireSettingsLock(lockPath, "next holder");
+	const releaseAfterCancellation = await acquireSettingsLockNative(lockPath, "next holder");
 	await releaseAfterCancellation();
 });

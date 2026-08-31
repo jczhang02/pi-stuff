@@ -39,7 +39,7 @@ function isMissingFile(cause: unknown): boolean {
 }
 
 /** Missing file returns `{}`; a malformed file throws so callers can fall back. */
-export async function readSettingsFile(path: string): Promise<SettingsRecord> {
+async function readSettingsFileNative(path: string): Promise<SettingsRecord> {
 	let content: string;
 	try {
 		content = await readFile(path, "utf8");
@@ -52,7 +52,7 @@ export async function readSettingsFile(path: string): Promise<SettingsRecord> {
 
 export function readSettingsFileEffect(path: string): Effect.Effect<SettingsRecord, Error> {
 	return Effect.tryPromise({
-		try: () => readSettingsFile(path),
+		try: () => readSettingsFileNative(path),
 		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 	});
 }
@@ -64,7 +64,7 @@ export function readTextFileEffect(path: string): Effect.Effect<string, Error> {
 	});
 }
 
-export async function writeSettingsFile(path: string, record: SettingsRecord): Promise<void> {
+async function writeSettingsFileNative(path: string, record: SettingsRecord): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporaryPath = `${path}.tmp-${String(process.pid)}-${randomUUID()}`;
 	try {
@@ -83,14 +83,14 @@ export async function writeSettingsFile(path: string, record: SettingsRecord): P
  * the result is written atomically. Unknown sibling namespaces are preserved
  * so a Capability never edits another Capability's section.
  */
-export async function mergeNamespaceRecord(
+async function mergeNamespaceRecordNative(
 	path: string,
 	namespace: string,
 	next: SettingsRecord,
 ): Promise<SettingsRecord> {
-	const current = await readSettingsFile(path);
+	const current = await readSettingsFileNative(path);
 	const merged = { ...current, [namespace]: next } satisfies SettingsRecord;
-	await writeSettingsFile(path, merged);
+	await writeSettingsFileNative(path, merged);
 	return merged;
 }
 
@@ -100,14 +100,14 @@ export function mergeNamespaceRecordEffect(
 	next: SettingsRecord,
 ): Effect.Effect<SettingsRecord, Error> {
 	return Effect.tryPromise({
-		try: () => mergeNamespaceRecord(path, namespace, next),
+		try: () => mergeNamespaceRecordNative(path, namespace, next),
 		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 	});
 }
 
 /** Read one namespace; a missing file or namespace returns `undefined`. */
-export async function readNamespace(path: string, namespace: string): Promise<SettingsRecord | undefined> {
-	const file = await readSettingsFile(path);
+async function readNamespaceNative(path: string, namespace: string): Promise<SettingsRecord | undefined> {
+	const file = await readSettingsFileNative(path);
 	const value = file[namespace];
 	if (value === undefined) return undefined;
 	if (!isSettingsRecord(value)) {
@@ -118,7 +118,7 @@ export async function readNamespace(path: string, namespace: string): Promise<Se
 
 export function readNamespaceEffect(path: string, namespace: string): Effect.Effect<SettingsRecord | undefined, Error> {
 	return Effect.tryPromise({
-		try: () => readNamespace(path, namespace),
+		try: () => readNamespaceNative(path, namespace),
 		catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 	});
 }
@@ -163,21 +163,4 @@ export function writeSettingsFileSync(path: string, record: SettingsRecord): voi
 		}
 		throw error;
 	}
-}
-
-export function mergeNamespaceRecordSync(path: string, namespace: string, next: SettingsRecord): SettingsRecord {
-	const current = readSettingsFileSync(path);
-	const merged = { ...current, [namespace]: next } satisfies SettingsRecord;
-	writeSettingsFileSync(path, merged);
-	return merged;
-}
-
-export function readNamespaceSync(path: string, namespace: string): SettingsRecord | undefined {
-	const file = readSettingsFileSync(path);
-	const value = file[namespace];
-	if (value === undefined) return undefined;
-	if (!isSettingsRecord(value)) {
-		throw new SettingsNamespaceError(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
-	}
-	return value;
 }
