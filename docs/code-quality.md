@@ -12,6 +12,10 @@ not code and remain outside code checks.
 - TypeScript profiles may differ only where their runtime needs different libraries, module resolution, or targets.
   They must not disable the shared strictness, unused-code, indexed-access, optional-property, override, side-effect,
   or erasable-syntax rules.
+- The repository typecheck keeps one TypeScript incremental-state file per profile under
+  `node_modules/.cache/pi-stuff/typecheck/`. These ignored caches may shorten repeated checks but never replace a clean
+  check: TypeScript invalidates them from Source, configuration, and dependency versions, and a clean worktree rebuilds
+  them without weakening any diagnostic.
 - A formatted hand-maintained file should contain 200–400 physical lines. More than 500 lines requires an explicit
   cohesion review; 800 lines is the merge limit. A function should contain 20–50 lines, requires review above 80, and
   may not exceed 120 lines.
