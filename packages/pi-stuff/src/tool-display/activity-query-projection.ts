@@ -68,7 +68,7 @@ function capSections(sections: readonly ToolFormattedSection[]): readonly ToolFo
 			if (current.operationEvidence) {
 				const sourceLine = sanitizeTerminalText(source.lines[sourceLineIndex] ?? "");
 				const evidence = source.operationEvidence?.[sourceLineIndex];
-				if (line === sourceLine && evidence) current.operationEvidence.push(evidence);
+				if (sanitizeTerminalText(line) === sourceLine && evidence) current.operationEvidence.push(evidence);
 			}
 			sourceLineIndex += 1;
 		}

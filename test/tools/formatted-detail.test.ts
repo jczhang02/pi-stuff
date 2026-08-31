@@ -127,11 +127,15 @@ test("/tools semantic variants preserve ownership and distinct terminal states",
 test("file mutation Formatted sections retain source and per-file diff evidence", () => {
 	const write = details(
 		"write",
-		{ content: "const value = 1;", path: "src/write.ts" },
+		{
+			content: "\u001b]8;;https://evil.invalid\u0007const value = 1;\u001b]8;;\u0007",
+			path: "src/write.ts",
+		},
 		textResult("written"),
 	).formatted?.sections?.find((section) => section.title === "Content");
 	expect(write?.languagePath).toBe("src/write.ts");
 	expect(write?.operationEvidence?.map((line) => line?.kind)).toEqual(["source"]);
+	expect(write?.lines.join("\n")).not.toContain("evil.invalid");
 
 	const edit = details(
 		"edit",
