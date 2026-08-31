@@ -41,5 +41,9 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 - [Dialog image handoff](dialog-readability-20260817/image-handoff.md)
 - [0.3.0 execution checklist](pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
+## Repository snapshots
+
+- [Tracked non-code file inventory](tracked-non-code-inventory-2026-08-31.md)
+
 Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. Historical versions, paths, and hashes
 remain unchanged so the recorded environment stays identifiable.
