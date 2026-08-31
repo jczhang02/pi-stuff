@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: 57c25ae722d172caadb0b87720dd5322b5e375740e57e6117ae4dd582c6ed6bb -->
+<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: b5be803adb5eba6002c1c64fb74c6796689111d9dca39d79bc0ee3b98580207b -->
 
 # Pi Stuff Web
 
@@ -11,6 +11,8 @@ Pi Stuff Web 暴露三个面向模型的工具：
 软件包有意不包含交互式浏览器、浮动窗口、活动组件、本地文件/视频读取器、仓库克隆器或独立研究工作流。搜索始终使用非 Curator 路径。Provider 选择通过工具调用或自有上游配置保持显式。
 
 三个工具都使用 Pi Stuff 共享单行生命周期渲染器。模型可见结果、引用、取消、SSRF 防护、重定向、提取和 PDF 处理仍由固定分叉负责。`tool-contracts.ts` 是父级适配器与私有运行时之间有界、面向模型 Schema 的唯一所有者。直接 Provider API 和网关请求会在凭据或请求正文可能被转发到另一来源前拒绝重定向。
+
+工具注册和设置加载仍会立即完成；搜索 Provider 模块图只在收到非空 `web_search` 请求后加载，并供后续调用复用。
 
 每次 `web_search` 和 `fetch_content` 调用都由父级适配器作为一个归属当前会话的 Effect 操作运行。所有保留的搜索与提取 Provider 都返回 Effect，不自行启动 runner；凭据、浏览器 Cookie、上传、重定向处理和线协议保留在狭窄的 Provider 自有原生适配器中。Effect 负责这些工作的生命周期、超时、中断、顺序分页，以及 Provider 路由、部分成功聚合和回退。内容检索还包含延迟 fake-IP 准备、远程目标校验、安全重定向抓取、有界响应读取、内容提取，以及按输入顺序最多并发三个 URL。中断会取消活动的原生工作；适配器只有在确认会话仍为当前会话后才提交存储与发布。请求构造、编解码器、URL 策略、解析、渲染、排序和确定性提取仍使用普通 TypeScript。
 

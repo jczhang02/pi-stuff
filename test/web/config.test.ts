@@ -13,6 +13,7 @@ import { WebSettingsStore } from "../../packages/pi-stuff/src/web/settings.js";
 
 const roots: string[] = [];
 const originalAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
+type CapturedTool = Parameters<PiWebAccessHost["registerTool"]>[0];
 
 async function root(): Promise<string> {
 	const value = await mkdtemp(join(tmpdir(), "pi-stuff-web-config-"));
@@ -26,14 +27,21 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((value) => rm(value, { force: true, recursive: true })));
 });
 
-async function installWeb(agentDirectory: string): Promise<{ settings: WebSettingsStore; tools: string[] }> {
+async function installWeb(
+	agentDirectory: string,
+): Promise<{ definitions: Map<string, CapturedTool>; settings: WebSettingsStore; tools: string[] }> {
 	process.env["PI_CODING_AGENT_DIR"] = agentDirectory;
 	const settings = await Effect.runPromise(WebSettingsStore.load(agentDirectory));
 	const tools: string[] = [];
+	const definitions = new Map<string, CapturedTool>();
 	const host: PiWebAccessHost = {
 		appendEntry: () => undefined,
 		on: () => undefined,
-		registerTool: (tool) => void tools.push(tool.name),
+		registerTool: (tool) => {
+			tools.push(tool.name);
+			// SAFETY: the fixture stores the complete Tool object and erases only its schema-specific generic parameters.
+			definitions.set(tool.name, tool as CapturedTool);
+		},
 	};
 	const effects: WebRuntimeEffectOptions = {
 		prepareFetch: () => Effect.void,
@@ -42,7 +50,7 @@ async function installWeb(agentDirectory: string): Promise<{ settings: WebSettin
 			handlers.success(await Effect.runPromise(program, { signal })),
 	};
 	piWebAccess(host, effects);
-	return { settings, tools };
+	return { definitions, settings, tools };
 }
 
 test("Web configuration stays read-only until an explicit update", async () => {
@@ -66,6 +74,35 @@ test("invalid stored SSRF fields fail closed", async () => {
 	await writeFile(join(agentDir, "pi-stuff.json"), JSON.stringify({ web: { ssrf: { allowRanges: "private" } } }));
 	const settings = await Effect.runPromise(WebSettingsStore.load(agentDir));
 	expect(() => runtimeConfig.withWebConfigSnapshot(settings.get(), loadSsrfConfig)).toThrow("ssrf.allowRanges");
+});
+
+test("the installed search Tool reaches the deferred provider runtime", async () => {
+	const agentDir = await root();
+	const { definitions, settings } = await installWeb(agentDir);
+	await Effect.runPromise(settings.update({ tavilyApiKey: "$$tavily-secret" }));
+	const tool = definitions.get("web_search");
+	if (!tool) throw new Error("web_search was not registered");
+	const originalFetch = globalThis.fetch;
+	const fetchMock = async (..._arguments: Parameters<typeof fetch>): ReturnType<typeof fetch> =>
+		Response.json({
+			answer: "Deferred provider loaded",
+			results: [{ content: "source", title: "Lazy", url: "https://example.com/lazy" }],
+		});
+	// SAFETY: this provider test exercises only fetch's request/response signature; preconnect is never used.
+	globalThis.fetch = fetchMock as typeof fetch;
+	try {
+		// SAFETY: the captured Tool owns the exact schema; this fixture supplies only its bounded public fields.
+		const result = await tool.execute(
+			"lazy-search",
+			{ provider: "tavily", query: "lazy provider" } as never,
+			undefined,
+			undefined,
+			{} as never,
+		);
+		expect(JSON.stringify(result)).toContain("https://example.com/lazy");
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });
 
 test("Web configuration I/O failures propagate during initialization", async () => {

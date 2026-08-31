@@ -17,7 +17,6 @@ import { readWebConfig, withWebConfigSnapshot } from "./config.ts";
 import { type FindMode, findContent } from "./content-find.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
-import { normalizeSearchProviderSelection, type SearchProviderSelection, search } from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import {
 	clearResults,
@@ -132,21 +131,6 @@ function resolveToolNames(config: WebSearchConfig): ToolNames {
 		seen.set(name, key);
 	}
 	return names;
-}
-
-function normalizeProviderInput(value: JsonInputValue, label = "provider"): SearchProviderSelection | undefined {
-	if (value === undefined) return undefined;
-	return normalizeSearchProviderSelection(value, label);
-}
-
-function resolveRequestedProvider(requested: JsonInputValue): SearchProviderSelection {
-	const normalizedRequested = normalizeProviderInput(requested);
-	if (normalizedRequested && normalizedRequested !== "auto") return normalizedRequested;
-	const config = loadConfig();
-	return (
-		normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ??
-		"auto"
-	);
 }
 
 function normalizeRecencyFilter(value: JsonInputValue): "day" | "week" | "month" | "year" | undefined {
@@ -289,9 +273,18 @@ async function executeSearch(
 			details: { error: "No query provided" },
 		};
 	}
-	const provider = resolveRequestedProvider(params.provider);
 	const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
 	const program = Effect.gen(function* () {
+		const { normalizeSearchProviderSelection, search } = yield* nativePromise(() => import("./gemini-search.ts"));
+		let provider = params.provider === undefined ? undefined : normalizeSearchProviderSelection(params.provider);
+		if (!provider || provider === "auto") {
+			const config = loadConfig();
+			const configured = config.searchProvider ?? config.provider;
+			provider =
+				configured === undefined
+					? "auto"
+					: normalizeSearchProviderSelection(configured, `provider in ${WEB_SEARCH_CONFIG_PATH}`);
+		}
 		const results: QueryResultData[] = [];
 		for (const [index, query] of queryList.entries()) {
 			yield* Effect.sync(() =>

@@ -20,6 +20,9 @@ PDF handling remain owned by the pinned fork. `tool-contracts.ts` is the single
 owner of their bounded model-facing schemas across the parent adapter and private runtime.
 Direct provider API and gateway requests reject redirects before credentials
 or request bodies can be forwarded to another origin.
+Tool registration and Settings loading stay eager, while the search-provider
+graph loads only after a non-empty `web_search` request and remains cached for
+later calls.
 
 Each `web_search` and `fetch_content` call runs as one Session-owned Effect
 operation from the parent adapter. Every retained search and extraction
