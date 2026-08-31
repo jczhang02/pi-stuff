@@ -1,5 +1,6 @@
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Effect, Fiber, Queue, type Scope } from "effect";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolArguments } from "./activity.js";
 import type { SuiteToolInvocation, SuiteToolInvocationResult } from "./contract.js";
@@ -100,6 +101,10 @@ interface ToolExecutionOutcome {
 	readonly result: AgentToolResult<unknown>;
 }
 
+type ToolUpdateMessage =
+	| { readonly result: AgentToolResult<unknown>; readonly type: "update" }
+	| { readonly type: "finish" };
+
 /** Own the complete nested Tool lifecycle used by Code Mode envelopes. */
 export class SuiteToolInvocationRuntime {
 	private readonly capturedHandlers = new Map<string, CapturedToolHandler[]>();
@@ -124,33 +129,39 @@ export class SuiteToolInvocationRuntime {
 		this.capturedHandlers.set(event, handlers);
 	}
 
-	async invoke(invocation: SuiteToolInvocation): Promise<SuiteToolInvocationResult> {
+	invoke(invocation: SuiteToolInvocation): Effect.Effect<SuiteToolInvocationResult, Error, Scope.Scope> {
 		const tool = this.tools.get(invocation.name);
-		if (!tool) throw new Error(`Unknown Suite Tool: ${invocation.name}`);
-		if (!this.isActive(invocation.name)) throw new Error(`Suite Tool is inactive: ${invocation.name}`);
-		await this.dispatchInformational(
-			"tool_execution_start",
-			{
-				args: invocation.input,
-				toolCallId: invocation.toolCallId,
-				toolName: invocation.name,
-				type: "tool_execution_start",
-			},
-			invocation.context,
-		);
-
-		let prepared: ToolArguments;
-		try {
-			prepared = this.prepare(tool, invocation);
-		} catch (error) {
-			return this.fail(invocation, error);
+		if (!tool) return Effect.fail(new Error(`Unknown Suite Tool: ${invocation.name}`));
+		if (!this.isActive(invocation.name)) {
+			return Effect.fail(new Error(`Suite Tool is inactive: ${invocation.name}`));
 		}
-		const blocked = await this.beforeExecution(invocation, prepared);
-		if (blocked) return blocked;
+		return Effect.gen({ self: this }, function* () {
+			yield* this.dispatchInformational(
+				"tool_execution_start",
+				{
+					args: invocation.input,
+					toolCallId: invocation.toolCallId,
+					toolName: invocation.name,
+					type: "tool_execution_start",
+				},
+				invocation.context,
+			);
 
-		const executed = await this.execute(tool, invocation, prepared);
-		const projected = await this.projectResult(invocation, prepared, executed);
-		return this.finish(invocation, projected.result, projected.isError);
+			const prepared = yield* Effect.try({
+				try: () => this.prepare(tool, invocation),
+				catch: normalizeError,
+			}).pipe(
+				Effect.map((value) => ({ ok: true as const, value })),
+				Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+			);
+			if (!prepared.ok) return yield* this.fail(invocation, prepared.error);
+			const blocked = yield* this.beforeExecution(invocation, prepared.value);
+			if (blocked) return blocked;
+
+			const executed = yield* this.execute(tool, invocation, prepared.value);
+			const projected = yield* this.projectResult(invocation, prepared.value, executed);
+			return yield* this.finish(invocation, projected.result, projected.isError);
+		});
 	}
 
 	private prepare(tool: ToolDefinition, invocation: SuiteToolInvocation): ToolArguments {
@@ -166,126 +177,151 @@ export class SuiteToolInvocationRuntime {
 				type: "toolCall",
 			} as never,
 		);
-		if (!isToolArguments(validated)) throw new Error(`Suite Tool ${invocation.name} requires object arguments`);
+		if (!isToolArguments(validated)) {
+			throw new Error(`Suite Tool ${invocation.name} requires object arguments`);
+		}
 		return validated;
 	}
 
-	private async beforeExecution(
+	private beforeExecution(
 		invocation: SuiteToolInvocation,
 		prepared: ToolArguments,
-	): Promise<SuiteToolInvocationResult | undefined> {
-		const event: CapturedToolEvent = {
-			input: prepared,
-			toolCallId: invocation.toolCallId,
-			toolName: invocation.name,
-			type: "tool_call",
-		};
-		try {
+	): Effect.Effect<SuiteToolInvocationResult | undefined> {
+		return Effect.gen({ self: this }, function* () {
+			const event: CapturedToolEvent = {
+				input: prepared,
+				toolCallId: invocation.toolCallId,
+				toolName: invocation.name,
+				type: "tool_call",
+			};
 			for (const handler of this.capturedHandlers.get("tool_call") ?? []) {
-				const decision = await handler.call(undefined, event, invocation.context);
+				const handled = yield* this.callHandler(handler, event, invocation.context).pipe(
+					Effect.map((value) => ({ ok: true as const, value })),
+					Effect.catch((error) => Effect.succeed({ error, ok: false as const })),
+				);
+				if (!handled.ok) return yield* this.fail(invocation, handled.error);
+				const decision = handled.value;
 				if (!isRecordValue(decision) || decision["block"] !== true) continue;
-				return this.fail(
+				return yield* this.fail(
 					invocation,
 					isRuntimeString(decision["reason"]) ? decision["reason"] : "Tool execution was blocked",
 					decision["terminate"] === true,
 				);
 			}
-		} catch (error) {
-			return this.fail(invocation, error);
-		}
-		return invocation.signal?.aborted ? this.fail(invocation, "Operation aborted") : undefined;
+			return invocation.signal?.aborted ? yield* this.fail(invocation, "Operation aborted") : undefined;
+		});
 	}
 
-	private async execute(
+	private execute(
 		tool: ToolDefinition,
 		invocation: SuiteToolInvocation,
 		prepared: ToolArguments,
-	): Promise<ToolExecutionOutcome> {
-		let pendingUpdate: AgentToolResult<unknown> | undefined;
-		let updateDrain: Promise<void> | undefined;
-		let acceptingUpdates = true;
-		const activeBefore = this.getActiveTools();
-		const drainUpdates = async (): Promise<void> => {
-			try {
-				while (pendingUpdate) {
-					const partialResult = pendingUpdate;
-					pendingUpdate = undefined;
-					await this.dispatchInformational(
-						"tool_execution_update",
-						{
-							args: prepared,
-							partialResult,
-							toolCallId: invocation.toolCallId,
-							toolName: invocation.name,
-							type: "tool_execution_update",
+	): Effect.Effect<ToolExecutionOutcome, never, Scope.Scope> {
+		return Effect.gen({ self: this }, function* () {
+			const updates = yield* Queue.unbounded<ToolUpdateMessage>();
+			let activeUpdate = false;
+			let finishing = false;
+			let pendingUpdate: AgentToolResult<unknown> | undefined;
+			let acceptingUpdates = true;
+			const worker = yield* Effect.forkScoped(
+				Effect.gen({ self: this }, function* () {
+					while (true) {
+						const message = yield* Queue.take(updates);
+						if (message.type === "finish") return;
+						yield* this.dispatchInformational(
+							"tool_execution_update",
+							{
+								args: prepared,
+								partialResult: message.result,
+								toolCallId: invocation.toolCallId,
+								toolName: invocation.name,
+								type: "tool_execution_update",
+							},
+							invocation.context,
+						);
+						const next = pendingUpdate;
+						pendingUpdate = undefined;
+						if (next) Queue.offerUnsafe(updates, { result: next, type: "update" });
+						else {
+							activeUpdate = false;
+							if (finishing) Queue.offerUnsafe(updates, { type: "finish" });
+						}
+					}
+				}),
+			);
+			const activeBefore = this.getActiveTools();
+			const executed = yield* Effect.tryPromise({
+				// SAFETY: validation above produced the argument type owned by this registry-selected Tool definition.
+				try: () =>
+					tool.execute(
+						invocation.toolCallId,
+						prepared as never,
+						invocation.signal,
+						(partialResult) => {
+							if (!acceptingUpdates) return;
+							try {
+								invocation.onUpdate?.(partialResult);
+							} catch {
+								// Rendering updates do not change nested Tool execution.
+							}
+							if (activeUpdate) {
+								pendingUpdate = partialResult;
+								return;
+							}
+							activeUpdate = true;
+							Queue.offerUnsafe(updates, { result: partialResult, type: "update" });
 						},
 						invocation.context,
-					);
-				}
-			} finally {
-				updateDrain = undefined;
-			}
-		};
-
-		let result: AgentToolResult<unknown>;
-		let isError = false;
-		try {
-			// SAFETY: validation above produced the argument type owned by this registry-selected Tool definition.
-			result = await tool.execute(
-				invocation.toolCallId,
-				prepared as never,
-				invocation.signal,
-				(partialResult) => {
-					if (!acceptingUpdates) return;
-					try {
-						invocation.onUpdate?.(partialResult);
-					} catch {
-						// Rendering updates do not change nested Tool execution.
-					}
-					pendingUpdate = partialResult;
-					updateDrain ??= drainUpdates();
-				},
-				invocation.context,
+					),
+				catch: normalizeError,
+			}).pipe(
+				Effect.map((result): ToolExecutionOutcome => ({ isError: false, result })),
+				Effect.catch((error) => Effect.succeed({ isError: true, result: errorToolResult(error) })),
+				Effect.onExit(() =>
+					Effect.sync(() => {
+						acceptingUpdates = false;
+						finishing = true;
+						if (!activeUpdate) Queue.offerUnsafe(updates, { type: "finish" });
+					}),
+				),
 			);
-			const activeAfter = this.getActiveTools();
-			if (activeBefore.every((name) => activeAfter.includes(name))) {
-				const beforeNames = new Set(activeBefore);
-				const addedToolNames = activeAfter.filter((name) => !beforeNames.has(name));
-				if (addedToolNames.length > 0) {
-					result = {
-						...result,
-						addedToolNames: [...new Set([...(result.addedToolNames ?? []), ...addedToolNames])],
-					};
-				}
-			}
-		} catch (error) {
-			result = errorToolResult(error);
-			isError = true;
-		} finally {
-			acceptingUpdates = false;
-		}
-		await updateDrain;
-		return { isError, result };
+			const activeAfter = executed.isError ? undefined : this.getActiveTools();
+			yield* Fiber.join(worker);
+			if (!activeAfter) return executed;
+			if (!activeBefore.every((name) => activeAfter.includes(name))) return executed;
+			const beforeNames = new Set(activeBefore);
+			const addedToolNames = activeAfter.filter((name) => !beforeNames.has(name));
+			if (addedToolNames.length === 0) return executed;
+			return {
+				...executed,
+				result: {
+					...executed.result,
+					addedToolNames: [...new Set([...(executed.result.addedToolNames ?? []), ...addedToolNames])],
+				},
+			};
+		});
 	}
 
-	private async projectResult(
+	private projectResult(
 		invocation: SuiteToolInvocation,
 		prepared: ToolArguments,
 		executed: ToolExecutionOutcome,
-	): Promise<ToolExecutionOutcome> {
-		const event: CapturedToolEvent = {
-			content: executed.result.content ?? [],
-			details: executed.result.details,
-			input: prepared,
-			isError: executed.isError || ("isError" in executed.result && executed.result.isError === true),
-			toolCallId: invocation.toolCallId,
-			toolName: invocation.name,
-			type: "tool_result",
-		};
-		if (executed.result.usage) event.usage = executed.result.usage;
-		for (const handler of this.capturedHandlers.get("tool_result") ?? []) {
-			try {
-				const replacement = await handler.call(undefined, event, invocation.context);
+	): Effect.Effect<ToolExecutionOutcome> {
+		return Effect.gen({ self: this }, function* () {
+			const event: CapturedToolEvent = {
+				content: executed.result.content ?? [],
+				details: executed.result.details,
+				input: prepared,
+				isError: executed.isError || ("isError" in executed.result && executed.result.isError === true),
+				toolCallId: invocation.toolCallId,
+				toolName: invocation.name,
+				type: "tool_result",
+			};
+			if (executed.result.usage) event.usage = executed.result.usage;
+			for (const handler of this.capturedHandlers.get("tool_result") ?? []) {
+				const replacement = yield* Effect.catch(this.callHandler(handler, event, invocation.context), () =>
+					Effect.succeed(undefined),
+				);
 				if (!isRecordValue(replacement)) continue;
 				for (const key of ["content", "details", "isError", "usage"] as const) {
 					if (replacement[key] !== undefined) {
@@ -297,37 +333,35 @@ export class SuiteToolInvocationRuntime {
 						});
 					}
 				}
-			} catch {
-				// Pi reports result-handler failures and keeps the previous result.
 			}
-		}
-		const result: AgentToolResult<unknown> = {
-			...executed.result,
-			content: event.content ?? [],
-			details: event.details,
-		};
-		if (event.usage !== undefined) Object.assign(result, { usage: event.usage });
-		if (event.isError === true) Object.assign(result, { isError: true });
-		else Reflect.deleteProperty(result, "isError");
-		return { isError: event.isError === true, result: stripToolControlMetadata(result) };
+			const result: AgentToolResult<unknown> = {
+				...executed.result,
+				content: event.content ?? [],
+				details: event.details,
+			};
+			if (event.usage !== undefined) Object.assign(result, { usage: event.usage });
+			if (event.isError === true) Object.assign(result, { isError: true });
+			else Reflect.deleteProperty(result, "isError");
+			return { isError: event.isError === true, result: stripToolControlMetadata(result) };
+		});
 	}
 
-	private async fail(
+	private fail(
 		invocation: SuiteToolInvocation,
 		cause: unknown,
 		terminate = false,
-	): Promise<SuiteToolInvocationResult> {
+	): Effect.Effect<SuiteToolInvocationResult> {
 		const result = errorToolResult(cause);
 		if (terminate) Reflect.set(result, "terminate", true);
 		return this.finish(invocation, result, true);
 	}
 
-	private async finish(
+	private finish(
 		invocation: SuiteToolInvocation,
 		result: AgentToolResult<unknown>,
 		isError: boolean,
-	): Promise<SuiteToolInvocationResult> {
-		await this.dispatchInformational(
+	): Effect.Effect<SuiteToolInvocationResult> {
+		return this.dispatchInformational(
 			"tool_execution_end",
 			{
 				isError,
@@ -337,21 +371,33 @@ export class SuiteToolInvocationRuntime {
 				type: "tool_execution_end",
 			},
 			invocation.context,
-		);
-		return { isError, result };
+		).pipe(Effect.andThen(Effect.succeed({ isError, result })));
 	}
 
-	private async dispatchInformational(
+	private callHandler(
+		handler: CapturedToolHandler,
+		event: CapturedToolEvent,
+		context: ExtensionContext,
+	): Effect.Effect<CapturedToolHandlerResult | undefined, Error> {
+		return Effect.tryPromise({
+			try: () => Promise.resolve(handler.call(undefined, event, context)),
+			catch: normalizeError,
+		});
+	}
+
+	private dispatchInformational(
 		event: "tool_execution_end" | "tool_execution_start" | "tool_execution_update",
 		value: CapturedToolEvent,
 		context: ExtensionContext,
-	): Promise<void> {
-		for (const handler of this.capturedHandlers.get(event) ?? []) {
-			try {
-				await handler.call(undefined, value, context);
-			} catch {
-				// Pi reports lifecycle handler failures without changing Tool execution.
+	): Effect.Effect<void> {
+		return Effect.gen({ self: this }, function* () {
+			for (const handler of this.capturedHandlers.get(event) ?? []) {
+				yield* Effect.catch(this.callHandler(handler, value, context), () => Effect.void);
 			}
-		}
+		});
 	}
+}
+
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

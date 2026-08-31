@@ -10,6 +10,8 @@ import type {
 	SuiteToolEnvelopeDecoder,
 	SuiteToolEnvelopeFallbackVisibility,
 	SuiteToolEnvelopeMediaResolver,
+	SuiteToolInvocation,
+	SuiteToolInvocationResult,
 	SuiteToolRegistrationTracker,
 	SuiteToolReplayDefinition,
 	SuiteToolSurfaceController,
@@ -42,6 +44,10 @@ export interface SuiteToolEnvelopeCompanionMarker {
 }
 
 type PrepareEnvelopeArguments = (tool: ToolDefinition, args: ToolArguments) => ToolArguments;
+type RunSuiteToolInvocation = (
+	runtime: SuiteToolInvocationRuntime,
+	invocation: SuiteToolInvocation,
+) => Promise<SuiteToolInvocationResult>;
 
 function marker<Marker, Tool = object | undefined>(
 	tool: Tool,
@@ -165,6 +171,7 @@ function createToolRegistry(
 	tools: Map<string, ToolDefinition>,
 	invocations: SuiteToolInvocationRuntime,
 	isActive: (name: string) => boolean,
+	runInvocation: RunSuiteToolInvocation,
 ): SuiteToolDefinitionRegistry {
 	return {
 		catalog: () =>
@@ -182,7 +189,7 @@ function createToolRegistry(
 			return true;
 		},
 		get: (name) => tools.get(name),
-		invoke: (invocation) => invocations.invoke(invocation),
+		invoke: (invocation) => runInvocation(invocations, invocation),
 		isActive,
 		list: () => [...tools.values()],
 	};
@@ -206,6 +213,7 @@ export function createSuiteToolRegistrationTrackerWithRuntime<Host extends Suite
 	pi: Host,
 	runtime: ToolUiRuntime,
 	prepareEnvelopeRenderArguments: PrepareEnvelopeArguments,
+	runInvocation: RunSuiteToolInvocation,
 ): SuiteToolRegistrationTracker<Host> {
 	const envelopeCompanions = new Map<string, Set<string>>();
 	const envelopeTools = new Set<string>();
@@ -236,7 +244,7 @@ export function createSuiteToolRegistrationTrackerWithRuntime<Host extends Suite
 	const invocations = new SuiteToolInvocationRuntime(tools, isActive, getActiveTools);
 	const on = captureToolEvents(pi, invocations);
 
-	const registry = createToolRegistry(tools, invocations, isActive);
+	const registry = createToolRegistry(tools, invocations, isActive, runInvocation);
 	const surface: SuiteToolSurfaceController = {
 		disableEnvelope(name) {
 			if (enabledEnvelope === name && virtualActiveTools) {

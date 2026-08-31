@@ -16,7 +16,6 @@ import {
 	type ToolActivityOutcome,
 	type ToolArguments,
 } from "./activity.js";
-import { DEFAULT_TOOL_UI_TIMER_SCHEDULER } from "./activity-clock.js";
 import { ToolActivityPresentation } from "./activity-presentation.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import { ToolEnvelopeProjection } from "./envelope-projection.js";
@@ -275,11 +274,6 @@ export interface ToolActivityDetailView {
 	readonly lines: readonly string[];
 }
 
-export interface ToolUiTimerScheduler {
-	setInterval(callback: () => void, delayMs: number): ReturnType<typeof setInterval> | number;
-	clearInterval(id: ReturnType<typeof setInterval> | number): void;
-}
-
 export class ToolUiRuntime extends ToolActivityPresentation {
 	private readonly activityPolicies: Map<string, ToolActivityMetadata<ToolArguments, unknown>>;
 	private readonly detailPresentations: Map<string, ToolDetailPresentation>;
@@ -294,11 +288,7 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 	private readonly replayToolDefinitions = new Map<string, SuiteToolReplayDefinition>();
 	private stagedReplayToolDefinitions: readonly SuiteToolReplayDefinition[] | undefined;
 
-	constructor(
-		settings = ToolUiSettingsStore.memory(),
-		scheduler: ToolUiTimerScheduler = DEFAULT_TOOL_UI_TIMER_SCHEDULER,
-		now: () => number = Date.now,
-	) {
+	constructor(settings = ToolUiSettingsStore.memory(), now: () => number = Date.now) {
 		const activityPolicies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>();
 		const detailPresentations = new Map<string, ToolDetailPresentation>();
 		const envelopes = new ToolEnvelopeProjection();
@@ -318,7 +308,6 @@ export class ToolUiRuntime extends ToolActivityPresentation {
 			disposition,
 			(name) => renderedToolNames.has(name),
 			settings,
-			scheduler,
 			now,
 		);
 		this.activityPolicies = activityPolicies;

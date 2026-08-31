@@ -2,28 +2,32 @@ import { expect, test } from "bun:test";
 import { access, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeNamespaceRecord } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
-import { type ToolUiSettings, ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
+import { Effect } from "effect";
+import { mergeNamespaceRecord, writeSettingsFile } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
+import { ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 function deferred() {
 	return Promise.withResolvers<void>();
 }
 
-async function withTemporarySettings(run: (path: string, directory: string) => Promise<void>): Promise<void> {
+function run<Value, ErrorType>(effect: Effect.Effect<Value, ErrorType>): Promise<Value> {
+	return Effect.runPromise(effect);
+}
+
+async function withTemporarySettings(runTest: (path: string, directory: string) => Promise<void>): Promise<void> {
 	const directory = await mkdtemp(join(tmpdir(), "pi-stuff-tools-settings-"));
 	try {
-		await run(join(directory, "settings.json"), directory);
+		await runTest(join(directory, "settings.json"), directory);
 	} finally {
 		await rm(directory, { force: true, recursive: true });
 	}
 }
 
-test("rapid toggles coalesce to the final in-memory and on-disk value", async () => {
+test("rapid toggles serialize to the final in-memory and on-disk value", async () => {
 	await withTemporarySettings(async (path, directory) => {
-		const store = await ToolUiSettingsStore.load(path);
-		const writes = Array.from({ length: 101 }, (_, index) => store.setLiveElapsed(index % 2 !== 0));
+		const store = await run(ToolUiSettingsStore.load(path));
 
-		await Promise.all(writes);
+		await Promise.all(Array.from({ length: 101 }, (_, index) => run(store.setLiveElapsed(index % 2 !== 0))));
 
 		expect(store.get()).toEqual({ liveElapsed: false, schemaVersion: 1 });
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ tools: { liveElapsed: false, schemaVersion: 1 } });
@@ -38,124 +42,83 @@ test("Tool settings startup reads the legacy file without migrating it", async (
 		const legacy = { liveElapsed: false, schemaVersion: 1 } as const;
 		await writeFile(legacyPath, JSON.stringify(legacy));
 
-		expect((await ToolUiSettingsStore.load(path)).get()).toEqual(legacy);
+		expect((await run(ToolUiSettingsStore.load(path))).get()).toEqual(legacy);
 		await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
 		expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(legacy);
 	});
 });
 
-test("rapid toggles perform one coalesced write", async () => {
+test("Tool settings preserve sibling namespaces", async () => {
 	await withTemporarySettings(async (path) => {
-		const written: ToolUiSettings[] = [];
-		const store = await ToolUiSettingsStore.load(path, async (_settingsPath, settings) => {
-			written.push(settings);
+		await writeSettingsFile(path, { ui: { statusline: true } });
+		const store = await run(ToolUiSettingsStore.load(path));
+
+		await run(store.setLiveElapsed(false));
+
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+			tools: { liveElapsed: false, schemaVersion: 1 },
+			ui: { statusline: true },
 		});
-
-		await Promise.all(Array.from({ length: 101 }, (_, index) => store.setLiveElapsed(index % 2 !== 0)));
-
-		expect(written).toEqual([{ liveElapsed: false, schemaVersion: 1 }]);
-		expect(store.get()).toEqual({ liveElapsed: false, schemaVersion: 1 });
 	});
 });
 
-test("whenIdle waits for active and subsequently queued writes before a reload", async () => {
+test("unchanged settings skip persistence", async () => {
 	await withTemporarySettings(async (path) => {
-		const firstStarted = deferred();
-		const releaseFirst = deferred();
-		const latestStarted = deferred();
-		const releaseLatest = deferred();
-		let writeCount = 0;
-		const store = await ToolUiSettingsStore.load(path, async (settingsPath, settings) => {
-			writeCount += 1;
-			if (writeCount === 1) {
-				firstStarted.resolve();
-				await releaseFirst.promise;
-			} else {
-				latestStarted.resolve();
-				await releaseLatest.promise;
-			}
-			await mergeNamespaceRecord(settingsPath, "tools", { liveElapsed: settings.liveElapsed, schemaVersion: 1 });
-		});
-		const first = store.setLiveElapsed(false);
-		await firstStarted.promise;
+		let writes = 0;
+		const store = await run(
+			ToolUiSettingsStore.load(path, (_settingsPath, _namespace, _record) =>
+				Effect.sync(() => {
+					writes += 1;
+				}),
+			),
+		);
 
+		await run(store.setLiveElapsed(true));
+
+		expect(writes).toBe(0);
+		expect(store.get()).toEqual({ liveElapsed: true, schemaVersion: 1 });
+	});
+});
+
+test("whenIdle waits for an active settings write", async () => {
+	await withTemporarySettings(async (path) => {
+		const started = deferred();
+		const release = deferred();
+		const store = await run(
+			ToolUiSettingsStore.load(path, (settingsPath, namespace, record) =>
+				Effect.tryPromise({
+					try: async () => {
+						started.resolve();
+						await release.promise;
+						await mergeNamespaceRecord(settingsPath, namespace, record);
+					},
+					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+				}),
+			),
+		);
+		const mutation = run(store.setLiveElapsed(false));
+		await started.promise;
 		let idleSettled = false;
-		const idle = store.whenIdle().then(() => {
+		const idle = run(store.whenIdle()).then(() => {
 			idleSettled = true;
 		});
-		const latest = store.setLiveElapsed(true);
-		releaseFirst.resolve();
-		await latestStarted.promise;
+
+		await Promise.resolve();
 		expect(idleSettled).toBe(false);
+		release.resolve();
+		await Promise.all([mutation, idle]);
 
-		releaseLatest.resolve();
-		await Promise.all([first, latest, idle]);
-		const reloaded = await ToolUiSettingsStore.load(path);
-
-		expect(writeCount).toBe(2);
 		expect(idleSettled).toBe(true);
-		expect(store.get()).toEqual({ liveElapsed: true, schemaVersion: 1 });
-		expect(reloaded.get()).toEqual(store.get());
-	});
-});
-
-test("a stale failed write does not roll back a newer value", async () => {
-	await withTemporarySettings(async (path) => {
-		const started = deferred();
-		const release = deferred();
-		let writeCount = 0;
-		const store = await ToolUiSettingsStore.load(path, async () => {
-			writeCount += 1;
-			started.resolve();
-			await release.promise;
-			throw new Error("first write failed");
-		});
-		const first = store.setLiveElapsed(false);
-		const firstError = first.then(
-			() => undefined,
-			(cause: unknown) => cause,
-		);
-		await started.promise;
-
-		const second = store.setLiveElapsed(true);
-		release.resolve();
-
-		expect(await firstError).toBeInstanceOf(Error);
-		await second;
-		expect(writeCount).toBe(1);
-		expect(store.get()).toEqual({ liveElapsed: true, schemaVersion: 1 });
-	});
-});
-
-test("a latest failed write rolls back to the value that actually persisted", async () => {
-	await withTemporarySettings(async (path) => {
-		const started = deferred();
-		const release = deferred();
-		let persisted = true;
-		let writeCount = 0;
-		const store = await ToolUiSettingsStore.load(path, async (_settingsPath, settings) => {
-			writeCount += 1;
-			if (writeCount === 1) {
-				started.resolve();
-				await release.promise;
-				persisted = settings.liveElapsed;
-				return;
-			}
-			throw new Error("latest write failed");
-		});
-		const first = store.setLiveElapsed(false);
-		await started.promise;
-		const second = store.setLiveElapsed(true);
-		const secondError = second.then(
-			() => undefined,
-			(cause: unknown) => cause,
-		);
-
-		release.resolve();
-		await first;
-		expect(await secondError).toBeInstanceOf(Error);
-		expect(writeCount).toBe(2);
-		expect(persisted).toBe(false);
 		expect(store.get()).toEqual({ liveElapsed: false, schemaVersion: 1 });
+	});
+});
+
+test("a failed settings write keeps the last committed value", async () => {
+	await withTemporarySettings(async (path) => {
+		const store = await run(ToolUiSettingsStore.load(path, () => Effect.fail(new Error("write failed"))));
+
+		await expect(run(store.setLiveElapsed(false))).rejects.toThrow("write failed");
+
+		expect(store.get()).toEqual({ liveElapsed: true, schemaVersion: 1 });
 	});
 });

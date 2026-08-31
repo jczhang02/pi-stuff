@@ -7,7 +7,7 @@ import {
 	type ToolActivityMetadata,
 	type ToolArguments,
 } from "./activity.js";
-import { ToolActivityClock } from "./activity-clock.js";
+import { type ActivityClockWakes, ToolActivityClock } from "./activity-clock.js";
 import {
 	type ResultErrorPolicy,
 	type ToolActivityQueryBinding,
@@ -22,7 +22,6 @@ import type {
 	ToolActivityDetailView,
 	ToolActivityView,
 	ToolDetailPresentation,
-	ToolUiTimerScheduler,
 } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import type { ToolGroupProjection } from "./group-projection.js";
@@ -78,7 +77,6 @@ export class ToolActivityPresentation {
 		disposition: (name: string, args: ToolArguments) => RetrievalGroupDisposition,
 		isRendered: (name: string) => boolean,
 		settings: ToolUiSettingsStore,
-		scheduler: ToolUiTimerScheduler,
 		now: () => number,
 	) {
 		this.groupSource = groupSource;
@@ -97,7 +95,7 @@ export class ToolActivityPresentation {
 			groupSummary: (group) => summarizeToolActivityAggregate(this.summaryIndex(group).aggregate(), group.closed),
 			liveResultFor: (toolCallId) => this.liveResults.get(toolCallId),
 		});
-		this.clock = new ToolActivityClock(scheduler, {
+		this.clock = new ToolActivityClock({
 			leaderIdFor: (toolCallId) => this.groups().leaderIdFor(toolCallId),
 			reconcileLeader: (leaderId) => this.reconcileGroup(this.groups().group(leaderId)),
 			reconcileTool: (toolCallId) => this.reconcileGroupForTool(toolCallId),
@@ -272,6 +270,26 @@ export class ToolActivityPresentation {
 
 	syncTimers(): void {
 		this.clock.sync();
+	}
+
+	bindTimerWakes(wakes: ActivityClockWakes): () => void {
+		return this.clock.bindWakes(wakes);
+	}
+
+	hasGroupPulseTimers(): boolean {
+		return this.clock.hasGroupPulses();
+	}
+
+	hasToolTimers(): boolean {
+		return this.clock.hasToolTimers();
+	}
+
+	tickGroupPulseTimers(): void {
+		this.clock.tickGroupPulses();
+	}
+
+	tickToolTimers(): void {
+		this.clock.tickToolTimers();
 	}
 
 	listGroups(): readonly ToolActivityView[] {

@@ -1,4 +1,5 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { type Static, type TSchema, Type } from "typebox";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityMetadata, ToolArguments } from "./activity.js";
@@ -44,7 +45,12 @@ export function registerSuiteToolActivityMetadata<TArgs extends ToolArguments, T
 export function createSuiteToolRegistrationTracker<Host extends SuiteToolTrackerHost>(
 	pi: Host,
 ): SuiteToolRegistrationTracker<Host> {
-	return createSuiteToolRegistrationTrackerWithRuntime(pi, getToolUiRuntime(pi), prepareEnvelopeRenderArguments);
+	return createSuiteToolRegistrationTrackerWithRuntime(
+		pi,
+		getToolUiRuntime(pi),
+		prepareEnvelopeRenderArguments,
+		(runtime, invocation) => Effect.runPromise(Effect.scoped(runtime.invoke(invocation))),
+	);
 }
 /** Fail fast when a Suite-owned Tool bypasses or under-declares the required Activity contract. */
 export function assertSuiteToolActivityCoverage(

@@ -7,7 +7,6 @@ import {
 	eventBusView,
 	getToolUiRuntime,
 	installToolUiRuntime,
-	ManualTimerScheduler,
 	presentation,
 	ToolUiRuntime,
 	ToolUiSettingsStore,
@@ -34,8 +33,9 @@ test("reload accepts the previous active-name-only handoff during a live code up
 });
 
 test("timers blink, invalidate, synchronize, and are cleared for reload", () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
+	const wakes: string[] = [];
+	runtime.bindTimerWakes({ groups: () => wakes.push("groups"), tools: () => wakes.push("tools") });
 	let invalidations = 0;
 	const markers: boolean[] = [];
 	runtime.startTimer(
@@ -43,15 +43,16 @@ test("timers blink, invalidate, synchronize, and are cleared for reload", () => 
 		() => invalidations++,
 		(visible) => markers.push(visible),
 	);
-	expect(scheduler.delays).toEqual([600]);
-	scheduler.tick();
+	expect(wakes).toEqual(["tools"]);
+	runtime.tickToolTimers();
 	expect(invalidations).toBe(1);
 	expect(markers.at(-1)).toBe(false);
 	runtime.syncTimers();
 	expect(markers.at(-1)).toBe(true);
 	expect(invalidations).toBe(2);
 	runtime.prepareReload([]);
-	expect(scheduler.activeCount).toBe(0);
+	expect(runtime.hasToolTimers()).toBe(false);
+	expect(wakes).toEqual(["tools", "tools"]);
 	expect(runtime.consumeReloadActiveTools()).toEqual([]);
 });
 
@@ -60,10 +61,7 @@ test("active Retrieval Groups show elapsed time only when the setting and thresh
 		[true, true],
 		[false, false],
 	] as const) {
-		const runtime = new ToolUiRuntime(
-			ToolUiSettingsStore.memory({ liveElapsed, schemaVersion: 1 }),
-			new ManualTimerScheduler(),
-		);
+		const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory({ liveElapsed, schemaVersion: 1 }));
 		runtime.registerActivity("read", presentation("read-file").activity);
 		runtime.markRendererAttached("read");
 		runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
@@ -88,8 +86,7 @@ test("active Retrieval Groups show elapsed time only when the setting and thresh
 
 test("active Retrieval Group timers advance without a fresh member renderer pass", () => {
 	let now = 1_000;
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler, () => now);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), () => now);
 	runtime.registerActivity("read", presentation("read-file").activity);
 	runtime.markRendererAttached("read");
 	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
@@ -110,14 +107,13 @@ test("active Retrieval Group timers advance without a fresh member renderer pass
 	expect(row.render(80)[0]).not.toContain(" · 2s");
 
 	now = 3_500;
-	scheduler.tick();
+	runtime.tickToolTimers();
 	expect(row.render(80)[0]).toContain(" · 2s");
 	runtime.clear();
 });
 
 test("parallel timers keep independent marker phases", () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
 	const first: boolean[] = [];
 	const second: boolean[] = [];
 	runtime.startTimer(
@@ -130,14 +126,13 @@ test("parallel timers keep independent marker phases", () => {
 		() => {},
 		(visible) => second.push(visible),
 	);
-	scheduler.tick();
+	runtime.tickToolTimers();
 	expect(first.at(-1)).toBe(false);
 	expect(second.at(-1)).toBe(false);
 });
 
 test("the next running member keeps the folded group marker animated", () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
 	runtime.registerActivity("read", presentation("read-file").activity);
 	runtime.markRendererAttached("read");
 	runtime.startTurn([assistant(call("r1", "read", "a.ts"), call("r2", "read", "b.ts"))]);
@@ -179,14 +174,13 @@ test("the next running member keeps the folded group marker animated", () => {
 	});
 	runtime.stopTimer("r1");
 
-	scheduler.tick();
+	runtime.tickToolTimers();
 	expect(leader.render(100)[0]).not.toStartWith("•");
 	runtime.clear();
 });
 
 test("live timer state is bounded while the shared ticker keeps recent rows active", () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
 	const invalidations = Array.from({ length: 769 }, () => 0);
 	for (let index = 0; index < invalidations.length; index += 1) {
 		runtime.startTimer(`call-${String(index)}`, () => {
@@ -194,17 +188,16 @@ test("live timer state is bounded while the shared ticker keeps recent rows acti
 		});
 	}
 
-	expect(scheduler.activeCount).toBe(1);
-	scheduler.tick();
+	expect(runtime.hasToolTimers()).toBe(true);
+	runtime.tickToolTimers();
 	expect(invalidations[0]).toBe(0);
 	expect(invalidations.at(-1)).toBe(1);
 	runtime.clear();
-	expect(scheduler.activeCount).toBe(0);
+	expect(runtime.hasToolTimers()).toBe(false);
 });
 
 test("active groups share one fallback pulse ticker", () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
 	runtime.registerActivity("read", presentation("read-file").activity);
 	runtime.markRendererAttached("read");
 	runtime.startTurn([
@@ -234,9 +227,9 @@ test("active groups share one fallback pulse ticker", () => {
 		});
 	}
 
-	expect(scheduler.activeCount).toBe(1);
+	expect(runtime.hasGroupPulseTimers()).toBe(true);
 	runtime.clear();
-	expect(scheduler.activeCount).toBe(0);
+	expect(runtime.hasGroupPulseTimers()).toBe(false);
 });
 
 test("runtime registry follows the Pi Host bus across per-extension event facades", () => {

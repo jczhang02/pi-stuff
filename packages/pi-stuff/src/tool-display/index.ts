@@ -3,14 +3,15 @@ import {
 	type ExtensionContext,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { Cause, Effect, Exit, Semaphore } from "effect";
+import { Cause, Effect, Exit, Queue } from "effect";
 import {
 	ensureUiSettingsCommand,
 	getCommandDialogCoordinator,
 	getHostSharedResource,
 	type UiSettingRegistry,
 } from "../conversation-ui/index.js";
-import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
+import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";
+import { TOOL_ACTIVITY_TICK_MS } from "./activity-clock.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
 import { registerHistoricalSuiteToolDefinitions } from "./registration.js";
@@ -72,17 +73,17 @@ function acquireToolUiSessionResources(
 	registry: UiSettingRegistry,
 	runtime: InstalledToolUiRuntime,
 	settings: ToolUiSettingsStore,
-	isCurrent: () => boolean,
-	resourceGate: Semaphore.Semaphore,
+	foundation: EffectFoundation,
+	capability: EffectScopeOwner,
 ) {
 	return Effect.gen(function* () {
 		// Scope finalizers are LIFO: remove observers before awaiting persistence.
-		yield* Effect.addFinalizer(() => Effect.promise(() => settings.whenIdle()));
-		yield* Effect.acquireRelease(resourceGate.take(1), () => resourceGate.release(1));
+		yield* Effect.addFinalizer(() => settings.whenIdle());
+		yield* Effect.addFinalizer(() => Effect.sync(() => runtime.suspend()));
 		yield* Effect.acquireRelease(
 			Effect.sync(() =>
 				settings.subscribe(() => {
-					if (isCurrent()) runtime.syncTimers();
+					if (foundation.isCurrent(capability)) runtime.syncTimers();
 				}),
 			),
 			(unsubscribe) => Effect.sync(unsubscribe),
@@ -99,7 +100,7 @@ function acquireToolUiSessionResources(
 						if (value !== "true" && value !== "false") {
 							throw new Error(`Invalid toolRunningTimer value: ${value}`);
 						}
-						await settings.setLiveElapsed(value === "true");
+						await runToolUiOperation(foundation, capability, settings.setLiveElapsed(value === "true"));
 					},
 					subscribe: (listener) => settings.subscribe(() => listener()),
 					values: ["true", "false"],
@@ -107,7 +108,59 @@ function acquireToolUiSessionResources(
 			),
 			(unregister) => Effect.sync(unregister),
 		);
+		const groupChanges = yield* Queue.sliding<void>(1);
+		const toolChanges = yield* Queue.sliding<void>(1);
+		yield* Effect.acquireRelease(
+			Effect.sync(() =>
+				runtime.bindTimerWakes({
+					groups: () => Queue.offerUnsafe(groupChanges, undefined),
+					tools: () => Queue.offerUnsafe(toolChanges, undefined),
+				}),
+			),
+			(unbind) => Effect.sync(unbind),
+		);
+		yield* Effect.forkScoped(
+			runTimerLane(
+				groupChanges,
+				() => runtime.hasGroupPulseTimers(),
+				() => runtime.tickGroupPulseTimers(),
+			),
+		);
+		yield* Effect.forkScoped(
+			runTimerLane(
+				toolChanges,
+				() => runtime.hasToolTimers(),
+				() => runtime.tickToolTimers(),
+			),
+		);
 	});
+}
+
+function runTimerLane(changes: Queue.Queue<void>, isActive: () => boolean, tick: () => void): Effect.Effect<never> {
+	return Effect.gen(function* () {
+		while (true) {
+			while (!isActive()) yield* Queue.take(changes);
+			const elapsed = yield* Effect.raceFirst(
+				Effect.sleep(TOOL_ACTIVITY_TICK_MS).pipe(Effect.as(true)),
+				Queue.take(changes).pipe(Effect.as(false)),
+			);
+			if (elapsed && isActive()) yield* Effect.sync(tick);
+		}
+	});
+}
+
+async function runToolUiOperation<Value, ErrorType>(
+	foundation: EffectFoundation,
+	capability: EffectScopeOwner,
+	program: Effect.Effect<Value, ErrorType>,
+): Promise<Value | undefined> {
+	if (!foundation.isCurrent(capability)) return undefined;
+	const operation = foundation.forkOperation(capability);
+	const exit = await foundation.run(operation, program);
+	await foundation.close(operation, exit);
+	if (Exit.isSuccess(exit)) return foundation.isCurrent(capability) ? exit.value : undefined;
+	if (Cause.hasInterrupts(exit.cause)) return undefined;
+	throw Cause.squash(exit.cause);
 }
 
 function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRuntime, ctx: ExtensionContext): void {
@@ -261,11 +314,10 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	lifecycle.activation = activation;
 	try {
 		const resumeHandoff = consumeResumeToolHandoff();
-		const settings = await ToolUiSettingsStore.load();
+		const settings = await Effect.runPromise(ToolUiSettingsStore.load());
 		const runtime = installToolUiRuntime(pi, settings);
 		if (resumeHandoff) runtime.stageResumeToolDefinitions(resumeHandoff.toolDefinitions);
 		const uiSettings = ensureUiSettingsCommand(pi);
-		const resourceGate = Semaphore.makeUnsafe(1);
 		pi.on("session_start", async (_event, ctx) => {
 			const session = foundation.sessionFor(ctx.sessionManager);
 			if (!session) throw new Error("Tool UI Session Scope was not initialized.");
@@ -273,13 +325,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			const capability = foundation.forkCapability(session);
 			const exit = await foundation.run(
 				capability,
-				acquireToolUiSessionResources(
-					uiSettings,
-					runtime,
-					settings,
-					() => foundation.isCurrent(capability),
-					resourceGate,
-				),
+				acquireToolUiSessionResources(uiSettings, runtime, settings, foundation, capability),
 			);
 			if (Exit.isSuccess(exit)) return;
 			await foundation.close(capability, exit);

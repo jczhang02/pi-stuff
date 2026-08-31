@@ -7,12 +7,10 @@ import {
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import type {
 	SuiteToolCodeModeContract,
 	SuiteToolTrackerHost,
-	ToolUiTimerScheduler,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/registration.js";
 
@@ -43,31 +41,6 @@ function fixtureTheme(): Theme {
 }
 
 export const theme = fixtureTheme();
-
-export class ManualTimerScheduler implements ToolUiTimerScheduler {
-	private readonly callbacks = new Map<number, () => void>();
-	private nextId = 1;
-	readonly delays: number[] = [];
-
-	get activeCount(): number {
-		return this.callbacks.size;
-	}
-
-	clearInterval(id: ReturnType<ToolUiTimerScheduler["setInterval"]>): void {
-		if (isRuntimeNumber(id)) this.callbacks.delete(id);
-	}
-
-	setInterval(callback: () => void, delayMs: number): ReturnType<ToolUiTimerScheduler["setInterval"]> {
-		const id = this.nextId++;
-		this.callbacks.set(id, callback);
-		this.delays.push(delayMs);
-		return id;
-	}
-
-	tick(): void {
-		for (const callback of Array.from(this.callbacks.values())) callback();
-	}
-}
 
 export function eventBusView(bus: EventBus = createEventBus()): EventBus {
 	return {

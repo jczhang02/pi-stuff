@@ -7,7 +7,6 @@ import {
 	call,
 	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
-	ManualTimerScheduler,
 	presentation,
 	registerSuiteToolEnvelope,
 	renderContext,
@@ -341,8 +340,7 @@ test("projection rebuild rebinds grouped models to fresh Host row components", (
 });
 
 test("projection replacement isolates reused IDs from stale rows, callbacks, and timers", async () => {
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory());
 	runtime.registerActivity("read", presentation("read-file").activity);
 	runtime.registerActivity("edit", presentation("change-file").activity);
 	runtime.markRendererAttached("read");
@@ -379,7 +377,7 @@ test("projection replacement isolates reused IDs from stale rows, callbacks, and
 
 	expect(oldInvalidations).toBe(1);
 	expect(newInvalidations).toBe(1);
-	expect(scheduler.activeCount).toBe(0);
+	expect(runtime.hasToolTimers()).toBe(false);
 	expect(renderLines(oldRow).join("\n")).not.toContain("Changed");
 	expect(renderLines(newRow).join("\n")).toContain("edit new.ts · done");
 });

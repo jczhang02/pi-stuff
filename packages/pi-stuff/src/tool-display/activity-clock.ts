@@ -1,7 +1,7 @@
 import type { PlannedRetrievalGroup } from "./activity.js";
-import type { ToolUiTimerScheduler } from "./contract.js";
 
 const TIMER_STATE_LIMIT = 768;
+export const TOOL_ACTIVITY_TICK_MS = 600;
 
 interface ToolTimerState {
 	invalidate: () => void;
@@ -17,29 +17,43 @@ type ActivityClockHooks = {
 	setLeaderMarker: (leaderId: string, visible: boolean, invalidate: boolean) => void;
 };
 
-export const DEFAULT_TOOL_UI_TIMER_SCHEDULER: ToolUiTimerScheduler = {
-	setInterval: (callback, delayMs) => {
-		const id = setInterval(callback, delayMs);
-		id.unref?.();
-		return id;
-	},
-	clearInterval: (id) => clearInterval(id),
-};
+export interface ActivityClockWakes {
+	readonly groups: () => void;
+	readonly tools: () => void;
+}
 
 export class ToolActivityClock {
 	private readonly groupPulses = new Map<string, { visible: boolean }>();
-	private groupPulseTimer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
-	private timer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
+	private groupWake: (() => void) | undefined;
 	private readonly timerStates = new Map<string, ToolTimerState>();
+	private timerWake: (() => void) | undefined;
 	private readonly hooks: ActivityClockHooks;
-	private readonly scheduler: ToolUiTimerScheduler;
 
-	constructor(scheduler: ToolUiTimerScheduler, hooks: ActivityClockHooks) {
-		this.scheduler = scheduler;
+	constructor(hooks: ActivityClockHooks) {
 		this.hooks = hooks;
 	}
 
+	bindWakes(wakes: ActivityClockWakes): () => void {
+		this.groupWake = wakes.groups;
+		this.timerWake = wakes.tools;
+		if (this.groupPulses.size > 0) wakes.groups();
+		if (this.timerStates.size > 0) wakes.tools();
+		return () => {
+			if (this.groupWake === wakes.groups) this.groupWake = undefined;
+			if (this.timerWake === wakes.tools) this.timerWake = undefined;
+		};
+	}
+
+	hasGroupPulses(): boolean {
+		return this.groupPulses.size > 0;
+	}
+
+	hasToolTimers(): boolean {
+		return this.timerStates.size > 0;
+	}
+
 	start(toolCallId: string, invalidate: () => void, setMarkerVisible: (visible: boolean) => void = () => {}): void {
+		const wasIdle = this.timerStates.size === 0;
 		const existing = this.timerStates.get(toolCallId);
 		const visible = existing?.visible ?? true;
 		if (existing) this.timerStates.delete(toolCallId);
@@ -55,7 +69,7 @@ export class ToolActivityClock {
 		this.timerStates.set(toolCallId, { invalidate, setMarkerVisible, visible });
 		setMarkerVisible(visible);
 		if (this.isGroupMarkerDriver(toolCallId)) this.pulseGroup(toolCallId, visible);
-		this.timer ??= this.scheduler.setInterval(() => this.tick(), 600);
+		if (wasIdle) this.timerWake?.();
 		this.hooks.reconcileTool(toolCallId);
 	}
 
@@ -64,10 +78,7 @@ export class ToolActivityClock {
 		if (!state) return;
 		this.timerStates.delete(toolCallId);
 		state.setMarkerVisible(true);
-		if (this.timerStates.size === 0 && this.timer !== undefined) {
-			this.scheduler.clearInterval(this.timer);
-			this.timer = undefined;
-		}
+		if (this.timerStates.size === 0) this.timerWake?.();
 		this.pulseGroup(toolCallId, true);
 		this.hooks.reconcileTool(toolCallId);
 	}
@@ -94,16 +105,14 @@ export class ToolActivityClock {
 			return;
 		}
 		if (this.groupPulses.has(group.leaderId)) return;
+		const wasIdle = this.groupPulses.size === 0;
 		this.groupPulses.set(group.leaderId, { visible: true });
-		this.groupPulseTimer ??= this.scheduler.setInterval(() => this.tickGroupPulses(), 600);
+		if (wasIdle) this.groupWake?.();
 	}
 
 	dropGroup(leaderId: string): void {
 		if (!this.groupPulses.delete(leaderId)) return;
-		if (this.groupPulses.size === 0 && this.groupPulseTimer !== undefined) {
-			this.scheduler.clearInterval(this.groupPulseTimer);
-			this.groupPulseTimer = undefined;
-		}
+		if (this.groupPulses.size === 0) this.groupWake?.();
 		this.hooks.setLeaderMarker(leaderId, true, true);
 	}
 
@@ -113,7 +122,7 @@ export class ToolActivityClock {
 		}
 	}
 
-	private tick(): void {
+	tickToolTimers(): void {
 		for (const [toolCallId, state] of this.timerStates) {
 			state.visible = !state.visible;
 			state.setMarkerVisible(state.visible);
@@ -121,6 +130,14 @@ export class ToolActivityClock {
 			state.invalidate();
 		}
 		this.reconcileTimerGroups();
+	}
+
+	tickGroupPulses(): void {
+		for (const [leaderId, pulse] of this.groupPulses) {
+			pulse.visible = !pulse.visible;
+			this.hooks.setLeaderMarker(leaderId, pulse.visible, true);
+			this.hooks.reconcileLeader(leaderId);
+		}
 	}
 
 	private reconcileTimerGroups(): void {
@@ -141,13 +158,5 @@ export class ToolActivityClock {
 	private isGroupMarkerDriver(toolCallId: string): boolean {
 		const leaderId = this.hooks.leaderIdFor(toolCallId);
 		return !leaderId || this.hooks.runningMemberId(leaderId) === toolCallId;
-	}
-
-	private tickGroupPulses(): void {
-		for (const [leaderId, pulse] of this.groupPulses) {
-			pulse.visible = !pulse.visible;
-			this.hooks.setLeaderMarker(leaderId, pulse.visible, true);
-			this.hooks.reconcileLeader(leaderId);
-		}
 	}
 }
