@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: c85e01ed716ac8bf0f879f9471cb5fda84e799143c2ce43859c2cbae2cde0712 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 2d8ed347c13976733a63943eb2d549a703ac40f9112a74167bd1391f141a60d9 -->
 
 # 报告
 
@@ -8,6 +8,7 @@
 
 ## 保留报告
 
+- [Terminal-Bench 2.1 Pi Stuff 延迟对比](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)及其保留的[截图](../../../../../docs/reports/assets/pi-stuff-0.3.0/)
 - [单软件包迁移](single-package-migration.md)

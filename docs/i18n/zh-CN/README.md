@@ -1,4 +1,4 @@
-<!-- translation-source: README.md; translation-source-sha256: b50b69351f648adb62a4d8a05716d047d23472aeb632bc85400263e0fc040523 -->
+<!-- translation-source: README.md; translation-source-sha256: 558ea27ebd98db3e555c3c694ed3af78e6b4d456164251950954665af3c0bad9 -->
 
 <div align="center">
 
@@ -193,6 +193,20 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 
 仓库不声明兼容其他 Pi 构建。升级 Pi 必须作为一次协调变更，同时更新固定的 Host 源码配置、开发类型依赖和
 公开接缝验收检查。完整信息见 [`兼容性契约`](../../compatibility.md)。
+
+## Benchmark 证据
+
+一项预注册的本地计时研究选取了 12 个 Terminal-Bench 2.1 任务，在 Pi Stuff Code Mode 关闭和开启时分别运行
+两次，共 48 次实验。Code Mode 关闭时，单次完整实验的算术平均耗时为 602.6 秒；开启时为 535.4 秒，但 Code
+Mode 效应的估计结果不确定。实际耗时主要来自 Agent/provider 执行轨迹和长尾超时；在全新 benchmark 容器中，
+Pi 模块冷导入平均耗时 40.5 秒。公开 Codex 结果并非同任务、同环境的配对 A/B 实验，因此这里只作描述性比较。
+
+| 文件 | 用途 |
+| --- | --- |
+| [科研报告](docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) · [English](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) | 实验方法、结果、限制与根因分析 |
+| [脱敏结果](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json) | 逐次实验记录、汇总统计与本地证据哈希 |
+| [冻结协议](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json) | 预注册任务、实验组、执行上限与分析规则 |
+| [冻结源清单快照](../../../docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json) | 协议与结果哈希所引用的逐字节任务总体；历史 adapter 字段仅作来源记录，不是可运行配置 |
 
 ## 开发
 
