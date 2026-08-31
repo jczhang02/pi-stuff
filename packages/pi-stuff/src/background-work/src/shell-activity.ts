@@ -373,22 +373,26 @@ export class ShellActivity {
 	}
 
 	private waitForCommandAcknowledgement(): Effect.Effect<void, unknown> {
+		let acknowledgementAccepted = false;
+		const acceptAcknowledgement = () => {
+			if (!acknowledgementAccepted) {
+				acknowledgementAccepted = consumeCommandAcknowledgement(
+					this.launch.acknowledgementPath,
+					this.launch.authorizationToken,
+					this.launch.supervisorIdentity,
+				);
+			}
+			if (acknowledgementAccepted) this.launchAuthorized = true;
+			return acknowledgementAccepted;
+		};
 		const acknowledged = Effect.gen({ self: this }, function* () {
 			const deadline = Date.now() + 3_000;
 			for (;;) {
 				const accepted = yield* Effect.try({
-					try: () =>
-						consumeCommandAcknowledgement(
-							this.launch.acknowledgementPath,
-							this.launch.authorizationToken,
-							this.launch.supervisorIdentity,
-						),
+					try: acceptAcknowledgement,
 					catch: (error) => error,
 				});
-				if (accepted) {
-					this.launchAuthorized = true;
-					return;
-				}
+				if (accepted) return;
 				if (Date.now() >= deadline) {
 					return yield* Effect.fail(
 						new Error("Background Work supervisor did not acknowledge its command within 3 seconds."),
@@ -401,8 +405,18 @@ export class ShellActivity {
 			try: () => this.launch.supervisor.completion,
 			catch: (error) => error,
 		}).pipe(
-			Effect.flatMap((result) =>
-				Effect.fail(result.error ?? new Error("Background Work supervisor exited before accepting its command.")),
+			Effect.match({
+				onFailure: (error) => error,
+				onSuccess: (result) =>
+					result.error ?? new Error("Background Work supervisor exited before accepting its command."),
+			}),
+			Effect.flatMap((error) =>
+				Effect.try({
+					try: () => {
+						if (!acceptAcknowledgement()) throw error;
+					},
+					catch: (cause) => cause,
+				}),
 			),
 		);
 		return Effect.raceFirst(acknowledged, supervisorExit).pipe(
