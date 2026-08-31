@@ -1,5 +1,10 @@
 # Effect v4 adoption baseline and final comparison
 
+> **Historical pre-acceptance snapshot.** This report evaluates implementation commit `a6edace` and preserves its
+> measurements unchanged. Its no-go recommendation and proposed ADR status applied only to that checkpoint. They were
+> superseded on 2026-08-31 by the [performance follow-up](./pi-stuff-lifecycle-performance.md) and the accepted
+> [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md).
+
 **Baseline measurement date:** 2026-08-30  
 **Final measurement date:** 2026-08-31  
 **Beads:** `ps-pby`, `ps-pby.1`, `ps-pby.35`  
@@ -7,15 +12,16 @@
 **Measured implementation commit:** `a6edace46111ed89ce44617955fbf525ece863c9`  
 **Certified Host:** Pi `0.84.4+source.b79e4cc83497.binary.ce91e1f8bff6.bun.1.3.14`, Linux x64  
 **Repository toolchain:** Bun `1.4.0`, TypeScript `5.9.3`  
-**Provisional recommendation:** **no-go for adoption now**
+**Recommendation at the measured checkpoint:** **no-go**
 
 The Effect v4 experiment preserves the tested Suite contracts and replaces substantial native lifecycle machinery, but
 it does not leave every executable certification gate green. The full lifecycle acceptance matrix completed its
 requested coverage and then rejected repeated Pi 0.84.2-era startup, reload, and degraded-provider budgets. A matched
 run of the pre-migration commit on the same Pi 0.84.4 binary reproduced those same budget classes, so this is a stale
-certification baseline rather than evidence that Effect introduced the failures. The gate is nevertheless red and must
-not be described as passed. Together with the release-candidate dependency and measured footprint increases, that makes
-the current recommendation no-go. The implementation branch remains available as evidence; ADR 0024 remains proposed.
+certification baseline rather than evidence that Effect introduced the failures. The gate was nevertheless red and
+could not be described as passed. Together with the release-candidate dependency and measured footprint increases,
+that made the checkpoint recommendation no-go. The implementation branch remained available as evidence, and ADR 0024
+remained proposed at that point.
 
 ## Quantitative summary
 
@@ -154,14 +160,13 @@ copied for Magic Context real-provider acceptance.
 - **Release risk:** the implementation depends on the exact prerelease `effect@4.0.0-rc.112`. The experiment did not
   chase a later RC, and accepting a prerelease as the Suite's internal execution foundation remains a maintainer risk.
 
-## Recommendation
+## Recommendation at the measured checkpoint
 
-Do not accept ADR 0024 or merge the experiment now. The architectural result is substantive and behaviorally strong,
-but a merge-quality candidate cannot claim complete certification while `bun run benchmark:lifecycle` is red. The
-failure should be resolved in an independent Pi 0.84.4 benchmark-recertification decision, using clean pre-migration
-controls rather than raising thresholds inside this experiment. A later adoption decision should then reconsider the
-measured runtime/typecheck footprint and the status of Effect v4's release candidate. No merge, publication, or ADR
-status change is authorized by this report.
+At this checkpoint, the report recommended not accepting ADR 0024 or merging the experiment. The architectural result
+was substantive and behaviorally strong, but a merge-quality candidate could not claim complete certification while
+`bun run benchmark:lifecycle` was red. It called for an independent Pi 0.84.4 benchmark-recertification decision using
+clean pre-migration controls rather than raising thresholds inside the experiment. That later investigation and the
+performance follow-up superseded this recommendation; the section remains as historical decision evidence.
 
 ## Reproduction
 

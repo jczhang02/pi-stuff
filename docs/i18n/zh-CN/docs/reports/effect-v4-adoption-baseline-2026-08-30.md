@@ -1,6 +1,10 @@
-<!-- translation-source: docs/reports/effect-v4-adoption-baseline-2026-08-30.md; translation-source-sha256: d6bcaa5449442c1eea33b26321ed6af7e330eb438fd5200634f286f8e92c2dff -->
+<!-- translation-source: docs/reports/effect-v4-adoption-baseline-2026-08-30.md; translation-source-sha256: c084222fef992092ac324d6ef260e64bc7f5bb4f0b653ee26a39f1eebfb88f5f -->
 
 # Effect v4 采用基线与最终对比
+
+> **接受前的历史快照。** 本报告评估实现提交 `a6edace`，并原样保留当时的测量。no-go 建议与 ADR 的
+> proposed 状态仅适用于该检查点；2026-08-31 的[性能跟进](./pi-stuff-lifecycle-performance.md)和已经接受的
+> [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md)已取代这两个结论。
 
 **基线测量日期：** 2026-08-30  
 **最终测量日期：** 2026-08-31  
@@ -9,13 +13,13 @@
 **被测实现提交：** `a6edace46111ed89ce44617955fbf525ece863c9`  
 **认证 Host：** Pi `0.84.4+source.b79e4cc83497.binary.ce91e1f8bff6.bun.1.3.14`、Linux x64  
 **仓库工具链：** Bun `1.4.0`、TypeScript `5.9.3`  
-**暂定建议：** **目前不采用（no-go）**
+**被测检查点的建议：** **不采用（no-go）**
 
 Effect v4 实验保住了已测试的 Suite 契约，也替换了大量原生生命周期机制，但并未让所有可执行认证闸门保持
 绿色。完整生命周期验收矩阵执行了全部要求的覆盖，随后拒绝了重复超出 Pi 0.84.2 时期预算的启动、重载和降级
 Provider 数据。迁移前提交在同一 Pi 0.84.4 二进制上的匹配测量复现了相同的超预算类别，因此这属于认证基线陈旧，
-而不是 Effect 引入这些失败的证据。即便如此，该闸门仍是红色，不能宣称通过。再考虑到候选版本依赖和测得的体积
-增长，目前的建议是 no-go。实现分支保留为证据；ADR 0024 继续保持 proposed。
+而不是 Effect 引入这些失败的证据。即便如此，该闸门当时仍是红色，不能宣称通过。再考虑到候选版本依赖和测得的
+体积增长，该检查点的建议是 no-go。实现分支当时保留为证据；ADR 0024 在该时点继续保持 proposed。
 
 ## 定量摘要
 
@@ -148,12 +152,12 @@ Code Mode TUI verifier 最初曾在 Provider 已完成、但外层 Host 尚未�
 - **发布风险：** 实现精确依赖 prerelease `effect@4.0.0-rc.112`。实验没有追逐更新的 RC；把候选版本作为 Suite
   内部执行基础仍是需要 maintainer 承担的风险。
 
-## 建议
+## 被测检查点的建议
 
-现在不要接受 ADR 0024，也不要合并该实验。架构结果具有实质性，行为证据也很强，但当
-`bun run benchmark:lifecycle` 仍为红色时，不能把它称作通过完整认证的 merge-quality candidate。该失败应在独立
-的 Pi 0.84.4 基准重新认证决策中解决，并使用干净的迁移前对照，而不是在本实验中提高阈值。后续采用决策还应重新
-评估测得的运行时/typecheck 体积与 Effect v4 候选版本状态。本报告不授权合并、发布或改变 ADR 状态。
+在这个检查点，本报告建议不接受 ADR 0024，也不合并该实验。架构结果具有实质性，行为证据也很强，但当
+`bun run benchmark:lifecycle` 仍为红色时，不能把它称作通过完整认证的 merge-quality candidate。报告要求在独立
+的 Pi 0.84.4 基准重新认证决策中处理该失败，使用干净的迁移前对照，而不是在本实验中提高阈值。后续调查和性能
+跟进已经取代这一建议；本节继续保留，作为当时的决策证据。
 
 ## 复现
 
