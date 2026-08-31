@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 121e557230c98a72d44fdcfd2ef26952c69787a8e9a0e988fd8700c7f8fe68ca -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 1cc8ca2fb4daca1df824d4b6b869cb076c68353100354c996ee7b6f5d7e7108b -->
 
 ---
 version: alpha
@@ -139,6 +139,8 @@ Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键�
 
 相关事件的完整顺序必须保留，但高成本预览要有明确上限，并说明省略了多少内容。原始标识符、参数和协议
 内容应放在用户主动打开的原始数据或调试操作后面，不能进入默认阅读路径。
+`/tools` 的 Formatted 文件修改详情只有在清理 Tool 文本后，才可使用语法与语义 diff 颜色；行号槽保持低
+对比度，Raw 协议详情保持无样式。
 
 ### 宽屏工作检查
 

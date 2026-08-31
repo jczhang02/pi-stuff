@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { type ToolActivityView, ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
@@ -118,6 +118,58 @@ test("/tools lists groups and formats only the selected member", () => {
 	expect(component.render(42).join("\n")).toContain("Tools");
 	component.handleInput?.("\u001b");
 	expect(harness.closed()).toBe(1);
+	component.dispose?.();
+});
+
+test("/tools styles sanitized operation evidence and reuses its cached document", () => {
+	initTheme("dark", false);
+	const runtime = groupedRuntime(["src/demo.ts"]);
+	runtime.registerDetailPresentation("read", {
+		detailSections: () => [
+			{
+				languagePath: "src/demo.ts",
+				lines: ["1  │ const same = true;", "2  │ - const oldValue = 1;", " 2 │ + const newValue = 2;"],
+				operationEvidence: [
+					{ diffKind: "context", kind: "diff", newLine: 1, oldLine: 1, text: "const same = true;" },
+					{
+						diffKind: "delete",
+						kind: "diff",
+						oldLine: 2,
+						text: "\u001b]8;;https://evil.invalid\u0007const oldValue = 1;\u001b]8;;\u0007",
+					},
+					{ diffKind: "add", kind: "diff", newLine: 2, text: "const newValue = 2;" },
+				],
+				title: "Diff",
+			},
+		],
+		label: () => "Read",
+		summary: () => "safe",
+		target: () => "src/demo.ts",
+	});
+	const taggedTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, value: string) => `<${color}>${value}</${color}>`,
+	};
+	// SAFETY: this fixture implements the exact Theme methods exercised by the Dialog and evidence renderer.
+	const detailTheme = taggedTheme as Theme;
+	const component = createToolDialogView(runtime, "read-1").create(contextHarness(32, detailTheme).context);
+	const output = component.render(160).join("\n");
+	expect(output).toContain("<error>-</error>");
+	expect(output).toContain("<success>+</success>");
+	expect(output).toContain("\u001b[");
+	expect(output).not.toContain("evil.invalid");
+
+	const group = runtime.resolveGroup("read-1");
+	if (!group || group === "ambiguous") throw new Error("missing detail group");
+	// SAFETY: createToolDialogView constructs ToolDialogComponent, whose private method remains an ordinary runtime method.
+	const cacheProbe = component as typeof component & {
+		detailDocument(group: ToolActivityView, width: number): readonly string[];
+	};
+	const first = cacheProbe.detailDocument(group, 120);
+	expect(cacheProbe.detailDocument(group, 120)).toBe(first);
+
+	component.handleInput?.("r");
+	expect(component.render(160).join("\n")).not.toContain("<success>+</success>");
 	component.dispose?.();
 });
 

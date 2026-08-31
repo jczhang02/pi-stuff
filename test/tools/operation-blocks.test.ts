@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, initTheme, type Theme, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
 import { sanitizeMultilineTerminalText } from "../../packages/pi-stuff/src/shared/terminal-text.js";
 import type { ToolArguments } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import { registerBuiltins } from "../../packages/pi-stuff/src/tool-display/builtin-tools.js";
 import { getToolUiRuntime, type ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { styleOperationEvidence } from "../../packages/pi-stuff/src/tool-display/operation-block-renderer.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 // SAFETY: this deterministic fixture implements the exact Theme members exercised by Tool rows.
@@ -120,6 +121,43 @@ test("Write shows result-authorized final content with compact and expanded boun
 	);
 	expect(expanded).toContain("12 │ const value12 = 12;");
 	expect(expanded).not.toContain("ctrl+o to expand");
+});
+
+test("operation evidence sanitizes Tool controls before source and diff styling", () => {
+	initTheme("dark", false);
+	const taggedTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, value: string) => `<${color}>${value}</${color}>`,
+	};
+	// SAFETY: this fixture implements the exact Theme methods exercised by the evidence renderer.
+	const evidenceTheme = taggedTheme as Theme;
+	const styled = styleOperationEvidence(
+		[
+			{ kind: "source", languagePath: "src/demo.ts", newLine: 1, text: "const value = 1;" },
+			{
+				diffKind: "delete",
+				kind: "diff",
+				languagePath: "src/demo.ts",
+				oldLine: 2,
+				text: "\u001b]8;;https://evil.invalid\u0007const oldValue = 1;\u001b]8;;\u0007",
+			},
+			{
+				diffKind: "add",
+				kind: "diff",
+				languagePath: "src/demo.ts",
+				newLine: 2,
+				text: "const newValue = 2;",
+			},
+		],
+		evidenceTheme,
+		"success",
+	);
+	const output = styled.join("\n");
+	expect(output).toContain("<dim>1 │ </dim>");
+	expect(output).toContain("<error>-</error>");
+	expect(output).toContain("<success>+</success>");
+	expect(output).toContain("\u001b[");
+	expect(output).not.toContain("evil.invalid");
 });
 
 test("Write prefers verified result content and uses singular line grammar", () => {

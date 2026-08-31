@@ -38,8 +38,20 @@ export interface ToolSummaryProjection {
 	readonly text: string;
 }
 
+export interface OperationEvidenceLine {
+	readonly diffKind?: "add" | "context" | "delete";
+	readonly kind: "diff" | "meta" | "outcome" | "source";
+	readonly languagePath?: string;
+	readonly newLine?: number;
+	readonly oldLine?: number;
+	readonly text: string;
+	readonly tone?: "error" | "muted" | "success" | "warning";
+}
+
 export interface ToolFormattedSection {
+	readonly languagePath?: string;
 	readonly lines: readonly string[];
+	readonly operationEvidence?: readonly OperationEvidenceLine[];
 	readonly title: string;
 }
 

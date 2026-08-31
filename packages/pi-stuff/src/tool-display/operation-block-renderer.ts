@@ -6,21 +6,15 @@ import {
 	TRANSCRIPT_MARKER,
 } from "../conversation-ui/transcript.js";
 import type { ToolActivityState } from "./activity-store.js";
+import type { OperationEvidenceLine } from "./contract.js";
 import { ROW_PREVIEW_CODE_UNIT_LIMIT } from "./limits.js";
-import { boundTerminalText, graphemePrefix } from "./terminal.js";
+import { boundTerminalText, graphemePrefix, sanitizeTerminalText } from "./terminal.js";
+
+export type { OperationEvidenceLine } from "./contract.js";
 
 const COMPACT_IDENTITY_CODE_UNITS = 160;
 const COMPACT_IDENTITY_LINES = 2;
 const GUTTER = " ".repeat(SELF_RENDERED_TRANSCRIPT_PADDING);
-
-export interface OperationEvidenceLine {
-	readonly diffKind?: "add" | "context" | "delete";
-	readonly kind: "diff" | "meta" | "outcome" | "source";
-	readonly newLine?: number;
-	readonly oldLine?: number;
-	readonly text: string;
-	readonly tone?: "error" | "muted" | "success" | "warning";
-}
 
 export interface OperationBlockRowModel {
 	readonly active: boolean;
@@ -56,6 +50,7 @@ export function sameOperationBlock(left: OperationBlockRowModel, right: Operatio
 				other !== undefined &&
 				line.diffKind === other.diffKind &&
 				line.kind === other.kind &&
+				line.languagePath === other.languagePath &&
 				line.newLine === other.newLine &&
 				line.oldLine === other.oldLine &&
 				line.text === other.text &&
@@ -94,17 +89,59 @@ function identityLines(model: OperationBlockRowModel): string[] {
 	return lines;
 }
 
-function highlightedEvidence(model: OperationBlockRowModel): string[] {
-	const source = model.evidence.filter((line) => line.kind === "source" || line.kind === "diff");
-	const language = model.languagePath ? getLanguageFromPath(model.languagePath) : undefined;
-	if (!language || source.length === 0) return source.map((line) => line.text);
-	return highlightCode(source.map((line) => line.text).join("\n"), language);
+function highlightedEvidence(evidence: readonly OperationEvidenceLine[], fallbackPath?: string): string[] {
+	const source = evidence.filter((line) => line.kind === "source" || line.kind === "diff");
+	const highlighted: string[] = [];
+	for (let start = 0; start < source.length; ) {
+		const path = sanitizeTerminalText(source[start]?.languagePath ?? fallbackPath ?? "");
+		let end = start + 1;
+		while (end < source.length && sanitizeTerminalText(source[end]?.languagePath ?? fallbackPath ?? "") === path) {
+			end += 1;
+		}
+		const lines = source.slice(start, end).map((line) => sanitizeTerminalText(line.text));
+		const language = path ? getLanguageFromPath(path) : undefined;
+		highlighted.push(...(language ? highlightCode(lines.join("\n"), language) : lines));
+		start = end;
+	}
+	return highlighted;
 }
 
-function lineNumberWidth(model: OperationBlockRowModel): number {
+function lineNumberWidth(evidence: readonly OperationEvidenceLine[]): number {
 	let maximum = 1;
-	for (const line of model.evidence) maximum = Math.max(maximum, line.oldLine ?? 0, line.newLine ?? 0);
+	for (const line of evidence) maximum = Math.max(maximum, line.oldLine ?? 0, line.newLine ?? 0);
 	return String(maximum).length;
+}
+
+export function styleOperationEvidence(
+	evidence: readonly OperationEvidenceLine[],
+	theme: Theme,
+	state: ToolActivityState,
+	languagePath?: string,
+): string[] {
+	const highlighted = highlightedEvidence(evidence, languagePath);
+	const numberWidth = lineNumberWidth(evidence);
+	let sourceIndex = 0;
+	return evidence.map((line) => {
+		const safeText = sanitizeTerminalText(line.text);
+		if (line.kind === "source") {
+			const number = String(line.newLine ?? line.oldLine ?? "").padStart(numberWidth);
+			const gutter = theme.fg("dim", `${number} │ `);
+			const content = highlighted[sourceIndex] ?? safeText;
+			sourceIndex += 1;
+			return `${gutter}${content}`;
+		}
+		if (line.kind === "diff") {
+			const oldLine = String(line.oldLine ?? "").padStart(numberWidth);
+			const newLine = String(line.newLine ?? "").padStart(numberWidth);
+			const marker = line.diffKind === "add" ? "+" : line.diffKind === "delete" ? "-" : " ";
+			const markerColor = marker === "+" ? "success" : marker === "-" ? "error" : "dim";
+			const content = highlighted[sourceIndex] ?? safeText;
+			sourceIndex += 1;
+			return `${theme.fg("dim", `${oldLine} ${newLine} │ `)}${theme.fg(markerColor, marker)} ${content}`;
+		}
+		const color = line.tone ?? (line.kind === "outcome" ? stateColor(state) : "muted");
+		return theme.fg(color, safeText);
+	});
 }
 
 function renderEvidence(
@@ -115,29 +152,10 @@ function renderEvidence(
 	continuationPrefix: string,
 ): string[] {
 	const rendered: string[] = [];
-	const highlighted = highlightedEvidence(model);
-	const numberWidth = lineNumberWidth(model);
-	let sourceIndex = 0;
-	for (const [index, line] of model.evidence.entries()) {
+	const styled = styleOperationEvidence(model.evidence, theme, model.state, model.languagePath);
+	for (const [index, content] of styled.entries()) {
 		const prefix = index === 0 ? firstPrefix : continuationPrefix;
 		const available = Math.max(1, width - visibleWidth(prefix));
-		let content: string;
-		if (line.kind === "source") {
-			const number = String(line.newLine ?? line.oldLine ?? "").padStart(numberWidth);
-			const gutter = theme.fg("dim", `${number} │ `);
-			content = `${gutter}${highlighted[sourceIndex] ?? line.text}`;
-			sourceIndex += 1;
-		} else if (line.kind === "diff") {
-			const oldLine = String(line.oldLine ?? "").padStart(numberWidth);
-			const newLine = String(line.newLine ?? "").padStart(numberWidth);
-			const marker = line.diffKind === "add" ? "+" : line.diffKind === "delete" ? "-" : " ";
-			const markerColor = marker === "+" ? "success" : marker === "-" ? "error" : "dim";
-			content = `${theme.fg("dim", `${oldLine} ${newLine} │ `)}${theme.fg(markerColor, marker)} ${highlighted[sourceIndex] ?? line.text}`;
-			sourceIndex += 1;
-		} else {
-			const color = line.tone ?? (line.kind === "outcome" ? stateColor(model.state) : "muted");
-			content = theme.fg(color, line.text);
-		}
 		const wrapped = wrapTextWithAnsi(content, available);
 		for (const [wrapIndex, value] of wrapped.entries()) {
 			rendered.push(`${wrapIndex === 0 ? prefix : continuationPrefix}${value}`);

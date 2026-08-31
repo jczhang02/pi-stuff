@@ -18,6 +18,19 @@ function issueSectionTitle(state: Exclude<ToolActivityState, "running" | "succes
 	return state === "error" ? "Error" : state === "rejected" ? "Rejection" : "Cancellation";
 }
 
+function evidenceSection(
+	title: string,
+	evidence: readonly OperationEvidenceLine[],
+	languagePath?: string,
+): ToolFormattedSection {
+	const section: ToolFormattedSection = {
+		lines: evidence.map(formattedEvidence),
+		operationEvidence: evidence,
+		title,
+	};
+	return languagePath ? { ...section, languagePath } : section;
+}
+
 export function operationDetailSections(
 	name: string,
 	args: ToolArguments,
@@ -39,14 +52,14 @@ export function operationDetailSections(
 	if (name === "write") {
 		return [
 			{ lines: first ? [formattedEvidence(first)] : [], title: "Change" },
-			{ lines: evidence.map(formattedEvidence), title: "Content" },
+			evidenceSection("Content", evidence, model.languagePath),
 			...issueSection,
 		];
 	}
 	if (name === "edit") {
 		return [
 			{ lines: first ? [formattedEvidence(first)] : [], title: "Change" },
-			{ lines: evidence.map(formattedEvidence), title: "Diff" },
+			evidenceSection("Diff", evidence, model.languagePath),
 			...issueSection,
 		];
 	}
@@ -57,7 +70,7 @@ export function operationDetailSections(
 		else if (first) files.unshift(first);
 		return [
 			{ lines: files.map(formattedEvidence), title: "Files" },
-			{ lines: diff.map(formattedEvidence), title: "Diff" },
+			evidenceSection("Diff", diff, model.languagePath),
 			...issueSection,
 		];
 	}

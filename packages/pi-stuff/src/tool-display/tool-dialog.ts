@@ -32,7 +32,8 @@ import {
 } from "../conversation-ui/index.js";
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
-import type { ToolActivityView, ToolFormattedImage, ToolUiRuntime } from "./contract.js";
+import type { ToolActivityView, ToolFormattedImage, ToolFormattedSection, ToolUiRuntime } from "./contract.js";
+import { styleOperationEvidence } from "./operation-block-renderer.js";
 import { toolStateGlyph } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
 import { oneLine } from "./tool-text.js";
@@ -177,6 +178,21 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 	return lines.flatMap((line) => {
 		const safeLine = sanitizeTerminalText(line);
 		return safeLine ? wrapTextWithAnsi(safeLine, contentWidth) : [""];
+	});
+}
+
+function wrapFormattedSection(
+	section: ToolFormattedSection,
+	state: ToolActivityState,
+	width: number,
+	theme: Theme,
+): string[] {
+	if (!section.operationEvidence) return wrapDetailLines(section.lines, width);
+	const styled = styleOperationEvidence(section.operationEvidence, theme, state, section.languagePath);
+	const contentWidth = Math.max(1, width - visibleWidth(GUTTER));
+	return section.lines.flatMap((line, index) => {
+		const content = styled[index] ?? sanitizeTerminalText(line);
+		return content ? wrapTextWithAnsi(content, contentWidth) : [""];
 	});
 }
 
@@ -649,7 +665,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const document = sections.flatMap((section, index) => [
 			...(index > 0 ? [""] : []),
 			commandDialogSectionHeading(this.context.theme, section.title, ""),
-			...wrapDetailLines(section.lines, width),
+			...wrapFormattedSection(section, detail.activity.state, width, this.context.theme),
 			...(detail.images && index === imageSection
 				? renderDetailImages(detail.images, width, this.context.theme)
 				: []),

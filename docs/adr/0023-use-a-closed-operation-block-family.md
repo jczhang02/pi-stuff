@@ -45,7 +45,11 @@ evidence authority.
 
 Operation Block grammar belongs only to the Transcript. `/tools` List rows expose identity, operation, outcome, and
 explicit state. Formatted Detail uses Tool-specific semantic sections; Raw remains the complete bounded protocol
-inspection authority. Formatted and Raw are two representations of one selected call, not separate Dialog modes.
+inspection authority. In file-mutation Formatted Detail, Write content and Edit/Patch diff evidence reuse the same
+syntax, dim-gutter, and semantic `+`/`-` marker styling as the Transcript. Tool-provided terminal controls are stripped
+before styling, and a multi-file Patch chooses syntax per contiguous file block. Highlighting is built only for the
+selected Formatted call after the existing 240-line/24-KiB cap and wrap-cache check; cache hits and Raw do not invoke
+the highlighter. Formatted and Raw are two representations of one selected call, not separate Dialog modes.
 
 ## Consequences
 

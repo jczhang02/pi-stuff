@@ -122,7 +122,8 @@ send_and_expect "\\017" "Tool output: expanded"
 send_and_expect "\\017" "Tool output: collapsed"
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "10 activities"
+must_expect "11 activities"
+must_expect "Tool search"
 must_expect "Esc close"
 wait_for_quiet
 send -- "?"
@@ -130,6 +131,7 @@ must_expect "Tools / Keys"
 must_expect "Ctrl+Y"
 wait_for_quiet
 send_and_expect "\\033" "activities"
+send_and_expect "\\031" "State · cancelled"
 if {$env(PI_STUFF_TOOLS_PTY_COLUMNS) >= 96} {
     send_and_expect "\\tr" "Raw"
     send_and_expect "r" "Cancellation"
@@ -141,6 +143,23 @@ send_and_expect "\\033\\[A" "State · cancelled"
 send_and_expect " " "Bash · command"
 send_and_expect "\\rr" "Raw"
 send_and_expect "r" "Output"
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
+send -- "/tools tools-pty-2\\r"
+must_expect "Tools /"
+must_expect "Content"
+must_expect "旧内容"
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
+send -- "/tools tools-pty-3\\r"
+must_expect "Tools /"
+must_expect "Diff"
+must_expect "旧内容"
+must_expect "新内容"
+send -- "r"
+must_expect "Raw"
+must_expect "oldText"
+send_and_expect "\\033" "r raw"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-4\\r"
@@ -236,6 +255,12 @@ function verifyOutput(output: string, columns: number): void {
 	}
 	const visible = stripTerminalControls(output);
 	verifyLifecycleFrames(visible);
+	const fixtureStart = visible.indexOf("run the Code Mode visibility fixture");
+	const toolsDialogStart = visible.indexOf("/tools", fixtureStart + 1);
+	if (fixtureStart < 0 || toolsDialogStart < 0) fail("could not isolate the compact Tool transcript");
+	if (visible.slice(fixtureStart, toolsDialogStart).toLowerCase().includes("tool search")) {
+		fail("successful tool_search flashed in the compact transcript");
+	}
 	for (const hidden of [
 		"CONTROL_ONLY_ACK",
 		CODE_MODE_NO_OUTPUT_MESSAGE,
@@ -249,8 +274,8 @@ function verifyOutput(output: string, columns: number): void {
 		"TOOLS_DONE",
 		"• TOOLS_DONE",
 		"• Read 1 file",
-		"• Write(written.txt)",
-		"• Edit(written.txt)",
+		"• Write(written.ts)",
+		"• Edit(written.ts)",
 		"• Searched 2 patterns, listed 1 directory",
 		"• List",
 		"• Bash",
@@ -267,7 +292,11 @@ function verifyOutput(output: string, columns: number): void {
 		"Tools",
 		"Tools /",
 		"Tools / Keys",
+		"Tool search",
 		"Ctrl+Y",
+		"Content",
+		"Diff",
+		"oldText",
 		"Call ID: tools-pty-4",
 		"Arguments",
 		"Result content",
@@ -293,6 +322,16 @@ function verifyOutput(output: string, columns: number): void {
 	if (/pi-max-tools-[^\n]*…[ \t]+1 lines/u.test(visible)) {
 		fail("long Tool target joined its ellipsis directly to the settled result");
 	}
+	const sgr = "\\u001b\\[[0-9;]*m";
+	if (!new RegExp(`${sgr}const${sgr}`, "u").test(output)) {
+		fail("Write detail did not contain syntax-highlighted TypeScript");
+	}
+	if (!new RegExp(`${sgr}-${sgr}[^\\n]{0,240}旧内容`, "u").test(output)) {
+		fail("Edit deletion did not contain a styled semantic marker");
+	}
+	if (!new RegExp(`${sgr}\\+${sgr}[^\\n]{0,240}新内容`, "u").test(output)) {
+		fail("Edit addition did not contain a styled semantic marker");
+	}
 }
 
 function verifyLifecycleFrames(visible: string): void {
@@ -304,7 +343,7 @@ function verifyLifecycleFrames(visible: string): void {
 		fail("independent Tool row did not expose its active and settled states");
 	}
 	const firstRetrieval = visible.indexOf("• Read 1 file");
-	const modification = visible.indexOf("• Write(written.txt)", firstRetrieval + 1);
+	const modification = visible.indexOf("• Write(written.ts)", firstRetrieval + 1);
 	const secondRetrieval = visible.indexOf("• Searched 2 patterns, listed 1 directory", modification + 1);
 	if (firstRetrieval < 0 || modification < 0 || secondRetrieval < 0) {
 		fail("retrieval groups and their independent modification boundary lost source order");
@@ -322,7 +361,7 @@ function verifyLifecycleFrames(visible: string): void {
 }
 
 function verifyRequests(records: readonly RequestRecord[]): void {
-	const expectedCompletions = [...Array.from({ length: 13 }, (_, index) => index), 12, 13, 14, 15];
+	const expectedCompletions = [...Array.from({ length: 13 }, (_, index) => index), 12, 13, 14, 15, 16];
 	const requestCount = expectedCompletions.length;
 	if (records.length !== requestCount) {
 		fail(`expected ${String(requestCount)} model requests, received ${String(records.length)}`);
@@ -527,7 +566,10 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 		}
 		const records = parseRequestRecords(await readFile(requestLog, "utf8"));
 		verifyRequests(records);
-		if ((await readFile(join(temporaryDirectory, "written.txt"), "utf8")) !== "新内容\nsecond line\n") {
+		if (
+			(await readFile(join(temporaryDirectory, "written.ts"), "utf8")) !==
+			'const label = "新内容";\nconst count = 2;\n'
+		) {
 			fail("the original Host edit execution contract changed");
 		}
 		if (!(await readFile(shellEvidence, "utf8")).includes("SHELL_PATH_USED")) {
@@ -545,6 +587,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 			"FIXTURE_ERROR",
 			"FIXTURE_REJECTED",
 			"FIXTURE_CANCELLED",
+			"tool_search",
 			"CONTROL_ONLY_ACK",
 			CODE_MODE_NO_OUTPUT_MESSAGE,
 			"VISIBLE_CODE_MODE_SUMMARY",

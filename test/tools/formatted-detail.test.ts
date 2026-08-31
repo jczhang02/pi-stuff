@@ -123,3 +123,55 @@ test("/tools semantic variants preserve ownership and distinct terminal states",
 		expect(details("structured_output", {}, result, `issue-${title}`).formatted?.sections?.[0]?.title).toBe(title);
 	}
 });
+
+test("file mutation Formatted sections retain source and per-file diff evidence", () => {
+	const write = details(
+		"write",
+		{ content: "const value = 1;", path: "src/write.ts" },
+		textResult("written"),
+	).formatted?.sections?.find((section) => section.title === "Content");
+	expect(write?.languagePath).toBe("src/write.ts");
+	expect(write?.operationEvidence?.map((line) => line?.kind)).toEqual(["source"]);
+
+	const edit = details(
+		"edit",
+		{ path: "src/edit.ts" },
+		{
+			content: [{ type: "text", text: "changed" }],
+			details: { patch: "--- a/src/edit.ts\n+++ b/src/edit.ts\n@@ -1 +1 @@\n-old\n+new" },
+		},
+	).formatted?.sections?.find((section) => section.title === "Diff");
+	expect(edit?.languagePath).toBe("src/edit.ts");
+	expect(edit?.operationEvidence?.map((line) => line?.diffKind)).toEqual(["delete", "add"]);
+
+	const patch = details(
+		"apply_patch",
+		{ input: "*** Begin Patch\n*** Update File: src/a.ts\n*** Update File: scripts/b.py\n*** End Patch" },
+		{
+			content: [{ type: "text", text: "changed" }],
+			details: {
+				changedFiles: ["src/a.ts", "scripts/b.py"],
+				createdFiles: [],
+				deletedFiles: [],
+				diff: [
+					"--- a/src/a.ts",
+					"+++ b/src/a.ts",
+					"@@ -1 +1 @@",
+					"-const oldValue = 1;",
+					"+const newValue = 2;",
+					"--- a/scripts/b.py",
+					"+++ b/scripts/b.py",
+					"@@ -1 +1 @@",
+					"-old_value = 1",
+					"+new_value = 2",
+				].join("\n"),
+				movedFiles: [],
+			},
+		},
+	).formatted?.sections?.find((section) => section.title === "Diff");
+	expect(
+		patch?.operationEvidence?.flatMap((line) =>
+			line?.kind === "diff" && line.languagePath ? [line.languagePath] : [],
+		),
+	).toEqual(["src/a.ts", "src/a.ts", "scripts/b.py", "scripts/b.py"]);
+});

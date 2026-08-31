@@ -16,7 +16,7 @@ transcript grouping and result association; `activity-presentation.ts` owns live
 Operation Block family; `operation-block-evidence.ts` owns its bounded result boundary;
 `file-operation-presentation.ts`, `operation-block-diff.ts`, and `background-operation-presentation.ts` own file
 mutation evidence, diff normalization, and Background output respectively; and `operation-block-renderer.ts` owns the
-Transcript grammar. `formatted-detail.ts` owns the complete semantic `/tools` map, while
+shared evidence styling and Transcript grammar. `formatted-detail.ts` owns the complete semantic `/tools` map, while
 `operation-block-formatted-detail.ts` adapts Operation Block evidence into Dialog sections;
 `registered-tool-renderer.ts` owns row/detail publication; and `activity-clock.ts` owns running markers. `ToolUiRuntime`
 remains the single public live-projection facade.
@@ -78,8 +78,10 @@ remains the single public live-projection facade.
   first-level unit: List rows expose Tool identity, bounded operation identity, optional verified non-state evidence,
   and explicit icon-and-word state, omitting generic outcomes that merely restate that state. A Retrieval Group exposes
   ordered `Calls`, while independent activity remains a singleton. Detail uses Tool-specific semantic sections such as
-  Command/Output, Change/Diff, Files/Diff, Task/Result, Invocation/Result, or Code/Error. Image blocks use Pi's native
-  image component when available. Up/Down selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles
+  Command/Output, Change/Diff, Files/Diff, Task/Result, Invocation/Result, or Code/Error. File-mutation Formatted detail
+  sanitizes Tool text before syntax-highlighting Write content and Edit/Patch diffs; gutters stay dim, `+`/`-` markers
+  use success/error color, and a multi-file Patch selects syntax per contiguous file block. Image blocks use Pi's
+  native image component when available. Up/Down selects members, PageUp/PageDown scrolls, Home/End jumps, `r` toggles
   Formatted and Raw, and Escape unwinds the Dialog.
 - Tool rendering is total: a missing historical Tool definition, malformed optional metadata, or throwing presentation
   hook receives a bounded generic row at its source position. Nested envelope Tools and media retain their owning
@@ -96,9 +98,10 @@ remains the single public live-projection facade.
 - An empty `/tools` Dialog keeps key-help and close hints, but omits selection and detail hints until a row exists.
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Formatted is the readable semantic
   view; Raw remains the complete bounded protocol inspection authority with call ID, Tool name, arguments, result
-  content, and details. Operation Blocks do not copy the Transcript `⎿` grammar into the Dialog. Compact mode neither
-  precomputes nor caches a global Raw transcript, and Tool-owned business results are never rewritten by this
-  Capability.
+  content, and details. File syntax highlighting is built only for the selected Formatted detail after a wrap-cache
+  miss; unchanged redraws reuse that document, and Raw bypasses highlighting. Operation Blocks do not copy the
+  Transcript `⎿` grammar into the Dialog. Compact mode neither precomputes nor caches a global Raw transcript, and
+  Tool-owned business results are never rewritten by this Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and Tool Activities are rebuilt after live updates, reload, restart/resume,
   tree navigation, and compaction without a migration or compatibility mode.

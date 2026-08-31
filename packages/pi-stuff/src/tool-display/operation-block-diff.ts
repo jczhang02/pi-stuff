@@ -234,6 +234,7 @@ export function projectDiff(rows: readonly DiffLine[], expanded: boolean, patch:
 	const omitted = additions + deletions - visibleChanged;
 	const lines: OperationEvidenceLine[] = visible.map((row) => {
 		const line: OperationEvidenceLine = { diffKind: row.kind, kind: "diff", text: row.text };
+		if (row.file) Object.assign(line, { languagePath: row.file });
 		if (row.newLine !== undefined) Object.assign(line, { newLine: row.newLine });
 		if (row.oldLine !== undefined) Object.assign(line, { oldLine: row.oldLine });
 		return line;

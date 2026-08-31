@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0023-use-a-closed-operation-block-family.md; translation-source-sha256: 9c020ac80c8ef8347e465e69facd4764875dcd14353003adcead872f616e4c9d -->
+<!-- translation-source: docs/adr/0023-use-a-closed-operation-block-family.md; translation-source-sha256: d4dee051658c1381bd434e9904634eab345155b399e1bcebb0cf87e297c86fd4 -->
 
 ---
 status: accepted
@@ -24,7 +24,7 @@ direct Bash cancellation 只有在之后出现的明确 empty Host abort record 
 
 `subagent` Tool 改用 **Agent Lifecycle Row**。Foreground work 标识 Agent、Task、state 和有意义的 duration；Expanded 列出每个 member 和有界 foreground result evidence。Background launch 与随后模型不可见的 completion row 保持为分开的 chronological event。`/agents` 继续作为唯一 live control 与完整 evidence authority。
 
-Operation Block grammar 只属于 Transcript。`/tools` List row 显示 identity、operation、outcome 与显式 state。Formatted Detail 使用 Tool-specific semantic section；Raw 继续作为完整有界 protocol inspection authority。Formatted 与 Raw 是同一个 selected call 的两种 representation，不是两个独立 Dialog mode。
+Operation Block grammar 只属于 Transcript。`/tools` List row 显示 identity、operation、outcome 与显式 state。Formatted Detail 使用 Tool-specific semantic section；Raw 继续作为完整有界 protocol inspection authority。文件修改的 Formatted Detail 中，Write content 与 Edit/Patch diff evidence 复用 Transcript 的语法、低对比度行号槽以及语义化 `+`/`-` 标记样式。样式处理前先移除 Tool 提供的终端控制序列，多文件 Patch 按连续文件块选择语法。只有当前选中 Formatted call 在既有 240 行/24 KiB 上限及换行缓存检查后才构建高亮；缓存命中与 Raw 都不调用高亮器。Formatted 与 Raw 是同一个 selected call 的两种 representation，不是两个独立 Dialog mode。
 
 ## 结果
 

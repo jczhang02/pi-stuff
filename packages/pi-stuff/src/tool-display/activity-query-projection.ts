@@ -22,6 +22,7 @@ import {
 	visibleActivityItems,
 } from "./activity-summary.js";
 import type {
+	OperationEvidenceLine,
 	PresentedToolMetadata,
 	ToolActivityDetailMode,
 	ToolActivityDetailView,
@@ -35,6 +36,7 @@ import type { ToolGroupProjection } from "./group-projection.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
 import { formattedResultLines } from "./registered-tool-renderer.js";
 import type { ToolRowModel } from "./render.js";
+import { sanitizeTerminalText } from "./terminal.js";
 import { buildRawToolDetailLines, capDetailLines, oneLine, summarizeBuiltin } from "./tool-text.js";
 
 const GROUP_LIST_LIMIT = 768;
@@ -42,16 +44,34 @@ const GROUP_LIST_LIMIT = 768;
 function capSections(sections: readonly ToolFormattedSection[]): readonly ToolFormattedSection[] {
 	const flattened = sections.flatMap((section, index) => [`@@pi-stuff-section:${String(index)}@@`, ...section.lines]);
 	const capped = capDetailLines(flattened, DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
-	const output: Array<{ lines: string[]; title: string }> = [];
-	let current: { lines: string[]; title: string } | undefined;
+	const output: Array<{
+		languagePath?: string;
+		lines: string[];
+		operationEvidence?: OperationEvidenceLine[];
+		title: string;
+	}> = [];
+	let current: (typeof output)[number] | undefined;
+	let source: ToolFormattedSection | undefined;
+	let sourceLineIndex = 0;
 	for (const line of capped) {
 		const marker = line.match(/^@@pi-stuff-section:(\d+)@@$/u);
 		if (marker) {
-			const source = sections[Number(marker[1])];
+			source = sections[Number(marker[1])];
 			if (!source) continue;
 			current = { lines: [], title: source.title };
+			if (source.languagePath) current.languagePath = source.languagePath;
+			if (source.operationEvidence) current.operationEvidence = [];
 			output.push(current);
-		} else current?.lines.push(line);
+			sourceLineIndex = 0;
+		} else if (current && source) {
+			current.lines.push(line);
+			if (current.operationEvidence) {
+				const sourceLine = sanitizeTerminalText(source.lines[sourceLineIndex] ?? "");
+				const evidence = source.operationEvidence?.[sourceLineIndex];
+				if (line === sourceLine && evidence) current.operationEvidence.push(evidence);
+			}
+			sourceLineIndex += 1;
+		}
 	}
 	return output;
 }

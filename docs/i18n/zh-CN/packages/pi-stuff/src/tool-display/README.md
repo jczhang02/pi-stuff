@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 9effa053e97fd46c0d10fb2fd30d94254ac27afa238d542446185dd9f0fb6335 -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: b07ddf31201269669981f0740ad16089784a1b9c04856ce72651e42b168bbebd -->
 
 # Tool Display 模块
 
@@ -6,7 +6,7 @@ Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 
 该能力使用原始定义重新注册七个 Pi 0.84.4 内置工具，只替换其渲染位置。工具 Schema、提示词元数据、执行、结果内容、生命周期事件和权限检查保持不变。Pi 0.84.4 的 PowerShell 工具完全由宿主渲染；Pi Stuff 只为重载/恢复成员关系识别其 `powershell` 名称。每个套件负责的工具必须通过 `registerSuiteOwnedTool` 声明 Activity 元数据；未知第三方工具保留原生渲染器并形成显示边界。
 
-`registration.ts` 负责套件工具装饰、Activity 覆盖和历史重放绑定；`index.ts` 负责有序宿主事件投影生命周期；`registration-tracker.ts` 负责工具注册表与活跃界面投影；`envelope-projection.ts` 负责嵌套工具解码和普通协议投影；`group-projection.ts` 负责对话记录分组与结果关联；`activity-presentation.ts` 负责实时行协调，`activity-query-projection.ts` 负责摘要与工具详情。`operation-block-presentation.ts` 分派封闭 Operation Block family；`operation-block-evidence.ts` 负责其有界结果边界；`file-operation-presentation.ts`、`operation-block-diff.ts` 与 `background-operation-presentation.ts` 分别负责文件修改证据、diff 规范化与 Background 输出；`operation-block-renderer.ts` 负责 Transcript grammar。`formatted-detail.ts` 负责完整语义化 `/tools` 映射，`operation-block-formatted-detail.ts` 把 Operation Block 证据适配为 Dialog section；`registered-tool-renderer.ts` 负责行/详情发布；`activity-clock.ts` 负责运行标记。`ToolUiRuntime` 仍是唯一公开实时投影外观。
+`registration.ts` 负责套件工具装饰、Activity 覆盖和历史重放绑定；`index.ts` 负责有序宿主事件投影生命周期；`registration-tracker.ts` 负责工具注册表与活跃界面投影；`envelope-projection.ts` 负责嵌套工具解码和普通协议投影；`group-projection.ts` 负责对话记录分组与结果关联；`activity-presentation.ts` 负责实时行协调，`activity-query-projection.ts` 负责摘要与工具详情。`operation-block-presentation.ts` 分派封闭 Operation Block family；`operation-block-evidence.ts` 负责其有界结果边界；`file-operation-presentation.ts`、`operation-block-diff.ts` 与 `background-operation-presentation.ts` 分别负责文件修改证据、diff 规范化与 Background 输出；`operation-block-renderer.ts` 负责共享证据样式与 Transcript grammar。`formatted-detail.ts` 负责完整语义化 `/tools` 映射，`operation-block-formatted-detail.ts` 把 Operation Block 证据适配为 Dialog section；`registered-tool-renderer.ts` 负责行/详情发布；`activity-clock.ts` 负责运行标记。`ToolUiRuntime` 仍是唯一公开实时投影外观。
 
 `activity-model.ts` 负责 Activity 词汇，`activity.ts` 保留公开外观与 Bash 分类，`retrieval-groups.ts` 规划对话记录成员关系，`activity-summary-format.ts` 负责纯摘要措辞。
 
@@ -23,12 +23,12 @@ Pi Stuff 套件紧凑、只负责呈现的工具 UI。
 - `Write(path)` 显示 `N lines written` 和语法高亮的最终内容，而不是 diff。Compact 显示十行及 `… +N lines (ctrl+o to expand)`，Expanded 上限为 240 行和 24 KiB。`Edit(path)` 显示精确 `+A/-D` 统计和带 old/new 行号的高亮 diff。`Patch(path)` 或 `Patch(N files)` 显示总计与逐文件 `M/A/D/R` 统计及有界 changed-line evidence；纯 rename 显示 `renamed without content changes`。存在证据时不重复通用成功 prose。
 - `subagent` Tool 使用 Agent Lifecycle Row，而不是 Operation Block。Foreground row 标识 Agent、Task、终态和有意义的 duration；Expanded 列出每个 member 和有界 foreground result evidence。Background launch 与随后模型不可见的 completion row 保持为两个 chronological event；`/agents` 继续负责 live control 与完整 evidence。
 - Task、`tool_search` 和 `ctx_reduce` 调用从开始到成功都不出现在紧凑对话记录中；Todo 负责 Task 状态，两个基础设施调用则对检索保持透明。全部调用仍可通过 `Ctrl+O` 与 `/tools` 检查；错误、拒绝或取消会成为独立工具活动，并关闭两侧检索。
-- Pi 全局 `Ctrl+O` 按持久源码顺序恢复合格调用、现有工具特定渲染器、成功 Task 与基础设施调用，以及逻辑 Thinking 运行。`/tools [group-or-member-id]` 保持以工具活动为第一级单元：List row 显示 Tool identity、有界 operation identity、可选且已验证的非状态 evidence，以及明确的图标加文字 state；若通用 outcome 只是重复该 state，则省略。检索组暴露有序 `Calls`，独立活动保持单项。Detail 使用 Command/Output、Change/Diff、Files/Diff、Task/Result、Invocation/Result 或 Code/Error 等 Tool-specific semantic section；可用时 image block 使用 Pi 原生 image component。Up/Down 选择成员，PageUp/PageDown 滚动，Home/End 跳转，`r` 切换 Formatted 与 Raw，Escape 逐层退出 Dialog。
+- Pi 全局 `Ctrl+O` 按持久源码顺序恢复合格调用、现有工具特定渲染器、成功 Task 与基础设施调用，以及逻辑 Thinking 运行。`/tools [group-or-member-id]` 保持以工具活动为第一级单元：List row 显示 Tool identity、有界 operation identity、可选且已验证的非状态 evidence，以及明确的图标加文字 state；若通用 outcome 只是重复该 state，则省略。检索组暴露有序 `Calls`，独立活动保持单项。Detail 使用 Command/Output、Change/Diff、Files/Diff、Task/Result、Invocation/Result 或 Code/Error 等 Tool-specific semantic section。文件修改的 Formatted detail 会先清理 Tool 文本，再对 Write 内容与 Edit/Patch diff 做语法高亮；行号槽保持低对比度，`+`/`-` 标记分别使用成功/错误色，多文件 Patch 按连续文件块选择语法。可用时 image block 使用 Pi 原生 image component。Up/Down 选择成员，PageUp/PageDown 滚动，Home/End 跳转，`r` 切换 Formatted 与 Raw，Escape 逐层退出 Dialog。
 - 工具渲染是全函数：历史工具定义缺失、可选元数据异常或呈现 Hook 抛错时，在源码位置提供一条有界通用行。嵌套封装工具和媒体保留其所属渲染器。只有未被其他界面表示的外层错误、拒绝或取消才得到一行封装回退；没有嵌套工具或媒体行的成功纯 JavaScript 代码模式保持不显示。
 - 封装重放为 Raw 详情保留原始参数，并在 Activity 分类、语义详情和渲染前应用工具当前 `prepareArguments` 兼容垫片。历史结果可能省略 `details`；可选异常元数据会被忽略，不会丢弃操作。嵌套结果 Hook 添加的仅控制 `<system-reminder>` 块不会成为代码模式业务输出；所属外层宿主结果仍是控制消息传输边界。嵌套流式输出立即到达调用方；信息更新 Hook 逐个运行，Hook 落后时只保留最新待处理更新，而最终工具结果仍是权威。
 - `/ui` 包含默认开启的 **工具运行计时器** 设置。它控制长时间运行的独立行和活跃检索组是否在现有阈值后显示经过时间。稳定摘要绝不保留该时间。
 - 空 `/tools` 对话框保留按键帮助与关闭提示，但在行存在前省略选择和详情提示。
-- 每个选中调用的 Formatted 与 Raw 详情文字限制为 240 行和 24 KiB。Formatted 是可读的语义视图；Raw 继续作为完整有界协议检查权威，包含 call ID、Tool name、arguments、result content 与 details。Operation Block 不把 Transcript 的 `⎿` grammar 复制进 Dialog。Compact 既不预计算，也不缓存全局 Raw Transcript；该能力绝不重写 Tool-owned business result。
+- 每个选中调用的 Formatted 与 Raw 详情文字限制为 240 行和 24 KiB。Formatted 是可读的语义视图；Raw 继续作为完整有界协议检查权威，包含 call ID、Tool name、arguments、result content 与 details。文件语法高亮只会在当前选中 Formatted detail 的换行缓存未命中后构建；内容不变的重绘复用该文档，Raw 绕过高亮。Operation Block 不把 Transcript 的 `⎿` grammar 复制进 Dialog。Compact 既不预计算，也不缓存全局 Raw Transcript；该能力绝不重写 Tool-owned business result。
 - 分组是确定性显示投影。会话 JSONL、模型可见消息、活跃工具成员关系和执行行为保持不变；工具活动会在实时更新、重载、重启/恢复、树导航和压缩后重建，无需迁移或兼容模式。
 - 进程内 `/resume` 会在 Pi 重建历史前，精确预绑定活跃且由套件渲染的内置工具，并保留宿主原生 PowerShell 成员关系而不增加渲染器。因此第一帧恢复画面保持紧凑，不会复活已禁用工具；完整活跃工具顺序保留，新调用重新绑定到目标会话的工作目录、信任和项目设置。
 

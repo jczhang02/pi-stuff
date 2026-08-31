@@ -145,6 +145,8 @@ pane or card.
 
 Keep complete relevant event order but bound each expensive preview. Say how much was omitted. Raw identifiers,
 arguments, and protocol content belong behind an explicit raw/debug action rather than in the default reading path.
+`/tools` Formatted file-mutation detail may use syntax and semantic diff color only after Tool text is sanitized;
+gutters remain low contrast, while Raw protocol detail remains unstyled.
 
 ### Wide work inspection
 
