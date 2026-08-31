@@ -12,15 +12,7 @@ import {
 } from "../../shared/effect-foundation.js";
 import { type JsonInputObject, parseJsonObject } from "../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeString } from "../../shared/runtime-type.js";
-import {
-	authenticateServer,
-	logoutServer,
-	type McpCommandContext,
-	openMcpSetup,
-	reconnectServer,
-	reconnectServers,
-	showStatus,
-} from "./commands.ts";
+import type { McpCommandContext } from "./commands.ts";
 import {
 	cloneMcpConfig,
 	loadMcpConfig,
@@ -34,17 +26,6 @@ import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { createOAuthRuntime, shutdownOAuth } from "./mcp-auth-flow.ts";
 import { mcpNativePromise, runMcpEffect, runMcpEffectExit } from "./mcp-effect-runner.ts";
 import { publishMcpStatusShutdown } from "./mcp-status.ts";
-import { executeCall } from "./proxy-call.ts";
-import {
-	executeAuthComplete,
-	executeAuthStart,
-	executeConnect,
-	executeDescribe,
-	executeInstructions,
-	executeList,
-	executeSearch,
-	executeStatus,
-} from "./proxy-modes.ts";
 import { createMcpRuntimeOwner, createOwnedUi, isAbortError, type McpRuntimeOwner } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
 import { renderMcpProxyToolCall, renderMcpToolResult } from "./tool-result-renderer.ts";
@@ -507,6 +488,8 @@ function handleMcpCommand(
 			commandCtx.ui?.notify("MCP not initialized", "error");
 			return;
 		}
+		const { authenticateServer, logoutServer, openMcpSetup, reconnectServer, reconnectServers, showStatus } =
+			yield* mcpNativePromise(() => import("./commands.ts"), commandCtx.signal);
 
 		const { subcommand, serverName } = parseMcpCommand(args);
 		switch (subcommand) {
@@ -609,33 +592,36 @@ function executeMcpAuthAction(
 	parsedArgs: JsonInputObject | undefined,
 	signal: AbortSignal | undefined,
 ): Effect.Effect<ReturnType<typeof proxyFailure> | undefined, Error> {
-	if (params.action === "auth-start") {
-		if (!params.server) {
-			return Effect.succeed(
-				proxyFailure(
+	if (params.action !== "auth-start" && params.action !== "auth-complete") return Effect.succeed(undefined);
+	return Effect.gen(function* () {
+		const { executeAuthComplete, executeAuthStart } = yield* mcpNativePromise(
+			() => import("./proxy-modes.ts"),
+			signal,
+		);
+		if (params.action === "auth-start") {
+			if (!params.server) {
+				return proxyFailure(
 					'auth-start requires `server`. Example: mcp({ action: "auth-start", server: "linear-server" })',
 					{ mode: "auth-start", error: "missing_server" },
-				),
-			);
+				);
+			}
+			return yield* executeAuthStart(state, params.server, signal);
 		}
-		return executeAuthStart(state, params.server, signal);
-	}
-	if (params.action !== "auth-complete") return Effect.succeed(undefined);
-	if (!params.server) {
-		return Effect.succeed(
-			proxyFailure("auth-complete requires `server`.", { mode: "auth-complete", error: "missing_server" }),
-		);
-	}
-	const input = parsedArgs?.["redirectUrl"] ?? parsedArgs?.["code"] ?? parsedArgs?.["input"];
-	if (!isRuntimeString(input) || input.trim().length === 0) {
-		return Effect.succeed(
-			proxyFailure("auth-complete requires args with `redirectUrl`, `code`, or `input`.", {
+		if (!params.server) {
+			return proxyFailure("auth-complete requires `server`.", {
+				mode: "auth-complete",
+				error: "missing_server",
+			});
+		}
+		const input = parsedArgs?.["redirectUrl"] ?? parsedArgs?.["code"] ?? parsedArgs?.["input"];
+		if (!isRuntimeString(input) || input.trim().length === 0) {
+			return proxyFailure("auth-complete requires args with `redirectUrl`, `code`, or `input`.", {
 				mode: "auth-complete",
 				error: "missing_input",
-			}),
-		);
-	}
-	return executeAuthComplete(state, params.server, input, signal);
+			});
+		}
+		return yield* executeAuthComplete(state, params.server, input, signal);
+	});
 }
 
 function executeMcpProxyTool(
@@ -677,6 +663,7 @@ function executeMcpProxyTool(
 		const authResult = yield* executeMcpAuthAction(state, params, parsedArgs, signal);
 		if (authResult !== undefined) return authResult;
 		if (params.tool) {
+			const { executeCall } = yield* mcpNativePromise(() => import("./proxy-call.ts"), signal);
 			return yield* executeCall(
 				state,
 				params.tool,
@@ -686,6 +673,8 @@ function executeMcpProxyTool(
 				signal,
 			);
 		}
+		const { executeConnect, executeDescribe, executeInstructions, executeList, executeSearch, executeStatus } =
+			yield* mcpNativePromise(() => import("./proxy-modes.ts"), signal);
 		if (params.connect) return yield* executeConnect(state, params.connect, signal);
 		if (params.describe) return executeDescribe(state, params.describe);
 		if (params.instructions) return executeInstructions(state, params.instructions);

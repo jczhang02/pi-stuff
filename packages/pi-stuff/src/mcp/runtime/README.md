@@ -18,6 +18,10 @@ at Pi-facing seams. `mcp-http-transport.ts` owns native HTTP negotiation and fai
 `config-sources.ts` owns path and host-config discovery; `config.ts` owns precedence-safe Effect loading and narrow
 writes; `config-persistence.ts` owns Effect-scoped write locks and atomic replacement.
 
+Registration, configuration, status projection, and Session ownership remain eager. Command execution, proxy-call
+handling, SDK clients and transports, schema validators, OAuth providers, and browser handoff load only at their first
+owning action.
+
 `mcp-setup-panel.ts` owns setup interaction, writes, and lifecycle state. `mcp-setup-panel-view.ts` renders immutable
 snapshots and exact write previews without mutating that state.
 

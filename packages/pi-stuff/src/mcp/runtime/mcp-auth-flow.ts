@@ -4,8 +4,6 @@
  * High-level OAuth flow management using the MCP SDK's built-in auth functions.
  */
 
-import { auth as runSdkAuth, UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import open from "open";
 import { isRuntimeString } from "../../shared/runtime-type.js";
 import { abortable, throwIfAborted } from "./abort.ts";
 import { logger } from "./logger.ts";
@@ -39,7 +37,7 @@ import {
 	stopCallbackServer,
 	waitForCallback,
 } from "./mcp-callback-server.ts";
-import { type McpOAuthConfig, McpOAuthProvider } from "./mcp-oauth-provider.ts";
+import type { McpOAuthConfig, McpOAuthProvider } from "./mcp-oauth-provider.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { isServerDisabled, type ServerEntry } from "./types.ts";
 import { formatTerminalError } from "./utils.ts";
@@ -162,6 +160,10 @@ type AuthStartContext = {
 
 async function startClientCredentialsAuth(context: AuthStartContext): Promise<{ authorizationUrl: string }> {
 	const { serverName, serverUrl, definition, config, authStorageOptions, runtime, signal } = context;
+	const [{ auth: runSdkAuth, UnauthorizedError }, { McpOAuthProvider }] = await Promise.all([
+		import("@modelcontextprotocol/sdk/client/auth.js"),
+		import("./mcp-oauth-provider.ts"),
+	]);
 	const storedAuth = await getAuthForUrl(serverName, serverUrl, authStorageOptions);
 	if (storedAuth?.clientInfo && !storedAuth.tokens && !config.clientId) {
 		clearClientInfo(serverName, authStorageOptions);
@@ -218,6 +220,10 @@ async function reserveOAuthCallback(context: AuthStartContext, oauthState: strin
 async function startInteractiveAuth(context: AuthStartContext): Promise<{ authorizationUrl: string }> {
 	const { serverName, serverUrl, definition, config, authStorageOptions, runtime, runtimeState, signal, generation } =
 		context;
+	const [{ auth: runSdkAuth, UnauthorizedError }, { McpOAuthProvider }] = await Promise.all([
+		import("@modelcontextprotocol/sdk/client/auth.js"),
+		import("./mcp-oauth-provider.ts"),
+	]);
 	const existingPendingAuth = runtimeState.pendingAuths.get(getPendingAuthKey(serverName, authStorageOptions));
 	if (existingPendingAuth?.serverUrl === serverUrl) {
 		return { authorizationUrl: existingPendingAuth.authorizationUrl };
@@ -446,6 +452,7 @@ export async function completeAuth(
 				`The OAuth authorization response issuer does not match the discovered issuer for ${serverName}.`,
 			);
 		}
+		const { auth: runSdkAuth, UnauthorizedError } = await import("@modelcontextprotocol/sdk/client/auth.js");
 
 		const result = await abortable(
 			runSdkAuth(pendingAuth.authProvider, {
@@ -533,6 +540,7 @@ export async function authenticate(
 				});
 			}
 			try {
+				const { default: open } = await import("open");
 				await abortable(open(authorizationUrl), signal);
 			} catch (error) {
 				if (isAbortError(error, signal)) throw error;
@@ -607,6 +615,10 @@ export async function getValidToken(
 
 		try {
 			// Create auth provider for token refresh
+			const [{ auth: runSdkAuth }, { McpOAuthProvider }] = await Promise.all([
+				import("@modelcontextprotocol/sdk/client/auth.js"),
+				import("./mcp-oauth-provider.ts"),
+			]);
 			const authProvider = new McpOAuthProvider(
 				serverName,
 				serverUrl,

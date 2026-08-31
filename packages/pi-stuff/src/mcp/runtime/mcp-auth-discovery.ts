@@ -1,5 +1,3 @@
-import { extractWWWAuthenticateParams } from "@modelcontextprotocol/sdk/client/auth.js";
-import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { fetchRemoteUrl } from "../../shared/ssrf-protection.js";
 import { throwIfAborted } from "./abort.ts";
 import type { AuthDiscovery } from "./mcp-auth-config.ts";
@@ -27,6 +25,10 @@ export async function probeAuthDiscovery(
 	definition?: ServerEntry,
 	signal?: AbortSignal,
 ): Promise<AuthDiscovery> {
+	const [{ extractWWWAuthenticateParams }, { LATEST_PROTOCOL_VERSION }] = await Promise.all([
+		import("@modelcontextprotocol/sdk/client/auth.js"),
+		import("@modelcontextprotocol/sdk/types.js"),
+	]);
 	// Discovery must not execute config commands or send their source text.
 	const discoveryHeaders = definition?.headers
 		? Object.fromEntries(

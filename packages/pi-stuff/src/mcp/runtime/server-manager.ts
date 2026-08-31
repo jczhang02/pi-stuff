@@ -1,5 +1,5 @@
-import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport, type StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client, ClientOptions } from "@modelcontextprotocol/sdk/client/index.js";
+import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Resource, Tool } from "@modelcontextprotocol/sdk/types.js";
 import * as Cause from "effect/Cause";
@@ -11,17 +11,11 @@ import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import { createJsonSchemaValidator } from "./json-schema-validator.ts";
 import { logger } from "./logger.ts";
 import type { AuthStorageOptions } from "./mcp-auth.ts";
-import { type McpOAuthRuntime, supportsOAuth } from "./mcp-auth-flow.ts";
+import { supportsOAuth } from "./mcp-auth-config.ts";
+import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { mcpNativePromise } from "./mcp-effect-runner.ts";
-import {
-	connectClient,
-	createHttpTransport,
-	createSessionTerminator,
-	isUnauthorizedHttpError,
-} from "./mcp-http-transport.ts";
 import { probeMcpEndpoint } from "./mcp-probe.ts";
 import {
 	createMcpTraceWriter,
@@ -47,7 +41,6 @@ import {
 	type ServerDefinition,
 	type Transport,
 } from "./types.ts";
-import { UnixSocketClientTransport } from "./unix-socket-transport.ts";
 import {
 	appendStderrTail,
 	resolveCommandSecretsRecord,
@@ -330,6 +323,10 @@ export class McpServerManager {
 			let transport: Transport;
 			let terminateSession: (() => Promise<void>) | undefined;
 			if (definition.command) {
+				const { StdioClientTransport } = yield* mcpNativePromise(
+					() => import("@modelcontextprotocol/sdk/client/stdio.js"),
+					signal,
+				);
 				let command = definition.command;
 				let args = definition.args ?? [];
 				if (command === "npx" || command === "npm") {
@@ -366,6 +363,10 @@ export class McpServerManager {
 					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
 				});
 			} else if (definition.url) {
+				const { createHttpTransport, createSessionTerminator } = yield* mcpNativePromise(
+					() => import("./mcp-http-transport.ts"),
+					signal,
+				);
 				transport = yield* createHttpTransport({
 					authStorageOptions: this.authStorageOptions,
 					definition,
@@ -376,6 +377,10 @@ export class McpServerManager {
 				});
 				terminateSession = createSessionTerminator(transport, name);
 			} else {
+				const { UnixSocketClientTransport } = yield* mcpNativePromise(
+					() => import("./unix-socket-transport.ts"),
+					signal,
+				);
 				transport = yield* Effect.try({
 					try: () => {
 						const socketPath = resolveConfigPath(definition.socket);
@@ -432,7 +437,15 @@ export class McpServerManager {
 	): Effect.Effect<ServerConnection, Error, Scope.Scope> {
 		return Effect.gen({ self: this }, function* () {
 			signal?.throwIfAborted();
-			const client = this.createClient(name);
+			const [{ Client: ClientConstructor }, { createJsonSchemaValidator }, { connectClient }] = yield* Effect.all(
+				[
+					mcpNativePromise(() => import("@modelcontextprotocol/sdk/client/index.js"), signal),
+					mcpNativePromise(() => import("./json-schema-validator.ts"), signal),
+					mcpNativePromise(() => import("./mcp-http-transport.ts"), signal),
+				] as const,
+				{ concurrency: "unbounded" },
+			);
+			const client = this.createClient(name, ClientConstructor, createJsonSchemaValidator());
 			const tracingEnabled = isMcpTraceEnabled(definition, this.traceSettings);
 			let traceWriter = tracingEnabled ? this.traceWriter : undefined;
 			if (tracingEnabled && !traceWriter) {
@@ -469,7 +482,12 @@ export class McpServerManager {
 			);
 			if (Exit.isFailure(connectExit)) {
 				const error = signal?.aborted ? signal.reason : Cause.squash(connectExit.cause);
-				if (isUnauthorizedHttpError(error) && supportsOAuth(definition)) {
+				const unauthorized = definition.url
+					? (yield* mcpNativePromise(() => import("./mcp-http-transport.ts"), signal)).isUnauthorizedHttpError(
+							error,
+						)
+					: false;
+				if (unauthorized && supportsOAuth(definition)) {
 					return {
 						client,
 						transport,
@@ -528,10 +546,14 @@ export class McpServerManager {
 		);
 	}
 
-	private createClient(serverName: string): Client {
+	private createClient(
+		serverName: string,
+		ClientConstructor: typeof Client,
+		jsonSchemaValidator: NonNullable<ClientOptions["jsonSchemaValidator"]>,
+	): Client {
 		let client: Client;
 		const clientOptions: ClientOptions = {
-			jsonSchemaValidator: createJsonSchemaValidator(),
+			jsonSchemaValidator,
 			listChanged: {
 				tools: {
 					onChanged: (error, tools) => {
@@ -545,7 +567,7 @@ export class McpServerManager {
 				},
 			},
 		};
-		client = new Client({ name: `pi-mcp-${serverName}`, version: "1.0.0" }, clientOptions);
+		client = new ClientConstructor({ name: `pi-mcp-${serverName}`, version: "1.0.0" }, clientOptions);
 		return client;
 	}
 

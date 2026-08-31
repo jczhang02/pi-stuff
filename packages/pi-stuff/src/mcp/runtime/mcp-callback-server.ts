@@ -8,14 +8,41 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
-import {
-	DEFAULT_OAUTH_CALLBACK_PATH,
-	getConfiguredOAuthCallbackPort,
-	getOAuthCallbackPath,
-	getOAuthCallbackPort,
-	setOAuthCallbackPath,
-	setOAuthCallbackPort,
-} from "./mcp-oauth-provider.ts";
+
+export const DEFAULT_OAUTH_CALLBACK_PORT = 19876;
+export const DEFAULT_OAUTH_CALLBACK_PATH = "/callback";
+
+let configuredOAuthCallbackPort = DEFAULT_OAUTH_CALLBACK_PORT;
+const environmentPort = process.env["MCP_OAUTH_CALLBACK_PORT"];
+if (environmentPort) {
+	const parsedPort = Number.parseInt(environmentPort, 10);
+	if (Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+		configuredOAuthCallbackPort = parsedPort;
+	}
+}
+
+let oauthCallbackPort = configuredOAuthCallbackPort;
+let oauthCallbackPath = DEFAULT_OAUTH_CALLBACK_PATH;
+
+export function getConfiguredOAuthCallbackPort(): number {
+	return configuredOAuthCallbackPort;
+}
+
+export function getOAuthCallbackPort(): number {
+	return oauthCallbackPort;
+}
+
+export function setOAuthCallbackPort(port: number): void {
+	oauthCallbackPort = port;
+}
+
+export function getOAuthCallbackPath(): string {
+	return oauthCallbackPath;
+}
+
+export function setOAuthCallbackPath(path: string): void {
+	oauthCallbackPath = path.startsWith("/") ? path : `/${path}`;
+}
 
 // HTML templates for callback responses
 const HTML_SUCCESS = `<!DOCTYPE html>

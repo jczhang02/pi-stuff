@@ -30,6 +30,7 @@ import {
 	updateClientInfo,
 	updateTokens,
 } from "./mcp-auth.ts";
+import { getOAuthCallbackPath, getOAuthCallbackPort } from "./mcp-callback-server.ts";
 import { resolveCommandSecret } from "./utils.ts";
 
 type IssuerBoundClientInformation = OAuthClientInformationMixed & { issuer?: string; redirect_uris?: string[] };
@@ -45,42 +46,6 @@ function issuersMatch(first: string, second: string): boolean {
 
 function issuerFrom(value: OAuthClientInformationMixed | OAuthTokens): string | undefined {
 	return "issuer" in value && isRuntimeString(value.issuer) ? value.issuer : undefined;
-}
-
-// Callback server configuration
-const DEFAULT_OAUTH_CALLBACK_PORT = 19876;
-const DEFAULT_OAUTH_CALLBACK_PATH = "/callback";
-
-let configuredOAuthCallbackPort = DEFAULT_OAUTH_CALLBACK_PORT;
-
-if (process.env["MCP_OAUTH_CALLBACK_PORT"]) {
-	const parsedPort = Number.parseInt(process.env["MCP_OAUTH_CALLBACK_PORT"], 10);
-	if (Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-		configuredOAuthCallbackPort = parsedPort;
-	}
-}
-
-let oauthCallbackPort = configuredOAuthCallbackPort;
-let oauthCallbackPath = DEFAULT_OAUTH_CALLBACK_PATH;
-
-export function getConfiguredOAuthCallbackPort(): number {
-	return configuredOAuthCallbackPort;
-}
-
-export function getOAuthCallbackPort(): number {
-	return oauthCallbackPort;
-}
-
-export function setOAuthCallbackPort(port: number): void {
-	oauthCallbackPort = port;
-}
-
-export function getOAuthCallbackPath(): string {
-	return oauthCallbackPath;
-}
-
-export function setOAuthCallbackPath(path: string): void {
-	oauthCallbackPath = path.startsWith("/") ? path : `/${path}`;
 }
 
 /** Configuration options for OAuth */
@@ -589,4 +554,12 @@ export class McpOAuthProvider implements OAuthClientProvider {
 	}
 }
 
-export { DEFAULT_OAUTH_CALLBACK_PATH, DEFAULT_OAUTH_CALLBACK_PORT };
+export {
+	DEFAULT_OAUTH_CALLBACK_PATH,
+	DEFAULT_OAUTH_CALLBACK_PORT,
+	getConfiguredOAuthCallbackPort,
+	getOAuthCallbackPath,
+	getOAuthCallbackPort,
+	setOAuthCallbackPath,
+	setOAuthCallbackPort,
+} from "./mcp-callback-server.ts";
