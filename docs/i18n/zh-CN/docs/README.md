@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: bb9566a0d5c9c94ddc0d01897c779f841925a2eb8f6cecfd56243fbcb3fff905 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 098d18a889e6d4ffa12dd48f6e582b6afcfa8518b4870aa9f2fc6d263164412a -->
 
 # 工程文档
 
@@ -60,14 +60,14 @@
 | Tool Display | [指南](capabilities/tool-display.md) | [`tool-display`](../packages/pi-stuff/src/tool-display/README.md) |
 | RTK | — | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
 | Codex Runtime | — | [`codex`](../packages/pi-stuff/src/codex/README.md) |
-| Goal | — | [`goal`](../packages/pi-stuff/src/goal/README.md) |
-| Context Management | — | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
-| Ponytail | — | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
+| Goal | [指南](capabilities/goal.md) | [`goal`](../packages/pi-stuff/src/goal/README.md) |
+| Context Management | [指南](capabilities/context-management.md) | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
+| Ponytail | [指南](capabilities/ponytail.md) | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
 | Web | — | [`web`](../packages/pi-stuff/src/web/README.md) |
 | MCP | — | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
-| Background Work | — | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
-| Agents | — | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
-| Todo | — | [`todo`](../packages/pi-stuff/src/todo/README.md) |
+| Background Work | [指南](capabilities/background-work.md) | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
+| Agents | [指南](capabilities/subagents.md) | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
+| Todo | [指南](capabilities/todo.md) | [`todo`](../packages/pi-stuff/src/todo/README.md) |
 | BTW | [指南](capabilities/btw.md) | [`btw`](../packages/pi-stuff/src/btw/README.md) |
 | Notification | [指南](capabilities/notification.md) | [`notification`](../packages/pi-stuff/src/notification/README.md) |
 | Code Mode | — | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |

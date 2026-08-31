@@ -59,14 +59,14 @@ hard-to-reverse, non-obvious trade-off. Git history is the archive for removed p
 | Tool Display | [Guide](capabilities/tool-display.md) | [`tool-display`](../packages/pi-stuff/src/tool-display/README.md) |
 | RTK | — | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
 | Codex Runtime | — | [`codex`](../packages/pi-stuff/src/codex/README.md) |
-| Goal | — | [`goal`](../packages/pi-stuff/src/goal/README.md) |
-| Context Management | — | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
-| Ponytail | — | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
+| Goal | [Guide](capabilities/goal.md) | [`goal`](../packages/pi-stuff/src/goal/README.md) |
+| Context Management | [Guide](capabilities/context-management.md) | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
+| Ponytail | [Guide](capabilities/ponytail.md) | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
 | Web | — | [`web`](../packages/pi-stuff/src/web/README.md) |
 | MCP | — | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
-| Background Work | — | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
-| Agents | — | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
-| Todo | — | [`todo`](../packages/pi-stuff/src/todo/README.md) |
+| Background Work | [Guide](capabilities/background-work.md) | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
+| Agents | [Guide](capabilities/subagents.md) | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
+| Todo | [Guide](capabilities/todo.md) | [`todo`](../packages/pi-stuff/src/todo/README.md) |
 | BTW | [Guide](capabilities/btw.md) | [`btw`](../packages/pi-stuff/src/btw/README.md) |
 | Notification | [Guide](capabilities/notification.md) | [`notification`](../packages/pi-stuff/src/notification/README.md) |
 | Code Mode | — | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |
