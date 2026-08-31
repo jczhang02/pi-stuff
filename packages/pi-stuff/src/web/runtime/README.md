@@ -1,25 +1,27 @@
-# Absorbed Web implementation
+# Web Runtime
 
-This directory is the private implementation behind Pi Stuff's `web` module. It is source code absorbed from a pinned,
-locally adapted `pi-web-access` snapshot; it is not a Package, dependency, or independently installed extension.
+[Simplified Chinese](../../../../../docs/i18n/zh-CN/packages/pi-stuff/src/web/runtime/README.md)
 
-Pi Stuff owns the user-visible Tool surface in the parent directory. The implementation here supplies search,
-HTTP/image/PDF extraction, bounded GitHub API reads, storage, and SSRF enforcement. Dormant upstream curator,
-command, source-check, page-answer, cloning, and video surfaces have been removed. See [`UPSTREAM.md`](./UPSTREAM.md) for exact provenance,
-integrity records, license, and the maintained delta. [`SECURITY.md`](./SECURITY.md) records the retained credential,
-remote-extraction, and paid-provider boundaries.
+Provider routing, extraction, stored-result retrieval, credential resolution, and SSRF enforcement for Pi Stuff Web.
 
-`implementation.ts` keeps installation as a short ordered lifecycle and delegates each Tool to its search, fetch,
-or stored-content handler. The parent `tool-contracts.ts` owns the shared bounded schemas; this private runtime owns
-execution, storage, and Session restoration only.
+## Quick start
 
-`rsc-extract.ts` separates flight-chunk parsing from the cycle-safe node traversal that renders referenced content and
-Markdown tables.
+Use the parent [Web guide](../../../../../docs/capabilities/web.md) and its three Tools. The runtime executes each
+search, fetch, or stored-content request from one immutable configuration snapshot.
 
-`extract.ts` keeps the ordered provider fallback policy in one sequence and delegates HTTP response types to focused
-raw, image, PDF, text, HTML, and RSC handlers.
+## Highlights
 
-`gemini-search.ts` owns one typed provider registry and the routing policy built from it. Each provider is declared
-once with its dispatch, availability, label, and automatic-routing metadata. Gemini API and browser transports remain
-inside `gemini-api.ts` and `gemini-web.ts`; extraction providers keep their separate content contract. Every provider
-reads the already-parsed Web namespace from the parent settings module rather than reparsing credential-bearing JSON.
+- Routes configured search providers while keeping paid providers explicit.
+- Extracts bounded HTTP, image, PDF, and GitHub content.
+- Applies SSRF and domain policy at the outbound HTTP seam.
+- Disables redirects before credentials or request bodies can cross origins.
+- Restores valid Session result entries younger than one hour.
+- Resolves bounded credential sources without persisting their values.
+
+## Documentation
+
+- [Web guide](../../../../../docs/capabilities/web.md)
+- [Web Module README](../README.md)
+- [Security contract](SECURITY.md)
+- [Upstream references](UPSTREAM.md)
+

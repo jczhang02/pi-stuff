@@ -1,54 +1,35 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: 7c8d24ba582464200573a79d23bbe2ce3657370bd650f1b9efd1905d7c6ac2e4 -->
+<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: a295f8f5720d4dfee50baa4f2974bd5da64c1786452c270900ca45607511afb2 -->
 
-# Pi Stuff MCP
+# MCP
 
-Pi Stuff MCP 读取项目 `.mcp.json` 等标准 MCP 声明，并暴露一个 `mcp` 网关工具。服务器默认按需连接；用户可以为单个服务器持久化自动连接。可选服务器失败不会阻止 Pi 或其他服务器工作。
+[English](../../../../../../../packages/pi-stuff/src/mcp/README.md)
 
-`/mcp` 打开 Pi Stuff 全宽非浮动服务器控制对话框。打开它绝不会连接服务器或写入配置。用方向键选择服务器，按 Enter 查看可用操作。`/mcp reconnect <server>` 等运维子命令仍供熟练用户使用。
+把已配置 MCP server 放在一个可搜索、有界的 gateway Tool 之后。
 
-吸收的运行时省略逐服务器直接工具、JavaScript 批处理、MCP Prompt 发现、MCP Apps 浏览器/原生窗口、浮动面板和捆绑 Skill。共享工具渲染器保持对话记录紧凑；分叉在大型 MCP 输出进入模型上下文前进行防护。发现使用排名后的字面词；正则搜索及其重量级执行后端被有意省略。省略服务器发起的 Sampling 和 Elicitation，因此 MCP 回调不能在共享命令对话框约定之外打开原生提示。工具或资源元数据列表超过 100 页或 10,000 项时，连接发现会拒绝；列表变化更新使用同样的条目限制。
+## 快速开始
 
-MCP 文本结果默认限制为 50 KiB 或 2,000 行。超大文本和超过 16 KiB 的原始代理详情会溢写到模式为 `0600` 的临时文件；图像块继续走 Pi 原生图像路径。溢写文件可能包含敏感服务器输出，不会自动删除。
-
-## 已接受的 `/mcp` 控制目标
-
-**决策更新：** 2026-08-20
-**状态：** 已实现。
-
-不带参数的 `/mcp` 是状态、设置、认证、重连和启用/禁用操作的默认交互路径。它不重复工具发现或协议检查。保留的 MCP 运行时仍是连接、OAuth、设置、配置和重载行为的唯一所有者。
-
-服务器名称是每行主要身份。使用真实状态图标加完整状态文字：
+添加项目 `.mcp.json`，启动 Pi，然后打开：
 
 ```text
-MCP · 1/4 已连接 · 14 个工具 · 3 个资源
-
-› ✓ filesystem · 已连接 · 8 个工具 · 1 个资源
-  ! github · 需要认证
-  × browser · 12 秒前失败
-  ■ legacy · 已禁用
-  ○ docs · 已缓存 · 6 个工具 · 2 个资源
-
-↑/↓ 导航 · Enter 管理 · s 设置 · ? 按键 · Esc 关闭
+/mcp
 ```
 
-已连接、已缓存或未连接、失败、需要认证和已禁用分别使用 `✓`、`○`、`×`、`!` 和 `■`。保留状态文字，因为即使共享紧凑图标类别，已缓存、未连接和已禁用也有实质差异。连接分母统计已启用服务器；禁用行仍可见，但不应连接。
+Server 默认按需连接。Dialog 管理 setup、认证、重连、启用状态，以及自动或按需 lifecycle。
 
-行保持声明顺序并原位更新。Enter 为选中服务器打开聚焦操作列表。重连、认证和登出行内运行；近期失败显示一个有界、经过遮盖的原因。`Ctrl+R` 直接重连选中服务器，`Ctrl+A` 直接认证。
+## 亮点
 
-详情视图显示连接是 `automatic` 还是 `on demand`。更改策略需要确认，只把该服务器的 `lifecycle` 字段持久化到项目局部 `.pi/mcp.json`，并重载 Pi。自动连接使用 MCP `keep-alive` 生命周期；按需使用 `lazy`。
+- 发现 shared、Agent、Pi 与 project server 声明。
+- 支持 stdio、HTTP 与受信 Unix socket transport。
+- 通过一个 `mcp` gateway 搜索并调用带前缀的 server Tool。
+- 在可选 startup connection 前恢复缓存 metadata。
+- 把 OAuth credential 保存到操作系统 credential store。
+- 对 metadata discovery、Tool output、raw detail 与诊断设定上限。
 
-登出和启用/禁用需要确认。启用/禁用通过保留运行时写入 `.pi/mcp.json`，成功后重载 Pi。默认确认选项为取消。
+## 文档
 
-Pi 配置的上、下操作每次移动一行；Ctrl+P/Ctrl+N 是别名。列表溢出时，PageUp/PageDown 和 `b`/Space 每次移动一页；Home/End 跳到第一行或最后一行。`?` 打开共享按键指南。Escape 从详情返回或关闭服务器列表。
+- [MCP 指南](../../../../docs/capabilities/mcp.md)
+- [命令参考](../../../../docs/reference/commands.md#mcp)
+- [故障排查](../../../../docs/troubleshooting.md#mcp)
+- [Runtime 契约](runtime/README.md)
+- [上游参考](UPSTREAM.md)
 
-Space 绝不执行持久操作。在设置中，它可以切换导入项的临时选择；Enter 审查精确目标和差异，第二次确认才执行写入。从服务器列表按 `s`，或在空列表按 Enter，可在同一个命令对话框中打开设置。每个合格服务器的详情操作都提供 OAuth 认证和登出。
-
-启动期间读取旧版明文 OAuth 条目，但不迁移。下一次显式 OAuth 修改会把条目写入操作系统凭据存储，并删除明文副本。
-
-OAuth 发现可以使用显式配置服务器主机上的其他端口，包括 localhost 部署。服务器公布的另一主机端点必须只解析到公共地址；其请求会固定 DNS，绝不跟随重定向。
-
-设置会在构造差异前拒绝超过 1,000,000 字节或 10,000 行的来源或生成预览。在该范围内，最多比较 250,000 对行时保留精确逐行差异；更大比较保留共同前缀/后缀行，并把变化的中间部分显示为线性的删除/添加块。
-
-设置使用与其他套件命令对话框相同的连续全宽顶线、两个单元内容边距、粗体标题、无图标语义小节标题、有界列表窗口和独立 Escape 路径。窄布局省略可选预览；低高度布局在次要发现文字之前保留标题、当前选择、确认详情和返回路径。
-
-状态快照排除服务器 URL、可执行命令、参数、环境值、OAuth 数据和 token。它只增加 OAuth 能力、自动连接策略，以及一条经过清理、遮盖且限制长度的近期失败原因。

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 098d18a889e6d4ffa12dd48f6e582b6afcfa8518b4870aa9f2fc6d263164412a -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 5c46dc132bca7c87f0afdb2e0f2f2594f7e50388b876a10a43118034227e5c30 -->
 
 # 工程文档
 
@@ -58,19 +58,19 @@
 | Conversation UI | [指南](capabilities/conversation-ui.md) | [`conversation-ui`](../packages/pi-stuff/src/conversation-ui/README.md) |
 | Session Naming | [指南](capabilities/session-naming.md) | [`session-naming`](../packages/pi-stuff/src/session-naming/README.md) |
 | Tool Display | [指南](capabilities/tool-display.md) | [`tool-display`](../packages/pi-stuff/src/tool-display/README.md) |
-| RTK | — | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
-| Codex Runtime | — | [`codex`](../packages/pi-stuff/src/codex/README.md) |
+| RTK | [指南](capabilities/rtk.md) | [`rtk`](../packages/pi-stuff/src/rtk/README.md) |
+| Codex | [指南](capabilities/codex.md) | [`codex`](../packages/pi-stuff/src/codex/README.md) |
 | Goal | [指南](capabilities/goal.md) | [`goal`](../packages/pi-stuff/src/goal/README.md) |
 | Context Management | [指南](capabilities/context-management.md) | [`context-management`](../packages/pi-stuff/src/context-management/README.md) |
 | Ponytail | [指南](capabilities/ponytail.md) | [`ponytail`](../packages/pi-stuff/src/ponytail/README.md) |
-| Web | — | [`web`](../packages/pi-stuff/src/web/README.md) |
-| MCP | — | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
+| Web | [指南](capabilities/web.md) | [`web`](../packages/pi-stuff/src/web/README.md) |
+| MCP | [指南](capabilities/mcp.md) | [`mcp`](../packages/pi-stuff/src/mcp/README.md) |
 | Background Work | [指南](capabilities/background-work.md) | [`background-work`](../packages/pi-stuff/src/background-work/README.md) |
 | Agents | [指南](capabilities/subagents.md) | [`subagents`](../packages/pi-stuff/src/subagents/README.md) |
 | Todo | [指南](capabilities/todo.md) | [`todo`](../packages/pi-stuff/src/todo/README.md) |
 | BTW | [指南](capabilities/btw.md) | [`btw`](../packages/pi-stuff/src/btw/README.md) |
 | Notification | [指南](capabilities/notification.md) | [`notification`](../packages/pi-stuff/src/notification/README.md) |
-| Code Mode | — | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |
+| Code Mode | [指南](capabilities/code-mode.md) | [`code-mode`](../packages/pi-stuff/src/code-mode/README.md) |
 
 ## 当前 ADR 索引
 
