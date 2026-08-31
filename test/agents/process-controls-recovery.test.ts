@@ -20,7 +20,7 @@ import {
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.ts";
 import { waitForSteeringAction } from "../../packages/pi-stuff/src/subagents/src/runs/background/steering.ts";
 import { writerProcessRegistryPath } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.ts";
-import { createDurableAgentExecutionCoordinator } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.ts";
+import { createDurableAgentExecutionCoordinator } from "../../packages/pi-stuff/src/subagents/src/runtime/durable-agent-execution-coordinator.ts";
 import { SessionAgentGovernor } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.ts";
 import { CurrentAgents } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.ts";
 import {
@@ -519,7 +519,10 @@ function crashRecoveryFixture() {
 
 async function launchCrashRecoveryWriter(fixture: ReturnType<typeof crashRecoveryFixture>) {
 	const { config, events, governorRoot, root, sessionFile, sessionId, sourceRunId } = fixture;
-	const firstCoordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
+	const firstCoordinator = createDurableAgentExecutionCoordinator({
+		effects: createTestAgentEffectOwner(),
+		rootDir: governorRoot,
+	});
 	firstCoordinator.bindSession({ sessionId, ownerAgentPath: [] });
 	const prepared = await firstCoordinator.prepare({
 		launchRunId: sourceRunId,
@@ -606,7 +609,10 @@ test(
 				expect(rows.find((row) => row.runId === sourceRunId)?.status).toBe("crashed");
 				expect(restoredState.asyncJobs.has(sourceRunId)).toBeFalse();
 
-				const reloadedCoordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
+				const reloadedCoordinator = createDurableAgentExecutionCoordinator({
+					effects: createTestAgentEffectOwner(),
+					rootDir: governorRoot,
+				});
 				reloadedCoordinator.bindSession({ sessionId, ownerAgentPath: [] });
 				await reloadedCoordinator.reconcileExisting();
 				const afterReconcile = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
@@ -686,7 +692,10 @@ test(
 			const events = new EventLog();
 			const config = agent(root);
 			cleanupRun(runId);
-			const coordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
+			const coordinator = createDurableAgentExecutionCoordinator({
+				effects: createTestAgentEffectOwner(),
+				rootDir: governorRoot,
+			});
 			try {
 				coordinator.bindSession({ sessionId, ownerAgentPath: [] });
 				const prepared = await coordinator.prepare({

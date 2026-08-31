@@ -1,8 +1,10 @@
-import { open, stat } from "node:fs/promises";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Cause, Effect, Exit, Option } from "effect";
 import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
-import { sanitizeTerminalText, utf8SafePrefix, utf8SafeTail } from "./output.js";
+import type { BackgroundWorkEffectTask } from "./effect-owner.js";
+import { readMonitorHttp, readMonitorSize, readMonitorSlice } from "./monitor-native.js";
+import { sanitizeTerminalText, utf8SafeTail } from "./output.js";
 import type {
 	BackgroundMonitorActivity,
 	BackgroundWorkOutcome,
@@ -52,102 +54,61 @@ function titleFor(input: MonitorInput): string {
 	return boundTerminalLine(`${input.source} ${input.target}`, 80);
 }
 
-function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal.aborted) {
-			reject(signal.reason);
-			return;
-		}
-		const timer = setTimeout(() => {
-			signal.removeEventListener("abort", abort);
-			resolve();
-		}, milliseconds);
-		const abort = () => {
-			clearTimeout(timer);
-			reject(signal.reason);
-		};
-		signal.addEventListener("abort", abort, { once: true });
-	});
-}
-
 function textCondition(evidence: string, successText?: string, failureText?: string): ProbeResult {
 	if (failureText && evidence.includes(failureText)) return { evidence, state: "failed" };
 	if (!successText || evidence.includes(successText)) return { evidence, state: "satisfied" };
 	return { evidence, state: "pending" };
 }
 
-async function readSlice(path: string, fromByte: number): Promise<string> {
-	const handle = await open(path, "r");
-	try {
-		const size = (await handle.stat()).size;
-		const start = Math.max(fromByte, size - MAX_EVIDENCE_BYTES);
-		const length = Math.max(0, Math.min(MAX_EVIDENCE_BYTES, size - start));
-		if (length === 0) return "";
-		const buffer = Buffer.alloc(length);
-		const { bytesRead } = await handle.read(buffer, 0, length, start);
-		const prefix = start > fromByte ? "…[earlier monitored content omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${utf8SafeTail(buffer, bytesRead).toString("utf-8")}`).trimEnd();
-	} finally {
-		await handle.close().catch(() => {});
-	}
-}
-
-async function readResponseBody(response: Response): Promise<string> {
-	if (!response.body) return "";
-	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let bytes = 0;
-	try {
-		for (;;) {
-			const item = await reader.read();
-			if (item.done) break;
-			const remaining = MAX_EVIDENCE_BYTES - bytes;
-			if (remaining <= 0) break;
-			const accepted = item.value.subarray(0, remaining);
-			chunks.push(accepted);
-			bytes += accepted.byteLength;
-			if (accepted.byteLength < item.value.byteLength || bytes >= MAX_EVIDENCE_BYTES) break;
-		}
-	} finally {
-		await reader.cancel().catch(() => {});
-	}
-	const combined = new Uint8Array(bytes);
-	let offset = 0;
-	for (const chunk of chunks) {
-		combined.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return new TextDecoder().decode(utf8SafePrefix(Buffer.from(combined)));
-}
-
 class PollingMonitor implements BackgroundMonitorActivity {
 	readonly id: string;
-	readonly outcome: Promise<BackgroundWorkOutcome>;
-	private readonly controller = new AbortController();
 	private evidence = "Waiting for the condition.";
-	private finalized = false;
+	private readonly effects: BackgroundWorkRuntime["effects"];
 	private initialOffset = 0;
 	private readonly input: MonitorInput;
 	private readonly intervalMs: number;
-	private outcomeResolve!: (outcome: BackgroundWorkOutcome) => void;
+	private outcomeValue: Promise<BackgroundWorkOutcome> | undefined;
 	private readonly startedAt = Date.now();
 	private status: "running" | "stopping" = "running";
+	private stopReason: "shutdown" | "user" | undefined;
+	private task: BackgroundWorkEffectTask<BackgroundWorkOutcome, never> | undefined;
+	private terminalOutcome: BackgroundWorkOutcome | undefined;
 	private readonly timeoutMs: number;
 	private readonly title: string;
 
-	constructor(id: string, input: MonitorInput, intervalMs: number, timeoutMs: number) {
+	constructor(
+		id: string,
+		input: MonitorInput,
+		intervalMs: number,
+		timeoutMs: number,
+		effects: BackgroundWorkRuntime["effects"],
+	) {
 		this.id = id;
+		this.effects = effects;
 		this.input = input;
 		this.intervalMs = intervalMs;
 		this.timeoutMs = timeoutMs;
 		this.title = titleFor(input);
-		this.outcome = new Promise((resolve) => {
-			this.outcomeResolve = resolve;
-		});
+	}
+
+	get outcome(): Promise<BackgroundWorkOutcome> {
+		if (!this.outcomeValue) throw new Error("Monitor has not started.");
+		return this.outcomeValue;
 	}
 
 	start(): void {
-		void this.run();
+		if (this.task) return;
+		const task = this.effects.open(this.run());
+		this.task = task;
+		this.outcomeValue = task.exit.then((exit) => {
+			if (Exit.isSuccess(exit)) return exit.value;
+			if (this.stopReason || Cause.hasInterrupts(exit.cause)) {
+				return this.finish("stopped", `Monitor "${this.title}" stopped`);
+			}
+			const error = Cause.squash(exit.cause);
+			this.evidence = error instanceof Error ? error.message : String(error);
+			return this.finish("failed", `Monitor "${this.title}" failed`);
+		});
 	}
 
 	readOutput(maxBytes = MAX_EVIDENCE_BYTES): string {
@@ -174,92 +135,92 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	}
 
 	async cancel(reason: "shutdown" | "user"): Promise<BackgroundWorkOutcome> {
-		if (this.finalized) return this.outcome;
+		if (this.terminalOutcome) return this.terminalOutcome;
+		this.stopReason = reason;
 		this.status = "stopping";
-		this.controller.abort(reason);
-		this.finish("stopped", `Monitor "${this.title}" stopped`);
+		await this.task?.interrupt();
 		return this.outcome;
 	}
 
-	private async run(): Promise<void> {
-		if (this.input.source === "log" && this.input.startAtEnd !== false) {
-			try {
-				this.initialOffset = (await stat(this.input.target)).size;
-			} catch {
-				this.initialOffset = 0;
+	private run(): Effect.Effect<BackgroundWorkOutcome, never> {
+		return Effect.gen({ self: this }, function* () {
+			if (this.input.source === "log" && this.input.startAtEnd !== false) {
+				this.initialOffset = yield* Effect.tryPromise({
+					try: () => readMonitorSize(this.input.target),
+					catch: (error) => error,
+				}).pipe(Effect.catch(() => Effect.succeed(0)));
 			}
-		}
-		const deadline = this.startedAt + this.timeoutMs;
-		while (!this.finalized && !this.controller.signal.aborted) {
-			if (Date.now() >= deadline) {
-				this.finish("timed_out", `Monitor "${this.title}" timed out`);
-				return;
-			}
-			try {
-				const result = await this.probe();
-				this.evidence = result.evidence || "Condition has not been observed yet.";
-				if (result.state === "satisfied") {
-					this.finish("completed", `Monitor "${this.title}" observed its condition`);
-					return;
+			const deadline = this.startedAt + this.timeoutMs;
+			for (;;) {
+				if (Date.now() >= deadline) {
+					return this.finish("timed_out", `Monitor "${this.title}" timed out`);
 				}
-				if (result.state === "failed") {
-					this.finish("failed", `Monitor "${this.title}" observed its failure condition`);
-					return;
-				}
-			} catch (error) {
-				if (this.controller.signal.aborted) return;
-				const code = error && isRuntimeObject(error) && "code" in error ? String(error.code) : "";
-				if (this.input.source !== "http" && code && code !== "ENOENT") {
+				const attempt = yield* this.probe().pipe(
+					Effect.match({
+						onFailure: (error) => ({ error }) as const,
+						onSuccess: (result) => ({ result }) as const,
+					}),
+				);
+				if ("result" in attempt) {
+					const result = attempt.result;
+					this.evidence = result.evidence || "Condition has not been observed yet.";
+					if (result.state === "satisfied") {
+						return this.finish("completed", `Monitor "${this.title}" observed its condition`);
+					}
+					if (result.state === "failed") {
+						return this.finish("failed", `Monitor "${this.title}" observed its failure condition`);
+					}
+				} else {
+					const { error } = attempt;
+					const code = error && isRuntimeObject(error) && "code" in error ? String(error.code) : "";
 					this.evidence = error instanceof Error ? error.message : String(error);
-					this.finish("failed", `Monitor "${this.title}" could not read its source`);
-					return;
+					if (this.input.source !== "http" && code && code !== "ENOENT") {
+						return this.finish("failed", `Monitor "${this.title}" could not read its source`);
+					}
 				}
-				this.evidence = error instanceof Error ? error.message : String(error);
+				yield* Effect.sleep(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())));
 			}
-			try {
-				await wait(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())), this.controller.signal);
-			} catch {
-				return;
-			}
-		}
+		});
 	}
 
-	private async probe(): Promise<ProbeResult> {
+	private probe(): Effect.Effect<ProbeResult, unknown> {
 		if (this.input.source === "http") return this.probeHttp();
-		const evidence = await readSlice(this.input.target, this.initialOffset);
-		if (!this.input.successText && !this.input.failureText) {
-			return { evidence: evidence || `Found ${this.input.target}`, state: "satisfied" };
-		}
-		return textCondition(evidence, this.input.successText, this.input.failureText);
+		return Effect.tryPromise({
+			try: () => readMonitorSlice(this.input.target, this.initialOffset, MAX_EVIDENCE_BYTES),
+			catch: (error) => error,
+		}).pipe(
+			Effect.map((evidence) =>
+				!this.input.successText && !this.input.failureText
+					? { evidence: evidence || `Found ${this.input.target}`, state: "satisfied" as const }
+					: textCondition(evidence, this.input.successText, this.input.failureText),
+			),
+		);
 	}
 
-	private async probeHttp(): Promise<ProbeResult> {
-		const attempt = new AbortController();
-		const parentAbort = () => attempt.abort(this.controller.signal.reason);
-		this.controller.signal.addEventListener("abort", parentAbort, { once: true });
-		const timeout = setTimeout(() => attempt.abort(new Error("HTTP probe timed out")), 10_000);
-		try {
-			const response = await fetch(this.input.target, { redirect: "follow", signal: attempt.signal });
-			const body = await readResponseBody(response);
-			const evidence = sanitizeTerminalText(
-				`HTTP ${String(response.status)} ${response.statusText}\n${body}`,
-			).trimEnd();
-			const condition = textCondition(evidence, this.input.successText, this.input.failureText);
-			if (condition.state === "failed") return condition;
-			if (!response.ok) return { evidence, state: "pending" };
-			return condition;
-		} finally {
-			clearTimeout(timeout);
-			this.controller.signal.removeEventListener("abort", parentAbort);
-		}
+	private probeHttp(): Effect.Effect<ProbeResult, unknown> {
+		return Effect.tryPromise({
+			try: async (signal) => {
+				const response = await readMonitorHttp(this.input.target, signal, MAX_EVIDENCE_BYTES);
+				const evidence = sanitizeTerminalText(
+					`HTTP ${String(response.status)} ${response.statusText}\n${response.body}`,
+				).trimEnd();
+				const condition = textCondition(evidence, this.input.successText, this.input.failureText);
+				if (condition.state === "failed") return condition;
+				return response.ok ? condition : { evidence, state: "pending" as const };
+			},
+			catch: (error) => error,
+		}).pipe(
+			Effect.timeoutOption(10_000),
+			Effect.flatMap((result) =>
+				Option.isSome(result) ? Effect.succeed(result.value) : Effect.fail(new Error("HTTP probe timed out")),
+			),
+		);
 	}
 
-	private finish(status: BackgroundWorkOutcome["status"], summary: string): void {
-		if (this.finalized) return;
-		this.finalized = true;
+	private finish(status: BackgroundWorkOutcome["status"], summary: string): BackgroundWorkOutcome {
+		if (this.terminalOutcome) return this.terminalOutcome;
 		this.status = "stopping";
-		this.controller.abort(status);
-		this.outcomeResolve({
+		this.terminalOutcome = {
 			endedAt: Date.now(),
 			id: this.id,
 			kind: "monitor",
@@ -268,7 +229,8 @@ class PollingMonitor implements BackgroundMonitorActivity {
 			status,
 			summary,
 			title: this.title,
-		});
+		};
+		return this.terminalOutcome;
 	}
 }
 
@@ -305,8 +267,8 @@ export async function startMonitor(
 		input,
 		Math.round(intervalSeconds * 1_000),
 		Math.round(timeoutSeconds * 1_000),
+		runtime.effects,
 	);
 	runtime.registerMonitor(monitor);
-	monitor.start();
 	return { id, title };
 }

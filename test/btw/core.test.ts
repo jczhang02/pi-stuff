@@ -296,7 +296,7 @@ test("reuses captured Magic memory without re-running stateful projection for a 
 			return Effect.succeed(completedStream(["answer"], assistant("answer")));
 		});
 	} finally {
-		contextTest.clear();
+		await contextTest.clear();
 	}
 
 	expect(magicTransforms).toBe(1);

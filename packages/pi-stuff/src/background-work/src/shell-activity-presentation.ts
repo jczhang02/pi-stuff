@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
+import { Effect, type Scope } from "effect";
 import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
@@ -39,72 +40,82 @@ export function emitShellToolUpdate(
 }
 
 interface ShellExecutionProjection {
-	readonly completion: Promise<BackgroundWorkOutcome>;
+	readonly completion: Effect.Effect<BackgroundWorkOutcome>;
 	readonly detach: (reason: "timeout") => void;
-	readonly detached: Promise<"manual" | "timeout">;
+	readonly detached: Effect.Effect<"manual" | "timeout">;
 	readonly id: string;
 	readonly onAbort: () => void;
 	readonly output: BoundedOutputFile;
 	readonly outputPath: () => string | undefined;
 }
 
-export async function executeShellTool(
+type ShellExecutionResult =
+	| { readonly kind: "completed"; readonly outcome: BackgroundWorkOutcome }
+	| { readonly kind: "detached"; readonly reason: "manual" | "timeout" };
+
+function waitForShellResult(source: ShellExecutionProjection, detachAt: number): Effect.Effect<ShellExecutionResult> {
+	const terminal = Effect.raceFirst(
+		source.completion.pipe(Effect.map((outcome) => ({ kind: "completed" as const, outcome }))),
+		source.detached.pipe(Effect.map((reason) => ({ kind: "detached" as const, reason }))),
+	);
+	const automaticDetach = Effect.sleep(Math.max(0, detachAt - Date.now())).pipe(
+		Effect.andThen(
+			Effect.sync(() => {
+				source.detach("timeout");
+				return { kind: "detached" as const, reason: "timeout" as const };
+			}),
+		),
+	);
+	return Effect.raceFirst(terminal, automaticDetach);
+}
+
+function abortShellExecution(signal: AbortSignal, onAbort: () => void): Effect.Effect<never> {
+	return Effect.callback((resume) => {
+		const abort = () => {
+			onAbort();
+			resume(Effect.interrupt);
+		};
+		if (signal.aborted) {
+			abort();
+			return;
+		}
+		signal.addEventListener("abort", abort, { once: true });
+		return Effect.sync(() => signal.removeEventListener("abort", abort));
+	});
+}
+
+export function executeShellTool(
 	input: BashExecutionInput,
 	backgroundAfterMs: number,
 	source: ShellExecutionProjection,
-): Promise<AgentToolResult<BackgroundWorkBashDetails | undefined>> {
-	if (input.runInBackground) return backgroundShellLaunchResult(source.id, source.outputPath());
-	let updateTimer: ReturnType<typeof setInterval> | undefined;
-	let lastUpdate = "";
-	const sendUpdate = () => {
-		const output = source.output.recentText(12_000);
-		if (!output || output === lastUpdate) return;
-		lastUpdate = output;
-		emitShellToolUpdate(input.onUpdate, { content: [{ type: "text", text: output }], details: undefined });
-	};
-	if (input.signal) {
-		if (input.signal.aborted) source.onAbort();
-		else input.signal.addEventListener("abort", source.onAbort, { once: true });
-	}
-	emitShellToolUpdate(input.onUpdate, { content: [], details: undefined });
-	const detachTimer = setTimeout(() => source.detach("timeout"), backgroundAfterMs);
-	detachTimer.unref?.();
-	let quickTimer: ReturnType<typeof setTimeout> | undefined;
-	const quick = await Promise.race([
-		source.completion.then((outcome) => ({ kind: "completed" as const, outcome })),
-		source.detached.then((reason) => ({ kind: "detached" as const, reason })),
-		new Promise<{ readonly kind: "still-running" }>((resolve) => {
-			quickTimer = setTimeout(() => resolve({ kind: "still-running" }), QUICK_COMPLETION_MS);
-			quickTimer.unref?.();
-		}),
-	]);
-	if (quickTimer) clearTimeout(quickTimer);
-	if (quick.kind === "completed") {
-		clearTimeout(detachTimer);
-		input.signal?.removeEventListener("abort", source.onAbort);
-		return foregroundShellResult(quick.outcome);
-	}
-	if (quick.kind === "detached") {
-		clearTimeout(detachTimer);
-		input.signal?.removeEventListener("abort", source.onAbort);
-		return backgroundShellLaunchResult(source.id, source.outputPath(), quick.reason);
-	}
-	updateTimer = setInterval(sendUpdate, 250);
-	updateTimer.unref?.();
-	try {
-		const result = await Promise.race([
-			source.completion.then((outcome) => ({ kind: "completed" as const, outcome })),
-			source.detached.then((reason) => ({ kind: "detached" as const, reason })),
-		]);
+): Effect.Effect<AgentToolResult<BackgroundWorkBashDetails | undefined>, never, Scope.Scope> {
+	if (input.runInBackground) return Effect.succeed(backgroundShellLaunchResult(source.id, source.outputPath()));
+	const execution = Effect.gen(function* () {
+		const detachAt = Date.now() + backgroundAfterMs;
+		let lastUpdate = "";
+		const sendUpdate = () => {
+			const output = source.output.recentText(12_000);
+			if (!output || output === lastUpdate) return;
+			lastUpdate = output;
+			emitShellToolUpdate(input.onUpdate, { content: [{ type: "text", text: output }], details: undefined });
+		};
+		emitShellToolUpdate(input.onUpdate, { content: [], details: undefined });
+		const quick = yield* Effect.raceFirst(
+			waitForShellResult(source, detachAt),
+			Effect.sleep(QUICK_COMPLETION_MS).pipe(Effect.as({ kind: "still-running" as const })),
+		);
+		if (quick.kind === "completed") return foregroundShellResult(quick.outcome);
+		if (quick.kind === "detached") {
+			return backgroundShellLaunchResult(source.id, source.outputPath(), quick.reason);
+		}
+		yield* Effect.forkScoped(Effect.forever(Effect.sleep(250).pipe(Effect.andThen(Effect.sync(sendUpdate)))));
+		const result = yield* waitForShellResult(source, detachAt);
 		sendUpdate();
 		return result.kind === "detached"
 			? backgroundShellLaunchResult(source.id, source.outputPath(), result.reason)
 			: foregroundShellResult(result.outcome);
-	} finally {
-		if (updateTimer) clearInterval(updateTimer);
-		clearTimeout(detachTimer);
-		input.signal?.removeEventListener("abort", source.onAbort);
-	}
+	}).pipe(Effect.onInterrupt(() => Effect.sync(source.onAbort)));
+	return input.signal ? Effect.raceFirst(execution, abortShellExecution(input.signal, source.onAbort)) : execution;
 }
 
 export function durableShellOutputPath(output: BoundedOutputFile): string | undefined {

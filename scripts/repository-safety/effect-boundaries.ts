@@ -54,6 +54,11 @@ export interface EffectBoundaryFinding {
 
 export const EFFECT_BOUNDARY_INVENTORY = {
 	governedSources: [
+		"packages/pi-stuff/src/background-work/src/effect-owner.ts",
+		"packages/pi-stuff/src/background-work/src/monitor.ts",
+		"packages/pi-stuff/src/background-work/src/runtime.ts",
+		"packages/pi-stuff/src/background-work/src/shell-activity-presentation.ts",
+		"packages/pi-stuff/src/background-work/src/shell-activity.ts",
 		"packages/pi-stuff/src/btw/btw.ts",
 		"packages/pi-stuff/src/btw/index.ts",
 		"packages/pi-stuff/src/btw/pi-compat.ts",
@@ -206,44 +211,74 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/runtime/xai-search.ts",
 	],
 	nativeAdapters: [
+		"packages/pi-stuff/src/background-work/src/monitor-native.ts",
+		"packages/pi-stuff/src/background-work/src/process-supervisor.mjs",
+		"packages/pi-stuff/src/background-work/src/process.ts",
+		"packages/pi-stuff/src/btw/btw-ui.ts",
 		"packages/pi-stuff/src/btw/index.ts",
 		"packages/pi-stuff/src/btw/pi-compat.ts",
+		"packages/pi-stuff/src/code-mode/host/install-host.ts",
+		"packages/pi-stuff/src/code-mode/host/process-start-identity.ts",
 		"packages/pi-stuff/src/code-mode/host/host-client.ts",
 		"packages/pi-stuff/src/code-mode/settings.ts",
+		"packages/pi-stuff/src/codex/native-runner.ts",
+		"packages/pi-stuff/src/codex/tools.ts",
 		"packages/pi-stuff/src/codex/usage.ts",
+		"packages/pi-stuff/src/context-management/config.ts",
+		"packages/pi-stuff/src/context-management/dialog.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-entry.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-host.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-transport.ts",
 		"packages/pi-stuff/src/context-management/projection.ts",
 		"packages/pi-stuff/src/context-management/runtime.ts",
+		"packages/pi-stuff/src/conversation-ui/command-dialog.ts",
+		"packages/pi-stuff/src/conversation-ui/input-enhancement.ts",
 		"packages/pi-stuff/src/goal/src/suite-menu.ts",
+		"packages/pi-stuff/src/lifecycle-deadline.ts",
 		"packages/pi-stuff/src/mcp/config-persistence.ts",
+		"packages/pi-stuff/src/mcp/runtime/abort.ts",
 		"packages/pi-stuff/src/mcp/runtime/config-codecs.ts",
 		"packages/pi-stuff/src/mcp/runtime/config-sources.ts",
 		"packages/pi-stuff/src/mcp/runtime/config.ts",
 		"packages/pi-stuff/src/mcp/runtime/implementation.ts",
 		"packages/pi-stuff/src/mcp/runtime/init.ts",
 		"packages/pi-stuff/src/mcp/runtime/lifecycle.ts",
+		"packages/pi-stuff/src/mcp/runtime/mcp-auth-discovery.ts",
+		"packages/pi-stuff/src/mcp/runtime/mcp-auth-keyring.ts",
+		"packages/pi-stuff/src/mcp/runtime/mcp-callback-server.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-auth-flow.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-http-transport.ts",
+		"packages/pi-stuff/src/mcp/runtime/mcp-keyring-helper.cjs",
+		"packages/pi-stuff/src/mcp/runtime/mcp-output-guard.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-probe.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-setup-panel.ts",
+		"packages/pi-stuff/src/mcp/runtime/mcp-trace.ts",
 		"packages/pi-stuff/src/mcp/runtime/metadata-discovery.ts",
 		"packages/pi-stuff/src/mcp/runtime/onboarding-state.ts",
+		"packages/pi-stuff/src/mcp/runtime/npx-resolver.ts",
 		"packages/pi-stuff/src/mcp/runtime/proxy-call.ts",
 		"packages/pi-stuff/src/mcp/runtime/runtime-owner.ts",
 		"packages/pi-stuff/src/mcp/runtime/server-manager.ts",
 		"packages/pi-stuff/src/mcp/runtime/tool-approval.ts",
+		"packages/pi-stuff/src/mcp/runtime/unix-socket-transport.ts",
 		"packages/pi-stuff/src/ponytail/config.ts",
 		"packages/pi-stuff/src/ponytail/index.ts",
 		"packages/pi-stuff/src/rtk/runtime.ts",
 		"packages/pi-stuff/src/session-naming/model.ts",
 		"packages/pi-stuff/src/shared/settings-io/file.ts",
 		"packages/pi-stuff/src/shared/settings-io/lock.ts",
+		"packages/pi-stuff/src/subagents/src/agents/agents.ts",
+		"packages/pi-stuff/src/subagents/src/agents/skills.ts",
+		"packages/pi-stuff/src/subagents/src/extension/completion-handling.ts",
+		"packages/pi-stuff/src/subagents/src/extension/fanout-child.ts",
 		"packages/pi-stuff/src/subagents/src/extension/index.ts",
+		"packages/pi-stuff/src/subagents/src/intercom/native-supervisor-storage.ts",
 		"packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.ts",
+		"packages/pi-stuff/src/subagents/src/runs/shared/nested-registry-projection.ts",
+		"packages/pi-stuff/src/subagents/src/runs/shared/session-lease.ts",
+		"packages/pi-stuff/src/subagents/src/runs/shared/worktree.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/async-control-events.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/async-job-observer.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/async-job-recovery.ts",
@@ -264,6 +299,21 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/writer-process-supervisor.mjs",
 		"packages/pi-stuff/src/subagents/src/runs/background/writer-protocol-forwarder.mjs",
+		"packages/pi-stuff/src/subagents/src/runtime/runtime-maintenance.ts",
+		"packages/pi-stuff/src/subagents/src/runtime/session-governor-compatibility.ts",
+		"packages/pi-stuff/src/subagents/src/runtime/session-governor-ledger.ts",
+		"packages/pi-stuff/src/subagents/src/session/foreground-replay.ts",
+		"packages/pi-stuff/src/subagents/src/shared/artifact-maintenance.ts",
+		"packages/pi-stuff/src/subagents/src/shared/artifact-snapshot.ts",
+		"packages/pi-stuff/src/subagents/src/shared/atomic-json.ts",
+		"packages/pi-stuff/src/subagents/src/shared/durable-claim.ts",
+		"packages/pi-stuff/src/subagents/src/shared/file-system-retry.ts",
+		"packages/pi-stuff/src/subagents/src/shared/private-directory.ts",
+		"packages/pi-stuff/src/subagents/src/shared/process-identity.ts",
+		"packages/pi-stuff/src/subagents/src/shared/utils.ts",
+		"packages/pi-stuff/src/subagents/src/ui/agent-transcript.ts",
+		"packages/pi-stuff/src/suite-loader.ts",
+		"packages/pi-stuff/src/todo/todo-overlay.ts",
 		"packages/pi-stuff/src/tool-display/registration.ts",
 		"packages/pi-stuff/src/tool-display/tool-invocation.ts",
 		"packages/pi-stuff/src/web/fake-ip.ts",
@@ -298,13 +348,11 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/web/runtime/xai-search.ts",
 	],
 	runnerAdapters: [
-		"packages/pi-stuff/src/btw/index.ts",
 		"packages/pi-stuff/src/codex/index.ts",
 		"packages/pi-stuff/src/context-management/index.ts",
 		"packages/pi-stuff/src/context-management/magic-worker-client.ts",
 		"packages/pi-stuff/src/conversation-ui/effect-owner.ts",
 		"packages/pi-stuff/src/conversation-ui/index.ts",
-		"packages/pi-stuff/src/goal/src/goal.ts",
 		"packages/pi-stuff/src/mcp/runtime/mcp-effect-runner.ts",
 		"packages/pi-stuff/src/notification/index.ts",
 		"packages/pi-stuff/src/ponytail/index.ts",
@@ -314,9 +362,6 @@ export const EFFECT_BOUNDARY_INVENTORY = {
 		"packages/pi-stuff/src/subagents/src/extension/index.ts",
 		"packages/pi-stuff/src/subagents/src/extension/nested-control-router.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/async-execution.ts",
-		"packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.ts",
-		"packages/pi-stuff/src/subagents/src/runtime/agent-effect-owner.ts",
-		"packages/pi-stuff/src/subagents/src/runtime/durable-agent-operation.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/child-task-runner.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts",
 		"packages/pi-stuff/src/subagents/src/runs/background/writer-process-supervisor.mjs",
@@ -565,7 +610,6 @@ export function auditEffectBoundarySource(
 	const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
 	const bindings = collectImports(sourceFile);
 	const governed = inventory.governedSources.includes(path);
-	if (!governed && bindings.effectImportLine === undefined) return [];
 	collectAliases(sourceFile, bindings);
 	const findings: EffectBoundaryFinding[] = [];
 	if (!governed && bindings.effectImportLine !== undefined) {
@@ -583,7 +627,7 @@ export function auditEffectBoundarySource(
 				});
 			}
 			const native = nativeFunction(node.expression, bindings);
-			if (native && governed && !allowNative) {
+			if (native && !allowNative) {
 				findings.push({
 					path,
 					rule: `native-effect-outside-adapter:${native}:${String(sourceLine(sourceFile, node))}`,
@@ -591,7 +635,7 @@ export function auditEffectBoundarySource(
 			}
 		} else if (ts.isNewExpression(node) && node.expression) {
 			const native = nativeConstructor(node.expression, bindings);
-			if (native && governed && !allowNative) {
+			if (native && !allowNative) {
 				findings.push({
 					path,
 					rule: `native-effect-outside-adapter:${native}:${String(sourceLine(sourceFile, node))}`,
@@ -639,7 +683,7 @@ export async function auditEffectBoundaryInventory(
 				}
 			}
 			if (!exists) findings.push({ path, rule: `effect-boundary-inventory-path-missing:${name}` });
-			if (name !== "governed-sources" && !governed.has(path)) {
+			if (name === "runner-adapters" && !governed.has(path)) {
 				findings.push({ path, rule: `effect-boundary-adapter-not-governed:${name}` });
 			}
 		}

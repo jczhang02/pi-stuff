@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 13792f1c3b985795ab9f1acc7a986cddb4b07e8e6ac49771c74cc457d2049ba4 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 38d3667c0b0476ae8ca928c6b0f018cecebbc18fb4fad44882a7e332c90d9b31 -->
 
 # Subagents 模块
 
@@ -18,7 +18,7 @@ Pi Stuff 不交付 Agent 定义。启动会选择已安装 Pi 软件包、用户
 
 在前台执行中，`executor-contract.ts` 定义私有组合约定。`launch-preparation.ts` 负责从输入、预算、分叉会话选择到会话根/嵌套路由设置的一次启动准入事务；`launch-model-planning.ts` 负责模型容量与投影准入；`launch-builders.ts` 把已准入计划映射到现有 Runner 引擎。`foreground-run-claim.ts`、`foreground-projection.ts` 和 `foreground-lifecycle.ts` 分别负责私有目录证明、当前/嵌套状态投影和执行稳定。
 
-`runtime/session-governor.ts` 负责 Agent 生命周期操作和稳定公开外观；`runtime/session-governor-spawn.ts` 负责 Spawn 准入与暂存，`runtime/session-governor-ledger.ts` 负责锁、编解码器和原子账本存储。`runtime/session-governor-contracts.ts` 负责持久约定与校验。`runtime/agent-runtime-event.ts` 校验原始生命周期事件值；`runtime/agent-runtime-liveness.ts` 负责安全关闭的进程与 Writer 注册表证明。
+`runtime/session-governor.ts` 负责 Agent 生命周期操作和稳定公开外观；`runtime/session-governor-spawn.ts` 负责 Spawn 准入与暂存，`runtime/session-governor-ledger.ts` 负责锁、编解码器和原子账本存储。`runtime/session-governor-contracts.ts` 负责持久约定与校验。`runtime/agent-effect-owner.ts` 拥有协调器操作和持久稳定重试所使用的 Session Capability Scope。Session 替换会中断并在新 Scope 下重新调度保留的重试工作；不存在脱离该所有者的重试 Fiber。`runtime/agent-runtime-event.ts` 校验原始生命周期事件值；`runtime/agent-runtime-liveness.ts` 负责安全关闭的进程与 Writer 注册表证明。
 
 `shared/artifacts.ts` 是稳定产物外观；`shared/artifact-files.ts` 负责路径、写入器和组声明，`shared/artifact-snapshot.ts` 负责有界、崩溃可恢复的原生目录扫描，`shared/artifact-maintenance.ts` 负责清理发现与编排。维护只会在已验证 Linux 宿主配置上成功完成分片后持久化目录身份和 Cookie；其他位置安全关闭，不删除产物。
 

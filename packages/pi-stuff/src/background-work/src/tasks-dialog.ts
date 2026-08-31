@@ -46,6 +46,7 @@ const GUTTER = "  ";
 const LIST_ROWS = 9;
 
 interface TasksDialogRuntime {
+	scheduleRefresh(callback: () => void, intervalMs: number): () => void;
 	snapshot(): readonly BackgroundWorkSnapshot[];
 	stop(id: string): Promise<BackgroundWorkOutcome>;
 	subscribe(listener: () => void): () => void;
@@ -170,7 +171,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	private showKeyHelp = false;
 	private splitFocus: "left" | "right" = "left";
 	private stopping = false;
-	private readonly timer: ReturnType<typeof setInterval>;
+	private readonly cancelRefresh: () => void;
 	private readonly runtime: TasksDialogRuntime;
 	private readonly unsubscribe: () => void;
 
@@ -179,14 +180,13 @@ class TasksDialogComponent implements CommandDialogComponent {
 		this.runtime = runtime;
 		this.refresh();
 		this.unsubscribe = runtime.subscribe(() => this.refresh());
-		this.timer = setInterval(() => context.requestRender(), 1_000);
-		this.timer.unref?.();
+		this.cancelRefresh = runtime.scheduleRefresh(() => context.requestRender(), 1_000);
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		clearInterval(this.timer);
+		this.cancelRefresh();
 		this.unsubscribe();
 	}
 

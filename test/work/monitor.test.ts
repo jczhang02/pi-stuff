@@ -12,6 +12,7 @@ import type {
 	SuiteAgentMessage,
 	SuiteAgentMessageOptions,
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
+import { createBackgroundWorkEffectOwner } from "./runtime-fixtures.js";
 
 const roots: string[] = [];
 const servers: Bun.Server<unknown>[] = [];
@@ -36,7 +37,12 @@ function setup() {
 			messages.push({ message, options });
 		},
 	};
-	const runtime = new BackgroundWorkRuntime({ cwd: root, pi, sessionId: "monitor-test" });
+	const runtime = new BackgroundWorkRuntime({
+		cwd: root,
+		effects: createBackgroundWorkEffectOwner(),
+		pi,
+		sessionId: "monitor-test",
+	});
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: root,

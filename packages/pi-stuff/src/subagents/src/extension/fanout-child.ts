@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { projectCurrentContext } from "../../../context-management/index.js";
+import { installEffectFoundation } from "../../../shared/effect-foundation.js";
 import { isRuntimeFunction } from "../../../shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
@@ -21,13 +22,14 @@ import {
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_SESSION_ENV,
 } from "../runs/shared/pi-args.ts";
+import { AgentEffectOwner } from "../runtime/agent-effect-owner.ts";
 import {
 	type AgentExecutionCoordinatorPort,
 	type AgentExecutionInvocation,
 	AgentRuntimeBindingRejectedError,
-	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
+import { createDurableAgentExecutionCoordinator } from "../runtime/durable-agent-execution-coordinator.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import {
 	type Details,
@@ -75,7 +77,10 @@ interface FanoutExecutorInput {
 
 export interface FanoutChildDependencies {
 	readonly createExecutor: (input: FanoutExecutorInput) => FanoutExecutor;
-	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
+	readonly createGovernorCoordinator: (
+		config: PiStuffAgentsConfig,
+		effects: AgentEffectOwner,
+	) => AgentExecutionCoordinatorPort;
 	readonly loadConfiguration: () => PiStuffAgentsConfig;
 }
 
@@ -99,8 +104,9 @@ const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
 			projectContext,
 			allowMutatingManagementActions: false,
 		}),
-	createGovernorCoordinator: (config) =>
+	createGovernorCoordinator: (config, effects) =>
 		createDurableAgentExecutionCoordinator({
+			effects,
 			rootDir: SESSION_GOVERNOR_ROOT,
 			limits: {
 				maxDepth: config.maxSubagentDepth,
@@ -135,6 +141,7 @@ class FanoutChildRuntime {
 	private readonly config: PiStuffAgentsConfig;
 	private readonly state: SubagentState;
 	private readonly executor: FanoutExecutor;
+	private readonly effects: AgentEffectOwner;
 	private readonly executionGovernor: AgentExecutionCoordinatorPort;
 	private readonly eventUnsubscribes: Array<() => void> = [];
 	private active = true;
@@ -145,12 +152,13 @@ class FanoutChildRuntime {
 		this.registeredApis = registeredApis;
 		this.config = deps.loadConfiguration();
 		this.state = createChildSafeState();
+		this.effects = new AgentEffectOwner(installEffectFoundation(pi, { deferShutdown: true }));
 		this.executor = deps.createExecutor({
 			pi,
 			projectContext: projectCurrentContext,
 			state: this.state,
 		});
-		this.executionGovernor = deps.createGovernorCoordinator(this.config);
+		this.executionGovernor = deps.createGovernorCoordinator(this.config, this.effects);
 	}
 
 	private bindExecutionGovernor(): string | undefined {
@@ -385,6 +393,9 @@ class FanoutChildRuntime {
 
 	register(): void {
 		try {
+			this.pi.on("session_start", async (_event, ctx) => {
+				if (this.active) await this.effects.startSession(ctx.sessionManager);
+			});
 			const complete = (data: ExtensionEventPayload): void => {
 				if (!this.active) return;
 				void this.executionGovernor.complete(data).catch((error) => {
@@ -399,10 +410,11 @@ class FanoutChildRuntime {
 					reportAgentDiagnostic("Failed to reconcile nested Agent leases after runner exit:", error);
 				});
 			});
-			this.pi.on("session_shutdown", () => {
+			this.pi.on("session_shutdown", async () => {
 				if (!this.active) return;
 				this.active = false;
 				this.registeredApis.delete(this.pi);
+				await this.effects.stop();
 				this.disposeComposition();
 			});
 			// Register the public Tool last so earlier initialization failures can retry cleanly.

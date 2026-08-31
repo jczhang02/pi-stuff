@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type Effect, Exit, type Scope } from "effect";
+import { Cause, type Effect, Exit, type Scope } from "effect";
 import type { EffectFoundation, EffectScopeOwner } from "../../../shared/effect-foundation.js";
 
 export interface AgentEffectTask<A, E> {
@@ -45,6 +45,12 @@ export class AgentEffectOwner {
 			result,
 			interrupt: () => close(Exit.interrupt()),
 		};
+	}
+
+	async run<A, E>(program: Effect.Effect<A, E, Scope.Scope>): Promise<A> {
+		const exit = await this.start(program).result;
+		if (Exit.isSuccess(exit)) return exit.value;
+		throw Cause.squash(exit.cause);
 	}
 
 	async stop(): Promise<boolean> {

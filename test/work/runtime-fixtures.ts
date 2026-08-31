@@ -17,6 +17,7 @@ import { Readable } from "node:stream";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { BackgroundWorkEffectOwner } from "../../packages/pi-stuff/src/background-work/src/effect-owner.js";
 import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BoundedOutputFile, tryReadBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
@@ -52,6 +53,7 @@ import type {
 	SuiteAgentMessageHost,
 	SuiteAgentMessageOptions,
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
+import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -141,9 +143,18 @@ function context(cwd: string): ExtensionContext {
 
 type RuntimeOptions = ConstructorParameters<typeof BackgroundWorkRuntime>[0];
 
+function createBackgroundWorkEffectOwner(): BackgroundWorkEffectOwner {
+	const foundation = new EffectFoundation();
+	void foundation.startSession();
+	const session = foundation.currentSession();
+	if (!session) throw new Error("Test Effect Session Scope was not initialized.");
+	return new BackgroundWorkEffectOwner(foundation, session);
+}
+
 function configuredRuntime(cwd: string, overrides: Partial<RuntimeOptions> = {}): BackgroundWorkRuntime {
 	return new BackgroundWorkRuntime({
 		cwd,
+		effects: createBackgroundWorkEffectOwner(),
 		pi: { sendMessage: () => {} },
 		sessionId: "work-test-session",
 		storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
@@ -196,6 +207,7 @@ function attributedRuntime(
 	return {
 		active: new BackgroundWorkRuntime({
 			cwd,
+			effects: createBackgroundWorkEffectOwner(),
 			pi,
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
@@ -253,6 +265,7 @@ export {
 	configuredRuntime,
 	context,
 	createAuthenticatedRuntimeRecord,
+	createBackgroundWorkEffectOwner,
 	DiagnosticChannel,
 	escapedProcessGroups,
 	existsSync,

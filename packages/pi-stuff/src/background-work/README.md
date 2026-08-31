@@ -13,9 +13,12 @@ Current-session Background Shell, one-shot Monitor, and `/tasks` management for 
 Todo, Goal, Beads, and Agent details retain their existing authorities and are not duplicated here.
 
 `runtime.ts` remains the sole registry, capacity, Monitor, persistence, receipt, notification, and shutdown authority.
-Its internal `shell-activity.ts` owns one authenticated process lifecycle, `shell-activity-launch.ts` owns pre-command
-resource preparation, and `shell-activity-presentation.ts` owns Tool-call waiting and result projection. `process.ts`
-owns supervisor and identity mechanisms, while `output.ts` owns bounded output. The stateless
+Its `effect-owner.ts` owns one Capability Scope beneath the initialized Session. Monitor polling, Shell waiting,
+notification retry and heartbeat, and Dialog refresh run as operations in that Scope; interruption cancels them, and
+shutdown requests the authenticated native stop protocol before closing the Scope. `shell-activity.ts` owns one
+authenticated process lifecycle, `shell-activity-launch.ts` owns pre-command resource preparation, and
+`shell-activity-presentation.ts` owns Tool-call waiting and result projection. `process.ts`, `process-supervisor.mjs`,
+and `monitor-native.ts` are the narrow native adapters, while `output.ts` owns bounded output. The stateless
 `notification-projection.ts` seam only bounds and escapes a completed batch before delivery.
 
 ## Accepted `/tasks` readability target

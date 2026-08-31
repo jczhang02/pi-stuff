@@ -300,6 +300,6 @@ export {
 	withDirectUserActivation,
 };
 
-export function cleanupContextCoreFixtures(): void {
-	__test.clear();
+export function cleanupContextCoreFixtures(): Promise<void> {
+	return __test.clear();
 }

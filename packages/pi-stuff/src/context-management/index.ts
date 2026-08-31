@@ -239,9 +239,9 @@ export default async function piStuffContext(
 export { registerContextPromptContributor } from "./prompt-contributions.js";
 
 export const __test = {
-	clear(): void {
+	async clear(): Promise<void> {
 		const registry = capabilityRegistry();
-		for (const runtime of registry.runtimes) void Effect.runPromise(runtime.dispose());
+		await Promise.all(Array.from(registry.runtimes, (runtime) => Effect.runPromise(runtime.dispose())));
 		// SAFETY: this package-owned symbol slot contains only ContextCapabilityRegistry.
 		const root = globalThis as { [key: symbol]: ContextCapabilityRegistry | undefined };
 		delete root[CONTEXT_CAPABILITY_REGISTRY];

@@ -8,10 +8,10 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import { recordForegroundOwnerExit } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/owner-exit.js";
 import {
-	AgentExecutionCoordinator,
+	type AgentExecutionCoordinatorOptions,
 	type AgentExecutionCoordinatorSession,
 	type AgentExecutionGovernorPort,
-	createDurableAgentExecutionCoordinator,
+	AgentExecutionCoordinator as ProductionAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 	runtimeCompletionAddresses,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
@@ -25,11 +25,31 @@ import type {
 	ReserveAgentSpawnInput,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-governor.js";
 import {
+	createDurableAgentExecutionCoordinator as createProductionDurableAgentExecutionCoordinator,
+	type DurableAgentExecutionCoordinatorOptions,
+} from "../../packages/pi-stuff/src/subagents/src/runtime/durable-agent-execution-coordinator.js";
+import {
 	type AgentGovernorLease,
 	type RebindAgentRuntimeRequest,
 	SessionAgentGovernor,
 	type SessionGovernorRebindResult,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
+import { createTestAgentEffectOwner } from "./agent-effect-owner-fixture.js";
+
+class AgentExecutionCoordinator extends ProductionAgentExecutionCoordinator {
+	constructor(options: Omit<AgentExecutionCoordinatorOptions, "effects">) {
+		super({ ...options, effects: createTestAgentEffectOwner() });
+	}
+}
+
+function createDurableAgentExecutionCoordinator(
+	options: Omit<DurableAgentExecutionCoordinatorOptions, "effects">,
+): ProductionAgentExecutionCoordinator {
+	return createProductionDurableAgentExecutionCoordinator({
+		...options,
+		effects: createTestAgentEffectOwner(),
+	});
+}
 
 interface RebindCall {
 	readonly reservation: AgentExecutionReservation;

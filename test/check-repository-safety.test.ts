@@ -73,7 +73,12 @@ async function createRepository(packageManager = "bun@1.4.0"): Promise<string> {
 		)}\n`,
 	);
 	await writeLocalPackage(root, LOCAL_PACKAGE);
-	for (const path of EFFECT_BOUNDARY_INVENTORY.governedSources) await writeFixture(root, path, "export {};\n");
+	const effectBoundaryPaths = new Set([
+		...EFFECT_BOUNDARY_INVENTORY.governedSources,
+		...EFFECT_BOUNDARY_INVENTORY.nativeAdapters,
+		...EFFECT_BOUNDARY_INVENTORY.runnerAdapters,
+	]);
+	for (const path of effectBoundaryPaths) await writeFixture(root, path, "export {};\n");
 	return root;
 }
 
@@ -513,7 +518,7 @@ test("confines native effects to explicit adapters and resolves import and destr
 	const allowedPath = "packages/pi-stuff/src/codex/usage.ts";
 	const rejectedPath = "packages/pi-stuff/src/codex/core.ts";
 	const inventory = {
-		governedSources: [allowedPath, rejectedPath],
+		governedSources: [rejectedPath],
 		nativeAdapters: [allowedPath],
 		runnerAdapters: [],
 	} satisfies EffectBoundaryInventory;
@@ -553,6 +558,18 @@ test("confines native effects to explicit adapters and resolves import and destr
 		{ path: rejectedPath, rule: "native-effect-outside-adapter:timer.setTimeout:15" },
 		{ path: rejectedPath, rule: "native-effect-outside-adapter:process.Bun.spawn:16" },
 		{ path: rejectedPath, rule: "native-effect-outside-adapter:process.Bun.spawn:17" },
+	]);
+	expect(
+		auditEffectBoundarySource(
+			"packages/pi-stuff/src/codex/unclassified.ts",
+			"export const schedule = () => setTimeout(callback, 1);",
+			inventory,
+		),
+	).toEqual([
+		{
+			path: "packages/pi-stuff/src/codex/unclassified.ts",
+			rule: "native-effect-outside-adapter:timer.setTimeout:1",
+		},
 	]);
 });
 

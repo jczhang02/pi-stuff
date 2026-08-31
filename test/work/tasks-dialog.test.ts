@@ -29,6 +29,10 @@ class RuntimeHarness {
 		},
 	];
 
+	scheduleRefresh(): () => void {
+		return () => {};
+	}
+
 	snapshot(): readonly BackgroundWorkSnapshot[] {
 		return this.rows;
 	}

@@ -21,10 +21,8 @@ import { inspectWriterProcessLivenessEffect } from "../runs/background/writer-pr
 import { createSubagentExecutor } from "../runs/foreground/subagent-executor.ts";
 import { resolvePiLaunchToolPlan, SUBAGENT_CHILD_ENV } from "../runs/shared/pi-args.ts";
 import { AgentEffectOwner } from "../runtime/agent-effect-owner.ts";
-import {
-	type AgentExecutionCoordinatorPort,
-	createDurableAgentExecutionCoordinator,
-} from "../runtime/agent-execution-coordinator.ts";
+import type { AgentExecutionCoordinatorPort } from "../runtime/agent-execution-coordinator.ts";
+import { createDurableAgentExecutionCoordinator } from "../runtime/durable-agent-execution-coordinator.ts";
 import { maintainAgentRuntime } from "../runtime/runtime-maintenance.ts";
 import {
 	type PrepareSessionGovernorCompatibilityInput,
@@ -130,8 +128,9 @@ const PRODUCTION_DEPENDENCIES = {
 			resolveCodeModeEnabled,
 			onForegroundStatus,
 		}),
-	createGovernorCoordinator: (config: PiStuffAgentsConfig): AgentExecutionCoordinatorPort =>
+	createGovernorCoordinator: (config: PiStuffAgentsConfig, effects: AgentEffectOwner): AgentExecutionCoordinatorPort =>
 		createDurableAgentExecutionCoordinator({
+			effects,
 			rootDir: SESSION_GOVERNOR_ROOT,
 			limits: {
 				maxDepth: config.maxSubagentDepth,
@@ -408,7 +407,7 @@ export default function registerSubagentExtension(
 		codeModeProviderTools: deps.codeModeProviderTools,
 		discoverAgents: deps.discoverAgents,
 	});
-	const executionGovernor = deps.createGovernorCoordinator(config);
+	const executionGovernor = deps.createGovernorCoordinator(config, effects);
 	const tracker = deps.createTracker(pi, state, () => current.refresh(), effects);
 	const supervisor = deps.createSupervisor(pi, state, effects);
 	const notifier = installCompletionHandling(pi, state, coordinator);

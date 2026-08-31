@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 6474232887b7c53535ec7630e2abbb6690e7141f654505cbe46add04b2d03249 -->
+<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 004d75022b94e3c38d7233bb428ada660874c665bea1f4f42b54f399cd2023b0 -->
 
 # Pi Stuff Work
 
@@ -12,7 +12,7 @@ Pi Stuff 当前会话的后台 Shell、一次性 Monitor 和 `/tasks` 管理。
 
 Todo、Goal、Beads 和 Agent 详情继续由既有权威负责，不在此重复。
 
-`runtime.ts` 仍是注册表、容量、Monitor、持久化、回执、通知和关闭的唯一权威。内部 `shell-activity.ts` 负责一个已认证进程生命周期，`shell-activity-launch.ts` 负责命令前资源准备，`shell-activity-presentation.ts` 负责工具调用等待和结果投影。`process.ts` 负责监督与身份机制，`output.ts` 负责有界输出。无状态 `notification-projection.ts` 接缝只在传输前限制并转义已完成批次。
+`runtime.ts` 仍是注册表、容量、Monitor、持久化、回执、通知和关闭的唯一权威。`effect-owner.ts` 在已初始化的 Session 下拥有一个 Capability Scope。Monitor 轮询、Shell 等待、通知重试与心跳以及对话框刷新都作为该 Scope 中的操作运行；中断会取消这些操作，关闭流程会先请求经过认证的原生停止协议，再关闭 Scope。`shell-activity.ts` 负责一个已认证进程生命周期，`shell-activity-launch.ts` 负责命令前资源准备，`shell-activity-presentation.ts` 负责工具调用等待和结果投影。`process.ts`、`process-supervisor.mjs` 和 `monitor-native.ts` 是狭窄的原生 adapter，`output.ts` 负责有界输出。无状态 `notification-projection.ts` 接缝只在传输前限制并转义已完成批次。
 
 ## 已接受的 `/tasks` 可读性目标
 

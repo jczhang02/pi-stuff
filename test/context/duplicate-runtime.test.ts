@@ -125,7 +125,7 @@ test("physical Context Module copies share one Host runtime", async () => {
 		expect(secondApi.handlers.get("context") ?? []).toHaveLength(0);
 		expect(second.getContextCapability(ctx).status().state).toBe("active");
 	} finally {
-		first?.__test.clear();
+		await first?.__test.clear();
 		rmSync(directory, { recursive: true, force: true });
 	}
 });

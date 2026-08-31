@@ -6,6 +6,7 @@ import type {
 	BashToolDetails,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	type AgentWorkOrigin,
 	readCurrentAgentWorkOrigin,
@@ -15,6 +16,7 @@ import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from 
 import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { settleWithin } from "../../lifecycle-deadline.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
+import type { BackgroundWorkEffectOwner, BackgroundWorkEffectTask } from "./effect-owner.js";
 import { projectNotificationBatch } from "./notification-projection.js";
 import { BoundedOutputFile, boundedTextTail, DEFAULT_MODEL_OUTPUT_LIMIT, tryReadBoundedTail } from "./output.js";
 import {
@@ -99,6 +101,7 @@ export interface BackgroundMonitorActivity {
 	readonly outcome: Promise<BackgroundWorkOutcome>;
 	readOutput(maxBytes?: number): string;
 	snapshot(): BackgroundWorkSnapshot;
+	start?(): void;
 }
 
 export interface CommandMonitorInput {
@@ -122,6 +125,7 @@ interface RuntimeOptions extends Partial<ShellActivityDependencies> {
 	readonly backgroundAfterMs?: number;
 	readonly commandPrefix?: string;
 	readonly cwd: string;
+	readonly effects: BackgroundWorkEffectOwner;
 	readonly pi: SuiteAgentMessageHost;
 	/** Test seam for transient stale-runtime recovery failure. */
 	readonly reconcileStale?: typeof reconcileStaleRuns;
@@ -138,19 +142,18 @@ export class BackgroundWorkRuntime {
 	private readonly commandPrefix: string | undefined;
 	private readonly cwd: string;
 	private disposed = false;
+	readonly effects: BackgroundWorkEffectOwner;
 	private readonly launchActivityIds = new Set<string>();
 	private launchReservations = 0;
 	private readonly launchSettlements = new Set<Promise<void>>();
 	private readonly listeners = new Set<() => void>();
 	private readonly metadataHeartbeatMs: number;
-	private metadataHeartbeatTimer: ReturnType<typeof setInterval> | undefined;
+	private metadataHeartbeatTask: BackgroundWorkEffectTask<void, never> | undefined;
 	private readonly monitors = new Map<string, BackgroundMonitorActivity>();
 	private readonly notifications: PendingNotification[] = [];
 	private readonly pendingForegroundLaunches = new Set<PendingForegroundLaunch>();
-	private notificationDeferredDelayMs: number | undefined;
 	private notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
-	private notificationFlush: Promise<void> | undefined;
-	private notificationTimer: ReturnType<typeof setTimeout> | undefined;
+	private notificationTask: BackgroundWorkEffectTask<void, never> | undefined;
 	private preparation: Promise<void> | undefined;
 	private readonly pi: SuiteAgentMessageHost;
 	private readonly reconcileStale: typeof reconcileStaleRuns;
@@ -168,6 +171,7 @@ export class BackgroundWorkRuntime {
 		}
 		this.commandPrefix = options.commandPrefix;
 		this.cwd = options.cwd;
+		this.effects = options.effects;
 		this.pi = options.pi;
 		this.reconcileStale = options.reconcileStale ?? reconcileStaleRuns;
 		this.metadataHeartbeatMs = options.metadataHeartbeatMs ?? DEFAULT_METADATA_HEARTBEAT_MS;
@@ -190,6 +194,7 @@ export class BackgroundWorkRuntime {
 		this.shellOwner = {
 			changed: () => this.emit(),
 			disposed: () => this.disposed,
+			effects: this.effects,
 			persist: () => this.persistRunningProcesses(),
 			settled: (outcome, wake) => {
 				this.emit();
@@ -204,22 +209,40 @@ export class BackgroundWorkRuntime {
 		};
 	}
 
+	scheduleRefresh(callback: () => void, intervalMs: number): () => void {
+		const task = this.effects.open(
+			Effect.forever(Effect.sleep(Math.max(0, intervalMs)).pipe(Effect.andThen(Effect.sync(callback)))),
+		);
+		return () => {
+			void task.interrupt();
+		};
+	}
+
 	hasCommandPrefix(): boolean {
 		return Boolean(this.commandPrefix?.trim());
 	}
 
 	/** Perform process-mutating stale recovery only after an explicit Work action. */
-	async prepare(): Promise<void> {
+	prepare(): Promise<void> {
 		if (!this.preparation) {
-			const attempt = this.reconcileStale(this.cwd).then((reconciliation) => {
-				if (reconciliation.unresolvedDirectories > 0) {
-					reportWorkDiagnostic(
-						`${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y was" : "ies were"} left untouched`,
-						undefined,
-						{ key: "unverified-stale-runtime", severity: "warning" },
-					);
-				}
-			});
+			const attempt = this.effects.run(
+				Effect.tryPromise({
+					try: () => this.reconcileStale(this.cwd),
+					catch: (error) => error,
+				}).pipe(
+					Effect.tap((reconciliation) =>
+						Effect.sync(() => {
+							if (reconciliation.unresolvedDirectories === 0) return;
+							reportWorkDiagnostic(
+								`${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y was" : "ies were"} left untouched`,
+								undefined,
+								{ key: "unverified-stale-runtime", severity: "warning" },
+							);
+						}),
+					),
+					Effect.asVoid,
+				),
+			);
 			this.preparation = attempt;
 			void attempt.catch(() => {
 				if (this.preparation === attempt) this.preparation = undefined;
@@ -254,6 +277,13 @@ export class BackgroundWorkRuntime {
 		}
 		this.monitors.set(activity.id, activity);
 		this.emit();
+		try {
+			activity.start?.();
+		} catch (error) {
+			this.monitors.delete(activity.id);
+			this.emit();
+			throw error;
+		}
 		void activity.outcome.then((outcome) => {
 			if (this.monitors.get(activity.id) !== activity) return;
 			this.monitors.delete(activity.id);
@@ -359,9 +389,6 @@ export class BackgroundWorkRuntime {
 		this.disposed = true;
 		this.listeners.clear();
 		this.stopMetadataHeartbeat();
-		if (this.notificationTimer) clearTimeout(this.notificationTimer);
-		this.notificationTimer = undefined;
-		this.notificationDeferredDelayMs = undefined;
 		this.notifications.length = 0;
 		const cleanup = Promise.allSettled([
 			...Array.from(this.activities.values(), (activity) => activity.stop("shutdown")),
@@ -387,6 +414,7 @@ export class BackgroundWorkRuntime {
 			}
 		}
 		this.terminalOutcomes.clear();
+		await this.effects.shutdown();
 		this.emit();
 	}
 
@@ -403,22 +431,21 @@ export class BackgroundWorkRuntime {
 		this.launchActivityIds.add(id);
 		this.launchReservations += 1;
 		const reservation = { active: true };
-		let settleLaunch!: () => void;
-		const launchSettlement = new Promise<void>((resolve) => {
-			settleLaunch = resolve;
-		});
-		this.launchSettlements.add(launchSettlement);
-		try {
-			return await this.spawnProcessTransaction(input, reservation, id);
-		} finally {
+		let launchSettlement!: Promise<void>;
+		const launch = this.spawnProcessTransaction(input, reservation, id).finally(() => {
 			this.launchActivityIds.delete(id);
 			if (reservation.active) {
 				reservation.active = false;
 				this.launchReservations -= 1;
 			}
-			settleLaunch();
 			this.launchSettlements.delete(launchSettlement);
-		}
+		});
+		launchSettlement = launch.then(
+			() => undefined,
+			() => undefined,
+		);
+		this.launchSettlements.add(launchSettlement);
+		return launch;
 	}
 
 	private async spawnProcessTransaction(
@@ -466,29 +493,40 @@ export class BackgroundWorkRuntime {
 			this.stopMetadataHeartbeat();
 			return;
 		}
-		if (this.metadataHeartbeatTimer) return;
-		this.metadataHeartbeatTimer = setInterval(() => {
-			if (this.disposed || this.activities.size === 0) {
-				this.stopMetadataHeartbeat();
-				return;
-			}
-			try {
-				this.persistRunningProcesses();
-			} catch (error) {
-				reportWorkDiagnostic("Task recovery metadata refresh failed", error, {
-					action: "/tasks",
-					key: "recovery-metadata-refresh",
-					notice: true,
-				});
-			}
-		}, this.metadataHeartbeatMs);
-		this.metadataHeartbeatTimer.unref?.();
+		if (this.metadataHeartbeatTask) return;
+		const task = this.effects.open(
+			Effect.forever(
+				Effect.sleep(this.metadataHeartbeatMs).pipe(
+					Effect.andThen(
+						Effect.sync(() => {
+							if (this.disposed || this.activities.size === 0) {
+								this.stopMetadataHeartbeat();
+								return;
+							}
+							try {
+								this.persistRunningProcesses();
+							} catch (error) {
+								reportWorkDiagnostic("Task recovery metadata refresh failed", error, {
+									action: "/tasks",
+									key: "recovery-metadata-refresh",
+									notice: true,
+								});
+							}
+						}),
+					),
+				),
+			),
+		);
+		this.metadataHeartbeatTask = task;
+		void task.exit.then(() => {
+			if (this.metadataHeartbeatTask === task) this.metadataHeartbeatTask = undefined;
+		});
 	}
 
 	private stopMetadataHeartbeat(): void {
-		if (!this.metadataHeartbeatTimer) return;
-		clearInterval(this.metadataHeartbeatTimer);
-		this.metadataHeartbeatTimer = undefined;
+		const task = this.metadataHeartbeatTask;
+		this.metadataHeartbeatTask = undefined;
+		if (task) void task.interrupt();
 	}
 
 	private enqueueNotification(outcome: BackgroundWorkOutcome, wake: boolean): void {
@@ -496,58 +534,75 @@ export class BackgroundWorkRuntime {
 		this.scheduleNotificationFlush(NOTIFICATION_BATCH_DELAY_MS);
 	}
 
-	private scheduleNotificationFlush(delayMs: number, replace = false): void {
+	private scheduleNotificationFlush(delayMs: number): void {
 		if (this.disposed || this.notifications.length === 0) return;
-		if (this.notificationFlush) {
-			if (replace || this.notificationDeferredDelayMs === undefined) this.notificationDeferredDelayMs = delayMs;
-			return;
-		}
-		if (this.notificationTimer) {
-			if (!replace) return;
-			clearTimeout(this.notificationTimer);
-		}
-		this.notificationTimer = setTimeout(() => {
-			this.notificationTimer = undefined;
-			let tracked: Promise<void>;
-			tracked = this.flushNotifications().finally(() => {
-				if (this.notificationFlush === tracked) this.notificationFlush = undefined;
-				if (this.notifications.length > 0 && !this.notificationTimer) {
-					const deferredDelay = this.notificationDeferredDelayMs ?? NOTIFICATION_BATCH_DELAY_MS;
-					this.notificationDeferredDelayMs = undefined;
-					this.scheduleNotificationFlush(deferredDelay, true);
-				}
-			});
-			this.notificationFlush = tracked;
-		}, delayMs);
-		this.notificationTimer.unref?.();
+		if (this.notificationTask) return;
+		const task = this.effects.open(this.notificationLoop(delayMs));
+		this.notificationTask = task;
+		void task.exit.then(() => {
+			if (this.notificationTask !== task) return;
+			this.notificationTask = undefined;
+			if (!this.disposed && this.notifications.length > 0) {
+				this.scheduleNotificationFlush(NOTIFICATION_BATCH_DELAY_MS);
+			}
+		});
 	}
 
-	private async flushNotifications(): Promise<void> {
-		if (this.disposed || this.notifications.length === 0) return;
-		const pending = this.notifications.splice(0);
-		for (let offset = 0; offset < pending.length; offset += MAX_NOTIFICATION_OUTCOMES) {
-			const batch = pending.slice(offset, offset + MAX_NOTIFICATION_OUTCOMES);
-			const wake = batch.some((item) => item.wake);
-			const parentRunOrigin = batch.some((item) => item.outcome.parentRunOrigin === "user") ? "user" : "automatic";
-			const projected = projectNotificationBatch(batch.map((item) => item.outcome));
-			try {
-				const accepted = await sendSuiteAgentMessage(
-					this.pi,
-					withAgentWorkOrigin(
-						{
-							customType: "pi-stuff-background-work-result",
-							content: projected.content,
-							details: { outcomes: projected.outcomes },
-							display: true,
-						},
-						parentRunOrigin,
-					),
-					wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
-					() => !this.disposed,
-				);
-				if (!accepted && !this.disposed) throw new Error("Background Work session changed before delivery.");
-			} catch (error) {
+	private notificationLoop(initialDelayMs: number): Effect.Effect<void, never> {
+		return Effect.gen({ self: this }, function* () {
+			let delayMs = initialDelayMs;
+			while (!this.disposed && this.notifications.length > 0) {
+				yield* Effect.sleep(delayMs);
 				if (this.disposed) return;
+				const retryDelay = yield* this.flushNotifications();
+				if (this.disposed || this.notifications.length === 0) return;
+				delayMs = retryDelay ?? NOTIFICATION_BATCH_DELAY_MS;
+			}
+		});
+	}
+
+	private flushNotifications(): Effect.Effect<number | undefined, never> {
+		if (this.disposed || this.notifications.length === 0) return Effect.succeed(undefined);
+		const pending = this.notifications.splice(0);
+		return Effect.gen({ self: this }, function* () {
+			for (let offset = 0; offset < pending.length; offset += MAX_NOTIFICATION_OUTCOMES) {
+				const batch = pending.slice(offset, offset + MAX_NOTIFICATION_OUTCOMES);
+				const wake = batch.some((item) => item.wake);
+				const parentRunOrigin = batch.some((item) => item.outcome.parentRunOrigin === "user")
+					? "user"
+					: "automatic";
+				const projected = projectNotificationBatch(batch.map((item) => item.outcome));
+				const delivery = yield* Effect.tryPromise({
+					try: () =>
+						sendSuiteAgentMessage(
+							this.pi,
+							withAgentWorkOrigin(
+								{
+									customType: "pi-stuff-background-work-result",
+									content: projected.content,
+									details: { outcomes: projected.outcomes },
+									display: true,
+								},
+								parentRunOrigin,
+							),
+							wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
+							() => !this.disposed,
+						),
+					catch: (error) => error,
+				}).pipe(
+					Effect.match({
+						onFailure: (error) => ({ error }) as const,
+						onSuccess: (accepted) => ({ accepted }) as const,
+					}),
+				);
+				if (this.disposed) return undefined;
+				const error =
+					"error" in delivery
+						? delivery.error
+						: delivery.accepted
+							? undefined
+							: new Error("Background Work session changed before delivery.");
+				if (error === undefined) continue;
 				reportWorkDiagnostic("Task completion delivery failed; retrying", error, {
 					key: "terminal-notification",
 				});
@@ -557,11 +612,11 @@ export class BackgroundWorkRuntime {
 					NOTIFICATION_RETRY_MAX_MS,
 					Math.max(NOTIFICATION_RETRY_INITIAL_MS, retryDelay * 2),
 				);
-				this.scheduleNotificationFlush(retryDelay, true);
-				return;
+				return retryDelay;
 			}
-		}
-		this.notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
+			this.notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
+			return undefined;
+		});
 	}
 
 	private emit(): void {

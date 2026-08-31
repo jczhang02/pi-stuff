@@ -1,11 +1,12 @@
-import { Effect, Fiber } from "effect";
+import { Deferred, Effect } from "effect";
+import type { AgentEffectOwner, AgentEffectTask } from "./agent-effect-owner.ts";
 
 const RETRY_DELAYS_MS = [25, 100, 500, 2_000] as const;
 
 export interface DurableAgentOperation {
 	retryIndex: number;
-	retryFiber?: Fiber.Fiber<void, unknown>;
-	inFlight?: Fiber.Fiber<void, unknown>;
+	retryTask?: AgentEffectTask<void, unknown>;
+	inFlight?: Deferred.Deferred<void, unknown>;
 }
 
 /** Owns retry and in-flight fibers for a durable ledger record across Pi Session changes. */
@@ -15,43 +16,50 @@ export function runDurableAgentOperation(
 	attempt: () => Effect.Effect<void, unknown>,
 ): Effect.Effect<void, unknown> {
 	if (!isPending()) return Effect.void;
-	if (operation.inFlight) return Fiber.join(operation.inFlight);
-	const inFlight = Effect.runFork(Effect.suspend(attempt));
+	if (operation.inFlight) return Deferred.await(operation.inFlight);
+	const inFlight = Deferred.makeUnsafe<void, unknown>();
 	operation.inFlight = inFlight;
-	inFlight.addObserver(() => {
-		if (operation.inFlight === inFlight) delete operation.inFlight;
-	});
-	return Fiber.join(inFlight);
+	return Effect.suspend(attempt).pipe(
+		Effect.onExit((exit) =>
+			Effect.sync(() => {
+				if (operation.inFlight === inFlight) delete operation.inFlight;
+			}).pipe(Effect.andThen(Deferred.done(inFlight, exit))),
+		),
+	);
 }
 
 export function scheduleDurableAgentOperation(
+	effects: AgentEffectOwner,
 	operation: DurableAgentOperation,
 	isPending: () => boolean,
 	attempt: () => Effect.Effect<void, unknown>,
 ): void {
-	if (!isPending() || operation.retryFiber) return;
+	if (!isPending() || operation.retryTask) return;
 	const delay = RETRY_DELAYS_MS[Math.min(operation.retryIndex, RETRY_DELAYS_MS.length - 1)] ?? 2_000;
 	operation.retryIndex += 1;
-	let retryFiber!: Fiber.Fiber<void, unknown>;
-	retryFiber = Effect.runFork(
-		Effect.sleep(delay).pipe(
-			Effect.andThen(
-				Effect.sync(() => {
-					if (operation.retryFiber === retryFiber) delete operation.retryFiber;
-				}),
-			),
-			Effect.andThen(Effect.suspend(() => runDurableAgentOperation(operation, isPending, attempt))),
-			Effect.catch(() => Effect.sync(() => scheduleDurableAgentOperation(operation, isPending, attempt))),
+	let retryTask: AgentEffectTask<void, unknown>;
+	const program = Effect.sleep(delay).pipe(
+		Effect.andThen(
+			Effect.sync(() => {
+				if (operation.retryTask === retryTask) delete operation.retryTask;
+			}),
 		),
+		Effect.andThen(Effect.suspend(attempt)),
+		Effect.catch(() => Effect.sync(() => scheduleDurableAgentOperation(effects, operation, isPending, attempt))),
 	);
-	operation.retryFiber = retryFiber;
-	retryFiber.addObserver(() => {
-		if (operation.retryFiber === retryFiber) delete operation.retryFiber;
+	try {
+		retryTask = effects.start(program);
+	} catch {
+		return;
+	}
+	operation.retryTask = retryTask;
+	void retryTask.result.then(() => {
+		if (operation.retryTask === retryTask) delete operation.retryTask;
 	});
 }
 
-export function stopDurableAgentOperation(operation: DurableAgentOperation): void {
-	const retryFiber = operation.retryFiber;
-	delete operation.retryFiber;
-	if (retryFiber) Effect.runFork(Fiber.interrupt(retryFiber));
+export function stopDurableAgentOperation(operation: DurableAgentOperation, interrupt = false): void {
+	const retryTask = operation.retryTask;
+	delete operation.retryTask;
+	if (interrupt && retryTask) void retryTask.interrupt();
 }

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: 28bdbaf8a20f5c5b5d81212825a7a8e123c73268ac369d38af8df13a2d631663 -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: c2b4fffcfc57dd56a25b4938cd4aad1b18ee134f65aae96950821f5bc83d8799 -->
 
 # Repository-owned Source 质量标准
 
@@ -17,9 +17,9 @@ prototype、脚本和质量工具代码都适用同一可维护性标准。来�
 - `check:repository` 对所有仓库代码执行 800 行文件上限，并递归执行 JavaScript/TypeScript 的 120 行函数
   上限。它检查已跟踪文件和未忽略的未跟踪文件，但排除已删除文件、二进制资产、正文和报告产物。
 - 同一检查也负责 Effect 迁移边界清单。导入 Effect 的生产 Source 必须纳入治理；Effect runner 只能出现在清单
-  所列的 Pi-facing adapter 中，已治理 Source 也只能在清单所列的 Capability adapter 中直接使用原生副作用。
-  清单项必须是确切且存在的 Source 路径；重复项和缺失路径都会使检查失败。每次迁移只扩展已治理集合，不能形成
-  目录级质量豁免。
+  所列且已治理的 Pi-facing adapter 中，所有 Package 生产 Source 默认禁止直接使用原生副作用。狭窄的纯原生
+  adapter 可以独立列入清单而无需导入 Effect。清单项必须是确切且存在的 Source 路径；重复项和缺失路径都会使
+  检查失败。每次迁移只扩展已治理集合，不能形成目录级质量豁免。
 - 拆分文件必须减少同时承担的职责、可变状态、分支或概念。把原有复杂度搬进机械命名的碎片并不满足标准。
 - 代码质量工作要报告前后物理行数。行数是审查证据，不是验收配额：应调查无法解释的 Capability 增长，并优先
   删除重复、分支、wrapper、兼容层或状态。当变更形成更深的 Module，或保留必要的说明、验证、安全、数据完整性、

@@ -6,8 +6,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import { installEffectFoundation } from "../shared/effect-foundation.js";
 import { CachedToolRow } from "../tool-display/index.js";
 import { reportWorkDiagnostic } from "./src/diagnostics.js";
+import { BackgroundWorkEffectOwner } from "./src/effect-owner.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
 import { registerWorkTools, type WorkToolRuntimeRef } from "./src/tools.js";
@@ -76,6 +78,7 @@ export default async function piStuffWork(
 	const createRuntime = options.createRuntime ?? ((input) => new BackgroundWorkRuntime(input));
 	const runtimeRef: WorkToolRuntimeRef = { current: () => runtime };
 	const dialogs = getCommandDialogCoordinator(pi);
+	const foundation = installEffectFoundation(pi, { deferShutdown: true });
 
 	// Install renderers before session replay. The session_start registration runs
 	// after Pi Stuff Tools and reclaims Bash execution for the live session.
@@ -114,9 +117,12 @@ export default async function piStuffWork(
 		runtime = undefined;
 		if (previous) void releaseRuntime(previous);
 		const settings = hostSettings(ctx);
+		const session = foundation.sessionFor(ctx.sessionManager);
+		if (!session) throw new Error("Background Work Session Scope was not initialized.");
 		const created = createRuntime({
 			...settings,
 			cwd: ctx.cwd,
+			effects: new BackgroundWorkEffectOwner(foundation, session),
 			pi,
 			sessionId: ctx.sessionManager.getSessionId(),
 		});

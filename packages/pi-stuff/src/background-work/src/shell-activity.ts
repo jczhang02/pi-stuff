@@ -1,8 +1,10 @@
 import { rmSync } from "node:fs";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { Deferred, Effect, Option } from "effect";
 import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
+import type { BackgroundWorkEffectOwner } from "./effect-owner.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT, tryReadBoundedTail } from "./output.js";
 import {
 	consumeCommandAcknowledgement,
@@ -10,7 +12,6 @@ import {
 	type ProcessIdentity,
 	publishCommandAuthorization,
 	reapOwnedProcessGroup,
-	type SignalVerifiedSupervisor,
 } from "./process.js";
 import type {
 	BackgroundWorkBashDetails,
@@ -41,6 +42,7 @@ export type { ShellActivityDependencies, ShellLaunchInput };
 export interface ShellActivityOwner {
 	changed(): void;
 	disposed(): boolean;
+	readonly effects: BackgroundWorkEffectOwner;
 	persist(): void;
 	settled(outcome: BackgroundWorkOutcome, wake: boolean | undefined): void;
 	unregister(activity: ShellActivity, receipt: BackgroundWorkOutcome | undefined): void;
@@ -50,11 +52,10 @@ export class ShellActivity {
 	private backgrounded: boolean;
 	private commandGroupReaped = false;
 	private commandIdentity: ProcessIdentity | undefined;
-	private readonly completionState = Promise.withResolvers<BackgroundWorkOutcome>();
-	readonly completion = this.completionState.promise;
+	private readonly completion = Deferred.makeUnsafe<BackgroundWorkOutcome>();
 	private controlBuffer = "";
 	private readonly dependencies: ShellActivityDependencies;
-	private readonly detachState = Promise.withResolvers<"manual" | "timeout">();
+	private readonly detached = Deferred.makeUnsafe<"manual" | "timeout">();
 	private finalization: "done" | "open" | "running" = "open";
 	readonly id: string;
 	readonly kind: BackgroundWorkKind;
@@ -64,7 +65,7 @@ export class ShellActivity {
 	readonly startedAt = Date.now();
 	private stopPromise: Promise<BackgroundWorkOutcome> | undefined;
 	private stopReason: ShellStopReason | undefined;
-	private timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+	private cancelTimeout: (() => void) | undefined;
 	private readonly title: string;
 
 	private constructor(state: ShellLaunchState, dependencies: ShellActivityDependencies, owner: ShellActivityOwner) {
@@ -83,7 +84,12 @@ export class ShellActivity {
 		dependencies: ShellActivityDependencies,
 		owner: ShellActivityOwner,
 	): Promise<ShellActivity> {
-		const state = await prepareShellLaunch(input, id, dependencies, () => owner.disposed());
+		const state = await owner.effects.run(
+			Effect.tryPromise({
+				try: () => prepareShellLaunch(input, id, dependencies, () => owner.disposed()),
+				catch: (error) => error,
+			}),
+		);
 		return new ShellActivity(state, dependencies, owner);
 	}
 
@@ -104,24 +110,50 @@ export class ShellActivity {
 		};
 		this.launch.supervisor.output.on("data", append);
 		this.launch.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(chunk));
-		void this.launch.supervisor.completion
-			.then(async ({ code, error, signal }) => {
+		const completion = Effect.tryPromise({
+			try: () => this.launch.supervisor.completion,
+			catch: (error) => error,
+		}).pipe(
+			Effect.flatMap(({ code, error, signal }) => {
 				if (error) append(Buffer.from(`Background supervisor failed: ${error.message}\n`, "utf-8"));
-				await this.finalize(code, signal);
-			})
-			.catch((error) => {
+				return this.finalize(code, signal);
+			}),
+			Effect.catch((error) => {
 				reportWorkDiagnostic("Task finalization failed; retrying", error, { key: "finalization-retry" });
-				if (this.finalization !== "done") {
-					append(Buffer.from(`Background finalization failed: ${String(error)}\n`, "utf-8"));
-					void this.finalize(1, null).catch((retryError) => {
-						reportWorkDiagnostic("A task could not be finalized", retryError, {
-							action: "/tasks",
-							key: "finalization-failed",
-							notice: true,
-						});
+				if (this.finalization === "done") return Effect.void;
+				append(Buffer.from(`Background finalization failed: ${String(error)}\n`, "utf-8"));
+				return this.finalize(1, null).pipe(
+					Effect.catch((retryError) =>
+						Effect.sync(() => {
+							reportWorkDiagnostic("A task could not be finalized", retryError, {
+								action: "/tasks",
+								key: "finalization-failed",
+								notice: true,
+							});
+						}),
+					),
+				);
+			}),
+			Effect.onInterrupt(() => this.stopAfterScopeInterrupt()),
+		);
+		void this.owner.effects.open(completion).exit;
+	}
+
+	private stopAfterScopeInterrupt(): Effect.Effect<void> {
+		if (this.finalization === "done") return Effect.void;
+		this.stopReason ??= "shutdown";
+		return this.stopNow().pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					reportWorkDiagnostic("A task could not stop during Effect Scope shutdown", error, {
+						action: "/tasks",
+						key: "scope-shutdown-stop",
+						notice: true,
 					});
-				}
-			});
+				}),
+			),
+			Effect.asVoid,
+		);
 	}
 
 	async authorize(): Promise<void> {
@@ -138,13 +170,7 @@ export class ShellActivity {
 			// The supervisor may already have spawned the command in its own group.
 			// Preserve durable ownership and let its graceful TERM handler reap that
 			// group instead of SIGKILLing the supervisor alone.
-			void this.stop("abort").catch((stopError) => {
-				reportWorkDiagnostic("A task could not stop after its supervisor input failed", stopError, {
-					action: "/tasks",
-					key: "supervisor-input-stop",
-					notice: true,
-				});
-			});
+			this.requestStop("abort", "supervisor input failure");
 		};
 		try {
 			publishCommandAuthorization(
@@ -157,37 +183,48 @@ export class ShellActivity {
 			throw error;
 		}
 		this.launch.supervisor.unref();
-		await this.waitForCommandAcknowledgement();
+		await this.owner.effects.run(this.waitForCommandAcknowledgement());
 		this.owner.changed();
 	}
 
-	async rollback(): Promise<void> {
-		this.finalization = "running";
-		this.owner.unregister(this, undefined);
-		try {
-			// Persist failed before command input was released. Kill the exact Bun
-			// subprocess handle first; ending stdin while it is alive would authorize
-			// the supervisor to launch the command we are trying to roll back.
-			this.launch.supervisor.kill("SIGKILL");
-		} catch {
-			// Completion below remains the authoritative exact-handle observation.
-		}
-		this.removeLaunchArtifact(this.launch.authorizationPath);
-		this.removeLaunchArtifact(this.launch.acknowledgementPath);
-		this.launch.supervisor.output.destroy();
-		this.launch.supervisor.closeControl();
-		this.launch.supervisor.unref();
-		await this.launch.supervisor.completion;
-		this.finalization = "done";
-		this.launch.output.close();
-		rmSync(this.launch.output.path, { force: true });
-		try {
-			this.owner.persist();
-		} catch (error) {
-			reportWorkDiagnostic("Launch rollback state could not be saved", error, {
-				key: "launch-rollback-persist",
-			});
-		}
+	rollback(): Promise<void> {
+		return this.owner.effects.run(
+			Effect.gen({ self: this }, function* () {
+				yield* Effect.sync(() => {
+					this.finalization = "running";
+					this.owner.unregister(this, undefined);
+					try {
+						// Persist failed before command input was released. Kill the exact Bun
+						// subprocess handle first; ending stdin while it is alive would authorize
+						// the supervisor to launch the command we are trying to roll back.
+						this.launch.supervisor.kill("SIGKILL");
+					} catch {
+						// Completion below remains the authoritative exact-handle observation.
+					}
+					this.removeLaunchArtifact(this.launch.authorizationPath);
+					this.removeLaunchArtifact(this.launch.acknowledgementPath);
+					this.launch.supervisor.output.destroy();
+					this.launch.supervisor.closeControl();
+					this.launch.supervisor.unref();
+				});
+				yield* Effect.tryPromise({
+					try: () => this.launch.supervisor.completion,
+					catch: (error) => error,
+				});
+				yield* Effect.sync(() => {
+					this.finalization = "done";
+					this.launch.output.close();
+					rmSync(this.launch.output.path, { force: true });
+					try {
+						this.owner.persist();
+					} catch (error) {
+						reportWorkDiagnostic("Launch rollback state could not be saved", error, {
+							key: "launch-rollback-persist",
+						});
+					}
+				});
+			}),
+		);
 	}
 
 	async execute(
@@ -198,17 +235,19 @@ export class ShellActivity {
 		const onAbort = () => {
 			if (!this.backgrounded) this.requestStop("abort", "abort signal");
 		};
-		return executeShellTool(input, backgroundAfterMs, {
-			completion: this.completion,
-			detach: (reason) => {
-				this.detach(reason);
-			},
-			detached: this.detachState.promise,
-			id: this.id,
-			onAbort,
-			output: this.launch.output,
-			outputPath: () => this.durableOutputPath(),
-		});
+		return this.owner.effects.run(
+			executeShellTool(input, backgroundAfterMs, {
+				completion: Deferred.await(this.completion),
+				detach: (reason) => {
+					this.detach(reason);
+				},
+				detached: Deferred.await(this.detached),
+				id: this.id,
+				onAbort,
+				output: this.launch.output,
+				outputPath: () => this.durableOutputPath(),
+			}),
+		);
 	}
 
 	startMonitor(timeoutSeconds: number): {
@@ -217,7 +256,7 @@ export class ShellActivity {
 		readonly outputPath?: string;
 	} {
 		this.armTimeout(timeoutSeconds, "monitor timeout");
-		const started = { id: this.id, outcome: this.completion };
+		const started = { id: this.id, outcome: this.owner.effects.run(Deferred.await(this.completion)) };
 		const outputPath = this.durableOutputPath();
 		return outputPath ? { ...started, outputPath } : started;
 	}
@@ -225,7 +264,7 @@ export class ShellActivity {
 	detach(reason: "manual" | "timeout"): boolean {
 		if (this.finalization === "done" || this.backgrounded || this.stopReason) return false;
 		this.backgrounded = true;
-		this.detachState.resolve(reason);
+		Deferred.doneUnsafe(this.detached, Effect.succeed(reason));
 		this.owner.changed();
 		return true;
 	}
@@ -260,60 +299,67 @@ export class ShellActivity {
 		this.launch.output.close();
 	}
 
-	async stop(reason: ShellStopReason): Promise<BackgroundWorkOutcome> {
-		if (this.finalization === "done") return this.completion;
+	stop(reason: ShellStopReason): Promise<BackgroundWorkOutcome> {
+		if (this.finalization === "done") return this.owner.effects.run(Deferred.await(this.completion));
 		if (this.stopPromise) return this.stopPromise;
 		this.stopReason = reason;
 		this.owner.changed();
-		const stopAttempt = this.stopNow();
+		const stopAttempt = this.owner.effects.run(this.stopNow());
 		this.stopPromise = stopAttempt;
-		try {
-			return await stopAttempt;
-		} finally {
+		return stopAttempt.finally(() => {
 			// A failed proof of termination intentionally preserves the durable activity,
 			// but it must not permanently cache that rejected attempt. A later explicit
 			// stop or shutdown gets a fresh chance to verify and reap the same identity.
 			if (this.stopPromise === stopAttempt) this.stopPromise = undefined;
-		}
+		});
 	}
 
-	private async stopNow(): Promise<BackgroundWorkOutcome> {
-		const { supervisor, supervisorIdentity } = this.launch;
-		let signalState: ReturnType<SignalVerifiedSupervisor>;
-		try {
-			signalState = this.dependencies.signalSupervisor(supervisor, supervisorIdentity, "SIGTERM");
-		} catch (error) {
-			this.owner.persist();
-			throw error;
-		}
-		if (signalState === "unresolved") {
-			this.owner.persist();
-			throw new Error(
-				`Background Work '${this.id}' supervisor could not be proven stopped; recovery ownership was retained.`,
+	private stopNow(): Effect.Effect<BackgroundWorkOutcome, unknown> {
+		return Effect.gen({ self: this }, function* () {
+			const { supervisor, supervisorIdentity } = this.launch;
+			const signalState = yield* Effect.try({
+				try: () => this.dependencies.signalSupervisor(supervisor, supervisorIdentity, "SIGTERM"),
+				catch: (error) => {
+					this.owner.persist();
+					return error;
+				},
+			});
+			if (signalState === "unresolved") {
+				this.owner.persist();
+				return yield* Effect.fail(
+					new Error(
+						`Background Work '${this.id}' supervisor could not be proven stopped; recovery ownership was retained.`,
+					),
+				);
+			}
+			const terminal = yield* Effect.raceFirst(
+				Deferred.await(this.completion).pipe(Effect.map(Option.some)),
+				Effect.sleep(this.dependencies.stopCompletionGraceMs).pipe(Effect.as(Option.none())),
 			);
-		}
-		const terminal = await Promise.race([
-			this.completion,
-			new Promise<undefined>((resolve) =>
-				setTimeout(() => resolve(undefined), this.dependencies.stopCompletionGraceMs),
-			),
-		]);
-		if (terminal) return terminal;
-		if (identityMatches(supervisorIdentity)) {
-			this.owner.persist();
-			throw new Error(
-				`Background Work '${this.id}' supervisor is still reaping its process group; recovery ownership was retained.`,
-			);
-		}
-		await this.finalize(null, "SIGTERM");
-		return this.completion;
+			if (Option.isSome(terminal)) return terminal.value;
+			if (identityMatches(supervisorIdentity)) {
+				this.owner.persist();
+				return yield* Effect.fail(
+					new Error(
+						`Background Work '${this.id}' supervisor is still reaping its process group; recovery ownership was retained.`,
+					),
+				);
+			}
+			yield* this.finalize(null, "SIGTERM");
+			return yield* Deferred.await(this.completion);
+		});
 	}
 
 	private armTimeout(seconds: number, source: string): void {
 		if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("Bash timeout must be a positive finite number");
 		const milliseconds = Math.min(2_147_483_647, Math.round(seconds * 1_000));
-		this.timeoutTimer = setTimeout(() => this.requestStop("timeout", source), milliseconds);
-		this.timeoutTimer.unref?.();
+		this.cancelTimeout?.();
+		const task = this.owner.effects.open(
+			Effect.sleep(milliseconds).pipe(Effect.andThen(Effect.sync(() => this.requestStop("timeout", source)))),
+		);
+		this.cancelTimeout = () => {
+			void task.interrupt();
+		};
 	}
 
 	private requestStop(reason: ShellStopReason, source: string): void {
@@ -326,53 +372,53 @@ export class ShellActivity {
 		});
 	}
 
-	private async waitForCommandAcknowledgement(): Promise<void> {
-		let supervisorExit:
-			| { readonly code: number | null; readonly error?: Error; readonly signal: NodeJS.Signals | null }
-			| undefined;
-		void this.launch.supervisor.completion.then(
-			(result) => {
-				supervisorExit = result;
-			},
-			(error) => {
-				supervisorExit = {
-					code: 1,
-					error: error instanceof Error ? error : new Error(String(error)),
-					signal: null,
-				};
-			},
-		);
-		try {
+	private waitForCommandAcknowledgement(): Effect.Effect<void, unknown> {
+		const acknowledged = Effect.gen({ self: this }, function* () {
 			const deadline = Date.now() + 3_000;
 			for (;;) {
-				if (
-					consumeCommandAcknowledgement(
-						this.launch.acknowledgementPath,
-						this.launch.authorizationToken,
-						this.launch.supervisorIdentity,
-					)
-				) {
+				const accepted = yield* Effect.try({
+					try: () =>
+						consumeCommandAcknowledgement(
+							this.launch.acknowledgementPath,
+							this.launch.authorizationToken,
+							this.launch.supervisorIdentity,
+						),
+					catch: (error) => error,
+				});
+				if (accepted) {
 					this.launchAuthorized = true;
 					return;
 				}
-				if (supervisorExit) {
-					throw (
-						supervisorExit.error ?? new Error("Background Work supervisor exited before accepting its command.")
+				if (Date.now() >= deadline) {
+					return yield* Effect.fail(
+						new Error("Background Work supervisor did not acknowledge its command within 3 seconds."),
 					);
 				}
-				if (Date.now() >= deadline) {
-					throw new Error("Background Work supervisor did not acknowledge its command within 3 seconds.");
-				}
-				await Bun.sleep(20);
+				yield* Effect.sleep(20);
 			}
-		} catch (error) {
-			this.launchAuthorized = true;
-			this.requestStop("abort", "command acknowledgement failure");
-			throw error;
-		} finally {
-			this.removeLaunchArtifact(this.launch.authorizationPath);
-			this.removeLaunchArtifact(this.launch.acknowledgementPath);
-		}
+		});
+		const supervisorExit = Effect.tryPromise({
+			try: () => this.launch.supervisor.completion,
+			catch: (error) => error,
+		}).pipe(
+			Effect.flatMap((result) =>
+				Effect.fail(result.error ?? new Error("Background Work supervisor exited before accepting its command.")),
+			),
+		);
+		return Effect.raceFirst(acknowledged, supervisorExit).pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					this.launchAuthorized = true;
+					this.requestStop("abort", "command acknowledgement failure");
+				}).pipe(Effect.andThen(Effect.fail(error))),
+			),
+			Effect.ensuring(
+				Effect.sync(() => {
+					this.removeLaunchArtifact(this.launch.authorizationPath);
+					this.removeLaunchArtifact(this.launch.acknowledgementPath);
+				}),
+			),
+		);
 	}
 
 	private removeLaunchArtifact(filePath: string): void {
@@ -426,26 +472,45 @@ export class ShellActivity {
 		}
 	}
 
-	private async finalize(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
-		if (this.finalization !== "open") return;
+	private finalize(code: number | null, signal: NodeJS.Signals | null): Effect.Effect<void, unknown> {
+		if (this.finalization !== "open") return Effect.void;
 		this.finalization = "running";
-		try {
-			if (this.commandIdentity && !this.commandGroupReaped) await reapOwnedProcessGroup(this.commandIdentity);
-		} catch (error) {
-			this.finalization = "open";
-			try {
-				this.owner.persist();
-			} catch (persistError) {
-				reportWorkDiagnostic("Unresolved process recovery state could not be saved", persistError, {
-					action: "/tasks",
-					key: "unresolved-process-recovery",
-					notice: true,
-				});
-			}
-			throw error;
-		}
+		const commandIdentity = this.commandIdentity;
+		const reap =
+			commandIdentity && !this.commandGroupReaped
+				? Effect.tryPromise({
+						try: () => reapOwnedProcessGroup(commandIdentity),
+						catch: (error) => error,
+					})
+				: Effect.void;
+		return reap.pipe(
+			Effect.catch((error) =>
+				Effect.sync(() => {
+					this.finalization = "open";
+					try {
+						this.owner.persist();
+					} catch (persistError) {
+						reportWorkDiagnostic("Unresolved process recovery state could not be saved", persistError, {
+							action: "/tasks",
+							key: "unresolved-process-recovery",
+							notice: true,
+						});
+					}
+				}).pipe(Effect.andThen(Effect.fail(error))),
+			),
+			Effect.andThen(Effect.sync(() => this.completeFinalization(code, signal))),
+			Effect.onInterrupt(() =>
+				Effect.sync(() => {
+					if (this.finalization === "running") this.finalization = "open";
+				}),
+			),
+		);
+	}
+
+	private completeFinalization(code: number | null, signal: NodeJS.Signals | null): void {
 		this.finalization = "done";
-		if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+		this.cancelTimeout?.();
+		this.cancelTimeout = undefined;
 		try {
 			this.launch.supervisor.output.destroy();
 		} catch {
@@ -479,7 +544,7 @@ export class ShellActivity {
 		} catch (error) {
 			reportWorkDiagnostic("Completed task state could not be saved", error, { key: "terminal-state-persist" });
 		}
-		this.completionState.resolve(outcome);
+		Deferred.doneUnsafe(this.completion, Effect.succeed(outcome));
 		const shouldNotify =
 			this.backgrounded &&
 			!this.owner.disposed() &&

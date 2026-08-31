@@ -1,16 +1,16 @@
 import { Effect } from "effect";
 import { isRuntimeFunction, isRuntimeString } from "../../../shared/runtime-type.js";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
-import {
-	AgentExecutionGovernor,
-	type AgentExecutionReservation,
-	type AgentExecutionReservationResult,
-	type AgentExecutionSettlement,
-	type AgentExecutionSettlementResult,
-	type AgentRuntimeCompletionEvent,
-	type AgentRuntimeCompletionResult,
-	type ReserveAgentResumeInput,
-	type ReserveAgentSpawnInput,
+import type { AgentEffectOwner } from "./agent-effect-owner.ts";
+import type {
+	AgentExecutionReservation,
+	AgentExecutionReservationResult,
+	AgentExecutionSettlement,
+	AgentExecutionSettlementResult,
+	AgentRuntimeCompletionEvent,
+	AgentRuntimeCompletionResult,
+	ReserveAgentResumeInput,
+	ReserveAgentSpawnInput,
 } from "./agent-execution-governor.ts";
 import {
 	explicitProcessPidState,
@@ -29,13 +29,11 @@ import {
 	scheduleDurableAgentOperation,
 	stopDurableAgentOperation,
 } from "./durable-agent-operation.ts";
-import {
-	type AgentGovernorLease,
-	type RebindAgentRuntimeRequest,
-	SessionAgentGovernor,
-	type SessionGovernorLimitInput,
-	type SessionGovernorRebindResult,
-	type SessionGovernorSnapshot,
+import type {
+	AgentGovernorLease,
+	RebindAgentRuntimeRequest,
+	SessionGovernorRebindResult,
+	SessionGovernorSnapshot,
 } from "./session-governor.ts";
 import { samePath } from "./session-governor-contracts.ts";
 
@@ -122,6 +120,7 @@ export interface AgentExecutionCoordinatorPort {
 
 export interface AgentExecutionCoordinatorOptions {
 	readonly createSession: (identity: AgentExecutionSessionIdentity) => AgentExecutionCoordinatorSession;
+	readonly effects: AgentEffectOwner;
 	readonly isPidAlive?: ((pid: number) => boolean | undefined) | undefined;
 	readonly readProcessStartIdentity?: ((pid: number) => string | undefined) | undefined;
 	readonly readSystemBootIdentity?: (() => string | undefined) | undefined;
@@ -186,6 +185,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	private readonly active = new Map<string, BoundInvocation>();
 	private readonly asyncStarts = new Map<string, AsyncStart>();
 	private readonly createSession: AgentExecutionCoordinatorOptions["createSession"];
+	private readonly effects: AgentEffectOwner;
 	private readonly readProcessStartIdentity: (pid: number) => string | undefined;
 	private readonly runtimeProcessState: RuntimeProcessState;
 	private readonly invocationRecords = new WeakMap<AgentExecutionInvocation, BoundInvocation>();
@@ -197,6 +197,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 
 	constructor(options: AgentExecutionCoordinatorOptions) {
 		this.createSession = options.createSession;
+		this.effects = options.effects;
 		this.readProcessStartIdentity = options.readProcessStartIdentity ?? readProcessStartIdentity;
 		this.runtimeProcessState = createRuntimeProcessState({
 			isPidAlive: options.isPidAlive ?? explicitProcessPidState,
@@ -215,6 +216,14 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		this.clearEphemeralState();
 		this.boundIdentity = Object.freeze({ sessionId, ownerAgentPath: Object.freeze(ownerAgentPath) });
 		this.boundSession = undefined;
+		for (const pending of this.pendingSettlements) {
+			stopDurableAgentOperation(pending, true);
+			this.scheduleSettlementRetry(pending);
+		}
+		for (const pending of this.pendingCompletions.values()) {
+			stopDurableAgentOperation(pending, true);
+			this.scheduleCompletionRetry(pending);
+		}
 	}
 
 	async prepare(input: {
@@ -482,7 +491,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	}
 
 	private attemptPendingSettlement(pending: PendingSettlement): Promise<void> {
-		return Effect.runPromise(this.pendingSettlementEffect(pending));
+		return this.effects.run(this.pendingSettlementEffect(pending));
 	}
 
 	private pendingSettlementEffect(pending: PendingSettlement): Effect.Effect<void, unknown> {
@@ -534,6 +543,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 
 	private scheduleSettlementRetry(pending: PendingSettlement): void {
 		scheduleDurableAgentOperation(
+			this.effects,
 			pending,
 			() => this.pendingSettlements.has(pending),
 			() => this.pendingSettlementEffect(pending),
@@ -621,7 +631,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	}
 
 	private attemptPendingCompletion(pending: PendingCompletion): Promise<void> {
-		return Effect.runPromise(this.pendingCompletionEffect(pending));
+		return this.effects.run(this.pendingCompletionEffect(pending));
 	}
 
 	private pendingCompletionEffect(pending: PendingCompletion): Effect.Effect<void, unknown> {
@@ -674,6 +684,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 	private scheduleCompletionRetry(pending: PendingCompletion): void {
 		const key = completionKey(pending.address, pending.generation);
 		scheduleDurableAgentOperation(
+			this.effects,
 			pending,
 			() => this.pendingCompletions.get(key) === pending,
 			() => this.pendingCompletionEffect(pending),
@@ -724,41 +735,6 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		// session authority. A late engine result after session switch/dispose must
 		// still finish that old ledger instead of leaking a running lease.
 	}
-}
-
-export interface DurableAgentExecutionCoordinatorOptions {
-	readonly rootDir: string;
-	readonly limits?: SessionGovernorLimitInput;
-	readonly isPidAlive?: (pid: number) => boolean | undefined;
-	readonly readProcessStartIdentity?: (pid: number) => string | undefined;
-	readonly readSystemBootIdentity?: () => string | undefined;
-}
-
-export function createDurableAgentExecutionCoordinator(
-	options: DurableAgentExecutionCoordinatorOptions,
-): AgentExecutionCoordinator {
-	return new AgentExecutionCoordinator({
-		isPidAlive: options.isPidAlive,
-		readProcessStartIdentity: options.readProcessStartIdentity,
-		readSystemBootIdentity: options.readSystemBootIdentity,
-		createSession: (identity) => {
-			const sessionGovernor = new SessionAgentGovernor({
-				rootDir: options.rootDir,
-				sessionId: identity.sessionId,
-				ownerAgentPath: identity.ownerAgentPath,
-				limits: options.limits,
-				readSystemBootIdentity: options.readSystemBootIdentity,
-			});
-			return {
-				governor: new AgentExecutionGovernor(sessionGovernor),
-				hasLedger: () => sessionGovernor.hasLedger(),
-				inspectExistingSnapshot: () => sessionGovernor.inspectExistingSnapshot(),
-				reconcile: async (isPidAlive) => {
-					await sessionGovernor.reconcile(isPidAlive);
-				},
-			};
-		},
-	});
 }
 
 function completionKey(address: AgentRuntimeCompletionEvent, generation: number): string {
