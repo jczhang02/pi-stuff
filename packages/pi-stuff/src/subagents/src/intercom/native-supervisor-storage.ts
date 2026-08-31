@@ -483,8 +483,8 @@ export async function collectSupervisorChannel(
 ): Promise<boolean> {
 	const metadata = await readSupervisorChannelMetadataAsync(channelDir);
 	if (metadata) {
-		if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
 		if ((await channelOwnerAlive(metadata)) !== false && !runInactive(metadata)) return false;
+		if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
 	}
 	const claim = await tryAcquireKernelClaimAsync(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
 	if (!claim) return false;
