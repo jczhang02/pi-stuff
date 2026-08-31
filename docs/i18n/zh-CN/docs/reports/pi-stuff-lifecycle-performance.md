@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: 39b3e3c9065383a0bc09b9615c2afdb24a9b1ead472e97b2adf6e624c3530589 -->
+<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: ed4c6622ae42bfcb0552ec89463aa6c89ab696baf92e28e4c63130da295c327a -->
 
 # Pi Stuff 生命周期性能
 
@@ -91,7 +91,7 @@ Pi Stuff 现在会在延迟激活 Magic Context 前绘制并确认首次输入�
 | 活跃后台 Shell 或 Agent 父级关闭，240 轮会话 | ≤ 375 ms |
 | 带嵌套代码证明的冷源码变化重载 | ≤ 6,000 ms |
 
-源码变化重载预算是开发正确性防护，不是普通用户路径。绝不能通过接受过期代码，或引入未跟踪编译产物或启动写入来改善。已验证基准会强制表中每项预算，而不是把它当作叙事指引。
+源码变化重载预算是开发正确性防护，不是普通用户路径。绝不能通过接受过期代码、交付编译产物或在软件包首次导入期间写入来改善。显式源码刷新所使用、经过内容校验且可丢弃的 XDG 转译缓存是允许的。已验证基准会强制表中每项预算，而不是把它当作叙事指引。
 
 240 轮活跃资源关闭上限包含套件生命周期加固合并后增加的 25 ms 调度器余量。十样本确认测得中位数 342.63 ms、最大值 359.45 ms，同时保留持久后台工具回执和已证明子进程清理；该运行中所有其他上限不变。
 

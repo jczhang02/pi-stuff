@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
 import { isRuntimeObject } from "./shared/runtime-type.js";
+import { piStuffCachePath } from "./xdg/index.js";
 
 const SUITE_RUNTIME_CACHE_KEY = Symbol.for("@jczhang02/pi-stuff/suite-runtime-cache/v2");
 
@@ -99,7 +100,7 @@ export async function importFreshSuiteRuntime(runtimePath: string): Promise<Suit
 		import("@earendil-works/pi-tui"),
 	]);
 	const jiti = createJiti(import.meta.url, {
-		fsCache: false,
+		fsCache: piStuffCachePath("jiti"),
 		moduleCache: false,
 		tryNative: false,
 		virtualModules: {

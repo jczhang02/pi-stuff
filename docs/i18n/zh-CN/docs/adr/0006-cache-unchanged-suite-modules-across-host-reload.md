@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0006-cache-unchanged-suite-modules-across-host-reload.md; translation-source-sha256: c526d09371e1f4fc610de5d9cd5bf990d6a4a2893637dce28a2d36fdba00398c -->
+<!-- translation-source: docs/adr/0006-cache-unchanged-suite-modules-across-host-reload.md; translation-source-sha256: 8b914d1d341159687c0363fdab337572a8007574fa86c4d51717c14f0f523ca1 -->
 
 ---
 status: accepted
@@ -23,7 +23,8 @@ Pi 在使旧扩展运行器失效前，会发送原因为 `reload` 的 `session_
 - 对并发加载去重；
 - 移除导入失败的结果，使后续重载可以恢复；
 - 指纹未变化时复用命名空间并重新运行所有安装器；
-- 指纹变化或此前导入失败时，新建一个禁用 `moduleCache` 与 `fsCache` 的 Jiti 加载器，使变化的嵌套模块重新求值，同时不在启动期间写入文件；
+- 指纹变化或此前导入失败时，新建一个禁用 `moduleCache` 与原生优先加载的 Jiti 加载器，使变化的嵌套模块重新求值，而不会滞留在运行时模块缓存中；
+- 允许 Jiti 复用 `$XDG_CACHE_HOME/pi-stuff/jiti` 下经过内容校验的转译结果；软件包首次导入仍使用原生只读路径，只有显式的源码变化刷新才可能填充这份可丢弃的派生缓存；
 - 把宿主提供的 Pi 模块命名空间用作 Jiti 虚拟模块，使刷新路径既适用于源码检出，也适用于已验证的 Bun 二进制文件。
 
 生成的有序组合移至 `src/suite-runtime.ts`；`index.ts` 仍是唯一的 Pi 扩展入口。这两个文件都由 `suite.json` 生成。软件包继续只交付 TypeScript 源码。
@@ -32,7 +33,7 @@ Pi 在使旧扩展运行器失效前，会发送原因为 `reload` 的 `session_
 
 - 普通的无变化重载会避免重新求值沉重的模块图，同时保留新的扩展注册。
 - 编辑任何嵌套套件源码都会使缓存失效，并优先保证正确的源码行为，而非重载延迟。
-- 改变源码后的刷新会刻意更慢，因为 Pi Stuff 不写入私有转译缓存。
+- 对尚未缓存的源码图，第一次源码变化刷新仍然较慢。后续刷新可以复用未变化文件的转译结果，同时仍会重新求值每一个变化的嵌套模块。
 - 软件包为少用的源码刷新路径新增一个精确版本的 Jiti 运行时依赖。
 - 生命周期验收必须证明两条路径：无变化重载复用命名空间，嵌套源码编辑则会在重载后生效。
 - 此缓存不会取代 Pi 软件包发现、会话、扩展运行器或宿主的重载命令。

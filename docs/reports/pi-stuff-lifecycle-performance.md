@@ -147,8 +147,9 @@ Host and Suite cells before changing a Capability.
 | Cold source-changing reload with nested-code proof | ≤ 6,000 ms |
 
 The source-changing reload budget is a development correctness guard, not the ordinary user path. It must never be
-improved by accepting stale code or by introducing an untracked compiled artifact or startup write. The certified
-benchmark enforces every budget in this table rather than treating it as narrative guidance.
+improved by accepting stale code, shipping a compiled artifact, or writing during initial Package import. A disposable,
+content-validated XDG transform cache used only by explicit source refresh is allowed. The certified benchmark enforces
+every budget in this table rather than treating it as narrative guidance.
 
 The 240-turn active-resource shutdown ceiling includes a 25 ms scheduler margin added after the Suite lifecycle
 hardening merge. A ten-sample confirmation measured a 342.63 ms median and 359.45 ms maximum while retaining durable

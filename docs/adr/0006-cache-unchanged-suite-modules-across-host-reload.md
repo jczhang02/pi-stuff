@@ -29,8 +29,10 @@ The source cache has these rules:
 - deduplicate concurrent loads;
 - remove a rejected import so a later reload can recover;
 - on an unchanged fingerprint, reuse the namespace and rerun all installers;
-- on a changed fingerprint or failed prior import, create a fresh Jiti loader with `moduleCache` and `fsCache` disabled,
-  so changed nested modules are re-evaluated without a startup write;
+- on a changed fingerprint or failed prior import, create a fresh Jiti loader with `moduleCache` and native-first loading
+  disabled, so changed nested modules are re-evaluated rather than retained in a runtime module cache;
+- let Jiti reuse content-validated transforms under `$XDG_CACHE_HOME/pi-stuff/jiti`; initial Package import remains
+  native and read-only, while an explicit source-changing refresh may populate this disposable derived cache;
 - use the Host-provided Pi module namespaces as Jiti virtual modules so the refresh path works in the certified Bun
   binary as well as the source checkout.
 
@@ -42,7 +44,8 @@ files are generated from `suite.json`. The Package continues to ship TypeScript 
 - Ordinary unchanged reloads avoid re-evaluating the heavy Module graph while preserving fresh Extension
   registrations.
 - Editing any nested Suite source invalidates the cache and favors correct source behavior over reload latency.
-- A source-changing refresh is deliberately slower because Pi Stuff does not write a private transpilation cache.
+- The first source-changing refresh for an uncached source graph remains slow. Later refreshes can reuse transforms for
+  unchanged files while still re-evaluating every changed nested module.
 - The Package gains one exact runtime dependency on Jiti for the uncommon source-refresh path.
 - Lifecycle acceptance must prove both paths: unchanged reload reuses the namespace, while a nested source edit is
   observed after reload.

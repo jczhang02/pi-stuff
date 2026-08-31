@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSuiteRuntime, type SuiteRuntimeModule } from "../packages/pi-stuff/src/suite-loader.ts";
+import {
+	importFreshSuiteRuntime,
+	loadSuiteRuntime,
+	type SuiteRuntimeModule,
+} from "../packages/pi-stuff/src/suite-loader.ts";
 
 const TEMPORARY_ROOTS: string[] = [];
 
@@ -124,5 +128,31 @@ describe("loadSuiteRuntime", () => {
 
 		expect(first).toBe(FIRST_RUNTIME);
 		expect(second).toBe(SECOND_RUNTIME);
+	});
+});
+
+describe("importFreshSuiteRuntime", () => {
+	test("re-evaluates changed nested source while reusing cached transforms", async () => {
+		const sourceRoot = await createSourceRoot('export const version = "first";\n');
+		const runtimePath = join(sourceRoot, "runtime.ts");
+		await writeFile(
+			runtimePath,
+			'import { version } from "./nested/runtime.ts";\nexport { version };\nexport function installPiStuff(): void {}\n',
+		);
+		const previousCacheHome = process.env["XDG_CACHE_HOME"];
+		process.env["XDG_CACHE_HOME"] = join(sourceRoot, "cache");
+
+		try {
+			const first = await importFreshSuiteRuntime(runtimePath);
+			await writeFile(join(sourceRoot, "nested", "runtime.ts"), 'export const version = "second";\n');
+			const second = await importFreshSuiteRuntime(runtimePath);
+
+			expect(first).toHaveProperty("version", "first");
+			expect(second).toHaveProperty("version", "second");
+			expect(await readdir(join(sourceRoot, "cache", "pi-stuff", "jiti"))).not.toHaveLength(0);
+		} finally {
+			if (previousCacheHome === undefined) delete process.env["XDG_CACHE_HOME"];
+			else process.env["XDG_CACHE_HOME"] = previousCacheHome;
+		}
 	});
 });
