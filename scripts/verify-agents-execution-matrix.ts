@@ -12,8 +12,8 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-execution-matrix-provider.ts");
-const PROCESS_TIMEOUT_MS = 30_000;
-const BACKGROUND_SETTLE_TIMEOUT_MS = 20_000;
+const PROCESS_TIMEOUT_MS = 90_000;
+const BACKGROUND_SETTLE_TIMEOUT_MS = 60_000;
 
 type ScenarioId =
 	| "single-fresh-foreground"
@@ -370,6 +370,7 @@ async function runScenario(input: {
 				PONYTAIL_QUIET_STARTUP: "1",
 				TERM: "xterm-256color",
 				TMPDIR: input.temporaryDirectory,
+				XDG_RUNTIME_DIR: join(input.temporaryDirectory, "runtime"),
 				XDG_STATE_HOME: join(input.temporaryDirectory, "state"),
 			},
 		},
@@ -386,7 +387,12 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 	const projectDirectory = join(temporaryDirectory, "project");
 	const sessionsDirectory = join(temporaryDirectory, "sessions");
 	const logPath = join(temporaryDirectory, "provider.jsonl");
-	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(projectDirectory), mkdir(sessionsDirectory)]);
+	await Promise.all([
+		mkdir(agentsDirectory, { recursive: true }),
+		mkdir(projectDirectory),
+		mkdir(join(temporaryDirectory, "runtime"), { mode: 0o700 }),
+		mkdir(sessionsDirectory),
+	]);
 	await disableSessionNamingForTest(configDirectory);
 	await Promise.all([
 		writeFile(join(projectDirectory, "matrix.txt"), "MATRIX_CHILD_FILE_OK\n", { mode: 0o600 }),

@@ -147,14 +147,20 @@ test("lets a first-time user understand status and choose an action without know
 	const component = createContextDialogView(snapshot).create(context);
 	const lines = component.render(64);
 	const text = lines.join("\n");
+	const wideText = component.render(100).join("\n");
 
 	expect(text).toContain("Context · 24.0% · 48K / 200K tokens");
 	expect(text).toContain("4 compartments · 6 memories · 3 notes");
 	expect(text).toContain("2 pending drops");
 	expect(text).toContain("Wrap up history");
+	expect(wideText).toContain("Choose recent messages to keep raw");
 	expect(text).toContain("Flush pending drops");
+	expect(wideText).toContain("2 queued · apply on next request");
 	expect(text).toContain("Rebuild compartments");
+	expect(wideText).toContain("Choose scope, then confirm");
 	expect(text).toContain("Upgrade session");
+	expect(wideText).toContain("Upgrade legacy history and memories");
+	expect(text).not.toContain("◆");
 	expect(text).toContain("↑/↓ select · Enter choose · Esc close");
 	expect(lines.every((line) => visibleWidth(line) <= 64)).toBeTrue();
 
@@ -185,7 +191,9 @@ test("shows only actions that can change the current Context state", () => {
 		expect(text).toContain("Rebuild compartments");
 		expect(text.includes("Flush pending drops")).toBe(flushVisible);
 		expect(text.includes("Upgrade session")).toBe(upgradeVisible);
-		if (upgradeNeeded === 1) expect(text).toContain("1 compartment needs upgrade");
+		if (upgradeNeeded === 1) {
+			expect(component.render(100).join("\n")).toContain("Upgrade legacy history and memories");
+		}
 		component.dispose?.();
 	}
 });

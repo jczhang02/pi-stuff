@@ -8,6 +8,11 @@ import {
 import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { DETAIL_LINE_LIMIT, ROW_PREVIEW_CODE_UNIT_LIMIT } from "./limits.js";
+import {
+	type OperationBlockRowModel,
+	renderOperationBlockRow,
+	sameOperationBlock,
+} from "./operation-block-renderer.js";
 import { boundTerminalText, graphemePrefix, sanitizeTerminalText } from "./terminal.js";
 import { oneLine } from "./tool-text.js";
 
@@ -15,9 +20,6 @@ const MAX_ROW_CACHE_WIDTHS = 6;
 const MAX_TRUNCATED_SUMMARY_WIDTH = 12;
 const MIN_TRUNCATED_LABEL_WIDTH = 4;
 const MIN_TRUNCATED_SUMMARY_WIDTH = 6;
-const MIN_TRUNCATED_TARGET_WIDTH = 8;
-const MIN_LATIN_PARTIAL_UNIT = 3;
-const MIN_COMPACT_PARTIAL_UNIT = 2;
 const SELF_RENDERED_TRANSCRIPT_GUTTER = " ".repeat(SELF_RENDERED_TRANSCRIPT_PADDING);
 
 export interface ToolRowModel {
@@ -54,7 +56,11 @@ export interface BashOperationRowModel {
 	readonly state: ToolActivityState;
 }
 
-export type ToolTranscriptRowModel = RetrievalGroupRowModel | BashOperationRowModel | ToolRowModel;
+export type ToolTranscriptRowModel =
+	| RetrievalGroupRowModel
+	| BashOperationRowModel
+	| OperationBlockRowModel
+	| ToolRowModel;
 
 export class EmptyToolComponent implements Component {
 	invalidate(): void {}
@@ -65,6 +71,9 @@ export class EmptyToolComponent implements Component {
 }
 
 function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel): boolean {
+	if (left.kind === "operation-block" || right.kind === "operation-block") {
+		return left.kind === "operation-block" && right.kind === "operation-block" && sameOperationBlock(left, right);
+	}
 	if (left.kind === "bash-operation" || right.kind === "bash-operation") {
 		return (
 			left.kind === "bash-operation" &&
@@ -132,9 +141,11 @@ export class CachedToolRow implements Component {
 		const rendered =
 			this.model.kind === "activity"
 				? renderRetrievalGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
-				: this.model.kind === "bash-operation"
-					? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
-					: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
+				: this.model.kind === "operation-block"
+					? renderOperationBlockRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+					: this.model.kind === "bash-operation"
+						? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+						: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {
@@ -303,15 +314,20 @@ function bashOutputLines(model: BashOperationRowModel) {
 			truncated: model.outputTruncated === true,
 		};
 	}
-	if (model.state === "cancelled" && !lines.some((line) => /\b(?:interrupt|abort|cancel)/iu.test(line))) {
-		lines.unshift("Interrupted");
+	if (model.state === "cancelled") {
+		const cancellationLine = lines.at(-1)?.trim();
+		if (cancellationLine === "Command aborted" || cancellationLine === "Operation aborted") {
+			lines = lines.slice(0, -1);
+			while (lines.at(-1)?.trim() === "") lines.pop();
+		}
+		if (!lines.some((line) => line.trim() === "Interrupted")) lines.unshift("Interrupted");
 	}
 	const terminal = lines.at(-1)?.trim() ?? "";
 	const exit = /^Command exited with code (\d+)$/u.exec(terminal);
 	if (exit) {
 		lines = lines.slice(0, -1);
 		while (lines.at(-1)?.trim() === "") lines.pop();
-		lines.unshift(`Error: Exit code ${exit[1] ?? "?"}`);
+		if (model.state !== "cancelled") lines.unshift(`Error: Exit code ${exit[1] ?? "?"}`);
 	} else if (terminal === "Command aborted" || terminal.startsWith("Command timed out")) {
 		lines = lines.slice(0, -1);
 		while (lines.at(-1)?.trim() === "") lines.pop();
@@ -404,48 +420,13 @@ function fitIdentityAndSummary(markerSlot: string, label: string, summary: strin
 	return `${markerSlot}${truncateToWidth(label, labelBudget, "…")}${separator}${fittedSummary}`;
 }
 
-function semanticCharacters(value: string): string[] {
-	return value.match(/[\p{L}\p{N}\p{Extended_Pictographic}]/gu) ?? [];
-}
-
-function isCompactSemanticCharacter(value: string): boolean {
-	return /[\p{Script=Han}\p{Extended_Pictographic}]/u.test(value);
-}
-
-function removeDanglingShellBoundary(value: string): string {
-	return value
-		.replaceAll(/\s+/gu, " ")
-		.trimEnd()
-		.replace(/(?:\s*(?:\|\||&&|[|&;]))+$/u, "")
-		.trimEnd();
-}
-
-/** Truncate only after a recognizable unit; otherwise omit the optional target. */
+/** Use the complete target budget without splitting terminal graphemes. */
 function fitOptionalTarget(targetPart: string, width: number): string {
 	const budget = Math.max(0, Math.floor(width));
-	if (budget < MIN_TRUNCATED_TARGET_WIDTH) return "";
+	if (budget === 0) return "";
 	if (visibleWidth(targetPart) <= budget) return targetPart;
-	const plain = sanitizeTerminalText(targetPart);
-	let prefix = sanitizeTerminalText(truncateToWidth(plain, Math.max(0, budget - visibleWidth("…")), "")).trimEnd();
-	if (!prefix) return "";
-
-	const next = plain.slice(prefix.length).at(0);
-	const last = prefix.at(-1);
-	const delimiter = /[\s/|&;,:=()[\]{}<>]/u;
-	if (next && last && !delimiter.test(last) && !delimiter.test(next)) {
-		let tokenStart = prefix.length;
-		while (tokenStart > 0 && !delimiter.test(prefix[tokenStart - 1] ?? "")) tokenStart -= 1;
-		const token = prefix.slice(tokenStart);
-		const semantic = semanticCharacters(token);
-		const compact = semantic.length > 0 && semantic.every(isCompactSemanticCharacter);
-		const minimum = compact ? MIN_COMPACT_PARTIAL_UNIT : MIN_LATIN_PARTIAL_UNIT;
-		if (semantic.length < minimum) prefix = prefix.slice(0, tokenStart);
-	}
-
-	prefix = removeDanglingShellBoundary(prefix);
-	const meaningfulUnits = prefix.match(/[\p{L}\p{N}\p{Extended_Pictographic}]+/gu) ?? [];
-	if (!meaningfulUnits.some((unit) => semanticCharacters(unit).length >= MIN_COMPACT_PARTIAL_UNIT)) return "";
-	return truncateToWidth(targetPart, Math.min(budget, visibleWidth(prefix) + visibleWidth("…")), "…");
+	const fitted = truncateToWidth(targetPart, budget, "…");
+	return /[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(sanitizeTerminalText(fitted)) ? fitted : "";
 }
 
 /** Fit one Tool row with identity first, result second, and optional target last. */
@@ -471,9 +452,6 @@ function fitToolRowParts(markerSlot: string, label: string, target: string, summ
 	if (fullSummaryWidth > remaining) return fitIdentityAndSummary(markerSlot, label, summary, width);
 
 	const targetBudget = remaining - fullSummaryWidth;
-	// A tiny path fragment adds noise and can visually bind its ellipsis to the
-	// independently-owned result. Keep the result boundary and omit the optional
-	// target until there is room for a recognisable fragment.
 	const fittedTarget = fitOptionalTarget(targetPart, targetBudget);
 	return `${identity}${fittedTarget}${fullSummaryPart}`;
 }

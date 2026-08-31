@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 5d78423a455bee91dd4b988d6b6639591c42f1466c778e3217bb4f72d29f86c5 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: ddd633eaf4f24a4d20cc441c52be9b458e9f328fc3354e49dced1126db1357db -->
 
 # 报告
 
@@ -9,6 +9,23 @@
 ## 保留报告
 
 - [Effect v4 采用基线](effect-v4-adoption-baseline-2026-08-30.md)
+- [Terminal-Bench 2.1 Pi Stuff 延迟对比](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
+- [Skill Discovery 启动边界真实模型确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)——
+  Raw/off/on 各 30/30，通过预注册的 non-inferiority gate；30 个 Code Mode Session 全部直接使用选中 Skill，
+  timeout 与 safety violation 均为零；方法与解释见其
+  [预注册](../../../../../docs/research/skill-discovery-startup-bounded-confirmation-20260830.md)
+- [Skill Discovery 隔离真实模型确认](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)——
+  保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但 4 个 Suite
+  Session 在 Provider 请求前超时；解释见其
+  [预注册](../../../../../docs/research/skill-discovery-isolated-confirmation-20260830.md)
+- [Skill Discovery direct-read 真实模型研究](../../../../../docs/reports/skill-discovery-direct-read-20260830.json)——
+  保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但一个匹配的
+  off/on pair 在 Provider 请求前超时；解释见其
+  [预注册](../../../../../docs/research/skill-discovery-direct-read-20260830.md)
+- [Skill Discovery 真实模型 confirmation](../../../../../docs/reports/skill-discovery-confirmation-20260830.json)——
+  保留的 behavioral gate 失败研究；解释见其[预注册](../../../../../docs/research/skill-discovery-confirmation-20260830.md)
+- [Skill Discovery 真实模型 benchmark](../../../../../docs/reports/skill-discovery-benchmark-20260830.json)——保留的
+  instrumentation failure 研究；解释见其[预注册](../../../../../docs/research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)及其保留的[截图](../../../../../docs/reports/assets/pi-stuff-0.3.0/)
 - [单软件包迁移](single-package-migration.md)

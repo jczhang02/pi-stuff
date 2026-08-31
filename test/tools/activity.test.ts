@@ -199,6 +199,28 @@ test("classifies only explicit retrieval metadata and the two transparent infras
 	);
 });
 
+test("keeps exact SKILL.md reads standalone without changing ordinary Read grouping", () => {
+	expect(classify("read", { path: "skills/demo/SKILL.md" })).toBe("boundary");
+	expect(classify("read", { path: "skills/demo/../actual/SKILL.md" })).toBe("boundary");
+	expect(classify("read", { path: "skills/demo/skill.md" })).toBe("retrieval");
+	expect(classify("read", { path: "skills/demo/README.md" })).toBe("retrieval");
+
+	const groups = planRetrievalGroups(
+		[
+			assistant(
+				{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "skill", name: "read", arguments: { path: "skills/demo/SKILL.md" } },
+				{ type: "toolCall", id: "r2", name: "read", arguments: { path: "b.ts" } },
+			),
+		],
+		classify,
+		true,
+	);
+
+	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1"], ["skill"], ["r2"]]);
+	expect(groups.map((group) => group.standalone === true)).toEqual([false, true, false]);
+});
+
 test("consequential Suite categories and unknown MCP calls are group boundaries", () => {
 	const cases: ReadonlyArray<readonly [string, ToolActivityCategory]> = [
 		["edit", "change-file"],

@@ -65,7 +65,7 @@ describe("Ponytail Command Dialog", () => {
 	test("shows one Pi Stuff-styled control plane and all specialized Skills", () => {
 		const { context } = harness();
 		const component = createPonytailDialogView(SNAPSHOT, { apply: async () => SNAPSHOT }).create(context);
-		const lines = component.render(68);
+		const lines = component.render(100);
 		const text = lines.join("\n");
 		expect(text).toContain("󱖿 Ponytail · full");
 		expect(text).toContain("󱖿 Control");
@@ -76,7 +76,16 @@ describe("Ponytail Command Dialog", () => {
 		expect(text).toContain("Show debt ledger");
 		expect(text).toContain("Show gain");
 		expect(text).toContain("Show help");
-		expect(lines.every((line) => visibleWidth(line) <= 68)).toBeTrue();
+		for (const description of [
+			"Find over-engineering in this diff",
+			"Find code to delete or simplify",
+			"Collect ponytail: shortcut markers",
+			"Show upstream benchmark savings",
+			"Open modes and commands",
+		]) {
+			expect(text).toContain(description);
+		}
+		expect(lines.every((line) => visibleWidth(line) <= 100)).toBeTrue();
 	});
 
 	test("applies mode changes in place without closing", async () => {

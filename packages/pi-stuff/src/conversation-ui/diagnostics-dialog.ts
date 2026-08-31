@@ -7,8 +7,10 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	matchesCommandDialogCancel,
 	matchesCommandDialogConfirm,
@@ -37,10 +39,6 @@ function marker(theme: Theme, severity: DiagnosticSeverity): string {
 
 function state(theme: Theme, severity: DiagnosticSeverity): string {
 	return theme.fg(severity === "error" ? "error" : severity === "warning" ? "warning" : "accent", severity);
-}
-
-function sectionHeading(theme: Theme, label: string): string {
-	return `${theme.fg("accent", "◆")} ${theme.bold(label)}`;
 }
 
 function age(timestamp: number, now = Date.now()): string {
@@ -79,7 +77,7 @@ function listLine(theme: Theme, record: DiagnosticRecord, selected: boolean, wid
 	const capabilityWidth = Math.min(18, Math.max(8, Math.floor(available * 0.25)));
 	const capability = theme.fg("text", truncateToWidth(record.capability, capabilityWidth, "…"));
 	const prefix = `${GUTTER}${cursor} ${marker(theme, record.severity)} ${capability}${theme.fg("dim", "  ")}`;
-	const occurrence = record.count > 1 ? `×${String(record.count)} · ` : "";
+	const occurrence = record.count > 1 ? `${String(record.count)} occurrences · ` : "";
 	const suffix = theme.fg("dim", `  ${occurrence}${age(record.lastOccurredAt)}`);
 	const summaryWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix));
 	const summary = truncateToWidth(record.summary, summaryWidth, "…");
@@ -229,19 +227,25 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
 		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		const footer = hint(theme, width, [
-			...(this.records.length > 0 ? [`${up}/${down} select`, `${confirm} details`, "c clear"] : []),
-			"? keys",
-			`${cancel} close`,
-		]);
-		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const actions = this.records.length > 0 ? [`${up}/${down} select`, `${confirm} details`, "c clear"] : [];
+		let footer = hint(theme, width, [...actions, "? keys", `${cancel} close`]);
+		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const page = commandDialogReadOnlyPageHint(this.records.length > viewport);
+		if (page) {
+			actions.splice(1, 0, page);
+			footer = hint(theme, width, [...actions, "? keys", `${cancel} close`]);
+			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		}
 		const selectedIndex = Math.max(
 			0,
 			this.records.findIndex((record) => record.id === this.selectedId),
 		);
 		const start = Math.max(0, Math.min(selectedIndex - Math.floor(viewport / 2), this.records.length - viewport));
 		const visible = viewport > 0 ? this.records.slice(start, start + viewport) : [];
-		const count = theme.fg("dim", ` · ${String(this.records.length)} records`);
+		const count = theme.fg(
+			"dim",
+			` · ${String(this.records.length)} ${this.records.length === 1 ? "record" : "records"}`,
+		);
 		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${theme.bold("Diagnostics")}${count}`];
 		const empty = `${GUTTER}${theme.fg("muted", "No Pi Stuff diagnostics yet.")}`;
 		const older = this.records.length - start - visible.length;
@@ -271,18 +275,12 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const document = this.detailDocument(record);
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		let footer = hint(theme, width, [`${up}/${down} scroll`, "? keys", `${cancel} back`]);
 		let viewport = Math.max(0, maximum - 8 - footer.length);
 		if (document.length > viewport) {
-			footer = hint(theme, width, [
-				`${up}/${down} scroll`,
-				`${pageUp}/${pageDown} page`,
-				"? keys",
-				`${cancel} back`,
-			]);
+			const page = commandDialogReadOnlyPageHint(true);
+			footer = hint(theme, width, [`${up}/${down} scroll`, ...(page ? [page] : []), "? keys", `${cancel} back`]);
 			viewport = Math.max(0, maximum - 8 - footer.length);
 		}
 		const maxOffset = Math.max(0, document.length - viewport);
@@ -309,8 +307,10 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const wrap = (lines: readonly string[]): string[] =>
 			lines.flatMap((line) => wrapTextWithAnsi(line || " ", available));
 		return [
-			...(record.action ? [sectionHeading(this.context.theme, "Action"), ...wrap([record.action]), ""] : []),
-			sectionHeading(this.context.theme, "Details"),
+			...(record.action
+				? [commandDialogSectionHeading(this.context.theme, "Action", ""), ...wrap([record.action]), ""]
+				: []),
+			commandDialogSectionHeading(this.context.theme, "Details", ""),
 			...wrap(details),
 		];
 	}

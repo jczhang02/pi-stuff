@@ -6,30 +6,55 @@ status: accepted
 
 ## Context
 
-ADR 0022 rejects a universal `Tool(args)` plus child-status block, while Bash and several other evidence-rich Tool
-activities still benefit from the same parent-and-child reading shape. Without an explicit boundary, presentation
-metadata could gradually turn that local shape into the universal Tool card that ADR 0022 rejected.
+Tool UI has two separate surfaces. The Transcript has Compact and Expanded forms; `/tools` has List and Detail, with
+Formatted and Raw representations inside Detail. The former generic standalone Tool row did not preserve enough
+evidence for file mutations, while applying a Bash-like shape to every Tool would erase useful domain distinctions.
 
-At acceptance, Bash is the only implemented Operation Block. Write, Edit, Patch, the `background` Tool's
-`action: "output"` activity, and unmatched outer Code Mode issues retain their existing Tool-specific presentation.
+ADR 0022 already restricts grouping to native retrieval. This decision concerns only independent Tool Activities and
+does not change Retrieval Group membership.
 
 ## Decision
 
-Pi Stuff adopts a closed eligibility boundary for Operation Blocks. Bash remains the only implemented member at
-acceptance. A later implementation may add only Write, Edit, Patch, the `background` Tool's `action: "output"`
-activity, or an outer Code Mode error, rejection, or cancellation that no nested Tool or media projection represents.
-Each specialization must update its owning Module contract and acceptance evidence when it ships.
+Pi Stuff uses an **Operation Block** only for Bash, Write, Edit, Patch, `background` with `action=output`, and an outer
+Code Mode error, rejection, or cancellation that no nested Tool or media projection represents. The Transcript grammar
+is a required `Tool(operation identity)` parent followed by indented `⎿ outcome evidence`. Parentheses are part of the
+grammar. No presentation metadata may opt another Tool into this closed family.
 
-A Code Mode specialization would replace the presentation of the same single Envelope Fallback Row; it would not add
-a second row or change nested Tool and media ownership. Until a candidate is specialized, its existing semantic shape
-remains authoritative. MCP and every other Tool family cannot opt into the family through presentation metadata.
+Write uses `Write(path)`, reports `N lines written`, and shows the syntax-highlighted final content rather than a diff.
+Compact shows ten lines and an exact omitted-line expansion hint; Expanded is capped at 240 lines and 24 KiB. Edit uses
+`Edit(path)` and shows exact `+A/-D` statistics with a syntax-highlighted old/new-line diff. Patch uses `Patch(path)` for
+one file and `Patch(N files)` for multiple files, then total and per-file `M/A/D/R` statistics plus bounded changed-line
+evidence. Compact diff evidence is capped at 2 KiB and ten changed lines, with at most four changed lines per Patch file
+plus adjacent context; Expanded diff evidence is capped at 240 lines and 24 KiB. Every cap reports the exact omitted
+amount. A pure rename reports `+0/-0` and `renamed without content changes`. When content evidence exists, generic
+mutation-success prose is omitted. Error, rejection, cancellation, partial-write, and unavailable-evidence states keep
+their explicit state and never infer successful evidence from unverified arguments.
 
-This decision refines standalone Tool presentation without replacing ADR 0022. Native Read, Grep/Find, and List remain
-the only Retrieval Group members, and the rejected universal `Tool(args)` plus child-status block remains rejected.
+A direct Bash cancellation has one visible authority only when a later explicit empty Host abort record settles the
+immediately preceding in-flight Bash Tool Activity. Partial output remains attached to that cancelled Operation Block,
+and Compact and Expanded do not add a second Envelope Fallback error. Exit code 128 without that Host abort evidence
+remains an error.
+
+Successful pure JavaScript Code Mode has no outer row: nested Tools and media are its visible authority. Only an outer
+issue unmatched by those projections receives a fallback Operation Block.
+
+The `subagent` Tool instead uses an **Agent Lifecycle Row**. Foreground work identifies Agent, Task, state, and useful
+duration; Expanded lists each member and bounded foreground result evidence. A background launch and its later
+model-invisible completion row remain separate chronological events. `/agents` stays the sole live control and complete
+evidence authority.
+
+Operation Block grammar belongs only to the Transcript. `/tools` List rows expose identity, operation, outcome, and
+explicit state. Formatted Detail uses Tool-specific semantic sections; Raw remains the complete bounded protocol
+inspection authority. In file-mutation Formatted Detail, Write content and Edit/Patch diff evidence reuse the same
+syntax, dim-gutter, and semantic `+`/`-` marker styling as the Transcript. Tool-provided terminal controls are stripped
+before styling, and a multi-file Patch chooses syntax per contiguous file block. Highlighting is built only for the
+selected Formatted call after the existing 240-line/24-KiB cap and wrap-cache check; cache hits and Raw do not invoke
+the highlighter. Formatted and Raw are two representations of one selected call, not separate Dialog modes.
 
 ## Consequences
 
-- Operation Blocks can share a restrained parent-and-child grammar without becoming a general Tool abstraction.
-- This decision constrains future presentation work without claiming that unimplemented specializations have shipped.
-- Extending the family beyond the reserved candidates requires revisiting this boundary rather than adding an opt-in
-  metadata flag.
+Native Grep/Find, List, and Read other than the exact resolved `SKILL.md` exception remain the only Retrieval Group
+members. An exact `SKILL.md` Read uses an independent Skill Tool Activity. MCP, Web, media, Agent, Task, Goal, Context,
+and infrastructure Tools retain their domain-specific rows. File changes are inspectable directly in Compact and
+Expanded Transcript UI, while `/tools` retains readable semantic detail and exact protocol evidence without duplicating
+the Transcript's `⎿` shape.

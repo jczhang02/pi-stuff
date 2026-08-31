@@ -1,86 +1,75 @@
-<!-- translation-source: packages/pi-stuff/src/rtk/README.md; translation-source-sha256: bcb19b2cd33e5c7adbc2cdb7ce517f90b586d062b1fc8d2e8ed0f1428a878042 -->
+<!-- translation-source: packages/pi-stuff/src/rtk/README.md; translation-source-sha256: b4e76f01594cabdb37a78b4e0b4d22b97af54e35e73787d763290e8637e1e46f -->
 
 # Pi Stuff RTK
 
 RTK 模块通过一个已验证的本地 `rtk` 可执行文件重写受支持 Bash 命令，并且只把紧凑 Bash 与 Grep 结果投影到模型可见上下文。
 
-宿主对话记录、工具显示和会话 JSONL 保留原始工具结果内容。`read` 输出和源码默认精确，不由该能力处理。
+Host Transcript、Tool Display 和 Session JSONL 保留原始 Tool result content。`read` 输出和源码默认精确，不由该 Capability 处理。
 
 ## 行为
 
-- `/rtk` 打开共享全宽 Pi Stuff 命令对话框，显示运行时身份和会话节省量。
-- `/rtk settings` 打开 Pi 原生设置组件，控制两个持久行为开关：**命令重写** 和 **模型投影**。
-- 启动不执行子进程、文件写入、Hook 安装、提示、浮动 UI 或状态栏修改。
-- 第一次 Bash 调用会在重写前验证 RTK `0.45.0`、其可执行路径和已验证的官方 Linux x64 SHA-256。
-- RTK 可执行文件缺失、缓慢、被替换或以其他方式漂移时，原始 Bash 命令保持不变。
-- 投影使用 Pi `context` 事件。它绝不返回 `tool_result` 补丁，也绝不编辑存储消息。
-- 失败工具结果、非文本块、Read 和未知工具保持精确。
+- `/rtk` 打开一个共享全宽 Command Dialog，其中同时包含 Runtime identity、两个 Pi 原生 behavior control 与 Session savings。仅打开 Dialog 不会验证可执行文件。
+- **Command rewriting** 与 **Model projection** 都显示 configured value 和 effective state。Model projection 不依赖 Runtime availability。
+- 启动不执行 subprocess、file write、Hook installation、notice、floating UI 或 Statusline mutation。
+- 第一次 Bash call 会在重写前验证 RTK `0.45.0`、可执行路径和已认证的官方 Linux x64 SHA-256。
+- RTK 可执行文件缺失、缓慢、被替换或发生其他 drift 时，原始 Bash command 保持不变。
+- Projection 使用 Pi `context` event。它绝不返回 `tool_result` patch，也绝不编辑已存储 message。
+- 失败 Tool result、non-text block、Read 和未知 Tool 保持精确。
 
 ## 命令
 
 ```text
-/rtk                 验证并检查 RTK
-/rtk status          验证并检查 RTK
-/rtk settings        配置 RTK 行为
-/rtk verify          显式重新验证当前可执行文件
-/rtk stats           检查本会话投影节省量
-/rtk clear-stats     清除内存投影统计
-/rtk help            显示有界命令摘要
+/rtk                 检查并配置 RTK
 ```
 
-本地 RTK 可执行文件是可选的。缺失或验证失败时，Pi 会正常继续但不重写命令。只面向模型的输出投影仍可使用，因为它不需要可执行文件。
+RTK 没有 subcommand 或 alias。任何非空参数都会报告
+`/rtk takes no subcommands; run /rtk.`，且不会打开其他 surface。
 
-## 已接受的 `/rtk` 可读性目标
+本地 RTK 可执行文件是可选的。缺失或认证失败时，Pi 会正常继续，但不进行 command rewriting。仅面向模型的 output projection 仍可使用，因为它不需要该可执行文件。
 
-**决策更新：** 2026-08-17
-**状态：** 已于 2026-08-18 实现。
+## `/rtk` 交互契约
 
-非设置 `/rtk` 界面保持为一个静态检查对话框。它不增加列表/详情模式，也不重复原生 `/rtk settings` 组件。它回答三个问题：可执行文件是否受信、哪些行为已启用，以及本会话避免了多少模型可见结果文字：
+Dialog 在一个界面回答三个问题：可执行文件是否受信、哪些 behavior 已 configured 且实际 effective，以及本 Session 避免了多少 eligible model-visible result text：
 
 ```text
 RTK
-✓ 就绪 · v0.45.0
 
-◆ 运行时
-二进制文件  ~/.local/bin/rtk
-SHA-256     99e0cff729d52297…
+Runtime
+○ unchecked
+Not verified yet.
 
-◆ 行为
-✓ 命令重写已开启
-✓ 模型投影已开启
+Behavior
+→ Command rewriting  configured on · effective unchecked
+  Model projection    configured on · effective active
 
-◆ 会话节省量
-12,430 字符 (38%) · 24 个结果
-Bash 12 · Grep 12
+Session savings
+No eligible result projected yet.
 
-/rtk settings · Esc 关闭
+↑/↓ select · Enter/Space toggle · v verify · c clear savings
+? keys · Esc close
 ```
 
-使用 `✓ ready`、`○ unchecked`、`! drifted` 和 `× unavailable`，并始终带状态文字。`Drifted` 表示选中可执行文件身份在验证后发生变化；它是警告，显式 `/rtk verify` 前重写保持禁用。`Unavailable` 在标记为 `Error` 的小节下包含有界错误和下一步 `Run /rtk verify`；不得暗示 Pi 本身无法继续。
+使用 `✓ ready`、`○ unchecked`、`! drifted` 和 `× unavailable`，并始终保留 state word。`Drifted` 表示选中可执行文件 identity 在认证后发生变化；它是 warning，用户按 `v` 重新验证前 rewriting 保持禁用。`Unavailable` 包含有界 `Error` section，但不得暗示 Pi 本身无法继续。
 
-行为开关使用 `✓ on` 和 `○ off`，而不是只靠颜色区分的文字。`Model projection` 只表示发送给模型的紧凑副本；对话记录、工具结果和会话 JSONL 保持精确。可见描述或小节文字必须保留这一区别，绝不暗示 RTK 重写存储输出。
+Pi 配置的 Up/Down action 选择 behavior。Enter 或 Space 切换选中项，也是持久化相应 setting 的唯一路径。Command rewriting 的 description 说明只有认证 Runtime ready 时才会重写。Model projection 的 description 说明它独立于 Runtime availability，把 eligible Tool result 投影到 model context；Transcript、Tool result 和 Session JSONL 保持精确。
 
-会话节省量是派生统计，不是计费或 token 声明。显示节省字符数、占合格原始结果字符的百分比和结果数。技术计数是次要信息；低高度下应先于运行时状态、错误、开关值或总节省行消失。二进制路径和缩短 SHA 是验证证据；空间不足时，在可操作错误后、核心状态与节省量前消失。
+Session savings 是派生统计，不是 billing 或 token claim。它显示 saved character、占 eligible original result character 的百分比和 result count。在尚无 eligible projection 时，精确显示 `No eligible result projected yet.`。按 `c` 只重置内存中的本 Session statistics，并报告 `Session savings cleared.`。Technique count、Binary 和 SHA 属于次要信息；低高度首先删除它们，并保留 Runtime state、两个 configured/effective behavior row、savings outcome 和 Escape path。`?` 打开完整 key guide；只有配置的 cancel action 会关闭 Dialog。
 
-`/rtk clear-stats` 报告 `✓ Projection statistics cleared.`。`/rtk help` 显示有界命令形式，未知操作使用 `! Unknown action`，后接同一形式。反馈绝不替换运行时状态或 Escape 路径。Pi 配置的 Up/Down 操作和 Ctrl+P/Ctrl+N 滚动长状态内容；PageUp/PageDown 和 `b`/Space 按页移动；Home/End 跳转；`?` 打开上下文按键帮助。只有配置的取消操作关闭状态界面；Enter 和 `q` 没有隐藏关闭行为。
+## 已认证 RTK Runtime
 
-实现现在为状态和开关配对固定图标，使用 `◆` 小节，解释只面向模型的投影，保持反馈结构化，并缩短页脚。聚焦测试覆盖运行时状态、设置所有权、投影文案、低高度适配和失败行为；真实 PTY 验证器覆盖宿主渲染。
+Linux x64 Runtime 固定到官方 [`rtk-ai/rtk` v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0)，source commit `b34be37caf3796b69a50952a28e60e32b5daad43`。只接受下列 release binary：
 
-## 已验证 RTK 运行时
-
-Linux x64 运行时固定到官方 [`rtk-ai/rtk` v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0)，源码提交 `b34be37caf3796b69a50952a28e60e32b5daad43`。只接受下列已发布二进制文件：
-
-| 构建 | SHA-256 |
+| Build | SHA-256 |
 | --- | --- |
-| 官方 `rtk-x86_64-unknown-linux-musl.tar.gz` 归档 | `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
-| 官方归档中的 `rtk` 二进制文件 | `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
+| 官方 `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
+| 官方 archive 中的 `rtk` binary | `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-每次重写都会重新检查选中路径、解析路径、文件指纹和实际二进制 SHA。任何身份变化都会禁用重写，直到 `/rtk verify` 显式重新验证。
+每次 rewrite 都会重新检查 selected path、resolved path、file fingerprint 和实际 binary SHA。任何 identity change 都会禁用 rewriting，直到用户在 `/rtk` 中按 `v` 显式重新认证。
 
-RTK v0.45.0 保留受支持的 `rg` 语法，包括 `--files`、Glob 和普通行号搜索。其官方 `find` 包装器仍拒绝 `-not`、`-exec` 等复合谓词与操作；`find ... -print0 | xargs ...` 等管道会保持原生。这是外部 RTK 约束。Pi Stuff 不解析或修复命令；需要不受支持的 `find` 形式时，在 `/rtk settings` 中禁用命令重写，并在后续官方 RTK 版本通过验证后删除该变通方法。
+RTK v0.45.0 保留受支持的 `rg` syntax，包括 `--files`、glob 和普通 line-number search。官方 `find` wrapper 仍拒绝 `-not`、`-exec` 等 compound predicate 与 action；`find ... -print0 | xargs ...` 等 pipeline 会保持 native。这是外部 RTK constraint。Pi Stuff 不解析或修复 command；需要不受支持的 `find` form 时，在 `/rtk` 中禁用 Command rewriting，并在后续官方 RTK release 通过认证后删除该 workaround。
 
-## 上下文组合
+## Context composition
 
-`createRtkProjectionAdapter()` 暴露供未来 Context 能力使用的小型 `ContextProjectionAdapter` 接缝。调用 `project(messages)` 时，禁用或失败会返回原数组，成功则返回写时复制投影。该适配器在一次组合 Pi 上下文过程中保持幂等。
+`createRtkProjectionAdapter()` 暴露供未来 Context Capability 使用的小型 `ContextProjectionAdapter` seam。调用 `project(messages)` 时，禁用或失败会返回原 array，成功则返回 copy-on-write projection。该 adapter 在一次组合 Pi context pass 中保持 idempotent。
 
-实现派生自 [`MasuRii/pi-rtk-optimizer`](https://github.com/MasuRii/pi-rtk-optimizer)。精确源码、归档、许可证、完整性和本地差异记录见 [UPSTREAM.md](./UPSTREAM.md)。
+实现派生自 [`MasuRii/pi-rtk-optimizer`](https://github.com/MasuRii/pi-rtk-optimizer)。精确 source、archive、license、integrity 和 local delta 记录见 [UPSTREAM.md](./UPSTREAM.md)。

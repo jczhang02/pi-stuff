@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
@@ -8,6 +9,7 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-grouping-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-grouping-pty-runner.sh");
+const GENERIC_FIT_TARGET = "https://example.test/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
 const SESSION_RECORD_SCHEMA = Type.Object(
 	{
 		message: Type.Optional(Type.Object({ role: Type.Optional(Type.String()) }, { additionalProperties: true })),
@@ -188,7 +190,7 @@ function requireRetrievalIssue(frame: string): void {
 	}
 }
 
-async function verifyRetrievalLifecycle(tmux: TmuxCommand, session: string): Promise<void> {
+async function verifyRetrievalLifecycle(tmux: TmuxCommand, session: string, columns: number): Promise<void> {
 	await sendTurn(tmux, session, "slow-retrieval");
 	await waitForText(tmux, session, "Reading 1 file", 4_000);
 	const targeted = await waitForText(tmux, session, "slow-target.txt", 2_500);
@@ -203,14 +205,58 @@ async function verifyRetrievalLifecycle(tmux: TmuxCommand, session: string): Pro
 
 	await sendTurn(tmux, session, "retrieval-issue");
 	requireRetrievalIssue(await waitForText(tmux, session, "GROUP_RETRIEVAL_ISSUE_DONE"));
+
+	await sendTurn(tmux, session, "fit-target");
+	const fitted = await waitForText(tmux, session, "GROUP_FIT_TARGET_DONE");
+	const identity = " • Retry ";
+	const outcome = " · retry failed";
+	const line = fitted
+		.split("\n")
+		.map((candidate) => candidate.trimEnd())
+		.find((candidate) => candidate.startsWith(identity) && candidate.endsWith(outcome));
+	if (!line) fail(`generic Tool target lost its identity or outcome\n${fitted}`);
+	const target = line.slice(identity.length, -outcome.length);
+	if (!target.endsWith("…") || !GENERIC_FIT_TARGET.startsWith(target.slice(0, -1))) {
+		fail(`generic Tool target was not truncated from its source\n${fitted}`);
+	}
+	if (visibleWidth(line) !== columns) {
+		fail(`generic Tool target left usable cells in ${String(columns)} columns\n${fitted}`);
+	}
 }
 
 async function verifyLifecyclePresentation(tmux: TmuxCommand, session: string): Promise<void> {
-	const partialStarted = performance.now();
-	await sendTurn(tmux, session, "partial-bash");
+	send(tmux, session, "partial-bash");
 	await waitForText(tmux, session, "PARTIAL_BASH_VISIBLE", 6_000);
-	await waitForText(tmux, session, "GROUP_PARTIAL_BASH_DONE", 6_000);
-	if (performance.now() - partialStarted > 6_000) fail("foreground Bash partial update stalled the TUI");
+	tmux(["send-keys", "-t", session, "Escape"]);
+	await waitForText(tmux, session, "Interrupted", 10_000);
+	const compactCancellation = capture(tmux, session);
+	if (
+		!compactCancellation.includes("PARTIAL_BASH_VISIBLE") ||
+		(compactCancellation.match(/Interrupted/gu) ?? []).length !== 1
+	) {
+		fail(`compact direct Bash cancellation lost its single partial-output authority\n${compactCancellation}`);
+	}
+	tmux(["send-keys", "-t", session, "C-o"]);
+	await waitForText(tmux, session, "Tool output: expanded");
+	const expandedCancellation = capture(tmux, session);
+	if (
+		!expandedCancellation.includes("PARTIAL_BASH_VISIBLE") ||
+		(expandedCancellation.match(/Interrupted/gu) ?? []).length !== 1
+	) {
+		fail(`expanded direct Bash cancellation lost its single partial-output authority\n${expandedCancellation}`);
+	}
+	tmux(["send-keys", "-t", session, "C-o"]);
+	await waitForText(tmux, session, "Tool output: collapsed");
+
+	await sendTurn(tmux, session, "exit-128");
+	const exit128 = await waitForText(tmux, session, "GROUP_EXIT_128_DONE");
+	const exit128Lines = exit128.split("\n");
+	const exit128Index = exit128Lines.findIndex((line) => line.includes("Bash(exit 128)"));
+	const exit128Block = exit128Index < 0 ? "" : exit128Lines.slice(exit128Index, exit128Index + 3).join("\n");
+	if (!exit128Block.includes("Error: Exit code 128") || exit128Block.includes("Interrupted")) {
+		fail(`direct Bash exit 128 was not retained as an error\n${exit128}`);
+	}
+
 	await sendTurn(tmux, session, "plain");
 	await waitForText(tmux, session, "PLAIN_DONE", 2_000);
 
@@ -273,7 +319,7 @@ async function verifyLifecyclePresentation(tmux: TmuxCommand, session: string): 
 	tmux(["send-keys", "-t", session, "Enter"]);
 	await Bun.sleep(100);
 	const details = capture(tmux, session);
-	for (const required of ["Tools / Bash · done", "◆ Result", "BASH_UI_SECOND_DONE"]) {
+	for (const required of ["Tools / Bash · done", "Output", "BASH_UI_SECOND_DONE"]) {
 		if (!details.includes(required)) fail(`/tools group details lost member ${required}\n${details}`);
 	}
 	tmux(["send-keys", "-t", session, "Escape"]);
@@ -502,13 +548,13 @@ async function verifyPersistedGrouping(sessionDirectory: string, scenario: Group
 		.filter((entry) => entry.message?.role === "toolResult");
 	const expectedResults =
 		scenario === "lifecycle"
-			? 26
+			? 28
 			: scenario === "compaction"
 				? 6
 				: scenario === "resume"
 					? 10
 					: scenario === "basic"
-						? 9
+						? 10
 						: 5;
 	if (toolResults.length !== expectedResults) {
 		fail(
@@ -608,7 +654,7 @@ export async function verifyToolsGroupingPty(options: ToolsGroupingPtyOptions): 
 		if (geometry !== `${String(options.columns)}x${String(options.rows)}`) fail(`unexpected geometry ${geometry}`);
 		if (scenario === "compaction") await waitForText(tmux, tmuxSession, "PADDING_DONE");
 		else {
-			await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE");
+			await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE", 30_000);
 			successGroup(captureHistory(tmux, tmuxSession));
 			if (scenario === "lifecycle") {
 				successfulMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Listed 1 directory");
@@ -616,7 +662,7 @@ export async function verifyToolsGroupingPty(options: ToolsGroupingPtyOptions): 
 		}
 
 		if (scenario === "basic" || scenario === "lifecycle") {
-			await verifyRetrievalLifecycle(tmux, tmuxSession);
+			await verifyRetrievalLifecycle(tmux, tmuxSession, options.columns);
 		}
 		if (scenario === "lifecycle") {
 			await verifyLifecyclePresentation(tmux, tmuxSession);

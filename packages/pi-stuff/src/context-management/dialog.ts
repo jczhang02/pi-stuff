@@ -12,6 +12,7 @@ import {
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	commandDialogRows,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
@@ -215,31 +216,26 @@ function summaryLine(context: CommandDialogViewContext<ContextDialogCommand>, sn
 function overviewItems(snapshot: ContextDialogSnapshot): SelectItem[] {
 	const items: SelectItem[] = [
 		{
-			description: "Compact older history · choose how many recent messages stay raw",
+			description: "Choose recent messages to keep raw",
 			label: "Wrap up history",
 			value: "wrapup",
 		},
 	];
 	if (snapshot.pendingOps > 0) {
 		items.push({
-			description: `${plural(snapshot.pendingOps, "drop")} queued · apply on the next request`,
+			description: `${String(snapshot.pendingOps)} queued · apply on next request`,
 			label: "Flush pending drops",
 			value: "flush",
 		});
 	}
 	items.push({
-		description: "Repair derived history · scope and confirmation follow",
+		description: "Choose scope, then confirm",
 		label: "Rebuild compartments",
 		value: "recomp",
 	});
 	if (snapshot.upgradeNeeded === undefined || snapshot.upgradeNeeded > 0) {
-		let description = "Check and upgrade legacy history and memories";
-		if (snapshot.upgradeNeeded !== undefined) {
-			const verb = snapshot.upgradeNeeded === 1 ? "needs" : "need";
-			description = `${plural(snapshot.upgradeNeeded, "compartment")} ${verb} upgrade`;
-		}
 		items.push({
-			description,
+			description: "Upgrade legacy history and memories",
 			label: "Upgrade session",
 			value: "upgrade",
 		});
@@ -450,19 +446,17 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 			const counts = `${plural(this.snapshot.compartmentCount, "compartment")} · ${plural(this.snapshot.memoryCount, "memory", "memories")} · ${plural(this.snapshot.noteCount, "note")}`;
 			const runtime = `Historian ${this.snapshot.historian} · cache ${this.snapshot.cache}`;
 			const history = `History ${this.snapshot.historyTokens === undefined ? "unavailable" : `~${compactNumber(this.snapshot.historyTokens)} tokens`} · ${plural(this.snapshot.activeTags, "active tag")} · ${plural(this.snapshot.droppedTags, "dropped tag")}`;
-			const heading = (value: string) =>
-				`${GUTTER}${this.context.theme.fg("accent", "◆")} ${this.context.theme.bold(value)}`;
 			return {
 				body: [
 					"",
-					heading("Overview"),
+					commandDialogSectionHeading(this.context.theme, "Overview"),
 					`${GUTTER}${this.context.theme.fg("muted", counts)}`,
 					`${GUTTER}${this.context.theme.fg("muted", runtime)}`,
 					`${GUTTER}${this.context.theme.fg("muted", history)}`,
 					...(this.snapshot.pendingOps > 0 || errorLines.length > 0
 						? [
 								"",
-								heading("Attention"),
+								commandDialogSectionHeading(this.context.theme, "Attention"),
 								...(this.snapshot.pendingOps > 0
 									? [
 											`${GUTTER}${this.context.theme.fg(
@@ -475,7 +469,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 							]
 						: []),
 					"",
-					heading("Actions"),
+					commandDialogSectionHeading(this.context.theme, "Actions"),
 					...selectedLines,
 				],
 				footer: "↑/↓ select · Enter choose · Esc close",

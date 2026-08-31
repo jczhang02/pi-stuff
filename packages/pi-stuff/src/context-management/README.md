@@ -74,9 +74,11 @@ Capability instructions come last. A provider-request fallback covers
 continuations that Pi starts without `before_agent_start` by rewriting the
 known Anthropic, OpenAI, Google, Bedrock, and Mistral system-prompt payload
 shapes. Unsupported payloads fail open with one silent diagnostic rather than
-mutating an unknown request shape. Ponytail registers at the final ordered
-position: its Code Mode Skill catalog, when required, precedes its current-mode
-instructions. Ponytail's standing contribution is measured and bounded
+mutating an unknown request shape. When its envelope hides top-level Read while
+virtual Read remains active, Code Mode contributes the Host Skill Discovery
+catalog before Ponytail. Ponytail remains the final ordered contribution: its
+compact active-mode Skill catalog precedes its current-mode instructions.
+Ponytail's standing contribution is measured and bounded
 separately from Context's 8,000-character direct-mode contract.
 
 The adapter bundles the pinned engine into an in-memory Worker artifact during
@@ -104,7 +106,7 @@ The narrowly enumerated Host effects and lifecycle contract are recorded in
 The accepted `/ctx` readability target is recorded in
 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md).
 Its 2026-08-17 update was implemented on 2026-08-18. The shipped single-column Dialog now leads with usage, uses
-`◆` sections and semantic status icons, hides known no-op actions, and explains Context vocabulary. Its action lists
+semantic section headings without icons plus explicit status icons, hides known no-op actions, and explains Context vocabulary. Its action lists
 and text fields keep Pi's native SelectList and Input keyboard behavior rather than intercepting the read-only Dialog
 aliases.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits

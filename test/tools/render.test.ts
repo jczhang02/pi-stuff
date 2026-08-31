@@ -36,21 +36,6 @@ function recordingTheme(calls: Array<[string, string]>): Theme {
 	});
 }
 
-function hasRecognizableTruncatedTarget(line: string): boolean {
-	const marker = " • Bash ";
-	const outcome = " · done";
-	if (!line.startsWith(marker) || !line.endsWith(outcome)) return true;
-	const target = line.slice(marker.length, -outcome.length);
-	if (!target.endsWith("…")) return true;
-	const prefix = target.slice(0, -1).trimEnd();
-	if (prefix.endsWith("/")) return true;
-	const unit = prefix.match(/[^\s/|&;,:=()[\]{}<>]+$/u)?.[0] ?? "";
-	const semantic = unit.match(/[\p{L}\p{N}\p{Extended_Pictographic}]/gu) ?? [];
-	const compact =
-		semantic.length > 0 && semantic.every((value) => /[\p{Script=Han}\p{Extended_Pictographic}]/u.test(value));
-	return semantic.length >= (compact ? 2 : 3);
-}
-
 test("keeps one fixed dot slot and semantic colors across lifecycle states", () => {
 	const states = [
 		["running", "muted"],
@@ -269,6 +254,17 @@ test("renders Claude-style Bash no-output and explicit failure states", () => {
 		state: "cancelled",
 	});
 	expect(cancelled.render(80)).toEqual([" • Bash(sleep 30)", "  ⎿  Interrupted"]);
+
+	const hostCancelled = new CachedToolRow(theme, {
+		active: false,
+		command: "printf partial; sleep 30",
+		expandable: true,
+		expanded: false,
+		kind: "bash-operation",
+		output: "partial\n\nOperation aborted",
+		state: "cancelled",
+	});
+	expect(hostCancelled.render(80)).toEqual([" • Bash(printf partial; sleep 30)", "  ⎿  Interrupted", "     partial"]);
 
 	const timedOut = new CachedToolRow(theme, {
 		active: false,
@@ -602,43 +598,53 @@ test("omits useless target fragments and keeps result metadata on a semantic bou
 	expect(Bun.stripANSI(rows[0]?.render(32)[0] ?? "")).toContain("… · done in 18s");
 });
 
-test("backs off punctuation-only and one-character target tails at adjacent widths", () => {
-	const target = "pwd && printf '%s\\n' '--- files ---' && find . -maxdepth 2 -type f -printf '%P\\n' | sort";
-	const row = new CachedToolRow(theme, {
-		durationMs: 1,
-		label: "Bash",
-		state: "success",
-		summary: "done",
-		target,
-	});
-
-	for (const width of [100, 99, 98, 97, 96, 64, 48, 32, 24]) {
-		const line = Bun.stripANSI(row.render(width)[0] ?? "");
-		expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-		expect(line).toEndWith(" · done");
-		expect(line).not.toMatch(/(?:\|\s*[\p{L}\p{N}]?|-[\p{L}\p{N}]?|'%[\p{L}\p{N}]?|\bpr)… · done$/u);
-	}
-});
-
-test("keeps only recognizable Latin, path, shell, CJK, and emoji target units", () => {
-	for (const target of [
-		"complete | sort-command-that-keeps-going",
-		"/tmp/prefix/partial-component-that-keeps-going",
-		"printf '%single-character-fragment-that-keeps-going",
-		"目录/很长的中文目标仍然继续",
-		"🙂🙂🙂🙂🙂🙂",
-	]) {
-		const row = new CachedToolRow(theme, {
-			durationMs: 1,
-			label: "Bash",
-			state: "success",
+test("uses every available target cell for Agent and other generic Tool Activities", () => {
+	const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+	const cases = [
+		{
+			label: "Agent",
+			state: "running" as const,
+			summary: "running",
+			target: "/workspace/project/src/components/agent-investigation-that-keeps-going",
+		},
+		{
+			label: "Fetch",
+			state: "success" as const,
 			summary: "done",
-			target,
-		});
-		for (let width = 16; width <= 48; width += 1) {
+			target: "https://example.test/a-very-long-resource-identifier-without-boundaries",
+		},
+		{
+			label: "Inspect",
+			state: "success" as const,
+			summary: "done",
+			target: "\u001b[31m路径/é/👩‍💻/仍然很长的目标内容\u001b[0m",
+		},
+	];
+
+	for (const model of cases) {
+		const row = new CachedToolRow(theme, { durationMs: 1, ...model });
+		const source = sanitizeTerminalText(model.target);
+		for (const width of [100, 80, 64, 48, 32, 24]) {
 			const line = Bun.stripANSI(row.render(width)[0] ?? "");
+			const identity = ` • ${model.label} `;
+			const outcome = ` · ${model.summary}`;
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-			expect(hasRecognizableTruncatedTarget(line)).toBe(true);
+			expect(line).toStartWith(identity);
+			expect(line).toEndWith(outcome);
+			const displayed = line.slice(identity.length, -outcome.length);
+			if (!displayed.endsWith("…")) {
+				expect(displayed).toBe(source);
+				continue;
+			}
+
+			const prefix = displayed.slice(0, -1);
+			expect(source.startsWith(prefix)).toBe(true);
+			const segments = [...segmenter.segment(source)];
+			const next = segments.find(({ index }) => index === prefix.length)?.segment;
+			expect(next).toBeDefined();
+			const budget = width - visibleWidth(identity) - visibleWidth(outcome);
+			expect(visibleWidth(`${prefix}${next ?? ""}…`)).toBeGreaterThan(budget);
+			expect(width - visibleWidth(line)).toBeLessThanOrEqual(next && visibleWidth(next) === 2 ? 1 : 0);
 		}
 	}
 });

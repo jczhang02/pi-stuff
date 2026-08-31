@@ -128,7 +128,9 @@ test("uses the shared list aliases without turning Space into a server toggle", 
 		tui: new TestTui(10),
 	});
 
-	component.render(64);
+	const overflow = component.render(64).join("\n");
+	expect(overflow).toContain("b/Space page");
+	expect(overflow).not.toContain("PgUp/PgDn page");
 	component.handleInput?.(" ");
 	expect(component.render(64).join("\n")).toContain("› ○ server-3");
 	expect(result).toBeUndefined();
@@ -303,7 +305,8 @@ test("keeps Space harmless and requires an explicit confirmation before disablin
 	component.handleInput?.("confirm");
 	const disableConfirmation = component.render(72).join("\n");
 	expect(disableConfirmation).toContain("Disable local?");
-	expect(disableConfirmation).toContain("◆ Preview");
+	expect(disableConfirmation).toContain("Preview");
+	expect(disableConfirmation).not.toContain("◆ Preview");
 	expect(disableConfirmation).toContain("Target  .pi/mcp.json");
 	expect(disableConfirmation).toContain("Change  disabled = true");
 	component.handleInput?.("confirm");
@@ -346,8 +349,9 @@ test("confirms and returns a persistent automatic-connection choice", () => {
 	component.handleInput?.("down");
 	component.handleInput?.("confirm");
 	const confirmation = component.render(72).join("\n");
-	expect(confirmation).toContain("◆ Confirm change");
-	expect(confirmation).toContain("◆ Preview");
+	expect(confirmation).toContain("Confirm change");
+	expect(confirmation).toContain("Preview");
+	expect(confirmation).not.toContain("◆ Confirm change");
 	expect(confirmation).toContain("Change  lifecycle = keep-alive");
 	expect(confirmation).toContain("Connect docs automatically?");
 	expect(confirmation).toContain("› Cancel");
@@ -555,6 +559,12 @@ test("makes Setup discoverable from the server list", () => {
 	});
 
 	expect(component.render(64).join("\n")).toContain("s setup");
+	expect(component.render(64).join("\n")).not.toContain("b/Space page");
+	component.handleInput?.("?");
+	const help = component.render(64).join("\n");
+	expect(help).toMatch(/\bs\s+Open MCP setup/u);
+	expect(help).not.toMatch(/\bS\s+Open MCP setup/u);
+	component.handleInput?.("\u001b");
 	component.handleInput?.("s");
 	expect(result).toEqual({ action: "setup" });
 	component.dispose?.();

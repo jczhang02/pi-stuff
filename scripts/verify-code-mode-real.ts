@@ -11,9 +11,15 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
+const SKILL_NAME = "code-mode-real-skill";
+const SKILL_DESCRIPTION = "Verify that Code Mode preserves native Skill Discovery.";
+const SKILL_BODY_TOKEN = "CODE_MODE_SKILL_BODY_OK";
 const execFileAsync = promisify(execFile);
 const PROVIDER_RECORD_SCHEMA = Type.Object(
-	{ toolNames: Type.Optional(Type.Array(Type.String())) },
+	{
+		skillCatalogExact: Type.Boolean(),
+		toolNames: Type.Optional(Type.Array(Type.String())),
+	},
 	{ additionalProperties: true },
 );
 
@@ -42,7 +48,6 @@ async function runPi(
 	const arguments_ = [
 		PI_BINARY,
 		"--no-extensions",
-		"--no-skills",
 		"--no-prompt-templates",
 		"--no-context-files",
 		"--no-themes",
@@ -75,6 +80,7 @@ async function runPi(
 			PI_STUFF_CODE_MODE_DEFAULT: "on",
 			PI_STUFF_CODE_MODE_FIXTURE_LOG: join(temporary, "provider.jsonl"),
 			PI_STUFF_CODE_MODE_FIXTURE_SCENARIO: "group",
+			PI_STUFF_CODE_MODE_FIXTURE_SKILL_PATH: join(temporary, "agent", "skills", SKILL_NAME, "SKILL.md"),
 			PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 			PI_TELEMETRY: "0",
 			XDG_CACHE_HOME: join(temporary, "cache"),
@@ -109,10 +115,15 @@ try {
 	await assertCertifiedPi();
 	await Promise.all([
 		mkdir(join(temporary, "agent"), { recursive: true }),
+		mkdir(join(temporary, "agent", "skills", SKILL_NAME), { recursive: true }),
 		mkdir(join(temporary, "project"), { recursive: true }),
 		mkdir(join(temporary, "sessions"), { recursive: true }),
 	]);
 	await writeFile(join(temporary, "agent", "settings.json"), "{}\n");
+	await writeFile(
+		join(temporary, "agent", "skills", SKILL_NAME, "SKILL.md"),
+		`---\nname: ${SKILL_NAME}\ndescription: ${SKILL_DESCRIPTION}\n---\n\n${SKILL_BODY_TOKEN}\n`,
+	);
 	await writeFile(join(temporary, "project", "package.json"), '{"packageManager":"bun@1.4.0"}\n');
 	const started = await runPi(root, temporary, sessionId, "start");
 	if (!started.stdout.includes("CODE_MODE_COMPLETE")) throw new Error(`Code Mode did not complete: ${started.stdout}`);
@@ -121,6 +132,8 @@ try {
 	}
 	if (!started.stdout.includes('"typed":true'))
 		throw new Error(`Code Mode describe contract failed: ${started.stdout}`);
+	if (!started.stdout.includes('"skillLoaded":true'))
+		throw new Error(`Code Mode did not read the discovered Skill through virtual Read: ${started.stdout}`);
 	if (unexpectedStderr(started.stderr)) throw new Error(`Code Mode emitted stderr: ${started.stderr}`);
 
 	const resumed = await runPi(root, temporary, sessionId, "resume");
@@ -132,6 +145,7 @@ try {
 	for (const line of providerLog.trim().split("\n")) {
 		const record = JSON.parse(line);
 		if (!Check(PROVIDER_RECORD_SCHEMA, record)) throw new Error(`Provider capture is malformed: ${line}`);
+		if (!record.skillCatalogExact) throw new Error(`Provider prompt omitted the exact Skill catalog entry: ${line}`);
 		if (!Array.isArray(record.toolNames)) throw new Error(`Provider capture omitted its Tool surface: ${line}`);
 		if (
 			record.toolNames.length !== 2 ||
@@ -151,6 +165,8 @@ try {
 	if (!sessionText.includes('"customType":"pi-stuff-code-mode-ledger"'))
 		throw new Error("Session did not persist the Code Mode recovery ledger");
 	if (!sessionText.includes('"name":"read"')) throw new Error("Session did not persist the nested read operation");
+	const skillPath = join(temporary, "agent", "skills", SKILL_NAME, "SKILL.md");
+	if (!sessionText.includes(skillPath)) throw new Error("Session did not persist the exact nested Skill read path");
 	if (!sessionText.includes('"name":"bash"')) throw new Error("Session did not persist the nested Bash operation");
 	if (!sessionText.includes('"name":"background"'))
 		throw new Error("Session did not persist the nested Background Work operation");

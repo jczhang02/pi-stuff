@@ -54,12 +54,62 @@ function renderedSummary(
 	const row = tool?.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-	tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
+	const resultRow = tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,
 	} as never);
-	return row?.render(100).join("\n") ?? "";
+	return [...(row?.render(100) ?? []), ...(resultRow?.render(100) ?? [])].join("\n");
 }
+
+function renderedRunning(
+	api: SuiteToolRegistrationHost,
+	tool: ToolDefinition | undefined,
+	args: Record<string, JsonValue>,
+	toolCallId: string,
+	expanded = false,
+): string {
+	expect(tool).toBeDefined();
+	getToolUiRuntime(api).startTurn([
+		{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
+	]);
+	const context = {
+		args,
+		argsComplete: true,
+		cwd: "/project",
+		executionStarted: true,
+		expanded,
+		invalidate: () => {},
+		isError: false,
+		isPartial: true,
+		lastComponent: undefined,
+		showImages: true,
+		state: {},
+		toolCallId,
+	};
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+	return (
+		tool
+			?.renderCall?.(args, theme, context as never)
+			?.render(100)
+			.join("\n") ?? ""
+	);
+}
+
+test("all Task tools stay compact while running but remain expandable", () => {
+	for (const [name, args] of [
+		["TaskCreate", { description: "Ship", subject: "Ship" }],
+		["TaskGet", { taskId: "1" }],
+		["TaskList", {}],
+		["TaskUpdate", { status: "completed", taskId: "1" }],
+	] as const) {
+		const { api, tools } = registeredTools();
+		expect(renderedRunning(api, tools.get(name), args, `running-${name}`)).toBe("");
+	}
+	const { api, tools } = registeredTools();
+	expect(
+		renderedRunning(api, tools.get("TaskCreate"), { description: "Ship", subject: "Ship" }, "running-expanded", true),
+	).toContain("Task create");
+});
 
 test("successful TaskUpdate calls stay silent but remain inspectable", () => {
 	const { api, tools } = registeredTools();
@@ -89,6 +139,39 @@ test("successful TaskUpdate calls stay silent but remain inspectable", () => {
 	expect(noOp).toBe("");
 	expect(updated).toBe("");
 	expect(getToolUiRuntime(api).listGroups()).toHaveLength(2);
+});
+
+test("Expanded Task success keeps the summary once and any additional evidence", () => {
+	for (const [id, name, args, summary] of [
+		[
+			"create",
+			"TaskCreate",
+			{ description: "Ship the repair", subject: "Ship repair" },
+			"Task #1 created successfully: Ship repair",
+		],
+		["update", "TaskUpdate", { status: "completed", taskId: "1" }, "Task 1 updated: status"],
+		["no-op", "TaskUpdate", { status: "completed", taskId: "1" }, "Task #1 already matches the requested values"],
+	] as const) {
+		const { api, tools } = registeredTools();
+		const output = renderedSummary(
+			api,
+			tools.get(name),
+			args,
+			{
+				content: [
+					{ text: summary, type: "text" },
+					{ text: "Additional task evidence", type: "text" },
+				],
+				details: {},
+			},
+			`expanded-${id}`,
+			undefined,
+			true,
+		);
+
+		expect(output.split(summary)).toHaveLength(2);
+		expect(output).toContain("Additional task evidence");
+	}
 });
 
 test("successful TaskList calls stay silent but remain inspectable", () => {

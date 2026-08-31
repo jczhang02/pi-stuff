@@ -19,6 +19,7 @@ import {
 } from "./presentation.js";
 import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
 import { projectCodeModeSearchResponse } from "./search-response.js";
+import { registerCodeModeSkillDiscovery } from "./skill-discovery.js";
 import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export type { CodeModeHost, PiStuffCodeModeOptions } from "./controls.js";
@@ -63,6 +64,7 @@ export const CODE_MODE_SEARCH_PRESENTATION: SuiteToolPresentation<{ readonly que
 	activity: {
 		categories: ["search-tool"],
 		classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+		silentSuccess: true,
 	},
 	detailLines: (_args, result) => {
 		const paths = result.details.paths;
@@ -282,6 +284,7 @@ export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeMo
 	const ledger = new CodeModeSessionLedger(pi);
 	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(options.effects), ledger);
 	const controls = new CodeModeControls(pi, options, connector, ledger, runtime);
+	registerCodeModeSkillDiscovery(pi, options);
 	registerSuiteToolEnvelope(pi, createCodeModeDefinition(runtime), {
 		decode: decodeCodeModeOperations,
 		media: decodeCodeModeMediaSegments,

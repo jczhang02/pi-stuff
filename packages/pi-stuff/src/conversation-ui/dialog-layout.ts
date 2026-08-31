@@ -15,6 +15,11 @@ const DEFAULT_NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export const WIDE_COMMAND_DIALOG_MIN_WIDTH = 96;
 
+export function commandDialogSectionHeading(theme: Theme, label: string, gutter = "  "): string {
+	const color = label === "Error" ? "error" : label === "Rejection" || label === "Cancellation" ? "warning" : "accent";
+	return `${gutter}${theme.bold(theme.fg(color, label))}`;
+}
+
 export type CommandDialogNavigation = "down" | "end" | "home" | "pageDown" | "pageUp" | "up";
 
 export interface CommandDialogKeyHelpEntry {
@@ -86,6 +91,10 @@ export function commandDialogScrollOffset(
 	if (navigation === "end") return boundedMaximum;
 	const delta = navigation === "up" ? -line : navigation === "down" ? line : navigation === "pageUp" ? -page : page;
 	return Math.max(0, Math.min(boundedMaximum, current + delta));
+}
+
+export function commandDialogReadOnlyPageHint(hasOverflow: boolean, suffix = ""): string | undefined {
+	return hasOverflow ? `b/Space page${suffix}` : undefined;
 }
 
 export function matchesCommandDialogCancel(
@@ -347,9 +356,14 @@ export function renderCommandDialogSplit(
 	renderLeft: (width: number) => readonly string[],
 	renderRight: (width: number) => readonly string[],
 	preferredLeftWidth = 36,
+	minimumLeftWidth = 30,
+	minimumRightWidth = 30,
 ): string[] {
 	const totalWidth = Math.max(1, Math.floor(width));
-	const leftWidth = Math.min(preferredLeftWidth, Math.max(30, Math.floor(totalWidth * 0.38)));
+	const leftWidth = Math.min(
+		Math.max(1, totalWidth - 1),
+		Math.max(minimumLeftWidth, Math.min(preferredLeftWidth, totalWidth - minimumRightWidth - 1)),
+	);
 	const rightWidth = Math.max(1, totalWidth - leftWidth - 1);
 	const left = renderLeft(leftWidth);
 	const right = renderRight(rightWidth);

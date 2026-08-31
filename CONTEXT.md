@@ -71,6 +71,11 @@ _Avoid_: console warning, transcript message, notification log
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file
 
+**Skill Discovery**:
+The Host-owned model-context catalog of enabled, model-invocable Skills, exposing each name, description, and location
+so an Agent can choose and read a matching Skill. It advertises Skill metadata rather than eagerly reading Skill bodies.
+_Avoid_: Skill search, eager Skill loading
+
 **RTK Runtime**:
 The separately installed, certified RTK executable whose CLI owns RTK command rewriting and output optimization. The
 Suite adapts the Host to it without duplicating its rewrite registry or installation lifecycle.
@@ -113,18 +118,23 @@ not merge or alter the underlying protocol events, ordering, or Session history.
 _Avoid_: Tool call, Tool row, Tool Activity Group
 
 **Retrieval Group**:
-A derived display-only summary of one continuous segment of native Read, Grep/Find, or List invocations. A Narrative
-Boundary, independent Tool Activity, automatic continuation, or turn completion closes it.
+A derived display-only summary of one continuous segment of native Read, Grep/Find, or List invocations, excluding a
+Read whose resolved basename is exactly `SKILL.md`. A Narrative Boundary, independent Tool Activity, automatic
+continuation, or turn completion closes it.
 _Avoid_: Exploration group, Tool batch, merged Tool call
+
+**Skill Tool Activity**:
+An independent Tool Activity for a native Read whose resolved basename is exactly `SKILL.md`. It derives
+`Skill <name>` from the resolved parent directory while retaining the underlying Read protocol and forming a Narrative
+Boundary.
+_Avoid_: Native Skill row, Skill Retrieval Group, Skill registry result
 
 **Operation Block**:
 A display-only Transcript projection of one independent, evidence-rich Tool Activity, with a bounded
 `Tool(operation identity)` parent and indented child outcome evidence at the invocation's native position. It is a
-closed Tool-specific presentation family, not a universal Tool card or grouping rule. Bash Operation Block is its only
-implemented specialization; ADR 0023 limits any later specializations to Write, Edit, Patch, the `background` Tool's
-`action: "output"` activity, and the unmatched outer Code Mode issue currently shown as an Envelope Fallback Row.
+closed family comprising Bash, Write, Edit, Patch, Background output, and an unmatched outer Code Mode issue, not a
+universal Tool card or a grouping rule.
 _Avoid_: Tool card, Universal Tool Block, Command Block
-
 **Bash Operation Block**:
 A Bash specialization of Operation Block, with one bounded command identity and child output preview. Shell
 composition inside the call remains one operation, and the underlying Tool result and Session records remain unchanged.

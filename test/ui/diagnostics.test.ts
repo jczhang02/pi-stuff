@@ -217,6 +217,17 @@ describe("/diagnostics Command Dialog", () => {
 		component.dispose?.();
 	});
 
+	test("distinguishes records from repeated occurrences", () => {
+		const channel = new DiagnosticChannel();
+		report(channel, 1);
+		report(channel, 1);
+		const component = createDiagnosticsView(channel).create(dialogHarness().context);
+		const output = component.render(80).join("\n");
+		expect(output).toContain("Diagnostics · 1 record");
+		expect(output).toContain("2 occurrences");
+		component.dispose?.();
+	});
+
 	test("keeps list and detail as sequential single-column views at wide widths", () => {
 		const channel = new DiagnosticChannel();
 		report(channel, 1);
@@ -236,7 +247,8 @@ describe("/diagnostics Command Dialog", () => {
 		output = component.render(100).join("\n");
 		expect(output).toContain("Diagnostics / Background Work");
 		expect(output).toContain("Issue 1");
-		expect(output).toContain("◆ Details");
+		expect(output).toContain("Details");
+		expect(output).not.toContain("◆");
 		expect(output).not.toContain("Diagnostics · 2 records");
 		component.handleInput?.("\u001b");
 		expect(component.render(100).join("\n")).toContain("Diagnostics · 2 records");
@@ -250,7 +262,10 @@ describe("/diagnostics Command Dialog", () => {
 		const channel = new DiagnosticChannel();
 		for (let index = 1; index <= 12; index += 1) report(channel, index);
 		const component = createDiagnosticsView(channel).create(dialogHarness().context);
-		expect(component.render(80).join("\n")).toContain("Issue 12");
+		const overflow = component.render(80).join("\n");
+		expect(overflow).toContain("Issue 12");
+		expect(overflow).toContain("b/Space page");
+		expect(overflow).not.toContain("PgUp/PgDn page");
 		component.handleInput?.(" ");
 		expect(component.render(80).join("\n")).toContain("Issue 4");
 		component.dispose?.();

@@ -12,6 +12,7 @@ import { assistantTerminalState, isIssueState, terminalStateFromResult } from ".
 import type { SuiteToolEnvelopeDetails } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { envelopeOperationResult } from "./envelope-renderer.js";
+import { directBashCancelledByHostAbort } from "./retrieval-groups.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 const PENDING_RESULT_LIMIT = 768;
@@ -192,7 +193,12 @@ export class ToolGroupProjection {
 		}
 		const previous = group.members[memberIndex];
 		if (!previous) return;
-		const updated = { ...previous, result };
+		const updated: PlannedToolActivityMember = {
+			args: previous.args,
+			id: previous.id,
+			name: previous.name,
+			result,
+		};
 		this.mutableMembers(group)[memberIndex] = updated;
 		if (this.isTransparentIssue(updated)) {
 			this.splitGroupAtIssue(group, memberIndex);
@@ -261,6 +267,8 @@ export class ToolGroupProjection {
 		if (!isRecordValue(message)) return;
 		const role = message.role;
 		if (role === "assistant" && Array.isArray(message.content)) {
+			const cancellation = directBashCancelledByHostAbort(this.indexedMessages);
+			if (cancellation) this.settleHostCancelledBash(cancellation.id);
 			this.applyAssistantContent(message.content, assistantTerminalState(message.stopReason));
 			return;
 		}
@@ -286,6 +294,18 @@ export class ToolGroupProjection {
 			this.tailForcedClosed = true;
 			this.closeOpenGroup();
 		}
+	}
+
+	private settleHostCancelledBash(toolCallId: string): void {
+		const group = this.groupForTool(toolCallId);
+		const memberIndex = this.memberIndexes.get(toolCallId);
+		const member = memberIndex === undefined ? undefined : group?.members[memberIndex];
+		if (!group || memberIndex === undefined || !member || member.name !== "bash" || member.terminalState) {
+			return;
+		}
+		this.mutableMembers(group)[memberIndex] = { ...member, terminalState: "cancelled" };
+		this.hooks.stopTimer(toolCallId);
+		this.hooks.groupChanged(group, toolCallId);
 	}
 
 	private applyAssistantContent(content: readonly unknown[], terminalState?: "cancelled" | "error"): void {

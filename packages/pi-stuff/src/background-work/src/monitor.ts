@@ -176,9 +176,13 @@ class PollingMonitor implements BackgroundMonitorActivity {
 				} else {
 					const { error } = attempt;
 					const code = error && isRuntimeObject(error) && "code" in error ? String(error.code) : "";
-					this.evidence = error instanceof Error ? error.message : String(error);
-					if (this.input.source !== "http" && code && code !== "ENOENT") {
-						return this.finish("failed", `Monitor "${this.title}" could not read its source`);
+					if (code === "ENOENT" && (this.input.source === "file" || this.input.source === "log")) {
+						this.evidence = `Waiting for ${this.input.source} to appear.`;
+					} else {
+						this.evidence = error instanceof Error ? error.message : String(error);
+						if (this.input.source !== "http" && code) {
+							return this.finish("failed", `Monitor "${this.title}" could not read its source`);
+						}
 					}
 				}
 				yield* Effect.sleep(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())));

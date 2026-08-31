@@ -8,6 +8,7 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../conversation-ui/transcript.js";
 import { getRenderState } from "./state/store.js";
 import type { TaskStatus } from "./tool/types.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
+const SUMMARY_GUTTER = " ".repeat(SELF_RENDERED_TRANSCRIPT_PADDING);
 const COLLAPSED_GUTTER = "  ";
 const TASK_ROW_GUTTER = "  ";
 const ALL_COMPLETE_LINGER_MS = 5_000;
@@ -171,11 +173,11 @@ export class TodoOverlay {
 		const completed = renderable.filter((task) => task.status === "completed").length;
 		const open = renderable.length - completed;
 		const summary = theme.fg(
-			"dim",
-			`◆ ${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`,
+			"accent",
+			theme.bold(`${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`),
 		);
 		const taskWidth = Math.max(0, width - visibleWidth(TASK_ROW_GUTTER));
-		const lines = [truncate(summary)];
+		const lines = [truncate(`${SUMMARY_GUTTER}${summary}`)];
 		lines.push(
 			...layout.visible.map((row) => truncate(`${TASK_ROW_GUTTER}${formatOverlayTaskLine(row, theme, taskWidth)}`)),
 		);

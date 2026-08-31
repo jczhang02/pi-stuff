@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: acb23cec47f996612d1cdcdcba93f2e64b3aadbdab721134c29e069c44be2b85 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: bdb024e11f5bb72ebabed4b6c0b0ee2e6ad4ad996d6690774e04aae969c123b4 -->
 
 # Pi Stuff
 
@@ -69,6 +69,11 @@ _避免使用_：console warning、transcript message、notification log
 Host 通过 Pi Package 契约发现的 Extension、Skill、Prompt Template 或 Theme。
 _避免使用_：asset、plugin file
 
+**Skill Discovery**：
+由 Host 拥有、位于模型上下文中的已启用且允许模型调用的 Skill 目录，展示每项 Skill 的名称、描述和位置，
+使 Agent 可以选择并读取匹配的 Skill。它只展示 Skill 元数据，不会预先读取 Skill 正文。
+_避免使用_：Skill search、eager Skill loading
+
 **RTK Runtime**：
 独立安装并经过认证的 RTK 可执行文件。它的 CLI 负责 RTK 命令改写与输出优化；Suite 只适配 Host，不复制其
 改写 registry 或安装生命周期。
@@ -110,21 +115,23 @@ _避免使用_：包含 prompt 等待的运行时长、Goal elapsed time、model
 _避免使用_：Tool call、Tool row、Tool Activity Group
 
 **Retrieval Group**：
-对一段连续原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要。Narrative Boundary、独立 Tool Activity、
-automatic continuation 或 turn completion 会关闭它。
+对一段连续原生 Read、Grep/Find 或 List invocation 生成的仅显示摘要，但不包含 resolved basename 恰好为
+`SKILL.md` 的 Read。Narrative Boundary、独立 Tool Activity、automatic continuation 或 turn completion 会关闭它。
 _避免使用_：Exploration group、Tool batch、merged Tool call
 
-**Operation Block**：
-一个独立且 evidence-rich 的 Tool Activity 在 Transcript 中的仅显示 projection：在该 invocation 的原始位置，
-展示有界的 `Tool(operation identity)` parent 及缩进的 child outcome evidence。它是封闭的 Tool-specific
-presentation 家族，不是通用 Tool card 或 grouping rule。Bash Operation Block 是目前唯一已实现的
-specialization；ADR 0023 将后续 specialization 限定为 Write、Edit、Patch、`background` Tool 的
-`action: "output"` activity，以及目前显示为 Envelope Fallback Row 的 unmatched outer Code Mode issue。
-_避免使用_：Tool card、Universal Tool Block、Command Block
+**Skill Tool Activity**：
+针对 resolved basename 恰好为 `SKILL.md` 的原生 Read 所形成的独立 Tool Activity。它从 resolved parent
+directory 派生 `Skill <name>`，同时保留底层 Read protocol，并形成 Narrative Boundary。
+_避免使用_：Native Skill row、Skill Retrieval Group、Skill registry result
 
+**Operation Block**：
+一种只用于 Transcript 显示的独立、证据丰富 Tool Activity projection，在 invocation 的原始位置展示有界的
+`Tool(operation identity)` parent 与缩进的 child outcome evidence。它是封闭 family，只包含 Bash、Write、
+Edit、Patch、Background output 和没有匹配 owner 的外层 Code Mode issue；它不是通用 Tool card 或 grouping rule。
+_避免使用_：Tool card、Universal Tool Block、Command Block
 **Bash Operation Block**：
-一种 Operation Block 的 Bash specialization，包含一个有界 command identity 与 child output preview。call 内部的
-shell composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
+Operation Block 的 Bash 特化，展示一个有界 command identity 与 child output preview。call 内部的 shell
+composition 仍是一项 operation，底层 Tool result 与 Session record 不变。
 _避免使用_：Command group、parsed subcommand、Retrieval Group
 
 **Envelope Fallback Row**：
@@ -161,10 +168,9 @@ Agent control action 使用的公开二元组：稳定 Agent run ID 与 child in
 _避免使用_：Agent key、child address
 
 **Agent Lifecycle Row**：
-一个 Agent Tool lifecycle event 在 Transcript 中的仅显示 projection。background launch 与 completion 保持为
-两个独立的 chronological event；live Agent state 与完整 child evidence 仍由 Agents 拥有。
+一次 Agent Tool lifecycle event 的仅显示 Transcript projection。Background launch 与 completion 保持为分开的
+chronological event；live Agent state 与完整 child evidence 仍由 Agents 负责。
 _避免使用_：Agent Operation Block、Subagent Row、Agent roster row
-
 **Context Activity**：
 一次由用户发起的 Context maintenance operation 所对应的、模型不可见且持久化的 Session record。一条可见
 Pi Stuff row 投影其 anchor，并在 resume 后继续更新。它不是 Tool call、Diagnostic Record 或 Statusline item。

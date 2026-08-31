@@ -231,7 +231,7 @@ test("failed mutations never produce successful change clauses", () => {
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(call("e1", "edit", "broken.ts")), result("e1", "EDIT FAILED", true)], true);
 	const output = settle(mutation, "e1", "broken.ts", true).callLines.join("\n");
-	expect(output).toContain("error");
+	expect(output).toContain("Error: EDIT FAILED");
 	expect(output).not.toContain("Changed");
 });
 

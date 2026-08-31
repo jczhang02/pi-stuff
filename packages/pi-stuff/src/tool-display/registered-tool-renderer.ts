@@ -25,6 +25,7 @@ import type {
 	ToolUiRuntime,
 } from "./contract.js";
 import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
+import { isOperationBlockMember } from "./operation-block-presentation.js";
 import { SUITE_ACTIVITY_RENDERER, type SuiteActivityRendererMarker } from "./registration-tracker.js";
 import { CachedToolRow, EmptyToolComponent, type ToolRowModel } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
@@ -96,7 +97,12 @@ function presentationSummary<TArgs extends ToolArguments, TDetails>(
 	try {
 		if (!presentation.summarize) return fallback;
 		const summary = oneLine(presentation.summarize(args, result, state, durationMs));
-		return summary ? { fromResult: false, text: summary } : fallback;
+		if (!summary) return fallback;
+		const resultSummary = terminalSummary(result, state, true);
+		return {
+			fromResult: state === "success" && resultSummary.fromResult && resultSummary.text === summary,
+			text: summary,
+		};
 	} catch {
 		return fallback;
 	}
@@ -160,6 +166,20 @@ function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 				) ?? [],
 		});
 	}
+	if (presentation.detailSections) {
+		Object.assign(detail, {
+			detailSections: (
+				args: ToolArguments,
+				result: AgentToolResult<unknown>,
+				state: Exclude<ToolActivityState, "running">,
+			) =>
+				presentation.detailSections?.(
+					argsForPresentation<TArgs, ToolArguments>(args),
+					resultForPresentation<TDetails>(result),
+					state,
+				) ?? [],
+		});
+	}
 	return detail;
 }
 
@@ -209,7 +229,16 @@ function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 		cwd: context.cwd,
 		name: tool.name,
 	};
-	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
+	const visible = context.expanded || presentation.activity.silentSuccess !== true;
+	runtime.presentRow(
+		context.toolCallId,
+		state.component,
+		model,
+		visible,
+		context.invalidate,
+		context.expanded,
+		metadata,
+	);
 	if (startLiveEffects) {
 		state.liveEffectsStarted = true;
 		runtime.startTimer(context.toolCallId, context.invalidate, (visible) =>
@@ -490,7 +519,7 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 				renderOptions.expanded,
 				typed.showImages,
 				theme,
-				tool.name === "bash",
+				tool.name === "bash" || isOperationBlockMember(tool.name, args),
 				Object.getOwnPropertyDescriptor(typed, EMBEDDED_TOOL_RESULT)?.value === true,
 				embeddedHostImageKeys instanceof Map ? embeddedHostImageKeys : undefined,
 			);

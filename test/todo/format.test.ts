@@ -50,6 +50,32 @@ describe("formatOverlayTaskLine", () => {
 		);
 	});
 
+	test("uses sanitized activeForm only for in-progress work and falls back to subject", () => {
+		expect(
+			formatOverlayTaskLine(
+				{
+					task: task({ activeForm: "  writing\n tests\u001b]0;hidden\u0007  ", status: "in_progress" }),
+					openBlockers: [],
+				},
+				recordingTheme,
+			),
+		).toBe("<accent>■</accent> <bold><accent>writing tests</accent></bold>");
+		expect(
+			formatOverlayTaskLine(
+				{ task: task({ activeForm: "\u001b]0;hidden\u0007", status: "in_progress" }), openBlockers: [] },
+				recordingTheme,
+			),
+		).toContain("quiet task");
+		for (const status of ["pending", "completed", "deleted"] as const) {
+			expect(
+				formatOverlayTaskLine(
+					{ task: task({ activeForm: "must not leak", status }), openBlockers: [] },
+					recordingTheme,
+				),
+			).not.toContain("must not leak");
+		}
+	});
+
 	test("dims and strikes completed work", () => {
 		expect(formatOverlayTaskLine({ task: task({ status: "completed" }), openBlockers: [] }, recordingTheme)).toBe(
 			"<dim>✓</dim> <strike><dim>quiet task</dim></strike>",
@@ -190,5 +216,17 @@ describe("formatCollapsedNextLine", () => {
 				recordingTheme,
 			),
 		).toBe("<muted>Next:</muted> <warning>□</warning> <muted>waiting task</muted>");
+	});
+
+	test("uses sanitized activeForm for the in-progress collapsed Next row", () => {
+		expect(
+			formatCollapsedNextLine(
+				{
+					task: task({ activeForm: "  shipping\n release\u001b]0;hidden\u0007", status: "in_progress" }),
+					openBlockers: [],
+				},
+				recordingTheme,
+			),
+		).toBe("<muted>Next:</muted> <text>shipping release</text>");
 	});
 });

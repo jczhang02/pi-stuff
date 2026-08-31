@@ -116,6 +116,19 @@ test("matches Claude Code's wide two-column and narrow single-column card struct
 	}
 });
 
+test("switches to the complete two-column card at 82 columns", () => {
+	const controller = new WelcomeHeaderController(context(), {
+		enabled: { get: () => true },
+		inventory: new InventorySource(inventory),
+	});
+	const component = controller.createHeader(tuiHarness().tui, theme);
+
+	expect(component.render(81).join("\n")).not.toMatch(/Loaded|Tips for getting started/u);
+	const wide = component.render(82).join("\n");
+	expect(wide).toContain("Loaded");
+	expect(wide).toContain("Tips for getting started");
+});
+
 test("selects the compact official mark on short terminals without dropping identity", () => {
 	const controller = new WelcomeHeaderController(context(), {
 		enabled: { get: () => true },

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 81f41e89411c80473f20e7cbc3fde0ed9f854db4a1919d304fe17c2cf82cc121 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 799a686f1efbd9ff28bfe16772d9ed6847c26c51f719c9640d1b66464113a7b7 -->
 
 # Conversation UI 模块
 
@@ -40,7 +40,7 @@ Pi 0.84.4 RPC `clear_queue` 会返回被移除的 steering 与 follow-up 消息�
 
 ### 欢迎标题
 
-启动标题遵循观察到的 Claude Code 2.1.197 卡片几何，同时保留 Pi Stuff 自己的身份和内容。强调色 Pi 标记按官方 pi.dev 几何重建：普通尺寸为 8×4，低于 48 列或高度不超过 18 行时为完整 4×2。它选择紧凑标记，而不是裁切大标记，并始终在标记下保留一行有效空白。70 列及以上时，卡片使用固定 52 单元身份列加响应式指引列；低于该宽度时变为居中单列卡片，并删除指引与清单，而不是让它们换行。它属于 Pi 普通回滚区，不是浮动窗口。
+启动标题遵循观察到的 Claude Code 2.1.197 卡片几何，同时保留 Pi Stuff 自己的身份和内容。强调色 Pi 标记按官方 pi.dev 几何重建：普通尺寸为 8×4，低于 48 列或高度不超过 18 行时为完整 4×2。它选择紧凑标记，而不是裁切大标记，并始终在标记下保留一行有效空白。82 列及以上时，卡片使用固定 52 单元身份列加响应式指引列；低于该宽度时变为居中单列卡片，并删除指引与清单，而不是让它们换行。它属于 Pi 普通回滚区，不是浮动窗口。
 
 ### 输入增强
 

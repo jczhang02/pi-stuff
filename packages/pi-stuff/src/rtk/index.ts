@@ -7,7 +7,6 @@ import { HOST_SHUTDOWN_GRACE_MS } from "../lifecycle-deadline.js";
 import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { createRtkProjectionAdapter } from "./projection.js";
 import { createRtkDialogView } from "./rtk-dialog.js";
-import { createRtkSettingsView } from "./rtk-settings-dialog.js";
 import { RtkRuntime } from "./runtime.js";
 import { RtkSettingsStore } from "./settings.js";
 
@@ -63,44 +62,34 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 	});
 
 	pi.registerCommand("rtk", {
-		description: "Inspect RTK runtime and model-context savings",
+		description: "Inspect and configure RTK",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("/rtk requires interactive TUI mode.", "warning");
 				return;
 			}
-			const action = args.trim().toLowerCase();
-			let note: string | undefined;
-			if (action === "settings") {
-				await dialogs.show(
-					ctx,
-					createRtkSettingsView(
-						settings,
-						{
-							setOutputProjection: async (enabled) => {
-								await runRtkOperation(foundation, settings.setOutputProjection(enabled));
-							},
-							setRewriteCommands: async (enabled) => {
-								await runRtkOperation(foundation, settings.setRewriteCommands(enabled));
-							},
-						},
-						{ onPersistenceError: (message) => ctx.ui.notify(message, "error") },
-					),
-				);
+			if (args.trim()) {
+				ctx.ui.notify("/rtk takes no subcommands; run /rtk.", "warning");
 				return;
 			}
-			if (!action || action === "status" || action === "verify") {
-				await runRtkOperation(foundation, runtime.verify(pi, { refresh: true }), ctx.signal);
-			} else if (action === "clear-stats") {
-				projection.reset();
-				note = "Projection statistics cleared.";
-			} else if (action === "help") {
-				note = "/rtk [status|settings|verify|stats|clear-stats|help]";
-			} else if (action !== "stats") {
-				note = `Unknown action: ${action}`;
-			}
-			const dialogOptions = { projection, runtime, settings };
-			await dialogs.show(ctx, createRtkDialogView(note === undefined ? dialogOptions : { ...dialogOptions, note }));
+			await dialogs.show(
+				ctx,
+				createRtkDialogView({
+					onPersistenceError: (message) => ctx.ui.notify(message, "error"),
+					projection,
+					runtime,
+					setOutputProjection: async (enabled) => {
+						await runRtkOperation(foundation, settings.setOutputProjection(enabled), ctx.signal);
+					},
+					setRewriteCommands: async (enabled) => {
+						await runRtkOperation(foundation, settings.setRewriteCommands(enabled), ctx.signal);
+					},
+					settings,
+					verify: async (signal) => {
+						await runRtkOperation(foundation, runtime.verify(pi, { refresh: true }), signal);
+					},
+				}),
+			);
 		},
 	});
 

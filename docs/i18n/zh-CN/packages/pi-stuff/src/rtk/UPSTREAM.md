@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/rtk/UPSTREAM.md; translation-source-sha256: bd1cf5bf0a929f314a2ea1c2fc18531160fe3cfa74d92031cdcd9755c6074190 -->
+<!-- translation-source: packages/pi-stuff/src/rtk/UPSTREAM.md; translation-source-sha256: e74854489dc9f053aaf18bfd6602ad0fbce3b1c4255e4acce9fed7fbb7166024 -->
 
 # 上游来源
 
@@ -51,7 +51,7 @@
 - 格式化并严格类型化保留算法，不削弱其输出约定。
 - 用 Pi 面向模型的 `context` 接缝替换上游 `tool_result` 修改，使对话记录和会话 JSONL 保持原始。
 - 保持 `read` 与源码投影禁用；失败结果和非文本块始终保持精确。
-- 用 `/rtk`、`/rtk settings` 和共享非浮动命令对话框，替换上游配置模态框、通知、状态栏指标、启动配置创建、Shell Hook 假设和生命周期。
+- 用共享非浮动 Command Dialog 中唯一的交互式 `/rtk` control surface，替换上游配置模态框、通知、状态栏指标、启动配置创建、Shell Hook 假设和生命周期。
 - 只针对文档中的 SHA-256 验证官方 Linux x64 RTK 0.45.0 可执行文件；路径、二进制、超时或可用性漂移均开放回退。
 - 把完整重写注册表委派给 RTK。官方 v0.45.0 仍拒绝复合 `find` 谓词和操作；Pi Stuff 记录该约束，而不是增加命令解析器或分叉。
 - 只暴露一个小型 `ContextProjectionAdapter`，用于与套件 Context 能力组合。

@@ -25,6 +25,7 @@ import type {
 } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import type { ToolGroupProjection } from "./group-projection.js";
+import { isOperationBlockMember, operationBlockModel } from "./operation-block-presentation.js";
 import type { CachedToolRow, RetrievalGroupRowModel, ToolRowModel } from "./render.js";
 import type { ToolUiSettingsStore } from "./settings.js";
 import { formatElapsed } from "./tool-text.js";
@@ -336,6 +337,7 @@ export class ToolActivityPresentation {
 			this.clock.dropGroup(group.leaderId);
 			const member = group.members[0];
 			if (member?.name === "bash") this.applyBashOperation(member, leader);
+			else if (member && isOperationBlockMember(member.name, member.args)) this.applyOperationBlock(member, leader);
 			else {
 				const silentSuccess =
 					member !== undefined &&
@@ -361,6 +363,7 @@ export class ToolActivityPresentation {
 				const binding = this.bindings.get(member.id);
 				if (!binding) continue;
 				if (member.name === "bash") this.applyBashOperation(member, binding);
+				else if (isOperationBlockMember(member.name, member.args)) this.applyOperationBlock(member, binding);
 				else this.applyBinding(binding, binding.baseModel, true);
 			}
 			return;
@@ -402,6 +405,19 @@ export class ToolActivityPresentation {
 			this.query.summaryMember(member).state,
 			() => this.scheduleInvalidation(binding.invalidate),
 		);
+	}
+
+	private applyOperationBlock(member: PlannedToolActivityMember, binding: GroupedRowBinding): void {
+		const model = operationBlockModel(
+			member,
+			member.result ?? binding.metadata.result,
+			this.query.summaryMember(member).state,
+			binding.expanded,
+		);
+		if (!model) return;
+		const modelChanged = binding.row.setModel(model);
+		const visibilityChanged = binding.row.setVisible(true);
+		if (modelChanged || visibilityChanged) this.scheduleInvalidation(binding.invalidate);
 	}
 
 	private summaryIndex(group: PlannedRetrievalGroup, changedMemberId?: string): GroupSummaryIndex {

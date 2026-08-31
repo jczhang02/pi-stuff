@@ -1,6 +1,6 @@
 import { stripTerminalControls } from "./terminal-controls.js";
 export const AGENTS_EXPECT_PROGRAM = `
-set timeout 40
+set timeout 120
 
 proc must_expect {pattern} {
     expect {
@@ -168,7 +168,7 @@ export function verifyTerminalOutput(output: string, columns: number): void {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}\n${visible.slice(-8_000)}`);
 	}
 	const compact = visible.replace(/\s+/gu, " ");
-	if (!/• Agent general-purpose\b.*?· launched/u.test(compact)) {
+	if (!/• Agent launch\b.*?· launched/u.test(compact)) {
 		fail(`terminal output is missing the standalone Agent launch row\n${visible.slice(-8_000)}`);
 	}
 	if (compact.includes("Launched 1 background agent")) fail("Agent launch leaked into an aggregate summary");

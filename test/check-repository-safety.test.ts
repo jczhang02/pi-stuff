@@ -316,7 +316,7 @@ test("enforces the documented internal Module dependency direction", async () =>
 	);
 	await writeFile(
 		join(root, "packages", "pi-stuff", "src", "code-mode", "index.ts"),
-		'import type { Contract } from "../tool-display/contract.js";\nexport type Mode = Contract;\n',
+		'import context from "../context-management/index.js";\nimport type { Contract } from "../tool-display/contract.js";\nexport type Mode = Contract;\nexport default context;\n',
 	);
 
 	expect(await auditRepositoryFiles(root)).toEqual([

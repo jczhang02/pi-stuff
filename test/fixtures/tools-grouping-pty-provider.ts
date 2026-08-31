@@ -8,6 +8,7 @@ import { createAssistantMessage, createTextStream, registerFixtureProvider } fro
 
 const PROVIDER = "pi-stuff-tools-grouping-pty";
 const MODEL = "fixture-model";
+const GENERIC_FIT_TARGET = "https://example.test/a-very-long-resource-identifier-without-boundaries-that-keeps-going";
 interface FixtureCall {
 	readonly arguments: Record<string, JsonValue>;
 	readonly name: string;
@@ -83,9 +84,11 @@ const BASH_UI_CALLS: readonly FixtureCall[] = [
 const PARTIAL_BASH_CALLS: readonly FixtureCall[] = [
 	{
 		name: "bash",
-		arguments: { command: "sleep 2.1; printf PARTIAL_BASH_VISIBLE; sleep 0.6" },
+		arguments: { command: "printf PARTIAL_BASH_VISIBLE; sleep 30" },
 	},
 ];
+const EXIT_128_CALLS: readonly FixtureCall[] = [{ name: "bash", arguments: { command: "exit 128" } }];
+const FIT_TARGET_CALLS: readonly FixtureCall[] = [{ name: "fixture_retry", arguments: { value: GENERIC_FIT_TARGET } }];
 const SLOW_RETRIEVAL_CALLS: readonly FixtureCall[] = [{ name: "read", arguments: { path: "slow-target.txt" } }];
 const RETRIEVAL_ISSUE_CALLS: readonly FixtureCall[] = [
 	{ name: "read", arguments: { path: "input-工具.txt" } },
@@ -215,6 +218,14 @@ function fixtureStream(context: Context) {
 		return completed === 0
 			? toolCallsStream("group-partial-bash", PARTIAL_BASH_CALLS)
 			: textStream("GROUP_PARTIAL_BASH_DONE");
+	}
+	if (request.includes("exit-128")) {
+		return completed === 0 ? toolCallsStream("group-exit-128", EXIT_128_CALLS) : textStream("GROUP_EXIT_128_DONE");
+	}
+	if (request.includes("fit-target")) {
+		return completed === 0
+			? toolCallsStream("group-fit-target", FIT_TARGET_CALLS)
+			: textStream("GROUP_FIT_TARGET_DONE");
 	}
 	if (request.includes("slow-retrieval")) {
 		return completed === 0

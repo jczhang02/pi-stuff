@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { type ToolActivityView, ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
@@ -92,14 +92,15 @@ test("/tools lists groups and formats only the selected member", () => {
 	const harness = contextHarness();
 	const component = createToolDialogView(runtime).create(harness.context);
 
+	expect(component.render(60).join("\n")).toContain("2 calls");
 	const list = component.render(42).join("\n");
-	expect(list).toContain("Read 2 files");
-	expect(list).toContain("2 calls");
+	expect(list).toContain("Read · 2 files");
 	expect(list).toContain("Enter details");
 	component.handleInput?.("\r");
 	let detail = component.render(42).join("\n");
 	expect(detail).toContain("Tools / Read 2 files");
-	expect(detail).toContain("◆ Result");
+	expect(detail).toContain("Content");
+	expect(detail).not.toContain("◆");
 	expect(detail).not.toContain("formatted");
 	expect(detail).not.toContain("Target:");
 	expect(detail).not.toContain("Summary:");
@@ -120,14 +121,67 @@ test("/tools lists groups and formats only the selected member", () => {
 	component.dispose?.();
 });
 
+test("/tools styles sanitized operation evidence and reuses its cached document", () => {
+	initTheme("dark", false);
+	const runtime = groupedRuntime(["src/demo.ts"]);
+	runtime.registerDetailPresentation("read", {
+		detailSections: () => [
+			{
+				languagePath: "src/demo.ts",
+				lines: ["1  │ const same = true;", "2  │ - const oldValue = 1;", " 2 │ + const newValue = 2;"],
+				operationEvidence: [
+					{ diffKind: "context", kind: "diff", newLine: 1, oldLine: 1, text: "const same = true;" },
+					{
+						diffKind: "delete",
+						kind: "diff",
+						oldLine: 2,
+						text: "\u001b]8;;https://evil.invalid\u0007const oldValue = 1;\u001b]8;;\u0007",
+					},
+					{ diffKind: "add", kind: "diff", newLine: 2, text: "const newValue = 2;" },
+				],
+				title: "Diff",
+			},
+		],
+		label: () => "Read",
+		summary: () => "safe",
+		target: () => "src/demo.ts",
+	});
+	const taggedTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, value: string) => `<${color}>${value}</${color}>`,
+	};
+	// SAFETY: this fixture implements the exact Theme methods exercised by the Dialog and evidence renderer.
+	const detailTheme = taggedTheme as Theme;
+	const component = createToolDialogView(runtime, "read-1").create(contextHarness(32, detailTheme).context);
+	const output = component.render(160).join("\n");
+	expect(output).toContain("<error>-</error>");
+	expect(output).toContain("<success>+</success>");
+	expect(output).toContain("\u001b[");
+	expect(output).not.toContain("evil.invalid");
+
+	const group = runtime.resolveGroup("read-1");
+	if (!group || group === "ambiguous") throw new Error("missing detail group");
+	// SAFETY: createToolDialogView constructs ToolDialogComponent, whose private method remains an ordinary runtime method.
+	const cacheProbe = component as typeof component & {
+		detailDocument(group: ToolActivityView, width: number): readonly string[];
+	};
+	const first = cacheProbe.detailDocument(group, 120);
+	expect(cacheProbe.detailDocument(group, 120)).toBe(first);
+
+	component.handleInput?.("r");
+	expect(component.render(160).join("\n")).not.toContain("<success>+</success>");
+	component.dispose?.();
+});
+
 test("/tools <member-id> focuses the requested member within its complete group", () => {
 	const runtime = groupedRuntime(["a.ts", "b.ts", "c.ts"]);
 	const harness = contextHarness(36);
 	const component = createToolDialogView(runtime, "read-2").create(harness.context);
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("3 calls");
-	expect(detail).toContain("◆ Calls");
-	expect(detail).toContain("◆ Result");
+	expect(detail).toContain("Calls");
+	expect(detail).toContain("Content");
+	expect(detail).not.toContain("◆");
 	expect(detail).not.toContain("Path: a.ts");
 	expect(detail).toContain("Path: b.ts");
 	expect(detail).not.toContain("Path: c.ts");
@@ -181,7 +235,9 @@ test("/tools pages the Activity list with Space", () => {
 	first.dispose?.();
 
 	const paged = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
-	expect(paged.render(64).join("\n")).toContain("? keys");
+	const overflow = paged.render(64).join("\n");
+	expect(overflow).toContain("b/Space page");
+	expect(overflow).not.toContain("PgUp/PgDn page");
 	paged.handleInput?.(" ");
 	paged.handleInput?.("\r");
 	const pagedTarget = paged
@@ -225,18 +281,18 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	const component = createToolDialogView(runtime, "internal-1").create(harness.context);
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("Tools / Internal activity");
-	expect(detail).toContain("◆ Result");
-	expect(detail).not.toContain("◆ Calls");
+	expect(detail).toContain("Reduction");
+	expect(detail).not.toContain("Calls");
 	expect(detail).not.toContain("formatted");
 	expect(detail).not.toContain("Target:");
 	expect(detail).not.toContain("Summary:");
-	expect(detail).toContain("context");
 	expect(detail).not.toContain("internal-1");
 	expect(detail).not.toContain("Arguments");
 	expect(detail).not.toContain("Result content");
 	component.handleInput?.("r");
 	let raw = component.render(60).join("\n");
-	expect(raw).toContain("◆ Raw");
+	expect(raw).toContain("Raw");
+	expect(raw).not.toContain("◆");
 	expect(raw).toContain("Call ID: internal-1");
 	expect(raw).toContain("Tool name: ctx_reduce");
 	expect(raw).toContain("Arguments");
@@ -247,7 +303,7 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	expect(raw).toContain("Result content");
 	expect(raw).toContain("Details");
 	component.handleInput?.("\u001b");
-	expect(component.render(60).join("\n")).toContain("◆ Result");
+	expect(component.render(60).join("\n")).toContain("Reduction");
 	component.handleInput?.("\u001b");
 	expect(component.render(60).join("\n")).toContain("Tools");
 	component.handleInput?.("\u001b");
@@ -366,6 +422,38 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 	component.dispose?.();
 });
 
+test("/tools retains bounded operation identity and removes state-equivalent evidence", () => {
+	const runtime = new ToolUiRuntime();
+	runtime.registerActivity("subagent", { categories: ["run-agent"], classify: () => [] });
+	runtime.registerDetailPresentation("subagent", {
+		label: () => "Agent",
+		summary: () => "finished · 18s",
+		target: () => "run · reviewer · inspect the complete implementation",
+	});
+	runtime.markRendererAttached("subagent");
+	runtime.indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "agent-run", name: "subagent", arguments: {} }],
+			},
+			{ role: "toolResult", toolCallId: "agent-run", content: [{ type: "text", text: "report" }], details: {} },
+		],
+		true,
+	);
+	const component = createToolDialogView(runtime).create(contextHarness().context);
+	const wide = component.render(90).find((line) => line.includes("Agent")) ?? "";
+	expect(wide).toContain("run");
+	expect(wide).toContain("18s");
+	expect(wide).not.toContain("finished");
+	expect(wide.match(/\bsuccess\b/gu)).toHaveLength(1);
+	const narrow = component.render(42).find((line) => line.includes("Agent")) ?? "";
+	expect(narrow).toContain("run");
+	expect(narrow).not.toContain("finished");
+	expect(narrow).toContain("success");
+	component.dispose?.();
+});
+
 test("/tools keeps list and detail visible on wide terminals", () => {
 	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const focusTheme = {
@@ -379,7 +467,7 @@ test("/tools keeps list and detail visible on wide terminals", () => {
 	expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
 	expect(lines).toHaveLength(18);
 	expect(lines[0]).toBe("━".repeat(100));
-	expect(lines.slice(1).every((line) => Bun.stripANSI(line)[36] === "┃")).toBe(true);
+	expect(lines.slice(1).every((line) => Bun.stripANSI(line)[52] === "┃")).toBe(true);
 	expect(Bun.stripANSI(output)).not.toContain("│");
 	expect(lines[1]?.split("┃")[0]).toContain("\u001b[35mTools\u001b[0m");
 	expect(lines[1]?.split("┃")[1]).not.toContain("\u001b[35mTools /");

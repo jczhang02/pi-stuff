@@ -40,11 +40,11 @@ type Screen = "overview" | "mode" | "default";
 const GUTTER = "  ";
 
 const SKILL_LABELS = {
-	"ponytail-review": { label: "Review complexity", description: "Find over-engineering in the current diff" },
-	"ponytail-audit": { label: "Audit repository", description: "Rank repo-wide opportunities to delete or simplify" },
+	"ponytail-review": { label: "Review complexity", description: "Find over-engineering in this diff" },
+	"ponytail-audit": { label: "Audit repository", description: "Find code to delete or simplify" },
 	"ponytail-debt": { label: "Show debt ledger", description: "Collect ponytail: shortcut markers" },
-	"ponytail-gain": { label: "Show gain", description: "Display the upstream benchmark scoreboard" },
-	"ponytail-help": { label: "Show help", description: "Open Ponytail's modes and commands reference" },
+	"ponytail-gain": { label: "Show gain", description: "Show upstream benchmark savings" },
+	"ponytail-help": { label: "Show help", description: "Open modes and commands" },
 } satisfies Record<PonytailSpecializedSkill, { description: string; label: string }>;
 
 function isPonytailSpecializedSkill(value: string): value is PonytailSpecializedSkill {

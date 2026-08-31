@@ -1,36 +1,31 @@
-<!-- translation-source: docs/adr/0023-use-a-closed-operation-block-family.md; translation-source-sha256: 6aa176c14e333c884d2ccea622a7594616eb31b6092389a1e5bd675f2a83a0a7 -->
+<!-- translation-source: docs/adr/0023-use-a-closed-operation-block-family.md; translation-source-sha256: d4dee051658c1381bd434e9904634eab345155b399e1bcebb0cf87e297c86fd4 -->
 
 ---
 status: accepted
 ---
 
-# 使用封闭的 Operation Block 家族
+# 使用封闭的 Operation Block family
 
 ## 背景
 
-ADR 0022 拒绝通用的 `Tool(args)` 加 child-status block；与此同时，Bash 和另外几类 evidence-rich Tool
-Activity 仍适合使用相同的 parent-and-child 阅读形态。如果没有明确边界，presentation metadata 可能逐步把
-这种局部形态变成 ADR 0022 已经拒绝的通用 Tool card。
+Tool UI 有两个独立 surface。Transcript 包含 Compact 与 Expanded；`/tools` 包含 List 与 Detail，Detail 内又有 Formatted 与 Raw。此前通用 standalone Tool row 无法为文件修改保留足够证据，但若让所有 Tool 都采用 Bash-like shape，又会抹掉有用的 domain distinction。
 
-本决策被接受时，Bash 是唯一已实现的 Operation Block。Write、Edit、Patch、`background` Tool 的
-`action: "output"` activity 与 unmatched outer Code Mode issue 仍使用各自既有的 Tool-specific presentation。
+ADR 0022 已经把 grouping 限制为 native retrieval。本决策只处理 independent Tool Activity，不改变 Retrieval Group membership。
 
 ## 决策
 
-Pi Stuff 为 Operation Block 采用封闭的 eligibility boundary。本决策被接受时，Bash 仍是唯一已实现的成员。
-后续实现只能加入 Write、Edit、Patch、`background` Tool 的 `action: "output"` activity，或没有 nested Tool
-或 media projection 表示的外层 Code Mode error、rejection 或 cancellation。每项 specialization 发布时，都必须
-同步更新所属 Module contract 与 acceptance evidence。
+Pi Stuff 只对 Bash、Write、Edit、Patch、`action=output` 的 `background`，以及没有 nested Tool 或 media projection 表示的外层 Code Mode error、rejection 或 cancellation 使用 **Operation Block**。Transcript grammar 必须是 `Tool(operation identity)` parent，下一行是缩进的 `⎿ outcome evidence`。括号是 grammar 的一部分。任何 presentation metadata 都不能把其他 Tool 加入这个封闭 family。
 
-Code Mode specialization 会替换同一条 Envelope Fallback Row 的 presentation；它不会增加第二条 row，也不会
-改变 nested Tool 与 media 的 ownership。candidate 完成 specialization 之前，其既有 semantic shape 仍是权威。
-MCP 和其他所有 Tool 家族不能通过 presentation metadata 选择加入该家族。
+Write 使用 `Write(path)`，报告 `N lines written`，并显示语法高亮的最终内容而不是 diff。Compact 显示十行和精确 omitted-line expansion hint；Expanded 上限为 240 行和 24 KiB。Edit 使用 `Edit(path)`，显示精确 `+A/-D` 统计和语法高亮的 old/new-line diff。Patch 对单文件使用 `Patch(path)`，多文件使用 `Patch(N files)`，随后显示总计和逐文件 `M/A/D/R` 统计及有界 changed-line evidence。Compact diff evidence 上限为 2 KiB 和十条 changed line，每个 Patch file 最多四条 changed line，另带相邻 context；Expanded diff evidence 上限为 240 行和 24 KiB。每次触顶都报告精确 omitted amount。纯 rename 报告 `+0/-0` 与 `renamed without content changes`。存在 content evidence 时省略 generic mutation-success prose。Error、rejection、cancellation、partial-write 和 unavailable-evidence state 保留显式 state，且绝不从未经验证的 argument 推断成功 evidence。
 
-本决策细化 standalone Tool presentation，但不取代 ADR 0022。只有原生 Read、Grep/Find 与 List 是 Retrieval
-Group 成员；已被拒绝的通用 `Tool(args)` 加 child-status block 仍然不采用。
+direct Bash cancellation 只有在之后出现的明确 empty Host abort record 将紧邻且仍 in-flight 的 Bash Tool Activity settle 时，才拥有一个可见 authority。partial output 保留在该 cancelled Operation Block 上，Compact 与 Expanded 都不再增加第二个 Envelope Fallback error。缺少该 Host abort evidence 时，exit code 128 仍是 error。
 
-## 后果
+成功的 pure JavaScript Code Mode 不显示 outer row：nested Tool 与 media 是其可见 authority。只有这些 projection 无法表示的 outer issue 才获得 fallback Operation Block。
 
-- Operation Block 可以共用克制的 parent-and-child grammar，而不会变成通用 Tool abstraction。
-- 本决策约束后续 presentation 工作，但不声称尚未实现的 specialization 已经发布。
-- 如果要扩展到预留 candidate 以外的 Tool，必须重新审视这一边界，不能增加选择加入的 metadata flag。
+`subagent` Tool 改用 **Agent Lifecycle Row**。Foreground work 标识 Agent、Task、state 和有意义的 duration；Expanded 列出每个 member 和有界 foreground result evidence。Background launch 与随后模型不可见的 completion row 保持为分开的 chronological event。`/agents` 继续作为唯一 live control 与完整 evidence authority。
+
+Operation Block grammar 只属于 Transcript。`/tools` List row 显示 identity、operation、outcome 与显式 state。Formatted Detail 使用 Tool-specific semantic section；Raw 继续作为完整有界 protocol inspection authority。文件修改的 Formatted Detail 中，Write content 与 Edit/Patch diff evidence 复用 Transcript 的语法、低对比度行号槽以及语义化 `+`/`-` 标记样式。样式处理前先移除 Tool 提供的终端控制序列，多文件 Patch 按连续文件块选择语法。只有当前选中 Formatted call 在既有 240 行/24 KiB 上限及换行缓存检查后才构建高亮；缓存命中与 Raw 都不调用高亮器。Formatted 与 Raw 是同一个 selected call 的两种 representation，不是两个独立 Dialog mode。
+
+## 结果
+
+Native Grep/Find、List，以及 exact resolved `SKILL.md` 例外之外的 Read，仍是仅有的 Retrieval Group member。exact `SKILL.md` Read 使用独立 Skill Tool Activity。MCP、Web、media、Agent、Task、Goal、Context 与 infrastructure Tool 保留 domain-specific row。文件修改可以直接在 Compact 与 Expanded Transcript UI 中检查；`/tools` 在不复制 Transcript `⎿` shape 的前提下，同时保留可读 semantic detail 与精确 protocol evidence。

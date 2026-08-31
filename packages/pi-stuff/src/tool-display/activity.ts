@@ -14,6 +14,7 @@ export {
 	activityKey,
 	activityTarget,
 	singleActivity,
+	skillReadName,
 	type ToolActivityCategory,
 	type ToolActivityClassifierInput,
 	type ToolActivityItem,

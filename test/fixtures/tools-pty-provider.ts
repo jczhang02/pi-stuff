@@ -12,8 +12,11 @@ const LONG_READ_TARGET = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep
 
 const TOOL_SEQUENCE = [
 	{ name: "read", arguments: { path: LONG_READ_TARGET } },
-	{ name: "write", arguments: { path: "written.txt", content: "旧内容\nsecond line\n" } },
-	{ name: "edit", arguments: { path: "written.txt", oldText: "旧内容", newText: "新内容" } },
+	{
+		name: "write",
+		arguments: { path: "written.ts", content: 'const label = "旧内容";\nconst count = 2;\n' },
+	},
+	{ name: "edit", arguments: { path: "written.ts", oldText: "旧内容", newText: "新内容" } },
 	{ name: "bash", arguments: { command: "printf '\u001b]0;OWNED_TITLE\u0007BASH_CJK_工具\\n'" } },
 	{ name: "grep", arguments: { pattern: "新内容", path: "." } },
 	{ name: "find", arguments: { pattern: "*.txt", path: "." } },
@@ -23,6 +26,7 @@ const TOOL_SEQUENCE = [
 	{ name: "fixture_state", arguments: { state: "error" } },
 	{ name: "fixture_state", arguments: { state: "rejected" } },
 	{ name: "fixture_state", arguments: { state: "cancelled" } },
+	{ name: "tool_search", arguments: { query: "write file" } },
 	{ name: "codemode", arguments: { code: 'await yield_control(); text("CONTROL_ONLY_ACK")' } },
 	{ name: "codemode", arguments: { code: "const silent = 1;" } },
 	{

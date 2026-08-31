@@ -150,7 +150,7 @@ must_expect "Cleared BTW history"
 send -- "f"
 after 700
 send -- "/btw\\r"
-must_expect "No previous /btw exchange in this session."
+must_expect "Ask a question with /btw <question>."
 send -- " "
 after 150
 send -- "\\r"

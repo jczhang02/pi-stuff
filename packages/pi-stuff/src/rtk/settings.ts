@@ -49,7 +49,7 @@ function normalizeSettings<Value>(value: Value): RtkSettingsRecord {
 	};
 }
 
-/** Settings remain read-only until the user changes them from `/rtk settings`. */
+/** Settings remain read-only until the user changes them from `/rtk`. */
 export class RtkSettingsStore {
 	private readonly store: EffectNamespacedSettingsStore<RtkSettingsRecord>;
 
@@ -76,7 +76,7 @@ export class RtkSettingsStore {
 				reportDiagnostic: (diagnostic) =>
 					reportDiagnostic({
 						...diagnostic,
-						action: "/rtk settings",
+						action: "/rtk",
 						capability: "RTK",
 						key: "invalid-settings",
 						summary: "RTK settings were invalid and built-in defaults are active",

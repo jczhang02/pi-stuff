@@ -1,6 +1,11 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import type { ToolActivityCategory, ToolActivityMetadata, ToolArguments } from "./activity-model.js";
+import {
+	skillReadName,
+	type ToolActivityCategory,
+	type ToolActivityMetadata,
+	type ToolArguments,
+} from "./activity-model.js";
 import { isToolArguments } from "./tool-value.js";
 
 export interface PlannedToolActivityMember {
@@ -8,7 +13,7 @@ export interface PlannedToolActivityMember {
 	readonly id: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
-	/** Display-only terminal state when Pi persisted a call that never executed. */
+	/** Display-only terminal state proved by the surrounding Host transcript. */
 	readonly terminalState?: "cancelled" | "error";
 }
 
@@ -30,10 +35,11 @@ const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
 /** One invocation-level policy shared by streaming, replay, and envelope projection. */
 export function classifyRetrievalGroupInvocation(
 	name: string,
-	_args: ToolArguments,
+	args: ToolArguments,
 	metadata: ToolActivityMetadata<ToolArguments, unknown> | undefined,
 ): RetrievalGroupDisposition {
 	if (TRANSPARENT_ACTIVITY_TOOL_NAMES.has(name)) return "transparent";
+	if (name === "read" && skillReadName("/", args)) return "boundary";
 	if (!metadata || !RETRIEVAL_ACTIVITY_TOOL_NAMES.has(name)) return "boundary";
 	return metadata.categories.length > 0 &&
 		metadata.categories.every((category) => RETRIEVAL_ACTIVITY_CATEGORIES.has(category))
@@ -41,11 +47,12 @@ export function classifyRetrievalGroupInvocation(
 		: "boundary";
 }
 
-interface ToolTranscriptRecord {
+export interface ToolTranscriptRecord {
 	readonly arguments?: unknown;
 	readonly content?: unknown;
 	readonly details?: unknown;
 	readonly display?: unknown;
+	readonly errorMessage?: unknown;
 	readonly id?: unknown;
 	readonly isError?: unknown;
 	readonly name?: unknown;
@@ -121,6 +128,51 @@ function assistantTerminalState(message: ToolTranscriptRecord): "cancelled" | "e
 	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
 }
 
+function isExplicitHostAbort(message: ToolTranscriptRecord): boolean {
+	return (
+		assistantTerminalState(message) === "cancelled" ||
+		(message.stopReason === "error" && message.errorMessage === "The operation was aborted.")
+	);
+}
+
+/** Pi records a direct Tool cancellation as a later explicit empty Host abort. */
+export function directBashCancelledByHostAbort(
+	messages: readonly unknown[],
+	abortIndex = messages.length - 1,
+): Omit<PlannedToolActivityMember, "result"> | undefined {
+	const current = messages[abortIndex];
+	if (
+		!isRecord(current) ||
+		current.role !== "assistant" ||
+		!isExplicitHostAbort(current) ||
+		!Array.isArray(current.content) ||
+		current.content.length !== 0
+	) {
+		return undefined;
+	}
+	const adjacentResult = toolResult(messages[abortIndex - 1]);
+	const previous = messages[abortIndex - (adjacentResult ? 2 : 1)];
+	if (
+		!isRecord(previous) ||
+		previous.role !== "assistant" ||
+		assistantTerminalState(previous) !== undefined ||
+		!Array.isArray(previous.content)
+	) {
+		return undefined;
+	}
+	for (let index = previous.content.length - 1; index >= 0; index -= 1) {
+		const call = toolCall(previous.content[index]);
+		if (call) {
+			if (call.name !== "bash") return undefined;
+			return !adjacentResult || (adjacentResult.id === call.id && adjacentResult.result.isError === true)
+				? call
+				: undefined;
+		}
+		if (hasVisibleText(previous.content[index]) || hasVisibleThinking(previous.content[index])) return undefined;
+	}
+	return undefined;
+}
+
 /**
  * Derive display-only Retrieval Groups from the current model-visible message order.
  * Tool results are transparent; visible Thinking runs, prose, user-visible context,
@@ -135,6 +187,11 @@ export function planRetrievalGroups(
 	for (const message of messages) {
 		const parsed = toolResult(message);
 		if (parsed) results.set(parsed.id, parsed.result);
+	}
+	const hostCancelledBash = new Set<string>();
+	for (let index = 1; index < messages.length; index += 1) {
+		const call = directBashCancelledByHostAbort(messages, index);
+		if (call) hostCancelledBash.add(call.id);
 	}
 
 	const groups: PlannedRetrievalGroup[] = [];
@@ -177,10 +234,10 @@ export function planRetrievalGroups(
 			const call = toolCall(block);
 			if (!call) continue;
 			const result = results.get(call.id);
-			const member = {
-				...call,
-				...(result ? { result } : terminalState ? { terminalState } : {}),
-			};
+			const settledState = hostCancelledBash.has(call.id) ? "cancelled" : result ? undefined : terminalState;
+			const member: PlannedToolActivityMember = { ...call };
+			if (result) Object.assign(member, { result });
+			if (settledState) Object.assign(member, { terminalState: settledState });
 			const disposition = classifyInvocation(call.name, call.args);
 			if (disposition === "boundary") {
 				appendStandalone(member);

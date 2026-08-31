@@ -31,6 +31,7 @@ function setup(
 		error?: string;
 		copyText?: (text: string) => Promise<void>;
 		onFork?: (exchange: BtwExchange, signal: AbortSignal) => Promise<void>;
+		theme?: Theme;
 	} = {},
 ) {
 	let closeCount = 0;
@@ -45,7 +46,7 @@ function setup(
 	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
 	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const controller = new BtwDialogController(
-		theme,
+		options.theme ?? theme,
 		tui as never,
 		keybindings,
 		Object.assign(
@@ -95,6 +96,26 @@ test("matches Claude Code's direct question surface without extra sections or st
 	}
 	expect(output).not.toContain("╭");
 	controller.dispose();
+});
+
+test("shows an empty /btw history as neutral guidance", () => {
+	const colors: Array<{ color: string; text: string }> = [];
+	// SAFETY: this deterministic fixture implements every Theme member exercised by the BTW renderer.
+	const result = setup({
+		theme: {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as Theme,
+	});
+	const output = result.controller.render(80).join("\n");
+	expect(output).toContain("Ask a question with /btw <question>.");
+	expect(output).not.toContain("No previous /btw exchange");
+	expect(colors).toContainEqual({ color: "muted", text: "Ask a question with /btw <question>." });
+	expect(colors).not.toContainEqual({ color: "error", text: "Ask a question with /btw <question>." });
+	result.controller.dispose();
 });
 
 test("streams in place, then renders the final Markdown answer and copy action", async () => {
@@ -293,6 +314,8 @@ test("accepts both PageUp and b for page scrolling", () => {
 		});
 		result.terminal.rows = 12;
 		const tail = result.controller.render(64).join("\n");
+		expect(tail).toContain("b/Space page");
+		expect(tail).not.toContain("PgUp/PgDn page");
 		result.controller.handleInput(key);
 		const earlier = result.controller.render(64).join("\n");
 		expect(earlier).not.toBe(tail);

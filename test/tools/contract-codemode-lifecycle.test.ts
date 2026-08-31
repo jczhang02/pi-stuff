@@ -69,6 +69,9 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 		},
 	];
 	runtime.observeEnvelopeResult("codemode", "outer-live", { operations });
+	expect(runtime.resolveGroup("nested-live")).toMatchObject({ state: "success" });
+	expect(runtime.groupActivities("nested-live")[0]).toMatchObject({ state: "success" });
+	expect(runtime.toolActivityDetail("nested-live", "formatted")?.activity).toMatchObject({ state: "success" });
 	const settled = envelope.renderResult?.(
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
@@ -93,7 +96,7 @@ test("envelope terminal operations without results keep their explicit outcome",
 	runtime.observeEnvelopeResult("codemode", "outer", { operations });
 
 	expect(runtime.resolveGroup("nested-success")).toMatchObject({ state: "success" });
-	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "warning" });
+	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "rejected" });
 });
 
 test("a settled envelope restores nested Tools to the outer call's source order", () => {
@@ -150,10 +153,15 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 		for (const name of ["read", "edit", "bash"]) runtime.markRendererAttached(name);
 	};
 	const calls = [
-		{ id: "read-before", name: "read", arguments: { value: "a.ts" } },
+		{ id: "read-before", name: "read", arguments: { path: "a.ts", value: "a.ts" } },
+		{
+			id: "skill",
+			name: "read",
+			arguments: { path: "skills/demo/SKILL.md", value: "skills/demo/SKILL.md" },
+		},
 		{ id: "bash-read", name: "bash", arguments: { command: "cat a.ts", value: "cat a.ts" } },
 		{ id: "edit", name: "edit", arguments: { value: "a.ts" } },
-		{ id: "read-after", name: "read", arguments: { value: "b.ts" } },
+		{ id: "read-after", name: "read", arguments: { path: "b.ts", value: "b.ts" } },
 	] as const;
 	const persisted = [
 		assistant(...calls.map((entry) => ({ ...entry, type: "toolCall" }))),
@@ -196,12 +204,11 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 		true,
 	);
 
-	const groupActivityNames = (runtime: ToolUiRuntime) =>
-		runtime.listGroups().map((group) => runtime.groupActivities(group.id).map((activity) => activity.name));
-	const expected = [["read"], ["edit"], ["bash"], ["read"]];
-	expect(groupActivityNames(rebuilt)).toEqual(expected);
-	expect(groupActivityNames(streaming)).toEqual(expected);
-	expect(groupActivityNames(codeMode)).toEqual(expected);
+	const groupMemberIds = (runtime: ToolUiRuntime) => runtime.listGroups().map((group) => group.memberIds);
+	const expected = [["read-after"], ["edit"], ["bash-read"], ["skill"], ["read-before"]];
+	expect(groupMemberIds(rebuilt)).toEqual(expected);
+	expect(groupMemberIds(streaming)).toEqual(expected);
+	expect(groupMemberIds(codeMode)).toEqual(expected);
 });
 
 test("the Code Mode surface hides every active Suite Tool without changing the virtual active Tool set", () => {
@@ -240,6 +247,7 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 			activity: {
 				categories: ["search-tool"],
 				classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+				silentSuccess: true,
 			},
 		},
 	);
@@ -257,6 +265,11 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 	const context = renderContext(state, { value: "" }, { toolCallId: "search-1" });
 	const callComponent = searchTool.renderCall?.(args, theme, context);
 	if (!callComponent) throw new Error("missing tool_search call component");
+	expect(renderLines(callComponent)).toEqual([]);
+	searchTool.renderCall?.(args, theme, { ...context, expanded: true });
+	expect(renderLines(callComponent).join("\n")).toContain("Tool Search");
+	searchTool.renderCall?.(args, theme, context);
+	expect(renderLines(callComponent)).toEqual([]);
 	const resultComponent = searchTool.renderResult?.(
 		{
 			content: [{ type: "text", text: '{"results":[{"path":"tools.read"}],"definitions":["LARGE"]}' }],

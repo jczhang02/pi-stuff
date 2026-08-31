@@ -1,3 +1,4 @@
+import { basename, dirname, resolve } from "node:path";
 import type { ToolCall } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../shared/runtime-type.js";
@@ -79,7 +80,7 @@ export interface ToolActivityMetadata<TArgs extends object, TDetails> {
 	/** Every semantic category this Tool may contribute. Empty is valid only for declared infrastructure. */
 	readonly categories: readonly ToolActivityCategory[];
 	readonly classify: (input: ToolActivityClassifierInput<TArgs, TDetails>) => readonly ToolActivityItem[];
-	/** Successful calls intentionally contribute no compact clause. */
+	/** Calls stay out of the compact transcript while running and after success; issues remain visible. */
 	readonly silentSuccess?: boolean;
 	/** Optional semantic description for an exceptional result. */
 	readonly summarizeIssue?: (
@@ -94,6 +95,15 @@ export function activityKey(...parts: readonly unknown[]): string {
 		.map((part) => oneLine(isRuntimeString(part) ? part : (JSON.stringify(part) ?? "")))
 		.filter(Boolean)
 		.join("\u0000");
+}
+
+export function skillReadName(cwd: string, args: ToolArguments): string | undefined {
+	const path = args["path"];
+	if (!isRuntimeString(path) || !path.trim()) return undefined;
+	const resolved = resolve(cwd, path);
+	if (basename(resolved) !== "SKILL.md") return undefined;
+	const parent = dirname(resolved);
+	return basename(parent) || parent;
 }
 
 /** Keep live targets glanceable without exposing a complete deep path. */

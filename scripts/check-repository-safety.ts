@@ -109,7 +109,7 @@ const ALLOWED_INTERNAL_DEPENDENCIES: InternalDependencyTable = {
 	todo: new Set(SHARED_MODULE_DEPENDENCIES),
 	btw: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
 	notification: new Set(SHARED_MODULE_DEPENDENCIES),
-	"code-mode": new Set(SHARED_MODULE_DEPENDENCIES),
+	"code-mode": new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
 };
 export interface SafetyFinding {
 	path: string;

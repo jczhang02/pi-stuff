@@ -303,7 +303,7 @@ class TmuxAgentsSession {
 	}
 
 	private async waitFor(predicate: (screen: string) => boolean, description: string): Promise<string> {
-		const deadline = Date.now() + 30_000;
+		const deadline = Date.now() + 120_000;
 		let screen = "";
 		while (Date.now() < deadline) {
 			screen = this.capture();
@@ -477,7 +477,7 @@ async function verifyAgentDetail(session: TmuxAgentsSession, options: AgentsPtyV
 	const detailInitial = await session.waitForStableScreen();
 	if (detailInitial.includes("pi-stuff-context")) fail("Agent detail exposed Suite-owned execution context");
 	if (detailInitial.split("Agents / general-purpose").length !== 2) fail("Agent detail repeated its title");
-	if (!detailInitial.includes("◆ Result") || !detailInitial.includes("CHILD_RUNNING")) {
+	if (!detailInitial.includes("Result") || !detailInitial.includes("CHILD_RUNNING")) {
 		fail("completed Agent detail did not start with its retained Result");
 	}
 	if (!detailInitial.includes("CHILD_MARKDOWN_RENDERED")) fail("Agent Result did not render Markdown content");

@@ -8,8 +8,8 @@ turn. In the full Suite, its Fleetview roster is the bottommost tail of Pi Stuff
 controls replace the latest-Prompt row in place instead of moving the roster. Agent details open in Pi Stuff's shared
 full-width Command Dialog.
 
-The public `subagent` Tool uses the internal Tool Display contract, so its running and terminal row follows the same
-compact grammar as Host Tools. Full Agent inspection and control remains in `/agents`.
+The public `subagent` Tool uses an Agent Lifecycle Row through the internal Tool Display contract. It never uses the
+Operation Block `Tool(identity)` plus `⎿` grammar. Full live Agent inspection and control remains in `/agents`.
 
 `extension/index.ts` is the Host composition root. `extension/public-agent-execution.ts` owns the governed public
 launch transaction, `extension/runtime-events.ts` owns current-Session event filtering and teardown, and
@@ -76,9 +76,10 @@ single-column `/agents` layout, terminal-width fitting, and scroll metrics.
   Tools also fail launch preflight if their selectors are unresolved or the target `cwd` would change the advertised
   Tool names, so delegation never silently starts with a different external capability contract. An inherited
   capability ceiling may still explicitly deny every extension, including otherwise valid MCP Tools.
-- The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
-  executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
-  background work is never mislabeled as completed.
+- The Tool row names the operation that actually occurred: background launches say `launched`, foreground executions
+  say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Foreground identity is
+  `Agent <name> · <task> · <state>` with a useful duration from one second onward; expansion lists each member and adds
+  bounded result evidence for foreground work. Starting background work is never mislabeled as completed.
 - Each delegated item carries a short, caller-provided `description` for terminal surfaces and a separate full `task`
   for execution. Existing task-only callers remain compatible through a bounded local fallback; no extra model call is
   made to name legacy work.
@@ -192,7 +193,8 @@ rows. An empty list keeps key-help and close hints but omits selection and detai
 The accepted Agent Command Dialog redesign is recorded in the
 [Agent activity UI reference](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).
 It was implemented on 2026-08-18. `/agents` remains single-column at every width and keeps the Agent name as its primary
-identity. Detail uses `◆ Task`, an optional outcome section, and `◆ Activity` without nested content indentation.
+identity. Detail uses `Task`, an optional outcome section, and `Activity` as semantic headings without icons or nested
+content indentation.
 Agent messages and retained outcomes reuse Pi's Markdown component; Tool output remains literal terminal text.
 Activity preserves relevant event order while bounding expanded Tool previews and reporting omitted lines. Lifecycle
 icons, Pi-configured selection actions, Ctrl+P/Ctrl+N and `b`/Space read-only aliases, Home/End, contextual `?` help,

@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 9cb9798f7d1fdf4d32284c54893584b8b838adc2ac5fbaec8d0599d92ed301c1 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 1cc8ca2fb4daca1df824d4b6b869cb076c68353100354c996ee7b6f5d7e7108b -->
 
 ---
 version: alpha
@@ -15,7 +15,7 @@ omitted:
     reason: 目前的组件 token 格式面向 CSS，无法准确描述 Pi TUI 的行为。
 spacing:
   dialog-gutter-cells: 2
-  section-icon-cells: 1
+  section-leading-blank-rows: 1
   internal-divider-cells: 1
 ---
 
@@ -74,7 +74,7 @@ Escape 返回路径，然后才考虑次要数量、描述、提示和周围条�
 
 终端变窄时，按以下顺序删减信息：装饰性文案、数量与时间、可选描述、目标与预览，最后是次要元数据。
 无论多窄，都要保留主要身份、有意义的摘要、生命周期状态、当前选中的操作和返回方式。文字换行不能增加
-额外缩进，也不能在续行中重复板块图标。
+额外缩进，也不能在续行中重复板块标题。
 
 宽屏双栏仍然是一块 Dialog 区域。顶部结构线必须贯穿完整宽度，中间只用一条竖线分隔导航和详情。它
 不能看起来像两张并排的卡片。只有需要在同级条目与详情之间反复切换的 `/tools` 和 `/tasks` 使用这种
@@ -86,14 +86,15 @@ Escape 返回路径，然后才考虑次要数量、描述、提示和周围条�
 Pi Stuff 使用平面界面。没有阴影、模糊、浮动卡片或装饰性层级。界面的深浅关系来自归属和阅读顺序：
 先是对话，然后是临时聚焦界面、当前选中行，最后是详情。
 
-层级通过一条结构分隔线、克制的间距、语义对比和紧凑板块图标表达。不要给每个板块再套一个框。可滚动的
+层级通过一条结构分隔线、克制的间距、语义对比和紧凑板块标题表达。不要给每个板块再套一个框。可滚动的
 Welcome 身份卡是目前唯一确认可以使用完整边框的例外，因为它属于对话文档，不属于临时 Dialog 系统。
 
 ## 形状
 
 Pi Stuff 的形状语言来自终端，以直线结构为主。Dialog 的结构线使用粗体框线字符；宽屏双栏在一条连续
-的 `━` 顶部粗线下使用一条粗体 `┃` 中间分隔线。板块标题使用紧凑的 `◆` 标记，它不能继续延伸成板块
-正文旁边的轨道。它只出现在标题行，不能表示生命周期状态、焦点或 Conversation Transcript 事件。
+的 `━` 顶部粗线下使用一条粗体 `┃` 中间分隔线。板块标题不使用图标。普通标题使用强调色粗体，Error
+使用错误色粗体，Rejection 与 Cancellation 使用警告色粗体。板块前保留一行空白，正文从下一行开始，
+并与 Dialog 的两格 gutter 对齐。不要增加替代符号、冒号、全大写、下划线或板块边框。
 
 `›` 只表示当前获得焦点、可以选择的行，没有其他含义。生命周期和严重程度使用另外一套单字符安全图标。
 Conversation Transcript 已经确定使用小圆点 `•`，本次保持不变。普通 Goal 生命周期信息通知也使用它作为
@@ -117,6 +118,10 @@ Transcript 记录标记，但完整动作词和语义颜色才表达生命周期
 每行先放可选的 `›`，接着是主要身份或容易理解的摘要，生命周期图标以及低优先级的时间或数量放在后面。
 内容超出可见窗口时，在焦点窗口两侧使用 `… 前面/较新还有 N 项` 和 `… 后面/较旧还有 N 项`。
 
+`/tools` row 依次使用 Tool identity、有界 operation identity、可选且已验证的非状态 evidence，以及明确的
+图标加文字 state。若 `done`、`completed`、`finished`、`running`、`success` 或 `error` 等通用 outcome 只是
+重复该 state，则应省略。
+
 标准选择操作必须通过 Pi 注入的按键管理器处理。Up 和 Down 每次移动一行，只读界面还支持
 Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键盘可用 `b`/Space；Home 和 End
 跳到第一项和最后一项。这些别名只用于自定义只读列表和详情，不能拦截文本输入、Settings 或确认界面的
@@ -124,7 +129,7 @@ Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键�
 
 ### 详情板块
 
-板块标题使用紧凑的 `◆`，例如 `◆ Task`、`◆ Activity`、`◆ Output` 或 `◆ Details`。每个界面根据自己的
+使用 `Task`、`Activity`、`Output` 或 `Details` 等简洁标题，并遵循上述层级规则。每个界面根据自己的
 任务选择板块：`/agents` 围绕 Agent 身份、Task、可选结果和 Activity 组织；`/ctx` 先显示 Context
 占用量；`/diagnostics` 先说明问题；`/tools` 先显示容易理解的 Tool Activity。不要强迫所有 Dialog
 使用同一套字段模板。
@@ -134,6 +139,8 @@ Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键�
 
 相关事件的完整顺序必须保留，但高成本预览要有明确上限，并说明省略了多少内容。原始标识符、参数和协议
 内容应放在用户主动打开的原始数据或调试操作后面，不能进入默认阅读路径。
+`/tools` 的 Formatted 文件修改详情只有在清理 Tool 文本后，才可使用语法与语义 diff 颜色；行号槽保持低
+对比度，Raw 协议详情保持无样式。
 
 ### 宽屏工作检查
 

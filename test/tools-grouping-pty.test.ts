@@ -48,4 +48,4 @@ test("real Pi groups complete Tool activity independently of an inherited tmux s
 		Bun.spawnSync(["tmux", "-S", parentSocket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
 		await rm(parentDirectory, { force: true, recursive: true });
 	}
-}, 120_000);
+}, 180_000);

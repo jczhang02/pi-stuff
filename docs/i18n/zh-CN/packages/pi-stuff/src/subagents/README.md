@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f4c332e8b300a6b267ff009521430b51d30737bbb4802364301a0a0da186df3b -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: f56317d60d6335e65bc646460edcc049a8d6513bd1578572b041c1844bc58fec -->
 
 # Subagents 模块
 
@@ -6,7 +6,7 @@ Pi Stuff 当前会话的前台与后台 Agents。
 
 该能力允许主 Pi Agent 委派隔离工作，并在后台工作运行时继续。后台完成会添加一条持久、紧凑的 TUI 结果，不把子 Agent 报告加入模型上下文，也不启动另一个主轮次。在完整套件中，其 Fleetview 名册是 Pi Stuff 共享页脚最底部的尾部。管理期间，控制会原位替换最新提示词行，而不是移动名册。Agent 详情在 Pi Stuff 共享全宽命令对话框中打开。
 
-公开 `subagent` 工具使用内部工具显示约定，因此其运行中与终态行遵循和宿主工具相同的紧凑语法。完整 Agent 检查与控制仍位于 `/agents`。
+公开 `subagent` Tool 通过内部 Tool Display contract 使用 Agent Lifecycle Row，绝不采用 Operation Block 的 `Tool(identity)` 加 `⎿` grammar。完整 live Agent 检查与控制仍位于 `/agents`。
 
 `extension/index.ts` 是宿主组合根。`extension/public-agent-execution.ts` 负责受治理的公开启动事务，`extension/runtime-events.ts` 负责当前会话事件过滤与拆卸，`extension/completion-handling.ts` 负责持久完成传输和历史会话渲染。
 
@@ -31,7 +31,7 @@ Pi Stuff 不交付 Agent 定义。启动会选择已安装 Pi 软件包、用户
 - 每次公开工具调用有且只有三种互斥形态之一：`agent` 加 `task` 用于单次启动，`tasks` 用于分组并行启动，`action` 用于当前会话控制。混合形态会被拒绝，不猜测要运行哪一种请求。Pi 原生并行工具调用也受支持：同一个 Assistant 响应发出的独立前台调用会作为分离的受治理启动并发运行。
 - 启动默认在后台。省略 `foreground` 可立即继续；当发现必须用于当前回答时设置 `foreground: true`。已废弃的 `background` 字段不接受。
 - 每次主 Agent 运行前，本地发现会用每个可选 Agent 的名称、用途和有效工具许可列表刷新公开工具约定。因此直接 Provider Schema 与代码模式暴露相同当前名册；模型无需猜定义名称或检查 Agent 文件。启动的可选 `cwd` 改变子进程执行位置；Agent 身份仍从公布的父项目名册解析。使用直接 MCP 工具的 Agent 如果选择器未解析，或目标 `cwd` 会改变公布工具名，也会在启动预检失败，确保委派绝不会在不同外部能力约定下静默开始。继承能力上限仍可显式拒绝所有扩展，包括其他情况下有效的 MCP 工具。
-- 稳定工具行描述实际发生的操作：后台启动写 `launched`，前台执行写 `finished`，恢复、引导、停止和状态操作使用各自已确认动词。开始后台工作绝不会误标为已完成。
+- Tool row 描述实际发生的操作：后台启动写 `launched`，前台执行写 `finished`，恢复、引导、停止和状态操作使用各自已确认动词。Foreground identity 是 `Agent <name> · <task> · <state>`，从一秒起显示有意义的 duration；Expanded 列出每个 member，并为 foreground work 增加有界 result evidence。开始后台工作绝不会误标为已完成。
 - 每个委派项携带调用方提供的简短 `description` 用于终端界面，并有独立完整 `task` 用于执行。现有仅 task 调用方通过有界本地回退保持兼容；不会额外调用模型为旧版工作命名。
 - 独立任务可以并发运行。会话级默认值为 20 个运行中 Agent、总计 200 次启动，最大嵌套深度为三层。
 - 当前版本会从未锁定的 v2 前调度器账本导入已证明历史，但不持有其易崩溃目录锁。不支持 v2 前与当前 Pi Stuff 进程针对同一个 Pi 会话并发运行；存在 v2 前锁时，新启动暂停到旧进程退出。紧邻前一当前版本写入的死亡屏障，只有具备进程代际证明时才回收。
@@ -56,7 +56,7 @@ Pi Stuff 不交付 Agent 定义。启动会选择已安装 Pi 软件包、用户
 
 Agent 命令对话框使用套件分隔线和两个单元边距，`›` 标记聚焦自定义行。它在所有宽度下保持单列：列表与详情是顺序模式；额外宽度留给选中 Agent 的任务、结果和 Activity，而不是持久名册栏。操作提示会换行，不会删除关闭或返回键：Escape 关闭 Agent 列表，并从详情或引导/恢复编辑器返回一级。终端高度较小时，选中 Agent 或附加错误和 Escape 路径优先于周边对话记录行。空列表保留按键帮助与关闭提示，但在 Agent 存在前省略选择和详情提示。
 
-已接受的 Agent 命令对话框重新设计记录在 [Agent Activity UI 参考](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign)，并已于 2026-08-18 实现。`/agents` 在所有宽度下保持单列，以 Agent 名称作为主要身份。详情使用 `◆ Task`、可选结果小节和 `◆ Activity`，内容不嵌套缩进。Agent 消息与保留结果复用 Pi Markdown 组件；工具输出保持字面终端文字。Activity 在限制展开工具预览和报告省略行的同时保留相关事件顺序。生命周期图标、Pi 配置的选择操作、Ctrl+P/Ctrl+N 与 `b`/Space 只读别名、Home/End、上下文 `?` 帮助、稳定启动顺序、低高度优先级和完整 Escape/控制路径，均由聚焦测试与真实 PTY 验证器覆盖。
+已接受的 Agent 命令对话框重新设计记录在 [Agent Activity UI 参考](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign)，并已于 2026-08-18 实现。`/agents` 在所有宽度下保持单列，以 Agent 名称作为主要身份。详情使用无图标的 `Task`、可选 outcome section 与 `Activity` semantic heading，内容不嵌套缩进。Agent 消息与保留结果复用 Pi Markdown 组件；工具输出保持字面终端文字。Activity 在限制展开工具预览和报告省略行的同时保留相关事件顺序。生命周期图标、Pi 配置的选择操作、Ctrl+P/Ctrl+N 与 `b`/Space 只读别名、Home/End、上下文 `?` 帮助、稳定启动顺序、低高度优先级和完整 Escape/控制路径，均由聚焦测试与真实 PTY 验证器覆盖。
 
 ## 范围
 

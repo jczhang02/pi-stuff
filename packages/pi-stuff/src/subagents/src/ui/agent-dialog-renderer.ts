@@ -3,7 +3,9 @@ import { type Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "
 import {
 	type CommandDialogViewContext,
 	commandDialogPrimaryKey,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
 } from "../../../conversation-ui/index.js";
@@ -158,6 +160,8 @@ class AgentDialogRenderFrame {
 			if (later > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
 		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
+		const page = commandDialogReadOnlyPageHint(rows.length > window.rows.length);
+		if (page) hints.splice(1, 0, page);
 		const selected = this.listRow();
 		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
 		hints.push("? keys", `${cancel} close`);
@@ -220,6 +224,8 @@ class AgentDialogRenderFrame {
 		if (later > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${later} later`)}`);
 		body.push("");
 		const hints = rows.length > 0 ? [`${up}/${down} select`, `${confirm} details`] : [];
+		const page = commandDialogReadOnlyPageHint(rows.length > window.rows.length);
+		if (page) hints.splice(1, 0, page);
 		hints.push("? keys", `${cancel} back`);
 		const selectedIndex = window.rows.findIndex((row) => row.key === this.state.nestedSelectedKey);
 		return fitCommandDialogRows(
@@ -280,8 +286,6 @@ class AgentDialogRenderFrame {
 		const theme = this.context.theme;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const header = [
 			divider(theme, width),
@@ -296,13 +300,15 @@ class AgentDialogRenderFrame {
 		return this.renderDetailSurface(
 			header,
 			detail.document,
-			(scrollable) =>
-				hintLines(theme, width, [
-					...(scrollable ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
+			(scrollable) => {
+				const page = commandDialogReadOnlyPageHint(scrollable);
+				return hintLines(theme, width, [
+					...(page ? [`${up}/${down} scroll`, page] : []),
 					...(this.hasToolActivity() ? ["t tool details"] : []),
 					"? keys",
 					`${cancel} back`,
-				]),
+				]);
+			},
 			!TERMINAL_STATUSES.has(row.status),
 			[detail.priority ?? stateLine, ...detail.taskLines.slice(0, 1)],
 		);
@@ -314,11 +320,11 @@ class AgentDialogRenderFrame {
 		const activity = this.activityLines(width);
 		return {
 			document: [
-				sectionHeading(this.context.theme, "Task"),
+				commandDialogSectionHeading(this.context.theme, "Task"),
 				...taskLines,
-				...(outcome ? ["", sectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
+				...(outcome ? ["", commandDialogSectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
 				"",
-				sectionHeading(this.context.theme, "Activity"),
+				commandDialogSectionHeading(this.context.theme, "Activity"),
 				...activity,
 			],
 			priority:
@@ -411,10 +417,9 @@ class AgentDialogRenderFrame {
 	private renderDetailFooter(row: AgentRow, width: number, scrollable: boolean): string[] {
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
-		const actions = scrollable ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : [];
+		const page = commandDialogReadOnlyPageHint(scrollable);
+		const actions = page ? [`${up}/${down} scroll`, page] : [];
 		if (row.nestedAgents.length > 0) actions.push("n nested");
 		if (!TERMINAL_STATUSES.has(row.status) && row.status !== "stopping") actions.push("s steer");
 		if (RESUMABLE_STATUSES.has(row.status)) actions.push("r resume");
@@ -470,10 +475,6 @@ function divider(theme: Theme, width: number): string {
 
 function title(theme: Theme, value: string): string {
 	return `${GUTTER}${theme.fg("text", theme.bold(value))}`;
-}
-
-function sectionHeading(theme: Theme, value: string): string {
-	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(value)}`;
 }
 
 function sectionBody(value: string, width: number): string[] {

@@ -10,8 +10,10 @@ import {
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
 	commandDialogReadKeyHelp,
+	commandDialogReadOnlyPageHint,
 	commandDialogRows,
 	commandDialogScrollOffset,
+	commandDialogSectionHeading,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
 	matchesCommandDialogCancel,
@@ -100,10 +102,6 @@ function statusGlyph(status: string): string {
 	if (status === "failed") return "×";
 	if (status === "paused" || status === "stopped") return "■";
 	return "●";
-}
-
-function sectionHeading(theme: Theme, label: string): string {
-	return `${theme.fg("accent", "◆")} ${theme.bold(label)}`;
 }
 
 function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
@@ -370,12 +368,18 @@ class TasksDialogComponent implements CommandDialogComponent {
 			"? keys",
 			`${cancel} close`,
 		];
-		const footer = hint(theme, width, baseHints);
+		let footer = hint(theme, width, baseHints);
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
 			: commandDialogRows(this.context);
 		const preferred = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		const page = commandDialogReadOnlyPageHint(this.rows.length > viewport);
+		if (page) {
+			baseHints.splice(1, 0, page);
+			footer = hint(theme, width, baseHints);
+			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		}
 		this.lastListViewportRows = Math.max(1, viewport);
 		const selectedIndex = Math.max(
 			0,
@@ -414,8 +418,6 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const theme = this.context.theme;
 		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
 		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
-		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
-		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
 		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
@@ -430,9 +432,10 @@ class TasksDialogComponent implements CommandDialogComponent {
 		]);
 		let fixedRows = 7 + footer.length + (this.note ? 1 : 0);
 		if (document.length > Math.max(0, maximum - fixedRows)) {
+			const page = commandDialogReadOnlyPageHint(true);
 			footer = hint(theme, width, [
 				`${up}/${down} scroll`,
-				`${pageUp}/${pageDown} page`,
+				...(page ? [page] : []),
 				...(this.isSplit() ? ["Tab pane"] : []),
 				...(row.status !== "stopping" ? ["x stop"] : []),
 				"? keys",
@@ -468,10 +471,10 @@ class TasksDialogComponent implements CommandDialogComponent {
 		const wrap = (value: string) => value.split(/\r?\n/gu).flatMap((line) => wrapTextWithAnsi(line || " ", width));
 		if (row.kind === "shell") {
 			return [
-				sectionHeading(this.context.theme, "Command"),
+				commandDialogSectionHeading(this.context.theme, "Command", ""),
 				...wrap(row.command ?? "Command unavailable."),
 				"",
-				sectionHeading(this.context.theme, "Output"),
+				commandDialogSectionHeading(this.context.theme, "Output", ""),
 				...wrap(row.output ?? "No output yet."),
 			];
 		}
@@ -486,13 +489,13 @@ class TasksDialogComponent implements CommandDialogComponent {
 			...(row.monitorTimeoutSeconds !== undefined ? [`timeout ${String(row.monitorTimeoutSeconds)}s`] : []),
 		];
 		return [
-			sectionHeading(this.context.theme, "Source"),
+			commandDialogSectionHeading(this.context.theme, "Source", ""),
 			...wrap(source),
 			"",
-			sectionHeading(this.context.theme, "Condition"),
+			commandDialogSectionHeading(this.context.theme, "Condition", ""),
 			...wrap(conditions.join(" · ") || "No completion text; any successful probe completes the monitor."),
 			"",
-			sectionHeading(this.context.theme, "Latest evidence"),
+			commandDialogSectionHeading(this.context.theme, "Latest evidence", ""),
 			...wrap(row.output ?? "No evidence yet."),
 		];
 	}

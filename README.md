@@ -196,6 +196,21 @@ Compatibility with other Pi builds is not claimed. A Pi upgrade is a coordinated
 pinned Host source profile, development types, and public-seam acceptance checks together. See the full
 [`compatibility contract`](docs/compatibility.md).
 
+## Benchmark evidence
+
+A preregistered local timing study ran 12 Terminal-Bench 2.1 tasks twice with Pi Stuff Code Mode off and twice with it
+on (48 trials total). Arithmetic mean whole-trial latency was 602.6 seconds with Code Mode off and 535.4 seconds with
+it on; the estimated Code Mode effect was inconclusive. Agent/provider trajectories and long-tail timeouts dominated
+the observed runtime, while cold Pi module import averaged 40.5 seconds in fresh benchmark containers. The public
+Codex comparison is descriptive because it was not a matched task-and-environment A/B test.
+
+| Artifact | Purpose |
+| --- | --- |
+| [Research report](docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) · [简体中文](docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) | Method, results, limitations, and root-cause analysis |
+| [Sanitized results](docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json) | Per-trial evidence, summary statistics, and retained-artifact hashes |
+| [Frozen protocol](docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json) | Preregistered tasks, arms, execution caps, and analysis rules |
+| [Frozen source manifest snapshot](docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json) | Byte-exact task population referenced by the protocol and result hash; historical adapter fields are provenance, not runnable configuration |
+
 ## Development
 
 Install the frozen dependency graph and run the complete repository check:

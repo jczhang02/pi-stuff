@@ -115,6 +115,31 @@ describe("file and log Monitor", () => {
 		await state.runtime.shutdown();
 	});
 
+	test("treats an expected missing file or log as pending evidence", async () => {
+		for (const source of ["file", "log"] as const) {
+			const state = setup();
+			const started = await startMonitor(
+				state.runtime,
+				{
+					intervalSeconds: 0.1,
+					source,
+					target: join(state.root, `missing.${source}`),
+					timeoutSeconds: 3,
+				},
+				state.context,
+			);
+			await waitUntil(
+				() =>
+					state.runtime.snapshot().find((item) => item.id === started.id)?.recentOutput ===
+					`Waiting for ${source} to appear.`,
+			);
+			expect(state.runtime.snapshot().find((item) => item.id === started.id)?.status).toBe("running");
+			expect(state.messages).toHaveLength(0);
+			await state.runtime.stop(started.id);
+			await state.runtime.shutdown();
+		}
+	});
+
 	test("ignores pre-existing log text by default", async () => {
 		const state = setup();
 		const path = join(state.root, "service.log");
