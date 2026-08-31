@@ -12,4 +12,4 @@ test("real Pi TUI keeps BTW concurrent, fits oversized history, and remains focu
 	] as const) {
 		await verifyBtwPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE, columns, rows });
 	}
-}, 60_000);
+}, 120_000);

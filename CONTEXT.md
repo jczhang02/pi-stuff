@@ -71,6 +71,11 @@ _Avoid_: console warning, transcript message, notification log
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file
 
+**Skill Discovery**:
+The Host-owned model-context catalog of enabled, model-invocable Skills, exposing each name, description, and location
+so an Agent can choose and read a matching Skill. It advertises Skill metadata rather than eagerly reading Skill bodies.
+_Avoid_: Skill search, eager Skill loading
+
 **RTK Runtime**:
 The separately installed, certified RTK executable whose CLI owns RTK command rewriting and output optimization. The
 Suite adapts the Host to it without duplicating its rewrite registry or installation lifecycle.

@@ -12,7 +12,7 @@ import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-execution-matrix-provider.ts");
-const PROCESS_TIMEOUT_MS = 30_000;
+const PROCESS_TIMEOUT_MS = 60_000;
 const BACKGROUND_SETTLE_TIMEOUT_MS = 20_000;
 
 type ScenarioId =

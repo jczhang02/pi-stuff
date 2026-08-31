@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 2d8ed347c13976733a63943eb2d549a703ac40f9112a74167bd1391f141a60d9 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: fa79c3a1e41ead8fe8b75c1f3acd44b149cf1074b0e747473792b89d6abb35b6 -->
 
 # 报告
 
@@ -9,6 +9,22 @@
 ## 保留报告
 
 - [Terminal-Bench 2.1 Pi Stuff 延迟对比](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
+- [Skill Discovery 启动边界真实模型确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)——
+  Raw/off/on 各 30/30，通过预注册的 non-inferiority gate；30 个 Code Mode Session 全部直接使用选中 Skill，
+  timeout 与 safety violation 均为零；方法与解释见其
+  [预注册](../../../../../docs/research/skill-discovery-startup-bounded-confirmation-20260830.md)
+- [Skill Discovery 隔离真实模型确认](../../../../../docs/reports/skill-discovery-isolated-confirmation-20260830.json)——
+  保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但 4 个 Suite
+  Session 在 Provider 请求前超时；解释见其
+  [预注册](../../../../../docs/research/skill-discovery-isolated-confirmation-20260830.md)
+- [Skill Discovery direct-read 真实模型研究](../../../../../docs/reports/skill-discovery-direct-read-20260830.json)——
+  保留的 hard gate 失败研究；完成的 29 个 Code Mode Session 全部通过 direct Skill use，但一个匹配的
+  off/on pair 在 Provider 请求前超时；解释见其
+  [预注册](../../../../../docs/research/skill-discovery-direct-read-20260830.md)
+- [Skill Discovery 真实模型 confirmation](../../../../../docs/reports/skill-discovery-confirmation-20260830.json)——
+  保留的 behavioral gate 失败研究；解释见其[预注册](../../../../../docs/research/skill-discovery-confirmation-20260830.md)
+- [Skill Discovery 真实模型 benchmark](../../../../../docs/reports/skill-discovery-benchmark-20260830.json)——保留的
+  instrumentation failure 研究；解释见其[预注册](../../../../../docs/research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)及其保留的[截图](../../../../../docs/reports/assets/pi-stuff-0.3.0/)
 - [单软件包迁移](single-package-migration.md)

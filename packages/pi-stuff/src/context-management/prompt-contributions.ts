@@ -10,6 +10,8 @@ import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 const PROMPT_CONTRIBUTION_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/prompt-contributions/v1");
 const CONTRIBUTION_ID = /^[a-z][a-z0-9-]*$/u;
 
+export type ContextPromptHost = Pick<ExtensionAPI, "events">;
+
 export interface ContextPromptContributor {
 	readonly id: string;
 	readonly order?: number;
@@ -58,11 +60,11 @@ function registry(): ContextPromptContributionRegistry {
 	return root[PROMPT_CONTRIBUTION_REGISTRY];
 }
 
-function ownerKey(pi: ExtensionAPI): object {
+function ownerKey(pi: ContextPromptHost): object {
 	return isRuntimeObject(pi.events) && pi.events !== null ? pi.events : pi;
 }
 
-function contributors(pi: ExtensionAPI): RegisteredContributor[] {
+function contributors(pi: ContextPromptHost): RegisteredContributor[] {
 	return [...(registry().hosts.get(ownerKey(pi))?.values() ?? [])].sort((left, right) => {
 		const order = (left.contributor.order ?? 0) - (right.contributor.order ?? 0);
 		return order || left.contributor.id.localeCompare(right.contributor.id);
@@ -100,7 +102,10 @@ function appendBlock(prompt: string, id: string, body: string | undefined): stri
 	return `${stripped}${stripped ? "\n\n" : ""}${start}\n${body.trim()}\n${end}`;
 }
 
-export function registerContextPromptContributor(pi: ExtensionAPI, contributor: ContextPromptContributor): () => void {
+export function registerContextPromptContributor(
+	pi: ContextPromptHost,
+	contributor: ContextPromptContributor,
+): () => void {
 	if (!CONTRIBUTION_ID.test(contributor.id))
 		throw new Error(`Invalid Context prompt contributor id: ${contributor.id}`);
 	const key = ownerKey(pi);
@@ -119,14 +124,14 @@ export function registerContextPromptContributor(pi: ExtensionAPI, contributor: 
 	};
 }
 
-export function stripContextPromptContributions(pi: ExtensionAPI, prompt: string): string {
+export function stripContextPromptContributions(pi: ContextPromptHost, prompt: string): string {
 	let result = prompt;
 	for (const registered of contributors(pi)) result = stripBlock(result, registered.contributor.id);
 	return result;
 }
 
 async function renderAgentPrompt(
-	pi: ExtensionAPI,
+	pi: ContextPromptHost,
 	event: BeforeAgentStartEvent,
 	ctx: ExtensionContext,
 ): Promise<string> {
@@ -139,7 +144,7 @@ async function renderAgentPrompt(
 }
 
 export async function applyContextPromptContributions(
-	pi: ExtensionAPI,
+	pi: ContextPromptHost,
 	event: BeforeAgentStartEvent,
 	ctx: ExtensionContext,
 ): Promise<BeforeAgentStartEventResult | undefined> {
@@ -239,7 +244,7 @@ function rewriteProviderPayload<Payload>(
 }
 
 export async function applyContextPromptContributionsToProvider<Payload>(
-	pi: ExtensionAPI,
+	pi: ContextPromptHost,
 	payload: Payload,
 	ctx: ExtensionContext,
 ): Promise<ProviderPromptProjection<Payload>> {

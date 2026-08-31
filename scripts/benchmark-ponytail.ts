@@ -497,7 +497,7 @@ async function runCase(benchmarkRoot: string, run: BenchmarkRun, sequence: numbe
 	const before = await snapshotBenchmarkFiles(project, benchmarkInventoryFiles(project, inventory));
 	const rpc = new PonytailBenchmarkRpc(project, sessions, runtime, temporary, observerLog);
 	try {
-		const state = (await rpc.command({ type: "get_state" }))["data"];
+		const state = (await rpc.getInitialState())["data"];
 		const commandResponse = (await rpc.command({ type: "get_commands" }))["data"];
 		await rpc.command({ type: "prompt", message: `/ponytail ${run["mode"]}` });
 		await rpc.promptAndSettle(scenario.prompt);

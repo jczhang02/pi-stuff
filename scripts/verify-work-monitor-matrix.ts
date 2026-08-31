@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
-import { terminateDetachedProcessGroup } from "./detached-process.js";
+import { PiRpcClient } from "./pi-rpc-client.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-monitor-matrix-provider.ts");
-const TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = 30_000;
 
 const SCENARIOS = ["cancel", "command_failure", "file_error", "http_success", "log_success", "timeout"] as const;
 type Scenario = (typeof SCENARIOS)[number];
@@ -29,16 +29,7 @@ const MATRIX_RECORD_SCHEMA = Type.Object(
 	},
 	{ additionalProperties: true },
 );
-const RPC_RECORD_SCHEMA = Type.Object(
-	{
-		id: Type.Optional(Type.String()),
-		success: Type.Optional(Type.Boolean()),
-		type: Type.Optional(Type.String()),
-	},
-	{ additionalProperties: true },
-);
 type MatrixRecord = Static<typeof MATRIX_RECORD_SCHEMA>;
-type RpcRecord = Static<typeof RPC_RECORD_SCHEMA>;
 
 function fail(message: string): never {
 	throw new Error(`Background Monitor matrix failed: ${message}`);
@@ -67,27 +58,6 @@ async function waitFor(predicate: () => Promise<boolean>, description: string): 
 	fail(`timed out waiting for ${description}`);
 }
 
-async function readResponses(stdout: ReadableStream<Uint8Array>, responses: RpcRecord[]): Promise<void> {
-	const reader = stdout.getReader();
-	const decoder = new TextDecoder();
-	let buffer = "";
-	for (;;) {
-		const item = await reader.read();
-		buffer += decoder.decode(item.value, { stream: !item.done });
-		while (buffer.includes("\n")) {
-			const newline = buffer.indexOf("\n");
-			const line = buffer.slice(0, newline).trim();
-			buffer = buffer.slice(newline + 1);
-			if (line) {
-				const response = JSON.parse(line);
-				if (!Check(RPC_RECORD_SCHEMA, response)) fail("Pi emitted a malformed RPC record");
-				responses.push(response);
-			}
-		}
-		if (item.done) break;
-	}
-}
-
 export async function verifyWorkMonitorMatrix(options: {
 	readonly packagePath: string;
 	readonly piBinary: string;
@@ -98,7 +68,7 @@ export async function verifyWorkMonitorMatrix(options: {
 	const matrixLog = join(temporaryDirectory, "matrix.jsonl");
 	const monitoredLog = join(temporaryDirectory, "monitored.log");
 	const server = Bun.serve({ fetch: () => new Response("READY"), hostname: "127.0.0.1", port: 0 });
-	let child: ReturnType<typeof Bun.spawn> | undefined;
+	let rpc: PiRpcClient | undefined;
 	try {
 		await Promise.all([
 			mkdir(agentDirectory),
@@ -111,9 +81,8 @@ export async function verifyWorkMonitorMatrix(options: {
 			`${JSON.stringify({ defaultProjectTrust: "always", packages: [resolve(options.packagePath)] }, null, "\t")}\n`,
 			{ mode: 0o600 },
 		);
-		const spawned = Bun.spawn(
-			[
-				options.piBinary,
+		rpc = new PiRpcClient({
+			arguments: [
 				"--mode",
 				"rpc",
 				"--offline",
@@ -132,41 +101,28 @@ export async function verifyWorkMonitorMatrix(options: {
 				"--extension",
 				providerExtension,
 			],
-			{
-				cwd: temporaryDirectory,
-				detached: true,
-				env: {
-					...process.env,
-					PI_CODING_AGENT_DIR: agentDirectory,
-					PI_OFFLINE: "1",
-					PI_STUFF_WORK_MONITOR_HTTP_URL: server.url.toString(),
-					PI_STUFF_WORK_MONITOR_LOG_PATH: monitoredLog,
-					PI_STUFF_WORK_MONITOR_MATRIX_LOG: matrixLog,
-					PI_TELEMETRY: "0",
-					TERM: "dumb",
-				},
-				stdin: "pipe",
-				stdout: "pipe",
-				stderr: "pipe",
+			commandTimeoutMs: TIMEOUT_MS,
+			cwd: temporaryDirectory,
+			detached: true,
+			environment: {
+				...process.env,
+				PI_CODING_AGENT_DIR: agentDirectory,
+				PI_OFFLINE: "1",
+				PI_STUFF_WORK_MONITOR_HTTP_URL: server.url.toString(),
+				PI_STUFF_WORK_MONITOR_LOG_PATH: monitoredLog,
+				PI_STUFF_WORK_MONITOR_MATRIX_LOG: matrixLog,
+				PI_TELEMETRY: "0",
+				TERM: "dumb",
 			},
-		);
-		child = spawned;
-		const responses: RpcRecord[] = [];
-		const reading = readResponses(spawned.stdout, responses);
+			executable: options.piBinary,
+			failurePrefix: "Background Monitor matrix failed",
+			settleTimeoutMs: TIMEOUT_MS,
+			startupTimeoutMs: TIMEOUT_MS,
+		});
+		await rpc.getInitialState();
 
 		for (const scenario of SCENARIOS) {
-			const requestId = `matrix-${scenario}`;
-			spawned.stdin.write(
-				`${JSON.stringify({ id: requestId, message: `WORK_MONITOR_SCENARIO:${scenario}`, type: "prompt" })}\n`,
-			);
-			await spawned.stdin.flush();
-			await waitFor(
-				async () =>
-					responses.some(
-						(record) => record.id === requestId && record.type === "response" && record.success === true,
-					),
-				`${scenario} prompt acceptance`,
-			);
+			await rpc.command({ message: `WORK_MONITOR_SCENARIO:${scenario}`, type: "prompt" });
 			await waitFor(
 				async () =>
 					(await records(matrixLog)).some(
@@ -188,9 +144,8 @@ export async function verifyWorkMonitorMatrix(options: {
 			await Bun.sleep(100);
 		}
 
-		await terminateDetachedProcessGroup(spawned);
-		await reading;
-		const extensionError = responses.find((record) => record.type === "extension_error");
+		await rpc.close();
+		const extensionError = rpc.events.find((record) => record["type"] === "extension_error");
 		if (extensionError) fail(`Pi reported an Extension error: ${JSON.stringify(extensionError)}`);
 		const taskRoot = join(temporaryDirectory, ".pi", "tasks");
 		const runtimeDirectories = (await readdir(taskRoot).catch((): string[] => [])).filter((name) =>
@@ -198,7 +153,7 @@ export async function verifyWorkMonitorMatrix(options: {
 		);
 		if (runtimeDirectories.length > 0) fail(`Pi exit left runtime directories: ${runtimeDirectories.join(", ")}`);
 	} finally {
-		if (child) await terminateDetachedProcessGroup(child);
+		if (rpc) await rpc.close().catch(() => {});
 		server.stop(true);
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 4286d40ca5163115fa12bbe6d774750854fd3ada18367080a8a3c26e7ab58416 -->
+<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 15684360dfb8f3dbd5075c7398c71dfea0de5d8f46a2d02e08c835fea11b8265 -->
 
 ---
 status: accepted
@@ -24,6 +24,13 @@ ADR 0005 证明：一个本地执行封装可以保留 Pi 工具行为和 UI，�
 - 后续注册或激活的工具会自动隐藏，无需逐工具路由声明。
 
 代码模式关闭时，Pi 会得到完全相同的原始工具列表和顺序。代码模式只改变可见性。它不会赋予工具新的权限、绕过其校验，也不会判断其副作用能否安全重试。
+
+工具虚拟化不得削弱由 Host 拥有的 Skill Discovery。当 `read` 在代码模式的虚拟 Tool 集中仍保持 active，且
+Host 为一次 Agent 启动提供 Skill Discovery 输入时，Provider prompt 必须接收与直接模式相同、由 Host 加载且
+允许模型调用的 Skill 名称、描述和位置。后续 provider-only continuation 可以复用该 Host snapshot。从未收到
+Host snapshot 的 provider-only 自动首轮会 fail open，而不会重新发现 Skill 或依赖 Host 内部实现。代码模式
+通过 Context Management 与 Pi 的公开 formatter 适配该目录；它不暴露顶层 `read`，也不改变 `--no-skills`、
+resource enablement、`disable-model-invocation`、显式 `/skill` 或 custom-prompt 行为。
 
 ### 配置和对话框
 
@@ -116,6 +123,8 @@ RTK 仍然有用。代码模式移除 Provider 可见工具 Schema 和中间编�
 ## 后果
 
 - 开启代码模式时，软件包负责的工具 Schema 会离开 Provider 界面，同时不改变工具权限、校验、生命周期或可见结果。
+- 只要虚拟 Read 仍保持 active，完整封装就会从 Host 提供的 Skill snapshot 保留由 Host 拥有的 Skill
+  Discovery；只有调用路径变为嵌套 `tools.read`。
 - 套件为直接调用和嵌套调用维护一个活跃工具目录与一个调用接缝。
 - 项目覆盖保持隔离，而一个 Pi 可见的全局默认值避免逐项目重复选择。
 - 持久批准与恢复状态可防止自动重复含糊的副作用。
