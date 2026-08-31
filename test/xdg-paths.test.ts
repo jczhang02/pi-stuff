@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { getCodeModeHostCachePath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
-import { resolveUiSettingsLockPath } from "../packages/pi-stuff/src/conversation-ui/settings.js";
+import { resolveSettingsLockPath } from "../packages/pi-stuff/src/shared/settings-io/index.js";
 import { xdgCacheHome, xdgConfigHome, xdgRuntimeHome, xdgStateHome } from "../packages/pi-stuff/src/xdg/index.js";
 
 const ORIGINAL_ENVIRONMENT = {
@@ -72,10 +72,10 @@ describe.serial("Pi Stuff XDG paths", () => {
 
 	test("the default UI lock uses XDG_RUNTIME_DIR while custom stores keep a sibling lock", () => {
 		const environment = { XDG_RUNTIME_DIR: "/run/user/1000" };
-		expect(resolveUiSettingsLockPath("/srv/config/pi/pi-stuff.json", environment, "/srv/config/pi")).toBe(
+		expect(resolveSettingsLockPath("/srv/config/pi/pi-stuff.json", environment, "/srv/config/pi")).toBe(
 			"/run/user/1000/pi-stuff/pi-stuff.json.lock",
 		);
-		expect(resolveUiSettingsLockPath("/tmp/settings.json", environment, "/srv/config/pi")).toBe(
+		expect(resolveSettingsLockPath("/tmp/settings.json", environment, "/srv/config/pi")).toBe(
 			"/tmp/settings.json.lock",
 		);
 	});

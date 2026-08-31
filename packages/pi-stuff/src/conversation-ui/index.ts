@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { installEffectFoundation } from "../shared/effect-foundation.js";
 import { getHostSharedResource } from "../shared/host-resource.js";
 import { isRuntimeBoolean, isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 import {
@@ -13,9 +14,13 @@ import type { CommandDialogCoordinatorImplementation } from "./command-dialog.js
 import { getCommandDialogCoordinator } from "./command-dialog-registry.js";
 import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
+import { UiEffectOwner } from "./effect-owner.js";
 import { globalWeakMap } from "./global-registry.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
-import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
+import {
+	installUiSessionPresentation as installPresentation,
+	type UiSessionPresentation,
+} from "./session-presentation.js";
 import {
 	beginUiSettingsGeneration,
 	registerOwnedUiSettings,
@@ -304,7 +309,20 @@ function registerDiagnosticsCommand(
 	});
 }
 
+function installUiSurfaces(
+	pi: ExtensionAPI,
+	coordinator: CommandDialogCoordinatorImplementation,
+	diagnostics: DiagnosticChannel,
+): UiSettingRegistry {
+	activateDiagnosticChannel(diagnostics);
+	const registry = ensureUiSettingsCommand(pi);
+	registerDiagnosticsCommand(pi, coordinator, diagnostics);
+	registerLiveThoughtDisplay(pi);
+	return registry;
+}
+
 export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
+	const effects = new UiEffectOwner(installEffectFoundation(pi));
 	const lifecycle = getHostSharedResource<UiLifecycleState>(
 		pi.events,
 		globalWeakMap<UiLifecycleState>(UI_LIFECYCLE_STATES),
@@ -317,7 +335,7 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	lifecycle.active = true;
 	lifecycle.activation = activation;
 	try {
-		await installUiCapability(pi, lifecycle, activation);
+		await installUiCapability(pi, lifecycle, activation, effects);
 	} catch (error) {
 		if (lifecycle.activation === activation) {
 			lifecycle.active = false;
@@ -327,16 +345,20 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
-async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState, activation: symbol): Promise<void> {
+async function installUiCapability(
+	pi: ExtensionAPI,
+	lifecycle: UiLifecycleState,
+	activation: symbol,
+	effects: UiEffectOwner,
+): Promise<void> {
 	// SAFETY: this module's getter always returns the package-owned coordinator implementation.
 	const coordinator = getCommandDialogCoordinator(pi) as CommandDialogCoordinatorImplementation;
 	const diagnostics = getDiagnosticChannel(pi);
-	activateDiagnosticChannel(diagnostics);
-	const registry = ensureUiSettingsCommand(pi);
-	registerDiagnosticsCommand(pi, coordinator, diagnostics);
-	registerLiveThoughtDisplay(pi);
-	const settings = await UiSettingsStore.load();
-	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
+	const registry = installUiSurfaces(pi, coordinator, diagnostics);
+	const settings = await Effect.runPromise(UiSettingsStore.load());
+	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings, (program) =>
+		effects.run(program),
+	);
 	let presentation: UiSessionPresentation | undefined;
 	let sessionContext: ExtensionContext | undefined;
 	const agentRunOrigin = new AgentRunOriginTracker();
@@ -398,13 +420,14 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 				const completedUserAgentRun = agentRunOrigin.consumeRunIncludesUserWork();
 				const shouldRefreshGit = completedUserAgentRun || userWorkGitRefreshPending;
 				userWorkGitRefreshPending = false;
-				// Pi awaits Extension handlers sequentially. Awaiting this bounded Git
-				// read prevents a later-loaded Extension from starting its continuation
-				// while the status probe is still running.
+				// Pi awaits handlers sequentially; this bounded Git read finishes before
+				// a later Extension can start its continuation.
 				if (shouldRefreshGit) await presentation?.refreshGit();
 				if (completedUserAgentRun) publishUserAgentRunSettled(pi, sessionContext);
 			});
 		}
+		const repeatGoalClock = effects.bindSession(ctx);
+		if (!repeatGoalClock) return;
 		presentation?.dispose();
 		sessionGeneration += 1;
 		gitRefreshDrainToken = undefined;
@@ -412,7 +435,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 		agentRunOrigin.reset();
 		agentSettlementPending = false;
 		userWorkGitRefreshPending = false;
-		presentation = installUiSessionPresentation(pi, ctx, settings, coordinator, diagnostics);
+		presentation = installPresentation(pi, ctx, settings, coordinator, diagnostics, repeatGoalClock);
 	});
 	pi.on("before_agent_start", (event) => {
 		diagnostics.acknowledgeNotices();
@@ -433,7 +456,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 		sessionContext = undefined;
 		agentSettlementPending = false;
 		userWorkGitRefreshPending = false;
-		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
+		await effects.shutdown(settings.whenIdle());
 		unregisterOwnedSettings?.();
 		unregisterOwnedSettings = undefined;
 		if (lifecycle.activation === activation) {

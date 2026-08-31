@@ -205,5 +205,5 @@ export function shutdownGoalSession(lifecycle: GoalSessionLifecycle, ctx: Extens
 }
 
 function suiteReady(pi: ExtensionAPI, ctx: ExtensionContext): Effect.Effect<boolean, unknown> {
-	return Effect.tryPromise({ try: () => whenSuiteSessionReady(pi, ctx), catch: (error) => error });
+	return whenSuiteSessionReady(pi, ctx);
 }

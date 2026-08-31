@@ -40,12 +40,15 @@ export interface StatuslinePreferencesSource {
 	subscribe(listener: () => void): () => void;
 }
 
+export type StatuslineClock = (callback: () => void, intervalMs: number) => () => void;
+
 interface SharedStatuslineControllerOptions {
 	readonly autocompleteVisible?: BooleanValueSource;
 	readonly codexStatus?: CodexStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
 	readonly goalStatus?: GoalStatusSource;
+	readonly repeat?: StatuslineClock | undefined;
 }
 
 export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
@@ -76,8 +79,8 @@ export interface StatuslineContext {
  * controller is structurally compatible with CommandDialogChrome.
  */
 export class StatuslineController {
+	private cancelGoalClock: (() => void) | undefined;
 	private disposed = false;
-	private goalClockTimer: ReturnType<typeof setInterval> | undefined;
 	private readonly options: StatuslineControllerOptions;
 	private readonly pi: StatuslineHost;
 	private readonly renderers = new Set<RenderRegistration>();
@@ -103,7 +106,7 @@ export class StatuslineController {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		this.clearGoalClockTimer();
+		this.clearGoalClock();
 		this.requestRender();
 		this.renderers.clear();
 	}
@@ -202,18 +205,17 @@ export class StatuslineController {
 			this.isVisible() &&
 			snapshot?.status === "active" &&
 			snapshot.activeStartedAt !== undefined;
-		if (shouldRun && !this.goalClockTimer) {
-			this.goalClockTimer = setInterval(() => this.requestRender(), GOAL_CLOCK_REFRESH_MS);
-			this.goalClockTimer.unref?.();
+		if (shouldRun && !this.cancelGoalClock) {
+			this.cancelGoalClock = this.options.repeat?.(() => this.requestRender(), GOAL_CLOCK_REFRESH_MS);
 		} else if (!shouldRun) {
-			this.clearGoalClockTimer();
+			this.clearGoalClock();
 		}
 	}
 
-	private clearGoalClockTimer(): void {
-		if (!this.goalClockTimer) return;
-		clearInterval(this.goalClockTimer);
-		this.goalClockTimer = undefined;
+	private clearGoalClock(): void {
+		const cancel = this.cancelGoalClock;
+		this.cancelGoalClock = undefined;
+		cancel?.();
 	}
 
 	private getPreferences(): StatuslinePreferences {

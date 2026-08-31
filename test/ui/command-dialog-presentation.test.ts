@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Effect } from "effect";
 import {
 	createApiHarness,
 	createContext,
@@ -33,7 +34,7 @@ test("installs one UI lifecycle across per-extension event API wrappers", async 
 	await piStuffUi(duplicate.api);
 
 	expect(first.registeredCommands).toEqual(["ui", "diagnostics"]);
-	expect(first.sessionHandlers).toHaveLength(1);
+	expect(first.sessionHandlers).toHaveLength(2);
 	expect(duplicate.registeredCommands).toEqual([]);
 	expect(duplicate.sessionHandlers).toHaveLength(0);
 });
@@ -425,11 +426,11 @@ test("does not probe Git while Statusline is disabled", async () => {
 	);
 	if (!presentation) throw new Error("Expected a TUI presentation");
 
-	await settings.set("statusline", false);
+	await Effect.runPromise(settings.set("statusline", false));
 	presentation.refreshGit();
 	expect(api.execCalls).toHaveLength(0);
 
-	await settings.set("statusline", true);
+	await Effect.runPromise(settings.set("statusline", true));
 	presentation.refreshGit();
 	expect(api.execCalls).toHaveLength(1);
 	presentation.dispose();

@@ -32,6 +32,53 @@ test("status channels support events-only Host adapters", () => {
 	});
 });
 
+test("runs the Goal clock only while an active Goal is visible", () => {
+	const { events } = createExtensionApi();
+	const goal = getGoalStatusChannel({ events });
+	const enabled = new ValueSource(true);
+	const intervals: number[] = [];
+	let cancellations = 0;
+	let tick: (() => void) | undefined;
+	const controller = new StatuslineController(api(), {
+		enabled,
+		goalStatus: goal.source,
+		repeat: (callback, intervalMs) => {
+			intervals.push(intervalMs);
+			tick = callback;
+			let active = true;
+			return () => {
+				if (!active) return;
+				active = false;
+				cancellations += 1;
+			};
+		},
+	});
+	const harness = tuiHarness();
+	const component = controller.createFooter(context({}), harness.tui, theme, footerData("main"));
+
+	goal.publish({ activeStartedAt: 1, status: "active", timeUsedSeconds: 0, tokensUsed: 0 });
+	expect(intervals).toEqual([1_000]);
+	const rendersBeforeTick = harness.requests.length;
+	tick?.();
+	expect(harness.requests).toHaveLength(rendersBeforeTick + 1);
+
+	goal.publish({ status: "paused", timeUsedSeconds: 1, tokensUsed: 0 });
+	expect(cancellations).toBe(1);
+	goal.publish({ activeStartedAt: 2, status: "active", timeUsedSeconds: 1, tokensUsed: 0 });
+	controller.setSuppressed(true);
+	expect(cancellations).toBe(2);
+	controller.setSuppressed(false);
+	enabled.set(false);
+	expect(cancellations).toBe(3);
+	enabled.set(true);
+	component.dispose();
+	expect(cancellations).toBe(4);
+
+	controller.createFooter(context({}), tuiHarness().tui, theme, footerData("main"));
+	controller.dispose();
+	expect(cancellations).toBe(5);
+});
+
 test("renders cache hit rate and observed Codex weekly and Fast state", () => {
 	const codexStatus = new CodexStatusValueSource({ fastEnabled: true, weeklyRemainingPercent: 63.4 });
 	const controller = new StatuslineController(api(), {

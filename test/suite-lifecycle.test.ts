@@ -5,6 +5,7 @@ import {
 	type ExtensionEvent,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	installSuiteSessionReadiness,
 	markSuiteSessionReady,
@@ -41,7 +42,7 @@ test("Suite readiness releases startup work only after later Capability initiali
 
 	pi.on("session_start", (_event, ctx) => {
 		order.push("goal-observed");
-		ready = whenSuiteSessionReady(pi, ctx).then((value) => {
+		ready = Effect.runPromise(whenSuiteSessionReady(pi, ctx)).then((value) => {
 			order.push(`goal-released:${value}`);
 			return value;
 		});
@@ -75,19 +76,19 @@ test("Suite readiness rejects stale startup generations and resolves shutdown wa
 	const first = context(SessionManager.inMemory());
 	const second = context(SessionManager.inMemory());
 	await start({ reason: "startup", type: "session_start" }, first);
-	const staleReady = whenSuiteSessionReady(pi, first);
+	const staleReady = Effect.runPromise(whenSuiteSessionReady(pi, first));
 	await start({ reason: "new", type: "session_start" }, second);
 	expect(await staleReady).toBe(false);
 	markSuiteSessionReady(pi, first);
 
-	const currentReady = whenSuiteSessionReady(pi, second);
+	const currentReady = Effect.runPromise(whenSuiteSessionReady(pi, second));
 	await shutdown({ reason: "reload", type: "session_shutdown" }, second);
 	expect(await currentReady).toBe(false);
-	expect(await whenSuiteSessionReady(pi, second)).toBe(false);
+	expect(await Effect.runPromise(whenSuiteSessionReady(pi, second))).toBe(false);
 
 	const third = context(SessionManager.inMemory());
 	await start({ reason: "resume", type: "session_start" }, third);
-	const resumedReady = whenSuiteSessionReady(pi, third);
+	const resumedReady = Effect.runPromise(whenSuiteSessionReady(pi, third));
 	markSuiteSessionReady(pi, third);
 	expect(await resumedReady).toBe(true);
 });
@@ -97,7 +98,7 @@ test("Suite readiness rejects startup work when final validation fails", async (
 	installSuiteSessionReadiness(pi);
 	let ready: Promise<boolean> | undefined;
 	pi.on("session_start", (_event, ctx) => {
-		ready = whenSuiteSessionReady(pi, ctx);
+		ready = Effect.runPromise(whenSuiteSessionReady(pi, ctx));
 	});
 	pi.on("session_start", (_event, ctx) => {
 		rejectSuiteSessionReadiness(pi, ctx);
@@ -116,7 +117,7 @@ test("Suite readiness rejects when Pi catches an earlier Capability startup fail
 	const suiteApi = installSuiteSessionReadiness(pi);
 	let ready: Promise<boolean> | undefined;
 	suiteApi.on("session_start", (_event, ctx) => {
-		ready = whenSuiteSessionReady(pi, ctx);
+		ready = Effect.runPromise(whenSuiteSessionReady(pi, ctx));
 	});
 	suiteApi.on("session_start", () => {
 		throw new Error("Capability startup failed");
@@ -141,5 +142,5 @@ test("Suite readiness rejects when Pi catches an earlier Capability startup fail
 
 test("standalone Capabilities have no aggregate Suite startup barrier", async () => {
 	const { pi } = fakePi();
-	expect(await whenSuiteSessionReady(pi, context(SessionManager.inMemory()))).toBe(true);
+	expect(await Effect.runPromise(whenSuiteSessionReady(pi, context(SessionManager.inMemory())))).toBe(true);
 });

@@ -1,15 +1,18 @@
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { getHostSharedResource } from "../shared/host-resource.js";
+import { parseJsonValue } from "../shared/json-value.js";
 import {
+	EffectNamespacedSettingsStore,
+	type EffectNamespaceStoreOptions,
+	type EffectNamespaceWriter,
 	mergedSettingsPath,
-	mergeNamespaceRecord,
-	readNamespace,
-	resolveSettingsLockPath,
+	readTextFileEffect,
 } from "../shared/settings-io/index.js";
+import { acquireSettingsLockEffect } from "../shared/settings-io/lock.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import type { StatuslineDensity } from "./statusline.js";
 
@@ -28,7 +31,6 @@ const UI_SETTING_IDS = [
 const BOOLEAN_SETTING_VALUES = [true, false] as const;
 const STATUSLINE_DENSITY_VALUES = ["auto", "full", "compact"] as const satisfies readonly StatuslineDensity[];
 const LEGACY_STATUSLINE_ICON_VALUES = ["auto", "nerd", "ascii"] as const;
-const ERRNO_SCHEMA = Type.Object({ code: Type.String() });
 const UI_SETTINGS_VERSION_ONE_SCHEMA = Type.Object(
 	{
 		inlineSlashAutocomplete: Type.Boolean(),
@@ -77,6 +79,16 @@ export interface UiSettings {
 	readonly welcomeHeader: boolean;
 }
 
+type UiSettingsRecord = {
+	inlineSlashAutocomplete: boolean;
+	inputHighlighting: boolean;
+	schemaVersion: 3;
+	statusline: boolean;
+	statuslineDensity: StatuslineDensity;
+	statuslineLatestPrompt: boolean;
+	welcomeHeader: boolean;
+};
+
 export interface RegisteredUiSetting {
 	readonly description: string;
 	readonly id: string;
@@ -95,7 +107,7 @@ export interface UiSettingRegistry {
 
 export type UiSettingsHost = Pick<ExtensionAPI, "events" | "on">;
 
-const DEFAULT_SETTINGS: UiSettings = {
+const DEFAULT_SETTINGS: UiSettingsRecord = {
 	inlineSlashAutocomplete: true,
 	inputHighlighting: true,
 	schemaVersion: 3,
@@ -106,29 +118,9 @@ const DEFAULT_SETTINGS: UiSettings = {
 };
 
 type SettingsListener = (settings: UiSettings) => void;
-type SettingsWriter = (path: string, settings: UiSettings) => Promise<void>;
+type UiSettingMutationRunner = (program: Effect.Effect<void, Error>) => Promise<void>;
 
-interface PersistenceWaiter {
-	reject(cause: unknown): void;
-	resolve(): void;
-}
-
-interface PendingSettingsWrite {
-	readonly changes: SettingsChanges;
-	readonly waiters: PersistenceWaiter[];
-}
-
-type SettingsChanges = { -readonly [Id in UiSettingId]?: UiSettings[Id] };
-
-export function resolveUiSettingsLockPath(
-	settingsPath: string,
-	environment: NodeJS.ProcessEnv = process.env,
-	agentDir = getAgentDir(),
-): string {
-	return resolveSettingsLockPath(settingsPath, environment, agentDir);
-}
-
-function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SCHEMA>): UiSettings {
+function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SCHEMA>): UiSettingsRecord {
 	return {
 		inlineSlashAutocomplete: value.inlineSlashAutocomplete,
 		inputHighlighting: value.inputHighlighting,
@@ -140,7 +132,7 @@ function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SC
 	};
 }
 
-function parseSettings<Value>(value: Value): UiSettings {
+function parseSettings<Value>(value: Value): UiSettingsRecord {
 	if (Check(UI_SETTINGS_VERSION_ONE_SCHEMA, value)) return parseVersionOneSettings(value);
 	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value) || Check(UI_SETTINGS_VERSION_THREE_SCHEMA, value)) {
 		return {
@@ -156,200 +148,70 @@ function parseSettings<Value>(value: Value): UiSettings {
 	throw new Error("expected schemaVersion 1, 2, or 3");
 }
 
-async function readSettings(path: string): Promise<UiSettings | undefined> {
-	try {
-		const namespace = await readNamespace(path, UI_NAMESPACE);
-		return namespace === undefined ? undefined : parseSettings(namespace);
-	} catch (error) {
-		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return undefined;
-		reportDiagnostic({
-			action: "/ui",
-			capability: "UI",
-			details: path,
-			error,
-			key: "invalid-settings",
-			severity: "warning",
-			summary: "UI settings were invalid and built-in defaults are active",
-			visibility: "notice",
-		});
-		return DEFAULT_SETTINGS;
-	}
-}
-
-async function writeSettings(path: string, settings: UiSettings): Promise<void> {
-	await mergeNamespaceRecord(path, UI_NAMESPACE, { ...settings });
-}
-
-/** Read the legacy `pi-stuff-ui.json` without mutating user configuration. */
-async function readLegacySettings(path: string): Promise<UiSettings | undefined> {
-	try {
-		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Re-export the shared whole-file settings lock so the Notification module (and
- * any other Capability that imported it from here) keeps one lock owner for the
- * merged settings file. The lock path and flock lease live in shared/settings-io.
- */
-export async function acquireSettingsLock(lockPath: string, owner = "UI"): Promise<() => Promise<void>> {
-	const { acquireSettingsLock: acquireSharedSettingsLock } = await import("../shared/settings-io/lock.js");
-	return acquireSharedSettingsLock(lockPath, owner);
-}
-
-function applySettingsChanges(settings: UiSettings, changes: SettingsChanges | undefined): UiSettings {
-	return {
-		inlineSlashAutocomplete: changes?.inlineSlashAutocomplete ?? settings.inlineSlashAutocomplete,
-		inputHighlighting: changes?.inputHighlighting ?? settings.inputHighlighting,
-		schemaVersion: 3,
-		statusline: changes?.statusline ?? settings.statusline,
-		statuslineDensity: changes?.statuslineDensity ?? settings.statuslineDensity,
-		statuslineLatestPrompt: changes?.statuslineLatestPrompt ?? settings.statuslineLatestPrompt,
-		welcomeHeader: changes?.welcomeHeader ?? settings.welcomeHeader,
-	};
-}
-
-async function persistSettingsChanges(
-	path: string,
-	lockPath: string,
-	changes: SettingsChanges,
-	fallback: UiSettings,
-	writer: SettingsWriter,
-): Promise<UiSettings> {
-	const release = await acquireSettingsLock(lockPath);
-	try {
-		const current = (await readSettings(path)) ?? fallback;
-		const next = applySettingsChanges(current, changes);
-		if (!sameSettings(current, next)) await writer(path, next);
-		return next;
-	} finally {
-		await release();
-	}
-}
-
 /** Settings are read at startup and written only after an explicit /ui mutation. */
 export class UiSettingsStore {
-	private drainPromise: Promise<void> | undefined;
-	private readonly listeners = new Set<SettingsListener>();
-	private readonly lockPath: string;
-	private readonly path: string;
-	private pendingWrite: PendingSettingsWrite | undefined;
-	private persistedValue: UiSettings;
-	private value: UiSettings;
-	private readonly writer: SettingsWriter;
+	private readonly store: EffectNamespacedSettingsStore<UiSettingsRecord>;
 
-	private constructor(path: string, lockPath: string, value: UiSettings, writer: SettingsWriter) {
-		this.path = path;
-		this.lockPath = lockPath;
-		this.persistedValue = value;
-		this.value = value;
-		this.writer = writer;
+	private constructor(store: EffectNamespacedSettingsStore<UiSettingsRecord>) {
+		this.store = store;
 	}
 
-	static async load(
+	static load(
 		path = mergedSettingsPath(getAgentDir()),
-		writer: SettingsWriter = writeSettings,
-	): Promise<UiSettingsStore> {
-		const value = await readSettings(path);
-		const initial = value ?? (await readLegacySettings(path)) ?? DEFAULT_SETTINGS;
-		return new UiSettingsStore(path, resolveUiSettingsLockPath(path), initial, writer);
+		writer?: EffectNamespaceWriter,
+	): Effect.Effect<UiSettingsStore, Error> {
+		const options: EffectNamespaceStoreOptions = {
+			path,
+			legacyPath: join(dirname(path), SETTINGS_FILE_NAME),
+			acquireLock: acquireSettingsLockEffect,
+			legacyReader: (legacyPath) =>
+				Effect.catch(
+					Effect.flatMap(readTextFileEffect(legacyPath), (content) =>
+						Effect.try({
+							try: () => parseSettings(parseJsonValue(content)),
+							catch: normalizeError,
+						}),
+					),
+					() => Effect.succeed(undefined),
+				),
+			reportDiagnostic: (diagnostic) =>
+				reportDiagnostic({
+					...diagnostic,
+					action: "/ui",
+					capability: "UI",
+					key: "invalid-settings",
+					summary: "UI settings were invalid and built-in defaults are active",
+				}),
+		};
+		if (writer) Object.assign(options, { writer });
+		return Effect.map(
+			EffectNamespacedSettingsStore.load(UI_NAMESPACE, DEFAULT_SETTINGS, parseSettings, options),
+			(store) => new UiSettingsStore(store),
+		);
 	}
 
 	static memory(value: UiSettings = DEFAULT_SETTINGS): UiSettingsStore {
-		return new UiSettingsStore("", "", value, writeSettings);
+		return new UiSettingsStore(EffectNamespacedSettingsStore.memory(parseSettings(value)));
 	}
 
 	get(): UiSettings {
-		return this.value;
+		return this.store.get();
 	}
 
 	getValue<Id extends UiSettingId>(id: Id): UiSettings[Id] {
-		return this.value[id];
+		return this.store.get()[id];
 	}
 
 	subscribe(listener: SettingsListener): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
+		return this.store.subscribe(listener);
 	}
 
-	async set<Id extends UiSettingId>(id: Id, value: UiSettings[Id]): Promise<void> {
-		if (this.value[id] === value) return;
-		const next = { ...this.value, [id]: value };
-		this.value = next;
-		const persistence = this.path ? this.enqueueWrite(id, value) : undefined;
-		this.notify();
-		await persistence;
+	set<Id extends UiSettingId>(id: Id, value: UiSettings[Id]): Effect.Effect<void, Error> {
+		return Effect.asVoid(this.store.update({ [id]: value }));
 	}
 
-	async whenIdle(): Promise<void> {
-		while (this.drainPromise) await this.drainPromise;
-	}
-
-	private async drainWrites(): Promise<void> {
-		while (this.pendingWrite) {
-			const pending = this.pendingWrite;
-			this.pendingWrite = undefined;
-			try {
-				this.persistedValue = await persistSettingsChanges(
-					this.path,
-					this.lockPath,
-					pending.changes,
-					this.persistedValue,
-					this.writer,
-				);
-				this.reconcileValueWithPersisted();
-				for (const waiter of pending.waiters) waiter.resolve();
-			} catch (error) {
-				this.reconcileValueWithPersisted();
-				for (const waiter of pending.waiters) waiter.reject(error);
-			}
-		}
-	}
-
-	private enqueueWrite<Id extends UiSettingId>(id: Id, value: UiSettings[Id]): Promise<void> {
-		const promise = new Promise<void>((resolve, reject) => {
-			const waiter = { reject, resolve };
-			if (this.pendingWrite) {
-				this.pendingWrite.changes[id] = value;
-				this.pendingWrite.waiters.push(waiter);
-				return;
-			}
-			this.pendingWrite = { changes: { [id]: value }, waiters: [waiter] };
-		});
-		this.ensureDrain();
-		return promise;
-	}
-
-	private ensureDrain(): void {
-		if (this.drainPromise) return;
-		this.drainPromise = Promise.resolve()
-			.then(() => this.drainWrites())
-			.finally(() => {
-				this.drainPromise = undefined;
-				if (this.pendingWrite) this.ensureDrain();
-			});
-	}
-
-	private notify(): void {
-		for (const listener of this.listeners) {
-			try {
-				listener(this.value);
-			} catch {
-				// Presentation observers cannot block persistence.
-			}
-		}
-	}
-
-	private replaceValue(value: UiSettings): void {
-		if (sameSettings(this.value, value)) return;
-		this.value = value;
-		this.notify();
-	}
-
-	private reconcileValueWithPersisted(): void {
-		this.replaceValue(applySettingsChanges(this.persistedValue, this.pendingWrite?.changes));
+	whenIdle(): Effect.Effect<void> {
+		return this.store.whenIdle();
 	}
 }
 
@@ -456,6 +318,7 @@ interface OwnedSettingDefinition<Id extends UiSettingId> {
 function registerStoreSetting<Id extends UiSettingId>(
 	registry: UiSettingRegistry,
 	store: UiSettingsStore,
+	runMutation: UiSettingMutationRunner,
 	definition: OwnedSettingDefinition<Id>,
 	values: readonly UiSettings[Id][],
 ): () => void {
@@ -466,21 +329,24 @@ function registerStoreSetting<Id extends UiSettingId>(
 		set: async (value) => {
 			const index = serializedValues.indexOf(value);
 			const storedValue = values[index];
-			if (storedValue === undefined) {
-				throw new Error(`Invalid ${definition.id} value: ${value}`);
-			}
-			await store.set(definition.id, storedValue);
+			if (storedValue === undefined) throw new Error(`Invalid ${definition.id} value: ${value}`);
+			await runMutation(store.set(definition.id, storedValue));
 		},
 		subscribe: (listener) => store.subscribe(listener),
 		values: serializedValues,
 	});
 }
 
-export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSettingsStore): () => void {
+export function registerOwnedUiSettings(
+	registry: UiSettingRegistry,
+	store: UiSettingsStore,
+	runMutation: UiSettingMutationRunner,
+): () => void {
 	const unregister = [
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Show session and context information below the editor",
 				id: "statusline",
@@ -492,6 +358,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Choose how much Statusline detail is retained as space narrows",
 				id: "statuslineDensity",
@@ -503,6 +370,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Show the latest prompt under the Statusline when space allows",
 				id: "statuslineLatestPrompt",
@@ -514,6 +382,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Show startup context summary (applies next launch)",
 				id: "welcomeHeader",
@@ -525,6 +394,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Highlight recognized commands and skills while typing",
 				id: "inputHighlighting",
@@ -536,6 +406,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 		registerStoreSetting(
 			registry,
 			store,
+			runMutation,
 			{
 				description: "Suggest Host-ranked Skills after slash text anywhere in the input",
 				id: "inlineSlashAutocomplete",
@@ -550,6 +421,6 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 	};
 }
 
-function sameSettings(left: UiSettings, right: UiSettings): boolean {
-	return UI_SETTING_IDS.every((id) => left[id] === right[id]) && left.schemaVersion === right.schemaVersion;
+function normalizeError(cause: unknown): Error {
+	return cause instanceof Error ? cause : new Error(String(cause));
 }

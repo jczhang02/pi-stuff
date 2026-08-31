@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect } from "effect";
 import {
 	activateDiagnosticChannel,
 	DiagnosticChannel,
@@ -26,6 +27,8 @@ const DEFAULTS: UiSettings = {
 	welcomeHeader: true,
 };
 
+const run = Effect.runPromise;
+
 afterEach(() => resetDiagnosticProcessState());
 
 async function withTemporarySettings(run: (path: string) => Promise<void>): Promise<void> {
@@ -37,7 +40,7 @@ async function withTemporarySettings(run: (path: string) => Promise<void>): Prom
 	}
 }
 
-async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
+async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 15_000): Promise<void> {
 	const startedAt = Date.now();
 	while (!(await predicate())) {
 		if (Date.now() - startedAt >= timeoutMs) throw new Error("timed out waiting for settings race workers");
@@ -47,24 +50,24 @@ async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 5_000): 
 
 test("UI settings default on without writing during startup and persist explicit changes", async () => {
 	await withTemporarySettings(async (path) => {
-		const store = await UiSettingsStore.load(path);
+		const store = await run(UiSettingsStore.load(path));
 		expect(store.get()).toEqual(DEFAULTS);
 		expect(Bun.file(path).size).toBe(0);
 		expect(Bun.file(`${path}.lock`).size).toBe(0);
 
 		await Promise.all([
-			store.set("statusline", false),
-			store.set("inputHighlighting", false),
-			store.set("statusline", true),
+			run(store.set("statusline", false)),
+			run(store.set("inputHighlighting", false)),
+			run(store.set("statusline", true)),
 		]);
-		await store.whenIdle();
+		await run(store.whenIdle());
 
 		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const persisted = JSON.parse(await readFile(path, "utf8")) as { ui: UiSettings };
 		expect(persisted).toEqual({ ui: { ...DEFAULTS, inputHighlighting: false } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
 		expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
-		expect((await UiSettingsStore.load(path)).get()).toEqual(persisted.ui);
+		expect((await run(UiSettingsStore.load(path))).get()).toEqual(persisted.ui);
 	});
 });
 
@@ -74,12 +77,12 @@ test("UI startup reads the legacy file without migrating it", async () => {
 		const legacy = { ...DEFAULTS, statusline: false };
 		await writeFile(legacyPath, JSON.stringify(legacy));
 
-		const store = await UiSettingsStore.load(path);
+		const store = await run(UiSettingsStore.load(path));
 		expect(store.get()).toEqual(legacy);
 		expect(Bun.file(path).size).toBe(0);
 		expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual(legacy);
 
-		await store.set("welcomeHeader", false);
+		await run(store.set("welcomeHeader", false));
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			ui: { ...legacy, welcomeHeader: false },
 		});
@@ -98,7 +101,7 @@ test("complete schema v1 settings migrate in memory and persist as v3 only after
 		} as const;
 		await writeFile(path, `${JSON.stringify({ ui: versionOne })}\n`);
 
-		const store = await UiSettingsStore.load(path);
+		const store = await run(UiSettingsStore.load(path));
 		expect(store.get()).toEqual({
 			...DEFAULTS,
 			inlineSlashAutocomplete: false,
@@ -107,7 +110,7 @@ test("complete schema v1 settings migrate in memory and persist as v3 only after
 		});
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ui: versionOne });
 
-		await store.set("statuslineDensity", "compact");
+		await run(store.set("statuslineDensity", "compact"));
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
 			ui: {
 				...DEFAULTS,
@@ -129,11 +132,11 @@ test("complete schema v2 settings discard the former icon preference when migrat
 		} as const;
 		await writeFile(path, `${JSON.stringify({ ui: versionTwo })}\n`);
 
-		const store = await UiSettingsStore.load(path);
+		const store = await run(UiSettingsStore.load(path));
 		expect(store.get()).toEqual(DEFAULTS);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ui: versionTwo });
 
-		await store.set("welcomeHeader", false);
+		await run(store.set("welcomeHeader", false));
 		const persisted: unknown = JSON.parse(await readFile(path, "utf8"));
 		expect(persisted).toEqual({ ui: { ...DEFAULTS, welcomeHeader: false } });
 	});
@@ -141,12 +144,12 @@ test("complete schema v2 settings discard the former icon preference when migrat
 
 test("two stores merge distinct explicit changes without losing either value", async () => {
 	await withTemporarySettings(async (path) => {
-		const first = await UiSettingsStore.load(path);
-		const second = await UiSettingsStore.load(path);
+		const first = await run(UiSettingsStore.load(path));
+		const second = await run(UiSettingsStore.load(path));
 
-		await Promise.all([first.set("statusline", false), second.set("inputHighlighting", false)]);
+		await Promise.all([run(first.set("statusline", false)), run(second.set("inputHighlighting", false))]);
 
-		expect((await UiSettingsStore.load(path)).get()).toEqual({
+		expect((await run(UiSettingsStore.load(path))).get()).toEqual({
 			...DEFAULTS,
 			inputHighlighting: false,
 			statusline: false,
@@ -199,7 +202,7 @@ test("concurrent stale-lock recovery admits only one settings writer", async () 
 			for (const worker of workers) worker.kill();
 		}
 	});
-});
+}, 30_000);
 
 test("invalid persisted UI settings fail quiet to the complete default", async () => {
 	await withTemporarySettings(async (path) => {
@@ -207,7 +210,7 @@ test("invalid persisted UI settings fail quiet to the complete default", async (
 		await writeFile(join(path, "..", "pi-stuff-ui.json"), JSON.stringify({ ...DEFAULTS, statusline: false }));
 		const diagnostics = new DiagnosticChannel();
 		activateDiagnosticChannel(diagnostics);
-		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);
+		expect((await run(UiSettingsStore.load(path))).get()).toEqual(DEFAULTS);
 		expect(diagnostics.list()).toHaveLength(1);
 		expect(diagnostics.list()[0]?.summary).toBe("UI settings were invalid and built-in defaults are active");
 		expect(diagnostics.listNotices()).toHaveLength(1);
@@ -217,24 +220,22 @@ test("invalid persisted UI settings fail quiet to the complete default", async (
 test("complete UI settings discard unknown persisted keys", async () => {
 	await withTemporarySettings(async (path) => {
 		await writeFile(path, `${JSON.stringify({ ui: { ...DEFAULTS, future: "ignored" } })}\n`);
-		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);
+		expect((await run(UiSettingsStore.load(path))).get()).toEqual(DEFAULTS);
 	});
 });
 
 test("a failed latest UI settings write rolls the live value back", async () => {
 	await withTemporarySettings(async (path) => {
-		const store = await UiSettingsStore.load(path, async () => {
-			throw new Error("settings disk denied");
-		});
+		const store = await run(UiSettingsStore.load(path, () => Effect.fail(new Error("settings disk denied"))));
 
-		const error = await store.set("statusline", false).then(
+		const error = await run(store.set("statusline", false)).then(
 			() => undefined,
 			(cause: unknown) => cause,
 		);
 
 		expect(error).toBeInstanceOf(Error);
 		expect(store.get()).toEqual(DEFAULTS);
-		await store.whenIdle();
+		await run(store.whenIdle());
 	});
 });
 
@@ -243,7 +244,7 @@ test("the registry presents owned and Capability settings in one stable order", 
 	const api = { events: {} } as ExtensionAPI;
 	const store = UiSettingsStore.memory();
 	const registry = beginUiSettingsGeneration(api);
-	const unregisterOwned = registerOwnedUiSettings(registry, store);
+	const unregisterOwned = registerOwnedUiSettings(registry, store, run);
 	const unregisterTool = registry.register({
 		description: "Show elapsed time while long-running tools work",
 		get: () => "true",

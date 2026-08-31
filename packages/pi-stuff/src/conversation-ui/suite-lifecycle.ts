@@ -1,14 +1,14 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { Deferred, Effect } from "effect";
 import { Guard } from "typebox/guard";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 
 type SessionManager = ExtensionContext["sessionManager"];
 
 interface ReadinessGate {
+	readonly deferred: Deferred.Deferred<boolean>;
 	readonly sessionManager: SessionManager;
-	readonly promise: Promise<boolean>;
 	resolve(ready: boolean): void;
-	settled: boolean;
 }
 
 interface ReadinessState {
@@ -30,20 +30,12 @@ function stateFor(pi: Pick<ExtensionAPI, "events">): ReadinessState {
 }
 
 function createGate(sessionManager: SessionManager): ReadinessGate {
-	let settle = (_ready: boolean): void => {};
-	const gate: ReadinessGate = {
-		promise: new Promise<boolean>((resolve) => {
-			settle = resolve;
-		}),
-		resolve(ready) {
-			if (gate.settled) return;
-			gate.settled = true;
-			settle(ready);
-		},
+	const deferred = Deferred.makeUnsafe<boolean>();
+	return {
+		deferred,
+		resolve: (ready) => Deferred.doneUnsafe(deferred, Effect.succeed(ready)),
 		sessionManager,
-		settled: false,
 	};
-	return gate;
 }
 
 function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
@@ -115,9 +107,9 @@ export function rejectSuiteSessionReadiness(pi: Pick<ExtensionAPI, "events">, ct
 }
 
 /** Standalone Capability loading has no Suite barrier and is ready immediately. */
-export function whenSuiteSessionReady(pi: Pick<ExtensionAPI, "events">, ctx: ExtensionContext): Promise<boolean> {
+export function whenSuiteSessionReady(pi: Pick<ExtensionAPI, "events">, ctx: ExtensionContext): Effect.Effect<boolean> {
 	const state = READINESS_STATES.get(pi.events);
-	if (!state?.installed) return Promise.resolve(true);
-	if (state.current?.sessionManager !== ctx.sessionManager) return Promise.resolve(false);
-	return state.current.promise;
+	if (!state?.installed) return Effect.succeed(true);
+	if (state.current?.sessionManager !== ctx.sessionManager) return Effect.succeed(false);
+	return Deferred.await(state.current.deferred);
 }

@@ -9,6 +9,7 @@ import {
 	GitStatusSource,
 	getCodexStatusChannel,
 	getGoalStatusChannel,
+	type StatuslineClock,
 	StatuslineController,
 	type StatuslinePreferences,
 	type StatuslinePreferencesSource,
@@ -96,6 +97,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		store: UiSettingsStore,
 		coordinator: CommandDialogCoordinatorImplementation,
 		diagnostics: DiagnosticChannel,
+		repeatGoalClock?: StatuslineClock,
 	) {
 		this.pi = pi;
 		this.cwd = () => ctx.sessionManager.getCwd() || ctx.cwd;
@@ -115,6 +117,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 			goalStatus: getGoalStatusChannel(pi).source,
 			gitChanges: this.git,
 			preferences: new StoreStatuslinePreferencesSource(store),
+			repeat: repeatGoalClock,
 		});
 		this.unregisterStatuslineChrome = coordinator.registerChrome("statusline", this.statusline);
 		this.notice = new DiagnosticNoticeController(ctx.ui, diagnostics);
@@ -168,7 +171,8 @@ export function installUiSessionPresentation(
 	store: UiSettingsStore,
 	coordinator: CommandDialogCoordinatorImplementation,
 	diagnostics: DiagnosticChannel,
+	repeatGoalClock?: StatuslineClock,
 ): UiSessionPresentation | undefined {
 	if (ctx.mode !== "tui") return undefined;
-	return new InstalledUiSessionPresentation(pi, ctx, store, coordinator, diagnostics);
+	return new InstalledUiSessionPresentation(pi, ctx, store, coordinator, diagnostics, repeatGoalClock);
 }
