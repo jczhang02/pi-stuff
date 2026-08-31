@@ -603,7 +603,13 @@ export function resolveSkills(skillNames: string[], cwd: string, localSkillPaths
 	const resolved: ResolvedSkill[] = [];
 	const missing: string[] = [];
 	const localByName = new Map<string, CachedSkillEntry>();
-	if (localSkillPaths?.length) {
+	if (
+		localSkillPaths?.length &&
+		skillNames.some((name) => {
+			const trimmed = name.trim();
+			return trimmed !== "" && trimmed !== SUBAGENT_ORCHESTRATION_SKILL;
+		})
+	) {
 		const agentDir = getAgentDir();
 		const localEntries = collectFilesystemSkills(
 			cwd,
