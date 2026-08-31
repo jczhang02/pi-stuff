@@ -17,6 +17,13 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 - Excluded: TypeScript, JavaScript, shell scripts, native executables, and PNG images.
 - Machine state, caches, ignored files, and untracked files are outside this inventory.
 
+## 删除候选（尚未执行）
+
+这里只记录已经完成初步核对的候选，不表示文件已经删除。
+
+- Research：删除 `docs/research/code-mode-cloudflare-openai-design-20260815.md` 及其中文镜像。设计结论已经进入现行架构与使用文档，这份提案主要重复保存形成结论前的材料；删除时一并清理中英文 Research 索引和本清单中的对应条目。
+- Reports：删除 `docs/reports/dialog-readability-20260817/` 这一完整记录，包括 `content.json`、`image-handoff.md` 和后者的中文镜像。实现已经完成，记录中声明的四张一次性截图也没有留在仓库；删除时一并清理中英文 Reports 索引和本清单中的对应条目。
+
 ## Summary
 
 | Area | Files |
@@ -413,5 +420,4 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl` | 定义拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json` | 冻结拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
 | `test/fixtures/smoke-package/package.json` | 声明一个最小 Pi Extension 测试 Package，用于验证扩展发现、加载和打包 smoke。 |
-
 

@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 8d7a015e517e1ae735b5ef091f17d607b37a974383df4834fae61d422e52a949 -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 0b211bfbb9274b55f848a357a8eedcbecb6819d9d2d07312a6a16fbf7e6c6fac -->
 
 # 非代码文件检查清单
 
@@ -18,6 +18,13 @@
 - 纳入文字材料、配置、结构化数据、终端文本、锁文件、补丁、校验和、元数据和许可证。
 - 排除 TypeScript、JavaScript、shell 脚本、原生可执行文件和 PNG 图片。
 - 机器状态、缓存、被忽略文件和未跟踪文件不在本清单范围内。
+
+## 删除候选（尚未执行）
+
+这里只记录已经完成初步核对的候选，不表示文件已经删除。
+
+- Research：删除 `docs/research/code-mode-cloudflare-openai-design-20260815.md` 及其中文镜像。设计结论已经进入现行架构与使用文档，这份提案主要重复保存形成结论前的材料；删除时一并清理中英文 Research 索引和本清单中的对应条目。
+- Reports：删除 `docs/reports/dialog-readability-20260817/` 这一完整记录，包括 `content.json`、`image-handoff.md` 和后者的中文镜像。实现已经完成，记录中声明的四张一次性截图也没有留在仓库；删除时一并清理中英文 Reports 索引和本清单中的对应条目。
 
 ## 汇总
 
@@ -415,5 +422,3 @@
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl` | 定义拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json` | 冻结拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
 | `test/fixtures/smoke-package/package.json` | 声明一个最小 Pi Extension 测试 Package，用于验证扩展发现、加载和打包 smoke。 |
-
-
