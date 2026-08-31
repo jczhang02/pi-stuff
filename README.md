@@ -22,6 +22,14 @@ Pi Stuff brings focused interface, work, context, and integration capabilities t
 
 </div>
 
+<p align="center">
+  <a href="docs/assets/readme/root/hero.png">
+    <img src="docs/assets/readme/root/hero.png" alt="Pi Stuff Welcome card and Statusline in Ghostty" width="100%">
+  </a>
+  <br>
+  <em>Pi Stuff running in Ghostty with the Catppuccin Latte theme.</em>
+</p>
+
 ## About
 
 Pi Stuff keeps everyday work inside Pi while making the conversation easier to read and longer tasks easier to run.
@@ -31,6 +39,14 @@ It adds four practical layers:
 - Goals, background tasks, delegated Agents, and Todo tracking that keep work moving.
 - Side questions and notifications that do not interrupt the main thread.
 - Optional Context, Web, MCP, RTK, Codex, and Code Mode integrations when a workflow needs them.
+
+<p align="center">
+  <a href="docs/assets/readme/root/architecture.png">
+    <img src="docs/assets/readme/root/architecture.png" alt="Pi Stuff Tool Activities and selected Tool details" width="100%">
+  </a>
+  <br>
+  <em>Tool Activities keep Suite work inspectable without leaving the conversation.</em>
+</p>
 
 ## Getting started
 
@@ -58,6 +74,14 @@ The [getting-started guide](docs/getting-started.md) covers the first session an
 The [command reference](docs/reference/commands.md) lists every slash command. The
 [settings reference](docs/reference/settings.md) covers optional configuration without turning installation into a
 configuration project.
+
+<p align="center">
+  <a href="docs/assets/readme/root/workflow.png">
+    <img src="docs/assets/readme/root/workflow.png" alt="Pi Stuff conversation with a four-step Todo" width="100%">
+  </a>
+  <br>
+  <em>A live Todo keeps multi-step work visible while Pi continues the conversation.</em>
+</p>
 
 ## Documentation
 

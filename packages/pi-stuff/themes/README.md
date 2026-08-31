@@ -4,6 +4,14 @@
 
 Pi Stuff includes all four flavors of Catppuccin for Pi.
 
+<p align="center">
+  <a href="../../../docs/assets/readme/themes/latte.png">
+    <img src="../../../docs/assets/readme/themes/latte.png" alt="Catppuccin Latte selected in Pi settings" width="100%">
+  </a>
+  <br>
+  <em>Catppuccin Latte applied across the Welcome card, editor, and Statusline.</em>
+</p>
+
 ## Available themes
 
 | Theme | Settings value |

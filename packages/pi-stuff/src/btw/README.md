@@ -4,6 +4,14 @@
 
 One no-Tool side question in a focused dialog, without changing the main conversation.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/btw.png">
+    <img src="../../../../docs/assets/readme/capabilities/btw.png" alt="BTW side-question view beside the main Pi conversation" width="100%">
+  </a>
+  <br>
+  <em>BTW answers a side question in its own focused view while the main transcript stays intact.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -29,4 +37,3 @@ Read the streamed answer and press Escape to return to the editor. Use Left and 
 - [Conversation UI guide](../../../../docs/capabilities/conversation-ui.md)
 - [Shared UI contract](../../../../DESIGN.md)
 - [Upstream references](UPSTREAM.md)
-

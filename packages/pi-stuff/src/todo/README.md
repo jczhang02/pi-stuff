@@ -4,6 +4,14 @@
 
 A Session-scale Agent checklist with dependencies and a compact view above the editor.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/todo.png">
+    <img src="../../../../docs/assets/readme/capabilities/todo.png" alt="Four-step Todo above the Pi editor" width="100%">
+  </a>
+  <br>
+  <em>A four-step Todo remains visible above the editor while Pi works.</em>
+</p>
+
 ## Quick start
 
 The Agent creates and updates tasks with `TaskCreate`, `TaskGet`, `TaskList`, and `TaskUpdate`. Press
@@ -25,4 +33,3 @@ The Agent creates and updates tasks with `TaskCreate`, `TaskGet`, `TaskList`, an
 - [Agents guide](../../../../docs/capabilities/subagents.md)
 - [Shared UI contract](../../../../DESIGN.md)
 - [Upstream references](UPSTREAM.md)
-

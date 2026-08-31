@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: 8a3ed7527b4e2cc81687d72e79350ebb97ebe9a2d7898f6f0fc4988e894197c7 -->
+<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: 920ac1833c5ab2edc4b43341cdf747ebff9474d01e9f2987cf3071c2ff945879 -->
 
 # MCP Runtime
 
 [English](../../../../../../../../packages/pi-stuff/src/mcp/runtime/README.md)
 
 Pi Stuff MCP gateway 背后的配置、transport、认证、生命周期、discovery 与输出处理。
+
+<p align="center">
+  <a href="../../../../../../../assets/readme/runtime/mcp.png">
+    <img src="../../../../../../../assets/readme/runtime/mcp.png" alt="Pi 中的 MCP runtime 连接状态" width="100%">
+  </a>
+  <br>
+  <em>内置 MCP runtime 通过 Pi 报告服务器配置和连接状态。</em>
+</p>
 
 ## 快速开始
 
@@ -26,4 +34,3 @@ Pi Stuff MCP gateway 背后的配置、transport、认证、生命周期、disco
 - [MCP 指南](../../../../../docs/capabilities/mcp.md)
 - [MCP Module README](../README.md)
 - [上游参考](UPSTREAM.md)
-

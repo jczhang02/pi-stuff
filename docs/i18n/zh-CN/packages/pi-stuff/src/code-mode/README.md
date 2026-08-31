@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: f209bb986f842ce31f5a2b2353e3baf59feacb1ea488a44ddc5d2bf8f084268f -->
+<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: ec6e766ab1db7de1a82ada9b140a11505d3f7854f6d73cd77901a12fb3c1ed33 -->
 
 # Code Mode
 
 [English](../../../../../../../packages/pi-stuff/src/code-mode/README.md)
 
 在隔离 V8 host 中通过 JavaScript 组合活动 Pi Stuff Tool。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/code-mode.png">
+    <img src="../../../../../../assets/readme/capabilities/code-mode.png" alt="Code Mode 项目控制与本地目录" width="100%">
+  </a>
+  <br>
+  <em>Code Mode 在同一界面中展示项目策略和本地操作目录。</em>
+</p>
 
 ## 快速开始
 
@@ -31,4 +39,3 @@ Model 随后可以发现本地 catalog，并从 `codemode({ code })` 调用 `too
 - [设置参考](../../../../docs/reference/settings.md#codemode)
 - [故障排查](../../../../docs/troubleshooting.md#codex-与-code-mode)
 - [上游参考](UPSTREAM.md)
-

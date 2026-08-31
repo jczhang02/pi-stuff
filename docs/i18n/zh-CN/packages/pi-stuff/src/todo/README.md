@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/todo/README.md; translation-source-sha256: 9f0506846cb77d71493605d2e4dba6d8e9cd533003d9f157a3745efbccc5f672 -->
+<!-- translation-source: packages/pi-stuff/src/todo/README.md; translation-source-sha256: 3a8dd9ff4f7672580ef4455447b70656172f3f60e27655333b2d8c378f2d11b5 -->
 
 # Todo
 
 [English](../../../../../../../packages/pi-stuff/src/todo/README.md)
 
 带 dependency 的 Session 级 Agent checklist，以紧凑视图显示在编辑器上方。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/todo.png">
+    <img src="../../../../../../assets/readme/capabilities/todo.png" alt="Pi 编辑器上方的四步 Todo" width="100%">
+  </a>
+  <br>
+  <em>Pi 工作时，四步 Todo 会一直显示在编辑器上方。</em>
+</p>
 
 ## 快速开始
 
@@ -27,4 +35,3 @@ Agent 使用 `TaskCreate`、`TaskGet`、`TaskList` 与 `TaskUpdate` 创建和更
 - [Agents 指南](../../../../docs/capabilities/subagents.md)
 - [共享 UI 契约](../../../../DESIGN.md)
 - [上游参考](UPSTREAM.md)
-

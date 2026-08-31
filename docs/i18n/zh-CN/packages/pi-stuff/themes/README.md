@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/themes/README.md; translation-source-sha256: a5d66acdbedf91a50ffa89a118bb5191bea6bd8a30b14dd66b0e5c8c2c74826d -->
+<!-- translation-source: packages/pi-stuff/themes/README.md; translation-source-sha256: 86d2aab53f630d79376333b4ac8b7f2934bcbf0c7482a0fd2c50366226ab94d0 -->
 
 # Catppuccin 主题
 
 [English](../../../../../../packages/pi-stuff/themes/README.md)
 
 Pi Stuff 为 Pi 提供 Catppuccin 的四种风味。
+
+<p align="center">
+  <a href="../../../../../assets/readme/themes/latte.png">
+    <img src="../../../../../assets/readme/themes/latte.png" alt="Pi 设置中选中的 Catppuccin Latte" width="100%">
+  </a>
+  <br>
+  <em>Catppuccin Latte 同时应用于欢迎卡片、编辑器和 Statusline。</em>
+</p>
 
 ## 可用主题
 

@@ -4,6 +4,14 @@
 
 JavaScript composition of active Pi Stuff Tools inside an isolated V8 host.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/code-mode.png">
+    <img src="../../../../docs/assets/readme/capabilities/code-mode.png" alt="Code Mode project controls and local catalog" width="100%">
+  </a>
+  <br>
+  <em>Code Mode exposes project policy and its local operation catalog in one control surface.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -29,4 +37,3 @@ the effective policy, catalog, approvals, and Session ledger.
 - [Settings reference](../../../../docs/reference/settings.md#codemode)
 - [Troubleshooting](../../../../docs/troubleshooting.md#codex-and-code-mode)
 - [Upstream references](UPSTREAM.md)
-

@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 95f8ced0c236d1c4613a9d9b0355a4ed864052b92fe28f8f99b8eb5c1b6119c9 -->
+<!-- translation-source: packages/pi-stuff/src/codex/README.md; translation-source-sha256: 3f54b116a50df539250df99f9e4afd15977989326fd1247a032537410f2e3fbf -->
 
 # Codex
 
 [English](../../../../../../../packages/pi-stuff/src/codex/README.md)
 
 为受支持的 OpenAI Codex Responses model 提供 Fast mode、用量显示和原生 Tool。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/codex.png">
+    <img src="../../../../../../assets/readme/capabilities/codex.png" alt="Pi 中的 Codex 用量与 Fast mode 控制" width="100%">
+  </a>
+  <br>
+  <em>Codex 用量和 Fast mode 控制可直接在 Pi 中查看。</em>
+</p>
 
 ## 快速开始
 
@@ -30,4 +38,3 @@
 - [命令参考](../../../../docs/reference/commands.md#codex-与-rtk)
 - [设置参考](../../../../docs/reference/settings.md#codex)
 - [故障排查](../../../../docs/troubleshooting.md#codex-与-code-mode)
-

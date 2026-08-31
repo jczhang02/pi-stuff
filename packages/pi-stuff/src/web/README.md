@@ -4,6 +4,14 @@
 
 Search, public HTTP extraction, and bounded continuation through three model-facing Tools.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/web.png">
+    <img src="../../../../docs/assets/readme/capabilities/web.png" alt="Shared Tool Activity view used by Web calls" width="100%">
+  </a>
+  <br>
+  <em>Web calls use the same inspectable Tool Activity surface as the rest of the Suite.</em>
+</p>
+
 ## Quick start
 
 ```json
@@ -29,4 +37,3 @@ Call `web_search` with the query, `fetch_content` with a selected public URL, an
 - [Runtime security](runtime/SECURITY.md)
 - [Runtime contract](runtime/README.md)
 - [Upstream references](UPSTREAM.md)
-

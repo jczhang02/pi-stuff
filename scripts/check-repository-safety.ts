@@ -5,6 +5,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import ts from "typescript";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { auditReadmeScreenshots } from "./check-readme-screenshots.js";
 import { SUITE_REGISTRY_SCHEMA } from "./generate-suite.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);
@@ -575,6 +576,8 @@ async function auditDocumentation(root: string, paths: readonly string[]): Promi
 	}
 	findings.push(...auditAdrDocuments(markdown));
 	findings.push(...auditIndexCoverage([...markdown.keys()], resolvedTargets));
+	const visibleMarkdown = new Map([...markdown].map(([path, content]) => [path, stripMarkdownFences(content)]));
+	findings.push(...(await auditReadmeScreenshots(root, paths, visibleMarkdown, resolveMarkdownTarget)));
 	findings.push(...auditTranslations(markdown, buffers));
 	return findings;
 }

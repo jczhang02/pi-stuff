@@ -4,6 +4,14 @@
 
 Background Shells and one-shot Monitors that report completion while the main Agent continues.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/background-work.png">
+    <img src="../../../../docs/assets/readme/capabilities/background-work.png" alt="Background Work tasks dialog in Pi" width="100%">
+  </a>
+  <br>
+  <em>The Background Work dialog keeps Shells and Monitors visible without leaving Pi.</em>
+</p>
+
 ## Quick start
 
 Ask the Agent to launch Bash with `run_in_background: true` or to create a `monitor` for command, file, log, or HTTP
@@ -31,4 +39,3 @@ The dialog lists current work, follows bounded output, and stops activities owne
 - [Tool Display guide](../../../../docs/capabilities/tool-display.md)
 - [Agents guide](../../../../docs/capabilities/subagents.md)
 - [Upstream references](UPSTREAM.md)
-

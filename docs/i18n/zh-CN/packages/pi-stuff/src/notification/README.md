@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/notification/README.md; translation-source-sha256: 858455396cb8dd154bac8cf84320afbc7dd647b2bd08b6d0d7f0b25d9ff71226 -->
+<!-- translation-source: packages/pi-stuff/src/notification/README.md; translation-source-sha256: 37d360b9c3b5ccf90b737ed946b257293010a2c88e9e07a95d10e6f659553708 -->
 
 # Notification
 
 [English](../../../../../../../packages/pi-stuff/src/notification/README.md)
 
 有实质内容的用户启动 Agent 工作结算后，发送终端原生完成或失败提醒。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/notification.png">
+    <img src="../../../../../../assets/readme/capabilities/notification.png" alt="Pi 中的通知策略控制" width="100%">
+  </a>
+  <br>
+  <em>通知策略可在 Pi 中明确配置并直接测试。</em>
+</p>
 
 ## 快速开始
 
@@ -29,4 +37,3 @@
 - [设置参考](../../../../docs/reference/settings.md#notification)
 - [故障排查](../../../../docs/troubleshooting.md#通知)
 - [命令参考](../../../../docs/reference/commands.md#界面与查看)
-

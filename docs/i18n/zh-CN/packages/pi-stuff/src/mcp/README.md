@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: a295f8f5720d4dfee50baa4f2974bd5da64c1786452c270900ca45607511afb2 -->
+<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: 5cf63d0b5c93facb72921316cf14e5a30429fcf945a7c3277ca111db8daf909e -->
 
 # MCP
 
 [English](../../../../../../../packages/pi-stuff/src/mcp/README.md)
 
 把已配置 MCP server 放在一个可搜索、有界的 gateway Tool 之后。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/mcp.png">
+    <img src="../../../../../../assets/readme/capabilities/mcp.png" alt="Pi 中的 MCP 连接对话框" width="100%">
+  </a>
+  <br>
+  <em>MCP 对话框显示连接状态，只在需要服务器时进入设置。</em>
+</p>
 
 ## 快速开始
 
@@ -32,4 +40,3 @@ Server 默认按需连接。Dialog 管理 setup、认证、重连、启用状态
 - [故障排查](../../../../docs/troubleshooting.md#mcp)
 - [Runtime 契约](runtime/README.md)
 - [上游参考](UPSTREAM.md)
-

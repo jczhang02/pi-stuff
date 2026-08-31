@@ -4,6 +4,14 @@
 
 Compact Tool activity in the transcript, with full details available when needed.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/tool-display.png">
+    <img src="../../../../docs/assets/readme/capabilities/tool-display.png" alt="Tool Activities list and selected details in Pi" width="100%">
+  </a>
+  <br>
+  <em>Tool Activities provide compact status on the left and selected details on the right.</em>
+</p>
+
 ## Quick start
 
 Run several Read, Grep, Find, or List operations, then press `Ctrl+O` or open:
@@ -29,4 +37,3 @@ Select a Retrieval Group or Tool Activity and press Enter. Press `r` to switch b
 - [Conversation UI guide](../../../../docs/capabilities/conversation-ui.md)
 - [Command reference](../../../../docs/reference/commands.md#interface-and-inspection)
 - [Shared UI contract](../../../../DESIGN.md)
-

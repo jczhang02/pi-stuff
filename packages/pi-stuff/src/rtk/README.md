@@ -4,6 +4,14 @@
 
 Optional command rewriting and model-only output projection for Bash and Grep.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/rtk.png">
+    <img src="../../../../docs/assets/readme/capabilities/rtk.png" alt="RTK verification and rewrite controls in Pi" width="100%">
+  </a>
+  <br>
+  <em>The RTK dialog separates runtime verification, rewrite policy, and Session savings.</em>
+</p>
+
 ## Quick start
 
 Install the certified RTK `0.45.0` Linux x64 binary on `PATH`, then open:
@@ -29,4 +37,3 @@ The dialog verifies the runtime, toggles Command rewriting and Model projection,
 - [Settings reference](../../../../docs/reference/settings.md#rtk)
 - [Troubleshooting](../../../../docs/troubleshooting.md#rtk)
 - [Upstream references](UPSTREAM.md)
-

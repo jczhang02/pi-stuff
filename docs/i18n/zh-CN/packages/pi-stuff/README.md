@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 6c602466ea8c4efc50fee3253b27fb28c40d2389ed464251394607a0e74d956e -->
+<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 0a3815c64391ef3f9c9a4cfa8b93259128448662ff2469ed65b81ec055f5b700 -->
 
 # `@jczhang02/pi-stuff`
 
 [English](../../../../../packages/pi-stuff/README.md)
 
 Pi Stuff Package 为 Pi 加入界面、工作、上下文和集成能力。
+
+<p align="center">
+  <a href="../../../../assets/readme/package/suite.png">
+    <img src="../../../../assets/readme/package/suite.png" alt="带有 Session 级 Todo 的 Pi Stuff 对话" width="100%">
+  </a>
+  <br>
+  <em>Suite 把对话、Tool 和 Session 级 Todo 放在同一个 Pi 界面中。</em>
+</p>
 
 ## 能力
 
@@ -26,6 +34,14 @@ pi
 
 当前已认证的 Pi 与工具链版本见 [`docs/compatibility.md`](../../docs/compatibility.md)。外部服务和可执行文件都
 按需配置。
+
+<p align="center">
+  <a href="../../../../assets/readme/package/commands.png">
+    <img src="../../../../assets/readme/package/commands.png" alt="Pi 编辑器中的 Pi Stuff slash command 补全" width="100%">
+  </a>
+  <br>
+  <em>slash 补全直接展示命令入口，无需额外的启动器。</em>
+</p>
 
 ## 文档
 

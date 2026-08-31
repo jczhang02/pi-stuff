@@ -1,4 +1,4 @@
-<!-- translation-source: README.md; translation-source-sha256: dfcc8cfa61c5fc5ed1af76ae7671552b91a3b6abe47591f08338f93318143c32 -->
+<!-- translation-source: README.md; translation-source-sha256: ea6caec087fcf47d2c52293e2285bdbb05ed245240fe0698a42cb74ae27cfdd4 -->
 
 <div align="center">
 
@@ -23,6 +23,14 @@ Pi Stuff 为原生 [Pi coding agent](https://github.com/earendil-works/pi) 加�
 
 </div>
 
+<p align="center">
+  <a href="../../assets/readme/root/hero.png">
+    <img src="../../assets/readme/root/hero.png" alt="Ghostty 中的 Pi Stuff 欢迎卡片和 Statusline" width="100%">
+  </a>
+  <br>
+  <em>Pi Stuff 在 Ghostty 中运行，使用 Catppuccin Latte 主题。</em>
+</p>
+
 ## 关于
 
 Pi Stuff 让日常工作留在 Pi 里，同时让对话更易读，长任务更容易持续推进。它提供四类实用能力：
@@ -31,6 +39,14 @@ Pi Stuff 让日常工作留在 Pi 里，同时让对话更易读，长任务更�
 - Goal、后台任务、委派 Agent 和 Todo，让工作持续向前。
 - 支线问题与通知，不打断主线。
 - 按需启用 Context、Web、MCP、RTK、Codex 和 Code Mode。
+
+<p align="center">
+  <a href="../../assets/readme/root/architecture.png">
+    <img src="../../assets/readme/root/architecture.png" alt="Pi Stuff Tool 活动与选中 Tool 的详情" width="100%">
+  </a>
+  <br>
+  <em>Tool 活动让 Suite 的工作随时可查，不必离开对话。</em>
+</p>
 
 ## 快速开始
 
@@ -57,6 +73,14 @@ pi
 
 [命令参考](docs/reference/commands.md)列出了全部 slash command。
 [设置参考](docs/reference/settings.md)集中说明可选配置，安装时无需一次配完。
+
+<p align="center">
+  <a href="../../assets/readme/root/workflow.png">
+    <img src="../../assets/readme/root/workflow.png" alt="带有四步 Todo 的 Pi Stuff 对话" width="100%">
+  </a>
+  <br>
+  <em>Pi 继续对话时，实时 Todo 会把多步工作留在视野内。</em>
+</p>
 
 ## 文档
 

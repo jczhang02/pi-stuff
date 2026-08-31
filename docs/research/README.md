@@ -5,6 +5,14 @@
 Dated investigations, measurements, comparisons, and design inputs retained for future review. For current behavior,
 start from the [documentation index](../README.md).
 
+<p align="center">
+  <a href="../assets/readme/research/index.png">
+    <img src="../assets/readme/research/index.png" alt="A live Pi conversation rendering chart and tree projections" width="100%">
+  </a>
+  <br>
+  <em>Real Pi rendering keeps interface research grounded in the shipped surface.</em>
+</p>
+
 ## Architecture and feasibility
 
 - [Code Mode: Cloudflare/OpenAI design](code-mode-cloudflare-openai-design-20260815.md)

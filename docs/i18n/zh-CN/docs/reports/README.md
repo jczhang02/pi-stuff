@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7bb92a4611a5fe16c0526e640b9b3c2b9aa8e075ddd242823c7c4024de33b1c3 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 960b548edc1f8b5efbbaca6ac0de0f7c2093156261b1870180f89ad0a660d1ac -->
 
 # 报告
 
@@ -6,6 +6,14 @@
 
 这里保留 Pi Stuff 的验收、设计和性能证据。当前认证环境见[兼容性指南](../compatibility.md)，当前行为见
 [文档索引](../README.md)。
+
+<p align="center">
+  <a href="../../../../assets/readme/reports/index.png">
+    <img src="../../../../assets/readme/reports/index.png" alt="Ghostty 中的 Pi Stuff 诊断界面" width="100%">
+  </a>
+  <br>
+  <em>Suite 诊断从当前进程提供范围明确的证据。</em>
+</p>
 
 ## 基准与验收
 

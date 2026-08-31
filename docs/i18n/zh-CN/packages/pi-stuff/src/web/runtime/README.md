@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/web/runtime/README.md; translation-source-sha256: fe031b756958d4d84d0932496d42b678dd15ed1fe430ddc596b5f96f804da452 -->
+<!-- translation-source: packages/pi-stuff/src/web/runtime/README.md; translation-source-sha256: 1950ece41cfd243622994d4da0ad44fd04d6f89a143154bbd051680b77bf58e4 -->
 
 # Web Runtime
 
 [English](../../../../../../../../packages/pi-stuff/src/web/runtime/README.md)
 
 Pi Stuff Web 的 provider routing、extraction、保存结果读取、credential resolution 与 SSRF enforcement。
+
+<p align="center">
+  <a href="../../../../../../../assets/readme/runtime/web.png">
+    <img src="../../../../../../../assets/readme/runtime/web.png" alt="Web runtime 使用的共享 Tool 活动视图" width="100%">
+  </a>
+  <br>
+  <em>内置 Web runtime 通过 Suite 的共享 Tool 活动视图报告调用。</em>
+</p>
 
 ## 快速开始
 
@@ -26,4 +34,3 @@ Pi Stuff Web 的 provider routing、extraction、保存结果读取、credential
 - [Web Module README](../README.md)
 - [安全契约](SECURITY.md)
 - [上游参考](UPSTREAM.md)
-

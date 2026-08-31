@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/ponytail/README.md; translation-source-sha256: ff69957eef0e21f137b9d37960591f3c2b9b63018a57b5a35e61b0ea80f1ed5e -->
+<!-- translation-source: packages/pi-stuff/src/ponytail/README.md; translation-source-sha256: f918fdcbe0b11ae65c8f0ac64a302771fe2c76f9b3a69ba77e39ad72bd1204c6 -->
 
 # Ponytail
 
 [English](../../../../../../../packages/pi-stuff/src/ponytail/README.md)
 
 帮助当前 Session 选择足够解决问题的最小编码方案。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/ponytail.png">
+    <img src="../../../../../../assets/readme/capabilities/ponytail.png" alt="Pi 中的 Ponytail 模式与指导项控制" width="100%">
+  </a>
+  <br>
+  <em>Ponytail 在一个界面中显示当前模式和全部指导项开关。</em>
+</p>
 
 ## 快速开始
 
@@ -32,4 +40,3 @@
 - [命令参考](../../../../docs/reference/commands.md#ponytail)
 - [设置参考](../../../../docs/reference/settings.md#ponytail)
 - [上游参考](UPSTREAM.md)
-

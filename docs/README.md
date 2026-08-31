@@ -5,6 +5,14 @@
 Guides, references, engineering contracts, and retained evidence for Pi Stuff. English Markdown is authoritative;
 Simplified Chinese mirrors follow the same repository paths under [`docs/i18n/zh-CN/`](i18n/zh-CN/).
 
+<p align="center">
+  <a href="assets/readme/docs/index.png">
+    <img src="assets/readme/docs/index.png" alt="Pi chart and tree projections in a live conversation" width="100%">
+  </a>
+  <br>
+  <em>Pi renders chart and tree projections directly in the conversation.</em>
+</p>
+
 ## Start here
 
 | Need | Document |

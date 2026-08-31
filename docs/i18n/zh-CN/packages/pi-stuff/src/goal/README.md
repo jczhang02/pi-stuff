@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: ca38b3bc18f5acdd6eee2c73ef9679f23ae04ab8310f0768533de2eb7a713a12 -->
+<!-- translation-source: packages/pi-stuff/src/goal/README.md; translation-source-sha256: 5b78a894a79a412bc8dae3500a91ebf41608b3584c7cb21a1d823d539cc84c4c -->
 
 # Goal
 
 [English](../../../../../../../packages/pi-stuff/src/goal/README.md)
 
 围绕一个 Session 目标持续推进、并由证据约束完成的工作方式。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/goal.png">
+    <img src="../../../../../../assets/readme/capabilities/goal.png" alt="Pi 中的 Goal 管理器" width="100%">
+  </a>
+  <br>
+  <em>Goal 管理器用于启动、编辑、暂停和恢复持续工作。</em>
+</p>
 
 ## 快速开始
 
@@ -30,4 +38,3 @@
 - [命令参考](../../../../docs/reference/commands.md#工作控制)
 - [设置参考](../../../../docs/reference/settings.md#goal)
 - [架构](../../../../docs/architecture.md#生命周期所有权)
-

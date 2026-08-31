@@ -76,7 +76,7 @@ Never mix standalone bold labels, tables, `<figure>`, or baked-in callouts with 
 - Capture above the target resolution, then downsample to a final `1600×900` PNG.
 - Use `different-ai/openwork@agent-first-screenshots` for vision checks, crop, and framing after the native Ghostty
   capture.
-- Add GIF or WebM only when motion is necessary to understand the behavior.
+- Keep README previews as PNG. Put any necessary motion demo in the detailed capability guide.
 
 Diagram-oriented READMEs render a real `chart` or `tree` fence inside Pi and capture that terminal state. Diagram labels
 are content; editorial arrows and callouts are not baked into the image.
@@ -92,25 +92,10 @@ Store assets under `docs/assets/readme/<readme-slug>/`:
 | Research index | `research/index.png` |
 | Reports index | `reports/index.png` |
 | Package | `package/suite.png`, `package/commands.png` |
-| Themes | `themes/preview.png` |
-| Conversation UI | `conversation-ui/preview.png` |
-| Session Naming | `session-naming/preview.png` |
-| Tool Display | `tool-display/preview.png` |
-| RTK | `rtk/preview.png` |
-| Codex | `codex/preview.png` |
-| Goal | `goal/preview.png` |
-| Context Management | `context-management/preview.png` |
-| Ponytail | `ponytail/preview.png` |
-| Web | `web/preview.png` |
-| MCP | `mcp/preview.png` |
-| Background Work | `background-work/preview.png` |
-| Agents | `subagents/preview.png` |
-| Todo | `todo/preview.png` |
-| BTW | `btw/preview.png` |
-| Notification | `notification/preview.png` |
-| Code Mode | `code-mode/preview.png` |
-| MCP runtime | `mcp-runtime/preview.png` |
-| Web runtime | `web-runtime/preview.png` |
+| Themes | `themes/latte.png` |
+| Capability Modules | `capabilities/<module>.png` |
+| MCP runtime | `runtime/mcp.png` |
+| Web runtime | `runtime/web.png` |
 
 ## Links and translations
 
@@ -133,4 +118,3 @@ After editing an English Markdown source:
 - Every image uses the standard block, is `1600×900` PNG, has meaningful alt text and a caption, and is clickable.
 - English and Simplified Chinese navigation reach equivalent content.
 - No link, translation header, screenshot, or indexed document is stale.
-

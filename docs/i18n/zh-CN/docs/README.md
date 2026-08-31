@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: fdba7ce37d98635f24ebd575b743bc8a484a6188d52e88daba9c480bf431a520 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: dcce084fe332b60053783ce0baf0acd2d588bc00c4e6ede3b7bd9c83bb13feea -->
 
 # 文档
 
@@ -6,6 +6,14 @@
 
 这里汇总 Pi Stuff 的指南、参考、工程约定和保留证据。英文 Markdown 是权威来源，简体中文镜像按照同样的
 仓库路径保存在 [`docs/i18n/zh-CN/`](../) 下。
+
+<p align="center">
+  <a href="../../../assets/readme/docs/index.png">
+    <img src="../../../assets/readme/docs/index.png" alt="Pi 在实时对话中呈现 chart 和 tree" width="100%">
+  </a>
+  <br>
+  <em>Pi 直接在对话中呈现 chart 和 tree。</em>
+</p>
 
 ## 从这里开始
 

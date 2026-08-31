@@ -5,6 +5,14 @@
 The shared Pi Stuff presentation layer for the conversation, editor, Statusline, Welcome header, and focused Command
 Dialogs.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/conversation-ui.png">
+    <img src="../../../../docs/assets/readme/capabilities/conversation-ui.png" alt="Conversation UI settings dialog in Pi" width="100%">
+  </a>
+  <br>
+  <em>The UI dialog configures the Statusline, prompt, Welcome card, highlighting, completion, and timers.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -29,4 +37,3 @@ completion, and Tool running timer.
 - [Settings reference](../../../../docs/reference/settings.md#ui)
 - [Command reference](../../../../docs/reference/commands.md#interface-and-inspection)
 - [Shared UI contract](../../../../DESIGN.md)
-

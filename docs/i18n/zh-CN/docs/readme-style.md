@@ -1,4 +1,4 @@
-<!-- translation-source: docs/readme-style.md; translation-source-sha256: 1b96fe5c81d60c6e266417b0fbb6e56fe6c588a0212bcc26ef4b6d721c765a4b -->
+<!-- translation-source: docs/readme-style.md; translation-source-sha256: c7f18a5eee81795d152ea2fb073529a419a45e8eee37c863bec884f8f6645ee5 -->
 
 # README 规范
 
@@ -75,7 +75,7 @@ README 是入口页。只保留安装步骤、最小可用示例、主要结果�
 - 隐藏 OS chrome，并把终端放在统一的浅薰衣草背景、圆角与阴影中。
 - 以高于目标的分辨率拍摄，再缩小为最终 `1600×900` PNG。
 - 原生 Ghostty 拍摄完成后，使用 `different-ai/openwork@agent-first-screenshots` 做视觉检查、裁切和构图。
-- 只有必须通过动态才能理解行为时，才加入 GIF 或 WebM。
+- README 预览统一使用 PNG。必须用动态才能讲清的演示放入详细 Capability 指南。
 
 面向图表的 README 在 Pi 内渲染真实 `chart` 或 `tree` fence，再拍摄该终端状态。图表标签属于内容；
 编辑性箭头和标注不得烘焙到图片中。
@@ -91,25 +91,10 @@ README 是入口页。只保留安装步骤、最小可用示例、主要结果�
 | 研究索引 | `research/index.png` |
 | 报告索引 | `reports/index.png` |
 | Package | `package/suite.png`、`package/commands.png` |
-| 主题 | `themes/preview.png` |
-| Conversation UI | `conversation-ui/preview.png` |
-| Session Naming | `session-naming/preview.png` |
-| Tool Display | `tool-display/preview.png` |
-| RTK | `rtk/preview.png` |
-| Codex | `codex/preview.png` |
-| Goal | `goal/preview.png` |
-| Context Management | `context-management/preview.png` |
-| Ponytail | `ponytail/preview.png` |
-| Web | `web/preview.png` |
-| MCP | `mcp/preview.png` |
-| Background Work | `background-work/preview.png` |
-| Agents | `subagents/preview.png` |
-| Todo | `todo/preview.png` |
-| BTW | `btw/preview.png` |
-| Notification | `notification/preview.png` |
-| Code Mode | `code-mode/preview.png` |
-| MCP runtime | `mcp-runtime/preview.png` |
-| Web runtime | `web-runtime/preview.png` |
+| 主题 | `themes/latte.png` |
+| Capability Module | `capabilities/<module>.png` |
+| MCP runtime | `runtime/mcp.png` |
+| Web runtime | `runtime/web.png` |
 
 ## 链接与翻译
 
@@ -131,4 +116,3 @@ README 是入口页。只保留安装步骤、最小可用示例、主要结果�
 - 每张图都使用标准代码块，是 `1600×900` PNG，包含有效 alt text 和 caption，并可点击。
 - 英文与简体中文导航能够到达对应内容。
 - 链接、翻译 header、截图和索引文档都没有过期。
-

@@ -6,6 +6,14 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 [compatibility guide](../compatibility.md) for the current certified environment and the
 [documentation index](../README.md) for current behavior.
 
+<p align="center">
+  <a href="../assets/readme/reports/index.png">
+    <img src="../assets/readme/reports/index.png" alt="Pi Stuff diagnostics in Ghostty" width="100%">
+  </a>
+  <br>
+  <em>Suite diagnostics provide bounded evidence from the running process.</em>
+</p>
+
 ## Benchmarks and acceptance
 
 - [Terminal-Bench 2.1 latency comparison](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)

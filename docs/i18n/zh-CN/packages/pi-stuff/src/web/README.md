@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: fd3f6e9700583e2c3de2615e8291c03759ec57fe603ed36500b63ff4a5932e31 -->
+<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: cd7424420f15954e707578ab7d6c3814df7e734acd5ac808c07f3728fc160904 -->
 
 # Web
 
 [English](../../../../../../../packages/pi-stuff/src/web/README.md)
 
 通过三个 model-facing Tool 提供搜索、公开 HTTP 提取与有界 continuation。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/web.png">
+    <img src="../../../../../../assets/readme/capabilities/web.png" alt="Web 调用使用的共享 Tool 活动视图" width="100%">
+  </a>
+  <br>
+  <em>Web 调用与 Suite 的其他 Tool 共用同一套可检查活动界面。</em>
+</p>
 
 ## 快速开始
 
@@ -31,4 +39,3 @@
 - [Runtime 安全](runtime/SECURITY.md)
 - [Runtime 契约](runtime/README.md)
 - [上游参考](UPSTREAM.md)
-

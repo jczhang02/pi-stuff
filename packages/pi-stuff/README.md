@@ -4,6 +4,14 @@
 
 The Pi Stuff Package adds focused interface, work, context, and integration capabilities to Pi.
 
+<p align="center">
+  <a href="../../docs/assets/readme/package/suite.png">
+    <img src="../../docs/assets/readme/package/suite.png" alt="Pi Stuff conversation with a Session-scale Todo" width="100%">
+  </a>
+  <br>
+  <em>The Suite combines conversation, Tools, and a Session-scale Todo in one Pi surface.</em>
+</p>
+
 ## Capabilities
 
 | Area | Included capabilities |
@@ -25,6 +33,14 @@ pi
 The current certified Pi and toolchain versions are listed in
 [`docs/compatibility.md`](../../docs/compatibility.md). Optional services and executables can be configured only when
 their capabilities are needed.
+
+<p align="center">
+  <a href="../../docs/assets/readme/package/commands.png">
+    <img src="../../docs/assets/readme/package/commands.png" alt="Pi Stuff slash-command completion in the Pi editor" width="100%">
+  </a>
+  <br>
+  <em>Slash completion exposes the command surface without a separate launcher.</em>
+</p>
 
 ## Documentation
 

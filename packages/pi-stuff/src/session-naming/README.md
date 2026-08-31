@@ -4,6 +4,14 @@
 
 Short, searchable Session names generated after direct user work settles.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/session-naming.png">
+    <img src="../../../../docs/assets/readme/capabilities/session-naming.png" alt="Automatic Session Naming controls in Pi" width="100%">
+  </a>
+  <br>
+  <em>Session Naming controls automatic names, cooldown, and model choice.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -29,4 +37,3 @@ policy, and the primary naming model.
 - [Settings reference](../../../../docs/reference/settings.md#sessionnaming)
 - [Command reference](../../../../docs/reference/commands.md#sessions-and-side-questions)
 - [Troubleshooting](../../../../docs/troubleshooting.md)
-

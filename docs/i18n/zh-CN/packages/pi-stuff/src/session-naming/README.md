@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/session-naming/README.md; translation-source-sha256: 4de3581cc83b67755c57abfcccec9f3315f5ee9de791a7153009b62b999145ec -->
+<!-- translation-source: packages/pi-stuff/src/session-naming/README.md; translation-source-sha256: 9ba7f8154acf7502e3be3f61221ce2c27a491d69b24df11913ea48d5fb57bd23 -->
 
 # Session Naming
 
 [English](../../../../../../../packages/pi-stuff/src/session-naming/README.md)
 
 直接用户工作结算后生成简短、可搜索的 Session 名称。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/session-naming.png">
+    <img src="../../../../../../assets/readme/capabilities/session-naming.png" alt="Pi 中的自动 Session 命名控制" width="100%">
+  </a>
+  <br>
+  <em>Session Naming 集中控制自动命名、冷却时间和模型选择。</em>
+</p>
 
 ## 快速开始
 
@@ -31,4 +39,3 @@ naming model。
 - [设置参考](../../../../docs/reference/settings.md#sessionnaming)
 - [命令参考](../../../../docs/reference/commands.md#session-与支线问题)
 - [故障排查](../../../../docs/troubleshooting.md)
-

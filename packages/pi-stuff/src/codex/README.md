@@ -4,6 +4,14 @@
 
 Fast mode, usage visibility, and native Tools for supported OpenAI Codex Responses models.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/codex.png">
+    <img src="../../../../docs/assets/readme/capabilities/codex.png" alt="Codex usage and Fast mode controls in Pi" width="100%">
+  </a>
+  <br>
+  <em>Codex usage and Fast mode controls stay available from Pi.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -28,4 +36,3 @@ Use `/codex fast` to toggle priority service and `/codex usage` to refresh curre
 - [Command reference](../../../../docs/reference/commands.md#codex-and-rtk)
 - [Settings reference](../../../../docs/reference/settings.md#codex)
 - [Troubleshooting](../../../../docs/troubleshooting.md#codex-and-code-mode)
-

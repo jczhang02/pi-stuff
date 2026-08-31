@@ -74,10 +74,34 @@ async function writeLocalPackage(root: string, manifest: JsonInputObject): Promi
 	await writeFile(join(root, "packages", "pi-stuff", "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
 }
 
-async function writeFixture(root: string, path: string, content: string): Promise<void> {
+async function writeFixture(root: string, path: string, content: string | Uint8Array): Promise<void> {
 	const absolutePath = join(root, path);
 	await mkdir(dirname(absolutePath), { recursive: true });
 	await writeFile(absolutePath, content);
+}
+
+function readmeScreenshotAssetPath(sourcePath: string): string {
+	return `docs/assets/readme/fixtures/${sourcePath.replaceAll("/", "-")}.png`;
+}
+
+function readmeScreenshotBlock(sourcePath: string): string {
+	const link = `/${readmeScreenshotAssetPath(sourcePath)}`;
+	return `<p align="center">\n  <a href="${link}">\n    <img src="${link}" alt="Fixture screenshot" width="100%">\n  </a>\n  <br>\n  <em>Fixture caption.</em>\n</p>`;
+}
+
+function pngHeader(width = 1600, height = 900): Buffer {
+	const png = Buffer.alloc(24);
+	Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
+	png.writeUInt32BE(13, 8);
+	png.write("IHDR", 12, "ascii");
+	png.writeUInt32BE(width, 16);
+	png.writeUInt32BE(height, 20);
+	return png;
+}
+
+async function writeReadmeFixture(root: string, sourcePath: string, content: string): Promise<void> {
+	await writeFixture(root, readmeScreenshotAssetPath(sourcePath), pngHeader());
+	await writeFixture(root, sourcePath, `${content.trimEnd()}\n\n${readmeScreenshotBlock(sourcePath)}\n`);
 }
 
 async function writeTranslationFixture(root: string, sourcePath: string, body = "# 中文镜像\n"): Promise<void> {
@@ -101,9 +125,21 @@ async function writeDocumentationFixture(root: string): Promise<readonly string[
 		"docs/reports/README.md": "# Reports\n\n[Report](report.md)\n",
 		"docs/reports/report.md": "# Report\n",
 	} as const;
-	for (const [path, content] of Object.entries(documents)) await writeFixture(root, path, content);
+	await writeReadmeFixture(root, "README.md", "Repository documentation.\n");
+	for (const [path, content] of Object.entries(documents)) {
+		if (path.endsWith("/README.md")) await writeReadmeFixture(root, path, content);
+		else await writeFixture(root, path, content);
+	}
 	const sources = ["README.md", ...Object.keys(documents)];
-	for (const source of sources) await writeTranslationFixture(root, source);
+	for (const source of sources) {
+		await writeTranslationFixture(
+			root,
+			source,
+			source === "README.md" || source.endsWith("/README.md")
+				? `${readmeScreenshotBlock(source)}\n\n# 中文镜像\n`
+				: "# 中文镜像\n",
+		);
+	}
 	return sources;
 }
 
@@ -151,6 +187,40 @@ test("accepts indexed ADRs and fresh Simplified Chinese mirrors", async () => {
 	await writeFixture(root, "docs/reports/historical.zh-CN.md", "# 历史记录\n");
 
 	expect(await auditRepositoryFiles(root)).toEqual([]);
+});
+
+test("enforces README screenshot ownership, dimensions, mirrors, and orphan cleanup", async () => {
+	const root = await createRepository();
+	await writeDocumentationFixture(root);
+	const rootAsset = readmeScreenshotAssetPath("README.md");
+	await writeFixture(root, rootAsset, pngHeader(800, 600));
+	await writeFixture(
+		root,
+		"docs/README.md",
+		`# Wiki\n\n[ADR](adr/0001-host.md)\n\n${readmeScreenshotBlock("README.md")}\n`,
+	);
+	await writeTranslationFixture(root, "docs/README.md", `${readmeScreenshotBlock("README.md")}\n\n# 中文镜像\n`);
+	await writeFixture(root, "docs/research/README.md", "# Research\n\n[Study](study.md)\n");
+	await writeTranslationFixture(root, "docs/research/README.md");
+	await writeTranslationFixture(
+		root,
+		"docs/reports/README.md",
+		`${readmeScreenshotBlock("README.md")}\n\n# 中文镜像\n`,
+	);
+	await writeFixture(root, "docs/assets/readme/fixtures/orphan.png", pngHeader());
+
+	const findings = await auditRepositoryFiles(root);
+	expect(findings).toContainEqual({ path: "README.md", rule: "readme-screenshot-size:800x600" });
+	expect(findings).toContainEqual({ path: "docs/README.md", rule: "readme-screenshot-reused:README.md" });
+	expect(findings).toContainEqual({ path: "docs/research/README.md", rule: "readme-screenshot-missing" });
+	expect(findings).toContainEqual({
+		path: "docs/i18n/zh-CN/docs/reports/README.md",
+		rule: "readme-screenshot-translation-mismatch",
+	});
+	expect(findings).toContainEqual({
+		path: "docs/assets/readme/fixtures/orphan.png",
+		rule: "readme-screenshot-orphan",
+	});
 });
 
 test("rejects broken wiki structure, ADR relations, and translation drift", async () => {

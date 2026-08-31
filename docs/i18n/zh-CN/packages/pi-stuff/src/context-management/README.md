@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 48bd7fbea94da4be59b885772455bd99be9f838fca479343a432685b8d62f14b -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 2ee2bc3923d259063aba05dd2864336f3a91afe480897364bef137e89336dc9c -->
 
 # Context Management
 
 [English](../../../../../../../packages/pi-stuff/src/context-management/README.md)
 
 面向 Pi Session 的 Context 投影、检索、memory、note、compaction 与压力处理。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/context-management.png">
+    <img src="../../../../../../assets/readme/capabilities/context-management.png" alt="Pi 中的 Context 状态与维护操作" width="100%">
+  </a>
+  <br>
+  <em>Context 状态和维护操作集中在一个对话框中。</em>
+</p>
 
 ## 快速开始
 
@@ -30,4 +38,3 @@ token 和当前错误。
 - [命令参考](../../../../docs/reference/commands.md#context)
 - [故障排查](../../../../docs/troubleshooting.md#context)
 - [架构](../../../../docs/architecture.md#生命周期所有权)
-

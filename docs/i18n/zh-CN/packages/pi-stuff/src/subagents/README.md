@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 5467d5359e8bf569c618912ae89d62b3fad61d54f2f5bed87ee9b7e66c002cc3 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 81675094ad7ba0a0d65a3592a0ebcb684e6c721da9066e1f8e9cf367a64279fd -->
 
 # Agents
 
 [English](../../../../../../../packages/pi-stuff/src/subagents/README.md)
 
 把有界工作委派给命名 child Agent，默认在后台执行，并通过一个界面管理生命周期。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/subagents.png">
+    <img src="../../../../../../assets/readme/capabilities/subagents.png" alt="Pi 中的委派 Agent 对话框" width="100%">
+  </a>
+  <br>
+  <em>Agents 对话框让委派工作保持在当前 Session 范围内。</em>
+</p>
 
 ## 快速开始
 
@@ -36,4 +44,3 @@
 - [Background Work 指南](../../../../docs/capabilities/background-work.md)
 - [Tool Display 指南](../../../../docs/capabilities/tool-display.md)
 - [上游参考](UPSTREAM.md)
-

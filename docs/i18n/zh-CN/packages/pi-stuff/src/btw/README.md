@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 6fa334d4e839290f06b518a1722ed8ffcd4e7bda60e625df90478290f1d79b9f -->
+<!-- translation-source: packages/pi-stuff/src/btw/README.md; translation-source-sha256: 85e182a0bef6e6d2fe388f3deb7d37276c6e1325a92da2bfbb4786c8262900a0 -->
 
 # BTW
 
 [English](../../../../../../../packages/pi-stuff/src/btw/README.md)
 
 在聚焦 dialog 中提出一个不使用 Tool 的支线问题，不改变主 conversation。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/btw.png">
+    <img src="../../../../../../assets/readme/capabilities/btw.png" alt="Pi 主对话旁的 BTW 支线问题视图" width="100%">
+  </a>
+  <br>
+  <em>BTW 在独立视图中回答支线问题，同时保留主 transcript。</em>
+</p>
 
 ## 快速开始
 
@@ -31,4 +39,3 @@
 - [Conversation UI 指南](../../../../docs/capabilities/conversation-ui.md)
 - [共享 UI 契约](../../../../DESIGN.md)
 - [上游参考](UPSTREAM.md)
-

@@ -4,6 +4,14 @@
 
 Bounded delegation to named child Agents, with background-by-default execution and one lifecycle view.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/subagents.png">
+    <img src="../../../../docs/assets/readme/capabilities/subagents.png" alt="Delegated Agents dialog in Pi" width="100%">
+  </a>
+  <br>
+  <em>The Agents dialog keeps delegated work scoped to the current Session.</em>
+</p>
+
 ## Quick start
 
 Use the `subagent` Tool:
@@ -34,4 +42,3 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
 - [Background Work guide](../../../../docs/capabilities/background-work.md)
 - [Tool Display guide](../../../../docs/capabilities/tool-display.md)
 - [Upstream references](UPSTREAM.md)
-

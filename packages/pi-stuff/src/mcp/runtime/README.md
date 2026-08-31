@@ -4,6 +4,14 @@
 
 Configuration, transport, authentication, lifecycle, discovery, and output handling behind the Pi Stuff MCP gateway.
 
+<p align="center">
+  <a href="../../../../../docs/assets/readme/runtime/mcp.png">
+    <img src="../../../../../docs/assets/readme/runtime/mcp.png" alt="MCP runtime connection state in Pi" width="100%">
+  </a>
+  <br>
+  <em>The bundled MCP runtime reports configured servers and connection state through Pi.</em>
+</p>
+
 ## Quick start
 
 Use the parent [MCP guide](../../../../../docs/capabilities/mcp.md) and `/mcp` surface. The runtime activates for
@@ -24,4 +32,3 @@ configured servers as their lifecycle or gateway use requires.
 - [MCP guide](../../../../../docs/capabilities/mcp.md)
 - [MCP Module README](../README.md)
 - [Upstream references](UPSTREAM.md)
-

@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 8264fe90e64b7da8fe2bf31961a76bb64a04817465ae17754b2074b4f78390c3 -->
+<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 28b2cf0b84e2c331d4758dac692543eee2d9bd7a00a2296188fb1ed1ce5ff71d -->
 
 # Background Work
 
 [English](../../../../../../../packages/pi-stuff/src/background-work/README.md)
 
 在主 Agent 继续工作时运行 Background Shell 与一次性 Monitor，并自动报告完成。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/background-work.png">
+    <img src="../../../../../../assets/readme/capabilities/background-work.png" alt="Pi 中的 Background Work 任务对话框" width="100%">
+  </a>
+  <br>
+  <em>Background Work 对话框让 Shell 和 Monitor 留在 Pi 内随时可查。</em>
+</p>
 
 ## 快速开始
 
@@ -33,4 +41,3 @@ Dialog 列出当前工作、跟随有界输出，并停止当前 Session 拥有�
 - [Tool Display 指南](../../../../docs/capabilities/tool-display.md)
 - [Agents 指南](../../../../docs/capabilities/subagents.md)
 - [上游参考](UPSTREAM.md)
-

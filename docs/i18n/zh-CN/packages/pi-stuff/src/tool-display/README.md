@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 115e609aed9df6807998cd61378c846cebbf0af80498ed1637e57b5dc750739a -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 738044dfbf52e7d2c80aae06c9783720194c196f22ff575788055d255c88b6af -->
 
 # Tool Display
 
 [English](../../../../../../../packages/pi-stuff/src/tool-display/README.md)
 
 在 transcript 中紧凑显示 Tool activity，需要时仍可查看完整详情。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/tool-display.png">
+    <img src="../../../../../../assets/readme/capabilities/tool-display.png" alt="Pi 中的 Tool 活动列表与选中详情" width="100%">
+  </a>
+  <br>
+  <em>Tool 活动在左侧提供紧凑状态，在右侧显示选中项详情。</em>
+</p>
 
 ## 快速开始
 
@@ -31,4 +39,3 @@
 - [Conversation UI 指南](../../../../docs/capabilities/conversation-ui.md)
 - [命令参考](../../../../docs/reference/commands.md#界面与查看)
 - [共享 UI 契约](../../../../DESIGN.md)
-

@@ -4,6 +4,14 @@
 
 Configured MCP servers behind one searchable, bounded gateway Tool.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/mcp.png">
+    <img src="../../../../docs/assets/readme/capabilities/mcp.png" alt="MCP connection dialog in Pi" width="100%">
+  </a>
+  <br>
+  <em>The MCP dialog shows connection state and opens setup only when a server is needed.</em>
+</p>
+
 ## Quick start
 
 Add a project `.mcp.json`, start Pi, then open:
@@ -31,4 +39,3 @@ or on-demand lifecycle.
 - [Troubleshooting](../../../../docs/troubleshooting.md#mcp)
 - [Runtime contract](runtime/README.md)
 - [Upstream references](UPSTREAM.md)
-

@@ -1,10 +1,18 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 41f3f66ec71204582a7a5f66d6b3a9def21ef1237ffe66058398abcfebba7050 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 564630b52140004b39830a0e9f67e2a6a0ae62925ddb5365ffaf278146c8fbef -->
 
 # 研究
 
 [English](../../../../../docs/research/README.md)
 
 这里保留按日期记录的调查、测量、比较和设计输入，供以后复查。查看当前行为请从[文档索引](../README.md)开始。
+
+<p align="center">
+  <a href="../../../../assets/readme/research/index.png">
+    <img src="../../../../assets/readme/research/index.png" alt="实时 Pi 对话中的 chart 与 tree 投影" width="100%">
+  </a>
+  <br>
+  <em>使用真实 Pi 渲染，让界面研究始终对应实际交付的界面。</em>
+</p>
 
 ## 架构与可行性
 

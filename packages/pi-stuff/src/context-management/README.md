@@ -4,6 +4,14 @@
 
 Context projection, retrieval, memory, notes, compaction, and pressure handling for Pi Sessions.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/context-management.png">
+    <img src="../../../../docs/assets/readme/capabilities/context-management.png" alt="Context status and maintenance actions in Pi" width="100%">
+  </a>
+  <br>
+  <em>Context status and maintenance actions stay visible in one focused dialog.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -28,4 +36,3 @@ tokens, and current errors.
 - [Command reference](../../../../docs/reference/commands.md#context)
 - [Troubleshooting](../../../../docs/troubleshooting.md#context)
 - [Architecture](../../../../docs/architecture.md#lifecycle-ownership)
-

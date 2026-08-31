@@ -1,10 +1,18 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 0062d605a2bc535901768951cc218f66bfbce648f29b8403791795cca2ced2de -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 93a97e6f3a561de053dfa80094fe8283541dd34c25732b0dcffdcdec3d8cb857 -->
 
 # Conversation UI
 
 [English](../../../../../../../packages/pi-stuff/src/conversation-ui/README.md)
 
 Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦 Command Dialog 的共享呈现层。
+
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/conversation-ui.png">
+    <img src="../../../../../../assets/readme/capabilities/conversation-ui.png" alt="Pi 中的 Conversation UI 设置对话框" width="100%">
+  </a>
+  <br>
+  <em>UI 对话框集中配置 Statusline、prompt、欢迎卡片、高亮、补全和计时器。</em>
+</p>
 
 ## 快速开始
 
@@ -29,4 +37,3 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
 - [设置参考](../../../../docs/reference/settings.md#ui)
 - [命令参考](../../../../docs/reference/commands.md#界面与查看)
 - [共享 UI 契约](../../../../DESIGN.md)
-

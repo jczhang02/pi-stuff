@@ -4,6 +4,14 @@
 
 Persistent, evidence-gated work toward one Session objective.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/goal.png">
+    <img src="../../../../docs/assets/readme/capabilities/goal.png" alt="Goal manager in Pi" width="100%">
+  </a>
+  <br>
+  <em>The Goal manager starts, edits, pauses, and resumes durable work.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -29,4 +37,3 @@ longer remain active.
 - [Command reference](../../../../docs/reference/commands.md#work-control)
 - [Settings reference](../../../../docs/reference/settings.md#goal)
 - [Architecture](../../../../docs/architecture.md#lifecycle-ownership)
-

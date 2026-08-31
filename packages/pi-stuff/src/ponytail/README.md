@@ -4,6 +4,14 @@
 
 Session-scoped guidance for choosing the smallest adequate coding solution.
 
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/ponytail.png">
+    <img src="../../../../docs/assets/readme/capabilities/ponytail.png" alt="Ponytail mode and guidance controls in Pi" width="100%">
+  </a>
+  <br>
+  <em>Ponytail shows the active mode and every guidance switch in one place.</em>
+</p>
+
 ## Quick start
 
 ```text
@@ -30,4 +38,3 @@ Bare `/ponytail` opens the control dialog. `full` is the default mode.
 - [Command reference](../../../../docs/reference/commands.md#ponytail)
 - [Settings reference](../../../../docs/reference/settings.md#ponytail)
 - [Upstream references](UPSTREAM.md)
-
