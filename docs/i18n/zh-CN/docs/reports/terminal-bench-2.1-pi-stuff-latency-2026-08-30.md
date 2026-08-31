@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md; translation-source-sha256: 52b4253f4ad49cabe09cd9b2bfa5e44142d8841e4f5c02738e0d56509a09da8e -->
+<!-- translation-source: docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md; translation-source-sha256: 29d7a9675c0c26d0fc46ba4380310de10db3cf27962d26d3edf82afd0d8d024a -->
 
 # Terminal-Bench 2.1 Pi Stuff 延迟对比 — 2026-08-30
 
@@ -46,7 +46,8 @@ Pi Stuff 实验则在本机运行确定性抽取的 12 项任务子集。
 
 - 评估器：Harbor 0.17.1；Terminal-Bench 2.1 数据集 digest 为
   `sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`。
-- Host 与模型：经认证的 Pi 0.84.3；`openai-codex/gpt-5.6-luna`；`max` 推理强度。
+- 历史实验所用 Host 与模型：实验记录时仓库认证的 Pi 0.84.3；`openai-codex/gpt-5.6-luna`；`max`
+  推理强度。
 - 实验组：`PI_STUFF_CODE_MODE_FROZEN=off` 和 `on`；其余 Agent 参数及挂载资源相同。
 - 样本：使用种子 `ps-ljy-terminal-bench-latency-tasks-v1` 对冻结清单中的 89 项任务作 SHA-256 排序，
   选取 12 项；每项任务在每组重复两次，共 48 次模型试验。

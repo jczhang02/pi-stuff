@@ -45,7 +45,8 @@ runnable configuration. Protocol validation fixed the following choices before a
 
 - Evaluator: Harbor 0.17.1 and Terminal-Bench 2.1 dataset digest
   `sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`.
-- Host and model: certified Pi 0.84.3; `openai-codex/gpt-5.6-luna`; `max` reasoning effort.
+- Historical study Host and model: Pi 0.84.3, certified for this repository when the run was recorded;
+  `openai-codex/gpt-5.6-luna`; `max` reasoning effort.
 - Arms: `PI_STUFF_CODE_MODE_FROZEN=off` and `on`; other Agent arguments and mounted resources were identical.
 - Sample: 12 tasks selected by SHA-256 sorting the frozen 89-task manifest with seed
   `ps-ljy-terminal-bench-latency-tasks-v1`; two repetitions per task and arm, 48 model trials in total.
