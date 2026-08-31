@@ -289,7 +289,7 @@ async function runReadTurn(
 	observations: PressureObservation[],
 ): Promise<void> {
 	const records = await rpc.promptAndWait(
-		`Use read exactly once for each of these files: ${paths.map((path) => basename(path)).join(", ")}. After all reads finish, reply exactly ${marker}.`,
+		`Use read exactly once for each exact quoted filename, preserving every character including leading zeroes: ${paths.map((path) => JSON.stringify(basename(path))).join(", ")}. After all reads finish, reply exactly ${marker}.`,
 	);
 	assertToolSuccess(records, "read", paths.length);
 	const answer = await lastAssistantText(rpc);
@@ -455,7 +455,7 @@ async function assertInitialState(rpc: RpcTransport): Promise<{ sessionFile: str
 
 async function seedContinuity(rpc: RpcTransport, canary: string, observations: PressureObservation[]): Promise<void> {
 	const records = await rpc.promptAndWait(
-		`The early acceptance canary is ${canary}. Call TaskCreate with subject ${JSON.stringify(TODO_SUBJECT)} and description ${JSON.stringify("A pending task that must survive Magic Context compaction and cold resume.")}. Also call ctx_memory with action write, category WORKFLOW_RULES, and content ${JSON.stringify(`Durable acceptance recall rule: the exact canary is ${canary}`)}. After both tools succeed, reply exactly MAGIC_SETUP_DONE.`,
+		`The early acceptance canary is ${canary}. Call TaskCreate with subject ${JSON.stringify(TODO_SUBJECT)} and description ${JSON.stringify("A pending task that must survive Magic Context compaction and cold resume.")}. Also call ctx_memory with action write, category PROJECT_RULES, and content ${JSON.stringify(`Durable acceptance recall rule: the exact canary is ${canary}`)}. After both tools succeed, reply exactly MAGIC_SETUP_DONE.`,
 	);
 	assertToolSuccess(records, "TaskCreate");
 	assertToolSuccess(records, "ctx_memory");
