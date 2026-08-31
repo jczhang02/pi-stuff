@@ -1,4 +1,4 @@
-<!-- translation-source: README.md; translation-source-sha256: 8b5bcaf461522530053ed08c0efdfef832b0367deed1c590df353caac85d519b -->
+<!-- translation-source: README.md; translation-source-sha256: 558ea27ebd98db3e555c3c694ed3af78e6b4d456164251950954665af3c0bad9 -->
 
 <div align="center">
 
@@ -205,8 +205,8 @@ Pi 模块冷导入平均耗时 40.5 秒。公开 Codex 结果并非同任务、�
 | --- | --- |
 | [科研报告](docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) · [English](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md) | 实验方法、结果、限制与根因分析 |
 | [脱敏结果](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json) | 逐次实验记录、汇总统计与本地证据哈希 |
-| [冻结协议](../../../benchmarks/terminal-bench-2.1/latency-study.json) | 预注册任务、实验组、执行上限与分析规则 |
-| [冻结源清单](../../../benchmarks/terminal-bench-2.1/manifest.json) | 协议与结果哈希所引用的逐字节任务总体；历史 adapter 字段仅作来源记录，不是可运行配置 |
+| [冻结协议](../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json) | 预注册任务、实验组、执行上限与分析规则 |
+| [冻结源清单快照](../../../docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json) | 协议与结果哈希所引用的逐字节任务总体；历史 adapter 字段仅作来源记录，不是可运行配置 |
 
 ## 开发
 

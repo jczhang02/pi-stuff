@@ -38,8 +38,10 @@ Consequently, the reference cannot identify a causal Pi Stuff penalty; the withi
 
 ## Frozen protocol
 
-The machine-readable protocol is [`latency-study.json`](../../benchmarks/terminal-bench-2.1/latency-study.json). Its
-validation test fixed the following choices before any counted model trial.
+The machine-readable [frozen protocol](terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json) records the study
+design. The byte-exact [source manifest snapshot](terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json)
+is retained only to verify its recorded hash; its historical adapter and execution fields are provenance, not current
+runnable configuration. Protocol validation fixed the following choices before any counted model trial.
 
 - Evaluator: Harbor 0.17.1 and Terminal-Bench 2.1 dataset digest
   `sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`.

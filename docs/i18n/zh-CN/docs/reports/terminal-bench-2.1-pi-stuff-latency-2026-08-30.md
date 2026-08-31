@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md; translation-source-sha256: 072712ec839ac0e0e201b5c32d93f480a673f8e809699c61f9ac9517b3e2e5ac -->
+<!-- translation-source: docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md; translation-source-sha256: 52b4253f4ad49cabe09cd9b2bfa5e44142d8841e4f5c02738e0d56509a09da8e -->
 
 # Terminal-Bench 2.1 Pi Stuff 延迟对比 — 2026-08-30
 
@@ -39,8 +39,10 @@ Pi Stuff 实验则在本机运行确定性抽取的 12 项任务子集。
 
 ## 冻结协议
 
-机器可读协议保存在 [`latency-study.json`](../../../../../benchmarks/terminal-bench-2.1/latency-study.json)。在
-任何计入结果的模型试验开始前，验证测试已固定以下选择。
+机器可读的[冻结协议](../../../../../docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json)
+记录了研究设计。逐字节保留的[源清单快照](../../../../../docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json)
+仅用于复核其中记录的哈希；里面的历史 adapter 与 execution 字段只是来源记录，不是当前可运行配置。在任何计入
+结果的模型试验开始前，协议验证已固定以下选择。
 
 - 评估器：Harbor 0.17.1；Terminal-Bench 2.1 数据集 digest 为
   `sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a`。
