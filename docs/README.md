@@ -2,30 +2,45 @@
 
 [Simplified Chinese](i18n/zh-CN/docs/README.md)
 
-This directory and the linked repository documents form the Pi Stuff engineering wiki. English sources are
-authoritative; Simplified Chinese mirrors are navigation-compatible translations, not separate specifications.
+This directory and the linked repository documents form the Pi Stuff documentation library. English sources are
+authoritative; Simplified Chinese mirrors provide matching navigation and content.
 
 ## Start here
 
 Read the narrowest current authority that answers the question:
 
-1. [`README.md`](../README.md) — user entry point, installation, and Suite overview.
-2. [`packages/pi-stuff/README.md`](../packages/pi-stuff/README.md) — current Package behavior and commands.
-3. The owning Capability Module README — behavior and maintenance notes closest to the source.
-4. [`CONTEXT.md`](../CONTEXT.md) — canonical terminology and ownership boundaries.
-5. [`DESIGN.md`](../DESIGN.md) — shared visual and interaction contract.
-6. An accepted ADR — why a durable architecture choice exists.
+1. [Getting started](getting-started.md) — install the Package and learn the first controls.
+2. [`README.md`](../README.md) — Suite overview and main navigation.
+3. [`packages/pi-stuff/README.md`](../packages/pi-stuff/README.md) — Package capabilities and installation.
+4. The owning Capability guide and Module README — usage followed by the contract closest to the source.
+5. [`CONTEXT.md`](../CONTEXT.md) — canonical terminology and ownership boundaries.
+6. [`DESIGN.md`](../DESIGN.md) — shared visual and interaction contract.
+7. An accepted ADR — the trade-off behind a durable architecture choice.
 
 Repository-wide rules live in [`AGENTS.md`](../AGENTS.md), [`code-quality.md`](code-quality.md), and
 [`compatibility.md`](compatibility.md). Contributor and issue workflows live in
 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) and [`agents/`](agents/).
 
+## User documentation
+
+| Need | Guide |
+| --- | --- |
+| Install and start | [Getting started](getting-started.md) |
+| Understand the Suite | [Architecture](architecture.md) |
+| Find a slash command | [Command reference](reference/commands.md) |
+| Configure a capability | [Settings reference](reference/settings.md) |
+| Choose a bundled theme | [Themes](reference/themes.md) |
+| Recover from a problem | [Troubleshooting](troubleshooting.md) |
+| Maintain README content and images | [README style](readme-style.md) |
+
 ## Document roles
 
 | Document | Owns | Does not own |
 | --- | --- | --- |
-| Root and Package READMEs | Current user-facing behavior and navigation | Historical rationale |
-| Capability READMEs | Current local behavior, contracts, and maintenance | Cross-Suite architecture |
+| Root, Package, and Capability READMEs | Concise entry points and navigation | Full command, settings, or recovery detail |
+| User guides | Current usage and task-oriented explanation | Source-local maintenance contracts |
+| Reference docs | Exact commands, settings, themes, and compatibility | Historical rationale |
+| Capability Module READMEs | Source-local contracts and maintenance | General onboarding |
 | `CONTEXT.md` | Canonical language and ownership boundaries | Procedural workflow |
 | `DESIGN.md` | Shared visible-surface rules | Capability internals |
 | ADRs | Durable decisions, trade-offs, and consequences | Current behavior already obvious from code or a README |

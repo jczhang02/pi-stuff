@@ -1,33 +1,47 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 3653ccc0bbdc0e46c1a48232049a1f1f130001eb28918fcd28cf555daaa45883 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 8f4b5498daa205714957375f680fb9e6343fcae1fcda34ce34bbc798b04adf6b -->
 
 # 工程文档
 
 [English](../../../../docs/README.md)
 
-本目录与其中链接的仓库文档共同构成 Pi Stuff 工程 Wiki。英文原文是权威来源；简体中文镜像在导航上与其
-对应，但不是另一套独立规范。
+本目录与其中链接的仓库文档共同构成 Pi Stuff 文档库。英文原文是权威来源；简体中文镜像提供对应的导航和内容。
 
 ## 从这里开始
 
 优先阅读能够回答问题的最窄当前权威：
 
-1. [`README.md`](../README.md)——用户入口、安装方式与 Suite 概览。
-2. [`packages/pi-stuff/README.md`](../packages/pi-stuff/README.md)——当前 Package 行为与命令。
-3. 负责该行为的 Capability Module README——最靠近源码的行为与维护说明。
-4. [`CONTEXT.md`](../CONTEXT.md)——规范术语与所有权边界。
-5. [`DESIGN.md`](../DESIGN.md)——共享视觉与交互契约。
-6. 已接受的 ADR——某个持久架构选择为何存在。
+1. [入门](getting-started.md)——安装 Package 并了解最先使用的控制入口。
+2. [`README.md`](../README.md)——Suite 概览与主要导航。
+3. [`packages/pi-stuff/README.md`](../packages/pi-stuff/README.md)——Package 能力与安装。
+4. 对应的 Capability 指南和 Module README——先说明用法，再提供最靠近源码的契约。
+5. [`CONTEXT.md`](../CONTEXT.md)——规范术语与所有权边界。
+6. [`DESIGN.md`](../DESIGN.md)——共享视觉与交互契约。
+7. 已接受的 ADR——持久架构选择背后的取舍。
 
 仓库级规则位于 [`AGENTS.md`](../AGENTS.md)、[`code-quality.md`](code-quality.md) 和
 [`compatibility.md`](compatibility.md)。贡献与 issue 流程位于
 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) 和 [`agents/`](agents/)。
 
+## 用户文档
+
+| 需求 | 指南 |
+| --- | --- |
+| 安装与启动 | [入门](getting-started.md) |
+| 理解 Suite | [架构](architecture.md) |
+| 查找 slash 命令 | [命令参考](reference/commands.md) |
+| 配置能力 | [设置参考](reference/settings.md) |
+| 选择内置主题 | [主题](reference/themes.md) |
+| 从问题中恢复 | [故障排查](troubleshooting.md) |
+| 维护 README 内容与图片 | [README 规范](readme-style.md) |
+
 ## 文档职责
 
 | 文档 | 负责 | 不负责 |
 | --- | --- | --- |
-| 根目录和 Package README | 当前用户可见行为与导航 | 历史理由 |
-| Capability README | 当前局部行为、契约与维护说明 | 跨 Suite 架构 |
+| 根目录、Package 与 Capability README | 简洁入口与导航 | 完整命令、设置或恢复细节 |
+| 用户指南 | 当前用法与面向任务的说明 | 源码局部维护契约 |
+| 参考文档 | 准确命令、设置、主题与兼容性 | 历史理由 |
+| Capability Module README | 源码局部契约与维护 | 通用入门 |
 | `CONTEXT.md` | 规范语言与所有权边界 | 操作流程 |
 | `DESIGN.md` | 共享可见界面规则 | Capability 内部实现 |
 | ADR | 持久决策、取舍与后果 | 已能从代码或 README 明显看出的当前行为 |
