@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/code-volume-reduction-20260823.md; translation-source-sha256: 9ea93e3e90203fb02d261c18e5028c122439766b0d9d08d01a40809d80b8c2de -->
+<!-- translation-source: docs/research/code-volume-reduction-20260823.md; translation-source-sha256: 352635a085e952e3cbcaa300ef56f64927cad87f282d1a64f85b5b4f41b5e40b -->
 # Pi Stuff 代码量削减结果
 
 **测量日期：** 2026-08-23
@@ -6,6 +6,9 @@
 **基线：** `06e627a`
 **测量实现：** `bd48b24`
 **认证 Host：** Pi `0.84.2+source.914cf1472e71.binary.9a2d20fab3ca.bun.1.3.14`、Bun `1.3.14`、Linux x64
+
+> **历史决策快照。** ADR 0024 和 2026-09-01 的最终 Effect 重新认证已取代下方的采用建议。这里的测量值
+> 保持不变，继续作为当日代码削减工作的历史证据。
 
 ## 决策
 

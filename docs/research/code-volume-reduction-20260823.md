@@ -6,6 +6,9 @@
 **Measured implementation:** `bd48b24`  
 **Certified Host:** Pi `0.84.2+source.914cf1472e71.binary.9a2d20fab3ca.bun.1.3.14`, Bun `1.3.14`, Linux x64
 
+> **Historical decision snapshot.** ADR 0024 and the final 2026-09-01 Effect recertification supersede the adoption
+> recommendation below. The measurements remain unchanged evidence for the code-reduction work completed on this date.
+
 ## Decision
 
 Keep the native implementation and the reduced Web/MCP product surface. Do not add Effect v4 to the production

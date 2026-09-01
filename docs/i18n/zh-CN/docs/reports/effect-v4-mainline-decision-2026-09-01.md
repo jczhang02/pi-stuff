@@ -1,159 +1,166 @@
-<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: 45b5902091ae500208d56f401d9bb01320864ea5ff76bcf781d08bf327b7257e -->
+<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: e406b43f09d8e513fd056fe2e0015a195502e5e3867c249e901120c5bfb47938 -->
 
 # Effect v4 与 main 的取舍结论
 
-> **结论：暂不合并。** 优化后的 Effect 版本在冷启动 import 上确实更快，但生命周期性能没有证明不劣于
-> main，也没有证明这些优势只有 Effect 才能带来。按本次约定，候选版本的稳定性不参与否决。
+> **结论：把 Effect 实现升为 main。** 修正 acknowledgement 测量并把 Context 激活移到 Host 确认之后，
+> 优化后的 Effect 候选没有任何被统计判定的生命周期回退。它在冷 import 上明显优于已经带齐通用优化的
+> 原生对照，同时没有突破任何冻结的体积门槛。按约定，预发布版本的稳定性不参与本次决定。
 
-**决定日期：** 2026-09-01  
-**测试协议：** [Effect v4 主线对比](../../../../../docs/research/effect-v4-mainline-comparison-protocol-20260901.json)  
+**最终决定日期：** 2026-09-02  
+**冻结协议：** [Effect v4 主线对比](../../../../../docs/research/effect-v4-mainline-comparison-protocol-20260901.json)  
 **环境：** Linux x64、Bun 1.4.0、认证 Pi 0.84.4 release artifact  
-**冻结的 main 基线：** `b338a27f3c40401bdc6e72f42cc46da2813e39c6`  
-**冻结的 Effect 候选：** `99e3cd50c8de851446867720cd67d118a9757877`  
-**正式测试上限：** 四小时；所有性能批次在 12:50:45 +08:00 前结束
+**重新认证的原生对照：** `e4dd26ae250bf6e2d5de80ba9c3f3aefceb878e8`  
+**重新认证的 Effect 可执行源码树：** `79155ab273903f1234db8f2dc24f1ad8d91d113c`  
+**测试时间上限：** 四小时；计划中的性能批次都在约定上限内完成
 
-## 先说结论
+## 先说人话
 
-Effect 不是单纯变慢。最终候选的 Suite import 快了约 11%，CPU 少了约 10%，import 峰值 RSS 低了约 9%。
-这些结果可以重复。
+原来的问题不是 Effect 天生慢，而是 Effect 版把 Context 的启动工作放错了位置。用户输入后，Pi 还没返回
+确认，候选版就先启动 Effect 生命周期工作。最敏感的首输入路径因此真的变慢：原生 main 约 2.19 ms，
+Effect 约 2.56 ms，配对比较慢了约 23%。
 
-问题出在归因和几个慢点上。只看完成结构迁移、尚未优化的 Effect 版本，import 其实明显更慢。后来的延迟加载和
-缓存优化不但追回损失，还超过了 main。但其中一部分只是普通的 TypeScript 优化，原生 main 也能照搬。因此，
-现有证据不能说“因为用了 Effect，所以更快”。生命周期测试还有两项预注册的恢复后 prompt acknowledgement
-回退，shutdown 和其他 acknowledgement 指标也没有排除变慢。三次 Package TypeScript 对照里，Effect 冷检查
-慢约 10%，暖检查慢约 19%。
+现在由真正拥有这条路径的代码只记录输入，再把激活推迟到下一个 Host turn。确实需要 Context 的 hook 仍会在
+使用前消费这次待处理激活，所以没有把正确性拖到模型请求之后。修复后，新 Session 的首次确认是原生
+2.25 ms、Effect 2.35 ms，统计上不劣；短 Session 恢复后的 100 对确认也不劣，是 2.22 ms 对 2.29 ms。
+稳态确认、Provider 启动和响应路径同样不劣。
 
-这不符合事先定下的规则：每个决策指标都要证明不劣于 main；能移植回原生 main 的优化，不能单独成为采用
-Effect 的理由。
+原生优化对照已经带上 Jiti 缓存和 Agent 扫描缩减这些可移植优化。在这个前提下，Effect 的 Suite import
+仍快约 12.9%，import CPU 少约 11.5%，峰值 RSS 低约 9.2%。旧报告的归因缺口由此关闭：剩下的端点优势来自
+当前 Effect 实现，主要是收窄后的 Effect 延迟加载，而不是因为对照漏掉了通用优化。
 
-## 正在验证的测量修正
+Effect 也不是没有成本。Package TypeScript 代码增加 3.9%，打包归档增加 0.74%，冷 typecheck 慢 3.5%。
+Background Work 和 Agent 退出中位数还多约 3.8–4.3 ms。这些成本都在冻结门槛内，也没有在生命周期矩阵中
+形成用户可见回退。
 
-后续诊断发现，`must_editor_ready` 发出最后一次 `Ctrl-U` 后会立即返回。因此 Prompt 计时开始时，Host 可能还在
-处理基准自身的 Editor 清屏。亚毫秒级的输入确认由此混入了上一段 TUI 工作；它测到的并不是 Editor 真正稳定后
-的状态。
+## 协议和测量有没有“改规则”
 
-fixture 现在会在最终清屏后、计时区间外，再等待同一个 20 ms 轮询周期。这没有修改门槛，也没有隐藏产品工作，
-只是让准备阶段在测量开始前真正结束。
+预注册文件保持原样，里面仍是最初冻结的试验臂。之后发现了两个 benchmark 缺陷：
 
-第二次审计又发现一个边界错误。fixture 虽然已经看到了同步的输入确认标记，却把随后一个 microtask 发出的
-Editor 清屏标记时间记成了 `acknowledgement`。因此这个指标虽然叫“确认”，实际还包含了确认之后的 Editor
-工作。现在第一次 Prompt 和单次、重复稳态 Prompt 都会在确认标记匹配后立刻读时钟，再继续等待 Editor 清屏
-或 Provider 启动。聚焦回归测试覆盖了这三条生成路径。
+1. fixture 在最后一次 Editor 清屏真正稳定前就开始计时；
+2. acknowledgement 指标记下的是稍后一个 Editor-clear microtask 的时间，而不是同步的 Host 确认标记。
 
-第一次修正后的固定提交重跑中，覆盖测试得到 5 项改善、121 项不劣、15 项无法下结论、2 项回退；精测得到
-2 项改善、42 项不劣、5 项无法下结论、0 项回退。随后 50 对短恢复诊断把稳态 Editor 清屏判为不劣，第一次
-Editor 清屏仍无法下结论。但这些 acknowledgement 分类仍用了错误的较晚边界，不能参与合并决定；其他生命周期
-指标仍然有效。使用正确确认边界的固定试验臂覆盖与精测重跑尚未完成。
+两个问题都先修 fixture，再补聚焦回归测试。第一次正确测量暴露出上面那项真实的确认前激活成本，产品代码随后
+在对应边界修好。所有决策批次再以前瞻方式重跑，试验臂固定为干净、不可移动的 `e4dd26ae` 和
+`79155ab2`。这叫修正测量和产品后的重新认证，不是拿旧样本事后改判。
+
+原生对照的 `fb00fb03` 已经包含研究中找出的全部可移植优化，`e4dd26ae` 又带上与候选相同的 typecheck
+进程优化。`79155ab2` 之后的决策文档提交不改变本次测量的 Package 可执行源码树。
 
 ## 门槛结果
 
 | 门槛 | 结果 | 证据 |
 | --- | --- | --- |
-| 确定性行为、安全、数据、取消、清理、启动纯度 | 通过 | 两边完整检查都通过；真实 V8 生命周期测试均为 10/10 |
-| 冷 import 不劣于 main | 通过，而且更好 | 四项里三项明显改善，context switch 不劣 |
-| 生命周期不劣于 main | **失败** | 覆盖测试有 2 项回退、22 项无法下结论 |
-| Package 与依赖体积增长不超过 5% | 通过 | 归档 +1.02%，依赖树条目 +2.31% |
-| Effect 当前独有且有分量的优势 | **尚未证明** | 最终收益混合了 Effect 专属和可移植优化，没有“原生版加同样优化”的对照 |
-| 试验臂身份准确 | 部分通过 | import 与覆盖测试准确；精测期间 main 前进到一个只改文档的新提交 |
-| 总结论 | **暂不合并** | 一个硬门槛失败，两个硬门槛没解决 |
+| 确定性行为、安全、数据、取消、清理、启动纯度 | 通过 | 两个可执行试验臂都完成全仓检查和真实 Host 生命周期覆盖 |
+| 冷 import 不劣于 main | 通过，而且更好 | 耗时、CPU、RSS 改善，context switch 不劣 |
+| 生命周期不劣于 main | 通过 | 143 项筛查没有回退；所有筛查不确定项都由更多样本解决 |
+| Package 与依赖增长不超过 5% | 通过 | 归档 +0.74%；TypeScript 代码 +3.89%；依赖树条目 +2.31% |
+| Effect 当前独有且有分量的优势 | 通过 | 原生对照带齐所有可移植优化后，Effect 仍明显更好 |
+| 试验臂身份准确 | 通过 | 所有最终 artifact 都记录干净、固定、稳定的 `e4dd26ae` 与 `79155ab2` |
+| 总结论 | **把 Effect 升为 main** | 所有冻结硬门槛均通过 |
 
-Effect 第一次完整检查时，一个共用临时锁的垃圾回收测试失败。当时另一个工作树有真实 Pi 进程在运行。该测试
-随后单独连续通过 20 次，干净环境下重跑完整检查也通过。因此这里记为测试隔离缺陷，不算产品回退。没有配置
-凭据的真实外部 Provider 路径没有测试，也不写成“通过”。
+没有凭据的真实外部 Provider 路径仍未测试，也不写成“已经通过”。它们是没有改变的公开接缝，不是本次决定
+使用的证据。
 
 ## 运行时结果
 
 ### Suite 冷 import
 
-每边先暖机五次，再测 20 组配对的新进程。比值小于 1 表示 Effect 更好。
+每边先暖机五次，再测 20 对全新进程。比值小于 1 表示 Effect 更好。
 
-| 指标 | Effect / main 中位数 | 配对 95% 区间 | 结果 |
+| 指标 | Effect / 原生配对中位数 | 配对 95% 区间 | 结果 |
 | --- | ---: | ---: | --- |
-| 耗时 | 0.8872 | 0.8682–0.8994 | 快 11.28% |
-| CPU | 0.8970 | 0.8935–0.9171 | 少 10.30% |
-| 最大 RSS | 0.9107 | 0.9037–0.9133 | 低 8.93% |
-| Context switch | 0.9739 | 0.8963–0.9965 | 不劣 |
+| 耗时 | 0.8709 | 0.8505–0.8803 | 快 12.91% |
+| CPU | 0.8853 | 0.8743–0.8979 | 少 11.47% |
+| 最大 RSS | 0.9080 | 0.9061–0.9126 | 低 9.20% |
+| Context switch | 0.9364 | 0.8962–0.9615 | 不劣 |
 
-### 生命周期覆盖测试
+这组结果不是说任意 Effect 程序都比原生 TypeScript 快。它只证明：在这个仓库里，当两边都带上能用的通用
+优化后，经过审查的 Effect 实现优于经过审查的原生实现。
 
-覆盖测试包含四种 Session 场景、七种操作、两种终端尺寸，每个 cell 暖机一次并测三组配对样本，另有 Host
-对照。143 项比较结果如下：
+### 生命周期覆盖与精测
+
+覆盖测试包含四种 Session 场景、七种操作、两种终端尺寸，每个 cell 暖机一次并测三对样本，另有 Host
+对照。143 项比较如下：
 
 | 分类 | 数量 |
 | --- | ---: |
-| 改善 | 3 |
-| 不劣 | 116 |
-| 无法下结论 | 22 |
-| 回退 | 2 |
+| 改善 | 16 |
+| 不劣 | 107 |
+| 筛查阶段无法下结论 | 20 |
+| 回退 | 0 |
 
-两项回退都是短 Session 恢复后的 `steadyAcknowledgementMs`：
+15 样本精测得到 1 项改善、46 项不劣、2 项无法下结论、0 项回退，并解决了覆盖测试的 9 项不确定结果。
+剩余 11 项通过更高样本的定向批次解决：
 
-| Cell | Effect / main 中位数 | 配对 95% 区间 |
-| --- | ---: | ---: |
-| `resume-short/prompt/100x32` | 1.4943 | 1.3672–2.7609 |
-| `resume-short/prompt/64x28` | 1.3459 | 1.3054–3.6458 |
+| 筛查缺口 | 最终证据 | 结果 |
+| --- | --- | --- |
+| 新 Session 100×32 的首次和稳态确认 | 50 对 prompt | 两项都不劣 |
+| degraded 64×28 的稳态确认与响应 | 25 对 prompt | 两项都不劣 |
+| 长恢复 64×28 的稳态确认、Provider 启动与响应 | 25 对 prompt | 三项都不劣 |
+| 短恢复 100×32 的首次确认、稳态 Provider 启动与响应 | 100 对 prompt | 六项 prompt 指标全部不劣 |
+| 短恢复 64×28 的稳态确认 | 独立 25 对确认 | 不劣 |
 
-acknowledgement 的绝对耗时很小，调度噪声会放大这个比值。它依然会挡住本次合并，因为测试前冻结的规则没有
-设置“绝对差值太小就忽略”的例外。
+定向诊断会完整记录 prompt 路径，但它只负责上表列出的未决指标。附带记录的其他诊断指标不会覆盖已经完成分类的
+正式 cell。
 
-旧的生命周期绝对预算对两边都已不合时宜：main 有 54 项发现，Effect 有 32 项。去掉具体数值后，30 类两边
-共有，24 类只出现在 main，2 类只出现在 Effect。Effect 整体更好，但两边都不能声称现有绝对预算是绿的。
+两组高样本确认可以看出剩余差值有多小：
 
-### 15 样本精测
+| 场景 | 原生中位数 | Effect 中位数 | 配对中位数比 | 配对 95% 区间 |
+| --- | ---: | ---: | ---: | ---: |
+| 新 Session 100×32，首次输入 | 2.25 ms | 2.35 ms | 1.0085 | 0.9652–1.0833 |
+| 短恢复 100×32，首次输入 | 2.22 ms | 2.29 ms | 1.0361 | 1.0045–1.0741 |
+| 短恢复 100×32，稳态输入 | 1.53 ms | 1.53 ms | 0.9824 | 0.9514–1.0241 |
 
-精测得到 38 项不劣、11 项无法下结论，没有被分类为回退的项目。但下面几项仍有风险：
+短恢复首次输入还差约 0.07 ms。继续删除剩下的 pending 状态写入、状态读取或 Host-turn 调度，会失去
+“直接输入在分发后启动 Context 准备”的保证。这个接缝已经没有兼顾安全和可测用户收益的改法。
 
-- 新 Session 的 Background Work shutdown：比值 1.1124，区间 1.0026–1.1529；
-- 新 Session 的 prompt acknowledgement：比值 1.1615，区间 1.0072–1.4444；
-- 新 Session 的 prompt 稳态 acknowledgement：比值 1.1818，区间 1.0837–1.8667；
-- 长 Session 恢复后的 prompt 稳态 acknowledgement：比值 1.5357，区间 1.0960–2.0196。
+### 退出时还剩多少差距
 
-这批数据只能作为补充，不能当成严格按预注册执行的正式证据。测试期间 main 工作树从 `b338a27f` 快进到
-`6f7d9d03`。最终差异没有改 Package 可执行源码或依赖图，只改了文档、仓库检查，并从发布文件列表移除了
-`CHANGELOG.md`。所以运行时数据仍有参考价值，但提交身份已经违反预注册。现在的 runner 会拒绝脏工作树、
-未锁定提交或测试途中发生移动的正式试验臂。
+最大的可重复 shutdown 差值仍然不劣：
 
-## 体积与开发成本
+| 场景 | 原生 p50 | Effect p50 | 绝对差值 | 配对比值（95% 区间） |
+| --- | ---: | ---: | ---: | ---: |
+| 新 Session Background Work 退出 | 140.11 ms | 144.45 ms | +4.34 ms | 1.0485（1.0110–1.0719） |
+| 新 Session Agent 退出 | 96.78 ms | 100.75 ms | +3.97 ms | 1.0366（1.0060–1.0765） |
+| 长恢复 Background Work 退出 | 162.94 ms | 167.26 ms | +4.32 ms | 1.0223（1.0115–1.0443） |
+| 长恢复 Agent 退出 | 112.79 ms | 116.56 ms | +3.77 ms | 1.0370（1.0094–1.0684） |
 
-| 指标 | Main | Effect | 变化 |
+`shutdownMs` 包含父 Pi 进程的完整退出，包括 Host 清理、Session 写入、终端 teardown 和 Effect
+finalization。现有 trace 无法把 3.8–4.3 ms 归到某一个阶段。能安全并发的 Effect finalizer 已经并发；
+没有分阶段证据就并行化剩余顺序 Scope，可能破坏清理顺序。因此本次采用不加入猜测式 shutdown 改动。
+
+### 旧的绝对预算
+
+旧绝对预算对两边都已经过时：原生有 67 项 finding，Effect 有 28 项。Effect 消除了全部 startup 预算
+finding，但两边仍超过旧 reload 和合成 Provider-response 预算。这个结果支持相对对照，但不能把失效门槛
+说成绿灯。
+
+## 体积和开发成本
+
+| 指标 | 原生对照 | Effect | 变化 |
 | --- | ---: | ---: | ---: |
-| 打包字节数 | 9,610,330 | 9,708,090 | +97,760（+1.02%） |
-| Package TypeScript 源码行数 | 120,699 | 124,885 | +4,186（+3.47%） |
+| 打包字节数 | 4,489,483 | 4,522,708 | +33,225（+0.74%） |
+| Package TypeScript 代码行数 | 108,465 | 112,685 | +4,220（+3.89%） |
 | 已安装依赖树条目 | 433 | 443 | +10（+2.31%） |
-| Package typecheck 冷检查中位数，3 次 | 6,781 ms | 7,464 ms | +10.07% |
-| Package typecheck 暖检查中位数，3 次 | 1,367 ms | 1,632 ms | +19.32% |
+| 冷 typecheck 中位数，3 轮交错样本 | 29,998.32 ms | 31,062.61 ms | +3.55% |
+| 暖 typecheck 中位数，3 轮交错样本 | 105.01 ms | 107.73 ms | +2.59% |
 
-每个 typecheck 试验臂和每轮测试都用了独立 build-info 文件。这组三样本只描述当前机器上的差异，没有置信区间。
-候选版本通过了通用 anti-slop、Effect anti-slop、Biome、Oxlint、TypeScript、依赖分析、生成源码、仓库安全、
-Package 验证和完整仓库检查。
+每次冷 typecheck 前都删除对应试验臂的 build-info，随后立即再跑一次作为暖样本。这组三样本是描述性对照，
+没有置信区间。通用 anti-slop、Effect anti-slop、Biome、Oxlint、TypeScript、依赖分析、生成源码检查、
+仓库安全和 Package 验证都作用于完整候选。
 
-## import 收益从哪里来
+## 为什么现在值得采用 Effect
 
-另外做了三组 20 样本配对对照，用来拆开历史检查点：
+性能优势有用，但长期价值是明确的生命周期所有权。一个共享 foundation 现在统一拥有 root、Session、
+Capability 和 operation Scope 树。Fiber 不能在没有明确 owner 的情况下逃出 operation；Session 替换会先
+阻止旧工作向新 Session 发布；各 Capability 的原生 shutdown 仍有权先完成自己的协议，再做最终 Scope 清理。
 
-| 比较 | 耗时 | CPU | 最大 RSS | 怎么看 |
-| --- | ---: | ---: | ---: | --- |
-| 原生 `d45db1a7` → 完成结构迁移的 Effect `5f94be91` | +16.36% | +14.56% | +9.59% | Effect 迁移一开始确实增加了成本 |
-| 结构版 Effect → 优化版 Effect `05250080` | -24.72% | -22.25% | -17.41% | 后续优化不但追回损失，还多赚了一截 |
-| 原生 → 优化版 Effect | -13.25% | -11.72% | -9.28% | 最终版本明显更好 |
+仓库检查会强制执行这条边界：生产副作用工作进入 Effect，纯计算继续用普通 TypeScript，runner 只留在面向
+Pi 的边界，外部资源的原生协议仍由对应 Capability adapter 管理。迁移删除了对应的 Promise/Abort/timer
+双轨生命周期，而不是在旧机制外包一层 Effect。优化后的原生对照也证明，排除可移植优化后，最终 import
+优势依然存在。
 
-保留下来的优化既有 Effect 专属的延迟 import 收窄，也有可移植的 Jiti 缓存和 Agent 扫描缩减。没有给原生版本
-加上同样的可移植优化，就不能把最终版本的全部收益算到 Effect 头上。
-
-## 下一步该优化什么
-
-1. **先查 Background Work shutdown。** 当前流程依次等待进程和存储清理、关闭 Capability Scope，最后再关
-   Effect 根 Scope。先给每个阶段计时，确认是否重复等待。当前中位数差约 11%；如果真有重复等待，预计能追回
-   几十毫秒。
-2. **别让即时 prompt acknowledgement 走多余的生命周期边界。** 绝对收益大概率只有几毫秒，用户不一定能
-   感觉到，但这是唯一被统计判为回退的地方。最可疑的是一次不必要的 Fiber 或 Scope 创建。
-3. **减少 TypeScript 看到的 Effect 类型。** 收窄 import，把大型 Effect 泛型留在 Module 内部。现在有约
-   10–19% 的开发检查差距，但其中一部分可能是 Effect 本身的固定成本。
-4. **补“原生版加可移植优化”的对照。** 这是判断 Effect 到底有没有独有收益的最短路径。
-5. **给每个生命周期试验分配独立临时锁和进程命名空间。** 这样可以消掉这次完整检查中出现的那次假失败，
-   不改产品行为。
-
-现在不该继续盲改。剩下的优化必须先有分阶段计时或缺失的因果对照，否则只是猜。
+成本有界、公开行为保持不变、所有权模型可以由工具检查。这三点一起满足冻结规则，足以让 Effect 成为主线实现。
 
 ## 原始证据
 
@@ -161,12 +168,15 @@ Package 验证和完整仓库检查。
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `formal-import.json` | `6474182e8516e44d345193bdbb1b4a681547cd145e4757b161123d6661f0f673` |
-| `formal-lifecycle-coverage.json` | `9e1ac1186c290a25d376b9f4de4810b6797a191016a69604f96673db48a720c1` |
-| `formal-lifecycle-precision.json` | `7d6f977e9042ae89da179e6e80359d9dfd4206fba6b19068f7d0c31696ddf512` |
-| `causal-import-native-vs-structural.json` | `d585e9b0b708d215313332c1b2ff3ff307cbf4c7e5c93ab7be97942e85f7d13e` |
-| `causal-import-structural-vs-optimized.json` | `2d4a6925833cc853fe56febd272108a95889ffec832dae0ceb66d8abfbc5311d` |
-| `causal-import-native-vs-optimized.json` | `1af745bca36febeed7792a100b51ed80e10cb27cec6e7c3fcf482083eac10c26` |
+| `final-native-optimized-vs-effect-lifecycle-coverage-real-ack.json` | `a3c9b5f4b3b3e1381fd913eee999e6946e55aac356a851952288bfbb50a2cb7e` |
+| `final-native-optimized-vs-effect-lifecycle-precision-real-ack.json` | `0ac4f6386c7c4742a5be391f1733645c2a43de8d2d16f2181ccf5f9052d3d52e` |
+| `final-79155-fresh-prompt-real-ack-combined-r50.json` | `5f6f2b9083032d4133120a30899abef533f58ea7d5fccdd5a5b99ebe89591ba8` |
+| `final-79155-resume-short-100x32-prompt-combined-r100.json` | `98888fa6fffb82f404403882ddd269db8f943b587ed9444e536f56522977bb63` |
+| `tight-prompt-paired-64x28-context-enabled-degraded-final-79155-gaps-r25.json` | `fa0f43bab1f1df196947cf3c4f6808abff60c33da1b0aad4f8cb5128bcbdafdf` |
+| `tight-prompt-paired-64x28-context-enabled-resume-long-final-79155-gaps-r25.json` | `9eed8c552f400933e4df4c21f8c51c781d518844c9614a2e8ddab27d47dfb4ad` |
+| `tight-prompt-paired-64x28-context-enabled-resume-short-real-ack-deferred-r25b.json` | `1d79c2c5420053726dfd9505704969315ea9d2378190ed4804972ee715883a4e` |
+| `final-79155-native-optimized-vs-effect-import-20x5.json` | `c734a79d50cc0d9ae214bfdb6378f9d37fab1187300d61b07bfe66d31d71b92c` |
+| `final-79155-static-and-development.json` | `a0047636b4a61d1b4371423e0dadf8156f2280ade53cce73d7fb7cf64717dcc5` |
 
-最新 main 文档已经在签名提交 `05f6e2a` 中合入 Effect 分支。试验臂身份保护在 `dc1f983` 中加入；它不会
-把此前身份偏移的精测结果倒推成严格正式证据。
+冻结协议和被取代的原始 artifact 保持不变。Git 历史保留之前“暂不合并”的报告文本及其证据；本文记录完成
+重新认证后的最终主线决定。

@@ -1,7 +1,7 @@
-<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 39a142f742e51c91aabaced8b64b8748a35792694d9d656f93caf06b68114111 -->
+<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: c424e5800811bbbca3b8dd9cbfd0ce56cd956e2cc0523c022f46e6a7d6c40032 -->
 
 ---
-status: proposed
+status: accepted
 ---
 
 # 采用 Effect 作为内部副作用模型
@@ -94,16 +94,15 @@ runner 仅限于面向 Pi 的适配器，而直接 Promise 构造、abort contro
 
 ## 后果
 
-预期的所有权树依次为 Pi 宿主、Suite 安装 Scope、Pi 会话 Scope、能力 Scope，再到 operation Scope
-和 Fiber。Effect 类型留在软件包内部，不替代 Pi 的公开 Extension、会话、工具、UI、Provider 或
-Agent 合同。Effect worktree 表明这套所有权模型可以落地，也能保住经过测试的公开合同；但这些结果只能
-证明方案可行，并不等于应当采用。
+所有权树依次为 Pi 宿主、Suite 安装 Scope、Pi 会话 Scope、能力 Scope，再到 operation Scope 和 Fiber。
+Effect 类型留在软件包内部，不替代 Pi 的公开 Extension、会话、工具、UI、Provider 或 Agent 合同。仓库
+检查把有副作用的执行限制在这套模型内，同时让纯计算和能力自有的原生适配器保持明确。
 
-原始实现与性能跟进完成后，一次中期审查曾于 2026-08-31 把本决策标为 accepted。2026-09-01 预注册的
-main 与 Effect 对比取代了该结论。候选版虽然改善了 Suite 直接导入，但生命周期矩阵仍有 2 项退化和
-22 项结论不明；精密复测也没有保持固定的基线身份；现有对照无法证明净收益来自 Effect 本身，而不是
-可移植优化。因此，预先冻结的合并规则没有通过。
+2026-09-01 的第一次预注册对比没有通过。后续发现 acknowledgement fixture 有两个边界错误，修正后又暴露
+出真实产品问题：直接输入会在 Host 确认前激活 Context。fixture 已补回归测试，Context 激活已移到确认之后，
+完整决策集也以干净、固定的试验臂重新前瞻运行。优化后的原生对照包含研究期间找出的全部可移植优化。
 
-本决策继续保持 proposed，`main` 不变。只有一次干净、固定身份的对比证明所有生命周期指标均不劣，
-且采用相同可移植优化的原生实现对照证明 Effect 本身有实质优势，才能重新考虑采用。当前证据与优化
-方向见 [2026-09-01 主线决策](../reports/effect-v4-mainline-decision-2026-09-01.md)。
+重新认证没有发现生命周期回退，所有筛查不确定项都由更高样本证据解决，归档、Source、依赖和 typecheck
+增长也都低于冻结门槛。与优化后的原生对照相比，Effect 实现的冷 import 耗时改善约 13%，CPU 改善约 11%，
+最大 RSS 改善约 9%。本决策自 2026-09-02 起正式 accepted，重新认证的 Effect 实现成为采用的主线。最终证据、
+测量修正与有界残余成本见 [2026-09-01 主线决策](../reports/effect-v4-mainline-decision-2026-09-01.md)。
