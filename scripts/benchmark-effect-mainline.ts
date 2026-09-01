@@ -15,7 +15,10 @@ type Arm = "baseline" | "candidate";
 type Profile = "import" | "lifecycle";
 
 interface Options {
+	readonly allowDirty: boolean;
+	readonly baselineCommit: string | undefined;
 	readonly baselineRoot: string;
+	readonly candidateCommit: string | undefined;
 	readonly candidateRoot: string;
 	readonly deadlineAt: number;
 	readonly lifecyclePlan: LifecycleComparisonPlanName;
@@ -71,7 +74,10 @@ function boundedInteger(
 }
 
 function parseOptions(arguments_: readonly string[]): Options {
+	let allowDirty = false;
+	let baselineCommit: string | undefined;
 	let baselineRoot = process.env["PI_STUFF_BENCHMARK_BASELINE"];
+	let candidateCommit: string | undefined;
 	let candidateRoot = process.cwd();
 	let lifecyclePlan: LifecycleComparisonPlanName = "coverage";
 	let maxMinutes = 240;
@@ -84,9 +90,22 @@ function parseOptions(arguments_: readonly string[]): Options {
 		const flag = arguments_[index];
 		const value = arguments_[index + 1];
 		switch (flag) {
+			case "--allow-dirty":
+				allowDirty = true;
+				break;
+			case "--baseline-commit":
+				if (!value) fail("--baseline-commit requires a commit");
+				baselineCommit = value;
+				index += 1;
+				break;
 			case "--baseline-root":
 				if (!value) fail("--baseline-root requires a path");
 				baselineRoot = value;
+				index += 1;
+				break;
+			case "--candidate-commit":
+				if (!value) fail("--candidate-commit requires a commit");
+				candidateCommit = value;
 				index += 1;
 				break;
 			case "--candidate-root":
@@ -133,8 +152,14 @@ function parseOptions(arguments_: readonly string[]): Options {
 		}
 	}
 	if (!baselineRoot) fail("pass --baseline-root or PI_STUFF_BENCHMARK_BASELINE");
+	if ((baselineCommit === undefined) !== (candidateCommit === undefined)) {
+		fail("pass both --baseline-commit and --candidate-commit, or neither");
+	}
 	return {
+		allowDirty,
+		baselineCommit,
 		baselineRoot: resolve(baselineRoot),
+		candidateCommit,
 		candidateRoot: resolve(candidateRoot),
 		deadlineAt: Date.now() + maxMinutes * 60_000,
 		lifecyclePlan,
@@ -157,6 +182,18 @@ function armIdentity(root: string) {
 		commit: gitText(root, ["rev-parse", "HEAD"]),
 		dirty: gitText(root, ["status", "--porcelain"]).length > 0,
 	};
+}
+
+function verifyArmIdentity(
+	arm: Arm,
+	identity: ReturnType<typeof armIdentity>,
+	expectedCommit: string | undefined,
+	allowDirty: boolean,
+): void {
+	if (expectedCommit !== undefined && identity.commit !== expectedCommit) {
+		fail(`${arm} commit changed: expected ${expectedCommit}, found ${identity.commit}`);
+	}
+	if (!allowDirty && identity.dirty) fail(`${arm} worktree is dirty`);
 }
 
 function parseImportProbe(output: string): ImportProbe {
@@ -249,6 +286,12 @@ function runImportProfile(options: Options): ImportProfileRun {
 
 async function main(): Promise<void> {
 	const options = parseOptions(Bun.argv.slice(2));
+	const initialArms = {
+		baseline: armIdentity(options.baselineRoot),
+		candidate: armIdentity(options.candidateRoot),
+	};
+	verifyArmIdentity("baseline", initialArms.baseline, options.baselineCommit, options.allowDirty);
+	verifyArmIdentity("candidate", initialArms.candidate, options.candidateCommit, options.allowDirty);
 	const importRun = options.profile === "import" ? runImportProfile(options) : undefined;
 	const lifecycleRun =
 		options.profile === "lifecycle"
@@ -262,14 +305,24 @@ async function main(): Promise<void> {
 					warmups: options.warmups,
 				})
 			: undefined;
+	const finalArms = {
+		baseline: armIdentity(options.baselineRoot),
+		candidate: armIdentity(options.candidateRoot),
+	};
+	for (const arm of ["baseline", "candidate"] as const) {
+		verifyArmIdentity(arm, finalArms[arm], initialArms[arm].commit, options.allowDirty);
+		if (finalArms[arm].dirty !== initialArms[arm].dirty) fail(`${arm} worktree state changed during the run`);
+	}
 	const complete = importRun?.complete ?? lifecycleRun?.complete ?? false;
 	const report = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		generatedAt: new Date().toISOString(),
 		toolchain: { bun: Bun.version, platform: process.platform, architecture: process.arch },
-		arms: {
-			baseline: armIdentity(options.baselineRoot),
-			candidate: armIdentity(options.candidateRoot),
+		arms: initialArms,
+		armVerification: {
+			allowDirty: options.allowDirty,
+			pinned: options.baselineCommit !== undefined,
+			stableAcrossRun: true,
 		},
 		thresholds: EFFECT_MAINLINE_THRESHOLDS,
 		complete,

@@ -108,6 +108,7 @@ test("keeps the executable thresholds aligned with the frozen protocol", async (
 
 test("profiles fresh imports through the public comparison CLI", async () => {
 	const root = resolve(import.meta.dir, "..");
+	const commit = Bun.spawnSync(["git", "-C", root, "rev-parse", "HEAD"]).stdout.toString().trim();
 	const directory = await mkdtemp(join(tmpdir(), "effect-mainline-benchmark-test-"));
 	const output = join(directory, "result.json");
 	try {
@@ -121,6 +122,11 @@ test("profiles fresh imports through the public comparison CLI", async () => {
 				root,
 				"--candidate-root",
 				root,
+				"--baseline-commit",
+				commit,
+				"--candidate-commit",
+				commit,
+				"--allow-dirty",
 				"--samples",
 				"3",
 				"--warmups",
@@ -133,11 +139,38 @@ test("profiles fresh imports through the public comparison CLI", async () => {
 		expect(result.exitCode, result.stderr.toString()).toBe(0);
 		const report = parseJsonValue(await readFile(output, "utf8"));
 		if (!isJsonInputObject(report)) throw new Error("comparison report must be an object");
-		expect(report["schemaVersion"]).toBe(1);
+		expect(report["schemaVersion"]).toBe(2);
+		expect(report["armVerification"]).toEqual({
+			allowDirty: true,
+			pinned: true,
+			stableAcrossRun: true,
+		});
 		const importProfile = report["importProfile"];
 		if (!isJsonInputObject(importProfile)) throw new Error("comparison report must include importProfile");
 		expect(importProfile["samplesPerArm"]).toBe(3);
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}
+});
+
+test("rejects a comparison arm that moved from its pinned commit", () => {
+	const root = resolve(import.meta.dir, "..");
+	const result = Bun.spawnSync(
+		[
+			process.execPath,
+			join(root, "scripts/benchmark-effect-mainline.ts"),
+			"--baseline-root",
+			root,
+			"--candidate-root",
+			root,
+			"--baseline-commit",
+			"0000000000000000000000000000000000000000",
+			"--candidate-commit",
+			"0000000000000000000000000000000000000000",
+			"--allow-dirty",
+		],
+		{ cwd: root, stderr: "pipe", stdout: "pipe" },
+	);
+	expect(result.exitCode).not.toBe(0);
+	expect(result.stderr.toString()).toContain("baseline commit changed");
 });

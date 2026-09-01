@@ -34,6 +34,9 @@
 	],
 	"causalLimitation": "No clean native-with-all-optimizations arm exists. Effect-specific optimizations will not be synthetically rewritten onto native code, so the study reports historical checkpoint contrasts instead of claiming a complete 2x2 factorial attribution.",
 	"execution": {
+		"armCommitsMustBePassedToRunner": true,
+		"armIdentitiesMustRemainStableAcrossRun": true,
+		"armWorktreesMustBeClean": true,
 		"formalMaxWallSeconds": 14400,
 		"liveProviderMaxCostUsd": 50,
 		"performanceConcurrency": 1,
