@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 564630b52140004b39830a0e9f67e2a6a0ae62925ddb5365ffaf278146c8fbef -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 489cddad090561c6ccdbf871fd9792139d892ed2ca3578df22e6ded4bdfbc5c7 -->
 
 # 研究
 
@@ -16,7 +16,6 @@
 
 ## 架构与可行性
 
-- [Code Mode：Cloudflare/OpenAI 设计](code-mode-cloudflare-openai-design-20260815.md)
 - [Code Mode 图像基准](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery 启动有界真实模型确认](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery 隔离真实模型确认](skill-discovery-isolated-confirmation-20260830.md)

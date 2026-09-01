@@ -38,7 +38,6 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 - [Context submission concurrency](context-submit-concurrency-research-2026-08-14.md)
 - [UI review](pi-stuff-ui-review-2026-08-05.md)
 - [Tool-folding rationale](tool-folding-comparison-20260806/design_rationale.md)
-- [Dialog image handoff](dialog-readability-20260817/image-handoff.md)
 - [0.3.0 execution checklist](pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
 Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. Historical versions, paths, and hashes

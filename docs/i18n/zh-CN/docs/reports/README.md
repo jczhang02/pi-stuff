@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 960b548edc1f8b5efbbaca6ac0de0f7c2093156261b1870180f89ad0a660d1ac -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 27a39cfa69071deb1ec4748e024722e46a43b8261f79d8cfe84ca60c6d202f44 -->
 
 # 报告
 
@@ -39,7 +39,6 @@
 - [Context 提交并发](context-submit-concurrency-research-2026-08-14.md)
 - [UI 审查](pi-stuff-ui-review-2026-08-05.md)
 - [Tool 折叠理由](tool-folding-comparison-20260806/design_rationale.md)
-- [Dialog 图像交接](dialog-readability-20260817/image-handoff.md)
 - [0.3.0 执行清单](../../../../../docs/reports/pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。

@@ -17,27 +17,20 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 - Excluded: TypeScript, JavaScript, shell scripts, native executables, and PNG images.
 - Machine state, caches, ignored files, and untracked files are outside this inventory.
 
-## 删除候选（尚未执行）
-
-这里只记录已经完成初步核对的候选，不表示文件已经删除。
-
-- Research：删除 `docs/research/code-mode-cloudflare-openai-design-20260815.md` 及其中文镜像。设计结论已经进入现行架构与使用文档，这份提案主要重复保存形成结论前的材料；删除时一并清理中英文 Research 索引和本清单中的对应条目。
-- Reports：删除 `docs/reports/dialog-readability-20260817/` 这一完整记录，包括 `content.json`、`image-handoff.md` 和后者的中文镜像。实现已经完成，记录中声明的四张一次性截图也没有留在仓库；删除时一并清理中英文 Reports 索引和本清单中的对应条目。
-
 ## Summary
 
 | Area | Files |
 | --- | ---: |
 | Repository root and configuration | 31 |
 | Core documentation | 44 |
-| Research, reports, and releases | 58 |
-| Simplified Chinese mirrors | 127 |
+| Research, reports, and releases | 55 |
+| Simplified Chinese mirrors | 125 |
 | Pi Stuff Package | 81 |
 | Test data | 11 |
-| **Included non-code files** | **352** |
+| **Included non-code files** | **347** |
 | Excluded code or executable files | 936 |
 | Excluded image files | 35 |
-| **Tracked files** | **1323** |
+| **Tracked files** | **1318** |
 
 ## Repository root and configuration (31)
 
@@ -124,7 +117,7 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/reference/themes.md` | 说明可用主题、选择方法、语义颜色映射和许可证来源。 |
 | `docs/troubleshooting.md` | 按安装、设置、Context、Web、MCP、通知和图片等场景提供排障办法。 |
 
-## Research, reports, and releases (58)
+## Research, reports, and releases (55)
 
 | File | 作用 |
 | --- | --- |
@@ -142,8 +135,6 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/reports/code-mode-image-20260827/ui/pi-direct.ansi` | 保存直接 Pi 图片查看对照场景的带 ANSI 颜色终端输出。 |
 | `docs/reports/code-mode-image-20260827/ui/pi-direct.txt` | 保存直接 Pi 图片查看对照场景去掉 ANSI 后的可读文本。 |
 | `docs/reports/context-submit-concurrency-research-2026-08-14.md` | 保存 Context 提交并发和渲染顺序的历史研究证据，并标明已被 ADR 0019 取代。 |
-| `docs/reports/dialog-readability-20260817/content.json` | 保存 Command Dialog 可读性报告的结构化中文内容，供逐项检查设计和验收边界。 |
-| `docs/reports/dialog-readability-20260817/image-handoff.md` | 记录 Dialog 可读性图片证据的槽位、比例、提示词和归档状态。 |
 | `docs/reports/magic-context-real-acceptance.json` | 保存 Magic Context 真实验收使用的归档包哈希、缓存和运行证据。 |
 | `docs/reports/pi-stuff-0.3.0-execution-checklist.zh-CN.md` | 记录 Pi Stuff 0.3.0 已完成的中文执行清单和对应验收工作项。 |
 | `docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 记录 0.3.0 在真实 Pi、真实模型和真实 TUI 中的最终验收结论。 |
@@ -166,7 +157,6 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/research/agent-activity-ui-reference.md` | 比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
 | `docs/research/claude-code-transcript-source-decisions.md` | 基于源码记录 Claude Code Transcript 的结构和相关决策证据。 |
-| `docs/research/code-mode-cloudflare-openai-design-20260815.md` | 比较 Cloudflare 与 OpenAI Code Mode，并形成 Pi Stuff 的修订方案。 |
 | `docs/research/code-mode-image-benchmark-20260827.md` | 预注册 Code Mode 图片任务基准的假设、变量、判定和实验协议。 |
 | `docs/research/code-volume-reduction-20260823.md` | 记录 Pi Stuff 代码量削减前后的测量结果和减少来源。 |
 | `docs/research/live-only-thoughts-feasibility-20260813.md` | 评估 Pi 0.84.1 只实时显示 Thoughts、不持久化的可行性。 |
@@ -187,7 +177,7 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/research/work-btw-ui-reference.md` | 比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/research/work-todo-ui-reference.md` | 比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 
-## Simplified Chinese mirrors (127)
+## Simplified Chinese mirrors (125)
 
 | File | 作用 |
 | --- | --- |
@@ -246,7 +236,6 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/i18n/zh-CN/docs/releases/0.2.2.md` | 中文镜像：记录 Pi Stuff 0.2.2 候选版的日常使用修复、安装和认证快照。 |
 | `docs/i18n/zh-CN/docs/reports/README.md` | 中文镜像：作为报告索引，导航验收、设计、迁移和性能证据。 |
 | `docs/i18n/zh-CN/docs/reports/context-submit-concurrency-research-2026-08-14.md` | 中文镜像：保存 Context 提交并发和渲染顺序的历史研究证据，并标明已被 ADR 0019 取代。 |
-| `docs/i18n/zh-CN/docs/reports/dialog-readability-20260817/image-handoff.md` | 中文镜像：记录 Dialog 可读性图片证据的槽位、比例、提示词和归档状态。 |
 | `docs/i18n/zh-CN/docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 中文镜像：记录 0.3.0 在真实 Pi、真实模型和真实 TUI 中的最终验收结论。 |
 | `docs/i18n/zh-CN/docs/reports/pi-stuff-lifecycle-performance.md` | 中文镜像：保存 Pi 生命周期启动、退出、reload 和 active resource 的性能测量及回归预算。 |
 | `docs/i18n/zh-CN/docs/reports/pi-stuff-ui-review-2026-08-05.md` | 中文镜像：记录 0.3.2 UI 审查、界面一致性修整和真实终端验收结果。 |
@@ -258,7 +247,6 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `docs/i18n/zh-CN/docs/research/agent-activity-ui-reference.md` | 中文镜像：比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/i18n/zh-CN/docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 中文镜像：研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
 | `docs/i18n/zh-CN/docs/research/claude-code-transcript-source-decisions.md` | 中文镜像：基于源码记录 Claude Code Transcript 的结构和相关决策证据。 |
-| `docs/i18n/zh-CN/docs/research/code-mode-cloudflare-openai-design-20260815.md` | 中文镜像：比较 Cloudflare 与 OpenAI Code Mode，并形成 Pi Stuff 的修订方案。 |
 | `docs/i18n/zh-CN/docs/research/code-mode-image-benchmark-20260827.md` | 中文镜像：预注册 Code Mode 图片任务基准的假设、变量、判定和实验协议。 |
 | `docs/i18n/zh-CN/docs/research/code-volume-reduction-20260823.md` | 中文镜像：记录 Pi Stuff 代码量削减前后的测量结果和减少来源。 |
 | `docs/i18n/zh-CN/docs/research/live-only-thoughts-feasibility-20260813.md` | 中文镜像：评估 Pi 0.84.1 只实时显示 Thoughts、不持久化的可行性。 |
@@ -420,4 +408,3 @@ taken from the `docs/readme-rewrite` worktree on 2026-08-31.
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-manifest.jsonl` | 定义拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验的固定任务、目标与干扰 Skill、提示词、期望 token、arm 顺序和 fixture 哈希。 |
 | `test/fixtures/skill-discovery-startup-bounded-confirmation-run-lock.json` | 冻结拆分冷启动与 RPC 时序后的 Skill Discovery 有界确认实验使用的候选 commit、Package tree、Pi Host、manifest 哈希和运行配置，保证结果可复现。 |
 | `test/fixtures/smoke-package/package.json` | 声明一个最小 Pi Extension 测试 Package，用于验证扩展发现、加载和打包 smoke。 |
-
