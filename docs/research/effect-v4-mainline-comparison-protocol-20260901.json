@@ -1,0 +1,101 @@
+{
+	"schemaVersion": 1,
+	"studyId": "effect-v4-mainline-decision-20260901",
+	"decision": "merge Effect into main only if the candidate passes every hard gate, establishes performance non-inferiority, and demonstrates at least one current Effect-specific material advantage",
+	"scope": {
+		"certifiedHost": "Pi 0.84.4 Linux x64 release binary",
+		"platform": "Linux x64",
+		"repositoryBun": "1.4.0",
+		"crossPlatformCertification": false
+	},
+	"productArms": {
+		"baseline": {
+			"commit": "b338a27f3c40401bdc6e72f42cc46da2813e39c6",
+			"name": "current main"
+		},
+		"candidate": {
+			"commit": "99e3cd50c8de851446867720cd67d118a9757877",
+			"name": "Effect worktree after merging current main"
+		}
+	},
+	"causalCheckpoints": [
+		{
+			"commit": "d45db1a7fa6a60defd822c42d3b103be567ac66a",
+			"role": "native pre-Effect control"
+		},
+		{
+			"commit": "5f94be91",
+			"role": "structurally complete Effect migration before retained performance work"
+		},
+		{
+			"commit": "05250080",
+			"role": "optimized Effect endpoint before the final merge-main commit"
+		}
+	],
+	"causalLimitation": "No clean native-with-all-optimizations arm exists. Effect-specific optimizations will not be synthetically rewritten onto native code, so the study reports historical checkpoint contrasts instead of claiming a complete 2x2 factorial attribution.",
+	"execution": {
+		"formalMaxWallSeconds": 14400,
+		"liveProviderMaxCostUsd": 50,
+		"performanceConcurrency": 1,
+		"retries": 0,
+		"outlierDeletion": false,
+		"batchEarlyStopping": false,
+		"hardGateFailureStopsLaterPaidWork": true
+	},
+	"profiles": {
+		"freshImport": {
+			"samplesPerArm": 20,
+			"warmupsPerArm": 5,
+			"metrics": ["durationMs", "cpuMs", "maxRssKiB", "fsRead", "fsWrite", "contextSwitches"]
+		},
+		"lifecycleCoverage": {
+			"samplesPerCell": 3,
+			"warmupsPerCell": 1,
+			"arms": ["host", "baseline", "candidate"],
+			"scenarios": ["fresh", "resume-short", "resume-long", "degraded"],
+			"actions": ["exit", "ctrl-c", "reload", "reload-change", "prompt", "background-exit", "agent-exit"],
+			"terminalSizes": ["100x32", "64x28"],
+			"longSessionToolResults": 6500,
+			"longSessionToolBytes": 8192
+		},
+		"lifecyclePrecision": {
+			"samplesPerCell": 15,
+			"warmupsPerCell": 3,
+			"arms": ["baseline", "candidate"],
+			"scenarios": ["fresh", "resume-long", "degraded"],
+			"actions": ["exit", "reload", "prompt", "background-exit", "agent-exit"],
+			"terminalSizes": ["100x32"]
+		},
+		"staticAndDevelopment": [
+			"complete check on both product arms",
+			"source and packed-package footprint",
+			"installed dependency-tree entries",
+			"cold and warm TypeScript checking",
+			"generic and Effect anti-slop enforcement"
+		],
+		"liveAcceptance": "Run configured real Provider and external-Service lanes only with fixed non-sensitive fixtures; unavailable credentials are reported as untested, never passed or skipped."
+	},
+	"statistics": {
+		"pairing": "same scenario, action, terminal size, metric, and measured iteration",
+		"order": "balanced rotating first arm",
+		"bootstrapReplicates": 20000,
+		"bootstrapSeed": 20260901,
+		"interval": "paired median-ratio percentile 95%"
+	},
+	"thresholds": {
+		"deterministicBehaviorRegression": 0,
+		"securityDataCancellationCleanupRegression": 0,
+		"performanceImprovementRatio": 0.95,
+		"performanceNonInferiorityRatio": 1.1,
+		"packageAndDependencyMaximumRatio": 1.05,
+		"existingAbsoluteLifecycleBudgetsStillApply": true
+	},
+	"verdictRules": [
+		"Any candidate-only deterministic behavior, security, data-integrity, cancellation, cleanup, startup-purity, or resource-leak failure blocks merge.",
+		"Every preregistered decision metric must be non-inferior; an inconclusive interval is not a pass.",
+		"A performance superiority claim requires the paired 95% interval upper bound to be at most 0.95.",
+		"A reproducible main failure that the candidate passes may establish an Effect-specific reliability advantage.",
+		"Optimizations that can be ported to native main do not by themselves justify Effect adoption.",
+		"If evidence is incomplete at the four-hour cap, the verdict is do not merge yet."
+	]
+}

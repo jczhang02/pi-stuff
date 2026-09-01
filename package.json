@@ -14,6 +14,7 @@
 		"beads:publish": "bun scripts/publish-beads.ts",
 		"benchmark:code-mode-image": "bun scripts/benchmark-code-mode-image.ts",
 		"benchmark:conversation-markdown": "bun scripts/benchmark-conversation-markdown.ts",
+		"benchmark:effect-mainline": "bun scripts/benchmark-effect-mainline.ts",
 		"benchmark:ponytail": "bun scripts/benchmark-ponytail.ts",
 		"benchmark:skill-discovery": "bun scripts/benchmark-skill-discovery.ts",
 		"benchmark:lifecycle": "bun scripts/benchmark-lifecycle.ts --acceptance --trace --long-tools 6500 --long-tool-bytes 8192",
