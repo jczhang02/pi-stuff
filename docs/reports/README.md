@@ -16,6 +16,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 
 ## Benchmarks and acceptance
 
+- [Effect v4 versus main decision](effect-v4-mainline-decision-2026-09-01.md)
 - [Terminal-Bench 2.1 latency comparison](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [Skill Discovery startup-bounded confirmation](skill-discovery-startup-bounded-confirmation-20260830.json) and its
   [preregistration](../research/skill-discovery-startup-bounded-confirmation-20260830.md)

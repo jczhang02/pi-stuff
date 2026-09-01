@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7b3cdfd122afc826462735a6c90439bcbd5f47bff040e06d0820da283957e782 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 01b0c7dac5681eb3677c06cfd86c40258fffcc791d813e8a14ffe8399cd3da36 -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Effect v4 与 main 的取舍结论](effect-v4-mainline-decision-2026-09-01.md)
 - [Terminal-Bench 2.1 延迟比较](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [Skill Discovery 启动有界确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)及其
   [预注册](../research/skill-discovery-startup-bounded-confirmation-20260830.md)
