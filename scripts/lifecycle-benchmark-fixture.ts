@@ -555,6 +555,7 @@ proc must_editor_ready {marker} {
         expect {
             -exact $marker {
                 send -- "\\025"
+                after 20
                 return
             }
             eof { puts stderr "Reached EOF while waiting for Editor input: $marker"; exit 3 }

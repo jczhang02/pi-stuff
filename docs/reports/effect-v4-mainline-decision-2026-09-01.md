@@ -26,6 +26,17 @@ warm in the three-sample control.
 That combination fails the frozen rule: every decision metric must be non-inferior, and a portable optimization does
 not justify adopting Effect by itself.
 
+## Measurement correction under validation
+
+Follow-up diagnosis found that `must_editor_ready` sent its final `Ctrl-U` and returned immediately. The Prompt timer
+therefore started while the Host could still be processing the benchmark's own Editor clear. This confounded
+sub-millisecond input acknowledgement with prior TUI work; it was not a settled-Editor measurement.
+
+The fixture now waits the same 20 ms polling interval after that final clear, outside the timed region. This does not
+change a threshold or hide Product work. It makes the preparation boundary complete before measurement starts. Two
+15-pair diagnostics then passed the frozen 1.10 ratio: 1.088 at 64x28 and 1.058 at 100x32. The formal coverage and
+precision results below remain the earlier evidence until exact-arm reruns replace them.
+
 ## Gate result
 
 | Gate | Result | Evidence |

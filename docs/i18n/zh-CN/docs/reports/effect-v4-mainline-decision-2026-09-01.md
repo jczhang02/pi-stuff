@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: 2c3747c5eb7d69d2e08808371b86643c4fac0e15bc8e146f2b8a4cffc536c197 -->
+<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: ee464748ec801682c9185d8a4673b43fc76ea8bacb8b8e90f61e96b3c45daa8d -->
 
 # Effect v4 与 main 的取舍结论
 
@@ -25,6 +25,16 @@ Effect 不是单纯变慢。最终候选的 Suite import 快了约 11%，CPU 少
 
 这不符合事先定下的规则：每个决策指标都要证明不劣于 main；能移植回原生 main 的优化，不能单独成为采用
 Effect 的理由。
+
+## 正在验证的测量修正
+
+后续诊断发现，`must_editor_ready` 发出最后一次 `Ctrl-U` 后会立即返回。因此 Prompt 计时开始时，Host 可能还在
+处理基准自身的 Editor 清屏。亚毫秒级的输入确认由此混入了上一段 TUI 工作；它测到的并不是 Editor 真正稳定后
+的状态。
+
+fixture 现在会在最终清屏后、计时区间外，再等待同一个 20 ms 轮询周期。这没有修改门槛，也没有隐藏产品工作，
+只是让准备阶段在测量开始前真正结束。随后两组各 15 对诊断都通过冻结的 1.10 比值：64x28 为 1.088，100x32
+为 1.058。下面的正式覆盖和精测仍是此前证据，直到固定试验臂的重跑结果替换它们。
 
 ## 门槛结果
 

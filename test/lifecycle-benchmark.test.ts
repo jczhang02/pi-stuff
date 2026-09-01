@@ -139,6 +139,11 @@ test("aggregates repeated steady Prompt timings inside one real Host process", (
 	expect(program).toContain("report_metric steady_acknowledgement 0 [nearest_rank_p50 $steady_acknowledgements]");
 });
 
+test("settles the final Editor clear before starting timed work", () => {
+	const program = lifecycleExpectProgram("prompt", false);
+	expect(program).toContain('send -- "\\025"\n                after 20\n                return');
+});
+
 test("rejects an invalid repeated Prompt count at the benchmark CLI boundary", () => {
 	const result = Bun.spawnSync(
 		["bun", join(import.meta.dir, "../scripts/benchmark-lifecycle.ts"), "--prompt-repetitions", "0"],
