@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 27a39cfa69071deb1ec4748e024722e46a43b8261f79d8cfe84ca60c6d202f44 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: f7b2fc460733fb9da2c790a4a285048b5c4ee88b5f5269e6981920427993b426 -->
 
 # 报告
 
@@ -29,16 +29,12 @@
 - [Skill Discovery 基准](../../../../../docs/reports/skill-discovery-benchmark-20260830.json)及其
   [预注册](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
-- [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)及保留的
-  [截图](../../../../../docs/reports/assets/pi-stuff-0.3.0/)
+- [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)
 
 ## 设计与迁移
 
 - [单 Package 迁移](single-package-migration.md)
 - [生命周期性能](pi-stuff-lifecycle-performance.md)
 - [Context 提交并发](context-submit-concurrency-research-2026-08-14.md)
-- [UI 审查](pi-stuff-ui-review-2026-08-05.md)
-- [Tool 折叠理由](tool-folding-comparison-20260806/design_rationale.md)
-- [0.3.0 执行清单](../../../../../docs/reports/pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
 原始 JSON、ANSI、文本和图像证据与所属报告放在一起。历史版本、路径和哈希保持原样，便于确认当时的环境。

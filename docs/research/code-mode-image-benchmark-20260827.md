@@ -172,15 +172,17 @@ The visual scope was confirmed after V2: compare Code Mode with Pi's direct `vie
 comparison is required. Two fresh authenticated Sessions on the exact certified Pi 0.84.3 release artifact use the same
 decoder-readable PNG. One asks Code Mode to return `tools.view_image`; the other invokes `view_image` directly.
 
-The archived [Code Mode capture](../reports/code-mode-image-20260827/ui/pi-code-mode.png),
-[direct capture](../reports/code-mode-image-20260827/ui/pi-direct.png), and
-[pixel difference](../reports/code-mode-image-20260827/ui/diff-pi-code-vs-direct.png) come from independent
-`100 × 32` tmux Sessions with `extended-keys=on` and `extended-keys-format=csi-u`. Freeze renders the real ANSI
-Tool rows rather than redrawing the UI. Both paths show exactly one `View pixel.png · loaded` row, the image fallback,
-and `UI_COMPLETE`; Code Mode shows no outer duplicate row. The ANSI streams, plain text, and rendered PNGs
-match exactly; ImageMagick reports 0 absolute-error pixels across the `1886 × 451` capture (850,586 pixels). The
-archived hashes, Host provenance, and pixel metric are recorded in
-[metadata.json](../reports/code-mode-image-20260827/ui/metadata.json).
+The retained [Code Mode capture](../reports/code-mode-image-20260827/ui/pi-code-mode.png) and
+[pixel difference](../reports/code-mode-image-20260827/ui/diff-pi-code-vs-direct.png) came from independent `100 × 32`
+tmux Sessions with `extended-keys=on` and `extended-keys-format=csi-u`. Freeze rendered the real ANSI Tool rows rather
+than redrawing the UI. Both paths showed one `View pixel.png · loaded` row, the image fallback, and `UI_COMPLETE`;
+Code Mode added no outer row.
+
+The direct Session produced the same ANSI, plain-text, and PNG hashes as the retained Code Mode capture. ImageMagick
+reported 0 absolute-error pixels across 850,586 pixels at `1886 × 451`. The duplicate direct files were removed from
+the current tree and remain recoverable at Git commit `94849d94ac23239d7f522bc3c40feb9b2822e61e`.
+[metadata.json](../reports/code-mode-image-20260827/ui/metadata.json) records both hash sets, Host provenance, and the
+pixel metric.
 
 The `Image preview unavailable` line is the certified Pi tmux fallback, not a missing Provider image. The benchmark's
 complete payload hashes and decoder checks remain the authority for image transfer and Session safety; this matched

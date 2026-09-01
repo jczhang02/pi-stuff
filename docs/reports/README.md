@@ -28,17 +28,13 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
 - [Skill Discovery benchmark](skill-discovery-benchmark-20260830.json) and its
   [preregistration](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)
-- [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md) and retained
-  [screenshots](assets/pi-stuff-0.3.0/)
+- [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md)
 
 ## Design and migration
 
 - [Single-Package migration](single-package-migration.md)
 - [Lifecycle performance](pi-stuff-lifecycle-performance.md)
 - [Context submission concurrency](context-submit-concurrency-research-2026-08-14.md)
-- [UI review](pi-stuff-ui-review-2026-08-05.md)
-- [Tool-folding rationale](tool-folding-comparison-20260806/design_rationale.md)
-- [0.3.0 execution checklist](pi-stuff-0.3.0-execution-checklist.zh-CN.md)
 
 Raw JSON, ANSI, text, and image evidence stays beside the report that owns it. Historical versions, paths, and hashes
 remain unchanged so the recorded environment stays identifiable.

@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 8c9658e6209388fb160e392e5ddec6f0d659021df3934f85e46d00eb4e24c83d -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 1575afeab5c2f86b0520c72ec4569fe145f425783aaea439acd5372cc8bd0781 -->
 
 # 非代码文件检查清单
 
@@ -9,7 +9,7 @@
 把代码和图片放到一边后，仓库里还有哪些文件要检查？这份清单逐项给出答案。每一行包含文件路径和中文用途，
 说明它负责什么、记录什么，或者给谁使用。
 
-整理或审查文档、配置、元数据、许可证和测试数据时，可以照着这份清单逐项核对。快照取自 2026-08-31 的
+整理或审查文档、配置、元数据、许可证和测试数据时，可以照着这份清单逐项核对。快照取自 2026-09-01 的
 `docs/readme-rewrite` worktree。
 
 ## 范围
@@ -25,14 +25,14 @@
 | --- | ---: |
 | 仓库根目录与配置 | 31 |
 | 核心文档 | 44 |
-| 研究、报告与发布记录 | 55 |
-| 简体中文镜像 | 125 |
+| 研究、报告与发布记录 | 49 |
+| 简体中文镜像 | 123 |
 | Pi Stuff Package | 81 |
 | 测试数据 | 11 |
-| **纳入的非代码文件** | **347** |
+| **纳入的非代码文件** | **339** |
 | 排除的代码或可执行文件 | 936 |
-| 排除的图片文件 | 35 |
-| **tracked 文件总数** | **1318** |
+| 排除的图片文件 | 29 |
+| **tracked 文件总数** | **1304** |
 
 ## 仓库根目录与配置（31）
 
@@ -119,7 +119,7 @@
 | `docs/reference/themes.md` | 说明可用主题、选择方法、语义颜色映射和许可证来源。 |
 | `docs/troubleshooting.md` | 按安装、设置、Context、Web、MCP、通知和图片等场景提供排障办法。 |
 
-## 研究、报告与发布记录（55）
+## 研究、报告与发布记录（49）
 
 | 文件 | 作用 |
 | --- | --- |
@@ -131,19 +131,15 @@
 | `docs/reports/code-mode-image-20260827/benchmark-v2.json` | 保存 Code Mode 图片任务第二轮真实模型基准结果，用来和首轮基线比较。 |
 | `docs/reports/code-mode-image-20260827/benchmark-v3-luna.json` | 保存使用 `gpt-5.6-luna` 的第三轮 Code Mode 图片基准结果。 |
 | `docs/reports/code-mode-image-20260827/benchmark-v4-luna.json` | 保存使用 `gpt-5.6-luna` 的第四轮 Code Mode 图片基准结果。 |
-| `docs/reports/code-mode-image-20260827/ui/metadata.json` | 记录 Code Mode 与直接 Pi UI 捕获时间，以及 ANSI、PNG、TXT 文件的 SHA-256。 |
+| `docs/reports/code-mode-image-20260827/ui/metadata.json` | 记录保留的 Code Mode 捕获、已归档直接捕获的哈希以及零差异像素结果。 |
 | `docs/reports/code-mode-image-20260827/ui/pi-code-mode.ansi` | 保存 Code Mode 图片查看场景的带 ANSI 颜色终端输出。 |
 | `docs/reports/code-mode-image-20260827/ui/pi-code-mode.txt` | 保存 Code Mode 图片查看场景去掉 ANSI 后的可读终端文本。 |
-| `docs/reports/code-mode-image-20260827/ui/pi-direct.ansi` | 保存直接 Pi 图片查看对照场景的带 ANSI 颜色终端输出。 |
-| `docs/reports/code-mode-image-20260827/ui/pi-direct.txt` | 保存直接 Pi 图片查看对照场景去掉 ANSI 后的可读文本。 |
-| `docs/reports/context-submit-concurrency-research-2026-08-14.md` | 保存 Context 提交并发和渲染顺序的历史研究证据，并标明已被 ADR 0019 取代。 |
+| `docs/reports/context-submit-concurrency-research-2026-08-14.md` | 保留 Context 提交时的渲染顺序事实，并说明现行 Worker 方案如何取代早期屏障。 |
 | `docs/reports/magic-context-real-acceptance.json` | 保存 Magic Context 真实验收使用的归档包哈希、缓存和运行证据。 |
-| `docs/reports/pi-stuff-0.3.0-execution-checklist.zh-CN.md` | 记录 Pi Stuff 0.3.0 已完成的中文执行清单和对应验收工作项。 |
-| `docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 记录 0.3.0 在真实 Pi、真实模型和真实 TUI 中的最终验收结论。 |
-| `docs/reports/pi-stuff-lifecycle-performance.md` | 保存 Pi 生命周期启动、退出、reload 和 active resource 的性能测量及回归预算。 |
-| `docs/reports/pi-stuff-ui-review-2026-08-05.md` | 记录 0.3.2 UI 审查、界面一致性修整和真实终端验收结果。 |
+| `docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 汇总 0.3.0 的归档身份、真实 Session、Magic-only gate 和最终检查结果。 |
+| `docs/reports/pi-stuff-lifecycle-performance.md` | 记录 schema 6 生命周期测量契约、历史结果摘要和当前回归预算。 |
 | `docs/reports/ps-8z1-final-acceptance-2026-08-29.md` | 记录 Bead `ps-8z1` 的最终验收范围、直接证据和结论。 |
-| `docs/reports/single-package-migration.md` | 记录迁移到单一 Aggregate Package 后的文件和 Capability 完成清单。 |
+| `docs/reports/single-package-migration.md` | 保留旧 Package 到现行 Module 的映射和迁移后的 Runtime Resource 去向。 |
 | `docs/reports/skill-discovery-benchmark-20260830.json` | 保存Skill Discovery 首轮真实模型基准的结构化评估结果和原始判定。 |
 | `docs/reports/skill-discovery-confirmation-20260830.json` | 保存修正 Tool allowlist 后的 Skill Discovery 确认实验的结构化评估结果和原始判定。 |
 | `docs/reports/skill-discovery-direct-read-20260830.json` | 保存直接读取 Skill 内容的 Skill Discovery 实验的结构化评估结果和原始判定。 |
@@ -153,8 +149,6 @@
 | `docs/reports/terminal-bench-2.1-pi-stuff-latency-protocol-2026-08-30.json` | 保存 Terminal-Bench 延迟研究的 schema、study ID 和冻结实验参数。 |
 | `docs/reports/terminal-bench-2.1-pi-stuff-latency-results-2026-08-30.json` | 保存 Terminal-Bench 延迟实验的环境哈希和原始测量结果。 |
 | `docs/reports/terminal-bench-2.1-pi-stuff-source-manifest-snapshot-2026-08-30.json` | 保存 Terminal-Bench 运行所用源码、依赖和 Harbor 版本快照。 |
-| `docs/reports/tool-folding-comparison-20260806/content.json` | 保存 Tool folding 对比报告的结构化中文正文。 |
-| `docs/reports/tool-folding-comparison-20260806/design_rationale.md` | 说明 Tool folding 对比后的设计理由、取舍和保留决定。 |
 | `docs/research/README.md` | 作为研究索引，导航保留的产品参考、实验和设计调查。 |
 | `docs/research/agent-activity-ui-reference.md` | 比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
@@ -179,7 +173,7 @@
 | `docs/research/work-btw-ui-reference.md` | 比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/research/work-todo-ui-reference.md` | 比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 
-## 简体中文镜像（125）
+## 简体中文镜像（123）
 
 | 文件 | 作用 |
 | --- | --- |
@@ -237,14 +231,12 @@
 | `docs/i18n/zh-CN/docs/releases/0.2.1.md` | 中文镜像：记录 Pi Stuff 0.2.1 候选版的完整 Capability 集、安装和认证快照。 |
 | `docs/i18n/zh-CN/docs/releases/0.2.2.md` | 中文镜像：记录 Pi Stuff 0.2.2 候选版的日常使用修复、安装和认证快照。 |
 | `docs/i18n/zh-CN/docs/reports/README.md` | 中文镜像：作为报告索引，导航验收、设计、迁移和性能证据。 |
-| `docs/i18n/zh-CN/docs/reports/context-submit-concurrency-research-2026-08-14.md` | 中文镜像：保存 Context 提交并发和渲染顺序的历史研究证据，并标明已被 ADR 0019 取代。 |
-| `docs/i18n/zh-CN/docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 中文镜像：记录 0.3.0 在真实 Pi、真实模型和真实 TUI 中的最终验收结论。 |
-| `docs/i18n/zh-CN/docs/reports/pi-stuff-lifecycle-performance.md` | 中文镜像：保存 Pi 生命周期启动、退出、reload 和 active resource 的性能测量及回归预算。 |
-| `docs/i18n/zh-CN/docs/reports/pi-stuff-ui-review-2026-08-05.md` | 中文镜像：记录 0.3.2 UI 审查、界面一致性修整和真实终端验收结果。 |
+| `docs/i18n/zh-CN/docs/reports/context-submit-concurrency-research-2026-08-14.md` | 中文镜像：保留 Context 提交时的渲染顺序事实，并说明 Worker 如何取代早期屏障。 |
+| `docs/i18n/zh-CN/docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 中文镜像：汇总 0.3.0 的归档身份、真实 Session、Magic-only gate 和检查结果。 |
+| `docs/i18n/zh-CN/docs/reports/pi-stuff-lifecycle-performance.md` | 中文镜像：记录 schema 6 生命周期测量契约、历史结果摘要和当前预算。 |
 | `docs/i18n/zh-CN/docs/reports/ps-8z1-final-acceptance-2026-08-29.md` | 中文镜像：记录 Bead `ps-8z1` 的最终验收范围、直接证据和结论。 |
-| `docs/i18n/zh-CN/docs/reports/single-package-migration.md` | 中文镜像：记录迁移到单一 Aggregate Package 后的文件和 Capability 完成清单。 |
+| `docs/i18n/zh-CN/docs/reports/single-package-migration.md` | 中文镜像：保留旧 Package 到现行 Module 的映射和 Runtime Resource 去向。 |
 | `docs/i18n/zh-CN/docs/reports/terminal-bench-2.1-pi-stuff-latency-2026-08-30.md` | 中文镜像：解释 Terminal-Bench 2.1 延迟比较的实验设计、测量口径和结论。 |
-| `docs/i18n/zh-CN/docs/reports/tool-folding-comparison-20260806/design_rationale.md` | 中文镜像：说明 Tool folding 对比后的设计理由、取舍和保留决定。 |
 | `docs/i18n/zh-CN/docs/research/README.md` | 中文镜像：作为研究索引，导航保留的产品参考、实验和设计调查。 |
 | `docs/i18n/zh-CN/docs/research/agent-activity-ui-reference.md` | 中文镜像：比较 Claude Code 与 Pi Subagents 的 Agent 活动 UI、生命周期和可见表面。 |
 | `docs/i18n/zh-CN/docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md` | 中文镜像：研究 Claude Code 的 Tool 分组与叙事边界，为 Pi Stuff 展示边界提供依据。 |
