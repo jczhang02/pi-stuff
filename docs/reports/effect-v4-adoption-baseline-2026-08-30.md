@@ -1,9 +1,9 @@
 # Effect v4 adoption baseline and final comparison
 
 > **Historical pre-acceptance snapshot.** This report evaluates implementation commit `a6edace` and preserves its
-> measurements unchanged. Its no-go recommendation and proposed ADR status applied only to that checkpoint. They were
-> superseded on 2026-08-31 by the [performance follow-up](./pi-stuff-lifecycle-performance.md) and the accepted
-> [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md).
+> measurements unchanged. Its checkpoint no-go was superseded by an interim acceptance on 2026-08-31. The
+> [preregistered 2026-09-01 comparison](./effect-v4-mainline-decision-2026-09-01.md) later superseded that acceptance,
+> returned [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md) to proposed, and left `main` unchanged.
 
 **Baseline measurement date:** 2026-08-30  
 **Final measurement date:** 2026-08-31  
@@ -165,8 +165,9 @@ copied for Magic Context real-provider acceptance.
 At this checkpoint, the report recommended not accepting ADR 0024 or merging the experiment. The architectural result
 was substantive and behaviorally strong, but a merge-quality candidate could not claim complete certification while
 `bun run benchmark:lifecycle` was red. It called for an independent Pi 0.84.4 benchmark-recertification decision using
-clean pre-migration controls rather than raising thresholds inside the experiment. That later investigation and the
-performance follow-up superseded this recommendation; the section remains as historical decision evidence.
+clean pre-migration controls rather than raising thresholds inside the experiment. The 2026-08-31 investigation and
+performance follow-up superseded this recommendation only temporarily; the preregistered 2026-09-01 comparison again
+concluded that the experiment should not be merged. This section remains as historical decision evidence.
 
 ## Reproduction
 

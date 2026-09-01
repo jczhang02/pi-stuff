@@ -1,7 +1,9 @@
 # Pi Stuff lifecycle performance
 
-> This report keeps the recorded Pi 0.84.2 schema 6 result and the executable lifecycle contract. It does not relabel
-> that measurement for the current Host; current identity belongs to the [compatibility guide](../compatibility.md).
+> **Historical performance follow-up.** This report keeps the recorded Pi 0.84.2 schema 6 result and the executable
+> lifecycle contract. It supported an interim Effect-acceptance decision on 2026-08-31, but it is not current
+> mainline certification; the [preregistered 2026-09-01 comparison](./effect-v4-mainline-decision-2026-09-01.md)
+> supersedes that adoption conclusion. Current Host identity belongs to the [compatibility guide](../compatibility.md).
 
 ## Measurement contract
 

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: proposed
 ---
 
 # Adopt Effect as the internal effect model
@@ -108,16 +108,17 @@ inventory. The audit rejects an Effect wrapper that leaves the complete former l
 
 The intended ownership tree is Pi Host, Suite installation Scope, Pi Session Scope, Capability Scope, then operation
 Scope and Fiber. Effect types stay inside the Package and do not replace Pi's public Extension, Session, Tool, UI,
-Provider, or Agent contracts. The complete migration demonstrated parity and passed the repository's final
-architecture, quality, real-Host, and packaging evidence, so this decision was accepted on 2026-08-31.
+Provider, or Agent contracts. The Effect worktree demonstrates that this ownership model is implementable and can
+preserve the tested public contracts, but those results establish feasibility rather than adoption.
 
-The final go/no-go decision passed every existing Capability contract, focused check, complete repository check,
-representative real-Host acceptance path, and two consecutive whole-scope Thermo-Nuclear reviews. The evidence reports
-source lines, mutable lifecycle state, branching, startup, resident memory, archive size, and typecheck time. No
-mechanical line-reduction target decided the result: the migration replaced former lifecycle mechanisms instead of
-leaving them under wrappers and Layers. The performance follow-up records a 6.2% faster real-Host startup, a 13.9%
-faster direct Suite import, 8.7% lower import RSS, and effectively unchanged shutdown versus the pre-Effect baseline.
-Cold uncached checking remains 7.4% slower; native incremental state cuts unchanged repeat checks by about 77%, while
-further cold-check reductions require a declaration/build boundary or upstream TypeScript/Effect work. See
-[`docs/reports/pi-stuff-lifecycle-performance.md`](../reports/pi-stuff-lifecycle-performance.md) for the complete
-measurements and rejected optimization candidates.
+An interim review marked this decision accepted on 2026-08-31 after the original implementation and performance
+follow-up. The preregistered main-versus-Effect comparison on 2026-09-01 superseded that disposition. Although the
+candidate improved direct Suite import, the lifecycle matrix contained two regressions and 22 inconclusive results,
+the precision rerun did not preserve its pinned baseline identity, and the available controls could not attribute the
+net gain specifically to Effect rather than portable optimizations. The frozen merge rule therefore did not pass.
+
+This decision remains proposed and `main` remains unchanged. Reconsideration requires a clean pinned comparison in
+which every lifecycle metric is non-inferior and a native implementation with the same portable optimizations shows
+that Effect itself provides a material advantage. See the
+[2026-09-01 mainline decision](../reports/effect-v4-mainline-decision-2026-09-01.md) for the current evidence and
+optimization directions.

@@ -1,9 +1,10 @@
-<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: d40489f28bae46fc201d0bb41f590f8653aa6630a8e36a1f96e6188416cca5c7 -->
+<!-- translation-source: docs/reports/pi-stuff-lifecycle-performance.md; translation-source-sha256: bb9f91ada8f7e4367c19b10b28ae700a141f7b138ee412a1739d186c72b951a6 -->
 
 # Pi Stuff 生命周期性能
 
-> 这份报告保留 Pi 0.84.2 的 schema 6 结果和仍可执行的 lifecycle contract，不会把旧测量改写成当前 Host
-> 的结果。当前身份见[兼容性指南](../compatibility.md)。
+> **历史性能跟进。** 这份报告保留 Pi 0.84.2 的 schema 6 结果和仍可执行的 lifecycle contract。它曾支持
+> 2026-08-31 的 Effect 中期接受结论，但不构成当前主线认证；[2026-09-01 预注册对比](./effect-v4-mainline-decision-2026-09-01.md)
+> 已取代其采用结论。当前 Host 身份见[兼容性指南](../compatibility.md)。
 
 ## 测量契约
 

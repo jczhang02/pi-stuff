@@ -1,10 +1,11 @@
-<!-- translation-source: docs/reports/effect-v4-adoption-baseline-2026-08-30.md; translation-source-sha256: c084222fef992092ac324d6ef260e64bc7f5bb4f0b653ee26a39f1eebfb88f5f -->
+<!-- translation-source: docs/reports/effect-v4-adoption-baseline-2026-08-30.md; translation-source-sha256: bd68edbecf758d40600f02e0ecec23e541e2d6bc7271d018ef14444947006b4c -->
 
 # Effect v4 采用基线与最终对比
 
-> **接受前的历史快照。** 本报告评估实现提交 `a6edace`，并原样保留当时的测量。no-go 建议与 ADR 的
-> proposed 状态仅适用于该检查点；2026-08-31 的[性能跟进](./pi-stuff-lifecycle-performance.md)和已经接受的
-> [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md)已取代这两个结论。
+> **接受前的历史快照。** 本报告评估实现提交 `a6edace`，并原样保留当时的测量。该检查点的 no-go
+> 曾被 2026-08-31 的中期接受结论取代；随后，[2026-09-01 预注册对比](./effect-v4-mainline-decision-2026-09-01.md)
+> 又取代了该接受结论，把 [ADR 0024](../adr/0024-adopt-effect-as-the-internal-effect-model.md)恢复为 proposed，
+> 并保持 `main` 不变。
 
 **基线测量日期：** 2026-08-30  
 **最终测量日期：** 2026-08-31  
@@ -156,8 +157,9 @@ Code Mode TUI verifier 最初曾在 Provider 已完成、但外层 Host 尚未�
 
 在这个检查点，本报告建议不接受 ADR 0024，也不合并该实验。架构结果具有实质性，行为证据也很强，但当
 `bun run benchmark:lifecycle` 仍为红色时，不能把它称作通过完整认证的 merge-quality candidate。报告要求在独立
-的 Pi 0.84.4 基准重新认证决策中处理该失败，使用干净的迁移前对照，而不是在本实验中提高阈值。后续调查和性能
-跟进已经取代这一建议；本节继续保留，作为当时的决策证据。
+的 Pi 0.84.4 基准重新认证决策中处理该失败，使用干净的迁移前对照，而不是在本实验中提高阈值。2026-08-31 的调查
+与性能跟进只是暂时取代了这一建议；2026-09-01 的预注册对比再次得出不应合并该实验的结论。本节继续保留，作为
+当时的决策证据。
 
 ## 复现
 

@@ -1,7 +1,7 @@
-<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 6c22afeda1c277d7cb621090aa4f6e752f4dc7ee3dd78b1af6bd5031e566a16e -->
+<!-- translation-source: docs/adr/0024-adopt-effect-as-the-internal-effect-model.md; translation-source-sha256: 39a142f742e51c91aabaced8b64b8748a35792694d9d656f93caf06b68114111 -->
 
 ---
-status: accepted
+status: proposed
 ---
 
 # 采用 Effect 作为内部副作用模型
@@ -96,14 +96,14 @@ runner 仅限于面向 Pi 的适配器，而直接 Promise 构造、abort contro
 
 预期的所有权树依次为 Pi 宿主、Suite 安装 Scope、Pi 会话 Scope、能力 Scope，再到 operation Scope
 和 Fiber。Effect 类型留在软件包内部，不替代 Pi 的公开 Extension、会话、工具、UI、Provider 或
-Agent 合同。完整迁移已经证明行为等价，并通过仓库最终架构、质量、真实宿主和打包证据，因此本决策
-于 2026-08-31 转为接受状态。
+Agent 合同。Effect worktree 表明这套所有权模型可以落地，也能保住经过测试的公开合同；但这些结果只能
+证明方案可行，并不等于应当采用。
 
-最终 go/no-go 决策通过了所有既有能力合同、聚焦检查、完整仓库检查、代表性真实宿主验收路径，以及
-连续两轮全范围 Thermo-Nuclear review。证据报告源码行数、可变生命周期状态、分支、启动、常驻内存、
-归档大小和类型检查时间。机械的行数降幅没有决定结果：迁移替换了原有生命周期机制，而不是把它们
-留在 wrapper 与 Layer 之下。性能跟进相对 Effect 引入前基线记录到：真实宿主启动加快 6.2%，Suite
-直接导入加快 13.9%，导入 RSS 降低 8.7%，关闭耗时基本不变。冷启动且无缓存的类型检查仍慢 7.4%；
-原生增量状态把无变更的重复检查缩短约 77%，而继续降低冷检查耗时需要声明/构建边界，或依赖上游
-TypeScript/Effect 改进。完整测量和被否决的优化候选见
-[`docs/reports/pi-stuff-lifecycle-performance.md`](../reports/pi-stuff-lifecycle-performance.md)。
+原始实现与性能跟进完成后，一次中期审查曾于 2026-08-31 把本决策标为 accepted。2026-09-01 预注册的
+main 与 Effect 对比取代了该结论。候选版虽然改善了 Suite 直接导入，但生命周期矩阵仍有 2 项退化和
+22 项结论不明；精密复测也没有保持固定的基线身份；现有对照无法证明净收益来自 Effect 本身，而不是
+可移植优化。因此，预先冻结的合并规则没有通过。
+
+本决策继续保持 proposed，`main` 不变。只有一次干净、固定身份的对比证明所有生命周期指标均不劣，
+且采用相同可移植优化的原生实现对照证明 Effect 本身有实质优势，才能重新考虑采用。当前证据与优化
+方向见 [2026-09-01 主线决策](../reports/effect-v4-mainline-decision-2026-09-01.md)。
