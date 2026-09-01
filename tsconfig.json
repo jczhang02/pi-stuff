@@ -1,5 +1,9 @@
 {
 	"extends": "./config/typescript/base.json",
+	"compilerOptions": {
+		"incremental": true,
+		"tsBuildInfoFile": "node_modules/.cache/pi-stuff/typecheck/root.tsbuildinfo"
+	},
 	"include": ["scripts/**/*.ts", "test/**/*.ts", "tools/**/*.ts", "packages/pi-stuff/src/**/*.ts"],
 	"exclude": [
 		"node_modules",

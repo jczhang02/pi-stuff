@@ -3,8 +3,10 @@
 	"compilerOptions": {
 		"target": "ES2023",
 		"lib": ["ES2023"],
+		"incremental": true,
 		"module": "ESNext",
-		"moduleResolution": "Bundler"
+		"moduleResolution": "Bundler",
+		"tsBuildInfoFile": "../../node_modules/.cache/pi-stuff/typecheck/agents.tsbuildinfo"
 	},
 	"include": ["../../packages/pi-stuff/src/subagents/**/*.ts"],
 	"exclude": ["../../node_modules"]

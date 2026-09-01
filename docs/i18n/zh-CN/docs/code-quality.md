@@ -1,4 +1,4 @@
-<!-- translation-source: docs/code-quality.md; translation-source-sha256: eb93b108a9f6461c8992af6ff94223e2223a087a06e036403662544fa22d7fa1 -->
+<!-- translation-source: docs/code-quality.md; translation-source-sha256: 5e3b4c2ed77853e6cc5196c594f8ff3ffd41379c4d9d96d264a06d83168f71d3 -->
 
 # Repository-owned Source 质量标准
 
@@ -16,9 +16,10 @@ prototype、脚本和质量工具代码都适用同一可维护性标准。来�
   边界审计为权威。
 - TypeScript profile 只能因为运行时需要不同的 library、module resolution 或 target 而不同。不得关闭共享
   的严格性、未使用代码、索引访问、可选属性、override、副作用导入或 erasable syntax 规则。
-- 仓库 typecheck 会在 `node_modules/.cache/pi-stuff/typecheck/` 下为每个 profile 保存一份 TypeScript 增量状态。
-  这些被忽略的缓存可以缩短重复检查，但不能代替干净检查：TypeScript 会依据 Source、配置和依赖版本使其失效，
-  干净 worktree 会在不削弱任何诊断的前提下重新建立缓存。
+- 仓库 typecheck 会在一个 TypeScript build 进程中运行所有 profile，并在
+  `node_modules/.cache/pi-stuff/typecheck/` 下为每个 profile 保存一份独立增量状态。这些被忽略的缓存可以缩短
+  重复检查，但不能代替干净检查：TypeScript 会依据 Source、配置和依赖版本使其失效，干净 worktree 会在不削弱
+  任何诊断的前提下重新建立缓存。
 - 格式化后的人工维护文件通常应为 200–400 个物理行。超过 500 行必须进行明确的 cohesion review；800 行是
   合并上限。函数通常应为 20–50 行，超过 80 行必须审查，且不得超过 120 行。
 - `check:repository` 对所有仓库代码执行 800 行文件上限，并递归执行 JavaScript/TypeScript 的 120 行函数
