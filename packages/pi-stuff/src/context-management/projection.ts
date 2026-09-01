@@ -1,4 +1,4 @@
-import type { ContextEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, ExtensionContext, InputEvent } from "@earendil-works/pi-coding-agent";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import {
@@ -57,6 +57,7 @@ export class ContextProjectionRuntime {
 	private generation = 0;
 	private readonly flights = new Map<string, ProjectionFlight>();
 	private readonly host: ContextProjectionRuntimeHost;
+	private interactivePaintPending = false;
 	/** Last valid project-memory snapshot, captured only by the normal Magic context event. */
 	private readonly memories = new Map<string, string>();
 	private readonly projections = new Map<string, string>();
@@ -72,8 +73,29 @@ export class ContextProjectionRuntime {
 		}
 		this.flights.clear();
 		this.projections.clear();
-		if (clearMemories) this.memories.clear();
+		if (clearMemories) {
+			this.interactivePaintPending = false;
+			this.memories.clear();
+		}
 		return this.generation;
+	}
+
+	noteInput(source: InputEvent["source"]): void {
+		// Every submitted prompt starts a new branch snapshot. The automatic Context
+		// event will repopulate this cache before tools run; retaining the previous
+		// turn's projection could otherwise omit the user's newest decision.
+		this.invalidate(false);
+		this.interactivePaintPending = source === "interactive";
+	}
+
+	yieldForInteractivePaint(): Effect.Effect<boolean> | undefined {
+		if (!this.interactivePaintPending) return;
+		this.interactivePaintPending = false;
+		const generation = this.host.current().generation;
+		return Effect.callback((resume) => {
+			const pending = setImmediate(() => resume(Effect.succeed(this.host.current().generation === generation)));
+			return Effect.sync(() => clearImmediate(pending));
+		});
 	}
 
 	private capture(ctx: ExtensionContext, full: string): void {

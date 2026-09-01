@@ -65,8 +65,9 @@ against the pinned Pi 0.84.4 source profile.
 
 ## Pi Stuff adapter policy
 
-- lazy direct-input activation, with automatic-turn activation only when a recognized CortexKit config exists and no
-  legacy location or flat user execution settings await the official factory's migration;
+- lazy direct-input activation starts after Host input acknowledgement while the first Agent boundary retains direct-user
+  mutation authority; automatic-turn activation runs only when a recognized CortexKit config exists and no legacy
+  location or flat user execution settings await the official factory's migration;
 - native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
 - exact official base Package plus the temporary audited tokenizer compatibility patch behind a replaceable Capability seam;

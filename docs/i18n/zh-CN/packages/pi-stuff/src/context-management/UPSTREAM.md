@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 2b562a10265b3c88d755c990e6755d03060593c89c5ac2ba428cea72700a2ebd -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 347c3d975eee9e464e0f76d9878d061bf477a1e704f77e9416978e050adff0cf -->
 
 # 捆绑上下文引擎来源
 
@@ -51,7 +51,8 @@ reminder rendering，不包括 tokenizer 加载或图像哈希修复。
 
 ## Pi Stuff 适配器政策
 
-- 由直接输入延迟激活；只有存在可识别 CortexKit 配置，且没有旧位置或扁平用户执行设置等待官方工厂迁移时，自动轮次才会激活；
+- 直接输入先由宿主确认，再启动惰性激活；第一个 Agent 边界仍保留直接用户的配置写入权限。只有存在可识别
+  CortexKit 配置，且没有旧位置或扁平用户执行设置等待官方工厂迁移时，自动轮次才会激活；
 - 开放回退到 Pi 原生行为；
 - 为 BTW 和 Agents 提供一个有界状态/投影接缝；
 - 在可替换能力接缝后使用精确官方基础软件包及临时、经过审查的分词器兼容补丁；

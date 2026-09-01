@@ -119,7 +119,7 @@ export class ContextCapabilityRuntime {
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
 	private nativeCompactionPreflight: Deferred.Deferred<void> | undefined;
-	private interactivePaintPending = false;
+	private directInputActivationPending = false;
 	private magicPromptInstalledForSession = false;
 	private readonly suiteCustomContextGuidance = new Set<symbol>();
 
@@ -172,22 +172,20 @@ export class ContextCapabilityRuntime {
 				: { state: "degraded", engine: "native", trigger, error };
 	}
 
-	noteInput(source: InputEvent["source"]): void {
-		// Every submitted prompt starts a new branch snapshot. The automatic Context
-		// event will repopulate this cache before tools run; retaining the previous
-		// turn's projection could otherwise omit the user's newest decision.
-		this.projectionRuntime.invalidate(false);
-		this.interactivePaintPending = source === "interactive";
+	noteInput(source: InputEvent["source"]): ContextCapabilityState {
+		this.projectionRuntime.noteInput(source);
+		if (source !== "extension") this.directInputActivationPending = true;
+		return this.state.state;
+	}
+
+	consumeDirectInputActivation(): boolean {
+		const pending = this.directInputActivationPending;
+		this.directInputActivationPending = false;
+		return pending;
 	}
 
 	yieldForInteractivePaint(): Effect.Effect<boolean> | undefined {
-		if (!this.interactivePaintPending) return;
-		this.interactivePaintPending = false;
-		const generation = this.generation;
-		return Effect.callback((resume) => {
-			const pending = setImmediate(() => resume(Effect.succeed(this.isCurrentGeneration(generation))));
-			return Effect.sync(() => clearImmediate(pending));
-		});
+		return this.projectionRuntime.yieldForInteractivePaint();
 	}
 
 	registerToolHandoffs(): void {
@@ -244,7 +242,7 @@ export class ContextCapabilityRuntime {
 		this.sessionStart = { ...event };
 		this.sessionContext = ctx;
 		this.projectionRuntime.invalidate(true);
-		this.interactivePaintPending = false;
+		this.directInputActivationPending = false;
 		this.magicPromptInstalledForSession = false;
 		this.suiteCustomContextGuidance.clear();
 		this.registry.contexts.set(ctx.sessionManager, this);

@@ -7,6 +7,7 @@ import {
 	registerSuiteAgentMessagePreparation,
 	reportDiagnostic,
 } from "../conversation-ui/index.js";
+import { deferToHostTurn } from "../lifecycle-deadline.js";
 import { type MagicContextPreparation, type MagicContextPreparationOptions, prepareMagicContext } from "./config.js";
 import type { MagicModule, NativeCompactionSettings } from "./magic-runtime.js";
 import { loadMagicContextWorker } from "./magic-worker-client.js";
@@ -115,6 +116,15 @@ function requiresInputActivation(state: ContextCapabilityState): boolean {
 	return state !== "active" && state !== "native";
 }
 
+function deferInputActivation(runtime: ContextCapabilityRuntime, ctx: ExtensionContext): void {
+	deferToHostTurn(() => {
+		if (!runtime.consumeDirectInputActivation()) return;
+		if (requiresInputActivation(runtime.status().state)) {
+			void runContextOwned(ctx, runtime.activate(ctx, "input"));
+		}
+	});
+}
+
 function registerContextProjection(pi: ExtensionAPI, runtime: ContextCapabilityRuntime): void {
 	pi.on("context", (event, ctx) => {
 		const interactivePaint = runtime.yieldForInteractivePaint();
@@ -194,14 +204,14 @@ export default async function piStuffContext(
 		runtime.invalidateProjection();
 	});
 	pi.on("input", (event, ctx) => {
-		runtime.noteInput(event.source);
+		const state = runtime.noteInput(event.source);
 		// A later Extension may still handle an Extension-authored input, in which
 		// case Pi never starts an Agent turn. Defer that path to the authoritative
 		// before_agent_start boundary so a display-only or rejected continuation
 		// cannot initialize or write Magic Context state. Direct user input starts
 		// activation without delaying the Host's input acknowledgement.
-		if (event.source !== "extension" && requiresInputActivation(runtime.status().state)) {
-			void runContextOwned(ctx, runtime.activate(ctx, "input"));
+		if (event.source !== "extension" && requiresInputActivation(state)) {
+			deferInputActivation(runtime, ctx);
 		}
 	});
 	pi.on("message_start", async (event, ctx) => {
@@ -220,12 +230,14 @@ export default async function piStuffContext(
 	// immediate first submission can paint without allowing native compaction to
 	// race ahead of Magic Context.
 	pi.on("session_before_compact", async (_event, ctx) => {
+		runtime.consumeDirectInputActivation();
 		await boundary.activate(ctx, "input");
 		runtime.yieldExtremeOverflowToNative(ctx);
 	});
 	pi.on("before_agent_start", async (event, ctx) => {
+		const trigger = runtime.consumeDirectInputActivation() ? "input" : "automatic-turn";
 		await Effect.runPromise(
-			runtime.activate(ctx, "automatic-turn").pipe(Effect.andThen(runtime.preflightExtremeOverflow(ctx))),
+			runtime.activate(ctx, trigger).pipe(Effect.andThen(runtime.preflightExtremeOverflow(ctx))),
 		);
 		return applyContextPromptContributions(pi, event, ctx);
 	});

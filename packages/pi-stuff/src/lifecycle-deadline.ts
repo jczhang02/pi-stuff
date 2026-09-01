@@ -1,5 +1,10 @@
 export const HOST_SHUTDOWN_GRACE_MS = 250;
 
+/** Continue after the Host finishes the current synchronous event dispatch. */
+export function deferToHostTurn(operation: () => void): void {
+	setImmediate(operation);
+}
+
 /** Wait for best-effort cleanup without letting a non-cooperative dependency own Host shutdown. */
 export async function settleWithin(operation: PromiseLike<unknown> | undefined, timeoutMs: number): Promise<boolean> {
 	if (!operation) return true;
