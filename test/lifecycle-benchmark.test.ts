@@ -135,8 +135,26 @@ test("aggregates repeated steady Prompt timings inside one real Host process", (
 	const program = lifecycleExpectProgram("prompt", false, 5);
 	expect(program).toContain("for {set steady_iteration 0} {$steady_iteration < 5} {incr steady_iteration}");
 	expect(program).toContain('set steady_prompt "PS5BW_STEADY_PROMPT_$steady_iteration"');
+	expect(program).toContain("set acknowledged [clock microseconds]");
+	expect(program).toContain("return [list [expr {$acknowledged - $started}]");
 	expect(program).toContain("lappend steady_acknowledgements");
 	expect(program).toContain("report_metric steady_acknowledgement 0 [nearest_rank_p50 $steady_acknowledgements]");
+});
+
+test("timestamps the first input acknowledgement before waiting for Editor clear", () => {
+	const program = lifecycleExpectProgram("prompt", false);
+	const acknowledgement = "set first_acknowledged [clock microseconds]";
+	const editorReady =
+		'must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"';
+	expect(program).toContain(acknowledgement);
+	expect(program.indexOf(acknowledgement)).toBeLessThan(program.indexOf(editorReady));
+	expect(program).toContain("report_metric acknowledgement $response_started $first_acknowledged");
+	const steadyAcknowledgement = "set steady_acknowledged [clock microseconds]";
+	const steadyEditorReady =
+		'must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"';
+	expect(program).toContain(steadyAcknowledgement);
+	expect(program.indexOf(steadyAcknowledgement)).toBeLessThan(program.indexOf(steadyEditorReady));
+	expect(program).toContain("report_metric steady_acknowledgement $steady_response_started $steady_acknowledged");
 });
 
 test("settles the final Editor clear before starting timed work", () => {

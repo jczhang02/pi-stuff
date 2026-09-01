@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: ee464748ec801682c9185d8a4673b43fc76ea8bacb8b8e90f61e96b3c45daa8d -->
+<!-- translation-source: docs/reports/effect-v4-mainline-decision-2026-09-01.md; translation-source-sha256: 45b5902091ae500208d56f401d9bb01320864ea5ff76bcf781d08bf327b7257e -->
 
 # Effect v4 与 main 的取舍结论
 
@@ -33,8 +33,17 @@ Effect 的理由。
 的状态。
 
 fixture 现在会在最终清屏后、计时区间外，再等待同一个 20 ms 轮询周期。这没有修改门槛，也没有隐藏产品工作，
-只是让准备阶段在测量开始前真正结束。随后两组各 15 对诊断都通过冻结的 1.10 比值：64x28 为 1.088，100x32
-为 1.058。下面的正式覆盖和精测仍是此前证据，直到固定试验臂的重跑结果替换它们。
+只是让准备阶段在测量开始前真正结束。
+
+第二次审计又发现一个边界错误。fixture 虽然已经看到了同步的输入确认标记，却把随后一个 microtask 发出的
+Editor 清屏标记时间记成了 `acknowledgement`。因此这个指标虽然叫“确认”，实际还包含了确认之后的 Editor
+工作。现在第一次 Prompt 和单次、重复稳态 Prompt 都会在确认标记匹配后立刻读时钟，再继续等待 Editor 清屏
+或 Provider 启动。聚焦回归测试覆盖了这三条生成路径。
+
+第一次修正后的固定提交重跑中，覆盖测试得到 5 项改善、121 项不劣、15 项无法下结论、2 项回退；精测得到
+2 项改善、42 项不劣、5 项无法下结论、0 项回退。随后 50 对短恢复诊断把稳态 Editor 清屏判为不劣，第一次
+Editor 清屏仍无法下结论。但这些 acknowledgement 分类仍用了错误的较晚边界，不能参与合并决定；其他生命周期
+指标仍然有效。使用正确确认边界的固定试验臂覆盖与精测重跑尚未完成。
 
 ## 门槛结果
 

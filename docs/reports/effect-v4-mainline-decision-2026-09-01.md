@@ -33,9 +33,20 @@ therefore started while the Host could still be processing the benchmark's own E
 sub-millisecond input acknowledgement with prior TUI work; it was not a settled-Editor measurement.
 
 The fixture now waits the same 20 ms polling interval after that final clear, outside the timed region. This does not
-change a threshold or hide Product work. It makes the preparation boundary complete before measurement starts. Two
-15-pair diagnostics then passed the frozen 1.10 ratio: 1.088 at 64x28 and 1.058 at 100x32. The formal coverage and
-precision results below remain the earlier evidence until exact-arm reruns replace them.
+change a threshold or hide Product work. It makes the preparation boundary complete before measurement starts.
+
+A second audit found another boundary error. The fixture observed the synchronous input-acknowledgement marker, but
+reported the timestamp of a later Editor-clear marker emitted from a microtask. The metric therefore included
+post-acknowledgement Editor work despite being named `acknowledgement`. First and repeated steady Prompts now record
+the clock immediately after matching the acknowledgement marker, before waiting for Editor clear or Provider start.
+Focused regression tests cover all three generated paths.
+
+Exact pinned reruns after the first correction produced 5 improved, 121 non-inferior, 15 inconclusive, and 2 regressed
+coverage comparisons; precision produced 2 improved, 42 non-inferior, 5 inconclusive, and no regression. A subsequent
+50-pair short-resume diagnostic classified steady Editor-clear timing as non-inferior and first Editor-clear timing as
+inconclusive. Those acknowledgement classifications still used the wrong later boundary and must not decide the
+merge. The other lifecycle metrics remain valid. Exact-arm coverage and precision reruns with the corrected
+acknowledgement boundary are pending.
 
 ## Gate result
 

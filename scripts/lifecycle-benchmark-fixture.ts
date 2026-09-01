@@ -367,8 +367,9 @@ function promptActionProgram(promptRepetitions: number): string {
 set steady_response_started [clock microseconds]
 send -- "PS5BW_SECOND_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
+set steady_acknowledged [clock microseconds]
 set second_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"]
-report_metric steady_acknowledgement $steady_response_started [lindex $second_ready 0]
+report_metric steady_acknowledgement $steady_response_started $steady_acknowledged
 report_metric steady_provider_start $steady_response_started [lindex $second_ready 1]
 must_expect "PS5BW_SECOND_PROMPT_DONE"
 report_metric steady_response $steady_response_started [clock microseconds]`
@@ -381,9 +382,10 @@ proc measure_steady_prompt {prompt ready_marker provider_marker done_marker} {
     set started [clock microseconds]
     send -- "$prompt\\r"
     must_expect "PS5BW_INPUT_ACK_$prompt"
+    set acknowledged [clock microseconds]
     set ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_$prompt" $provider_marker]
     must_expect $done_marker
-    return [list [expr {[lindex $ready 0] - $started}] [expr {[lindex $ready 1] - $started}] [expr {[clock microseconds] - $started}]]
+    return [list [expr {$acknowledged - $started}] [expr {[lindex $ready 1] - $started}] [expr {[clock microseconds] - $started}]]
 }
 set steady_acknowledgements {}
 set steady_provider_starts {}
@@ -410,8 +412,9 @@ report_metric steady_response 0 [nearest_rank_p50 $steady_responses]`;
 set response_started [clock microseconds]
 send -- "PS5BW_FIRST_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"
+set first_acknowledged [clock microseconds]
 set first_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"]
-report_metric acknowledgement $response_started [lindex $first_ready 0]
+report_metric acknowledgement $response_started $first_acknowledged
 report_metric provider_start $response_started [lindex $first_ready 1]
 must_expect "PS5BW_FIRST_PROMPT_DONE"
 report_metric response $response_started [clock microseconds]
