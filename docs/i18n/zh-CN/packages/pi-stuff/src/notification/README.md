@@ -1,9 +1,39 @@
-<!-- translation-source: packages/pi-stuff/src/notification/README.md; translation-source-sha256: b7f976b42debd90118da29754172a543078f0a941650045a3c445d29e60680d4 -->
+<!-- translation-source: packages/pi-stuff/src/notification/README.md; translation-source-sha256: 37d360b9c3b5ccf90b737ed946b257293010a2c88e9e07a95d10e6f659553708 -->
 
-# Notification 能力
+# Notification
 
-Notification 只会在用户启动的 Agent 工作稳定、其 Agent Work Duration 达到配置的最短时长，并且 Pi 在宽限期内持续安静后，发送延迟的终端原生完成或失败提醒。Agent Work Duration 会减去 Pi 公开 `ui_prompt_start` 与 `ui_prompt_end` 边界之间的区间；若稳定时 prompt 仍打开，也会在该边界关闭，因此等待确认或输入的时间不会把短暂 Agent 工作变成提醒。已存储的最短时长设置和 Goal 的活跃 elapsed-time accounting 均不改变。用户或终端输入会取消待发提醒。扩展自动发起的工作不会创建提醒。
+[English](../../../../../../../packages/pi-stuff/src/notification/README.md)
 
-`/notifications` 打开共享全宽命令对话框，可启用提醒、选择 `auto`、Kitty OSC 99、OSC 9、Ghostty OSC 777 或 BEL 传输、控制响应预览与终端 BEL，并发送测试提醒。响应预览默认关闭，因为桌面通知历史可能在 Pi 之外可见。在 tmux 中，`Tmux notification` 是注意 BEL 的唯一权威。开启后会保留受支持的系统通知协议并增加一个原始 BEL；如果 `auto` 无法识别视觉协议，则回退到 BEL。关闭后仍保留受支持的系统通知，同时抑制 BEL，包括显式 `bell` 传输。tmux 继续负责标记外观和聚焦时清除。
+有实质内容的用户启动 Agent 工作结算后，发送终端原生完成或失败提醒。
 
-设置位于 `<agentDir>/pi-stuff.json` 的 `notification` 命名空间。加载是只读的；旧版 `pi-stuff-notification.json` 文件只通过有文档记录的一次性迁移提升。传输是观察性的：不受支持的终端或写入失败会报告有界诊断，绝不会使 Agent 工作失败。
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/notification.png">
+    <img src="../../../../../../assets/readme/capabilities/notification.png" alt="Pi 中的通知策略控制" width="100%">
+  </a>
+  <br>
+  <em>通知策略可在 Pi 中明确配置并直接测试。</em>
+</p>
+
+## 快速开始
+
+```text
+/notifications
+```
+
+查看活动策略并发送测试通知。默认值要求 10 秒 Agent Work Duration，之后再经过 2 秒安静宽限期。
+
+## 亮点
+
+- 只在直接用户工作完全结算后提醒。
+- 排除等待 Pi 输入或权限 prompt 的时间。
+- 终端活动或新工作恢复时取消待发送提醒。
+- 选择 Kitty OSC 99、Ghostty OSC 777、OSC 9 或 BEL delivery。
+- 支持 tmux passthrough，并独立控制 attention BEL。
+- 默认关闭 response preview。
+
+## 文档
+
+- [Notification 指南](../../../../docs/capabilities/notification.md)
+- [设置参考](../../../../docs/reference/settings.md#notification)
+- [故障排查](../../../../docs/troubleshooting.md#通知)
+- [命令参考](../../../../docs/reference/commands.md#界面与查看)

@@ -1,27 +1,36 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: c2fead20f9064186393e9fe9f980d18bbfb44c85612cd9e0547f3de98ccec589 -->
+<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: 920ac1833c5ab2edc4b43341cdf747ebff9474d01e9f2987cf3071c2ff945879 -->
 
-# 已吸收的 MCP 实现
+# MCP Runtime
 
-本目录是 Pi Stuff `mcp` 模块背后的私有实现。它是从固定且经过本地改编的 `pi-mcp-adapter` 快照吸收的源码；不是软件包、依赖或独立安装的扩展。
+[English](../../../../../../../../packages/pi-stuff/src/mcp/runtime/README.md)
 
-Pi Stuff 负责父目录中面向用户的代理工具和命令对话框。本实现提供配置、传输、发现、OAuth、生命周期、输出防护和协议处理。精确来源、完整性记录、许可证和维护差异见 [`UPSTREAM.md`](./UPSTREAM.md)。直接工具、JavaScript 批处理、Prompts、Apps、Sampling 和 Elicitation 被有意删除，而不是藏在标志后。
+Pi Stuff MCP gateway 背后的配置、transport、认证、生命周期、discovery 与输出处理。
 
-`implementation.ts` 为每个工厂维护一个适配器状态，从共享 Effect Foundation 的会话 Scope 派生能力 Scope，并串联有序的会话、命令和网关工具阶段。`runtime-owner.ts` 负责 MCP 运行时 Scope；`server-manager.ts` 负责由 Fiber 支持的连接单航班身份和逐连接子 Scope；`metadata-discovery.ts` 负责有界的工具与资源分页。生命周期、会话、命令和网关操作均组合为 Effect，`mcp-effect-runner.ts` 只在面向 Pi 的边界把它们投影回既有的 Promise 与 `AbortSignal` 约定。`mcp-http-transport.ts` 负责原生 HTTP 协商与获取失败时的清理。`config-sources.ts` 负责路径与宿主配置发现；`config.ts` 负责优先级安全的 Effect 加载与范围狭窄的写入；`config-persistence.ts` 负责由 Effect Scope 管理的写锁与原子替换。
+<p align="center">
+  <a href="../../../../../../../assets/readme/runtime/mcp.png">
+    <img src="../../../../../../../assets/readme/runtime/mcp.png" alt="Pi 中的 MCP runtime 连接状态" width="100%">
+  </a>
+  <br>
+  <em>内置 MCP runtime 通过 Pi 报告服务器配置和连接状态。</em>
+</p>
 
-注册、配置、状态投影与 Session 所有权保持即时建立。命令执行、代理调用处理、SDK Client 与 Transport、Schema 校验器、OAuth Provider 以及浏览器交接仅在各自首次负责的操作中加载。
+## 快速开始
 
-`mcp-setup-panel.ts` 负责设置交互、写入和生命周期状态。`mcp-setup-panel-view.ts` 渲染不可变快照与精确写入预览，不修改该状态。
+使用上层 [MCP 指南](../../../../../docs/capabilities/mcp.md)与 `/mcp` 界面。已配置 server 的 lifecycle
+或 gateway 使用需要时，runtime 会激活。
 
-## 保留的运行时约定
+## 亮点
 
-- 提供的内存 `config` 是完整隔离快照：每个工厂和会话各自克隆，绝不修改，也绝不与文件或命令行配置合并。
-- 配置的 `!command` 凭据来源只在连接或认证时运行。它没有 stdin 或 stderr，截止时间为 10 秒，stdout 上限为 1 MiB；读取、合并、预览、哈希或渲染配置时绝不运行。
-- OAuth 凭据要求操作系统凭据存储，不可用时安全关闭。Linux 可以通过打包的 `keyctl`/Node 辅助程序恢复被撤销的会话 Keyring；失败绝不回退到明文。
-- HTTP 连接先探测 Streamable HTTP；遇到隐式 OAuth 挑战时使用原生 SDK Provider 重试一次；只有非认证类协议失败才回退到原生 SSE。SDK Client 与 Transport 身份保持原生。
-- 端点分类继续采用手动重定向、每次请求 5 秒截止时间和 64 KiB 响应体上限，并保证取消响应体。Effect 中断会且只会关闭一次获取失败的连接。
-- 运行时 Scope 负责连接尝试 Fiber、OAuth 关闭、健康检查以及每个活动连接的子 Scope。关闭时先中断待完成的获取，再执行原生会话、Client、Transport 和追踪清理协议。
-- 每个宿主会话只有一个状态发布代际。权限交接会发布空快照，过期的初始化或清理无法向更新的会话发布状态。
-- 配置发现、预览和 Codec 仍是同步原生适配器。加载与修改工作流组合为 Effect，每次修改都会获取共享设置锁。
-- 配置的 `rmcp-mux` Socket 是受信共享端点。Pi Stuff 只负责客户端连接，绝不启动、接管、重启或停止 mux 守护进程或上游进程。
-- 已启用的 `eager` 和 `keep-alive` 服务器可以在没有 `session_start` 的程序化宿主中初始化；之后会话负责的运行时会取代该加载期运行时。
-- 返回的 `structuredContent` 会依据公布的 JSON Schema draft-07 或 2020-12 `outputSchema` 校验。
+- 合并有界 global 与 project configuration，并报告冲突。
+- 运行 stdio、HTTP 与受信 shared-socket transport。
+- 只在连接或认证时解析 `!command` secret。
+- 要求操作系统 credential storage 才能使用 OAuth。
+- 把 Tool 与 Resource discovery 各限制为 100 页或 10,000 项。
+- 返回结果前验证声明的 `structuredContent` schema。
+- 替换过期 runtime ownership，并执行有界 transport cleanup。
+
+## 文档
+
+- [MCP 指南](../../../../../docs/capabilities/mcp.md)
+- [MCP Module README](../README.md)
+- [上游参考](UPSTREAM.md)

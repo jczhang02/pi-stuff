@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/code-mode-image-benchmark-20260827.md; translation-source-sha256: c7aee4b858a46bae87366f4c8fcb875f1c5adb100a0615128418133543fdc8d3 -->
+<!-- translation-source: docs/research/code-mode-image-benchmark-20260827.md; translation-source-sha256: a34e74271143801aa4d6dae2c6663245500b2593064444d8114beb67aea81563 -->
 
 # Code Mode 图像基准测试预注册
 
@@ -121,11 +121,17 @@ V2 于 2026-08-26T02:18:36.030Z 在经过认证的 Pi 0.84.3 构件上完成，�
 
 V2 之后确认了视觉范围：比较 Code Mode 与 Pi 的直接 `view_image` 路径；不要求 Claude Code 比较。两个全新的已认证 Session 在完全相同的经过认证的 Pi 0.84.3 发布构件上使用同一个可由解码器读取的 PNG。一个要求 Code Mode 返回 `tools.view_image`；另一个直接调用 `view_image`。
 
-归档的 [Code Mode 截图](../../../../../docs/reports/code-mode-image-20260827/ui/pi-code-mode.png)、
-[直接调用截图](../../../../../docs/reports/code-mode-image-20260827/ui/pi-direct.png) 和
-[像素差异](../../../../../docs/reports/code-mode-image-20260827/ui/diff-pi-code-vs-direct.png) 来自独立的
-`100 × 32` tmux Session，使用 `extended-keys=on` 和 `extended-keys-format=csi-u`。Freeze 渲染真实 ANSI Tool 行，而不是重新绘制 UI。两条路径都恰好显示一行 `View pixel.png · loaded`、图像 fallback 和 `UI_COMPLETE`；Code Mode 没有外层重复行。ANSI 流、纯文本和渲染后的 PNG 完全一致；ImageMagick 在 `1886 × 451` 的截图（850,586 个像素）中报告绝对误差像素为 0。归档 hash、Host 来源和像素度量记录在
-[metadata.json](../../../../../docs/reports/code-mode-image-20260827/ui/metadata.json) 中。
+保留的 [Code Mode 截图](../../../../../docs/reports/code-mode-image-20260827/ui/pi-code-mode.png)和
+[像素差异](../../../../../docs/reports/code-mode-image-20260827/ui/diff-pi-code-vs-direct.png)来自两个独立的
+`100 × 32` tmux Session，使用 `extended-keys=on` 和 `extended-keys-format=csi-u`。Freeze 渲染真实 ANSI
+Tool 行，而不是重新绘制 UI。两条路径都显示一行 `View pixel.png · loaded`、图像 fallback 和
+`UI_COMPLETE`；Code Mode 没有增加外层记录。
+
+直接调用 Session 产生的 ANSI、纯文本和 PNG hash 与保留的 Code Mode capture 完全相同。ImageMagick 在
+`1886 × 451`、共 850,586 个像素的结果中报告 0 个绝对误差像素。重复的 direct 文件已从当前 tree 删除，
+可从 Git commit `94849d94ac23239d7f522bc3c40feb9b2822e61e` 恢复。
+[metadata.json](../../../../../docs/reports/code-mode-image-20260827/ui/metadata.json)记录两组 hash、Host 来源和
+像素指标。
 
 `Image preview unavailable` 行是经过认证的 Pi tmux fallback，并不表示缺少 Provider 图像。基准测试的完整 payload hash 和解码检查仍是图像传输与 Session 安全性的权威依据；此次匹配截图验证了可见 Tool 的权威性和布局。
 

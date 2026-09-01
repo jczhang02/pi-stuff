@@ -1,4 +1,4 @@
-<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: f6d19567ae6ce8fab35a2370992a583137f1b721bf1fadba0b443d35777ccf2e -->
+<!-- translation-source: .github/CONTRIBUTING.md; translation-source-sha256: fe5414604ed0c158fcd524fd550686695e68af1bf49fb640788335c18bbb1158 -->
 
 # 贡献指南
 
@@ -24,7 +24,7 @@ bun run check
 ## Package 变更
 
 Pi Stuff 只有一个私有本地 Package。Capability Module 不独立确定版本或发布。当行为变化需要持久的用户可见
-记录时，更新 Package changelog；删除后的逐 Module 发布历史由 Git 历史保留。
+记录时，更新 `docs/releases/` 中的发布说明。详细变更历史由 Git 保留。
 
 不要只手工修改生成的组合输出。请修改 `packages/pi-stuff/suite.json`，运行 `bun run suite:generate`，再用
 `bun run pack:verify` 验证提取后的本地 Package。本仓库没有 registry 发布或 Changesets 流程。

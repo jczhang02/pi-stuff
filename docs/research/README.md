@@ -1,17 +1,20 @@
 # Research
 
-This directory contains dated investigations, measurements, comparisons, and decision inputs. Each file is evidence
-for its stated repository snapshot and source revisions, not a current product or compatibility contract.
+[Simplified Chinese](../i18n/zh-CN/docs/research/README.md)
 
-Do not rewrite historical Host versions or rejected options to resemble current behavior. When repository paths have
-moved, preserve the old path as text and use the [single-Package migration record](../reports/single-package-migration.md)
-to find its current Module. Current authority is indexed in [`docs/README.md`](../README.md).
+Dated investigations, measurements, comparisons, and design inputs retained for future review. For current behavior,
+start from the [documentation index](../README.md).
 
-## Retained studies
+<p align="center">
+  <a href="../assets/readme/research/index.png">
+    <img src="../assets/readme/research/index.png" alt="A live Pi conversation rendering chart and tree projections" width="100%">
+  </a>
+  <br>
+  <em>Real Pi rendering keeps interface research grounded in the shipped surface.</em>
+</p>
 
-### Architecture and feasibility
+## Architecture and feasibility
 
-- [Code Mode: Cloudflare/OpenAI design](code-mode-cloudflare-openai-design-20260815.md)
 - [Code Mode image benchmark](code-mode-image-benchmark-20260827.md)
 - [Skill Discovery startup-bounded real-model confirmation](skill-discovery-startup-bounded-confirmation-20260830.md)
 - [Skill Discovery isolated real-model confirmation](skill-discovery-isolated-confirmation-20260830.md)
@@ -24,7 +27,7 @@ to find its current Module. Current authority is indexed in [`docs/README.md`](.
 - [Pi XDG base-directory behavior](pi-xdg-base-directory-20260811.md)
 - [tmux/Kitty image feasibility](pi-tmux-kitty-images-feasibility-20260815.md)
 
-### Product and UI references
+## Product and interface references
 
 - [Agent activity UI](agent-activity-ui-reference.md)
 - [Claude Code grouping and Narrative Boundaries](claude-code-tool-grouping-narrative-boundary-20260826.md)
@@ -36,10 +39,10 @@ to find its current Module. Current authority is indexed in [`docs/README.md`](.
 - [BTW UI](work-btw-ui-reference.md)
 - [Todo UI](work-todo-ui-reference.md)
 
-### Upstream Package references
+## Upstream Package references
 
 - [Background Work Package](work-background-package-reference.md)
 - [BTW Package](work-btw-package-reference.md)
 
-Disposable harnesses, duplicated comparisons, and investigations whose conclusions are fully owned by current ADRs
-are available from Git history rather than retained as parallel documentation.
+Each study keeps the versions, paths, and alternatives that belonged to its recorded snapshot. Git history holds
+discarded harnesses and redundant investigations.

@@ -22,8 +22,8 @@ Tests must exercise the agreed public seams, remain offline during verification,
 ## Package changes
 
 Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. Update the
-Package changelog when a behavior change needs a durable user-facing record; Git history retains removed per-Module
-release history.
+release notes under `docs/releases/` when a behavior change needs a durable user-facing record. Git retains the
+detailed change history.
 
 Do not hand-edit generated composition output alone. Change `packages/pi-stuff/suite.json`, run
 `bun run suite:generate`, and verify the extracted local Package with `bun run pack:verify`. There is no registry

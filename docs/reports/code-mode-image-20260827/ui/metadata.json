@@ -1,16 +1,22 @@
 {
 	"capturedAt": "2026-08-26T12:09:30.220Z",
-	"captures": {
-		"pi-code-mode": {
-			"ansiSha256": "71c19415c8083f9674d4a86d974bf680e8acf23e245e3ed3fba99bcad82f78b9",
-			"pngSha256": "e07abdcb80acc869ee156b137e97d887334d25f6960f8dfa869c5aa9f0369043",
-			"textSha256": "99df83ef35d193971df33e170e3d5cdfd8b84126ae52c3fa75e199ae2e298e39"
-		},
-		"pi-direct": {
-			"ansiSha256": "71c19415c8083f9674d4a86d974bf680e8acf23e245e3ed3fba99bcad82f78b9",
-			"pngSha256": "e07abdcb80acc869ee156b137e97d887334d25f6960f8dfa869c5aa9f0369043",
-			"textSha256": "99df83ef35d193971df33e170e3d5cdfd8b84126ae52c3fa75e199ae2e298e39"
-		}
+	"retainedCapture": {
+		"name": "pi-code-mode",
+		"ansiSha256": "71c19415c8083f9674d4a86d974bf680e8acf23e245e3ed3fba99bcad82f78b9",
+		"pngSha256": "e07abdcb80acc869ee156b137e97d887334d25f6960f8dfa869c5aa9f0369043",
+		"textSha256": "99df83ef35d193971df33e170e3d5cdfd8b84126ae52c3fa75e199ae2e298e39"
+	},
+	"archivedComparison": {
+		"name": "pi-direct",
+		"gitCommit": "94849d94ac23239d7f522bc3c40feb9b2822e61e",
+		"ansiSha256": "71c19415c8083f9674d4a86d974bf680e8acf23e245e3ed3fba99bcad82f78b9",
+		"pngSha256": "e07abdcb80acc869ee156b137e97d887334d25f6960f8dfa869c5aa9f0369043",
+		"textSha256": "99df83ef35d193971df33e170e3d5cdfd8b84126ae52c3fa75e199ae2e298e39"
+	},
+	"exactMatch": {
+		"ansi": true,
+		"pixels": true,
+		"text": true
 	},
 	"fixture": {
 		"bytes": 338,
@@ -28,8 +34,6 @@
 		"totalPixels": 850586,
 		"width": 1886
 	},
-	"piActivityAnsiExactMatch": true,
-	"piActivityTextExactMatch": true,
 	"rendering": {
 		"capture": "Real isolated 100x32 tmux PTY with extended-keys=on and extended-keys-format=csi-u; capture-pane -p -e -N cropped to Tool activity and completion",
 		"freeze": "freeze version v0.2.2",

@@ -1,25 +1,41 @@
-<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: b5be803adb5eba6002c1c64fb74c6796689111d9dca39d79bc0ee3b98580207b -->
+<!-- translation-source: packages/pi-stuff/src/web/README.md; translation-source-sha256: cd7424420f15954e707578ab7d6c3814df7e734acd5ac808c07f3728fc160904 -->
 
-# Pi Stuff Web
+# Web
 
-Pi Stuff Web 暴露三个面向模型的工具：
+[English](../../../../../../../packages/pi-stuff/src/web/README.md)
 
-- `web_search` 搜索一到四个有界查询，并返回带引用的来源。
-- `fetch_content` 以可读或原始模式读取 HTTP(S) 页面。PDF 会转换为临时 Markdown 产物，并返回其路径供 Pi `read` 工具使用。
-- `get_search_content` 从先前搜索/抓取结果中获取有界片段或匹配段落。
+通过三个 model-facing Tool 提供搜索、公开 HTTP 提取与有界 continuation。
 
-软件包有意不包含交互式浏览器、浮动窗口、活动组件、本地文件/视频读取器、仓库克隆器或独立研究工作流。搜索始终使用非 Curator 路径。Provider 选择通过工具调用或自有上游配置保持显式。
+<p align="center">
+  <a href="../../../../../../assets/readme/capabilities/web.png">
+    <img src="../../../../../../assets/readme/capabilities/web.png" alt="Web 调用使用的共享 Tool 活动视图" width="100%">
+  </a>
+  <br>
+  <em>Web 调用与 Suite 的其他 Tool 共用同一套可检查活动界面。</em>
+</p>
 
-三个工具都使用 Pi Stuff 共享单行生命周期渲染器。模型可见结果、引用、取消、SSRF 防护、重定向、提取和 PDF 处理仍由固定分叉负责。`tool-contracts.ts` 是父级适配器与私有运行时之间有界、面向模型 Schema 的唯一所有者。直接 Provider API 和网关请求会在凭据或请求正文可能被转发到另一来源前拒绝重定向。
+## 快速开始
 
-工具注册和设置加载仍会立即完成；搜索 Provider 模块图只在收到非空 `web_search` 请求后加载，并供后续调用复用。
+```json
+{ "query": "Pi coding agent extension API" }
+```
 
-每次 `web_search` 和 `fetch_content` 调用都由父级适配器作为一个归属当前会话的 Effect 操作运行。所有保留的搜索与提取 Provider 都返回 Effect，不自行启动 runner；凭据、浏览器 Cookie、上传、重定向处理和线协议保留在狭窄的 Provider 自有原生适配器中。Effect 负责这些工作的生命周期、超时、中断、顺序分页，以及 Provider 路由、部分成功聚合和回退。内容检索还包含延迟 fake-IP 准备、远程目标校验、安全重定向抓取、有界响应读取、内容提取，以及按输入顺序最多并发三个 URL。中断会取消活动的原生工作；适配器只有在确认会话仍为当前会话后才提交存储与发布。请求构造、编解码器、URL 策略、解析、渲染、排序和确定性提取仍使用普通 TypeScript。
+用 query 调用 `web_search`，用选定公开 URL 调用 `fetch_content`；需要更多内容时，把返回的
+`responseId` 传给 `get_search_content`。
 
-Provider 包含/排除值共用一个套件负责的域名规范化器。它接受 URL 形态主机输入，拒绝字面 IP 和单标签主机，只匹配精确主机或其子域名。
+## 亮点
 
-面向 Pi 的适配器通过 Effect 设置存储一次性加载共享 `web` 设置命名空间。缺失命名空间会让内置默认值保持休眠；无效 JSON 或无效命名空间则产生一条有界诊断记录，并激活完整默认值。文件系统和意外读取失败会中止套件初始化，而不是静默加载部分 Web 配置。每次搜索或抓取都接收一个内存中的只读快照，因此通过该存储执行的更新会在下一次工具调用生效，不改变已在进行的操作。
+- 通过显式或自动 provider 路由搜索一到四个 query。
+- 获取 readable 或 raw HTTP 内容、图像、PDF 与有界 GitHub 数据。
+- 按片段或匹配段落继续保存结果。
+- 应用 URL、domain、redirect、credential 与 SSRF 保护。
+- 最多恢复一小时内有效的 Session result entry。
+- 不让显式付费 provider 进入自动与 `all` 路由。
 
-在 TUN 解析器把公共域名映射到 `198.18.0.0/15` 的系统上，页面抓取会用请求主机和公共金丝雀延迟检测该情况。兼容性只作用于进程，显式 SSRF 设置仍优先，且不会创建设置文件。字面 IP URL 仍在套件边界被拒绝。
+## 文档
 
-具名第三方 Provider 会收到其操作所需的查询或 URL。付费 Bright Data Provider 只允许显式使用，既排除在零配置回退之外，也排除在 `provider: "all"` 之外；仅配置 token 不会发起请求。凭据、下游出口和计费响应边界见私有运行时 [`SECURITY.md`](runtime/SECURITY.md)。
+- [Web 指南](../../../../docs/capabilities/web.md)
+- [设置参考](../../../../docs/reference/settings.md#web)
+- [Runtime 安全](runtime/SECURITY.md)
+- [Runtime 契约](runtime/README.md)
+- [上游参考](UPSTREAM.md)

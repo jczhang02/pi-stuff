@@ -1,20 +1,38 @@
-# Notification Capability
+# Notification
 
-Notification sends a delayed terminal-native completion or failure alert only after user-started Agent work settles,
-its Agent Work Duration reaches the configured minimum, and Pi remains quiet through the grace period. Agent Work
-Duration subtracts intervals between Pi's public `ui_prompt_start` and `ui_prompt_end` boundaries, including an open
-prompt closed by settlement, so time spent waiting for confirmation or input cannot turn short Agent work into an
-alert. The stored minimum-duration setting and Goal's active elapsed-time accounting are unchanged. User or terminal
-input cancels a pending alert. Extension-authored automatic work does not create one.
+[Simplified Chinese](../../../../docs/i18n/zh-CN/packages/pi-stuff/src/notification/README.md)
 
-`/notifications` opens the shared full-width Command Dialog for enabling alerts, choosing `auto`, Kitty OSC 99,
-OSC 9, Ghostty OSC 777, or BEL delivery, controlling response previews and terminal BEL, and sending a test alert.
-Response previews are disabled by default because desktop notification history may be visible outside Pi.
-Inside tmux, `Tmux notification` is the sole authority for attention BELs. Turning it on preserves a supported
-system-notification protocol and adds one raw BEL, or falls back to BEL when `auto` cannot identify a visual protocol.
-Turning it off preserves supported system notifications and suppresses BEL, including explicit `bell` delivery. tmux
-continues to own the marker's appearance and focus-time clearing.
+Terminal-native completion and failure alerts after substantial user-started Agent work settles.
 
-Settings live under the `notification` namespace in `<agentDir>/pi-stuff.json`. Loading is read-only; the legacy
-`pi-stuff-notification.json` file is lifted only through the documented one-time migration. Delivery is observational:
-unsupported terminals or write failures report a bounded diagnostic and never fail Agent work.
+<p align="center">
+  <a href="../../../../docs/assets/readme/capabilities/notification.png">
+    <img src="../../../../docs/assets/readme/capabilities/notification.png" alt="Notification policy controls in Pi" width="100%">
+  </a>
+  <br>
+  <em>Notification policy is explicit, testable, and configurable from Pi.</em>
+</p>
+
+## Quick start
+
+```text
+/notifications
+```
+
+Review the active policy and send a test notification. Defaults require 10 seconds of Agent Work Duration followed by
+a 2-second quiet grace period.
+
+## Highlights
+
+- Alerts only after direct user work fully settles.
+- Excludes time spent waiting for Pi input or permission prompts.
+- Cancels a pending alert when terminal activity or new work resumes.
+- Selects Kitty OSC 99, Ghostty OSC 777, OSC 9, or BEL delivery.
+- Supports tmux passthrough with independently controlled attention BEL.
+- Keeps response previews off by default.
+
+## Documentation
+
+- [Notification guide](../../../../docs/capabilities/notification.md)
+- [Settings reference](../../../../docs/reference/settings.md#notification)
+- [Troubleshooting](../../../../docs/troubleshooting.md#notifications)
+- [Command reference](../../../../docs/reference/commands.md#interface-and-inspection)

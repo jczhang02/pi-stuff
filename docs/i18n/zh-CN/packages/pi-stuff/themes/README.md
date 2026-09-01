@@ -1,10 +1,35 @@
-<!-- translation-source: packages/pi-stuff/themes/README.md; translation-source-sha256: ee2540416a35511f3dfc6195fd4e677c6f56456a9e26fa1e02e4031cdc1434a9 -->
+<!-- translation-source: packages/pi-stuff/themes/README.md; translation-source-sha256: 86d2aab53f630d79376333b4ac8b7f2934bcbf0c7482a0fd2c50366226ab94d0 -->
 
 # Catppuccin 主题
 
-这些 Pi 主题使用官方 Catppuccin Palette 1.8.0：
-https://github.com/catppuccin/palette/blob/v1.8.0/palette.json
+[English](../../../../../../packages/pi-stuff/themes/README.md)
 
-每个主题都把 Pi 完整的语义颜色约定映射到一种 Catppuccin 风味。三个工具背景色分别把该风味的 Mauve、Green 或 Red 以 12% 混合到 Base 上，使工具状态保持可读，同时不改变 Pi 的渲染路径。Pi 负责主题选择、实时切换、真彩色输出及其原生 256 色回退。
+Pi Stuff 为 Pi 提供 Catppuccin 的四种风味。
 
-调色板使用相邻 `LICENSE` 文件中的许可证。
+<p align="center">
+  <a href="../../../../../assets/readme/themes/latte.png">
+    <img src="../../../../../assets/readme/themes/latte.png" alt="Pi 设置中选中的 Catppuccin Latte" width="100%">
+  </a>
+  <br>
+  <em>Catppuccin Latte 同时应用于欢迎卡片、编辑器和 Statusline。</em>
+</p>
+
+## 可用主题
+
+| 主题 | 设置值 |
+| --- | --- |
+| Catppuccin Latte | `catppuccin-latte` |
+| Catppuccin Frappé | `catppuccin-frappe` |
+| Catppuccin Macchiato | `catppuccin-macchiato` |
+| Catppuccin Mocha | `catppuccin-mocha` |
+
+在 Pi 的 `/settings` 菜单中选择主题。Pi 会立即切换，并负责 truecolor 与 256 色终端输出。
+
+## 颜色映射
+
+每种风味都把 Pi 的文字、强调、边框、Markdown、语法、选区和 Tool 状态映射到官方
+[Catppuccin Palette 1.8.0](https://github.com/catppuccin/palette/blob/v1.8.0/palette.json)。Tool 背景使用淡化的
+Mauve、Green 和 Red，分别表示活动、成功和失败。
+
+[主题指南](../../../docs/reference/themes.md)包含直接设置方式和调色板细节。调色板许可证见
+[`LICENSE`](../../../../../../packages/pi-stuff/themes/LICENSE)。

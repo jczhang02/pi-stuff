@@ -27,6 +27,8 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
   not through a question widget, only when scope, authority, or a material product decision genuinely depends on it.
 - Keep long-running work observable. The Agent owns focused checks and representative real-Host acceptance; do not hand
   routine verification back to the user.
+- Keep tests proportional to risk: write the smallest focused coverage that protects meaningful behavior or a
+  demonstrated regression. Redundant, speculative, or bloated tests do not belong.
 - Every code change must pass the Thermo-Nuclear completion review in `docs/code-quality.md` against the complete final
   diff. A small isolated change needs one focused clean review. Broad, cross-Capability, architecture, whole-repository
   quality/refactoring/source-reduction, or release-risk work needs an independent reviewer and repeated review of the
@@ -57,8 +59,9 @@ material, not Pi Runtime Resources; never copy them into a user's global Pi Agen
   worktree do not certify those changes. Public-seam certification cannot be claimed from mocks.
 - Do not infer a merge from ancestry alone. Inspect the relevant patch or commits, every associated worktree's tracked
   and untracked state, and the target branch before reporting merge or cleanup status.
-- Commit small, coherent checkpoints frequently after the relevant focused check; do not accumulate unrelated work in
-  one commit. Use signed Conventional Commits.
+- After a worktree's changes are merged, verify it has no tracked or untracked work, then remove the worktree promptly.
+- Commit and push small, coherent checkpoints promptly after the relevant focused check; do not accumulate unrelated
+  work in one commit. Use signed Conventional Commits.
 - Keep human-authored English Markdown authoritative and update the owning current document in the same change whenever
   behavior, contracts, terminology, compatibility, or workflow changes. Mirror every retained English Markdown source
   under `docs/i18n/zh-CN/<repository path>` with its source path and raw-source SHA-256, and update the mirror in the
