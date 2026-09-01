@@ -200,6 +200,8 @@ function providerPromptMarker(context) {
 	const messages = context.messages ?? [];
 	for (let index = messages.length - 1; index >= Math.max(0, messages.length - 32); index -= 1) {
 		const text = JSON.stringify(messages[index]);
+		const steady = /PS5BW_STEADY_PROMPT_\\d+/.exec(text)?.[0];
+		if (steady) return steady.replace("PS5BW_STEADY_PROMPT_", "STEADY_");
 		if (text.includes("PS5BW_SECOND_PROMPT")) return "SECOND";
 		if (text.includes("PS5BW_FIRST_PROMPT")) return "FIRST";
 	}
@@ -258,6 +260,8 @@ function responseStream(context) {
     }
     return textStream("PS5BW_BACKGROUND_READY");
   }
+  const steady = [...transcript.matchAll(/PS5BW_STEADY_PROMPT_\\d+/g)].at(-1)?.[0];
+  if (steady) return textStream(steady + "_DONE");
   if (transcript.includes("PS5BW_SECOND_PROMPT")) return textStream("PS5BW_SECOND_PROMPT_DONE");
   if (transcript.includes("PS5BW_FIRST_PROMPT")) return textStream("PS5BW_FIRST_PROMPT_DONE");
   return textStream("PS5BW_PROMPT_DONE");
@@ -356,10 +360,53 @@ export default function lifecycleTraceFixture(pi) {
 `;
 }
 
-function lifecycleActionProgram(action: Action): string {
-	switch (action) {
-		case "prompt":
-			return `
+function promptActionProgram(promptRepetitions: number): string {
+	const steadyProgram =
+		promptRepetitions === 1
+			? `must_editor_ready "PS5BW_STEADY_EDITOR_READY"
+set steady_response_started [clock microseconds]
+send -- "PS5BW_SECOND_PROMPT\\r"
+must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
+set second_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"]
+report_metric steady_acknowledgement $steady_response_started [lindex $second_ready 0]
+report_metric steady_provider_start $steady_response_started [lindex $second_ready 1]
+must_expect "PS5BW_SECOND_PROMPT_DONE"
+report_metric steady_response $steady_response_started [clock microseconds]`
+			: `proc nearest_rank_p50 {values} {
+    set ordered [lsort -integer $values]
+    return [lindex $ordered [expr {([llength $ordered] - 1) / 2}]]
+}
+proc measure_steady_prompt {prompt ready_marker provider_marker done_marker} {
+    must_editor_ready $ready_marker
+    set started [clock microseconds]
+    send -- "$prompt\\r"
+    must_expect "PS5BW_INPUT_ACK_$prompt"
+    set ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_$prompt" $provider_marker]
+    must_expect $done_marker
+    return [list [expr {[lindex $ready 0] - $started}] [expr {[lindex $ready 1] - $started}] [expr {[clock microseconds] - $started}]]
+}
+set steady_acknowledgements {}
+set steady_provider_starts {}
+set steady_responses {}
+for {set steady_iteration 0} {$steady_iteration < ${String(promptRepetitions)}} {incr steady_iteration} {
+    if {$steady_iteration == 0} {
+        set steady_prompt "PS5BW_SECOND_PROMPT"
+        set steady_provider_marker "PS5BW_PROVIDER_START_SECOND"
+        set steady_done_marker "PS5BW_SECOND_PROMPT_DONE"
+    } else {
+        set steady_prompt "PS5BW_STEADY_PROMPT_$steady_iteration"
+        set steady_provider_marker "PS5BW_PROVIDER_START_STEADY_$steady_iteration"
+        set steady_done_marker "[set steady_prompt]_DONE"
+    }
+    lassign [measure_steady_prompt $steady_prompt "PS5BW_STEADY_EDITOR_READY_$steady_iteration" $steady_provider_marker $steady_done_marker] steady_acknowledgement steady_provider_start steady_response
+    lappend steady_acknowledgements $steady_acknowledgement
+    lappend steady_provider_starts $steady_provider_start
+    lappend steady_responses $steady_response
+}
+report_metric steady_acknowledgement 0 [nearest_rank_p50 $steady_acknowledgements]
+report_metric steady_provider_start 0 [nearest_rank_p50 $steady_provider_starts]
+report_metric steady_response 0 [nearest_rank_p50 $steady_responses]`;
+	return `
 set response_started [clock microseconds]
 send -- "PS5BW_FIRST_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"
@@ -368,19 +415,17 @@ report_metric acknowledgement $response_started [lindex $first_ready 0]
 report_metric provider_start $response_started [lindex $first_ready 1]
 must_expect "PS5BW_FIRST_PROMPT_DONE"
 report_metric response $response_started [clock microseconds]
-must_editor_ready "PS5BW_STEADY_EDITOR_READY"
-set steady_response_started [clock microseconds]
-send -- "PS5BW_SECOND_PROMPT\\r"
-must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
-set second_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"]
-report_metric steady_acknowledgement $steady_response_started [lindex $second_ready 0]
-report_metric steady_provider_start $steady_response_started [lindex $second_ready 1]
-must_expect "PS5BW_SECOND_PROMPT_DONE"
-report_metric steady_response $steady_response_started [clock microseconds]
+${steadyProgram}
 must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
+}
+
+function lifecycleActionProgram(action: Action, promptRepetitions: number): string {
+	switch (action) {
+		case "prompt":
+			return promptActionProgram(promptRepetitions);
 		case "background-exit":
 			return `
 send -- "PS5BW_BACKGROUND_PROMPT\\r"
@@ -448,8 +493,11 @@ send -- "\\004"
 	return fail(`unsupported lifecycle action: ${action}`);
 }
 
-export function lifecycleExpectProgram(action: Action, trace: boolean): string {
-	const actionProgram = lifecycleActionProgram(action);
+export function lifecycleExpectProgram(action: Action, trace: boolean, promptRepetitions = 1): string {
+	if (!Number.isSafeInteger(promptRepetitions) || promptRepetitions < 1 || promptRepetitions > 100) {
+		fail("prompt repetitions must be an integer from 1 through 100");
+	}
+	const actionProgram = lifecycleActionProgram(action, promptRepetitions);
 	return `
 set timeout ${String(DEFAULT_TIMEOUT_SECONDS)}
 log_user ${trace ? "1" : "0"}

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import {
 	type Action,
 	type CellSummary,
@@ -128,6 +129,44 @@ test("waits for real Editor input instead of sleeping after visible markers", ()
 	expect(agentExit).toContain('send -- "\\003"');
 	expect(agentExit).toContain('must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"');
 	expect(agentExit).toContain("report_metric interrupt");
+});
+
+test("aggregates repeated steady Prompt timings inside one real Host process", () => {
+	const program = lifecycleExpectProgram("prompt", false, 5);
+	expect(program).toContain("for {set steady_iteration 0} {$steady_iteration < 5} {incr steady_iteration}");
+	expect(program).toContain('set steady_prompt "PS5BW_STEADY_PROMPT_$steady_iteration"');
+	expect(program).toContain("lappend steady_acknowledgements");
+	expect(program).toContain("report_metric steady_acknowledgement 0 [nearest_rank_p50 $steady_acknowledgements]");
+});
+
+test("rejects an invalid repeated Prompt count at the benchmark CLI boundary", () => {
+	const result = Bun.spawnSync(
+		["bun", join(import.meta.dir, "../scripts/benchmark-lifecycle.ts"), "--prompt-repetitions", "0"],
+		{ stdout: "pipe", stderr: "pipe" },
+	);
+	expect(result.exitCode).not.toBe(0);
+	expect(`${result.stdout.toString()}\n${result.stderr.toString()}`).toContain(
+		"--prompt-repetitions must be an integer from 1 through 100",
+	);
+});
+
+test("keeps repeated Prompt aggregation outside certifying acceptance", () => {
+	const result = Bun.spawnSync(
+		[
+			"bun",
+			join(import.meta.dir, "../scripts/benchmark-lifecycle.ts"),
+			"--acceptance",
+			"--prompt-repetitions",
+			"2",
+			"--pi",
+			join(import.meta.dir, "missing-pi"),
+		],
+		{ stdout: "pipe", stderr: "pipe" },
+	);
+	expect(result.exitCode).not.toBe(0);
+	expect(`${result.stdout.toString()}\n${result.stderr.toString()}`).toContain(
+		"--prompt-repetitions is diagnostic-only and cannot be combined with --acceptance",
+	);
 });
 
 test("uses nearest-rank percentiles", () => {

@@ -164,12 +164,15 @@ async function executeSample(
 	sessionDirectory: string,
 	sessionFile: string,
 ): Promise<string> {
-	const result = Bun.spawnSync(["expect", "-c", lifecycleExpectProgram(action, options.trace)], {
-		cwd: join(benchmarkRoot, "project"),
-		env: environment,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const result = Bun.spawnSync(
+		["expect", "-c", lifecycleExpectProgram(action, options.trace, options.promptRepetitions)],
+		{
+			cwd: join(benchmarkRoot, "project"),
+			env: environment,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
 	const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
 	if (result.exitCode !== 0) {
 		const log = await readFile(join(runDirectory, "pty.log"), "utf8").catch(() => "<PTY log unavailable>");

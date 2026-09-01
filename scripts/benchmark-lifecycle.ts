@@ -43,6 +43,7 @@ export interface BenchmarkOptions extends LifecycleAcceptanceSelection {
 	readonly output: string;
 	readonly packagePath: string;
 	readonly piBinary: string;
+	readonly promptRepetitions: number;
 }
 
 export interface LifecycleSample {
@@ -172,6 +173,7 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	let output = DEFAULT_OUTPUT;
 	let packagePath = DEFAULT_PACKAGE;
 	let piBinary = process.env["PI_BIN"] ?? DEFAULT_PI_BINARY;
+	let promptRepetitions = 1;
 	let samples = DEFAULT_SAMPLES;
 	let scenarios: readonly Scenario[] = SCENARIOS;
 	let sizes: readonly TerminalSize[] = DEFAULT_SIZES;
@@ -219,6 +221,10 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 				piBinary = resolve(value);
 				index += 1;
 				break;
+			case "--prompt-repetitions":
+				promptRepetitions = boundedInteger(value, flag, 1, 100);
+				index += 1;
+				break;
 			case "--samples":
 				samples = boundedInteger(value, flag, 1, 100);
 				index += 1;
@@ -246,6 +252,9 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 				fail(`unknown argument: ${String(flag)}`);
 		}
 	}
+	if (acceptance && promptRepetitions !== 1) {
+		fail("--prompt-repetitions is diagnostic-only and cannot be combined with --acceptance");
+	}
 	return {
 		acceptance,
 		actions,
@@ -255,6 +264,7 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 		output,
 		packagePath,
 		piBinary,
+		promptRepetitions,
 		samples,
 		scenarios,
 		sizes,

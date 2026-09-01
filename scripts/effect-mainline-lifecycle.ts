@@ -152,6 +152,7 @@ function benchmarkOptions(
 		output: "",
 		packagePath: join(root, "packages/pi-stuff"),
 		piBinary,
+		promptRepetitions: 1,
 		samples: options.samples,
 		scenarios: plan.scenarios,
 		sizes: plan.sizes,
