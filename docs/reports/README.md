@@ -29,6 +29,7 @@ Dated acceptance, design, and performance evidence for Pi Stuff. Use the
   [preregistration](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 final acceptance](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 final acceptance](pi-stuff-0.3.0-final-acceptance.md)
+- [Effect v4 adoption baseline](effect-v4-adoption-baseline-2026-08-30.md)
 
 ## Design and migration
 

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: dcce084fe332b60053783ce0baf0acd2d588bc00c4e6ede3b7bd9c83bb13feea -->
+<!-- translation-source: docs/README.md; translation-source-sha256: a714739316b98e7dcfb228fe86d361c24637a1aca0a03760dca223b3c0be6394 -->
 
 # 文档
 
@@ -83,6 +83,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0021](adr/0021-fork-ponytail-as-a-suite-capability.md) | 将 Ponytail fork 为 Suite 能力 |
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | 紧凑折叠仅用于原生检索 |
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 类型集合 |
+| [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部 effect 模型 |
 
 ## 证据与历史
 

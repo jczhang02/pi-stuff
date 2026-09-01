@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: f7b2fc460733fb9da2c790a4a285048b5c4ee88b5f5269e6981920427993b426 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 7b3cdfd122afc826462735a6c90439bcbd5f47bff040e06d0820da283957e782 -->
 
 # 报告
 
@@ -30,6 +30,7 @@
   [预注册](../research/skill-discovery-benchmark-20260830.md)
 - [ps-8z1 最终验收](ps-8z1-final-acceptance-2026-08-29.md)
 - [Pi Stuff 0.3.0 最终验收](pi-stuff-0.3.0-final-acceptance.md)
+- [Effect v4 采用基线](effect-v4-adoption-baseline-2026-08-30.md)
 
 ## 设计与迁移
 
