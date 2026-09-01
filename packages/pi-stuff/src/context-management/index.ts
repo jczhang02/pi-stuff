@@ -13,7 +13,12 @@ import { loadMagicContextWorker } from "./magic-worker-client.js";
 import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
 import { estimateProjectionTokens, extractMagicProjection, formatProjection, nativeProjection } from "./projection.js";
 import { applyContextPromptContributions, applyContextPromptContributionsToProvider } from "./prompt-contributions.js";
-import { type ContextCapability, type ContextCapabilityRegistry, ContextCapabilityRuntime } from "./runtime.js";
+import {
+	type ContextCapability,
+	type ContextCapabilityRegistry,
+	ContextCapabilityRuntime,
+	type ContextCapabilityState,
+} from "./runtime.js";
 
 export type { NativeCompactionSettings } from "./magic-runtime.js";
 export type {
@@ -106,6 +111,10 @@ async function runContextOwned(ctx: ExtensionContext, program: Effect.Effect<voi
 	}
 }
 
+function requiresInputActivation(state: ContextCapabilityState): boolean {
+	return state !== "active" && state !== "native";
+}
+
 function registerContextProjection(pi: ExtensionAPI, runtime: ContextCapabilityRuntime): void {
 	pi.on("context", (event, ctx) => {
 		const interactivePaint = runtime.yieldForInteractivePaint();
@@ -191,7 +200,9 @@ export default async function piStuffContext(
 		// before_agent_start boundary so a display-only or rejected continuation
 		// cannot initialize or write Magic Context state. Direct user input starts
 		// activation without delaying the Host's input acknowledgement.
-		if (event.source !== "extension") void runContextOwned(ctx, runtime.activate(ctx, "input"));
+		if (event.source !== "extension" && requiresInputActivation(runtime.status().state)) {
+			void runContextOwned(ctx, runtime.activate(ctx, "input"));
+		}
 	});
 	pi.on("message_start", async (event, ctx) => {
 		if (event.message.role !== "custom") return;
@@ -249,4 +260,5 @@ export const __test = {
 	extractMagicProjection,
 	estimateProjectionTokens,
 	formatProjection,
+	requiresInputActivation,
 };

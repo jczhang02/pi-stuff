@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+	__test,
 	apiFor,
 	COMPACTION_RESULT,
 	type CompactOptions,
@@ -30,6 +31,14 @@ import {
 } from "./core-fixtures.js";
 
 afterEach(cleanupContextCoreFixtures);
+
+test("runs input activation only while Context is unsettled", () => {
+	expect(__test.requiresInputActivation("dormant")).toBe(true);
+	expect(__test.requiresInputActivation("loading")).toBe(true);
+	expect(__test.requiresInputActivation("degraded")).toBe(true);
+	expect(__test.requiresInputActivation("active")).toBe(false);
+	expect(__test.requiresInputActivation("native")).toBe(false);
+});
 
 test("keeps automatic messages and Tools outside Context lifecycle policy", async () => {
 	const handlers: Handlers = new Map();
