@@ -24,13 +24,13 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | Repository root and configuration | 31 |
 | Core documentation | 44 |
 | Research, reports, and releases | 49 |
-| Simplified Chinese mirrors | 123 |
-| Pi Stuff Package | 81 |
+| Simplified Chinese mirrors | 122 |
+| Pi Stuff Package | 80 |
 | Test data | 11 |
-| **Included non-code files** | **339** |
+| **Included non-code files** | **337** |
 | Excluded code or executable files | 936 |
 | Excluded image files | 29 |
-| **Tracked files** | **1304** |
+| **Tracked files** | **1302** |
 
 ## Repository root and configuration (31)
 
@@ -171,7 +171,7 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | `docs/research/work-btw-ui-reference.md` | 比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/research/work-todo-ui-reference.md` | 比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 
-## Simplified Chinese mirrors (123)
+## Simplified Chinese mirrors (122)
 
 | File | 作用 |
 | --- | --- |
@@ -259,7 +259,6 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | `docs/i18n/zh-CN/docs/research/work-btw-ui-reference.md` | 中文镜像：比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/i18n/zh-CN/docs/research/work-todo-ui-reference.md` | 中文镜像：比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 | `docs/i18n/zh-CN/docs/troubleshooting.md` | 中文镜像：按安装、设置、Context、Web、MCP、通知和图片等场景提供排障办法。 |
-| `docs/i18n/zh-CN/packages/pi-stuff/CHANGELOG.md` | 中文镜像：记录 Pi Stuff Package 各版本新增、变更和修复内容。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/README.md` | 中文镜像：作为 Package 入口，介绍安装方式、能力组成、常用命令和文档链接。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/src/background-work/README.md` | 中文镜像：Background Work Module README：说明后台 Shell、Monitor、容量和恢复的模块契约。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/src/background-work/UPSTREAM.md` | 中文镜像：记录 Background Work 的上游来源、版本或 commit、同步范围和本地偏差。 |
@@ -299,11 +298,10 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | `docs/i18n/zh-CN/packages/pi-stuff/src/web/runtime/UPSTREAM.md` | 中文镜像：记录 Web Runtime 的上游来源、版本或 commit、同步范围和本地偏差。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/themes/README.md` | 中文镜像：说明主题文件格式、安装方式、四种 Catppuccin 风味和颜色映射。 |
 
-## Pi Stuff Package (81)
+## Pi Stuff Package (80)
 
 | File | 作用 |
 | --- | --- |
-| `packages/pi-stuff/CHANGELOG.md` | 记录 Pi Stuff Package 各版本新增、变更和修复内容。 |
 | `packages/pi-stuff/LICENSE` | 保存 Pi Stuff Package 的 MIT 许可证和版权声明。 |
 | `packages/pi-stuff/README.md` | 作为 Package 入口，介绍安装方式、能力组成、常用命令和文档链接。 |
 | `packages/pi-stuff/package.json` | 声明 Package 名称、版本、Pi 入口、依赖、发布文件和脚本。 |

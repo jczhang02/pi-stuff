@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 1575afeab5c2f86b0520c72ec4569fe145f425783aaea439acd5372cc8bd0781 -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 33350902faf67361c6675cf47f02397d1a91fdfdbf8b4692e616e045289ecacf -->
 
 # 非代码文件检查清单
 
@@ -26,13 +26,13 @@
 | 仓库根目录与配置 | 31 |
 | 核心文档 | 44 |
 | 研究、报告与发布记录 | 49 |
-| 简体中文镜像 | 123 |
-| Pi Stuff Package | 81 |
+| 简体中文镜像 | 122 |
+| Pi Stuff Package | 80 |
 | 测试数据 | 11 |
-| **纳入的非代码文件** | **339** |
+| **纳入的非代码文件** | **337** |
 | 排除的代码或可执行文件 | 936 |
 | 排除的图片文件 | 29 |
-| **tracked 文件总数** | **1304** |
+| **tracked 文件总数** | **1302** |
 
 ## 仓库根目录与配置（31）
 
@@ -173,7 +173,7 @@
 | `docs/research/work-btw-ui-reference.md` | 比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/research/work-todo-ui-reference.md` | 比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 
-## 简体中文镜像（123）
+## 简体中文镜像（122）
 
 | 文件 | 作用 |
 | --- | --- |
@@ -261,7 +261,6 @@
 | `docs/i18n/zh-CN/docs/research/work-btw-ui-reference.md` | 中文镜像：比较 BTW 的单次问答、侧线程和邮箱 UI 生命周期并记录所选方案。 |
 | `docs/i18n/zh-CN/docs/research/work-todo-ui-reference.md` | 中文镜像：比较 Todo 可见性方案，并记录采用最多五行清单的 UI 决定。 |
 | `docs/i18n/zh-CN/docs/troubleshooting.md` | 中文镜像：按安装、设置、Context、Web、MCP、通知和图片等场景提供排障办法。 |
-| `docs/i18n/zh-CN/packages/pi-stuff/CHANGELOG.md` | 中文镜像：记录 Pi Stuff Package 各版本新增、变更和修复内容。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/README.md` | 中文镜像：作为 Package 入口，介绍安装方式、能力组成、常用命令和文档链接。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/src/background-work/README.md` | 中文镜像：Background Work Module README：说明后台 Shell、Monitor、容量和恢复的模块契约。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/src/background-work/UPSTREAM.md` | 中文镜像：记录 Background Work 的上游来源、版本或 commit、同步范围和本地偏差。 |
@@ -301,11 +300,10 @@
 | `docs/i18n/zh-CN/packages/pi-stuff/src/web/runtime/UPSTREAM.md` | 中文镜像：记录 Web Runtime 的上游来源、版本或 commit、同步范围和本地偏差。 |
 | `docs/i18n/zh-CN/packages/pi-stuff/themes/README.md` | 中文镜像：说明主题文件格式、安装方式、四种 Catppuccin 风味和颜色映射。 |
 
-## Pi Stuff Package（81）
+## Pi Stuff Package（80）
 
 | 文件 | 作用 |
 | --- | --- |
-| `packages/pi-stuff/CHANGELOG.md` | 记录 Pi Stuff Package 各版本新增、变更和修复内容。 |
 | `packages/pi-stuff/LICENSE` | 保存 Pi Stuff Package 的 MIT 许可证和版权声明。 |
 | `packages/pi-stuff/README.md` | 作为 Package 入口，介绍安装方式、能力组成、常用命令和文档链接。 |
 | `packages/pi-stuff/package.json` | 声明 Package 名称、版本、Pi 入口、依赖、发布文件和脚本。 |

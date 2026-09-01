@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/single-package-migration.md; translation-source-sha256: 4437c7225b236f0ba1858f6c8a48dac6ac37a87bf942a9000ae1e66226aef37f -->
+<!-- translation-source: docs/reports/single-package-migration.md; translation-source-sha256: a9c4ddf0c767acabe0c1aea11f4b3549dccafd029f7cf5a338f566cca413a6d9 -->
 
 # 单 Package 迁移记录
 
@@ -42,8 +42,7 @@
 - `src/code-mode/LICENSES/*`、`src/code-mode/THIRD_PARTY_NOTICES.md` 和 `src/code-mode/UPSTREAM.md`
 - 各 Module 自己的 `UPSTREAM.md`、`SECURITY.md` 和第三方许可证
 
-原先内置的 `subagents/agents/general-purpose.md` 已删除。各 Package 的旧 changelog 留在 Git 历史中；现在保留的
-Package changelog 是 `packages/pi-stuff/CHANGELOG.md`。
+原先内置的 `subagents/agents/general-purpose.md` 已删除。
 
 ## 结果
 

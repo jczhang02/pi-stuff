@@ -40,8 +40,7 @@ Later Capabilities enter through the same Package boundary. The current ordered 
 - `src/code-mode/LICENSES/*`, `src/code-mode/THIRD_PARTY_NOTICES.md`, and `src/code-mode/UPSTREAM.md`
 - Module-owned `UPSTREAM.md`, `SECURITY.md`, and third-party license files
 
-The formerly bundled `subagents/agents/general-purpose.md` resource was removed. Historical per-Package changelogs are
-available in Git history; the retained Package changelog is `packages/pi-stuff/CHANGELOG.md`.
+The formerly bundled `subagents/agents/general-purpose.md` resource was removed.
 
 ## Result
 
