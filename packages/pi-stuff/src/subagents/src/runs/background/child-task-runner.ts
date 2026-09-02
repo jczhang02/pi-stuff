@@ -10,7 +10,11 @@ import { createChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { ArtifactPaths, ModelAttempt, ToolBudgetState } from "../../shared/types.ts";
 import { detectSubagentError, findLatestSessionFile } from "../../shared/utils.ts";
-import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
+import {
+	formatModelAttemptNote,
+	formatSubagentModelVerificationError,
+	isRetryableModelFailureAttempt,
+} from "../shared/model-fallback.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { toolBudgetState } from "../shared/tool-budget.ts";
 import {
@@ -197,10 +201,15 @@ function failedLaunch(message: string, model: string | undefined) {
 	};
 }
 
-function classifyRun(run: ChildProcessResult, model: string | undefined) {
-	const detected = !run.error
-		? detectSubagentError(run.messages.filter((message): message is Message => message.role !== "custom"))
-		: undefined;
+function classifyRun(run: ChildProcessResult, model: string | undefined, task: RunnerAgentTask) {
+	const modelVerificationError =
+		model && run.model
+			? formatSubagentModelVerificationError(model, run.model, task.modelVerificationRegistry)
+			: undefined;
+	const detected =
+		!run.error && !modelVerificationError
+			? detectSubagentError(run.messages.filter((message): message is Message => message.role !== "custom"))
+			: undefined;
 	const emptyOutput = !run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
 	const expectedManagerSignal =
 		run.process?.terminationOrigin === "manager-final-drain" ||
@@ -218,6 +227,7 @@ function classifyRun(run: ChildProcessResult, model: string | undefined) {
 					: undefined
 		: undefined;
 	const error =
+		modelVerificationError ??
 		run.error ??
 		(detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ??
 		emptyOutput ??
@@ -248,9 +258,7 @@ function shouldStopFallback(
 			run.interrupted ||
 			run.timedOut ||
 			run.stopped ||
-			// Retrying after Tool execution could repeat external mutations.
-			run.toolCount > 0 ||
-			!isRetryableModelFailure(error) ||
+			!isRetryableModelFailureAttempt({ error, messages: run.messages, toolCount: run.toolCount }) ||
 			candidateIndex === candidateCount - 1,
 	);
 }
@@ -301,7 +309,7 @@ async function runAttempts(
 				break;
 			}
 			if (run.process) summary.writerProcesses.push({ ...run.process, attempt: candidateIndex });
-			const classified = classifyRun(run, candidate);
+			const classified = classifyRun(run, candidate, input.task);
 			summary.attempts.push(classified.attempt);
 			if (candidate) summary.attemptedModels.push(candidate);
 			summary.final = classified.final;

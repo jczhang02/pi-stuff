@@ -46,6 +46,8 @@ export interface RunnerAgentTask
 	thinking?: string;
 	/** Context windows frozen from the launcher's model registry for the selected candidates. */
 	modelContextWindows?: Array<{ model: string; contextWindow: number }>;
+	/** Registry entries used to verify that Pi honored a launch candidate. */
+	modelVerificationRegistry?: Array<{ provider: string; id: string; fullId: string }>;
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
 	excludeTools?: string[];

@@ -446,6 +446,7 @@ test("builds one parallel group and resolves every task override before persiste
 		toolBudget: { hard: 14, soft: 10, block: ["read"] },
 		toolTimeoutMs: 2_500,
 	});
+	expect(built.recoveries.map((recovery) => recovery.modelOrigin)).toEqual(["explicit", "configured"]);
 });
 
 test("single recovery data retains the child session and limits without retired features", () => {
@@ -481,6 +482,7 @@ test("single recovery data retains the child session and limits without retired 
 		excludeTools: ["write"],
 		sessionFile: path.join(root, "child.jsonl"),
 		context: "fork",
+		modelOrigin: "inherited",
 		initialToolBudget: { hard: 11, block: ["read"] },
 		toolTimeoutMs: 1_800,
 		capabilityCeiling: {

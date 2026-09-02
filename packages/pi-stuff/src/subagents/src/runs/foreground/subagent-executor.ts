@@ -376,6 +376,7 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 			sessionFile,
 			revivalLease,
 			modelOverride: descriptor?.model ?? target.model,
+			modelOrigin: descriptor?.modelOrigin ?? "inherited",
 			thinkingOverride: descriptor?.thinking ?? target.thinking,
 			logicalSourceRunId: descriptor?.sourceRunId ?? target.runId,
 			logicalChildIndex: descriptor?.version === 2 ? descriptor.childIndex : target.index,

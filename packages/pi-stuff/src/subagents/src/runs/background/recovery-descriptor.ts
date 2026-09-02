@@ -69,6 +69,9 @@ const V2_RECOVERY_DESCRIPTOR_SCHEMA = Type.Object(
 		sessionFile: Type.Optional(NONEMPTY_STRING),
 		cwd: NONEMPTY_STRING,
 		model: Type.Optional(NONEMPTY_STRING),
+		modelOrigin: Type.Optional(
+			Type.Union([Type.Literal("explicit"), Type.Literal("inherited"), Type.Literal("configured")]),
+		),
 		fallbackModels: Type.Optional(Type.Array(NONEMPTY_STRING, { maxItems: MAX_MODEL_CANDIDATES_PER_CHILD - 1 })),
 		thinking: Type.Optional(NONEMPTY_STRING),
 		tools: Type.Optional(STRING_LIST),

@@ -32,8 +32,10 @@ import {
 	type AvailableModelInfo,
 	assertModelCandidateLimit,
 	buildModelCandidates,
+	type ModelOrigin,
 	type ParentModel,
 	resolveEffectiveSubagentModel,
+	resolveModelOrigin,
 } from "../shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../shared/model-scope.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
@@ -105,6 +107,7 @@ export interface BackgroundRecoveryDescriptor {
 	sessionFile?: string;
 	cwd: string;
 	model?: string;
+	modelOrigin?: ModelOrigin;
 	fallbackModels?: string[];
 	thinking?: string;
 	tools?: string[];
@@ -147,6 +150,7 @@ export interface ResolvedTaskBuildInput {
 	skills?: string[] | undefined;
 	sessionFile?: string | undefined;
 	modelOverride?: string | undefined;
+	modelOriginOverride?: ModelOrigin | undefined;
 	modelCandidatesOverride?: string[] | undefined;
 	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
@@ -158,6 +162,8 @@ interface ResolvedTaskProjection {
 	maxSubagentDepth: number;
 	modelCandidates: string[];
 	modelContextWindows: Array<{ model: string; contextWindow: number }>;
+	modelVerificationRegistry: Array<{ provider: string; id: string; fullId: string }>;
+	modelOrigin: ModelOrigin;
 	primaryModel?: string;
 	skillNames: string[];
 	systemPrompt: string;
@@ -215,6 +221,9 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (resolved.modelContextWindows.length > 0) {
 		task.modelContextWindows = resolved.modelContextWindows.map((entry) => ({ ...entry }));
 	}
+	if (resolved.modelVerificationRegistry.length > 0) {
+		task.modelVerificationRegistry = resolved.modelVerificationRegistry.map((entry) => ({ ...entry }));
+	}
 	if (agent.tools) task.tools = [...agent.tools];
 	if (agent.excludeTools) task.excludeTools = [...agent.excludeTools];
 	if (agent.extensions) task.extensions = [...agent.extensions];
@@ -240,6 +249,7 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (input.context) recovery.context = input.context;
 	if (input.sessionFile) recovery.sessionFile = input.sessionFile;
 	if (resolved.primaryModel) recovery.model = resolved.primaryModel;
+	recovery.modelOrigin = resolved.modelOrigin;
 	if (resolved.modelCandidates.length > 1) recovery.fallbackModels = resolved.modelCandidates.slice(1);
 	if (resolved.thinking) recovery.thinking = resolved.thinking;
 	if (agent.tools) recovery.tools = [...agent.tools];
@@ -290,6 +300,43 @@ function mcpContractError(
 	return `Agent '${agent.name}' direct MCP Tool contract changes with cwd (parent: ${names(advertisedSelections)}; execution: ${names(toolPlan.resolvedMcpSelections)}).`;
 }
 
+function resolveTaskModels(input: ResolvedTaskBuildInput) {
+	const { agent, params, taskInput } = input;
+	const explicitModel = input.modelOverride ?? taskInput.model;
+	const modelOrigin =
+		input.modelOriginOverride ??
+		resolveModelOrigin({
+			explicitModel,
+			agentModel: agent.model,
+			parentModel: params.ctx.currentModel,
+		});
+	const resolvedPrimaryModel = resolveEffectiveSubagentModel(
+		explicitModel,
+		agent.model,
+		params.ctx.currentModel,
+		params.availableModels,
+		params.ctx.currentModelProvider,
+		{ scope: params.ctx.modelScope, source: modelOrigin === "explicit" ? "explicit" : "inherited" },
+	);
+	const modelCandidates = input.modelCandidatesOverride?.length
+		? [...input.modelCandidatesOverride]
+		: buildModelCandidates(
+				resolvedPrimaryModel,
+				agent.fallbackModels,
+				params.availableModels,
+				params.ctx.currentModelProvider,
+				{ scope: params.ctx.modelScope, origin: modelOrigin },
+			);
+	assertModelCandidateLimit(modelCandidates);
+	const primaryModel = modelCandidates[0] ?? resolvedPrimaryModel;
+	return {
+		modelCandidates,
+		modelOrigin,
+		primaryModel,
+		thinking: resolveEffectiveThinking(primaryModel, input.thinkingOverride ?? agent.thinking),
+	};
+}
+
 export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { error: string } {
 	const { taskInput, agent, params } = input;
 	const taskCwd = resolveChildCwd(input.runnerCwd, taskInput.cwd);
@@ -311,27 +358,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
 	}
 
-	const resolvedPrimaryModel = resolveEffectiveSubagentModel(
-		input.modelOverride ?? taskInput.model,
-		agent.model,
-		params.ctx.currentModel,
-		params.availableModels,
-		params.ctx.currentModelProvider,
-		{ scope: params.ctx.modelScope },
-	);
-	const modelCandidates = input.modelCandidatesOverride?.length
-		? [...input.modelCandidatesOverride]
-		: buildModelCandidates(
-				resolvedPrimaryModel,
-				agent.fallbackModels,
-				params.availableModels,
-				params.ctx.currentModelProvider,
-				{ scope: params.ctx.modelScope },
-			);
-	assertModelCandidateLimit(modelCandidates);
-	const primaryModel = modelCandidates[0] ?? resolvedPrimaryModel;
-	const thinkingConfig = input.thinkingOverride ?? agent.thinking;
-	const thinking = resolveEffectiveThinking(primaryModel, thinkingConfig);
+	const { modelCandidates, modelOrigin, primaryModel, thinking } = resolveTaskModels(input);
 	const toolBudget = resolveTaskToolBudget(taskInput.toolBudget, params.toolBudget, agent.toolBudget);
 	if (toolBudget.error) return { error: toolBudget.error };
 	const toolTimeout = resolveToolTimeoutMs({
@@ -387,12 +414,18 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 		if (contextWindow === undefined || !Number.isSafeInteger(contextWindow) || contextWindow <= 0) return [];
 		return [{ model, contextWindow }];
 	});
+	const modelVerificationRegistry = modelCandidates.flatMap((model) => {
+		const info = findModelInfo(model, params.availableModels, params.ctx.currentModelProvider);
+		return info ? [{ provider: info.provider, id: info.id, fullId: info.fullId }] : [];
+	});
 	const projection: ResolvedTaskProjection = {
 		definitionDigest,
 		launchContractDigest: launchBindingDigest(launchBinding),
 		maxSubagentDepth,
 		modelCandidates,
 		modelContextWindows,
+		modelVerificationRegistry,
+		modelOrigin,
 		skillNames,
 		systemPrompt,
 		taskCwd,

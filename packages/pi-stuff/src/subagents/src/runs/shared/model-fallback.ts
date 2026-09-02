@@ -1,6 +1,6 @@
 import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentWarning } from "../../shared/diagnostics.ts";
-import type { ModelInfo as AvailableModelInfo } from "../../shared/model-info.ts";
+import { type ModelInfo as AvailableModelInfo, splitKnownThinkingSuffix } from "../../shared/model-info.ts";
 import type { Usage } from "../../shared/types.ts";
 import { checkModelScope, type ModelScopeConfig, type ModelScopeViolation, type ModelSource } from "./model-scope.ts";
 
@@ -15,12 +15,26 @@ interface ModelAttemptSummary {
 }
 
 export function splitThinkingSuffix(model: string) {
-	const colonIdx = model.lastIndexOf(":");
-	if (colonIdx === -1) return { baseModel: model, thinkingSuffix: "" };
-	return {
-		baseModel: model.substring(0, colonIdx),
-		thinkingSuffix: model.substring(colonIdx),
-	};
+	return splitKnownThinkingSuffix(model);
+}
+
+export function formatSubagentModelVerificationError(
+	expectedModel: string,
+	observedModel: string,
+	availableModels: AvailableModelInfo[] | undefined,
+): string | undefined {
+	if (!availableModels || availableModels.length === 0) return undefined;
+	const expectedBase = splitThinkingSuffix(expectedModel).baseModel;
+	const observedBase = splitThinkingSuffix(observedModel).baseModel;
+	if (expectedBase === observedBase) return undefined;
+	const expectedEntry = availableModels.find((entry) => entry.fullId === expectedBase);
+	if (expectedEntry) {
+		if (expectedEntry.id === observedBase) return undefined;
+		const expectedIdLeaf = expectedEntry.id.slice(expectedEntry.id.lastIndexOf("/") + 1);
+		const expectedFullIdLeaf = expectedEntry.fullId.slice(expectedEntry.fullId.lastIndexOf("/") + 1);
+		if (expectedIdLeaf === observedBase || expectedFullIdLeaf === observedBase) return undefined;
+	}
+	return `model_verification_failed: child reported a different model than the launch candidate. Expected '${expectedModel}' but observed '${observedModel}'.`;
 }
 
 /** Sentinel model value requesting that a subagent inherit the parent session's model. */
@@ -72,21 +86,54 @@ function stripTrailingDateStamp(segment: string): string {
 	return segment;
 }
 
+function isRegisteredProvider(provider: string, availableModels: AvailableModelInfo[]): boolean {
+	const normalized = normalizeModelSegment(provider);
+	return availableModels.some((entry) => normalizeModelSegment(entry.provider) === normalized);
+}
+
+function splitQualifiedModelQuery(baseModel: string, availableModels: AvailableModelInfo[]) {
+	const slashIdx = baseModel.indexOf("/");
+	if (slashIdx !== -1) {
+		const providerPart = baseModel.slice(0, slashIdx);
+		if (isRegisteredProvider(providerPart, availableModels)) {
+			return { queryProvider: normalizeModelSegment(providerPart), queryIdRaw: baseModel.slice(slashIdx + 1) };
+		}
+		return { queryIdRaw: baseModel };
+	}
+	for (const separator of [":", "."]) {
+		const separatorIdx = baseModel.indexOf(separator);
+		if (separatorIdx <= 0) continue;
+		const providerPart = baseModel.slice(0, separatorIdx);
+		if (!isRegisteredProvider(providerPart, availableModels)) continue;
+		return { queryProvider: normalizeModelSegment(providerPart), queryIdRaw: baseModel.slice(separatorIdx + 1) };
+	}
+	return { queryIdRaw: baseModel };
+}
+
+function resolveExactIdMatches(
+	baseModel: string,
+	availableModels: AvailableModelInfo[],
+	preferredProvider?: string,
+): string | undefined {
+	const exactMatches = availableModels.filter((entry) => entry.id === baseModel);
+	if (preferredProvider) {
+		const preferredMatch = exactMatches.find((entry) => entry.provider === preferredProvider);
+		if (preferredMatch) return preferredMatch.fullId;
+	}
+	return exactMatches.length === 1 ? exactMatches[0]?.fullId : undefined;
+}
+
 function resolveBaseModelCandidate(
 	baseModel: string,
 	availableModels: AvailableModelInfo[],
 	preferredProvider?: string,
 ): string | undefined {
-	if (baseModel.includes("/")) {
-		const exact = availableModels.find((entry) => entry.fullId === baseModel);
-		if (exact) return exact.fullId;
-	} else {
-		const exactMatches = availableModels.filter((entry) => entry.id === baseModel);
-		if (preferredProvider) {
-			const preferredMatch = exactMatches.find((entry) => entry.provider === preferredProvider);
-			if (preferredMatch) return preferredMatch.fullId;
-		}
-		if (exactMatches.length === 1) return exactMatches.at(0)?.fullId;
+	const exact = availableModels.find((entry) => entry.fullId === baseModel);
+	if (exact) return exact.fullId;
+	const { queryProvider } = splitQualifiedModelQuery(baseModel, availableModels);
+	if (queryProvider === undefined) {
+		const exactId = resolveExactIdMatches(baseModel, availableModels, preferredProvider);
+		if (exactId) return exactId;
 	}
 
 	return fuzzyResolveModel(baseModel, availableModels, preferredProvider);
@@ -106,24 +153,7 @@ export function fuzzyResolveModel(
 	availableModels: AvailableModelInfo[],
 	preferredProvider?: string,
 ): string | undefined {
-	let queryProvider: string | undefined;
-	let queryIdRaw = baseModel;
-	const slashIdx = baseModel.indexOf("/");
-	if (slashIdx !== -1) {
-		queryProvider = normalizeModelSegment(baseModel.slice(0, slashIdx));
-		queryIdRaw = baseModel.slice(slashIdx + 1);
-	} else {
-		const providerSeparators = [":", "."];
-		for (const separator of providerSeparators) {
-			const separatorIdx = baseModel.indexOf(separator);
-			if (separatorIdx <= 0) continue;
-			const providerPart = normalizeModelSegment(baseModel.slice(0, separatorIdx));
-			if (!availableModels.some((entry) => normalizeModelSegment(entry.provider) === providerPart)) continue;
-			queryProvider = providerPart;
-			queryIdRaw = baseModel.slice(separatorIdx + 1);
-			break;
-		}
-	}
+	const { queryProvider, queryIdRaw } = splitQualifiedModelQuery(baseModel, availableModels);
 	const queryId = normalizeModelSegment(queryIdRaw);
 	const queryIdNoDate = stripTrailingDateStamp(queryId);
 
@@ -168,6 +198,49 @@ export function resolveModelCandidate(
 	return model;
 }
 
+function resolveSubagentModelCandidate(
+	model: string,
+	availableModels: AvailableModelInfo[] | undefined,
+	preferredProvider?: string,
+): string | undefined {
+	if (!availableModels || availableModels.length === 0) return model;
+	const resolvedWhole = resolveBaseModelCandidate(model, availableModels, preferredProvider);
+	if (resolvedWhole) return resolvedWhole;
+	const { baseModel, thinkingSuffix } = splitThinkingSuffix(model);
+	const resolvedBase = thinkingSuffix
+		? resolveBaseModelCandidate(baseModel, availableModels, preferredProvider)
+		: undefined;
+	return resolvedBase ? `${resolvedBase}${thinkingSuffix}` : undefined;
+}
+
+function suggestAlternateProviderModel(
+	model: string,
+	availableModels: AvailableModelInfo[] | undefined,
+): string | undefined {
+	if (!availableModels || availableModels.length === 0) return undefined;
+	const { baseModel, thinkingSuffix } = splitThinkingSuffix(model);
+	const { queryProvider, queryIdRaw } = splitQualifiedModelQuery(baseModel, availableModels);
+	if (queryProvider === undefined) return undefined;
+	const suggestion = resolveBaseModelCandidate(queryIdRaw, availableModels);
+	if (!suggestion) return undefined;
+	const matched = availableModels.find((entry) => entry.fullId === suggestion);
+	if (!matched || normalizeModelSegment(matched.provider) === queryProvider) return undefined;
+	return `${suggestion}${thinkingSuffix}`;
+}
+
+function resolveRequiredSubagentModelCandidate(
+	model: string,
+	availableModels: AvailableModelInfo[] | undefined,
+	preferredProvider?: string,
+): string {
+	const resolved = resolveSubagentModelCandidate(model, availableModels, preferredProvider);
+	if (resolved) return resolved;
+	const suggestion = suggestAlternateProviderModel(model, availableModels);
+	throw new Error(
+		`Unknown subagent model '${model}' in the active Pi model registry.${suggestion ? ` Did you mean '${suggestion}'?` : ""}`,
+	);
+}
+
 export interface ResolveSubagentModelOverrideOptions {
 	/** When set with `enforce: true`, out-of-scope models are rejected. */
 	scope?: ModelScopeConfig | undefined;
@@ -208,12 +281,18 @@ export function resolveSubagentModelOverride(
 	const trimmed = isRuntimeString(requestedModel) ? requestedModel.trim() : "";
 	const explicit = trimmed && trimmed !== INHERIT_MODEL ? trimmed : undefined;
 	let resolved: string | undefined;
+	let resolvedFromRegistry = explicit === undefined;
 	if (explicit === undefined) {
 		resolved = parentModel ? `${parentModel.provider}/${parentModel.id}` : undefined;
 	} else {
-		resolved = resolveModelCandidate(explicit, availableModels, preferredProvider);
+		const candidate = resolveSubagentModelCandidate(explicit, availableModels, preferredProvider);
+		resolvedFromRegistry = candidate !== undefined;
+		resolved =
+			options?.source === "explicit"
+				? (candidate ?? resolveRequiredSubagentModelCandidate(explicit, availableModels, preferredProvider))
+				: (candidate ?? explicit);
 	}
-	if (resolved && options?.scope?.enforce) {
+	if (resolved && resolvedFromRegistry && options?.scope?.enforce) {
 		const source: ModelSource = explicit === undefined ? "inherited" : (options.source ?? "inherited");
 		const violation = checkModelScope(resolved, options.scope, source);
 		if (violation) {
@@ -230,26 +309,42 @@ export function resolveEffectiveSubagentModel(
 	parentModel: ParentModel | undefined,
 	availableModels: AvailableModelInfo[] | undefined,
 	preferredProvider?: string,
-	options?: Omit<ResolveSubagentModelOverrideOptions, "source">,
+	options?: ResolveSubagentModelOverrideOptions,
 ): string | undefined {
+	const source = options?.source ?? (explicitModel !== undefined ? "explicit" : "inherited");
 	const resolved = resolveSubagentModelOverride(
 		explicitModel ?? agentModel,
 		parentModel,
 		availableModels,
 		preferredProvider,
-		{ ...options, source: explicitModel !== undefined ? "explicit" : "inherited" },
+		{ ...options, source },
 	);
 	if (resolved || explicitModel === undefined) return resolved;
 	return resolveSubagentModelOverride(agentModel, parentModel, availableModels, preferredProvider, {
 		...options,
-		source: "inherited",
+		source: options?.source ?? "inherited",
 	});
+}
+
+export type ModelOrigin = ModelSource | "configured";
+
+export function resolveModelOrigin(input: {
+	explicitModel?: string | boolean | undefined;
+	agentModel?: string | boolean | undefined;
+	parentModel?: ParentModel | undefined;
+}): ModelOrigin {
+	const requestedModel = input.explicitModel ?? input.agentModel;
+	const requested = isRuntimeString(requestedModel) ? requestedModel.trim() : "";
+	if (input.parentModel && (!requested || requested === INHERIT_MODEL)) return "inherited";
+	const explicit = isRuntimeString(input.explicitModel) ? input.explicitModel.trim() : "";
+	return explicit && explicit !== INHERIT_MODEL ? "explicit" : "configured";
 }
 
 export interface BuildModelCandidatesOptions {
 	/** Fallback models are inherited agent config and warn, rather than error, when out of scope. */
 	scope?: ModelScopeConfig | undefined;
 	onWarn?: (violation: ModelScopeViolation) => void;
+	origin?: ModelOrigin;
 }
 
 export function buildModelCandidates(
@@ -259,14 +354,34 @@ export function buildModelCandidates(
 	preferredProvider?: string,
 	options?: BuildModelCandidatesOptions,
 ): string[] {
+	const origin = options?.origin ?? "configured";
 	const seen = new Set<string>();
 	const candidates: string[] = [];
 	const rawCandidates = [primaryModel, ...(fallbackModels ?? [])];
+	let skippedPrimary: string | undefined;
 	for (let index = 0; index < rawCandidates.length; index++) {
 		const raw = rawCandidates[index];
 		if (!raw) continue;
-		const normalized = resolveModelCandidate(raw.trim(), availableModels, preferredProvider);
-		if (!normalized || seen.has(normalized)) continue;
+		const model = raw.trim();
+		const normalized =
+			index === 0 && origin === "inherited"
+				? model
+				: index === 0 && origin === "explicit"
+					? resolveRequiredSubagentModelCandidate(model, availableModels, preferredProvider)
+					: resolveSubagentModelCandidate(model, availableModels, preferredProvider);
+		if (!normalized) {
+			if (index === 0) skippedPrimary = model;
+			else
+				reportAgentWarning(
+					`[pi-subagents] Skipping fallback model '${model}' because it is unavailable in this environment.`,
+				);
+			continue;
+		}
+		if (seen.has(normalized)) continue;
+		if (index === 0 && origin === "explicit" && options?.scope?.enforce) {
+			const violation = checkModelScope(normalized, options.scope, "explicit");
+			if (violation) throw new Error(violation.message);
+		}
 		if (index > 0 && options?.scope?.enforce) {
 			const violation = checkModelScope(normalized, options.scope, "inherited");
 			if (violation) (options.onWarn ?? defaultScopeWarn)(violation);
@@ -279,6 +394,14 @@ export function buildModelCandidates(
 			);
 		}
 	}
+	if (candidates.length === 0 && skippedPrimary) {
+		resolveRequiredSubagentModelCandidate(skippedPrimary, availableModels, preferredProvider);
+	}
+	if (skippedPrimary) {
+		reportAgentWarning(
+			`[pi-subagents] Skipping primary model '${skippedPrimary}' because it is unavailable in this environment.`,
+		);
+	}
 	return candidates;
 }
 
@@ -290,8 +413,27 @@ export function assertModelCandidateLimit(candidates: readonly string[]): void {
 	}
 }
 
+/** A Tool failure is task-local even when its diagnostic mentions a provider or network error. */
+const TOOL_FAILURE_PREFIX = /^[\w.:@/-]+ failed (?:(?:\(exit \d+\):)|(?:with exit code \d+))(?:\s|$)/i;
+
+const CONTEXT_OVERFLOW_PATTERNS = [
+	/context(?: length| window| limit)? (?:exceed|overflow|too long)/i,
+	/maximum context length/i,
+	/too many tokens/i,
+	/context_length_exceeded/i,
+	/prompt.*too long/i,
+	/input.*too long/i,
+	/exceeded.*context/i,
+];
+
+export function isContextOverflow(error: string | undefined): boolean {
+	if (!error || TOOL_FAILURE_PREFIX.test(error.trim())) return false;
+	return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(error));
+}
+
 const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/rate\s*limit/i,
+	/usage\s*limit/i,
 	/too many requests/i,
 	/\b429\b/,
 	/quota/i,
@@ -311,6 +453,7 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/overloaded/i,
 	/service unavailable/i,
 	/temporar(?:ily)? unavailable/i,
+	/connection\s+(?:error|reset|closed|aborted)/i,
 	/connection refused/i,
 	/fetch failed/i,
 	/network error/i,
@@ -319,9 +462,11 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/upstream/i,
 	/timed? out/i,
 	/timeout/i,
+	/\b500\b/,
 	/\b502\b/,
 	/\b503\b/,
 	/\b504\b/,
+	/internal server error/i,
 	/cold.?start/i,
 	/empty response/i,
 	/no output/i,
@@ -329,19 +474,33 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/final child payload.*above the safe/i,
 ];
 
-/**
- * Failures reported as `<tool> failed (exit N): ...` or `<tool> failed with
- * exit code N` come from a tool call inside the child's task, not from the
- * provider/model, however network-flavored their details read. Retrying a
- * different model cannot fix them and would rerun the whole task. Tool names
- * include namespaced forms like `mcp.server/write`.
- */
-const TOOL_FAILURE_PREFIX = /^[\w.:@/-]+ failed (?:(?:\(exit \d+\):)|(?:with exit code \d+))(?:\s|$)/i;
-
 export function isRetryableModelFailure(error: string | undefined): boolean {
 	if (!error) return false;
 	if (TOOL_FAILURE_PREFIX.test(error.trim())) return false;
+	if (isContextOverflow(error)) return false;
 	return RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(error));
+}
+
+export function isRetryableModelFailureAttempt(input: {
+	error: string | undefined;
+	messages?: readonly unknown[] | undefined;
+	toolCount?: number | undefined;
+}): boolean {
+	if (!isRetryableModelFailure(input.error) || (input.toolCount ?? 0) > 0) return false;
+	if (input.error === "Agent produced no output.") return true;
+	if ((input.messages?.length ?? 0) === 0) return true;
+	const error = input.error?.trim();
+	return Boolean(
+		error &&
+			input.messages?.some(
+				(message) =>
+					isRuntimeObject(message) &&
+					message !== null &&
+					"errorMessage" in message &&
+					isRuntimeString(message.errorMessage) &&
+					message.errorMessage.trim() === error,
+			),
+	);
 }
 
 export function formatModelAttemptNote(attempt: ModelAttemptSummary, nextModel?: string): string {

@@ -19,7 +19,7 @@ import { type AsyncParallelTaskInput, buildResolvedTask } from "../background/as
 import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
-import { buildModelCandidates, resolveEffectiveSubagentModel } from "../shared/model-fallback.ts";
+import { buildModelCandidates, resolveEffectiveSubagentModel, resolveModelOrigin } from "../shared/model-fallback.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import type { PreparedLaunch, SubagentParamsLike, TaskParam } from "./executor-contract.ts";
@@ -202,6 +202,7 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: AgentConfig): string[] {
 	const { currentModel, modelScope } = data.executionContext;
 	const provider = currentModel?.provider;
+	const origin = resolveModelOrigin({ explicitModel: task.model, agentModel: agent.model, parentModel: currentModel });
 	const primary = resolveEffectiveSubagentModel(
 		task.model,
 		agent.model,
@@ -210,7 +211,10 @@ function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: Agent
 		provider,
 		{ scope: modelScope },
 	);
-	return buildModelCandidates(primary, agent.fallbackModels, data.availableModels, provider, { scope: modelScope });
+	return buildModelCandidates(primary, agent.fallbackModels, data.availableModels, provider, {
+		scope: modelScope,
+		origin,
+	});
 }
 
 export function projectionTokenBudget(data: PreparedLaunch): number {

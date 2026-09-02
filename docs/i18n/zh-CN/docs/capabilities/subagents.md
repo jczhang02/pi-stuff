@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 69effe443bf096d615e47cf9831a53061740b0d6f4fe8fc5ec7c0134ce0fb60e -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 2d85fce16bff3e3b6e4fc9b5a2b6566aa09877483c461227682a27f6ca52c07b -->
 
 # Agents
 
@@ -104,6 +104,12 @@ Footer roster 是紧凑生命周期视图。打开 Agent 管理时会替换 late
 
 Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及显式 Tool budget。Child 执行前会检查
 容量、认证和 model 可用性。普通委派工作没有固定 turn 截止线，因此不会仅因 Agent 持续工作而终止仍有进展的运行。
+
+每次 call 显式指定的 model 必须能在 Pi 当前 model registry 中解析。Agent 配置或 fallback 中不可用的 model
+会被跳过并尝试下一个可用 candidate；当前 parent model 即使来自尚未注册的自定义 provider，仍会被信任。
+包含 `owner/name` 的 model ID 只有在 `owner` 确实是已注册 provider 时才按 `provider/id` 解释。有 registry
+证据时，child 报告的实际 model 还会与 launch candidate 核对。Provider failure 只会在 child 尚未产生有效活动时
+轮换到 fallback，避免重复工作或外部 mutation。
 
 `toolTimeoutMs` 为每个非等待型 Tool call 设置硬超时。task 级值覆盖 launch 值，launch 值覆盖 Agent frontmatter
 与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。已知快速的内置 Tool 默认 5 分钟；本就需要等待的 supervisor 与 intercom

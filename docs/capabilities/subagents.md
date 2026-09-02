@@ -109,6 +109,13 @@ A launch can request fresh or forked context, an explicit model, one Skill, and 
 authentication, and model availability are checked before child execution. Ordinary delegated work has no fixed turn
 cutoff, so a productive Agent is not terminated merely because it has continued working.
 
+Explicit per-call models must resolve in Pi's active model registry. Unavailable Agent-configured models and fallbacks
+are skipped in favor of the next available candidate, while the current parent model remains trusted even when a
+custom provider has not registered it. Model IDs containing `owner/name` are resolved as IDs unless `owner` is an
+actual registered provider. When registry evidence is available, the child-reported model is also checked against the
+launch candidate. Provider failures rotate to a fallback only before useful child activity, avoiding repeated work or
+external mutations.
+
 `toolTimeoutMs` sets a hard timeout for each non-waiting Tool call. A task-level value overrides the launch value,
 which overrides Agent frontmatter and `PI_SUBAGENT_TOOL_TIMEOUT_MS`. Known-fast built-in Tools use a five-minute
 default; supervisor and intercom Tools that legitimately wait remain exempt.
