@@ -23,6 +23,7 @@ import {
 	rewriteSubagentPrompt,
 	SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV,
 	setEnvironment,
+	stripParentOnlySubagentMessages,
 	temporaryDirectories,
 	tmpdir,
 	toolInfo,
@@ -30,6 +31,52 @@ import {
 } from "./tool-presentation-fixtures.js";
 
 afterEach(cleanupToolPresentationFixtures);
+
+test("sanitizes non-portable Tool ids in forked child history", () => {
+	const assistant = {
+		role: "assistant",
+		content: [
+			{ type: "toolCall", id: "call_read|fc_123", name: "read", arguments: { path: "README.md" } },
+			{ type: "toolCall", id: "call_bash-ok", name: "bash", arguments: { command: "pwd" } },
+		],
+		stopReason: "toolUse",
+		timestamp: 1,
+	};
+	const readResult = {
+		role: "toolResult",
+		toolName: "read",
+		toolCallId: "call_read|fc_123",
+		content: [{ type: "text", text: "file contents" }],
+		isError: false,
+		timestamp: 2,
+	};
+	const bashResult = {
+		role: "toolResult",
+		toolName: "bash",
+		toolCallId: "call_bash-ok",
+		content: [{ type: "text", text: "cwd" }],
+		isError: false,
+		timestamp: 3,
+	};
+
+	// SAFETY: The fixture messages match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages([assistant, readResult, bashResult] as never)).toEqual([
+		{
+			...assistant,
+			content: [
+				{
+					type: "toolCall",
+					id: "tool_Y2FsbF9yZWFkfGZjXzEyMw",
+					name: "read",
+					arguments: { path: "README.md" },
+				},
+				assistant.content[1],
+			],
+		},
+		{ ...readResult, toolCallId: "tool_Y2FsbF9yZWFkfGZjXzEyMw" },
+		bashResult,
+	] as never);
+});
 
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {
 	for (const tools of [[], ["/tmp/child-tool.ts"], ["edit"]]) {

@@ -158,6 +158,30 @@ function stripAssistantSubagentToolCallBlocks(message: SubagentContextMessage): 
 	return { ...message, content: filteredContent };
 }
 
+const PORTABLE_TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function portableToolId(id: string): string {
+	if (PORTABLE_TOOL_ID_PATTERN.test(id)) return id;
+	return `tool_${Buffer.from(id).toString("base64url") || "empty"}`;
+}
+
+function sanitizeToolHistoryMessage(message: SubagentContextMessage): SubagentContextMessage {
+	if (message.role === "toolResult") {
+		const toolCallId = portableToolId(message.toolCallId);
+		return toolCallId === message.toolCallId ? message : { ...message, toolCallId };
+	}
+	if (message.role !== "assistant") return message;
+	let changed = false;
+	const content = message.content.map((block) => {
+		if (block.type !== "toolCall") return block;
+		const id = portableToolId(block.id);
+		if (id === block.id) return block;
+		changed = true;
+		return { ...block, id };
+	});
+	return changed ? { ...message, content } : message;
+}
+
 export function stripParentOnlySubagentMessages(messages: SubagentContextMessage[]): SubagentContextMessage[] {
 	const preserveCurrentFanoutToolHistory = process.env[SUBAGENT_FANOUT_CHILD_ENV] === "1";
 	let changed = false;
@@ -175,8 +199,9 @@ export function stripParentOnlySubagentMessages(messages: SubagentContextMessage
 			changed = true;
 			continue;
 		}
-		if (stripped !== message) changed = true;
-		filtered.push(stripped);
+		const sanitized = sanitizeToolHistoryMessage(stripped);
+		if (stripped !== message || sanitized !== stripped) changed = true;
+		filtered.push(sanitized);
 	}
 	return changed ? filtered : messages;
 }
