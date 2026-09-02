@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/pi-subagents-v0.63-synchronization-20260902.md; translation-source-sha256: 750db5bb0dd0261d360dcc1377fb64675224db490e1f5ec147f7747e9c71d2f4 -->
+<!-- translation-source: docs/research/pi-subagents-v0.63-synchronization-20260902.md; translation-source-sha256: f7cd005d5046ffb2a6f96b18ba3e54c669fdb68a31976c3b7c651b681f1b639f -->
 
 # pi-subagents v0.63.0 同步台账
 
@@ -14,7 +14,7 @@
 ## 已验证源码快照
 
 | 项目 | 已验证值 |
-|---|---|
+| --- | --- |
 | 上游仓库 | <https://github.com/nicobailon/pi-subagents> |
 | 已导入基线 | `v0.38.0`，提交 `89de10e4bc8895e7948704c38620a5b35ddcd17e` |
 | 已审查同步点 | `v0.63.0`，提交 `4f7eb2b56dc5306416920db8c6e222c7aaad3c81` |
@@ -109,6 +109,21 @@ npm view pi-subagents@0.63.0 dist time version
 | Agent 能力发现 | `f1b338c`、`7ebae72` | **已覆盖。**现有动态 Agent roster 和 Tool 描述会投影发现的 Agent 元数据。第二个公开能力列表 Tool 会复制同一可见权威。 |
 | 子输出 timing footer | `bb44244` | **已覆盖。**Pi Stuff 提取子协议输出，并不会把 Pi timing footer 追加到委派结果，因此无需迁移 footer 删除分支。 |
 | 存储耗尽 | `3847dee` 还添加了上游容量弹性排队写入器 | **冲突。**Pi Stuff 要求在推进 Agent 所有权前留下持久生命周期证据，因此真实存储写入失败时会 fail closed。观察器和陈旧运行 reconciler 会保留并重试未完成证据；存储已满时不会让没有记录的工作继续运行。上面的原子错误保留修复会让真正的 `ENOSPC`/quota 原因保持可见。 |
+
+### 本地 ps-qer 完成控制
+
+上游同步移除了过早的默认截止。Pi Stuff 还负责上游 Package 边界之外的生命周期要求：
+
+| 本地要求 | Pi Stuff 结果 |
+|---|---|
+| 累计 work accounting | 初始 attempt、每个已结算 model attempt、fallback 与 resume 共用一个持久 work unit。它记录 turn、Tool call、input/output token、Provider 权威报告的美元成本、model attempt 与 resume 次数。 |
+| 有限扩展策略 | 后续自动工作在 1,000,000 个已报告 token 或 5.00 美元已报告成本处请求关注。策略绝不停止正在运行的 child；用户直接确认后可恢复保留的 child，且不会重置总量。 |
+| 异常结果契约 | 稳定终态类别区分 completed、timeout、stopped、interrupted、Provider、Context、storage、protocol、explicit budget、cost guard、process 与 unknown outcome。未完成结果携带有界证据、稳定 Agent Target 和 resume eligibility。 |
+| 显式 Tool budget | 硬上限只阻止已配置的 Tool 集合。最终 Assistant 合成与未配置 Tool 仍可使用；后续真实故障会保留自己的终态类别。 |
+| Legacy 恢复 | 无版本 active artifact 只有在存在当前 owner 证据时才保持 live。已有终态、进程已死、PID 已复用或 owner 未知的 record 会成为仅用于展示的未完成隔离项；恢复不会 signal 或 reclaim 未知进程。 |
+
+设计输入保留在 [Subagent 完成控制](subagent-completion-controls-20260902.md)中。带凭据的 metrics 与最终 Host
+认证属于[按日期记录的验收报告](../reports/ps-qer-agent-completion-acceptance-20260902.md)，而不是本上游台账。
 
 ## 明确排除的上游产品界面
 

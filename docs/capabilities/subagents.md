@@ -75,10 +75,12 @@ Assistant response can also run concurrently.
 { "action": "steer", "id": "agent-id", "message": "Check the fallback path too." }
 { "action": "stop", "id": "agent-id" }
 { "action": "resume", "id": "agent-id" }
+{ "action": "resume", "id": "agent-id", "index": 0, "acknowledgeCost": true }
 ```
 
 `status` may omit `id` for a one-shot overview. `steer`, `stop`, and `resume` require `id`; grouped runs can also select
-a child by `index`. Use `/agents` for regular inspection and control.
+a child by `index`. `acknowledgeCost` is valid only for a direct user-started resume after the cost guard requests
+attention. Use `/agents` for regular inspection and control.
 
 ## Background and foreground
 
@@ -91,6 +93,9 @@ owned by the launching child and cannot detach beyond that owner.
 ## `/agents`
 
 `/agents` shows current-Session Agent lifecycle, retained outcomes, Result, Activity, and bounded child transcript.
+Terminal details include a stable outcome class and reason, cumulative turns, Tool calls, input/output tokens, reported
+cost when the Provider supplied it, model attempts, resumes, the Agent Target, and whether continuation is supported.
+An abnormal end remains `incomplete` or `failed`; retained partial evidence is not relabelled as a successful report.
 
 | Key | Action |
 | --- | --- |
@@ -138,6 +143,14 @@ Default governor limits are:
 Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls, `toolTimeoutMs` can
 bound one Tool call, and `timeoutMs` can tighten the default run deadline.
 
+The initial child, model attempts, fallbacks, and resumes share one durable work unit. Before starting later automatic
+work, the governor requests attention once cumulative reported usage reaches 1,000,000 input-plus-output tokens or
+$5.00 of Provider-reported cost. Missing Provider cost is never estimated as authoritative USD. The guard does not stop
+an in-flight child. A direct user can acknowledge a resume, which retains the same Session and cumulative totals.
+
+An explicit Tool hard limit blocks only the configured Tool names. Unconfigured Tools and the final Assistant response
+remain available so the Agent can synthesize a bounded partial or final result from evidence already collected.
+
 ## Artifacts and isolation
 
 Agent artifacts live beside the persisted Pi Session under the Settings-owned Session root. Ordinary delegation does
@@ -147,6 +160,10 @@ Optional per-Agent worktree isolation keeps changed or uncertain worktrees for i
 may be removed automatically.
 
 Changing or ending the parent Session cancels an in-flight launch safely and records its terminal state.
+
+On cold restore, current versioned lifecycle artifacts keep their recorded state. Versionless legacy records remain
+live only when current process or writer evidence proves ownership; terminal proof, a dead or reused PID, or unknown
+ownership is projected as a dismissible incomplete legacy result. Recovery never signals or reclaims an unknown owner.
 
 ## See also
 

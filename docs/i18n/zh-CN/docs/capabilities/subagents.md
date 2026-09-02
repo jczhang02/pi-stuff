@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 2d85fce16bff3e3b6e4fc9b5a2b6566aa09877483c461227682a27f6ca52c07b -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 45e5d21d438c9005df5f28e58c3914b2faee3a2a7860dc2063319bc62c3c293f -->
 
 # Agents
 
@@ -74,10 +74,12 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 { "action": "steer", "id": "agent-id", "message": "Check the fallback path too." }
 { "action": "stop", "id": "agent-id" }
 { "action": "resume", "id": "agent-id" }
+{ "action": "resume", "id": "agent-id", "index": 0, "acknowledgeCost": true }
 ```
 
 `status` 可以省略 `id`，获取一次性概览。`steer`、`stop` 与 `resume` 要求 `id`；grouped run 还可以用
-`index` 选择 child。日常检查和控制请使用 `/agents`。
+`index` 选择 child。只有成本 guard 请求关注后，由用户直接发起的 resume 才能使用 `acknowledgeCost`。
+日常检查和控制请使用 `/agents`。
 
 ## 后台与前台
 
@@ -89,6 +91,9 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 ## `/agents`
 
 `/agents` 显示当前 Session 的 Agent 生命周期、保留结果、Result、Activity 与有界 child transcript。
+终态详情包括稳定的 outcome class 与原因、累计 turn、Tool call、input/output token、Provider 实际报告时的成本、
+model attempt、resume 次数、Agent Target，以及是否支持 continuation。异常结束始终保持为 `incomplete` 或
+`failed`；保留的 partial 证据不会被重新标成成功报告。
 
 | 按键 | 操作 |
 | --- | --- |
@@ -133,6 +138,14 @@ Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则
 普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`toolTimeoutMs` 可以限制单次
 Tool call，`timeoutMs` 可以收紧默认运行期限。
 
+初始 child、model attempt、fallback 与 resume 共用一个持久 work unit。后续自动工作开始前，累计报告用量达到
+1,000,000 个 input 加 output token，或 Provider 实际报告成本达到 5.00 美元时，governor 会请求关注。Provider
+没有报告成本时，不会把估算值当成权威美元成本。guard 不会停止正在运行的 child。用户直接确认 resume 后，
+会保留同一 Session 与累计总量。
+
+显式 Tool 硬上限只阻止已配置的 Tool 名称。未配置的 Tool 与最终 Assistant 响应仍可使用，因此 Agent 能根据
+已经收集的证据合成有界 partial 或最终结果。
+
 ## Artifact 与 isolation
 
 Agent artifact 位于 Settings 管理的 Session root 中，与持久 Pi Session 相邻。普通委派不会创建项目
@@ -142,6 +155,10 @@ Agent artifact 位于 Settings 管理的 Session root 中，与持久 Pi Session
 所有的 worktree 可以自动移除。
 
 更换或结束 parent Session 会安全取消进行中的 launch，并记录其最终状态。
+
+冷恢复时，当前版本的生命周期 artifact 保持原有状态。无版本 legacy record 只有在当前进程或 writer 证据能
+证明所有权时才保持 live；已有终态证明、进程已死、PID 已复用或所有权未知时，会投影为可移除的未完成 legacy
+结果。恢复绝不会 signal 或 reclaim 未知 owner。
 
 ## 相关文档
 

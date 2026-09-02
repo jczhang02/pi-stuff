@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 01b0c7dac5681eb3677c06cfd86c40258fffcc791d813e8a14ffe8399cd3da36 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 593e37747348d7a6320a8bd3710678c64bffe9c74f20f164b600b855c5fe65f1 -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [ps-qer Agent 完成验收](ps-qer-agent-completion-acceptance-20260902.md)
 - [Effect v4 与 main 的取舍结论](effect-v4-mainline-decision-2026-09-01.md)
 - [Terminal-Bench 2.1 延迟比较](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [Skill Discovery 启动有界确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)及其

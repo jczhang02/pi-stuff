@@ -41,6 +41,7 @@ start from the [documentation index](../README.md).
 
 ## Upstream Package references
 
+- [Subagent completion controls](subagent-completion-controls-20260902.md)
 - [Background Work Package](work-background-package-reference.md)
 - [BTW Package](work-btw-package-reference.md)
 - [pi-subagents v0.63.0 synchronization](pi-subagents-v0.63-synchronization-20260902.md)

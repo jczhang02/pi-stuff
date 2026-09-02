@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 01de72cfdf55d6ef1c645c8fa35dcd6800755e8e10119dbc0c627c099ab49258 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 9d82fc772085d9d9961b755a15223fa614c132db1b3d7a4f4973813c42a5e5e1 -->
 
 # 研究
 
@@ -42,6 +42,7 @@
 
 ## 上游 Package 参考
 
+- [Subagent 完成控制](subagent-completion-controls-20260902.md)
 - [Background Work Package](work-background-package-reference.md)
 - [BTW Package](work-btw-package-reference.md)
 - [pi-subagents v0.63.0 同步](pi-subagents-v0.63-synchronization-20260902.md)

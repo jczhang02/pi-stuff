@@ -14,7 +14,7 @@ a real execution failure such as a configured timeout or unavailable Provider.
 ## Verified source snapshot
 
 | Item | Verified value |
-|---|---|
+| --- | --- |
 | Upstream repository | <https://github.com/nicobailon/pi-subagents> |
 | Imported baseline | `v0.38.0`, commit `89de10e4bc8895e7948704c38620a5b35ddcd17e` |
 | Reviewed synchronization point | `v0.63.0`, commit `4f7eb2b56dc5306416920db8c6e222c7aaad3c81` |
@@ -113,6 +113,23 @@ Every row was reviewed through its tag commit. Counts are the commits after the 
 | Agent capability discovery | `f1b338c`, `7ebae72` | **Covered.** The existing dynamic Agent roster and Tool description project discovered Agent metadata. A second public capability-list Tool would duplicate the same visible authority. |
 | Child output timing footer | `bb44244` | **Covered.** Pi Stuff extracts child protocol output and does not append Pi's timing footer to the delegated result, so there is no footer-removal branch to port. |
 | Storage exhaustion | `3847dee` also adds an upstream capacity-resilient queued writer | **Conflict.** Pi Stuff requires durable lifecycle evidence before advancing Agent ownership and therefore fails closed on a real storage write failure. Its observer and stale-run reconciler retain and retry unfinished evidence; it does not keep unrecorded work running while storage is full. The atomic error-preservation fix above keeps the actual `ENOSPC`/quota cause visible. |
+
+### Local ps-qer completion controls
+
+The upstream synchronization removes the premature default cutoffs. Pi Stuff also owns lifecycle requirements that are
+outside the upstream Package boundary:
+
+| Local requirement | Pi Stuff result |
+|---|---|
+| Cumulative work accounting | The initial attempt, every settled model attempt, fallback, and resume share one durable work unit. It records turns, Tool calls, input/output tokens, authoritative Provider-reported USD, model attempts, and resumes. |
+| Finite expansion policy | Later automatic work requests attention at 1,000,000 reported tokens or $5.00 of reported cost. The policy never stops an in-flight child; a direct user acknowledgement resumes the retained child without resetting totals. |
+| Abnormal result contract | Stable terminal classes distinguish completed, timeout, stopped, interrupted, Provider, Context, storage, protocol, explicit budget, cost guard, process, and unknown outcomes. Incomplete results carry bounded evidence, a stable Agent Target, and resume eligibility. |
+| Explicit Tool budget | A hard limit blocks only the configured Tool set. Final Assistant synthesis and unconfigured Tools remain available, and a later real failure keeps its own terminal class. |
+| Legacy recovery | Versionless active artifacts remain live only with current owner evidence. Terminal, dead, reused-PID, or unknown-owner records become presentation-only incomplete quarantine entries; recovery does not signal or reclaim an unknown process. |
+
+The design input is retained in [Subagent completion controls](subagent-completion-controls-20260902.md). Credential-backed
+metrics and final Host certification belong to the
+[dated acceptance report](../reports/ps-qer-agent-completion-acceptance-20260902.md) rather than this upstream ledger.
 
 ## Deliberately excluded upstream product surfaces
 
