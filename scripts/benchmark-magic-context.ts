@@ -226,6 +226,7 @@ async function collectSample(): Promise<MagicContextSample> {
 	const buildStartedAt = performance.now();
 	const bundle = await buildMagicWorkerBundle();
 	const workerBuildMs = round(performance.now() - buildStartedAt);
+	let workerStartDurationMs: number | undefined;
 	const clock: EffectClock = { firstEffectMs: null, startedAt: null };
 	const transport = new MagicWorkerTransport(
 		{
@@ -241,7 +242,12 @@ async function collectSample(): Promise<MagicContextSample> {
 				writeMagicWorkerSyncResponse(message.buffer, 2, "Synchronous Host effects are outside this benchmark.");
 			},
 		},
-		async () => startMagicWorkerFromBundle(bundle),
+		async () => {
+			const workerStartedAt = performance.now();
+			const handle = startMagicWorkerFromBundle(bundle);
+			workerStartDurationMs = performance.now() - workerStartedAt;
+			return handle;
+		},
 	);
 	let id = 0;
 	const nextId = (): number => {
@@ -253,7 +259,12 @@ async function collectSample(): Promise<MagicContextSample> {
 			Effect.gen(function* () {
 				const initializeStartedAt = performance.now();
 				const ready = yield* transport.initialize(nextId(), []);
-				const initializeAndTokenizerPreloadMs = round(performance.now() - initializeStartedAt);
+				const initializeTotalMs = performance.now() - initializeStartedAt;
+				if (workerStartDurationMs === undefined) {
+					return yield* Effect.fail(new Error("Magic Context Worker start was not measured."));
+				}
+				const workerStartMs = round(workerStartDurationMs);
+				const initializeAndTokenizerPreloadMs = round(initializeTotalMs - workerStartDurationMs);
 				if (!ready.commands.some((registered) => registered.name === "ctx-status")) {
 					return yield* Effect.fail(
 						new Error(`Magic Context did not register ctx-status: ${JSON.stringify(ready)}`),
@@ -266,7 +277,7 @@ async function collectSample(): Promise<MagicContextSample> {
 					"malformed-image": yield* measureCase(transport, "malformed-image", clock, nextId),
 				};
 				const queue = yield* measureQueue(transport, nextId);
-				return { cases, initializeAndTokenizerPreloadMs, queue };
+				return { cases, initializeAndTokenizerPreloadMs, queue, workerStartMs };
 			}),
 		),
 	);

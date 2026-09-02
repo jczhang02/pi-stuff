@@ -27,6 +27,7 @@ export const MAGIC_CONTEXT_SAMPLE_SCHEMA = Type.Object({
 		singleCommandMs: POSITIVE_NUMBER,
 	}),
 	workerBuildMs: POSITIVE_NUMBER,
+	workerStartMs: POSITIVE_NUMBER,
 });
 
 export const MAGIC_CONTEXT_BENCHMARK_REPORT_SCHEMA = Type.Object({
@@ -44,6 +45,7 @@ export function numericMagicContextMetrics(sample: MagicContextSample): Map<stri
 		["queue.parallelPairMs", sample.queue.parallelPairMs],
 		["queue.singleCommandMs", sample.queue.singleCommandMs],
 		["workerBuildMs", sample.workerBuildMs],
+		["workerStartMs", sample.workerStartMs],
 	]);
 	for (const name of MAGIC_CONTEXT_BENCHMARK_CASES) {
 		const current = sample.cases[name];
