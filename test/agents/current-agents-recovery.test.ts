@@ -103,6 +103,7 @@ test("restores sibling runs when optional control-event files are absent", async
 		fs.writeFileSync(
 			path.join(root, id, "status.json"),
 			JSON.stringify({
+				lifecycleArtifactVersion: 3,
 				runId: id,
 				sessionId: "root-session",
 				state: "running",

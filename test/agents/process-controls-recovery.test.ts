@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -28,6 +29,7 @@ import {
 	DEFAULT_ARTIFACT_CONFIG,
 	getAsyncConfigPath,
 	RESULTS_DIR,
+	SESSION_GOVERNOR_ROOT,
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_ASYNC_STATUS_EVENT,
 	type SubagentState,
@@ -310,6 +312,24 @@ function stateForSession(sessionId: string): SubagentState {
 	};
 }
 
+function trackGovernorSession(sessionId: string): void {
+	temporaryPaths.push(path.join(SESSION_GOVERNOR_ROOT, createHash("sha256").update(sessionId).digest("hex")));
+}
+
+async function registerGovernorRun(sessionId: string, runId: string, childCount: number): Promise<void> {
+	trackGovernorSession(sessionId);
+	const governor = new SessionAgentGovernor({ rootDir: SESSION_GOVERNOR_ROOT, sessionId, pid: process.pid });
+	for (let index = 0; index < childCount; index++) {
+		const acquired = await governor.acquireSpawn({
+			logicalAgentId: `${runId}:${index}`,
+			runtimeRunId: runId,
+			childIndex: index,
+			pid: process.pid,
+		});
+		if (!acquired.ok) throw new Error(acquired.error.message);
+	}
+}
+
 function seedSession(root: string): string {
 	const sessionDir = path.join(root, "seed-session");
 	fs.mkdirSync(sessionDir, { recursive: true });
@@ -354,6 +374,7 @@ test(
 			const config = contextUsageAgent(root);
 			cleanupRun(runId);
 			try {
+				await registerGovernorRun(sessionId, runId, 1);
 				const launched = await executeAsyncSingle(runId, {
 					agent: config.name,
 					task: "PROCESS_CONTEXT_USAGE",
@@ -403,6 +424,7 @@ test(
 			const sessionId = `session-${runId}`;
 			const config = agent(root);
 			try {
+				await registerGovernorRun(sessionId, runId, 2);
 				const launched = await executeAsyncParallel(runId, {
 					agents: [config],
 					tasks: [
@@ -509,13 +531,15 @@ function crashRecoveryFixture() {
 	const resumedRunId = `resume-${process.pid}-${Date.now()}`;
 	cleanupRun(sourceRunId);
 	cleanupRun(resumedRunId);
+	const sessionId = `recovery-session-${process.pid}-${Date.now()}`;
+	trackGovernorSession(sessionId);
 	return {
 		root,
 		sessionFile: seedSession(root),
-		sessionId: `recovery-session-${process.pid}-${Date.now()}`,
+		sessionId,
 		sourceRunId,
 		resumedRunId,
-		governorRoot: path.join(root, "governor"),
+		governorRoot: SESSION_GOVERNOR_ROOT,
 		config: agent(root),
 		events: new EventLog(),
 	};
@@ -639,6 +663,8 @@ test(
 						sourceRunId,
 						parentSessionId: sessionId,
 					},
+					logicalSourceRunId: sourceRunId,
+					logicalChildIndex: 0,
 					ctx: {
 						pi: extensionApi(events),
 						cwd: root,
