@@ -1,0 +1,4 @@
+interface:
+  display_name: "Beads"
+  short_description: "Pi Stuff task tracking with bd"
+  default_prompt: "Use $beads to inspect or manage accepted Pi Stuff work."
