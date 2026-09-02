@@ -137,7 +137,7 @@ export interface MagicContextCommandDefinition {
 }
 
 export interface MagicContextExtensionAPI
-	extends Pick<ExtensionAPI, "registerEntryRenderer" | "sendMessage" | "sendUserMessage"> {
+	extends Pick<ExtensionAPI, "events" | "registerEntryRenderer" | "sendMessage" | "sendUserMessage"> {
 	appendEntry(customType: string, data?: JsonInputValue): void;
 	getAllTools(): MagicContextToolInfo[];
 	on(...registration: MagicContextEventRegistration): void;

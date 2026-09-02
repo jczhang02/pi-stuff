@@ -21,6 +21,7 @@ class FakeMagicWorkerPort implements MagicWorkerPort {
 	onmessageerror: ((event: MessageEvent) => void) | null = null;
 	readonly messages: MagicWorkerRequest[] = [];
 	refs = 0;
+	referenced = false;
 	unrefs = 0;
 	private readonly closeListeners = new Set<(event: CloseEvent) => void>();
 	private readonly onPost: (message: MagicWorkerRequest) => void;
@@ -40,10 +41,12 @@ class FakeMagicWorkerPort implements MagicWorkerPort {
 
 	ref(): void {
 		this.refs += 1;
+		this.referenced = true;
 	}
 
 	unref(): void {
 		this.unrefs += 1;
+		this.referenced = false;
 	}
 
 	reply(message: MagicWorkerMessage): void {
@@ -205,6 +208,72 @@ test("request interruption emits protocol cancellation and removes the pending r
 	expect(port.messages).toContainEqual({ id: 2, type: "cancel" });
 	expect(port.refs).toBe(2);
 	expect(port.unrefs).toBe(2);
+	expect(harness.releases).toBe(1);
+});
+
+test("a late reply after cancellation is ignored while the Worker stays active", async () => {
+	const requestPosted = Promise.withResolvers<void>();
+	const fatals: Error[] = [];
+	let port!: FakeMagicWorkerPort;
+	port = new FakeMagicWorkerPort((message) => {
+		if (message.type === "initialize") port.reply(ready(message.id));
+		else if (message.type === "command") requestPosted.resolve();
+	});
+	const harness = transportHarness(port, (error) => fatals.push(error));
+
+	await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				yield* harness.transport.initialize(1, []);
+				const controller = new AbortController();
+				const running = Effect.runPromiseExit(harness.transport.request(command(2)), {
+					signal: controller.signal,
+				});
+				yield* Effect.promise(() => requestPosted.promise);
+				controller.abort(new Error("cancelled"));
+				expect(Exit.hasInterrupts(yield* Effect.promise(() => running))).toBeTrue();
+				port.reply({ id: 2, type: "command-result" });
+				yield* Effect.promise(() => Bun.sleep(0));
+				expect(harness.transport.isActive()).toBeTrue();
+			}),
+		),
+	);
+
+	expect(fatals).toEqual([]);
+	expect(port.messages).toContainEqual({ id: 2, type: "cancel" });
+	expect(port.unrefs).toBe(2);
+	expect(port.referenced).toBeFalse();
+	expect(harness.releases).toBe(1);
+});
+
+test("one Worker exit rejects every concurrent request and reports one fatal", async () => {
+	const fatals: Error[] = [];
+	let commandsPosted = 0;
+	let port!: FakeMagicWorkerPort;
+	port = new FakeMagicWorkerPort((message) => {
+		if (message.type === "initialize") port.reply(ready(message.id));
+		else if (message.type === "command" && ++commandsPosted === 2) port.exit("worker exited");
+	});
+	const harness = transportHarness(port, (error) => fatals.push(error));
+
+	const exits = await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				yield* harness.transport.initialize(1, []);
+				return yield* Effect.all(
+					[Effect.exit(harness.transport.request(command(2))), Effect.exit(harness.transport.request(command(3)))],
+					{ concurrency: "unbounded" },
+				);
+			}),
+		),
+	);
+
+	expect(exits.every(Exit.hasFails)).toBeTrue();
+	expect(fatals).toHaveLength(1);
+	expect(fatals[0]?.message).toContain("worker exited");
+	expect(port.refs).toBe(3);
+	expect(port.unrefs).toBe(2);
+	expect(port.referenced).toBeFalse();
 	expect(harness.releases).toBe(1);
 });
 

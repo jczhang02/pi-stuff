@@ -58,6 +58,12 @@ const MAGIC_CONTEXT_SOURCE: MagicContextToolInfo["sourceInfo"] = {
 	source: "@cortexkit/pi-magic-context",
 };
 
+// Pi never initializes child Extensions inside the Context Engine Worker, so upstream child-init events have no publisher here.
+const isolatedWorkerEvents: MagicContextExtensionAPI["events"] = {
+	emit: () => undefined,
+	on: () => () => undefined,
+};
+
 function send(message: MagicWorkerMessage): void {
 	postMessage(message);
 }
@@ -143,6 +149,7 @@ function workerToolInfo(tool: MagicContextToolDefinition): MagicContextToolInfo 
 function workerPi(): MagicContextExtensionAPI {
 	return {
 		appendEntry: (customType, data) => contexts.sendEffect({ args: [customType, data], name: "appendEntry" }),
+		events: isolatedWorkerEvents,
 		getAllTools: () => [...hostTools, ...[...tools.values()].map(workerToolInfo)],
 		on: registerEvent,
 		registerCommand,

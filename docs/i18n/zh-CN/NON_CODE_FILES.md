@@ -1,4 +1,4 @@
-<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: 33350902faf67361c6675cf47f02397d1a91fdfdbf8b4692e616e045289ecacf -->
+<!-- translation-source: NON_CODE_FILES.md; translation-source-sha256: ab38d93d241766d3c4a8db85c9b9e74e8be23c22fec6b34e687227967fc3bf08 -->
 
 # 非代码文件检查清单
 
@@ -66,7 +66,7 @@
 | `config/typescript/goal-upstream-run.json` | 为 Goal 上游测试设置可发射编译、独立输出目录和所需源码范围。 |
 | `config/typescript/rtk.json` | 给 RTK 模块及其测试定义独立的 TypeScript 编译和类型检查范围。 |
 | `package.json` | 定义根工作区、Bun 脚本、检查与测试命令、开发依赖和 Knip 入口。 |
-| `patches/@cortexkit%2Fpi-magic-context@0.40.0.patch` | 修补 Magic Context 0.40.0 的 tokenizer 发现、token 复用和启动预加载行为。 |
+| `patches/@cortexkit%2Fpi-magic-context@0.41.1.patch` | 修补 Magic Context 0.41.1 的 tokenizer 发现、token 复用和启动预加载行为。 |
 | `schemas/suite.schema.json` | 定义 `suite.json` 的 JSON Schema，用来校验模块声明、顺序和配置形状。 |
 | `tsconfig.json` | 定义根 TypeScript 检查范围，并排除由独立 tsconfig 负责的模块和测试。 |
 
