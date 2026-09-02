@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: c5b899dedeeea9a90f3769b755bd1b13523f48297b6cb3e8043f87854e301ba0 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: e79d74c8878aaa9a75dff4978776d3996bedd382ad7451f8d82367d7a49295ab -->
 
 # Agents
 
@@ -30,7 +30,7 @@
 
 ## 亮点
 
-- 按明确优先级发现项目、用户与 Package Agent 定义。
+- 按明确优先级发现固定目录、settings 扫描目录、symlink 目录与 Package 中的 Agent 定义。
 - 支持逐 Agent Tool allowlist 与 exclusion，不改变 parent Host。
 - 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call。
 - 默认后台运行；前台模式会等待结果。

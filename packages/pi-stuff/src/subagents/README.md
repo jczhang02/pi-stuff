@@ -28,7 +28,7 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
 
 ## Highlights
 
-- Discovers project, user, and Package Agent definitions with explicit precedence.
+- Discovers fixed, settings-scanned, symlinked, and Package Agent definitions with explicit precedence.
 - Supports per-Agent Tool allowlists and exclusions without changing the parent Host.
 - Supports one Agent, parallel grouped tasks, and status or lifecycle control calls.
 - Runs in the background by default; foreground mode waits for the result.

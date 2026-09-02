@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 748143efeb8194ddbd7f3b971c594959a2a0e46eaf0d6f7d5902c21f12a4de14 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 69effe443bf096d615e47cf9831a53061740b0d6f4fe8fc5ec7c0134ce0fb60e -->
 
 # Agents
 
@@ -17,6 +17,10 @@ Agent 定义从以下位置发现：
 名称冲突时，项目定义优先于用户定义，用户定义优先于 Package 定义。每次主运行前，`subagent` Tool 描述会列出
 有效 roster 和每个 Agent 的用途。
 Agent frontmatter 可以声明 `tools` 与 `excludeTools`；exclusion 对该 child 始终优先。
+
+Pi settings 可以通过 `subagents.agentScanDirs` 增加递归扫描根。用户 settings 提供 user scope 根，项目
+`.pi/settings.json` 提供 project scope 根。条目会展开 `~`，并可包含一个完整的 `*` 路径段，以扫描一层目录。
+缺失的根会被忽略；symlink 目录只跟随一次；如果扫描根与固定 user 或 project Agent 目录发生同名冲突，固定目录优先。
 
 ## 快速开始
 

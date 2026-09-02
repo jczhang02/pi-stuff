@@ -73,7 +73,13 @@ export async function findNearestProjectRoot(cwd: string): Promise<string | null
 	let current = path.resolve(cwd);
 	let gitRoot: string | null = null;
 	while (true) {
-		if (await isDirectory(path.join(getProjectConfigDir(current), "agents"))) return current;
+		const configDir = getProjectConfigDir(current);
+		if (
+			(await isDirectory(path.join(configDir, "agents"))) ||
+			(await pathExists(path.join(configDir, "settings.json")))
+		) {
+			return current;
+		}
 		if (!gitRoot && (await pathExists(path.join(current, ".git")))) gitRoot = current;
 		const parent = path.dirname(current);
 		if (parent === current) return gitRoot;
@@ -89,10 +95,22 @@ export async function discoverAgents(cwd: string, scope: AgentScope): Promise<Ag
 
 	const packagePaths = await collectPackageAgentPaths(cwd, projectRoot, { includeProject, includeUser });
 	const packageAgents = await loadUniqueAgents(packagePaths, "package", false);
-	const userPaths = includeUser ? [...extraUserAgentDirs(), path.join(getAgentDir(), "agents")] : [];
+	const userPaths = includeUser
+		? [
+				...extraUserAgentDirs(),
+				...(await settingsAgentScanDirs(path.join(getAgentDir(), "settings.json"))),
+				path.join(getAgentDir(), "agents"),
+			]
+		: [];
 	const userAgents = await loadUniqueAgents(userPaths, "user", true);
+	const projectScanDirs =
+		includeProject && projectRoot
+			? await settingsAgentScanDirs(path.join(getProjectConfigDir(projectRoot), "settings.json"))
+			: [];
 	const projectAgents =
-		includeProject && projectAgentsDir ? await loadUniqueAgents([projectAgentsDir], "project", true) : [];
+		includeProject && projectAgentsDir
+			? await loadUniqueAgents([...projectScanDirs, projectAgentsDir], "project", true)
+			: [];
 
 	const agents = mergeAgentsForScope(scope, userAgents, projectAgents, packageAgents);
 	return { agents, projectAgentsDir };
@@ -222,8 +240,16 @@ function parseToolTimeout(value: string | undefined, name: string): number | und
 	return result.toolTimeoutMs;
 }
 
-async function listAgentFiles(directory: string): Promise<string[]> {
+async function listAgentFiles(directory: string, visitedDirectories = new Set<string>()): Promise<string[]> {
 	const files: string[] = [];
+	let realDirectory: string;
+	try {
+		realDirectory = await fs.promises.realpath(directory);
+	} catch {
+		return files;
+	}
+	if (visitedDirectories.has(realDirectory)) return files;
+	visitedDirectories.add(realDirectory);
 	let entries: fs.Dirent[];
 	try {
 		entries = (await fs.promises.readdir(directory, { withFileTypes: true })).sort((left, right) =>
@@ -235,8 +261,9 @@ async function listAgentFiles(directory: string): Promise<string[]> {
 	for (const entry of entries) {
 		if (PRUNED_DIRECTORY_NAMES.has(entry.name)) continue;
 		const candidate = path.join(directory, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...(await listAgentFiles(candidate)));
+		const directoryEntry = entry.isDirectory() || (entry.isSymbolicLink() && (await isDirectory(candidate)));
+		if (directoryEntry) {
+			files.push(...(await listAgentFiles(candidate, visitedDirectories)));
 			continue;
 		}
 		if (
@@ -374,6 +401,48 @@ function extraUserAgentDirs(): string[] {
 		.split(path.delimiter)
 		.map((entry) => entry.trim())
 		.filter(Boolean);
+}
+
+async function settingsAgentScanDirs(settingsPath: string): Promise<string[]> {
+	const settings = await readJson(settingsPath);
+	if (!isRecord(settings)) return [];
+	const subagents = settings["subagents"];
+	if (!isRecord(subagents)) return [];
+	const patterns = stringArray(subagents["agentScanDirs"]);
+	return uniquePaths((await Promise.all(patterns.map(expandAgentScanDirPattern))).flat());
+}
+
+async function expandAgentScanDirPattern(pattern: string): Promise<string[]> {
+	const trimmed = pattern.trim();
+	const homeExpanded =
+		trimmed === "~"
+			? os.homedir()
+			: trimmed.startsWith("~/") || trimmed.startsWith("~\\")
+				? path.join(os.homedir(), trimmed.slice(2))
+				: trimmed;
+	const expanded = homeExpanded.replace(/[\\/]+/g, path.sep);
+	const wildcardCount = [...expanded.matchAll(/\*/g)].length;
+	if (wildcardCount === 0) return (await isDirectory(path.resolve(expanded))) ? [path.resolve(expanded)] : [];
+	const parts = expanded.split(path.sep);
+	const wildcardIndex = parts.indexOf("*");
+	if (wildcardCount !== 1 || wildcardIndex < 0) return [];
+	const base = path.resolve(parts.slice(0, wildcardIndex).join(path.sep) || path.sep);
+	const suffix = parts.slice(wildcardIndex + 1);
+	let entries: fs.Dirent[];
+	try {
+		entries = await fs.promises.readdir(base, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const candidates = await Promise.all(
+		entries.map(async (entry) => {
+			const candidate = path.join(base, entry.name, ...suffix);
+			return (entry.isDirectory() || entry.isSymbolicLink()) && (await isDirectory(candidate))
+				? candidate
+				: undefined;
+		}),
+	);
+	return candidates.filter((candidate): candidate is string => candidate !== undefined);
 }
 
 function splitTools(values: string[] | undefined) {

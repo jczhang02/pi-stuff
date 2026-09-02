@@ -17,6 +17,11 @@ When names collide, project definitions take precedence over user definitions, w
 definitions. The `subagent` Tool description lists the effective roster and each Agent's purpose before a main run.
 Agent frontmatter may declare `tools` and `excludeTools`; exclusions always win for that child.
 
+Pi settings may add recursive roots through `subagents.agentScanDirs`. User settings contribute user-scoped roots;
+project `.pi/settings.json` contributes project-scoped roots. Entries expand `~` and may contain one whole `*` path
+segment to scan one directory level. Missing roots are ignored, symlinked directories are followed once, and the fixed
+user or project Agent directory wins when names collide with a scan root.
+
 ## Quick start
 
 Launch one Agent in the background:
