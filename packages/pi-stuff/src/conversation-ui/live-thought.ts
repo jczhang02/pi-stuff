@@ -341,16 +341,16 @@ function fitHead(text: string, width: number): string {
 	return `${result}${ELLIPSIS}`;
 }
 
-function fitFragment(text: string, width: number, requireNewestTail: boolean): string {
-	if (visibleWidth(text) <= width) return text;
+function fitFragment(fragment: string, width: number, requireNewestTail: boolean): string {
+	if (visibleWidth(fragment) <= width) return fragment;
 	if (width <= 0) return "";
 
-	const segments = [...WORD_SEGMENTER.segment(text)];
+	const segments = [...WORD_SEGMENTER.segment(fragment)];
 	const firstMeaningful = segments.find(({ segment }) => MEANINGFUL_TEXT.test(segment));
 	if (!firstMeaningful) return "";
 
 	const prefixEnd = firstMeaningful.index + firstMeaningful.segment.length;
-	const prefix = text.slice(0, prefixEnd).trim();
+	const prefix = fragment.slice(0, prefixEnd).trim();
 	const tailBudget = width - visibleWidth(prefix) - visibleWidth(MIDDLE_ELLIPSIS);
 	if (tailBudget > 0) {
 		const suffixWidths = segments.map(() => 0);
@@ -363,9 +363,8 @@ function fitFragment(text: string, width: number, requireNewestTail: boolean): s
 		}
 		for (const [index, segment] of segments.entries()) {
 			if (segment.index < prefixEnd || !MEANINGFUL_TEXT.test(segment.segment)) continue;
-			const tail = text.slice(segment.index).trim();
 			if ((suffixWidths[index] ?? Number.POSITIVE_INFINITY) <= tailBudget) {
-				return `${prefix}${MIDDLE_ELLIPSIS}${tail}`;
+				return `${prefix}${MIDDLE_ELLIPSIS}${fragment.slice(segment.index)}`;
 			}
 		}
 		let finalMeaningful: (typeof segments)[number] | undefined;
@@ -388,7 +387,7 @@ function fitFragment(text: string, width: number, requireNewestTail: boolean): s
 	if (requireNewestTail) return "";
 	if (visibleWidth(prefix) + visibleWidth(ELLIPSIS) <= width) return `${prefix}${ELLIPSIS}`;
 	if (LATIN_WORD.test(firstMeaningful.segment)) return "";
-	return fitReadableHead(text, width);
+	return fitReadableHead(fragment, width);
 }
 
 function fitReadableHead(text: string, width: number): string {
