@@ -216,6 +216,7 @@ test("keeps resume logical identity while rebinding its new runtime as child zer
 	if (!prepared.ok || !prepared.invocation) throw new Error("Expected a governed resume");
 	expect(governor.resumeReservations).toEqual([
 		{
+			acknowledgeCost: false,
 			launchRunId: "resume-tool-call",
 			targetRunId: "original-run",
 			childIndex: 4,

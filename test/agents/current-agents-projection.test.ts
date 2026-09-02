@@ -373,6 +373,7 @@ test("cold startup restores only governor-indexed active runtime directories", a
 		readRunStatus: async (asyncDir) => {
 			reads.push(asyncDir);
 			return {
+				lifecycleArtifactVersion: 3,
 				runId: path.basename(asyncDir),
 				sessionId: "root-session",
 				state: "running",
@@ -407,6 +408,7 @@ test("treats a missing runtime root as one completed restore generation", async 
 		fs.writeFileSync(
 			path.join(runDir, "status.json"),
 			JSON.stringify({
+				lifecycleArtifactVersion: 3,
 				runId: "late-run",
 				sessionId: "root-session",
 				state: "running",
