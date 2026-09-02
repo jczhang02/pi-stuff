@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -159,10 +160,19 @@ function stripAssistantSubagentToolCallBlocks(message: SubagentContextMessage): 
 }
 
 const PORTABLE_TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const MAX_PORTABLE_TOOL_ID_LENGTH = 64;
+const COMPOSITE_TOOL_ID_APIS = new Set([
+	"azure-openai-responses",
+	"cursor-native",
+	"openai-completions",
+	"openai-responses",
+]);
 
 function portableToolId(id: string): string {
-	if (PORTABLE_TOOL_ID_PATTERN.test(id)) return id;
-	return `tool_${Buffer.from(id).toString("base64url") || "empty"}`;
+	if (PORTABLE_TOOL_ID_PATTERN.test(id) && id.length <= MAX_PORTABLE_TOOL_ID_LENGTH) return id;
+	const encoded = `tool_${Buffer.from(id).toString("base64url") || "empty"}`;
+	if (encoded.length <= MAX_PORTABLE_TOOL_ID_LENGTH) return encoded;
+	return `tool_${createHash("sha256").update(id).digest("base64url")}`;
 }
 
 function sanitizeToolHistoryMessage(message: SubagentContextMessage): SubagentContextMessage {
@@ -182,8 +192,12 @@ function sanitizeToolHistoryMessage(message: SubagentContextMessage): SubagentCo
 	return changed ? { ...message, content } : message;
 }
 
-export function stripParentOnlySubagentMessages(messages: SubagentContextMessage[]): SubagentContextMessage[] {
+export function stripParentOnlySubagentMessages(
+	messages: SubagentContextMessage[],
+	options: { sanitizeToolIds?: boolean } = {},
+): SubagentContextMessage[] {
 	const preserveCurrentFanoutToolHistory = process.env[SUBAGENT_FANOUT_CHILD_ENV] === "1";
+	const sanitizeToolIds = options.sanitizeToolIds ?? true;
 	let changed = false;
 	const filtered: SubagentContextMessage[] = [];
 	for (const message of messages) {
@@ -199,7 +213,7 @@ export function stripParentOnlySubagentMessages(messages: SubagentContextMessage
 			changed = true;
 			continue;
 		}
-		const sanitized = sanitizeToolHistoryMessage(stripped);
+		const sanitized = sanitizeToolIds ? sanitizeToolHistoryMessage(stripped) : stripped;
 		if (stripped !== message || sanitized !== stripped) changed = true;
 		filtered.push(sanitized);
 	}
@@ -340,7 +354,9 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	});
 	registerStructuredOutputTool(pi);
 	pi.on("context", (event, ctx) => {
-		const messages = stripParentOnlySubagentMessages(event.messages);
+		const messages = stripParentOnlySubagentMessages(event.messages, {
+			sanitizeToolIds: !COMPOSITE_TOOL_ID_APIS.has(ctx.model?.api ?? ""),
+		});
 		continuationHistoryObserved ||= childContextHasOwnContinuation(messages);
 		const projected = projectChildContinuationContext(messages, pi, ctx);
 		if (messages === event.messages && !projected.changed) return undefined;

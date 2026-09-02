@@ -78,6 +78,27 @@ test("sanitizes non-portable Tool ids in forked child history", () => {
 	] as never);
 });
 
+test("bounds portable Tool ids while preserving provider-native composite ids", () => {
+	const toolCallId = `call_${"x".repeat(80)}|fc_${"y".repeat(80)}`;
+	const messages = [
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: toolCallId, name: "read", arguments: { path: "README.md" } }],
+		},
+		{ role: "toolResult", toolName: "read", toolCallId, content: [{ type: "text", text: "file" }] },
+	];
+	const expectedId = `tool_${createHash("sha256").update(toolCallId).digest("base64url")}`;
+
+	// SAFETY: The fixture values match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages(messages as never)).toEqual([
+		{ ...messages[0], content: [{ ...messages[0]?.content?.[0], id: expectedId }] },
+		{ ...messages[1], toolCallId: expectedId },
+	] as never);
+	expect(expectedId.length).toBeLessThanOrEqual(64);
+	// SAFETY: The fixture values match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages(messages as never, { sanitizeToolIds: false })).toBe(messages as never);
+});
+
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {
 	for (const tools of [[], ["/tmp/child-tool.ts"], ["edit"]]) {
 		const plan = resolvePiLaunchToolPlan(
