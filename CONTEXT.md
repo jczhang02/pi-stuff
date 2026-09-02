@@ -95,6 +95,11 @@ One Capability-owned top-level object in `<agentDir>/pi-stuff.json`. Its owner m
 preserving sibling namespaces; the merged file, lock, and atomic write remain shared infrastructure.
 _Avoid_: Capability settings file, global config
 
+**Vibe Line Spinner**:
+The Host-owned animated glyph in Pi's Working Row while the Host processes Agent work. It is a liveness signal, not
+the Working Row itself, Live Thoughts, or other Conversation UI content.
+_Avoid_: Vibe Line, Working Row, Live Thoughts
+
 **Logical Thinking Run**:
 A continuously updated visible reasoning segment treated as one narrative unit. A later separately visible reasoning
 segment is a new run; streaming deltas, terminal wrapping, and redraw are not.

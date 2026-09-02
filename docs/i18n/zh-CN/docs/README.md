@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: a714739316b98e7dcfb228fe86d361c24637a1aca0a03760dca223b3c0be6394 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 88b7b07aeecd0086b8cd82a5e065fb108ec62e1e606f37704ee4d0ef5c2e300c -->
 
 # 文档
 
@@ -84,6 +84,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | 紧凑折叠仅用于原生检索 |
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 类型集合 |
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部 effect 模型 |
+| [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | 在 Pi Stuff 边界内保护 Vibe Line Spinner 活性 |
 
 ## 证据与历史
 
