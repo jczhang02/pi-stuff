@@ -56,6 +56,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | --- | --- |
 | [`CONTEXT.md`](../CONTEXT.md) | Canonical terms and ownership boundaries |
 | [`DESIGN.md`](../DESIGN.md) | Shared interface and interaction rules |
+| [Capability Contract Catalog](capability-contract-catalog.md) | Current observable contracts and acceptance status |
 | [Compatibility](compatibility.md) | Certified Host, toolchain, and dependency versions |
 | [Code quality](code-quality.md) | Source-quality gates and completion review |
 | [README style](readme-style.md) | README structure, screenshots, and translation rules |
