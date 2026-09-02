@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 1cc8ca2fb4daca1df824d4b6b869cb076c68353100354c996ee7b6f5d7e7108b -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 1bd297875360e37de7ce667438630d49228b152c9e0dddcb8592f78b0984dcd7 -->
 
 ---
 version: alpha
@@ -126,6 +126,20 @@ Transcript 记录标记，但完整动作词和语义颜色才表达生命周期
 Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键盘可用 `b`/Space；Home 和 End
 跳到第一项和最后一项。这些别名只用于自定义只读列表和详情，不能拦截文本输入、Settings 或确认界面的
 按键。只有确实发生溢出时才显示翻页提示；完整的当前界面按键说明放在 `?` 帮助页里，避免 Footer 过满。
+
+### Fast Resume 选择器
+
+Fast Resume 是一个单栏 Command Dialog。它的 Header 在一条有界的行内保留 scope、Threaded 或 flat 排序呈现、
+可见数量和加载状态。渐进加载的行在原位置更新，按 Session path 保持选择；名称或较早批次到达时，焦点绝不
+随之移动。每行以 Session name 或第一条 user message 开头；age、exact 或 approximate message count 和 All scope 的
+project path 属于次要信息，在窄屏下最先隐藏。Threaded 呈现按规范化父 Session 路径分组，只增加最低限度的
+树形连接符和深度缩进；Recent 与 Fuzzy 呈现保持平面列表。
+
+输入时由搜索输入框独占可打印字符，因此列表的可打印字符别名不适用。Up、Down、PageUp、PageDown、Home、
+End、Enter 和 Escape 保持标准含义。Tab 切换 Current Folder 与 All scope；Ctrl+S 在 Threaded、Recent 和 Fuzzy
+呈现之间循环，Ctrl+N 切换 Named-only 筛选，Ctrl+L 刷新，无需打开另一界面。重命名和删除确认会在原位置替换
+列表正文，保留 Header 与 Escape 返回路径，并且绝不会把 active Session 暴露给删除操作。加载、错误、确认和
+变更结果在 Dialog 内各自只有一个可见权威。
 
 ### 详情板块
 

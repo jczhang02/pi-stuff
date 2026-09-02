@@ -3,6 +3,7 @@
 	"schemaVersion": 2,
 	"capabilities": [
 		"conversation-ui",
+		"fast-resume",
 		"session-naming",
 		"tool-display",
 		"rtk",

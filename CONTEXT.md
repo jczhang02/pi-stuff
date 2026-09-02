@@ -81,6 +81,11 @@ The separately installed, certified RTK executable whose CLI owns RTK command re
 Suite adapts the Host to it without duplicating its rewrite registry or installation lifecycle.
 _Avoid_: Embedded RTK, Pi Stuff command parser
 
+**Fast Resume Selector**:
+The Pi Stuff Command Dialog that progressively discovers bounded Session metadata and delegates the selected Session
+to Pi. It is a fast path with explicit metadata ceilings, not a complete-history index or another Session manager.
+_Avoid_: Session database, cached resume, Pi replacement
+
 **Session Name**:
 Pi-owned Session metadata that gives one coding conversation a concise semantic identity. Session Naming may propose
 and persist this value after settled direct-user work, but it does not replace the Session, task, Goal, or Agent name.

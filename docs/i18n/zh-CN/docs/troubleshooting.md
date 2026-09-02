@@ -1,4 +1,4 @@
-<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: 479956b7f08195d1997a50341738c4817662338f22503efbc52f57220b70234b -->
+<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: 29678061d85bd970c349b4d4676e8943d62c7681be43c5b8d3cdee432b976767 -->
 
 # 故障排查
 
@@ -26,6 +26,17 @@ Pi Stuff 设置是 `<agentDir>/pi-stuff.json` 中的普通 JSON。JSON 注释和
 
 运行 `/ui`，检查 Welcome、Statusline、密度、最新 prompt、输入高亮、行内 slash 补全和 Tool 计时器设置。
 终端宽度不足时，自动 Statusline 会切换到紧凑形式。
+
+## Fast Resume
+
+如果 `/resume` 打开的是 Pi 原生选择器，请查看 `/diagnostics`。当经认证的 Host selector seam 不可用时，
+Fast Resume 会回退；请更新到认证的 Pi 版本，或把 `fastResume.hijackResume` 设为 `false` 后使用
+`/fast-resume`。
+
+Fast Resume 有意不搜索完整 transcript。需要完整历史搜索或精确消息数量时，请关闭拦截并使用 Pi 原生选择器。
+如果 Session 名称缺失，请先刷新；位于有界尾部窗口之外的名称仍是已记录的限制。
+
+删除会先尝试平台回收站命令，并在确认后于回收站失败时永久 unlink。除非可以接受永久删除，否则不要确认。
 
 ## Context
 

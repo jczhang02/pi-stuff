@@ -12,6 +12,7 @@ import {
 	markSuiteSessionReady,
 	rejectSuiteSessionReadiness,
 } from "./conversation-ui/suite-lifecycle.js";
+import fastResume from "./fast-resume/index.js";
 import goal from "./goal/index.js";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
 import mcp from "./mcp/index.js";
@@ -59,6 +60,7 @@ function createCapabilities(
 ): readonly CapabilityInstallation[] {
 	return [
 		{ id: "conversation-ui", install: conversationUi },
+		{ id: "fast-resume", install: fastResume },
 		{ id: "session-naming", install: sessionNaming },
 		{ id: "tool-display", install: toolDisplay },
 		{ id: "rtk", install: rtk },

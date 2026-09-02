@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: 13f3a2283228dbd69ed328b7a1c4051225f1baacf87f55a494e52c40fba9e08b -->
+<!-- translation-source: packages/pi-stuff/README.md; translation-source-sha256: da419348db7ea023641cb226749b737e5b1bc9f34510c07654839e533d49bb6e -->
 
 # `@jczhang02/pi-stuff`
 
@@ -18,7 +18,7 @@ Pi Stuff Package 为 Pi 加入界面、工作、上下文和集成能力。
 
 | 分类 | 包含的能力 |
 | --- | --- |
-| 界面 | [Conversation UI](src/conversation-ui/README.md)、[Session Naming](src/session-naming/README.md)、[Tool Display](src/tool-display/README.md) |
+| 界面 | [Conversation UI](src/conversation-ui/README.md)、[Fast Resume](src/fast-resume/README.md)、[Session Naming](src/session-naming/README.md)、[Tool Display](src/tool-display/README.md) |
 | 工作 | [Goal](src/goal/README.md)、[Background Work](src/background-work/README.md)、[Agents](src/subagents/README.md)、[Todo](src/todo/README.md) |
 | 流程 | [BTW](src/btw/README.md)、[Notification](src/notification/README.md)、[Ponytail](src/ponytail/README.md) |
 | 上下文与集成 | [Context Management](src/context-management/README.md)、[Web](src/web/README.md)、[MCP](src/mcp/README.md)、[RTK](src/rtk/README.md)、[Codex](src/codex/README.md)、[Code Mode](src/code-mode/README.md) |

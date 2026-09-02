@@ -16,6 +16,7 @@ const TEMPORARY_ROOTS: string[] = [];
 const SUITE_CAPABILITIES = [
 	"conversation-ui",
 	"session-naming",
+	"fast-resume",
 	"tool-display",
 	"context-management",
 	"ponytail",

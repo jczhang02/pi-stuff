@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 97a7ffc1798e80d03d4b1db04d2e1b310b46dc0e7171fb51d125005fa421b677 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: df91ee6d2da7e8a39b1a398b673d0239662e9a389523e31156ca382a2d320f67 -->
 
 # Pi Stuff
 
@@ -78,6 +78,11 @@ _避免使用_：Skill search、eager Skill loading
 独立安装并经过认证的 RTK 可执行文件。它的 CLI 负责 RTK 命令改写与输出优化；Suite 只适配 Host，不复制其
 改写 registry 或安装生命周期。
 _避免使用_：Embedded RTK、Pi Stuff command parser
+
+**Fast Resume Selector**：
+Pi Stuff 的 Command Dialog 会逐步发现有界的 Session 元数据，并将选中的 Session 委派给 Pi。它是一条带有明确
+元数据上限的快速路径，不是完整历史索引，也不是另一个 Session manager。
+_避免使用_：Session database、cached resume、Pi replacement
 
 **Session Name**：
 由 Pi 拥有的 Session 元数据，为一段编码对话提供简短语义身份。Session Naming 可以在用户直接发起的工作

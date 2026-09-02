@@ -30,6 +30,7 @@ Simplified Chinese mirrors follow the same repository paths under [`docs/i18n/zh
 | Area | User guide | Module README |
 | --- | --- | --- |
 | Conversation UI | [Guide](capabilities/conversation-ui.md) | [Module](../packages/pi-stuff/src/conversation-ui/README.md) |
+| Fast Resume | [Guide](capabilities/fast-resume.md) | [Module](../packages/pi-stuff/src/fast-resume/README.md) |
 | Session Naming | [Guide](capabilities/session-naming.md) | [Module](../packages/pi-stuff/src/session-naming/README.md) |
 | Tool Display | [Guide](capabilities/tool-display.md) | [Module](../packages/pi-stuff/src/tool-display/README.md) |
 | Goal | [Guide](capabilities/goal.md) | [Module](../packages/pi-stuff/src/goal/README.md) |
@@ -84,6 +85,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | Use a closed Operation Block family |
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | Adopt Effect as the internal effect model |
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | Protect Vibe Line Spinner liveness at Pi Stuff boundaries |
+| [0026](adr/0026-add-fast-resume.md) | Add Fast Resume |
 
 ## Evidence and history
 

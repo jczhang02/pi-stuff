@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: c8c807dc1db42b28124670242f970390800a44120bc67d26a05c372ce0a20c9c -->
+<!-- translation-source: docs/README.md; translation-source-sha256: ef9f8a4d98fa23d53e2e609657566548f0d320339cb0948f9c65bea3c07bba30 -->
 
 # 文档
 
@@ -32,6 +32,7 @@
 | 分类 | 用户指南 | Module README |
 | --- | --- | --- |
 | Conversation UI | [指南](capabilities/conversation-ui.md) | [Module](../packages/pi-stuff/src/conversation-ui/README.md) |
+| Fast Resume | [指南](capabilities/fast-resume.md) | [Module](../packages/pi-stuff/src/fast-resume/README.md) |
 | Session Naming | [指南](capabilities/session-naming.md) | [Module](../packages/pi-stuff/src/session-naming/README.md) |
 | Tool Display | [指南](capabilities/tool-display.md) | [Module](../packages/pi-stuff/src/tool-display/README.md) |
 | Goal | [指南](capabilities/goal.md) | [Module](../packages/pi-stuff/src/goal/README.md) |
@@ -86,6 +87,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 类型集合 |
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部 effect 模型 |
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | 在 Pi Stuff 边界内保护 Vibe Line Spinner 活性 |
+| [0026](adr/0026-add-fast-resume.md) | 添加 Fast Resume |
 
 ## 证据与历史
 

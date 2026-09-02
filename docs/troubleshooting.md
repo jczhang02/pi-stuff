@@ -27,6 +27,19 @@ See [Settings reference](reference/settings.md) for types and defaults.
 Run `/ui` and inspect Welcome, Statusline, density, latest-prompt, input highlighting, inline slash completion, and
 Tool timer settings. Terminal width can make the automatic Statusline switch to its compact form.
 
+## Fast Resume
+
+If `/resume` opens Pi's native selector, inspect `/diagnostics`. Fast Resume falls back when the certified Host
+selector seam is unavailable; update to the certified Pi version or set `fastResume.hijackResume` to `false` and
+use `/fast-resume`.
+
+Fast Resume deliberately does not search complete transcripts. Use Pi's native selector by disabling interception when
+you need complete-history search or exact message counts. If a Session name is missing, refresh first; names outside
+the bounded tail window remain a documented limit.
+
+Deletion tries the platform trash command and then permanently unlinks after confirmation. Do not confirm deletion
+unless permanent removal is acceptable.
+
 ## Context
 
 ### `/ctx` reports that Context is unavailable

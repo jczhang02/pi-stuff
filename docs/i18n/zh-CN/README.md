@@ -1,4 +1,4 @@
-<!-- translation-source: README.md; translation-source-sha256: ea6caec087fcf47d2c52293e2285bdbb05ed245240fe0698a42cb74ae27cfdd4 -->
+<!-- translation-source: README.md; translation-source-sha256: a72b391dd3da9bcea4a6feb9c7d01e1e291e40e052b9d29a36c27c4c9855a2e9 -->
 
 <div align="center">
 
@@ -35,7 +35,7 @@ Pi Stuff 为原生 [Pi coding agent](https://github.com/earendil-works/pi) 加�
 
 Pi Stuff 让日常工作留在 Pi 里，同时让对话更易读，长任务更容易持续推进。它提供四类实用能力：
 
-- 安静、清楚的对话界面、Tool 活动和 Session 名称。
+- 安静、清楚的对话界面、快速恢复 Session、Tool 活动和 Session 名称。
 - Goal、后台任务、委派 Agent 和 Todo，让工作持续向前。
 - 支线问题与通知，不打断主线。
 - 按需启用 Context、Web、MCP、RTK、Codex 和 Code Mode。
@@ -66,7 +66,7 @@ pi
 
 | 你想做什么 | 从这里开始 | 继续阅读 |
 | --- | --- | --- |
-| 让对话更清爽 | `/ui`、自动 Session 命名、紧凑 Tool 活动 | [界面指南](docs/README.md#能力指南) |
+| 让对话更清爽 | `/ui`、`/resume`、自动 Session 命名、紧凑 Tool 活动 | [界面指南](docs/README.md#能力指南) |
 | 让工作持续推进 | `/goal`、`/tasks`、`/agents`、Todo Tools | [工作指南](docs/README.md#能力指南) |
 | 在主线之外提问和接收提醒 | `/btw`、`/notifications` | [流程指南](docs/README.md#能力指南) |
 | 接入更多上下文和工具 | `/ctx`、Web、MCP、RTK、Codex、Code Mode | [集成指南](docs/README.md#能力指南) |
@@ -120,6 +120,7 @@ Pi Extension 以当前用户的操作系统权限运行。安装前请检查 Ext
 
 ### 上游项目与 fork
 
+- [`pi-fast-resume`](https://github.com/monotykamary/pi-fast-resume) 为 Fast Resume 提供参考，并提供了 MIT 授权的基础实现。
 - [`pi-background-tasks`](https://github.com/ismailsaleekh/pi-background-tasks) 为 Background Work 提供参考。
 - [`rpiv-mono`](https://github.com/juicesharp/rpiv-mono) 为 BTW 和 Todo 提供参考。
 - [`howaboua-pi-stuff`](https://github.com/IgorWarzocha/howaboua-pi-stuff) 为 Conversation UI、Codex 和 Code Mode 提供参考。

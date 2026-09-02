@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reference/settings.md; translation-source-sha256: 250db5c562209b49a27264b3a608d83d219b6112562de854d7175d0fba035f7b -->
+<!-- translation-source: docs/reference/settings.md; translation-source-sha256: 373c63e4dfa776dabdd08c0cc643fc3ec074584f6bfbbc154ef312cf87f3d2be -->
 
 # 设置参考
 
@@ -73,6 +73,17 @@ Pi Stuff 把设置保存在 `<agentDir>/pi-stuff.json` 这一份普通 JSON 文�
 | `continuationLimits.noProgressTurns` | 正整数或 `null` | `null` | 无进展上限；`null` 表示关闭 |
 
 交互式 Goal 设置界面负责常用的 continuation 与 Tool 可见性选择。
+
+### `fastResume`
+
+| 字段 | 类型 | 默认值 | 控制方式 |
+| --- | --- | --- | --- |
+| `hijackResume` | boolean | `true` | JSON |
+| `shortcut` | 可选 Pi key ID 字符串 | 无 | JSON |
+
+`hijackResume` 在进程内拦截 Pi 内置的 `/resume` 选择器。关闭后保留原生 `/resume`，并注册
+`/fast-resume`。`shortcut` 为同一个 Fast Resume 选择器增加 Host 快捷键。启动时只读取该命名空间，
+不会创建或重写设置文件；无效值回退到默认值并记录诊断。
 
 ### `sessionNaming`
 

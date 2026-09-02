@@ -17,6 +17,7 @@
 			"items": {
 				"enum": [
 					"conversation-ui",
+					"fast-resume",
 					"session-naming",
 					"tool-display",
 					"rtk",

@@ -35,7 +35,7 @@ Pi Stuff brings focused interface, work, context, and integration capabilities t
 Pi Stuff keeps everyday work inside Pi while making the conversation easier to read and longer tasks easier to run.
 It adds four practical layers:
 
-- A quiet, readable interface for conversation, Tool activity, and Session names.
+- A quiet, readable interface for conversation, fast Session resume, Tool activity, and Session names.
 - Goals, background tasks, delegated Agents, and Todo tracking that keep work moving.
 - Side questions and notifications that do not interrupt the main thread.
 - Optional Context, Web, MCP, RTK, Codex, and Code Mode integrations when a workflow needs them.
@@ -66,7 +66,7 @@ The [getting-started guide](docs/getting-started.md) covers the first session an
 
 | What you want | Start with | Learn more |
 | --- | --- | --- |
-| A calmer conversation | `/ui`, automatic Session names, compact Tool activity | [Interface guides](docs/README.md#capability-guides) |
+| A calmer conversation | `/ui`, `/resume`, automatic Session names, compact Tool activity | [Interface guides](docs/README.md#capability-guides) |
 | Work that keeps moving | `/goal`, `/tasks`, `/agents`, Todo Tools | [Work guides](docs/README.md#capability-guides) |
 | Questions and alerts off the main path | `/btw`, `/notifications` | [Flow guides](docs/README.md#capability-guides) |
 | More context and connected tools | `/ctx`, Web, MCP, RTK, Codex, Code Mode | [Integration guides](docs/README.md#capability-guides) |
@@ -121,6 +121,7 @@ and report vulnerabilities through the private channel in the [security policy](
 
 ### Upstream projects and forks
 
+- [`pi-fast-resume`](https://github.com/monotykamary/pi-fast-resume) informed and supplied the MIT-licensed basis for Fast Resume.
 - [`pi-background-tasks`](https://github.com/ismailsaleekh/pi-background-tasks) informed Background Work.
 - [`rpiv-mono`](https://github.com/juicesharp/rpiv-mono) informed BTW and Todo.
 - [`howaboua-pi-stuff`](https://github.com/IgorWarzocha/howaboua-pi-stuff) informed Conversation UI, Codex, and Code Mode.

@@ -65,6 +65,7 @@ const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
 ]);
 const INTERNAL_MODULES = [
 	"conversation-ui",
+	"fast-resume",
 	"session-naming",
 	"tool-display",
 	"context-management",
@@ -96,6 +97,7 @@ interface InternalDependencyTable {
 
 const ALLOWED_INTERNAL_DEPENDENCIES: InternalDependencyTable = {
 	"conversation-ui": new Set(["ponytail"]),
+	"fast-resume": new Set(["conversation-ui"]),
 	"session-naming": new Set(["conversation-ui"]),
 	"tool-display": new Set(["conversation-ui"]),
 	"context-management": new Set(SHARED_MODULE_DEPENDENCIES),

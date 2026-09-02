@@ -16,7 +16,7 @@ The Pi Stuff Package adds focused interface, work, context, and integration capa
 
 | Area | Included capabilities |
 | --- | --- |
-| Interface | [Conversation UI](src/conversation-ui/README.md), [Session Naming](src/session-naming/README.md), [Tool Display](src/tool-display/README.md) |
+| Interface | [Conversation UI](src/conversation-ui/README.md), [Fast Resume](src/fast-resume/README.md), [Session Naming](src/session-naming/README.md), [Tool Display](src/tool-display/README.md) |
 | Work | [Goal](src/goal/README.md), [Background Work](src/background-work/README.md), [Agents](src/subagents/README.md), [Todo](src/todo/README.md) |
 | Flow | [BTW](src/btw/README.md), [Notification](src/notification/README.md), [Ponytail](src/ponytail/README.md) |
 | Context and integrations | [Context Management](src/context-management/README.md), [Web](src/web/README.md), [MCP](src/mcp/README.md), [RTK](src/rtk/README.md), [Codex](src/codex/README.md), [Code Mode](src/code-mode/README.md) |

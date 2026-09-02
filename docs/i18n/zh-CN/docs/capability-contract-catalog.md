@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: 077e9eb3587910509ed8afbd5eca97b1d5bbd8d3367163679b05cad33957f964 -->
+<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: 4e8b9c394b33f8f1bb4d2dbbfbec8563468cef9f3712986ffe347faa00cc0a3e -->
 
 # Capability Contract 目录
 
@@ -33,6 +33,16 @@ README 仍是局部合同权威。
 | `conversation-ui.diagnostics` | `conversation-ui` | [README](../../../../packages/pi-stuff/src/conversation-ui/README.md) | Diagnostic notice and `/diagnostics` | 正常： current problems coalesce into one focus-neutral notice; 失败： details are bounded and redacted; 恢复： clear and Escape restore draft and chrome; 持久化： restart clears process-only history; 边界： diagnostics never enter model or Session context | `real-host/fixture-provider` | [PTY](../../../../test/ui-pty.test.ts), [focused](../../../../test/ui/diagnostics.test.ts) | `pending` |
 | `conversation-ui.settings` | `conversation-ui` | [README](../../../../packages/pi-stuff/src/conversation-ui/README.md) | `/ui` SettingsList | 正常： seven presentation settings expose documented effects; 失败： writes roll back; 恢复： concurrent leases preserve updates; 持久化： explicit changes only survive restart; 边界： immediate and next-launch settings differ | `real-host/fixture-provider` | [PTY](../../../../test/ui-pty.test.ts), [focused](../../../../test/ui/ui-settings-dialog.test.ts) | `pending` |
 | `conversation-ui.dialog` | `conversation-ui` | [README](../../../../packages/pi-stuff/src/conversation-ui/README.md) | Shared Command Dialog | 正常： one full-width focus surface owns draft and chrome; 失败： section failures remain isolated; 恢复： blocking FIFO resumes the exact normal view; 边界： non-TUI is a no-op and 24 by 16 remains operable | `real-host/fixture-provider` | [PTY](../../../../test/ui-pty.test.ts), [queue](../../../../test/ui/command-dialog-queue.test.ts) | `pending` |
+
+## Fast Resume
+
+| ID | Capability | 行为权威 | 公开 seam | 场景 | 证据配置 | 证据 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `fast-resume.selector` | `fast-resume` | [README](../../../../packages/pi-stuff/src/fast-resume/README.md) | `/resume` Command Dialog | 正常：Current 在 All 之前渐进显示；失败：损坏文件相互隔离，错误保持有界；恢复：刷新和关闭会取消过期工作；持久化：Session JSONL 保持权威；边界：搜索与元数据存在有界读取限制 | `real-host/fixture-provider` | [PTY](../../../../scripts/verify-fast-resume-pty.ts)、[scanner](../../../../test/fast-resume/scanner.test.ts)、[dialog](../../../../test/fast-resume/dialog.test.ts) | `pending` |
+| `fast-resume.navigation` | `fast-resume` | [README](../../../../packages/pi-stuff/src/fast-resume/README.md) | Fast Resume 按键与过滤器 | 正常：scope、视图、排序、仅 Named、查询和稳定路径选择可以组合；失败：无效正则按字面搜索；恢复：Escape 恢复编辑器和 Suite chrome；边界：窄与低布局仍保留选择项和退出方式 | `real-host/fixture-provider` | [PTY](../../../../scripts/verify-fast-resume-pty.ts)、[search](../../../../test/fast-resume/search.test.ts)、[dialog](../../../../test/fast-resume/dialog.test.ts) | `pending` |
+| `fast-resume.mutations` | `fast-resume` | [README](../../../../packages/pi-stuff/src/fast-resume/README.md) | 重命名与确认删除 | 正常：重命名使用 Pi 元数据，确认删除后刷新；失败：拒绝删除活动 Session，回收站失败后回退到 unlink；恢复：unlink 失败时保留该行；持久化：结果写入 Pi Session 文件；边界：没有直接输入和确认就不执行变更 | `real-host/fixture-provider` | [PTY](../../../../scripts/verify-fast-resume-pty.ts)、[focused](../../../../test/fast-resume/session-operations.test.ts) | `pending` |
+| `fast-resume.host-integration` | `fast-resume` | [README](../../../../packages/pi-stuff/src/fast-resume/README.md) | 经认证的 Host selector seam 与合并设置 | 正常：默认 `/resume` 和可选快捷键打开同一个选择器；失败：seam 不可用时恢复原生 resume 并注册 `/fast-resume`；恢复：reload 只恢复自己拥有的 patch；持久化：设置保留上游含义；边界：导入和启动不写文件、不访问网络、不建索引，也不修改 Host 文件 | `packed-package/real-host` | [PTY](../../../../scripts/verify-fast-resume-pty.ts)、[adapter](../../../../test/fast-resume/host-adapter.test.ts)、[settings](../../../../test/fast-resume/settings.test.ts) | `pending` |
+| `fast-resume.latency` | `fast-resume` | [README](../../../../packages/pi-stuff/src/fast-resume/README.md) | Enter 到完整可选列表 | 正常：代表性大型语料的完整 Current 列表达到登记的 P95 目标；失败：一个损坏 Session 不会阻塞列表；恢复：重复打开不会累积工作；边界：基准验证已渲染行和语料身份，不保留 Session 内容 | `real-host/fixture-provider` | [benchmark](../../../../docs/reports/fast-resume-acceptance-2026-09-03.md)、[PTY](../../../../scripts/verify-fast-resume-pty.ts) | `pending` |
 
 ## Session Naming（会话命名）
 

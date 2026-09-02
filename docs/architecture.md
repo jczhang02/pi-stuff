@@ -17,7 +17,7 @@ Pi Host
 ```
 
 Pi owns the editor, ordinary foreground Agent runs, sessions, models, and extension loading. Pi Stuff adds Suite
-behavior through Pi's public extension APIs.
+behavior through Pi's public extension APIs and one certified, recoverable Host seam for Fast Resume.
 
 ## Suite composition
 
@@ -26,7 +26,7 @@ this order:
 
 | Stage | Capability Modules |
 | --- | --- |
-| Conversation foundation | Conversation UI, Session Naming, Tool Display |
+| Conversation foundation | Conversation UI, Fast Resume, Session Naming, Tool Display |
 | Model and command support | RTK, Codex |
 | Work and context | Goal, Context Management, Ponytail |
 | Integrations | Web, MCP |
@@ -74,7 +74,7 @@ the Welcome card, Statusline, overlays, notifications, and transcript do not com
 | Location | Owner |
 | --- | --- |
 | `<agentDir>/settings.json` | Pi Host settings |
-| `<agentDir>/pi-stuff.json` | Pi Stuff settings namespaces |
+| `<agentDir>/pi-stuff.json` | Pi Stuff settings namespaces, including Fast Resume interception and shortcut policy |
 | `<project>/.pi/code-mode.json` | Trusted-project Code Mode override |
 | User MCP configuration | MCP server declarations and authentication |
 | External Context configuration | Context engine and worker selection |

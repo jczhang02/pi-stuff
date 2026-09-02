@@ -1,4 +1,4 @@
-<!-- translation-source: docs/architecture.md; translation-source-sha256: bd6ee5a5da611eebf2d2b9887858e50bded168e6d88e390673b952162c396b3d -->
+<!-- translation-source: docs/architecture.md; translation-source-sha256: fe3a95d138176073c4e886f143e95f896d45d64aec3c4bb23fa6dee4dd791b2e -->
 
 # 架构
 
@@ -19,7 +19,7 @@ Pi Host
 ```
 
 Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension 加载。Pi Stuff 通过 Pi 的公开 Extension API
-加入 Suite 行为。
+以及 Fast Resume 的一个经认证、可恢复 Host seam 加入 Suite 行为。
 
 ## Suite 组合
 
@@ -27,7 +27,7 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 
 | 阶段 | Capability Module |
 | --- | --- |
-| Conversation 基础 | Conversation UI、Session Naming、Tool Display |
+| Conversation 基础 | Conversation UI、Fast Resume、Session Naming、Tool Display |
 | Model 与命令支持 | RTK、Codex |
 | 工作与 Context | Goal、Context Management、Ponytail |
 | 集成 | Web、MCP |
@@ -71,7 +71,7 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 | 位置 | Owner |
 | --- | --- |
 | `<agentDir>/settings.json` | Pi Host 设置 |
-| `<agentDir>/pi-stuff.json` | Pi Stuff 设置命名空间 |
+| `<agentDir>/pi-stuff.json` | Pi Stuff 设置命名空间，包括 Fast Resume 拦截与快捷键策略 |
 | `<project>/.pi/code-mode.json` | 受信项目的 Code Mode override |
 | 用户 MCP 配置 | MCP server 声明、连接策略和认证 |
 | 外部 Context 配置 | Context engine 与 worker 选择 |

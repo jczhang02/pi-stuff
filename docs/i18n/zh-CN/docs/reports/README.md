@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 9d212478c0c2e8523d57169d19d92b41a79b64f28d4e10a09848d87e04cb13b3 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 90801e7b58f0adcd84b0ae522b42acb4503d6d0181e2e329d4890501f2990a5e -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Fast Resume 验收](fast-resume-acceptance-2026-09-03.md)
 - [Capability Contract 验收与有界 Terminal-Bench 观察](ps-ps3-capability-contract-and-terminal-bench-observation-2026-08-30.md)
 - [Effect 下的 Magic Context 优化与重新认证](magic-context-effect-optimization-2026-09-02.md)
 - [ps-qer Agent 完成验收](ps-qer-agent-completion-acceptance-20260902.md)

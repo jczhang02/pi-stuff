@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reference/commands.md; translation-source-sha256: dd66c09b866bf7bdb2b6644cc3e7f1f62e8bf4582e7837192df9f456c41bf586 -->
+<!-- translation-source: docs/reference/commands.md; translation-source-sha256: b5953dd460bb3850ca44f290b7a74006656016c7c2fe0b61bf53920f86b14c61 -->
 
 # 命令参考
 
@@ -22,6 +22,8 @@ Pi 自带的 `/settings` 命令控制活动主题等 Host 设置。
 
 | 命令 | 操作 |
 | --- | --- |
+| `/resume` | 默认打开 Fast Resume；拦截不可用时回退到 Pi 原生选择器 |
+| `/fast-resume` | 原生拦截关闭或不可用时打开 Fast Resume |
 | `/autoname` | 为当前 Session 生成新名称 |
 | `/autoname settings` | 配置自动命名、冷却期、手动名称策略与主要 model |
 | `/btw <question>` | 提出不使用 Tool 的支线问题，不加入主 transcript |

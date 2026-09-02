@@ -132,6 +132,20 @@ aliases; Home and End jump to the first and last row. These aliases apply only t
 never text input, Settings, or confirmation controls. Show page hints only when overflow exists, and expose the full
 contextual map through `?` rather than crowding every Footer.
 
+### Fast Resume Selector
+
+Fast Resume is a single-column Command Dialog. Its Header keeps scope, threaded or flat sort presentation, visible count, and
+loading state on one bounded line. Progressive rows update in place, keep selection by Session path, and never move
+focus because a name or older batch arrives. A row leads with the Session name or first user message; age, approximate
+message count, and All-scope project path remain secondary and disappear first at narrow widths. Directory view adds
+only the minimum tree connector and depth indentation.
+
+Typing owns search input, so printable list aliases do not apply. Up, Down, PageUp, PageDown, Home, End, Enter, and
+Escape retain their standard meanings. Tab changes Current Folder and All scope; Ctrl+S cycles threaded tree and flat
+Recent or Fuzzy presentation, while Ctrl+N and Ctrl+L change the Named-only filter and refresh without opening another surface. Rename and delete confirmation replace
+the list body in place, keep the Header and escape route, and never expose the active Session to deletion. Loading,
+errors, confirmation, and mutation outcomes have one visible authority inside the Dialog.
+
 ### Detail sections
 
 Use concise headings such as `Task`, `Activity`, `Output`, or `Details` with the hierarchy defined above. Section sets
