@@ -2,17 +2,24 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { Check } from "typebox/value";
 import {
 	balancedArmOrder,
 	comparePairedSamples,
 	EFFECT_MAINLINE_THRESHOLDS,
 } from "./effect-mainline-benchmark-core.js";
+import { MAGIC_CONTEXT_BENCHMARK_REPORT_SCHEMA, numericMagicContextMetrics } from "./magic-context-benchmark-core.js";
 
 type Arm = "baseline" | "candidate";
 
 interface ArmSample {
 	readonly packageVersion: string;
-	readonly values: Record<string, number>;
+	readonly values: ReadonlyMap<string, number>;
+}
+
+interface ArmSamples {
+	readonly baseline: readonly ArmSample[];
+	readonly candidate: readonly ArmSample[];
 }
 
 function integer(raw: string | undefined, fallback: number, name: string, minimum: number): number {
@@ -24,31 +31,16 @@ function integer(raw: string | undefined, fallback: number, name: string, minimu
 	return value;
 }
 
-function flattenNumbers(value: unknown, prefix = "", output: Record<string, number> = {}): Record<string, number> {
-	if (typeof value === "number") {
-		if (!(value > 0) || !Number.isFinite(value))
-			throw new Error(`Benchmark metric ${prefix} is not positive and finite.`);
-		output[prefix] = value;
-		return output;
-	}
-	if (!value || typeof value !== "object" || Array.isArray(value)) return output;
-	for (const [key, child] of Object.entries(value)) {
-		flattenNumbers(child, prefix ? `${prefix}.${key}` : key, output);
-	}
-	return output;
-}
-
 async function readArmSample(path: string): Promise<ArmSample> {
 	const report: unknown = JSON.parse(await readFile(path, "utf8"));
-	if (!report || typeof report !== "object" || !("packageVersion" in report) || !("raw" in report)) {
+	if (!Check(MAGIC_CONTEXT_BENCHMARK_REPORT_SCHEMA, report) || report.raw.length !== 1) {
 		throw new Error(`Magic Context arm report ${path} has an invalid shape.`);
 	}
-	const packageVersion = report.packageVersion;
-	const raw = report.raw;
-	if (typeof packageVersion !== "string" || !Array.isArray(raw) || raw.length !== 1 || !raw[0]) {
+	const sample = report.raw[0];
+	if (!sample) {
 		throw new Error(`Magic Context arm report ${path} must contain exactly one sample.`);
 	}
-	return { packageVersion, values: flattenNumbers(raw[0]) };
+	return { packageVersion: report.packageVersion, values: numericMagicContextMetrics(sample) };
 }
 
 async function runArm(root: string, arm: Arm, iteration: number, directory: string): Promise<ArmSample> {
@@ -74,18 +66,18 @@ async function runArm(root: string, arm: Arm, iteration: number, directory: stri
 	return readArmSample(output);
 }
 
-function compareArms(samples: Record<Arm, readonly ArmSample[]>) {
+function compareArms(samples: ArmSamples) {
 	const baseline = samples.baseline;
 	const candidate = samples.candidate;
 	if (baseline.length !== candidate.length || baseline.length < 3) {
 		throw new Error("Magic Context comparison requires at least three complete sample pairs.");
 	}
-	const names = Object.keys(baseline[0]?.values ?? {}).sort();
+	const names = [...(baseline[0]?.values.keys() ?? [])].sort();
 	return Object.fromEntries(
 		names.map((name) => {
 			const pairs = baseline.map((sample, index) => {
-				const baselineValue = sample.values[name];
-				const candidateValue = candidate[index]?.values[name];
+				const baselineValue = sample.values.get(name);
+				const candidateValue = candidate[index]?.values.get(name);
 				if (baselineValue === undefined || candidateValue === undefined) {
 					throw new Error(`Magic Context comparison is missing ${name} pair ${String(index)}.`);
 				}
@@ -109,7 +101,7 @@ async function main(): Promise<void> {
 	});
 	if (!values.baseline || !values.candidate)
 		throw new Error("--baseline and --candidate worktree roots are required.");
-	const roots: Record<Arm, string> = {
+	const roots = {
 		baseline: resolve(values.baseline),
 		candidate: resolve(values.candidate),
 	};
@@ -117,7 +109,9 @@ async function main(): Promise<void> {
 	const warmupCount = integer(values.warmups, 3, "--warmups", 0);
 	const directory = await mkdtemp(join(tmpdir(), "pi-stuff-magic-context-comparison-"));
 	try {
-		const measured: Record<Arm, ArmSample[]> = { baseline: [], candidate: [] };
+		const baselineSamples: ArmSample[] = [];
+		const candidateSamples: ArmSample[] = [];
+		const measured = { baseline: baselineSamples, candidate: candidateSamples };
 		for (let iteration = 0; iteration < measuredCount + warmupCount; iteration += 1) {
 			for (const arm of balancedArmOrder<Arm>(["baseline", "candidate"], iteration)) {
 				const sample = await runArm(roots[arm], arm, iteration, directory);
@@ -131,7 +125,16 @@ async function main(): Promise<void> {
 					candidate: { packageVersion: measured.candidate[0]?.packageVersion, root: roots.candidate },
 				},
 				comparisons: compareArms(measured),
-				raw: measured,
+				raw: {
+					baseline: measured.baseline.map(({ packageVersion, values }) => ({
+						packageVersion,
+						values: Object.fromEntries(values),
+					})),
+					candidate: measured.candidate.map(({ packageVersion, values }) => ({
+						packageVersion,
+						values: Object.fromEntries(values),
+					})),
+				},
 				samples: measuredCount,
 				thresholds: EFFECT_MAINLINE_THRESHOLDS,
 				warmups: warmupCount,

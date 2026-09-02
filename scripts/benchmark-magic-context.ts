@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +11,8 @@ import type {
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { writeMagicWorkerSyncResponse } from "../packages/pi-stuff/src/context-management/magic-worker-host.js";
 import type {
 	MagicWorkerContextSnapshot,
@@ -24,33 +25,18 @@ import {
 	startMagicWorkerFromBundle,
 } from "../packages/pi-stuff/src/context-management/magic-worker-transport.js";
 import { percentile, summarize } from "./lifecycle-benchmark-sampling.js";
+import {
+	type MagicContextBenchmarkCase as BenchmarkCase,
+	MAGIC_CONTEXT_SAMPLE_SCHEMA,
+	type MagicContextSample,
+	numericMagicContextMetrics,
+} from "./magic-context-benchmark-core.js";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const root = resolve(dirname(scriptPath), "..");
-const CASES = ["fresh", "short", "long", "malformed-image"] as const;
-type BenchmarkCase = (typeof CASES)[number];
-
-interface CaseMetrics {
-	readonly firstProjectionMs: number;
-	readonly fullSnapshotMs: number;
-	readonly hostEffectMs: number | null;
-	readonly incrementalLeafMs: number;
-}
-
-interface QueueMetrics {
-	readonly estimatedQueueWaitMs: number;
-	readonly parallelPairMs: number;
-	readonly singleCommandMs: number;
-}
-
-interface MagicContextSample {
-	readonly bundleBytes: number;
-	readonly cases: Record<BenchmarkCase, CaseMetrics>;
-	readonly initializeAndTokenizerPreloadMs: number;
-	readonly packageVersion: string;
-	readonly queue: QueueMetrics;
-	readonly workerBuildMs: number;
-}
+const PACKAGE_MANIFEST_SCHEMA = Type.Object({
+	dependencies: Type.Object({ "@cortexkit/pi-magic-context": Type.String({ minLength: 1 }) }),
+});
 
 interface EffectClock {
 	firstEffectMs: number | null;
@@ -136,7 +122,14 @@ function eventRequest(
 	context: MagicWorkerContextSnapshot,
 	event: ContextEvent | SessionShutdownEvent | SessionStartEvent,
 ): MagicWorkerEventRequest {
-	return { context, event, id, name: event.type, type: "event" } as MagicWorkerEventRequest;
+	switch (event.type) {
+		case "context":
+			return { context, event, id, name: "context", type: "event" };
+		case "session_shutdown":
+			return { context, event, id, name: "session_shutdown", type: "event" };
+		case "session_start":
+			return { context, event, id, name: "session_start", type: "event" };
+	}
 }
 
 function measureCase(
@@ -144,7 +137,7 @@ function measureCase(
 	name: BenchmarkCase,
 	clock: EffectClock,
 	nextId: () => number,
-): Effect.Effect<CaseMetrics, Error> {
+): Effect.Effect<MagicContextSample["cases"][BenchmarkCase], Error> {
 	return Effect.gen(function* () {
 		const branch = branchFor(name);
 		const sessionId = `benchmark-${name}`;
@@ -184,7 +177,10 @@ function command(id: number, context: MagicWorkerContextSnapshot): MagicWorkerIn
 	return { args: "", context, id, name: "ctx-status", type: "command" };
 }
 
-function measureQueue(transport: MagicWorkerTransport, nextId: () => number): Effect.Effect<QueueMetrics, Error> {
+function measureQueue(
+	transport: MagicWorkerTransport,
+	nextId: () => number,
+): Effect.Effect<MagicContextSample["queue"], Error> {
 	return Effect.gen(function* () {
 		const sessionId = "benchmark-queue";
 		const branch = branchFor("fresh");
@@ -219,13 +215,11 @@ function measureQueue(transport: MagicWorkerTransport, nextId: () => number): Ef
 }
 
 async function packageVersion(): Promise<string> {
-	const require = createRequire(import.meta.url);
-	const path = require.resolve("@cortexkit/pi-magic-context/package.json");
-	const manifest = JSON.parse(await readFile(path, "utf8"));
-	if (!manifest || typeof manifest !== "object" || !("version" in manifest) || typeof manifest.version !== "string") {
+	const manifest: unknown = JSON.parse(await readFile(join(root, "packages", "pi-stuff", "package.json"), "utf8"));
+	if (!Check(PACKAGE_MANIFEST_SCHEMA, manifest)) {
 		throw new Error("Magic Context benchmark could not read the installed package version.");
 	}
-	return manifest.version;
+	return manifest.dependencies["@cortexkit/pi-magic-context"];
 }
 
 async function collectSample(): Promise<MagicContextSample> {
@@ -265,8 +259,12 @@ async function collectSample(): Promise<MagicContextSample> {
 						new Error(`Magic Context did not register ctx-status: ${JSON.stringify(ready)}`),
 					);
 				}
-				const cases = {} as Record<BenchmarkCase, CaseMetrics>;
-				for (const name of CASES) cases[name] = yield* measureCase(transport, name, clock, nextId);
+				const cases = {
+					fresh: yield* measureCase(transport, "fresh", clock, nextId),
+					short: yield* measureCase(transport, "short", clock, nextId),
+					long: yield* measureCase(transport, "long", clock, nextId),
+					"malformed-image": yield* measureCase(transport, "malformed-image", clock, nextId),
+				};
 				const queue = yield* measureQueue(transport, nextId);
 				return { cases, initializeAndTokenizerPreloadMs, queue };
 			}),
@@ -278,25 +276,6 @@ async function collectSample(): Promise<MagicContextSample> {
 		workerBuildMs,
 		...measured,
 	};
-}
-
-function numericMetrics(sample: MagicContextSample): Record<string, number> {
-	const metrics: Record<string, number> = {
-		bundleBytes: sample.bundleBytes,
-		initializeAndTokenizerPreloadMs: sample.initializeAndTokenizerPreloadMs,
-		"queue.estimatedQueueWaitMs": sample.queue.estimatedQueueWaitMs,
-		"queue.parallelPairMs": sample.queue.parallelPairMs,
-		"queue.singleCommandMs": sample.queue.singleCommandMs,
-		workerBuildMs: sample.workerBuildMs,
-	};
-	for (const name of CASES) {
-		const current = sample.cases[name];
-		metrics[`${name}.firstProjectionMs`] = current.firstProjectionMs;
-		metrics[`${name}.fullSnapshotMs`] = current.fullSnapshotMs;
-		metrics[`${name}.incrementalLeafMs`] = current.incrementalLeafMs;
-		if (current.hostEffectMs !== null) metrics[`${name}.hostEffectMs`] = current.hostEffectMs;
-	}
-	return metrics;
 }
 
 function positiveInteger(raw: string | undefined, fallback: number, name: string): number {
@@ -313,7 +292,7 @@ function nonNegativeInteger(raw: string | undefined, fallback: number, name: str
 	return value;
 }
 
-async function configureSample(rootDirectory: string): Promise<Record<string, string>> {
+async function configureSample(rootDirectory: string): Promise<NodeJS.ProcessEnv> {
 	const configDirectory = join(rootDirectory, "config", "cortexkit");
 	await Promise.all([
 		mkdir(configDirectory, { recursive: true }),
@@ -331,7 +310,7 @@ async function configureSample(rootDirectory: string): Promise<Record<string, st
 			todowrite: { enabled: false, overlay: false },
 		})}\n`,
 	);
-	const environment = {
+	const environment: NodeJS.ProcessEnv = {
 		...process.env,
 		HF_HUB_OFFLINE: "1",
 		HOME: join(rootDirectory, "home"),
@@ -341,7 +320,7 @@ async function configureSample(rootDirectory: string): Promise<Record<string, st
 		XDG_CACHE_HOME: join(rootDirectory, "cache"),
 		XDG_CONFIG_HOME: join(rootDirectory, "config"),
 		XDG_STATE_HOME: join(rootDirectory, "state"),
-	} as Record<string, string>;
+	};
 	delete environment["XDG_DATA_HOME"];
 	return environment;
 }
@@ -364,7 +343,11 @@ async function runChildSample(directory: string, index: number): Promise<MagicCo
 			`Magic Context benchmark sample ${String(index)} failed:\n${child.stdout.toString()}\n${child.stderr.toString()}\n${magicLog}`,
 		);
 	}
-	return JSON.parse(await readFile(output, "utf8")) as MagicContextSample;
+	const sample: unknown = JSON.parse(await readFile(output, "utf8"));
+	if (!Check(MAGIC_CONTEXT_SAMPLE_SCHEMA, sample)) {
+		throw new Error(`Magic Context benchmark sample ${String(index)} returned an invalid report.`);
+	}
+	return sample;
 }
 
 async function runBenchmark(samples: number, warmups: number, output: string | undefined): Promise<void> {
@@ -377,13 +360,13 @@ async function runBenchmark(samples: number, warmups: number, output: string | u
 		}
 		const first = collected[0];
 		if (!first) throw new Error("Magic Context benchmark produced no measured samples.");
-		const metricNames = Object.keys(numericMetrics(first));
+		const metricNames = [...numericMagicContextMetrics(first).keys()];
 		const summaries = Object.fromEntries(
 			metricNames.map((name) => [
 				name,
 				summarize(
 					collected.map((sample) => {
-						const value = numericMetrics(sample)[name];
+						const value = numericMagicContextMetrics(sample).get(name);
 						if (value === undefined) throw new Error(`Benchmark sample omitted ${name}.`);
 						return value;
 					}),
