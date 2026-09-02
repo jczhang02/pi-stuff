@@ -20,7 +20,7 @@ binary; it does not alter upstream source or persist a derived artifact.
 ## Temporary tokenizer compatibility patch
 
 - Patch: [`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
-- Patch SHA-256: `b9793412071a0f6797d2afad4a91a90b8f51313daba4df4170898004ce739c56`
+- Patch SHA-256: `e01e53c4eab1f49c9d44ed5b9040eddd1d0eeb547121d8f62209d049c940cef0`
 - Scope:
   - add the published module's `import.meta.url` ancestry and Bun isolated-linker `node_modules` root to the existing
     `ai-tokenizer` fallback search;

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 554872f76b902a0290c7d8fb2a62fbd791d73b4d992e1dd45c66ccdfba17be9a -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 84dea31c34e1bd35e3b17fd6afbc4bd80783f47ebc503e1e799dd825c8285a99 -->
 
 # 捆绑上下文引擎来源
 
@@ -20,7 +20,7 @@ Pi Stuff 通过本适配器集成官方 Magic Context Package，不内嵌 Magic 
 ## 临时 tokenizer 兼容补丁
 
 - 补丁：[`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
-- 补丁 SHA-256：`b9793412071a0f6797d2afad4a91a90b8f51313daba4df4170898004ce739c56`
+- 补丁 SHA-256：`e01e53c4eab1f49c9d44ed5b9040eddd1d0eeb547121d8f62209d049c940cef0`
 - 范围：
   - 把已发布模块的 `import.meta.url` 祖先路径和 Bun isolated-linker 的 `node_modules` 根目录加入现有
     `ai-tokenizer` 回退搜索；
