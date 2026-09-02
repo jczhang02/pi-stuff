@@ -53,6 +53,7 @@ export interface TaskParam {
 	model?: string;
 	skill?: string | string[] | boolean;
 	toolBudget?: ToolBudgetConfig;
+	toolTimeoutMs?: number;
 }
 
 /** Private engine shape. The public Claude-style contract maps into this subset. */
@@ -70,6 +71,7 @@ export interface SubagentParamsLike {
 	async?: boolean;
 	timeoutMs?: number;
 	toolBudget?: ToolBudgetConfig;
+	toolTimeoutMs?: number;
 	cwd?: string;
 	model?: string;
 	thinking?: string | false;

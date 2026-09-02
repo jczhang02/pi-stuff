@@ -38,7 +38,7 @@ Each `subagent` call uses exactly one shape.
 ### One Agent
 
 `agent` and `task` are required. Optional fields select a short `description`, working directory, model, Skill,
-an explicit Tool budget, context mode, isolation, and foreground execution.
+an explicit Tool budget or per-Tool timeout, context mode, isolation, and foreground execution.
 
 ### Parallel Agents
 
@@ -103,6 +103,10 @@ A launch can request fresh or forked context, an explicit model, one Skill, and 
 authentication, and model availability are checked before child execution. Ordinary delegated work has no fixed turn
 cutoff, so a productive Agent is not terminated merely because it has continued working.
 
+`toolTimeoutMs` sets a hard timeout for each non-waiting Tool call. A task-level value overrides the launch value,
+which overrides Agent frontmatter and `PI_SUBAGENT_TOOL_TIMEOUT_MS`. Known-fast built-in Tools use a five-minute
+default; supervisor and intercom Tools that legitimately wait remain exempt.
+
 Each child uses the same Pi Host binary with the owning Package loaded and ambient discovery disabled. Non-fanout
 children do not receive the `subagent` Tool.
 
@@ -115,8 +119,8 @@ Default governor limits are:
 - nesting depth 3;
 - 30 minutes per run.
 
-Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls, while `timeoutMs`
-can tighten the default run deadline.
+Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls, `toolTimeoutMs` can
+bound one Tool call, and `timeoutMs` can tighten the default run deadline.
 
 ## Artifacts and isolation
 

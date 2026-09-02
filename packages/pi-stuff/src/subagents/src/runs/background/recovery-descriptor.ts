@@ -86,6 +86,7 @@ const V2_RECOVERY_DESCRIPTOR_SCHEMA = Type.Object(
 		absoluteDeadlineAt: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 		initialTurnBudget: Type.Optional(Type.Unknown()),
 		initialToolBudget: Type.Optional(Type.Unknown()),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 		maxSubagentDepth: Type.Integer({ minimum: 0 }),
 		capabilityCeiling: Type.Optional(Type.Unknown()),
 		sessionDir: Type.Optional(NONEMPTY_STRING),

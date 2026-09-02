@@ -32,7 +32,7 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
 - Supports one Agent, parallel grouped tasks, and status or lifecycle control calls.
 - Runs in the background by default; foreground mode waits for the result.
 - Delivers compact completion without starting an unsolicited main Agent turn.
-- Applies concurrent, total-launch, nesting, explicit Tool, and time limits without a fixed turn cutoff.
+- Applies concurrent, total-launch, nesting, smart per-Tool, and run-time limits without a fixed turn cutoff.
 - Keeps Session-owned artifacts and preserves changed isolated worktrees for inspection.
 
 ## Documentation

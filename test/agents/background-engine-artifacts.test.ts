@@ -222,6 +222,36 @@ process.stdout.write(events.map(JSON.stringify).join("\\n") + "\\n");
 	});
 }, 5_000);
 
+test("terminates a child whose Tool call exceeds its configured timeout", async () => {
+	const root = fixtureRoot();
+	const writer = path.join(root, "tool-timeout.ts");
+	fs.writeFileSync(
+		writer,
+		`#!/usr/bin/env bun
+process.stdout.write(JSON.stringify({
+  type: "tool_execution_start",
+  toolCallId: "call-1",
+  toolName: "bash",
+  args: { command: "hang" },
+}) + "\\n");
+setInterval(() => {}, 1_000);
+`,
+		{ mode: 0o700 },
+	);
+	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+	const config = singleRunnerConfig(root, "tool-timeout", {
+		asyncDir: path.join(root, "tool-timeout"),
+		work: { mode: "single", task: { ...task(0), toolTimeoutMs: 30 } },
+	});
+
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
+	expect(completion).toMatchObject({
+		state: "failed",
+		results: [{ error: "Tool 'bash' exceeded its timeout of 30ms.", timedOut: true }],
+	});
+}, 5_000);
+
 test("bounds recent status output by UTF-8 bytes without changing the full result", async () => {
 	const root = fixtureRoot();
 	const writer = path.join(root, "large-recent-output.ts");

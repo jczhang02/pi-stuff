@@ -16,6 +16,7 @@ export interface PublicAgentTask {
 	readonly model?: string;
 	readonly skill?: string | readonly string[] | boolean;
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
+	readonly toolTimeoutMs?: number;
 	readonly context?: "fork" | "fresh";
 	readonly isolation?: "shared" | "worktree";
 	readonly foreground?: boolean;
@@ -36,6 +37,7 @@ const LAUNCH_ONLY_FIELDS = [
 	"thinking",
 	"timeoutMs",
 	"toolBudget",
+	"toolTimeoutMs",
 ] as const;
 
 function hasOwn(params: PublicAgentParams, field: keyof PublicAgentParams): boolean {
@@ -114,6 +116,7 @@ export interface PublicAgentParams {
 	readonly thinking?: string;
 	readonly timeoutMs?: number;
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
+	readonly toolTimeoutMs?: number;
 }
 
 function mutableSkill(
@@ -145,6 +148,7 @@ function mapTask(task: PublicAgentTask): NonNullable<SubagentParamsLike["tasks"]
 	if (task.model) mapped.model = task.model;
 	if (task.skill !== undefined) mapped.skill = mutableSkill(task.skill);
 	if (task.toolBudget) mapped.toolBudget = mutableToolBudget(task.toolBudget);
+	if (task.toolTimeoutMs !== undefined) mapped.toolTimeoutMs = task.toolTimeoutMs;
 	return mapped;
 }
 
@@ -174,6 +178,7 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 	if (params.skill !== undefined) common.skill = mutableSkill(params.skill);
 	if (params.timeoutMs !== undefined) common.timeoutMs = params.timeoutMs;
 	if (params.toolBudget) common.toolBudget = mutableToolBudget(params.toolBudget);
+	if (params.toolTimeoutMs !== undefined) common.toolTimeoutMs = params.toolTimeoutMs;
 
 	if (params.tasks?.length) {
 		return { ...common, tasks: params.tasks.map(mapTask) };
@@ -184,6 +189,7 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 		if (params.model) Object.assign(task, { model: params.model });
 		if (params.skill !== undefined) Object.assign(task, { skill: params.skill });
 		if (params.toolBudget) Object.assign(task, { toolBudget: params.toolBudget });
+		if (params.toolTimeoutMs !== undefined) Object.assign(task, { toolTimeoutMs: params.toolTimeoutMs });
 		return {
 			...common,
 			tasks: [mapTask(task)],

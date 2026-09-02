@@ -39,6 +39,7 @@ import type { ModelScopeConfig } from "../shared/model-scope.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolTimeoutMs, TOOL_TIMEOUT_ENV } from "../shared/tool-timeout.ts";
 
 export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
@@ -65,6 +66,7 @@ export interface AsyncParallelTaskInput {
 	model?: string;
 	skill?: string | string[] | false;
 	toolBudget?: ToolBudgetConfig;
+	toolTimeoutMs?: number;
 }
 
 export interface CommonBuildParams {
@@ -80,6 +82,7 @@ export interface CommonBuildParams {
 	cwd?: string | undefined;
 	maxSubagentDepth: number;
 	toolBudget?: ResolvedToolBudget | undefined;
+	toolTimeoutMs?: number | undefined;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
 	controlConfig?: ResolvedControlConfig | undefined;
 	absoluteDeadlineAt?: number | undefined;
@@ -119,6 +122,7 @@ export interface BackgroundRecoveryDescriptor {
 	absoluteDeadlineAt?: number;
 	initialTurnBudget?: ResolvedTurnBudget;
 	initialToolBudget?: ResolvedToolBudget;
+	toolTimeoutMs?: number;
 	maxSubagentDepth: number;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	sessionDir?: string;
@@ -159,6 +163,7 @@ interface ResolvedTaskProjection {
 	taskCwd: string;
 	thinking?: string;
 	toolBudget?: ResolvedToolBudget;
+	toolTimeoutMs?: number;
 }
 
 function resolveTaskToolBudget(
@@ -216,6 +221,7 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
 	if (input.sessionFile) task.sessionFile = input.sessionFile;
 	if (resolved.toolBudget) task.toolBudget = resolved.toolBudget;
+	if (resolved.toolTimeoutMs !== undefined) task.toolTimeoutMs = resolved.toolTimeoutMs;
 	if (resolved.capabilityCeiling) task.capabilityCeiling = resolved.capabilityCeiling;
 	const recovery: BackgroundRecoveryDescriptor = {
 		version: 2,
@@ -245,6 +251,7 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
 	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
 	if (resolved.toolBudget) recovery.initialToolBudget = resolved.toolBudget;
+	if (resolved.toolTimeoutMs !== undefined) recovery.toolTimeoutMs = resolved.toolTimeoutMs;
 	if (resolved.capabilityCeiling) recovery.capabilityCeiling = resolved.capabilityCeiling;
 	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
 	if (params.artifactsDir) recovery.artifactsDir = params.artifactsDir;
@@ -324,6 +331,12 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	const thinking = resolveEffectiveThinking(primaryModel, thinkingConfig);
 	const toolBudget = resolveTaskToolBudget(taskInput.toolBudget, params.toolBudget, agent.toolBudget);
 	if (toolBudget.error) return { error: toolBudget.error };
+	const toolTimeout = resolveToolTimeoutMs({
+		callValue: taskInput.toolTimeoutMs ?? params.toolTimeoutMs,
+		agentValue: agent.toolTimeoutMs,
+		envValue: process.env[TOOL_TIMEOUT_ENV],
+	});
+	if (toolTimeout.error) return { error: toolTimeout.error };
 
 	const maxSubagentDepth = resolveChildMaxSubagentDepth(params.maxSubagentDepth, agent.maxSubagentDepth);
 	const capabilityCeiling = params.capabilityCeiling;
@@ -358,6 +371,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	if (toolPlan.extensionArgs) launchBinding.extensions = [...toolPlan.extensionArgs];
 	if (toolPlan.effectiveMcpTools) launchBinding.mcpDirectTools = [...toolPlan.effectiveMcpTools];
 	if (toolBudget.toolBudget) launchBinding.toolBudget = toolBudget.toolBudget;
+	if (toolTimeout.toolTimeoutMs !== undefined) launchBinding.toolTimeoutMs = toolTimeout.toolTimeoutMs;
 	if (capabilityCeiling) launchBinding.capabilityCeiling = capabilityCeiling;
 	const modelContextWindows = modelCandidates.flatMap((model) => {
 		const contextWindow = findModelInfo(
@@ -381,6 +395,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	if (primaryModel) projection.primaryModel = primaryModel;
 	if (thinking) projection.thinking = thinking;
 	if (toolBudget.toolBudget) projection.toolBudget = toolBudget.toolBudget;
+	if (toolTimeout.toolTimeoutMs !== undefined) projection.toolTimeoutMs = toolTimeout.toolTimeoutMs;
 	if (capabilityCeiling) projection.capabilityCeiling = capabilityCeiling;
 	return projectBuiltTask(input, projection);
 }

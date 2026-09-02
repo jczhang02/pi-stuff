@@ -259,6 +259,7 @@ export async function prepareLaunch(
 			effectiveCwd,
 			availableModels: models,
 			toolBudget: budgets.toolBudget,
+			toolTimeoutMs: params.toolTimeoutMs,
 			capabilityCeiling,
 			maxSubagentDepth,
 			childBaseExtensionPath: deps.childBaseExtensionPath,

@@ -60,7 +60,7 @@ export interface ChildRuntimeControl {
 	revokeFinalization(): void;
 }
 
-type ChildTerminalCause = "pause" | "timeout" | "stop" | "protocol" | "setup";
+type ChildTerminalCause = "pause" | "timeout" | "stop" | "tool-timeout" | "protocol" | "setup";
 type WriterControlCommand = "cancel-finalize" | "finalize" | "proceed" | "terminate-sigint" | "terminate-sigterm";
 type ChildLifecycleEvent =
 	| { readonly type: "close"; readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }
@@ -455,7 +455,7 @@ export class ChildProcessEngine {
 		this.wakeLifecycle();
 	}
 
-	private terminateProtocol(cause: "protocol", error: string, signal: "SIGINT" | "SIGTERM"): boolean {
+	private terminateProtocol(cause: "protocol" | "tool-timeout", error: string, signal: "SIGINT" | "SIGTERM"): boolean {
 		if (!this.claimTerminalCause(cause)) return false;
 		this.forcedError = error;
 		this.cancelFinalDrain();
@@ -484,6 +484,11 @@ export class ChildProcessEngine {
 			status: this.input.status,
 			startFinalDrain: (evidence) => this.startFinalDrain(evidence),
 			cancelFinalDrain: () => this.cancelFinalDrain(),
+			scheduleTimeout: (delayMs, action) => {
+				const timer = setTimeout(action, delayMs);
+				timer.unref();
+				return () => clearTimeout(timer);
+			},
 			terminate: (cause, error, signal) => this.terminateProtocol(cause, error, signal),
 		});
 		this.childStdout.on("data", (chunk: Buffer) => {
@@ -735,7 +740,10 @@ export class ChildProcessEngine {
 		if (observed.terminationOrigin) writerProcess.terminationOrigin = observed.terminationOrigin;
 		return {
 			exitCode:
-				this.terminalCause === "pause" || this.terminalCause === "timeout" || this.terminalCause === "stop"
+				this.terminalCause === "pause" ||
+				this.terminalCause === "timeout" ||
+				this.terminalCause === "stop" ||
+				this.terminalCause === "tool-timeout"
 					? 1
 					: observed.completedByInternalFinalDrain
 						? 0
@@ -754,7 +762,7 @@ export class ChildProcessEngine {
 			model: snapshot.model,
 			contextUsage: this.input.statusStep.contextUsage,
 			interrupted: this.terminalCause === "pause" || undefined,
-			timedOut: this.terminalCause === "timeout" || undefined,
+			timedOut: this.terminalCause === "timeout" || this.terminalCause === "tool-timeout" || undefined,
 			stopped: this.terminalCause === "stop" || undefined,
 			contextNudgeObserved: snapshot.contextNudgeObserved || undefined,
 			process: writerProcess,

@@ -90,6 +90,7 @@ test("parses only current execution controls and skips one malformed definition 
 			"skills: research, review",
 			'turnBudget: {"maxTurns":4,"graceTurns":1}',
 			'toolBudget: {"soft":6,"hard":8,"block":["read"]}',
+			"toolTimeoutMs: 1200",
 			"maxSubagentDepth: 2",
 			"defaultAsync: true",
 			"defaultTimeoutMs: 30000",
@@ -115,6 +116,7 @@ test("parses only current execution controls and skips one malformed definition 
 		systemPromptMode: "replace",
 		thinking: "high",
 		toolBudget: { block: ["read"], hard: 8, soft: 6 },
+		toolTimeoutMs: 1200,
 		tools: ["read", "bash"],
 	});
 	for (const retiredField of [

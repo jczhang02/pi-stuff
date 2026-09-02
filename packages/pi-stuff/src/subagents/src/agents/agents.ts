@@ -6,6 +6,7 @@ import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.j
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
+import { resolveToolTimeoutMs } from "../runs/shared/tool-timeout.ts";
 import type { ToolBudgetConfig } from "../shared/types.ts";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 import { mergeAgentsForScope } from "./agent-selection.ts";
@@ -41,6 +42,7 @@ export interface AgentConfig {
 	readonly subagentOnlyExtensions?: string[];
 	readonly maxSubagentDepth?: number;
 	readonly toolBudget?: ToolBudgetConfig;
+	readonly toolTimeoutMs?: number;
 }
 
 export interface AgentDiscoveryResult {
@@ -145,6 +147,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		const subagentOnlyExtensions = nonEmpty(parseFrontmatterList(frontmatter["subagentOnlyExtensions"]));
 
 		const toolBudget = parseToolBudget(frontmatter["toolBudget"], localName);
+		const toolTimeoutMs = parseToolTimeout(frontmatter["toolTimeoutMs"], localName);
 		const maxSubagentDepth = optionalNonNegativeInteger(frontmatter["maxSubagentDepth"]);
 		if (frontmatter["maxSubagentDepth"] !== undefined && maxSubagentDepth === undefined) return undefined;
 
@@ -193,6 +196,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		if (subagentOnlyExtensions) agent = { ...agent, subagentOnlyExtensions };
 		if (maxSubagentDepth !== undefined) agent = { ...agent, maxSubagentDepth };
 		if (toolBudget) agent = { ...agent, toolBudget };
+		if (toolTimeoutMs !== undefined) agent = { ...agent, toolTimeoutMs };
 		return agent;
 	} catch {
 		// One malformed optional Agent definition must not make the Agent tool unavailable.
@@ -206,6 +210,13 @@ function parseToolBudget(value: string | undefined, name: string): ToolBudgetCon
 	const result = validateToolBudgetConfig(parsed, `Agent '${name}' toolBudget`);
 	if (result.error) throw new Error(result.error);
 	return result.budget;
+}
+
+function parseToolTimeout(value: string | undefined, name: string): number | undefined {
+	if (value === undefined) return undefined;
+	const result = resolveToolTimeoutMs({ agentValue: Number(value) });
+	if (result.error) throw new Error(`Agent '${name}' ${result.error}`);
+	return result.toolTimeoutMs;
 }
 
 async function listAgentFiles(directory: string): Promise<string[]> {

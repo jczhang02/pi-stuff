@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentConfig } from "../agents/agents.ts";
 
-export const AGENT_DEFINITION_PROJECTION_VERSION = 2 as const;
-export const LAUNCH_BINDING_PROJECTION_VERSION = 2 as const;
+export const AGENT_DEFINITION_PROJECTION_VERSION = 3 as const;
+export const LAUNCH_BINDING_PROJECTION_VERSION = 3 as const;
 
 function stableJson<Value>(value: Value): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -54,6 +54,7 @@ export function projectAgentDefinition(agent: AgentConfig) {
 		skillPath: agent.skillPath,
 		maxSubagentDepth: agent.maxSubagentDepth,
 		toolBudget: agent.toolBudget,
+		toolTimeoutMs: agent.toolTimeoutMs,
 	};
 }
 
@@ -77,6 +78,7 @@ export interface LaunchBindingInput {
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
 	toolBudget?: AgentConfig["toolBudget"];
+	toolTimeoutMs?: number;
 	maxSubagentDepth?: number;
 	capabilityCeiling?: unknown;
 }
@@ -102,6 +104,7 @@ export function projectLaunchBinding(input: LaunchBindingInput) {
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
 		toolBudget: input.toolBudget,
+		toolTimeoutMs: input.toolTimeoutMs,
 		maxSubagentDepth: input.maxSubagentDepth,
 		capabilityCeiling: input.capabilityCeiling,
 	};

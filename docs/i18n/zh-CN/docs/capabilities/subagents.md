@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: db3897224aade2ea6f9824567968325c6570fa6c669df9c08db89e9843407ff1 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: ee5f6c9409b5430b46ab4f21bb6ec5d3582ebd9f88fe489eb63246417f072d0c -->
 
 # Agents
 
@@ -38,8 +38,8 @@ Agent 定义从以下位置发现：
 
 ### 单个 Agent
 
-`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、显式 Tool budget、
-context mode、isolation 和前台执行。
+`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、显式 Tool budget 或
+逐 Tool timeout、context mode、isolation 和前台执行。
 
 ### 并行 Agent
 
@@ -100,6 +100,10 @@ Footer roster 是紧凑生命周期视图。打开 Agent 管理时会替换 late
 Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及显式 Tool budget。Child 执行前会检查
 容量、认证和 model 可用性。普通委派工作没有固定 turn 截止线，因此不会仅因 Agent 持续工作而终止仍有进展的运行。
 
+`toolTimeoutMs` 为每个非等待型 Tool call 设置硬超时。task 级值覆盖 launch 值，launch 值覆盖 Agent frontmatter
+与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。已知快速的内置 Tool 默认 5 分钟；本就需要等待的 supervisor 与 intercom
+Tool 不受此限制。
+
 每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。非 fanout child
 不会得到 `subagent` Tool。
 
@@ -112,7 +116,8 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 - 嵌套深度 3；
 - 每次运行 30 分钟。
 
-普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`timeoutMs` 可以收紧默认运行期限。
+普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`toolTimeoutMs` 可以限制单次
+Tool call，`timeoutMs` 可以收紧默认运行期限。
 
 ## Artifact 与 isolation
 

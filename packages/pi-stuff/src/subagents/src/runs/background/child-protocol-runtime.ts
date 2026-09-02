@@ -17,6 +17,7 @@ import {
 	projectChildLifecycle,
 } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import { effectiveToolTimeoutMs, formatToolTimeoutMessage, toolTimeoutCallKey } from "../shared/tool-timeout.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -35,7 +36,7 @@ import {
 } from "./runner-output.ts";
 import { writeStatus } from "./runner-state.ts";
 
-type ChildProtocolTerminalCause = "protocol";
+type ChildProtocolTerminalCause = "protocol" | "tool-timeout";
 
 export interface ChildProtocolRuntimeInput {
 	config: BackgroundRunnerConfig;
@@ -49,6 +50,7 @@ export interface ChildProtocolRuntimeInput {
 	status: RunnerStatus;
 	startFinalDrain: (evidence: boolean) => void;
 	cancelFinalDrain: () => void;
+	scheduleTimeout: (delayMs: number, action: () => void) => () => void;
 	terminate: (cause: ChildProtocolTerminalCause, error: string, signal: "SIGINT" | "SIGTERM") => boolean;
 }
 
@@ -101,6 +103,9 @@ export class ChildProtocolRuntime {
 	private invalidProtocolEvent = false;
 	private stdoutProtocolBytes = 0;
 	private stderrProtocolBytes = 0;
+	private toolTimeoutSequence = 0;
+	private readonly activeToolTimeouts = new Map<string, { toolName: string; cancel: () => void }>();
+	private readonly activeToolTimeoutKeysByName = new Map<string, string[]>();
 	private contextNudgeObserved = false;
 	private streamingStatusPersistenceFailed = false;
 
@@ -269,6 +274,7 @@ export class ChildProtocolRuntime {
 
 	private handleToolEvent(event: ChildProtocolEvent): boolean {
 		if (event.type === "tool_execution_start" && event.toolName) {
+			this.armToolTimeout(event);
 			this.toolCount += 1;
 			this.input.statusStep.toolCount = this.toolCount;
 			this.input.statusStep.currentTool = event.toolName;
@@ -279,12 +285,60 @@ export class ChildProtocolRuntime {
 			return true;
 		}
 		if (event.type !== "tool_execution_end") return false;
+		this.clearToolTimeout(event);
 		this.input.statusStep.currentTool = undefined;
 		this.input.statusStep.currentToolArgs = undefined;
 		this.input.statusStep.currentToolStartedAt = undefined;
 		this.input.statusStep.lastActivityAt = Date.now();
 		this.persistStreamingStatus();
 		return true;
+	}
+
+	private removeToolTimeout(key: string): void {
+		const active = this.activeToolTimeouts.get(key);
+		if (!active) return;
+		active.cancel();
+		this.activeToolTimeouts.delete(key);
+		const keys =
+			this.activeToolTimeoutKeysByName.get(active.toolName)?.filter((candidate) => candidate !== key) ?? [];
+		if (keys.length > 0) this.activeToolTimeoutKeysByName.set(active.toolName, keys);
+		else this.activeToolTimeoutKeysByName.delete(active.toolName);
+	}
+
+	private clearToolTimeout(event: ChildProtocolEvent): void {
+		const key = event.toolCallId
+			? `id:${event.toolCallId}`
+			: event.toolName
+				? this.activeToolTimeoutKeysByName.get(event.toolName)?.[0]
+				: this.activeToolTimeouts.size === 1
+					? this.activeToolTimeouts.keys().next().value
+					: undefined;
+		if (key) this.removeToolTimeout(key);
+	}
+
+	private armToolTimeout(event: ChildProtocolEvent): void {
+		const toolName = event.toolName;
+		if (!toolName) return;
+		const timeoutMs = effectiveToolTimeoutMs(toolName, this.input.task.toolTimeoutMs);
+		if (timeoutMs === undefined) return;
+		const remainingMs =
+			this.input.config.deadlineAt === undefined
+				? undefined
+				: Math.max(0, this.input.config.deadlineAt - Date.now());
+		if (remainingMs !== undefined && timeoutMs >= remainingMs) return;
+		const key = toolTimeoutCallKey(event, ++this.toolTimeoutSequence);
+		const cancel = this.input.scheduleTimeout(timeoutMs, () => {
+			this.removeToolTimeout(key);
+			this.input.terminate("tool-timeout", formatToolTimeoutMessage(toolName, timeoutMs), "SIGTERM");
+		});
+		this.activeToolTimeouts.set(key, { toolName, cancel });
+		const keys = this.activeToolTimeoutKeysByName.get(toolName) ?? [];
+		keys.push(key);
+		this.activeToolTimeoutKeysByName.set(toolName, keys);
+	}
+
+	private clearAllToolTimeouts(): void {
+		for (const key of this.activeToolTimeouts.keys()) this.removeToolTimeout(key);
 	}
 
 	private recordMessage(message: ChildProtocolMessage, assistantMessageEnd: boolean): void {
@@ -345,6 +399,7 @@ export class ChildProtocolRuntime {
 	}
 
 	end(): void {
+		this.clearAllToolTimeouts();
 		this.stdoutReader.end();
 		this.stderrReader.end();
 	}

@@ -71,6 +71,7 @@ function commonBuild(data: PreparedLaunch, deps: ExecutorDeps) {
 		artifactConfig: data.artifactConfig,
 		sessionDir: data.sessionRoot,
 		toolBudget: data.toolBudget,
+		toolTimeoutMs: data.params.toolTimeoutMs,
 		capabilityCeiling: data.capabilityCeiling,
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 	};

@@ -264,6 +264,7 @@ interface LaunchModelPlanInput {
 	effectiveCwd: string;
 	availableModels: ModelInfo[];
 	toolBudget?: ResolvedToolBudget | undefined;
+	toolTimeoutMs?: number | undefined;
 	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling> | undefined;
 	maxSubagentDepth: number;
 	childBaseExtensionPath?: string | undefined;
@@ -294,6 +295,7 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 			cwd: input.effectiveCwd,
 			maxSubagentDepth: input.maxSubagentDepth,
 			toolBudget: input.toolBudget,
+			toolTimeoutMs: input.toolTimeoutMs,
 			capabilityCeiling: input.capabilityCeiling,
 			childBaseExtensionPath: input.childBaseExtensionPath,
 		},
@@ -391,6 +393,7 @@ export function taskInputs(params: SubagentParamsLike): TaskParam[] {
 	if (params.model) task.model = params.model;
 	if (params.skill !== undefined) task.skill = params.skill;
 	if (params.toolBudget) task.toolBudget = params.toolBudget;
+	if (params.toolTimeoutMs !== undefined) task.toolTimeoutMs = params.toolTimeoutMs;
 	return [task];
 }
 
@@ -407,5 +410,6 @@ export function resolvedTaskInput(
 	const skill = normalizeSkillInput(task.skill);
 	if (skill !== undefined) input.skill = skill;
 	if (task.toolBudget) input.toolBudget = task.toolBudget;
+	if (task.toolTimeoutMs !== undefined) input.toolTimeoutMs = task.toolTimeoutMs;
 	return input;
 }

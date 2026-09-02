@@ -53,6 +53,7 @@ export interface RunnerAgentTask
 	launchBindingTask?: string;
 	launchContractDigest?: string;
 	toolBudget?: ResolvedToolBudget;
+	toolTimeoutMs?: number;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 }
 

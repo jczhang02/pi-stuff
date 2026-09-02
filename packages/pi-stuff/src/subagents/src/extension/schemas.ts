@@ -40,6 +40,7 @@ const AgentTask = Type.Object(
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 		context: Type.Optional(
 			Type.String({
 				enum: ["fresh", "fork"],
@@ -75,6 +76,7 @@ const FanoutAgentTask = Type.Object(
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 		context: Type.Optional(
 			Type.String({
 				enum: ["fresh", "fork"],
@@ -136,6 +138,14 @@ export const SubagentParams = Type.Object(
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(
+			Type.Integer({
+				minimum: 1,
+				maximum: 2_147_483_647,
+				description:
+					"Optional hard timeout for each Tool call in milliseconds; known-fast built-in Tools default to five minutes.",
+			}),
+		),
 		action: Type.Optional(
 			Type.String({
 				enum: ["status", "steer", "stop", "resume"],
@@ -201,6 +211,7 @@ export const FanoutChildSubagentParams = Type.Object(
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 	},
 	{
 		additionalProperties: false,

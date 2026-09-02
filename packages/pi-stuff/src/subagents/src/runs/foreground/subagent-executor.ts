@@ -313,6 +313,7 @@ async function prepareResumeRun(input: ResumeRunInput) {
 		modelScope: discovered.modelScope,
 		timeoutMs: timeout.timeoutMs,
 		toolBudget: tool.budget,
+		toolTimeoutMs: input.params.toolTimeoutMs ?? descriptor?.toolTimeoutMs,
 	};
 }
 
@@ -324,7 +325,8 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 	} catch (error) {
 		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
-	const { agent, descriptor, effectiveCwd, modelScope, sessionFile, target, timeoutMs, toolBudget } = prepared;
+	const { agent, descriptor, effectiveCwd, modelScope, sessionFile, target, timeoutMs, toolBudget, toolTimeoutMs } =
+		prepared;
 	const runId = randomUUID().replace(/-/g, "").slice(0, 12);
 	const parentSessionFile = input.ctx.sessionManager.getSessionFile() ?? null;
 	const artifactConfig = DEFAULT_ARTIFACT_CONFIG;
@@ -387,6 +389,7 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 		};
 		if (timeoutMs !== undefined) resumeInput.timeoutMs = timeoutMs;
 		if (toolBudget) resumeInput.toolBudget = toolBudget;
+		if (toolTimeoutMs !== undefined) resumeInput.toolTimeoutMs = toolTimeoutMs;
 		const result = await input.engines.backgroundSingle(runId, resumeInput);
 		backgroundOwnsRoute = Boolean(result.details.asyncId);
 		if (resultIsError(result)) return result;
