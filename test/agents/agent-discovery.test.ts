@@ -84,6 +84,7 @@ test("parses only current execution controls and skips one malformed definition 
 			"fallbackModels: provider/one, provider/two",
 			"thinking: high",
 			"tools: read, bash, mcp:browser/open",
+			"excludeTools: write, made-up-tool",
 			"systemPromptMode: replace",
 			"inheritProjectContext: false",
 			"inheritSkills: false",
@@ -107,6 +108,7 @@ test("parses only current execution controls and skips one malformed definition 
 	const configured = agents.find(({ name }) => name === "configured");
 	expect(configured).toMatchObject({
 		fallbackModels: ["provider/one", "provider/two"],
+		excludeTools: ["write", "made-up-tool"],
 		inheritProjectContext: false,
 		inheritSkills: false,
 		maxSubagentDepth: 2,

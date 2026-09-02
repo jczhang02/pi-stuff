@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: ee5f6c9409b5430b46ab4f21bb6ec5d3582ebd9f88fe489eb63246417f072d0c -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 748143efeb8194ddbd7f3b971c594959a2a0e46eaf0d6f7d5902c21f12a4de14 -->
 
 # Agents
 
@@ -16,6 +16,7 @@ Agent 定义从以下位置发现：
 
 名称冲突时，项目定义优先于用户定义，用户定义优先于 Package 定义。每次主运行前，`subagent` Tool 描述会列出
 有效 roster 和每个 Agent 的用途。
+Agent frontmatter 可以声明 `tools` 与 `excludeTools`；exclusion 对该 child 始终优先。
 
 ## 快速开始
 
@@ -103,6 +104,9 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 `toolTimeoutMs` 为每个非等待型 Tool call 设置硬超时。task 级值覆盖 launch 值，launch 值覆盖 Agent frontmatter
 与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。已知快速的内置 Tool 默认 5 分钟；本就需要等待的 supervisor 与 intercom
 Tool 不受此限制。
+
+`excludeTools` 从 child 的 ambient、显式、MCP 与 Suite 注入 Tool 中减去指定名称。排除 `subagent` 会关闭该
+Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则排除 `read` 会在启动前被拒绝。
 
 每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。非 fanout child
 不会得到 `subagent` Tool。

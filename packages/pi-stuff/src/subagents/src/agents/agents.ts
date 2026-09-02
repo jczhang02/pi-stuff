@@ -26,6 +26,7 @@ export interface AgentConfig {
 	readonly packageName?: string;
 	readonly description: string;
 	readonly tools?: string[];
+	readonly excludeTools?: string[];
 	readonly mcpDirectTools?: string[];
 	readonly model?: string;
 	readonly fallbackModels?: string[];
@@ -139,6 +140,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		const packageName = parsedPackage.packageName;
 		const rawTools = parseFrontmatterList(frontmatter["tools"]);
 		const { tools, mcpDirectTools } = splitTools(rawTools);
+		const excludeTools = parseFrontmatterList(frontmatter["excludeTools"]);
 		const fallbackModels = nonEmpty(parseFrontmatterList(frontmatter["fallbackModels"]));
 		if (fallbackModels && fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) return undefined;
 		const skills = nonEmpty(parseFrontmatterList(frontmatter["skill"] ?? frontmatter["skills"]));
@@ -185,6 +187,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		};
 		if (packageName) agent = { ...agent, packageName };
 		if (rawTools !== undefined) agent = { ...agent, tools };
+		if (excludeTools !== undefined) agent = { ...agent, excludeTools };
 		if (mcpDirectTools.length > 0) agent = { ...agent, mcpDirectTools };
 		if (optionalText(frontmatter["model"])) agent = { ...agent, model: frontmatter["model"].trim() };
 		if (fallbackModels) agent = { ...agent, fallbackModels };

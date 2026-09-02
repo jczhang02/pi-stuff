@@ -103,6 +103,7 @@ function buildChildLaunch(input: ChildProcessEngineInput) {
 		childBaseExtensionPath: input.task.childBaseExtensionPath,
 		requireReadTool: input.task.inheritSkills || Boolean(input.task.skills?.length),
 		tools: input.task.tools,
+		excludeTools: input.task.excludeTools,
 		extensions: input.task.extensions,
 		subagentOnlyExtensions: input.task.subagentOnlyExtensions,
 		systemPrompt: input.task.systemPrompt,

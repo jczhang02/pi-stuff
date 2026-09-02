@@ -48,6 +48,7 @@ export interface RunnerAgentTask
 	modelContextWindows?: Array<{ model: string; contextWindow: number }>;
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	excludeTools?: string[];
 	childBaseExtensionPath?: string;
 	sessionFile?: string;
 	launchBindingTask?: string;

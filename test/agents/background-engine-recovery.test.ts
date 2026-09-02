@@ -237,18 +237,20 @@ test("launch evidence contains current limits but ignores retired Agent features
 		definitionDigest: "definition",
 		inheritProjectContext: true,
 		inheritSkills: false,
+		excludeTools: ["write"],
 		toolBudget: { hard: 12, soft: 9, block: ["read"] },
 		toolTimeoutMs: 1_500,
 		maxSubagentDepth: 2,
 		capabilityCeiling: { version: 1, allowedTools: ["read"] },
 	});
 
-	expect(definition.version).toBe(3);
+	expect(definition.version).toBe(4);
 	expect(definition).not.toHaveProperty("memory");
 	expect(definition).not.toHaveProperty("completionGuard");
 	expect(definition).not.toHaveProperty("output");
 	expect(binding).toMatchObject({
-		version: 3,
+		version: 4,
+		excludeTools: ["write"],
 		toolBudget: { hard: 12, soft: 9, block: ["read"] },
 		toolTimeoutMs: 1_500,
 		maxSubagentDepth: 2,
@@ -353,11 +355,13 @@ test("builds one parallel group and resolves every task override before persiste
 		agent(root, "writer", {
 			model: "provider/writer-default",
 			fallbackModels: ["provider/writer-default"],
+			excludeTools: ["write"],
 			toolBudget: { hard: 30, soft: 20 },
 			toolTimeoutMs: 3_500,
 		}),
 		agent(root, "reviewer", {
 			model: "provider/reviewer-default",
+			excludeTools: ["edit"],
 			toolBudget: { hard: 15 },
 			toolTimeoutMs: 3_000,
 		}),
@@ -424,6 +428,7 @@ test("builds one parallel group and resolves every task override before persiste
 		],
 		thinking: "high",
 		skills: ["review"],
+		excludeTools: ["write"],
 		toolBudget: { hard: 9, soft: 6, block: ["browser"] },
 		toolTimeoutMs: 1_500,
 	});
@@ -437,6 +442,7 @@ test("builds one parallel group and resolves every task override before persiste
 		modelContextWindows: [{ model: "provider/reviewer-default", contextWindow: 80_000 }],
 		thinking: "high",
 		skills: ["review"],
+		excludeTools: ["edit"],
 		toolBudget: { hard: 14, soft: 10, block: ["read"] },
 		toolTimeoutMs: 2_500,
 	});
@@ -447,7 +453,7 @@ test("single recovery data retains the child session and limits without retired 
 	const built = buildAsyncSingleRunnerWork("run-single", {
 		agent: "writer",
 		task: "Continue the implementation",
-		agentConfig: agent(root, "writer"),
+		agentConfig: agent(root, "writer", { excludeTools: ["write"] }),
 		ctx: buildContext(root),
 		cwd: root,
 		context: "fork",
@@ -472,6 +478,7 @@ test("single recovery data retains the child session and limits without retired 
 		version: 2,
 		sourceRunId: "run-single",
 		agent: "writer",
+		excludeTools: ["write"],
 		sessionFile: path.join(root, "child.jsonl"),
 		context: "fork",
 		initialToolBudget: { hard: 11, block: ["read"] },

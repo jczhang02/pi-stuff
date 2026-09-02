@@ -108,6 +108,7 @@ export interface BackgroundRecoveryDescriptor {
 	fallbackModels?: string[];
 	thinking?: string;
 	tools?: string[];
+	excludeTools?: string[];
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
@@ -215,6 +216,7 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 		task.modelContextWindows = resolved.modelContextWindows.map((entry) => ({ ...entry }));
 	}
 	if (agent.tools) task.tools = [...agent.tools];
+	if (agent.excludeTools) task.excludeTools = [...agent.excludeTools];
 	if (agent.extensions) task.extensions = [...agent.extensions];
 	if (agent.subagentOnlyExtensions) task.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
 	if (agent.mcpDirectTools) task.mcpDirectTools = [...agent.mcpDirectTools];
@@ -241,6 +243,7 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (resolved.modelCandidates.length > 1) recovery.fallbackModels = resolved.modelCandidates.slice(1);
 	if (resolved.thinking) recovery.thinking = resolved.thinking;
 	if (agent.tools) recovery.tools = [...agent.tools];
+	if (agent.excludeTools) recovery.excludeTools = [...agent.excludeTools];
 	if (agent.extensions) recovery.extensions = [...agent.extensions];
 	if (agent.subagentOnlyExtensions) recovery.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
 	if (agent.mcpDirectTools) recovery.mcpDirectTools = [...agent.mcpDirectTools];
@@ -343,6 +346,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	const definitionDigest = agentDefinitionDigest(agent);
 	const toolPlan = resolvePiLaunchToolPlan({
 		tools: agent.tools,
+		excludeTools: agent.excludeTools,
 		extensions: agent.extensions,
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		mcpDirectTools: agent.mcpDirectTools,
@@ -368,6 +372,7 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	};
 	if (thinking) launchBinding.thinking = thinking;
 	if (toolPlan.effectiveToolAllowlist) launchBinding.tools = [...toolPlan.effectiveToolAllowlist];
+	if (toolPlan.excludeTools.length > 0) launchBinding.excludeTools = [...toolPlan.excludeTools];
 	if (toolPlan.extensionArgs) launchBinding.extensions = [...toolPlan.extensionArgs];
 	if (toolPlan.effectiveMcpTools) launchBinding.mcpDirectTools = [...toolPlan.effectiveMcpTools];
 	if (toolBudget.toolBudget) launchBinding.toolBudget = toolBudget.toolBudget;

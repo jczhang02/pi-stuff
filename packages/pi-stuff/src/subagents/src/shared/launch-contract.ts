@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentConfig } from "../agents/agents.ts";
 
-export const AGENT_DEFINITION_PROJECTION_VERSION = 3 as const;
-export const LAUNCH_BINDING_PROJECTION_VERSION = 3 as const;
+export const AGENT_DEFINITION_PROJECTION_VERSION = 4 as const;
+export const LAUNCH_BINDING_PROJECTION_VERSION = 4 as const;
 
 function stableJson<Value>(value: Value): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -47,6 +47,7 @@ export function projectAgentDefinition(agent: AgentConfig) {
 		fallbackModels: agent.fallbackModels,
 		thinking: agent.thinking,
 		tools: agent.tools,
+		excludeTools: agent.excludeTools,
 		mcpDirectTools: agent.mcpDirectTools,
 		extensions: agent.extensions,
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
@@ -74,6 +75,7 @@ export interface LaunchBindingInput {
 	inheritSkills: boolean;
 	skills?: string[];
 	tools?: string[];
+	excludeTools?: string[];
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
@@ -100,6 +102,7 @@ export function projectLaunchBinding(input: LaunchBindingInput) {
 		inheritSkills: input.inheritSkills,
 		skills: input.skills,
 		tools: input.tools,
+		excludeTools: input.excludeTools,
 		extensions: input.extensions,
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,

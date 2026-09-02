@@ -513,6 +513,8 @@ export function applySteeringRecoveryAgentConfig(
 	else recovered.thinking = descriptor.thinking;
 	if (descriptor.tools === undefined) delete recovered.tools;
 	else recovered.tools = [...descriptor.tools];
+	if (descriptor.excludeTools === undefined) delete recovered.excludeTools;
+	else recovered.excludeTools = [...descriptor.excludeTools];
 	if (descriptor.extensions === undefined) delete recovered.extensions;
 	else recovered.extensions = [...descriptor.extensions];
 	if (descriptor.subagentOnlyExtensions === undefined) delete recovered.subagentOnlyExtensions;

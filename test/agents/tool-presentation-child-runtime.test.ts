@@ -61,6 +61,23 @@ test("keeps the certified Host grep hang outside explicit child Tool allowlists"
 	expect(plan.requiredChildTools).toEqual(["read", "find", "ls", "bash"]);
 });
 
+test("subtracts per-Agent Tool exclusions from explicit and injected child capabilities", () => {
+	const plan = resolvePiLaunchToolPlan({
+		tools: ["read", "write", "subagent"],
+		excludeTools: [" write ", "subagent", "structured_output"],
+		structuredOutput: true,
+	});
+	expect(plan.declaredBuiltinTools).toEqual(["read", "write", "subagent"]);
+	expect(plan.excludeTools).toEqual(["write", "subagent", "structured_output"]);
+	expect(plan.effectiveToolAllowlist).toEqual(["read"]);
+	expect(plan.requiredChildTools).toEqual(["read"]);
+	expect(plan.internalTools).toEqual([]);
+	expect(plan.fanoutAuthorized).toBeFalse();
+	expect(() => resolvePiLaunchToolPlan({ requireReadTool: true, excludeTools: ["read"] })).toThrow(
+		"removes required tool 'read'",
+	);
+});
+
 test("leaves Host-like delimiter examples intact because resource isolation belongs to Pi CLI flags", () => {
 	const prompt = [
 		"Replacement instructions.",

@@ -72,6 +72,7 @@ const V2_RECOVERY_DESCRIPTOR_SCHEMA = Type.Object(
 		fallbackModels: Type.Optional(Type.Array(NONEMPTY_STRING, { maxItems: MAX_MODEL_CANDIDATES_PER_CHILD - 1 })),
 		thinking: Type.Optional(NONEMPTY_STRING),
 		tools: Type.Optional(STRING_LIST),
+		excludeTools: Type.Optional(STRING_LIST),
 		extensions: Type.Optional(STRING_LIST),
 		subagentOnlyExtensions: Type.Optional(STRING_LIST),
 		mcpDirectTools: Type.Optional(STRING_LIST),

@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 85e183c8857daace6eecbdfaf6c6cdbc9b982911b74cf5ef7b5ae79c3970b24d -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: c5b899dedeeea9a90f3769b755bd1b13523f48297b6cb3e8043f87854e301ba0 -->
 
 # Agents
 
@@ -31,6 +31,7 @@
 ## 亮点
 
 - 按明确优先级发现项目、用户与 Package Agent 定义。
+- 支持逐 Agent Tool allowlist 与 exclusion，不改变 parent Host。
 - 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call。
 - 默认后台运行；前台模式会等待结果。
 - 送达紧凑 completion，不主动启动另一轮主 Agent。

@@ -15,6 +15,7 @@ Agent definitions are discovered from:
 
 When names collide, project definitions take precedence over user definitions, which take precedence over Package
 definitions. The `subagent` Tool description lists the effective roster and each Agent's purpose before a main run.
+Agent frontmatter may declare `tools` and `excludeTools`; exclusions always win for that child.
 
 ## Quick start
 
@@ -106,6 +107,9 @@ cutoff, so a productive Agent is not terminated merely because it has continued 
 `toolTimeoutMs` sets a hard timeout for each non-waiting Tool call. A task-level value overrides the launch value,
 which overrides Agent frontmatter and `PI_SUBAGENT_TOOL_TIMEOUT_MS`. Known-fast built-in Tools use a five-minute
 default; supervisor and intercom Tools that legitimately wait remain exempt.
+
+`excludeTools` subtracts names from ambient, explicit, MCP, and Suite-injected child Tools. Excluding `subagent`
+disables nested fanout for that Agent. Excluding `read` is rejected when the Agent needs it for lazy Skill loading.
 
 Each child uses the same Pi Host binary with the owning Package loaded and ambient discovery disabled. Non-fanout
 children do not receive the `subagent` Tool.
