@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 489cddad090561c6ccdbf871fd9792139d892ed2ca3578df22e6ded4bdfbc5c7 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 01de72cfdf55d6ef1c645c8fa35dcd6800755e8e10119dbc0c627c099ab49258 -->
 
 # 研究
 
@@ -44,5 +44,6 @@
 
 - [Background Work Package](work-background-package-reference.md)
 - [BTW Package](work-btw-package-reference.md)
+- [pi-subagents v0.63.0 同步](pi-subagents-v0.63-synchronization-20260902.md)
 
 每项研究都保留其快照对应的版本、路径和备选方案。已经丢弃的 harness 与重复调查留在 Git 历史中。
