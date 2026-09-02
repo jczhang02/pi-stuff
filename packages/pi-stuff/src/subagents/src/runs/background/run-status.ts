@@ -96,8 +96,26 @@ function rowDetail(row: AgentRow): string {
 	const lines = [rowHeading(row)];
 	const task = compactChildText(row.task, MAX_DETAIL_TASK_CHARS);
 	if (task) lines.push(`Task: ${task}`);
-	if (row.error)
+	if (row.terminalOutcome) {
+		lines.push(
+			`Outcome [${row.terminalOutcome.class}/${row.terminalOutcome.state}]: ${compactChildText(row.terminalOutcome.reason, MAX_FAILURE_CHARS)}`,
+		);
+	} else if (row.error) {
 		lines.push(`Failure [${failureCategory(row.error)}]: ${compactChildText(row.error, MAX_FAILURE_CHARS)}`);
+	}
+	if (row.cumulativeUsage) {
+		const usage = row.cumulativeUsage;
+		const cost = usage.reportedCostUsd === undefined ? "unreported" : `$${usage.reportedCostUsd.toFixed(6)}`;
+		lines.push(
+			`Usage: ${usage.turns} turns · ${usage.toolCalls} Tools · ${usage.inputTokens} input + ${usage.outputTokens} output tokens · reported cost ${cost} · ${usage.modelAttempts} attempts · ${usage.resumes} resumes`,
+		);
+	}
+	if (row.terminalOutcome) {
+		const { continuation } = row.terminalOutcome;
+		lines.push(
+			`Recovery: id=${continuation.target.id} · index=${String(continuation.target.index)} · ${continuation.resumeSupported ? "resumable" : "not resumable"}${continuation.acknowledgementRequired ? " · acknowledgement required" : ""}`,
+		);
+	}
 	if (row.partialResult) lines.push(`Progress: ${compactChildText(row.partialResult, MAX_PROGRESS_CHARS)}`);
 	return lines.join("\n");
 }

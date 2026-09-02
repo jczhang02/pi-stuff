@@ -185,7 +185,7 @@ interface RootHarness {
 		completions: unknown[];
 		disposed: number;
 		failures: number;
-		prepares: Array<{ launchRunId: string; params: GovernedAgentParams }>;
+		prepares: Array<{ acknowledgeCost?: boolean; launchRunId: string; params: GovernedAgentParams }>;
 		reconcileChecks: number;
 		reconciles: number;
 		settlements: number;
@@ -257,7 +257,7 @@ function createHarnessState(): RootHarness {
 		disposed: 0,
 		failures: 0,
 		// SAFETY: this test controls the value and supplies every Array member exercised by this case.
-		prepares: [] as Array<{ launchRunId: string; params: GovernedAgentParams }>,
+		prepares: [] as Array<{ acknowledgeCost?: boolean; launchRunId: string; params: GovernedAgentParams }>,
 		reconcileChecks: 0,
 		reconciles: 0,
 		settlements: 0,
@@ -320,7 +320,12 @@ function createGovernorDependencies(
 				inspectExistingRuntimeLeases: async () =>
 					options.restoreActive || options.restoreFailure || options.restoreGate ? [restoredLease] : [],
 				prepare: async (input) => {
-					governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
+					const prepared: (typeof governor.prepares)[number] = {
+						launchRunId: input.launchRunId,
+						params: input.params,
+					};
+					if (input.acknowledgeCost === true) prepared.acknowledgeCost = true;
+					governor.prepares.push(prepared);
 					await options.prepareGate;
 					if (options.governorReject)
 						return { ok: false, message: "Agent limit reached; wait for one to finish." };

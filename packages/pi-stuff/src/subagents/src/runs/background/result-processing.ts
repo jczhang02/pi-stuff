@@ -446,6 +446,8 @@ export class ResultProcessor {
 					if (result.artifactPaths?.outputPath) child.artifactPath = result.artifactPaths.outputPath;
 					if (sessionPath) child.sessionPath = sessionPath;
 					if (result.intercomTarget) child.intercomTarget = result.intercomTarget;
+					if (result.cumulativeUsage) child.cumulativeUsage = { ...result.cumulativeUsage };
+					if (result.terminalOutcome) child.terminalOutcome = structuredClone(result.terminalOutcome);
 					const publicChildren = compactNestedResultChildren(childNestedChildren);
 					if (publicChildren) child.children = publicChildren;
 					return child;

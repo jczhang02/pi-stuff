@@ -154,15 +154,20 @@ function finiteUsageNumber<Value>(value: Value): number {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : 0;
 }
 
-export function addUsage(target: Usage, message: ChildMessage): void {
+export function addUsage(target: Usage, message: ChildMessage): boolean {
 	const usage = message.usage;
 	target.turns += 1;
-	if (!usage || !isRuntimeObject(usage)) return;
+	if (!usage || !isRuntimeObject(usage)) return false;
 	target.input += finiteUsageNumber(usage.input ?? usage.inputTokens);
 	target.output += finiteUsageNumber(usage.output ?? usage.outputTokens);
 	target.cacheRead += finiteUsageNumber(usage.cacheRead);
 	target.cacheWrite += finiteUsageNumber(usage.cacheWrite);
-	target.cost += finiteUsageNumber(usage.cost?.total);
+	const cost = usage.cost;
+	const reportedCostTotal =
+		isRuntimeObject(cost) && isRuntimeNumber(cost.total) && Number.isFinite(cost.total) ? cost.total : undefined;
+	if (reportedCostTotal === undefined) return false;
+	target.cost += reportedCostTotal;
+	return true;
 }
 
 export function providerContextTokens(message: ChildMessage): number | undefined {

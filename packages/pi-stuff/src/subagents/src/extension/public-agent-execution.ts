@@ -276,6 +276,12 @@ export async function runPublicAgent(
 	}
 	let prepareInput: Parameters<typeof runtime.governor.prepare>[0] = { launchRunId, params: targetParams };
 	if (resumeTargetRunId) prepareInput = { ...prepareInput, resumeTargetRunId };
+	if (targetParams.acknowledgeCost === true) {
+		if (parentRunOrigin !== "user") {
+			return projectPublicAgentFailure(params, "Cost acknowledgement requires a direct user-started Agent request.");
+		}
+		prepareInput = { ...prepareInput, acknowledgeCost: true };
+	}
 	const prepared = await runtime.governor.prepare(prepareInput);
 	if (!prepared.ok) return projectPublicAgentFailure(params, prepared.message);
 	const invocation = prepared.invocation;

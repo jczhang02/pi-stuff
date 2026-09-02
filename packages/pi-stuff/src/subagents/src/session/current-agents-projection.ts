@@ -1,5 +1,6 @@
+import type { AgentWorkUsage } from "../runtime/session-governor.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
-import type { AgentContextUsage, SubagentState } from "../shared/types.ts";
+import type { AgentContextUsage, AgentTerminalOutcome, SubagentState } from "../shared/types.ts";
 import {
 	ACTIVE_SOURCE_STATUSES,
 	type AgentNestedDetail,
@@ -15,6 +16,8 @@ import {
 	nestedForChild,
 	partialResult,
 	projectedContextUsage,
+	projectedCumulativeUsage,
+	projectedTerminalOutcome,
 	projectNestedAgents,
 	RESUMABLE_STATUSES,
 	rowKey,
@@ -40,6 +43,8 @@ export interface AgentRow extends AgentTranscriptTarget {
 	readonly endedAt: number | null;
 	readonly elapsedMs: number | null;
 	readonly contextUsage: Readonly<AgentContextUsage> | null;
+	readonly cumulativeUsage: Readonly<AgentWorkUsage> | null;
+	readonly terminalOutcome: Readonly<AgentTerminalOutcome> | null;
 	readonly partialResult: string | null;
 	readonly nestedCount: number;
 	readonly nestedAgents: readonly AgentNestedDetail[];
@@ -122,6 +127,8 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 				stepRecord["endedAt"] ?? (TERMINAL_SOURCE_STATUSES.has(jobStatus) ? job.updatedAt : null),
 			),
 			contextUsage: projectedContextUsage(stepRecord, job),
+			cumulativeUsage: projectedCumulativeUsage(stepRecord, job),
+			terminalOutcome: projectedTerminalOutcome(stepRecord, job),
 			partialResult: partialResult(status, stepRecord, job),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
@@ -203,6 +210,8 @@ function projectForegroundControl(
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
 			contextUsage: projectedContextUsage(childRecord, control),
+			cumulativeUsage: projectedCumulativeUsage(rememberedChild, childRecord, control),
+			terminalOutcome: projectedTerminalOutcome(rememberedChild, childRecord, control),
 			partialResult: partialResult(status, rememberedChild, childRecord),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
@@ -242,6 +251,8 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
 				contextUsage: projectedContextUsage(childRecord),
+				cumulativeUsage: projectedCumulativeUsage(childRecord),
+				terminalOutcome: projectedTerminalOutcome(childRecord),
 				partialResult: partialResult(status, childRecord),
 				nestedCount: countNestedRuns(nested),
 				nestedAgents: projectNestedAgents(nested),
@@ -267,6 +278,16 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 		...draft,
 		elapsedMs,
 		contextUsage: draft.contextUsage ? Object.freeze({ ...draft.contextUsage }) : null,
+		cumulativeUsage: draft.cumulativeUsage ? Object.freeze({ ...draft.cumulativeUsage }) : null,
+		terminalOutcome: draft.terminalOutcome
+			? Object.freeze({
+					...draft.terminalOutcome,
+					continuation: Object.freeze({
+						...draft.terminalOutcome.continuation,
+						target: Object.freeze({ ...draft.terminalOutcome.continuation.target }),
+					}),
+				})
+			: null,
 		partialResult,
 		nestedAgents: Object.freeze([...draft.nestedAgents]),
 	});

@@ -3,6 +3,7 @@ import {
 	type AgentGovernorLease,
 	type AgentRecord,
 	createLease,
+	emptyAgentWorkUsage,
 	type GovernorLedger,
 	nonNegativeInteger,
 	positiveInteger,
@@ -205,6 +206,7 @@ function stageSpawns(context: SpawnReservationContext): StagedSpawn[] {
 				agentPath,
 				limits: tightenSessionGovernorLimits(context.effectiveLimits, request.childLimits),
 				createdAtMs: acquiredAtMs,
+				workUsage: emptyAgentWorkUsage(),
 			},
 		};
 	});

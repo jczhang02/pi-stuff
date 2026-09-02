@@ -266,6 +266,7 @@ function createRootAgentSurface(input: RootAgentSurfaceInput): RootAgentSurface 
 		const ctx = input.state.lastUiContext;
 		if (!ctx) return { acknowledged: false, message: "No active parent session is available." };
 		let params: PublicAgentParams = { action, id: row.runId, index: row.childIndex };
+		if (action === "resume") params = { ...params, acknowledgeCost: true };
 		if (message) params = { ...params, message };
 		const result = await input.execute(
 			input.randomId(),

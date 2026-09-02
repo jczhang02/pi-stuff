@@ -41,7 +41,9 @@ export interface ChildProcessResult {
 	error?: string | undefined;
 	protocolError?: ProtocolOutputLimit | undefined;
 	usage: Usage;
+	costReported?: boolean;
 	toolCount: number;
+	toolBudgetBlockedTool?: string | undefined;
 	durationMs: number;
 	model?: string | undefined;
 	contextUsage?: AgentContextUsage | undefined;
@@ -758,7 +760,9 @@ export class ChildProcessEngine {
 			error: observed.error,
 			protocolError: snapshot.protocolError,
 			usage: snapshot.usage,
+			costReported: snapshot.costReported,
 			toolCount: snapshot.toolCount,
+			toolBudgetBlockedTool: snapshot.toolBudgetBlockedTool,
 			durationMs: Date.now() - this.startedAt,
 			model: snapshot.model,
 			contextUsage: this.input.statusStep.contextUsage,

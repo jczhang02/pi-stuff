@@ -1,5 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+	DEFAULT_AGENT_WORK_COST_POLICY,
+	SessionAgentGovernor,
+} from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
+import { SESSION_GOVERNOR_ROOT } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import {
 	cleanupBackgroundEngineFixtures,
 	createHash,
 	fallbackSessionKeyForTest,
@@ -21,7 +26,94 @@ import {
 	waitForFile,
 } from "./background-engine-fixtures.js";
 
-afterEach(cleanupBackgroundEngineFixtures);
+const governorSessionDirectories: string[] = [];
+
+afterEach(() => {
+	cleanupBackgroundEngineFixtures();
+	for (const directory of governorSessionDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test("reconciles reported usage before refusing an automatic model fallback", async () => {
+	const root = fixtureRoot();
+	const secondAttempt = path.join(root, "second-attempt");
+	const writer = path.join(root, "cost-guard.ts");
+	fs.writeFileSync(
+		writer,
+		`#!/usr/bin/env bun
+const model = Bun.argv[Bun.argv.indexOf("--model") + 1] ?? "";
+if (model.endsWith("model-b")) await Bun.write(${JSON.stringify(secondAttempt)}, "started");
+process.stdout.write(JSON.stringify({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: model.endsWith("model-a") ? [] : [{ type: "text", text: "UNEXPECTED_FALLBACK" }],
+    errorMessage: model.endsWith("model-a") ? "503 Service Unavailable" : undefined,
+    stopReason: model.endsWith("model-a") ? "error" : "stop",
+    timestamp: Date.now(),
+    usage: {
+      input: ${String(DEFAULT_AGENT_WORK_COST_POLICY.reportedTokenLimit)},
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: { total: 1 },
+    },
+  },
+}) + "\\n", () => process.exit(0));
+`,
+		{ mode: 0o700 },
+	);
+	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+	const governorSessionId = `fallback-cost-${path.basename(root)}`;
+	const logicalAgentId = "cost-guard-run:0";
+	const governor = new SessionAgentGovernor({
+		rootDir: SESSION_GOVERNOR_ROOT,
+		sessionId: governorSessionId,
+		pid: process.pid,
+	});
+	const sessionDirectory = path.join(
+		SESSION_GOVERNOR_ROOT,
+		createHash("sha256").update(governorSessionId).digest("hex"),
+	);
+	governorSessionDirectories.push(sessionDirectory);
+	const acquired = await governor.acquireSpawn({ logicalAgentId, runtimeRunId: "cost-guard-run", pid: process.pid });
+	if (!acquired.ok) throw new Error(acquired.error.message);
+	const asyncDir = path.join(root, "async-cost-guard");
+	const resultPath = path.join(asyncDir, "result.json");
+
+	await runConfiguredBackground(
+		singleRunnerConfig(root, "cost-guard-run", {
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					governorSessionId,
+					logicalAgentPathComponent: logicalAgentId,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
+			},
+		}),
+	);
+
+	expect(readBackgroundCompletion(resultPath)).toMatchObject({
+		state: "failed",
+		results: [
+			{
+				success: false,
+				error: expect.stringContaining("Automatic Agent expansion needs attention"),
+				modelAttempts: [{ model: "test/model-a", success: false, costReported: true }],
+			},
+		],
+	});
+	expect(fs.existsSync(secondAttempt)).toBeFalse();
+	expect((await governor.workUnit(logicalAgentId)).usage).toMatchObject({
+		inputTokens: DEFAULT_AGENT_WORK_COST_POLICY.reportedTokenLimit,
+		reportedCostUsd: 1,
+		modelAttempts: 1,
+	});
+}, 5_000);
 
 test("restores a frozen fork before retrying a larger model", async () => {
 	const root = fixtureRoot();

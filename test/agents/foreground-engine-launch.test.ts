@@ -440,6 +440,23 @@ test("does not call an expected foreground termination a crash", () => {
 				success: false,
 				exitCode: 1,
 				timedOut: true,
+				cumulativeUsage: {
+					turns: 4,
+					toolCalls: 6,
+					inputTokens: 800,
+					outputTokens: 90,
+					modelAttempts: 1,
+					resumes: 0,
+				},
+				terminalOutcome: {
+					state: "incomplete",
+					class: "timeout",
+					reason: "Agent timed out after retained work.",
+					continuation: {
+						target: { id: config.id, index: 0 },
+						resumeSupported: true,
+					},
+				},
 				writerProcesses: [
 					{
 						attempt: 0,
@@ -455,6 +472,14 @@ test("does not call an expected foreground termination a crash", () => {
 		],
 	});
 	expect(result.details.results[0]?.crashed).toBeUndefined();
+	expect(result.details.results[0]).toMatchObject({
+		cumulativeUsage: { turns: 4, toolCalls: 6, inputTokens: 800, outputTokens: 90 },
+		terminalOutcome: {
+			state: "incomplete",
+			class: "timeout",
+			continuation: { target: { id: config.id, index: 0 }, resumeSupported: true },
+		},
+	});
 });
 
 test("contains a synchronous cancellation transport failure and still settles foreground execution", async () => {

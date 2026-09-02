@@ -9,7 +9,11 @@ import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../..
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { ResolvedToolBudget } from "../../shared/types.ts";
-import { CHILD_MODEL_CONTEXT_ENTRY_TYPE, type ChildModelContext } from "./child-protocol.ts";
+import {
+	CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+	CHILD_TOOL_BUDGET_ENTRY_TYPE,
+	type ChildModelContext,
+} from "./child-protocol.ts";
 import {
 	childContextHasOwnContinuation,
 	type ProviderPayloadModel,
@@ -236,11 +240,19 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 		event: string,
 		handler: (event: { toolName?: string }) => ToolBudgetEventResult,
 	) => void;
+	const recordBudgetEvent = (outcome: "soft-reached" | "hard-blocked", toolName: string): void => {
+		try {
+			pi.appendEntry(CHILD_TOOL_BUDGET_ENTRY_TYPE, { version: 1, outcome, toolCount, toolName });
+		} catch {
+			// Budget enforcement remains authoritative when optional telemetry cannot be appended.
+		}
+	};
 	onRuntimeEvent("tool_call", (event) => {
 		const toolName = isRuntimeString(event.toolName) ? event.toolName : "tool";
 		toolCount++;
 		if (budget.soft !== undefined && toolCount >= budget.soft && !softNudged) {
 			softNudged = true;
+			recordBudgetEvent("soft-reached", toolName);
 			try {
 				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
 				if (dispatched) {
@@ -253,6 +265,7 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 			}
 		}
 		if (!shouldBlockToolForBudget(budget, toolName, toolCount)) return undefined;
+		recordBudgetEvent("hard-blocked", toolName);
 		return { block: true, reason: toolBudgetBlockedMessage(budget, toolName, toolCount) };
 	});
 }

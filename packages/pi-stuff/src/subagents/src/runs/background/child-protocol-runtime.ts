@@ -61,9 +61,11 @@ export interface ChildProtocolSnapshot {
 	assistantError: string | undefined;
 	protocolError: ProtocolOutputLimit | undefined;
 	usage: Usage;
+	costReported: boolean;
 	toolCount: number;
 	model: string | undefined;
 	contextNudgeObserved: boolean;
+	toolBudgetBlockedTool: string | undefined;
 }
 
 function aggregateOutputLimit(
@@ -107,6 +109,8 @@ export class ChildProtocolRuntime {
 	private readonly activeToolTimeouts = new Map<string, { toolName: string; cancel: () => void }>();
 	private readonly activeToolTimeoutKeysByName = new Map<string, string[]>();
 	private contextNudgeObserved = false;
+	private toolBudgetBlockedTool: string | undefined;
+	private costReported = false;
 	private streamingStatusPersistenceFailed = false;
 
 	constructor(input: ChildProtocolRuntimeInput) {
@@ -256,6 +260,15 @@ export class ChildProtocolRuntime {
 	}
 
 	private handleContextEvent(event: ChildProtocolEvent): boolean {
+		if (event.toolBudgetEvent) {
+			this.toolCount = Math.max(this.toolCount, event.toolBudgetEvent.toolCount);
+			this.input.statusStep.toolCount = this.toolCount;
+			if (event.toolBudgetEvent.outcome === "hard-blocked") {
+				this.toolBudgetBlockedTool = event.toolBudgetEvent.toolName;
+			}
+			this.persistStreamingStatus();
+			return true;
+		}
 		if (event.modelContext) {
 			this.contextWindow = event.modelContext.contextWindow;
 			this.input.statusStep.contextUsage =
@@ -352,7 +365,7 @@ export class ChildProtocolRuntime {
 		if (assistantMessageEnd && message.role === "assistant") {
 			this.observedModel = message.model ?? this.observedModel;
 			this.assistantError = message.errorMessage;
-			addUsage(this.usage, message);
+			this.costReported = addUsage(this.usage, message) || this.costReported;
 			this.input.statusStep.turnCount = this.usage.turns;
 			this.input.statusStep.tokens = tokenUsage(this.usage);
 		}
@@ -405,16 +418,22 @@ export class ChildProtocolRuntime {
 	}
 
 	snapshot(): ChildProtocolSnapshot {
+		const latestAssistantEvidence = this.messages.findLast((message) => message.role === "assistant");
 		return {
 			stderr: this.stderrTail.text(),
 			messages: this.messages,
-			output: getFinalOutput(this.messages) || this.rawOutputTail.text().trim(),
+			output:
+				getFinalOutput(this.messages) ||
+				(latestAssistantEvidence ? extractTextFromContent(latestAssistantEvidence.content) : "") ||
+				this.rawOutputTail.text().trim(),
 			assistantError: this.assistantError,
 			protocolError: this.protocolError,
 			usage: this.usage,
+			costReported: this.costReported,
 			toolCount: this.toolCount,
 			model: this.observedModel,
 			contextNudgeObserved: this.contextNudgeObserved,
+			toolBudgetBlockedTool: this.toolBudgetBlockedTool,
 		};
 	}
 }

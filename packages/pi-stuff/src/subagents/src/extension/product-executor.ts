@@ -22,7 +22,7 @@ export interface PublicAgentTask {
 	readonly foreground?: boolean;
 }
 
-const CONTROL_ONLY_FIELDS = new Set(["action", "id", "index", "message"]);
+const CONTROL_ONLY_FIELDS = new Set(["acknowledgeCost", "action", "id", "index", "message"]);
 const LAUNCH_ONLY_FIELDS = [
 	"agent",
 	"context",
@@ -70,6 +70,9 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 	if (params.action) {
 		const mixed = LAUNCH_ONLY_FIELDS.find((field) => hasOwn(params, field));
 		if (mixed) throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.`);
+		if (params.acknowledgeCost === true && params.action !== "resume") {
+			throw new Error("acknowledgeCost is supported only for action='resume'.");
+		}
 		return { ...params };
 	}
 	const control = [...CONTROL_ONLY_FIELDS].find((field) => field !== "action" && Object.hasOwn(params, field));
@@ -99,6 +102,7 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 }
 
 export interface PublicAgentParams {
+	readonly acknowledgeCost?: boolean;
 	readonly action?: "resume" | "status" | "steer" | "stop";
 	readonly agent?: string;
 	readonly context?: "fork" | "fresh";

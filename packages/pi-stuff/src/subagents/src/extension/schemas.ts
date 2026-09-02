@@ -169,6 +169,12 @@ export const SubagentParams = Type.Object(
 		message: Type.Optional(
 			Type.String({ minLength: 1, description: "Required steering message, or an optional resume message." }),
 		),
+		acknowledgeCost: Type.Optional(
+			Type.Boolean({
+				description:
+					"Resume only: set true after a direct user acknowledgement to continue a cost-limited Agent without resetting cumulative usage.",
+			}),
+		),
 	},
 	{
 		additionalProperties: false,

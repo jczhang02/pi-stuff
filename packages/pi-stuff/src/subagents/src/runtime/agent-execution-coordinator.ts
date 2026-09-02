@@ -107,6 +107,7 @@ export interface AgentExecutionCoordinatorPort {
 		readonly launchRunId: string;
 		readonly params: GovernedAgentParams;
 		readonly resumeTargetRunId?: string;
+		readonly acknowledgeCost?: boolean;
 	}): Promise<AgentExecutionPrepareResult>;
 	observeAsyncStarted<Event>(event: Event): Promise<void>;
 	settle(invocation: AgentExecutionInvocation, result: GovernedEngineResult): Promise<void>;
@@ -230,6 +231,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		readonly launchRunId: string;
 		readonly params: GovernedAgentParams;
 		readonly resumeTargetRunId?: string;
+		readonly acknowledgeCost?: boolean;
 	}): Promise<AgentExecutionPrepareResult> {
 		const launchRunId = requiredText("launchRunId", input.launchRunId);
 		if (input.params.action && input.params.action !== "resume") return { ok: true };
@@ -261,6 +263,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 				launchRunId,
 				targetRunId,
 				childIndex: nonNegativeSafeInteger("index", input.params.index ?? 0),
+				acknowledgeCost: input.acknowledgeCost === true,
 			});
 		} else {
 			reserved = await session.governor.reserveSpawn({

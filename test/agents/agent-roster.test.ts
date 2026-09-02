@@ -149,6 +149,8 @@ function row(
 	return {
 		childIndex: 0,
 		contextUsage: overrides.contextUsage ?? null,
+		cumulativeUsage: null,
+		terminalOutcome: null,
 		description: overrides.description ?? task,
 		endedAt: overrides.endedAt ?? null,
 		error: null,

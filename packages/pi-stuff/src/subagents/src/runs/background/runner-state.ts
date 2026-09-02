@@ -156,6 +156,8 @@ export function applyTerminalResultToStep(step: RunnerStatusStep, result: Backgr
 	step.thinking = result.thinking;
 	step.attemptedModels = result.attemptedModels;
 	step.modelAttempts = result.modelAttempts;
+	step.cumulativeUsage = result.cumulativeUsage;
+	step.terminalOutcome = result.terminalOutcome;
 	step.totalCost = result.totalCost;
 	step.timedOut = result.timedOut;
 	step.stopped = result.stopped;
@@ -331,6 +333,17 @@ function updateRunProjection(status: RunnerStatus): void {
 		{ input: 0, output: 0, total: 0 },
 	);
 	status.totalTokens = totals.total > 0 ? totals : undefined;
+	const totalCost = status.steps.reduce(
+		(acc, step) => {
+			acc.inputTokens += step.totalCost?.inputTokens ?? 0;
+			acc.outputTokens += step.totalCost?.outputTokens ?? 0;
+			acc.costUsd += step.totalCost?.costUsd ?? 0;
+			return acc;
+		},
+		{ inputTokens: 0, outputTokens: 0, costUsd: 0 },
+	);
+	if (totalCost.inputTokens || totalCost.outputTokens || totalCost.costUsd) status.totalCost = totalCost;
+	else delete status.totalCost;
 	status.lastUpdate = Date.now();
 }
 

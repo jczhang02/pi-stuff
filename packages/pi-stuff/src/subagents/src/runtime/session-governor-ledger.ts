@@ -10,6 +10,7 @@ import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-cla
 import {
 	type AgentGovernorLease,
 	type AgentRecord,
+	emptyAgentWorkUsage,
 	type GovernorLedger,
 	type LeaseRecord,
 	resolveSessionGovernorLimits,
@@ -45,12 +46,22 @@ const LIMITS_SCHEMA = record({
 	maxRunning: POSITIVE_INTEGER_SCHEMA,
 	maxTotal: POSITIVE_INTEGER_SCHEMA,
 });
+const AGENT_WORK_USAGE_SCHEMA = record({
+	turns: NON_NEGATIVE_INTEGER_SCHEMA,
+	toolCalls: NON_NEGATIVE_INTEGER_SCHEMA,
+	inputTokens: NON_NEGATIVE_INTEGER_SCHEMA,
+	outputTokens: NON_NEGATIVE_INTEGER_SCHEMA,
+	reportedCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+	modelAttempts: NON_NEGATIVE_INTEGER_SCHEMA,
+	resumes: NON_NEGATIVE_INTEGER_SCHEMA,
+});
 const AGENT_RECORD_SCHEMA = record({
 	logicalAgentId: STABLE_TEXT_SCHEMA,
 	ownerAgentPath: AGENT_PATH_SCHEMA,
 	agentPath: AGENT_PATH_SCHEMA,
 	limits: LIMITS_SCHEMA,
 	createdAtMs: Type.Number(),
+	workUsage: Type.Optional(AGENT_WORK_USAGE_SCHEMA),
 });
 const LEASE_RECORD_SCHEMA = record({
 	logicalAgentId: STABLE_TEXT_SCHEMA,
@@ -348,6 +359,7 @@ export function snapshotLedger(
 			ownerAgentPath: [...agent.ownerAgentPath],
 			agentPath: [...agent.agentPath],
 			limits: { ...agent.limits },
+			workUsage: { ...agent.workUsage },
 		})),
 		leases: ledger.leases.map((lease) => toPublicLease(ledger.sessionId, lease)),
 	};
@@ -367,13 +379,18 @@ function parseLedger(raw: string, expectedSessionId: string): ReadLedgerResult {
 	if (value.version !== LEDGER_VERSION || value.sessionId !== expectedSessionId) {
 		throw new SessionGovernorStateError("Session governor ledger identity or version is invalid.");
 	}
-	const agents: AgentRecord[] = value.agents;
+	const agents: AgentRecord[] = value.agents.map((agent) => ({
+		...agent,
+		workUsage: agent.workUsage ? { ...agent.workUsage } : emptyAgentWorkUsage(),
+	}));
 	for (const agent of agents) {
 		if (!samePath(agent.agentPath, [...agent.ownerAgentPath, agent.logicalAgentId])) {
 			throw new SessionGovernorStateError(`Logical Agent '${agent.logicalAgentId}' has an invalid owner path.`);
 		}
 	}
-	const migrated = value.leases.some((lease) => lease.runtimeRunId === undefined || lease.childIndex === undefined);
+	const migrated =
+		value.agents.some((agent) => agent.workUsage === undefined) ||
+		value.leases.some((lease) => lease.runtimeRunId === undefined || lease.childIndex === undefined);
 	const leases: LeaseRecord[] = value.leases.map((lease) => ({
 		...lease,
 		runtimeRunId: lease.runtimeRunId ?? lease.logicalAgentId,

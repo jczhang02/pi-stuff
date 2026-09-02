@@ -49,7 +49,7 @@ export function initialToolBudgetState(budget: ResolvedToolBudget): ToolBudgetSt
 }
 
 export function toolBudgetState(budget: ResolvedToolBudget, toolCount: number, blockedTool?: string): ToolBudgetState {
-	const overHard = toolCount > budget.hard;
+	const overHard = blockedTool !== undefined;
 	const overSoft = budget.soft !== undefined && toolCount >= budget.soft;
 	const state: ToolBudgetState = {
 		...budget,

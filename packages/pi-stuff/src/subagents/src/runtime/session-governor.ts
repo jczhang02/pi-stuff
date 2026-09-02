@@ -6,12 +6,20 @@ import {
 	type AcquireSpawnRequest,
 	type AgentGovernorLease,
 	type AgentRecord,
+	type AgentWorkExpansionResult,
+	type AgentWorkUnitSnapshot,
+	checkedUsageTotal,
+	costGuardError,
 	createLease,
+	emptyAgentWorkUsage,
+	expansionResult,
 	finiteNumber,
 	type GovernorLedger,
+	nonNegativeFiniteNumber,
 	nonNegativeInteger,
 	positiveInteger,
 	type RebindAgentRuntimeRequest,
+	type RecordAgentWorkAttemptRequest,
 	readCompleteLimits,
 	runtimeAddressKey,
 	type SessionAgentGovernorOptions,
@@ -31,6 +39,7 @@ import {
 	safeSystemBootIdentity,
 	samePath,
 	snapshotLedger,
+	snapshotWorkUnit,
 	stableText,
 	type TransactionResult,
 	tightenSessionGovernorLimits,
@@ -51,7 +60,13 @@ export type {
 	AcquireAgentRequest,
 	AcquireSpawnRequest,
 	AgentGovernorLease,
+	AgentWorkCostGuardCode,
+	AgentWorkCostPolicy,
+	AgentWorkExpansionResult,
+	AgentWorkUnitSnapshot,
+	AgentWorkUsage,
 	RebindAgentRuntimeRequest,
+	RecordAgentWorkAttemptRequest,
 	SessionAgentGovernorOptions,
 	SessionGovernorAcquireError,
 	SessionGovernorAcquireResult,
@@ -61,6 +76,7 @@ export type {
 	SessionGovernorBatchReleaseResult,
 	SessionGovernorConflictCode,
 	SessionGovernorConflictError,
+	SessionGovernorCostGuardError,
 	SessionGovernorFileSystem,
 	SessionGovernorHistoricalAgent,
 	SessionGovernorLimitCode,
@@ -73,6 +89,7 @@ export type {
 	SessionGovernorSnapshot,
 } from "./session-governor-ledger.ts";
 export {
+	DEFAULT_AGENT_WORK_COST_POLICY,
 	DEFAULT_SESSION_GOVERNOR_LIMITS,
 	resolveSessionGovernorLimits,
 	SessionGovernorStateError,
@@ -129,6 +146,63 @@ export class SessionAgentGovernor {
 		return this.ledger.snapshot();
 	}
 
+	async workUnit(logicalAgentId: string): Promise<AgentWorkUnitSnapshot> {
+		const validatedId = stableText("logicalAgentId", logicalAgentId);
+		return this.ledger.transact((ledger) => ({
+			value: snapshotWorkUnit(this.ownedAgent(ledger, validatedId)),
+			changed: false,
+		}));
+	}
+
+	async authorizeWorkExpansion(logicalAgentId: string): Promise<AgentWorkExpansionResult> {
+		const workUnit = await this.workUnit(logicalAgentId);
+		return expansionResult(workUnit);
+	}
+
+	/** Settle one Provider/model attempt before any later automatic expansion is considered. */
+	async recordWorkAttempt(request: RecordAgentWorkAttemptRequest): Promise<AgentWorkUnitSnapshot> {
+		const logicalAgentId = stableText("logicalAgentId", request.logicalAgentId);
+		const delta = {
+			turns: nonNegativeInteger("turns", request.turns),
+			toolCalls: nonNegativeInteger("toolCalls", request.toolCalls),
+			inputTokens: nonNegativeInteger("inputTokens", request.inputTokens),
+			outputTokens: nonNegativeInteger("outputTokens", request.outputTokens),
+		};
+		const reportedCostUsd =
+			request.reportedCostUsd === undefined
+				? undefined
+				: nonNegativeFiniteNumber("reportedCostUsd", request.reportedCostUsd);
+		return this.ledger.transact((ledger) => {
+			const agent = this.ownedAgent(ledger, logicalAgentId);
+			const usage = agent.workUsage;
+			usage.turns = checkedUsageTotal("turns", usage.turns, delta.turns);
+			usage.toolCalls = checkedUsageTotal("toolCalls", usage.toolCalls, delta.toolCalls);
+			usage.inputTokens = checkedUsageTotal("inputTokens", usage.inputTokens, delta.inputTokens);
+			usage.outputTokens = checkedUsageTotal("outputTokens", usage.outputTokens, delta.outputTokens);
+			usage.modelAttempts = checkedUsageTotal("modelAttempts", usage.modelAttempts, 1);
+			if (reportedCostUsd !== undefined) {
+				usage.reportedCostUsd = nonNegativeFiniteNumber(
+					"cumulative reportedCostUsd",
+					(usage.reportedCostUsd ?? 0) + reportedCostUsd,
+				);
+			}
+			return { value: snapshotWorkUnit(agent), changed: true };
+		});
+	}
+
+	private ownedAgent(ledger: GovernorLedger, logicalAgentId: string): AgentRecord {
+		const agent = ledger.agents.find((candidate) => candidate.logicalAgentId === logicalAgentId);
+		if (!agent) {
+			throw new SessionGovernorStateError(`Logical Agent '${logicalAgentId}' has no durable session record.`);
+		}
+		if (!samePath(agent.ownerAgentPath, this.ownerAgentPath)) {
+			throw new SessionGovernorStateError(
+				`Logical Agent '${logicalAgentId}' does not belong to this governor owner path.`,
+			);
+		}
+		return agent;
+	}
+
 	/** Atomically and idempotently account for proven pre-upgrade Agent records; never imports leases. */
 	async importHistoricalAgents(records: readonly SessionGovernorHistoricalAgent[]): Promise<SessionGovernorSnapshot> {
 		if (this.ownerAgentPath.length > 0) {
@@ -148,6 +222,7 @@ export class SessionAgentGovernor {
 					agentPath,
 					limits: readCompleteLimits(record.limits),
 					createdAtMs: finiteNumber("createdAtMs", record.createdAtMs),
+					workUsage: emptyAgentWorkUsage(),
 				};
 			})
 			.sort((left, right) => left.agentPath.length - right.agentPath.length);
@@ -204,8 +279,28 @@ export class SessionAgentGovernor {
 	async acquireSpawnBatch(requests: readonly AcquireSpawnRequest[]): Promise<SessionGovernorBatchAcquireResult> {
 		const systemBootIdentity = this.currentSystemBootIdentity();
 		const validated = validateSpawnRequests(requests, this.pid, this.readProcessStartIdentity);
-		return this.ledger.transact((ledger, effectiveLimits) =>
-			reserveSpawnBatch({
+		return this.ledger.transact((ledger, effectiveLimits) => {
+			if (this.ownerAgentPath.length > 0) {
+				const owner = ledger.agents.find((agent) => samePath(agent.agentPath, this.ownerAgentPath));
+				if (!owner) {
+					throw new SessionGovernorStateError(
+						`Owner Agent path '${this.ownerAgentPath.join(" / ")}' is not registered in session '${this.sessionId}'.`,
+					);
+				}
+				const workUnit = snapshotWorkUnit(owner);
+				const guard = expansionResult(workUnit);
+				if (!guard.allowed) {
+					return {
+						value: {
+							ok: false,
+							error: costGuardError(workUnit, guard.reason),
+							snapshot: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
+						},
+						changed: false,
+					};
+				}
+			}
+			return reserveSpawnBatch({
 				ledger,
 				effectiveLimits,
 				requests: validated,
@@ -214,8 +309,8 @@ export class SessionAgentGovernor {
 				systemBootIdentity,
 				now: this.now,
 				token: this.token,
-			}),
-		);
+			});
+		});
 	}
 
 	async acquireResume(request: AcquireAgentRequest): Promise<SessionGovernorAcquireResult> {
@@ -285,6 +380,11 @@ export class SessionAgentGovernor {
 					limitError("running_limit", logicalAgentId, effectiveLimits.maxRunning, ledger.leases.length, 1),
 				);
 			}
+			const workUnit = snapshotWorkUnit(agent);
+			const guard = expansionResult(workUnit);
+			if (!guard.allowed && request.acknowledgeCost !== true) {
+				return acquireFailure(ledger, effectiveLimits, this.ownerAgentPath, costGuardError(workUnit, guard.reason));
+			}
 
 			let leaseInput: AgentGovernorLease = {
 				sessionId: this.sessionId,
@@ -302,6 +402,7 @@ export class SessionAgentGovernor {
 			if (systemBootIdentity) leaseInput = { ...leaseInput, systemBootIdentity };
 			const lease = createLease(leaseInput);
 			ledger.leases.push(toLeaseRecord(lease));
+			agent.workUsage.resumes = checkedUsageTotal("resumes", agent.workUsage.resumes, 1);
 			return {
 				value: {
 					ok: true,
