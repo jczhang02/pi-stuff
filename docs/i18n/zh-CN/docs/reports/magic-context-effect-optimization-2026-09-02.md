@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/magic-context-effect-optimization-2026-09-02.md; translation-source-sha256: b3d57d68ba429739b09efb942e1a2a1e0bdebb1cb28bec5799152a4bba218277 -->
+<!-- translation-source: docs/reports/magic-context-effect-optimization-2026-09-02.md; translation-source-sha256: 4abbfc9a2adf8325ea7bf2a615362db85c6360af7bd2d934df90ebaeab4d741e -->
 
 # Effect 下的 Magic Context：优化与重新认证
 
@@ -6,11 +6,11 @@
 > 清理、崩溃隔离和 Session 隔离有了更清楚的所有者；它不会让 Magic Context 自己的投影算法变快。0.41.1
 > 的投影性能保持不劣，同时带来上游 cache 和 Pi 生命周期修复，代价是 Worker bundle 更大、构建更慢。
 
-**决定日期：** 2026-09-02  
-**对照：** 独立干净 worktree 中的 `@cortexkit/pi-magic-context@0.40.0`  
-**候选：** `@cortexkit/pi-magic-context@0.41.1`，保留三项本地补丁行为  
-**平台：** Linux x64、Bun 1.4.0、已认证 Pi 0.84.4  
-**协议：** 3 轮预热、10 轮配对样本，每轮交替先运行哪个版本；固定 20,000 次配对 bootstrap；ratio ≤0.95
+- **决定日期：** 2026-09-02
+- **对照：** 独立干净 worktree 中的 `@cortexkit/pi-magic-context@0.40.0`
+- **候选：** `@cortexkit/pi-magic-context@0.41.1`，保留三项本地补丁行为
+- **平台：** Linux x64、Bun 1.4.0、已认证 Pi 0.84.4
+- **协议：** 3 轮预热、10 轮配对样本，每轮交替先运行哪个版本；固定 20,000 次配对 bootstrap；ratio ≤0.95
 判为改进，95% 区间上界 ≤1.10 判为不劣
 
 ## 人话结论

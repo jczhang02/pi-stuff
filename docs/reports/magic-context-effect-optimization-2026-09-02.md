@@ -5,11 +5,11 @@
 > Context's own projection algorithm faster. The 0.41.1 upgrade keeps projection performance non-inferior and brings
 > upstream cache and Pi lifecycle fixes, at the cost of a larger and slower-to-build Worker bundle.
 
-**Decision date:** 2026-09-02  
-**Control:** `@cortexkit/pi-magic-context@0.40.0` in a detached clean worktree  
-**Candidate:** `@cortexkit/pi-magic-context@0.41.1` with the three retained local patch behaviors  
-**Platform:** Linux x64, Bun 1.4.0, certified Pi 0.84.4  
-**Protocol:** 3 warmups and 10 paired samples, alternating which arm runs first; deterministic 20,000-replicate paired
+- **Decision date:** 2026-09-02
+- **Control:** `@cortexkit/pi-magic-context@0.40.0` in a detached clean worktree
+- **Candidate:** `@cortexkit/pi-magic-context@0.41.1` with the three retained local patch behaviors
+- **Platform:** Linux x64, Bun 1.4.0, certified Pi 0.84.4
+- **Protocol:** 3 warmups and 10 paired samples, alternating which arm runs first; deterministic 20,000-replicate paired
 bootstrap; improvement at ratio ≤0.95 and non-inferiority at upper 95% bound ≤1.10
 
 ## Plain-language result

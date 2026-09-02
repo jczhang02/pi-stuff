@@ -2,15 +2,12 @@ diff --git a/dist/index-0jgz8yja.js b/dist/index-0jgz8yja.js
 index f574d21a61cffa52fce1952d7d4aa0d4700eb70c..2fdf431135ce7b7917ad6752df443d567a044245 100644
 --- a/dist/index-0jgz8yja.js
 +++ b/dist/index-0jgz8yja.js
-@@ -8885,7 +8885,7 @@ import { existsSync as existsSync3, readFileSync as readFileSync2, realpathSync
+@@ -8885,4 +8885,4 @@ import { existsSync as existsSync3, readFileSync as readFileSync2, realpathSync
  import { createRequire } from "node:module";
  import { homedir as homedir3 } from "node:os";
  import { dirname as dirname2, join as join2, resolve } from "node:path";
 -import { pathToFileURL } from "node:url";
 +import { fileURLToPath, pathToFileURL } from "node:url";
- 
- // ../plugin/src/shared/commit-detection.ts
- var HASH_HEX = "[0-9a-f]{7,12}";
 @@ -9009,13 +9009,18 @@ function tokenizerPackageRoots() {
      }
      candidates.push(join2(root, "node_modules", "ai-tokenizer"));
