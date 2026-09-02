@@ -358,6 +358,7 @@ async function verifyWideRestart(paths: pty.CasePaths, options: UiPtyVerificatio
 		if (screen.includes("→ Notification delivery")) pty.fail("Notification settings still appeared under /ui");
 		restarted.sendKey("Escape");
 		await restarted.waitForAbsence("Type to search");
+		await flow.verifyVibeLineSpinnerLiveness(restarted);
 	} finally {
 		restarted.stop();
 	}
@@ -488,6 +489,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
 						"first, replacing, settled, session-preserved, and context-preserved Thought",
+						"2,500-character cumulative CJK Thought kept every Vibe Line Spinner frame within 500ms and recovered",
 						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",

@@ -50,11 +50,8 @@ function loadFencedVisualizationProjector(): PrepareFencedVisualizations {
 	return prepareFencedVisualizations;
 }
 
-// U+2217 keeps the asterisk's light visual weight while centering it on the
-// text axis; unlike ASCII `*`, it is not Markdown list punctuation.
-const THOUGHT_MARKER = "∗";
-const FULL_PREFIX = `${THOUGHT_MARKER} thoughts: `;
-const COMPACT_PREFIX = `${THOUGHT_MARKER} `;
+const FULL_PREFIX = `${TRANSCRIPT_MARKER} thoughts: `;
+const COMPACT_PREFIX = `${TRANSCRIPT_MARKER} `;
 // Markdown normalizes the source '-' to the transcript's visible U+2022 while
 // preserving all nested block structure inside one message-level list item.
 const ASSISTANT_LIST_PREFIX = "- ";
@@ -62,7 +59,7 @@ const ASSISTANT_LIST_CONTINUATION = "  ";
 const ASSISTANT_MARKER_ANCHOR = "\u2060";
 const MARKDOWN_CODE_BLOCK_INDENT = "  ";
 const MARKDOWN_CODE_BLOCK_INDENT_WIDTH = 2;
-const LABEL = `${THOUGHT_MARKER} thoughts:`;
+const LABEL = `${TRANSCRIPT_MARKER} thoughts:`;
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", { granularity: "grapheme" });
@@ -356,10 +353,20 @@ function fitFragment(text: string, width: number, requireNewestTail: boolean): s
 	const prefix = text.slice(0, prefixEnd).trim();
 	const tailBudget = width - visibleWidth(prefix) - visibleWidth(MIDDLE_ELLIPSIS);
 	if (tailBudget > 0) {
-		for (const segment of segments) {
+		const suffixWidths = segments.map(() => 0);
+		let suffixWidth = 0;
+		for (let index = segments.length - 1; index >= 0; index -= 1) {
+			const segment = segments[index];
+			if (!segment) continue;
+			suffixWidth += visibleWidth(segment.segment);
+			suffixWidths[index] = suffixWidth;
+		}
+		for (const [index, segment] of segments.entries()) {
 			if (segment.index < prefixEnd || !MEANINGFUL_TEXT.test(segment.segment)) continue;
 			const tail = text.slice(segment.index).trim();
-			if (visibleWidth(tail) <= tailBudget) return `${prefix}${MIDDLE_ELLIPSIS}${tail}`;
+			if ((suffixWidths[index] ?? Number.POSITIVE_INFINITY) <= tailBudget) {
+				return `${prefix}${MIDDLE_ELLIPSIS}${tail}`;
+			}
 		}
 		let finalMeaningful: (typeof segments)[number] | undefined;
 		for (let index = segments.length - 1; index >= 0; index -= 1) {

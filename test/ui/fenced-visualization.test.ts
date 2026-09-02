@@ -224,7 +224,7 @@ describe("Conversation UI composition", () => {
 		expect(user).not.toBe(source);
 		expect(assistant).toStartWith("- ");
 		expect(assistant).not.toContain(`${FENCE}chart`);
-		expect(thinking).toStartWith("∗ thoughts:");
+		expect(thinking).toStartWith("• thoughts:");
 		expect(thinking).not.toContain("▁▂▃▄▅▆▇█");
 
 		const rendered = await renderProjected(source, 40, "assistant");

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c0093f174897bb6bd48ca5421eac25e8d819b1a1c6d954389c2103131314f248 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: d494cf0faf0c547d3c68771a26ade7e399828fb69040ee5aac1340e4b2aae0d6 -->
 
 # Conversation UI
 
@@ -57,7 +57,8 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 ## 实时 Thought
 
 关闭 Pi 原生 **Hide thinking blocks** 设置后，model 工作时可以在编辑器上方投影当前语义 Thought block。
-该投影有界、仅用于显示，并以 `∗ thoughts:` 开头。完成后的 transcript 内容仍是本次运行的记录。
+该投影有界且仅用于显示。完整形式以 `• thoughts:` 开头，窄屏形式保留同一个 `•` Transcript marker，且该
+marker 与 Tool Activity 对齐。完成后的 transcript 内容仍是本次运行的记录。
 
 ## Chart 与 tree
 
