@@ -237,7 +237,6 @@ test("launch evidence contains current limits but ignores retired Agent features
 		definitionDigest: "definition",
 		inheritProjectContext: true,
 		inheritSkills: false,
-		turnBudget: { maxTurns: 8, graceTurns: 2 },
 		toolBudget: { hard: 12, soft: 9, block: ["read"] },
 		maxSubagentDepth: 2,
 		capabilityCeiling: { version: 1, allowedTools: ["read"] },
@@ -249,7 +248,6 @@ test("launch evidence contains current limits but ignores retired Agent features
 	expect(definition).not.toHaveProperty("output");
 	expect(binding).toMatchObject({
 		version: 2,
-		turnBudget: { maxTurns: 8, graceTurns: 2 },
 		toolBudget: { hard: 12, soft: 9, block: ["read"] },
 		maxSubagentDepth: 2,
 		capabilityCeiling: { version: 1, allowedTools: ["read"] },
@@ -353,12 +351,10 @@ test("builds one parallel group and resolves every task override before persiste
 		agent(root, "writer", {
 			model: "provider/writer-default",
 			fallbackModels: ["provider/writer-default"],
-			defaultTurnBudget: { maxTurns: 20, graceTurns: 3 },
 			toolBudget: { hard: 30, soft: 20 },
 		}),
 		agent(root, "reviewer", {
 			model: "provider/reviewer-default",
-			defaultTurnBudget: { maxTurns: 18, graceTurns: 2 },
 			toolBudget: { hard: 15 },
 		}),
 	];
@@ -372,7 +368,6 @@ test("builds one parallel group and resolves every task override before persiste
 				cwd: "packages/core",
 				model: "provider/fast",
 				skill: "review",
-				turnBudget: { maxTurns: 7, graceTurns: 1 },
 				toolBudget: { hard: 9, soft: 6, block: ["browser"] },
 			},
 			{ agent: "reviewer", description: "Review core change", task: "Review", skill: ["review"] },
@@ -397,7 +392,6 @@ test("builds one parallel group and resolves every task override before persiste
 		cwd: root,
 		contextForAgent: () => "fork",
 		thinking: "high",
-		turnBudget: { maxTurns: 12, graceTurns: 2 },
 		toolBudget: { hard: 14, soft: 10, block: ["read"] },
 		concurrency: 2,
 		worktree: false,
@@ -424,7 +418,6 @@ test("builds one parallel group and resolves every task override before persiste
 		],
 		thinking: "high",
 		skills: ["review"],
-		turnBudget: { maxTurns: 7, graceTurns: 1 },
 		toolBudget: { hard: 9, soft: 6, block: ["browser"] },
 	});
 	expect(built.work.group.tasks[1]).toMatchObject({
@@ -437,7 +430,6 @@ test("builds one parallel group and resolves every task override before persiste
 		modelContextWindows: [{ model: "provider/reviewer-default", contextWindow: 80_000 }],
 		thinking: "high",
 		skills: ["review"],
-		turnBudget: { maxTurns: 12, graceTurns: 2 },
 		toolBudget: { hard: 14, soft: 10, block: ["read"] },
 	});
 });
@@ -452,7 +444,6 @@ test("single recovery data retains the child session and limits without retired 
 		cwd: root,
 		context: "fork",
 		sessionFile: path.join(root, "child.jsonl"),
-		turnBudget: { maxTurns: 8, graceTurns: 2 },
 		toolBudget: { hard: 11, block: ["read"] },
 		maxSubagentDepth: 2,
 		capabilityCeiling: {
@@ -474,7 +465,6 @@ test("single recovery data retains the child session and limits without retired 
 		agent: "writer",
 		sessionFile: path.join(root, "child.jsonl"),
 		context: "fork",
-		initialTurnBudget: { maxTurns: 8, graceTurns: 2 },
 		initialToolBudget: { hard: 11, block: ["read"] },
 		capabilityCeiling: {
 			version: 1,
@@ -487,6 +477,7 @@ test("single recovery data retains the child session and limits without retired 
 		"acceptance",
 		"agentContract",
 		"completionGuard",
+		"initialTurnBudget",
 		"memory",
 		"outputMode",
 		"outputPath",

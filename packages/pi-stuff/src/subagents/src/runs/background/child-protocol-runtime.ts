@@ -4,7 +4,7 @@ import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js
 import { appendArtifactJsonl } from "../../shared/artifacts.ts";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import type { ProtocolOutputLimit, TurnBudgetState, Usage } from "../../shared/types.ts";
+import type { ProtocolOutputLimit, Usage } from "../../shared/types.ts";
 import { extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
 import {
 	type ChildProtocolEvent,
@@ -17,7 +17,6 @@ import {
 	projectChildLifecycle,
 } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
-import { initialTurnBudgetState, turnBudgetDecision, turnBudgetState } from "../shared/turn-budget.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -26,7 +25,6 @@ import {
 	addUsage,
 	appendDiagnosticEvent,
 	appendRecentOutput,
-	assistantStartsToolCall,
 	emptyUsage,
 	estimatedChildMessageTokens,
 	maxChildProtocolBytes,
@@ -37,7 +35,7 @@ import {
 } from "./runner-output.ts";
 import { writeStatus } from "./runner-state.ts";
 
-type ChildProtocolTerminalCause = "protocol" | "turn-budget";
+type ChildProtocolTerminalCause = "protocol";
 
 export interface ChildProtocolRuntimeInput {
 	config: BackgroundRunnerConfig;
@@ -63,8 +61,6 @@ export interface ChildProtocolSnapshot {
 	usage: Usage;
 	toolCount: number;
 	model: string | undefined;
-	turnBudget: TurnBudgetState | undefined;
-	turnBudgetExceeded: boolean;
 	contextNudgeObserved: boolean;
 }
 
@@ -105,8 +101,6 @@ export class ChildProtocolRuntime {
 	private invalidProtocolEvent = false;
 	private stdoutProtocolBytes = 0;
 	private stderrProtocolBytes = 0;
-	private turnBudget: TurnBudgetState | undefined;
-	private turnBudgetExceeded = false;
 	private contextNudgeObserved = false;
 	private streamingStatusPersistenceFailed = false;
 
@@ -114,7 +108,6 @@ export class ChildProtocolRuntime {
 		this.input = input;
 		this.contextWindow = resolveTaskContextWindow(input.task, input.model);
 		this.observedModel = input.model;
-		this.turnBudget = input.task.turnBudget ? initialTurnBudgetState(input.task.turnBudget) : undefined;
 		this.stdoutReader = createBoundedLineReader({
 			onLine: (line) => this.processLine(line),
 			onLimit: (limit) => {
@@ -308,27 +301,8 @@ export class ChildProtocolRuntime {
 			addUsage(this.usage, message);
 			this.input.statusStep.turnCount = this.usage.turns;
 			this.input.statusStep.tokens = tokenUsage(this.usage);
-			this.applyTurnBudget(message);
 		}
 		this.persistStreamingStatus();
-	}
-
-	private applyTurnBudget(message: Extract<ChildProtocolMessage, { role: "assistant" }>): void {
-		const budget = this.input.task.turnBudget;
-		if (!budget) return;
-		const decision = turnBudgetDecision(
-			budget,
-			this.usage.turns,
-			terminalAssistantStop(message),
-			assistantStartsToolCall(message),
-			true,
-		);
-		const error = `Agent exceeded its turn budget (${budget.maxTurns} + ${budget.graceTurns}).`;
-		const aborted =
-			decision === "abort" && !this.turnBudgetExceeded && this.input.terminate("turn-budget", error, "SIGINT");
-		this.turnBudget = turnBudgetState(budget, this.usage.turns, aborted);
-		this.input.statusStep.turnBudget = this.turnBudget;
-		if (aborted) this.turnBudgetExceeded = true;
 	}
 
 	private appendStderr(line: string): void {
@@ -385,8 +359,6 @@ export class ChildProtocolRuntime {
 			usage: this.usage,
 			toolCount: this.toolCount,
 			model: this.observedModel,
-			turnBudget: this.turnBudget,
-			turnBudgetExceeded: this.turnBudgetExceeded,
 			contextNudgeObserved: this.contextNudgeObserved,
 		};
 	}

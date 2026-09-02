@@ -15,7 +15,6 @@ export interface PublicAgentTask {
 	readonly cwd?: string;
 	readonly model?: string;
 	readonly skill?: string | readonly string[] | boolean;
-	readonly turnBudget?: { readonly maxTurns: number; readonly graceTurns?: number };
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
 	readonly context?: "fork" | "fresh";
 	readonly isolation?: "shared" | "worktree";
@@ -36,7 +35,6 @@ const LAUNCH_ONLY_FIELDS = [
 	"tasks",
 	"thinking",
 	"timeoutMs",
-	"turnBudget",
 	"toolBudget",
 ] as const;
 
@@ -115,7 +113,6 @@ export interface PublicAgentParams {
 	readonly tasks?: readonly PublicAgentTask[];
 	readonly thinking?: string;
 	readonly timeoutMs?: number;
-	readonly turnBudget?: { readonly maxTurns: number; readonly graceTurns?: number };
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
 }
 
@@ -147,7 +144,6 @@ function mapTask(task: PublicAgentTask): NonNullable<SubagentParamsLike["tasks"]
 	if (task.cwd) mapped.cwd = task.cwd;
 	if (task.model) mapped.model = task.model;
 	if (task.skill !== undefined) mapped.skill = mutableSkill(task.skill);
-	if (task.turnBudget) mapped.turnBudget = { ...task.turnBudget };
 	if (task.toolBudget) mapped.toolBudget = mutableToolBudget(task.toolBudget);
 	return mapped;
 }
@@ -177,7 +173,6 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 	if (params.thinking) common.thinking = params.thinking;
 	if (params.skill !== undefined) common.skill = mutableSkill(params.skill);
 	if (params.timeoutMs !== undefined) common.timeoutMs = params.timeoutMs;
-	if (params.turnBudget) common.turnBudget = { ...params.turnBudget };
 	if (params.toolBudget) common.toolBudget = mutableToolBudget(params.toolBudget);
 
 	if (params.tasks?.length) {
@@ -188,7 +183,6 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 		if (params.description) Object.assign(task, { description: params.description });
 		if (params.model) Object.assign(task, { model: params.model });
 		if (params.skill !== undefined) Object.assign(task, { skill: params.skill });
-		if (params.turnBudget) Object.assign(task, { turnBudget: params.turnBudget });
 		if (params.toolBudget) Object.assign(task, { toolBudget: params.toolBudget });
 		return {
 			...common,

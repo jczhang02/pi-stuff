@@ -9,13 +9,12 @@ import * as Queue from "effect/Queue";
 import { isRuntimeNumber } from "../../../../shared/runtime-type.js";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import type { AgentContextUsage, ProtocolOutputLimit, TurnBudgetState, Usage } from "../../shared/types.ts";
+import type { AgentContextUsage, ProtocolOutputLimit, Usage } from "../../shared/types.ts";
 import type { ChildProtocolMessage } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
 import { getPiSpawnCommand, type PiSpawnDeps } from "../shared/pi-spawn.ts";
 import { readChildToolDiagnosticError } from "../shared/tool-availability.ts";
-import { appendTurnBudgetSystemPrompt } from "../shared/turn-budget.ts";
 import { ChildProtocolRuntime, type ChildProtocolSnapshot } from "./child-protocol-runtime.ts";
 import { steerAcksDir, steerCapabilityPath, stepSteerInboxDir } from "./control-channel.ts";
 import type {
@@ -49,8 +48,6 @@ export interface ChildProcessResult {
 	interrupted?: boolean | undefined;
 	timedOut?: boolean | undefined;
 	stopped?: boolean | undefined;
-	turnBudget?: TurnBudgetState | undefined;
-	turnBudgetExceeded?: boolean | undefined;
 	contextNudgeObserved?: boolean | undefined;
 	process?: WriterProcess | undefined;
 }
@@ -63,7 +60,7 @@ export interface ChildRuntimeControl {
 	revokeFinalization(): void;
 }
 
-type ChildTerminalCause = "pause" | "timeout" | "stop" | "turn-budget" | "protocol" | "setup";
+type ChildTerminalCause = "pause" | "timeout" | "stop" | "protocol" | "setup";
 type WriterControlCommand = "cancel-finalize" | "finalize" | "proceed" | "terminate-sigint" | "terminate-sigterm";
 type ChildLifecycleEvent =
 	| { readonly type: "close"; readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }
@@ -108,7 +105,7 @@ function buildChildLaunch(input: ChildProcessEngineInput) {
 		tools: input.task.tools,
 		extensions: input.task.extensions,
 		subagentOnlyExtensions: input.task.subagentOnlyExtensions,
-		systemPrompt: appendTurnBudgetSystemPrompt(input.task.systemPrompt ?? "", input.task.turnBudget),
+		systemPrompt: input.task.systemPrompt,
 		systemPromptMode: input.task.systemPromptMode,
 		mcpDirectTools: input.task.mcpDirectTools,
 		capabilityCeiling: input.task.capabilityCeiling ?? input.config.capabilityCeiling,
@@ -458,12 +455,12 @@ export class ChildProcessEngine {
 		this.wakeLifecycle();
 	}
 
-	private terminateProtocol(cause: "protocol" | "turn-budget", error: string, signal: "SIGINT" | "SIGTERM"): boolean {
+	private terminateProtocol(cause: "protocol", error: string, signal: "SIGINT" | "SIGTERM"): boolean {
 		if (!this.claimTerminalCause(cause)) return false;
 		this.forcedError = error;
 		this.cancelFinalDrain();
 		const requested = this.requestTermination(signal);
-		if (requested || cause === "turn-budget") this.armTerminationHardKill();
+		if (requested) this.armTerminationHardKill();
 		return true;
 	}
 
@@ -738,10 +735,7 @@ export class ChildProcessEngine {
 		if (observed.terminationOrigin) writerProcess.terminationOrigin = observed.terminationOrigin;
 		return {
 			exitCode:
-				this.terminalCause === "pause" ||
-				this.terminalCause === "timeout" ||
-				this.terminalCause === "stop" ||
-				snapshot.turnBudgetExceeded
+				this.terminalCause === "pause" || this.terminalCause === "timeout" || this.terminalCause === "stop"
 					? 1
 					: observed.completedByInternalFinalDrain
 						? 0
@@ -762,8 +756,6 @@ export class ChildProcessEngine {
 			interrupted: this.terminalCause === "pause" || undefined,
 			timedOut: this.terminalCause === "timeout" || undefined,
 			stopped: this.terminalCause === "stop" || undefined,
-			turnBudget: snapshot.turnBudget,
-			turnBudgetExceeded: snapshot.turnBudgetExceeded || undefined,
 			contextNudgeObserved: snapshot.contextNudgeObserved || undefined,
 			process: writerProcess,
 		};

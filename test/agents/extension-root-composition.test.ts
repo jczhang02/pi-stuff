@@ -114,7 +114,7 @@ test("publishes one discoverable Agent call contract and rejects repair-prone le
 	expect(tool.description).toContain("Background completion never starts another main turn");
 	expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
 	expect(tool.description).toContain(
-		"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops",
+		"Omit timeoutMs and toolBudget for ordinary tasks; set them only when the task explicitly needs a tighter bound",
 	);
 	expect(tool.description).toContain("Pi Stuff does not provide built-in Agent definitions");
 	expect(tool.description).toContain("Package, user, or project Agent");

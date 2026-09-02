@@ -8,7 +8,6 @@ import type {
 	NestedRouteInfo,
 	ResolvedControlConfig,
 	ResolvedToolBudget,
-	ResolvedTurnBudget,
 } from "../../shared/types.ts";
 import type { PiWriterProcessInstanceExitV1 } from "../background/process-terminal.ts";
 import type { ResolvedSubagentCapabilityCeiling } from "./capability-ceiling.ts";
@@ -23,7 +22,7 @@ import type { SingleResult } from "./run-result.ts";
 export interface RunnerAgentTask
 	extends Omit<
 		Partial<LaunchBindingInput>,
-		"task" | "inheritProjectContext" | "inheritSkills" | "turnBudget" | "toolBudget" | "capabilityCeiling"
+		"task" | "inheritProjectContext" | "inheritSkills" | "toolBudget" | "capabilityCeiling"
 	> {
 	/** Durable ledger namespace; may be v1 only while finishing an in-flight upgrade. */
 	governorSessionId?: string;
@@ -53,7 +52,6 @@ export interface RunnerAgentTask
 	sessionFile?: string;
 	launchBindingTask?: string;
 	launchContractDigest?: string;
-	turnBudget?: ResolvedTurnBudget;
 	toolBudget?: ResolvedToolBudget;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 }

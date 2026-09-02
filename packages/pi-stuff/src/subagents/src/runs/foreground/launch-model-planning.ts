@@ -14,7 +14,7 @@ import { isRuntimeFunction, isRuntimeNumber } from "../../../../shared/runtime-t
 import type { AgentConfig } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { findModelInfo, type ModelInfo } from "../../shared/model-info.ts";
-import { type ResolvedToolBudget, type ResolvedTurnBudget, wrapForkTask } from "../../shared/types.ts";
+import { type ResolvedToolBudget, wrapForkTask } from "../../shared/types.ts";
 import { type AsyncParallelTaskInput, buildResolvedTask } from "../background/async-execution.ts";
 import type { AsyncExecutionContext } from "../background/resolved-task.ts";
 import type { resolveCurrentSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
@@ -263,7 +263,6 @@ interface LaunchModelPlanInput {
 	context: ContextMode;
 	effectiveCwd: string;
 	availableModels: ModelInfo[];
-	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
 	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling> | undefined;
 	maxSubagentDepth: number;
@@ -294,7 +293,6 @@ function planTaskModels(state: TaskModelPlanState, task: TaskParam, index: numbe
 			availableModels: input.availableModels,
 			cwd: input.effectiveCwd,
 			maxSubagentDepth: input.maxSubagentDepth,
-			turnBudget: input.turnBudget,
 			toolBudget: input.toolBudget,
 			capabilityCeiling: input.capabilityCeiling,
 			childBaseExtensionPath: input.childBaseExtensionPath,
@@ -392,7 +390,6 @@ export function taskInputs(params: SubagentParamsLike): TaskParam[] {
 	if (params.description) task.description = params.description;
 	if (params.model) task.model = params.model;
 	if (params.skill !== undefined) task.skill = params.skill;
-	if (params.turnBudget) task.turnBudget = params.turnBudget;
 	if (params.toolBudget) task.toolBudget = params.toolBudget;
 	return [task];
 }
@@ -409,7 +406,6 @@ export function resolvedTaskInput(
 	if (task.model) input.model = task.model;
 	const skill = normalizeSkillInput(task.skill);
 	if (skill !== undefined) input.skill = skill;
-	if (task.turnBudget) input.turnBudget = task.turnBudget;
 	if (task.toolBudget) input.toolBudget = task.toolBudget;
 	return input;
 }

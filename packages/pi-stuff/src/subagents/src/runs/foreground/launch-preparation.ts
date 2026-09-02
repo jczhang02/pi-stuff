@@ -27,7 +27,6 @@ import {
 } from "../shared/nested-events.ts";
 import { SUBAGENT_PARENT_PHYSICAL_SESSION_ENV, SUBAGENT_PARENT_SESSION_ENV } from "../shared/pi-args.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import {
 	type AgentToolResult,
 	type ExecutorDeps,
@@ -206,13 +205,10 @@ async function resolveLaunchPreflight(
 function resolveLaunchBudgets(params: SubagentParamsLike) {
 	const timeout = resolveTimeout(params.timeoutMs);
 	if (timeout.error) return { error: timeout.error };
-	const turn = resolveTurnBudgetConfig(params.turnBudget, "turnBudget");
-	if (turn.error) return { error: turn.error };
 	const tool = validateToolBudgetConfig(params.toolBudget, "toolBudget");
 	if (tool.error) return { error: tool.error };
 	return {
 		timeoutMs: timeout.timeoutMs,
-		turnBudget: turn.turnBudget,
 		toolBudget: tool.budget,
 	};
 }
@@ -262,7 +258,6 @@ export async function prepareLaunch(
 			context,
 			effectiveCwd,
 			availableModels: models,
-			turnBudget: budgets.turnBudget,
 			toolBudget: budgets.toolBudget,
 			capabilityCeiling,
 			maxSubagentDepth,
@@ -309,7 +304,6 @@ export async function prepareLaunch(
 		sessionRoot,
 		artifactConfig,
 		artifactsDir,
-		turnBudget: budgets.turnBudget,
 		toolBudget: budgets.toolBudget,
 		timeoutMs: budgets.timeoutMs,
 		context,

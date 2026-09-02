@@ -16,7 +16,6 @@ import {
 	type ResolvedTurnBudget,
 	resolveChildMaxSubagentDepth,
 	type ToolBudgetConfig,
-	type TurnBudgetConfig,
 } from "../../shared/types.ts";
 import { resolveChildCwd } from "../../shared/utils.ts";
 import {
@@ -39,8 +38,7 @@ import {
 import type { ModelScopeConfig } from "../shared/model-scope.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
-import { DEFAULT_AGENT_TOOL_BUDGET, validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { DEFAULT_AGENT_TURN_BUDGET, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
+import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 
 export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
@@ -66,7 +64,6 @@ export interface AsyncParallelTaskInput {
 	cwd?: string;
 	model?: string;
 	skill?: string | string[] | false;
-	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
 }
 
@@ -82,7 +79,6 @@ export interface CommonBuildParams {
 	availableModels?: AvailableModelInfo[] | undefined;
 	cwd?: string | undefined;
 	maxSubagentDepth: number;
-	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
 	controlConfig?: ResolvedControlConfig | undefined;
@@ -163,18 +159,6 @@ interface ResolvedTaskProjection {
 	taskCwd: string;
 	thinking?: string;
 	toolBudget?: ResolvedToolBudget;
-	turnBudget?: ResolvedTurnBudget;
-}
-
-function resolveTaskTurnBudget(
-	explicit: TurnBudgetConfig | undefined,
-	runBudget: ResolvedTurnBudget | undefined,
-	agentBudget: TurnBudgetConfig | undefined,
-) {
-	if (explicit !== undefined) return resolveTurnBudgetConfig(explicit, "turnBudget");
-	if (runBudget !== undefined) return { turnBudget: runBudget };
-	if (agentBudget !== undefined) return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
-	return { turnBudget: DEFAULT_AGENT_TURN_BUDGET };
 }
 
 function resolveTaskToolBudget(
@@ -191,7 +175,7 @@ function resolveTaskToolBudget(
 		const resolved = validateToolBudgetConfig(agentBudget, "agent.toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
 	}
-	return { toolBudget: DEFAULT_AGENT_TOOL_BUDGET };
+	return {};
 }
 
 function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskProjection): BuiltTask {
@@ -231,7 +215,6 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (agent.mcpDirectTools) task.mcpDirectTools = [...agent.mcpDirectTools];
 	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
 	if (input.sessionFile) task.sessionFile = input.sessionFile;
-	if (resolved.turnBudget) task.turnBudget = resolved.turnBudget;
 	if (resolved.toolBudget) task.toolBudget = resolved.toolBudget;
 	if (resolved.capabilityCeiling) task.capabilityCeiling = resolved.capabilityCeiling;
 	const recovery: BackgroundRecoveryDescriptor = {
@@ -261,7 +244,6 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (agent.filePath) recovery.agentFilePath = agent.filePath;
 	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
 	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
-	if (resolved.turnBudget) recovery.initialTurnBudget = resolved.turnBudget;
 	if (resolved.toolBudget) recovery.initialToolBudget = resolved.toolBudget;
 	if (resolved.capabilityCeiling) recovery.capabilityCeiling = resolved.capabilityCeiling;
 	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
@@ -340,8 +322,6 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	const primaryModel = modelCandidates[0] ?? resolvedPrimaryModel;
 	const thinkingConfig = input.thinkingOverride ?? agent.thinking;
 	const thinking = resolveEffectiveThinking(primaryModel, thinkingConfig);
-	const turnBudget = resolveTaskTurnBudget(taskInput.turnBudget, params.turnBudget, agent.defaultTurnBudget);
-	if (turnBudget.error) return { error: turnBudget.error };
 	const toolBudget = resolveTaskToolBudget(taskInput.toolBudget, params.toolBudget, agent.toolBudget);
 	if (toolBudget.error) return { error: toolBudget.error };
 
@@ -377,7 +357,6 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	if (toolPlan.effectiveToolAllowlist) launchBinding.tools = [...toolPlan.effectiveToolAllowlist];
 	if (toolPlan.extensionArgs) launchBinding.extensions = [...toolPlan.extensionArgs];
 	if (toolPlan.effectiveMcpTools) launchBinding.mcpDirectTools = [...toolPlan.effectiveMcpTools];
-	if (turnBudget.turnBudget) launchBinding.turnBudget = turnBudget.turnBudget;
 	if (toolBudget.toolBudget) launchBinding.toolBudget = toolBudget.toolBudget;
 	if (capabilityCeiling) launchBinding.capabilityCeiling = capabilityCeiling;
 	const modelContextWindows = modelCandidates.flatMap((model) => {
@@ -401,7 +380,6 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	};
 	if (primaryModel) projection.primaryModel = primaryModel;
 	if (thinking) projection.thinking = thinking;
-	if (turnBudget.turnBudget) projection.turnBudget = turnBudget.turnBudget;
 	if (toolBudget.toolBudget) projection.toolBudget = toolBudget.toolBudget;
 	if (capabilityCeiling) projection.capabilityCeiling = capabilityCeiling;
 	return projectBuiltTask(input, projection);

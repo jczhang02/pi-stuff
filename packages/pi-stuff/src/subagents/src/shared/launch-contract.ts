@@ -52,7 +52,6 @@ export function projectAgentDefinition(agent: AgentConfig) {
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		skills: agent.skills,
 		skillPath: agent.skillPath,
-		defaultTurnBudget: agent.defaultTurnBudget,
 		maxSubagentDepth: agent.maxSubagentDepth,
 		toolBudget: agent.toolBudget,
 	};
@@ -77,7 +76,6 @@ export interface LaunchBindingInput {
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
-	turnBudget?: AgentConfig["defaultTurnBudget"];
 	toolBudget?: AgentConfig["toolBudget"];
 	maxSubagentDepth?: number;
 	capabilityCeiling?: unknown;
@@ -103,7 +101,6 @@ export function projectLaunchBinding(input: LaunchBindingInput) {
 		extensions: input.extensions,
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
-		turnBudget: input.turnBudget,
 		toolBudget: input.toolBudget,
 		maxSubagentDepth: input.maxSubagentDepth,
 		capabilityCeiling: input.capabilityCeiling,

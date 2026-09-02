@@ -116,9 +116,15 @@ test("parses only current execution controls and skips one malformed definition 
 		thinking: "high",
 		toolBudget: { block: ["read"], hard: 8, soft: 6 },
 		tools: ["read", "bash"],
-		defaultTurnBudget: { graceTurns: 1, maxTurns: 4 },
 	});
-	for (const retiredField of ["defaultAsync", "defaultTimeoutMs", "completionGuard", "memory", "output"]) {
+	for (const retiredField of [
+		"defaultAsync",
+		"defaultTimeoutMs",
+		"defaultTurnBudget",
+		"completionGuard",
+		"memory",
+		"output",
+	]) {
 		expect(configured).not.toHaveProperty(retiredField);
 	}
 });

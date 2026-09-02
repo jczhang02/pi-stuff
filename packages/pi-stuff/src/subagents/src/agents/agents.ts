@@ -6,8 +6,7 @@ import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.j
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
-import { resolveTurnBudgetConfig } from "../runs/shared/turn-budget.ts";
-import type { ToolBudgetConfig, TurnBudgetConfig } from "../shared/types.ts";
+import type { ToolBudgetConfig } from "../shared/types.ts";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 import { mergeAgentsForScope } from "./agent-selection.ts";
 import { parseFrontmatter, parseFrontmatterList } from "./frontmatter.ts";
@@ -33,7 +32,6 @@ export interface AgentConfig {
 	readonly systemPromptMode: SystemPromptMode;
 	readonly inheritProjectContext: boolean;
 	readonly inheritSkills: boolean;
-	readonly defaultTurnBudget?: TurnBudgetConfig;
 	readonly systemPrompt: string;
 	readonly source: AgentSource;
 	readonly filePath: string;
@@ -146,7 +144,6 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		const extensions = parseFrontmatterList(frontmatter["extensions"]);
 		const subagentOnlyExtensions = nonEmpty(parseFrontmatterList(frontmatter["subagentOnlyExtensions"]));
 
-		const defaultTurnBudget = parseTurnBudget(frontmatter["turnBudget"], localName);
 		const toolBudget = parseToolBudget(frontmatter["toolBudget"], localName);
 		const maxSubagentDepth = optionalNonNegativeInteger(frontmatter["maxSubagentDepth"]);
 		if (frontmatter["maxSubagentDepth"] !== undefined && maxSubagentDepth === undefined) return undefined;
@@ -190,7 +187,6 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		if (fallbackModels) agent = { ...agent, fallbackModels };
 		if (frontmatter["thinking"] === "false") agent = { ...agent, thinking: false };
 		else if (optionalText(frontmatter["thinking"])) agent = { ...agent, thinking: frontmatter["thinking"].trim() };
-		if (defaultTurnBudget) agent = { ...agent, defaultTurnBudget };
 		if (skills) agent = { ...agent, skills };
 		if (skillPath) agent = { ...agent, skillPath };
 		if (extensions !== undefined) agent = { ...agent, extensions };
@@ -202,14 +198,6 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		// One malformed optional Agent definition must not make the Agent tool unavailable.
 		return undefined;
 	}
-}
-
-function parseTurnBudget(value: string | undefined, name: string): TurnBudgetConfig | undefined {
-	if (!optionalText(value)) return undefined;
-	const parsed = parseJsonValue(value);
-	const result = resolveTurnBudgetConfig(parsed, `Agent '${name}' turnBudget`);
-	if (result.error) throw new Error(result.error);
-	return result.turnBudget;
 }
 
 function parseToolBudget(value: string | undefined, name: string): ToolBudgetConfig | undefined {

@@ -44,7 +44,6 @@ import {
 import { SUBAGENT_PARENT_PHYSICAL_SESSION_ENV, SUBAGENT_PARENT_SESSION_ENV } from "../shared/pi-args.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { runForegroundConfig } from "./execution.ts";
 import type {
 	AgentToolResult,
@@ -301,8 +300,6 @@ async function prepareResumeRun(input: ResumeRunInput) {
 			: undefined);
 	if (!baseAgent) throw new Error(`Unknown Agent for resume: ${target.agent}`);
 	const agent = descriptor ? applySteeringRecoveryAgentConfig(baseAgent, descriptor) : baseAgent;
-	const turn = resolveTurnBudgetConfig(input.params.turnBudget ?? descriptor?.initialTurnBudget, "turnBudget");
-	if (turn.error) throw new Error(turn.error);
 	const tool = validateToolBudgetConfig(input.params.toolBudget ?? descriptor?.initialToolBudget, "toolBudget");
 	if (tool.error) throw new Error(tool.error);
 	const timeout = resolveTimeout(input.params.timeoutMs);
@@ -315,7 +312,6 @@ async function prepareResumeRun(input: ResumeRunInput) {
 		descriptor,
 		modelScope: discovered.modelScope,
 		timeoutMs: timeout.timeoutMs,
-		turnBudget: turn.turnBudget,
 		toolBudget: tool.budget,
 	};
 }
@@ -328,8 +324,7 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 	} catch (error) {
 		return errorResult("management", error instanceof Error ? error.message : String(error));
 	}
-	const { agent, descriptor, effectiveCwd, modelScope, sessionFile, target, timeoutMs, toolBudget, turnBudget } =
-		prepared;
+	const { agent, descriptor, effectiveCwd, modelScope, sessionFile, target, timeoutMs, toolBudget } = prepared;
 	const runId = randomUUID().replace(/-/g, "").slice(0, 12);
 	const parentSessionFile = input.ctx.sessionManager.getSessionFile() ?? null;
 	const artifactConfig = DEFAULT_ARTIFACT_CONFIG;
@@ -391,7 +386,6 @@ async function resumeRun(input: ResumeRunInput): Promise<AgentToolResult<Details
 			),
 		};
 		if (timeoutMs !== undefined) resumeInput.timeoutMs = timeoutMs;
-		if (turnBudget) resumeInput.turnBudget = turnBudget;
 		if (toolBudget) resumeInput.toolBudget = toolBudget;
 		const result = await input.engines.backgroundSingle(runId, resumeInput);
 		backgroundOwnsRoute = Boolean(result.details.asyncId);

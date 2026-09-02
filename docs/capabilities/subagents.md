@@ -38,7 +38,7 @@ Each `subagent` call uses exactly one shape.
 ### One Agent
 
 `agent` and `task` are required. Optional fields select a short `description`, working directory, model, Skill,
-turn and Tool budgets, context mode, isolation, and foreground execution.
+an explicit Tool budget, context mode, isolation, and foreground execution.
 
 ### Parallel Agents
 
@@ -99,8 +99,9 @@ owns control at a time.
 
 ## Context, models, and Tools
 
-A launch can request fresh or forked context, an explicit model, one Skill, and bounded turn or Tool budgets. Capacity,
-authentication, and model availability are checked before child execution.
+A launch can request fresh or forked context, an explicit model, one Skill, and an explicit Tool budget. Capacity,
+authentication, and model availability are checked before child execution. Ordinary delegated work has no fixed turn
+cutoff, so a productive Agent is not terminated merely because it has continued working.
 
 Each child uses the same Pi Host binary with the owning Package loaded and ambient discovery disabled. Non-fanout
 children do not receive the `subagent` Tool.
@@ -112,11 +113,10 @@ Default governor limits are:
 - 20 concurrently running Agents;
 - 200 total launches per parent Session;
 - nesting depth 3;
-- 64 ordinary turns plus 2 wrap-up turns;
-- 96 soft and 128 hard Tool calls;
 - 30 minutes per run.
 
-Configured per-call budgets can tighten the applicable child limits.
+Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls, while `timeoutMs`
+can tighten the default run deadline.
 
 ## Artifacts and isolation
 
@@ -134,4 +134,3 @@ Changing or ending the parent Session cancels an in-flight launch safely and rec
 - [Command reference](../reference/commands.md#work-control)
 - [Background Work](background-work.md)
 - [Tool Display](tool-display.md)
-

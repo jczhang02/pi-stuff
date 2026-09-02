@@ -3,7 +3,6 @@ import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-typ
 import type { ResolvedToolBudget, ToolBudgetConfig, ToolBudgetState } from "../../shared/types.ts";
 
 export const DEFAULT_TOOL_BUDGET_BLOCK = ["read", "grep", "find", "ls"] as const;
-export const DEFAULT_AGENT_TOOL_BUDGET: ResolvedToolBudget = Object.freeze({ soft: 96, hard: 128, block: "*" });
 export const TOOL_BUDGET_ENV = "PI_SUBAGENT_TOOL_BUDGET";
 export const TOOL_BUDGET_ZERO_AUTH_ENV = "PI_SUBAGENT_TOOL_BUDGET_ZERO_AUTH";
 

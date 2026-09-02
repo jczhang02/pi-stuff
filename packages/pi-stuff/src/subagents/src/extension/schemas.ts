@@ -10,26 +10,6 @@ const SkillSelection = Type.Unsafe({
 	description: "Optional skill name or names. false disables skills for this Agent.",
 });
 
-const TurnBudget = Type.Object(
-	{
-		maxTurns: Type.Integer({
-			minimum: 1,
-			description: "Soft threshold at which wrap-up is requested.",
-		}),
-		graceTurns: Type.Optional(
-			Type.Integer({
-				minimum: 0,
-				description: "Additional wrap-up turns allowed after the soft threshold and before forced termination.",
-			}),
-		),
-	},
-	{
-		additionalProperties: false,
-		description:
-			"Optional expert bounded-execution control. Omit for ordinary delegated work unless the user or project explicitly requires a turn bound; forced termination begins only after maxTurns plus graceTurns.",
-	},
-);
-
 const ToolBudget = Type.Object(
 	{
 		soft: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -59,7 +39,6 @@ const AgentTask = Type.Object(
 		cwd: Type.Optional(Type.String({ minLength: 1 })),
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
 		context: Type.Optional(
 			Type.String({
@@ -95,7 +74,6 @@ const FanoutAgentTask = Type.Object(
 		cwd: Type.Optional(Type.String({ minLength: 1 })),
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
 		context: Type.Optional(
 			Type.String({
@@ -157,7 +135,6 @@ export const SubagentParams = Type.Object(
 		thinking: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
 		action: Type.Optional(
 			Type.String({
@@ -223,7 +200,6 @@ export const FanoutChildSubagentParams = Type.Object(
 		thinking: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
 	},
 	{

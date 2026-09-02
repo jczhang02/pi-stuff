@@ -320,7 +320,7 @@ test("resolves the advertised Agent from the parent project while executing in t
 	expect(executedFrom).toBe(childCwd);
 });
 
-test("applies finite product backstops to ordinary foreground and background launches", async () => {
+test("applies only the run timeout to ordinary foreground and background launches", async () => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-backstops-"));
 	temporaryDirectories.push(cwd);
 	fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -353,14 +353,11 @@ test("applies finite product backstops to ordinary foreground and background lau
 	expect(backgroundTimeoutMs).toBe(30 * 60 * 1_000);
 	expect(foregroundConfig).toMatchObject({
 		timeoutMs: 30 * 60 * 1_000,
-		work: {
-			mode: "single",
-			task: {
-				turnBudget: { maxTurns: 64, graceTurns: 2 },
-				toolBudget: { soft: 96, hard: 128, block: "*" },
-			},
-		},
+		work: { mode: "single" },
 	});
+	if (foregroundConfig?.work.mode !== "single") throw new Error("Expected one foreground task");
+	expect(foregroundConfig.work.task).not.toHaveProperty("turnBudget");
+	expect(foregroundConfig.work.task).not.toHaveProperty("toolBudget");
 });
 
 test("does not let a failing completion observer replace a valid Agent result", async () => {

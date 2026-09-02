@@ -248,7 +248,6 @@ function shouldStopFallback(
 			run.interrupted ||
 			run.timedOut ||
 			run.stopped ||
-			run.turnBudgetExceeded ||
 			// Retrying after Tool execution could repeat external mutations.
 			run.toolCount > 0 ||
 			!isRetryableModelFailure(error) ||
@@ -355,11 +354,6 @@ function createTaskResult(
 	if (final?.interrupted) result.interrupted = true;
 	if (final?.timedOut) result.timedOut = true;
 	if (final?.stopped) result.stopped = true;
-	if (final?.turnBudget) result.turnBudget = final.turnBudget;
-	if (final?.turnBudgetExceeded) {
-		result.turnBudgetExceeded = true;
-		result.wrapUpRequested = true;
-	}
 	if (final?.contextNudgeObserved) result.contextNudgeObserved = true;
 	const toolBudget: ToolBudgetState | undefined = task.toolBudget
 		? toolBudgetState(task.toolBudget, final?.toolCount ?? 0)
@@ -424,7 +418,6 @@ function writeTerminalArtifacts(
 				model: result.model,
 				thinking: result.thinking,
 				skills: task.skills,
-				turnBudget: result.turnBudget,
 				toolBudget: result.toolBudget,
 				exitCode: result.exitCode,
 				error: result.error,

@@ -70,7 +70,6 @@ function commonBuild(data: PreparedLaunch, deps: ExecutorDeps) {
 		artifactsDir: data.artifactConfig.enabled ? data.artifactsDir : undefined,
 		artifactConfig: data.artifactConfig,
 		sessionDir: data.sessionRoot,
-		turnBudget: data.turnBudget,
 		toolBudget: data.toolBudget,
 		capabilityCeiling: data.capabilityCeiling,
 		childBaseExtensionPath: deps.childBaseExtensionPath,

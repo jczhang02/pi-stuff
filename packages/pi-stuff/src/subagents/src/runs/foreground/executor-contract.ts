@@ -8,10 +8,8 @@ import type {
 	ArtifactConfig,
 	Details,
 	ResolvedToolBudget,
-	ResolvedTurnBudget,
 	SubagentState,
 	ToolBudgetConfig,
-	TurnBudgetConfig,
 } from "../../shared/types.ts";
 import type { executeAsyncParallel, executeAsyncSingle } from "../background/async-execution.ts";
 import type { AsyncExecutionContext } from "../background/resolved-task.ts";
@@ -54,7 +52,6 @@ export interface TaskParam {
 	cwd?: string;
 	model?: string;
 	skill?: string | string[] | boolean;
-	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
 }
 
@@ -72,7 +69,6 @@ export interface SubagentParamsLike {
 	context?: "fresh" | "fork";
 	async?: boolean;
 	timeoutMs?: number;
-	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
 	cwd?: string;
 	model?: string;
@@ -138,7 +134,6 @@ export interface PreparedLaunch {
 	sessionRoot: string;
 	artifactConfig: ArtifactConfig;
 	artifactsDir: string;
-	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
 	timeoutMs?: number | undefined;
 	context: ContextMode;

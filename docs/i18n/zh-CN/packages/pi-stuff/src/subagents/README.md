@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 81675094ad7ba0a0d65a3592a0ebcb684e6c721da9066e1f8e9cf367a64279fd -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 213a93839a2ac03c172eccba5085bb2ea6549f09e9d4ddd86d1d3d6fc893d777 -->
 
 # Agents
 
@@ -34,7 +34,7 @@
 - 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call。
 - 默认后台运行；前台模式会等待结果。
 - 送达紧凑 completion，不主动启动另一轮主 Agent。
-- 应用并发、总 launch、嵌套、turn、Tool 和时间限制。
+- 应用并发、总 launch、嵌套、显式 Tool 与时间限制，不设置固定 turn 截止线。
 - 保存 Session-owned artifact，并保留已修改的隔离 worktree 供检查。
 
 ## 文档

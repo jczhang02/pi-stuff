@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 4efb5af39d0aa6031e9f8ae5a76f6205db0f332f5d1d0e549ee547b219738193 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: db3897224aade2ea6f9824567968325c6570fa6c669df9c08db89e9843407ff1 -->
 
 # Agents
 
@@ -38,7 +38,7 @@ Agent 定义从以下位置发现：
 
 ### 单个 Agent
 
-`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、turn 与 Tool budget、
+`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、显式 Tool budget、
 context mode、isolation 和前台执行。
 
 ### 并行 Agent
@@ -97,8 +97,8 @@ Footer roster 是紧凑生命周期视图。打开 Agent 管理时会替换 late
 
 ## Context、model 与 Tool
 
-Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及有界 turn 或 Tool budget。Child 执行前会
-检查容量、认证和 model 可用性。
+Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及显式 Tool budget。Child 执行前会检查
+容量、认证和 model 可用性。普通委派工作没有固定 turn 截止线，因此不会仅因 Agent 持续工作而终止仍有进展的运行。
 
 每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。非 fanout child
 不会得到 `subagent` Tool。
@@ -110,11 +110,9 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 - 同时运行 20 个 Agent；
 - 每个 parent Session 总共 launch 200 次；
 - 嵌套深度 3；
-- 64 个普通 turn，加 2 个 wrap-up turn；
-- 96 次 soft、128 次 hard Tool call；
 - 每次运行 30 分钟。
 
-逐 call 配置的 budget 可以进一步收紧对应 child 限制。
+普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`timeoutMs` 可以收紧默认运行期限。
 
 ## Artifact 与 isolation
 
@@ -132,4 +130,3 @@ Agent artifact 位于 Settings 管理的 Session root 中，与持久 Pi Session
 - [命令参考](../reference/commands.md#工作控制)
 - [Background Work](background-work.md)
 - [Tool Display](tool-display.md)
-
