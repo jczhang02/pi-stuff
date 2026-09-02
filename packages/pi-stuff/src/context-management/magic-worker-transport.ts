@@ -52,7 +52,7 @@ function workerError(cause: unknown): Error {
 	return cause instanceof Error ? cause : new Error(magicWorkerErrorMessage(cause));
 }
 
-async function startMagicWorkerNative(): Promise<MagicWorkerNativeHandle> {
+export async function buildMagicWorkerBundle(): Promise<Blob> {
 	const magicContextUrl = import.meta.resolve("@cortexkit/pi-magic-context");
 	const build = await Bun.build({
 		define: { "import.meta.url": JSON.stringify(magicContextUrl) },
@@ -66,6 +66,10 @@ async function startMagicWorkerNative(): Promise<MagicWorkerNativeHandle> {
 			`Magic Context worker build failed: ${build.logs.map((log) => log.message).join("; ") || "no executable output"}`,
 		);
 	}
+	return output;
+}
+
+export function startMagicWorkerFromBundle(output: Blob): MagicWorkerNativeHandle {
 	const workerUrl = URL.createObjectURL(output);
 	try {
 		const worker = new Worker(workerUrl, { name: "pi-stuff-magic-context", type: "module" });
@@ -83,6 +87,10 @@ async function startMagicWorkerNative(): Promise<MagicWorkerNativeHandle> {
 		URL.revokeObjectURL(workerUrl);
 		throw error;
 	}
+}
+
+async function startMagicWorkerNative(): Promise<MagicWorkerNativeHandle> {
+	return startMagicWorkerFromBundle(await buildMagicWorkerBundle());
 }
 
 /** Effect-owned request correlation over the native Bun Worker protocol. */
