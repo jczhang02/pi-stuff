@@ -418,7 +418,14 @@ export class ChildProtocolRuntime {
 	}
 
 	snapshot(): ChildProtocolSnapshot {
-		const latestAssistantEvidence = this.messages.findLast((message) => message.role === "assistant");
+		let latestAssistantEvidence: ChildProtocolMessage | undefined;
+		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+			const message = this.messages[index];
+			if (message?.role === "assistant") {
+				latestAssistantEvidence = message;
+				break;
+			}
+		}
 		return {
 			stderr: this.stderrTail.text(),
 			messages: this.messages,
