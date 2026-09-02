@@ -13,6 +13,8 @@ import {
 	TODO_PTY_READY,
 	TODO_PTY_SUBJECTS,
 	USER_VISUALIZATION_SOURCE,
+	VIBE_LINE_LIVENESS_PTY_DONE,
+	VIBE_LINE_LIVENESS_PTY_PROMPT,
 	VISUALIZATION_PTY_PROMPT,
 	VISUALIZATION_PTY_RESPONSE,
 } from "../test/fixtures/ui-pty-provider.js";
@@ -30,6 +32,8 @@ const UI_LABELS = [
 	"Tool running timer",
 ] as const;
 const NERD_THINKING_MARKER = "\uF0EB med";
+const VIBE_LINE_SPINNER = /^[ \t]*([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])[ \t]+\S.*$/u;
+const VIBE_LINE_STALL_LIMIT_MS = 500;
 const thoughtTransformer = createLiveThoughtTransformer();
 const FIXTURE_RECORD_SCHEMA = Type.Object(
 	{
@@ -296,12 +300,12 @@ export function expectedThoughtProjection(phaseIndex: number, columns: number): 
 	}).replaceAll(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/gu, "$1");
 }
 
-function thoughtRows(screen: string): string[] {
-	return screen.split("\n").filter((line) => /(?:^|\s)∗(?: thoughts:)?\s/u.test(line));
+function thoughtRows(screen: string, expected: string): string[] {
+	return screen.split("\n").filter((line) => line.includes(expected));
 }
 
 function verifySingleThoughtRow(screen: string, expected: string, columns: number, phase: string): void {
-	const rows = thoughtRows(screen);
+	const rows = thoughtRows(screen, expected);
 	if (rows.length !== 1 || !rows[0]?.includes(expected)) {
 		pty.fail(`${phase} did not render exactly one expected Thought row in ${String(columns)} columns\n${screen}`);
 	}
@@ -356,6 +360,46 @@ export async function verifyThoughtLifecycle(
 	}
 	verifyTerminalWidth(screen, columns, `settled ${String(columns)}-column Thought`);
 	await waitForPersistedSessionValue(paths.sessions, FIXTURE_THINKING, "the original Thinking content");
+}
+
+export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession): Promise<void> {
+	session.sendLiteral(VIBE_LINE_LIVENESS_PTY_PROMPT);
+	session.sendKey("Enter");
+	const frames = new Set<string>();
+	const deadline = Date.now() + pty.WAIT_TIMEOUT_MS;
+	let currentFrame: string | undefined;
+	let frameChangedAt: number | undefined;
+	let screen = "";
+	while (Date.now() < deadline) {
+		screen = session.capture();
+		const observedAt = performance.now();
+		const matches = screen
+			.split("\n")
+			.map((line) => VIBE_LINE_SPINNER.exec(line)?.[1])
+			.filter((value): value is string => value !== undefined);
+		const nextFrame = matches.length === 1 ? matches[0] : undefined;
+		if (nextFrame) {
+			frames.add(nextFrame);
+			if (nextFrame !== currentFrame) {
+				currentFrame = nextFrame;
+				frameChangedAt = observedAt;
+			}
+		}
+		if (currentFrame && frameChangedAt !== undefined && observedAt - frameChangedAt > VIBE_LINE_STALL_LIMIT_MS) {
+			pty.fail(
+				`Vibe Line Spinner frame ${currentFrame} remained unchanged for more than ${String(VIBE_LINE_STALL_LIMIT_MS)}ms`,
+			);
+		}
+		if (screen.includes(VIBE_LINE_LIVENESS_PTY_DONE)) break;
+		await pty.delay(pty.POLL_INTERVAL_MS);
+	}
+	if (!screen.includes(VIBE_LINE_LIVENESS_PTY_DONE)) pty.fail("long CJK Thinking stress did not settle");
+	if (frames.size < 2) pty.fail(`Vibe Line Spinner did not advance: ${JSON.stringify([...frames])}`);
+
+	const recovery = "VIBE_LINE_RECOVERY";
+	session.sendLiteral(`THOUGHT_PROBE_${recovery}`);
+	session.sendKey("Enter");
+	await session.waitForText(`THOUGHT_DONE_${recovery}`);
 }
 
 export async function verifyThoughtContextPreservation(

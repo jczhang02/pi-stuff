@@ -28,6 +28,12 @@ const THOUGHT_DELTAS = THOUGHT_PHASES.map(
 	(phase, index) => `${index === 0 ? "" : "\n\n"}**${phase}${index === 0 ? "\u001b]0;OWNED_TITLE\u0007" : ""}**`,
 );
 export const FIXTURE_THINKING = THOUGHT_DELTAS.join("");
+export const VIBE_LINE_LIVENESS_PTY_PROMPT = "VIBE_LINE_LIVENESS_PTY";
+export const VIBE_LINE_LIVENESS_PTY_DONE = "VIBE_LINE_LIVENESS_DONE";
+const VIBE_LINE_LIVENESS_DELTAS = ["Preparing the Vibe Line liveness probe: ", "推".repeat(2_500)] as const;
+const VIBE_LINE_LIVENESS_THOUGHT = VIBE_LINE_LIVENESS_DELTAS.join("");
+const VIBE_LINE_LIVENESS_DELTA_MS = 900;
+const VIBE_LINE_LIVENESS_FINISH_MS = 5_000;
 const RESPONSE = [
 	"UI_PTY_DONE 中文结果🧪",
 	...Array.from({ length: 20 }, (_, index) => `真实输出 ${String(index + 1).padStart(2, "0")} · 对话保持优先`),
@@ -320,9 +326,20 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	if (lastUser === VISUALIZATION_PTY_PROMPT) return visualizationStream(model, options);
 	if (lastUser === USER_VISUALIZATION_SOURCE) return textOnlyStream(model, "USER-VISUALIZATION-ACK");
 	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
+	const isVibeLineLivenessProbe = lastUser === VIBE_LINE_LIVENESS_PTY_PROMPT;
 	const isThoughtProbe = lastUser.startsWith("THOUGHT_PROBE_");
-	const response = isThoughtProbe ? `THOUGHT_DONE_${lastUser.slice("THOUGHT_PROBE_".length)}` : RESPONSE;
-	const finalUsage = isThoughtProbe ? ZERO_USAGE : FINAL_USAGE;
+	const response = isVibeLineLivenessProbe
+		? VIBE_LINE_LIVENESS_PTY_DONE
+		: isThoughtProbe
+			? `THOUGHT_DONE_${lastUser.slice("THOUGHT_PROBE_".length)}`
+			: RESPONSE;
+	const finalUsage = isVibeLineLivenessProbe || isThoughtProbe ? ZERO_USAGE : FINAL_USAGE;
+	const thoughtDeltas = isVibeLineLivenessProbe ? VIBE_LINE_LIVENESS_DELTAS : THOUGHT_DELTAS;
+	const finalThinking = isVibeLineLivenessProbe ? VIBE_LINE_LIVENESS_THOUGHT : FIXTURE_THINKING;
+	const thoughtDeltaMs = isVibeLineLivenessProbe ? VIBE_LINE_LIVENESS_DELTA_MS : 900;
+	const thoughtFinishMs = isVibeLineLivenessProbe
+		? VIBE_LINE_LIVENESS_FINISH_MS
+		: thoughtDeltas.length * thoughtDeltaMs;
 	const stream = createAssistantMessageEventStream();
 	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
 	let thinking = "";
@@ -332,7 +349,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 		if (settled) return;
 		settled = true;
 		pending.content = [{ type: "thinking", thinking }];
-		stream.push({ type: "thinking_end", contentIndex: 0, content: FIXTURE_THINKING, partial: pending });
+		stream.push({ type: "thinking_end", contentIndex: 0, content: finalThinking, partial: pending });
 		pending.content = [
 			{ type: "thinking", thinking },
 			{ type: "text", text: "" },
@@ -349,7 +366,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 			reason: "stop",
 			message: assistantMessage(
 				[
-					{ type: "thinking", thinking: FIXTURE_THINKING },
+					{ type: "thinking", thinking: finalThinking },
 					{ type: "text", text: response },
 				],
 				"stop",
@@ -372,15 +389,15 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	stream.push({ type: "start", partial: pending });
 	pending.content = [{ type: "thinking", thinking }];
 	stream.push({ type: "thinking_start", contentIndex: 0, partial: pending });
-	for (const [index, delta] of THOUGHT_DELTAS.entries()) {
+	for (const [index, delta] of thoughtDeltas.entries()) {
 		setTimeout(() => {
 			if (settled) return;
 			thinking += delta;
 			pending.content = [{ type: "thinking", thinking }];
 			stream.push({ type: "thinking_delta", contentIndex: 0, delta, partial: pending });
-		}, index * 900);
+		}, index * thoughtDeltaMs);
 	}
-	setTimeout(finish, THOUGHT_DELTAS.length * 900);
+	setTimeout(finish, thoughtFinishMs);
 	options?.signal?.addEventListener("abort", abort, { once: true });
 	return stream;
 }

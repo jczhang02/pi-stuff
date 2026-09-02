@@ -58,7 +58,8 @@ Focused dialogs temporarily take the editor surface. Closing a dialog restores t
 ## Live Thoughts
 
 When Pi's native **Hide thinking blocks** setting is disabled, the current semantic Thought block can be projected
-above the editor while the model works. The projection is bounded, display-only, and prefixed with `∗ thoughts:`.
+above the editor while the model works. The projection is bounded and display-only. Its full form begins with
+`• thoughts:`, its narrow form keeps the same `•` Transcript marker, and that marker aligns with Tool Activity.
 Completed transcript content remains the record of the run.
 
 ## Charts and trees

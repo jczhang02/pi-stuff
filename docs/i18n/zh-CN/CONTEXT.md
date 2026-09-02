@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: bdb024e11f5bb72ebabed4b6c0b0ee2e6ad4ad996d6690774e04aae969c123b4 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 97a7ffc1798e80d03d4b1db04d2e1b310b46dc0e7171fb51d125005fa421b677 -->
 
 # Pi Stuff
 
@@ -92,6 +92,11 @@ _避免使用_：Suite configuration、installer state
 `<agentDir>/pi-stuff.json` 中由一个 Capability 拥有的顶层对象。owner 可以读取和替换该对象，同时保留 sibling
 namespace；合并文件、lock 与 atomic write 仍是共享基础设施。
 _避免使用_：Capability settings file、global config
+
+**Vibe Line Spinner**：
+Host 处理 Agent 工作时，Pi 的 Working Row 中由 Host 拥有的动画字符。它是活性信号，不等同于 Working Row
+本身、Live Thoughts 或其他 Conversation UI 内容。
+_避免使用_：Vibe Line、Working Row、Live Thoughts
 
 **Logical Thinking Run**：
 持续更新且可见的一段 reasoning，被视作一个 narrative unit。之后另行出现的可见 reasoning segment 是新的

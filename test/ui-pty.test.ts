@@ -13,6 +13,7 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 	for (const required of [
 		"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 		"priority Statusline fields and responsive prompt bounds at all accepted widths",
+		"2,500-character cumulative CJK Thought kept every Vibe Line Spinner frame within 500ms and recovered",
 		"native and inline autocomplete suppression and restoration",
 		"long CJK prompt, Welcome scroll-away, live and settled Thought",
 		"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",

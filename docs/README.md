@@ -82,6 +82,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0022](adr/0022-restrict-folding-to-native-retrieval.md) | Restrict compact folding to native retrieval |
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | Use a closed Operation Block family |
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | Adopt Effect as the internal effect model |
+| [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | Protect Vibe Line Spinner liveness at Pi Stuff boundaries |
 
 ## Evidence and history
 
