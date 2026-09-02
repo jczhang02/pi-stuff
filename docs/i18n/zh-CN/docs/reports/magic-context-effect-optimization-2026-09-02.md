@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/magic-context-effect-optimization-2026-09-02.md; translation-source-sha256: 4abbfc9a2adf8325ea7bf2a615362db85c6360af7bd2d934df90ebaeab4d741e -->
+<!-- translation-source: docs/reports/magic-context-effect-optimization-2026-09-02.md; translation-source-sha256: 8a4dcb826d2bb627038b1c2a47521ccf998c807bb13adfa6918a8a966500b6bb -->
 
 # Effect 下的 Magic Context：优化与重新认证
 
@@ -16,13 +16,14 @@
 ## 人话结论
 
 这个升级值得做。Magic Context 的日常工作没有明显变慢：fresh、short、long 和异常图像的首次投影全部通过
-不劣门槛。初始化、单命令和测得的排队等待也通过。上游 0.41.x 增加了 cache 稳定性修复、Pi RPC 与多
-Session 修复、schema v82、捆绑 Pi CLI 检测，以及可选 ONNX 安装加固。
+不劣门槛。原生 Worker handle 启动和初始化也通过。毫秒级的单命令与排队数据噪声太大，无法分类，但其绝对
+耗时仍不足以支持引入更复杂的调度器。上游 0.41.x 增加了 cache 稳定性修复、Pi RPC 与多 Session 修复、
+schema v82、捆绑 Pi CLI 检测，以及可选 ONNX 安装加固。
 
-代价有两个。生成的 Worker bundle 从 6,863,418 增至 8,421,328 bytes，增加 22.7%。构建时间从
-93.866 ms 的样本中位数升到 129.071 ms；配对中位 ratio 为 1.383。这个构建只在 Context Engine Worker
-启动时运行一次，不会在每轮对话或 Session 切换时运行。初始化加 tokenizer preload 的配对中位数只增加
-约 3.9%，统计上仍不劣。
+代价有两个。生成的 Worker bundle 从 6,863,704 增至 8,421,328 bytes，增加 22.7%。构建时间从
+101.599 ms 的样本中位数升到 136.854 ms；配对中位 ratio 为 1.391。这个构建只在 Context Engine Worker
+启动时运行一次，不会在每轮对话或 Session 切换时运行。原生 Worker handle 启动保持在 1 ms 以下且不劣。
+扣除 handle 启动后，初始化加 tokenizer preload 的配对中位数只增加约 1.7%，统计上仍不劣。
 
 Effect 在这里改善的是控制，不是算术速度。它让 Worker 生命周期、取消、pending request 失败、有界清理和
 fail-open 恢复归一个所有者管理。昂贵的 token 与历史投影仍由上游在 Worker 中完成。这种分离是净收益：
@@ -35,35 +36,37 @@ bootstrap 区间，所以绝对中位数之比不一定等于配对中位 ratio�
 
 | 指标 | 0.40.0 中位数 | 0.41.1 中位数 | 配对 ratio | 95% 区间 | 结果 |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Worker 构建 | 93.866 ms | 129.071 ms | 1.383 | 1.259–1.449 | 回退 |
-| 初始化 + tokenizer preload | 754.376 ms | 787.451 ms | 1.039 | 0.943–1.069 | 不劣 |
-| Fresh 首次投影 | 38.362 ms | 39.807 ms | 1.038 | 0.851–1.076 | 不劣 |
-| Short 首次投影 | 122.864 ms | 122.078 ms | 0.987 | 0.948–1.027 | 不劣 |
-| Long 首次投影 | 1,559.720 ms | 1,573.873 ms | 0.998 | 0.963–1.019 | 不劣 |
-| 异常图像首次投影 | 134.804 ms | 137.626 ms | 1.006 | 0.962–1.069 | 不劣 |
-| Fresh 增量 leaf | 8.391 ms | 8.742 ms | 0.999 | 0.967–1.120 | 无定论 |
-| Short 增量 leaf | 9.655 ms | 10.145 ms | 1.087 | 0.612–1.480 | 无定论 |
-| Long 增量 leaf | 21.303 ms | 20.649 ms | 1.011 | 0.848–1.079 | 不劣 |
-| 异常图像增量 leaf | 26.948 ms | 25.726 ms | 0.965 | 0.952–1.024 | 不劣 |
-| 单个排队命令 | 1.179 ms | 1.182 ms | 0.938 | 0.784–1.064 | 不劣 |
-| 两个命令总时间 | 2.383 ms | 2.205 ms | 0.861 | 0.691–1.183 | 无定论 |
-| 推算的排队等待 | 1.093 ms | 0.989 ms | 0.840 | 0.677–0.978 | 不劣 |
+| Worker 构建 | 101.599 ms | 136.854 ms | 1.391 | 1.230–1.452 | 回退 |
+| Worker handle 启动 | 0.671 ms | 0.477 ms | 0.648 | 0.438–1.030 | 不劣 |
+| 初始化 + tokenizer preload | 769.386 ms | 784.051 ms | 1.017 | 0.978–1.090 | 不劣 |
+| Fresh 首次投影 | 38.383 ms | 39.423 ms | 1.002 | 0.955–1.087 | 不劣 |
+| Short 首次投影 | 120.828 ms | 118.821 ms | 0.996 | 0.975–1.003 | 不劣 |
+| Long 首次投影 | 1,528.344 ms | 1,548.235 ms | 1.015 | 0.973–1.066 | 不劣 |
+| 异常图像首次投影 | 132.128 ms | 136.297 ms | 1.019 | 0.956–1.073 | 不劣 |
+| Fresh 增量 leaf | 8.546 ms | 9.007 ms | 1.077 | 0.799–1.206 | 无定论 |
+| Short 增量 leaf | 13.243 ms | 13.430 ms | 1.077 | 0.668–1.302 | 无定论 |
+| Long 增量 leaf | 20.990 ms | 23.626 ms | 1.046 | 0.876–1.142 | 无定论 |
+| 异常图像增量 leaf | 26.066 ms | 27.666 ms | 0.977 | 0.851–1.038 | 不劣 |
+| 单个排队命令 | 1.229 ms | 1.206 ms | 1.029 | 0.695–1.150 | 无定论 |
+| 两个命令总时间 | 2.389 ms | 2.450 ms | 0.928 | 0.788–1.252 | 无定论 |
+| 推算的排队等待 | 1.165 ms | 1.251 ms | 0.943 | 0.632–1.415 | 无定论 |
 
-Fresh 与 short 增量样本是噪声较大，不是已经证明的回退。配对中位数分别约为不变和 +8.7%，但区间同时跨过
-改进与回退门槛。它们继续保留在测试矩阵中，本报告不把它们说成胜出。
+Fresh、short 和 long 增量样本的噪声都较大，并未证明发生回退。它们的配对中位数分别增加约 7.7%、7.7%
+和 4.6%，但每个区间都同时跨过改进与回退门槛。它们继续保留在测试矩阵中，本报告不把它们说成胜出；异常
+图像增量路径仍然不劣。
 
 ## 为什么不加 bundle cache
 
 模块级 cache 不能改善首次激活，因为 import 后仍必须先构建一次 bundle。它只能在 Worker 发生故障或整个
-Capability 重启后再次构建时省约 129 ms。正常 Session 切换会复用同一个 Worker。保留 cache 会让 8.4 MB
+Capability 重启后再次构建时省约 137 ms。正常 Session 切换会复用同一个 Worker。保留 cache 会让 8.4 MB
 Blob 常驻整个 Host 生命周期，还要为一个真实负载中没有频繁出现的路径处理失效问题。
 
 目前这个交换不划算。只有 telemetry 显示正常使用中反复重建 Worker，或者重建时间已经占用户可见恢复延迟的
-明显部分，才应重新考虑。基准已把构建和初始化拆开输出，触发条件可以直接测量。
+明显部分，才应重新考虑。基准已把构建、Worker handle 启动和初始化拆开输出，触发条件可以直接测量。
 
 ## 为什么队列保持串行
 
-两个同时发出的状态命令只推算出约 0.99 ms 排队等待。为了省这一毫秒，需要证明哪些上游 handler 真正只读，
+两个同时发出的状态命令只推算出约 1.25 ms 排队等待。为了省这一毫秒，需要证明哪些上游 handler 真正只读，
 同时保持 Session snapshot、增量 entry、取消、Magic Context 可变状态和 SQLite transaction 的顺序。当前
 FIFO 是简单的正确性边界，测得收益远低于拆分它的成本与风险。
 
@@ -91,7 +94,7 @@ prompt 为 85,670 tokens，占 128k window 的 66.93%。
 ## 证据身份与源码成本
 
 - 配对基准：`.artifacts/magic-context-040-vs-0411-paired.json`，SHA-256
-  `f3401fcb0f238167e2a5f88896cb4e24d0b34cde5e2f047baba1eb3d5ebee357`。
+  `a2150fa9a35950753c51d443804d955fe05e72bdada577dae7ed82fb4bbaeba2`。
 - 最终真实 Provider 报告：`.artifacts/magic-context-real-acceptance-0.41.1-final.json`，SHA-256
   `0fffc873cd885372fb07b880a4463a5f7ec56e8c602030c4e4ddda996c7e5670`。
 - 生产 Context 适配器增加 15 行：Worker transport 从 250→258，Worker entry 增加 7 行，API type 改动

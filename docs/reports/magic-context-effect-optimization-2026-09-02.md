@@ -15,14 +15,16 @@ bootstrap; improvement at ratio ≤0.95 and non-inferiority at upper 95% bound �
 ## Plain-language result
 
 The upgrade is worth taking. Normal Magic Context work is not meaningfully slower: fresh, short, long, and malformed
-image first projections all pass the non-inferiority gate. Initialization, single commands, and measured queue wait
-also pass. Upstream 0.41.x adds cache-stability repairs, Pi RPC and multi-Session fixes, schema v82, bundled-Pi CLI
-detection, and optional ONNX installation hardening.
+image first projections all pass the non-inferiority gate. Native Worker-handle start and initialization also pass.
+The millisecond-scale command and queue measurements are too noisy to classify, but remain too small to justify a
+more complex scheduler. Upstream 0.41.x adds cache-stability repairs, Pi RPC and multi-Session fixes, schema v82,
+bundled-Pi CLI detection, and optional ONNX installation hardening.
 
-There are two real costs. The generated Worker bundle grows from 6,863,418 to 8,421,328 bytes, up 22.7%. Its build
-time rises from a 93.866 ms sample median to 129.071 ms; the paired median ratio is 1.383. That build runs once when the
-Context Engine Worker starts, not on every turn or Session switch. Initialization plus tokenizer preload rises only
-about 3.9% by paired median and remains non-inferior.
+There are two real costs. The generated Worker bundle grows from 6,863,704 to 8,421,328 bytes, up 22.7%. Its build
+time rises from a 101.599 ms sample median to 136.854 ms; the paired median ratio is 1.391. That build runs once when
+the Context Engine Worker starts, not on every turn or Session switch. Native Worker-handle start remains below one
+millisecond and non-inferior. Initialization plus tokenizer preload, measured after subtracting handle start, rises
+only about 1.7% by paired median and remains non-inferior.
 
 Effect is helpful here for control, not raw arithmetic. It gives one owner for Worker lifetime, cancellation, pending
 request failure, bounded cleanup, and fail-open recovery. The upstream projection still does the expensive token and
@@ -36,38 +38,39 @@ ratios and their 95% bootstrap interval, so an absolute-median quotient need not
 
 | Metric | 0.40.0 median | 0.41.1 median | Paired ratio | 95% interval | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Worker build | 93.866 ms | 129.071 ms | 1.383 | 1.259–1.449 | Regressed |
-| Initialize + tokenizer preload | 754.376 ms | 787.451 ms | 1.039 | 0.943–1.069 | Non-inferior |
-| Fresh first projection | 38.362 ms | 39.807 ms | 1.038 | 0.851–1.076 | Non-inferior |
-| Short first projection | 122.864 ms | 122.078 ms | 0.987 | 0.948–1.027 | Non-inferior |
-| Long first projection | 1,559.720 ms | 1,573.873 ms | 0.998 | 0.963–1.019 | Non-inferior |
-| Malformed-image first projection | 134.804 ms | 137.626 ms | 1.006 | 0.962–1.069 | Non-inferior |
-| Fresh incremental leaf | 8.391 ms | 8.742 ms | 0.999 | 0.967–1.120 | Inconclusive |
-| Short incremental leaf | 9.655 ms | 10.145 ms | 1.087 | 0.612–1.480 | Inconclusive |
-| Long incremental leaf | 21.303 ms | 20.649 ms | 1.011 | 0.848–1.079 | Non-inferior |
-| Malformed-image incremental leaf | 26.948 ms | 25.726 ms | 0.965 | 0.952–1.024 | Non-inferior |
-| Single queued command | 1.179 ms | 1.182 ms | 0.938 | 0.784–1.064 | Non-inferior |
-| Two-command elapsed time | 2.383 ms | 2.205 ms | 0.861 | 0.691–1.183 | Inconclusive |
-| Inferred queue wait | 1.093 ms | 0.989 ms | 0.840 | 0.677–0.978 | Non-inferior |
+| Worker build | 101.599 ms | 136.854 ms | 1.391 | 1.230–1.452 | Regressed |
+| Worker-handle start | 0.671 ms | 0.477 ms | 0.648 | 0.438–1.030 | Non-inferior |
+| Initialize + tokenizer preload | 769.386 ms | 784.051 ms | 1.017 | 0.978–1.090 | Non-inferior |
+| Fresh first projection | 38.383 ms | 39.423 ms | 1.002 | 0.955–1.087 | Non-inferior |
+| Short first projection | 120.828 ms | 118.821 ms | 0.996 | 0.975–1.003 | Non-inferior |
+| Long first projection | 1,528.344 ms | 1,548.235 ms | 1.015 | 0.973–1.066 | Non-inferior |
+| Malformed-image first projection | 132.128 ms | 136.297 ms | 1.019 | 0.956–1.073 | Non-inferior |
+| Fresh incremental leaf | 8.546 ms | 9.007 ms | 1.077 | 0.799–1.206 | Inconclusive |
+| Short incremental leaf | 13.243 ms | 13.430 ms | 1.077 | 0.668–1.302 | Inconclusive |
+| Long incremental leaf | 20.990 ms | 23.626 ms | 1.046 | 0.876–1.142 | Inconclusive |
+| Malformed-image incremental leaf | 26.066 ms | 27.666 ms | 0.977 | 0.851–1.038 | Non-inferior |
+| Single queued command | 1.229 ms | 1.206 ms | 1.029 | 0.695–1.150 | Inconclusive |
+| Two-command elapsed time | 2.389 ms | 2.450 ms | 0.928 | 0.788–1.252 | Inconclusive |
+| Inferred queue wait | 1.165 ms | 1.251 ms | 0.943 | 0.632–1.415 | Inconclusive |
 
-Fresh and short incremental samples are noisy rather than proven regressions. Their paired medians are approximately
-unchanged and +8.7%, respectively, but the intervals cross both improvement and regression thresholds. They stay in
-the test matrix and are not claimed as wins.
+Fresh, short, and long incremental samples are noisy rather than proven regressions. Their paired medians rise by
+about 7.7%, 7.7%, and 4.6%, respectively, but every interval crosses both improvement and regression thresholds.
+They stay in the test matrix and are not claimed as wins. The malformed-image incremental path remains non-inferior.
 
 ## Why there is no bundle cache
 
 A module-level cache would not improve first activation, because the bundle must still be built once after import. It
-would save about 129 ms only when the Worker is rebuilt after a failure or full Capability restart. Normal Session
+would save about 137 ms only when the Worker is rebuilt after a failure or full Capability restart. Normal Session
 switches reuse the same Worker. Keeping the cache would retain an 8.4 MB Blob for the Host lifetime and add invalidation
 questions for a path that the real workload did not show as frequent.
 
 That trade is not justified now. Reconsider it when telemetry shows repeated Worker reconstruction in normal use, or
-when rebuild time becomes a material share of user-visible recovery latency. The benchmark exports separate build and
-initialization phases so that trigger is measurable.
+when rebuild time becomes a material share of user-visible recovery latency. The benchmark exports separate build,
+Worker-handle start, and initialization phases so that trigger is measurable.
 
 ## Why the queue stays serial
 
-Two simultaneous status commands infer about 0.99 ms of queue wait. Removing that millisecond would require proving
+Two simultaneous status commands infer about 1.25 ms of queue wait. Removing that millisecond would require proving
 which upstream handlers are read-only while preserving ordering across Session snapshots, incremental entries,
 cancellation, mutable Magic Context state, and SQLite transactions. The current FIFO is the simple correctness
 boundary, and the measured benefit is below the cost and risk of partitioning it.
@@ -99,7 +102,7 @@ isolated a second project, and reported a 21.46% Prompt Cache hit rate. The larg
 ## Evidence identity and source cost
 
 - Paired benchmark: `.artifacts/magic-context-040-vs-0411-paired.json`, SHA-256
-  `f3401fcb0f238167e2a5f88896cb4e24d0b34cde5e2f047baba1eb3d5ebee357`.
+  `a2150fa9a35950753c51d443804d955fe05e72bdada577dae7ed82fb4bbaeba2`.
 - Final real-Provider report: `.artifacts/magic-context-real-acceptance-0.41.1-final.json`, SHA-256
   `0fffc873cd885372fb07b880a4463a5f7ec56e8c602030c4e4ddda996c7e5670`.
 - Production Context adapter growth is 15 lines: Worker transport 250→258, Worker entry +7, and the API type change is
