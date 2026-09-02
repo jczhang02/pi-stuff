@@ -306,6 +306,13 @@ function positiveInteger(raw: string | undefined, fallback: number, name: string
 	return value;
 }
 
+function nonNegativeInteger(raw: string | undefined, fallback: number, name: string): number {
+	if (raw === undefined) return fallback;
+	const value = Number(raw);
+	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer.`);
+	return value;
+}
+
 async function configureSample(rootDirectory: string): Promise<Record<string, string>> {
 	const configDirectory = join(rootDirectory, "config", "cortexkit");
 	await Promise.all([
@@ -421,7 +428,7 @@ if (sampleOutput) {
 } else {
 	await runBenchmark(
 		positiveInteger(values.samples, 10, "--samples"),
-		positiveInteger(values.warmups, 3, "--warmups"),
+		nonNegativeInteger(values.warmups, 3, "--warmups"),
 		values.output,
 	);
 }
