@@ -6,7 +6,7 @@ interface TerminalResultInput {
 	index: number;
 	success: boolean;
 	error?: string;
-	sessionFile?: string;
+	sessionFile?: string | undefined;
 	interrupted?: boolean;
 	timedOut?: boolean;
 	stopped?: boolean;

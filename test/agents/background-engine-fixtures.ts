@@ -285,6 +285,7 @@ export function runBackgroundWork(
 			(task, index) =>
 				Effect.tryPromise({ try: () => runTask(task, index, options.signal), catch: (error) => error }),
 			{
+				runId: "test-run",
 				terminalCause: () => {
 					const reason = options.signal?.reason;
 					return options.signal?.aborted

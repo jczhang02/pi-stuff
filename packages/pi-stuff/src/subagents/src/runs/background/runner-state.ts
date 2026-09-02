@@ -16,6 +16,7 @@ import {
 	MAX_BACKGROUND_TASKS,
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
+import { terminalOutcome } from "../shared/terminal-outcome.ts";
 import type { cleanupWorktrees, diffWorktrees } from "../shared/worktree.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
@@ -34,6 +35,7 @@ interface ChildCompletedDiagnosticEvent {
 	error?: string;
 }
 interface RunBackgroundWorkOptions {
+	runId: string;
 	terminalCause?: () => NonNullable<BackgroundTaskResult["preStartTerminalCause"]> | undefined;
 }
 
@@ -79,6 +81,8 @@ function applyTaskResultMetadata(result: BackgroundTaskResult, task: RunnerAgent
 export function stoppedResult(
 	task: RunnerAgentTask,
 	cause: NonNullable<BackgroundTaskResult["preStartTerminalCause"]>,
+	runId: string,
+	index: number,
 ): BackgroundTaskResult {
 	const message = `Agent ${cause === "timeout" ? "timed out" : cause === "pause" ? "paused" : "stopped"} before it started.`;
 	const result: BackgroundTaskResult = {
@@ -88,6 +92,16 @@ export function stoppedResult(
 		exitCode: 1,
 		error: message,
 		preStartTerminalCause: cause,
+		terminalOutcome: terminalOutcome({
+			runId,
+			index,
+			success: false,
+			error: message,
+			sessionFile: task.sessionFile,
+			interrupted: cause === "pause",
+			timedOut: cause === "timeout",
+			stopped: cause === "stop",
+		}),
 	};
 	if (cause === "pause") result.interrupted = true;
 	else if (cause === "timeout") result.timedOut = true;
@@ -95,7 +109,12 @@ export function stoppedResult(
 	return applyTaskResultMetadata(result, task);
 }
 
-export function failedResult(task: RunnerAgentTask, cause: unknown): BackgroundTaskResult {
+export function failedResult(
+	task: RunnerAgentTask,
+	cause: unknown,
+	runId: string,
+	index: number,
+): BackgroundTaskResult {
 	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
 	const result: BackgroundTaskResult = {
 		agent: task.agent,
@@ -103,6 +122,13 @@ export function failedResult(task: RunnerAgentTask, cause: unknown): BackgroundT
 		success: false,
 		exitCode: 1,
 		error: message,
+		terminalOutcome: terminalOutcome({
+			runId,
+			index,
+			success: false,
+			error: message,
+			sessionFile: task.sessionFile,
+		}),
 	};
 	return applyTaskResultMetadata(result, task);
 }
@@ -123,6 +149,13 @@ export function terminalizeRejectedStep(
 	step.durationMs = Math.max(0, endedAt - (step.startedAt ?? endedAt));
 	step.exitCode = 1;
 	step.error = message;
+	step.terminalOutcome = terminalOutcome({
+		runId: status.runId,
+		index,
+		success: false,
+		error: message,
+		sessionFile: step.sessionFile,
+	});
 	step.currentTool = undefined;
 	step.currentToolArgs = undefined;
 	step.currentToolStartedAt = undefined;
@@ -233,7 +266,7 @@ export function failUndeliveredSteering(
 export function runBackgroundWork(
 	work: BackgroundRunnerWork,
 	runTask: (task: RunnerAgentTask, index: number) => Effect.Effect<BackgroundTaskResult, unknown>,
-	options: RunBackgroundWorkOptions = {},
+	options: RunBackgroundWorkOptions,
 ): Effect.Effect<BackgroundTaskResult[], unknown> {
 	const tasks = taskList(work);
 	if (tasks.length > MAX_BACKGROUND_TASKS) {
@@ -243,8 +276,10 @@ export function runBackgroundWork(
 	}
 	const executeTask = (task: RunnerAgentTask, index: number): Effect.Effect<BackgroundTaskResult> => {
 		const cause = options.terminalCause?.();
-		if (cause) return Effect.succeed(stoppedResult(task, cause));
-		return runTask(task, index).pipe(Effect.catch((error) => Effect.succeed(failedResult(task, error))));
+		if (cause) return Effect.succeed(stoppedResult(task, cause, options.runId, index));
+		return runTask(task, index).pipe(
+			Effect.catch((error) => Effect.succeed(failedResult(task, error, options.runId, index))),
+		);
 	};
 	if (work.mode === "single") {
 		return executeTask(work.task, 0).pipe(Effect.map((result) => [result]));

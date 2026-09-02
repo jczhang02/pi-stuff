@@ -548,7 +548,9 @@ function persistTaskCompletion(
 export async function runResolvedTask(input: ResolvedTaskInput): Promise<BackgroundTaskResult> {
 	const statusStep = input.status.steps[input.index];
 	if (!statusStep) throw new Error(`Missing status step for Agent index ${input.index}.`);
-	if (input.consumeScheduledStop(input.index)) return stoppedResult(input.task, "stop");
+	if (input.consumeScheduledStop(input.index)) {
+		return stoppedResult(input.task, "stop", input.config.id, input.index);
+	}
 	const started = startTask(input, statusStep);
 	const summary = await runAttempts(
 		input,
