@@ -62,6 +62,7 @@ import registerSubagentPromptRuntime, {
 	registerSteeringInbox,
 	registerToolBudget,
 	rewriteSubagentPrompt,
+	stripParentOnlySubagentMessages,
 	validateFinalProviderPayload,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/subagent-prompt-runtime.js";
 import {
@@ -306,6 +307,7 @@ export {
 	SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV,
 	setEnvironment,
 	steerAckPathFromDir,
+	stripParentOnlySubagentMessages,
 	temporaryDirectories,
 	tmpdir,
 	toolInfo,

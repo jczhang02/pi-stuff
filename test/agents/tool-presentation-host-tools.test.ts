@@ -243,6 +243,33 @@ test("detached root Agents keep native supervisor coordination with an explicit 
 	expect(foreground.env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV]).toBeUndefined();
 });
 
+test("forwards ambient Tool exclusions without inventing an allowlist", () => {
+	const ambient = buildPiArgs({
+		baseArgs: [],
+		task: "Inspect the project.",
+		sessionEnabled: false,
+		inheritProjectContext: true,
+		inheritSkills: false,
+		excludeTools: ["write", "unknown_tool"],
+	});
+	const excludeIndex = ambient.args.indexOf("--exclude-tools");
+	expect(ambient.args[excludeIndex + 1]).toBe("write,unknown_tool");
+	expect(ambient.args).not.toContain("--tools");
+
+	const explicit = buildPiArgs({
+		baseArgs: [],
+		task: "Inspect the project.",
+		sessionEnabled: false,
+		inheritProjectContext: true,
+		inheritSkills: false,
+		tools: ["read", "write"],
+		excludeTools: ["write"],
+	});
+	const toolsIndex = explicit.args.indexOf("--tools");
+	expect(explicit.args[toolsIndex + 1]).toBe("read");
+	expect(explicit.args).not.toContain("--exclude-tools");
+});
+
 test("replaces ambient child discovery with a controlled Suite surface and a terminal payload gate", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-child-base-extension-"));
 	temporaryDirectories.push(root);

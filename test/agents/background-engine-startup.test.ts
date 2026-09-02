@@ -426,7 +426,17 @@ test("waits for every parallel child when one child execution rejects", async ()
 
 	expect(completed.sort()).toEqual([1, 2]);
 	expect(results).toMatchObject([
-		{ agent: "agent-0", success: false, exitCode: 1, error: "child setup failed" },
+		{
+			agent: "agent-0",
+			success: false,
+			exitCode: 1,
+			error: "child setup failed",
+			terminalOutcome: {
+				state: "failed",
+				class: "unknown",
+				continuation: { target: { id: "test-run", index: 0 }, resumeSupported: false },
+			},
+		},
 		{ agent: "agent-1", success: true, exitCode: 0, output: "done-1" },
 		{ agent: "agent-2", success: true, exitCode: 0, output: "done-2" },
 	]);
@@ -494,6 +504,10 @@ test("projects every queued terminal cause without rewriting a launched Agent er
 		expect(results[1]?.interrupted).toBe(cause === "pause" ? true : undefined);
 		expect(results[1]?.timedOut).toBe(cause === "timeout" ? true : undefined);
 		expect(results[1]?.stopped).toBe(cause === "stop" ? true : undefined);
+		expect(results[1]?.terminalOutcome).toMatchObject({
+			class: cause === "pause" ? "interrupted" : cause === "timeout" ? "timeout" : "stopped",
+			continuation: { target: { id: "test-run", index: 1 }, resumeSupported: false },
+		});
 	}
 });
 

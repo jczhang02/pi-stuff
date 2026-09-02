@@ -104,6 +104,8 @@ function toSingleResult(
 	if (result.thinking) projected.thinking = result.thinking;
 	if (result.attemptedModels) projected.attemptedModels = [...result.attemptedModels];
 	if (result.modelAttempts) projected.modelAttempts = result.modelAttempts.map((attempt) => ({ ...attempt }));
+	if (result.cumulativeUsage) projected.cumulativeUsage = { ...result.cumulativeUsage };
+	if (result.terminalOutcome) projected.terminalOutcome = structuredClone(result.terminalOutcome);
 	if (result.error) projected.error = result.error;
 	if (result.sessionFile) projected.sessionFile = result.sessionFile;
 	if (result.artifactPaths) projected.artifactPaths = { ...result.artifactPaths };
@@ -229,6 +231,8 @@ export function projectForegroundStatus(
 		if (step.thinking) projected.thinking = step.thinking;
 		if (step.attemptedModels) projected.attemptedModels = [...step.attemptedModels];
 		if (step.modelAttempts) projected.modelAttempts = step.modelAttempts.map((attempt) => ({ ...attempt }));
+		if (step.cumulativeUsage) projected.cumulativeUsage = { ...step.cumulativeUsage };
+		if (step.terminalOutcome) projected.terminalOutcome = structuredClone(step.terminalOutcome);
 		if (step.error) projected.error = step.error;
 		else if (!detached && status.error) projected.error = status.error;
 		if (step.sessionFile) projected.sessionFile = step.sessionFile;

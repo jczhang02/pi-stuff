@@ -17,6 +17,22 @@ import {
 	waitUntil,
 } from "./current-agents-fixtures.js";
 
+const completedCumulativeUsage = {
+	turns: 72,
+	toolCalls: 140,
+	inputTokens: 900_000,
+	outputTokens: 20_000,
+	reportedCostUsd: 4.25,
+	modelAttempts: 2,
+	resumes: 1,
+};
+const completedTerminalOutcome = {
+	state: "completed",
+	class: "completed",
+	reason: "Agent returned a final answer.",
+	continuation: { target: { id: "done", index: 0 }, resumeSupported: false },
+} as const;
+
 function currentSessionSnapshot() {
 	const state = createState();
 	state.foregroundControls.set(
@@ -113,6 +129,8 @@ function currentSessionSnapshot() {
 				{
 					agent: "scout",
 					status: "completed",
+					cumulativeUsage: completedCumulativeUsage,
+					terminalOutcome: completedTerminalOutcome,
 					contextUsage: { tokens: 75_000, contextWindow: 100_000 },
 					startedAt: 1_000,
 					endedAt: 3_000,
@@ -156,6 +174,20 @@ test("projects terminal direct children with bounded completion detail", () => {
 		status: "completed",
 		elapsedMs: 2_000,
 		contextUsage: { tokens: 75_000, contextWindow: 100_000 },
+		cumulativeUsage: {
+			turns: 72,
+			toolCalls: 140,
+			inputTokens: 900_000,
+			outputTokens: 20_000,
+			reportedCostUsd: 4.25,
+			modelAttempts: 2,
+			resumes: 1,
+		},
+		terminalOutcome: {
+			state: "completed",
+			class: "completed",
+			continuation: { target: { id: "done", index: 0 }, resumeSupported: false },
+		},
 	});
 	expect(row(snapshot, "finished-foreground:0")).toMatchObject({
 		status: "completed",
@@ -341,6 +373,7 @@ test("cold startup restores only governor-indexed active runtime directories", a
 		readRunStatus: async (asyncDir) => {
 			reads.push(asyncDir);
 			return {
+				lifecycleArtifactVersion: 3,
 				runId: path.basename(asyncDir),
 				sessionId: "root-session",
 				state: "running",
@@ -375,6 +408,7 @@ test("treats a missing runtime root as one completed restore generation", async 
 		fs.writeFileSync(
 			path.join(runDir, "status.json"),
 			JSON.stringify({
+				lifecycleArtifactVersion: 3,
 				runId: "late-run",
 				sessionId: "root-session",
 				state: "running",

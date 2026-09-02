@@ -16,6 +16,66 @@ export const DEFAULT_SESSION_GOVERNOR_LIMITS: SessionGovernorLimits = {
 	maxTotal: 200,
 };
 
+export interface AgentWorkCostPolicy {
+	readonly reportedTokenLimit: number;
+	readonly reportedCostUsdLimit: number;
+}
+
+/** Frozen from the six-reviewer ps-qer baseline: 756,682 tokens and $4.163430 at the high end. */
+export const DEFAULT_AGENT_WORK_COST_POLICY: AgentWorkCostPolicy = Object.freeze({
+	reportedTokenLimit: 1_000_000,
+	reportedCostUsdLimit: 5,
+});
+
+export interface AgentWorkUsage {
+	turns: number;
+	toolCalls: number;
+	inputTokens: number;
+	outputTokens: number;
+	reportedCostUsd?: number;
+	modelAttempts: number;
+	resumes: number;
+}
+
+export function emptyAgentWorkUsage(): AgentWorkUsage {
+	return {
+		turns: 0,
+		toolCalls: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		modelAttempts: 0,
+		resumes: 0,
+	};
+}
+
+export interface RecordAgentWorkAttemptRequest {
+	readonly logicalAgentId: string;
+	readonly turns: number;
+	readonly toolCalls: number;
+	readonly inputTokens: number;
+	readonly outputTokens: number;
+	readonly reportedCostUsd?: number;
+}
+
+export type AgentWorkCostGuardCode = "reported_tokens" | "reported_cost_usd";
+
+export interface AgentWorkUnitSnapshot {
+	readonly logicalAgentId: string;
+	readonly usage: Readonly<AgentWorkUsage>;
+	readonly policy: AgentWorkCostPolicy;
+	readonly expansionAllowed: boolean;
+	readonly guardReason?: AgentWorkCostGuardCode;
+}
+
+export type AgentWorkExpansionResult =
+	| { readonly allowed: true; readonly workUnit: AgentWorkUnitSnapshot }
+	| {
+			readonly allowed: false;
+			readonly reason: AgentWorkCostGuardCode;
+			readonly message: string;
+			readonly workUnit: AgentWorkUnitSnapshot;
+	  };
+
 export interface SessionAgentGovernorOptions {
 	readonly rootDir: string;
 	readonly sessionId: string;
@@ -41,6 +101,8 @@ export interface AcquireAgentRequest {
 	readonly runtimeRunId?: string;
 	readonly childIndex?: number;
 	readonly pid?: number;
+	/** Direct user acknowledgement may admit a retained resume without clearing cumulative usage. */
+	readonly acknowledgeCost?: boolean;
 }
 
 export interface AcquireSpawnRequest extends AcquireAgentRequest {
@@ -54,7 +116,9 @@ export type AgentGovernorLease = Readonly<Omit<LeaseRecord, "ownerAgentPath" | "
 };
 export type SessionGovernorAgentSnapshot = AgentRecord;
 
-export type SessionGovernorHistoricalAgent = SessionGovernorAgentSnapshot;
+export type SessionGovernorHistoricalAgent = Omit<SessionGovernorAgentSnapshot, "workUsage"> & {
+	readonly workUsage?: AgentWorkUsage;
+};
 
 export interface SessionGovernorSnapshot {
 	readonly sessionId: string;
@@ -93,7 +157,19 @@ export interface SessionGovernorConflictError {
 	readonly message: string;
 }
 
-export type SessionGovernorAcquireError = SessionGovernorLimitError | SessionGovernorConflictError;
+export interface SessionGovernorCostGuardError {
+	readonly kind: "cost_guard";
+	readonly code: AgentWorkCostGuardCode;
+	readonly logicalAgentId: string;
+	readonly limit: number;
+	readonly used: number;
+	readonly message: string;
+}
+
+export type SessionGovernorAcquireError =
+	| SessionGovernorLimitError
+	| SessionGovernorConflictError
+	| SessionGovernorCostGuardError;
 
 export type SessionGovernorAcquireResult =
 	| {
@@ -175,6 +251,7 @@ export interface AgentRecord {
 	readonly agentPath: readonly string[];
 	readonly limits: SessionGovernorLimits;
 	readonly createdAtMs: number;
+	workUsage: AgentWorkUsage;
 }
 
 export interface LeaseRecord {
@@ -309,6 +386,12 @@ export function finiteNumber<Value>(name: string, value: Value): number {
 	return value;
 }
 
+export function nonNegativeFiniteNumber<Value>(name: string, value: Value): number {
+	const number = finiteNumber(name, value);
+	if (number < 0) throw new TypeError(`${name} must be a non-negative finite number.`);
+	return number;
+}
+
 export function samePath(left: readonly string[], right: readonly string[]): boolean {
 	return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
@@ -320,4 +403,66 @@ export function safeSystemBootIdentity(readIdentity: () => string | undefined): 
 	} catch {
 		return undefined;
 	}
+}
+
+export function checkedUsageTotal(name: string, current: number, delta: number): number {
+	return nonNegativeInteger(`cumulative ${name}`, current + delta);
+}
+
+function workGuardReason(agent: AgentRecord): AgentWorkCostGuardCode | undefined {
+	const usage = agent.workUsage;
+	if (usage.inputTokens + usage.outputTokens >= DEFAULT_AGENT_WORK_COST_POLICY.reportedTokenLimit) {
+		return "reported_tokens";
+	}
+	if (
+		usage.reportedCostUsd !== undefined &&
+		usage.reportedCostUsd >= DEFAULT_AGENT_WORK_COST_POLICY.reportedCostUsdLimit
+	) {
+		return "reported_cost_usd";
+	}
+	return undefined;
+}
+
+export function snapshotWorkUnit(agent: AgentRecord): AgentWorkUnitSnapshot {
+	const guardReason = workGuardReason(agent);
+	const snapshot: AgentWorkUnitSnapshot = {
+		logicalAgentId: agent.logicalAgentId,
+		usage: { ...agent.workUsage },
+		policy: { ...DEFAULT_AGENT_WORK_COST_POLICY },
+		expansionAllowed: guardReason === undefined,
+	};
+	return guardReason === undefined ? snapshot : { ...snapshot, guardReason };
+}
+
+export function expansionResult(workUnit: AgentWorkUnitSnapshot): AgentWorkExpansionResult {
+	const reason = workUnit.guardReason;
+	if (!reason) return { allowed: true, workUnit };
+	const usage = workUnit.usage;
+	const message =
+		reason === "reported_tokens"
+			? `Automatic Agent expansion needs attention: reported tokens ${String(
+					usage.inputTokens + usage.outputTokens,
+				)} reached the ${String(workUnit.policy.reportedTokenLimit)}-token limit.`
+			: `Automatic Agent expansion needs attention: reported cost $${(usage.reportedCostUsd ?? 0).toFixed(
+					6,
+				)} reached the $${workUnit.policy.reportedCostUsdLimit.toFixed(2)} limit.`;
+	return { allowed: false, reason, message, workUnit };
+}
+
+export function costGuardError(
+	workUnit: AgentWorkUnitSnapshot,
+	reason: AgentWorkCostGuardCode,
+): SessionGovernorCostGuardError {
+	const tokens = workUnit.usage.inputTokens + workUnit.usage.outputTokens;
+	const expansion = expansionResult(workUnit);
+	if (expansion.allowed)
+		throw new SessionGovernorStateError("A permitted work unit cannot produce a cost guard error.");
+	return {
+		kind: "cost_guard",
+		code: reason,
+		logicalAgentId: workUnit.logicalAgentId,
+		limit: reason === "reported_tokens" ? workUnit.policy.reportedTokenLimit : workUnit.policy.reportedCostUsdLimit,
+		used: reason === "reported_tokens" ? tokens : (workUnit.usage.reportedCostUsd ?? 0),
+		message: `${expansion.message} Resume it after direct user acknowledgement to continue with the same cumulative totals.`,
+	};
 }

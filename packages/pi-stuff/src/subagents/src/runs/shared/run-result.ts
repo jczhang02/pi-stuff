@@ -1,5 +1,6 @@
 /** Foreground and delivered Agent result contracts. */
 
+import type { AgentWorkUsage } from "../../runtime/session-governor.ts";
 import type {
 	AgentContextUsage,
 	ArtifactPaths,
@@ -15,11 +16,38 @@ import type {
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "./capability-ceiling.ts";
 import type { NestedRunSummary, PublicNestedRunSummary } from "./nested-contract.ts";
 
+export type AgentTerminalClass =
+	| "completed"
+	| "timeout"
+	| "stopped"
+	| "interrupted"
+	| "provider"
+	| "context"
+	| "storage"
+	| "protocol"
+	| "explicit_budget"
+	| "cost_guard"
+	| "process"
+	| "unknown";
+
+export interface AgentTerminalOutcome {
+	state: "completed" | "incomplete" | "failed";
+	class: AgentTerminalClass;
+	reason: string;
+	continuation: {
+		target: { id: string; index: number };
+		resumeSupported: boolean;
+		acknowledgementRequired?: true;
+	};
+}
+
 export interface SubagentResultIntercomChild {
 	agent: string;
 	status: SubagentResultStatus;
 	summary: string;
 	index?: number;
+	cumulativeUsage?: AgentWorkUsage;
+	terminalOutcome?: AgentTerminalOutcome;
 	artifactPath?: string;
 	sessionPath?: string;
 	intercomTarget?: string;
@@ -50,6 +78,8 @@ export interface ModelAttempt {
 	exitCode?: number | null;
 	error?: string | undefined;
 	usage?: Usage;
+	/** True only when the Provider supplied authoritative monetary telemetry. */
+	costReported?: true;
 }
 
 export interface ProtocolOutputLimit {
@@ -90,6 +120,9 @@ export interface SingleResult {
 	thinking?: string;
 	attemptedModels?: string[];
 	modelAttempts?: ModelAttempt[];
+	/** Durable work-unit total across model attempts and resumes; not current Context occupancy. */
+	cumulativeUsage?: AgentWorkUsage;
+	terminalOutcome?: AgentTerminalOutcome;
 	error?: string;
 	protocolError?: ProtocolOutputLimit;
 	sessionFile?: string;

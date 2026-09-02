@@ -35,11 +35,18 @@ export type ChildProtocolMessage = (Message | PiCustomMessage) & {
 };
 
 export const CHILD_MODEL_CONTEXT_ENTRY_TYPE = "pi-stuff-agent-model-context";
+export const CHILD_TOOL_BUDGET_ENTRY_TYPE = "pi-stuff-agent-tool-budget";
 
 export interface ChildModelContext {
 	readonly provider: string;
 	readonly model: string;
 	readonly contextWindow: number;
+}
+
+export interface ChildToolBudgetEvent {
+	readonly outcome: "soft-reached" | "hard-blocked";
+	readonly toolCount: number;
+	readonly toolName: string;
 }
 
 const CHILD_PROTOCOL_EVENT_TYPES = new Set([
@@ -83,6 +90,7 @@ export interface ChildProtocolEvent {
 	isError?: boolean;
 	willRetry?: JsonValue;
 	modelContext?: ChildModelContext;
+	toolBudgetEvent?: ChildToolBudgetEvent;
 }
 
 export function childMessageProtocolError(value: JsonValue | undefined): string | undefined {
@@ -179,6 +187,7 @@ export function parseChildProtocolEvent(value: JsonValue): ParsedChildProtocolEv
 		if (error) return { error: `${event["type"]} ${error}` };
 	}
 	let modelContext: ChildModelContext | undefined;
+	let toolBudgetEvent: ChildToolBudgetEvent | undefined;
 	if (event["type"] === "entry_appended" && isJsonObject(event["entry"])) {
 		const entry = event["entry"];
 		if (entry["customType"] === CHILD_MODEL_CONTEXT_ENTRY_TYPE) {
@@ -204,10 +213,29 @@ export function parseChildProtocolEvent(value: JsonValue): ParsedChildProtocolEv
 				model: data["model"],
 				contextWindow: data["contextWindow"],
 			};
+		} else if (entry["customType"] === CHILD_TOOL_BUDGET_ENTRY_TYPE) {
+			if (entry["type"] !== "custom") return { error: "entry_appended Tool budget entry.type must be 'custom'" };
+			if (!isJsonObject(entry["data"])) return { error: "entry_appended Tool budget data must be an object" };
+			const data = entry["data"];
+			if (data["version"] !== 1) return { error: "entry_appended Tool budget data.version must be 1" };
+			if (data["outcome"] !== "soft-reached" && data["outcome"] !== "hard-blocked") {
+				return { error: "entry_appended Tool budget data.outcome is invalid" };
+			}
+			if (!isRuntimeNumber(data["toolCount"]) || !Number.isSafeInteger(data["toolCount"]) || data["toolCount"] < 1) {
+				return { error: "entry_appended Tool budget data.toolCount must be a positive safe integer" };
+			}
+			if (!isRuntimeString(data["toolName"]) || !data["toolName"].trim()) {
+				return { error: "entry_appended Tool budget data.toolName must be a non-empty string" };
+			}
+			toolBudgetEvent = {
+				outcome: data["outcome"],
+				toolCount: data["toolCount"],
+				toolName: data["toolName"],
+			};
 		}
 	}
 	// SAFETY: supported event names are checked above, and final message events pass the complete message validator.
-	return { event: { ...event, type: event["type"], modelContext } as ChildProtocolEvent };
+	return { event: { ...event, type: event["type"], modelContext, toolBudgetEvent } as ChildProtocolEvent };
 }
 
 export function formatProtocolOutputLimit(limit: ProtocolOutputLimit): string {

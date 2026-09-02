@@ -27,7 +27,7 @@ export function buildSubagentToolDescription(roster: readonly AgentToolRosterEnt
 		"Pi may also issue several independent single calls in one assistant response; those foreground calls run concurrently under the same session limits.",
 		"A short 3–5 word description improves the UI; put the complete execution instruction in task.",
 		"Pi Stuff does not provide built-in Agent definitions; select an available Package, user, or project Agent.",
-		"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops; set them only when the task needs a tighter bound.",
+		"Omit timeoutMs and toolBudget for ordinary tasks; set them only when the task explicitly needs a tighter bound.",
 		"Do not invent or pass a background field. Omit foreground for the default background launch; set foreground=true only when the findings must inform the current answer.",
 		"Background completion never starts another main turn and remains inspectable through /agents. Foreground returns only direct-child summaries; inspect full and nested transcripts through /agents.",
 		formatAgentRoster(roster),
@@ -44,7 +44,7 @@ export function buildFanoutChildSubagentToolDescription(): string {
 		"Several independent single calls in one assistant response run concurrently under the same session limits.",
 		"A short 3–5 word description improves the UI; put the complete execution instruction in task.",
 		"Pi Stuff does not provide built-in Agent definitions; select an available Package, user, or project Agent.",
-		"Omit timeoutMs, turnBudget, and toolBudget for ordinary tasks to use the finite product backstops; set them only when the task needs a tighter bound.",
+		"Omit timeoutMs and toolBudget for ordinary tasks; set them only when the task explicitly needs a tighter bound.",
 		"Nested launches are always owner-blocking and collected before this Agent can finish; detached background launch is unavailable here.",
 		"Results contain direct-child summaries; inspect full and nested transcripts through /agents.",
 	].join(" ");

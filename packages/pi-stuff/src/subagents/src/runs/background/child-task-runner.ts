@@ -4,14 +4,27 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import * as Effect from "effect/Effect";
+import { parseAgentOwnerPath } from "../../runtime/agent-runtime-event.ts";
+import { type AgentWorkUnitSnapshot, SessionAgentGovernor } from "../../runtime/session-governor.ts";
 import { formatOutputArtifactContent, getArtifactPaths, withArtifactGroupWriteClaim } from "../../shared/artifacts.ts";
 import { writePrivateAtomicText } from "../../shared/atomic-json.ts";
 import { createChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import type { ArtifactPaths, ModelAttempt, ToolBudgetState } from "../../shared/types.ts";
+import {
+	type ArtifactPaths,
+	type ModelAttempt,
+	SESSION_GOVERNOR_ROOT,
+	type ToolBudgetState,
+} from "../../shared/types.ts";
 import { detectSubagentError, findLatestSessionFile } from "../../shared/utils.ts";
-import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
+import {
+	formatModelAttemptNote,
+	formatSubagentModelVerificationError,
+	isRetryableModelFailureAttempt,
+} from "../shared/model-fallback.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import { PI_STUFF_AGENT_PATH_ENV } from "../shared/pi-args.ts";
+import { terminalOutcome } from "../shared/terminal-outcome.ts";
 import { toolBudgetState } from "../shared/tool-budget.ts";
 import {
 	ChildProcessEngine,
@@ -102,6 +115,36 @@ interface AttemptSummary {
 	attemptedModels: string[];
 	writerProcesses: WriterProcess[];
 	final: ChildProcessResult | undefined;
+	workUnit?: AgentWorkUnitSnapshot;
+}
+
+function workUsageGovernor(task: RunnerAgentTask): SessionAgentGovernor | undefined {
+	if (!task.governorSessionId || !task.logicalAgentPathComponent) return undefined;
+	return new SessionAgentGovernor({
+		rootDir: SESSION_GOVERNOR_ROOT,
+		sessionId: task.governorSessionId,
+		ownerAgentPath: parseAgentOwnerPath(process.env[PI_STUFF_AGENT_PATH_ENV]),
+	});
+}
+
+async function recordSettledAttempt(
+	governor: SessionAgentGovernor | undefined,
+	task: RunnerAgentTask,
+	run: ChildProcessResult,
+): Promise<AgentWorkUnitSnapshot | undefined> {
+	const logicalAgentId = task.logicalAgentPathComponent;
+	if (!governor || !logicalAgentId) return;
+	const settled = {
+		logicalAgentId,
+		turns: run.usage.turns,
+		toolCalls: run.toolCount,
+		inputTokens: run.usage.input,
+		outputTokens: run.usage.output,
+	};
+	const request: Parameters<SessionAgentGovernor["recordWorkAttempt"]>[0] = run.costReported
+		? { ...settled, reportedCostUsd: run.usage.cost }
+		: settled;
+	return governor.recordWorkAttempt(request);
 }
 
 function writeStartingArtifacts(input: ResolvedTaskInput, transcript: TaskTranscript, startedAt: number): void {
@@ -190,6 +233,7 @@ function failedLaunch(message: string, model: string | undefined) {
 			output: "",
 			error: message,
 			usage: emptyUsage(),
+			costReported: false,
 			toolCount: 0,
 			durationMs: 0,
 			model,
@@ -197,10 +241,15 @@ function failedLaunch(message: string, model: string | undefined) {
 	};
 }
 
-function classifyRun(run: ChildProcessResult, model: string | undefined) {
-	const detected = !run.error
-		? detectSubagentError(run.messages.filter((message): message is Message => message.role !== "custom"))
-		: undefined;
+function classifyRun(run: ChildProcessResult, model: string | undefined, task: RunnerAgentTask) {
+	const modelVerificationError =
+		model && run.model
+			? formatSubagentModelVerificationError(model, run.model, task.modelVerificationRegistry)
+			: undefined;
+	const detected =
+		!run.error && !modelVerificationError
+			? detectSubagentError(run.messages.filter((message): message is Message => message.role !== "custom"))
+			: undefined;
 	const emptyOutput = !run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
 	const expectedManagerSignal =
 		run.process?.terminationOrigin === "manager-final-drain" ||
@@ -218,19 +267,22 @@ function classifyRun(run: ChildProcessResult, model: string | undefined) {
 					: undefined
 		: undefined;
 	const error =
+		modelVerificationError ??
 		run.error ??
 		(detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ??
 		emptyOutput ??
 		unexplainedExit;
 	const exitCode = error && run.exitCode === 0 ? 1 : run.exitCode;
+	const attempt: ModelAttempt = {
+		model: model ?? run.model ?? "default",
+		success: exitCode === 0 && !error,
+		exitCode,
+		error: error ? boundResultText(error, MAX_MODEL_ATTEMPT_ERROR_BYTES) : undefined,
+		usage: run.usage,
+	};
+	if (run.costReported) attempt.costReported = true;
 	return {
-		attempt: {
-			model: model ?? run.model ?? "default",
-			success: exitCode === 0 && !error,
-			exitCode,
-			error: error ? boundResultText(error, MAX_MODEL_ATTEMPT_ERROR_BYTES) : undefined,
-			usage: run.usage,
-		} satisfies ModelAttempt,
+		attempt,
 		final: { ...run, exitCode, error },
 		error,
 	};
@@ -248,10 +300,7 @@ function shouldStopFallback(
 			run.interrupted ||
 			run.timedOut ||
 			run.stopped ||
-			run.turnBudgetExceeded ||
-			// Retrying after Tool execution could repeat external mutations.
-			run.toolCount > 0 ||
-			!isRetryableModelFailure(error) ||
+			!isRetryableModelFailureAttempt({ error, messages: run.messages, toolCount: run.toolCount }) ||
 			candidateIndex === candidateCount - 1,
 	);
 }
@@ -266,6 +315,7 @@ async function runAttempts(
 	const candidates = input.task.modelCandidates?.length ? input.task.modelCandidates : [input.task.model];
 	const summary: AttemptSummary = { attempts: [], attemptedModels: [], writerProcesses: [], final: undefined };
 	const fallbackSnapshot = createSessionFallbackSnapshot(input.task.sessionFile, candidates.length);
+	const usageGovernor = workUsageGovernor(input.task);
 	try {
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
 			const candidate = candidates[candidateIndex];
@@ -299,14 +349,34 @@ async function runAttempts(
 				summary.attempts.push(failed.attempt);
 				if (candidate) summary.attemptedModels.push(candidate);
 				summary.final = failed.final;
+				const workUnit = await recordSettledAttempt(usageGovernor, input.task, failed.final);
+				if (workUnit) summary.workUnit = workUnit;
 				break;
 			}
 			if (run.process) summary.writerProcesses.push({ ...run.process, attempt: candidateIndex });
-			const classified = classifyRun(run, candidate);
+			const classified = classifyRun(run, candidate, input.task);
 			summary.attempts.push(classified.attempt);
 			if (candidate) summary.attemptedModels.push(candidate);
 			summary.final = classified.final;
+			try {
+				const workUnit = await recordSettledAttempt(usageGovernor, input.task, classified.final);
+				if (workUnit) summary.workUnit = workUnit;
+			} catch (error) {
+				summary.final = {
+					...classified.final,
+					exitCode: 1,
+					error: error instanceof Error ? error.message : String(error),
+				};
+				break;
+			}
 			if (shouldStopFallback(run, classified.attempt, classified.error, candidateIndex, candidates.length)) break;
+			if (usageGovernor && input.task.logicalAgentPathComponent) {
+				const expansion = await usageGovernor.authorizeWorkExpansion(input.task.logicalAgentPathComponent);
+				if (!expansion.allowed) {
+					summary.final = { ...classified.final, exitCode: 1, error: expansion.message };
+					break;
+				}
+			}
 			try {
 				fallbackSnapshot?.restore();
 			} catch (restoreError) {
@@ -355,16 +425,14 @@ function createTaskResult(
 	if (final?.interrupted) result.interrupted = true;
 	if (final?.timedOut) result.timedOut = true;
 	if (final?.stopped) result.stopped = true;
-	if (final?.turnBudget) result.turnBudget = final.turnBudget;
-	if (final?.turnBudgetExceeded) {
-		result.turnBudgetExceeded = true;
-		result.wrapUpRequested = true;
-	}
 	if (final?.contextNudgeObserved) result.contextNudgeObserved = true;
 	const toolBudget: ToolBudgetState | undefined = task.toolBudget
-		? toolBudgetState(task.toolBudget, final?.toolCount ?? 0)
+		? toolBudgetState(task.toolBudget, final?.toolCount ?? 0, final?.toolBudgetBlockedTool)
 		: undefined;
-	if (toolBudget) result.toolBudget = toolBudget;
+	if (toolBudget) {
+		result.toolBudget = toolBudget;
+		if (toolBudget.outcome === "hard-blocked") result.toolBudgetBlocked = true;
+	}
 	const sessionFile = task.sessionFile ?? findLatestSessionFile(childSessionDir);
 	if (sessionFile) result.sessionFile = sessionFile;
 	const intercomTarget = config.childIntercomTargets?.[index];
@@ -381,6 +449,21 @@ function createTaskResult(
 	if (transcriptError) result.transcriptError = transcriptError;
 	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
 	if (task.capabilityCeiling) result.capabilityCeiling = task.capabilityCeiling;
+	if (summary.workUnit) result.cumulativeUsage = { ...summary.workUnit.usage };
+	const outcomeInput: Parameters<typeof terminalOutcome>[0] = {
+		runId: config.id,
+		index,
+		success: result.success,
+	};
+	if (result.error) outcomeInput.error = result.error;
+	if (result.sessionFile) outcomeInput.sessionFile = result.sessionFile;
+	if (result.interrupted) outcomeInput.interrupted = true;
+	if (result.timedOut) outcomeInput.timedOut = true;
+	if (result.stopped) outcomeInput.stopped = true;
+	if (result.protocolError) outcomeInput.protocolError = result.protocolError;
+	if (result.turnBudgetExceeded) outcomeInput.turnBudgetExceeded = true;
+	if (summary.workUnit) outcomeInput.workUnit = summary.workUnit;
+	result.terminalOutcome = terminalOutcome(outcomeInput);
 	return { result, fullOutput };
 }
 
@@ -424,7 +507,6 @@ function writeTerminalArtifacts(
 				model: result.model,
 				thinking: result.thinking,
 				skills: task.skills,
-				turnBudget: result.turnBudget,
 				toolBudget: result.toolBudget,
 				exitCode: result.exitCode,
 				error: result.error,
@@ -466,7 +548,9 @@ function persistTaskCompletion(
 export async function runResolvedTask(input: ResolvedTaskInput): Promise<BackgroundTaskResult> {
 	const statusStep = input.status.steps[input.index];
 	if (!statusStep) throw new Error(`Missing status step for Agent index ${input.index}.`);
-	if (input.consumeScheduledStop(input.index)) return stoppedResult(input.task, "stop");
+	if (input.consumeScheduledStop(input.index)) {
+		return stoppedResult(input.task, "stop", input.config.id, input.index);
+	}
 	const started = startTask(input, statusStep);
 	const summary = await runAttempts(
 		input,

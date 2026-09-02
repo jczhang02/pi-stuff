@@ -85,6 +85,7 @@ const originalRunResultMaxBytes = process.env["PI_SUBAGENT_RUN_RESULT_MAX_BYTES"
 const originalTmpDir = process.env["TMPDIR"];
 const originalTmp = process.env["TMP"];
 const originalTemp = process.env["TEMP"];
+const originalXdgStateHome = process.env["XDG_STATE_HOME"];
 const WRITER_REGISTRY_SCHEMA = Type.Object(
 	{
 		writers: Type.Optional(
@@ -284,6 +285,7 @@ export function runBackgroundWork(
 			(task, index) =>
 				Effect.tryPromise({ try: () => runTask(task, index, options.signal), catch: (error) => error }),
 			{
+				runId: "test-run",
 				terminalCause: () => {
 					const reason = options.signal?.reason;
 					return options.signal?.aborted
@@ -398,4 +400,6 @@ export function cleanupBackgroundEngineFixtures(): void {
 	else process.env["TMP"] = originalTmp;
 	if (originalTemp === undefined) delete process.env["TEMP"];
 	else process.env["TEMP"] = originalTemp;
+	if (originalXdgStateHome === undefined) delete process.env["XDG_STATE_HOME"];
+	else process.env["XDG_STATE_HOME"] = originalXdgStateHome;
 }

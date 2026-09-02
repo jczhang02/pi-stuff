@@ -108,6 +108,8 @@ function row(key: string, status: AgentStatus, overrides: Partial<Omit<AgentRow,
 		error: null,
 		elapsedMs: 12_000,
 		contextUsage: null,
+		cumulativeUsage: null,
+		terminalOutcome: null,
 		key,
 		name: key,
 		nestedAgents: [],
@@ -336,6 +338,41 @@ test("shows a terminal error once and removes repeated task wrappers", async () 
 	const low = text(component, 64);
 	expect(low).toContain("Provider rejected the child payload");
 	expect(low).toContain("Esc back");
+});
+
+test("shows cumulative usage and recovery in the authoritative Agent detail", async () => {
+	const { component } = setup(
+		[
+			row("limited", "failed", {
+				cumulativeUsage: {
+					turns: 66,
+					toolCalls: 94,
+					inputTokens: 1_000_000,
+					outputTokens: 12_180,
+					reportedCostUsd: 4.16343,
+					modelAttempts: 1,
+					resumes: 0,
+				},
+				terminalOutcome: {
+					state: "incomplete",
+					class: "cost_guard",
+					reason: "Automatic Agent expansion needs attention.",
+					continuation: {
+						target: { id: "run-limited", index: 0 },
+						resumeSupported: true,
+						acknowledgementRequired: true,
+					},
+				},
+			}),
+		],
+		{ initialKey: "limited" },
+	);
+	await flush();
+	const detail = text(component, 120);
+	expect(detail).toContain("Run\n  66 turns · 94 Tools · 1000000 input + 12180 output tokens");
+	expect(detail).toContain("Reported cost $4.163430 · 1 attempts · 0 resumes");
+	expect(detail).toContain("cost_guard · incomplete · Automatic Agent expansion needs attention.");
+	expect(detail).toContain("Target run-limited index 0 · resumable · acknowledgement required");
 });
 
 test("navigates without wrapping and uses Escape as back then close", async () => {

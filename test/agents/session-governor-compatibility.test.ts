@@ -317,6 +317,62 @@ test("quarantines a v1 lease whose runtime ownership is still live or unknown", 
 	expect(await governor(currentRoot, "ps2-current").inspectExistingSnapshot()).toBeUndefined();
 });
 
+test("keeps missing, corrupt, nonterminal, live, and writer-unknown v1 evidence quarantined", async () => {
+	for (const kind of ["missing", "corrupt", "nonterminal", "live", "writer-unknown"] as const) {
+		const currentRoot = temporaryRoot(`pi-governor-current-${kind}-`);
+		const legacyRoot = temporaryRoot(`pi-governor-legacy-${kind}-`);
+		const old = governor(legacyRoot, "logical-session");
+		const acquired = await old.acquireSpawn({ logicalAgentId: `${kind}:0`, pid: 999_999_991 });
+		if (!acquired.ok) throw new Error(acquired.error.message);
+		const asyncDir = runtimeDirectory(`${kind}-${randomUUID()}`, "/sessions/current.jsonl");
+		await old.rebindRuntime(acquired.lease, {
+			runtimeRunId: path.basename(asyncDir),
+			asyncDir,
+			pid: 999_999_991,
+		});
+		makeFixtureUseLegacyLockProtocol(legacyRoot);
+
+		let readStatus: PrepareSessionGovernorCompatibilityInput["readStatus"];
+		let isPidAlive: PrepareSessionGovernorCompatibilityInput["isPidAlive"];
+		let inspectWriterLiveness: PrepareSessionGovernorCompatibilityInput["inspectWriterLiveness"] | undefined;
+		if (kind === "missing") readStatus = () => null;
+		if (kind === "corrupt")
+			readStatus = () => {
+				throw new Error("corrupt legacy status");
+			};
+		if (kind === "nonterminal") {
+			readStatus = () => ({
+				runId: path.basename(asyncDir),
+				sessionId: "/sessions/current.jsonl",
+				mode: "single",
+				state: "running",
+				startedAt: 1,
+				steps: [{ agent: "worker", status: "running" }],
+			});
+		}
+		if (kind === "live") isPidAlive = () => true;
+		if (kind === "writer-unknown") {
+			isPidAlive = () => false;
+			inspectWriterLiveness = () => undefined;
+		}
+
+		let compatibilityInput: CompatibilityInput = {
+			scope: scope({ declared: [`${kind}:0`], legacyArtifactSessionId: "/sessions/current.jsonl" }),
+			limits,
+			currentRootDir: currentRoot,
+			legacyRootDir: legacyRoot,
+		};
+		if (readStatus) compatibilityInput = { ...compatibilityInput, readStatus };
+		if (isPidAlive) compatibilityInput = { ...compatibilityInput, isPidAlive };
+		if (inspectWriterLiveness) compatibilityInput = { ...compatibilityInput, inspectWriterLiveness };
+		const result = await prepareSessionGovernorCompatibility(compatibilityInput);
+
+		expect(result.ok, kind).toBeFalse();
+		expect(await governor(currentRoot, "ps2-current").inspectExistingSnapshot(), kind).toBeUndefined();
+		expect((await old.inspectExistingSnapshot())?.leases, kind).toHaveLength(1);
+	}
+});
+
 test("ignores another physical copy's live v1 lease", async () => {
 	const currentRoot = temporaryRoot("pi-governor-current-");
 	const legacyRoot = temporaryRoot("pi-governor-legacy-");

@@ -6,8 +6,8 @@ import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.j
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
-import { resolveTurnBudgetConfig } from "../runs/shared/turn-budget.ts";
-import type { ToolBudgetConfig, TurnBudgetConfig } from "../shared/types.ts";
+import { resolveToolTimeoutMs } from "../runs/shared/tool-timeout.ts";
+import type { ToolBudgetConfig } from "../shared/types.ts";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 import { mergeAgentsForScope } from "./agent-selection.ts";
 import { parseFrontmatter, parseFrontmatterList } from "./frontmatter.ts";
@@ -26,6 +26,7 @@ export interface AgentConfig {
 	readonly packageName?: string;
 	readonly description: string;
 	readonly tools?: string[];
+	readonly excludeTools?: string[];
 	readonly mcpDirectTools?: string[];
 	readonly model?: string;
 	readonly fallbackModels?: string[];
@@ -33,7 +34,6 @@ export interface AgentConfig {
 	readonly systemPromptMode: SystemPromptMode;
 	readonly inheritProjectContext: boolean;
 	readonly inheritSkills: boolean;
-	readonly defaultTurnBudget?: TurnBudgetConfig;
 	readonly systemPrompt: string;
 	readonly source: AgentSource;
 	readonly filePath: string;
@@ -43,6 +43,7 @@ export interface AgentConfig {
 	readonly subagentOnlyExtensions?: string[];
 	readonly maxSubagentDepth?: number;
 	readonly toolBudget?: ToolBudgetConfig;
+	readonly toolTimeoutMs?: number;
 }
 
 export interface AgentDiscoveryResult {
@@ -72,7 +73,13 @@ export async function findNearestProjectRoot(cwd: string): Promise<string | null
 	let current = path.resolve(cwd);
 	let gitRoot: string | null = null;
 	while (true) {
-		if (await isDirectory(path.join(getProjectConfigDir(current), "agents"))) return current;
+		const configDir = getProjectConfigDir(current);
+		if (
+			(await isDirectory(path.join(configDir, "agents"))) ||
+			(await pathExists(path.join(configDir, "settings.json")))
+		) {
+			return current;
+		}
 		if (!gitRoot && (await pathExists(path.join(current, ".git")))) gitRoot = current;
 		const parent = path.dirname(current);
 		if (parent === current) return gitRoot;
@@ -88,10 +95,22 @@ export async function discoverAgents(cwd: string, scope: AgentScope): Promise<Ag
 
 	const packagePaths = await collectPackageAgentPaths(cwd, projectRoot, { includeProject, includeUser });
 	const packageAgents = await loadUniqueAgents(packagePaths, "package", false);
-	const userPaths = includeUser ? [...extraUserAgentDirs(), path.join(getAgentDir(), "agents")] : [];
+	const userPaths = includeUser
+		? [
+				...extraUserAgentDirs(),
+				...(await settingsAgentScanDirs(path.join(getAgentDir(), "settings.json"))),
+				path.join(getAgentDir(), "agents"),
+			]
+		: [];
 	const userAgents = await loadUniqueAgents(userPaths, "user", true);
+	const projectScanDirs =
+		includeProject && projectRoot
+			? await settingsAgentScanDirs(path.join(getProjectConfigDir(projectRoot), "settings.json"))
+			: [];
 	const projectAgents =
-		includeProject && projectAgentsDir ? await loadUniqueAgents([projectAgentsDir], "project", true) : [];
+		includeProject && projectAgentsDir
+			? await loadUniqueAgents([...projectScanDirs, projectAgentsDir], "project", true)
+			: [];
 
 	const agents = mergeAgentsForScope(scope, userAgents, projectAgents, packageAgents);
 	return { agents, projectAgentsDir };
@@ -139,6 +158,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		const packageName = parsedPackage.packageName;
 		const rawTools = parseFrontmatterList(frontmatter["tools"]);
 		const { tools, mcpDirectTools } = splitTools(rawTools);
+		const excludeTools = parseFrontmatterList(frontmatter["excludeTools"]);
 		const fallbackModels = nonEmpty(parseFrontmatterList(frontmatter["fallbackModels"]));
 		if (fallbackModels && fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) return undefined;
 		const skills = nonEmpty(parseFrontmatterList(frontmatter["skill"] ?? frontmatter["skills"]));
@@ -146,8 +166,8 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		const extensions = parseFrontmatterList(frontmatter["extensions"]);
 		const subagentOnlyExtensions = nonEmpty(parseFrontmatterList(frontmatter["subagentOnlyExtensions"]));
 
-		const defaultTurnBudget = parseTurnBudget(frontmatter["turnBudget"], localName);
 		const toolBudget = parseToolBudget(frontmatter["toolBudget"], localName);
+		const toolTimeoutMs = parseToolTimeout(frontmatter["toolTimeoutMs"], localName);
 		const maxSubagentDepth = optionalNonNegativeInteger(frontmatter["maxSubagentDepth"]);
 		if (frontmatter["maxSubagentDepth"] !== undefined && maxSubagentDepth === undefined) return undefined;
 
@@ -185,31 +205,24 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 		};
 		if (packageName) agent = { ...agent, packageName };
 		if (rawTools !== undefined) agent = { ...agent, tools };
+		if (excludeTools !== undefined) agent = { ...agent, excludeTools };
 		if (mcpDirectTools.length > 0) agent = { ...agent, mcpDirectTools };
 		if (optionalText(frontmatter["model"])) agent = { ...agent, model: frontmatter["model"].trim() };
 		if (fallbackModels) agent = { ...agent, fallbackModels };
 		if (frontmatter["thinking"] === "false") agent = { ...agent, thinking: false };
 		else if (optionalText(frontmatter["thinking"])) agent = { ...agent, thinking: frontmatter["thinking"].trim() };
-		if (defaultTurnBudget) agent = { ...agent, defaultTurnBudget };
 		if (skills) agent = { ...agent, skills };
 		if (skillPath) agent = { ...agent, skillPath };
 		if (extensions !== undefined) agent = { ...agent, extensions };
 		if (subagentOnlyExtensions) agent = { ...agent, subagentOnlyExtensions };
 		if (maxSubagentDepth !== undefined) agent = { ...agent, maxSubagentDepth };
 		if (toolBudget) agent = { ...agent, toolBudget };
+		if (toolTimeoutMs !== undefined) agent = { ...agent, toolTimeoutMs };
 		return agent;
 	} catch {
 		// One malformed optional Agent definition must not make the Agent tool unavailable.
 		return undefined;
 	}
-}
-
-function parseTurnBudget(value: string | undefined, name: string): TurnBudgetConfig | undefined {
-	if (!optionalText(value)) return undefined;
-	const parsed = parseJsonValue(value);
-	const result = resolveTurnBudgetConfig(parsed, `Agent '${name}' turnBudget`);
-	if (result.error) throw new Error(result.error);
-	return result.turnBudget;
 }
 
 function parseToolBudget(value: string | undefined, name: string): ToolBudgetConfig | undefined {
@@ -220,8 +233,23 @@ function parseToolBudget(value: string | undefined, name: string): ToolBudgetCon
 	return result.budget;
 }
 
-async function listAgentFiles(directory: string): Promise<string[]> {
+function parseToolTimeout(value: string | undefined, name: string): number | undefined {
+	if (value === undefined) return undefined;
+	const result = resolveToolTimeoutMs({ agentValue: Number(value) });
+	if (result.error) throw new Error(`Agent '${name}' ${result.error}`);
+	return result.toolTimeoutMs;
+}
+
+async function listAgentFiles(directory: string, visitedDirectories = new Set<string>()): Promise<string[]> {
 	const files: string[] = [];
+	let realDirectory: string;
+	try {
+		realDirectory = await fs.promises.realpath(directory);
+	} catch {
+		return files;
+	}
+	if (visitedDirectories.has(realDirectory)) return files;
+	visitedDirectories.add(realDirectory);
 	let entries: fs.Dirent[];
 	try {
 		entries = (await fs.promises.readdir(directory, { withFileTypes: true })).sort((left, right) =>
@@ -233,8 +261,9 @@ async function listAgentFiles(directory: string): Promise<string[]> {
 	for (const entry of entries) {
 		if (PRUNED_DIRECTORY_NAMES.has(entry.name)) continue;
 		const candidate = path.join(directory, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...(await listAgentFiles(candidate)));
+		const directoryEntry = entry.isDirectory() || (entry.isSymbolicLink() && (await isDirectory(candidate)));
+		if (directoryEntry) {
+			files.push(...(await listAgentFiles(candidate, visitedDirectories)));
 			continue;
 		}
 		if (
@@ -372,6 +401,48 @@ function extraUserAgentDirs(): string[] {
 		.split(path.delimiter)
 		.map((entry) => entry.trim())
 		.filter(Boolean);
+}
+
+async function settingsAgentScanDirs(settingsPath: string): Promise<string[]> {
+	const settings = await readJson(settingsPath);
+	if (!isRecord(settings)) return [];
+	const subagents = settings["subagents"];
+	if (!isRecord(subagents)) return [];
+	const patterns = stringArray(subagents["agentScanDirs"]);
+	return uniquePaths((await Promise.all(patterns.map(expandAgentScanDirPattern))).flat());
+}
+
+async function expandAgentScanDirPattern(pattern: string): Promise<string[]> {
+	const trimmed = pattern.trim();
+	const homeExpanded =
+		trimmed === "~"
+			? os.homedir()
+			: trimmed.startsWith("~/") || trimmed.startsWith("~\\")
+				? path.join(os.homedir(), trimmed.slice(2))
+				: trimmed;
+	const expanded = homeExpanded.replace(/[\\/]+/g, path.sep);
+	const wildcardCount = [...expanded.matchAll(/\*/g)].length;
+	if (wildcardCount === 0) return (await isDirectory(path.resolve(expanded))) ? [path.resolve(expanded)] : [];
+	const parts = expanded.split(path.sep);
+	const wildcardIndex = parts.indexOf("*");
+	if (wildcardCount !== 1 || wildcardIndex < 0) return [];
+	const base = path.resolve(parts.slice(0, wildcardIndex).join(path.sep) || path.sep);
+	const suffix = parts.slice(wildcardIndex + 1);
+	let entries: fs.Dirent[];
+	try {
+		entries = await fs.promises.readdir(base, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const candidates = await Promise.all(
+		entries.map(async (entry) => {
+			const candidate = path.join(base, entry.name, ...suffix);
+			return (entry.isDirectory() || entry.isSymbolicLink()) && (await isDirectory(candidate))
+				? candidate
+				: undefined;
+		}),
+	);
+	return candidates.filter((candidate): candidate is string => candidate !== undefined);
 }
 
 function splitTools(values: string[] | undefined) {

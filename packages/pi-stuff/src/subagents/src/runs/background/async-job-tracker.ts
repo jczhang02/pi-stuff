@@ -215,6 +215,7 @@ class AsyncJobTracker {
 		job.sessionDir = status.sessionDir ?? job.sessionDir;
 		job.outputFile = status.outputFile ?? job.outputFile;
 		job.totalTokens = status.totalTokens ?? job.totalTokens;
+		job.totalCost = status.totalCost ?? job.totalCost;
 		job.timeoutMs = status.timeoutMs ?? job.timeoutMs;
 		job.deadlineAt = status.deadlineAt ?? job.deadlineAt;
 		job.timedOut = status.timedOut ?? job.timedOut;

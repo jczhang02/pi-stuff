@@ -86,6 +86,62 @@ test("captures user attribution before launching a background Agent", async () =
 	expect(root.engineOrigins).toEqual(["user"]);
 });
 
+test("accepts cost acknowledgement only from a direct user resume", async () => {
+	const root = createHarness();
+	await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+	const state = root.state.value;
+	if (!state?.foregroundRuns || !state.currentSessionId) throw new Error("Expected an active Agent session");
+	state.foregroundRuns.set("cost-limited", {
+		children: [
+			{
+				agent: "reviewer",
+				index: 0,
+				sessionFile: "/tmp/reviewer.jsonl",
+				status: "failed",
+				task: "Continue the retained review",
+			},
+		],
+		cwd: "/project",
+		mode: "single",
+		runId: "cost-limited",
+		sessionId: state.currentSessionId,
+		updatedAt: 1,
+	});
+	const tool = root.api.tools.get("subagent");
+	if (!tool) throw new Error("Expected public Agent tool");
+
+	const automatic = await tool.execute(
+		"automatic-resume",
+		{ action: "resume", acknowledgeCost: true, id: "cost-limited" },
+		new AbortController().signal,
+		undefined,
+		context(),
+	);
+	expect(automatic.content[0]).toMatchObject({
+		type: "text",
+		text: expect.stringContaining("requires a direct user-started Agent request"),
+	});
+	expect(root.governor.prepares).toHaveLength(0);
+
+	const stop = listenForAgentWorkOriginQueries(root.api.api, () => "user");
+	try {
+		await tool.execute(
+			"user-resume",
+			{ action: "resume", acknowledgeCost: true, id: "cost-limited" },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+	} finally {
+		stop();
+	}
+	expect(root.governor.prepares).toHaveLength(1);
+	expect(root.governor.prepares[0]).toMatchObject({
+		acknowledgeCost: true,
+		params: { action: "resume", id: "cost-limited" },
+	});
+});
+
 test("releases the governor invocation when post-prepare runtime startup fails", async () => {
 	const root = createHarness({ runtimeStartFailure: true });
 	await root.api.fire("session_start", { reason: "startup", type: "session_start" });

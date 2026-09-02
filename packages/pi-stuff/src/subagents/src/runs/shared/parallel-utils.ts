@@ -8,7 +8,6 @@ import type {
 	NestedRouteInfo,
 	ResolvedControlConfig,
 	ResolvedToolBudget,
-	ResolvedTurnBudget,
 } from "../../shared/types.ts";
 import type { PiWriterProcessInstanceExitV1 } from "../background/process-terminal.ts";
 import type { ResolvedSubagentCapabilityCeiling } from "./capability-ceiling.ts";
@@ -23,7 +22,7 @@ import type { SingleResult } from "./run-result.ts";
 export interface RunnerAgentTask
 	extends Omit<
 		Partial<LaunchBindingInput>,
-		"task" | "inheritProjectContext" | "inheritSkills" | "turnBudget" | "toolBudget" | "capabilityCeiling"
+		"task" | "inheritProjectContext" | "inheritSkills" | "toolBudget" | "capabilityCeiling"
 	> {
 	/** Durable ledger namespace; may be v1 only while finishing an in-flight upgrade. */
 	governorSessionId?: string;
@@ -47,14 +46,17 @@ export interface RunnerAgentTask
 	thinking?: string;
 	/** Context windows frozen from the launcher's model registry for the selected candidates. */
 	modelContextWindows?: Array<{ model: string; contextWindow: number }>;
+	/** Registry entries used to verify that Pi honored a launch candidate. */
+	modelVerificationRegistry?: Array<{ provider: string; id: string; fullId: string }>;
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	excludeTools?: string[];
 	childBaseExtensionPath?: string;
 	sessionFile?: string;
 	launchBindingTask?: string;
 	launchContractDigest?: string;
-	turnBudget?: ResolvedTurnBudget;
 	toolBudget?: ResolvedToolBudget;
+	toolTimeoutMs?: number;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 }
 

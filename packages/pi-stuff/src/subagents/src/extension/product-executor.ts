@@ -15,14 +15,14 @@ export interface PublicAgentTask {
 	readonly cwd?: string;
 	readonly model?: string;
 	readonly skill?: string | readonly string[] | boolean;
-	readonly turnBudget?: { readonly maxTurns: number; readonly graceTurns?: number };
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
+	readonly toolTimeoutMs?: number;
 	readonly context?: "fork" | "fresh";
 	readonly isolation?: "shared" | "worktree";
 	readonly foreground?: boolean;
 }
 
-const CONTROL_ONLY_FIELDS = new Set(["action", "id", "index", "message"]);
+const CONTROL_ONLY_FIELDS = new Set(["acknowledgeCost", "action", "id", "index", "message"]);
 const LAUNCH_ONLY_FIELDS = [
 	"agent",
 	"context",
@@ -36,8 +36,8 @@ const LAUNCH_ONLY_FIELDS = [
 	"tasks",
 	"thinking",
 	"timeoutMs",
-	"turnBudget",
 	"toolBudget",
+	"toolTimeoutMs",
 ] as const;
 
 function hasOwn(params: PublicAgentParams, field: keyof PublicAgentParams): boolean {
@@ -70,6 +70,9 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 	if (params.action) {
 		const mixed = LAUNCH_ONLY_FIELDS.find((field) => hasOwn(params, field));
 		if (mixed) throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.`);
+		if (params.acknowledgeCost === true && params.action !== "resume") {
+			throw new Error("acknowledgeCost is supported only for action='resume'.");
+		}
 		return { ...params };
 	}
 	const control = [...CONTROL_ONLY_FIELDS].find((field) => field !== "action" && Object.hasOwn(params, field));
@@ -99,6 +102,7 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 }
 
 export interface PublicAgentParams {
+	readonly acknowledgeCost?: boolean;
 	readonly action?: "resume" | "status" | "steer" | "stop";
 	readonly agent?: string;
 	readonly context?: "fork" | "fresh";
@@ -115,8 +119,8 @@ export interface PublicAgentParams {
 	readonly tasks?: readonly PublicAgentTask[];
 	readonly thinking?: string;
 	readonly timeoutMs?: number;
-	readonly turnBudget?: { readonly maxTurns: number; readonly graceTurns?: number };
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
+	readonly toolTimeoutMs?: number;
 }
 
 function mutableSkill(
@@ -147,8 +151,8 @@ function mapTask(task: PublicAgentTask): NonNullable<SubagentParamsLike["tasks"]
 	if (task.cwd) mapped.cwd = task.cwd;
 	if (task.model) mapped.model = task.model;
 	if (task.skill !== undefined) mapped.skill = mutableSkill(task.skill);
-	if (task.turnBudget) mapped.turnBudget = { ...task.turnBudget };
 	if (task.toolBudget) mapped.toolBudget = mutableToolBudget(task.toolBudget);
+	if (task.toolTimeoutMs !== undefined) mapped.toolTimeoutMs = task.toolTimeoutMs;
 	return mapped;
 }
 
@@ -177,8 +181,8 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 	if (params.thinking) common.thinking = params.thinking;
 	if (params.skill !== undefined) common.skill = mutableSkill(params.skill);
 	if (params.timeoutMs !== undefined) common.timeoutMs = params.timeoutMs;
-	if (params.turnBudget) common.turnBudget = { ...params.turnBudget };
 	if (params.toolBudget) common.toolBudget = mutableToolBudget(params.toolBudget);
+	if (params.toolTimeoutMs !== undefined) common.toolTimeoutMs = params.toolTimeoutMs;
 
 	if (params.tasks?.length) {
 		return { ...common, tasks: params.tasks.map(mapTask) };
@@ -188,8 +192,8 @@ export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 		if (params.description) Object.assign(task, { description: params.description });
 		if (params.model) Object.assign(task, { model: params.model });
 		if (params.skill !== undefined) Object.assign(task, { skill: params.skill });
-		if (params.turnBudget) Object.assign(task, { turnBudget: params.turnBudget });
 		if (params.toolBudget) Object.assign(task, { toolBudget: params.toolBudget });
+		if (params.toolTimeoutMs !== undefined) Object.assign(task, { toolTimeoutMs: params.toolTimeoutMs });
 		return {
 			...common,
 			tasks: [mapTask(task)],

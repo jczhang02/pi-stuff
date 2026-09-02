@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverAgents, EXTRA_AGENT_DIRS_ENV } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
@@ -71,6 +71,69 @@ test("uses package < user < project precedence without a settings override layer
 	expect(userOnly.find(({ name }) => name === "package-only")?.source).toBe("package");
 });
 
+test("loads settings scan roots by scope while fixed Agent directories retain precedence", async () => {
+	const root = await temporaryRoot();
+	const user = join(root, "user");
+	const project = join(root, "project");
+	const nested = join(project, "src", "feature");
+	const userFlows = join(root, "user-flows");
+	const projectFlows = join(root, "project-flows");
+	process.env["PI_CODING_AGENT_DIR"] = user;
+
+	await Promise.all([
+		mkdir(nested, { recursive: true }),
+		mkdir(join(project, ".git"), { recursive: true }),
+		writeAgent(join(userFlows, "one", "agents"), "shared", "user scanned"),
+		writeAgent(join(userFlows, "one", "agents"), "user-scan", "user scan only"),
+		writeAgent(join(user, "agents"), "shared", "user fixed"),
+		writeAgent(join(projectFlows, "one", "agents"), "shared", "project scanned"),
+		writeAgent(join(projectFlows, "one", "agents"), "project-scan", "project scan only"),
+		writeAgent(join(project, ".pi", "agents"), "shared", "project fixed"),
+	]);
+	await Promise.all([
+		writeFile(
+			join(user, "settings.json"),
+			`${JSON.stringify({ subagents: { agentScanDirs: [join(userFlows, "*", "agents")] } })}\n`,
+		),
+		writeFile(
+			join(project, ".pi", "settings.json"),
+			`${JSON.stringify({ subagents: { agentScanDirs: [join(projectFlows, "*", "agents")] } })}\n`,
+		),
+	]);
+
+	const both = (await discoverAgents(nested, "both")).agents;
+	expect(both.find(({ name }) => name === "shared")?.description).toBe("project fixed");
+	expect(both.some(({ name }) => name === "user-scan")).toBeTrue();
+	expect(both.some(({ name }) => name === "project-scan")).toBeTrue();
+
+	const userOnly = (await discoverAgents(nested, "user")).agents;
+	expect(userOnly.find(({ name }) => name === "shared")?.description).toBe("user fixed");
+	expect(userOnly.some(({ name }) => name === "user-scan")).toBeTrue();
+	expect(userOnly.some(({ name }) => name === "project-scan")).toBeFalse();
+
+	const projectOnly = (await discoverAgents(nested, "project")).agents;
+	expect(projectOnly.find(({ name }) => name === "shared")?.description).toBe("project fixed");
+	expect(projectOnly.some(({ name }) => name === "project-scan")).toBeTrue();
+	expect(projectOnly.some(({ name }) => name === "user-scan")).toBeFalse();
+});
+
+test("follows symlinked Agent directories once without recursing through cycles", async () => {
+	const root = await temporaryRoot();
+	const user = join(root, "user");
+	const fixedRoot = join(user, "agents");
+	const shared = join(root, "shared-agents");
+	const linked = join(fixedRoot, "linked");
+	process.env["PI_CODING_AGENT_DIR"] = user;
+	await Promise.all([mkdir(fixedRoot, { recursive: true }), writeAgent(shared, "linked-agent", "linked Agent")]);
+	const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+	await symlink(shared, linked, directoryLinkType);
+	await symlink(shared, join(shared, "loop"), directoryLinkType);
+
+	const agents = (await discoverAgents(root, "user")).agents;
+	expect(agents.filter(({ name }) => name === "linked-agent")).toHaveLength(1);
+	expect(agents.find(({ name }) => name === "linked-agent")?.filePath).toBe(join(linked, "linked-agent.md"));
+});
+
 test("parses only current execution controls and skips one malformed definition locally", async () => {
 	const root = await temporaryRoot();
 	const user = join(root, "user");
@@ -84,12 +147,14 @@ test("parses only current execution controls and skips one malformed definition 
 			"fallbackModels: provider/one, provider/two",
 			"thinking: high",
 			"tools: read, bash, mcp:browser/open",
+			"excludeTools: write, made-up-tool",
 			"systemPromptMode: replace",
 			"inheritProjectContext: false",
 			"inheritSkills: false",
 			"skills: research, review",
 			'turnBudget: {"maxTurns":4,"graceTurns":1}',
 			'toolBudget: {"soft":6,"hard":8,"block":["read"]}',
+			"toolTimeoutMs: 1200",
 			"maxSubagentDepth: 2",
 			"defaultAsync: true",
 			"defaultTimeoutMs: 30000",
@@ -106,6 +171,7 @@ test("parses only current execution controls and skips one malformed definition 
 	const configured = agents.find(({ name }) => name === "configured");
 	expect(configured).toMatchObject({
 		fallbackModels: ["provider/one", "provider/two"],
+		excludeTools: ["write", "made-up-tool"],
 		inheritProjectContext: false,
 		inheritSkills: false,
 		maxSubagentDepth: 2,
@@ -115,10 +181,17 @@ test("parses only current execution controls and skips one malformed definition 
 		systemPromptMode: "replace",
 		thinking: "high",
 		toolBudget: { block: ["read"], hard: 8, soft: 6 },
+		toolTimeoutMs: 1200,
 		tools: ["read", "bash"],
-		defaultTurnBudget: { graceTurns: 1, maxTurns: 4 },
 	});
-	for (const retiredField of ["defaultAsync", "defaultTimeoutMs", "completionGuard", "memory", "output"]) {
+	for (const retiredField of [
+		"defaultAsync",
+		"defaultTimeoutMs",
+		"defaultTurnBudget",
+		"completionGuard",
+		"memory",
+		"output",
+	]) {
 		expect(configured).not.toHaveProperty(retiredField);
 	}
 });

@@ -320,7 +320,7 @@ test("resolves the advertised Agent from the parent project while executing in t
 	expect(executedFrom).toBe(childCwd);
 });
 
-test("applies finite product backstops to ordinary foreground and background launches", async () => {
+test("applies only the run timeout to ordinary foreground and background launches", async () => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-backstops-"));
 	temporaryDirectories.push(cwd);
 	fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -353,14 +353,11 @@ test("applies finite product backstops to ordinary foreground and background lau
 	expect(backgroundTimeoutMs).toBe(30 * 60 * 1_000);
 	expect(foregroundConfig).toMatchObject({
 		timeoutMs: 30 * 60 * 1_000,
-		work: {
-			mode: "single",
-			task: {
-				turnBudget: { maxTurns: 64, graceTurns: 2 },
-				toolBudget: { soft: 96, hard: 128, block: "*" },
-			},
-		},
+		work: { mode: "single" },
 	});
+	if (foregroundConfig?.work.mode !== "single") throw new Error("Expected one foreground task");
+	expect(foregroundConfig.work.task).not.toHaveProperty("turnBudget");
+	expect(foregroundConfig.work.task).not.toHaveProperty("toolBudget");
 });
 
 test("does not let a failing completion observer replace a valid Agent result", async () => {
@@ -443,6 +440,23 @@ test("does not call an expected foreground termination a crash", () => {
 				success: false,
 				exitCode: 1,
 				timedOut: true,
+				cumulativeUsage: {
+					turns: 4,
+					toolCalls: 6,
+					inputTokens: 800,
+					outputTokens: 90,
+					modelAttempts: 1,
+					resumes: 0,
+				},
+				terminalOutcome: {
+					state: "incomplete",
+					class: "timeout",
+					reason: "Agent timed out after retained work.",
+					continuation: {
+						target: { id: config.id, index: 0 },
+						resumeSupported: true,
+					},
+				},
 				writerProcesses: [
 					{
 						attempt: 0,
@@ -458,6 +472,14 @@ test("does not call an expected foreground termination a crash", () => {
 		],
 	});
 	expect(result.details.results[0]?.crashed).toBeUndefined();
+	expect(result.details.results[0]).toMatchObject({
+		cumulativeUsage: { turns: 4, toolCalls: 6, inputTokens: 800, outputTokens: 90 },
+		terminalOutcome: {
+			state: "incomplete",
+			class: "timeout",
+			continuation: { target: { id: config.id, index: 0 }, resumeSupported: true },
+		},
+	});
 });
 
 test("contains a synchronous cancellation transport failure and still settles foreground execution", async () => {

@@ -3,6 +3,7 @@
 import type { AgentConfig } from "../../agents/agents.ts";
 import { resolveChildCwd } from "../../shared/utils.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
+import type { ModelOrigin } from "../shared/model-fallback.ts";
 import { type BackgroundRunnerWork, MAX_BACKGROUND_TASKS, MAX_PARALLEL_CONCURRENCY } from "../shared/parallel-utils.ts";
 import {
 	type AsyncParallelTaskInput,
@@ -35,6 +36,7 @@ export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
 	skills?: string[] | undefined;
 	sessionFile?: string | undefined;
 	modelOverride?: string | undefined;
+	modelOrigin?: ModelOrigin | undefined;
 	modelCandidates?: string[] | undefined;
 	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
@@ -122,6 +124,7 @@ export function buildAsyncSingleRunnerWork(
 		skills: params.skills,
 		sessionFile: params.sessionFile,
 		modelOverride: params.modelOverride,
+		modelOriginOverride: params.modelOrigin,
 		modelCandidatesOverride: params.modelCandidates,
 		thinkingOverride: params.thinkingOverride,
 	});

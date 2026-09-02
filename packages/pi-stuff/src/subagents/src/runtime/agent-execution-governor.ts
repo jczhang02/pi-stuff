@@ -55,6 +55,7 @@ export interface ReserveAgentResumeInput {
 	readonly targetRunId: string;
 	readonly childIndex: number;
 	readonly pid?: number;
+	readonly acknowledgeCost?: boolean;
 }
 
 export type AgentExecutionSettlement =
@@ -132,6 +133,7 @@ export class AgentExecutionGovernor {
 			childIndex,
 		};
 		if (input.pid !== undefined) Object.assign(request, { pid: input.pid });
+		if (input.acknowledgeCost === true) Object.assign(request, { acknowledgeCost: true });
 		const acquired = await this.backend.acquireResume(request);
 		if (!acquired.ok) return reservationFailure(acquired.error, "resume", 1);
 		return {
@@ -242,6 +244,7 @@ export function formatAgentExecutionGovernorError(
 			`${error.limit} Agent limit. Start a new Pi session to create more Agents.`
 		);
 	}
+	if (error.kind === "cost_guard") return error.message;
 
 	if (error.code === "logical_agent_exists") {
 		return `Cannot start Agent '${error.logicalAgentId}' because that child is already recorded. Resume it instead.`;

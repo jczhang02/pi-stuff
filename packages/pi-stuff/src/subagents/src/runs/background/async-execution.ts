@@ -34,7 +34,6 @@ import {
 import type { BackgroundRunnerConfig, BackgroundRunnerWork } from "../shared/parallel-utils.ts";
 import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseIntent } from "../shared/session-lease.ts";
-import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import type { AsyncExecutionContext, BackgroundRecoveryDescriptor } from "./resolved-task.ts";
 import { type SpawnedRunnerLifecycle, spawnRunner } from "./runner-process.ts";
 import type { AsyncParallelRunnerWorkBuildParams, AsyncSingleRunnerWorkBuildParams } from "./runner-work.ts";
@@ -302,9 +301,6 @@ function emitStarted(input: {
 				child.timeoutMs = input.timeoutMs;
 				if (input.deadlineAt !== undefined) child.deadlineAt = input.deadlineAt;
 			}
-			if (input.work.mode === "single" && first.turnBudget) {
-				child.turnBudget = initialTurnBudgetState(first.turnBudget);
-			}
 			if (input.capabilityCeiling) child.capabilityCeiling = input.capabilityCeiling;
 			const event: Parameters<typeof writeNestedEvent>[1] = {
 				type: "subagent.nested.started",
@@ -340,9 +336,6 @@ function emitStarted(input: {
 		if (input.timeoutMs !== undefined) {
 			started.timeoutMs = input.timeoutMs;
 			if (input.deadlineAt !== undefined) started.deadlineAt = input.deadlineAt;
-		}
-		if (input.work.mode === "single" && first.turnBudget) {
-			started.turnBudget = initialTurnBudgetState(first.turnBudget);
 		}
 		if (input.capabilityCeiling) started.capabilityCeiling = input.capabilityCeiling;
 		if (input.acknowledgeStart) started.acknowledgeStart = input.acknowledgeStart;
@@ -533,7 +526,6 @@ async function executePreparedAsync(input: PreparedAsyncLaunch): Promise<AsyncEx
 	if (work.mode === "single") {
 		if (work.task.launchContractDigest) details.launchContractDigest = work.task.launchContractDigest;
 		if ("context" in params && params.context) details.context = params.context;
-		if (work.task.turnBudget) details.turnBudget = work.task.turnBudget;
 		if (work.task.toolBudget) details.toolBudget = work.task.toolBudget;
 	}
 	return {

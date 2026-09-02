@@ -317,11 +317,13 @@ class AgentDialogRenderFrame {
 	private detailContent(row: AgentRow | AgentNestedDetail, width: number) {
 		const taskLines = sectionBody(row.task || "(no task)", width);
 		const outcome = agentOutcome(row, width, this.context.theme, this.markdown);
+		const lifecycle = agentLifecycle(row, width);
 		const activity = this.activityLines(width);
 		return {
 			document: [
 				commandDialogSectionHeading(this.context.theme, "Task"),
 				...taskLines,
+				...(lifecycle.length ? ["", commandDialogSectionHeading(this.context.theme, "Run"), ...lifecycle] : []),
 				...(outcome ? ["", commandDialogSectionHeading(this.context.theme, outcome.label), ...outcome.lines] : []),
 				"",
 				commandDialogSectionHeading(this.context.theme, "Activity"),
@@ -453,6 +455,28 @@ class AgentDialogRenderFrame {
 			commandDialogRows(this.context),
 		);
 	}
+}
+
+function agentLifecycle(row: AgentRow | AgentNestedDetail, width: number): string[] {
+	if (!("cumulativeUsage" in row) || !("terminalOutcome" in row)) return [];
+	const lines: string[] = [];
+	const usage = row.cumulativeUsage;
+	if (usage) {
+		const cost = usage.reportedCostUsd === undefined ? "unreported" : `$${usage.reportedCostUsd.toFixed(6)}`;
+		lines.push(
+			`${usage.turns} turns · ${usage.toolCalls} Tools · ${usage.inputTokens} input + ${usage.outputTokens} output tokens`,
+			`Reported cost ${cost} · ${usage.modelAttempts} attempts · ${usage.resumes} resumes`,
+		);
+	}
+	const outcome = row.terminalOutcome;
+	if (outcome) {
+		lines.push(`${outcome.class} · ${outcome.state} · ${outcome.reason}`);
+		const { continuation } = outcome;
+		lines.push(
+			`Target ${continuation.target.id} index ${String(continuation.target.index)} · ${continuation.resumeSupported ? "resumable" : "not resumable"}${continuation.acknowledgementRequired ? " · acknowledgement required" : ""}`,
+		);
+	}
+	return lines.flatMap((line) => sectionBody(line, width));
 }
 
 function selectedWindow<T extends { readonly key: string }>(

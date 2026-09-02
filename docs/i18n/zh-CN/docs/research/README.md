@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/README.md; translation-source-sha256: 489cddad090561c6ccdbf871fd9792139d892ed2ca3578df22e6ded4bdfbc5c7 -->
+<!-- translation-source: docs/research/README.md; translation-source-sha256: 9d82fc772085d9d9961b755a15223fa614c132db1b3d7a4f4973813c42a5e5e1 -->
 
 # 研究
 
@@ -42,7 +42,9 @@
 
 ## 上游 Package 参考
 
+- [Subagent 完成控制](subagent-completion-controls-20260902.md)
 - [Background Work Package](work-background-package-reference.md)
 - [BTW Package](work-btw-package-reference.md)
+- [pi-subagents v0.63.0 同步](pi-subagents-v0.63-synchronization-20260902.md)
 
 每项研究都保留其快照对应的版本、路径和备选方案。已经丢弃的 harness 与重复调查留在 Git 历史中。

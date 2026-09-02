@@ -5,7 +5,10 @@ import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { errnoCode, readOwnedFileTailAsync } from "../../shared/private-directory.ts";
+import { probeProcessLiveness, readProcessStartIdentity } from "../../shared/process-identity.ts";
 import type { AsyncStatus } from "../../shared/types.ts";
+import { terminalOutcome } from "../shared/terminal-outcome.ts";
+import { inspectWriterProcessLiveness } from "./writer-process-registry.ts";
 
 export const MAX_RECENT_AGENT_JOBS = 200;
 const RESTORE_READ_CONCURRENCY = 8;
@@ -112,6 +115,99 @@ export interface RestoredAsyncJob {
 	readonly status: AsyncStatus;
 }
 
+function legacyIncompleteStatus(status: AsyncStatus, reason: string, now: number): AsyncStatus {
+	const steps = (status.steps?.length ? status.steps : [{ agent: "agent", status: "running" as const }]).map(
+		(step, index) => {
+			if (step.status === "complete" || step.status === "completed") return step;
+			const outcomeInput: Parameters<typeof terminalOutcome>[0] = {
+				runId: status.runId,
+				index,
+				success: false,
+				error: reason,
+			};
+			const sessionFile = step.sessionFile ?? status.sessionFile;
+			if (sessionFile) outcomeInput.sessionFile = sessionFile;
+			return {
+				...step,
+				status: "failed" as const,
+				activityState: undefined,
+				currentTool: undefined,
+				currentToolStartedAt: undefined,
+				currentPath: undefined,
+				endedAt: step.endedAt ?? now,
+				error: step.error ?? reason,
+				terminalOutcome: step.terminalOutcome ?? terminalOutcome(outcomeInput),
+			};
+		},
+	);
+	const projected: AsyncStatus = {
+		...status,
+		state: "failed",
+		activityState: undefined,
+		currentTool: undefined,
+		currentToolStartedAt: undefined,
+		currentPath: undefined,
+		lastUpdate: now,
+		endedAt: now,
+		error: reason,
+		steps,
+		processTerminal: status.processTerminal?.state === "observed" ? status.processTerminal : undefined,
+	};
+	delete projected.runnerTerminationRequestedAt;
+	return projected;
+}
+
+/**
+ * Presentation-only classification for pre-versioned active artifacts. The
+ * returned status is never persisted, and liveness probes never send a signal.
+ */
+export function classifyLegacyActiveStatus(
+	asyncDir: string,
+	status: AsyncStatus,
+	options: {
+		readonly now?: () => number;
+		readonly probeRunner?: (pid: number) => boolean | undefined;
+		readonly readRunnerIdentity?: (pid: number) => string | undefined;
+		readonly inspectWriters?: (asyncDir: string) => boolean | undefined;
+	} = {},
+): AsyncStatus {
+	if (status.lifecycleArtifactVersion !== undefined || (status.state !== "queued" && status.state !== "running")) {
+		return status;
+	}
+	const noSignalSuffix = "No process was signalled or reclaimed.";
+	if (status.processTerminal?.state === "observed") {
+		return legacyIncompleteStatus(
+			status,
+			`Legacy Agent process has terminal evidence while its status remains active. ${noSignalSuffix}`,
+			options.now?.() ?? Date.now(),
+		);
+	}
+
+	const pid = Number.isSafeInteger(status.pid) && Number(status.pid) > 0 ? Number(status.pid) : undefined;
+	const runnerLiveness = pid === undefined ? false : (options.probeRunner ?? probeProcessLiveness)(pid);
+	let reusedPid = false;
+	if (pid !== undefined && runnerLiveness === true) {
+		const readIdentity =
+			options.readRunnerIdentity ?? (process.platform === "linux" ? readProcessStartIdentity : () => undefined);
+		const currentIdentity = readIdentity(pid);
+		if (status.processStartIdentity && currentIdentity === status.processStartIdentity) return status;
+		reusedPid = Boolean(
+			status.processStartIdentity && currentIdentity && currentIdentity !== status.processStartIdentity,
+		);
+	}
+	const inspectWriters =
+		options.inspectWriters ?? (process.platform === "linux" ? inspectWriterProcessLiveness : () => undefined);
+	const writerLiveness = inspectWriters(asyncDir);
+	if (writerLiveness === true) return status;
+
+	const reason = reusedPid
+		? `Legacy Agent runner PID was reused; its active status is quarantined as incomplete. ${noSignalSuffix}`
+		: runnerLiveness === false && writerLiveness === false
+			? `Legacy Agent runner and writers are no longer live; its active status is quarantined as incomplete. ${noSignalSuffix}`
+			: `Legacy Agent process ownership cannot be verified; its active status is quarantined as incomplete. ${noSignalSuffix}`;
+	return legacyIncompleteStatus(status, reason, options.now?.() ?? Date.now());
+}
+
 export function scanRestorableAsyncJobs(
 	asyncDirRoot: string,
 	asyncDirectories: readonly string[] | undefined,
@@ -143,8 +239,9 @@ export function scanRestorableAsyncJobs(
 					),
 					Effect.map((status) => {
 						if (!status) return undefined;
-						const sessionId = normalizeSessionId(status.sessionId, status.runId);
-						return sessionId ? { asyncDir, sessionId, status } : undefined;
+						const classified = classifyLegacyActiveStatus(asyncDir, status);
+						const sessionId = normalizeSessionId(classified.sessionId, classified.runId);
+						return sessionId ? { asyncDir, sessionId, status: classified } : undefined;
 					}),
 					Effect.catch((error) =>
 						Effect.sync(() => {

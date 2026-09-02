@@ -16,7 +16,6 @@ import {
 	type ResolvedTurnBudget,
 	resolveChildMaxSubagentDepth,
 	type ToolBudgetConfig,
-	type TurnBudgetConfig,
 } from "../../shared/types.ts";
 import { resolveChildCwd } from "../../shared/utils.ts";
 import {
@@ -33,14 +32,16 @@ import {
 	type AvailableModelInfo,
 	assertModelCandidateLimit,
 	buildModelCandidates,
+	type ModelOrigin,
 	type ParentModel,
 	resolveEffectiveSubagentModel,
+	resolveModelOrigin,
 } from "../shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../shared/model-scope.ts";
 import type { RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
-import { DEFAULT_AGENT_TOOL_BUDGET, validateToolBudgetConfig } from "../shared/tool-budget.ts";
-import { DEFAULT_AGENT_TURN_BUDGET, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
+import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolTimeoutMs, TOOL_TIMEOUT_ENV } from "../shared/tool-timeout.ts";
 
 export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
@@ -66,8 +67,8 @@ export interface AsyncParallelTaskInput {
 	cwd?: string;
 	model?: string;
 	skill?: string | string[] | false;
-	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
+	toolTimeoutMs?: number;
 }
 
 export interface CommonBuildParams {
@@ -82,8 +83,8 @@ export interface CommonBuildParams {
 	availableModels?: AvailableModelInfo[] | undefined;
 	cwd?: string | undefined;
 	maxSubagentDepth: number;
-	turnBudget?: ResolvedTurnBudget | undefined;
 	toolBudget?: ResolvedToolBudget | undefined;
+	toolTimeoutMs?: number | undefined;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling | undefined;
 	controlConfig?: ResolvedControlConfig | undefined;
 	absoluteDeadlineAt?: number | undefined;
@@ -106,9 +107,11 @@ export interface BackgroundRecoveryDescriptor {
 	sessionFile?: string;
 	cwd: string;
 	model?: string;
+	modelOrigin?: ModelOrigin;
 	fallbackModels?: string[];
 	thinking?: string;
 	tools?: string[];
+	excludeTools?: string[];
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
@@ -123,6 +126,7 @@ export interface BackgroundRecoveryDescriptor {
 	absoluteDeadlineAt?: number;
 	initialTurnBudget?: ResolvedTurnBudget;
 	initialToolBudget?: ResolvedToolBudget;
+	toolTimeoutMs?: number;
 	maxSubagentDepth: number;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	sessionDir?: string;
@@ -146,6 +150,7 @@ export interface ResolvedTaskBuildInput {
 	skills?: string[] | undefined;
 	sessionFile?: string | undefined;
 	modelOverride?: string | undefined;
+	modelOriginOverride?: ModelOrigin | undefined;
 	modelCandidatesOverride?: string[] | undefined;
 	thinkingOverride?: AgentConfig["thinking"] | undefined;
 }
@@ -157,24 +162,15 @@ interface ResolvedTaskProjection {
 	maxSubagentDepth: number;
 	modelCandidates: string[];
 	modelContextWindows: Array<{ model: string; contextWindow: number }>;
+	modelVerificationRegistry: Array<{ provider: string; id: string; fullId: string }>;
+	modelOrigin: ModelOrigin;
 	primaryModel?: string;
 	skillNames: string[];
 	systemPrompt: string;
 	taskCwd: string;
 	thinking?: string;
 	toolBudget?: ResolvedToolBudget;
-	turnBudget?: ResolvedTurnBudget;
-}
-
-function resolveTaskTurnBudget(
-	explicit: TurnBudgetConfig | undefined,
-	runBudget: ResolvedTurnBudget | undefined,
-	agentBudget: TurnBudgetConfig | undefined,
-) {
-	if (explicit !== undefined) return resolveTurnBudgetConfig(explicit, "turnBudget");
-	if (runBudget !== undefined) return { turnBudget: runBudget };
-	if (agentBudget !== undefined) return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
-	return { turnBudget: DEFAULT_AGENT_TURN_BUDGET };
+	toolTimeoutMs?: number;
 }
 
 function resolveTaskToolBudget(
@@ -191,7 +187,7 @@ function resolveTaskToolBudget(
 		const resolved = validateToolBudgetConfig(agentBudget, "agent.toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
 	}
-	return { toolBudget: DEFAULT_AGENT_TOOL_BUDGET };
+	return {};
 }
 
 function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskProjection): BuiltTask {
@@ -225,14 +221,18 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (resolved.modelContextWindows.length > 0) {
 		task.modelContextWindows = resolved.modelContextWindows.map((entry) => ({ ...entry }));
 	}
+	if (resolved.modelVerificationRegistry.length > 0) {
+		task.modelVerificationRegistry = resolved.modelVerificationRegistry.map((entry) => ({ ...entry }));
+	}
 	if (agent.tools) task.tools = [...agent.tools];
+	if (agent.excludeTools) task.excludeTools = [...agent.excludeTools];
 	if (agent.extensions) task.extensions = [...agent.extensions];
 	if (agent.subagentOnlyExtensions) task.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
 	if (agent.mcpDirectTools) task.mcpDirectTools = [...agent.mcpDirectTools];
 	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
 	if (input.sessionFile) task.sessionFile = input.sessionFile;
-	if (resolved.turnBudget) task.turnBudget = resolved.turnBudget;
 	if (resolved.toolBudget) task.toolBudget = resolved.toolBudget;
+	if (resolved.toolTimeoutMs !== undefined) task.toolTimeoutMs = resolved.toolTimeoutMs;
 	if (resolved.capabilityCeiling) task.capabilityCeiling = resolved.capabilityCeiling;
 	const recovery: BackgroundRecoveryDescriptor = {
 		version: 2,
@@ -249,9 +249,11 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (input.context) recovery.context = input.context;
 	if (input.sessionFile) recovery.sessionFile = input.sessionFile;
 	if (resolved.primaryModel) recovery.model = resolved.primaryModel;
+	recovery.modelOrigin = resolved.modelOrigin;
 	if (resolved.modelCandidates.length > 1) recovery.fallbackModels = resolved.modelCandidates.slice(1);
 	if (resolved.thinking) recovery.thinking = resolved.thinking;
 	if (agent.tools) recovery.tools = [...agent.tools];
+	if (agent.excludeTools) recovery.excludeTools = [...agent.excludeTools];
 	if (agent.extensions) recovery.extensions = [...agent.extensions];
 	if (agent.subagentOnlyExtensions) recovery.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
 	if (agent.mcpDirectTools) recovery.mcpDirectTools = [...agent.mcpDirectTools];
@@ -261,8 +263,8 @@ function projectBuiltTask(input: ResolvedTaskBuildInput, resolved: ResolvedTaskP
 	if (agent.filePath) recovery.agentFilePath = agent.filePath;
 	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
 	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
-	if (resolved.turnBudget) recovery.initialTurnBudget = resolved.turnBudget;
 	if (resolved.toolBudget) recovery.initialToolBudget = resolved.toolBudget;
+	if (resolved.toolTimeoutMs !== undefined) recovery.toolTimeoutMs = resolved.toolTimeoutMs;
 	if (resolved.capabilityCeiling) recovery.capabilityCeiling = resolved.capabilityCeiling;
 	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
 	if (params.artifactsDir) recovery.artifactsDir = params.artifactsDir;
@@ -298,6 +300,43 @@ function mcpContractError(
 	return `Agent '${agent.name}' direct MCP Tool contract changes with cwd (parent: ${names(advertisedSelections)}; execution: ${names(toolPlan.resolvedMcpSelections)}).`;
 }
 
+function resolveTaskModels(input: ResolvedTaskBuildInput) {
+	const { agent, params, taskInput } = input;
+	const explicitModel = input.modelOverride ?? taskInput.model;
+	const modelOrigin =
+		input.modelOriginOverride ??
+		resolveModelOrigin({
+			explicitModel,
+			agentModel: agent.model,
+			parentModel: params.ctx.currentModel,
+		});
+	const resolvedPrimaryModel = resolveEffectiveSubagentModel(
+		explicitModel,
+		agent.model,
+		params.ctx.currentModel,
+		params.availableModels,
+		params.ctx.currentModelProvider,
+		{ scope: params.ctx.modelScope, source: modelOrigin === "explicit" ? "explicit" : "inherited" },
+	);
+	const modelCandidates = input.modelCandidatesOverride?.length
+		? [...input.modelCandidatesOverride]
+		: buildModelCandidates(
+				resolvedPrimaryModel,
+				agent.fallbackModels,
+				params.availableModels,
+				params.ctx.currentModelProvider,
+				{ scope: params.ctx.modelScope, origin: modelOrigin },
+			);
+	assertModelCandidateLimit(modelCandidates);
+	const primaryModel = modelCandidates[0] ?? resolvedPrimaryModel;
+	return {
+		modelCandidates,
+		modelOrigin,
+		primaryModel,
+		thinking: resolveEffectiveThinking(primaryModel, input.thinkingOverride ?? agent.thinking),
+	};
+}
+
 export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { error: string } {
 	const { taskInput, agent, params } = input;
 	const taskCwd = resolveChildCwd(input.runnerCwd, taskInput.cwd);
@@ -319,37 +358,22 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
 	}
 
-	const resolvedPrimaryModel = resolveEffectiveSubagentModel(
-		input.modelOverride ?? taskInput.model,
-		agent.model,
-		params.ctx.currentModel,
-		params.availableModels,
-		params.ctx.currentModelProvider,
-		{ scope: params.ctx.modelScope },
-	);
-	const modelCandidates = input.modelCandidatesOverride?.length
-		? [...input.modelCandidatesOverride]
-		: buildModelCandidates(
-				resolvedPrimaryModel,
-				agent.fallbackModels,
-				params.availableModels,
-				params.ctx.currentModelProvider,
-				{ scope: params.ctx.modelScope },
-			);
-	assertModelCandidateLimit(modelCandidates);
-	const primaryModel = modelCandidates[0] ?? resolvedPrimaryModel;
-	const thinkingConfig = input.thinkingOverride ?? agent.thinking;
-	const thinking = resolveEffectiveThinking(primaryModel, thinkingConfig);
-	const turnBudget = resolveTaskTurnBudget(taskInput.turnBudget, params.turnBudget, agent.defaultTurnBudget);
-	if (turnBudget.error) return { error: turnBudget.error };
+	const { modelCandidates, modelOrigin, primaryModel, thinking } = resolveTaskModels(input);
 	const toolBudget = resolveTaskToolBudget(taskInput.toolBudget, params.toolBudget, agent.toolBudget);
 	if (toolBudget.error) return { error: toolBudget.error };
+	const toolTimeout = resolveToolTimeoutMs({
+		callValue: taskInput.toolTimeoutMs ?? params.toolTimeoutMs,
+		agentValue: agent.toolTimeoutMs,
+		envValue: process.env[TOOL_TIMEOUT_ENV],
+	});
+	if (toolTimeout.error) return { error: toolTimeout.error };
 
 	const maxSubagentDepth = resolveChildMaxSubagentDepth(params.maxSubagentDepth, agent.maxSubagentDepth);
 	const capabilityCeiling = params.capabilityCeiling;
 	const definitionDigest = agentDefinitionDigest(agent);
 	const toolPlan = resolvePiLaunchToolPlan({
 		tools: agent.tools,
+		excludeTools: agent.excludeTools,
 		extensions: agent.extensions,
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		mcpDirectTools: agent.mcpDirectTools,
@@ -375,10 +399,11 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 	};
 	if (thinking) launchBinding.thinking = thinking;
 	if (toolPlan.effectiveToolAllowlist) launchBinding.tools = [...toolPlan.effectiveToolAllowlist];
+	if (toolPlan.excludeTools.length > 0) launchBinding.excludeTools = [...toolPlan.excludeTools];
 	if (toolPlan.extensionArgs) launchBinding.extensions = [...toolPlan.extensionArgs];
 	if (toolPlan.effectiveMcpTools) launchBinding.mcpDirectTools = [...toolPlan.effectiveMcpTools];
-	if (turnBudget.turnBudget) launchBinding.turnBudget = turnBudget.turnBudget;
 	if (toolBudget.toolBudget) launchBinding.toolBudget = toolBudget.toolBudget;
+	if (toolTimeout.toolTimeoutMs !== undefined) launchBinding.toolTimeoutMs = toolTimeout.toolTimeoutMs;
 	if (capabilityCeiling) launchBinding.capabilityCeiling = capabilityCeiling;
 	const modelContextWindows = modelCandidates.flatMap((model) => {
 		const contextWindow = findModelInfo(
@@ -389,20 +414,26 @@ export function buildResolvedTask(input: ResolvedTaskBuildInput): BuiltTask | { 
 		if (contextWindow === undefined || !Number.isSafeInteger(contextWindow) || contextWindow <= 0) return [];
 		return [{ model, contextWindow }];
 	});
+	const modelVerificationRegistry = modelCandidates.flatMap((model) => {
+		const info = findModelInfo(model, params.availableModels, params.ctx.currentModelProvider);
+		return info ? [{ provider: info.provider, id: info.id, fullId: info.fullId }] : [];
+	});
 	const projection: ResolvedTaskProjection = {
 		definitionDigest,
 		launchContractDigest: launchBindingDigest(launchBinding),
 		maxSubagentDepth,
 		modelCandidates,
 		modelContextWindows,
+		modelVerificationRegistry,
+		modelOrigin,
 		skillNames,
 		systemPrompt,
 		taskCwd,
 	};
 	if (primaryModel) projection.primaryModel = primaryModel;
 	if (thinking) projection.thinking = thinking;
-	if (turnBudget.turnBudget) projection.turnBudget = turnBudget.turnBudget;
 	if (toolBudget.toolBudget) projection.toolBudget = toolBudget.toolBudget;
+	if (toolTimeout.toolTimeoutMs !== undefined) projection.toolTimeoutMs = toolTimeout.toolTimeoutMs;
 	if (capabilityCeiling) projection.capabilityCeiling = capabilityCeiling;
 	return projectBuiltTask(input, projection);
 }

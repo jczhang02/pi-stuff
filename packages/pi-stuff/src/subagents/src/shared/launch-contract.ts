@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentConfig } from "../agents/agents.ts";
 
-export const AGENT_DEFINITION_PROJECTION_VERSION = 2 as const;
-export const LAUNCH_BINDING_PROJECTION_VERSION = 2 as const;
+export const AGENT_DEFINITION_PROJECTION_VERSION = 4 as const;
+export const LAUNCH_BINDING_PROJECTION_VERSION = 4 as const;
 
 function stableJson<Value>(value: Value): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -47,14 +47,15 @@ export function projectAgentDefinition(agent: AgentConfig) {
 		fallbackModels: agent.fallbackModels,
 		thinking: agent.thinking,
 		tools: agent.tools,
+		excludeTools: agent.excludeTools,
 		mcpDirectTools: agent.mcpDirectTools,
 		extensions: agent.extensions,
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		skills: agent.skills,
 		skillPath: agent.skillPath,
-		defaultTurnBudget: agent.defaultTurnBudget,
 		maxSubagentDepth: agent.maxSubagentDepth,
 		toolBudget: agent.toolBudget,
+		toolTimeoutMs: agent.toolTimeoutMs,
 	};
 }
 
@@ -74,11 +75,12 @@ export interface LaunchBindingInput {
 	inheritSkills: boolean;
 	skills?: string[];
 	tools?: string[];
+	excludeTools?: string[];
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
-	turnBudget?: AgentConfig["defaultTurnBudget"];
 	toolBudget?: AgentConfig["toolBudget"];
+	toolTimeoutMs?: number;
 	maxSubagentDepth?: number;
 	capabilityCeiling?: unknown;
 }
@@ -100,11 +102,12 @@ export function projectLaunchBinding(input: LaunchBindingInput) {
 		inheritSkills: input.inheritSkills,
 		skills: input.skills,
 		tools: input.tools,
+		excludeTools: input.excludeTools,
 		extensions: input.extensions,
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
-		turnBudget: input.turnBudget,
 		toolBudget: input.toolBudget,
+		toolTimeoutMs: input.toolTimeoutMs,
 		maxSubagentDepth: input.maxSubagentDepth,
 		capabilityCeiling: input.capabilityCeiling,
 	};

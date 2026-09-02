@@ -23,6 +23,7 @@ import {
 	rewriteSubagentPrompt,
 	SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV,
 	setEnvironment,
+	stripParentOnlySubagentMessages,
 	temporaryDirectories,
 	tmpdir,
 	toolInfo,
@@ -30,6 +31,73 @@ import {
 } from "./tool-presentation-fixtures.js";
 
 afterEach(cleanupToolPresentationFixtures);
+
+test("sanitizes non-portable Tool ids in forked child history", () => {
+	const assistant = {
+		role: "assistant",
+		content: [
+			{ type: "toolCall", id: "call_read|fc_123", name: "read", arguments: { path: "README.md" } },
+			{ type: "toolCall", id: "call_bash-ok", name: "bash", arguments: { command: "pwd" } },
+		],
+		stopReason: "toolUse",
+		timestamp: 1,
+	};
+	const readResult = {
+		role: "toolResult",
+		toolName: "read",
+		toolCallId: "call_read|fc_123",
+		content: [{ type: "text", text: "file contents" }],
+		isError: false,
+		timestamp: 2,
+	};
+	const bashResult = {
+		role: "toolResult",
+		toolName: "bash",
+		toolCallId: "call_bash-ok",
+		content: [{ type: "text", text: "cwd" }],
+		isError: false,
+		timestamp: 3,
+	};
+
+	// SAFETY: The fixture messages match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages([assistant, readResult, bashResult] as never)).toEqual([
+		{
+			...assistant,
+			content: [
+				{
+					type: "toolCall",
+					id: "tool_Y2FsbF9yZWFkfGZjXzEyMw",
+					name: "read",
+					arguments: { path: "README.md" },
+				},
+				assistant.content[1],
+			],
+		},
+		{ ...readResult, toolCallId: "tool_Y2FsbF9yZWFkfGZjXzEyMw" },
+		bashResult,
+	] as never);
+});
+
+test("bounds portable Tool ids while preserving provider-native composite ids", () => {
+	const toolCallId = `call_${"x".repeat(80)}|fc_${"y".repeat(80)}`;
+	const messages = [
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: toolCallId, name: "read", arguments: { path: "README.md" } }],
+		},
+		{ role: "toolResult", toolName: "read", toolCallId, content: [{ type: "text", text: "file" }] },
+	];
+	const expectedId = `tool_${createHash("sha256").update(toolCallId).digest("base64url")}`;
+
+	// SAFETY: The fixture values match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages(messages as never)).toEqual([
+		{ ...messages[0], content: [{ ...messages[0]?.content?.[0], id: expectedId }] },
+		{ ...messages[1], toolCallId: expectedId },
+	] as never);
+	expect(expectedId.length).toBeLessThanOrEqual(64);
+	// SAFETY: The fixture values match Pi's assistant and Tool-result context shapes under test.
+	expect(stripParentOnlySubagentMessages(messages as never, { sanitizeToolIds: false })).toBe(messages as never);
+});
 
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {
 	for (const tools of [[], ["/tmp/child-tool.ts"], ["edit"]]) {
@@ -59,6 +127,23 @@ test("keeps the certified Host grep hang outside explicit child Tool allowlists"
 	const plan = resolvePiLaunchToolPlan({ tools: ["read", "grep", "find", "ls", "bash"] });
 	expect(plan.effectiveToolAllowlist).toEqual(["read", "find", "ls", "bash"]);
 	expect(plan.requiredChildTools).toEqual(["read", "find", "ls", "bash"]);
+});
+
+test("subtracts per-Agent Tool exclusions from explicit and injected child capabilities", () => {
+	const plan = resolvePiLaunchToolPlan({
+		tools: ["read", "write", "subagent"],
+		excludeTools: [" write ", "subagent", "structured_output"],
+		structuredOutput: true,
+	});
+	expect(plan.declaredBuiltinTools).toEqual(["read", "write", "subagent"]);
+	expect(plan.excludeTools).toEqual(["write", "subagent", "structured_output"]);
+	expect(plan.effectiveToolAllowlist).toEqual(["read"]);
+	expect(plan.requiredChildTools).toEqual(["read"]);
+	expect(plan.internalTools).toEqual([]);
+	expect(plan.fanoutAuthorized).toBeFalse();
+	expect(() => resolvePiLaunchToolPlan({ requireReadTool: true, excludeTools: ["read"] })).toThrow(
+		"removes required tool 'read'",
+	);
 });
 
 test("leaves Host-like delimiter examples intact because resource isolation belongs to Pi CLI flags", () => {

@@ -2,6 +2,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { type AgentRow, CurrentAgents } from "../../session/current-agents.ts";
 import { compactAbsolutePaths } from "../../shared/display-description.ts";
 import type { Details, SubagentState } from "../../shared/types.ts";
+import { classifyAgentFailure } from "../shared/terminal-outcome.ts";
 
 const MAX_LIST_TASK_CHARS = 160;
 const MAX_DETAIL_TASK_CHARS = 300;
@@ -46,21 +47,6 @@ function compactText(value: string, limit: number): string {
 	return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
-type FailureCategory = "context" | "protocol" | "timeout" | "provider" | "process" | "budget" | "unknown";
-
-function failureCategory(error: string): FailureCategory {
-	if (/payload input bound|context(?:[_\s-]*(?:length|window|overflow))|too many tokens/i.test(error))
-		return "context";
-	if (/protocol[_\s-]|message(?:\.|_).*invalid|malformed event/i.test(error)) return "protocol";
-	if (/timed?\s*out|deadline/i.test(error)) return "timeout";
-	if (/\b(?:401|403|429|5\d\d)\b|auth(?:entication|orization)?|quota|rate limit|provider/i.test(error)) {
-		return "provider";
-	}
-	if (/turn budget|tool budget|budget/i.test(error)) return "budget";
-	if (/signal|exit(?:ed| code)|process|crash|disappear/i.test(error)) return "process";
-	return "unknown";
-}
-
 function compactChildText(value: string, limit: number): string {
 	return compactText(compactAbsolutePaths(value), limit);
 }
@@ -96,8 +82,26 @@ function rowDetail(row: AgentRow): string {
 	const lines = [rowHeading(row)];
 	const task = compactChildText(row.task, MAX_DETAIL_TASK_CHARS);
 	if (task) lines.push(`Task: ${task}`);
-	if (row.error)
-		lines.push(`Failure [${failureCategory(row.error)}]: ${compactChildText(row.error, MAX_FAILURE_CHARS)}`);
+	if (row.terminalOutcome) {
+		lines.push(
+			`Outcome [${row.terminalOutcome.class}/${row.terminalOutcome.state}]: ${compactChildText(row.terminalOutcome.reason, MAX_FAILURE_CHARS)}`,
+		);
+	} else if (row.error) {
+		lines.push(`Failure [${classifyAgentFailure(row.error)}]: ${compactChildText(row.error, MAX_FAILURE_CHARS)}`);
+	}
+	if (row.cumulativeUsage) {
+		const usage = row.cumulativeUsage;
+		const cost = usage.reportedCostUsd === undefined ? "unreported" : `$${usage.reportedCostUsd.toFixed(6)}`;
+		lines.push(
+			`Usage: ${usage.turns} turns · ${usage.toolCalls} Tools · ${usage.inputTokens} input + ${usage.outputTokens} output tokens · reported cost ${cost} · ${usage.modelAttempts} attempts · ${usage.resumes} resumes`,
+		);
+	}
+	if (row.terminalOutcome) {
+		const { continuation } = row.terminalOutcome;
+		lines.push(
+			`Recovery: id=${continuation.target.id} · index=${String(continuation.target.index)} · ${continuation.resumeSupported ? "resumable" : "not resumable"}${continuation.acknowledgementRequired ? " · acknowledgement required" : ""}`,
+		);
+	}
 	if (row.partialResult) lines.push(`Progress: ${compactChildText(row.partialResult, MAX_PROGRESS_CHARS)}`);
 	return lines.join("\n");
 }

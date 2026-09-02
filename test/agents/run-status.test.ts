@@ -161,6 +161,26 @@ test("shows bounded path-safe terminal failure without stale progress", () => {
 					status: "failed",
 					label: "Review /workspace/private/project/implementation.ts",
 					error: "protocol_invalid_event: message_end message.role is invalid at /workspace/private/project/session.jsonl",
+					cumulativeUsage: {
+						turns: 66,
+						toolCalls: 94,
+						inputTokens: 1_000_000,
+						outputTokens: 12_180,
+						reportedCostUsd: 4.16343,
+						modelAttempts: 1,
+						resumes: 0,
+					},
+					terminalOutcome: {
+						state: "incomplete",
+						class: "protocol",
+						reason:
+							"protocol_invalid_event: message_end message.role is invalid at /workspace/private/project/session.jsonl",
+						continuation: {
+							target: { id: "failed-review", index: 0 },
+							resumeSupported: true,
+							acknowledgementRequired: true,
+						},
+					},
 					recentOutput: ["Still reading /workspace/private/project/earlier-file.ts."],
 				},
 			],
@@ -171,10 +191,14 @@ test("shows bounded path-safe terminal failure without stale progress", () => {
 	const text = resultText(result);
 
 	expect(text).toContain("Task: Review implementation.ts");
-	expect(text).toContain("Failure [protocol]: protocol_invalid_event: message_end message.role is invalid");
+	expect(text).toContain("Outcome [protocol/incomplete]: protocol_invalid_event: message_end message.role is invalid");
+	expect(text).toContain(
+		"Usage: 66 turns · 94 Tools · 1000000 input + 12180 output tokens · reported cost $4.163430 · 1 attempts · 0 resumes",
+	);
+	expect(text).toContain("Recovery: id=failed-review · index=0 · resumable · acknowledgement required");
 	expect(text).not.toContain("Progress:");
 	expect(text).not.toContain("/workspace/private");
-	expect(text.length).toBeLessThan(1_100);
+	expect(text.length).toBeLessThan(1_500);
 });
 
 test("redacts only absolute path tokens in model-visible status text", () => {

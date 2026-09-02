@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 4efb5af39d0aa6031e9f8ae5a76f6205db0f332f5d1d0e549ee547b219738193 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 45e5d21d438c9005df5f28e58c3914b2faee3a2a7860dc2063319bc62c3c293f -->
 
 # Agents
 
@@ -16,6 +16,11 @@ Agent 定义从以下位置发现：
 
 名称冲突时，项目定义优先于用户定义，用户定义优先于 Package 定义。每次主运行前，`subagent` Tool 描述会列出
 有效 roster 和每个 Agent 的用途。
+Agent frontmatter 可以声明 `tools` 与 `excludeTools`；exclusion 对该 child 始终优先。
+
+Pi settings 可以通过 `subagents.agentScanDirs` 增加递归扫描根。用户 settings 提供 user scope 根，项目
+`.pi/settings.json` 提供 project scope 根。条目会展开 `~`，并可包含一个完整的 `*` 路径段，以扫描一层目录。
+缺失的根会被忽略；symlink 目录只跟随一次；如果扫描根与固定 user 或 project Agent 目录发生同名冲突，固定目录优先。
 
 ## 快速开始
 
@@ -38,8 +43,8 @@ Agent 定义从以下位置发现：
 
 ### 单个 Agent
 
-`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、turn 与 Tool budget、
-context mode、isolation 和前台执行。
+`agent` 和 `task` 必填。可选字段用于选择简短 `description`、工作目录、model、Skill、显式 Tool budget 或
+逐 Tool timeout、context mode、isolation 和前台执行。
 
 ### 并行 Agent
 
@@ -69,10 +74,12 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 { "action": "steer", "id": "agent-id", "message": "Check the fallback path too." }
 { "action": "stop", "id": "agent-id" }
 { "action": "resume", "id": "agent-id" }
+{ "action": "resume", "id": "agent-id", "index": 0, "acknowledgeCost": true }
 ```
 
 `status` 可以省略 `id`，获取一次性概览。`steer`、`stop` 与 `resume` 要求 `id`；grouped run 还可以用
-`index` 选择 child。日常检查和控制请使用 `/agents`。
+`index` 选择 child。只有成本 guard 请求关注后，由用户直接发起的 resume 才能使用 `acknowledgeCost`。
+日常检查和控制请使用 `/agents`。
 
 ## 后台与前台
 
@@ -84,6 +91,9 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 ## `/agents`
 
 `/agents` 显示当前 Session 的 Agent 生命周期、保留结果、Result、Activity 与有界 child transcript。
+终态详情包括稳定的 outcome class 与原因、累计 turn、Tool call、input/output token、Provider 实际报告时的成本、
+model attempt、resume 次数、Agent Target，以及是否支持 continuation。异常结束始终保持为 `incomplete` 或
+`failed`；保留的 partial 证据不会被重新标成成功报告。
 
 | 按键 | 操作 |
 | --- | --- |
@@ -97,8 +107,21 @@ Footer roster 是紧凑生命周期视图。打开 Agent 管理时会替换 late
 
 ## Context、model 与 Tool
 
-Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及有界 turn 或 Tool budget。Child 执行前会
-检查容量、认证和 model 可用性。
+Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以及显式 Tool budget。Child 执行前会检查
+容量、认证和 model 可用性。普通委派工作没有固定 turn 截止线，因此不会仅因 Agent 持续工作而终止仍有进展的运行。
+
+每次 call 显式指定的 model 必须能在 Pi 当前 model registry 中解析。Agent 配置或 fallback 中不可用的 model
+会被跳过并尝试下一个可用 candidate；当前 parent model 即使来自尚未注册的自定义 provider，仍会被信任。
+包含 `owner/name` 的 model ID 只有在 `owner` 确实是已注册 provider 时才按 `provider/id` 解释。有 registry
+证据时，child 报告的实际 model 还会与 launch candidate 核对。Provider failure 只会在 child 尚未产生有效活动时
+轮换到 fallback，避免重复工作或外部 mutation。
+
+`toolTimeoutMs` 为每个非等待型 Tool call 设置硬超时。task 级值覆盖 launch 值，launch 值覆盖 Agent frontmatter
+与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。已知快速的内置 Tool 默认 5 分钟；本就需要等待的 supervisor 与 intercom
+Tool 不受此限制。
+
+`excludeTools` 从 child 的 ambient、显式、MCP 与 Suite 注入 Tool 中减去指定名称。排除 `subagent` 会关闭该
+Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则排除 `read` 会在启动前被拒绝。
 
 每个 child 使用同一个 Pi Host binary，显式加载所属 Package，并关闭 ambient discovery。非 fanout child
 不会得到 `subagent` Tool。
@@ -110,11 +133,18 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 - 同时运行 20 个 Agent；
 - 每个 parent Session 总共 launch 200 次；
 - 嵌套深度 3；
-- 64 个普通 turn，加 2 个 wrap-up turn；
-- 96 次 soft、128 次 hard Tool call；
 - 每次运行 30 分钟。
 
-逐 call 配置的 budget 可以进一步收紧对应 child 限制。
+普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`toolTimeoutMs` 可以限制单次
+Tool call，`timeoutMs` 可以收紧默认运行期限。
+
+初始 child、model attempt、fallback 与 resume 共用一个持久 work unit。后续自动工作开始前，累计报告用量达到
+1,000,000 个 input 加 output token，或 Provider 实际报告成本达到 5.00 美元时，governor 会请求关注。Provider
+没有报告成本时，不会把估算值当成权威美元成本。guard 不会停止正在运行的 child。用户直接确认 resume 后，
+会保留同一 Session 与累计总量。
+
+显式 Tool 硬上限只阻止已配置的 Tool 名称。未配置的 Tool 与最终 Assistant 响应仍可使用，因此 Agent 能根据
+已经收集的证据合成有界 partial 或最终结果。
 
 ## Artifact 与 isolation
 
@@ -126,10 +156,13 @@ Agent artifact 位于 Settings 管理的 Session root 中，与持久 Pi Session
 
 更换或结束 parent Session 会安全取消进行中的 launch，并记录其最终状态。
 
+冷恢复时，当前版本的生命周期 artifact 保持原有状态。无版本 legacy record 只有在当前进程或 writer 证据能
+证明所有权时才保持 live；已有终态证明、进程已死、PID 已复用或所有权未知时，会投影为可移除的未完成 legacy
+结果。恢复绝不会 signal 或 reclaim 未知 owner。
+
 ## 相关文档
 
 - [Agents Module README](../../packages/pi-stuff/src/subagents/README.md)
 - [命令参考](../reference/commands.md#工作控制)
 - [Background Work](background-work.md)
 - [Tool Display](tool-display.md)
-

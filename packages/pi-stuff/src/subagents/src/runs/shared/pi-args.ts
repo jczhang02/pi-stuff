@@ -94,6 +94,7 @@ export interface BuildPiArgsInput {
 	childBaseExtensionPath?: string | undefined;
 	requireReadTool?: boolean | undefined;
 	tools?: string[] | undefined;
+	excludeTools?: string[] | undefined;
 	extensions?: string[] | undefined;
 	subagentOnlyExtensions?: string[] | undefined;
 	systemPrompt?: string | null | undefined;
@@ -177,6 +178,7 @@ export function applyThinkingSuffix(
 
 export interface ResolvePiLaunchToolPlanInput {
 	tools?: string[] | undefined;
+	excludeTools?: string[] | undefined;
 	extensions?: string[] | undefined;
 	subagentOnlyExtensions?: string[] | undefined;
 	mcpDirectTools?: string[] | undefined;
@@ -193,6 +195,7 @@ export interface PiLaunchToolPlan {
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	requestedBuiltinTools: string[];
 	declaredBuiltinTools: string[];
+	excludeTools: string[];
 	resolvedMcpSelections: ResolvedMcpDirectToolSelection[];
 	effectiveMcpSelections: ResolvedMcpDirectToolSelection[];
 	effectiveMcpTools: string[];
@@ -260,7 +263,12 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	);
 	const allowedToolSet =
 		capabilityCeiling?.allowedTools === undefined ? undefined : new Set(capabilityCeiling.allowedTools);
+	const excludeTools = [...new Set((input.excludeTools ?? []).map((tool) => tool.trim()).filter(Boolean))];
+	const excludedToolSet = new Set(excludeTools);
 	const requestedBuiltinTools = input.tools?.filter((tool) => !isExtensionTool(tool)) ?? [];
+	if (input.requireReadTool && excludedToolSet.has("read")) {
+		throw new Error("Agent excludeTools removes required tool 'read' for lazy skill loading.");
+	}
 	if (input.requireReadTool && allowedToolSet && !allowedToolSet.has("read")) {
 		throw new Error(
 			`Capability ceiling from ${capabilityCeiling?.sources.join(", ") || "unknown source"} excludes required tool 'read' for lazy skill loading.`,
@@ -278,8 +286,11 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 					.filter((tool) => !allowedToolSet || allowedToolSet.has(tool))
 					// Host 0.84.1 can leave limit-killed rg children unreaped and freeze a parallel child Tool batch.
 					.filter((tool) => tool !== "grep");
+	const effectiveDeclaredBuiltinTools = declaredBuiltinTools.filter((tool) => !excludedToolSet.has(tool));
 	const fanoutAuthorized =
-		(input.tools === undefined && allowedToolSet === undefined) || declaredBuiltinTools.includes("subagent");
+		!excludedToolSet.has("subagent") &&
+		((input.tools === undefined && allowedToolSet === undefined) ||
+			effectiveDeclaredBuiltinTools.includes("subagent"));
 	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions
 		? []
 		: (input.tools ?? []).filter((tool) => !requestedBuiltinTools.includes(tool) && isExtensionTool(tool));
@@ -287,7 +298,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 		? []
 		: resolveMcpDirectToolSelections(input.mcpDirectTools, input.cwd);
 	const effectiveMcpSelections = resolvedMcpSelections.filter(
-		(selection) => !allowedToolSet || allowedToolSet.has(selection.name),
+		(selection) => (!allowedToolSet || allowedToolSet.has(selection.name)) && !excludedToolSet.has(selection.name),
 	);
 	const effectiveMcpTools = effectiveMcpSelections.map((selection) => selection.name);
 	const explicitToolAllowlist =
@@ -295,12 +306,14 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	const internalTools = [
 		...(input.structuredOutput ? ["structured_output"] : []),
 		...(input.nativeSupervisor ? ["contact_supervisor"] : []),
+	].filter((tool) => !excludedToolSet.has(tool));
+	const effectiveToolAllowlist = [
+		...new Set([...effectiveDeclaredBuiltinTools, ...effectiveMcpTools, ...internalTools]),
 	];
-	const effectiveToolAllowlist = [...new Set([...declaredBuiltinTools, ...effectiveMcpTools, ...internalTools])];
 	const requiredChildTools = explicitToolAllowlist
 		? [
 				...new Set([
-					...(input.tools !== undefined ? declaredBuiltinTools : []),
+					...(input.tools !== undefined ? effectiveDeclaredBuiltinTools : []),
 					...(input.mcpDirectTools?.length ? effectiveMcpTools : []),
 					...(input.requireReadTool ? ["read"] : []),
 					...internalTools,
@@ -333,6 +346,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	const plan: PiLaunchToolPlan = {
 		requestedBuiltinTools,
 		declaredBuiltinTools,
+		excludeTools,
 		resolvedMcpSelections,
 		effectiveMcpSelections,
 		effectiveMcpTools,
@@ -364,10 +378,18 @@ function appendChildLaunchArgs(
 	codeModeProviderTools: readonly string[],
 	systemPrompt: string | null | undefined,
 ): string | undefined {
-	const hostToolAllowlist = [...new Set([...toolPlan.effectiveToolAllowlist, ...codeModeProviderTools])];
+	const hostToolAllowlist = [
+		...new Set(
+			[...toolPlan.effectiveToolAllowlist, ...codeModeProviderTools].filter(
+				(tool) => !toolPlan.excludeTools.includes(tool),
+			),
+		),
+	];
 	if (toolPlan.explicitToolAllowlist) {
 		args.push(hostToolAllowlist.length > 0 ? "--tools" : "--no-tools");
 		if (hostToolAllowlist.length > 0) args.push(hostToolAllowlist.join(","));
+	} else if (toolPlan.excludeTools.length > 0) {
+		args.push("--exclude-tools", toolPlan.excludeTools.join(","));
 	}
 	args.push("--no-extensions");
 	for (const extPath of toolPlan.extensionArgs) args.push("--extension", extPath);
@@ -463,7 +485,13 @@ function buildChildEnv(
 	tempDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
 	const toolDiagnosticPath = path.join(tempDir, "child-diagnostic.json");
 	env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
-	const requiredChildTools = [...new Set([...toolPlan.requiredChildTools, ...codeModeProviderTools])];
+	const requiredChildTools = [
+		...new Set(
+			[...toolPlan.requiredChildTools, ...codeModeProviderTools].filter(
+				(tool) => !toolPlan.excludeTools.includes(tool),
+			),
+		),
+	];
 	if (requiredChildTools.length > 0) env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(requiredChildTools);
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
@@ -559,6 +587,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 
 	const toolPlan = resolvePiLaunchToolPlan({
 		tools: input.tools,
+		excludeTools: input.excludeTools,
 		extensions: input.extensions,
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,

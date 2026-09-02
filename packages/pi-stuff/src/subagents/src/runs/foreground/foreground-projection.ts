@@ -256,6 +256,8 @@ export function rememberForegroundResult(
 			if (child.model) rememberedChild.model = child.model;
 			if (child.thinking) rememberedChild.thinking = child.thinking;
 			if (child.error) rememberedChild.error = child.error;
+			if (child.cumulativeUsage) rememberedChild.cumulativeUsage = { ...child.cumulativeUsage };
+			if (child.terminalOutcome) rememberedChild.terminalOutcome = structuredClone(child.terminalOutcome);
 			if (child.detachedReason) rememberedChild.detachedReason = child.detachedReason;
 			if (child.finalOutput) rememberedChild.finalOutput = child.finalOutput;
 			if (child.artifactPaths) rememberedChild.artifactPaths = child.artifactPaths;

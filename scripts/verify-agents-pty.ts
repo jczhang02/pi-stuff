@@ -473,20 +473,28 @@ async function verifyAgentDetail(session: TmuxAgentsSession, options: AgentsPtyV
 	session.sendKey("Enter");
 	await session.waitForText("Agents / general-purpose");
 	await session.waitForText("Activity");
-	await session.waitForText("CHILD_FINAL_SUMMARY");
 	const detailInitial = await session.waitForStableScreen();
 	if (detailInitial.includes("pi-stuff-context")) fail("Agent detail exposed Suite-owned execution context");
 	if (detailInitial.split("Agents / general-purpose").length !== 2) fail("Agent detail repeated its title");
-	if (!detailInitial.includes("Result") || !detailInitial.includes("CHILD_RUNNING")) {
-		fail("completed Agent detail did not start with its retained Result");
+	const detailScreens = [detailInitial];
+	for (let index = 0; index < 64 && detailScreens.at(-1)?.includes("later lines"); index += 1) {
+		detailScreens.push(await session.sendAndWaitForChange("Down"));
 	}
-	if (!detailInitial.includes("CHILD_MARKDOWN_RENDERED")) fail("Agent Result did not render Markdown content");
-	if (detailInitial.includes("## CHILD_FINAL_SUMMARY") || detailInitial.includes("**CHILD_MARKDOWN_RENDERED**")) {
+	const detailDown = detailScreens[1] ?? fail(`Down did not move the completed Agent detail\n${detailInitial}`);
+	const detailEnd = detailScreens.at(-1) ?? fail("completed Agent detail had no rendered page");
+	if (detailEnd.includes("later lines")) fail("completed Agent detail exceeded the bounded page traversal");
+	const detailPages = detailScreens.join("\n");
+	if (
+		!detailPages.includes("Result") ||
+		!detailPages.includes("CHILD_RUNNING") ||
+		!detailPages.includes("CHILD_FINAL_SUMMARY") ||
+		!detailPages.includes("CHILD_MARKDOWN_RENDERED")
+	) {
+		fail("Agent Result did not remain inspectable through detail pagination");
+	}
+	if (detailPages.includes("## CHILD_FINAL_SUMMARY") || detailPages.includes("**CHILD_MARKDOWN_RENDERED**")) {
 		fail("Agent Result exposed unrendered Markdown markers");
 	}
-	const detailDown = await session.sendAndWaitForChange("Down");
-	if (detailDown === detailInitial) fail(`Down did not move the completed Agent detail\n${detailInitial}`);
-	const detailEnd = await session.sendAndWaitForChange(" ", true);
 	if (detailEnd.includes("AGENT_TOOL_RESULT")) fail(`successful Tool result was expanded by default\n${detailEnd}`);
 	await session.sendAndWaitForChange("t");
 	await session.sendAndWaitForChange(" ", true);

@@ -23,6 +23,7 @@ import type {
 	SingleResult,
 } from "../shared/types.ts";
 import { readStatusAsync } from "../shared/utils.ts";
+import { projectedCumulativeUsage, projectedTerminalOutcome } from "./current-agents-projection-normalization.ts";
 
 const MAX_REPLAYED_FOREGROUND_RUNS = 200;
 const MAX_REPLAYED_CHILDREN = 20;
@@ -111,6 +112,8 @@ function replayChild<Value>(value: Value, index: number, updatedAt: number): For
 	if (!agent || !task || exitCode === undefined) return undefined;
 	const context = child.context === "fresh" || child.context === "fork" ? child.context : undefined;
 	const contextUsage = agentContextUsage(child.contextUsage);
+	const cumulativeUsage = projectedCumulativeUsage(child) ?? undefined;
+	const terminalOutcome = projectedTerminalOutcome(child) ?? undefined;
 	const sessionFile = exactString(child.sessionFile, 4_096);
 	if (child.sessionFile !== undefined && !sessionFile) return undefined;
 	if (sessionFile && !path.isAbsolute(sessionFile)) return undefined;
@@ -155,6 +158,8 @@ function replayChild<Value>(value: Value, index: number, updatedAt: number): For
 	};
 	if (context) replayed.context = context;
 	if (contextUsage) replayed.contextUsage = contextUsage;
+	if (cumulativeUsage) replayed.cumulativeUsage = cumulativeUsage;
+	if (terminalOutcome) replayed.terminalOutcome = terminalOutcome;
 	if (child.crashed === true) replayed.crashed = true;
 	if (sessionFile) replayed.sessionFile = sessionFile;
 	if (childCwd) replayed.cwd = childCwd;
@@ -249,6 +254,8 @@ function runtimeChild(step: RuntimeReplayStep, index: number, updatedAt: number)
 	const task = displayString(step.task, 16 * 1024) ?? description;
 	const context = step.context === "fresh" || step.context === "fork" ? step.context : undefined;
 	const contextUsage = agentContextUsage(step.contextUsage);
+	const cumulativeUsage = projectedCumulativeUsage(step) ?? undefined;
+	const terminalOutcome = projectedTerminalOutcome(step) ?? undefined;
 	const childCwd = exactString(step.cwd, 4_096);
 	if (step.cwd !== undefined && (!childCwd || !path.isAbsolute(childCwd))) return undefined;
 	const sessionFile = exactString(step.sessionFile, 4_096);
@@ -309,6 +316,8 @@ function runtimeChild(step: RuntimeReplayStep, index: number, updatedAt: number)
 	if (task) child.task = task;
 	if (context) child.context = context;
 	if (contextUsage) child.contextUsage = contextUsage;
+	if (cumulativeUsage) child.cumulativeUsage = cumulativeUsage;
+	if (terminalOutcome) child.terminalOutcome = terminalOutcome;
 	if (step.agentStatus === "crashed") child.crashed = true;
 	if (sessionFile) child.sessionFile = sessionFile;
 	if (childCwd) child.cwd = childCwd;
@@ -439,6 +448,8 @@ function applyCompletionValue(
 			transcriptPath: exactString(result.transcriptPath, 4_096) ?? step.transcriptPath,
 			transcriptError: displayString(result.transcriptError, 8 * 1024) ?? step.transcriptError,
 			recentOutput: displayOutput ? [displayOutput] : step.recentOutput,
+			cumulativeUsage: projectedCumulativeUsage(result) ?? step.cumulativeUsage,
+			terminalOutcome: projectedTerminalOutcome(result) ?? step.terminalOutcome,
 			children,
 			activityState: undefined,
 			currentTool: undefined,

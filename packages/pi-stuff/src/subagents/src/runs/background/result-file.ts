@@ -70,6 +70,51 @@ const MODEL_ATTEMPT_SCHEMA = Type.Object(
 		exitCode: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 		error: Type.Optional(Type.String()),
 		usage: Type.Optional(MODEL_USAGE_SCHEMA),
+		costReported: Type.Optional(Type.Literal(true)),
+	},
+	{ additionalProperties: false },
+);
+const CUMULATIVE_USAGE_SCHEMA = Type.Object(
+	{
+		turns: Type.Integer({ minimum: 0 }),
+		toolCalls: Type.Integer({ minimum: 0 }),
+		inputTokens: Type.Integer({ minimum: 0 }),
+		outputTokens: Type.Integer({ minimum: 0 }),
+		reportedCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+		modelAttempts: Type.Integer({ minimum: 0 }),
+		resumes: Type.Integer({ minimum: 0 }),
+	},
+	{ additionalProperties: false },
+);
+const TERMINAL_OUTCOME_SCHEMA = Type.Object(
+	{
+		state: Type.Union([Type.Literal("completed"), Type.Literal("incomplete"), Type.Literal("failed")]),
+		class: Type.Union([
+			Type.Literal("completed"),
+			Type.Literal("timeout"),
+			Type.Literal("stopped"),
+			Type.Literal("interrupted"),
+			Type.Literal("provider"),
+			Type.Literal("context"),
+			Type.Literal("storage"),
+			Type.Literal("protocol"),
+			Type.Literal("explicit_budget"),
+			Type.Literal("cost_guard"),
+			Type.Literal("process"),
+			Type.Literal("unknown"),
+		]),
+		reason: Type.String(),
+		continuation: Type.Object(
+			{
+				target: Type.Object(
+					{ id: Type.String(), index: Type.Integer({ minimum: 0 }) },
+					{ additionalProperties: false },
+				),
+				resumeSupported: Type.Boolean(),
+				acknowledgementRequired: Type.Optional(Type.Literal(true)),
+			},
+			{ additionalProperties: false },
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -95,6 +140,8 @@ const RESULT_CHILD_SCHEMA = Type.Object(
 		exitCode: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 		attemptedModels: Type.Optional(Type.Array(Type.String())),
 		modelAttempts: Type.Optional(Type.Array(MODEL_ATTEMPT_SCHEMA)),
+		cumulativeUsage: Type.Optional(CUMULATIVE_USAGE_SCHEMA),
+		terminalOutcome: Type.Optional(TERMINAL_OUTCOME_SCHEMA),
 		turnBudget: Type.Optional(Type.Unknown()),
 		toolBudget: Type.Optional(Type.Unknown()),
 		totalCost: Type.Optional(Type.Unknown()),
@@ -175,6 +222,8 @@ export const RESULT_CHILD_FIELDS = [
 	"thinking",
 	"attemptedModels",
 	"modelAttempts",
+	"cumulativeUsage",
+	"terminalOutcome",
 	"totalCost",
 	"artifactPaths",
 	"transcriptPath",
@@ -398,6 +447,8 @@ export function terminalStatusFromResult(
 			thinking,
 			attemptedModels: child?.attemptedModels ?? step.attemptedModels,
 			modelAttempts: child?.modelAttempts ?? step.modelAttempts,
+			cumulativeUsage: child?.cumulativeUsage ?? step.cumulativeUsage,
+			terminalOutcome: child?.terminalOutcome ?? step.terminalOutcome,
 			totalCost: child?.totalCost ?? step.totalCost,
 			transcriptPath: child?.transcriptPath ?? step.transcriptPath,
 			transcriptError: child?.transcriptError ?? step.transcriptError,

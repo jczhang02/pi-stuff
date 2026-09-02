@@ -158,7 +158,7 @@ process.stdout.write(events.map((event) => JSON.stringify(event)).join("\\n") + 
 	expect(completion.results[0]?.protocolError).toBeUndefined();
 }, 5_000);
 
-test("enforces aggregate protocol and turn budgets on a final record without a newline", async () => {
+test("enforces the aggregate protocol limit on a final record without a newline", async () => {
 	const root = fixtureRoot();
 	const cases = [
 		{
@@ -170,16 +170,6 @@ process.stdout.write(event("a".repeat(240)) + "\\n" + event("b".repeat(240)), ()
 `,
 			task: { ...task(0), cwd: root },
 			expected: "aggregate protocol limit",
-		},
-		{
-			id: "turn-budget-final-line",
-			protocolLimit: "4096",
-			script: `
-const event = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "OVER_BUDGET_WITHOUT_NEWLINE" }], stopReason: "toolUse", timestamp: Date.now() } };
-process.stdout.write(JSON.stringify(event), () => process.exit(0));
-`,
-			task: { ...task(0), cwd: root, turnBudget: { maxTurns: 1, graceTurns: 0 } },
-			expected: "turn budget",
 		},
 	] as const;
 
@@ -196,11 +186,71 @@ process.stdout.write(JSON.stringify(event), () => process.exit(0));
 		const completion = readBackgroundCompletion(config.resultPath);
 		expect(completion.state).toBe("failed");
 		expect(completion.results[0]?.error?.toLowerCase()).toContain(fixture.expected);
-		if (fixture.id === "turn-budget-final-line") {
-			expect(completion.results[0]?.turnBudgetExceeded).toBe(true);
-		}
 	}
 });
+
+test("allows ordinary Agents to continue beyond the retired 64-turn budget", async () => {
+	const root = fixtureRoot();
+	const writer = path.join(root, "unbounded-turns.ts");
+	fs.writeFileSync(
+		writer,
+		`#!/usr/bin/env bun
+const events = Array.from({ length: 70 }, (_, index) => ({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "TURN_" + index }],
+    stopReason: index === 69 ? "stop" : "toolUse",
+    timestamp: Date.now(),
+  },
+}));
+process.stdout.write(events.map(JSON.stringify).join("\\n") + "\\n");
+`,
+		{ mode: 0o700 },
+	);
+	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+	const config = singleRunnerConfig(root, "unbounded-turns", {
+		asyncDir: path.join(root, "unbounded-turns"),
+	});
+
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
+	expect(completion).toMatchObject({
+		state: "complete",
+		success: true,
+		results: [{ output: "TURN_69", success: true }],
+	});
+}, 5_000);
+
+test("terminates a child whose Tool call exceeds its configured timeout", async () => {
+	const root = fixtureRoot();
+	const writer = path.join(root, "tool-timeout.ts");
+	fs.writeFileSync(
+		writer,
+		`#!/usr/bin/env bun
+process.stdout.write(JSON.stringify({
+  type: "tool_execution_start",
+  toolCallId: "call-1",
+  toolName: "bash",
+  args: { command: "hang" },
+}) + "\\n");
+setInterval(() => {}, 1_000);
+`,
+		{ mode: 0o700 },
+	);
+	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+	const config = singleRunnerConfig(root, "tool-timeout", {
+		asyncDir: path.join(root, "tool-timeout"),
+		work: { mode: "single", task: { ...task(0), toolTimeoutMs: 30 } },
+	});
+
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
+	expect(completion).toMatchObject({
+		state: "failed",
+		results: [{ error: "Tool 'bash' exceeded its timeout of 30ms.", timedOut: true }],
+	});
+}, 5_000);
 
 test("bounds recent status output by UTF-8 bytes without changing the full result", async () => {
 	const root = fixtureRoot();

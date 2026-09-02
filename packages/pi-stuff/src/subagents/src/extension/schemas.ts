@@ -10,26 +10,6 @@ const SkillSelection = Type.Unsafe({
 	description: "Optional skill name or names. false disables skills for this Agent.",
 });
 
-const TurnBudget = Type.Object(
-	{
-		maxTurns: Type.Integer({
-			minimum: 1,
-			description: "Soft threshold at which wrap-up is requested.",
-		}),
-		graceTurns: Type.Optional(
-			Type.Integer({
-				minimum: 0,
-				description: "Additional wrap-up turns allowed after the soft threshold and before forced termination.",
-			}),
-		),
-	},
-	{
-		additionalProperties: false,
-		description:
-			"Optional expert bounded-execution control. Omit for ordinary delegated work unless the user or project explicitly requires a turn bound; forced termination begins only after maxTurns plus graceTurns.",
-	},
-);
-
 const ToolBudget = Type.Object(
 	{
 		soft: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -59,8 +39,8 @@ const AgentTask = Type.Object(
 		cwd: Type.Optional(Type.String({ minLength: 1 })),
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 		context: Type.Optional(
 			Type.String({
 				enum: ["fresh", "fork"],
@@ -95,8 +75,8 @@ const FanoutAgentTask = Type.Object(
 		cwd: Type.Optional(Type.String({ minLength: 1 })),
 		model: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 		context: Type.Optional(
 			Type.String({
 				enum: ["fresh", "fork"],
@@ -157,8 +137,15 @@ export const SubagentParams = Type.Object(
 		thinking: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(
+			Type.Integer({
+				minimum: 1,
+				maximum: 2_147_483_647,
+				description:
+					"Optional hard timeout for each Tool call in milliseconds; known-fast built-in Tools default to five minutes.",
+			}),
+		),
 		action: Type.Optional(
 			Type.String({
 				enum: ["status", "steer", "stop", "resume"],
@@ -181,6 +168,12 @@ export const SubagentParams = Type.Object(
 		),
 		message: Type.Optional(
 			Type.String({ minLength: 1, description: "Required steering message, or an optional resume message." }),
+		),
+		acknowledgeCost: Type.Optional(
+			Type.Boolean({
+				description:
+					"Resume only: set true after a direct user acknowledgement to continue a cost-limited Agent without resetting cumulative usage.",
+			}),
 		),
 	},
 	{
@@ -223,8 +216,8 @@ export const FanoutChildSubagentParams = Type.Object(
 		thinking: Type.Optional(Type.String({ minLength: 1 })),
 		skill: Type.Optional(SkillSelection),
 		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
+		toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
 	},
 	{
 		additionalProperties: false,

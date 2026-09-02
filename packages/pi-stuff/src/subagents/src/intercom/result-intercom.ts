@@ -251,6 +251,20 @@ function formatSubagentResultIntercomMessage(input: {
 	for (const [index, child] of input.children.entries()) {
 		lines.push("");
 		lines.push(`${index + 1}. ${child.agent} — ${child.status}`);
+		if (child.terminalOutcome) {
+			const { continuation } = child.terminalOutcome;
+			lines.push(
+				`Outcome: ${child.terminalOutcome.class}/${child.terminalOutcome.state} — ${child.terminalOutcome.reason}`,
+				`Recovery: ${continuation.target.id} index ${String(continuation.target.index)} — ${continuation.resumeSupported ? "resumable" : "not resumable"}${continuation.acknowledgementRequired ? "; acknowledgement required" : ""}`,
+			);
+		}
+		if (child.cumulativeUsage) {
+			const usage = child.cumulativeUsage;
+			const cost = usage.reportedCostUsd === undefined ? "unreported" : `$${usage.reportedCostUsd.toFixed(6)}`;
+			lines.push(
+				`Usage: ${usage.turns} turns, ${usage.toolCalls} Tools, ${usage.inputTokens} input + ${usage.outputTokens} output tokens, reported cost ${cost}, ${usage.modelAttempts} attempts, ${usage.resumes} resumes`,
+			);
+		}
 		lines.push(child.summary);
 	}
 

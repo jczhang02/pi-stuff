@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -8,7 +9,11 @@ import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../..
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { ResolvedToolBudget } from "../../shared/types.ts";
-import { CHILD_MODEL_CONTEXT_ENTRY_TYPE, type ChildModelContext } from "./child-protocol.ts";
+import {
+	CHILD_MODEL_CONTEXT_ENTRY_TYPE,
+	CHILD_TOOL_BUDGET_ENTRY_TYPE,
+	type ChildModelContext,
+} from "./child-protocol.ts";
 import {
 	childContextHasOwnContinuation,
 	type ProviderPayloadModel,
@@ -158,8 +163,45 @@ function stripAssistantSubagentToolCallBlocks(message: SubagentContextMessage): 
 	return { ...message, content: filteredContent };
 }
 
-export function stripParentOnlySubagentMessages(messages: SubagentContextMessage[]): SubagentContextMessage[] {
+const PORTABLE_TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const MAX_PORTABLE_TOOL_ID_LENGTH = 64;
+const COMPOSITE_TOOL_ID_APIS = new Set([
+	"azure-openai-responses",
+	"cursor-native",
+	"openai-completions",
+	"openai-responses",
+]);
+
+function portableToolId(id: string): string {
+	if (PORTABLE_TOOL_ID_PATTERN.test(id) && id.length <= MAX_PORTABLE_TOOL_ID_LENGTH) return id;
+	const encoded = `tool_${Buffer.from(id).toString("base64url") || "empty"}`;
+	if (encoded.length <= MAX_PORTABLE_TOOL_ID_LENGTH) return encoded;
+	return `tool_${createHash("sha256").update(id).digest("base64url")}`;
+}
+
+function sanitizeToolHistoryMessage(message: SubagentContextMessage): SubagentContextMessage {
+	if (message.role === "toolResult") {
+		const toolCallId = portableToolId(message.toolCallId);
+		return toolCallId === message.toolCallId ? message : { ...message, toolCallId };
+	}
+	if (message.role !== "assistant") return message;
+	let changed = false;
+	const content = message.content.map((block) => {
+		if (block.type !== "toolCall") return block;
+		const id = portableToolId(block.id);
+		if (id === block.id) return block;
+		changed = true;
+		return { ...block, id };
+	});
+	return changed ? { ...message, content } : message;
+}
+
+export function stripParentOnlySubagentMessages(
+	messages: SubagentContextMessage[],
+	options: { sanitizeToolIds?: boolean } = {},
+): SubagentContextMessage[] {
 	const preserveCurrentFanoutToolHistory = process.env[SUBAGENT_FANOUT_CHILD_ENV] === "1";
+	const sanitizeToolIds = options.sanitizeToolIds ?? true;
 	let changed = false;
 	const filtered: SubagentContextMessage[] = [];
 	for (const message of messages) {
@@ -175,8 +217,9 @@ export function stripParentOnlySubagentMessages(messages: SubagentContextMessage
 			changed = true;
 			continue;
 		}
-		if (stripped !== message) changed = true;
-		filtered.push(stripped);
+		const sanitized = sanitizeToolIds ? sanitizeToolHistoryMessage(stripped) : stripped;
+		if (stripped !== message || sanitized !== stripped) changed = true;
+		filtered.push(sanitized);
 	}
 	return changed ? filtered : messages;
 }
@@ -197,11 +240,19 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 		event: string,
 		handler: (event: { toolName?: string }) => ToolBudgetEventResult,
 	) => void;
+	const recordBudgetEvent = (outcome: "soft-reached" | "hard-blocked", toolName: string): void => {
+		try {
+			pi.appendEntry(CHILD_TOOL_BUDGET_ENTRY_TYPE, { version: 1, outcome, toolCount, toolName });
+		} catch {
+			// Budget enforcement remains authoritative when optional telemetry cannot be appended.
+		}
+	};
 	onRuntimeEvent("tool_call", (event) => {
 		const toolName = isRuntimeString(event.toolName) ? event.toolName : "tool";
 		toolCount++;
 		if (budget.soft !== undefined && toolCount >= budget.soft && !softNudged) {
 			softNudged = true;
+			recordBudgetEvent("soft-reached", toolName);
 			try {
 				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
 				if (dispatched) {
@@ -214,6 +265,7 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 			}
 		}
 		if (!shouldBlockToolForBudget(budget, toolName, toolCount)) return undefined;
+		recordBudgetEvent("hard-blocked", toolName);
 		return { block: true, reason: toolBudgetBlockedMessage(budget, toolName, toolCount) };
 	});
 }
@@ -315,7 +367,9 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	});
 	registerStructuredOutputTool(pi);
 	pi.on("context", (event, ctx) => {
-		const messages = stripParentOnlySubagentMessages(event.messages);
+		const messages = stripParentOnlySubagentMessages(event.messages, {
+			sanitizeToolIds: !COMPOSITE_TOOL_ID_APIS.has(ctx.model?.api ?? ""),
+		});
 		continuationHistoryObserved ||= childContextHasOwnContinuation(messages);
 		const projected = projectChildContinuationContext(messages, pi, ctx);
 		if (messages === event.messages && !projected.changed) return undefined;

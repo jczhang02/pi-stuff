@@ -123,13 +123,15 @@ function runConfiguredWork(
 									Effect.sync(() => terminalizeRejectedStep(status, statusPath, eventsPath, index, error)),
 								),
 							),
-						{ terminalCause: () => control.preStartTerminalCause() },
+						{ runId: config.id, terminalCause: () => control.preStartTerminalCause() },
 					);
 					return yield* Effect.try({ try: () => boundRunResultOutputs(taskResults), catch: (error) => error });
 				}).pipe(
 					Effect.catch((error) => {
 						const message = error instanceof Error ? error.message : String(error);
-						return Effect.succeed(taskList(config.work).map((task) => failedResult(task, message)));
+						return Effect.succeed(
+							taskList(config.work).map((task, index) => failedResult(task, message, config.id, index)),
+						);
 					}),
 				);
 				return yield* finalizeConfiguredRun({

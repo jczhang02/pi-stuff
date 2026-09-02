@@ -2,7 +2,6 @@ import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import { type AsyncStatus, SUBAGENT_LIFECYCLE_ARTIFACT_VERSION } from "../../shared/types.ts";
 import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
 import { initialToolBudgetState } from "../shared/tool-budget.ts";
-import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import { createSteeringStatus } from "./steering.ts";
 
 export type BackgroundRunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
@@ -52,7 +51,6 @@ export function createInitialStatus(
 			if (task.model) step.model = task.model;
 			if (task.thinking) step.thinking = task.thinking;
 			if (task.skills?.length) step.skills = task.skills;
-			if (task.turnBudget) step.turnBudget = initialTurnBudgetState(task.turnBudget);
 			if (task.toolBudget) step.toolBudget = initialToolBudgetState(task.toolBudget);
 			if (task.launchContractDigest) step.launchContractDigest = task.launchContractDigest;
 			if (task.capabilityCeiling) step.capabilityCeiling = task.capabilityCeiling;

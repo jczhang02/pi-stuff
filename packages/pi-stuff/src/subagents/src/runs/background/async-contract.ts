@@ -2,6 +2,7 @@
 
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { JsonInputValue } from "../../../../shared/json-value.js";
+import type { AgentWorkUsage } from "../../runtime/session-governor.ts";
 import type {
 	AgentContextUsage,
 	CostSummary,
@@ -19,7 +20,7 @@ import type {
 	NestedRuntimeEvidence,
 	NestedStepSummary,
 } from "../shared/nested-contract.ts";
-import type { ModelAttempt } from "../shared/run-result.ts";
+import type { AgentTerminalOutcome, ModelAttempt } from "../shared/run-result.ts";
 
 export interface AsyncStartedEvent {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
@@ -75,6 +76,8 @@ export interface AsyncStatusStep extends NestedStepSummary {
 	thinking?: string | undefined;
 	attemptedModels?: string[] | undefined;
 	modelAttempts?: ModelAttempt[] | undefined;
+	cumulativeUsage?: AgentWorkUsage | undefined;
+	terminalOutcome?: AgentTerminalOutcome | undefined;
 	totalCost?: CostSummary | undefined;
 	steering?: SteeringStatus;
 	structuredOutput?: unknown;
@@ -155,6 +158,7 @@ export interface AsyncJobState
 	sessionDir?: string | undefined;
 	outputFile?: string | undefined;
 	totalTokens?: TokenUsage | undefined;
+	totalCost?: CostSummary | undefined;
 	sessionFile?: string | undefined;
 	controlEventCursor?: number;
 	/** A restored observer failed to stat events; first successful read starts at EOF. */

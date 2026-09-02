@@ -4,7 +4,7 @@ import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js
 import { appendArtifactJsonl } from "../../shared/artifacts.ts";
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import type { ProtocolOutputLimit, TurnBudgetState, Usage } from "../../shared/types.ts";
+import type { ProtocolOutputLimit, Usage } from "../../shared/types.ts";
 import { extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
 import {
 	type ChildProtocolEvent,
@@ -17,7 +17,7 @@ import {
 	projectChildLifecycle,
 } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
-import { initialTurnBudgetState, turnBudgetDecision, turnBudgetState } from "../shared/turn-budget.ts";
+import { effectiveToolTimeoutMs, formatToolTimeoutMessage, toolTimeoutCallKey } from "../shared/tool-timeout.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -26,7 +26,6 @@ import {
 	addUsage,
 	appendDiagnosticEvent,
 	appendRecentOutput,
-	assistantStartsToolCall,
 	emptyUsage,
 	estimatedChildMessageTokens,
 	maxChildProtocolBytes,
@@ -37,7 +36,7 @@ import {
 } from "./runner-output.ts";
 import { writeStatus } from "./runner-state.ts";
 
-type ChildProtocolTerminalCause = "protocol" | "turn-budget";
+type ChildProtocolTerminalCause = "protocol" | "tool-timeout";
 
 export interface ChildProtocolRuntimeInput {
 	config: BackgroundRunnerConfig;
@@ -51,6 +50,7 @@ export interface ChildProtocolRuntimeInput {
 	status: RunnerStatus;
 	startFinalDrain: (evidence: boolean) => void;
 	cancelFinalDrain: () => void;
+	scheduleTimeout: (delayMs: number, action: () => void) => () => void;
 	terminate: (cause: ChildProtocolTerminalCause, error: string, signal: "SIGINT" | "SIGTERM") => boolean;
 }
 
@@ -61,11 +61,11 @@ export interface ChildProtocolSnapshot {
 	assistantError: string | undefined;
 	protocolError: ProtocolOutputLimit | undefined;
 	usage: Usage;
+	costReported: boolean;
 	toolCount: number;
 	model: string | undefined;
-	turnBudget: TurnBudgetState | undefined;
-	turnBudgetExceeded: boolean;
 	contextNudgeObserved: boolean;
+	toolBudgetBlockedTool: string | undefined;
 }
 
 function aggregateOutputLimit(
@@ -105,16 +105,18 @@ export class ChildProtocolRuntime {
 	private invalidProtocolEvent = false;
 	private stdoutProtocolBytes = 0;
 	private stderrProtocolBytes = 0;
-	private turnBudget: TurnBudgetState | undefined;
-	private turnBudgetExceeded = false;
+	private toolTimeoutSequence = 0;
+	private readonly activeToolTimeouts = new Map<string, { toolName: string; cancel: () => void }>();
+	private readonly activeToolTimeoutKeysByName = new Map<string, string[]>();
 	private contextNudgeObserved = false;
+	private toolBudgetBlockedTool: string | undefined;
+	private costReported = false;
 	private streamingStatusPersistenceFailed = false;
 
 	constructor(input: ChildProtocolRuntimeInput) {
 		this.input = input;
 		this.contextWindow = resolveTaskContextWindow(input.task, input.model);
 		this.observedModel = input.model;
-		this.turnBudget = input.task.turnBudget ? initialTurnBudgetState(input.task.turnBudget) : undefined;
 		this.stdoutReader = createBoundedLineReader({
 			onLine: (line) => this.processLine(line),
 			onLimit: (limit) => {
@@ -258,6 +260,15 @@ export class ChildProtocolRuntime {
 	}
 
 	private handleContextEvent(event: ChildProtocolEvent): boolean {
+		if (event.toolBudgetEvent) {
+			this.toolCount = Math.max(this.toolCount, event.toolBudgetEvent.toolCount);
+			this.input.statusStep.toolCount = this.toolCount;
+			if (event.toolBudgetEvent.outcome === "hard-blocked") {
+				this.toolBudgetBlockedTool = event.toolBudgetEvent.toolName;
+			}
+			this.persistStreamingStatus();
+			return true;
+		}
 		if (event.modelContext) {
 			this.contextWindow = event.modelContext.contextWindow;
 			this.input.statusStep.contextUsage =
@@ -276,6 +287,7 @@ export class ChildProtocolRuntime {
 
 	private handleToolEvent(event: ChildProtocolEvent): boolean {
 		if (event.type === "tool_execution_start" && event.toolName) {
+			this.armToolTimeout(event);
 			this.toolCount += 1;
 			this.input.statusStep.toolCount = this.toolCount;
 			this.input.statusStep.currentTool = event.toolName;
@@ -286,12 +298,60 @@ export class ChildProtocolRuntime {
 			return true;
 		}
 		if (event.type !== "tool_execution_end") return false;
+		this.clearToolTimeout(event);
 		this.input.statusStep.currentTool = undefined;
 		this.input.statusStep.currentToolArgs = undefined;
 		this.input.statusStep.currentToolStartedAt = undefined;
 		this.input.statusStep.lastActivityAt = Date.now();
 		this.persistStreamingStatus();
 		return true;
+	}
+
+	private removeToolTimeout(key: string): void {
+		const active = this.activeToolTimeouts.get(key);
+		if (!active) return;
+		active.cancel();
+		this.activeToolTimeouts.delete(key);
+		const keys =
+			this.activeToolTimeoutKeysByName.get(active.toolName)?.filter((candidate) => candidate !== key) ?? [];
+		if (keys.length > 0) this.activeToolTimeoutKeysByName.set(active.toolName, keys);
+		else this.activeToolTimeoutKeysByName.delete(active.toolName);
+	}
+
+	private clearToolTimeout(event: ChildProtocolEvent): void {
+		const key = event.toolCallId
+			? `id:${event.toolCallId}`
+			: event.toolName
+				? this.activeToolTimeoutKeysByName.get(event.toolName)?.[0]
+				: this.activeToolTimeouts.size === 1
+					? this.activeToolTimeouts.keys().next().value
+					: undefined;
+		if (key) this.removeToolTimeout(key);
+	}
+
+	private armToolTimeout(event: ChildProtocolEvent): void {
+		const toolName = event.toolName;
+		if (!toolName) return;
+		const timeoutMs = effectiveToolTimeoutMs(toolName, this.input.task.toolTimeoutMs);
+		if (timeoutMs === undefined) return;
+		const remainingMs =
+			this.input.config.deadlineAt === undefined
+				? undefined
+				: Math.max(0, this.input.config.deadlineAt - Date.now());
+		if (remainingMs !== undefined && timeoutMs >= remainingMs) return;
+		const key = toolTimeoutCallKey(event, ++this.toolTimeoutSequence);
+		const cancel = this.input.scheduleTimeout(timeoutMs, () => {
+			this.removeToolTimeout(key);
+			this.input.terminate("tool-timeout", formatToolTimeoutMessage(toolName, timeoutMs), "SIGTERM");
+		});
+		this.activeToolTimeouts.set(key, { toolName, cancel });
+		const keys = this.activeToolTimeoutKeysByName.get(toolName) ?? [];
+		keys.push(key);
+		this.activeToolTimeoutKeysByName.set(toolName, keys);
+	}
+
+	private clearAllToolTimeouts(): void {
+		for (const key of this.activeToolTimeouts.keys()) this.removeToolTimeout(key);
 	}
 
 	private recordMessage(message: ChildProtocolMessage, assistantMessageEnd: boolean): void {
@@ -305,30 +365,11 @@ export class ChildProtocolRuntime {
 		if (assistantMessageEnd && message.role === "assistant") {
 			this.observedModel = message.model ?? this.observedModel;
 			this.assistantError = message.errorMessage;
-			addUsage(this.usage, message);
+			this.costReported = addUsage(this.usage, message) || this.costReported;
 			this.input.statusStep.turnCount = this.usage.turns;
 			this.input.statusStep.tokens = tokenUsage(this.usage);
-			this.applyTurnBudget(message);
 		}
 		this.persistStreamingStatus();
-	}
-
-	private applyTurnBudget(message: Extract<ChildProtocolMessage, { role: "assistant" }>): void {
-		const budget = this.input.task.turnBudget;
-		if (!budget) return;
-		const decision = turnBudgetDecision(
-			budget,
-			this.usage.turns,
-			terminalAssistantStop(message),
-			assistantStartsToolCall(message),
-			true,
-		);
-		const error = `Agent exceeded its turn budget (${budget.maxTurns} + ${budget.graceTurns}).`;
-		const aborted =
-			decision === "abort" && !this.turnBudgetExceeded && this.input.terminate("turn-budget", error, "SIGINT");
-		this.turnBudget = turnBudgetState(budget, this.usage.turns, aborted);
-		this.input.statusStep.turnBudget = this.turnBudget;
-		if (aborted) this.turnBudgetExceeded = true;
 	}
 
 	private appendStderr(line: string): void {
@@ -371,23 +412,35 @@ export class ChildProtocolRuntime {
 	}
 
 	end(): void {
+		this.clearAllToolTimeouts();
 		this.stdoutReader.end();
 		this.stderrReader.end();
 	}
 
 	snapshot(): ChildProtocolSnapshot {
+		let latestAssistantEvidence: ChildProtocolMessage | undefined;
+		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+			const message = this.messages[index];
+			if (message?.role === "assistant") {
+				latestAssistantEvidence = message;
+				break;
+			}
+		}
 		return {
 			stderr: this.stderrTail.text(),
 			messages: this.messages,
-			output: getFinalOutput(this.messages) || this.rawOutputTail.text().trim(),
+			output:
+				getFinalOutput(this.messages) ||
+				(latestAssistantEvidence ? extractTextFromContent(latestAssistantEvidence.content) : "") ||
+				this.rawOutputTail.text().trim(),
 			assistantError: this.assistantError,
 			protocolError: this.protocolError,
 			usage: this.usage,
+			costReported: this.costReported,
 			toolCount: this.toolCount,
 			model: this.observedModel,
-			turnBudget: this.turnBudget,
-			turnBudgetExceeded: this.turnBudgetExceeded,
 			contextNudgeObserved: this.contextNudgeObserved,
+			toolBudgetBlockedTool: this.toolBudgetBlockedTool,
 		};
 	}
 }

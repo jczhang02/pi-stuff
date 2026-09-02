@@ -1,12 +1,14 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { JsonValue } from "../../../shared/json-value.js";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
 import { resolveNestedAsyncDir } from "../runs/shared/nested-events.ts";
 import { sanitizeSummary } from "../runs/shared/nested-summary.ts";
+import type { AgentWorkUsage } from "../runtime/session-governor.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type {
 	AgentContextUsage,
+	AgentTerminalOutcome,
 	AsyncJobState,
 	AsyncJobStep,
 	AsyncStatus,
@@ -59,6 +61,10 @@ export type AgentProjectionValue = boolean | null | number | object | string | u
 
 type AgentProjectionKey =
 	| keyof AgentContextUsage
+	| keyof AgentWorkUsage
+	| keyof AgentTerminalOutcome
+	| keyof AgentTerminalOutcome["continuation"]
+	| keyof AgentTerminalOutcome["continuation"]["target"]
 	| keyof AsyncJobState
 	| keyof AsyncJobStep
 	| keyof AsyncStatus
@@ -141,6 +147,94 @@ export function projectedContextUsage(...values: AgentProjectionValue[]): AgentC
 		}
 	}
 	return null;
+}
+
+export function projectedCumulativeUsage(...values: AgentProjectionValue[]): AgentWorkUsage | null {
+	for (const value of values) {
+		const usage = asRecord(asRecord(value)["cumulativeUsage"]);
+		const turns = nonNegativeInteger(usage["turns"]);
+		const toolCalls = nonNegativeInteger(usage["toolCalls"]);
+		const inputTokens = nonNegativeInteger(usage["inputTokens"]);
+		const outputTokens = nonNegativeInteger(usage["outputTokens"]);
+		const modelAttempts = nonNegativeInteger(usage["modelAttempts"]);
+		const resumes = nonNegativeInteger(usage["resumes"]);
+		if (
+			turns === undefined ||
+			toolCalls === undefined ||
+			inputTokens === undefined ||
+			outputTokens === undefined ||
+			modelAttempts === undefined ||
+			resumes === undefined
+		) {
+			continue;
+		}
+		const cumulative: AgentWorkUsage = { turns, toolCalls, inputTokens, outputTokens, modelAttempts, resumes };
+		const reportedCostUsd = usage["reportedCostUsd"];
+		if (reportedCostUsd !== undefined) {
+			if (!isRuntimeNumber(reportedCostUsd) || !Number.isFinite(reportedCostUsd) || reportedCostUsd < 0) continue;
+			cumulative.reportedCostUsd = reportedCostUsd;
+		}
+		return cumulative;
+	}
+	return null;
+}
+
+const TERMINAL_CLASSES: ReadonlySet<string> = new Set([
+	"completed",
+	"timeout",
+	"stopped",
+	"interrupted",
+	"provider",
+	"context",
+	"storage",
+	"protocol",
+	"explicit_budget",
+	"cost_guard",
+	"process",
+	"unknown",
+]);
+
+function isTerminalClass<Value>(value: Value): value is Value & AgentTerminalOutcome["class"] {
+	return isRuntimeString(value) && TERMINAL_CLASSES.has(value);
+}
+
+export function projectedTerminalOutcome(...values: AgentProjectionValue[]): AgentTerminalOutcome | null {
+	for (const value of values) {
+		const outcome = asRecord(asRecord(value)["terminalOutcome"]);
+		const state = outcome["state"];
+		const terminalClass = outcome["class"];
+		const reason = boundedText(optionalString(outcome["reason"]), MAX_TERMINAL_ERROR_CHARS);
+		const continuation = asRecord(outcome["continuation"]);
+		const target = asRecord(continuation["target"]);
+		const id = optionalString(target["id"]);
+		const index = nonNegativeInteger(target["index"]);
+		const resumeSupported = continuation["resumeSupported"];
+		if (
+			(state !== "completed" && state !== "incomplete" && state !== "failed") ||
+			!isTerminalClass(terminalClass) ||
+			!reason ||
+			!id ||
+			index === undefined ||
+			!isRuntimeBoolean(resumeSupported)
+		) {
+			continue;
+		}
+		const projected: AgentTerminalOutcome = {
+			state,
+			class: terminalClass,
+			reason,
+			continuation: { target: { id, index }, resumeSupported },
+		};
+		if (continuation["acknowledgementRequired"] === true) {
+			projected.continuation.acknowledgementRequired = true;
+		}
+		return projected;
+	}
+	return null;
+}
+
+function nonNegativeInteger<Value>(value: Value): number | undefined {
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function optionalString<Value>(value: Value): string | null {
