@@ -117,7 +117,7 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | `docs/reference/themes.md` | 说明可用主题、选择方法、语义颜色映射和许可证来源。 |
 | `docs/troubleshooting.md` | 按安装、设置、Context、Web、MCP、通知和图片等场景提供排障办法。 |
 
-## Research, reports, and releases (49)
+## Research, reports, and releases (50)
 
 | File | 作用 |
 | --- | --- |
@@ -133,6 +133,7 @@ taken from the `docs/readme-rewrite` worktree on 2026-09-01.
 | `docs/reports/code-mode-image-20260827/ui/pi-code-mode.ansi` | 保存 Code Mode 图片查看场景的带 ANSI 颜色终端输出。 |
 | `docs/reports/code-mode-image-20260827/ui/pi-code-mode.txt` | 保存 Code Mode 图片查看场景去掉 ANSI 后的可读终端文本。 |
 | `docs/reports/context-submit-concurrency-research-2026-08-14.md` | 保留 Context 提交时的渲染顺序事实，并说明现行 Worker 方案如何取代早期屏障。 |
+| `docs/reports/magic-context-effect-optimization-2026-09-02.md` | 记录 Effect 下 Magic Context 0.41.1 的升级、配对性能、真实宿主验收和优化取舍。 |
 | `docs/reports/magic-context-real-acceptance.json` | 保存 Magic Context 真实验收使用的归档包哈希、缓存和运行证据。 |
 | `docs/reports/pi-stuff-0.3.0-final-acceptance.md` | 汇总 0.3.0 的归档身份、真实 Session、Magic-only gate 和最终检查结果。 |
 | `docs/reports/pi-stuff-lifecycle-performance.md` | 记录 schema 6 生命周期测量契约、历史结果摘要和当前回归预算。 |

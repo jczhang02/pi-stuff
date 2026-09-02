@@ -11,6 +11,7 @@ import {
 	parseJsonValue,
 } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { verifyRealHostLifecycle } from "./magic-context-real-lifecycle.js";
 import { createRpcTransport, parseRpcRecord, type RpcRecord, type RpcTransport } from "./magic-context-real-rpc.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -148,7 +149,12 @@ interface ScenarioTransports {
 	readonly options: MagicContextScenarioOptions;
 }
 
-type PrimaryEvidence = Readonly<{ database: DatabaseEvidence; sessionFile: string; sessionId: string }>;
+type PrimaryEvidence = Readonly<{
+	database: DatabaseEvidence;
+	realHost: Awaited<ReturnType<typeof verifyRealHostLifecycle>>;
+	sessionFile: string;
+	sessionId: string;
+}>;
 
 function fail(message: string): never {
 	throw new Error(`Magic Context real-provider acceptance failed: ${message}`);
@@ -580,10 +586,11 @@ async function runPrimarySession(
 	const rpc = await openSession(state, state.options.projectA, { sessionId });
 	const identity = await assertInitialState(rpc);
 	await seedContinuity(rpc, canary, observations);
+	const realHost = await verifyRealHostLifecycle(rpc, identity, canary);
 	const database = await driveMagicPressure(rpc, state.options, identity, observations);
 	await verifyContinuity(rpc, canary, false);
 	await closeSession(state, rpc);
-	return { database, ...identity };
+	return { database, realHost, ...identity };
 }
 
 async function verifyColdResume(state: ScenarioTransports, primary: PrimaryEvidence, canary: string): Promise<void> {
@@ -763,6 +770,7 @@ export async function runMagicContextRealScenario(options: MagicContextScenarioO
 			magicContextLimit: EXPECTED_MAGIC_CONTEXT_LIMIT,
 			observations,
 			provider,
+			realHost: primary.realHost,
 			session,
 			sessionFile: primary.sessionFile,
 			todoSubject: TODO_SUBJECT,

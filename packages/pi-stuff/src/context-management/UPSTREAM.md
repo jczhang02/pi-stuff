@@ -4,24 +4,23 @@ Pi Stuff integrates the official Magic Context Package through this adapter and 
 The repository applies one temporary, audited dependency patch to the pinned Package while the upstream tokenizer
 path does not satisfy standalone Pi's module-resolution and first-turn latency contracts.
 
-The exact published package executes inside Pi Stuff's Context Engine Worker.
-The adapter produces one activation-time in-memory bundle solely to make the
-official module graph resolvable from the certified standalone Pi binary; it
-does not alter upstream source or persist a derived artifact.
+The exact published Package executes inside Pi Stuff's Context Engine Worker. The adapter produces one
+activation-time in-memory bundle solely to make the official module graph resolvable from the certified standalone Pi
+binary; it does not alter upstream source or persist a derived artifact.
 
 - Upstream: `https://github.com/cortexkit/magic-context`
-- Upstream release: `v0.40.0`
-- Published source commit (`gitHead`): `002c2c292eef51573ebe950237d586f9310bbece`
-- Package: `@cortexkit/pi-magic-context@0.40.0`
-- npm integrity: `sha512-nlrC4QKcUWsdWnmoXhWRhRinOrZwrkrkIz3SmEdu2Fe78DS4BFNmyv4vIRR58yqv+iSBvkUzko5fOb4F9z6oxA==`
-- npm tarball SHA-1: `8697ea2bc658f325faefd1308b39b82594910b38`
-- Audited tarball SHA-256: `968c34cc384252302ef77eec1c0235ecf1cd5ca96d6abccdd4ef4630fdf48f1b`
+- Upstream release: `v0.41.1`
+- Published source commit (`gitHead`): `cbfac49fa88b3eb86074b9499c38e993cc447f34`
+- Package: `@cortexkit/pi-magic-context@0.41.1`
+- npm integrity: `sha512-FYl1IH4KOCXkt4UOI6ZswwI/p3YO9+eP2hrfOtgjlsYjp8UHI+OM7fRY6Z6PGOcaf5+kn0PM1CeHY9j3mjL9TQ==`
+- npm tarball SHA-1: `877ae8c6d055bc8af7e7fa5f1d180724c18d2dfb`
+- Audited tarball SHA-256: `5a227889dd91ed952a7403390b463e3e1ac705f837b8f055ffba62eb659229de`
 - License: MIT, as declared by the official Package manifest and upstream repository.
 
 ## Temporary tokenizer compatibility patch
 
-- Patch: [`patches/@cortexkit%2Fpi-magic-context@0.40.0.patch`](../../../../patches/@cortexkit%252Fpi-magic-context@0.40.0.patch)
-- Patch SHA-256: `809e9705edad15cc8f5cfc6122b4c50c62ed6c6d49a2fa00f36353b433a88388`
+- Patch: [`patches/@cortexkit%2Fpi-magic-context@0.41.1.patch`](../../../../patches/@cortexkit%252Fpi-magic-context@0.41.1.patch)
+- Patch SHA-256: `b9793412071a0f6797d2afad4a91a90b8f51313daba4df4170898004ce739c56`
 - Scope:
   - add the published module's `import.meta.url` ancestry and Bun isolated-linker `node_modules` root to the existing
     `ai-tokenizer` fallback search;
@@ -30,38 +29,37 @@ does not alter upstream source or persist a derived artifact.
     not part of the hash result.
 - Behavior retained: a genuinely unavailable tokenizer still uses Magic Context's existing heuristic fallback. The
   patch does not suppress or intercept diagnostics.
-- Evidence: direct `preloadTokenizer()` under the certified standalone Pi Host changes from `false` to `true` when the
-  Host runs from an unrelated user project; the long malformed-image PTY fixture remains responsive; and the real
-  Context PTY gate rejects raw `[magic-context]` output.
+- Evidence: a forced frozen-lockfile install applies the patch; direct `preloadTokenizer()` under the certified Pi Host
+  resolves from an unrelated user project; the 4 MiB malformed-image PTY case remains responsive; and the real Context
+  PTY gate rejects raw `[magic-context]` output.
 - Removal trigger: replace the patch only after an exact official Magic Context artifact passes the same clean-install,
-  first-input, malformed-image, and real-Host checks.
+  first-input, malformed-image, schema, and real-Host checks.
 
-### 2026-08-30 upstream audit
+### 2026-09-02 upstream audit and upgrade
 
-The latest official Package release at the time of this audit is
-[`v0.40.1`](https://github.com/cortexkit/magic-context/releases/tag/v0.40.1), published from
-[`a239835e161efc730f0da8472786fe372626e66b`](https://github.com/cortexkit/magic-context/commit/a239835e161efc730f0da8472786fe372626e66b).
-That release commit changes only the three Package versions, and its release notes cover database opening, musl local
-embeddings, task visibility, and reminder rendering rather than tokenizer loading or image hashing.
+The latest npm release at this audit is
+[`v0.41.1`](https://github.com/cortexkit/magic-context/releases/tag/v0.41.1). The preceding
+[`v0.41.0`](https://github.com/cortexkit/magic-context/releases/tag/v0.41.0) adds cache-stability repairs, Pi RPC and
+multi-Session support, layout-tolerant Pi module resolution, and storage migration v82. The patch release fixes the
+first-day historian, bundled-Pi subagent, optional ONNX, Todo rendering, and diagnostic regressions.
 
-The exact official [`@cortexkit/pi-magic-context@0.40.1` npm
-artifact](https://www.npmjs.com/package/@cortexkit/pi-magic-context/v/0.40.1) has SHA-1
-`86c182b8fe0785f38ec3ff35c2a2196b356cab82` and still lacks every local patch behavior:
+The official 0.41.1 artifact still lacks all three local tokenizer and image-hash behaviors: its tokenizer fallback
+walk starts only from `process.argv[1]`, tokenizer preload remains outside factory initialization, and part hashing
+cannot accept an already-computed token estimate. The removal trigger is therefore not met, so the equivalent audited
+patch remains in place.
 
-- `tokenizerPackageRoots()` searches the working directory, OpenCode cache, and `process.argv[1]` ancestry, but not the
-  published module's `import.meta.url` ancestry or Bun isolated-linker `node_modules` root;
-- `preloadTokenizer()` still runs from `before_agent_start`, not during engine initialization; and
-- `memoizedContent(kind, content)` still performs `estimateTokens(content)` without accepting the image draft's known
-  token estimate.
+Schema v82 adds `memory_verifications.mapping_origin`. Certification creates a real v82 database, rolls it back to an
+exact v81 shape, verifies automatic v81-to-v82 migration, and then starts a v81-fenced Worker against v82 storage. The
+stale Worker exposes no commands or Tools and retains only `session_shutdown`, so it cannot write a newer store.
 
-The removal trigger is therefore not met. Pi Stuff keeps the exact `0.40.0` dependency and its audited patch; any later
-upgrade must preserve an equivalent patch until a new official artifact passes the clean-install, first-input,
-malformed-image, and real-Host gates.
+Upstream 0.41.1 also reads `pi.events` for child-subagent lifecycle notifications. Pi never initializes child
+Extensions inside the Context Engine Worker, so that isolated adapter supplies a no-op EventBus: there is no in-Worker
+publisher to forward, while foreground Pi and Agents retain their existing lifecycle ownership.
 
-The Package declares Pi peers `^0.80.2`, which does not include the Suite's
-certified Pi 0.84.4 Host. Pi Stuff therefore does not infer compatibility from
-the peer range: its real-Host PTY gate separately certifies this exact artifact
-against the pinned Pi 0.84.4 source profile.
+The Package declares Pi peers `^0.80.2`, which does not include the Suite's certified Pi 0.84.4 Host. Pi Stuff does not
+infer compatibility from that range. Real Pi 0.84.4 PTY and Provider gates separately certify activation, cancellation
+recovery, live Session replacement and restoration, cold resume, Magic-only compaction, project isolation, and
+fail-open behavior. See the [optimization report](../../../../docs/reports/magic-context-effect-optimization-2026-09-02.md).
 
 ## Pi Stuff adapter policy
 

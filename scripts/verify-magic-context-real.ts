@@ -364,8 +364,10 @@ async function main(): Promise<void> {
 			},
 			continuity: {
 				canarySha256: sha256(scenario.canary),
+				cancellationRecovery: scenario.realHost.cancellationRecovery,
 				coldResume: true,
 				goalStatus: "paused",
+				liveSessionSwitch: scenario.realHost.liveSessionSwitch,
 				projectIsolation: {
 					distinct: true,
 					isolatedIdentitySha256: sha256(scenario.database.isolatedIdentity),

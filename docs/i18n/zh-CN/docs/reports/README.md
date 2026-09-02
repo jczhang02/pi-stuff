@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/README.md; translation-source-sha256: 01b0c7dac5681eb3677c06cfd86c40258fffcc791d813e8a14ffe8399cd3da36 -->
+<!-- translation-source: docs/reports/README.md; translation-source-sha256: 21b2fde8ae5f4e06052d2c97e3efda8647b8b2de46b0a0115c24c33289f3301a -->
 
 # 报告
 
@@ -17,6 +17,7 @@
 
 ## 基准与验收
 
+- [Effect 下的 Magic Context 优化与重新认证](magic-context-effect-optimization-2026-09-02.md)
 - [Effect v4 与 main 的取舍结论](effect-v4-mainline-decision-2026-09-01.md)
 - [Terminal-Bench 2.1 延迟比较](terminal-bench-2.1-pi-stuff-latency-2026-08-30.md)
 - [Skill Discovery 启动有界确认](../../../../../docs/reports/skill-discovery-startup-bounded-confirmation-20260830.json)及其
