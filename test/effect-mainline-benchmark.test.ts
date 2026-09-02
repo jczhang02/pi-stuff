@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Check } from "typebox/value";
 import { isJsonInputObject, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import {
 	balancedArmOrder,
@@ -10,6 +11,7 @@ import {
 	EFFECT_MAINLINE_THRESHOLDS,
 } from "../scripts/effect-mainline-benchmark-core.js";
 import { lifecycleComparisonPlan, lifecycleMeasurementsOf } from "../scripts/effect-mainline-lifecycle.js";
+import { MAGIC_CONTEXT_SAMPLE_SCHEMA, numericMagicContextMetrics } from "../scripts/magic-context-benchmark-core.js";
 
 const repeatedPairs = (ratio: number) =>
 	Array.from({ length: 15 }, (_value, index) => ({
@@ -104,6 +106,22 @@ test("keeps the executable thresholds aligned with the frozen protocol", async (
 	expect(protocol["thresholds"]["performanceNonInferiorityRatio"]).toBe(
 		EFFECT_MAINLINE_THRESHOLDS.nonInferiorityRatio,
 	);
+});
+
+test("keeps Worker start independent in Magic Context benchmark samples", () => {
+	const projection = { firstProjectionMs: 1, fullSnapshotMs: 1, hostEffectMs: null, incrementalLeafMs: 1 };
+	const sample = {
+		bundleBytes: 1,
+		cases: { fresh: projection, long: projection, "malformed-image": projection, short: projection },
+		initializeAndTokenizerPreloadMs: 3,
+		packageVersion: "fixture",
+		queue: { estimatedQueueWaitMs: 1, parallelPairMs: 2, singleCommandMs: 1 },
+		workerBuildMs: 4,
+		workerStartMs: 2,
+	};
+	expect(Check(MAGIC_CONTEXT_SAMPLE_SCHEMA, sample)).toBe(true);
+	expect(numericMagicContextMetrics(sample).get("workerStartMs")).toBe(2);
+	expect(Check(MAGIC_CONTEXT_SAMPLE_SCHEMA, { ...sample, workerStartMs: undefined })).toBe(false);
 });
 
 test("profiles fresh imports through the public comparison CLI", async () => {

@@ -1,11 +1,17 @@
-diff --git a/dist/index-kamc8t8p.js b/dist/index-kamc8t8p.js
-index be69a26a99d6b67f36f17a82cd203f158cf3c7b6..90afd5294bd99f9c82611c84a80b7e3f99c92a87 100644
---- a/dist/index-kamc8t8p.js
-+++ b/dist/index-kamc8t8p.js
-@@ -9031 +9031 @@
+diff --git a/dist/index-0jgz8yja.js b/dist/index-0jgz8yja.js
+index f574d21a61cffa52fce1952d7d4aa0d4700eb70c..2fdf431135ce7b7917ad6752df443d567a044245 100644
+--- a/dist/index-0jgz8yja.js
++++ b/dist/index-0jgz8yja.js
+@@ -8885,4 +8885,4 @@ import { existsSync as existsSync3, readFileSync as readFileSync2, realpathSync
+ import { createRequire } from "node:module";
+ import { homedir as homedir3 } from "node:os";
+ import { dirname as dirname2, join as join2, resolve } from "node:path";
 -import { pathToFileURL } from "node:url";
 +import { fileURLToPath, pathToFileURL } from "node:url";
-@@ -9155,8 +9155,13 @@ function tokenizerPackageRoots() {
+@@ -9009,13 +9009,18 @@ function tokenizerPackageRoots() {
+     }
+     candidates.push(join2(root, "node_modules", "ai-tokenizer"));
+   }
 -  let ancestor = process.argv[1] ? dirname2(resolve(process.argv[1])) : cwd;
 -  while (true) {
 -    candidates.push(join2(ancestor, "node_modules", "ai-tokenizer"));
@@ -26,11 +32,13 @@ index be69a26a99d6b67f36f17a82cd203f158cf3c7b6..90afd5294bd99f9c82611c84a80b7e3f
 +      ancestor = parent;
 +    }
    }
+   return [...new Set(candidates)];
+ }
 diff --git a/dist/index.js b/dist/index.js
-index 2ee284f3faab6a8765148a4121e1f57749144b54..1a39cb124ea31caeeb63a86d56165771071fdd59 100644
+index ab4cf6242ad700372ac05ddef01febaadca945e5..340c1092888b39ccc2c12b70b2c09a2eab5a4083 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -15953,14 +15953,14 @@ function safeStableStringify(value) {
+@@ -16629,14 +16629,14 @@ function safeStableStringify(value) {
      return "";
    }
  }
@@ -47,7 +55,7 @@ index 2ee284f3faab6a8765148a4121e1f57749144b54..1a39cb124ea31caeeb63a86d56165771
      keyBytes: key.length * 2 + 32
    };
    contentMemo.set(key, measured);
-@@ -15979,8 +15979,8 @@ function memoizedContent(kind, content) {
+@@ -16655,8 +16655,8 @@ function memoizedContent(kind, content) {
  function memoizedTokens(kind, content) {
    return memoizedContent(kind, content).tokens;
  }
@@ -58,7 +66,7 @@ index 2ee284f3faab6a8765148a4121e1f57749144b54..1a39cb124ea31caeeb63a86d56165771
  }
  function parseVisibleTag(content, tagsByNumber) {
    const match = content.trimStart().match(TAG_PREFIX);
-@@ -16242,7 +16242,7 @@ function finalizeParts(drafts, protectedTags, pendingDropTagNumbers) {
+@@ -16918,7 +16918,7 @@ function finalizeParts(drafts, protectedTags, pendingDropTagNumbers) {
      u += uTokens;
      return {
        key: draft.key,
@@ -67,11 +75,11 @@ index 2ee284f3faab6a8765148a4121e1f57749144b54..1a39cb124ea31caeeb63a86d56165771
        kind: draft.kind,
        tokens,
        uTokens,
-@@ -29758,6 +29758,7 @@ async function src_default(pi) {
-     log(`${PREFIX2} in-process re-init detected (Magic Context already active in this process); skipping full extension registration`);
+@@ -30623,6 +30623,7 @@ async function src_default(pi) {
+     log(`${PREFIX2} in-process subagent child detected; skipping full extension registration`);
      return;
    }
 +  await preloadTokenizer();
-   markPiMagicContextActive();
+   const unregisterPiSubagentInitContext = registerPiSubagentInitContext(pi);
+   registerPiSubagentInitContextCleanup(pi, unregisterPiSubagentInitContext);
    beginBootQuietPeriod();
-   const bootProjectDir = process.cwd();

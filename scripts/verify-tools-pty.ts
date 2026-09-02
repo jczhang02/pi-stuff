@@ -17,6 +17,7 @@ const activeParityRunner = join(root, "test/fixtures/tools-active-parity-runner.
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 const BUILTIN_SET = new Set<string>(BUILTINS);
 const LONG_READ_DIRECTORY = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep";
+const COMPACT_TRANSCRIPT_END_MARKER = "TOOLS_PTY_COMPACT_TRANSCRIPT_END";
 
 export interface ToolsPtyVerificationOptions {
 	readonly piBinary: string;
@@ -117,6 +118,7 @@ wait_for_quiet
 send -- "run the Code Mode visibility fixture\r"
 must_expect "TOOLS_DONE"
 wait_for_quiet
+puts "${COMPACT_TRANSCRIPT_END_MARKER}"
 send_and_expect "\\017" "Tool output: expanded"
 send_and_expect "\\017" "Tool output: collapsed"
 send -- "/tools\\r"
@@ -241,7 +243,7 @@ function verifyOutput(output: string, columns: number): void {
 	const visible = stripTerminalControls(output);
 	verifyLifecycleFrames(visible);
 	const fixtureStart = visible.indexOf("run the Code Mode visibility fixture");
-	const toolsDialogStart = visible.indexOf("/tools", fixtureStart + 1);
+	const toolsDialogStart = visible.indexOf(COMPACT_TRANSCRIPT_END_MARKER, fixtureStart + 1);
 	if (fixtureStart < 0 || toolsDialogStart < 0) fail("could not isolate the compact Tool transcript");
 	if (visible.slice(fixtureStart, toolsDialogStart).toLowerCase().includes("tool search")) {
 		fail("successful tool_search flashed in the compact transcript");

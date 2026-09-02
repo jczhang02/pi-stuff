@@ -24,7 +24,7 @@
       "name": "@jczhang02/pi-stuff",
       "version": "0.3.3",
       "dependencies": {
-        "@cortexkit/pi-magic-context": "0.40.0",
+        "@cortexkit/pi-magic-context": "0.41.1",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@mozilla/readability": "0.6.0",
         "@napi-rs/keyring": "1.3.0",
@@ -53,7 +53,7 @@
     },
   },
   "patchedDependencies": {
-    "@cortexkit/pi-magic-context@0.40.0": "patches/@cortexkit%2Fpi-magic-context@0.40.0.patch",
+    "@cortexkit/pi-magic-context@0.41.1": "patches/@cortexkit%2Fpi-magic-context@0.41.1.patch",
   },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.91.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw=="],
@@ -126,7 +126,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.6", "", { "os": "win32", "cpu": "x64" }, "sha512-WN05KwXnTO/2J45RQPvzZMXf7tZUIofHoR35xIPfCo7pQ2RFidxI8sfb5mGsaTxdMmEOzHzOPRCdA5/fCpc7xQ=="],
 
-    "@cortexkit/pi-magic-context": ["@cortexkit/pi-magic-context@0.40.0", "", { "dependencies": { "@cortexkit/subc-client": "0.4.1", "@huggingface/transformers": "^4.1.0", "@jitl/quickjs-singlefile-cjs-release-asyncify": "0.32.0", "ai-tokenizer": "^1.0.6", "comment-json": "^5.0.0", "quickjs-emscripten": "^0.32.0", "typebox": "^1.3.1", "zod": "^4.1.8" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "^0.80.2", "@earendil-works/pi-tui": "^0.80.2" }, "optionalPeers": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"] }, "sha512-nlrC4QKcUWsdWnmoXhWRhRinOrZwrkrkIz3SmEdu2Fe78DS4BFNmyv4vIRR58yqv+iSBvkUzko5fOb4F9z6oxA=="],
+    "@cortexkit/pi-magic-context": ["@cortexkit/pi-magic-context@0.41.1", "", { "dependencies": { "@cortexkit/subc-client": "0.4.1", "@jitl/quickjs-singlefile-cjs-release-asyncify": "0.32.0", "ai-tokenizer": "^1.0.6", "comment-json": "^5.0.0", "onnxruntime-web": "1.26.0-dev.20260416-b7804b056c", "quickjs-emscripten": "^0.32.0", "typebox": "^1.3.1", "zod": "^4.1.8" }, "optionalDependencies": { "onnxruntime-node": "1.24.3", "sharp": "^0.34.5" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "^0.80.2", "@earendil-works/pi-tui": "^0.80.2" }, "optionalPeers": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"] }, "sha512-FYl1IH4KOCXkt4UOI6ZswwI/p3YO9+eP2hrfOtgjlsYjp8UHI+OM7fRY6Z6PGOcaf5+kn0PM1CeHY9j3mjL9TQ=="],
 
     "@cortexkit/subc-client": ["@cortexkit/subc-client@0.4.1", "", {}, "sha512-kHLx5L/iefnbR/fiETQsCGGCegoQ/rcr70J7r/RfPakci6G1lEcTcK5V67o6WGWs4IOizkCM2tPa4ew8cp1tzA=="],
 
@@ -153,12 +153,6 @@
     "@google/genai": ["@google/genai@1.52.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q=="],
 
     "@hono/node-server": ["@hono/node-server@2.0.12", "", { "peerDependencies": { "hono": "^4" } }, "sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg=="],
-
-    "@huggingface/jinja": ["@huggingface/jinja@0.5.9", "", {}, "sha512-uWTG+l3VJRsl7EXxYizuL3P+cCPoc3cRqbWWRcQN0FhejRfbdq0RNhCmbY/YDtnTcz9icdLYuLDjsnz4d8JMuw=="],
-
-    "@huggingface/tokenizers": ["@huggingface/tokenizers@0.1.3", "", {}, "sha512-8rF/RRT10u+kn7YuUbUg0OF30K8rjTc78aHpxT+qJ1uWSqxT1MHi8+9ltwYfkFYJzT/oS+qw3JVfHtNMGAdqyA=="],
-
-    "@huggingface/transformers": ["@huggingface/transformers@4.2.0", "", { "dependencies": { "@huggingface/jinja": "^0.5.6", "@huggingface/tokenizers": "^0.1.3", "onnxruntime-node": "1.24.3", "onnxruntime-web": "1.26.0-dev.20260416-b7804b056c", "sharp": "^0.34.5" } }, "sha512-8BRCoBMH0XsWaEIamuR0LrJGAfftgHAfb2Vrffy0VKlSAE/MnUJ5/h/zTfEP3fDIft+nk7TqB8xXEyABGitBjQ=="],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 

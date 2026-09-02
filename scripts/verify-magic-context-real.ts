@@ -99,9 +99,9 @@ async function verifyLocalPackage(packagePath: string): Promise<string> {
 	if (
 		!Check(PACKAGE_MANIFEST_SCHEMA, officialManifest) ||
 		officialManifest.name !== "@cortexkit/pi-magic-context" ||
-		officialManifest.version !== "0.40.0"
+		officialManifest.version !== "0.41.1"
 	) {
-		fail(`Pi Stuff does not resolve the audited official Magic Context 0.40.0: ${JSON.stringify(officialManifest)}`);
+		fail(`Pi Stuff does not resolve the audited official Magic Context 0.41.1: ${JSON.stringify(officialManifest)}`);
 	}
 	return packagePath;
 }
@@ -364,8 +364,10 @@ async function main(): Promise<void> {
 			},
 			continuity: {
 				canarySha256: sha256(scenario.canary),
+				cancellationRecovery: scenario.realHost.cancellationRecovery,
 				coldResume: true,
 				goalStatus: "paused",
+				liveSessionSwitch: scenario.realHost.liveSessionSwitch,
 				projectIsolation: {
 					distinct: true,
 					isolatedIdentitySha256: sha256(scenario.database.isolatedIdentity),
@@ -379,7 +381,7 @@ async function main(): Promise<void> {
 			magicContext: {
 				executeThresholdPercentage: EXECUTE_THRESHOLD_PERCENTAGE,
 				historianModel: HISTORIAN_MODEL,
-				package: "@cortexkit/pi-magic-context@0.40.0",
+				package: "@cortexkit/pi-magic-context@0.41.1",
 				usableContextLimit: scenario.magicContextLimit,
 			},
 			model: {
