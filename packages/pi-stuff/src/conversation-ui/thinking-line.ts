@@ -4,7 +4,9 @@ import {
 	type Component,
 	Container,
 	Markdown,
+	Spacer,
 	sliceByColumn,
+	Text,
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -161,10 +163,22 @@ class ThinkingLine implements Component {
 
 function projectThinkingLines(component: AssistantMessageComponent): void {
 	const internals = assistantInternals(component);
-	for (const [index, child] of internals.contentContainer.children.entries()) {
-		if (!(child instanceof Markdown)) continue;
-		const style = thinkingStyle(child);
-		if (style) internals.contentContainer.children[index] = new ThinkingLine(child, internals.outputPad, style);
+	const children = internals.contentContainer.children;
+	for (let index = children.length - 1; index >= 0; index -= 1) {
+		const child = children[index];
+		if (!child) continue;
+		// The certified Host uses Text here for hidden Thinking and already-spaced terminal status rows.
+		let thinkingLine = child instanceof Text;
+		if (child instanceof Markdown) {
+			const style = thinkingStyle(child);
+			if (style) {
+				children[index] = new ThinkingLine(child, internals.outputPad, style);
+				thinkingLine = true;
+			}
+		}
+		if (!thinkingLine || index === 0 || children[index - 1] instanceof Spacer) continue;
+		// Pi 0.84.4 separates Thinking from following prose, but omits the reverse text-to-Thinking boundary.
+		children.splice(index, 0, new Spacer(1));
 	}
 }
 

@@ -20,7 +20,12 @@ import * as pty from "./ui-pty-session.js";
 import { waitForPersistedSessionValue } from "./ui-pty-thinking-evidence.js";
 import type { UiPtyVerificationOptions } from "./verify-ui-pty.js";
 
-export { verifyThoughtLifecycle, waitForHiddenThinking, waitForThoughtText } from "./ui-pty-thinking-evidence.js";
+export {
+	verifyInterleavedThoughtSpacing,
+	verifyThoughtLifecycle,
+	waitForHiddenThinking,
+	waitForThoughtText,
+} from "./ui-pty-thinking-evidence.js";
 
 const UI_LABELS = [
 	"Statusline",

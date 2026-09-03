@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 83fd6839dfd00bc60c9ea208956203779fa356b43e0f23f22b9563f9327d4b65 -->
+<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 9ce6870cbd687fa316280e1f630883fdbd89662145029d67e33c2107e64e6862 -->
 
 ---
 status: accepted
@@ -33,10 +33,12 @@ run 只经过一次 Host 原生 Markdown component 渲染，然后在同行前�
 源码、不合并 run、不做模型分类、不运行刷新计时器，也不单独持久化显示状态。
 
 Pi 目前没有公开的 Thinking 渲染后 seam。因此 Conversation UI 会在
-`AssistantMessageComponent.updateContent()` 外安装一个有 guard、与版本绑定的 adapter，并且只替换 Host 创建的
-Thinking Markdown children。公开的 MIT Package `@99percentpeople/pi-thinking-fold@0.1.9` 已证明渲染后选行可行；
-Pi Stuff 只保留这一渲染顺序，不复制其源码，也不采用其计时器、按键绑定、设置、Working Row 或模型专用行为。
-adapter 会验证认证 component 布局；布局不可用时明确失败。Host 提供等价公开 seam 后必须移除该 adapter。
+`AssistantMessageComponent.updateContent()` 外安装一个有 guard、与版本绑定的 adapter，并替换 Host 创建的
+Thinking Markdown children。同一 adapter 还会仅在同一条 Assistant message 内 Assistant prose 直接位于
+Thinking run 之前时，补回 Host 缺失的 spacer；现有的开头间距与 Thinking-to-prose 间距保持不变。公开的
+MIT Package `@99percentpeople/pi-thinking-fold@0.1.9` 已证明渲染后选行可行；Pi Stuff 只保留这一渲染
+顺序，不复制其源码，也不采用其计时器、按键绑定、设置、Working Row 或模型专用行为。adapter 会验证认证
+component 布局；布局不可用时明确失败。Host 提供等价公开 seam 后必须移除该 adapter。
 
 硬保证目前仅适用于已认证 Linux x64 Host profile。极端输入规模下由 Host 所有的累积 Markdown 转换与渲染
 仍是明确的上游限制；Pi Stuff 不声称修复或掩盖该 Host 行为。Pi Stuff 新增的工作量取决于消息 component

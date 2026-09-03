@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 8d35b774e89a3d5767c39e7ed43af038a30b6586a0a3314826321e453176eab4 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 79429dc8a445593b4640ba506172ae2d9be0ba8b5204ebf67e11f7da67bccab0 -->
 
 # Conversation UI
 
@@ -59,7 +59,8 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 Thinking 内容、可见性和 run 边界都由 Pi 负责。关闭 Pi 原生 **Hide thinking blocks** 设置后，每个 streaming
 或 settled Thinking run 只占一行：`• thoughts: ` 后面接当前原生 Markdown 渲染的最后一条终端行。流式更新
 会替换这一行，run 结束后保留最终行；整行过宽时保留内容尾部。打开该设置后，Host 会把每个 run 替换为
-斜体 `• thoughts` 标签。`Ctrl+T` 仍用于切换 Host 设置。
+斜体 `• thoughts` 标签。相邻的 Assistant prose 与 Thinking run 无论顺序如何都由一行空白分隔，包括二者属于
+同一条 Host Assistant message 时。`Ctrl+T` 仍用于切换 Host 设置。
 
 该改动只影响显示。Pi Stuff 不使用语义 parser、源码截断、计时器、模型分类或合并后的 run 状态。选中的
 终端行保留原生 Markdown 样式；Session record、Provider context、复制和导出源码均不变。Pi 目前没有公开的
