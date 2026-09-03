@@ -15,18 +15,27 @@ import type {
 	ToolResultRenderOptions,
 	ToolSummaryProjection,
 } from "./contract.js";
-import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
-import { normalizeOperationIssueReason } from "./operation-block-evidence.js";
+import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT, TOOL_DISPLAY_ITEM_LIMIT, TOOL_DISPLAY_MEDIA_LIMIT } from "./limits.js";
+import { normalizeOperationIssueReason, operationResultText } from "./operation-block-evidence.js";
 import {
 	EMBEDDED_HOST_IMAGE_KEYS,
 	EMBEDDED_TOOL_RESULT,
 	formattedResultLines,
+	imageContentKey,
+	imageMimeKey,
 	terminalSummary,
+	toolArgumentKeys,
 } from "./registered-tool-renderer.js";
 import { CachedToolRow, EmptyToolComponent } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
 import { stripToolControlMetadata } from "./tool-invocation.js";
-import { capDetailLines, classifyTerminalState, oneLine } from "./tool-text.js";
+import {
+	boundedToolArguments,
+	boundedToolResult,
+	capDetailLines,
+	classifyTerminalState,
+	oneLine,
+} from "./tool-text.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 interface EnvelopeChildRenderer {
@@ -76,14 +85,22 @@ export function decodeEnvelopeOperations(
 	details: SuiteToolEnvelopeDetails,
 ): readonly SuiteToolEnvelopeOperation[] {
 	try {
-		return decode(details).filter(
-			(operation) =>
+		const decoded = decode(details);
+		const operations: SuiteToolEnvelopeOperation[] = [];
+		for (let index = 0; index < Math.min(decoded.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+			const operation = decoded[index];
+			if (
+				operation &&
 				isRuntimeString(operation.id) &&
 				operation.id.length > 0 &&
 				isRuntimeString(operation.name) &&
 				operation.name.length > 0 &&
-				isRecordValue(operation.args),
-		);
+				isRecordValue(operation.args)
+			) {
+				operations.push(operation);
+			}
+		}
+		return operations;
 	} catch {
 		return [];
 	}
@@ -124,14 +141,26 @@ function resolveEnvelopeMedia(
 	result: AgentToolResult<unknown>,
 	presentation: SuiteToolEnvelopePresentation,
 ): readonly (readonly AgentToolResult<unknown>["content"][number][])[] {
+	let resolved: readonly (readonly AgentToolResult<unknown>["content"][number][])[];
 	if (presentation.media) {
 		try {
-			return presentation.media(result.details);
+			resolved = presentation.media(result.details);
 		} catch {
 			return [];
 		}
+	} else {
+		resolved = [];
+		for (let index = 0; index < Math.min(result.content.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+			const item = result.content[index];
+			if (item?.type === "image") resolved = [...resolved, [item]];
+			if (resolved.length >= TOOL_DISPLAY_MEDIA_LIMIT) break;
+		}
 	}
-	return result.content.flatMap((item) => (item.type === "image" ? [[item]] : []));
+	const media: Array<readonly AgentToolResult<unknown>["content"][number][]> = [];
+	for (let index = 0; index < Math.min(resolved.length, TOOL_DISPLAY_MEDIA_LIMIT); index += 1) {
+		media.push((resolved[index] ?? []).slice(0, TOOL_DISPLAY_ITEM_LIMIT));
+	}
+	return media;
 }
 
 function projectEnvelopeOperationResult(
@@ -142,7 +171,7 @@ function projectEnvelopeOperationResult(
 		return operation.result;
 	}
 	const placements = new Map<number, AgentToolResult<unknown>["content"]>();
-	for (const placement of operation.mediaPlacements) {
+	for (const placement of operation.mediaPlacements.slice(0, TOOL_DISPLAY_ITEM_LIMIT)) {
 		if (!Number.isInteger(placement.afterContentIndex) || !Number.isInteger(placement.mediaIndex)) continue;
 		if (placement.afterContentIndex < 0 || placement.afterContentIndex > operation.result.content.length) continue;
 		const segment = media[placement.mediaIndex];
@@ -153,28 +182,34 @@ function projectEnvelopeOperationResult(
 	}
 	if (placements.size === 0) return operation.result;
 	const content: AgentToolResult<unknown>["content"] = [];
-	for (let index = 0; index <= operation.result.content.length; index += 1) {
+	const contentLimit = Math.min(operation.result.content.length, TOOL_DISPLAY_ITEM_LIMIT);
+	for (let index = 0; index <= contentLimit; index += 1) {
 		content.push(...(placements.get(index) ?? []));
 		const item = operation.result.content[index];
 		if (item) content.push(item);
+	}
+	if (contentLimit < operation.result.content.length) {
+		content.push({ type: "text", text: "… nested result content omitted" });
 	}
 	return { ...operation.result, content };
 }
 
 export function prepareEnvelopeRenderArguments(tool: ToolDefinition, args: ToolArguments): ToolArguments {
+	const argumentKeys = toolArgumentKeys(tool.parameters);
+	const displayArgs = boundedToolArguments(args, argumentKeys);
 	try {
-		let input: unknown = args;
+		let input: unknown = displayArgs;
 		if (tool.prepareArguments) {
-			input = tool.prepareArguments(structuredClone(args));
+			input = tool.prepareArguments(structuredClone(displayArgs));
 		}
 		// SAFETY: the registry-selected Tool owns both its erased schema and this canonical replay Tool call.
 		const prepared = validateToolArguments(
 			tool as never,
 			{ arguments: input, id: "tool-ui-replay", name: tool.name, type: "toolCall" } as never,
 		);
-		return isToolArguments(prepared) ? prepared : args;
+		return isToolArguments(prepared) ? boundedToolArguments(prepared, argumentKeys) : displayArgs;
 	} catch {
-		return args;
+		return displayArgs;
 	}
 }
 
@@ -196,7 +231,7 @@ function fallbackToolComponent(
 	expanded: boolean,
 	successFromResult = false,
 ): Component {
-	const visibleResult = result ? stripToolControlMetadata(result) : undefined;
+	const visibleResult = result ? stripToolControlMetadata(boundedToolResult(result)) : undefined;
 	const summary: ToolSummaryProjection =
 		state === "running"
 			? { fromResult: false, text: "working" }
@@ -237,12 +272,18 @@ function envelopeHostImageKeys(
 ): Map<string, Set<string>> | undefined {
 	if (!getCapabilities().images || !showImages) return;
 	let keys: Map<string, Set<string>> | undefined;
-	for (const item of result.content) {
+	let mediaCount = 0;
+	for (let index = 0; index < Math.min(result.content.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+		const item = result.content[index];
+		if (!item) continue;
 		if (item.type !== "image" || !isRuntimeString(item.data) || !isRuntimeString(item.mimeType)) continue;
+		if (mediaCount >= TOOL_DISPLAY_MEDIA_LIMIT) break;
 		keys ??= new Map();
-		const data = keys.get(item.mimeType) ?? new Set<string>();
-		data.add(item.data);
-		keys.set(item.mimeType, data);
+		const mimeType = imageMimeKey(item.mimeType);
+		const data = keys.get(mimeType) ?? new Set<string>();
+		data.add(imageContentKey(item.mimeType, item.data));
+		keys.set(mimeType, data);
+		mediaCount += 1;
 	}
 	return keys;
 }
@@ -261,9 +302,8 @@ function renderEnvelopeFallback(
 		const reason =
 			normalizeOperationIssueReason(
 				oneLine(
-					result.content
-						.filter((item): item is { readonly text: string; readonly type: "text" } => item.type === "text")
-						.flatMap((item) => item.text.split(/\r?\n/u))
+					operationResultText(result)
+						.text.split(/\r?\n/u)
 						.find((line) => line.trim().length > 0) ?? state,
 				),
 			) || state;
@@ -277,7 +317,7 @@ function renderEnvelopeFallback(
 					tone: state === "error" ? "error" : "warning",
 				},
 			],
-			expandable: code.length > 160 || code.includes("\n"),
+			expandable: code.length > 160 || code.slice(0, 161).includes("\n"),
 			expanded: options.expanded,
 			identity: code,
 			identityCodeUnits: options.expanded ? 32 * 1024 : 160,
@@ -309,7 +349,7 @@ export function renderEnvelopeOperations(
 	envelope: ToolDefinition,
 ): Component {
 	const operations = decodeEnvelopeOperations(presentation.decode, result.details);
-	const visibleResult = stripToolControlMetadata(result);
+	const visibleResult = stripToolControlMetadata(boundedToolResult(result));
 	if (operations.length === 0) {
 		const state = outerEnvelopeState(visibleResult, options, context);
 		if (envelope.name === "codemode" && (state === "running" || state === "success")) {
@@ -326,6 +366,10 @@ export function renderEnvelopeOperations(
 	const renderedOperations: Component[] = [];
 	const retained = new Set<string>();
 	for (const operation of operations) {
+		if (operation.displayOnly === "overflow") {
+			renderedOperations.push(new Text(theme.fg("dim", "… earlier nested operations omitted"), 2, 0));
+			continue;
+		}
 		const tool = presentation.registry.get(operation.name);
 		const operationResult = projectEnvelopeOperationResult(operation, media) ?? envelopeOperationResult(operation);
 		let args = operation.args;

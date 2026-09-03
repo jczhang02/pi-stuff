@@ -12,11 +12,144 @@ import {
 } from "../shared/runtime-type.js";
 import type { ToolArguments } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
-import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT, ROW_PREVIEW_BYTE_LIMIT, ROW_PREVIEW_CODE_UNIT_LIMIT } from "./limits.js";
+import {
+	DETAIL_BYTE_LIMIT,
+	DETAIL_LINE_LIMIT,
+	ROW_PREVIEW_BYTE_LIMIT,
+	ROW_PREVIEW_CODE_UNIT_LIMIT,
+	TOOL_DISPLAY_ITEM_LIMIT,
+	TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT,
+} from "./limits.js";
 import { graphemePrefix, graphemeSuffix, sanitizeTerminalText, truncateUtf8Graphemes } from "./terminal.js";
 
 const DETAIL_RAW_SCAN_FACTOR = 4;
 const SUMMARY_TEXT_MAX_CODE_UNITS = 64 * 1024;
+const TOOL_VALUE_ARRAY_LIMIT = TOOL_DISPLAY_ITEM_LIMIT;
+const TOOL_VALUE_DEPTH_LIMIT = 8;
+const TOOL_VALUE_VISIT_LIMIT = 256;
+
+interface BoundedSourceText {
+	readonly clipped: boolean;
+	readonly text: string;
+}
+
+interface BoundedToolObject {
+	[key: string]: BoundedToolValue;
+}
+
+type BoundedToolValue = boolean | null | number | string | undefined | BoundedToolValue[] | BoundedToolObject;
+
+interface ToolValueBudget {
+	remaining: number;
+}
+export const TOOL_DISPLAY_ARGUMENT_KEYS = [
+	"action",
+	"agent",
+	"code",
+	"command",
+	"content",
+	"description",
+	"describe",
+	"edits",
+	"file_path",
+	"foreground",
+	"id",
+	"input",
+	"message",
+	"name",
+	"newText",
+	"oldText",
+	"path",
+	"patch",
+	"pattern",
+	"prompt",
+	"query",
+	"request",
+	"range",
+	"search",
+	"server",
+	"sources",
+	"start",
+	"summary",
+	"tag",
+	"target",
+	"task",
+	"tasks",
+	"tool",
+	"to",
+	"url",
+	"value",
+] as const;
+const TOOL_DISPLAY_RESULT_KEYS = [
+	"absolute_path",
+	"action",
+	"afterContentIndex",
+	"asyncId",
+	"backgroundTaskId",
+	"cancelled",
+	"changedFiles",
+	"count",
+	"confirmed",
+	"content",
+	"createdFiles",
+	"deletedFiles",
+	"detached",
+	"diff",
+	"error",
+	"evidence",
+	"exitCode",
+	"failed",
+	"finalContent",
+	"hintServer",
+	"images",
+	"interrupted",
+	"kind",
+	"latest_path",
+	"matchCount",
+	"matches",
+	"mediaIndex",
+	"mediaPlacements",
+	"mimeType",
+	"mode",
+	"model",
+	"movedFiles",
+	"operations",
+	"outputGuard",
+	"patch",
+	"path",
+	"paths",
+	"proof",
+	"queryCount",
+	"requirement",
+	"requestedTool",
+	"resourceUri",
+	"result",
+	"resultCount",
+	"results",
+	"returnedChars",
+	"returnedMatches",
+	"server",
+	"source",
+	"state",
+	"status",
+	"stopped",
+	"successful",
+	"successfulQueries",
+	"summary",
+	"taskId",
+	"tasks",
+	"tool",
+	"total",
+	"totalResults",
+	"truncated",
+	"urlCount",
+] as const;
+
+function sourcePrefix(value: string, maximumCodeUnits: number): BoundedSourceText {
+	const limit = Math.max(0, Math.floor(maximumCodeUnits));
+	const text = value.slice(0, limit);
+	return { clipped: text.length < value.length, text };
+}
 
 export function formatElapsed(milliseconds: number): string {
 	if (milliseconds < 1_000) return "<1s";
@@ -30,9 +163,10 @@ export function formatElapsed(milliseconds: number): string {
 }
 
 export function oneLine(value: string): string {
-	const normalized = sanitizeTerminalText(value).replace(/\s+/gu, " ").trim();
+	const source = sourcePrefix(value, ROW_PREVIEW_CODE_UNIT_LIMIT * DETAIL_RAW_SCAN_FACTOR);
+	const normalized = sanitizeTerminalText(source.text).replace(/\s+/gu, " ").trim();
 	const raw = graphemePrefix(normalized, ROW_PREVIEW_CODE_UNIT_LIMIT);
-	const clipped = raw.length < normalized.length;
+	const clipped = source.clipped || raw.length < normalized.length;
 	const suffix = clipped ? "…" : "";
 	return truncateUtf8Graphemes(`${raw}${suffix}`, ROW_PREVIEW_BYTE_LIMIT);
 }
@@ -54,7 +188,9 @@ export function describeBuiltinTarget(name: string, args: ToolArguments): string
 
 function textFromResult(result: AgentToolResult<unknown>): string {
 	let output = "";
-	for (const entry of result.content) {
+	for (let index = 0; index < Math.min(result.content.length, TOOL_VALUE_ARRAY_LIMIT); index += 1) {
+		const entry = result.content[index];
+		if (!entry) continue;
 		if (entry.type !== "text") continue;
 		const separator = output ? "\n" : "";
 		const remaining = SUMMARY_TEXT_MAX_CODE_UNITS - output.length - separator.length;
@@ -67,8 +203,10 @@ function textFromResult(result: AgentToolResult<unknown>): string {
 		const contentBudget = Math.max(0, remaining - marker.length);
 		const headLength = Math.ceil(contentBudget / 2);
 		const tailLength = Math.floor(contentBudget / 2);
-		const tail = tailLength > 0 ? graphemeSuffix(entry.text, tailLength) : "";
-		output += `${separator}${graphemePrefix(entry.text, headLength)}${marker}${tail}`;
+		const headSource = entry.text.slice(0, headLength + 2);
+		const tailSource = tailLength > 0 ? entry.text.slice(-(tailLength + 2)) : "";
+		const tail = tailLength > 0 ? graphemeSuffix(tailSource, tailLength) : "";
+		output += `${separator}${graphemePrefix(headSource, headLength)}${marker}${tail}`;
 		break;
 	}
 	return output.trim();
@@ -160,7 +298,9 @@ export function summarizeBuiltin(
 		const text = textFromResult(result);
 		return oneLine(name === "bash" ? lastNonEmptyLine(text) : firstNonEmptyLine(text));
 	}
-	if (result.content.some((entry) => entry.type === "image")) return "image loaded";
+	for (let index = 0; index < Math.min(result.content.length, DETAIL_LINE_LIMIT); index += 1) {
+		if (result.content[index]?.type === "image") return "image loaded";
+	}
 	if (name === "write") {
 		const content = stringArgument(args, "content");
 		const lines = writeLineCount(content);
@@ -193,10 +333,128 @@ export function summarizeBuiltin(
 	return oneLine(firstNonEmptyLine(text || "done"));
 }
 
-function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
+interface BoundedValuePreview {
+	readonly text: string;
+	readonly truncated: boolean;
+}
+
+/** Build a display-only argument view without enumerating arbitrary objects. */
+export function boundedToolArguments(
+	args: ToolArguments,
+	argumentKeys: readonly string[] | undefined = TOOL_DISPLAY_ARGUMENT_KEYS,
+): ToolArguments {
+	const visits = { remaining: TOOL_VALUE_VISIT_LIMIT };
+	const projected: BoundedToolObject = {};
+	for (const key of (argumentKeys ?? TOOL_DISPLAY_ARGUMENT_KEYS).slice(0, TOOL_VALUE_ARRAY_LIMIT)) {
+		if (visits.remaining <= 0) break;
+		try {
+			const value = readHostProxyProperty(args, key);
+			if (!isRuntimeUndefined(value))
+				projected[key] = boundedToolValue(value, 0, visits, TOOL_DISPLAY_ARGUMENT_KEYS);
+		} catch {
+			projected[key] = "[unavailable]";
+		}
+	}
+	return projected;
+}
+
+/** Build a display-only result view before Suite presentation callbacks run. */
+export function boundedToolResult(result: AgentToolResult<unknown>): AgentToolResult<unknown> {
+	const visits = { remaining: TOOL_VALUE_VISIT_LIMIT };
+	const content: AgentToolResult<unknown>["content"] = [];
+	const visibleBlocks = Math.min(result.content.length, TOOL_VALUE_ARRAY_LIMIT);
+	for (let index = 0; index < visibleBlocks; index += 1) {
+		const entry = result.content[index];
+		if (!entry) continue;
+		if (entry.type === "text") {
+			const source = sourcePrefix(entry.text, SUMMARY_TEXT_MAX_CODE_UNITS);
+			content.push({
+				type: "text",
+				text: source.clipped ? `${source.text}\n… result text truncated` : source.text,
+			});
+		} else if (isRuntimeString(entry.data) && isRuntimeString(entry.mimeType)) {
+			content.push({
+				data: entry.data.slice(0, TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT),
+				mimeType: entry.mimeType.slice(0, 256),
+				type: "image",
+			});
+		}
+	}
+	if (visibleBlocks < result.content.length) {
+		content.push({ type: "text", text: "… result content omitted" });
+	}
+	const projected: AgentToolResult<unknown> = {
+		content,
+		details: boundedToolValue(result.details, 0, visits, TOOL_DISPLAY_RESULT_KEYS),
+	};
+	if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) Object.assign(projected, { isError: true });
+	return projected;
+}
+
+function boundedToolValue<Value>(
+	value: Value,
+	depth: number,
+	visits: ToolValueBudget,
+	objectKeys: readonly string[],
+): BoundedToolValue {
+	if (visits.remaining <= 0) return "[work limit]";
+	visits.remaining -= 1;
+	if (isRuntimeString(value)) {
+		const source = sourcePrefix(value, SUMMARY_TEXT_MAX_CODE_UNITS);
+		return source.clipped ? `${source.text}…` : source.text;
+	}
+	if (value === null) return null;
+	if (isRuntimeBoolean(value)) return Boolean(value);
+	if (isRuntimeNumber(value)) return Number(value);
+	if (isRuntimeUndefined(value)) return undefined;
+	if (isRuntimeBigInt(value)) return `${String(value)}n`;
+	if (isRuntimeFunction(value)) return "[function]";
+	if (isRuntimeSymbol(value)) return String(value);
+	if (!isRuntimeObject(value)) return "[unsupported value]";
+	if (depth >= TOOL_VALUE_DEPTH_LIMIT) return "[depth limit]";
+	if (Array.isArray(value)) {
+		const output: BoundedToolValue[] = [];
+		const visibleItems = Math.min(value.length, TOOL_VALUE_ARRAY_LIMIT);
+		for (let index = 0; index < visibleItems; index += 1) {
+			try {
+				output.push(boundedToolValue(readHostProxyProperty(value, index), depth + 1, visits, objectKeys));
+			} catch {
+				output.push("[unavailable]");
+			}
+			if (visits.remaining <= 0) break;
+		}
+		if (output.length < value.length) {
+			const marker = visits.remaining <= 0 ? "[work limit]" : "[items omitted]";
+			if (output.length >= TOOL_VALUE_ARRAY_LIMIT) output[output.length - 1] = marker;
+			else output.push(marker);
+		}
+		return output;
+	}
+	const projected: BoundedToolObject = {};
+	for (const key of objectKeys.slice(0, TOOL_VALUE_ARRAY_LIMIT)) {
+		if (visits.remaining <= 0) {
+			projected["…"] = "[work limit]";
+			break;
+		}
+		visits.remaining -= 1;
+		try {
+			const child = readHostProxyProperty(value, key);
+			if (!isRuntimeUndefined(child)) {
+				projected[key] = boundedToolValue(child, depth + 1, visits, objectKeys);
+			}
+		} catch {
+			projected[key] = "[unavailable]";
+		}
+	}
+	if (visits.remaining <= 0) projected["…"] = "[work limit]";
+	return projected;
+}
+
+function boundedJson<Value>(value: Value, maxCodeUnits: number, objectKeys?: readonly string[]): BoundedValuePreview {
 	const parts: string[] = [];
 	let remaining = Math.max(1, Math.floor(maxCodeUnits));
 	let truncated = false;
+	let visits = TOOL_VALUE_VISIT_LIMIT;
 	const seen = new WeakSet<object>();
 	const append = (text: string): boolean => {
 		if (remaining <= 0) {
@@ -209,16 +467,22 @@ function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
 		if (next.length < text.length) truncated = true;
 		return !truncated;
 	};
-	const visit = <Candidate>(candidate: Candidate, depth: number): void => {
+	const visit = <Candidate>(candidate: Candidate, depth: number, keys?: readonly string[]): void => {
 		if (truncated) return;
+		if (visits <= 0) {
+			truncated = true;
+			return;
+		}
+		visits -= 1;
 		if (candidate === null) {
 			append("null");
 			return;
 		}
 		if (isRuntimeString(candidate)) {
-			const slice = graphemePrefix(candidate, Math.max(0, remaining - 2));
+			const source = sourcePrefix(candidate, Math.max(0, remaining - 2) + 2);
+			const slice = graphemePrefix(source.text, Math.max(0, remaining - 2));
 			append(JSON.stringify(slice));
-			if (slice.length < candidate.length) truncated = true;
+			if (source.clipped || slice.length < source.text.length) truncated = true;
 			return;
 		}
 		if (isRuntimeNumber(candidate) || isRuntimeBoolean(candidate)) {
@@ -226,7 +490,7 @@ function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
 			return;
 		}
 		if (isRuntimeBigInt(candidate)) {
-			append(`${String(candidate)}n`);
+			append('"[bigint]"');
 			return;
 		}
 		if (isRuntimeUndefined(candidate)) {
@@ -234,7 +498,7 @@ function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
 			return;
 		}
 		if (isRuntimeSymbol(candidate) || isRuntimeFunction(candidate)) {
-			append(JSON.stringify(String(candidate)));
+			append(isRuntimeSymbol(candidate) ? '"[symbol]"' : '"[function]"');
 			return;
 		}
 		if (!isRuntimeObject(candidate)) {
@@ -252,36 +516,54 @@ function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
 		seen.add(candidate);
 		if (Array.isArray(candidate)) {
 			append("[");
-			for (let index = 0; index < candidate.length && !truncated; index += 1) {
+			const visibleItems = Math.min(candidate.length, TOOL_VALUE_ARRAY_LIMIT);
+			for (let index = 0; index < visibleItems && !truncated; index += 1) {
 				if (index > 0) append(", ");
 				visit(candidate[index], depth + 1);
 			}
+			if (visibleItems < candidate.length) truncated = true;
 			append("]");
+			return;
+		}
+		if (!keys) {
+			append('"[object fields omitted]"');
+			truncated = true;
 			return;
 		}
 		append("{");
 		let first = true;
-		for (const key of Object.keys(candidate)) {
+		const visibleKeys = keys.slice(0, TOOL_VALUE_ARRAY_LIMIT);
+		for (const key of visibleKeys) {
 			if (truncated) break;
-			if (!first) append(", ");
-			first = false;
-			append(JSON.stringify(key));
-			append(": ");
 			try {
-				visit(readHostProxyProperty(candidate, key), depth + 1);
+				const child = readHostProxyProperty(candidate, key);
+				if (isRuntimeUndefined(child)) continue;
+				if (!first) append(", ");
+				first = false;
+				append(JSON.stringify(sourcePrefix(key, ROW_PREVIEW_CODE_UNIT_LIMIT).text));
+				append(": ");
+				visit(child, depth + 1);
 			} catch {
+				if (!first) append(", ");
+				first = false;
+				append(JSON.stringify(sourcePrefix(key, ROW_PREVIEW_CODE_UNIT_LIMIT).text));
+				append(": ");
 				append('"[unavailable]"');
 			}
 		}
+		if (keys.length > visibleKeys.length) truncated = true;
 		append("}");
 	};
 	try {
-		visit(value, 0);
+		visit(value, 0, objectKeys);
 	} catch {
 		append('"[unavailable]"');
 	}
 	const output = parts.join("");
-	return truncated ? `${graphemePrefix(output, Math.max(0, maxCodeUnits - 1))}…` : output;
+	return {
+		text: truncated ? `${graphemePrefix(output, Math.max(0, maxCodeUnits - 1))}…` : output,
+		truncated,
+	};
 }
 
 class DetailCollector {
@@ -309,12 +591,13 @@ class DetailCollector {
 			return false;
 		}
 		const scanLimit = Math.max(1_024, available * DETAIL_RAW_SCAN_FACTOR);
-		const safe = sanitizeTerminalText(rawLine);
+		const source = sourcePrefix(rawLine, scanLimit + 1);
+		const safe = sanitizeTerminalText(source.text);
 		const rawSlice = graphemePrefix(safe, scanLimit);
 		const bounded = truncateUtf8Graphemes(rawSlice, available);
 		this.lines.push(bounded);
 		this.bytes += separatorBytes + Buffer.byteLength(bounded);
-		if (rawSlice.length < safe.length || bounded.length < rawSlice.length) {
+		if (source.clipped || rawSlice.length < safe.length || bounded.length < rawSlice.length) {
 			this.capped = true;
 			return false;
 		}
@@ -351,15 +634,22 @@ function addMultiline(collector: DetailCollector, value: string, prefix = ""): v
 	let offset = 0;
 	const rawChunkLimit = Math.max(1_024, DETAIL_BYTE_LIMIT * DETAIL_RAW_SCAN_FACTOR);
 	while (!collector.isCapped()) {
-		const newline = value.indexOf("\n", offset);
-		if (newline >= 0 && newline - offset <= rawChunkLimit) {
+		const scanEnd = Math.min(value.length, offset + rawChunkLimit + 1);
+		let newline = -1;
+		for (let index = offset; index < scanEnd; index += 1) {
+			if (value.charCodeAt(index) === 0x0a) {
+				newline = index;
+				break;
+			}
+		}
+		if (newline >= 0) {
 			if (!collector.add(`${prefix}${value.slice(offset, newline)}`)) return;
 			offset = newline + 1;
 			if (offset === value.length) collector.add(prefix);
 			continue;
 		}
 		if (value.length - offset > rawChunkLimit) {
-			collector.add(`${prefix}${graphemePrefix(value.slice(offset), rawChunkLimit)}`);
+			collector.add(`${prefix}${graphemePrefix(value.slice(offset, scanEnd), rawChunkLimit)}`);
 			collector.markCapped();
 			return;
 		}
@@ -398,18 +688,28 @@ export function buildRawToolDetailLines(
 	name: string,
 	args: ToolArguments,
 	result: AgentToolResult<unknown> | undefined,
+	argumentKeys?: readonly string[],
 ): string[] {
-	return capDetailLines([
+	const argumentPreview = boundedJson(args, DETAIL_BYTE_LIMIT, argumentKeys);
+	const detailsPreview =
+		result?.details === undefined
+			? { text: "(none)", truncated: false }
+			: boundedJson(result.details, DETAIL_BYTE_LIMIT, TOOL_DISPLAY_RESULT_KEYS);
+	const lines = [
 		`Call ID: ${oneLine(id)}`,
 		`Tool name: ${oneLine(name)}`,
 		"",
 		"Arguments",
-		boundedJson(args, DETAIL_BYTE_LIMIT),
+		argumentPreview.text,
 		"",
 		"Result content",
 		...(result ? buildToolResultLines(result) : ["(pending)"]),
 		"",
 		"Details",
-		result?.details === undefined ? "(none)" : boundedJson(result.details, DETAIL_BYTE_LIMIT),
-	]);
+		detailsPreview.text,
+	];
+	if (argumentPreview.truncated || detailsPreview.truncated) {
+		lines.push(`… detail capped at ${String(DETAIL_LINE_LIMIT)} lines / ${String(DETAIL_BYTE_LIMIT)} bytes`);
+	}
+	return capDetailLines(lines);
 }

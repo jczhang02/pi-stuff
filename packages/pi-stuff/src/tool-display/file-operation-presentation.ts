@@ -16,6 +16,8 @@ import type { OperationBlockRowModel, OperationEvidenceLine } from "./operation-
 import { oneLine } from "./tool-text.js";
 
 type FileOperationName = "apply_patch" | "edit" | "write";
+const PATCH_METADATA_LIMIT = 64;
+const PATCH_SOURCE_LIMIT = 24 * 1_024 * 4;
 
 export function isFileOperationBlock(name: string): name is FileOperationName {
 	return name === "write" || name === "edit" || name === "apply_patch";
@@ -55,26 +57,35 @@ function writeModel(
 				: [operationIssueLine(state, result)];
 		return baseOperationBlockModel("Write", path, state, expanded, evidence);
 	}
-	const lines = logicalOperationLines(verified);
-	const preview = boundedOperationLines(lines, expanded, 10);
+	const source = logicalOperationLines(verified, expanded);
+	const preview = boundedOperationLines(source.lines, expanded, 10);
 	const partial =
 		state === "success"
-			? `${operationLineCount(lines.length)} written`
-			: `Partial write · ${operationLineCount(lines.length)} verified`;
+			? source.truncated
+				? "Content written · preview truncated"
+				: `${operationLineCount(source.lines.length)} written`
+			: source.truncated
+				? "Partial write · verified preview truncated"
+				: `Partial write · ${operationLineCount(source.lines.length)} verified`;
 	const evidence: OperationEvidenceLine[] = [{ kind: "outcome", text: partial }];
 	evidence.push(...preview.visible.map((text, index) => ({ kind: "source" as const, newLine: index + 1, text })));
-	if (preview.omitted > 0) {
+	if (preview.omitted > 0 || source.truncated) {
 		evidence.push({
 			kind: "meta",
-			text: expanded
-				? `… ${String(preview.omitted)} lines omitted · content capped at 240 lines / 24 KiB`
-				: `… +${String(preview.omitted)} lines (ctrl+o to expand)`,
+			text: source.truncated
+				? expanded
+					? "… more content omitted · content capped at 240 lines / 24 KiB"
+					: "… more content (ctrl+o to expand)"
+				: expanded
+					? `… ${String(preview.omitted)} lines omitted · content capped at 240 lines / 24 KiB`
+					: `… +${String(preview.omitted)} lines (ctrl+o to expand)`,
 		});
 	}
 	if (state !== "success") evidence.push(operationIssueLine(state, result));
 	return {
 		...baseOperationBlockModel("Write", path, state, expanded, evidence),
-		expandable: lines.length > boundedOperationLines(lines, false, 10).visible.length,
+		expandable:
+			source.truncated || source.lines.length > boundedOperationLines(source.lines, false, 10).visible.length,
 		languagePath: path,
 	};
 }
@@ -89,8 +100,8 @@ function editModel(
 	if (state === "running") {
 		return baseOperationBlockModel("Edit", path, state, expanded, [{ kind: "outcome", text: "Editing…" }]);
 	}
-	const rows = diffRowsFromResult(result, path);
-	if (rows.length === 0) {
+	const parsed = diffRowsFromResult(result, path, expanded);
+	if (parsed.rows.length === 0) {
 		return baseOperationBlockModel(
 			"Edit",
 			path,
@@ -101,10 +112,13 @@ function editModel(
 				: [operationIssueLine(state, result)],
 		);
 	}
-	const diff = projectDiff(rows, expanded, false);
+	const diff = projectDiff(parsed.rows, expanded, false, parsed.truncated);
 	const prefix = state === "success" ? "" : "Partial change · ";
 	const evidence: OperationEvidenceLine[] = [
-		{ kind: "outcome", text: `${prefix}+${String(diff.additions)}/-${String(diff.deletions)}` },
+		{
+			kind: "outcome",
+			text: `${prefix}${diff.truncated ? "Preview · " : ""}+${String(diff.additions)}/-${String(diff.deletions)}`,
+		},
 		...diff.lines,
 	];
 	if (state !== "success") evidence.push(operationIssueLine(state, result));
@@ -116,14 +130,16 @@ function editModel(
 }
 
 function patchTargets(input: string): string[] {
-	return [...input.matchAll(/^\*\*\* (?:Add|Delete|Update) File: (.+)$/gmu)]
+	return [...input.slice(0, PATCH_SOURCE_LIMIT).matchAll(/^\*\*\* (?:Add|Delete|Update) File: (.+)$/gmu)]
+		.slice(0, PATCH_METADATA_LIMIT)
 		.map((match) => oneLine(match[1] ?? ""))
 		.filter(Boolean);
 }
 
 function pureRenameFiles(input: string): FileChange[] {
 	const files: FileChange[] = [];
-	for (const block of input.split(/^\*\*\* (?=Add|Delete|Update)/gmu)) {
+	for (const block of input.slice(0, PATCH_SOURCE_LIMIT).split(/^\*\*\* (?=Add|Delete|Update)/gmu)) {
+		if (files.length >= PATCH_METADATA_LIMIT) break;
 		const source = block.match(/^Update File: (?<path>.+)$/mu)?.groups?.["path"];
 		const target = block.match(/^\*\*\* Move to: (?<path>.+)$/mu)?.groups?.["path"];
 		if (!source || !target || /^[-+](?![-+])/mu.test(block)) continue;
@@ -179,10 +195,15 @@ function patchModel(
 	if (state === "running") {
 		return baseOperationBlockModel("Patch", identity, state, expanded, [{ kind: "outcome", text: "Applying…" }]);
 	}
-	const resultRows = diffRowsFromResult(result, "");
-	const rows = resultRows.length > 0 ? resultRows : state === "success" ? parseApplyPatchDiff(input) : [];
+	const resultDiff = diffRowsFromResult(result, "", expanded);
+	const parsed =
+		resultDiff.rows.length > 0
+			? resultDiff
+			: state === "success"
+				? parseApplyPatchDiff(input, expanded)
+				: { rows: [], truncated: false };
 	const verifiedFiles = structuredPatchFiles(result);
-	if (rows.length === 0) {
+	if (parsed.rows.length === 0) {
 		const evidence: OperationEvidenceLine[] = [];
 		if (state === "success") {
 			const renames = pureRenameFiles(input);
@@ -201,12 +222,15 @@ function patchModel(
 		} else evidence.push(operationIssueLine(state, result));
 		return baseOperationBlockModel("Patch", identity, state, expanded, evidence);
 	}
-	const diff = projectDiff(rows, expanded, true);
+	const diff = projectDiff(parsed.rows, expanded, true, parsed.truncated);
 	const files = diff.files.length > 0 ? diff.files : verifiedFiles;
 	const totalTargets = Math.max(files.length, patchTargets(input).length);
 	const prefix = state === "success" ? "" : `Partial patch · ${String(files.length)}/${String(totalTargets)} files · `;
 	const evidence: OperationEvidenceLine[] = [
-		{ kind: "outcome", text: `${prefix}+${String(diff.additions)}/-${String(diff.deletions)}` },
+		{
+			kind: "outcome",
+			text: `${prefix}${diff.truncated ? "Preview · " : ""}+${String(diff.additions)}/-${String(diff.deletions)}`,
+		},
 	];
 	for (const file of files) {
 		const rename = file.status === "R" && file.additions === 0 && file.deletions === 0;

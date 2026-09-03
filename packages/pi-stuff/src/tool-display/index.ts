@@ -14,13 +14,16 @@ import {
 	type UiSettingRegistry,
 } from "../conversation-ui/index.js";
 import { type EffectFoundation, type EffectScopeOwner, installEffectFoundation } from "../shared/effect-foundation.js";
+import { isRuntimeString } from "../shared/runtime-type.js";
 import { TOOL_ACTIVITY_TICK_MS } from "./activity-clock.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
+import { TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT, TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT } from "./limits.js";
 import { registerHistoricalSuiteToolDefinitions } from "./registration.js";
 import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
 import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
+import { isRecordValue } from "./tool-value.js";
 
 const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 const TOOL_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-tools/lifecycle-states/v1");
@@ -50,23 +53,92 @@ function releaseToolLifecycle(state: ToolLifecycleState, activation: symbol): vo
 }
 
 interface CurrentTranscript {
+	readonly hasOlder: boolean;
 	readonly messages: readonly unknown[];
 	readonly toolNames: ReadonlySet<string>;
 }
 
-function currentTranscript(ctx: ExtensionContext): CurrentTranscript {
-	const messages: unknown[] = [];
+interface TranscriptPager {
+	loadOlder(): CurrentTranscript;
+}
+
+const HISTORY_ENTRY_PAGE_LIMIT = 64;
+
+function transcriptToolNames(messages: readonly unknown[]): ReadonlySet<string> {
 	const toolNames = new Set<string>();
-	for (const entry of ctx.sessionManager.getBranch()) {
-		for (const message of sessionEntryToContextMessages(entry)) {
-			messages.push(message);
-			if (message.role !== "assistant") continue;
-			for (const part of message.content) {
-				if (part.type === "toolCall") toolNames.add(part.name);
+	for (const message of messages) {
+		if (!isRecordValue(message) || message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (let index = 0; index < Math.min(message.content.length, TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT); index += 1) {
+			const part = message.content[index];
+			if (isRecordValue(part) && part.type === "toolCall" && isRuntimeString(part.name)) {
+				toolNames.add(part.name);
 			}
 		}
 	}
-	return { messages, toolNames };
+	return toolNames;
+}
+
+function createTranscriptPager(ctx: ExtensionContext): TranscriptPager {
+	const branch = ctx.sessionManager.getBranch();
+	let cursor = branch.length;
+	let pendingContentEnd: number | undefined;
+	let pendingMessageIndex = -1;
+	let pendingMessages: readonly unknown[] = [];
+	return {
+		loadOlder: () => {
+			const newestFirst: unknown[] = [];
+			let blockCount = 0;
+			let messageCount = 0;
+			let visitedEntries = 0;
+			while (
+				messageCount < TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT &&
+				blockCount < TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT
+			) {
+				if (pendingMessageIndex < 0) {
+					if (cursor <= 0 || visitedEntries >= HISTORY_ENTRY_PAGE_LIMIT) break;
+					cursor -= 1;
+					const entry = branch[cursor];
+					if (!entry) continue;
+					pendingMessages = sessionEntryToContextMessages(entry);
+					pendingMessageIndex = pendingMessages.length - 1;
+					pendingContentEnd = undefined;
+					visitedEntries += 1;
+					continue;
+				}
+				const message = pendingMessages[pendingMessageIndex];
+				if (!message) {
+					pendingMessageIndex -= 1;
+					pendingContentEnd = undefined;
+					continue;
+				}
+				if (isRecordValue(message) && message.role === "assistant" && Array.isArray(message.content)) {
+					const end = Math.min(pendingContentEnd ?? message.content.length, message.content.length);
+					const remaining = TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT - blockCount;
+					const start = Math.max(0, end - remaining);
+					newestFirst.push({ ...message, content: message.content.slice(start, end) });
+					blockCount += Math.max(1, end - start);
+					messageCount += 1;
+					if (start > 0) pendingContentEnd = start;
+					else {
+						pendingMessageIndex -= 1;
+						pendingContentEnd = undefined;
+					}
+					continue;
+				}
+				newestFirst.push(message);
+				messageCount += 1;
+				blockCount += 1;
+				pendingMessageIndex -= 1;
+				pendingContentEnd = undefined;
+			}
+			const messages = newestFirst.reverse();
+			return {
+				hasOlder: cursor > 0 || pendingMessageIndex >= 0,
+				messages,
+				toolNames: transcriptToolNames(messages),
+			};
+		},
+	};
 }
 
 type InstalledToolUiRuntime = ReturnType<typeof installToolUiRuntime>;
@@ -166,11 +238,21 @@ async function runToolUiOperation<Value, ErrorType>(
 	throw Cause.squash(exit.cause);
 }
 
-function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRuntime, ctx: ExtensionContext): void {
-	const transcript = currentTranscript(ctx);
+function registerHistoryPageTools(pi: ExtensionAPI, transcript: CurrentTranscript): void {
 	const activeTools = pi.getActiveTools();
 	if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0) pi.setActiveTools(activeTools);
+}
+
+function resetHistoricalProjection(pi: ExtensionAPI, runtime: InstalledToolUiRuntime, ctx: ExtensionContext): void {
+	const pager = createTranscriptPager(ctx);
+	const transcript = pager.loadOlder();
+	registerHistoryPageTools(pi, transcript);
 	runtime.resetProjection(transcript.messages);
+	runtime.configureHistoryLoader(() => {
+		const page = pager.loadOlder();
+		registerHistoryPageTools(pi, page);
+		return page;
+	}, transcript.hasOlder);
 }
 
 function isCurrentToolSession(foundation: EffectFoundation, ctx: ExtensionContext): boolean {
@@ -186,7 +268,8 @@ function registerToolProjectionEvents(
 ): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (!isCurrentToolSession(foundation, ctx)) return;
-		const transcript = currentTranscript(ctx);
+		const pager = createTranscriptPager(ctx);
+		const transcript = pager.loadOlder();
 		const replayOnlyNames = new Set(runtime.replayOnlyTools());
 		registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
 		let restoredActiveTools: readonly string[] | undefined;
@@ -208,6 +291,11 @@ function registerToolProjectionEvents(
 		const registeredReplayNames = registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames);
 		if (restoredActiveTools || registeredReplayNames.length > 0) pi.setActiveTools([...activeToolsBeforeReplay]);
 		runtime.resetProjection(transcript.messages);
+		runtime.configureHistoryLoader(() => {
+			const page = pager.loadOlder();
+			registerHistoryPageTools(pi, page);
+			return page;
+		}, transcript.hasOlder);
 	});
 	pi.on("session_compact", (_event, ctx) => resetHistoricalProjection(pi, runtime, ctx));
 	pi.on("session_tree", (_event, ctx) => resetHistoricalProjection(pi, runtime, ctx));
@@ -341,20 +429,13 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 					ctx.ui.notify("/tools requires interactive TUI mode.", "warning");
 					return;
 				}
-				const requestedId = args.trim();
-				if (requestedId) {
-					const resolved = runtime.resolveGroup(requestedId);
-					if (resolved === "ambiguous") {
-						ctx.ui.notify(`More than one Tool Activity matches ${requestedId}.`, "warning");
-						return;
-					}
-					if (!resolved) {
-						ctx.ui.notify(`No current-session Tool Activity matches ${requestedId}.`, "warning");
-						return;
-					}
+				if (args.trim()) {
+					ctx.ui.notify("/tools does not accept arguments.", "warning");
+					return;
 				}
 
-				await getCommandDialogCoordinator(pi).show(ctx, createToolDialogView(runtime, requestedId || undefined));
+				resetHistoricalProjection(pi, runtime, ctx);
+				await getCommandDialogCoordinator(pi).show(ctx, createToolDialogView(runtime));
 			},
 		});
 

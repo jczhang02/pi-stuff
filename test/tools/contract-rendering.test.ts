@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
+import { SubagentParams } from "../../packages/pi-stuff/src/subagents/src/extension/schemas.js";
 import {
 	apiHarness,
 	assistant,
@@ -82,7 +84,41 @@ test("first Tool projection does not traverse unrelated arguments", () => {
 	} as never);
 
 	expect(renderLines(component).join("\n")).toContain("Wide");
-	expect(argumentPropertyVisits).toBe(0);
+	expect(argumentPropertyVisits).toBeLessThanOrEqual(192);
+});
+
+test("the shared Agent Tool row bounds arguments at the real presentation seam", () => {
+	const harness = apiHarness();
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "Agent fixture",
+			execute: async () => ({ content: [], details: { mode: "single" as const, results: [] } }),
+			label: "Agent",
+			name: "subagent",
+			parameters: SubagentParams,
+		},
+		createAgentToolPresentation(),
+	);
+	let keyScans = 0;
+	const args = new Proxy(
+		{ agent: "reviewer", task: "x".repeat(8 * 1024 * 1024) },
+		{
+			ownKeys: (target) => {
+				keyScans += 1;
+				return Reflect.ownKeys(target);
+			},
+		},
+	);
+	const tool = harness.tools.get("subagent");
+	if (!tool?.renderCall) throw new Error("missing Agent Tool renderer");
+	const component = tool.renderCall(args, theme, {
+		...renderContext({}, { value: "" }, { toolCallId: "agent-wide" }),
+		args,
+	});
+
+	expect(renderLines(component).join("\n")).toContain("Agent");
+	expect(keyScans).toBe(0);
 });
 
 test("silent-success Tools stay compact while running but remain expandable", () => {

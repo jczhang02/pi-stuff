@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
 import { SELF_RENDERED_TRANSCRIPT_PADDING, TRANSCRIPT_CONTINUATION } from "../conversation-ui/transcript.js";
-import { isRuntimeFunction, isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityMetadata, ToolArguments } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import type {
@@ -24,12 +24,42 @@ import type {
 	ToolSummaryProjection,
 	ToolUiRuntime,
 } from "./contract.js";
-import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
+import {
+	DETAIL_BYTE_LIMIT,
+	DETAIL_LINE_LIMIT,
+	TOOL_DISPLAY_ITEM_LIMIT,
+	TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT,
+	TOOL_DISPLAY_MEDIA_LIMIT,
+} from "./limits.js";
 import { isOperationBlockMember } from "./operation-block-presentation.js";
 import { SUITE_ACTIVITY_RENDERER, type SuiteActivityRendererMarker } from "./registration-tracker.js";
 import { CachedToolRow, EmptyToolComponent, type ToolRowModel } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
-import { buildToolResultLines, capDetailLines, classifyTerminalState, oneLine } from "./tool-text.js";
+import {
+	boundedToolArguments,
+	boundedToolResult,
+	buildToolResultLines,
+	capDetailLines,
+	classifyTerminalState,
+	oneLine,
+	TOOL_DISPLAY_ARGUMENT_KEYS,
+} from "./tool-text.js";
+
+const TOOL_ARGUMENT_KEY_LIMIT = 64;
+
+export function toolArgumentKeys(schema: TSchema): readonly string[] {
+	const properties = "properties" in schema ? schema.properties : undefined;
+	const schemaKeys =
+		isRuntimeObject(properties) && properties !== null && !Array.isArray(properties) ? Object.keys(properties) : [];
+	return [...new Set([...schemaKeys, ...TOOL_DISPLAY_ARGUMENT_KEYS])].slice(0, TOOL_ARGUMENT_KEY_LIMIT);
+}
+
+function presentationArguments<TArgs extends ToolArguments>(
+	args: ToolArguments,
+	argumentKeys: readonly string[],
+): Readonly<TArgs> {
+	return argsForPresentation<TArgs, ToolArguments>(boundedToolArguments(args, argumentKeys));
+}
 
 export function formattedResultLines(result: AgentToolResult<unknown>, summary: ToolSummaryProjection): string[] {
 	const lines = buildToolResultLines(result);
@@ -134,11 +164,13 @@ function resultForPresentation<TDetails>(result: AgentToolResult<unknown>): Agen
 function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 	tool: ToolDefinition<TSchema, TDetails>,
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
+	argumentKeys: readonly string[],
 ): ToolDetailPresentation {
 	const detail: ToolDetailPresentation = {
-		label: (args) => labelFor(tool, presentation, argsForPresentation<TArgs, ToolArguments>(args)),
+		argumentKeys,
+		label: (args) => labelFor(tool, presentation, presentationArguments<TArgs>(args, argumentKeys)),
 		summary: (args, result, state) => {
-			const typedArgs = argsForPresentation<TArgs, ToolArguments>(args);
+			const typedArgs = presentationArguments<TArgs>(args, argumentKeys);
 			if (state === "running") {
 				const source = presentation.runningSummary;
 				return {
@@ -147,10 +179,16 @@ function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 				};
 			}
 			return result
-				? presentationSummary(presentation, typedArgs, resultForPresentation<TDetails>(result), state, undefined)
+				? presentationSummary(
+						presentation,
+						typedArgs,
+						resultForPresentation<TDetails>(boundedToolResult(result)),
+						state,
+						undefined,
+					)
 				: { fromResult: false, text: state };
 		},
-		target: (args) => oneLine(presentation.target?.(argsForPresentation<TArgs, ToolArguments>(args)) ?? ""),
+		target: (args) => oneLine(presentation.target?.(presentationArguments<TArgs>(args, argumentKeys)) ?? ""),
 	};
 	if (presentation.detailLines) {
 		Object.assign(detail, {
@@ -160,8 +198,8 @@ function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 				state: Exclude<ToolActivityState, "running">,
 			) =>
 				presentation.detailLines?.(
-					argsForPresentation<TArgs, ToolArguments>(args),
-					resultForPresentation<TDetails>(result),
+					presentationArguments<TArgs>(args, argumentKeys),
+					resultForPresentation<TDetails>(boundedToolResult(result)),
 					state,
 				) ?? [],
 		});
@@ -174,8 +212,8 @@ function createDetailPresentation<TArgs extends ToolArguments, TDetails>(
 				state: Exclude<ToolActivityState, "running">,
 			) =>
 				presentation.detailSections?.(
-					argsForPresentation<TArgs, ToolArguments>(args),
-					resultForPresentation<TDetails>(result),
+					presentationArguments<TArgs>(args, argumentKeys),
+					resultForPresentation<TDetails>(boundedToolResult(result)),
 					state,
 				) ?? [],
 		});
@@ -190,8 +228,10 @@ function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 	state: RendererState<TArgs, TDetails>,
 	context: ToolRenderContext<TArgs>,
 	theme: Theme,
+	argumentKeys: readonly string[],
 ): CachedToolRow {
 	const args = context.args;
+	const presentedArgs = presentationArguments<TArgs>(args, argumentKeys);
 	state.args = args;
 	state.wasLiveExecution ??= context.executionStarted !== false;
 	if (state.wasLiveExecution && state.startedAt === undefined) state.startedAt = Date.now();
@@ -200,17 +240,20 @@ function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 	let summary = "working";
 	try {
 		summary = isRuntimeFunction(summarySource)
-			? summarySource(args, presentation.tracksElapsed && runtime.showLiveElapsed() ? durationMs : undefined)
+			? summarySource(
+					presentedArgs,
+					presentation.tracksElapsed && runtime.showLiveElapsed() ? durationMs : undefined,
+				)
 			: (summarySource ?? "working");
 	} catch {
 		// The shared Tool row remains available when optional presentation logic fails.
 	}
 	const model: ToolRowModel = {
 		durationMs,
-		label: labelFor(tool, presentation, args),
+		label: labelFor(tool, presentation, presentedArgs),
 		state: "running",
 		summary: oneLine(summary),
-		target: presentationTarget(presentation, args),
+		target: presentationTarget(presentation, presentedArgs),
 	};
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	const startLiveEffects = state.wasLiveExecution && !state.liveEffectsStarted;
@@ -269,8 +312,11 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 	result: AgentToolResult<TDetails>,
 	context: ToolRenderContext<TArgs>,
 	theme: Theme,
+	argumentKeys: readonly string[],
 ): CachedToolRow {
 	const args = state.args ?? context.args;
+	const presentedArgs = presentationArguments<TArgs>(args, argumentKeys);
+	const presentedResult = resultForPresentation<TDetails>(boundedToolResult(result));
 	state.args = args;
 	state.wasLiveExecution ??= context.executionStarted !== false;
 	const lightweightHistoricalReplay =
@@ -288,7 +334,12 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		} else if (!state.detailMaterialized) {
 			state.detailLines = capPresentationDetails(
 				state.lastResult,
-				presentationDetails(presentation, args, state.lastResult, state.terminalState),
+				presentationDetails(
+					presentation,
+					presentedArgs,
+					resultForPresentation<TDetails>(boundedToolResult(state.lastResult)),
+					state.terminalState,
+				),
 				state.summary ?? terminalSummary(state.lastResult, state.terminalState),
 			);
 			state.detailMaterialized = true;
@@ -312,7 +363,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		let domainError = context.isError;
 		if (!domainError && presentation.resultIsError) {
 			try {
-				domainError = presentation.resultIsError(args, result);
+				domainError = presentation.resultIsError(presentedArgs, presentedResult);
 			} catch {
 				domainError = true;
 			}
@@ -320,13 +371,13 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 		activityState = classifyTerminalState(result, domainError);
 		const finishedAt = Date.now();
 		const durationMs = state.startedAt === undefined ? undefined : Math.max(0, finishedAt - state.startedAt);
-		summary = presentationSummary(presentation, args, result, activityState, durationMs);
+		summary = presentationSummary(presentation, presentedArgs, presentedResult, activityState, durationMs);
 		model = {
 			durationMs,
-			label: labelFor(tool, presentation, args),
+			label: labelFor(tool, presentation, presentedArgs),
 			state: activityState,
 			summary: summary.text,
-			target: presentationTarget(presentation, args),
+			target: presentationTarget(presentation, presentedArgs),
 		};
 	}
 	if (!state.component) state.component = new CachedToolRow(theme, model);
@@ -337,7 +388,7 @@ function settleRow<TArgs extends ToolArguments, TDetails>(
 	if (context.expanded && tool.name !== "bash") {
 		state.detailLines = capPresentationDetails(
 			result,
-			presentationDetails(presentation, args, result, activityState),
+			presentationDetails(presentation, presentedArgs, presentedResult, activityState),
 			summary,
 		);
 		state.detailMaterialized = true;
@@ -379,12 +430,22 @@ const MEDIA_FALLBACK_PADDING = SELF_RENDERED_TRANSCRIPT_PADDING + visibleWidth(T
 
 type ImageContentIndex = ReadonlyMap<string, ReadonlySet<string>>;
 
+export function imageContentKey(mimeType: string, data: string): string {
+	return `${imageMimeKey(mimeType)}:${String(data.length)}:${data.slice(0, 64)}:${data.slice(-64)}`;
+}
+
+export function imageMimeKey(mimeType: string): string {
+	return mimeType.slice(0, 256);
+}
+
 function imagePreviewFallback(mimeType: string, data: string, showImages: boolean): string {
-	const subtype = mimeType.slice(mimeType.indexOf("/") + 1).split("+", 1)[0];
+	const safeMimeType = imageMimeKey(mimeType);
+	const subtype = safeMimeType.slice(safeMimeType.indexOf("/") + 1).split("+", 1)[0];
 	const format = subtype ? subtype.toUpperCase() : "IMAGE";
-	const dimensions = getImageDimensions(data, mimeType);
+	const oversized = data.length > TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT || safeMimeType.length < mimeType.length;
+	const dimensions = oversized ? undefined : getImageDimensions(data, safeMimeType);
 	return [
-		showImages ? "Image preview unavailable" : "Image preview hidden",
+		oversized ? "Image preview omitted" : showImages ? "Image preview unavailable" : "Image preview hidden",
 		format,
 		dimensions ? `${String(dimensions.widthPx)}×${String(dimensions.heightPx)}` : undefined,
 	]
@@ -407,27 +468,31 @@ function resultBody<TArgs extends ToolArguments, TDetails>(
 	if (text) container.addChild(new Text(theme.fg("toolOutput", text), 2, 0));
 	const inlineImageProtocol = getCapabilities().images;
 	const hostRendersImages = Boolean(!embedded && inlineImageProtocol && showImages);
-	const images = hostRendersImages
-		? []
-		: result.content.filter(
-				(
-					item,
-				): item is {
-					readonly type: "image";
-					readonly data: string;
-					readonly mimeType: string;
-				} =>
-					item.type === "image" &&
-					isRuntimeString(item.data) &&
-					isRuntimeString(item.mimeType) &&
-					!hostImageKeys?.get(item.mimeType)?.has(item.data),
-			);
+	const images: Array<{ readonly data: string; readonly mimeType: string; readonly type: "image" }> = [];
+	if (!hostRendersImages) {
+		for (let index = 0; index < Math.min(result.content.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+			const item = result.content[index];
+			if (
+				item?.type !== "image" ||
+				!isRuntimeString(item.data) ||
+				!isRuntimeString(item.mimeType) ||
+				hostImageKeys?.get(imageMimeKey(item.mimeType))?.has(imageContentKey(item.mimeType, item.data))
+			) {
+				continue;
+			}
+			images.push(item);
+			if (images.length >= TOOL_DISPLAY_MEDIA_LIMIT) break;
+		}
+	}
 	for (const [index, image] of images.entries()) {
 		if ((embedded && Boolean(inlineImageProtocol && showImages)) || text || index > 0) {
 			container.addChild(new Spacer(1));
 		}
 		container.addChild(
-			showImages && inlineImageProtocol
+			showImages &&
+				inlineImageProtocol &&
+				image.data.length <= TOOL_DISPLAY_MEDIA_CODE_UNIT_LIMIT &&
+				image.mimeType.length <= 256
 				? new Image(
 						image.data,
 						image.mimeType,
@@ -450,7 +515,11 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 	runtime: ToolUiRuntime,
 ): ToolDefinition<TParams, TDetails> {
 	type TArgs = Static<TParams> & ToolArguments;
-	runtime.registerDetailPresentation(tool.name, createDetailPresentation<TArgs, TDetails>(tool, presentation));
+	const argumentKeys = toolArgumentKeys(tool.parameters);
+	runtime.registerDetailPresentation(
+		tool.name,
+		createDetailPresentation<TArgs, TDetails>(tool, presentation, argumentKeys),
+	);
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
 		renderShell: "self" as const,
@@ -493,7 +562,7 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 				state.projectedReplay = true;
 				return state.component;
 			}
-			return updateRunningRow(tool, presentation, runtime, state, typed, theme);
+			return updateRunningRow(tool, presentation, runtime, state, typed, theme, argumentKeys);
 		},
 		renderResult: (result, options, theme, context) => {
 			// SAFETY: Pi supplies this documented two-flag render options object to Tool result renderers.
@@ -508,10 +577,10 @@ export function attachRenderer<TParams extends TSchema, TDetails>(
 				isPartial: renderOptions.isPartial,
 			};
 			if (renderOptions.isPartial) {
-				updateRunningRow(tool, presentation, runtime, state, typed, theme);
+				updateRunningRow(tool, presentation, runtime, state, typed, theme, argumentKeys);
 				return new EmptyToolComponent();
 			}
-			settleRow(tool, presentation, runtime, state, result, typed, theme);
+			settleRow(tool, presentation, runtime, state, result, typed, theme, argumentKeys);
 			const embeddedHostImageKeys = Object.getOwnPropertyDescriptor(typed, EMBEDDED_HOST_IMAGE_KEYS)?.value;
 			return resultBody(
 				state,

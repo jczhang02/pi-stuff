@@ -32,16 +32,43 @@ import type {
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { formattedToolSections } from "./formatted-detail.js";
 import type { ToolGroupProjection } from "./group-projection.js";
-import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT } from "./limits.js";
+import { DETAIL_BYTE_LIMIT, DETAIL_LINE_LIMIT, TOOL_DISPLAY_ITEM_LIMIT, TOOL_DISPLAY_MEDIA_LIMIT } from "./limits.js";
 import { formattedResultLines } from "./registered-tool-renderer.js";
 import type { ToolRowModel } from "./render.js";
 import { sanitizeTerminalText } from "./terminal.js";
-import { buildRawToolDetailLines, capDetailLines, oneLine, summarizeBuiltin } from "./tool-text.js";
+import {
+	boundedToolArguments,
+	boundedToolResult,
+	buildRawToolDetailLines,
+	capDetailLines,
+	oneLine,
+	summarizeBuiltin,
+} from "./tool-text.js";
 
 const GROUP_LIST_LIMIT = 768;
 
 function capSections(sections: readonly ToolFormattedSection[]): readonly ToolFormattedSection[] {
-	const flattened = sections.flatMap((section, index) => [`@@pi-stuff-section:${String(index)}@@`, ...section.lines]);
+	const flattened: string[] = [];
+	let sourceCapped = false;
+	for (let sectionIndex = 0; sectionIndex < Math.min(sections.length, DETAIL_LINE_LIMIT); sectionIndex += 1) {
+		const section = sections[sectionIndex];
+		if (!section) continue;
+		flattened.push(`@@pi-stuff-section:${String(sectionIndex)}@@`);
+		const remaining = DETAIL_LINE_LIMIT + 1 - flattened.length;
+		if (remaining <= 0) {
+			sourceCapped = true;
+			break;
+		}
+		for (let lineIndex = 0; lineIndex < Math.min(section.lines.length, remaining); lineIndex += 1) {
+			flattened.push(section.lines[lineIndex] ?? "");
+		}
+		if (section.lines.length > remaining) {
+			sourceCapped = true;
+			break;
+		}
+	}
+	if (sections.length > DETAIL_LINE_LIMIT) sourceCapped = true;
+	if (sourceCapped) flattened.push("… detail source omitted");
 	const capped = capDetailLines(flattened, DETAIL_LINE_LIMIT, DETAIL_BYTE_LIMIT);
 	const output: Array<{
 		languagePath?: string;
@@ -65,7 +92,9 @@ function capSections(sections: readonly ToolFormattedSection[]): readonly ToolFo
 		} else if (current && source) {
 			current.lines.push(line);
 			if (current.operationEvidence) {
-				const sourceLine = sanitizeTerminalText(source.lines[sourceLineIndex] ?? "");
+				const sourceLine = sanitizeTerminalText(
+					(source.lines[sourceLineIndex] ?? "").slice(0, DETAIL_BYTE_LIMIT * 4),
+				);
 				const evidence = source.operationEvidence?.[sourceLineIndex];
 				if (sanitizeTerminalText(line) === sourceLine && evidence) current.operationEvidence.push(evidence);
 			}
@@ -110,20 +139,23 @@ export class ToolActivityQueryProjection {
 			.map(({ order: _order, ...group }) => group);
 	}
 
+	viewsForGroups(groups: readonly PlannedRetrievalGroup[]): readonly ToolActivityView[] {
+		const views: ToolActivityView[] = [];
+		for (let index = groups.length - 1; index >= 0 && views.length < GROUP_LIST_LIMIT; index -= 1) {
+			const group = groups[index];
+			const view = group ? this.groupView(group) : undefined;
+			if (view) views.push(view);
+		}
+		return views;
+	}
+
 	resolveGroup(query: string): ToolActivityView | "ambiguous" | undefined {
 		const normalized = query.trim();
 		if (!normalized) return undefined;
-		const matches = this.allGroupViews().filter(
-			(group) =>
-				group.id === normalized ||
-				group.id.startsWith(normalized) ||
-				group.memberIds.some((memberId) => memberId === normalized || memberId.startsWith(normalized)),
-		);
-		if (matches.length !== 1) return matches.length > 1 ? "ambiguous" : undefined;
-		const match = matches[0];
-		if (!match) return undefined;
-		const { order: _order, ...group } = match;
-		return group;
+		const planned = this.source.groupSource().group(normalized) ?? this.source.groupSource().groupForTool(normalized);
+		if (planned) return this.groupView(planned);
+		const activity = this.source.activities.get(normalized);
+		return activity ? this.standaloneView(activity) : undefined;
 	}
 
 	groupActivities(groupId: string): readonly ToolActivity[] {
@@ -152,21 +184,28 @@ export class ToolActivityQueryProjection {
 		const rawArgs = this.source.envelopes.rawArgumentsFor(toolCallId) ?? args;
 		const name = member?.name ?? binding?.metadata.name ?? activity.name;
 		const result = member?.result ?? binding?.metadata.result ?? this.source.liveResultFor(toolCallId);
+		const presentation = this.source.detailPresentations.get(name);
 		if (name === "codemode" && activity.state === "success") return undefined;
-		if (mode === "raw") return { activity, lines: buildRawToolDetailLines(toolCallId, name, rawArgs, result) };
+		if (mode === "raw") {
+			return {
+				activity,
+				lines: buildRawToolDetailLines(toolCallId, name, rawArgs, result, presentation?.argumentKeys),
+			};
+		}
+		const presentedArgs = boundedToolArguments(args, presentation?.argumentKeys);
+		const presentedResult = result ? boundedToolResult(result) : undefined;
 		let lines: readonly string[] | undefined;
 		let sections: readonly ToolFormattedSection[] | undefined;
-		const presentation = this.source.detailPresentations.get(name);
-		if (result && activity.state !== "running" && presentation?.detailSections) {
+		if (presentedResult && activity.state !== "running" && presentation?.detailSections) {
 			try {
-				sections = presentation.detailSections(args, result, activity.state);
+				sections = presentation.detailSections(presentedArgs, presentedResult, activity.state);
 			} catch {
 				// Fall through to the shared semantic projection.
 			}
 		}
-		if (result && activity.state !== "running" && presentation?.detailLines) {
+		if (presentedResult && activity.state !== "running" && presentation?.detailLines) {
 			try {
-				lines = presentation.detailLines(args, result, activity.state);
+				lines = presentation.detailLines(presentedArgs, presentedResult, activity.state);
 			} catch {
 				// Fall back to bounded result text when an optional formatter fails.
 			}
@@ -174,8 +213,8 @@ export class ToolActivityQueryProjection {
 		const fallback =
 			lines && lines.length > 0
 				? lines
-				: result
-					? formattedResultLines(result, {
+				: presentedResult
+					? formattedResultLines(presentedResult, {
 							fromResult: activity.summaryFromResult === true,
 							text: activity.summary,
 						})
@@ -185,15 +224,18 @@ export class ToolActivityQueryProjection {
 		const semantic = capSections(
 			sections && sections.length > 0
 				? sections
-				: result && activity.state !== "running"
-					? formattedToolSections(name, args, result, activity.state, fallback)
+				: presentedResult && activity.state !== "running"
+					? formattedToolSections(name, presentedArgs, presentedResult, activity.state, fallback)
 					: [{ lines: fallback, title: "Status" }],
 		);
-		const images = result?.content.flatMap((item) =>
-			item.type === "image" && isRuntimeString(item.data) && isRuntimeString(item.mimeType)
-				? [{ data: item.data, mimeType: item.mimeType }]
-				: [],
-		);
+		const images: Array<{ data: string; mimeType: string }> = [];
+		for (let index = 0; result && index < Math.min(result.content.length, DETAIL_LINE_LIMIT); index += 1) {
+			const item = result.content[index];
+			if (item?.type === "image" && isRuntimeString(item.data) && isRuntimeString(item.mimeType)) {
+				images.push({ data: item.data, mimeType: item.mimeType });
+				if (images.length >= TOOL_DISPLAY_MEDIA_LIMIT) break;
+			}
+		}
 		const detail: ToolActivityDetailView = {
 			activity,
 			lines: semantic.flatMap((section) => section.lines),
@@ -323,20 +365,23 @@ export class ToolActivityQueryProjection {
 		const standalone = this.source.activities
 			.list()
 			.filter((activity) => !covered.has(activity.id))
-			.map((activity) => ({
-				id: activity.id,
-				label: activity.label,
-				memberIds: [activity.id],
-				operation: activity.target,
-				order: groups.length + activity.sequence,
-				outcome: activity.summary,
-				state:
-					activity.state === "rejected" || activity.state === "cancelled"
-						? activity.state
-						: toolActivityOutcome(activity.state),
-				summary: activity.label,
-			}));
+			.map((activity) => ({ ...this.standaloneView(activity), order: groups.length + activity.sequence }));
 		return [...grouped, ...standalone];
+	}
+
+	private standaloneView(activity: ToolActivity): ToolActivityView {
+		return {
+			id: activity.id,
+			label: activity.label,
+			memberIds: [activity.id],
+			operation: activity.target,
+			outcome: activity.summary,
+			state:
+				activity.state === "rejected" || activity.state === "cancelled"
+					? activity.state
+					: toolActivityOutcome(activity.state),
+			summary: activity.label,
+		};
 	}
 
 	private groupView(group: PlannedRetrievalGroup): ToolActivityView | undefined {
@@ -367,14 +412,17 @@ export class ToolActivityQueryProjection {
 			: states.every((candidate) => candidate === "cancelled")
 				? "cancelled"
 				: summary.outcome;
+		const continuedSummary = `${group.continuedFromPrevious ? "Continued · " : ""}${summary.summary}${
+			group.continuesToNext ? " · continues" : ""
+		}`;
 		return {
 			id: group.leaderId,
 			label: labels.size === 1 ? (members[0]?.label ?? "Tools") : "Tools",
 			memberIds: group.members.map((member) => member.id),
 			operation: summary.target,
-			outcome: summary.summary,
+			outcome: continuedSummary,
 			state,
-			summary: summary.summary,
+			summary: continuedSummary,
 		};
 	}
 
@@ -385,37 +433,52 @@ export class ToolActivityQueryProjection {
 		state: Exclude<ToolActivityState, "running" | "success">,
 	): string {
 		const summarizeIssue = this.source.activityPolicies.get(name)?.summarizeIssue;
+		const presentation = this.source.detailPresentations.get(name);
+		const presentedArgs = boundedToolArguments(args, presentation?.argumentKeys);
+		const presentedResult = boundedToolResult(result);
 		if (summarizeIssue) {
 			try {
-				const summary = oneLine(summarizeIssue(args, result, state));
+				const summary = oneLine(summarizeIssue(presentedArgs, presentedResult, state));
 				if (summary) return summary;
 			} catch {
 				// Keep the compact projection available when optional semantic extraction fails.
 			}
 		}
-		for (const item of result.content) {
+		for (const item of presentedResult.content) {
 			if (item.type !== "text") continue;
 			const summary = oneLine(item.text.split(/\r?\n/u)[0] ?? "");
 			if (summary) return summary;
 		}
-		return summarizeBuiltin(name, args, result, state, undefined);
+		return summarizeBuiltin(name, presentedArgs, presentedResult, state, undefined);
 	}
 
 	private classify(metadata: PresentedToolMetadata, state: ToolActivityState): readonly ToolActivityItem[] {
 		const policy = this.source.activityPolicies.get(metadata.name);
 		if (!policy) return [];
 		try {
-			const input = { args: metadata.args, state };
+			const presentation = this.source.detailPresentations.get(metadata.name);
+			const input = { args: boundedToolArguments(metadata.args, presentation?.argumentKeys), state };
 			if (metadata.cwd) Object.assign(input, { cwd: metadata.cwd });
-			if (metadata.result) Object.assign(input, { result: metadata.result });
-			return policy.classify(input).map((item) =>
-				item.countKeys
-					? {
-							...item,
-							countKeys: item.countKeys.map((key) => canonicalCountKey(item.category, key, metadata.cwd)),
-						}
-					: item,
-			);
+			if (metadata.result) Object.assign(input, { result: boundedToolResult(metadata.result) });
+			const classified = policy.classify(input);
+			const items: ToolActivityItem[] = [];
+			for (let index = 0; index < Math.min(classified.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+				const item = classified[index];
+				if (!item) continue;
+				const projected: ToolActivityItem = { category: item.category };
+				if (item.count !== undefined) Object.assign(projected, { count: item.count });
+				if (item.detail) Object.assign(projected, { detail: oneLine(item.detail) });
+				if (item.target) Object.assign(projected, { target: oneLine(item.target) });
+				if (item.countKeys) {
+					Object.assign(projected, {
+						countKeys: item.countKeys
+							.slice(0, TOOL_DISPLAY_ITEM_LIMIT)
+							.map((key) => canonicalCountKey(item.category, oneLine(key), metadata.cwd)),
+					});
+				}
+				items.push(projected);
+			}
+			return items;
 		} catch {
 			return [];
 		}

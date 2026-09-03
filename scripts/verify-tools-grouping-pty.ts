@@ -353,19 +353,19 @@ async function verifyLifecycleOutcomes(
 	if (failure.includes("• Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
 	const unresolvedMarkerColor = markerColor(captureAnsiHistory(tmux, session), "Bash(printf FIXTURE_GROUP_ERROR");
 	if (unresolvedMarkerColor === successfulMarkerColor) fail("failed Bash operation retained the success color");
-	await sendTurn(tmux, session, "recovery");
-	const recovery = await waitForText(tmux, session, "GROUP_RECOVERY_DONE");
-	const recoveryText = normalized(recovery);
-	for (const required of ["Retry same exact retry · retry failed", "Retry same exact retry · recovered"]) {
-		if (!recoveryText.includes(required)) fail(`standalone retry omitted ${required}\n${recovery}`);
+	await sendTurn(tmux, session, "retry-history");
+	const retryHistory = await waitForText(tmux, session, "GROUP_RETRY_HISTORY_DONE");
+	const retryHistoryText = normalized(retryHistory);
+	for (const required of ["Retry same exact retry · retry failed", "Retry same exact retry · retry succeeded"]) {
+		if (!retryHistoryText.includes(required)) fail(`standalone retry omitted ${required}\n${retryHistory}`);
 	}
-	const recoveryAnsi = captureAnsiHistory(tmux, session);
-	const failedRetryColor = markerColor(recoveryAnsi, "Retry same exact retry · retry failed");
+	const retryHistoryAnsi = captureAnsiHistory(tmux, session);
+	const failedRetryColor = markerColor(retryHistoryAnsi, "Retry same exact retry · retry failed");
 	if (failedRetryColor === successfulMarkerColor) fail("failed retry retained the success color");
-	const recoveredMarkerColor = markerColor(recoveryAnsi, "Retry same exact retry · recovered");
-	if (recoveredMarkerColor !== successfulMarkerColor) {
+	const successfulRetryColor = markerColor(retryHistoryAnsi, "Retry same exact retry · retry succeeded");
+	if (successfulRetryColor !== successfulMarkerColor) {
 		fail(
-			`recovered standalone Tool did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(recoveredMarkerColor)}`,
+			`successful retry did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(successfulRetryColor)}`,
 		);
 	}
 	await sendTurn(tmux, session, "mutation");

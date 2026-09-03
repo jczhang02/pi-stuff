@@ -1,5 +1,6 @@
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { TOOL_DISPLAY_ITEM_LIMIT, TOOL_DISPLAY_MEDIA_LIMIT } from "../tool-display/limits.js";
 import { sanitizeCodeModeContent } from "./image-content.js";
 
 type ToolContent = AgentToolResult<unknown>["content"];
@@ -35,17 +36,6 @@ function isToolContentItem<Value>(value: Value): value is Value & ToolContentIte
 
 export function isCodeModeToolContent<Value>(value: Value): value is Value & ToolContent {
 	return Array.isArray(value) && Array.from(value).every(isToolContentItem);
-}
-
-function isMediaContentIndexes<Value>(value: Value): value is Value & readonly (readonly number[])[] {
-	return (
-		Array.isArray(value) &&
-		value.every(
-			(indexes) =>
-				Array.isArray(indexes) &&
-				indexes.every((index) => isRuntimeNumber(index) && Number.isSafeInteger(index) && index >= 0),
-		)
-	);
 }
 
 /**
@@ -118,8 +108,27 @@ export function separateCodeModeMediaForUi<Details>(
 	if (!isCodeModeModelContentOwner(details) || !("operations" in details) || !Array.isArray(details.operations)) {
 		return undefined;
 	}
+	const raw = Object.getOwnPropertyDescriptor(details, RAW_MODEL_CONTENT)?.value;
+	if (!Array.isArray(raw)) return undefined;
+	if (
+		details.operations.length > TOOL_DISPLAY_ITEM_LIMIT ||
+		raw.length > TOOL_DISPLAY_ITEM_LIMIT ||
+		result.content.length > TOOL_DISPLAY_ITEM_LIMIT
+	) {
+		return {
+			...result,
+			content: [{ type: "text", text: "… Code Mode media preview omitted" }],
+			details: {
+				...details,
+				mediaContentIndexes: [],
+				modelContent: result.content,
+			},
+		};
+	}
 	const referencedMedia = new Set<number>();
-	for (const operation of details.operations) {
+	const operationStart = Math.max(0, details.operations.length - TOOL_DISPLAY_ITEM_LIMIT);
+	for (let operationIndex = operationStart; operationIndex < details.operations.length; operationIndex += 1) {
+		const operation = details.operations[operationIndex];
 		if (
 			!isRuntimeObject(operation) ||
 			operation === null ||
@@ -128,7 +137,12 @@ export function separateCodeModeMediaForUi<Details>(
 		) {
 			continue;
 		}
-		for (const placement of operation.mediaPlacements) {
+		for (
+			let placementIndex = 0;
+			placementIndex < Math.min(operation.mediaPlacements.length, TOOL_DISPLAY_ITEM_LIMIT);
+			placementIndex += 1
+		) {
+			const placement = operation.mediaPlacements[placementIndex];
 			if (
 				isRuntimeObject(placement) &&
 				placement !== null &&
@@ -138,26 +152,30 @@ export function separateCodeModeMediaForUi<Details>(
 				placement.mediaIndex >= 0
 			) {
 				referencedMedia.add(placement.mediaIndex);
+				if (referencedMedia.size >= TOOL_DISPLAY_MEDIA_LIMIT) break;
 			}
 		}
+		if (referencedMedia.size >= TOOL_DISPLAY_MEDIA_LIMIT) break;
 	}
 	if (referencedMedia.size === 0) return undefined;
-	const raw = Object.getOwnPropertyDescriptor(details, RAW_MODEL_CONTENT)?.value;
 	if (!isCodeModeToolContent(raw)) return undefined;
 	const mediaContentIndexes = normalizedMediaContentIndexes(raw, result.content);
 	if (!mediaContentIndexes) return undefined;
 	if ([...referencedMedia].some((index) => !mediaContentIndexes[index])) return undefined;
 
-	const nestedContentIndexes = new Set(
-		[...referencedMedia].flatMap((mediaIndex) => [...(mediaContentIndexes[mediaIndex] ?? [])]),
-	);
+	const nestedContentIndexes = new Set<number>();
+	for (const mediaIndex of referencedMedia) {
+		for (const contentIndex of (mediaContentIndexes[mediaIndex] ?? []).slice(0, TOOL_DISPLAY_ITEM_LIMIT)) {
+			nestedContentIndexes.add(contentIndex);
+		}
+	}
 	return {
 		...result,
 		content: result.content.filter((_item, index) => !nestedContentIndexes.has(index)),
 		details: {
 			...details,
 			mediaContentIndexes,
-			modelContent: [...result.content],
+			modelContent: result.content,
 		},
 	};
 }
@@ -174,13 +192,26 @@ export function decodeCodeModeMediaSegments<Value>(detailsValue: Value): readonl
 	}
 	const modelContent = detailsValue.modelContent;
 	const mediaContentIndexes = detailsValue.mediaContentIndexes;
-	if (!isCodeModeToolContent(modelContent) || !isMediaContentIndexes(mediaContentIndexes)) return [];
-	return mediaContentIndexes.map((indexes) =>
-		indexes.flatMap((index) => {
-			const item = modelContent[index];
-			return item ? [item] : [];
-		}),
-	);
+	if (!Array.isArray(modelContent) || !Array.isArray(mediaContentIndexes)) return [];
+	const segments: ToolContentItem[][] = [];
+	for (
+		let segmentIndex = 0;
+		segmentIndex < Math.min(mediaContentIndexes.length, TOOL_DISPLAY_MEDIA_LIMIT);
+		segmentIndex += 1
+	) {
+		const indexes = mediaContentIndexes[segmentIndex];
+		if (!Array.isArray(indexes)) return [];
+		const segment: ToolContentItem[] = [];
+		for (let index = 0; index < Math.min(indexes.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+			const contentIndex = indexes[index];
+			if (!isRuntimeNumber(contentIndex) || !Number.isSafeInteger(contentIndex) || contentIndex < 0) return [];
+			const item = modelContent[contentIndex];
+			if (!isToolContentItem(item)) return [];
+			segment.push(item);
+		}
+		segments.push(segment);
+	}
+	return segments;
 }
 
 /** Restore normalized Tool results and quarantine invalid historical images only in provider context. */

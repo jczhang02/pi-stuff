@@ -6,9 +6,11 @@ import { createMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/runtime
 import { createMcpRuntimeOwner } from "../../packages/pi-stuff/src/mcp/runtime/runtime-owner.js";
 import { McpServerManager } from "../../packages/pi-stuff/src/mcp/runtime/server-manager.js";
 import {
-	formatMcpDirectToolCallLines,
+	formatMcpProxyToolCallLines,
+	formatMcpToolResultIdentity,
 	formatMcpToolResultLines,
 } from "../../packages/pi-stuff/src/mcp/runtime/tool-result-renderer.js";
+import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isJsonSourceValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 async function createManager() {
@@ -18,7 +20,10 @@ async function createManager() {
 }
 
 test("MCP call and result previews are terminal-cell-safe", () => {
-	const call = formatMcpDirectToolCallLines("server/tool", { query: "😀".repeat(31) }, 60);
+	const call = formatMcpProxyToolCallLines(
+		{ args: JSON.stringify({ query: "😀".repeat(31) }), tool: "server/tool" },
+		60,
+	);
 	const result = formatMcpToolResultLines(
 		{ content: [{ type: "text", text: `\u001b[31m${"界".repeat(100)}\u001b[0m` }] },
 		false,
@@ -30,6 +35,34 @@ test("MCP call and result previews are terminal-cell-safe", () => {
 		expect(line).not.toContain("\u001b");
 	}
 	expect(result.truncated).toBeTrue();
+	expect(
+		formatMcpToolResultLines({ content: [{ type: "text", text: "x".repeat(60) }] }, false, 3, 60).truncated,
+	).toBeFalse();
+	const identity = formatMcpToolResultIdentity({
+		mode: "call",
+		server: "s".repeat(2_000_000),
+		tool: "t".repeat(2_000_000),
+	});
+	expect(identity?.length).toBeLessThanOrEqual(3_010);
+});
+
+test("MCP call preview does not enumerate arbitrary argument objects", () => {
+	let keyScans = 0;
+	const args = new Proxy<JsonInputObject>(
+		{},
+		{
+			ownKeys: () => {
+				keyScans += 1;
+				return Array.from({ length: 100_000 }, (_, index) => `field-${String(index)}`);
+			},
+		},
+	);
+
+	expect(formatMcpProxyToolCallLines({ args, tool: "server/tool" })).toEqual([
+		"mcp call server/tool",
+		"[argument object preview omitted]",
+	]);
+	expect(keyScans).toBe(0);
 });
 
 test("MCP status events omit absent optional server fields", async () => {
