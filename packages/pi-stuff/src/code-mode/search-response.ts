@@ -100,7 +100,7 @@ export function projectCodeModeSearchResponse(
 		fullDescriptions = nextDescriptions;
 		fullText = encoded;
 	}
-	if (fullText) return projection(search, fullText, fullResults);
+	if (fullText && fullResults.length === results.length) return projection(search, fullText, fullResults);
 
 	const topDescription = descriptions[0];
 	const topResult = results[0];

@@ -123,13 +123,17 @@ test("top-level Tool Discovery keeps the callable subagent contract within its c
 });
 
 test("top-level Tool Discovery deterministically degrades every response within its character budget", async () => {
-	const definitions = await executeDiscovery(
+	const definitions = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 100 }, { typesSize: 100 }]));
+	expect(definitions.payload.representation).toBe("definitions");
+	expect(definitions.payload.definitions).toHaveLength(2);
+	expect(definitions.payload.results[0]).not.toHaveProperty("description");
+
+	const partialDefinitions = await executeDiscovery(
 		discoveryConnectorFixture([{ typesSize: 1_800 }, { typesSize: 1_800 }, { typesSize: 1_800 }]),
 	);
-	expect(definitions.payload.representation).toBe("definitions");
-	expect(definitions.payload.definitions.length).toBeGreaterThan(0);
-	expect(definitions.payload.definitions.length).toBeLessThan(3);
-	expect(definitions.payload.results[0]).not.toHaveProperty("description");
+	expect(partialDefinitions.payload.representation).toBe("typed-top");
+	expect(partialDefinitions.payload.definitions).toHaveLength(1);
+	expect(partialDefinitions.payload.results).toHaveLength(3);
 
 	const documentedType = `/** ${"field details ".repeat(150)}*/\ntype FixtureInput = string;`;
 	const typedTop = await executeDiscovery(
@@ -193,6 +197,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 
 	for (const projection of [
 		definitions,
+		partialDefinitions,
 		typedTop,
 		describeRequired,
 		bracketPath,
