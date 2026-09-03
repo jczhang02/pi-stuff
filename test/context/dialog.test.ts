@@ -135,6 +135,14 @@ test("shows the repair step when Context continuity is degraded", () => {
 	const lowComponent = createContextDialogView(snapshot).create(lowContext);
 	expect(lowComponent.render(100).join("\n")).toContain("Continuity degraded");
 	lowComponent.dispose?.();
+
+	const { context: nestedContext } = harness(8);
+	const nestedComponent = createContextDialogView(snapshot).create(nestedContext);
+	input(nestedComponent, "\r");
+	const nestedText = nestedComponent.render(100).join("\n");
+	expect(nestedText).toContain("Keep 20 recent messages");
+	expect(nestedText).not.toContain("Continuity degraded");
+	nestedComponent.dispose?.();
 });
 
 test("sanitizes and wraps multiline status errors into terminal-safe rows", () => {

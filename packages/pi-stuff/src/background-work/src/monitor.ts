@@ -79,6 +79,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	private readonly intervalMs: number;
 	private outcomeValue: Promise<BackgroundWorkOutcome> | undefined;
 	private readonly startedAt = Date.now();
+	private readonly startedAtMonotonic = performance.now();
 	private status: "running" | "stopping" = "running";
 	private stopReason: "shutdown" | "user" | undefined;
 	private task: BackgroundWorkEffectTask<BackgroundWorkOutcome, never> | undefined;
@@ -160,9 +161,8 @@ class PollingMonitor implements BackgroundMonitorActivity {
 					catch: (error) => error,
 				}).pipe(Effect.catch(() => Effect.succeed(0)));
 			}
-			const deadline = this.startedAt + this.timeoutMs;
 			for (;;) {
-				if (Date.now() >= deadline) {
+				if (performance.now() - this.startedAtMonotonic >= this.timeoutMs) {
 					return this.finish("timed_out", `Monitor "${this.title}" timed out`);
 				}
 				const attempt = yield* this.probe().pipe(
@@ -192,7 +192,9 @@ class PollingMonitor implements BackgroundMonitorActivity {
 						}
 					}
 				}
-				yield* Effect.sleep(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())));
+				yield* Effect.sleep(
+					Math.min(this.intervalMs, Math.max(1, this.timeoutMs - (performance.now() - this.startedAtMonotonic))),
+				);
 			}
 		});
 	}

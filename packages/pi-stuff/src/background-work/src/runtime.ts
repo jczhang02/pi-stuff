@@ -189,8 +189,14 @@ export class BackgroundWorkRuntime {
 		this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 		this.storage = options.storage ?? new WorkRunStorage(options.cwd, options.sessionId);
 		const maxTimeoutSliceMs = options.maxTimeoutSliceMs ?? MAX_TIMER_DELAY_MS;
-		if (!Number.isSafeInteger(maxTimeoutSliceMs) || maxTimeoutSliceMs <= 0) {
-			throw new Error("Background Work timer slice must be a positive safe integer");
+		if (
+			!Number.isSafeInteger(maxTimeoutSliceMs) ||
+			maxTimeoutSliceMs <= 0 ||
+			maxTimeoutSliceMs > MAX_TIMER_DELAY_MS
+		) {
+			throw new Error(
+				`Background Work timer slice must be a positive safe integer no greater than ${String(MAX_TIMER_DELAY_MS)}`,
+			);
 		}
 		this.shellDependencies = {
 			captureSupervisorIdentity: options.captureSupervisorIdentity ?? captureProcessIdentityWithRetry,

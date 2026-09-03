@@ -9,6 +9,8 @@ const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
 export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
 const MEMORY_TAIL_LIMIT = 64 * 1024;
 const MIN_ROLLING_OUTPUT_LIMIT = 64;
+const ROLLING_OMISSION_PREFIX = "…[";
+const ROLLING_OMISSION_SUFFIX = " earlier output bytes omitted]\n";
 
 function completeUtf8End(buffer: Buffer): number {
 	let end = buffer.length;
@@ -42,6 +44,21 @@ export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_L
 function formatTextTail(selected: Buffer, omittedBytes: number): string {
 	const prefix = omittedBytes > 0 ? `…[${formatSize(omittedBytes)} earlier output bytes omitted]\n` : "";
 	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
+}
+
+function rollingOmissionMarker(omittedBytes: number): Buffer {
+	return Buffer.from(`${ROLLING_OMISSION_PREFIX}${String(omittedBytes)}${ROLLING_OMISSION_SUFFIX}`, "utf-8");
+}
+
+function parseRollingOmissionMarker(buffer: Buffer): { bytes: number; length: number } | undefined {
+	const newline = buffer.indexOf(0x0a);
+	if (newline < 0) return undefined;
+	const line = buffer.subarray(0, newline + 1).toString("utf-8");
+	if (!line.startsWith(ROLLING_OMISSION_PREFIX) || !line.endsWith(ROLLING_OMISSION_SUFFIX)) return undefined;
+	const raw = line.slice(ROLLING_OMISSION_PREFIX.length, -ROLLING_OMISSION_SUFFIX.length);
+	if (!/^\d+$/u.test(raw)) return undefined;
+	const bytes = Number(raw);
+	return Number.isSafeInteger(bytes) ? { bytes, length: Buffer.byteLength(line, "utf-8") } : undefined;
 }
 
 export class BoundedOutputFile {
@@ -160,7 +177,7 @@ export class BoundedOutputFile {
 		let selected = utf8SafeTail(this.tail, this.maxBytes);
 		for (;;) {
 			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
-			const marker = Buffer.from(`…[${formatSize(omittedBytes)} earlier output bytes omitted]\n`, "utf-8");
+			const marker = rollingOmissionMarker(omittedBytes);
 			const next = utf8SafeTail(this.tail, this.maxBytes - marker.length);
 			if (next.length === selected.length) return Buffer.concat([marker, selected]);
 			selected = next;
@@ -193,9 +210,17 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 		const size = statSync(path).size;
 		const bytes = Math.min(size, Math.max(1, maxBytes));
 		const buffer = Buffer.alloc(bytes);
-		readSync(fd, buffer, 0, bytes, Math.max(0, size - bytes));
+		const position = Math.max(0, size - bytes);
+		readSync(fd, buffer, 0, bytes, position);
 		const selected = utf8SafeTail(buffer, bytes);
-		return formatTextTail(selected, size - selected.length);
+		const markerBuffer = Buffer.alloc(Math.min(size, 128));
+		readSync(fd, markerBuffer, 0, markerBuffer.length, 0);
+		const marker = parseRollingOmissionMarker(markerBuffer);
+		if (!marker) return formatTextTail(selected, size - selected.length);
+		const selectedPosition = size - selected.length;
+		const retainedBytesOmitted = Math.max(0, selectedPosition - marker.length);
+		const payload = selected.subarray(Math.max(0, marker.length - selectedPosition));
+		return formatTextTail(payload, marker.bytes + retainedBytesOmitted);
 	} catch {
 		return undefined;
 	} finally {

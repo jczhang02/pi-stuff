@@ -41,10 +41,17 @@ test("bounds durable output while retaining the newest evidence", () => {
 	expect(output.durable).toBeTrue();
 	expect(tryReadBoundedTail(path, 1_024)).toEndWith("LATEST-EVIDENCE");
 	expect(tryReadBoundedTail(path, 1_024)).toContain("earlier output bytes omitted");
+	expect(tryReadBoundedTail(path, 80)).toStartWith("…[68");
 	expect(output.recentText(1_024)).toContain("LATEST-EVIDENCE");
 	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
 	expect(output.recentText()).not.toContain("stopped this task");
+});
+
+test("rejects timer slices that the runtime cannot schedule safely", () => {
+	expect(() => configuredRuntime(temporaryRoot(), { maxTimeoutSliceMs: 2_147_483_648 })).toThrow(
+		"timer slice must be a positive safe integer no greater than 2147483647",
+	);
 });
 
 test("degrades write and close failures to the bounded in-memory tail", () => {

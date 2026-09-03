@@ -356,10 +356,10 @@ export class ShellActivity {
 		const task = this.owner.effects.open(
 			Effect.gen({ self: this }, function* () {
 				let remaining = milliseconds;
-				let observedAt = Date.now();
+				let observedAt = performance.now();
 				while (remaining > 0) {
 					yield* Effect.sleep(Math.min(remaining, this.dependencies.maxTimeoutSliceMs));
-					const now = Date.now();
+					const now = performance.now();
 					remaining -= Math.max(1, now - observedAt);
 					observedAt = now;
 				}

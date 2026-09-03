@@ -411,7 +411,11 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					`${GUTTER}${this.context.theme.bold(sections.title)}`,
 				],
 				priority: [
-					errorLines[0] ?? continuityLines[0] ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`,
+					errorLines[0] ??
+						(this.screen.kind === "overview" ? continuityLines[0] : undefined) ??
+						selected ??
+						inputLines[0] ??
+						`${GUTTER}${sections.title}`,
 				],
 			},
 			commandDialogRows(this.context),
