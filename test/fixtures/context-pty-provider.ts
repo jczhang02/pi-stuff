@@ -291,9 +291,36 @@ export default function contextPtyProvider(pi: ExtensionAPI): void {
 		},
 	);
 
-	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Context PTY fixture", (_model, context) =>
-		fixtureStream(context),
-	);
+	if (process.env["PI_STUFF_CONTEXT_PTY_BUILTIN_OPENAI"] === "1") {
+		const baseUrl = process.env["PI_STUFF_CONTEXT_PTY_BASE_URL"];
+		if (!baseUrl) {
+			throw new Error(
+				"Context PTY fixture configuration error: PI_STUFF_CONTEXT_PTY_BASE_URL is required for built-in OpenAI mode",
+			);
+		}
+		pi.registerProvider(PROVIDER, {
+			name: "Pi Stuff Context PTY fixture",
+			baseUrl,
+			apiKey: "fixture",
+			api: "openai-completions",
+			models: [
+				{
+					api: "openai-completions",
+					id: process.env["PI_STUFF_CONTEXT_PTY_MODEL"] ?? MODEL,
+					name: "Pi Stuff Context PTY fixture",
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: Number(process.env["PI_STUFF_CONTEXT_PTY_CONTEXT_WINDOW"] ?? "8000000"),
+					maxTokens: 4_096,
+				},
+			],
+		});
+	} else {
+		registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Context PTY fixture", (_model, context) =>
+			fixtureStream(context),
+		);
+	}
 
 	pi.on("session_start", (_event, ctx) => {
 		record({

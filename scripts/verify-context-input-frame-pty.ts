@@ -3,8 +3,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { type Static, Type } from "typebox";
-import { Check } from "typebox/value";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -13,18 +18,9 @@ const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const INPUT_FRAME_LATENCY_LIMIT_MS = 150;
 const WORKING_STALL_LIMIT_MS = 500;
 const HISTORY_MARKER = "CONTEXT_INPUT_HISTORY_499";
-const RECORD_SCHEMA = Type.Object(
-	{
-		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
-		hasSince: Type.Optional(Type.Boolean()),
-		lastUser: Type.Optional(Type.String()),
-		magicProjectionMarkers: Type.Optional(Type.Array(Type.String())),
-		type: Type.Optional(Type.String()),
-	},
-	{ additionalProperties: true },
-);
-
-type RecordLine = Static<typeof RECORD_SCHEMA>;
+const CONTEXT_RESUME_REQUEST = "CONTEXT_RESUME_REQUEST";
+const CONTEXT_RESUME_DONE = "CONTEXT_RESUME_DONE";
+const PROVIDER_CONTEXT_WINDOW = "8000000";
 type PtyEnvironment = Record<string, string | undefined>;
 
 const ZERO_USAGE = {
@@ -96,18 +92,6 @@ async function exists(path: string): Promise<boolean> {
 	);
 }
 
-async function readRecords(path: string): Promise<RecordLine[]> {
-	return (await readFile(path, "utf8"))
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => {
-			const record = JSON.parse(line);
-			if (!Check(RECORD_SCHEMA, record)) fail(`provider log ${path} contains a malformed record`);
-			return record;
-		});
-}
-
 function seedSession(sessionDirectory: string, cwd: string): string {
 	const manager = SessionManager.create(cwd, sessionDirectory, { id: "context-input-frame" });
 	manager.appendModelChange("pi-stuff-context-pty", "fixture-model");
@@ -143,6 +127,120 @@ function seedSession(sessionDirectory: string, cwd: string): string {
 	const sessionFile = manager.getSessionFile();
 	if (!sessionFile) fail("target Session was not persisted");
 	return sessionFile;
+}
+
+function isValidRetryRequestBody(request: string | undefined): boolean {
+	return Boolean(
+		request?.includes(HISTORY_MARKER) &&
+			request.includes("session-history-since") &&
+			request.includes("Magic Context") &&
+			Buffer.byteLength(request, "utf8") <= Math.floor(Number(PROVIDER_CONTEXT_WINDOW) * 0.95),
+	);
+}
+
+function requestBodyDiagnostic(requestBodies: readonly string[]): string {
+	return JSON.stringify(
+		requestBodies.map((body) => ({
+			bytes: Buffer.byteLength(body, "utf8"),
+			hasHistoryMarker: body.includes(HISTORY_MARKER),
+			hasMagicContext: body.includes("Magic Context"),
+			hasSessionHistorySince: body.includes("session-history-since"),
+		})),
+	);
+}
+
+function createBuiltinOpenAiServer(requestBodies: string[]) {
+	return Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		fetch: async (request) => {
+			const body = await request.text();
+			const parsedBody: JsonInputValue | undefined = (() => {
+				try {
+					return parseJsonValue(body);
+				} catch {
+					return undefined;
+				}
+			})();
+			const messages =
+				isJsonInputObject(parsedBody) && Array.isArray(parsedBody["messages"]) ? parsedBody["messages"] : [];
+			const lastUserContent = [...messages]
+				.reverse()
+				.find((message) => isJsonInputObject(message) && message["role"] === "user");
+			const lastUser =
+				isJsonInputObject(lastUserContent) && isRuntimeString(lastUserContent["content"])
+					? lastUserContent["content"]
+					: isJsonInputObject(lastUserContent) && Array.isArray(lastUserContent["content"])
+						? lastUserContent["content"]
+								.flatMap((part) =>
+									isJsonInputObject(part) && part["type"] === "text" && isRuntimeString(part["text"])
+										? [part["text"]]
+										: [],
+								)
+								.join("")
+						: "";
+			const isResume = lastUser.includes(CONTEXT_RESUME_REQUEST);
+			const isDrain = lastUser.includes("CONTEXT_DRAIN");
+			if (isResume) requestBodies.push(body);
+			if (!isResume && !isDrain) return new Response("not found", { status: 404 });
+			const attempt = requestBodies.length;
+			const chunk = (value: JsonInputObject): string => `data: ${JSON.stringify(value)}\n\n`;
+			const response = isDrain
+				? [
+						chunk({
+							id: "context-input-frame",
+							object: "chat.completion.chunk",
+							created: 1,
+							model: "fixture-model",
+							choices: [
+								{ index: 0, delta: { role: "assistant", content: "CONTEXT_DRAIN_DONE" }, finish_reason: null },
+							],
+						}),
+						chunk({
+							id: "context-input-frame",
+							object: "chat.completion.chunk",
+							created: 1,
+							model: "fixture-model",
+							choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+						}),
+						"data: [DONE]\n\n",
+					].join("")
+				: attempt === 1
+					? chunk({
+							id: "context-input-frame",
+							object: "chat.completion.chunk",
+							created: 1,
+							model: "fixture-model",
+							choices: [{ index: 0, delta: { role: "assistant", content: "partial" }, finish_reason: null }],
+						})
+					: [
+							chunk({
+								id: "context-input-frame",
+								object: "chat.completion.chunk",
+								created: 1,
+								model: "fixture-model",
+								choices: [
+									{
+										index: 0,
+										delta: { role: "assistant", content: CONTEXT_RESUME_DONE },
+										finish_reason: null,
+									},
+								],
+							}),
+							chunk({
+								id: "context-input-frame",
+								object: "chat.completion.chunk",
+								created: 1,
+								model: "fixture-model",
+								choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+							}),
+							"data: [DONE]\n\n",
+						].join("");
+			return new Response(response, {
+				headers: { "content-type": "text/event-stream", connection: "keep-alive" },
+			});
+		},
+	});
 }
 
 async function verifySubmittedPromptFrame(capture: () => string, submit: () => void, prompt: string): Promise<void> {
@@ -194,7 +292,7 @@ async function verifySubmittedPromptFrame(capture: () => string, submit: () => v
 	}
 }
 
-async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, requestLog: string): Promise<void> {
+async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, requestBodies: string[]): Promise<void> {
 	const socket = join(environment["HOME"] ?? cwd, "context-input-frame-tmux.sock");
 	const terminalOutputPath = join(environment["HOME"] ?? cwd, "context-input-frame-terminal.log");
 	const terminalOutputDonePath = `${terminalOutputPath}.done`;
@@ -265,19 +363,19 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 			`cat >> ${shellQuote(terminalOutputPath)}; touch ${shellQuote(terminalOutputDonePath)}`,
 		]);
 
-		const prompt = "CONTEXT_RESUME_REQUEST";
+		const prompt = CONTEXT_RESUME_REQUEST;
 		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
 		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
 		await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), prompt);
 
-		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
-		const modelRequest = (await readRecords(requestLog))
-			.reverse()
-			.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
+		await waitFor((frame) => frame.includes(CONTEXT_RESUME_DONE), "resumed Context response", 40_000);
+		const modelRequests = requestBodies.filter((body) => body.includes(prompt));
+		const [firstRequest, secondRequest] = modelRequests;
 		if (
-			modelRequest?.hasSince !== true ||
-			modelRequest.hasCompactMagicContextPrompt !== true ||
-			modelRequest.magicProjectionMarkers?.includes(HISTORY_MARKER) !== true
+			modelRequests.length !== 2 ||
+			!isValidRetryRequestBody(firstRequest) ||
+			!isValidRetryRequestBody(secondRequest) ||
+			firstRequest !== secondRequest
 		) {
 			send("/ctx status");
 			await Bun.sleep(100);
@@ -288,7 +386,7 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 				? await readFile(magicLogPath, "utf8").catch(() => "<Magic Context log unavailable>")
 				: "<Magic Context log path unavailable>";
 			fail(
-				`model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
+				`input-frame retry did not produce exactly two stable bounded HTTP requests: ${requestBodyDiagnostic(modelRequests)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
 			);
 		}
 
@@ -325,6 +423,8 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
+	const requestBodies: string[] = [];
+	const server = createBuiltinOpenAiServer(requestBodies);
 	try {
 		await Promise.all(
 			[
@@ -341,7 +441,7 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 			writeFile(requestLog, ""),
 			writeFile(
 				join(configDirectory, "settings.json"),
-				`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen" })}\n`,
+				`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen", retry: { enabled: true, maxRetries: 1, baseDelayMs: 0, provider: { maxRetries: 0 } } })}\n`,
 			),
 			writeFile(
 				join(cortexConfigDirectory, "magic-context.jsonc"),
@@ -372,6 +472,10 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 				HOME: temporaryDirectory,
 				MAGIC_CONTEXT_LOG_PATH: magicLog,
 				MAGIC_CONTEXT_TEST_DATA_DIR: dataDirectory,
+				PI_STUFF_CONTEXT_PTY_BUILTIN_OPENAI: "1",
+				PI_STUFF_CONTEXT_PTY_BASE_URL: `http://127.0.0.1:${String(server.port)}`,
+				PI_STUFF_CONTEXT_PTY_MODEL: "fixture-model",
+				PI_STUFF_CONTEXT_PTY_CONTEXT_WINDOW: PROVIDER_CONTEXT_WINDOW,
 				PI_CODING_AGENT_DIR: configDirectory,
 				PI_OFFLINE: "1",
 				PI_STUFF_CONTEXT_PTY_BIN: options.piBinary,
@@ -393,9 +497,10 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 				XDG_DATA_HOME: undefined,
 			},
 			projectDirectory,
-			requestLog,
+			requestBodies,
 		);
 	} finally {
+		server.stop(true);
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}
 }

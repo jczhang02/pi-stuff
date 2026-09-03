@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import {
+	getContextStatusChannel,
 	getHostSharedResource,
 	hasDirectUserActivation,
 	registerSuiteAgentMessagePreparation,
@@ -13,7 +14,8 @@ import type { MagicModule, NativeCompactionSettings } from "./magic-runtime.js";
 import { loadMagicContextWorker } from "./magic-worker-client.js";
 import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
 import { estimateProjectionTokens, extractMagicProjection, formatProjection, nativeProjection } from "./projection.js";
-import { applyContextPromptContributions, applyContextPromptContributionsToProvider } from "./prompt-contributions.js";
+import { applyContextPromptContributions } from "./prompt-contributions.js";
+import { registerContextProviderBoundary } from "./provider-boundary.js";
 import {
 	type ContextCapability,
 	type ContextCapabilityRegistry,
@@ -125,8 +127,13 @@ function deferInputActivation(runtime: ContextCapabilityRuntime, ctx: ExtensionC
 	});
 }
 
-function registerContextProjection(pi: ExtensionAPI, runtime: ContextCapabilityRuntime): void {
+function registerContextProjection(
+	pi: ExtensionAPI,
+	runtime: ContextCapabilityRuntime,
+	status: ReturnType<typeof getContextStatusChannel>,
+): void {
 	pi.on("context", (event, ctx) => {
+		if (runtime.status().state === "active") status.publish({ state: "recovering" });
 		const interactivePaint = runtime.yieldForInteractivePaint();
 		return Effect.runPromise(
 			interactivePaint
@@ -177,6 +184,7 @@ export default async function piStuffContext(
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
 	if (!created) return;
+	const status = getContextStatusChannel(pi);
 	registry.runtimes.add(runtime);
 	registry.capabilities.set(runtime, {
 		status: () => runtime.status(),
@@ -192,15 +200,23 @@ export default async function piStuffContext(
 		},
 	});
 	pi.on("session_shutdown", (event, ctx) => {
+		status.clear();
 		unregisterSuiteAgentMessagePreparation();
 		return Effect.runPromise(runtime.dispose(event, ctx));
 	});
 	runtime.registerToolHandoffs();
 
-	pi.on("session_start", (event, ctx) => Effect.runPromise(runtime.startSession(event, ctx)));
-	registerContextProjection(pi, runtime);
-	pi.on("session_compact", () => runtime.invalidateProjection());
+	pi.on("session_start", (event, ctx) => {
+		status.clear();
+		return Effect.runPromise(runtime.startSession(event, ctx));
+	});
+	registerContextProjection(pi, runtime, status);
+	pi.on("session_compact", () => {
+		status.clear();
+		runtime.invalidateProjection();
+	});
 	pi.on("session_tree", () => {
+		status.clear();
 		runtime.invalidateProjection();
 	});
 	pi.on("input", (event, ctx) => {
@@ -241,22 +257,7 @@ export default async function piStuffContext(
 		);
 		return applyContextPromptContributions(pi, event, ctx);
 	});
-	let providerPromptDiagnosticReported = false;
-	pi.on("before_provider_request", async (event, ctx) => {
-		const projection = await applyContextPromptContributionsToProvider(pi, event.payload, ctx);
-		if (projection.active && !projection.found && !providerPromptDiagnosticReported) {
-			providerPromptDiagnosticReported = true;
-			reportDiagnostic({
-				capability: "Context",
-				error: new Error("Provider payload has no supported system-prompt field."),
-				key: "provider-prompt-contribution",
-				severity: "warning",
-				summary: "A Context prompt contribution could not be projected into this Provider request",
-				visibility: "silent",
-			});
-		}
-		return projection.payload === event.payload ? undefined : projection.payload;
-	});
+	registerContextProviderBoundary(pi, runtime, status);
 }
 
 export { registerContextPromptContributor } from "./prompt-contributions.js";
