@@ -146,6 +146,19 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(typedTop.payload.definitions[0]?.types).toBe("type FixtureInput = string;");
 	expect(typedTop.payload.results[1]?.signature).toContain("(input: unknown): Promise<unknown>");
 
+	const typedPaths = await executeDiscovery(
+		discoveryConnectorFixture([
+			{ descriptionSize: 2_500, types: documentedType, typesSize: 0 },
+			{ name: "n".repeat(5_000), typesSize: 0 },
+			{ name: "typed-usable", typesSize: 0 },
+		]),
+	);
+	expect(typedPaths.payload.representation).toBe("typed-top");
+	expect(typedPaths.payload.results.map((result) => result.path)).toEqual([
+		"tools.fixture_0",
+		'tools["typed-usable"]',
+	]);
+
 	const describeRequired = await executeDiscovery(
 		discoveryConnectorFixture([{ typesSize: 5_000 }, { typesSize: 5_000 }]),
 	);
@@ -199,6 +212,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 		definitions,
 		partialDefinitions,
 		typedTop,
+		typedPaths,
 		describeRequired,
 		bracketPath,
 		bracketDefinition,

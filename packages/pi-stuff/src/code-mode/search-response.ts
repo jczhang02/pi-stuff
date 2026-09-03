@@ -86,21 +86,9 @@ export function projectCodeModeSearchResponse(
 	}
 
 	const descriptions = results.map((result) => ({ ...describe(result), path: projectedPath(result) }));
-	let fullResults: Array<ReturnType<typeof signatureResult>> = [];
-	let fullDescriptions: DescribeOutput[] = [];
-	let fullText: string | undefined;
-	for (const [index, result] of results.entries()) {
-		const description = descriptions[index];
-		if (!description) break;
-		const nextResults = [...fullResults, signatureResult(result)];
-		const nextDescriptions = [...fullDescriptions, description];
-		const encoded = encode(search, "definitions", nextResults, nextDescriptions);
-		if (!encoded) break;
-		fullResults = nextResults;
-		fullDescriptions = nextDescriptions;
-		fullText = encoded;
-	}
-	if (fullText && fullResults.length === results.length) return projection(search, fullText, fullResults);
+	const fullResults = results.map((result) => signatureResult(result));
+	const fullText = encode(search, "definitions", fullResults, descriptions);
+	if (fullText) return projection(search, fullText, fullResults);
 
 	const topDescription = descriptions[0];
 	const topResult = results[0];
@@ -114,7 +102,7 @@ export function projectCodeModeSearchResponse(
 				const compact = signatureResult(result, false);
 				const nextResults = [...typedResults, compact];
 				const encoded = encode(search, "typed-top", nextResults, [typedDescription]);
-				if (!encoded) break;
+				if (!encoded) continue;
 				typedResults = nextResults;
 				typedText = encoded;
 			}
