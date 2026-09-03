@@ -22,9 +22,9 @@ test("the compact Tool contract describes canonical unwrapped Read results", () 
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
 	expect(definition.description).toContain("top-level await");
 	expect(definition.description).toContain("await every tools.* call");
-	expect(definition.description).toContain("Do not guess Tool names");
-	expect(definition.description).toContain("including after context compaction");
-	expect(definition.description).toContain("never guess input field names");
+	expect(definition.description).toContain("Call only listed/searched methods");
+	expect(definition.description).toContain("After context compaction");
+	expect(definition.description).toContain("never guess");
 	expect(definition.description).toContain(
 		'const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);',
 	);
