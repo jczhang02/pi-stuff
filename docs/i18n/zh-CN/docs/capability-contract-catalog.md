@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: 5242fb11aba31d1082da8880301b447f2b8fdcd38848be2da1a1dc2391419665 -->
+<!-- translation-source: docs/capability-contract-catalog.md; translation-source-sha256: 6d89c9f8f60a02e4d81674fcf03fd36dc0500436fa477c16f1d6c8da1dbeb52d -->
 
 # Capability Contract 目录
 
@@ -54,6 +54,7 @@ README 仍是局部合同权威。
 | `tool-display.replay` | `tool-display` | [README](../../../../packages/pi-stuff/src/tool-display/README.md) | Session replay and resume | 正常： persisted Tool arguments and results rebuild Activity; 失败： absent details remain legal; 恢复： reload, tree navigation, and compaction rebuild projection; 持久化： Tool results and model content remain unchanged | `real-host/fixture-provider` | [resume](../../../../test/tools-resume-pty.test.ts), [verifier](../../../../scripts/verify-tools-resume-pty.ts) | `pending` |
 | `tool-display.timer` | `tool-display` | [README](../../../../packages/pi-stuff/src/tool-display/README.md) | Tool running timer setting | 正常： active long operations show elapsed time; 恢复： disabling removes future timers; 持久化： explicit preference survives restart; 边界： settled rows never retain elapsed time | `real-host/fixture-provider` | [settings](../../../../test/ui/ui-settings-dialog.test.ts), [PTY](../../../../test/ui-pty.test.ts) | `pending` |
 | `tool-display.resume` | `tool-display` | [README](../../../../packages/pi-stuff/src/tool-display/README.md) | In-process `/resume` | 正常： active rendered built-ins pre-bind before replay; 失败： disabled Tools stay disabled; 恢复： target cwd and trust rebind; 边界： active order and Host PowerShell membership remain exact | `real-host/fixture-provider` | [PTY](../../../../test/tools-resume-pty.test.ts), [verifier](../../../../scripts/verify-tools-resume-pty.ts) | `pending` |
+| `tool-display.liveness` | `tool-display` | [README](../../../../packages/pi-stuff/src/tool-display/README.md) | Pi Stuff-owned Tool presentation | 正常：首个 Tool UI、输入与选择在 150 ms 内响应；失败：超大值显示有界省略证据；恢复：后续交互保持响应；持久化：更早 history 每次只加载一个有界 page；边界：spinner frame 在 200 ms 内前进，Host 原生与第三方 renderer 不在范围内 | `real-host/fixture-provider` | [PTY](../../../../test/tools-pty.test.ts), [structural](../../../../test/tools/contract-rendering.test.ts) | `pending` |
 
 ## RTK
 

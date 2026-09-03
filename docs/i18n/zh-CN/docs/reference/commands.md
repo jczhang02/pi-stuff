@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reference/commands.md; translation-source-sha256: dd66c09b866bf7bdb2b6644cc3e7f1f62e8bf4582e7837192df9f456c41bf586 -->
+<!-- translation-source: docs/reference/commands.md; translation-source-sha256: 9c4979480d263a1e5a252d3dda91bc18e09108d1aa6eb8f1c1bc334282424f31 -->
 
 # 命令参考
 
@@ -12,8 +12,7 @@ Pi Stuff 命令从 Pi 编辑器中运行。不带参数的命令通常打开交�
 | --- | --- |
 | `/ui` | 配置 Welcome 卡片、Statusline、行内 slash 补全、输入高亮、密度和 Tool 计时器 |
 | `/diagnostics` | 显示当前进程中有界、脱敏的 Suite 诊断 |
-| `/tools` | 列出 Retrieval Group 成员和独立 Tool Activity |
-| `/tools <id>` | 查看一个 Tool Activity |
+| `/tools` | 打开最新的有界 Tool Activity page；在 dialog 内显式加载更早 activity |
 | `/notifications` | 配置通知策略并发送测试通知 |
 
 Pi 自带的 `/settings` 命令控制活动主题等 Host 设置。

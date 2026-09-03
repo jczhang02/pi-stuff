@@ -23,6 +23,9 @@ Select an activity and press Enter for details. Use `/ui` to toggle the running 
 Continuous native Read, Grep, Find, and List calls form one Retrieval Group. The row summarizes ordered Search, Read,
 and List work and keeps failed, rejected, or cancelled members available for inspection.
 
+A run longer than one display budget becomes ordered bounded segments. `Continued` and `continues` markers identify
+adjacent segments without scanning unseen members or claiming a total for the complete run.
+
 A Retrieval Group ends when the conversation reaches work with a different meaning, including:
 
 - Bash, Web, MCP, media, mutation, Agent, Task, Background, or Goal activity;
@@ -40,11 +43,12 @@ already have a visible owner.
 
 Each block leads with the operation identity and follows with bounded outcome evidence. Examples include command and
 exit state for Bash, line count and final content for Write, change counts and diff evidence for Edit, and per-file
-statistics for Patch.
+statistics for Patch. Source caps apply before splitting, diff projection, wrapping, or highlighting.
 
 Agent delegation uses Agent Lifecycle Rows, with `/agents` as the inspection and control surface. Task bookkeeping and
 transparent infrastructure activity stay out of the compact transcript but remain available through `Ctrl+O` and
-`/tools`.
+`/tools`. Agent-related Tools registered through the shared Tool seam use the same bounded rows; `/agents`, child
+transcripts, continuation, cancellation, and execution policy remain Agents-owned.
 
 ## Activity states
 
@@ -55,10 +59,21 @@ A later successful invocation never rewrites an earlier failure; a Retrieval Gro
 Malformed historical data or a rendering failure falls back to a bounded generic row so Tool history remains
 inspectable.
 
+## Bounded display work
+
+Compact, Expanded, Formatted, and Raw views bound arguments, results, object depth, item counts, nested operations,
+media, lines, and bytes before presentation callbacks or allocation-heavy formatting run. MCP previews, Code Mode
+envelopes, Agent Tool rows, and Operation Blocks use the same rule. Oversized values show a truncation or omission
+marker; an exact omitted count appears only when already known without another scan.
+
+These limits change only the display projection. Full Tool arguments, results, Provider context, and canonical Session
+records remain unchanged.
+
 ## `/tools`
 
-`/tools` lists Retrieval Groups and independent Tool Activities. `/tools <id>` opens a matching group or member
-directly when the identifier is unambiguous.
+`/tools` takes no arguments. It opens the newest bounded history page and includes `Load older activities…` when more
+records exist. Selecting that row loads exactly one older bounded page; ordinary navigation never starts hidden
+loading. Repeated loads can reach the earliest Session Tool record while preserving source order.
 
 | Key | Action |
 | --- | --- |
@@ -71,6 +86,13 @@ directly when the identifier is unambiguous.
 
 Formatted detail uses semantic sections for everyday reading. Raw detail is the bounded protocol view. Each mode is
 capped at 240 lines and 24 KiB.
+
+## Responsiveness contract
+
+On the certified Linux x64 Host, Pi Stuff-owned Tool Display must expose the first Tool UI, input echo, and selection
+feedback within 150 ms, and must not leave one visible Vibe Line Spinner frame unchanged for more than 200 ms while a
+Tool is active. The shared 500 ms liveness check remains a severe-failure backstop. Host-native and third-party
+renderers remain outside this guarantee.
 
 ## Running timer
 
@@ -88,3 +110,4 @@ Calls without an owned renderer retain Pi's native presentation.
 - [Conversation UI](conversation-ui.md)
 - [Command reference](../reference/commands.md)
 - [DESIGN.md](../../DESIGN.md)
+- [Bound Tool Display before projection](../adr/0028-bound-tool-display-before-projection.md)

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: 97bb5b66fc4ad193842798762e23bcee6fe473a417f7c31f73bffa60211acd91 -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 941ef767f1c966353bacdc1053c05eb9c68c9cc8cd7c6a20dd2fafec073067e9 -->
 
 # 文档
 
@@ -87,6 +87,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部 effect 模型 |
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | 在 Pi Stuff 边界内保护 Vibe Line Spinner 活性 |
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
+| [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
 
 ## 证据与历史
 

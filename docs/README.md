@@ -85,6 +85,7 @@ The Web and MCP runtimes also have source-local READMEs:
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | Adopt Effect as the internal effect model |
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | Protect Vibe Line Spinner liveness at Pi Stuff boundaries |
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | Preserve foreground reporting through Background Work handoff |
+| [0028](adr/0028-bound-tool-display-before-projection.md) | Bound Tool Display before projection |
 
 ## Evidence and history
 
