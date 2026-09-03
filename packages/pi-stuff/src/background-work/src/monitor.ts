@@ -43,11 +43,15 @@ interface ProbeResult {
 	readonly state: "failed" | "pending" | "satisfied";
 }
 
-function boundedSeconds(value: number | undefined, fallback: number, name: string, maximum: number): number {
+function positiveSeconds(value: number | undefined, fallback: number, name: string): number {
 	const selected = value ?? fallback;
-	if (!Number.isFinite(selected) || selected <= 0 || selected > maximum) {
-		throw new Error(`${name} must be greater than 0 and no more than ${String(maximum)} seconds`);
-	}
+	if (!Number.isFinite(selected) || selected <= 0) throw new Error(`${name} must be greater than 0 seconds`);
+	return selected;
+}
+
+function boundedSeconds(value: number | undefined, fallback: number, name: string, maximum: number): number {
+	const selected = positiveSeconds(value, fallback, name);
+	if (selected > maximum) throw new Error(`${name} must be no more than ${String(maximum)} seconds`);
 	return selected;
 }
 
@@ -246,7 +250,7 @@ export async function startMonitor(
 	input: MonitorInput,
 	ctx: ExtensionContext,
 ): Promise<StartedMonitor> {
-	const timeoutSeconds = boundedSeconds(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, "Monitor timeout", 86_400);
+	const timeoutSeconds = positiveSeconds(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, "Monitor timeout");
 	const title = titleFor(input);
 	if (!input.target.trim()) throw new Error("Monitor target is empty");
 	if (input.source === "http") {

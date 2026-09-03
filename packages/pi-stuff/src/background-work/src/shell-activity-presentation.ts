@@ -18,7 +18,7 @@ import type { ShellLaunchInput } from "./shell-activity-launch.js";
 
 const QUICK_COMPLETION_MS = 2_000;
 
-export type ShellStopReason = "abort" | "output_limit" | "shutdown" | "timeout" | "user";
+export type ShellStopReason = "abort" | "shutdown" | "timeout" | "user";
 
 export function shellActivityTitle(input: ShellLaunchInput): string {
 	const first =
@@ -167,7 +167,6 @@ export function shellTerminalStatus(
 ): BackgroundWorkTerminalStatus {
 	let status: BackgroundWorkTerminalStatus;
 	if (stopReason === "timeout") status = "timed_out";
-	else if (stopReason === "output_limit") status = "failed";
 	else if (stopReason) status = "stopped";
 	else status = code === 0 && signal === null ? "completed" : "failed";
 	if (kind === "monitor" && !stopReason) {
@@ -180,7 +179,6 @@ export function shellTerminalStatus(
 export function shellOutcomeSummary(
 	kind: BackgroundWorkKind,
 	title: string,
-	stopReason: ShellStopReason | undefined,
 	status: BackgroundWorkTerminalStatus,
 	code: number | null,
 ): string {
@@ -189,9 +187,7 @@ export function shellOutcomeSummary(
 		case "completed":
 			return `${subject} "${title}" completed`;
 		case "failed":
-			return stopReason === "output_limit"
-				? `${subject} "${title}" exceeded the output limit and was stopped`
-				: `${subject} "${title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
+			return `${subject} "${title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
 		case "stopped":
 			return `${subject} "${title}" stopped`;
 		case "timed_out":

@@ -5,8 +5,6 @@ import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared
 
 export { sanitizeTerminalText };
 
-const OVERFLOW_MARKER = Buffer.from("\n[Pi Stuff stopped this task: output limit reached.]\n", "utf-8");
-
 const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
 export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
 const MEMORY_TAIL_LIMIT = 64 * 1024;
@@ -37,11 +35,11 @@ export function utf8SafePrefix(buffer: Buffer): Buffer {
 export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
 	const buffer = Buffer.from(value, "utf-8");
 	const selected = utf8SafeTail(buffer, maxBytes);
-	return formatTextTail(selected, buffer.length > selected.length);
+	return formatTextTail(selected, buffer.length - selected.length);
 }
 
-function formatTextTail(selected: Buffer, omitted: boolean): string {
-	const prefix = omitted ? "…[earlier output omitted]\n" : "";
+function formatTextTail(selected: Buffer, omittedBytes: number): string {
+	const prefix = omittedBytes > 0 ? `…[${formatSize(omittedBytes)} earlier output bytes omitted]\n` : "";
 	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
 }
 
@@ -52,6 +50,7 @@ export class BoundedOutputFile {
 	private fd: number | undefined;
 	private readonly closeFile: typeof closeSync;
 	private readonly maxBytes: number;
+	private omittedTailBytes = 0;
 	private overflow = false;
 	private storageError: string | undefined;
 	private tail = Buffer.alloc(0);
@@ -62,8 +61,8 @@ export class BoundedOutputFile {
 		maxBytes = DEFAULT_ACTIVITY_OUTPUT_LIMIT,
 		deps: { readonly closeSync?: typeof closeSync; readonly writeSync?: typeof writeSync } = {},
 	) {
-		if (!Number.isSafeInteger(maxBytes) || maxBytes <= OVERFLOW_MARKER.length) {
-			throw new Error("Background output limit is too small");
+		if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+			throw new Error("Background output retention must be a positive safe integer");
 		}
 		this.path = path;
 		this.maxBytes = maxBytes;
@@ -82,25 +81,25 @@ export class BoundedOutputFile {
 	}
 
 	get durable(): boolean {
-		return this.storageError === undefined;
+		return !this.overflow && this.storageError === undefined;
 	}
 
-	/** Returns false once the hard cap has been reached. */
 	append(chunk: Buffer): boolean {
-		if (this.closed || this.overflow) return false;
-		const contentLimit = this.maxBytes - OVERFLOW_MARKER.length;
-		const remaining = Math.max(0, contentLimit - this.bytes);
+		if (this.closed) return false;
+		this.remember(chunk);
+		if (this.overflow || this.fd === undefined) return true;
+		const remaining = Math.max(0, this.maxBytes - this.bytes);
 		const accepted = chunk.subarray(0, remaining);
 		if (accepted.length > 0) this.write(accepted);
 		if (accepted.length === chunk.length) return true;
 		this.overflow = true;
-		this.write(OVERFLOW_MARKER);
-		return false;
+		this.closeStorage();
+		return true;
 	}
 
 	recentText(maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
 		const selected = utf8SafeTail(this.tail, maxBytes);
-		return formatTextTail(selected, this.bytes > selected.length);
+		return formatTextTail(selected, this.omittedTailBytes + this.tail.length - selected.length);
 	}
 
 	close(): void {
@@ -111,7 +110,6 @@ export class BoundedOutputFile {
 
 	private write(chunk: Buffer): void {
 		this.bytes += chunk.length;
-		this.remember(chunk);
 		if (this.fd === undefined) return;
 		try {
 			let offset = 0;
@@ -127,7 +125,9 @@ export class BoundedOutputFile {
 
 	private remember(chunk: Buffer): void {
 		const joined = Buffer.concat([this.tail, chunk]);
-		this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - MEMORY_TAIL_LIMIT)));
+		const start = Math.max(0, joined.length - MEMORY_TAIL_LIMIT);
+		this.omittedTailBytes += start;
+		this.tail = Buffer.from(joined.subarray(start));
 	}
 
 	private degradeStorage(cause: unknown): void {
@@ -158,7 +158,7 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 		const buffer = Buffer.alloc(bytes);
 		readSync(fd, buffer, 0, bytes, Math.max(0, size - bytes));
 		const selected = utf8SafeTail(buffer, bytes);
-		return formatTextTail(selected, size > bytes);
+		return formatTextTail(selected, size - selected.length);
 	} catch {
 		return undefined;
 	} finally {

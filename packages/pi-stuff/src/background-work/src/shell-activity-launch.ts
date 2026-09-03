@@ -18,6 +18,7 @@ import type { WorkRunStorage } from "./storage.js";
 export interface ShellActivityDependencies {
 	readonly captureSupervisorIdentity: typeof captureProcessIdentityWithRetry;
 	readonly cwd: string;
+	readonly maxTimeoutSliceMs: number;
 	readonly outputFactory: (path: string) => BoundedOutputFile;
 	readonly shellPath: string | undefined;
 	readonly signalSupervisor: SignalVerifiedSupervisor;

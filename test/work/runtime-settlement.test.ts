@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	type BackgroundWorkRuntime,
 	BoundedOutputFile,
 	captureProcessIdentity,
 	cleanupRuntimeFixtures,
@@ -221,36 +220,25 @@ test("isolates foreground Bash progress from a failing onUpdate observer", async
 	}
 });
 
-test("contains rejected timeout, abort, and output-limit stops without an unhandled rejection", async () => {
+test("contains rejected timeout and abort stops without an unhandled rejection", async () => {
 	const unhandled: unknown[] = [];
 	const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => unhandled.push(reason);
 	process.on("unhandledRejection", onUnhandled);
 	try {
-		for (const trigger of ["timeout", "abort", "output-limit"] as const) {
+		for (const trigger of ["timeout", "abort"] as const) {
 			const root = temporaryRoot();
 			let terminationAttempts = 0;
-			const runtimeOptions: Partial<ConstructorParameters<typeof BackgroundWorkRuntime>[0]> = {
+			const active = configuredRuntime(root, {
 				signalSupervisor: (supervisor, _identity, signal) => {
 					terminationAttempts += 1;
 					supervisor.kill(signal);
 					throw new Error(`injected ${trigger} stop failure`);
 				},
-			};
-			if (trigger === "output-limit") {
-				Object.assign(runtimeOptions, {
-					outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
-				});
-			}
-			const active = configuredRuntime(root, runtimeOptions);
+			});
 			const controller = new AbortController();
 			const execution = active.executeBash(
 				Object.assign(
-					{
-						command:
-							trigger === "output-limit"
-								? `printf '${"x".repeat(512)}'; sleep 30`
-								: "sleep 30; printf 'TERMINAL\\n'",
-					},
+					{ command: "sleep 30; printf 'TERMINAL\\n'" },
 					trigger === "abort" ? { signal: controller.signal } : undefined,
 					trigger === "timeout" ? { timeoutSeconds: 0.01 } : undefined,
 				),
@@ -267,6 +255,39 @@ test("contains rejected timeout, abort, and output-limit stops without an unhand
 	} finally {
 		process.off("unhandledRejection", onUnhandled);
 	}
+});
+
+test("segments explicit deadlines without treating a timer slice as the deadline", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, { maxTimeoutSliceMs: 50 });
+	const startedAt = performance.now();
+	try {
+		const started = await active.startCommandMonitor({ command: "sleep 30", timeoutSeconds: 0.3 }, context(root));
+		const outcome = await started.outcome;
+		expect(outcome.status).toBe("timed_out");
+		expect(performance.now() - startedAt).toBeGreaterThanOrEqual(250);
+	} finally {
+		await active.shutdown();
+	}
+});
+
+test("continues a command after its durable output retention fills", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, {
+		outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
+	});
+	const result = await active.executeBash(
+		{ command: "head -c 70000 /dev/zero | tr '\\0' x; printf '\\nSURVIVED\\n'" },
+		context(root),
+	);
+	const text = result.content.find((item) => item.type === "text");
+
+	expect(text?.type === "text" ? text.text : "").toContain("SURVIVED");
+	expect(text?.type === "text" ? text.text : "").toContain("earlier output bytes omitted");
+	expect(text?.type === "text" ? text.text : "").not.toContain("output limit");
+	expect(result.details).toBeUndefined();
+	expect(active.snapshot()).toHaveLength(0);
+	await active.shutdown();
 });
 
 test("retries process termination after a transient unresolved stop proof", async () => {

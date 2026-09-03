@@ -104,12 +104,7 @@ export class ShellActivity {
 	}
 
 	bind(): void {
-		const append = (chunk: Buffer) => {
-			const accepted = this.launch.output.append(chunk);
-			if (!accepted && this.launch.output.overflowed && !this.stopReason) {
-				this.requestStop("output_limit", "output limit");
-			}
-		};
+		const append = (chunk: Buffer) => this.launch.output.append(chunk);
 		this.launch.supervisor.output.on("data", append);
 		this.launch.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(chunk));
 		const completion = Effect.tryPromise({
@@ -353,11 +348,23 @@ export class ShellActivity {
 	}
 
 	private armTimeout(seconds: number, source: string): void {
-		if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("Bash timeout must be a positive finite number");
-		const milliseconds = Math.min(2_147_483_647, Math.round(seconds * 1_000));
+		const milliseconds = Math.round(seconds * 1_000);
+		if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+			throw new Error("Bash timeout must be a positive, representable duration");
+		}
 		this.cancelTimeout?.();
 		const task = this.owner.effects.open(
-			Effect.sleep(milliseconds).pipe(Effect.andThen(Effect.sync(() => this.requestStop("timeout", source)))),
+			Effect.gen({ self: this }, function* () {
+				let remaining = milliseconds;
+				let observedAt = Date.now();
+				while (remaining > 0) {
+					yield* Effect.sleep(Math.min(remaining, this.dependencies.maxTimeoutSliceMs));
+					const now = Date.now();
+					remaining -= Math.max(1, now - observedAt);
+					observedAt = now;
+				}
+				this.requestStop("timeout", source);
+			}),
 		);
 		this.cancelTimeout = () => {
 			void task.interrupt();
@@ -547,7 +554,7 @@ export class ShellActivity {
 			parentRunOrigin: this.launch.input.parentRunOrigin ?? "automatic",
 			startedAt: this.startedAt,
 			status,
-			summary: shellOutcomeSummary(this.kind, this.title, this.stopReason, status, code),
+			summary: shellOutcomeSummary(this.kind, this.title, status, code),
 			title: this.title,
 		};
 		if (isRuntimeNumber(code)) Object.assign(outcome, { exitCode: code });

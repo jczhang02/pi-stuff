@@ -34,6 +34,7 @@ import {
 import { reconcileStaleRuns, WorkRunStorage } from "./storage.js";
 
 const DEFAULT_BACKGROUND_AFTER_MS = 120_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const MAX_CONCURRENT_ACTIVITIES = 16;
 const MAX_TERMINAL_RECEIPTS = 64;
 const MAX_NOTIFICATION_OUTCOMES = 16;
@@ -180,9 +181,14 @@ export class BackgroundWorkRuntime {
 		}
 		this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 		this.storage = options.storage ?? new WorkRunStorage(options.cwd, options.sessionId);
+		const maxTimeoutSliceMs = options.maxTimeoutSliceMs ?? MAX_TIMER_DELAY_MS;
+		if (!Number.isSafeInteger(maxTimeoutSliceMs) || maxTimeoutSliceMs <= 0) {
+			throw new Error("Background Work timer slice must be a positive safe integer");
+		}
 		this.shellDependencies = {
 			captureSupervisorIdentity: options.captureSupervisorIdentity ?? captureProcessIdentityWithRetry,
 			cwd: options.cwd,
+			maxTimeoutSliceMs,
 			outputFactory: options.outputFactory ?? ((filePath) => new BoundedOutputFile(filePath)),
 			shellPath: options.shellPath,
 			signalSupervisor: options.signalSupervisor ?? signalVerifiedSupervisor,

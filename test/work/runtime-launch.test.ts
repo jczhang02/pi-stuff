@@ -28,15 +28,21 @@ import {
 
 afterEach(cleanupRuntimeFixtures);
 
-test("never exceeds its byte cap and strips terminal control sequences", () => {
+test("bounds durable output while retaining the newest evidence", () => {
 	const root = temporaryRoot();
 	const path = join(root, "output");
 	const output = new BoundedOutputFile(path, 256);
-	expect(output.append(Buffer.from(`\u001b[31m${"x".repeat(500)}\u001b[0m`))).toBe(false);
+	output.append(Buffer.from(`\u001b[31m${"x".repeat(70_000)}\u001b[0m`));
+	output.append(Buffer.from("LATEST-EVIDENCE\n"));
 	output.close();
+
 	expect(statSync(path).size).toBe(256);
+	expect(output.overflowed).toBeTrue();
+	expect(output.durable).toBeFalse();
+	expect(output.recentText(1_024)).toContain("LATEST-EVIDENCE");
+	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
-	expect(output.recentText()).toContain("output limit reached");
+	expect(output.recentText()).not.toContain("stopped this task");
 });
 
 test("degrades write and close failures to the bounded in-memory tail", () => {

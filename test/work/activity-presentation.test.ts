@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { Check } from "typebox/value";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createSuiteToolRegistrationTracker } from "../../packages/pi-stuff/src/tool-display/registration.js";
@@ -12,6 +13,17 @@ function registeredBash() {
 	if (!bash) throw new Error("Background Work did not register Bash");
 	return { api, bash };
 }
+
+test("explicit Bash and Monitor deadlines are not capped at one day", () => {
+	const { host, tools } = toolRegistrationHarness(["bash"]);
+	registerWorkTools(host, { current: () => undefined });
+	const bash = tools.get("bash");
+	const monitor = tools.get("monitor");
+	if (!bash || !monitor) throw new Error("Background Work tools were not registered");
+
+	expect(Check(bash.parameters, { command: ":", timeout: 3_000_000 })).toBeTrue();
+	expect(Check(monitor.parameters, { source: "file", target: "/tmp/ready", timeout_seconds: 3_000_000 })).toBeTrue();
+});
 
 test("the live Background Work Bash keeps its Code Mode contract", () => {
 	const { host } = toolRegistrationHarness(["bash"]);
