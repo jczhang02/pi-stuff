@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type } from "typebox";
@@ -15,7 +15,22 @@ const REQUEST_RECORD_SCHEMA = Type.Object(
 		monitorCompletedNotification: Type.Boolean(),
 		monitorTimedOutNotification: Type.Boolean(),
 		request: Type.Number(),
+		shellCompletedNotification: Type.Boolean(),
 		tools: Type.Array(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_RECORD_SCHEMA = Type.Object(
+	{
+		message: Type.Optional(
+			Type.Object(
+				{
+					content: Type.Optional(Type.Unknown()),
+					role: Type.Optional(Type.String()),
+				},
+				{ additionalProperties: true },
+			),
+		),
 	},
 	{ additionalProperties: true },
 );
@@ -34,7 +49,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_WORK_PTY_RUNNER) /dev/null
 set work_pty $spawn_out(slave,name)
-must_expect "foreground.pid; sleep 30"
+must_expect "foreground.pid; sleep 3"
 after 1000
 set detached 0
 set continued 0
@@ -51,6 +66,14 @@ for {set attempt 0} {$attempt < 4 && !$detached && !$continued} {incr attempt} {
 set timeout 25
 if {!$detached && !$continued} { puts stderr "Ctrl+B did not detach foreground Bash"; exit 2 }
 if {!$continued} { must_expect "CTRL_B_CONTINUED" }
+must_expect "FOREGROUND_HANDOFF_COMPLETION_REPORT"
+send -- "/tasks\r"
+must_expect "No background work in this session."
+must_expect "Esc close"
+send -- "\\033"
+after 100
+send -- "start stop fixture\r"
+must_expect "STOP_FIXTURE_CONTINUES"
 send -- "/tasks\r"
 must_expect "Tasks"
 must_expect "Shell"
@@ -159,9 +182,11 @@ export async function verifyWorkPty(options: {
 		const visible = stripTerminalControls(output);
 		for (const expected of [
 			"CTRL_B_CONTINUED",
+			"FOREGROUND_HANDOFF_COMPLETION_REPORT",
 			"MAIN_CONTINUES",
 			"MONITOR_RESUMED",
 			"Prepare monitored service",
+			"STOP_FIXTURE_CONTINUES",
 			"Monitor",
 			"Tasks",
 			"Tasks / Shell",
@@ -170,7 +195,12 @@ export async function verifyWorkPty(options: {
 		]) {
 			if (!visible.includes(expected)) fail(`terminal output is missing ${expected}`);
 		}
-		for (const forbidden of ["<background-work-notification>", "<task id=", "UNEXPECTED_REQUEST_"]) {
+		for (const forbidden of [
+			"<background-work-notification>",
+			"<task id=",
+			"MISSING_FOREGROUND_HANDOFF_NOTIFICATION",
+			"UNEXPECTED_REQUEST_",
+		]) {
 			if (visible.includes(forbidden)) fail(`terminal output exposed ${forbidden}`);
 		}
 		const records = (await readFile(requestLog, "utf-8"))
@@ -182,7 +212,7 @@ export async function verifyWorkPty(options: {
 				if (!Check(REQUEST_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
 				return record;
 			});
-		if (records.length < 6) fail(`expected at least 6 model requests, received ${String(records.length)}`);
+		if (records.length < 9) fail(`expected at least 9 model requests, received ${String(records.length)}`);
 		for (const [index, record] of records.entries()) {
 			if (record.request !== index) fail(`request sequence diverged at ${String(index)}`);
 			for (const tool of ["background", "bash", "monitor"]) {
@@ -195,7 +225,30 @@ export async function verifyWorkPty(options: {
 				`Monitor resume did not carry a completed, non-timeout terminal notification: ${JSON.stringify(records)}`,
 			);
 		}
-		for (const path of [join(temporaryDirectory, "foreground.pid"), join(temporaryDirectory, "background.pid")]) {
+		if (!records[2]?.shellCompletedNotification) {
+			fail("foreground handoff continuation did not carry the completed Shell notification");
+		}
+		const sessions = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
+		if (sessions.length !== 1 || !sessions[0]) fail("expected exactly one isolated Session");
+		const transcript = await readFile(join(sessionDirectory, sessions[0]), "utf-8");
+		const reportPersisted = transcript
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.some((line) => {
+				const record = JSON.parse(line);
+				if (!Check(SESSION_RECORD_SCHEMA, record)) fail("Session contains a malformed record");
+				return (
+					record.message?.role === "assistant" &&
+					JSON.stringify(record.message.content)?.includes("FOREGROUND_HANDOFF_COMPLETION_REPORT") === true
+				);
+			});
+		if (!reportPersisted) fail("Session did not persist the foreground handoff Completion Report");
+		for (const path of [
+			join(temporaryDirectory, "foreground.pid"),
+			join(temporaryDirectory, "stop.pid"),
+			join(temporaryDirectory, "background.pid"),
+		]) {
 			const pid = await processFrom(path);
 			if (processExists(pid)) fail(`Pi exit left process ${String(pid)} alive`);
 		}

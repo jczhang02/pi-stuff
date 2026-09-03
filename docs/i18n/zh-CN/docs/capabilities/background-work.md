@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: ea17d7c8aa1e52f02ac5672d62e52ea5ba48a8c564c2b7298e365149fcd88e4e -->
+<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 40fe9658d949f2ddbbdad1694e0ba12d364026df81d1105973ebcca6479606c9 -->
 
 # Background Work
 
@@ -18,6 +18,9 @@ Bash call 可以立即分离：
 }
 ```
 
+`run_in_background` 表示独立工作：其结果会被保留，但不会启动后续 Agent turn。当前工作需要 command result
+时应省略该字段；稍后发生的 Foreground Handoff 会保留这项责任。
+
 Monitor 等待外部证据，并自动报告最终结果：
 
 ```json
@@ -33,17 +36,19 @@ Monitor 等待外部证据，并自动报告最终结果：
 
 ## Background Shell
 
-设置 `run_in_background: true` 可以在启动时分离 Bash。前台 Bash call 也可以用 `Ctrl+B` 分离；工作持续两分钟
-后还未结束时，会自动转到后台。
+设置 `run_in_background: true` 会启动显式独立的 Bash 命令；命令结束时不会唤醒 Agent。前台 Bash call 也可以
+用 `Ctrl+B` 分离；工作持续两分钟后还未结束时，会自动转到后台。该 Foreground Handoff 会在 Shell 成功、失败
+或超时时恢复 Agent。
 
 | Bash 字段 | 含义 |
 | --- | --- |
 | `command` | 要运行的 Shell 命令 |
 | `description` | 可选任务标签，最多 160 个字符 |
-| `run_in_background` | 立即分离 |
+| `run_in_background` | 独立启动并立即分离 |
 | `timeout` | 可选运行上限，0.1 到 86,400 秒 |
 
-Timeout 或 stop 会终止所属进程树。后台输出保持有界，可以通过 activity ID 检查。
+Timeout 或 stop 会终止所属进程树。后台输出保持有界，可以通过 activity ID 检查。不要仅为看守已移交的前台
+Shell 而创建 Monitor；该 Shell 自己拥有 terminal wake。
 
 ## Monitor
 
@@ -79,8 +84,12 @@ Timeout 或 stop 会终止所属进程树。后台输出保持有界，可以通
 
 ## 完成送达
 
-Shell 与 Monitor 结果会自动送达。非 stopped completion 可以唤醒主 Agent 一次；时间接近的多个结果会合并。
-近期结束的 activity 以有界 receipt 保留，供输出查看和幂等 stop 请求使用。
+Shell 与 Monitor 结果会自动送达。Monitor 或已移交的前台 Shell 会在非 stopped terminal outcome 后唤醒主
+Agent 一次；显式独立的 Background Shell 不会唤醒。主动请求的 stop 会同步确认，不会加入第二个 turn。时间
+接近的多个结果会合并。
+
+Foreground Handoff 结束后，Agent 会检查其有界证据、恢复原来已获授权的工作，并仅在没有必需工作剩余时生成
+Completion Report。近期结束的 activity 以有界 receipt 保留，供输出查看和幂等 stop 请求使用。
 
 Runtime 保留最新 64 个 receipt，每批最多 16 个结果。Receipt 只用于近期检查，不是长期任务日志。
 
@@ -102,4 +111,3 @@ Session shutdown 会停止所属 Shell、取消 Monitor、等待有界终止宽�
 - [命令参考](../reference/commands.md#工作控制)
 - [Tool Display](tool-display.md)
 - [Agents](subagents.md)
-

@@ -29,31 +29,49 @@ function signatureResult(result: SearchResult, typed = true) {
 	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }
 
-function definitionResult(result: SearchResult) {
-	return { ...result, path: projectedPath(result), signature: signature(result) };
+function compactTypes(types: string): string {
+	return types
+		.split("\n")
+		.filter((line) => !/^\s*(?:\/\*\*|\*\/?)/u.test(line))
+		.join("\n");
+}
+
+function removeRepeatedDescription(description: DescribeOutput): DescribeOutput {
+	if (!description.description) return description;
+	const prefix = `${description.description}\n\n`;
+	if (!description.types.startsWith(prefix)) return description;
+	return { ...description, types: description.types.slice(prefix.length) };
 }
 
 function compactDescription(description: DescribeOutput) {
 	const compact = {
+		description: description.description,
 		kind: description.kind,
 		path: description.path,
-		types: description.types,
+		types: description.kind === "snippet" ? description.types : compactTypes(description.types),
 	};
 	return description.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }
 
+function describeRequiredResult(result: SearchResult) {
+	const compact = { kind: result.kind, path: projectedPath(result) };
+	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
+}
+
 function encode(
 	search: SearchOutput,
-	representation: "definitions" | "typed-top" | "signatures" | "paths",
+	representation: "definitions" | "typed-top" | "describe-required",
 	results: readonly unknown[],
 	definitions: readonly unknown[] = [],
+	instruction?: string,
 ): string | undefined {
-	const text = JSON.stringify({
+	const payload = {
 		...metadata(search, results.length),
 		definitions,
 		representation,
 		results,
-	});
+	};
+	const text = JSON.stringify(instruction ? { ...payload, instruction } : payload);
 	return text.length <= RESPONSE_CHARS ? text : undefined;
 }
 
@@ -74,21 +92,11 @@ export function projectCodeModeSearchResponse(
 		return projection(search, JSON.stringify({ ...search, definitions: [], representation: "definitions" }), []);
 	}
 
-	const descriptions = results.map((result) => ({ ...describe(result), path: projectedPath(result) }));
-	let fullResults: Array<ReturnType<typeof definitionResult>> = [];
-	let fullDescriptions: DescribeOutput[] = [];
-	let fullText: string | undefined;
-	for (const [index, result] of results.entries()) {
-		const description = descriptions[index];
-		if (!description) break;
-		const nextResults = [...fullResults, definitionResult(result)];
-		const nextDescriptions = [...fullDescriptions, description];
-		const encoded = encode(search, "definitions", nextResults, nextDescriptions);
-		if (!encoded) break;
-		fullResults = nextResults;
-		fullDescriptions = nextDescriptions;
-		fullText = encoded;
-	}
+	const descriptions = results.map((result) =>
+		removeRepeatedDescription({ ...describe(result), path: projectedPath(result) }),
+	);
+	const fullResults = results.map((result) => signatureResult(result));
+	const fullText = encode(search, "definitions", fullResults, descriptions);
 	if (fullText) return projection(search, fullText, fullResults);
 
 	const topDescription = descriptions[0];
@@ -103,7 +111,7 @@ export function projectCodeModeSearchResponse(
 				const compact = signatureResult(result, false);
 				const nextResults = [...typedResults, compact];
 				const encoded = encode(search, "typed-top", nextResults, [typedDescription]);
-				if (!encoded) break;
+				if (!encoded) continue;
 				typedResults = nextResults;
 				typedText = encoded;
 			}
@@ -111,27 +119,18 @@ export function projectCodeModeSearchResponse(
 		}
 	}
 
-	let compactResults: Array<ReturnType<typeof signatureResult>> = [];
-	let compactText: string | undefined;
+	const instruction =
+		"Call codemode.describe with a result's exact path before invoking it; if no result fits, refine the search. Do not guess input fields.";
+	let compactResults: Array<ReturnType<typeof describeRequiredResult>> = [];
+	let compactText = encode(search, "describe-required", compactResults, [], instruction);
+	if (!compactText) throw new Error("Tool Discovery metadata exceeds its response budget.");
 	for (const result of results) {
-		const compact = signatureResult(result, false);
+		const compact = describeRequiredResult(result);
 		const nextResults = [...compactResults, compact];
-		const encoded = encode(search, "signatures", nextResults);
-		if (!encoded) break;
+		const encoded = encode(search, "describe-required", nextResults, [], instruction);
+		if (!encoded) continue;
 		compactResults = nextResults;
 		compactText = encoded;
 	}
-	if (compactText) return projection(search, compactText, compactResults);
-
-	let pathResults: Array<{ readonly path: string }> = [];
-	let pathText = encode(search, "paths", pathResults);
-	if (!pathText) throw new Error("Tool Discovery metadata exceeds its response budget.");
-	for (const result of results) {
-		const nextResults = [...pathResults, { path: projectedPath(result) }];
-		const encoded = encode(search, "paths", nextResults);
-		if (!encoded) break;
-		pathResults = nextResults;
-		pathText = encoded;
-	}
-	return projection(search, pathText, pathResults);
+	return projection(search, compactText, compactResults);
 }

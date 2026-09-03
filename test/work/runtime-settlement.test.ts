@@ -165,7 +165,6 @@ test("retries a transient terminal notification failure without duplicating deli
 		await active.executeBash(
 			{
 				command: "sleep 0.1; printf 'RETRY-DELIVERY\\n'",
-				runInBackground: true,
 			},
 			context(root),
 		);
@@ -176,7 +175,9 @@ test("retries a transient terminal notification failure without duplicating deli
 		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const delivery = messages[0] as {
 			message: { content: string; details: { outcomes: Array<{ outputPath?: string }> } };
+			options: { deliverAs: string; triggerTurn: boolean };
 		};
+		expect(delivery.options).toEqual({ deliverAs: "steer", triggerTurn: true });
 		expect(delivery.message.content).toContain("<output_file>");
 		const outputPath = delivery.message.details.outcomes[0]?.outputPath;
 		expect(outputPath).toBeString();

@@ -228,6 +228,18 @@ _Avoid_: Todo, daemon, scheduler
 A Host-session-owned operating-system command that continues independently after an explicit background launch or foreground detach. It ends with the current Host session and never becomes a cross-session daemon.
 _Avoid_: Job, service
 
+**Foreground Handoff**:
+The transition of a still-running foreground Bash invocation into a Background Shell, whether requested with `Ctrl+B`
+or applied by the runtime threshold. It changes execution placement but preserves the current user work's obligation to
+receive and reconcile the terminal outcome.
+_Avoid_: Implicit background launch, fire-and-forget
+
 **Monitor**:
 A one-shot wait for one explicit observable condition in Background Work, such as a command result, log match, file state, or HTTP response. It is not a polling conversation, recurring loop, or schedule.
 _Avoid_: Watcher, cron, polling task
+
+**Completion Report**:
+A user-facing Assistant response that states whether the requested work completed, cites the decisive terminal
+evidence, and names any remaining work. A raw Background Work outcome notification is delivery input, not a Completion
+Report.
+_Avoid_: Completion notification, Background command row

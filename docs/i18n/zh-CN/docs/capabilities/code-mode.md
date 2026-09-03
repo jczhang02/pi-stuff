@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: 9ac98dbde233e17cd056a18d62079492a2586460bb2e0b541cae851378867331 -->
+<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: 0a742caf243e864a51ffe974a73622a36fb23eeb22f2597dc266817b0697e754 -->
 
 # Code Mode
 
@@ -43,7 +43,10 @@ text(pkg);
 Code Mode 开启后，活动 Package-owned Tool 会移到 `codemode({ code })` 之后。单独安装的 Tool 保持 top-level。
 
 `codemode.search(query)` 与 `codemode.describe(path)` 检查本地 catalog，不把整个 catalog 放进 model history。
-Top-level `tool_search` Tool 读取同一个 ranked catalog。
+Top-level `tool_search` Tool 读取同一个 ranked catalog。其 response 不超过 4,000 个字符：完整定义放不下时，
+只保留一次排名第一的 Tool description，并附上紧凑的结构类型；两者仍放不下时，明确要求调用
+`codemode.describe(path)`，而不是给出不完整的可调用契约。如果连一条 result path 都放不下，则要求 model
+缩小搜索范围。Context compaction 后如果看不到确切输入字段，应重新 describe method，不能猜字段名。
 
 可用输出 helper 包括 `text`、`image`、`generatedImage`、`audio`、`store`、`load` 与 `notify`。
 直接返回完整的图像 Tool result，可以保留其原生图像路径。

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, AssistantMessage, Model, UserMessage } from "@earendil-works/pi-ai";
 import type {
+	AgentEndEvent,
 	ContextEvent,
+	ExtensionAPI,
+	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionEvent,
 	MessageEndEvent,
@@ -13,13 +16,16 @@ import type {
 	SessionEntry,
 	SessionShutdownEvent,
 	SessionStartEvent,
+	ToolDefinition,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
+import type { TSchema } from "typebox";
 import type {
 	MagicContextEventMap,
 	MagicContextEventName,
 } from "../../packages/pi-stuff/src/context-management/magic-context-types.js";
+import type { MagicModule } from "../../packages/pi-stuff/src/context-management/magic-runtime.js";
 import { magicContextWorkerFactory } from "../../packages/pi-stuff/src/context-management/magic-worker-client.js";
 import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-management/magic-worker-context.js";
 import {
@@ -35,7 +41,7 @@ import {
 } from "../../packages/pi-stuff/src/context-management/magic-worker-protocol.js";
 import { installEffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
-import { createExtensionContext } from "../fixtures/extension-context.js";
+import { createExtensionCommandContext, createExtensionContext } from "../fixtures/extension-context.js";
 
 const MODEL: Model<Api> = {
 	api: "openai-completions",
@@ -100,6 +106,28 @@ function messageEntry(id: string, message: AssistantMessage | UserMessage, paren
 	return { id, message, parentId, timestamp: new Date().toISOString(), type: "message" };
 }
 
+function beforeCompactEvent(
+	firstKeptEntryId = "worker-entry",
+	signal = new AbortController().signal,
+): SessionBeforeCompactEvent {
+	return {
+		branchEntries: [],
+		preparation: {
+			fileOps: { edited: new Set(), read: new Set(), written: new Set() },
+			firstKeptEntryId,
+			isSplitTurn: false,
+			messagesToSummarize: [],
+			settings: { enabled: true, keepRecentTokens: 8_192, reserveTokens: 16_384 },
+			tokensBefore: 0,
+			turnPrefixMessages: [],
+		},
+		reason: "manual",
+		signal,
+		type: "session_before_compact",
+		willRetry: false,
+	};
+}
+
 async function createMagicWorkerHarness() {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-magic-worker-"));
 	const configDirectory = join(temporaryDirectory, "config", "cortexkit");
@@ -136,8 +164,8 @@ async function createMagicWorkerHarness() {
 	});
 	delete process.env["XDG_DATA_HOME"];
 	const handlers = new Map<string, WorkerHandler[]>();
-	const registeredTools = new Set<string>();
-	const commands = new Set<string>();
+	const registeredTools = new Map<string, ToolDefinition<TSchema, unknown>>();
+	const commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]>();
 	const state: WorkerHarnessState = {
 		branchReads: 0,
 		entryReads: 0,
@@ -146,11 +174,16 @@ async function createMagicWorkerHarness() {
 	};
 	const pi = createExtensionApi({
 		on: captureExtensionHandlers(handlers),
-		registerCommand: (name) => commands.add(name),
-		registerTool: (tool) => registeredTools.add(tool.name),
+		registerCommand: (name, definition) => {
+			commands.set(name, definition.handler);
+		},
+		registerTool: (tool) => {
+			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
+			registeredTools.set(tool.name, tool as ToolDefinition<TSchema, unknown>);
+		},
 	});
-	const contextForSession = (id: string): ExtensionContext =>
-		createExtensionContext({
+	const contextForSession = (id: string) =>
+		createExtensionCommandContext({
 			cwd: temporaryDirectory,
 			getContextUsage: () => ({ contextWindow: 128_000, percent: 0, tokens: 0 }),
 			hasUI: false,
@@ -188,7 +221,76 @@ async function createMagicWorkerHarness() {
 	};
 }
 
-test("the isolated engine keeps ordinary turns incremental and event payloads clone-safe", async () => {
+async function cancellationOutcome(operation: PromiseLike<unknown>): Promise<"cancelled" | "completed" | "timed-out"> {
+	return Promise.race([
+		Promise.resolve(operation).then(
+			() => "completed" as const,
+			() => "cancelled" as const,
+		),
+		Bun.sleep(250).then(() => "timed-out" as const),
+	]);
+}
+
+async function verifyOwnedCancellation(
+	harness: Awaited<ReturnType<typeof createMagicWorkerHarness>>,
+	activeContext: ExtensionCommandContext,
+): Promise<void> {
+	const { commands, registeredTools } = harness;
+	const augmentationCommand = commands.get("ctx-aug");
+	if (!augmentationCommand) throw new Error("ctx-aug was not registered");
+	expect(await cancellationOutcome(augmentationCommand("", activeContext))).toBe("cancelled");
+
+	const cancelledTool = new AbortController();
+	cancelledTool.abort(new Error("Tool consumer cancelled"));
+	const searchTool = registeredTools.get("ctx_search");
+	if (!searchTool) throw new Error("ctx_search was not registered");
+	expect(
+		await cancellationOutcome(
+			searchTool.execute(
+				"cancelled-context-search",
+				{ query: "中文检索标记" },
+				cancelledTool.signal,
+				undefined,
+				activeContext,
+			),
+		),
+	).toBe("cancelled");
+	await commands.get("ctx-status")?.("", activeContext);
+}
+
+test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {
+	const harness = await createMagicWorkerHarness();
+	const { commands, contextForSession, handlers, pi } = harness;
+	try {
+		const packageRoot = join(import.meta.dir, "../../packages/pi-stuff");
+		const directModule: MagicModule = await import(Bun.resolveSync("@cortexkit/pi-magic-context", packageRoot));
+		await directModule.default(pi);
+		const context = contextForSession("direct-cancellation-session");
+		await requireHandler(handlers, "session_start")({ type: "session_start", reason: "startup" }, context);
+
+		const eventSignal = new AbortController();
+		eventSignal.abort(new Error("compaction consumer cancelled"));
+		expect(
+			await requireHandler(handlers, "session_before_compact")(
+				beforeCompactEvent("direct-entry", eventSignal.signal),
+				context,
+			),
+		).toEqual({ cancel: true });
+
+		context.abort();
+		const statusCommand = commands.get("ctx-status");
+		expect(statusCommand).toBeDefined();
+		await statusCommand?.("", context);
+		const assistant = assistantMessage("DIRECT_INTERRUPTED_TURN");
+		await requireHandler(handlers, "message_end")({ type: "message_end", message: assistant }, context);
+		await requireHandler(handlers, "agent_end")({ type: "agent_end", messages: [assistant] }, context);
+		await requireHandler(handlers, "session_shutdown")({ type: "session_shutdown", reason: "quit" }, context);
+	} finally {
+		await harness.cleanup();
+	}
+});
+
+test("the isolated engine matches pinned cancellation and keeps ordinary turns incremental", async () => {
 	const harness = await createMagicWorkerHarness();
 	const { commands, contextForSession, handlers, magicLog, pi, registeredTools, state } = harness;
 	const context = contextForSession("worker-test-session");
@@ -203,39 +305,45 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 		expect(handlers.has("context")).toBeTrue();
 		expect(handlers.has("session_start")).toBeTrue();
 		expect(handlers.has("session_shutdown")).toBeTrue();
-		expect([...registeredTools].sort()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
+		expect([...registeredTools.keys()].sort()).toEqual([
+			"ctx_expand",
+			"ctx_memory",
+			"ctx_note",
+			"ctx_reduce",
+			"ctx_search",
+		]);
 		expect(commands.has("ctx-status")).toBeTrue();
 
 		const sessionStart: SessionStartEvent = { reason: "resume", type: "session_start" };
 		await requireHandler(handlers, "session_start")(sessionStart, context);
 		expect(state.branchReads).toBe(1);
 
-		const beforeCompact: SessionBeforeCompactEvent = {
-			branchEntries: [],
-			preparation: {
-				fileOps: { edited: new Set(), read: new Set(), written: new Set() },
-				firstKeptEntryId: "worker-entry",
-				isSplitTurn: false,
-				messagesToSummarize: [],
-				settings: { enabled: true, keepRecentTokens: 8_192, reserveTokens: 16_384 },
-				tokensBefore: 0,
-				turnPrefixMessages: [],
-			},
-			reason: "manual",
-			signal: new AbortController().signal,
-			type: "session_before_compact",
-			willRetry: false,
-		};
+		const beforeCompact = beforeCompactEvent();
 		expect(await requireHandler(handlers, "session_before_compact")(beforeCompact, context)).toEqual({
 			cancel: true,
 		});
 		expect(state.branchReads).toBe(1);
 		const cancelled = new AbortController();
 		cancelled.abort(new Error("already cancelled"));
-		await expect(
-			requireHandler(handlers, "session_before_compact")({ ...beforeCompact, signal: cancelled.signal }, context),
-		).rejects.toThrow("already cancelled");
+		expect(
+			await requireHandler(handlers, "session_before_compact")(
+				{ ...beforeCompact, signal: cancelled.signal },
+				context,
+			),
+		).toEqual({ cancel: true });
 
+		const inFlightTagged = assistantMessage("§1§ WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");
+		const inFlightProjected = assistantMessage("WORKER_IN_FLIGHT_INTERRUPT_EVIDENCE");
+		inFlightProjected.timestamp = inFlightTagged.timestamp;
+		const inFlightEvent = requireHandler(handlers, "message_end")(
+			{ message: inFlightTagged, type: "message_end" },
+			context,
+		);
+		context.abort();
+		expect(await inFlightEvent).toEqual({ message: inFlightProjected });
+		const statusCommand = commands.get("ctx-status");
+		expect(statusCommand).toBeDefined();
+		await statusCommand?.("", context);
 		const taggedMessage = assistantMessage("§1§ WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		const projectedMessage = assistantMessage("WORKER_INCREMENTAL_INDEX_EVIDENCE");
 		projectedMessage.timestamp = taggedMessage.timestamp;
@@ -285,6 +393,10 @@ test("the isolated engine keeps ordinary turns incremental and event payloads cl
 			};
 			await requireHandler(handlers, "tool_result")(toolResult, context);
 		}
+
+		const agentEnd: AgentEndEvent = { messages: [projectedMessage], type: "agent_end" };
+		await requireHandler(handlers, "agent_end")(agentEnd, context);
+		await verifyOwnedCancellation(harness, context);
 
 		const beforeSwitch: SessionBeforeSwitchEvent = { reason: "resume", type: "session_before_switch" };
 		await requireHandler(handlers, "session_before_switch")(beforeSwitch, context);

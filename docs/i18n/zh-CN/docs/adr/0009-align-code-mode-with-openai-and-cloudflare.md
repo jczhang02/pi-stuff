@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 15684360dfb8f3dbd5075c7398c71dfea0de5d8f46a2d02e08c835fea11b8265 -->
+<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 4c1ef6dfa839fbbccc30a78d8439b5649df2aa9da274f239c735e1ef4f17759e -->
 
 ---
 status: accepted
@@ -61,7 +61,7 @@ OpenAI 的 Programmatic Tool Calling 形式是规范形式：
 
 Pi 0.84.2 以 `codemode({ code })` 传输源码，因为它的公开工具 API 不暴露自由格式源码工具。该包装器不会建立第二种 JavaScript 方言。
 
-Cloudflare 的 `async () => { return value; }` 形式和旧的 `suite.*` 命名空间继续作为兼容输入。只有程序没有调用输出辅助函数时，返回值才会输出，因此不会重复输出。`tool_search`、`codemode.search` 和 `codemode.describe` 读取同一个活跃本地目录和确定性排名。发现至少要求一个词法查询 token 匹配，绝不会用无关工具替代。顶层响应限制为 4,000 个字符，并依次降级为：带完整定义的有类型最高匹配及紧凑签名、仅签名、仅路径；`codemode.describe` 保留完整生成的 TypeScript 输入与结果类型。完整嵌套 Schema 留在 V8 内部，绝不进入 Provider 历史。
+Cloudflare 的 `async () => { return value; }` 形式和旧的 `suite.*` 命名空间继续作为兼容输入。只有程序没有调用输出辅助函数时，返回值才会输出，因此不会重复输出。`tool_search`、`codemode.search` 和 `codemode.describe` 读取同一个活跃本地目录和确定性排名。发现至少要求一个词法查询 token 匹配，绝不会用无关工具替代。顶层响应限制为 4,000 个字符。它首先返回完整定义；完整定义放不下时，只保留一次排名第一的 Tool description，移除该 Tool 结构化 TypeScript 类型中生成的 JSDoc，并为其他匹配保留紧凑签名。排名第一的 description 与紧凑类型仍放不下时，response 会要求调用 `codemode.describe(path)`，且不暴露无类型的可调用签名。如果连一条完整 result path 都放不下，则要求 model 缩小搜索范围。这样可以保留调用契约，避免只留下看似可选的字段而丢失必填组合。`codemode.describe` 保留完整生成的 TypeScript 输入与结果类型。完整嵌套 Schema 留在 V8 内部，绝不进入 Provider 历史。
 
 Pi Stuff 复用 `@cloudflare/codemode` 0.5.1 中与运行时无关的部分：源码规范化、Connector 搜索与描述、名称清理、JSON Schema 到 TypeScript 转换、代码片段、二进制与 bigint 编解码器、稳定重放序列化，以及聚焦的上游测试。精确内嵌源码、提交、软件包完整性、许可证和本地差异均记录在代码模式上游声明中。不导入仅适用于 Workers 的执行和 Durable Object 存储。
 

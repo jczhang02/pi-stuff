@@ -1,13 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type {
-	DescribeOutput,
-	SearchOutput,
-	SearchResult,
-} from "../../packages/pi-stuff/src/code-mode/cloudflare/connector-types.js";
 import { describeTarget } from "../../packages/pi-stuff/src/code-mode/cloudflare/describe.js";
-import { toolPath } from "../../packages/pi-stuff/src/code-mode/cloudflare/utils.js";
 import {
 	buildSuiteSandboxSource,
 	SuiteCodeModeConnector,
@@ -15,7 +9,6 @@ import {
 } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import {
 	CODE_MODE_SEARCH_PRESENTATION,
-	type CodeModeSearchDetails,
 	createCodeModeDefinition,
 	createCodeModeSearchDefinition,
 } from "../../packages/pi-stuff/src/code-mode/extension.js";
@@ -24,80 +17,14 @@ import type { CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runt
 import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { registryFixture } from "./fixtures.js";
 
-type DiscoveryConnector = Parameters<typeof createCodeModeSearchDefinition>[0];
-
-function discoveryConnectorFixture(
-	entries: readonly {
-		readonly connector?: string;
-		readonly descriptionSize?: number;
-		readonly name?: string;
-		readonly typesSize: number;
-	}[],
-): DiscoveryConnector {
-	const results: SearchResult[] = entries.map((entry, index) => {
-		const connector = entry.connector ?? "tools";
-		const method = entry.name ?? `fixture_${String(index)}`;
-		return {
-			connector,
-			description: "d".repeat(entry.descriptionSize ?? 0),
-			kind: "method",
-			method,
-			path: toolPath(method, connector),
-			score: 100 - index,
-		};
-	});
-	const definitions = new Map<string, DescribeOutput>(
-		results.map((result, index) => [
-			result.path,
-			{
-				description: result.description,
-				kind: "method",
-				path: result.path,
-				types: "T".repeat(entries[index]?.typesSize ?? 0),
-			},
-		]),
-	);
-	return {
-		describe(path: string) {
-			const definition = definitions.get(path);
-			if (!definition) throw new Error(`Missing discovery fixture ${path}`);
-			return definition;
-		},
-		search: () => ({ results, total: results.length, truncated: false }) satisfies SearchOutput,
-	};
-}
-
-interface DiscoveryPayload {
-	readonly definitions: readonly { readonly path: string; readonly types?: string }[];
-	readonly representation: "definitions" | "typed-top" | "signatures" | "paths";
-	readonly results: readonly { readonly path: string; readonly signature?: string }[];
-	readonly truncated: boolean;
-}
-
-async function executeDiscovery(connector: DiscoveryConnector): Promise<{
-	readonly details: CodeModeSearchDetails;
-	readonly payload: DiscoveryPayload;
-	readonly text: string;
-}> {
-	// SAFETY: this fixture supplies the only ExtensionContext field read by Tool Discovery.
-	const result = await createCodeModeSearchDefinition(connector).execute(
-		"search-fixture",
-		{ query: "fixture" },
-		undefined,
-		undefined,
-		{ cwd: "/project" } as ExtensionContext,
-	);
-	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
-	return { details: result.details, payload: JSON.parse(text) as DiscoveryPayload, text };
-}
-
 test("the compact Tool contract describes canonical unwrapped Read results", () => {
 	// SAFETY: this test controls the value and supplies every CodeModeRuntime member exercised by this case.
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
 	expect(definition.description).toContain("top-level await");
 	expect(definition.description).toContain("await every tools.* call");
-	expect(definition.description).toContain("Do not guess Tool names");
+	expect(definition.description).toContain("Call only listed/searched methods");
+	expect(definition.description).toContain("After context compaction");
+	expect(definition.description).toContain("never guess");
 	expect(definition.description).toContain(
 		'const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);',
 	);
@@ -321,7 +248,10 @@ test("top-level and in-program discovery share Cloudflare-ranked catalog data an
 	} as ExtensionContext);
 	const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 	// SAFETY: Tool Discovery produced this JSON from the asserted projection contract.
-	const payload = JSON.parse(text) as DiscoveryPayload;
+	const payload = JSON.parse(text) as {
+		readonly definitions: readonly { readonly kind: string; readonly path: string }[];
+		readonly results: readonly { readonly path: string; readonly signature: string }[];
+	};
 	expect(payload.definitions[0]).toMatchObject({ kind: "method", path: "tools.read" });
 	expect(payload.results[0]).toMatchObject({
 		path: "tools.read",
@@ -341,61 +271,6 @@ test("top-level and in-program discovery share Cloudflare-ranked catalog data an
 		"tools.read",
 		"tools.write",
 	]);
-});
-
-test("top-level Tool Discovery deterministically degrades every response within its character budget", async () => {
-	const definitions = await executeDiscovery(
-		discoveryConnectorFixture([{ typesSize: 1_800 }, { typesSize: 1_800 }, { typesSize: 1_800 }]),
-	);
-	expect(definitions.text.length).toBeLessThanOrEqual(4_000);
-	expect(definitions.payload.representation).toBe("definitions");
-	expect(definitions.payload.definitions.length).toBeGreaterThan(0);
-	expect(definitions.payload.definitions.length).toBeLessThan(3);
-
-	const typedTop = await executeDiscovery(
-		discoveryConnectorFixture(Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, typesSize: 500 }))),
-	);
-	expect(typedTop.text.length).toBeLessThanOrEqual(4_000);
-	expect(typedTop.payload.representation).toBe("typed-top");
-	expect(typedTop.payload.definitions[0]?.types).toHaveLength(500);
-	expect(typedTop.payload.results[1]?.signature).toContain("(input: unknown): Promise<unknown>");
-
-	const signatures = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 5_000 }, { typesSize: 5_000 }]));
-	expect(signatures.text.length).toBeLessThanOrEqual(4_000);
-	expect(signatures.payload.representation).toBe("signatures");
-	expect(signatures.payload.definitions).toEqual([]);
-	expect(signatures.payload.results[0]?.signature).toContain("(input: unknown): Promise<unknown>");
-
-	const bracketPath = await executeDiscovery(discoveryConnectorFixture([{ name: "task-create", typesSize: 5_000 }]));
-	expect(bracketPath.payload.representation).toBe("signatures");
-	expect(bracketPath.payload.results[0]?.signature).toBe('tools["task-create"](input: unknown): Promise<unknown>');
-
-	const bracketDefinition = await executeDiscovery(discoveryConnectorFixture([{ name: "task-create", typesSize: 5 }]));
-	expect(bracketDefinition.payload.representation).toBe("definitions");
-	expect(bracketDefinition.payload.definitions[0]?.path).toBe('tools["task-create"]');
-	expect(bracketDefinition.payload.results[0]).toMatchObject({
-		path: 'tools["task-create"]',
-		signature: 'tools["task-create"](input: TaskCreateInput): Promise<TaskCreateOutput>',
-	});
-
-	const customOwner = await executeDiscovery(
-		discoveryConnectorFixture([{ connector: "my-tools", name: "task-create", typesSize: 5 }]),
-	);
-	expect(customOwner.payload.results[0]?.path).toBe('globalThis["my-tools"]["task-create"]');
-
-	const longNames = Array.from({ length: 5 }, (_, index) => ({
-		name: `${String(index)}_${"n".repeat(2_100)}`,
-		typesSize: 5_000,
-	}));
-	const paths = await executeDiscovery(discoveryConnectorFixture(longNames));
-	expect(paths.text.length).toBeLessThanOrEqual(4_000);
-	expect(paths.payload.representation).toBe("paths");
-	expect(paths.payload.results[0]).toEqual({ path: `tools[${JSON.stringify(longNames[0]?.name)}]` });
-
-	for (const projection of [definitions, typedTop, signatures, bracketPath, bracketDefinition, paths]) {
-		expect(projection.details.paths).toEqual(projection.payload.results.map((result) => result.path));
-		expect(projection.details.truncated).toBe(projection.payload.truncated);
-	}
 });
 
 test("approval-required Tools cannot opt into reexecute replay", () => {

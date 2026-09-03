@@ -30,6 +30,8 @@ function fixtureStream(context: Context) {
 	const transcript = JSON.stringify(context.messages ?? []);
 	const monitorCompletedNotification =
 		transcript.includes('kind=\\"monitor\\"') && transcript.includes('status=\\"completed\\"');
+	const shellCompletedNotification =
+		transcript.includes('kind=\\"shell\\"') && transcript.includes('status=\\"completed\\"');
 	const logPath = process.env["PI_STUFF_WORK_PTY_LOG"];
 	if (logPath) {
 		appendFileSync(
@@ -39,6 +41,7 @@ function fixtureStream(context: Context) {
 				monitorTimedOutNotification:
 					transcript.includes('kind=\\"monitor\\"') && transcript.includes('status=\\"timed_out\\"'),
 				request: current,
+				shellCompletedNotification,
 				tools,
 			})}\n`,
 		);
@@ -46,19 +49,33 @@ function fixtureStream(context: Context) {
 	switch (current) {
 		case 0:
 			return toolStream("bash", "work-foreground", {
-				command: "echo $$ > foreground.pid; sleep 30",
+				command: "echo $$ > foreground.pid; sleep 3; printf FOREGROUND_SHELL_DONE",
 				description: "Foreground handoff fixture",
 			});
 		case 1:
 			return textStream("CTRL_B_CONTINUED");
 		case 2:
+			return textStream(
+				shellCompletedNotification
+					? "FOREGROUND_HANDOFF_COMPLETION_REPORT"
+					: "MISSING_FOREGROUND_HANDOFF_NOTIFICATION",
+			);
+		case 3:
+			return toolStream("bash", "work-stop", {
+				command: "echo $$ > stop.pid; sleep 30",
+				description: "Stop control fixture",
+				run_in_background: true,
+			});
+		case 4:
+			return textStream("STOP_FIXTURE_CONTINUES");
+		case 5:
 			return toolStream("bash", "work-background", {
 				command:
 					"echo $$ > background.pid; while [ ! -f release.flag ]; do sleep 0.1; done; printf READY > ready.flag; printf BG_DONE",
 				description: "Prepare monitored service",
 				run_in_background: true,
 			});
-		case 3:
+		case 6:
 			return toolStream("monitor", "work-monitor", {
 				description: "Wait for service readiness",
 				interval_seconds: 0.1,
@@ -67,10 +84,10 @@ function fixtureStream(context: Context) {
 				target: "ready.flag",
 				timeout_seconds: 22,
 			});
-		case 4:
+		case 7:
 			return textStream("MAIN_CONTINUES");
 		default:
-			if (current >= 5) {
+			if (current >= 8) {
 				return textStream(monitorCompletedNotification ? "MONITOR_RESUMED" : "DRAINING_PENDING_NOTIFICATION");
 			}
 			return textStream(`UNEXPECTED_REQUEST_${String(current)}`);

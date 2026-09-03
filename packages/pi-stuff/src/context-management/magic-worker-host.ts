@@ -55,21 +55,16 @@ export function snapshotMagicWorkerContext(ctx: ExtensionContext): MagicWorkerCo
 	};
 }
 
-export interface MagicWorkerEventSnapshot {
-	readonly input: MagicWorkerEventInput;
-	readonly signal?: AbortSignal;
-}
-
-export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEventSnapshot {
+export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEventInput {
 	switch (event.type) {
 		case "agent_end":
-			return { input: { event, name: "agent_end", type: "event" } };
+			return { event, name: "agent_end", type: "event" };
 		case "before_agent_start":
-			return { input: { event, name: "before_agent_start", type: "event" } };
+			return { event, name: "before_agent_start", type: "event" };
 		case "context":
-			return { input: { event, name: "context", type: "event" } };
+			return { event, name: "context", type: "event" };
 		case "message_end":
-			return { input: { event, name: "message_end", type: "event" } };
+			return { event, name: "message_end", type: "event" };
 		case "session_before_compact": {
 			const compactEvent = event.customInstructions
 				? {
@@ -87,45 +82,38 @@ export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEven
 						type: event.type,
 						willRetry: event.willRetry,
 					};
-			return {
-				input: { event: compactEvent, name: "session_before_compact", type: "event" },
-				signal: event.signal,
-			};
+			return { event: compactEvent, name: "session_before_compact", type: "event" };
 		}
 		case "session_before_switch":
-			return { input: { event, name: "session_before_switch", type: "event" } };
+			return { event, name: "session_before_switch", type: "event" };
 		case "session_compact":
-			return { input: { event, name: "session_compact", type: "event" } };
+			return { event, name: "session_compact", type: "event" };
 		case "session_shutdown":
-			return { input: { event, name: "session_shutdown", type: "event" } };
+			return { event, name: "session_shutdown", type: "event" };
 		case "session_start":
-			return { input: { event, name: "session_start", type: "event" } };
+			return { event, name: "session_start", type: "event" };
 		case "tool_execution_end":
 			return {
-				input: {
-					event: {
-						isError: event.isError,
-						result: undefined,
-						toolCallId: event.toolCallId,
-						toolName: event.toolName,
-						type: event.type,
-					},
-					name: "tool_execution_end",
-					type: "event",
+				event: {
+					isError: event.isError,
+					result: undefined,
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+					type: event.type,
 				},
+				name: "tool_execution_end",
+				type: "event",
 			};
 		case "tool_execution_start":
 			return {
-				input: {
-					event: {
-						args: parseJsonObject(JSON.stringify(event.args)),
-						toolCallId: event.toolCallId,
-						toolName: event.toolName,
-						type: event.type,
-					},
-					name: "tool_execution_start",
-					type: "event",
+				event: {
+					args: parseJsonObject(JSON.stringify(event.args)),
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+					type: event.type,
 				},
+				name: "tool_execution_start",
+				type: "event",
 			};
 		case "tool_result": {
 			const toolResult = {
@@ -138,11 +126,9 @@ export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEven
 				type: event.type,
 			};
 			return {
-				input: {
-					event: event.usage ? { ...toolResult, usage: event.usage } : toolResult,
-					name: "tool_result",
-					type: "event",
-				},
+				event: event.usage ? { ...toolResult, usage: event.usage } : toolResult,
+				name: "tool_result",
+				type: "event",
 			};
 		}
 		default:

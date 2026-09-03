@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 491758b54887ee1ec4f019cd8451cb0e109713b0d223ed4c6af2d6a909cc8383 -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: fca42013df406541ecf7f8983a1df58d239c9776d787fdd81f1323769197c378 -->
 
 # Agents
 
@@ -32,7 +32,8 @@
 
 - 按明确优先级发现固定目录、settings 扫描目录、symlink 目录与 Package 中的 Agent 定义。
 - 支持逐 Agent Tool allowlist 与 exclusion，不改变 parent Host。
-- 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call。
+- 支持单个 Agent、并行 grouped task，以及 status 或生命周期 control call；`agent` 选择 launch definition，
+  `id` 标识已有 Agent Target。
 - 默认后台运行；前台模式会等待结果。
 - 送达紧凑 completion，不主动启动另一轮主 Agent。
 - 应用并发、总 launch、嵌套、智能逐 Tool 与运行时间限制，不设置固定 turn 截止线。

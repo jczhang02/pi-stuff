@@ -312,6 +312,7 @@ test("degrades immediately when the active Context engine reports a fatal failur
 					magicApi.on("context", () => ({
 						messages: [taggedMessage("<session-history>cached before failure</session-history>")],
 					}));
+					magicApi.on("session_shutdown", () => new Promise<void>((resolve) => setImmediate(resolve)));
 					magicApi.registerTool({
 						description: "Search Context",
 						execute: async () => ({ content: [{ type: "text", text: "result" }], details: undefined }),
@@ -330,6 +331,7 @@ test("degrades immediately when the active Context engine reports a fatal failur
 	expect(api.getActiveTools()).toContain("ctx_search");
 	expect(reportFatal).toBeDefined();
 
+	ctx.abort();
 	reportFatal?.(new Error("Context engine worker crashed"));
 	await Bun.sleep(10);
 

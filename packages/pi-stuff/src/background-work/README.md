@@ -14,8 +14,9 @@ Background Shells and one-shot Monitors that report completion while the main Ag
 
 ## Quick start
 
-Ask the Agent to launch Bash with `run_in_background: true` or to create a `monitor` for command, file, log, or HTTP
-evidence. Then open:
+Ask the Agent to use `run_in_background: true` for an independent Bash command, or to create a `monitor` for command,
+file, log, or HTTP evidence. Keep a required Bash command in the foreground; a later handoff resumes the Agent when it
+settles. Then open:
 
 ```text
 /tasks
@@ -26,6 +27,7 @@ The dialog lists current work, follows bounded output, and stops activities owne
 ## Highlights
 
 - Detaches Bash immediately, through `Ctrl+B`, or after a two-minute foreground handoff.
+- Keeps explicit background launches independent while foreground handoffs resume the main Agent at terminal outcome.
 - Monitors exact success or failure text across four source types.
 - Delivers terminal outcomes automatically without conversational polling.
 - Keeps the newest 64 bounded completion receipts for recent inspection.

@@ -16,6 +16,9 @@ A Bash call can detach immediately:
 }
 ```
 
+`run_in_background` denotes independent work: its outcome is retained but does not start a later Agent turn. Omit it
+when the command result is required for the current work; a later Foreground Handoff preserves that responsibility.
+
 A Monitor waits for external evidence and reports its terminal result automatically:
 
 ```json
@@ -32,18 +35,19 @@ conversation.
 
 ## Background Shells
 
-Set `run_in_background: true` to detach Bash at launch. A foreground Bash call can also be detached with `Ctrl+B`, and
-work still running after two minutes moves to the background automatically.
+Set `run_in_background: true` to launch an explicitly independent Bash command that does not wake the Agent when it
+settles. A foreground Bash call can also be detached with `Ctrl+B`, and work still running after two minutes moves to
+the background automatically. That Foreground Handoff resumes the Agent when the Shell succeeds, fails, or times out.
 
 | Bash field | Meaning |
 | --- | --- |
 | `command` | Shell command to run |
 | `description` | Optional task label, up to 160 characters |
-| `run_in_background` | Detach immediately |
+| `run_in_background` | Launch independently and detach immediately |
 | `timeout` | Optional runtime limit from 0.1 to 86,400 seconds |
 
 A timeout or stop terminates the owned process tree. Background output remains bounded and can be inspected by activity
-ID.
+ID. Do not create a Monitor merely to watch a handed-off foreground Shell; that Shell owns its terminal wake.
 
 ## Monitors
 
@@ -81,9 +85,13 @@ leaves the live list after its terminal result is delivered.
 
 ## Completion delivery
 
-Shell and Monitor outcomes are delivered automatically. Non-stopped completion can wake the main Agent once; multiple
-nearby outcomes are batched. Recently finished activities remain available as bounded receipts for output and
-idempotent stop requests.
+Shell and Monitor outcomes are delivered automatically. A Monitor or handed-off foreground Shell wakes the main Agent
+once after a non-stopped terminal outcome; an explicitly independent Background Shell does not. A requested stop is
+acknowledged synchronously and does not enqueue a second turn. Multiple nearby outcomes are batched.
+
+After a Foreground Handoff settles, the Agent inspects its bounded evidence, resumes the original authorized work, and
+produces a Completion Report only when no required work remains. Recently finished activities remain available as
+bounded receipts for output and idempotent stop requests.
 
 The runtime keeps the newest 64 receipts and batches up to 16 outcomes. Receipts support recent inspection and are not a
 long-term task log.
@@ -107,4 +115,3 @@ active.
 - [Command reference](../reference/commands.md#work-control)
 - [Tool Display](tool-display.md)
 - [Agents](subagents.md)
-
