@@ -57,7 +57,7 @@ function describeRequiredResult(result: SearchResult) {
 
 function encode(
 	search: SearchOutput,
-	representation: "definitions" | "typed-top" | "describe-required" | "paths",
+	representation: "definitions" | "typed-top" | "describe-required",
 	results: readonly unknown[],
 	definitions: readonly unknown[] = [],
 	instruction?: string,
@@ -126,9 +126,11 @@ export function projectCodeModeSearchResponse(
 		}
 	}
 
-	const instruction = "Call codemode.describe(result.path) before invoking any result; do not guess input fields.";
+	const instruction =
+		"Call codemode.describe(result.path) before invoking any result; if no result fits, refine the search. Do not guess input fields.";
 	let compactResults: Array<ReturnType<typeof describeRequiredResult>> = [];
-	let compactText: string | undefined;
+	let compactText = encode(search, "describe-required", compactResults, [], instruction);
+	if (!compactText) throw new Error("Tool Discovery metadata exceeds its response budget.");
 	for (const result of results) {
 		const compact = describeRequiredResult(result);
 		const nextResults = [...compactResults, compact];
@@ -137,17 +139,5 @@ export function projectCodeModeSearchResponse(
 		compactResults = nextResults;
 		compactText = encoded;
 	}
-	if (compactText) return projection(search, compactText, compactResults);
-
-	let pathResults: Array<{ readonly path: string }> = [];
-	let pathText = encode(search, "paths", pathResults);
-	if (!pathText) throw new Error("Tool Discovery metadata exceeds its response budget.");
-	for (const result of results) {
-		const nextResults = [...pathResults, { path: projectedPath(result) }];
-		const encoded = encode(search, "paths", nextResults);
-		if (!encoded) break;
-		pathResults = nextResults;
-		pathText = encoded;
-	}
-	return projection(search, pathText, pathResults);
+	return projection(search, compactText, compactResults);
 }

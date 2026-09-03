@@ -61,7 +61,7 @@ function discoveryConnectorFixture(
 interface DiscoveryPayload {
 	readonly definitions: readonly { readonly description?: string; readonly path: string; readonly types?: string }[];
 	readonly instruction?: string;
-	readonly representation: "definitions" | "typed-top" | "describe-required" | "paths";
+	readonly representation: "definitions" | "typed-top" | "describe-required";
 	readonly results: readonly { readonly path: string; readonly signature?: string }[];
 	readonly truncated: boolean;
 }
@@ -174,7 +174,23 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(paths.payload.representation).toBe("describe-required");
 	expect(paths.payload.results[0]).toMatchObject({ path: `tools[${JSON.stringify(longNames[0]?.name)}]` });
 
-	for (const projection of [definitions, typedTop, describeRequired, bracketPath, bracketDefinition, paths]) {
+	const oversizedPath = await executeDiscovery(
+		discoveryConnectorFixture([{ name: "n".repeat(5_000), typesSize: 5_000 }]),
+	);
+	expect(oversizedPath.text.length).toBeLessThanOrEqual(4_000);
+	expect(oversizedPath.payload.representation).toBe("describe-required");
+	expect(oversizedPath.payload.results).toEqual([]);
+	expect(oversizedPath.payload.instruction).toContain("refine the search");
+
+	for (const projection of [
+		definitions,
+		typedTop,
+		describeRequired,
+		bracketPath,
+		bracketDefinition,
+		paths,
+		oversizedPath,
+	]) {
 		expect(projection.details.paths).toEqual(projection.payload.results.map((result) => result.path));
 		expect(projection.details.truncated).toBe(projection.payload.truncated);
 	}

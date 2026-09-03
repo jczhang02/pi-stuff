@@ -85,9 +85,10 @@ Discovery requires one lexical query-token match and never substitutes an unrela
 bounded to 4,000 characters. It first returns complete definitions; when those do not fit, it keeps the top Tool
 description once, removes generated JSDoc from that Tool's structural TypeScript type, and uses compact signatures for
 other matches. If the top description and compact type still do not fit, the response requires
-`codemode.describe(path)` and exposes no untyped callable signature. This preserves the invocation contract instead of
-leaving optional-looking fields without their required combinations. `codemode.describe` retains the full generated
-TypeScript input and result types. Full nested schemas stay inside V8 and never enter provider history.
+`codemode.describe(path)` and exposes no untyped callable signature. If no complete result path fits, it asks the model
+to refine the search. This preserves the invocation contract instead of leaving optional-looking fields without their
+required combinations. `codemode.describe` retains the full generated TypeScript input and result types. Full nested
+schemas stay inside V8 and never enter provider history.
 
 Pi Stuff reuses the runtime-neutral parts of `@cloudflare/codemode` 0.5.1: source normalization, Connector search and
 describe, name sanitation, JSON-schema-to-TypeScript conversion, snippets, binary and bigint codecs, stable replay
