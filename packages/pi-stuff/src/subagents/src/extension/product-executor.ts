@@ -72,7 +72,7 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 		if (mixed) {
 			const recovery =
 				mixed === "agent"
-					? " Use id for an Agent Target; agent selects an Agent definition only when launching with task."
+					? " Use id to target an Agent; status omits id for an overview. agent selects an Agent definition only when launching with task."
 					: "";
 			throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.${recovery}`);
 		}

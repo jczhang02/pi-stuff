@@ -102,7 +102,7 @@ describe("toEngineParams", () => {
 			}),
 		).toThrow("cannot include launch field 'foreground'");
 		expect(() => toEngineParams({ action: "status", agent: "run-123" })).toThrow(
-			"Use id for an Agent Target; agent selects an Agent definition only when launching with task.",
+			"Use id to target an Agent; status omits id for an overview. agent selects an Agent definition only when launching with task.",
 		);
 	});
 
