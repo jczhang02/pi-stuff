@@ -41,7 +41,14 @@ type BoundedToolValue = boolean | null | number | string | undefined | BoundedTo
 
 interface ToolValueBudget {
 	remaining: number;
+	readonly seen: WeakSet<object>;
+	truncated: boolean;
 }
+
+type BoundedToolProjection = Readonly<{
+	truncated: boolean;
+	value: BoundedToolValue;
+}>;
 export const TOOL_DISPLAY_ARGUMENT_KEYS = [
 	"action",
 	"agent",
@@ -344,24 +351,12 @@ export function boundedToolArguments(
 	args: ToolArguments,
 	argumentKeys: readonly string[] | undefined = TOOL_DISPLAY_ARGUMENT_KEYS,
 ): ToolArguments {
-	const visits = { remaining: TOOL_VALUE_VISIT_LIMIT };
-	const projected: BoundedToolObject = {};
-	for (const key of (argumentKeys ?? TOOL_DISPLAY_ARGUMENT_KEYS).slice(0, TOOL_VALUE_ARRAY_LIMIT)) {
-		if (visits.remaining <= 0) break;
-		try {
-			const value = readHostProxyProperty(args, key);
-			if (!isRuntimeUndefined(value))
-				projected[key] = boundedToolValue(value, 0, visits, TOOL_DISPLAY_ARGUMENT_KEYS);
-		} catch {
-			projected[key] = "[unavailable]";
-		}
-	}
-	return projected;
+	const projected = projectBoundedToolValue(args, argumentKeys ?? TOOL_DISPLAY_ARGUMENT_KEYS).value;
+	return isRuntimeObject(projected) && projected !== null && !Array.isArray(projected) ? projected : {};
 }
 
 /** Build a display-only result view before Suite presentation callbacks run. */
 export function boundedToolResult(result: AgentToolResult<unknown>): AgentToolResult<unknown> {
-	const visits = { remaining: TOOL_VALUE_VISIT_LIMIT };
 	const content: AgentToolResult<unknown>["content"] = [];
 	const visibleBlocks = Math.min(result.content.length, TOOL_VALUE_ARRAY_LIMIT);
 	for (let index = 0; index < visibleBlocks; index += 1) {
@@ -386,7 +381,7 @@ export function boundedToolResult(result: AgentToolResult<unknown>): AgentToolRe
 	}
 	const projected: AgentToolResult<unknown> = {
 		content,
-		details: boundedToolValue(result.details, 0, visits, TOOL_DISPLAY_RESULT_KEYS),
+		details: projectBoundedToolValue(result.details, TOOL_DISPLAY_RESULT_KEYS).value,
 	};
 	if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) Object.assign(projected, { isError: true });
 	return projected;
@@ -396,23 +391,32 @@ function boundedToolValue<Value>(
 	value: Value,
 	depth: number,
 	visits: ToolValueBudget,
-	objectKeys: readonly string[],
+	objectKeys?: readonly string[],
 ): BoundedToolValue {
-	if (visits.remaining <= 0) return "[work limit]";
+	if (visits.remaining <= 0) {
+		visits.truncated = true;
+		return "[work limit]";
+	}
 	visits.remaining -= 1;
 	if (isRuntimeString(value)) {
 		const source = sourcePrefix(value, SUMMARY_TEXT_MAX_CODE_UNITS);
+		if (source.clipped) visits.truncated = true;
 		return source.clipped ? `${source.text}…` : source.text;
 	}
 	if (value === null) return null;
 	if (isRuntimeBoolean(value)) return Boolean(value);
 	if (isRuntimeNumber(value)) return Number(value);
 	if (isRuntimeUndefined(value)) return undefined;
-	if (isRuntimeBigInt(value)) return `${String(value)}n`;
+	if (isRuntimeBigInt(value)) return "[bigint]";
 	if (isRuntimeFunction(value)) return "[function]";
-	if (isRuntimeSymbol(value)) return String(value);
+	if (isRuntimeSymbol(value)) return "[symbol]";
 	if (!isRuntimeObject(value)) return "[unsupported value]";
-	if (depth >= TOOL_VALUE_DEPTH_LIMIT) return "[depth limit]";
+	if (depth >= TOOL_VALUE_DEPTH_LIMIT) {
+		visits.truncated = true;
+		return "[depth limit]";
+	}
+	if (visits.seen.has(value)) return "[circular]";
+	visits.seen.add(value);
 	if (Array.isArray(value)) {
 		const output: BoundedToolValue[] = [];
 		const visibleItems = Math.min(value.length, TOOL_VALUE_ARRAY_LIMIT);
@@ -425,15 +429,23 @@ function boundedToolValue<Value>(
 			if (visits.remaining <= 0) break;
 		}
 		if (output.length < value.length) {
+			visits.truncated = true;
 			const marker = visits.remaining <= 0 ? "[work limit]" : "[items omitted]";
 			if (output.length >= TOOL_VALUE_ARRAY_LIMIT) output[output.length - 1] = marker;
 			else output.push(marker);
 		}
 		return output;
 	}
+	if (!objectKeys) {
+		visits.truncated = true;
+		return "[object fields omitted]";
+	}
 	const projected: BoundedToolObject = {};
-	for (const key of objectKeys.slice(0, TOOL_VALUE_ARRAY_LIMIT)) {
+	const visibleKeys = objectKeys.slice(0, TOOL_VALUE_ARRAY_LIMIT);
+	if (visibleKeys.length < objectKeys.length) visits.truncated = true;
+	for (const key of visibleKeys) {
 		if (visits.remaining <= 0) {
+			visits.truncated = true;
 			projected["…"] = "[work limit]";
 			break;
 		}
@@ -447,34 +459,45 @@ function boundedToolValue<Value>(
 			projected[key] = "[unavailable]";
 		}
 	}
-	if (visits.remaining <= 0) projected["…"] = "[work limit]";
+	if (visits.remaining <= 0) {
+		visits.truncated = true;
+		projected["…"] = "[work limit]";
+	}
 	return projected;
 }
 
-function boundedJson<Value>(value: Value, maxCodeUnits: number, objectKeys?: readonly string[]): BoundedValuePreview {
+function projectBoundedToolValue<Value>(value: Value, objectKeys?: readonly string[]): BoundedToolProjection {
+	const visits: ToolValueBudget = {
+		remaining: TOOL_VALUE_VISIT_LIMIT,
+		seen: new WeakSet<object>(),
+		truncated: false,
+	};
+	try {
+		const projected = boundedToolValue(value, 0, visits, objectKeys);
+		return { truncated: visits.truncated, value: projected };
+	} catch {
+		return { truncated: visits.truncated, value: "[unavailable]" };
+	}
+}
+
+/** Serialize only the bounded plain-data projection; never inspect a Host value here. */
+function serializeBoundedToolProjection(projection: BoundedToolProjection, maxCodeUnits: number): BoundedValuePreview {
 	const parts: string[] = [];
 	let remaining = Math.max(1, Math.floor(maxCodeUnits));
-	let truncated = false;
-	let visits = TOOL_VALUE_VISIT_LIMIT;
-	const seen = new WeakSet<object>();
+	let outputTruncated = false;
 	const append = (text: string): boolean => {
 		if (remaining <= 0) {
-			truncated = true;
+			outputTruncated = true;
 			return false;
 		}
 		const next = graphemePrefix(text, remaining);
 		parts.push(next);
 		remaining -= next.length;
-		if (next.length < text.length) truncated = true;
-		return !truncated;
+		if (next.length < text.length) outputTruncated = true;
+		return !outputTruncated;
 	};
-	const visit = <Candidate>(candidate: Candidate, depth: number, keys?: readonly string[]): void => {
-		if (truncated) return;
-		if (visits <= 0) {
-			truncated = true;
-			return;
-		}
-		visits -= 1;
+	const visit = (candidate: BoundedToolValue): void => {
+		if (outputTruncated) return;
 		if (candidate === null) {
 			append("null");
 			return;
@@ -483,84 +506,41 @@ function boundedJson<Value>(value: Value, maxCodeUnits: number, objectKeys?: rea
 			const source = sourcePrefix(candidate, Math.max(0, remaining - 2) + 2);
 			const slice = graphemePrefix(source.text, Math.max(0, remaining - 2));
 			append(JSON.stringify(slice));
-			if (source.clipped || slice.length < source.text.length) truncated = true;
+			if (source.clipped || slice.length < source.text.length) outputTruncated = true;
 			return;
 		}
 		if (isRuntimeNumber(candidate) || isRuntimeBoolean(candidate)) {
 			append(String(candidate));
 			return;
 		}
-		if (isRuntimeBigInt(candidate)) {
-			append('"[bigint]"');
-			return;
-		}
 		if (isRuntimeUndefined(candidate)) {
 			append("undefined");
 			return;
 		}
-		if (isRuntimeSymbol(candidate) || isRuntimeFunction(candidate)) {
-			append(isRuntimeSymbol(candidate) ? '"[symbol]"' : '"[function]"');
-			return;
-		}
-		if (!isRuntimeObject(candidate)) {
-			append(JSON.stringify(String(candidate)));
-			return;
-		}
-		if (depth >= 8) {
-			append('"[depth limit]"');
-			return;
-		}
-		if (seen.has(candidate)) {
-			append('"[circular]"');
-			return;
-		}
-		seen.add(candidate);
 		if (Array.isArray(candidate)) {
 			append("[");
-			const visibleItems = Math.min(candidate.length, TOOL_VALUE_ARRAY_LIMIT);
-			for (let index = 0; index < visibleItems && !truncated; index += 1) {
+			for (let index = 0; index < candidate.length && !outputTruncated; index += 1) {
 				if (index > 0) append(", ");
-				visit(candidate[index], depth + 1);
+				visit(candidate[index]);
 			}
-			if (visibleItems < candidate.length) truncated = true;
 			append("]");
-			return;
-		}
-		if (!keys) {
-			append('"[object fields omitted]"');
-			truncated = true;
 			return;
 		}
 		append("{");
 		let first = true;
-		const visibleKeys = keys.slice(0, TOOL_VALUE_ARRAY_LIMIT);
-		for (const key of visibleKeys) {
-			if (truncated) break;
-			try {
-				const child = readHostProxyProperty(candidate, key);
-				if (isRuntimeUndefined(child)) continue;
-				if (!first) append(", ");
-				first = false;
-				append(JSON.stringify(sourcePrefix(key, ROW_PREVIEW_CODE_UNIT_LIMIT).text));
-				append(": ");
-				visit(child, depth + 1);
-			} catch {
-				if (!first) append(", ");
-				first = false;
-				append(JSON.stringify(sourcePrefix(key, ROW_PREVIEW_CODE_UNIT_LIMIT).text));
-				append(": ");
-				append('"[unavailable]"');
-			}
+		for (const [key, child] of Object.entries(candidate)) {
+			if (outputTruncated) break;
+			if (!first) append(", ");
+			first = false;
+			append(JSON.stringify(sourcePrefix(key, ROW_PREVIEW_CODE_UNIT_LIMIT).text));
+			append(": ");
+			visit(child);
 		}
-		if (keys.length > visibleKeys.length) truncated = true;
 		append("}");
 	};
-	try {
-		visit(value, 0, objectKeys);
-	} catch {
-		append('"[unavailable]"');
-	}
+	visit(projection.value);
 	const output = parts.join("");
+	const truncated = projection.truncated || outputTruncated;
 	return {
 		text: truncated ? `${graphemePrefix(output, Math.max(0, maxCodeUnits - 1))}…` : output,
 		truncated,
@@ -691,11 +671,17 @@ export function buildRawToolDetailLines(
 	result: AgentToolResult<unknown> | undefined,
 	argumentKeys?: readonly string[],
 ): string[] {
-	const argumentPreview = boundedJson(args, DETAIL_BYTE_LIMIT, argumentKeys);
+	const argumentPreview = serializeBoundedToolProjection(
+		projectBoundedToolValue(args, argumentKeys),
+		DETAIL_BYTE_LIMIT,
+	);
 	const detailsPreview =
 		result?.details === undefined
 			? { text: "(none)", truncated: false }
-			: boundedJson(result.details, DETAIL_BYTE_LIMIT, TOOL_DISPLAY_RESULT_KEYS);
+			: serializeBoundedToolProjection(
+					projectBoundedToolValue(result.details, TOOL_DISPLAY_RESULT_KEYS),
+					DETAIL_BYTE_LIMIT,
+				);
 	const lines = [
 		`Call ID: ${oneLine(id)}`,
 		`Tool name: ${oneLine(name)}`,
