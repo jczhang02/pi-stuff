@@ -48,7 +48,7 @@ function compactDescription(description: DescribeOutput) {
 		description: description.description,
 		kind: description.kind,
 		path: description.path,
-		types: compactTypes(description.types),
+		types: description.kind === "snippet" ? description.types : compactTypes(description.types),
 	};
 	return description.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }

@@ -148,6 +148,36 @@ test("top-level Tool Discovery emits a saved snippet description once", async ()
 	expect(projection.text.split(description)).toHaveLength(2);
 });
 
+test("typed-top discovery preserves saved snippet source verbatim", async () => {
+	const description = "Reuse the verified formatter";
+	const snippet: SearchResult = {
+		connector: "snippets",
+		description,
+		kind: "snippet",
+		method: "format-result",
+		path: "format-result",
+		score: 100,
+	};
+	const method: SearchResult = {
+		connector: "tools",
+		kind: "method",
+		method: "oversized",
+		path: "tools.oversized",
+		score: 90,
+	};
+	const source = "```ts\n/** keep this comment */\n* keep this line\n```";
+	const projection = await executeDiscovery({
+		describe: (path) =>
+			path === snippet.path
+				? { description, kind: "snippet", path, types: [description, source].join("\n\n") }
+				: { kind: "method", path, types: "T".repeat(5_000) },
+		search: () => ({ results: [snippet, method], total: 2, truncated: false }),
+	});
+
+	expect(projection.payload.representation).toBe("typed-top");
+	expect(projection.payload.definitions[0]?.types).toBe(source);
+});
+
 test("top-level Tool Discovery deterministically degrades every response within its character budget", async () => {
 	const definitions = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 100 }, { typesSize: 100 }]));
 	expect(definitions.payload.representation).toBe("definitions");
