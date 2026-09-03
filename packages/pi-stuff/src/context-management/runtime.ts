@@ -72,6 +72,7 @@ export interface ContextCapabilityRegistry {
 
 interface ContextRuntimeBoundary {
 	readonly activate: (ctx: ExtensionContext, trigger: ContextActivationTrigger) => Promise<ContextStatusSnapshot>;
+	readonly committed: () => void;
 	readonly committedFailure: (cause: unknown, ctx: ExtensionContext) => Promise<void>;
 }
 
@@ -103,6 +104,7 @@ export class ContextCapabilityRuntime {
 	private readonly sessionStarts = Semaphore.makeUnsafe(1);
 	private generation = 0;
 	private readonly boundary: ContextRuntimeBoundary;
+	private providerBoundaryCommitted = false;
 	private readonly commandRuntime: ContextCommandRuntime;
 	private readonly magicCommands = new Map<string, MagicCommandDefinition>();
 	private magicContextHandler: MagicContextHandler | undefined;
@@ -577,6 +579,10 @@ export class ContextCapabilityRuntime {
 				try: () => this.commitRegistrationPlan(plan, generation),
 				catch: (error) => error,
 			});
+			if (!this.providerBoundaryCommitted) {
+				this.boundary.committed();
+				this.providerBoundaryCommitted = true;
+			}
 			committed = true;
 			this.state = { state: "active", engine: "magic-context", trigger };
 			return this.status();

@@ -158,6 +158,7 @@ export default async function piStuffContext(
 	const boundary = {
 		activate: (ctx: ExtensionContext, trigger: Parameters<ContextCapability["activate"]>[1]) =>
 			Effect.runPromise(runtime.activate(ctx, trigger)),
+		committed: () => registerContextProviderBoundary(pi, runtime, getContextStatusChannel(pi)),
 		committedFailure: (cause: unknown, ctx: ExtensionContext) =>
 			runContextOwned(ctx, runtime.handleCommittedFailure(cause, ctx)),
 	};
@@ -257,7 +258,6 @@ export default async function piStuffContext(
 		);
 		return applyContextPromptContributions(pi, event, ctx);
 	});
-	registerContextProviderBoundary(pi, runtime, status);
 }
 
 export { registerContextPromptContributor } from "./prompt-contributions.js";
