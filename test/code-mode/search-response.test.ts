@@ -126,7 +126,6 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	const definitions = await executeDiscovery(
 		discoveryConnectorFixture([{ typesSize: 1_800 }, { typesSize: 1_800 }, { typesSize: 1_800 }]),
 	);
-	expect(definitions.text.length).toBeLessThanOrEqual(4_000);
 	expect(definitions.payload.representation).toBe("definitions");
 	expect(definitions.payload.definitions.length).toBeGreaterThan(0);
 	expect(definitions.payload.definitions.length).toBeLessThan(3);
@@ -138,7 +137,6 @@ test("top-level Tool Discovery deterministically degrades every response within 
 			Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, types: documentedType, typesSize: 0 })),
 		),
 	);
-	expect(typedTop.text.length).toBeLessThanOrEqual(4_000);
 	expect(typedTop.payload.representation).toBe("typed-top");
 	expect(typedTop.payload.definitions[0]?.description).toHaveLength(2_500);
 	expect(typedTop.payload.definitions[0]?.types).toBe("type FixtureInput = string;");
@@ -147,7 +145,6 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	const describeRequired = await executeDiscovery(
 		discoveryConnectorFixture([{ typesSize: 5_000 }, { typesSize: 5_000 }]),
 	);
-	expect(describeRequired.text.length).toBeLessThanOrEqual(4_000);
 	expect(describeRequired.payload.representation).toBe("describe-required");
 	expect(describeRequired.payload.definitions).toEqual([]);
 	expect(describeRequired.payload.instruction).toContain("codemode.describe");
@@ -175,14 +172,12 @@ test("top-level Tool Discovery deterministically degrades every response within 
 		typesSize: 5_000,
 	}));
 	const paths = await executeDiscovery(discoveryConnectorFixture(longNames));
-	expect(paths.text.length).toBeLessThanOrEqual(4_000);
 	expect(paths.payload.representation).toBe("describe-required");
 	expect(paths.payload.results[0]).toMatchObject({ path: `tools[${JSON.stringify(longNames[0]?.name)}]` });
 
 	const oversizedPath = await executeDiscovery(
 		discoveryConnectorFixture([{ name: "n".repeat(5_000), typesSize: 5_000 }]),
 	);
-	expect(oversizedPath.text.length).toBeLessThanOrEqual(4_000);
 	expect(oversizedPath.payload.representation).toBe("describe-required");
 	expect(oversizedPath.payload.results).toEqual([]);
 	expect(oversizedPath.payload.instruction).toContain("refine the search");
@@ -196,6 +191,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 		paths,
 		oversizedPath,
 	]) {
+		expect(projection.text.length).toBeLessThanOrEqual(4_000);
 		expect(projection.details.paths).toEqual(projection.payload.results.map((result) => result.path));
 		expect(projection.details.truncated).toBe(projection.payload.truncated);
 	}
