@@ -7,8 +7,8 @@ import {
 } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import {
 	type ConversationMarkdownTransformContext,
-	createConversationMarkdownTransformer,
 	registerConversationMarkdown,
+	transformConversationMarkdown,
 } from "../../packages/pi-stuff/src/conversation-ui/conversation-markdown.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
 import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
@@ -22,7 +22,7 @@ const CONTEXT: ConversationMarkdownTransformContext = {
 const THOUGHT_PREFIX = "• thoughts: ";
 
 function transform(markdown: string, overrides: Partial<ConversationMarkdownTransformContext> = {}): string {
-	return createConversationMarkdownTransformer()(markdown, { ...CONTEXT, ...overrides });
+	return transformConversationMarkdown(markdown, { ...CONTEXT, ...overrides });
 }
 
 async function render(
@@ -30,7 +30,7 @@ async function render(
 	messageType: ConversationMarkdownTransformContext["messageType"],
 ): Promise<string[]> {
 	initTheme("dark");
-	const transformer = createConversationMarkdownTransformer();
+	const transformer = transformConversationMarkdown;
 	const lines = new Markdown(markdown, 0, 0, getMarkdownTheme(), undefined, {
 		transform: (value, availableWidth) => transformer(value, { availableWidth, isStreaming: false, messageType }),
 	})
@@ -88,7 +88,7 @@ test("leaves user Markdown unchanged and gives every Assistant message one outer
 
 test("aligns the expanded Thinking label with Assistant and Tool Activity markers", async () => {
 	initTheme("dark");
-	const transformer = createConversationMarkdownTransformer();
+	const transformer = transformConversationMarkdown;
 	const markdown = (source: string, messageType: ConversationMarkdownTransformContext["messageType"]) =>
 		new Markdown(source, SELF_RENDERED_TRANSCRIPT_PADDING, 0, getMarkdownTheme(), undefined, {
 			transform: (value, availableWidth) => transformer(value, { availableWidth, isStreaming: true, messageType }),

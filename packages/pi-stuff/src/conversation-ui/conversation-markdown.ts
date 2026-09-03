@@ -11,15 +11,6 @@ export interface ConversationMarkdownTransformContext {
 	readonly messageType: "assistant" | "assistant-thinking" | "user";
 }
 
-export type ConversationMarkdownTransformer = (
-	markdown: string,
-	context: ConversationMarkdownTransformContext,
-) => string;
-
-interface MarkdownTransformerExtensionAPI {
-	registerMarkdownTransformer(transformer: ConversationMarkdownTransformer): void;
-}
-
 interface ProjectedVisualizationBlock {
 	readonly firstLine: string;
 	readonly language: string;
@@ -70,12 +61,12 @@ const VISUALIZATION_FENCE_CANDIDATE = /(?:^|\r?\n)[ ]{0,3}(?:`{3,}|~{3,})[ \t]*(
 
 /** Register Conversation UI projection through Pi's public Host seam. */
 export function registerConversationMarkdown(pi: ExtensionAPI): void {
-	if (!hasMarkdownTransformer(pi)) {
+	if (!isRuntimeFunction(pi.registerMarkdownTransformer)) {
 		throw new Error(
 			"Pi Stuff Conversation UI requires an upstream Pi Host with registerMarkdownTransformer() support",
 		);
 	}
-	pi.registerMarkdownTransformer(createConversationMarkdownTransformer());
+	pi.registerMarkdownTransformer(transformConversationMarkdown);
 }
 
 const HOST_THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
@@ -154,21 +145,17 @@ function prepareVisualizationMarkdown(markdown: string, availableWidth: number):
 	);
 }
 
-/** Build the pure projection separately so width and safety behavior can be certified. */
-export function createConversationMarkdownTransformer(): ConversationMarkdownTransformer {
-	return (markdown, context) => {
-		restorePendingMarkdownThemeProjection();
-		if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
-		if (context.messageType === "user") {
-			if (!VISUALIZATION_FENCE_CANDIDATE.test(markdown)) return markdown;
-			const projection = prepareVisualizationMarkdown(markdown, context.availableWidth);
-			armMarkdownThemeProjection(false, projection.projectedBlocks);
-			return projection.markdown;
-		}
-		if (context.messageType !== "assistant-thinking") return markdown;
-
-		return `${EXPANDED_THINKING_PREFIX}${markdown}`;
-	};
+/** Apply the display-only Conversation UI projection at Pi's Markdown seam. */
+export function transformConversationMarkdown(markdown: string, context: ConversationMarkdownTransformContext): string {
+	restorePendingMarkdownThemeProjection();
+	if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
+	if (context.messageType === "user") {
+		if (!VISUALIZATION_FENCE_CANDIDATE.test(markdown)) return markdown;
+		const projection = prepareVisualizationMarkdown(markdown, context.availableWidth);
+		armMarkdownThemeProjection(false, projection.projectedBlocks);
+		return projection.markdown;
+	}
+	return `${EXPANDED_THINKING_PREFIX}${markdown}`;
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
@@ -191,10 +178,6 @@ function renderAssistantTranscript(markdown: string, availableWidth: number): st
 		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
 	}
 	return `${ASSISTANT_LIST_PREFIX}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
-}
-
-function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & MarkdownTransformerExtensionAPI {
-	return "registerMarkdownTransformer" in pi && isRuntimeFunction(pi.registerMarkdownTransformer);
 }
 
 function normalizeWidth(width: number): number {

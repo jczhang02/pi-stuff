@@ -24,7 +24,7 @@ type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext)
 const NATIVE_THINKING_TRANSFORMER: MarkdownTransformer = (markdown) => markdown;
 
 interface TransformerModule {
-	createConversationMarkdownTransformer(): MarkdownTransformer;
+	transformConversationMarkdown: MarkdownTransformer;
 }
 
 interface HostMarkdownRuntime {
@@ -135,7 +135,7 @@ async function loadTransformer(root: string): Promise<MarkdownTransformer> {
 	const moduleUrl = conversationMarkdownModuleUrl(root);
 	// SAFETY: the benchmark loads the repository-owned module at the exact public export exercised by its focused tests.
 	const module = (await import(moduleUrl)) as TransformerModule;
-	return module.createConversationMarkdownTransformer();
+	return module.transformConversationMarkdown;
 }
 
 async function loadHostMarkdownRuntime(root: string): Promise<HostMarkdownRuntime> {

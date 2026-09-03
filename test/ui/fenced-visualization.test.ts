@@ -6,7 +6,7 @@ import {
 } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import {
 	type ConversationMarkdownTransformContext,
-	createConversationMarkdownTransformer,
+	transformConversationMarkdown,
 } from "../../packages/pi-stuff/src/conversation-ui/conversation-markdown.js";
 import { projectFencedVisualizations as projectFencedVisualizationsWithWidth } from "../../packages/pi-stuff/src/conversation-ui/fenced-visualization.js";
 import { renderTreeSource as renderTreeSourceWithWidth } from "../../packages/pi-stuff/src/conversation-ui/indentation-tree.js";
@@ -34,7 +34,7 @@ function fenced(language: string, lines: readonly string[], marker = FENCE): str
 
 async function renderProjected(source: string, width: number, messageType: "assistant" | "user"): Promise<string[]> {
 	initTheme("dark");
-	const transformer = createConversationMarkdownTransformer();
+	const transformer = transformConversationMarkdown;
 	const markdown = new Markdown(source, 0, 0, getMarkdownTheme(), undefined, {
 		transform: (value, availableWidth) => transformer(value, { availableWidth, isStreaming: false, messageType }),
 	});
@@ -216,7 +216,7 @@ describe("indentation tree renderer", () => {
 describe("Conversation UI composition", () => {
 	test("projects User and Assistant fences without interpreting Thinking content", async () => {
 		const source = chart("sparkline", ["1 3 2 5 4"]);
-		const transformer = createConversationMarkdownTransformer();
+		const transformer = transformConversationMarkdown;
 		const user = transformer(source, { ...ASSISTANT_CONTEXT, messageType: "user" });
 		const assistant = transformer(source, ASSISTANT_CONTEXT);
 		const thinking = transformer(source, { ...ASSISTANT_CONTEXT, messageType: "assistant-thinking" });
@@ -250,7 +250,7 @@ describe("Conversation UI composition", () => {
 
 	test("reserves the Host code indent and Assistant marker budgets before chart rendering", () => {
 		const source = chart("bar", ["A 1", "B 2"]);
-		const transformer = createConversationMarkdownTransformer();
+		const transformer = transformConversationMarkdown;
 		const narrowUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 25, messageType: "user" });
 		const fittingUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 26, messageType: "user" });
 		const narrowAssistant = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 27 });
