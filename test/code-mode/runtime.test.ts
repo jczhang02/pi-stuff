@@ -585,3 +585,37 @@ test("runtime recognizes an executor AbortError even without an outer AbortSigna
 	expect(result.details.status).toBe("cancelled");
 	expect(result.details.operations).toMatchObject([{ id: "nested-bash", state: "cancelled" }]);
 });
+
+test("runtime bounds retained trace evidence without losing the omission count", async () => {
+	const executor: CodeModeExecutor = {
+		async execute(options) {
+			for (let index = 0; index < 800; index += 1) {
+				options.context.onTraceUpdate?.({
+					cellId: "cell-many",
+					droppedTraceCount: Math.max(0, index - 767),
+					trace: {
+						id: `nested-${String(index)}`,
+						input: { index },
+						name: "read",
+						status: "done",
+					},
+				});
+			}
+			return { cellId: "cell-many", contentItems: [{ type: "input_text", text: "done" }], kind: "result" };
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
+		"outer-many",
+		"text('done')",
+		// SAFETY: this fixture supplies the only Extension context field exercised by a ledger-free runtime.
+		{ cwd: "/project" } as ExtensionContext,
+	);
+
+	expect(result.details.droppedOperationCount).toBe(32);
+	expect(result.details.operations).toHaveLength(768);
+	expect(result.details.operations[0]?.id).toBe("nested-32");
+});

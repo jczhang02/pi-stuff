@@ -9,7 +9,6 @@ import { unwrapSuiteToolResult } from "./connector.js";
 import { isCodeModeToolContent } from "./presentation.js";
 
 const SCHEMA_VERSION = 1;
-export const MAX_DURABLE_VALUE_BYTES = 1_000_000;
 export const MAX_RETAINED_EXECUTIONS = 50;
 
 const EXECUTION_STATUSES = [
@@ -177,7 +176,6 @@ export interface ExecutionState extends Omit<Mutable<CodeModeExecutionHistoryIte
 
 export interface LedgerSnapshot {
 	executions: Map<string, ExecutionState>;
-	physicalBytes: number;
 	snippets: Map<string, Snippet>;
 	totalExecutions: number;
 }
@@ -192,12 +190,6 @@ export function durableValue<Value>(what: string, value: Value): StoredValue {
 		);
 	}
 	if (serialized === undefined) return { kind: "undefined" };
-	const bytes = Buffer.byteLength(serialized);
-	if (bytes > MAX_DURABLE_VALUE_BYTES) {
-		throw new Error(
-			`${what} is too large to record durably (${String(bytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Write large data to a file or workspace and return a small reference such as a path.`,
-		);
-	}
 	return { json: parseJsonValue(serialized), kind: "json" };
 }
 
@@ -224,7 +216,7 @@ export function eventFrom(source: JsonSourceValue): LedgerEvent | undefined {
 }
 
 export function createLedgerSnapshot(): LedgerSnapshot {
-	return { executions: new Map(), physicalBytes: 0, snippets: new Map(), totalExecutions: 0 };
+	return { executions: new Map(), snippets: new Map(), totalExecutions: 0 };
 }
 
 function applyOpened(execution: ExecutionState, event: CallPendingEvent | CallStartedEvent): void {

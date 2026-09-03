@@ -22,7 +22,6 @@ import {
 	executionHistory,
 	type LedgerEvent,
 	type LedgerSnapshot,
-	MAX_DURABLE_VALUE_BYTES,
 	optionalPresentationValue,
 	type ReplayPolicy,
 	trimTerminalExecutions,
@@ -37,11 +36,7 @@ export type {
 };
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
-export const MAX_CODE_MODE_LEDGER_BYTES = 16 * 1024 * 1024;
-// Pi 0.84.4 wraps this event once with fixed custom-entry fields, a generated
-// ID, its parent ID, and an ISO timestamp. 512 bytes deliberately overcounts
-// that Host-owned wrapper between exact measurements on Session reload.
-const PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES = 512;
+const MAX_CODE_MODE_SOURCE_BYTES = 1_000_000;
 const PAUSED_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export type CodeModeStepDecision =
@@ -77,14 +72,6 @@ function isLedgerEntry(entry: SessionEntry): entry is Extract<SessionEntry, { ty
 	return entry.type === "custom" && entry.customType === CODE_MODE_LEDGER_ENTRY_TYPE;
 }
 
-function physicalEntryBytes(entry: SessionEntry): number {
-	try {
-		return Buffer.byteLength(JSON.stringify(entry)) + 1;
-	} catch {
-		return MAX_CODE_MODE_LEDGER_BYTES + 1;
-	}
-}
-
 function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
 	const state = createLedgerSnapshot();
 	for (const entry of context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries()) {
@@ -92,10 +79,6 @@ function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
 		const event = eventFrom(entry.data);
 		if (event) applyEvent(state, event);
 	}
-	state.physicalBytes = context.sessionManager
-		.getEntries()
-		.filter(isLedgerEntry)
-		.reduce((total, entry) => total + physicalEntryBytes(entry), 0);
 	trimTerminalExecutions(state);
 	return state;
 }
@@ -126,9 +109,9 @@ export class CodeModeSessionLedger {
 		requiresApproval: ReadonlySet<string> = new Set(),
 	): CodeModeExecutionController {
 		const codeBytes = Buffer.byteLength(code);
-		if (codeBytes > MAX_DURABLE_VALUE_BYTES) {
+		if (codeBytes > MAX_CODE_MODE_SOURCE_BYTES) {
 			throw new Error(
-				`Code Mode source is too large to record durably (${String(codeBytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Move large data out of the program and keep the source small.`,
+				`Code Mode source is too large to record durably (${String(codeBytes)} bytes > ${String(MAX_CODE_MODE_SOURCE_BYTES)} byte limit). Move large data out of the program and keep the source small.`,
 			);
 		}
 		const scope = sessionScope(context);
@@ -332,14 +315,7 @@ export class CodeModeSessionLedger {
 		if (scope.sessionId && scope.context.sessionManager.getSessionId() !== scope.sessionId) {
 			throw new Error("Code Mode Session changed before its execution ledger could be updated");
 		}
-		const bytes = Buffer.byteLength(JSON.stringify(event)) + PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES;
-		if (state.physicalBytes + bytes > MAX_CODE_MODE_LEDGER_BYTES) {
-			throw new Error(
-				`Code Mode Session ledger reached its ${String(MAX_CODE_MODE_LEDGER_BYTES)} byte physical limit. Start a new Pi Session before running more durable Code Mode work.`,
-			);
-		}
 		this.pi.appendEntry(CODE_MODE_LEDGER_ENTRY_TYPE, event);
-		state.physicalBytes += bytes;
 		applyEvent(state, event);
 		trimTerminalExecutions(state);
 		this.rememberSnapshot(scope, state);

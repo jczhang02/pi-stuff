@@ -27,6 +27,7 @@ import type {
 	RuntimeToolTrace,
 	SuiteSandboxTool,
 } from "./protocol.js";
+import { MAX_RETAINED_CODE_MODE_TRACES } from "./protocol.js";
 
 const AUTO_WAIT_MS = 60_000;
 const MAX_OUTPUT_CHARS = 400_000;
@@ -165,19 +166,42 @@ function projectFinalMedia(
 	return { content: output, operations };
 }
 
+function dropOldestTrace(
+	target: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+): void {
+	const oldestId = target.keys().next().value;
+	if (oldestId === undefined) return;
+	const index = operationIndexes.get(oldestId);
+	target.delete(oldestId);
+	operationIndexes.delete(oldestId);
+	if (index === undefined) return;
+	operations.splice(index, 1);
+	for (const [id, current] of operationIndexes) {
+		if (current > index) operationIndexes.set(id, current - 1);
+	}
+}
+
 function mergeTrace(
 	target: Map<string, RuntimeToolTrace>,
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	trace: RuntimeToolTrace,
-): void {
-	target.set(trace.id, trace);
+): number {
 	let index = operationIndexes.get(trace.id);
+	let dropped = 0;
 	if (index === undefined) {
+		if (target.size >= MAX_RETAINED_CODE_MODE_TRACES) {
+			dropOldestTrace(target, operationIndexes, operations);
+			dropped = 1;
+		}
 		index = operations.length;
 		operationIndexes.set(trace.id, index);
 	}
+	target.set(trace.id, trace);
 	operations[index] = operation(trace);
+	return dropped;
 }
 
 function mergeTraces(
@@ -185,8 +209,10 @@ function mergeTraces(
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	traces: readonly RuntimeToolTrace[] | undefined,
-): void {
-	for (const trace of traces ?? []) mergeTrace(target, operationIndexes, operations, trace);
+): number {
+	let dropped = 0;
+	for (const trace of traces ?? []) dropped += mergeTrace(target, operationIndexes, operations, trace);
+	return dropped;
 }
 
 function settleRunningTraces(
@@ -521,8 +547,8 @@ export class CodeModeRuntime {
 		};
 		const recordResponse = (response: RuntimeResponse): void => {
 			cellId = response.cellId;
-			droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-			mergeTraces(traces, operationIndexes, operations, response.traces);
+			const dropped = mergeTraces(traces, operationIndexes, operations, response.traces);
+			droppedOperationCount = Math.max(droppedOperationCount + dropped, response.droppedTraceCount ?? 0);
 			publish();
 		};
 		const executorContext: ExecutorContext = {
@@ -530,8 +556,8 @@ export class CodeModeRuntime {
 			extensionContext: context,
 			onTraceUpdate: (update: { cellId: string; droppedTraceCount?: number; trace: RuntimeToolTrace }) => {
 				cellId = update.cellId;
-				droppedOperationCount = Math.max(droppedOperationCount, update.droppedTraceCount ?? 0);
-				mergeTrace(traces, operationIndexes, operations, update.trace);
+				const dropped = mergeTrace(traces, operationIndexes, operations, update.trace);
+				droppedOperationCount = Math.max(droppedOperationCount + dropped, update.droppedTraceCount ?? 0);
 				publish();
 			},
 			toolCallId: outerToolCallId,

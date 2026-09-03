@@ -6,8 +6,13 @@ import type {
 	RuntimeToolTrace,
 	RuntimeTraceUpdate,
 } from "../protocol.js";
+import { MAX_RETAINED_CODE_MODE_TRACES } from "../protocol.js";
 
-const MAX_OPERATION_COUNT = 768;
+interface TraceState {
+	dropped: number;
+	readonly ids: Set<string>;
+	readonly traces: RuntimeToolTrace[];
+}
 
 function cloneTrace(trace: RuntimeToolTrace): RuntimeToolTrace {
 	try {
@@ -25,33 +30,19 @@ function cloneTrace(trace: RuntimeToolTrace): RuntimeToolTrace {
 }
 
 export class CodeModeTraceStore {
-	private readonly operationCounts = new Map<string, number>();
-	private readonly traces = new Map<string, RuntimeToolTrace[]>();
+	private readonly states = new Map<string, TraceState>();
 
 	clear(): void {
-		this.operationCounts.clear();
-		this.traces.clear();
+		this.states.clear();
 	}
 
 	delete(cellId: string): void {
-		this.operationCounts.delete(cellId);
-		this.traces.delete(cellId);
-	}
-
-	reserve(cellId: string): void {
-		const count = this.operationCounts.get(cellId) ?? 0;
-		if (count >= MAX_OPERATION_COUNT) {
-			throw new Error(`Code Mode supports at most ${String(MAX_OPERATION_COUNT)} nested Tool calls per execution`);
-		}
-		this.operationCounts.set(cellId, count + 1);
+		this.states.delete(cellId);
 	}
 
 	start(cellId: string, id: string, name: string, input: CodemodeValue, plan?: RuntimeToolCallPlan): RuntimeToolTrace {
-		const traces = this.traces.get(cellId) ?? [];
-		if (traces.some((trace) => trace.id === id)) {
-			throw new Error(`Duplicate Code Mode nested Tool call ID: ${id}`);
-		}
-		this.reserve(cellId);
+		const state = this.states.get(cellId) ?? { dropped: 0, ids: new Set(), traces: [] };
+		if (state.ids.has(id)) throw new Error(`Duplicate Code Mode nested Tool call ID: ${id}`);
 		const trace: RuntimeToolTrace = {
 			id,
 			input,
@@ -66,17 +57,25 @@ export class CodeModeTraceStore {
 				sequence: plan.sequence,
 			});
 		}
-		traces.push(trace);
-		this.traces.set(cellId, traces);
+		state.ids.add(id);
+		state.traces.push(trace);
+		if (state.traces.length > MAX_RETAINED_CODE_MODE_TRACES) {
+			state.traces.shift();
+			state.dropped += 1;
+		}
+		this.states.set(cellId, state);
 		return trace;
 	}
 
 	emit(cellId: string, trace: RuntimeToolTrace, context: ExecutorContext): void {
 		try {
+			const state = this.states.get(cellId);
+			if (!state?.traces.some((retained) => retained.id === trace.id)) return;
 			const update: RuntimeTraceUpdate = {
 				cellId,
 				trace: cloneTrace(trace),
 			};
+			if (state && state.dropped > 0) Object.assign(update, { droppedTraceCount: state.dropped });
 			context.onTraceUpdate?.(update);
 		} catch {
 			// UI projection failures never change nested Tool execution.
@@ -84,8 +83,12 @@ export class CodeModeTraceStore {
 	}
 
 	attach(response: RuntimeResponse): RuntimeResponse {
-		const traces = this.traces.get(response.cellId)?.map(cloneTrace);
+		const state = this.states.get(response.cellId);
 		if (response.kind !== "yielded") this.delete(response.cellId);
-		return traces && traces.length > 0 ? { ...response, traces } : response;
+		if (!state) return response;
+		const projected = { ...response };
+		if (state.dropped > 0) Object.assign(projected, { droppedTraceCount: state.dropped });
+		if (state.traces.length > 0) Object.assign(projected, { traces: state.traces.map(cloneTrace) });
+		return projected;
 	}
 }

@@ -2,6 +2,8 @@ import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-codin
 import type { TSchema } from "typebox";
 import type { CodemodeValue } from "./cloudflare/codec.js";
 
+export const MAX_RETAINED_CODE_MODE_TRACES = 768;
+
 export interface SandboxToolExecutionContext {
 	readonly captureResult?: (result: AgentToolResult<unknown>) => void;
 	readonly cwd: string;

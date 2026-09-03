@@ -10,18 +10,29 @@ test("duplicate nested Tool IDs fail instead of corrupting the UI projection", (
 	);
 });
 
-test("650 trace fan-out updates each carry only the changed nested Tool", () => {
+test("nested Tool trace retention never limits execution", () => {
 	const traces = new CodeModeTraceStore();
 	const updates: RuntimeTraceUpdate[] = [];
 	const context = { cwd: "/project", onTraceUpdate: (update: RuntimeTraceUpdate) => updates.push(update) };
-	for (let index = 0; index < 650; index += 1) {
+	let first: ReturnType<CodeModeTraceStore["start"]> | undefined;
+	for (let index = 0; index < 800; index += 1) {
 		const trace = traces.start("cell", `nested-${String(index)}`, "read", { path: `${String(index)}.ts` });
+		first ??= trace;
 		traces.emit("cell", trace, context);
 	}
 
-	expect(updates).toHaveLength(650);
-	expect(updates[0]?.trace.id).toBe("nested-0");
-	expect(updates[649]?.trace.id).toBe("nested-649");
+	expect(() => traces.start("cell", "nested-0", "read", {})).toThrow(
+		"Duplicate Code Mode nested Tool call ID: nested-0",
+	);
+	if (!first) throw new Error("expected the first trace fixture");
+	first.status = "done";
+	traces.emit("cell", first, context);
+	const response = traces.attach({ cellId: "cell", contentItems: [], kind: "result" });
+	expect(updates).toHaveLength(800);
+	expect(updates.at(-1)?.droppedTraceCount).toBe(32);
 	expect(updates.every((update) => update.trace.status === "running")).toBe(true);
 	expect(updates.every((update) => !("traces" in update))).toBe(true);
+	expect(response.droppedTraceCount).toBe(32);
+	expect(response.traces).toHaveLength(768);
+	expect(response.traces?.[0]?.id).toBe("nested-32");
 });
