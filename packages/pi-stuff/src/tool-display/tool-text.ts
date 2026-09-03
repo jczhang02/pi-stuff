@@ -100,6 +100,7 @@ const TOOL_DISPLAY_RESULT_KEYS = [
 	"exitCode",
 	"failed",
 	"finalContent",
+	"fullOutputPath",
 	"hintServer",
 	"images",
 	"interrupted",
