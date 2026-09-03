@@ -701,8 +701,12 @@ export class ContextCapabilityRuntime {
 		return this.projectionRuntime.projectMagicEvent(event, ctx).pipe(Effect.map((attempt) => attempt?.result));
 	}
 
-	markProviderProjectionValidated(model: ExtensionContext["model"]): void {
-		this.projectionRuntime.markProviderProjectionValidated(model);
+	currentProviderProjectionToken(): symbol | undefined {
+		return this.projectionRuntime.currentProviderProjectionToken();
+	}
+
+	markProviderProjectionValidated(token: symbol | undefined, model: ExtensionContext["model"]): void {
+		this.projectionRuntime.markProviderProjectionValidated(token, model);
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {

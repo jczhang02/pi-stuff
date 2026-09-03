@@ -12,6 +12,7 @@ export function registerContextProviderBoundary(
 ): void {
 	let providerPromptDiagnosticReported = false;
 	pi.on("before_provider_request", async (event, ctx) => {
+		const candidateToken = runtime.currentProviderProjectionToken();
 		const projection = await applyContextPromptContributionsToProvider(pi, event.payload, ctx);
 		if (projection.active && !projection.found && !providerPromptDiagnosticReported) {
 			providerPromptDiagnosticReported = true;
@@ -50,7 +51,7 @@ export function registerContextProviderBoundary(
 			);
 			return undefined;
 		}
-		runtime.markProviderProjectionValidated(ctx.model);
+		runtime.markProviderProjectionValidated(candidateToken, ctx.model);
 		status.publish({
 			state: "validated",
 			tokens: estimatedTokens,

@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { registerContextPromptContributor } from "../../packages/pi-stuff/src/context-management/index.js";
 import { getContextStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 import {
 	apiFor,
@@ -218,6 +219,64 @@ test("recomputes a validated projection when an earlier message object changes",
 	expect(magicContexts).toBe(2);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	expect((recomputed[0] as { messages: unknown[] }).messages).toContain(changedEarlierMessage);
+});
+
+test("does not validate a replacement candidate after an earlier provider boundary resumes", async () => {
+	const handlers: Handlers = new Map();
+	let magicContexts = 0;
+	const { promise: contributionGate, resolve: releaseContribution } = Promise.withResolvers<void>();
+	let contributionEntered = false;
+	const api = apiFor(handlers);
+	registerContextPromptContributor(api, {
+		id: "candidate-gate",
+		renderAgent: () => undefined,
+		renderProvider: async () => {
+			contributionEntered = true;
+			await contributionGate;
+			return "candidate contribution";
+		},
+	});
+	piStuffContext(api, {
+		loadMagicContext: async () =>
+			magicModule({
+				onContext: () => {
+					magicContexts++;
+				},
+			}),
+	});
+	const ctx = createExtensionCommandContext({
+		model: {
+			api: "openai-completions",
+			baseUrl: "http://127.0.0.1.invalid",
+			contextWindow: 128_000,
+			cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+			id: "fixture-model",
+			input: ["text"],
+			maxTokens: 512,
+			name: "Fixture",
+			provider: "unknown-provider",
+			reasoning: false,
+		} satisfies Model<Api>,
+	});
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+	const messageA = taggedMessage("candidate A");
+	const messageB = taggedMessage("candidate B");
+	await emitResults(handlers, "context", { type: "context", messages: [messageA] }, ctx);
+	const pendingBoundary = emit(
+		handlers,
+		"before_provider_request",
+		{ type: "before_provider_request", payload: { system: "Host" } },
+		ctx,
+	);
+	while (!contributionEntered) await Promise.resolve();
+
+	await emitResults(handlers, "context", { type: "context", messages: [messageB] }, ctx);
+	releaseContribution();
+	await pendingBoundary;
+	await emitResults(handlers, "context", { type: "context", messages: [messageB] }, ctx);
+
+	expect(magicContexts).toBe(3);
 });
 
 test("awaits startup activation before compaction can run", async () => {

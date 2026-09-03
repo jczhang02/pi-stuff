@@ -56,6 +56,7 @@ interface ProjectionFlight {
 }
 
 interface ProviderProjectionEntry {
+	readonly token: symbol;
 	readonly messages: readonly AgentMessage[];
 	readonly full: string;
 	readonly result: MagicContextEventResult;
@@ -153,6 +154,10 @@ export class ContextProjectionRuntime {
 		this.providerProjection = undefined;
 	}
 
+	currentProviderProjectionToken(): symbol | undefined {
+		return this.providerProjection?.token;
+	}
+
 	private providerProjectionModelMatches(model: ExtensionContext["model"]): boolean {
 		const entry = this.providerProjection;
 		return (
@@ -174,6 +179,7 @@ export class ContextProjectionRuntime {
 			return;
 		}
 		this.providerProjection = {
+			token: Symbol("provider-projection"),
 			messages: event.messages.slice(),
 			full: attempt.full,
 			result,
@@ -184,8 +190,9 @@ export class ContextProjectionRuntime {
 		};
 	}
 
-	markProviderProjectionValidated(model: ExtensionContext["model"]): void {
+	markProviderProjectionValidated(token: symbol | undefined, model: ExtensionContext["model"]): void {
 		const entry = this.providerProjection;
+		if (token === undefined || entry?.token !== token) return;
 		const modelMatches = this.providerProjectionModelMatches(model);
 		if (!entry || !modelMatches) {
 			this.invalidateProviderProjection();
