@@ -112,7 +112,20 @@ test("publishes projection recovery, validation, then clears after a successful 
 	});
 	expect(contextStatus.source.getSnapshot()?.tokens).toBeGreaterThanOrEqual(0);
 
-	await emit(handlers, "message_end", { type: "message_end", message: { role: "assistant" } }, ctx);
+	await emit(
+		handlers,
+		"message_end",
+		{ type: "message_end", message: { role: "assistant", stopReason: "error" } },
+		ctx,
+	);
+	expect(contextStatus.source.getSnapshot()).toEqual({ state: "unknown" });
+
+	await emit(
+		handlers,
+		"message_end",
+		{ type: "message_end", message: { role: "assistant", stopReason: "stop" } },
+		ctx,
+	);
 	expect(contextStatus.source.getSnapshot()).toBeUndefined();
 });
 

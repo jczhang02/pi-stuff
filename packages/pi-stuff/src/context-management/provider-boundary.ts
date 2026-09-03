@@ -60,12 +60,11 @@ export function registerContextProviderBoundary(
 		return payload === event.payload ? undefined : payload;
 	});
 	pi.on("message_end", (event: { message: { role: string; stopReason?: string } }) => {
-		if (
-			event.message.role === "assistant" &&
-			event.message.stopReason !== "error" &&
-			event.message.stopReason !== "aborted"
-		) {
-			status.clear();
+		if (event.message.role !== "assistant") return;
+		if (event.message.stopReason === "error" || event.message.stopReason === "aborted") {
+			status.publish({ state: "unknown" });
+			return;
 		}
+		status.clear();
 	});
 }
