@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0026-preserve-foreground-reporting-through-background-handoff.md; translation-source-sha256: 0c72f3b893d43a766246d01eb2f31a4d97257e664572e2824a6fac99ba51cb6c -->
+<!-- translation-source: docs/adr/0027-preserve-foreground-reporting-through-background-handoff.md; translation-source-sha256: 0c72f3b893d43a766246d01eb2f31a4d97257e664572e2824a6fac99ba51cb6c -->
 
 ---
 status: accepted
