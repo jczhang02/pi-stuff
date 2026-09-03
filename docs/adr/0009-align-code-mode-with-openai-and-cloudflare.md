@@ -141,8 +141,9 @@ and continue into later effects: every later call in that pass also returns the 
 One typed V8 Host-loss retry is allowed. Completed calls are replayed from the ledger; an ambiguous non-replayable
 effect becomes `incomplete` and requires `/codemode abandon`. `/codemode rollback <execution-id>` runs only explicitly
 declared compensating operations, in reverse order. It never pretends an external effect was erased. Stale unfinished
-and paused work expires, terminal history is bounded, and large or unserializable values fail instead of being stored
-approximately.
+and paused work expires, while terminal summaries and nested trace evidence remain bounded. Canonical replay values have
+no Suite byte quota; a genuinely unserializable post-effect result leaves settlement incomplete instead of being
+approximated or replayed.
 
 Connector lifecycle hooks run at the end of every pass, including a failed Host pass and a paused approval pass. A
 terminal execution is disposed once with `completed`, `error`, `rejected`, or `rolled_back`. Cleanup failures are

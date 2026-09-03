@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: 483fb9ddb44a7cd2b16c824a0229f9a5724a8a5cefe14da1cb6f46c92431bef7 -->
+<!-- translation-source: packages/pi-stuff/src/code-mode/README.md; translation-source-sha256: 65b96d631ac74ee37fb656d5ac957d0d638ff2fc28e0b7b99b20721cc5e8b278 -->
 
 # Code Mode
 
@@ -29,7 +29,7 @@ Model 随后可以发现本地 catalog，并从 `codemode({ code })` 调用 `too
 - 阻止 sandbox 直接访问 Node、filesystem、process、network、module 与 credential。
 - 保留每个 nested Tool 的 validation、permission、lifecycle、renderer 与 media behavior。
 - 让有界 Tool Discovery 保持可调用；契约放不下时明确要求 `codemode.describe`，而不暴露不完整 signature。
-- 在有界 Session ledger 中记录稳定 execution 与 nested-call ID。
+- 在 append-only Session ledger 中记录稳定 execution 与 nested-call ID，不让保留字节数成为工作配额。
 - 支持持久 approval、replay policy、rollback、checkpoint 与保存的 snippet。
 - 只在第一次显式 execution 时安装和验证 pinned V8 helper。
 

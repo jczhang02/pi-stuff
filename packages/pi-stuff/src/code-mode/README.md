@@ -28,7 +28,7 @@ the effective policy, catalog, approvals, and Session ledger.
 - Preserves each nested Tool's validation, permissions, lifecycle, renderer, and media behavior.
 - Keeps bounded Tool Discovery callable, or explicitly requires `codemode.describe` instead of exposing an incomplete
   signature.
-- Records stable execution and nested-call IDs in a bounded Session ledger.
+- Records stable execution and nested-call IDs in the append-only Session ledger without turning retained bytes into a work quota.
 - Supports durable approval, replay policy, rollback, checkpoints, and saved snippets.
 - Installs and verifies the pinned V8 helper only on first explicit execution.
 

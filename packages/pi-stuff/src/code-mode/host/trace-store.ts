@@ -70,7 +70,7 @@ export class CodeModeTraceStore {
 	emit(cellId: string, trace: RuntimeToolTrace, context: ExecutorContext): void {
 		try {
 			const state = this.states.get(cellId);
-			if (!state?.traces.some((retained) => retained.id === trace.id)) return;
+			if (!state?.traces.includes(trace)) return;
 			const update: RuntimeTraceUpdate = {
 				cellId,
 				trace: cloneTrace(trace),

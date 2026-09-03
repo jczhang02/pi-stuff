@@ -403,7 +403,7 @@ test("a trace setup failure settles the durable Tool plan before responding", as
 	runtime.clear();
 });
 
-test("hidden nested Tools count against the per-execution safety bound", async () => {
+test("hidden nested Tools continue beyond the trace retention bound", async () => {
 	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
 	let invocations = 0;
 	let sequence = 0;
@@ -458,13 +458,10 @@ test("hidden nested Tools count against the per-execution safety bound", async (
 	}
 	for (let attempt = 0; attempt < 20 && responses.length < 769; attempt += 1) await Bun.sleep(1);
 
-	expect(invocations).toBe(768);
+	expect(invocations).toBe(769);
 	expect(responses).toHaveLength(769);
-	expect(settlements.filter((status) => status === "success")).toHaveLength(768);
-	expect(settlements.filter((status) => status === "error")).toHaveLength(1);
-	expect(responses.find((response) => response.id === 769)?.result).toEqual({
-		message: "Code Mode supports at most 768 nested Tool calls per execution",
-		status: "error",
-	});
+	expect(settlements.filter((status) => status === "success")).toHaveLength(769);
+	expect(settlements.filter((status) => status === "error")).toHaveLength(0);
+	expect(responses.find((response) => response.id === 769)?.result.status).toBe("ok");
 	runtime.clear();
 });

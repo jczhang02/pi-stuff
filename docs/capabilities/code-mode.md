@@ -64,7 +64,7 @@ available only through the Tool catalog and Host output helpers.
 The child Agent's existing Tool allowlist and capability ceiling still bound its catalog. A later parent toggle does
 not change an already running child.
 
-One execution may issue at most 768 nested Tool calls. Crossing the bound fails explicitly.
+Nested Tool calls continue past the trace-retention threshold. The runtime keeps the latest 768 trace rows and an omission count without stopping the execution.
 
 ## Tool behavior and UI
 
@@ -91,8 +91,9 @@ Each execution and nested call receives a stable ID in the current Session's app
 An unfinished `never` or `record` call becomes `incomplete`. Recovery commands fail when the active Session branch
 cannot be identified rather than treating history as empty.
 
-The ledger retains up to 50 terminal executions, caps one source program at 1,000,000 bytes, and caps all Code Mode
-ledger entries in one Session at 16 MiB.
+The folded ledger view retains up to 50 terminal executions, and one source program is capped at 1,000,000 bytes before
+execution. Canonical replay values and cumulative Session ledger entries have no Suite byte quota; a real persistence
+failure leaves the execution `incomplete` rather than replaying an uncertain effect.
 
 ## Durable approval
 

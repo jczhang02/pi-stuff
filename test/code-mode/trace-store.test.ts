@@ -21,6 +21,9 @@ test("nested Tool trace retention never limits execution", () => {
 		traces.emit("cell", trace, context);
 	}
 
+	expect(() => traces.start("cell", "nested-799", "read", {})).toThrow(
+		"Duplicate Code Mode nested Tool call ID: nested-799",
+	);
 	expect(() => traces.start("cell", "nested-0", "read", {})).toThrow(
 		"Duplicate Code Mode nested Tool call ID: nested-0",
 	);
@@ -35,4 +38,5 @@ test("nested Tool trace retention never limits execution", () => {
 	expect(response.droppedTraceCount).toBe(32);
 	expect(response.traces).toHaveLength(768);
 	expect(response.traces?.[0]?.id).toBe("nested-32");
+	expect(response.traces?.at(-1)?.id).toBe("nested-799");
 });
