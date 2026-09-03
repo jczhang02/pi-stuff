@@ -117,6 +117,13 @@ response. Notification compares this value with its configured minimum-duration 
 and Host lifecycle timing remain unchanged.
 _Avoid_: Prompt-inclusive run duration, Goal elapsed time, model latency
 
+**Work Continuity Contract**:
+The Suite guarantee that work owned by the current Session does not become blocked or terminal solely because internal
+accounting, retained evidence, completed-work totals, or productive elapsed time crosses an arbitrary threshold. User
+or Host lifecycle authority and recoverable cost, runaway, external-availability, and integrity controls remain outside
+this guarantee.
+_Avoid_: Unlimited execution, cross-Session daemon, no limits
+
 **Tool Activity**:
 A display-only unit representing either one independent Tool invocation or one Retrieval Group. Its projection does
 not merge or alter the underlying protocol events, ordering, or Session history.
@@ -158,9 +165,9 @@ remains diagnostic evidence rather than a Conversation Transcript event.
 _Avoid_: Internal wait, empty Code Mode call, no-op Tool
 
 **Execution Ledger**:
-Code Mode's replay and recovery state stored in bounded Pi Session custom entries. It keeps one canonical completion
-payload, has a fixed physical aggregate budget, and rejects further durable work before crossing that budget; it is
-not a second database or an unbounded event archive.
+Code Mode's authoritative append-only replay and recovery state stored in Pi Session custom entries. It keeps exact
+canonical completion payloads, never imposes a cumulative work quota, and treats post-effect persistence failure as
+incomplete; it is not a second database or a model-facing transcript.
 _Avoid_: Code Mode database, recovery log
 
 **Tool Discovery**:

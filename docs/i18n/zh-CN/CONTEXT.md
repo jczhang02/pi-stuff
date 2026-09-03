@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: a5074845fc6c9230a2a1ce35b4119684ac2d2ab3c53a1e55097c25248dc4be5d -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: a229dcbcf873f1cb0f210b667aca44ed15def0db6e5643e8aa369ca963d6a961 -->
 
 # Pi Stuff
 
@@ -114,6 +114,12 @@ _避免使用_：Assistant message boundary、API turn、physical terminal row
 最短时长阈值；Goal 的活跃 elapsed time 与 Host 生命周期计时不变。
 _避免使用_：包含 prompt 等待的运行时长、Goal elapsed time、model latency
 
+**Work Continuity Contract**：
+Suite 的保证：当前 Session 所属工作不会仅因内部 accounting、retained evidence、completed-work total 或
+productive elapsed time 跨过任意阈值而进入 blocked 或 terminal 状态。用户或 Host 的生命周期权威，以及可恢复的
+cost、runaway、external-availability 和 integrity control 不受此保证约束。
+_避免使用_：Unlimited execution、cross-Session daemon、no limits
+
 **Tool Activity**：
 只用于显示的单元，代表一次独立 Tool invocation 或一个 Retrieval Group。它的 projection 不合并或改变底层
 协议事件、顺序或 Session 历史。
@@ -151,8 +157,9 @@ _避免使用_：Envelope chrome、raw Tool result、duplicate error row
 _避免使用_：Internal wait、empty Code Mode call、no-op Tool
 
 **Execution Ledger**：
-存放在有界 Pi Session custom entry 中的 Code Mode replay 与 recovery 状态。它只保留一份 canonical completion
-payload，拥有固定物理总预算，并在越过预算前拒绝更多 durable work；它不是第二个数据库或无界 event archive。
+存放在 Pi Session custom entry 中的 Code Mode 权威 append-only replay 与 recovery 状态。它保存准确的 canonical
+completion payload，不施加累计 work quota，并把 effect 后的持久化失败视为 incomplete；它不是第二个数据库或
+面向模型的 transcript。
 _避免使用_：Code Mode database、recovery log
 
 **Tool Discovery**：
