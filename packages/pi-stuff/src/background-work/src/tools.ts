@@ -23,7 +23,7 @@ const BASH_PARAMETERS = Type.Object({
 	),
 	run_in_background: Type.Optional(
 		Type.Boolean({
-			description: "Start detached from the foreground tool call and continue useful work immediately",
+			description: "Start an independent detached command without automatically starting a later Agent turn",
 		}),
 	),
 	timeout: Type.Optional(
@@ -172,10 +172,11 @@ function registerBashTool(pi: SuiteToolRegistrationHost, runtimeRef: WorkToolRun
 			name: "bash",
 			label: "bash",
 			description:
-				"Execute a shell command in the current working directory. Output is bounded. Set run_in_background for servers or other independent long work; a foreground command still running after two minutes moves to the background automatically. timeout limits total runtime and stops the process tree.",
+				"Execute a shell command in the current working directory. Output is bounded. Set run_in_background for servers or other independent long work that should not start another Agent turn; a foreground command still running after two minutes moves to the background and resumes the Agent when it settles. timeout limits total runtime and stops the process tree.",
 			promptSnippet: "Execute shell commands; use run_in_background for independent long-running work",
 			promptGuidelines: [
-				"Continue useful work after a Bash command moves to the background; its terminal result is delivered automatically instead of requiring polling.",
+				"Continue useful work after a foreground Bash moves to the background; its terminal result resumes you automatically, so do not create a Monitor merely to watch that Shell.",
+				"After a handed-off foreground Bash settles, inspect its result, finish the original work, and provide a Completion Report only when no required work remains.",
 				"Inspect PI_* environment variables for current model and session details.",
 			],
 			parameters: BASH_PARAMETERS,
@@ -273,6 +274,7 @@ export function registerWorkTools(
 		promptSnippet: "Wait asynchronously for one known command, file, log, or HTTP condition",
 		promptGuidelines: [
 			"Use Monitor only for a concrete observable condition with a deadline; after it starts, continue useful work and do not poll it from the conversation.",
+			"Do not use Monitor merely to watch a foreground Bash that moved to Background Work; that Shell resumes the Agent when it settles.",
 		],
 		parameters: MONITOR_PARAMETERS,
 		executionMode: "parallel",

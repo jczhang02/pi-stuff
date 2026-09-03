@@ -39,16 +39,45 @@ test("moves only the active foreground Bash command and then cleans its process 
 	expect(active.snapshot()).toHaveLength(0);
 });
 
-test("automatically hands off a foreground command after the configured production seam", async () => {
-	const root = temporaryRoot();
-	const active = runtime(root, [], 100);
-	const result = await active.executeBash({ command: "sleep 30" }, context(root));
-	const text = result.content.find((item) => item.type === "text");
-	expect(text?.type === "text" ? text.text : "").toContain("moved to background task");
-	expect(isForegroundBashResult(result)).toBe(false);
-	expect(active.snapshot()).toHaveLength(1);
-	await active.shutdown();
-});
+const foregroundTerminalCases = [
+	{ command: "sleep 0.2; printf 'FOREGROUND-HANDOFF-DONE\n'", status: "completed" },
+	{ command: "sleep 0.2; printf 'FOREGROUND-HANDOFF-FAILED\n' >&2; exit 7", status: "failed" },
+	{ command: "sleep 30", status: "timed_out", timeoutSeconds: 0.2 },
+] as const;
+
+for (const handoff of ["automatic", "manual"] as const) {
+	for (const terminalCase of foregroundTerminalCases) {
+		test(`${handoff} foreground handoff wakes after it is ${terminalCase.status}`, async () => {
+			const root = temporaryRoot();
+			const messages: DeliveredMessage[] = [];
+			const active = runtime(root, messages, handoff === "automatic" ? 50 : 10_000);
+			try {
+				const input = { command: terminalCase.command };
+				if ("timeoutSeconds" in terminalCase) {
+					Object.assign(input, { timeoutSeconds: terminalCase.timeoutSeconds });
+				}
+				const execution = active.executeBash(input, context(root));
+				if (handoff === "manual") {
+					await Bun.sleep(50);
+					expect(active.detachActiveForeground()).toBe(true);
+				}
+				const result = await execution;
+				expect(isForegroundBashResult(result)).toBe(false);
+				await waitUntil(() => messages.length === 1);
+				const delivered = messages[0];
+				if (!delivered) throw new Error("Foreground Handoff result was not delivered");
+				const details = delivered.message.details;
+				if (!Check(COMPLETION_DETAILS_SCHEMA, details)) {
+					throw new Error("Foreground Handoff details are invalid");
+				}
+				expect(details.outcomes[0]?.status).toBe(terminalCase.status);
+				expect(delivered.options).toEqual({ deliverAs: "steer", triggerTurn: true });
+			} finally {
+				await active.shutdown();
+			}
+		});
+	}
+}
 
 test("refreshes Git after a user-attributed Background Shell finishes after its parent settles", async () => {
 	const root = temporaryRoot();
@@ -119,7 +148,8 @@ test("does not refresh Git or wake the Agent after an automatic Background Shell
 test("kills TERM-ignoring descendants during session shutdown", async () => {
 	const root = temporaryRoot();
 	const childPath = join(root, "child.pid");
-	const active = runtime(root);
+	const messages: DeliveredMessage[] = [];
+	const active = runtime(root, messages);
 	await active.executeBash(
 		{
 			command: `trap '' TERM HUP INT; sh -c 'trap "" TERM HUP INT; while :; do sleep 1; done' & echo $! > ${JSON.stringify(childPath)}; wait`,
@@ -132,6 +162,7 @@ test("kills TERM-ignoring descendants during session shutdown", async () => {
 	expect(processExists(childPid)).toBe(true);
 	await active.shutdown();
 	await waitUntil(() => !processExists(childPid));
+	expect(messages).toEqual([]);
 	expect(existsSync(join(root, ".pi", "tasks"))).toBe(true);
 	expect(readFileSync(childPath, "utf-8").trim()).toBe(String(childPid));
 });
@@ -166,6 +197,72 @@ test("delivers a one-shot file Monitor result without conversational polling", a
 	expect(active.readOutput(started.id)).toContain("observed its condition");
 	expect((await active.stop(started.id)).status).toBe("completed");
 	await active.shutdown();
+});
+
+test("a timed-out Monitor does not strand a later foreground handoff result", async () => {
+	const root = temporaryRoot();
+	const messages: DeliveredMessage[] = [];
+	const active = runtime(root, messages, 50);
+	try {
+		const execution = active.executeBash(
+			{ command: "sleep 0.8; printf 'FOREGROUND-HANDOFF-AFTER-MONITOR\n'" },
+			context(root),
+		);
+		expect(isForegroundBashResult(await execution)).toBe(false);
+		await startMonitor(
+			active,
+			{
+				intervalSeconds: 0.1,
+				source: "file",
+				successText: "NEVER",
+				target: join(root, "never-created"),
+				timeoutSeconds: 0.2,
+			},
+			context(root),
+		);
+
+		await waitUntil(() => messages.length === 1);
+		expect(messages[0]?.message.details).toMatchObject({
+			outcomes: [{ kind: "monitor", status: "timed_out" }],
+		});
+		expect(messages[0]?.options).toEqual({ deliverAs: "steer", triggerTurn: true });
+
+		await waitUntil(() => messages.length === 2);
+		expect(messages[1]?.message.details).toMatchObject({
+			outcomes: [{ kind: "shell", status: "completed" }],
+		});
+		expect(messages[1]?.options).toEqual({ deliverAs: "steer", triggerTurn: true });
+	} finally {
+		await active.shutdown();
+	}
+});
+
+test("batches nearby Shell outcomes without losing a foreground handoff wake", async () => {
+	const root = temporaryRoot();
+	const messages: DeliveredMessage[] = [];
+	const active = runtime(root, messages, 50);
+	try {
+		const foreground = await active.executeBash({ command: "sleep 0.6; printf 'REQUIRED-SHELL\n'" }, context(root));
+		expect(isForegroundBashResult(foreground)).toBe(false);
+		await active.executeBash(
+			{ command: "sleep 0.53; printf 'INDEPENDENT-SHELL\n'", runInBackground: true },
+			context(root),
+		);
+
+		await waitUntil(() => active.snapshot().length === 0);
+		await waitUntil(() => messages.length === 1);
+		await Bun.sleep(250);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]?.message.details).toMatchObject({
+			outcomes: [
+				{ kind: "shell", status: "completed" },
+				{ kind: "shell", status: "completed" },
+			],
+		});
+		expect(messages[0]?.options).toEqual({ deliverAs: "steer", triggerTurn: true });
+	} finally {
+		await active.shutdown();
+	}
 });
 
 test("does not enqueue a second Agent turn for work the user explicitly stopped", async () => {
@@ -220,6 +317,7 @@ test("retains a failed Background Shell receipt with bounded in-memory fallback"
 		expect(taskId).toBeString();
 		await waitUntil(() => active.snapshot().length === 0);
 		await waitUntil(() => messages.length === 1);
+		expect(messages[0]?.options).toEqual({ deliverAs: "followUp", triggerTurn: false });
 		expect((await active.stop(taskId ?? "")).status).toBe("failed");
 		expect(active.readOutput(taskId ?? "")).toContain("BACKGROUND-FAILED");
 
@@ -376,8 +474,12 @@ test("enforces a Background Shell runtime timeout after returning control", asyn
 	await waitUntil(() => active.snapshot().length === 0);
 	await waitUntil(() => messages.length === 1);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	const delivered = messages[0] as { message: { details: { outcomes: Array<{ status: string }> } } };
+	const delivered = messages[0] as {
+		message: { details: { outcomes: Array<{ status: string }> } };
+		options: { deliverAs: string; triggerTurn: boolean };
+	};
 	expect(delivered.message.details.outcomes[0]?.status).toBe("timed_out");
+	expect(delivered.options).toEqual({ deliverAs: "followUp", triggerTurn: false });
 	expect(active.readOutput(taskId ?? "")).toContain("timed out");
 	expect((await active.stop(taskId ?? "")).status).toBe("timed_out");
 	await active.shutdown();

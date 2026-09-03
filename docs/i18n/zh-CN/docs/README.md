@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: c8c807dc1db42b28124670242f970390800a44120bc67d26a05c372ce0a20c9c -->
+<!-- translation-source: docs/README.md; translation-source-sha256: 700b1a6eb61193cc0c8be48b622178de9fcf1058f03119195393da4b59d4ad8e -->
 
 # 文档
 
@@ -86,6 +86,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0023](adr/0023-use-a-closed-operation-block-family.md) | 使用封闭的 Operation Block 类型集合 |
 | [0024](adr/0024-adopt-effect-as-the-internal-effect-model.md) | 采用 Effect 作为内部 effect 模型 |
 | [0025](adr/0025-protect-vibe-line-spinner-liveness.md) | 在 Pi Stuff 边界内保护 Vibe Line Spinner 活性 |
+| [0026](adr/0026-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
 
 ## 证据与历史
 

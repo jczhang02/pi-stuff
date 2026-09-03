@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 97a7ffc1798e80d03d4b1db04d2e1b310b46dc0e7171fb51d125005fa421b677 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 6954718e70951cc30c20f0f4099336ad7ed210130819ccec6f66577ad9f9db8d -->
 
 # Pi Stuff
 
@@ -218,7 +218,17 @@ _避免使用_：Todo、daemon、scheduler
 Host Session 结束，绝不会变成跨 Session daemon。
 _避免使用_：Job、service
 
+**Foreground Handoff**：
+仍在运行的前台 Bash invocation 转换为 Background Shell 的过程，无论它由 `Ctrl+B` 请求还是由 runtime
+阈值触发。它改变执行位置，但保留当前用户工作接收并处理 terminal outcome 的义务。
+_避免使用_：Implicit background launch、fire-and-forget
+
 **Monitor**：
 在 Background Work 中对一个明确可观察条件进行的一次性等待，例如 command result、log match、file state
 或 HTTP response。它不是 polling conversation、recurring loop 或 schedule。
 _避免使用_：Watcher、cron、polling task
+
+**Completion Report**：
+面向用户的 Assistant response，说明请求的工作是否完成，给出决定性的 terminal evidence，并指出任何剩余
+工作。原始 Background Work outcome notification 是 delivery input，不是 Completion Report。
+_避免使用_：Completion notification、Background command row

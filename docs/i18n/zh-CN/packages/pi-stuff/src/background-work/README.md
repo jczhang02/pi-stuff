@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: 28b2cf0b84e2c331d4758dac692543eee2d9bd7a00a2296188fb1ed1ce5ff71d -->
+<!-- translation-source: packages/pi-stuff/src/background-work/README.md; translation-source-sha256: a691900ba31fdb60aad0d9c4fd8349043f9e16ed85472a18c9ef955ee08799a6 -->
 
 # Background Work
 
@@ -16,8 +16,8 @@
 
 ## 快速开始
 
-让 Agent 使用 `run_in_background: true` 启动 Bash，或为 command、file、log、HTTP 证据创建 `monitor`。
-然后打开：
+让 Agent 仅对独立 Bash 命令使用 `run_in_background: true`，或为 command、file、log、HTTP 证据创建
+`monitor`。必需的 Bash 命令保持前台；稍后发生 handoff 时，命令结束会恢复 Agent。然后打开：
 
 ```text
 /tasks
@@ -28,6 +28,7 @@ Dialog 列出当前工作、跟随有界输出，并停止当前 Session 拥有�
 ## 亮点
 
 - 在启动时、通过 `Ctrl+B` 或前台运行两分钟后分离 Bash。
+- 显式 background launch 保持独立，而 foreground handoff 会在 terminal outcome 时恢复主 Agent。
 - 跨四种 source 监控精确 success 或 failure text。
 - 自动送达最终结果，无需在 conversation 中轮询。
 - 保留最新 64 个有界 completion receipt，供近期检查。

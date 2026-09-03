@@ -65,6 +65,12 @@ const COMPLETION_DETAILS_SCHEMA = Type.Object(
 			Type.Object(
 				{
 					parentRunOrigin: Type.Optional(Type.Union([Type.Literal("automatic"), Type.Literal("user")])),
+					status: Type.Union([
+						Type.Literal("completed"),
+						Type.Literal("failed"),
+						Type.Literal("stopped"),
+						Type.Literal("timed_out"),
+					]),
 				},
 				{ additionalProperties: true },
 			),

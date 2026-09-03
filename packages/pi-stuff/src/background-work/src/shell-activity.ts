@@ -567,7 +567,10 @@ export class ShellActivity {
 			this.stopReason !== "shutdown" &&
 			this.stopReason !== "abort" &&
 			this.stopReason !== "user";
-		this.owner.settled(outcome, shouldNotify ? this.kind === "monitor" : undefined);
+		this.owner.settled(
+			outcome,
+			shouldNotify ? this.kind === "monitor" || !this.launch.input.backgrounded : undefined,
+		);
 	}
 
 	private durableOutputPath(): string | undefined {
