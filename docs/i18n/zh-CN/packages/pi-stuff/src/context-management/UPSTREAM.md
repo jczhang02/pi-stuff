@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 84dea31c34e1bd35e3b17fd6afbc4bd80783f47ebc503e1e799dd825c8285a99 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: c07c8e3f997c1daefa52c4556778eda1b35b56e8917a7ce2f3e268061798d67e -->
 
 # 捆绑上下文引擎来源
 
@@ -65,6 +65,9 @@ Package 声明的 Pi peer 是 `^0.80.2`，不包括 Suite 已认证的 Pi 0.84.4
 - 为 BTW 和 Agents 提供一个有界状态/投影接缝；
 - 在可替换 Capability 接缝后使用精确官方基础 Package 及临时、经过审查的 tokenizer 兼容补丁；
 - 通过不可变 Host 快照和有界副作用，把精确官方引擎与 Pi UI 线程隔离；
+- 保持取消边界语义透明：镜像的生命周期事件与不读取 signal 的命令不继承当前 Agent turn 的 signal；Tool
+  invocation 与固定版本中读取 signal 的 augmentation 命令保留各自拥有的 signal；每次上游升级都重新审计哪些
+  官方 handler 会读取 signal；
 - 不提供相互竞争的 Todo、状态栏、公告、Dreamer 或 Sidekick UI；
 - 只暴露五个 Context Tools，以及聚焦的状态、清理、重组、收尾和 Session 升级命令；
 - 只有一个显式 compaction 权威：Magic 接管前允许原生回退，活跃 Magic 尝试后绝不叠加；

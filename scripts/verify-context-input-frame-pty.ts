@@ -1,10 +1,12 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -13,12 +15,43 @@ const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const INPUT_FRAME_LATENCY_LIMIT_MS = 150;
 const WORKING_STALL_LIMIT_MS = 500;
 const HISTORY_MARKER = "CONTEXT_INPUT_HISTORY_499";
+const PROVIDER_CONTENT_PART_SCHEMA = Type.Object(
+	{
+		arguments: Type.Optional(Type.Unknown()),
+		id: Type.Optional(Type.String()),
+		name: Type.Optional(Type.String()),
+		text: Type.Optional(Type.String()),
+		type: Type.String(),
+	},
+	{ additionalProperties: true },
+);
+const PROVIDER_MESSAGE_SCHEMA = Type.Object(
+	{
+		content: Type.Union([Type.String(), Type.Array(PROVIDER_CONTENT_PART_SCHEMA)]),
+		role: Type.String(),
+		stopReason: Type.Optional(Type.String()),
+		toolCallId: Type.Optional(Type.String()),
+		toolName: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const PROVIDER_TOOL_SCHEMA = Type.Object({ name: Type.String() }, { additionalProperties: true });
+const PROVIDER_PAYLOAD_SCHEMA = Type.Object(
+	{
+		messages: Type.Array(PROVIDER_MESSAGE_SCHEMA),
+		systemPrompt: Type.Optional(Type.String()),
+		tools: Type.Optional(Type.Array(PROVIDER_TOOL_SCHEMA)),
+	},
+	{ additionalProperties: true },
+);
 const RECORD_SCHEMA = Type.Object(
 	{
 		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
 		hasSince: Type.Optional(Type.Boolean()),
 		lastUser: Type.Optional(Type.String()),
 		magicProjectionMarkers: Type.Optional(Type.Array(Type.String())),
+		providerPayload: Type.Optional(PROVIDER_PAYLOAD_SCHEMA),
+		tools: Type.Optional(Type.Array(Type.String())),
 		type: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: true },
@@ -108,6 +141,118 @@ async function readRecords(path: string): Promise<RecordLine[]> {
 		});
 }
 
+type ProviderMessage = Static<typeof PROVIDER_MESSAGE_SCHEMA>;
+
+function providerMessageText(message: ProviderMessage): string {
+	if (isRuntimeString(message.content)) return message.content;
+	return message.content
+		.map((part) => (part.type === "text" ? (part.text ?? "") : ""))
+		.filter(Boolean)
+		.join("\n");
+}
+
+function assertRecoveryProviderPayload(records: readonly RecordLine[], record: RecordLine): void {
+	const payload = record.providerPayload;
+	if (!payload) fail("recovery request did not record its complete Provider payload");
+	const interruptedRequest = [...records]
+		.reverse()
+		.find(
+			(candidate) =>
+				candidate.type === "request" &&
+				candidate.lastUser?.includes("CONTEXT_INTERRUPT_A") === true &&
+				candidate.providerPayload?.messages.some(
+					(message) =>
+						message.role === "toolResult" &&
+						message.toolCallId === "context-interrupt-search-1" &&
+						message.toolName === "ctx_search",
+				) === true,
+		);
+	const interruptedPayload = interruptedRequest?.providerPayload;
+	if (!interruptedPayload) fail("interrupted request did not record its complete Provider payload");
+
+	const interruptIndex = payload.messages.findIndex(
+		(message) => message.role === "user" && providerMessageText(message).includes("CONTEXT_INTERRUPT_A"),
+	);
+	const recoveryIndex = payload.messages.findIndex(
+		(message) => message.role === "user" && providerMessageText(message).includes("CONTEXT_INTERRUPT_B"),
+	);
+	const interruptToolCallIndex = payload.messages.findIndex(
+		(message, index) =>
+			index > interruptIndex &&
+			index < recoveryIndex &&
+			message.role === "assistant" &&
+			Array.isArray(message.content) &&
+			message.content.some(
+				(part) =>
+					part.type === "toolCall" &&
+					part.id === "context-interrupt-search-1" &&
+					part.name === "ctx_search" &&
+					isDeepStrictEqual(part.arguments, { query: "CONTEXT_INPUT_HISTORY_499" }),
+			),
+	);
+	const interruptToolResultIndex = payload.messages.findIndex(
+		(message, index) =>
+			index > interruptToolCallIndex &&
+			index < recoveryIndex &&
+			message.role === "toolResult" &&
+			message.toolCallId === "context-interrupt-search-1" &&
+			message.toolName === "ctx_search",
+	);
+	const interruptedAssistantIndex = payload.messages.findIndex(
+		(message, index) =>
+			index > interruptToolResultIndex &&
+			index < recoveryIndex &&
+			message.role === "assistant" &&
+			message.stopReason === "aborted",
+	);
+	const sourceInterruptIndex = interruptedPayload.messages.findIndex(
+		(message) => message.role === "user" && providerMessageText(message).includes("CONTEXT_INTERRUPT_A"),
+	);
+	const sourceToolResultIndex = interruptedPayload.messages.findIndex(
+		(message) =>
+			message.role === "toolResult" &&
+			message.toolCallId === "context-interrupt-search-1" &&
+			message.toolName === "ctx_search",
+	);
+	const retainedSequence = isDeepStrictEqual(
+		interruptedPayload.messages.slice(sourceInterruptIndex, sourceToolResultIndex + 1),
+		payload.messages.slice(interruptIndex, interruptToolResultIndex + 1),
+	);
+	const seenToolCalls = new Set<string>();
+	let invalidToolResult = false;
+	for (const message of payload.messages) {
+		if (Array.isArray(message.content)) {
+			for (const part of message.content) {
+				if (part.type === "toolCall" && part.id) seenToolCalls.add(part.id);
+			}
+		}
+		if (
+			message.role === "toolResult" &&
+			(!message.toolCallId || !message.toolName || !seenToolCalls.has(message.toolCallId))
+		) {
+			invalidToolResult = true;
+		}
+	}
+	const contextTools = ["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"];
+	if (
+		interruptIndex < 0 ||
+		recoveryIndex <= interruptIndex ||
+		recoveryIndex !== payload.messages.length - 1 ||
+		interruptToolCallIndex <= interruptIndex ||
+		interruptToolResultIndex <= interruptToolCallIndex ||
+		interruptedAssistantIndex <= interruptToolResultIndex ||
+		sourceInterruptIndex < 0 ||
+		sourceToolResultIndex <= sourceInterruptIndex ||
+		!retainedSequence ||
+		!isDeepStrictEqual(interruptedPayload.systemPrompt, payload.systemPrompt) ||
+		!isDeepStrictEqual(interruptedPayload.tools, payload.tools) ||
+		invalidToolResult ||
+		!contextTools.every((name) => payload.tools?.some((tool) => tool.name === name))
+	) {
+		fail(`recovery Provider payload lost or altered content: ${JSON.stringify(record)}`);
+	}
+}
+
 function seedSession(sessionDirectory: string, cwd: string): string {
 	const manager = SessionManager.create(cwd, sessionDirectory, { id: "context-input-frame" });
 	manager.appendModelChange("pi-stuff-context-pty", "fixture-model");
@@ -145,13 +290,12 @@ function seedSession(sessionDirectory: string, cwd: string): string {
 	return sessionFile;
 }
 
-async function verifySubmittedPromptFrame(capture: () => string, submit: () => void, prompt: string): Promise<void> {
-	const captureOverheads = Array.from({ length: 5 }, () => {
-		const startedAt = performance.now();
-		capture();
-		return performance.now() - startedAt;
-	}).sort((left, right) => left - right);
-	const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
+async function verifySubmittedPromptFrame(
+	capture: () => string,
+	submit: () => void,
+	prompt: string,
+	verifyWorkingAnimation = true,
+): Promise<void> {
 	const submittedAt = performance.now();
 	submit();
 	const workingFrames = new Set<string>();
@@ -162,7 +306,7 @@ async function verifySubmittedPromptFrame(capture: () => string, submit: () => v
 	while (Date.now() < workingDeadline) {
 		const frame = capture();
 		if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-			transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
+			transcriptVisibleMs = performance.now() - submittedAt;
 		}
 		const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
 		const observedAt = performance.now();
@@ -181,6 +325,7 @@ async function verifySubmittedPromptFrame(capture: () => string, submit: () => v
 			workingFrame = undefined;
 			workingFrameChangedAt = undefined;
 		}
+		if (transcriptVisibleMs !== undefined && !verifyWorkingAnimation) break;
 		await Bun.sleep(50);
 	}
 	if (transcriptVisibleMs === undefined) {
@@ -189,9 +334,82 @@ async function verifySubmittedPromptFrame(capture: () => string, submit: () => v
 	if (transcriptVisibleMs > INPUT_FRAME_LATENCY_LIMIT_MS) {
 		fail(`submitted prompt took ${transcriptVisibleMs.toFixed(1)}ms to appear in the Conversation Transcript`);
 	}
-	if (workingFrames.size < 2) {
+	if (verifyWorkingAnimation && workingFrames.size < 2) {
 		fail(`Vibe Line Working animation did not advance: ${JSON.stringify([...workingFrames])}`);
 	}
+}
+
+interface InputFrameFlow {
+	readonly capture: (history?: boolean) => string;
+	readonly environment: PtyEnvironment;
+	readonly requestLog: string;
+	readonly send: (text: string) => void;
+	readonly session: string;
+	readonly tmux: (args: readonly string[]) => string;
+	readonly waitFor: (
+		predicate: (frame: string) => boolean,
+		label: string,
+		timeoutMs?: number,
+		history?: boolean,
+	) => Promise<string>;
+}
+
+async function verifyInputFrameFlow({
+	capture,
+	environment,
+	requestLog,
+	send,
+	session,
+	tmux,
+	waitFor,
+}: InputFrameFlow): Promise<void> {
+	const prompt = "CONTEXT_RESUME_REQUEST";
+	tmux(["send-keys", "-t", session, "-l", "--", prompt]);
+	await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
+	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), prompt);
+
+	await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
+	const modelRequest = (await readRecords(requestLog))
+		.reverse()
+		.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
+	if (
+		modelRequest?.hasSince !== true ||
+		modelRequest.hasCompactMagicContextPrompt !== true ||
+		modelRequest.magicProjectionMarkers?.includes(HISTORY_MARKER) !== true
+	) {
+		send("/ctx status");
+		await Bun.sleep(100);
+		tmux(["send-keys", "-t", session, "Enter"]);
+		await Bun.sleep(500);
+		const magicLogPath = environment["MAGIC_CONTEXT_LOG_PATH"];
+		const magicLog = magicLogPath
+			? await readFile(magicLogPath, "utf8").catch(() => "<Magic Context log unavailable>")
+			: "<Magic Context log path unavailable>";
+		fail(
+			`model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
+		);
+	}
+
+	const interruptedPrompt = "CONTEXT_INTERRUPT_A";
+	tmux(["send-keys", "-t", session, "-l", "--", interruptedPrompt]);
+	await waitFor((frame) => editorContains(frame, interruptedPrompt), "the typed interrupt target");
+	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), interruptedPrompt);
+	tmux(["send-keys", "-t", session, "Escape"]);
+	await waitFor((frame) => frame.includes("Operation aborted"), "the interrupted Agent turn", 10_000);
+
+	const recoveryPrompt = "CONTEXT_INTERRUPT_B";
+	tmux(["send-keys", "-t", session, "-l", "--", recoveryPrompt]);
+	await waitFor((frame) => editorContains(frame, recoveryPrompt), "the typed post-interrupt prompt");
+	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), recoveryPrompt, false);
+	await waitFor((frame) => frame.includes("CONTEXT_INTERRUPT_B_DONE"), "post-interrupt Context response", 40_000);
+	const records = await readRecords(requestLog);
+	const recoveryRequest = [...records]
+		.reverse()
+		.find((record) => record.type === "request" && record.lastUser?.includes(recoveryPrompt) === true);
+	if (recoveryRequest?.hasCompactMagicContextPrompt !== true) {
+		fail(`post-interrupt Provider payload lost Context projection: ${JSON.stringify(recoveryRequest)}`);
+	}
+	assertRecoveryProviderPayload(records, recoveryRequest);
 }
 
 async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, requestLog: string): Promise<void> {
@@ -236,6 +454,18 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 				socket,
 				"-f",
 				"/dev/null",
+				"start-server",
+				";",
+				"set-option",
+				"-s",
+				"extended-keys",
+				"on",
+				";",
+				"set-option",
+				"-s",
+				"extended-keys-format",
+				"csi-u",
+				";",
 				"new-session",
 				"-d",
 				"-s",
@@ -265,32 +495,7 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 			`cat >> ${shellQuote(terminalOutputPath)}; touch ${shellQuote(terminalOutputDonePath)}`,
 		]);
 
-		const prompt = "CONTEXT_RESUME_REQUEST";
-		tmux(["send-keys", "-t", session, "-l", "--", prompt]);
-		await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
-		await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), prompt);
-
-		await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
-		const modelRequest = (await readRecords(requestLog))
-			.reverse()
-			.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
-		if (
-			modelRequest?.hasSince !== true ||
-			modelRequest.hasCompactMagicContextPrompt !== true ||
-			modelRequest.magicProjectionMarkers?.includes(HISTORY_MARKER) !== true
-		) {
-			send("/ctx status");
-			await Bun.sleep(100);
-			tmux(["send-keys", "-t", session, "Enter"]);
-			await Bun.sleep(500);
-			const magicLogPath = environment["MAGIC_CONTEXT_LOG_PATH"];
-			const magicLog = magicLogPath
-				? await readFile(magicLogPath, "utf8").catch(() => "<Magic Context log unavailable>")
-				: "<Magic Context log path unavailable>";
-			fail(
-				`model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
-			);
-		}
+		await verifyInputFrameFlow({ capture, environment, requestLog, send, session, tmux, waitFor });
 
 		send("CONTEXT_DRAIN");
 		await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
@@ -321,11 +526,13 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 	const cortexConfigDirectory = join(xdgConfigDirectory, "cortexkit");
 	const dataDirectory = join(temporaryDirectory, "data");
 	const cacheDirectory = join(temporaryDirectory, "cache");
+	const runtimeDirectory = join(temporaryDirectory, "runtime");
 	const projectDirectory = join(temporaryDirectory, "项目隔离", "context-input-frame");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
 	try {
+		await mkdir(runtimeDirectory, { mode: 0o700 });
 		await Promise.all(
 			[
 				configDirectory,
@@ -391,6 +598,7 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 				XDG_CACHE_HOME: cacheDirectory,
 				XDG_CONFIG_HOME: xdgConfigDirectory,
 				XDG_DATA_HOME: undefined,
+				XDG_RUNTIME_DIR: runtimeDirectory,
 			},
 			projectDirectory,
 			requestLog,

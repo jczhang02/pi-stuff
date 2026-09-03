@@ -183,6 +183,7 @@ test("does not mix concurrent session starts across activation contexts", async 
 test("serializes concurrent session starts after Magic is active", async () => {
 	const handlers: Handlers = new Map();
 	const { promise: firstGate, resolve: releaseFirst } = Promise.withResolvers<void>();
+	const { promise: firstEntered, resolve: markFirstEntered } = Promise.withResolvers<void>();
 	const order: string[] = [];
 	piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => ({
@@ -192,7 +193,10 @@ test("serializes concurrent session starts after Magic is active", async () => {
 					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 					const reason = String((event as { readonly reason?: unknown }).reason);
 					order.push(`${reason}:start`);
-					if (reason === "first") await firstGate;
+					if (reason === "first") {
+						markFirstEntered?.();
+						await firstGate;
+					}
 					order.push(`${reason}:end`);
 				});
 			},
@@ -205,7 +209,7 @@ test("serializes concurrent session starts after Magic is active", async () => {
 	const firstCtx = context([], "/workspace/first", "session-first");
 	const secondCtx = context([], "/workspace/second", "session-second");
 	const first = emit(handlers, "session_start", { type: "session_start", reason: "first" }, firstCtx);
-	await Promise.resolve();
+	await firstEntered;
 	const second = emit(handlers, "session_start", { type: "session_start", reason: "second" }, secondCtx);
 	await Promise.resolve();
 	expect(order).toEqual(["first:start"]);

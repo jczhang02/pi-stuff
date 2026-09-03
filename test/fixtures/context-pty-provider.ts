@@ -3,7 +3,7 @@ import type { AssistantMessage, Context, JsonValue } from "@earendil-works/pi-ai
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
+import { type JsonInputValue, parseJsonObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/registration.js";
 import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
@@ -122,12 +122,20 @@ function assistantMessage(
 	};
 }
 
-function textStream(text: string, usage = ZERO_USAGE, delayMs = 0) {
+function textStream(text: string, usage = ZERO_USAGE, delayMs = 0, signal?: AbortSignal) {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistantMessage([], "pending", usage);
-	stream.push({ type: "start", partial: pending });
-	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let settled = false;
+	const settle = (): boolean => {
+		if (settled) return false;
+		settled = true;
+		if (timer) clearTimeout(timer);
+		signal?.removeEventListener("abort", abort);
+		return true;
+	};
 	const finish = (): void => {
+		if (!settle()) return;
 		stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
 		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
 		stream.push({
@@ -136,8 +144,21 @@ function textStream(text: string, usage = ZERO_USAGE, delayMs = 0) {
 			message: assistantMessage([{ type: "text", text }], "stop", usage),
 		});
 	};
-	if (delayMs > 0) setTimeout(finish, delayMs);
-	else finish();
+	const abort = (): void => {
+		if (!settle()) return;
+		stream.push({
+			type: "error",
+			reason: "aborted",
+			error: assistantMessage([], "aborted", usage),
+		});
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	if (signal?.aborted) queueMicrotask(abort);
+	else if (delayMs > 0) {
+		signal?.addEventListener("abort", abort, { once: true });
+		timer = setTimeout(finish, delayMs);
+	} else finish();
 	return stream;
 }
 
@@ -158,7 +179,7 @@ function toolCallStream(id: string, name: string, argumentsValue: Record<string,
 	return stream;
 }
 
-function fixtureStream(context: Context) {
+function fixtureStream(context: Context, signal?: AbortSignal) {
 	if (process.env["MAGIC_CONTEXT_PI_SUBAGENT"] === "1") {
 		const marker = process.env["PI_STUFF_CONTEXT_PTY_HISTORIAN_MARKER"];
 		if (marker) writeFileSync(marker, "ready\n");
@@ -175,6 +196,12 @@ function fixtureStream(context: Context) {
 	const repeatSearchResult = context.messages.find(
 		(entry) =>
 			entry.role === "toolResult" && entry.toolName === "ctx_search" && entry.toolCallId === "context-search-2",
+	);
+	const interruptSearchResult = context.messages.find(
+		(entry) =>
+			entry.role === "toolResult" &&
+			entry.toolName === "ctx_search" &&
+			entry.toolCallId === "context-interrupt-search-1",
 	);
 	const bulkResult = context.messages.find(
 		(entry) => entry.role === "toolResult" && entry.toolName === "context_bulk",
@@ -206,6 +233,7 @@ function fixtureStream(context: Context) {
 		ponytailMarkerCount: systemPrompt.match(/pi-stuff:prompt-contribution:ponytail:start/gu)?.length ?? 0,
 		hasPonytailPrompt: systemPrompt.includes("PONYTAIL MODE ACTIVE — level: full"),
 		hasCompactMagicContextPrompt: systemPrompt.includes("## Magic Context"),
+		providerPayload: parseJsonObject(JSON.stringify(context)),
 		hasVerboseMagicContextPrompt: systemPrompt.includes("Most AI sessions are disposable"),
 		tools: (context.tools ?? []).map((tool) => tool.name),
 		searchResult: searchResult ? contentText(searchResult.content) : undefined,
@@ -237,8 +265,15 @@ function fixtureStream(context: Context) {
 	if (lastUser.includes("CONTEXT_BULK")) return textStream("CONTEXT_BULK_DONE");
 	if (lastUser.includes("CONTEXT_AFTER_COMPACT")) return textStream("CONTEXT_AFTER_COMPACT_DONE", HIGH_USAGE);
 	if (lastUser.includes("CONTEXT_SETTLE")) return textStream("CONTEXT_SETTLE_DONE", LOW_USAGE);
+	if (lastUser.includes("CONTEXT_INTERRUPT_A") && !interruptSearchResult) {
+		return toolCallStream("context-interrupt-search-1", "ctx_search", { query: "CONTEXT_INPUT_HISTORY_499" });
+	}
+	if (lastUser.includes("CONTEXT_INTERRUPT_A")) {
+		return textStream("CONTEXT_INTERRUPT_A_UNEXPECTED", ZERO_USAGE, 60_000, signal);
+	}
+	if (lastUser.includes("CONTEXT_INTERRUPT_B")) return textStream("CONTEXT_INTERRUPT_B_DONE");
 	if (lastUser.includes("CONTEXT_RESUME_REQUEST")) {
-		return textStream("CONTEXT_RESUME_DONE", ZERO_USAGE, 2_500);
+		return textStream("CONTEXT_RESUME_DONE", ZERO_USAGE, 2_500, signal);
 	}
 	if (lastUser.includes("CONTEXT_RESUME")) return textStream("CONTEXT_RESUME_DONE");
 	if (lastUser.includes("CONTEXT_DRAIN")) return textStream("CONTEXT_DRAIN_DONE");
@@ -291,8 +326,8 @@ export default function contextPtyProvider(pi: ExtensionAPI): void {
 		},
 	);
 
-	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Context PTY fixture", (_model, context) =>
-		fixtureStream(context),
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Stuff Context PTY fixture", (_model, context, options) =>
+		fixtureStream(context, options?.signal),
 	);
 
 	pi.on("session_start", (_event, ctx) => {

@@ -1,6 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import {
 	getHostSharedResource,
 	hasDirectUserActivation,
@@ -8,6 +10,7 @@ import {
 	reportDiagnostic,
 } from "../conversation-ui/index.js";
 import { deferToHostTurn } from "../lifecycle-deadline.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { type MagicContextPreparation, type MagicContextPreparationOptions, prepareMagicContext } from "./config.js";
 import type { MagicModule, NativeCompactionSettings } from "./magic-runtime.js";
 import { loadMagicContextWorker } from "./magic-worker-client.js";
@@ -94,16 +97,20 @@ export async function projectCurrentContext(
 	return (capability ?? nativeCapability()).projectCurrentContext(audience, ctx, options);
 }
 
-async function runContextOwned(ctx: ExtensionContext, program: Effect.Effect<void>): Promise<void> {
-	// These callbacks acknowledge before their work settles, so the current Pi
-	// Session signal—not a detached Fiber—owns interruption.
-	try {
-		await Effect.runPromise(program, { signal: ctx.signal });
-	} catch (error) {
-		if (ctx.signal?.aborted) return;
+async function runContextOwned(
+	foundation: EffectFoundation,
+	ctx: Pick<ExtensionContext, "sessionManager">,
+	program: Effect.Effect<void>,
+): Promise<void> {
+	const session = foundation.sessionFor(ctx.sessionManager);
+	if (!session || !foundation.isCurrent(session)) return;
+	const operation = foundation.forkOperation(session);
+	const exit = await foundation.run(operation, program);
+	await foundation.close(operation, exit);
+	if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
 		reportDiagnostic({
 			capability: "Context",
-			error,
+			error: Cause.squash(exit.cause),
 			key: "owned-effect",
 			severity: "error",
 			summary: "A Session-owned Context operation failed",
@@ -116,11 +123,15 @@ function requiresInputActivation(state: ContextCapabilityState): boolean {
 	return state !== "active" && state !== "native";
 }
 
-function deferInputActivation(runtime: ContextCapabilityRuntime, ctx: ExtensionContext): void {
+function deferInputActivation(
+	runtime: ContextCapabilityRuntime,
+	foundation: EffectFoundation,
+	ctx: ExtensionContext,
+): void {
 	deferToHostTurn(() => {
 		if (!runtime.consumeDirectInputActivation()) return;
 		if (requiresInputActivation(runtime.status().state)) {
-			void runContextOwned(ctx, runtime.activate(ctx, "input"));
+			void runContextOwned(foundation, ctx, runtime.activate(ctx, "input"));
 		}
 	});
 }
@@ -145,6 +156,7 @@ export default async function piStuffContext(
 	dependencies: ContextCapabilityDependencies = {},
 ): Promise<void> {
 	const registry = capabilityRegistry();
+	const foundation = installEffectFoundation(pi, { deferShutdown: true });
 	const magicSubagent = dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1");
 	let created = false;
 	let runtime: ContextCapabilityRuntime;
@@ -152,7 +164,7 @@ export default async function piStuffContext(
 		activate: (ctx: ExtensionContext, trigger: Parameters<ContextCapability["activate"]>[1]) =>
 			Effect.runPromise(runtime.activate(ctx, trigger)),
 		committedFailure: (cause: unknown, ctx: ExtensionContext) =>
-			runContextOwned(ctx, runtime.handleCommittedFailure(cause, ctx)),
+			runContextOwned(foundation, ctx, runtime.handleCommittedFailure(cause, ctx)),
 	};
 	runtime = getHostSharedResource(
 		pi.events,
@@ -211,7 +223,7 @@ export default async function piStuffContext(
 		// cannot initialize or write Magic Context state. Direct user input starts
 		// activation without delaying the Host's input acknowledgement.
 		if (event.source !== "extension" && requiresInputActivation(state)) {
-			deferInputActivation(runtime, ctx);
+			deferInputActivation(runtime, foundation, ctx);
 		}
 	});
 	pi.on("message_start", async (event, ctx) => {
