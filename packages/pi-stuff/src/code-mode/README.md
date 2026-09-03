@@ -26,6 +26,8 @@ the effective policy, catalog, approvals, and Session ledger.
 - Resolves trusted-project, global, process, and child-Agent policy explicitly.
 - Keeps direct Node, filesystem, process, network, module, and credential access out of the sandbox.
 - Preserves each nested Tool's validation, permissions, lifecycle, renderer, and media behavior.
+- Keeps bounded Tool Discovery callable, or explicitly requires `codemode.describe` instead of exposing an incomplete
+  signature.
 - Records stable execution and nested-call IDs in a bounded Session ledger.
 - Supports durable approval, replay policy, rollback, checkpoints, and saved snippets.
 - Installs and verifies the pinned V8 helper only on first explicit execution.

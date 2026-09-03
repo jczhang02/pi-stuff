@@ -33,27 +33,42 @@ function definitionResult(result: SearchResult) {
 	return { ...result, path: projectedPath(result), signature: signature(result) };
 }
 
+function compactTypes(types: string): string {
+	return types
+		.split("\n")
+		.filter((line) => !/^\s*(?:\/\*\*|\*\/?)/u.test(line))
+		.join("\n");
+}
+
 function compactDescription(description: DescribeOutput) {
 	const compact = {
+		description: description.description,
 		kind: description.kind,
 		path: description.path,
-		types: description.types,
+		types: compactTypes(description.types),
 	};
 	return description.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }
 
+function describeRequiredResult(result: SearchResult) {
+	const compact = { kind: result.kind, path: projectedPath(result) };
+	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
+}
+
 function encode(
 	search: SearchOutput,
-	representation: "definitions" | "typed-top" | "signatures" | "paths",
+	representation: "definitions" | "typed-top" | "describe-required" | "paths",
 	results: readonly unknown[],
 	definitions: readonly unknown[] = [],
+	instruction?: string,
 ): string | undefined {
-	const text = JSON.stringify({
+	const payload = {
 		...metadata(search, results.length),
 		definitions,
 		representation,
 		results,
-	});
+	};
+	const text = JSON.stringify(instruction ? { ...payload, instruction } : payload);
 	return text.length <= RESPONSE_CHARS ? text : undefined;
 }
 
@@ -111,12 +126,13 @@ export function projectCodeModeSearchResponse(
 		}
 	}
 
-	let compactResults: Array<ReturnType<typeof signatureResult>> = [];
+	const instruction = "Call codemode.describe(result.path) before invoking any result; do not guess input fields.";
+	let compactResults: Array<ReturnType<typeof describeRequiredResult>> = [];
 	let compactText: string | undefined;
 	for (const result of results) {
-		const compact = signatureResult(result, false);
+		const compact = describeRequiredResult(result);
 		const nextResults = [...compactResults, compact];
-		const encoded = encode(search, "signatures", nextResults);
+		const encoded = encode(search, "describe-required", nextResults, [], instruction);
 		if (!encoded) break;
 		compactResults = nextResults;
 		compactText = encoded;

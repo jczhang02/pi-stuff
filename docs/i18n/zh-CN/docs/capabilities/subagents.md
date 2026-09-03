@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 45e5d21d438c9005df5f28e58c3914b2faee3a2a7860dc2063319bc62c3c293f -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 986dd781eaae5d1e9f36e94692c6889f30751b97dc2ac154f14c655213266245 -->
 
 # Agents
 
@@ -78,8 +78,9 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 ```
 
 `status` 可以省略 `id`，获取一次性概览。`steer`、`stop` 与 `resume` 要求 `id`；grouped run 还可以用
-`index` 选择 child。只有成本 guard 请求关注后，由用户直接发起的 resume 才能使用 `acknowledgeCost`。
-日常检查和控制请使用 `/agents`。
+`index` 选择 child。`agent` 只在 launch 时命名 Agent definition，`id` 标识已有 Agent Target；Todo 字段
+`taskId` 不是 Agent 标识符。只有成本 guard 请求关注后，由用户直接发起的 resume 才能使用
+`acknowledgeCost`。日常检查和控制请使用 `/agents`。
 
 ## 后台与前台
 

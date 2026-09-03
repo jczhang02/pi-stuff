@@ -23,6 +23,7 @@ export function buildSubagentToolDescription(roster: readonly AgentToolRosterEnt
 	return [
 		"Delegate one or several concrete tasks to isolated current-session Agents.",
 		'Choose exactly one shape per call: single uses agent + task; grouped parallel uses tasks; control uses action="status", "steer", "stop", or "resume".',
+		"For control, id identifies an Agent Target; agent selects an Agent definition only for launch, and taskId is never valid here.",
 		"Do not combine single, parallel, or control fields.",
 		"Pi may also issue several independent single calls in one assistant response; those foreground calls run concurrently under the same session limits.",
 		"A short 3–5 word description improves the UI; put the complete execution instruction in task.",

@@ -101,6 +101,15 @@ describe("toEngineParams", () => {
 				message: "Check the parser",
 			}),
 		).toThrow("cannot include launch field 'foreground'");
+		expect(() => toEngineParams({ action: "status", agent: "run-123" })).toThrow(
+			"Use id for an Agent Target; agent selects an Agent definition only when launching with task.",
+		);
+	});
+
+	test("explains the required single-launch shape and recovery path", () => {
+		expect(() => toEngineParams({ task: "Inspect the parser" })).toThrow(
+			"Single Agent launch requires non-blank agent + task. Inspect the current Tool description for available Agent definitions, or provide a non-empty tasks list for parallel work.",
+		);
 	});
 });
 

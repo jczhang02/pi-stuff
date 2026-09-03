@@ -79,8 +79,9 @@ Assistant response can also run concurrently.
 ```
 
 `status` may omit `id` for a one-shot overview. `steer`, `stop`, and `resume` require `id`; grouped runs can also select
-a child by `index`. `acknowledgeCost` is valid only for a direct user-started resume after the cost guard requests
-attention. Use `/agents` for regular inspection and control.
+a child by `index`. `agent` names an Agent definition only when launching, while `id` identifies an existing Agent
+Target; the Todo field `taskId` is not an Agent identifier. `acknowledgeCost` is valid only for a direct user-started
+resume after the cost guard requests attention. Use `/agents` for regular inspection and control.
 
 ## Background and foreground
 

@@ -69,7 +69,13 @@ function sharedTaskValue<K extends "context" | "isolation" | "foreground">(
 export function normalizePublicAgentParams(params: PublicAgentParams): PublicAgentParams {
 	if (params.action) {
 		const mixed = LAUNCH_ONLY_FIELDS.find((field) => hasOwn(params, field));
-		if (mixed) throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.`);
+		if (mixed) {
+			const recovery =
+				mixed === "agent"
+					? " Use id for an Agent Target; agent selects an Agent definition only when launching with task."
+					: "";
+			throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.${recovery}`);
+		}
 		if (params.acknowledgeCost === true && params.action !== "resume") {
 			throw new Error("acknowledgeCost is supported only for action='resume'.");
 		}
@@ -96,7 +102,9 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 		return normalized;
 	}
 	if (!params.agent?.trim() || !params.task?.trim()) {
-		throw new Error("Provide agent plus task for one launch, or a non-empty tasks list for parallel work.");
+		throw new Error(
+			"Single Agent launch requires non-blank agent + task. Inspect the current Tool description for available Agent definitions, or provide a non-empty tasks list for parallel work.",
+		);
 	}
 	return { ...params };
 }
