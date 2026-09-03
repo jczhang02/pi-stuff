@@ -17,6 +17,7 @@ export interface CasePaths {
 	readonly config: string;
 	readonly log: string;
 	readonly project: string;
+	readonly runtime: string;
 	readonly sessions: string;
 }
 
@@ -110,6 +111,7 @@ export class TmuxPiSession {
 			PI_TELEMETRY: "0",
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
+			XDG_RUNTIME_DIR: paths.runtime,
 		};
 	}
 
@@ -299,12 +301,14 @@ export async function createCase(
 	const config = join(caseDirectory, "agent");
 	const sessions = join(caseDirectory, "sessions");
 	const project = join(caseDirectory, "项目", "长路径", "验证");
+	const runtime = join(caseDirectory, "runtime");
 	const skill = join(config, "skills", "humanizer-zh");
 	const log = join(caseDirectory, "ui-pty.jsonl");
 	await Promise.all([
 		mkdir(config, { recursive: true }),
 		mkdir(sessions, { recursive: true }),
 		mkdir(project, { recursive: true }),
+		mkdir(runtime, { mode: 0o700, recursive: true }),
 		mkdir(skill, { recursive: true }),
 	]);
 	await Promise.all([
@@ -353,7 +357,7 @@ export async function createCase(
 		}),
 		writeFile(join(project, "untracked-🧪.txt"), "new\n", { mode: 0o600 }),
 	]);
-	return { config, log, project, sessions };
+	return { config, log, project, runtime, sessions };
 }
 
 export function rowsBelowEditorDivider(screen: string): readonly string[] {
