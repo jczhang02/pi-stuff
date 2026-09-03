@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { Markdown, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { transformConversationMarkdown } from "../../packages/pi-stuff/src/conversation-ui/conversation-markdown.js";
 import {
 	HIDDEN_THINKING_LABEL,
@@ -71,6 +71,29 @@ test("replaces a visible Thinking run with its latest native Markdown row", () =
 		rendered.updateContent(settled, false);
 		expect(renderedContent(rendered)).toEqual(["• thoughts: Designing event loop state machine"]);
 	} finally {
+		uninstall();
+	}
+});
+
+test("reuses the projected row during ordinary Host redraws", () => {
+	initTheme("dark");
+	const uninstall = installThinkingLineDisplay();
+	const original = Markdown.prototype.render;
+	let renderCalls = 0;
+	Markdown.prototype.render = function (width): string[] {
+		renderCalls += 1;
+		return original.call(this, width);
+	};
+	try {
+		const rendered = component(assistantMessage([{ type: "thinking", thinking: "first\n\nlatest" }]));
+		rendered.render(80);
+		rendered.render(80);
+		expect(renderCalls).toBe(1);
+		rendered.invalidate();
+		rendered.render(80);
+		expect(renderCalls).toBe(2);
+	} finally {
+		Markdown.prototype.render = original;
 		uninstall();
 	}
 });
@@ -154,14 +177,21 @@ test("keeps the tail of a wrapped latest line within the viewport", () => {
 	const uninstall = installThinkingLineDisplay();
 	try {
 		const rendered = component(
-			assistantMessage([{ type: "thinking", thinking: "alpha beta gamma delta epsilon zeta eta theta omega" }]),
+			assistantMessage([
+				{
+					type: "thinking",
+					thinking: "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ](https://example.com)",
+				},
+			]),
 		);
 		rendered.render(80);
 		const raw = rendered.render(28).find((line) => stripTerminalSequences(line).includes("thoughts"));
 		if (!raw) throw new Error("Thinking row was not rendered");
 		const visible = stripTerminalSequences(raw).trim();
-		expect(visible).toEndWith("omega");
-		expect(visible).not.toContain("alpha");
+		expect(visible).toEndWith("MNOPQRSTUVWXYZ");
+		expect(visible).not.toContain("abc");
+		expect(raw).toContain("\u001b]8;;\u001b\\");
+		expect(raw).toEndWith("\u001b[0m");
 		expect(visibleWidth(raw)).toBeLessThanOrEqual(28);
 	} finally {
 		uninstall();

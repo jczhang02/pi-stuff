@@ -15,6 +15,8 @@ export const HIDDEN_THINKING_LABEL = `${TRANSCRIPT_MARKER} thoughts`;
 const VISIBLE_THINKING_PREFIX = `${HIDDEN_THINKING_LABEL}: `;
 const VISIBLE_THINKING_PREFIX_WIDTH = visibleWidth(VISIBLE_THINKING_PREFIX);
 const THINKING_LINE_PATCH = Symbol.for("@jczhang02/pi-stuff:thinking-line-patch/v1");
+// Force the Host truncator to close active ANSI and OSC 8 styles without adding a visible cell.
+const TWO_CELL_TRUNCATION_SENTINEL = "🧪";
 
 type UpdateContent = (this: AssistantMessageComponent, message: AssistantMessage, isStreaming?: boolean) => void;
 
@@ -139,9 +141,16 @@ class ThinkingLine implements Component {
 				}
 			}
 			const nativeContent = sliceByColumn(latestLine, this.outputPad, width - this.outputPad * 2, true).trimEnd();
-			const overflow = visibleWidth(nativeContent) - availableContentWidth;
+			const nativeWidth = visibleWidth(nativeContent);
+			const overflow = nativeWidth - availableContentWidth;
 			const content =
-				overflow > 0 ? sliceByColumn(nativeContent, overflow, availableContentWidth, true) : nativeContent;
+				overflow > 0
+					? truncateToWidth(
+							sliceByColumn(nativeContent, overflow, availableContentWidth, true) + TWO_CELL_TRUNCATION_SENTINEL,
+							availableContentWidth,
+							"",
+						)
+					: nativeContent;
 			line = truncateToWidth(leftPad + this.label + content, width, "");
 		}
 		this.cachedLine = line;
@@ -185,7 +194,7 @@ export function installThinkingLineDisplay(): () => void {
 		const original = prototype.updateContent;
 		const patched: UpdateContent = function (message, isStreaming): void {
 			original.call(this, message, isStreaming);
-			projectThinkingLines(this);
+			if (message.content.some((block) => block.type === "thinking")) projectThinkingLines(this);
 		};
 		state = { original, owners: 0, patched };
 		prototype.updateContent = patched;
