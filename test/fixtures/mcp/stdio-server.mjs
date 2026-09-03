@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 
 const marker = process.env.PI_STUFF_MCP_MARKER;
 const resourcesError = process.env.PI_STUFF_MCP_RESOURCES_ERROR === "1";
+const hangCall = process.env.PI_STUFF_MCP_HANG_CALL === "1";
 const metadataLoop = process.env.PI_STUFF_MCP_METADATA_LOOP;
 const oversizedMetadata = process.env.PI_STUFF_MCP_OVERSIZED_METADATA === "1";
 if (marker) writeFileSync(marker, `${String(process.pid)}\n`, "utf8");
@@ -62,6 +63,7 @@ function handle(message) {
 			break;
 		case "tools/call":
 			if (marker) appendFileSync(marker, `call:${String(message.params?.arguments?.text ?? "")}\n`, "utf8");
+			if (hangCall) break;
 			reply(message.id, {
 				content: [{ text: String(message.params?.arguments?.text ?? ""), type: "text" }],
 				isError: false,

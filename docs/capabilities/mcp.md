@@ -90,6 +90,10 @@ blocking other servers or ordinary Pi work.
 
 `keep-alive` and `eager` servers may connect at startup after cached metadata is restored.
 
+Ordinary Tool and Resource requests have no implicit absolute deadline. A positive global or per-server
+`requestTimeoutMs` remains an absolute request deadline. Connection, authentication, and metadata discovery retain
+their bounded setup behavior.
+
 Tool and Resource metadata is bounded to 100 pages or 10,000 entries for each list. Change notifications use the same
 ceiling.
 

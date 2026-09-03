@@ -145,8 +145,9 @@ export class McpServerManager {
 		this.oauthRuntime = runtime;
 	}
 
-	getRequestOptions(name: string, signal?: AbortSignal): RequestOptions | undefined {
-		return this.buildRequestOptions(this.connections.get(name)?.connection.definition, signal);
+	getRequestOptions(name: string, signal?: AbortSignal): RequestOptions {
+		const options = this.buildRequestOptions(this.connections.get(name)?.connection.definition, signal);
+		return { ...options, timeout: options?.timeout ?? 0 };
 	}
 
 	private getResolvedRequestTimeoutMs(definition?: ServerDefinition): number | undefined {
