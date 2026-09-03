@@ -21,8 +21,10 @@ interface MarkdownTransformContext {
 
 type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
 
+const NATIVE_THINKING_TRANSFORMER: MarkdownTransformer = (markdown) => markdown;
+
 interface TransformerModule {
-	createLiveThoughtTransformer(): MarkdownTransformer;
+	createConversationMarkdownTransformer(): MarkdownTransformer;
 }
 
 interface HostMarkdownRuntime {
@@ -125,15 +127,15 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	};
 }
 
-function liveThoughtModuleUrl(root: string): string {
-	return pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/live-thought.ts")).href;
+function conversationMarkdownModuleUrl(root: string): string {
+	return pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/conversation-markdown.ts")).href;
 }
 
 async function loadTransformer(root: string): Promise<MarkdownTransformer> {
-	const moduleUrl = liveThoughtModuleUrl(root);
+	const moduleUrl = conversationMarkdownModuleUrl(root);
 	// SAFETY: the benchmark loads the repository-owned module at the exact public export exercised by its focused tests.
 	const module = (await import(moduleUrl)) as TransformerModule;
-	return module.createLiveThoughtTransformer();
+	return module.createConversationMarkdownTransformer();
 }
 
 async function loadHostMarkdownRuntime(root: string): Promise<HostMarkdownRuntime> {
@@ -243,6 +245,14 @@ function scenarios(): readonly Scenario[] {
 			markdown: [textOfLength(prose, 32_000)],
 			messageType: "assistant-thinking",
 			rounds: 1,
+		},
+		{
+			id: "thinking-streaming-8k",
+			isStreaming: true,
+			markdown: streamingPrefixes(stream.slice(0, 8_000), 12),
+			messageType: "assistant-thinking",
+			rounds: 1,
+			widths: [100],
 		},
 		{
 			id: "assistant-streaming-8k",
@@ -390,7 +400,7 @@ function benchmarkScenario(
 }
 
 function timedFreshImport(root: string): number {
-	const moduleUrl = liveThoughtModuleUrl(root);
+	const moduleUrl = conversationMarkdownModuleUrl(root);
 	const started = performance.now();
 	const child = Bun.spawnSync([process.execPath, "-e", `await import(${JSON.stringify(moduleUrl)})`], {
 		cwd: root,
@@ -432,7 +442,7 @@ function benchmarkFreshImport(
 		baselineMs,
 		candidateMs,
 		feature: false,
-		id: "fresh-live-thought-import",
+		id: "fresh-conversation-markdown-import",
 		medianRatioConfidence95: confidence,
 		regression: slowerThanBaseline,
 		slowerThanBaseline,
@@ -444,7 +454,7 @@ const baselineHost = await loadHostMarkdownRuntime(options.baselineRoot);
 const candidateHost = await loadHostMarkdownRuntime(options.candidateRoot);
 baselineHost.initTheme("dark");
 candidateHost.initTheme("dark");
-process.stderr.write("Benchmarking fresh-live-thought-import...\n");
+process.stderr.write("Benchmarking fresh-conversation-markdown-import...\n");
 const reports: ScenarioReport[] = [
 	benchmarkFreshImport(options.baselineRoot, options.candidateRoot, options.warmups, options.samples),
 ];
@@ -453,14 +463,23 @@ const candidate = await loadTransformer(options.candidateRoot);
 const selectedScenarios = scenarios();
 for (const scenario of selectedScenarios) {
 	process.stderr.write(`Benchmarking ${scenario.id}...\n`);
+	const scenarioBaseline = scenario.messageType === "assistant-thinking" ? NATIVE_THINKING_TRANSFORMER : baseline;
 	reports.push(
-		benchmarkScenario(baselineHost, baseline, candidateHost, candidate, scenario, options.warmups, options.samples),
+		benchmarkScenario(
+			baselineHost,
+			scenarioBaseline,
+			candidateHost,
+			candidate,
+			scenario,
+			options.warmups,
+			options.samples,
+		),
 	);
 }
 const confirmations: ScenarioReport[] = [];
 for (const report of reports.filter((candidateReport) => candidateReport.regression)) {
-	if (report.id === "fresh-live-thought-import") {
-		process.stderr.write("Confirming fresh-live-thought-import...\n");
+	if (report.id === "fresh-conversation-markdown-import") {
+		process.stderr.write("Confirming fresh-conversation-markdown-import...\n");
 		confirmations.push(
 			benchmarkFreshImport(options.baselineRoot, options.candidateRoot, options.warmups, options.samples),
 		);
@@ -469,8 +488,17 @@ for (const report of reports.filter((candidateReport) => candidateReport.regress
 	const scenario = selectedScenarios.find((candidateScenario) => candidateScenario.id === report.id);
 	if (!scenario) fail(`missing confirmation scenario ${report.id}`);
 	process.stderr.write(`Confirming ${scenario.id}...\n`);
+	const scenarioBaseline = scenario.messageType === "assistant-thinking" ? NATIVE_THINKING_TRANSFORMER : baseline;
 	confirmations.push(
-		benchmarkScenario(baselineHost, baseline, candidateHost, candidate, scenario, options.warmups, options.samples),
+		benchmarkScenario(
+			baselineHost,
+			scenarioBaseline,
+			candidateHost,
+			candidate,
+			scenario,
+			options.warmups,
+			options.samples,
+		),
 	);
 }
 const regressions = confirmations.filter((report) => report.regression);

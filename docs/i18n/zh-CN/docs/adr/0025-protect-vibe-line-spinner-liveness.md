@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 786452f698aa9f41bcc9d935eebc4b52541c4bd9d821b9c9876efe5676f04591 -->
+<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 99dd2f3fbacdceddb553864f7ef47ffa1951e6e16ae15b7f7715dfc30f2cf973 -->
 
 ---
 status: accepted
@@ -26,9 +26,10 @@ adapter，或把完整操作移到其现有 child 或 Worker 边界，同时保�
 活性上限时才需要处理；此后应在共享 owning seam 采用最小修复。display-only Capability 只有在不改变规范
 Session 或 Provider 内容的前提下满足该限制时才予以保留。
 
-保留的 Live Thoughts 复用现有 `TRANSCRIPT_MARKER`（`•`）作为前导图标。在完整标签与紧凑形式下，它渲染
-后的 marker cell 都必须在 Host output padding 下与 Tool Activity 精确对齐。Thought 身份由 `thoughts:` 标签
-和 Host theme 表达；Pi Stuff 不引入单独的星号或在不同终端字体下可能产生光学偏移的近似 glyph。
+Conversation UI 只在固定 Thinking 标签中复用现有 `TRANSCRIPT_MARKER`（`•`）。展开的 Host Thinking run
+带有同行前缀 `• thoughts: `；隐藏的 run 使用 Host 拥有的 `• thoughts` 标签。两者都保留 Host Thinking
+样式，并让 marker cell 在 Host output padding 下与 Tool Activity 对齐。Pi Stuff 不检查、合并、选择、截断、
+拟合或单独持久化 Thinking 内容。
 
 硬保证目前仅适用于已认证 Linux x64 Host profile。极端输入规模下由 Host 所有的累积 Markdown 转换与渲染
 仍是明确的上游限制；Pi Stuff 不声称修复或掩盖该 Host 行为。
@@ -42,6 +43,7 @@ Session 或 Provider 内容的前提下满足该限制时才予以保留。
 ## 后果
 
 每个违规 Capability 保留自己的 subprocess、Worker、cancellation 与 error 语义，同时移除该边界上的
-Host-thread wait。Live Thoughts 应通过有界拟合保留其显示契约；如果无法通过已认证的真实 PTY 验收，则应
-移除该投影，而不是允许 Vibe Line Spinner 冻结。未支持的平台可以在共享 seam 下获得同一结构修复，但本
-决策不对它们作出认证。
+Host-thread wait。连续累计 Thinking 表明，原有的语义 block 选择与宽度拟合投影仍会在同步 Markdown 路径上
+与 Vibe Line Spinner 争用，因此该投影已移除。剩余固定标签必须在配对渲染基准中匹配原生 Thinking，并通过
+已认证真实 PTY 的 500 毫秒门槛。未支持的平台可以在共享 seam 下获得同一结构修复，但本决策不对它们作出
+认证。

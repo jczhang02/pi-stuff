@@ -27,10 +27,10 @@ They require representative real-PTY evidence that the 500-millisecond liveness 
 then belongs at the shared owning seam. A display-only Capability remains only while it can meet the limit without
 changing canonical Session or Provider content.
 
-Retained Live Thoughts reuse the existing `TRANSCRIPT_MARKER` (`•`) as their leading icon. Its rendered marker cell
-must align exactly with Tool Activity under the Host output padding in both full-label and compact forms. The
-`thoughts:` label and Host theme carry Thought identity; Pi Stuff does not introduce a separate star or a visually
-similar glyph whose optical alignment can vary between terminal fonts.
+Conversation UI reuses the existing `TRANSCRIPT_MARKER` (`•`) only in fixed Thinking labels. Expanded Host Thinking
+runs receive the inline `• thoughts: ` prefix; hidden runs use the Host-owned `• thoughts` label. Both keep the Host
+Thinking style and align the marker cell with Tool Activity under Host output padding. Pi Stuff does not inspect,
+merge, select, truncate, fit, or separately persist Thinking content.
 
 The hard guarantee currently applies to the certified Linux x64 Host profile. Host-owned cumulative Markdown
 transformation and rendering at extreme input sizes remain an explicit upstream limitation; Pi Stuff does not claim
@@ -47,7 +47,8 @@ to fix or mask that Host behavior.
 ## Consequences
 
 Each violating Capability keeps its own subprocess, Worker, cancellation, and error semantics while removing the
-Host-thread wait at that boundary. Live Thoughts should retain its display contract through bounded fitting; if it
-cannot pass certified real-PTY acceptance, the projection is removed rather than allowing the Vibe Line Spinner to
-freeze. Unsupported platforms may receive the same structural fix when it is shared, but are not certified by this
-decision.
+Host-thread wait at that boundary. The former semantic-block selection and width-fitting projection was removed after
+continuous cumulative Thinking showed that it still competed with the Vibe Line Spinner on the synchronous Markdown
+path. The remaining fixed labels must match native Thinking in paired rendering benchmarks and pass the certified
+real-PTY 500-millisecond gate. Unsupported platforms may receive the same structural fix when it is shared, but are
+not certified by this decision.

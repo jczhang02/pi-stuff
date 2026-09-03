@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 1cc8ca2fb4daca1df824d4b6b869cb076c68353100354c996ee7b6f5d7e7108b -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 1cb0e837f962ef2860881cf995d373a2ae406d4ad02d5b50ce85ec42172623c6 -->
 
 ---
 version: alpha
@@ -166,6 +166,11 @@ Statusline 只使用 Nerd Font。固定语法依次为：`󱙺` model、`` Th
 设置。`·`、`…` 等分隔和截断符号只是标点，不是语义图标。Capability 的身份图标（如 Ponytail 的 `󱖿`）
 应在它自己的 Dialog 中复用，而不是另造第二个视觉身份。重做 Dialog 时，不能顺手改变 Transcript 标记或
 Tool 渲染。
+
+Thinking 始终位于 Host 拥有的 Transcript 内。展开时，每个 Host Thinking run 以 `• thoughts: ` 开头，后面
+同行显示完整 Markdown；隐藏时，该 run 显示为 `• thoughts`。两种状态都使用 Host 的 `thinkingText` 颜色与
+斜体样式。Pi Stuff 不合并 run、不选择语义片段、不拟合内容，也不拥有可见性；Pi 设置和 `Ctrl+T` 始终是
+权威。同行的展开标签可能改变开头标题、列表项或代码围栏的显示方式，但不会改变规范消息。
 
 同一 Transcript 消息里的有效 `chart` 或 `tree` fence 可以变成 Fenced Visualization Projection。结果必须
 保持平面、单色且符合终端习惯：使用无边框、不可交互的 code-block 文本与 Unicode 图表或树形 glyph，不加

@@ -4,12 +4,12 @@ import {
 	getMarkdownTheme,
 	initTheme,
 } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import {
+	type ConversationMarkdownTransformContext,
+	createConversationMarkdownTransformer,
+} from "../../packages/pi-stuff/src/conversation-ui/conversation-markdown.js";
 import { projectFencedVisualizations as projectFencedVisualizationsWithWidth } from "../../packages/pi-stuff/src/conversation-ui/fenced-visualization.js";
 import { renderTreeSource as renderTreeSourceWithWidth } from "../../packages/pi-stuff/src/conversation-ui/indentation-tree.js";
-import {
-	createLiveThoughtTransformer,
-	type ThoughtMarkdownTransformContext,
-} from "../../packages/pi-stuff/src/conversation-ui/live-thought.js";
 import { renderChartSource as renderChartSourceWithWidth } from "../../packages/pi-stuff/src/conversation-ui/unicode-chart.js";
 
 const projectFencedVisualizations = (markdown: string, availableWidth: number): string =>
@@ -22,7 +22,7 @@ const renderTreeSource = (source: string, availableWidth: number): string[] =>
 const BACKTICK = String.fromCharCode(0x60);
 const FENCE = BACKTICK.repeat(3);
 const LONG_FENCE = BACKTICK.repeat(4);
-const ASSISTANT_CONTEXT: ThoughtMarkdownTransformContext = {
+const ASSISTANT_CONTEXT: ConversationMarkdownTransformContext = {
 	availableWidth: 80,
 	isStreaming: false,
 	messageType: "assistant",
@@ -34,7 +34,7 @@ function fenced(language: string, lines: readonly string[], marker = FENCE): str
 
 async function renderProjected(source: string, width: number, messageType: "assistant" | "user"): Promise<string[]> {
 	initTheme("dark");
-	const transformer = createLiveThoughtTransformer();
+	const transformer = createConversationMarkdownTransformer();
 	const markdown = new Markdown(source, 0, 0, getMarkdownTheme(), undefined, {
 		transform: (value, availableWidth) => transformer(value, { availableWidth, isStreaming: false, messageType }),
 	});
@@ -214,9 +214,9 @@ describe("indentation tree renderer", () => {
 });
 
 describe("Conversation UI composition", () => {
-	test("projects User and Assistant fences while leaving the Thinking path owned by Live Thoughts", async () => {
+	test("projects User and Assistant fences without interpreting Thinking content", async () => {
 		const source = chart("sparkline", ["1 3 2 5 4"]);
-		const transformer = createLiveThoughtTransformer();
+		const transformer = createConversationMarkdownTransformer();
 		const user = transformer(source, { ...ASSISTANT_CONTEXT, messageType: "user" });
 		const assistant = transformer(source, ASSISTANT_CONTEXT);
 		const thinking = transformer(source, { ...ASSISTANT_CONTEXT, messageType: "assistant-thinking" });
@@ -224,7 +224,7 @@ describe("Conversation UI composition", () => {
 		expect(user).not.toBe(source);
 		expect(assistant).toStartWith("- ");
 		expect(assistant).not.toContain(`${FENCE}chart`);
-		expect(thinking).toStartWith("• thoughts:");
+		expect(thinking).toBe(`• thoughts: ${source}`);
 		expect(thinking).not.toContain("▁▂▃▄▅▆▇█");
 
 		const rendered = await renderProjected(source, 40, "assistant");
@@ -250,7 +250,7 @@ describe("Conversation UI composition", () => {
 
 	test("reserves the Host code indent and Assistant marker budgets before chart rendering", () => {
 		const source = chart("bar", ["A 1", "B 2"]);
-		const transformer = createLiveThoughtTransformer();
+		const transformer = createConversationMarkdownTransformer();
 		const narrowUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 25, messageType: "user" });
 		const fittingUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 26, messageType: "user" });
 		const narrowAssistant = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 27 });

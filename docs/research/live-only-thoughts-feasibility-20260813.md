@@ -66,7 +66,7 @@ This is a limitation of the seam, not of Pi Stuff's current semantic-block parse
 
 Pi Stuff currently uses exactly this public, display-only seam. Its transformer receives `isStreaming`, but the current implementation intentionally projects both live and settled blocks the same way:
 
-- [`live-thought.ts` lines 34–51](../../packages/pi-stuff/src/conversation-ui/live-thought.ts#L34-L51)
+- [`live-thought.ts` lines 34–51](https://github.com/jczhang02/pi-stuff/blob/add4468b5525e06acaae866f60c31a24534a829a/packages/pi-stuff/src/conversation-ui/live-thought.ts#L34-L51)
 - [`conversation-ui/README.md` lines 92–102](../../packages/pi-stuff/src/conversation-ui/README.md#L92-L102)
 
 ## Certified component probe

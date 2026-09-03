@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 93a97e6f3a561de053dfa80094fe8283541dd34c25732b0dcffdcdec3d8cb857 -->
+<!-- translation-source: packages/pi-stuff/src/conversation-ui/README.md; translation-source-sha256: 3f77c14f92cc830dbe779cf59de100030dbf528952fc178d7dc755af2445e348 -->
 
 # Conversation UI
 
@@ -27,7 +27,7 @@ Pi Stuff 面向 conversation、编辑器、Statusline、Welcome header 与聚焦
 - 具有稳定 model、工作区、Context、用量、Goal 与 Ponytail 分组的响应式 Statusline。
 - 单行 latest-prompt 预览与紧凑 Skill 标签。
 - 原生编辑器输入高亮与 slash 补全。
-- 仅用于显示的实时 Thought，以及 `chart` 或 `tree` Markdown 投影。
+- Host 拥有的 Thinking，配有仅用于显示的 `• thoughts:` 和 `• thoughts` 标签，以及 `chart` 或 `tree` Markdown 投影。
 - 关闭后恢复编辑器草稿的全宽 Command Dialog。
 - 通过 `/diagnostics` 查看有界 Suite 诊断。
 

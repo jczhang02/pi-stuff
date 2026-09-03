@@ -1,11 +1,11 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: d494cf0faf0c547d3c68771a26ade7e399828fb69040ee5aac1340e4b2aae0d6 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c6f146dd3ad217c8ef3fe4b7fb70d4641ebed33548def21fc6a2377400a06fe6 -->
 
 # Conversation UI
 
 [English](../../../../../docs/capabilities/conversation-ui.md)
 
 Conversation UI 让 Pi Stuff 的当前状态在 Pi 内保持易读。它负责 Welcome header、响应式 Statusline、输入呈现、
-实时 Thought 投影、围栏可视化、共享 Command Dialog 和 Suite 诊断。
+Thinking 标签、围栏可视化、共享 Command Dialog 和 Suite 诊断。
 
 ## 快速开始
 
@@ -54,11 +54,16 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 
 聚焦 dialog 会暂时占用编辑器界面。关闭后恢复完全相同的草稿和普通 Pi chrome。
 
-## 实时 Thought
+## Thinking 标签
 
-关闭 Pi 原生 **Hide thinking blocks** 设置后，model 工作时可以在编辑器上方投影当前语义 Thought block。
-该投影有界且仅用于显示。完整形式以 `• thoughts:` 开头，窄屏形式保留同一个 `•` Transcript marker，且该
-marker 与 Tool Activity 对齐。完成后的 transcript 内容仍是本次运行的记录。
+Thinking 内容、可见性和 run 边界都由 Pi 负责。关闭 Pi 原生 **Hide thinking blocks** 设置后，每个 streaming
+或 settled Thinking run 都以 `• thoughts: ` 开头，后面同行显示完整的 Host Markdown。打开该设置后，Host
+会把每个 run 替换为斜体 `• thoughts` 标签。两种状态都保留 Pi 原生的 Thinking 颜色和斜体样式，`Ctrl+T`
+仍用于切换 Host 设置。
+
+这只是仅用于显示的标签替换。Pi Stuff 不会合并 run、选择语义 block、截断或拟合 Thinking，也不会改变
+Session record、Provider context、复制或导出的源码。若内容以标题、列表项或代码围栏开头，该结构会跟在
+展开标签之后，因此首个 Markdown 结构的显示可能与无前缀的原生 Thinking 不同。
 
 ## Chart 与 tree
 

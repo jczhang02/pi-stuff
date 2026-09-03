@@ -14,7 +14,7 @@ alter Provider context, or introduce a second Markdown authority and runtime.
 Pi Stuff will recognize complete `chart` and `tree` fenced code blocks at the existing Conversation Markdown
 projection seam. It will replace valid blocks with width-bounded terminal text for display while leaving the
 canonical User or Assistant message, Session records, copy/export source, and Provider context unchanged. Thinking
-remains under Live Thoughts and never enters this visualization path.
+receives only its display label and never enters this visualization path.
 
 The dispatcher is static and internal to Conversation UI. It runs inside the Module’s one registered Host Markdown
 transformer; there is no second transformer, plugin registry, setting, Capability, Package, or runtime dependency.

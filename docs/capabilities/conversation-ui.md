@@ -3,7 +3,7 @@
 [Simplified Chinese](../i18n/zh-CN/docs/capabilities/conversation-ui.md)
 
 Conversation UI keeps Pi Stuff's current state readable inside Pi. It owns the Welcome header, responsive Statusline,
-input presentation, live Thought projection, fenced visualizations, shared Command Dialog, and Suite diagnostics.
+input presentation, Thinking labels, fenced visualizations, shared Command Dialog, and Suite diagnostics.
 
 ## Quick start
 
@@ -55,12 +55,17 @@ handling. Slash completion covers registered commands and inserts the canonical 
 
 Focused dialogs temporarily take the editor surface. Closing a dialog restores the exact draft and normal Pi chrome.
 
-## Live Thoughts
+## Thinking labels
 
-When Pi's native **Hide thinking blocks** setting is disabled, the current semantic Thought block can be projected
-above the editor while the model works. The projection is bounded and display-only. Its full form begins with
-`• thoughts:`, its narrow form keeps the same `•` Transcript marker, and that marker aligns with Tool Activity.
-Completed transcript content remains the record of the run.
+Pi owns Thinking content, visibility, and run boundaries. With Pi's native **Hide thinking blocks** setting disabled,
+each streaming or settled Thinking run begins with `• thoughts: ` followed on the same line by the complete Host
+Markdown. With the setting enabled, the Host replaces each run with the italic `• thoughts` label. Both states keep
+Pi's native Thinking color and italic style, and `Ctrl+T` continues to toggle the Host setting.
+
+This is a display-only label replacement. Pi Stuff does not merge runs, select semantic blocks, truncate or fit
+Thinking, or change Session records, Provider context, copy, or export source. A leading heading, list item, or code
+fence follows the inline expanded label, so its first Markdown construct may render differently from unprefixed native
+Thinking.
 
 ## Charts and trees
 

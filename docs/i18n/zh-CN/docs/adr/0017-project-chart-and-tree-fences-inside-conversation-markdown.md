@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0017-project-chart-and-tree-fences-inside-conversation-markdown.md; translation-source-sha256: 1595eaee3fbe37bb413ec1996cec570c783ea934645544b2118b991cb188e955 -->
+<!-- translation-source: docs/adr/0017-project-chart-and-tree-fences-inside-conversation-markdown.md; translation-source-sha256: b3f0cc46ce6f2c94a023dd3fdb6b8abbad838c65d0fed57c28cacd31111bb8ef -->
 
 ---
 status: accepted
@@ -12,7 +12,7 @@ status: accepted
 
 ## 决策
 
-Pi Stuff 会在现有对话 Markdown 投影接缝识别完整的 `chart` 和 `tree` 围栏代码块。有效代码块会被替换为受宽度限制的终端文字用于显示，而规范的用户或 Assistant 消息、会话记录、复制/导出源码和 Provider 上下文保持不变。Thinking 继续由实时思考负责，绝不进入该可视化路径。
+Pi Stuff 会在现有对话 Markdown 投影接缝识别完整的 `chart` 和 `tree` 围栏代码块。有效代码块会被替换为受宽度限制的终端文字用于显示，而规范的用户或 Assistant 消息、会话记录、复制/导出源码和 Provider 上下文保持不变。Thinking 只接收显示标签，绝不进入该可视化路径。
 
 分派器是对话 UI 内部的静态实现。它在该模块唯一注册的宿主 Markdown 转换器中运行；不存在第二个转换器、插件注册表、设置、能力、软件包或运行时依赖。Assistant 候选识别被融合进现有保留分块的清理遍历；用户 Markdown 使用精确的开围栏预过滤。只有检测到目标围栏候选后，才同步延迟加载固定且由仓库负责的投影器模块；所属转换器注入 Pi TUI 的列宽测量，使这些模块不含宿主导入。因此，普通启动和普通消息绝不会加载或进入可视化解析。只有闭合围栏、语法、安全检查、限制和可用终端宽度全部满足时，匹配代码块才会投影。每条 Markdown 消息最多投影 16 个有效代码块。否则逐字节返回原围栏。
 

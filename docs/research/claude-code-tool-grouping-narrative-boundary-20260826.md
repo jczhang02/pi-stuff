@@ -345,7 +345,7 @@ provider's content index, and projects its latest meaningful semantic block. Con
   therefore another visible Thinking component;
 - a Thinking block in a later Assistant message also creates another component.
 
-The Pi Stuff seam is [`conversation-ui/live-thought.ts`](../../packages/pi-stuff/src/conversation-ui/live-thought.ts),
+The Pi Stuff seam is [`conversation-ui/live-thought.ts`](https://github.com/jczhang02/pi-stuff/blob/add4468b5525e06acaae866f60c31a24534a829a/packages/pi-stuff/src/conversation-ui/live-thought.ts),
 registered from [`conversation-ui/index.ts`](../../packages/pi-stuff/src/conversation-ui/index.ts); its intended
 display-only contract is documented in the owning
 [`conversation-ui/README.md`](../../packages/pi-stuff/src/conversation-ui/README.md).

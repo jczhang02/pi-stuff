@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/live-only-thoughts-feasibility-20260813.md; translation-source-sha256: d2795aa65fc3e2fd25c5e9166b0b6a7db1be7c210ce012e475650f1656e37b9d -->
+<!-- translation-source: docs/research/live-only-thoughts-feasibility-20260813.md; translation-source-sha256: 86cbc24021e5706244560bad671b5d4327299645fa2590b8fc72dd03fe446bd4 -->
 
 # Pi 0.84.1 上仅实时 Thoughts 的可行性
 
@@ -68,7 +68,7 @@ if (context.messageType === "assistant-thinking" && !context.isStreaming) {
 
 Pi Stuff 当前正是使用这个公开、仅显示的 seam。其 transformer 接收 `isStreaming`，但当前实现有意以相同方式投影实时和已稳定 blocks：
 
-- [`live-thought.ts` lines 34–51](../../../../../packages/pi-stuff/src/conversation-ui/live-thought.ts#L34-L51)
+- [`live-thought.ts` lines 34–51](https://github.com/jczhang02/pi-stuff/blob/add4468b5525e06acaae866f60c31a24534a829a/packages/pi-stuff/src/conversation-ui/live-thought.ts#L34-L51)
 - [`conversation-ui/README.md` lines 92–102](../../packages/pi-stuff/src/conversation-ui/README.md#L92-L102)
 
 ## 已认证的组件探针

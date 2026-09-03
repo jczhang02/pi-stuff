@@ -24,16 +24,17 @@ export const THOUGHT_PHASES = [
 	"Listing and ranking failure hypotheses",
 	"Adding failure hypotheses commentary",
 ] as const;
-const THOUGHT_DELTAS = THOUGHT_PHASES.map(
-	(phase, index) => `${index === 0 ? "" : "\n\n"}**${phase}${index === 0 ? "\u001b]0;OWNED_TITLE\u0007" : ""}**`,
-);
+const THOUGHT_DELTAS = THOUGHT_PHASES.map((phase, index) => `${index === 0 ? "" : "\n\n"}**${phase}**`);
 export const FIXTURE_THINKING = THOUGHT_DELTAS.join("");
 export const VIBE_LINE_LIVENESS_PTY_PROMPT = "VIBE_LINE_LIVENESS_PTY";
 export const VIBE_LINE_LIVENESS_PTY_DONE = "VIBE_LINE_LIVENESS_DONE";
-const VIBE_LINE_LIVENESS_DELTAS = ["Preparing the Vibe Line liveness probe: ", "推".repeat(2_500)] as const;
+const VIBE_LINE_LIVENESS_DELTAS = [
+	"Preparing the Vibe Line liveness probe: ",
+	...Array.from({ length: 100 }, () => "推".repeat(25)),
+] as const;
 const VIBE_LINE_LIVENESS_THOUGHT = VIBE_LINE_LIVENESS_DELTAS.join("");
-const VIBE_LINE_LIVENESS_DELTA_MS = 900;
-const VIBE_LINE_LIVENESS_FINISH_MS = 5_000;
+const VIBE_LINE_LIVENESS_DELTA_MS = 12;
+const VIBE_LINE_LIVENESS_FINISH_MS = VIBE_LINE_LIVENESS_DELTAS.length * VIBE_LINE_LIVENESS_DELTA_MS;
 const RESPONSE = [
 	"UI_PTY_DONE 中文结果🧪",
 	...Array.from({ length: 20 }, (_, index) => `真实输出 ${String(index + 1).padStart(2, "0")} · 对话保持优先`),
