@@ -27,7 +27,6 @@ import {
 	type UiSettingRegistry,
 	UiSettingsStore,
 } from "./settings.js";
-import { registerThinkingLineDisplay } from "./thinking-line.js";
 import { createUiSettingsView } from "./ui-settings-dialog.js";
 
 export { getHostSharedResource } from "../shared/host-resource.js";
@@ -358,7 +357,6 @@ async function installUiCapability(
 	const coordinator = getCommandDialogCoordinator(pi) as CommandDialogCoordinatorImplementation;
 	const diagnostics = getDiagnosticChannel(pi);
 	const registry = installUiSurfaces(pi, coordinator, diagnostics);
-	registerThinkingLineDisplay(pi);
 	const settings = await Effect.runPromise(UiSettingsStore.load());
 	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings, (program) =>
 		effects.run(program),

@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { AssistantMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	Container,
@@ -166,20 +166,6 @@ function projectThinkingLines(component: AssistantMessageComponent): void {
 		const style = thinkingStyle(child);
 		if (style) internals.contentContainer.children[index] = new ThinkingLine(child, internals.outputPad, style);
 	}
-}
-
-/** Register the display only for interactive Host Sessions. */
-export function registerThinkingLineDisplay(pi: ExtensionAPI): void {
-	let release: (() => void) | undefined;
-	pi.on("session_start", (_event, ctx) => {
-		if (!ctx.hasUI) return;
-		release ??= installThinkingLineDisplay();
-		ctx.ui.setHiddenThinkingLabel(HIDDEN_THINKING_LABEL);
-	});
-	pi.on("session_shutdown", () => {
-		release?.();
-		release = undefined;
-	});
 }
 
 /** Install the certified Host adapter and return its idempotent release function. */

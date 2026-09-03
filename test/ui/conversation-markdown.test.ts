@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	getMarkdownTheme,
@@ -145,6 +145,20 @@ test("sets the hidden Thinking label only for interactive sessions", async () =>
 	await rpcApi.start(rpc);
 	expect(rpcUi.hiddenThinkingLabels).toEqual([]);
 	await rpcApi.shutdown(rpc);
+});
+
+test("releases the Thinking adapter when UI presentation setup fails", async () => {
+	const initialUpdateContent = AssistantMessageComponent.prototype.updateContent;
+	const api = createApiHarness();
+	await piStuffUi(api.api);
+	const ui = new UiHarness();
+	ui.setHiddenThinkingLabel = () => {
+		throw new Error("hidden label unavailable");
+	};
+	const ctx = createContext(ui);
+	await expect(api.start(ctx)).rejects.toThrow("hidden label unavailable");
+	expect(AssistantMessageComponent.prototype.updateContent).toBe(initialUpdateContent);
+	await api.shutdown(ctx);
 });
 
 test("fails clearly when the Host cannot provide the accepted Markdown seam", () => {

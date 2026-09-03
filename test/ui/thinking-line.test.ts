@@ -98,22 +98,18 @@ test("reuses the projected row during ordinary Host redraws", () => {
 	}
 });
 
-test("restores the Host renderer after the final adapter owner releases it", () => {
-	initTheme("dark");
+test("restores the prior Host renderer after the final adapter owner releases it", () => {
+	const initialUpdateContent = AssistantMessageComponent.prototype.updateContent;
 	const releaseFirst = installThinkingLineDisplay();
+	const patchedUpdateContent = AssistantMessageComponent.prototype.updateContent;
 	const releaseSecond = installThinkingLineDisplay();
 	releaseFirst();
 	try {
-		expect(renderedContent(component(assistantMessage([{ type: "thinking", thinking: "First\n\nLatest" }])))).toEqual(
-			["• thoughts: Latest"],
-		);
+		expect(AssistantMessageComponent.prototype.updateContent).toBe(patchedUpdateContent);
 	} finally {
 		releaseSecond();
 	}
-	expect(renderedContent(component(assistantMessage([{ type: "thinking", thinking: "First\n\nLatest" }])))).toEqual([
-		"First",
-		"Latest",
-	]);
+	expect(AssistantMessageComponent.prototype.updateContent).toBe(initialUpdateContent);
 });
 
 test("keeps Host Thinking visibility semantics", () => {
