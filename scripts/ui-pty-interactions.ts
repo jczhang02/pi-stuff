@@ -6,8 +6,6 @@ import { Check } from "typebox/value";
 import { isJsonInputObject, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import {
 	DIAGNOSTIC_PTY_SUMMARY,
-	FIXTURE_THINKING,
-	THOUGHT_PHASES,
 	TODO_PTY_PROMPT,
 	TODO_PTY_READY,
 	TODO_PTY_SUBJECTS,
@@ -19,17 +17,10 @@ import {
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as pty from "./ui-pty-session.js";
-import {
-	EXPANDED_THINKING_PREFIX,
-	HIDDEN_THINKING_LABEL,
-	normalizeRenderedText,
-	verifyThinkingHtmlExport,
-	waitForPersistedSessionValue,
-	waitForThoughtText,
-} from "./ui-pty-thinking-evidence.js";
+import { waitForPersistedSessionValue } from "./ui-pty-thinking-evidence.js";
 import type { UiPtyVerificationOptions } from "./verify-ui-pty.js";
 
-export { waitForThoughtText } from "./ui-pty-thinking-evidence.js";
+export { verifyThoughtLifecycle, waitForHiddenThinking, waitForThoughtText } from "./ui-pty-thinking-evidence.js";
 
 const UI_LABELS = [
 	"Statusline",
@@ -266,108 +257,6 @@ export async function waitForFixtureRecords(
 		await pty.delay(pty.POLL_INTERVAL_MS);
 	}
 	pty.fail(`fixture log did not reach ${String(count)} ${type} record(s)`);
-}
-
-function hiddenThinkingRows(screen: string): string[] {
-	return screen.split("\n").filter((line) => line.trim() === HIDDEN_THINKING_LABEL);
-}
-
-export async function waitForHiddenThinking(session: pty.TmuxPiSession, minimumRows: number): Promise<string> {
-	const deadline = Date.now() + pty.WAIT_TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		const screen = session.capture();
-		if (
-			hiddenThinkingRows(screen).length >= minimumRows &&
-			THOUGHT_PHASES.every((phase) => !normalizeRenderedText(screen).includes(phase))
-		) {
-			return screen;
-		}
-		await pty.delay(pty.POLL_INTERVAL_MS);
-	}
-	pty.fail(`timed out waiting for ${String(minimumRows)} hidden Thinking label(s)`);
-}
-
-function verifyItalicThinkingLabel(session: pty.TmuxPiSession, label: string): void {
-	const line = session
-		.captureAnsi()
-		.split("\n")
-		.find((candidate) => candidate.includes(label));
-	if (!line?.includes("\u001b[3m")) {
-		pty.fail("Thinking label did not retain the Host italic style");
-	}
-}
-
-export async function verifyThoughtLifecycle(
-	session: pty.TmuxPiSession,
-	paths: pty.CasePaths,
-	columns: number,
-	rows: number,
-): Promise<void> {
-	const settledMarker = `THOUGHT_DONE_${String(columns)}`;
-	const prompt = `THOUGHT_PROBE_${String(columns)}`;
-	const finalPhase = THOUGHT_PHASES.at(-1) ?? pty.fail("Thinking fixture has no phases");
-	session.sendLiteral(prompt);
-	session.sendKey("Enter");
-
-	let screen = "";
-	for (const [index, phase] of THOUGHT_PHASES.entries()) {
-		const expected = index === 0 ? EXPANDED_THINKING_PREFIX + phase : phase;
-		screen = await waitForThoughtText(session, expected);
-		if (screen.includes(settledMarker)) {
-			pty.fail(`Thinking phase ${String(index + 1)} was captured only after the response settled`);
-		}
-		if (columns >= 64) {
-			for (const visiblePhase of THOUGHT_PHASES.slice(0, index + 1)) {
-				if (!normalizeRenderedText(screen).includes(visiblePhase)) {
-					pty.fail(`expanded Thinking dropped an earlier cumulative phase\n${screen}`);
-				}
-			}
-		}
-	}
-
-	await session.waitForText(settledMarker);
-	session.resize(columns - 1, rows);
-	await pty.delay(100);
-	session.resize(columns, rows);
-	screen = await waitForThoughtText(session, finalPhase);
-	screen = await session.waitForLatestPrompt(prompt);
-	if (!screen.includes(settledMarker)) pty.fail("settled Thinking was not present beside its completed response");
-	const promptRows = pty.rowsBelowEditorDivider(screen).filter((line) => line.includes(prompt));
-	if (promptRows.length !== 1) {
-		pty.fail(
-			String(columns) +
-				"-column latest prompt occupied " +
-				String(promptRows.length) +
-				" rows instead of exactly one\n" +
-				screen,
-		);
-	}
-	verifyTerminalWidth(screen, columns, `settled ${String(columns)}-column Thinking`);
-
-	if (columns === 100) {
-		verifyItalicThinkingLabel(session, EXPANDED_THINKING_PREFIX);
-		session.sendKey("C-t");
-		screen = await waitForHiddenThinking(session, 1);
-		if (hiddenThinkingRows(screen).length !== 1) pty.fail("one Host Thinking run did not collapse to one label");
-		verifyItalicThinkingLabel(session, HIDDEN_THINKING_LABEL);
-		session.sendKey("C-t");
-		await waitForThoughtText(session, finalPhase);
-
-		const secondMarker = "THOUGHT_DONE_SECOND_RUN";
-		session.sendLiteral("THOUGHT_PROBE_SECOND_RUN");
-		session.sendKey("Enter");
-		await session.waitForText(secondMarker);
-		session.sendKey("C-t");
-		screen = await waitForHiddenThinking(session, 2);
-		if (hiddenThinkingRows(screen).length < 2) {
-			pty.fail("separate Host Thinking runs did not retain separate hidden labels");
-		}
-		session.sendKey("C-t");
-		await waitForThoughtText(session, finalPhase);
-	}
-
-	await waitForPersistedSessionValue(paths.sessions, FIXTURE_THINKING, "the original Thinking content");
-	if (columns === 100) await verifyThinkingHtmlExport(paths.sessions);
 }
 
 export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession): Promise<number> {

@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import type { Markdown } from "@earendil-works/pi-tui";
 import type {
 	getMarkdownTheme,
@@ -28,9 +30,14 @@ interface TransformerModule {
 }
 
 interface HostMarkdownRuntime {
+	readonly AssistantMessageComponent: typeof AssistantMessageComponent;
 	readonly Markdown: typeof Markdown;
 	readonly getMarkdownTheme: typeof getMarkdownTheme;
 	readonly initTheme: typeof initTheme;
+}
+
+interface ThinkingLineModule {
+	installThinkingLineDisplay: () => () => void;
 }
 
 interface Scenario {
@@ -131,6 +138,10 @@ function conversationMarkdownModuleUrl(root: string): string {
 	return pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/conversation-markdown.ts")).href;
 }
 
+function thinkingLineModuleUrl(root: string): string {
+	return pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/thinking-line.ts")).href;
+}
+
 async function loadTransformer(root: string): Promise<MarkdownTransformer> {
 	const moduleUrl = conversationMarkdownModuleUrl(root);
 	// SAFETY: the benchmark loads the repository-owned module at the exact public export exercised by its focused tests.
@@ -138,23 +149,42 @@ async function loadTransformer(root: string): Promise<MarkdownTransformer> {
 	return module.transformConversationMarkdown;
 }
 
+async function loadThinkingLineModule(root: string): Promise<ThinkingLineModule> {
+	const moduleUrl = thinkingLineModuleUrl(root);
+	// SAFETY: the benchmark loads the repository-owned module at the exact internal seam exercised by focused tests.
+	const module = (await import(moduleUrl)) as ThinkingLineModule;
+	if (!isRuntimeFunction(module.installThinkingLineDisplay)) {
+		fail(`Thinking line installer is unavailable under ${root}`);
+	}
+	return module;
+}
+
 async function loadHostMarkdownRuntime(root: string): Promise<HostMarkdownRuntime> {
+	const agentUrl = pathToFileURL(resolve(root, "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href;
 	const tuiUrl = pathToFileURL(resolve(root, "node_modules/@earendil-works/pi-tui/dist/index.js")).href;
 	const themeUrl = pathToFileURL(
 		resolve(root, "node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js"),
 	).href;
 	// SAFETY: the benchmark loads the pinned Host packages from the two explicit repository roots and checks each used export.
+	const agent = (await import(agentUrl)) as Pick<HostMarkdownRuntime, "AssistantMessageComponent">;
+	// SAFETY: the benchmark loads the pinned Host packages from the two explicit repository roots and checks each used export.
 	const tui = (await import(tuiUrl)) as Pick<HostMarkdownRuntime, "Markdown">;
 	// SAFETY: the benchmark loads the pinned Host packages from the two explicit repository roots and checks each used export.
 	const theme = (await import(themeUrl)) as Pick<HostMarkdownRuntime, "getMarkdownTheme" | "initTheme">;
 	if (
+		!isRuntimeFunction(agent.AssistantMessageComponent) ||
 		!isRuntimeFunction(tui.Markdown) ||
 		!isRuntimeFunction(theme.getMarkdownTheme) ||
 		!isRuntimeFunction(theme.initTheme)
 	) {
 		fail(`Host Markdown runtime exports are unavailable under ${root}`);
 	}
-	return { Markdown: tui.Markdown, getMarkdownTheme: theme.getMarkdownTheme, initTheme: theme.initTheme };
+	return {
+		AssistantMessageComponent: agent.AssistantMessageComponent,
+		Markdown: tui.Markdown,
+		getMarkdownTheme: theme.getMarkdownTheme,
+		initTheme: theme.initTheme,
+	};
 }
 
 function textOfLength(seed: string, length: number): string {
@@ -283,7 +313,48 @@ function scenarios(): readonly Scenario[] {
 	];
 }
 
+function renderThinkingScenario(
+	host: HostMarkdownRuntime,
+	transformer: MarkdownTransformer,
+	scenario: Scenario,
+): number {
+	let checksum = 0;
+	for (let round = 0; round < scenario.rounds; round += 1) {
+		const component = new host.AssistantMessageComponent(undefined, false, host.getMarkdownTheme(), "• thoughts", 0, [
+			transformer,
+		]);
+		for (const source of scenario.markdown) {
+			const message: AssistantMessage = {
+				api: "openai-completions",
+				content: [{ type: "thinking", thinking: source }],
+				model: "conversation-markdown-benchmark",
+				provider: "fixture",
+				role: "assistant",
+				stopReason: scenario.isStreaming ? "pending" : "stop",
+				timestamp: 0,
+				usage: {
+					cacheRead: 0,
+					cacheWrite: 0,
+					cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
+					input: 0,
+					output: 0,
+					totalTokens: 0,
+				},
+			};
+			component.updateContent(message, scenario.isStreaming);
+			for (const width of scenario.widths ?? WIDTHS) {
+				const lines = component.render(width);
+				checksum += lines.length + (lines[0]?.length ?? 0) + (lines.at(-1)?.length ?? 0);
+			}
+		}
+	}
+	return checksum;
+}
+
 function renderScenario(host: HostMarkdownRuntime, transformer: MarkdownTransformer, scenario: Scenario): number {
+	if (scenario.messageType === "assistant-thinking" && scenario.mode !== "transform") {
+		return renderThinkingScenario(host, transformer, scenario);
+	}
 	let checksum = 0;
 	for (let round = 0; round < scenario.rounds; round += 1) {
 		for (const source of scenario.markdown) {
@@ -454,6 +525,8 @@ function benchmarkFreshImport(
 const options = parseOptions(process.argv.slice(2));
 const baselineHost = await loadHostMarkdownRuntime(options.baselineRoot);
 const candidateHost = await loadHostMarkdownRuntime(options.candidateRoot);
+const candidateThinkingLine = await loadThinkingLineModule(options.candidateRoot);
+const uninstallCandidateThinkingLine = candidateThinkingLine.installThinkingLineDisplay();
 baselineHost.initTheme("dark");
 candidateHost.initTheme("dark");
 process.stderr.write("Benchmarking fresh-conversation-markdown-import...\n");
@@ -504,6 +577,7 @@ for (const report of reports.filter((candidateReport) => candidateReport.regress
 	);
 }
 const regressions = confirmations.filter((report) => report.regression);
+uninstallCandidateThinkingLine();
 process.stdout.write(
 	`${JSON.stringify(
 		{

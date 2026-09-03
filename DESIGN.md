@@ -174,11 +174,13 @@ fallbacks, terminal detection, or an icon-mode setting. Separators and truncatio
 Capability identity icon, such as Ponytail's `󱖿`, in its owning Dialog instead of introducing a second visual identity.
 A Dialog redesign does not silently change transcript markers or Tool rendering.
 
-Thinking stays inside the Host-owned Transcript. When expanded, every Host Thinking run starts with `• thoughts: `
-followed inline by its complete Markdown; when hidden, that run becomes `• thoughts`. Both states use the Host
-`thinkingText` color and italic style. Pi Stuff does not merge runs, choose semantic fragments, fit content, or own
-visibility: Pi's setting and `Ctrl+T` remain authoritative. The inline expanded label may change how a leading Markdown
-heading, list item, or code fence renders, but it never changes the canonical message.
+Thinking stays inside the Host-owned Transcript. When visible, every Host Thinking run occupies one row: `• thoughts: `
+followed by the last terminal row from its current native Markdown rendering. Streaming updates replace that row, and
+the settled run keeps its final row. When hidden, the run becomes `• thoughts`. The label uses the Host `thinkingText`
+color and italic style, while its content retains native Markdown styling. If the combined row is too wide, it keeps the
+content tail. Pi Stuff does not merge runs, parse source into semantic fragments, add a timer, or own visibility: Pi's
+setting and `Ctrl+T` remain authoritative. The version-bound component adapter fails outside the certified Host layout,
+and it never changes the canonical message.
 
 A valid `chart` or `tree` fence may become a Fenced Visualization Projection inside the same Transcript message. Keep
 the result flat, monochrome, and terminal-native: inert borderless code-block text and Unicode plot or tree glyphs,

@@ -44,8 +44,6 @@ function loadFencedVisualizationProjector(): PrepareFencedVisualizations {
 	return prepareFencedVisualizations;
 }
 
-export const HIDDEN_THINKING_LABEL = `${TRANSCRIPT_MARKER} thoughts`;
-const EXPANDED_THINKING_PREFIX = `${HIDDEN_THINKING_LABEL}: `;
 // Markdown normalizes the source '-' to the transcript's visible U+2022 while
 // preserving all nested block structure inside one message-level list item.
 const ASSISTANT_LIST_PREFIX = "- ";
@@ -155,7 +153,7 @@ export function transformConversationMarkdown(markdown: string, context: Convers
 		armMarkdownThemeProjection(false, projection.projectedBlocks);
 		return projection.markdown;
 	}
-	return `${EXPANDED_THINKING_PREFIX}${markdown}`;
+	return markdown;
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {

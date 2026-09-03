@@ -19,8 +19,6 @@ const CONTEXT: ConversationMarkdownTransformContext = {
 	isStreaming: true,
 	messageType: "assistant-thinking",
 };
-const THOUGHT_PREFIX = "• thoughts: ";
-
 function transform(markdown: string, overrides: Partial<ConversationMarkdownTransformContext> = {}): string {
 	return transformConversationMarkdown(markdown, { ...CONTEXT, ...overrides });
 }
@@ -40,35 +38,12 @@ async function render(
 	return lines;
 }
 
-test("prefixes complete Thinking Markdown without interpreting or fitting it", () => {
-	const source = [
-		"Planning the change.",
-		"",
-		"- Inspect the repository",
-		"- Run focused tests",
-		"",
-		"最后保留完整内容 🧪",
-	].join("\n");
+test("leaves Thinking Markdown unchanged for component-level projection", () => {
+	const source = "Planning the change.\n\n- Inspect the repository\n- Run focused tests";
 
-	expect(transform(source)).toBe(THOUGHT_PREFIX + source);
-	expect(transform(source, { availableWidth: 1 })).toBe(THOUGHT_PREFIX + source);
-	expect(transform(source, { isStreaming: false })).toBe(THOUGHT_PREFIX + source);
-});
-
-test("keeps every cumulative Thought phase instead of selecting or merging semantic blocks", () => {
-	const source = [
-		"**Creating diagnostic script for false failure**",
-		"",
-		"**Drafting failure detection logic in script**",
-		"",
-		"## Listing and ranking failure hypotheses",
-	].join("\n");
-
-	const projected = transform(source);
-	expect(projected).toBe(THOUGHT_PREFIX + source);
-	expect(projected).toContain("Creating diagnostic script");
-	expect(projected).toContain("Drafting failure detection logic");
-	expect(projected).toContain("Listing and ranking failure hypotheses");
+	expect(transform(source)).toBe(source);
+	expect(transform(source, { availableWidth: 1 })).toBe(source);
+	expect(transform(source, { isStreaming: false })).toBe(source);
 });
 
 test("leaves user Markdown unchanged and gives every Assistant message one outer marker", async () => {
@@ -86,7 +61,7 @@ test("leaves user Markdown unchanged and gives every Assistant message one outer
 	expect(rendered.every((line) => visibleWidth(line) <= 44)).toBe(true);
 });
 
-test("aligns the expanded Thinking label with Assistant and Tool Activity markers", async () => {
+test("aligns Assistant and Tool Activity markers", async () => {
 	initTheme("dark");
 	const transformer = transformConversationMarkdown;
 	const markdown = (source: string, messageType: ConversationMarkdownTransformContext["messageType"]) =>
@@ -94,7 +69,6 @@ test("aligns the expanded Thinking label with Assistant and Tool Activity marker
 			transform: (value, availableWidth) => transformer(value, { availableWidth, isStreaming: true, messageType }),
 		});
 	const assistantLine = stripTerminalSequences(markdown("DONE", "assistant").render(80)[0] ?? "");
-	const thoughtLine = stripTerminalSequences(markdown("Checking alignment", "assistant-thinking").render(80)[0] ?? "");
 	await Promise.resolve();
 	// SAFETY: CachedToolRow uses only bold() and fg() in this marker-alignment fixture.
 	const toolTheme = {
@@ -111,9 +85,7 @@ test("aligns the expanded Thinking label with Assistant and Tool Activity marker
 			summary: "Ran 1 command · 1 failed",
 		}).render(80)[0] ?? "";
 
-	expect(thoughtLine).toContain("• thoughts: Checking alignment");
-	expect([activityLine.indexOf("•"), assistantLine.indexOf("•"), thoughtLine.indexOf("•")]).toEqual([
-		SELF_RENDERED_TRANSCRIPT_PADDING,
+	expect([activityLine.indexOf("•"), assistantLine.indexOf("•")]).toEqual([
 		SELF_RENDERED_TRANSCRIPT_PADDING,
 		SELF_RENDERED_TRANSCRIPT_PADDING,
 	]);
@@ -154,22 +126,25 @@ test("registers the Conversation Markdown transformer through the public Host se
 	const api = createApiHarness();
 	registerConversationMarkdown(api.api);
 	expect(api.markdownTransformers).toHaveLength(1);
-	expect(api.markdownTransformers[0]?.("Checking. Ready", CONTEXT)).toBe("• thoughts: Checking. Ready");
+	expect(api.markdownTransformers[0]?.("Checking. Ready", CONTEXT)).toBe("Checking. Ready");
 });
 
 test("sets the hidden Thinking label only for interactive sessions", async () => {
-	const api = createApiHarness();
-	await piStuffUi(api.api);
+	const interactiveApi = createApiHarness();
+	await piStuffUi(interactiveApi.api);
 	const interactiveUi = new UiHarness();
 	const interactive = createContext(interactiveUi);
-	await api.start(interactive);
+	await interactiveApi.start(interactive);
 	expect(interactiveUi.hiddenThinkingLabels).toEqual(["• thoughts"]);
+	await interactiveApi.shutdown(interactive);
 
+	const rpcApi = createApiHarness();
+	await piStuffUi(rpcApi.api);
 	const rpcUi = new UiHarness();
 	const rpc = createContext(rpcUi, "rpc");
-	await api.start(rpc);
+	await rpcApi.start(rpc);
 	expect(rpcUi.hiddenThinkingLabels).toEqual([]);
-	await api.shutdown(rpc);
+	await rpcApi.shutdown(rpc);
 });
 
 test("fails clearly when the Host cannot provide the accepted Markdown seam", () => {

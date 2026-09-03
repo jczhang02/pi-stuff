@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c6f146dd3ad217c8ef3fe4b7fb70d4641ebed33548def21fc6a2377400a06fe6 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: 8d35b774e89a3d5767c39e7ed43af038a30b6586a0a3314826321e453176eab4 -->
 
 # Conversation UI
 
@@ -57,13 +57,13 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 ## Thinking 标签
 
 Thinking 内容、可见性和 run 边界都由 Pi 负责。关闭 Pi 原生 **Hide thinking blocks** 设置后，每个 streaming
-或 settled Thinking run 都以 `• thoughts: ` 开头，后面同行显示完整的 Host Markdown。打开该设置后，Host
-会把每个 run 替换为斜体 `• thoughts` 标签。两种状态都保留 Pi 原生的 Thinking 颜色和斜体样式，`Ctrl+T`
-仍用于切换 Host 设置。
+或 settled Thinking run 只占一行：`• thoughts: ` 后面接当前原生 Markdown 渲染的最后一条终端行。流式更新
+会替换这一行，run 结束后保留最终行；整行过宽时保留内容尾部。打开该设置后，Host 会把每个 run 替换为
+斜体 `• thoughts` 标签。`Ctrl+T` 仍用于切换 Host 设置。
 
-这只是仅用于显示的标签替换。Pi Stuff 不会合并 run、选择语义 block、截断或拟合 Thinking，也不会改变
-Session record、Provider context、复制或导出的源码。若内容以标题、列表项或代码围栏开头，该结构会跟在
-展开标签之后，因此首个 Markdown 结构的显示可能与无前缀的原生 Thinking 不同。
+该改动只影响显示。Pi Stuff 不使用语义 parser、源码截断、计时器、模型分类或合并后的 run 状态。选中的
+终端行保留原生 Markdown 样式；Session record、Provider context、复制和导出源码均不变。Pi 目前没有公开的
+Thinking 渲染后 hook，因此 adapter 与认证 Host 的 component 布局绑定；布局不可用时会明确失败。
 
 ## Chart 与 tree
 

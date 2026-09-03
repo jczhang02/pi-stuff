@@ -502,7 +502,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
-						"complete expanded, hidden, toggled, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
+						"latest-line, hidden, toggled, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
 						"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",
@@ -520,7 +520,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						verified.push("diagnostic notice and full-width details at 64x28");
 					}
 					await flow.verifyThoughtLifecycle(session, paths, columns, rows);
-					verified.push(`complete streaming and settled Thinking ${String(columns)}x${String(rows)}`);
+					verified.push(`latest-line streaming and settled Thinking ${String(columns)}x${String(rows)}`);
 					if (columns === 64) {
 						await flow.verifyTodoOverlay(session, options, columns, rows);
 						verified.push("expanded four-task Todo alignment at 64x28");

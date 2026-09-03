@@ -58,14 +58,15 @@ Focused dialogs temporarily take the editor surface. Closing a dialog restores t
 ## Thinking labels
 
 Pi owns Thinking content, visibility, and run boundaries. With Pi's native **Hide thinking blocks** setting disabled,
-each streaming or settled Thinking run begins with `• thoughts: ` followed on the same line by the complete Host
-Markdown. With the setting enabled, the Host replaces each run with the italic `• thoughts` label. Both states keep
-Pi's native Thinking color and italic style, and `Ctrl+T` continues to toggle the Host setting.
+each streaming or settled Thinking run occupies one line: `• thoughts: ` followed by the last terminal row from its
+current native Markdown rendering. Streaming updates replace that line, and a settled run keeps its final line. If the
+combined line is too wide, the content tail remains visible. With the setting enabled, the Host replaces each run with
+the italic `• thoughts` label. `Ctrl+T` continues to toggle the Host setting.
 
-This is a display-only label replacement. Pi Stuff does not merge runs, select semantic blocks, truncate or fit
-Thinking, or change Session records, Provider context, copy, or export source. A leading heading, list item, or code
-fence follows the inline expanded label, so its first Markdown construct may render differently from unprefixed native
-Thinking.
+This is display-only. Pi Stuff uses no semantic parser, source truncation, timer, model classification, or merged run
+state. It preserves the native Markdown styling of the selected terminal row and never changes Session records,
+Provider context, copy, or export source. Pi currently exposes no public post-render Thinking hook, so the adapter is
+bound to the certified Host component layout and fails clearly when that layout is unavailable.
 
 ## Charts and trees
 
