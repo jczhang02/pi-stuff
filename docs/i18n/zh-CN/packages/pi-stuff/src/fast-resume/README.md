@@ -1,43 +1,44 @@
-<!-- translation-source: packages/pi-stuff/src/fast-resume/README.md; translation-source-sha256: a1e2d4e8b1732f22a8c9ca1bc366c6232c27d526ed7970799c903f135d947460 -->
+<!-- translation-source: packages/pi-stuff/src/fast-resume/README.md; translation-source-sha256: f6ca876519d68569a4c213cb6227b2bc7a7bfdb4b0f957b8096d7626e79e7640 -->
 
 # Fast Resume
 
 [English](../../../../../../../packages/pi-stuff/src/fast-resume/README.md)
 
-一个渐进式 Session 选择器：无需解析完整 Session 历史，也能在 Pi 中完成日常恢复操作。
+Pi 的原生 Session 选择器，只是用有界 Session 读取替代完整历史解析。
 
 <p align="center">
   <a href="../../../../../../assets/readme/capabilities/fast-resume.png">
-    <img src="../../../../../../assets/readme/capabilities/fast-resume.png" alt="Pi 中的 Fast Resume Session 选择器" width="100%">
+    <img src="../../../../../../assets/readme/capabilities/fast-resume.png" alt="由 Fast Resume 提供数据的 Pi 原生 Session 选择器" width="100%">
   </a>
   <br>
-  <em>Fast Resume 先让当前项目最近的 Session 可供选择，同时继续加载较旧的元数据。</em>
+  <em>Fast Resume 只改变 Session 行的加载方式，不改变 Pi 选择器的外观和行为。</em>
 </p>
 
 ## 快速开始
 
-`/resume` 默认打开 Fast Resume。输入文字进行搜索，按 Enter 切换 Session，或按 Tab 在 Current Folder
-与 All Sessions 之间切换。经认证的拦截 seam 不可用时，运行时会回退到 Host 原生选择器。
+`/resume` 默认打开 Pi 原生的 `SessionSelectorComponent`，但使用 Fast Resume loader。搜索、scope、排序、
+重命名、删除和键盘行为仍由 Host 负责。如果经认证的拦截 seam 不可用，Pi Stuff 会调用原始的原生选择器。
 
-若要保留 Pi 原生 `/resume`，请在 `pi-stuff.json` 中把 `fastResume.hijackResume` 设为 `false`，
-并改用 `/fast-resume` 打开本选择器。
+在 `pi-stuff.json` 中把 `fastResume.hijackResume` 设为 `false`，即可让 `/resume` 保留 Pi 的完整历史
+加载方式，并通过 `/fast-resume` 打开使用有界 loader 的原生选择器。
 
-## 主要特性
+## Contract
 
-- 先显示 Current Folder 中最新的 Session，再以有界批次加载其余 Session 和 All Sessions。
-- 在线程化目录呈现与平面的 Recent 或 Fuzzy 呈现之间切换，并支持仅显示 Named Session。
-- 搜索 Session ID、名称、cwd 和首条用户消息；支持模糊、引号精确与 `re:<pattern>` 正则输入。
-- 通过 Pi Session 元数据重命名；确认后删除，平台回收站命令不可用时回退到永久 unlink。
-- 在刷新、关闭、reload、Session 替换和 shutdown 时取消过期后台工作。
-- 保持 Session JSONL 文件为权威来源；Fast Resume 不创建索引或 cache。
+- 可见界面就是 Pi 导出的原生组件。Pi Stuff 不维护并行的 resume UI、搜索引擎、列表 controller 或变更流程。
+- Current Folder 和 All Sessions 对每个文件最多读取头部 1 MiB，并对过大文件读取尾部 32 KiB。文件能
+  放入前向窗口时会完整解析。加载进度交给原生 Header；只有用户请求 All Sessions 时才加载该 scope。
+- 选择结果交给 Pi 的 `switchSession`；重命名和确认删除继续使用原生选择器行为。
+- 每次打开选择器都拥有自己的 loader operation。关闭界面时关闭该 owner；刷新和迟到结果继续由原生组件处理。
+- Session JSONL 文件仍是权威来源。Fast Resume 不创建索引、cache、数据库，也不访问网络。
 
-有界读取使选择器保持快速，但也意味着尾部窗口之外的名称可能缺失，消息数量只是近似值。需要完整历史搜索
-或精确元数据时，请使用 Pi 原生选择器。
+有界读取以完整性换取延迟。文件能放入 1 MiB 前向窗口时，会保留完整的可搜索文字、消息数量与最后消息
+活动时间。过大文件可能缺少后续消息和尾部窗口以外的名称、报告较低的消息数量，并回退到文件系统修改时间进行
+排序。需要完整历史搜索或精确列表元数据时，请关闭拦截。
 
 ## 文档
 
 - [Fast Resume 指南](../../../../docs/capabilities/fast-resume.md)
-- [命令参考](../../../../docs/reference/commands.md#session-与支线问题)
+- [命令参考](../../../../docs/reference/commands.md#sessions-and-side-questions)
 - [设置参考](../../../../docs/reference/settings.md#fastresume)
 - [架构决策](../../../../docs/adr/0026-add-fast-resume.md)
 - [故障排查](../../../../docs/troubleshooting.md)

@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: df91ee6d2da7e8a39b1a398b673d0239662e9a389523e31156ca382a2d320f67 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 80e58b8dfb502a8c2bd31ec7c009be3b25f232ee004b6c427dd16e9305b1fb89 -->
 
 # Pi Stuff
 
@@ -79,10 +79,10 @@ _避免使用_：Skill search、eager Skill loading
 改写 registry 或安装生命周期。
 _避免使用_：Embedded RTK、Pi Stuff command parser
 
-**Fast Resume Selector**：
-Pi Stuff 的 Command Dialog 会逐步发现有界的 Session 元数据，并将选中的 Session 委派给 Pi。它是一条带有明确
-元数据上限的快速路径，不是完整历史索引，也不是另一个 Session manager。
-_避免使用_：Session database、cached resume、Pi replacement
+**Fast Resume Loader**：
+Pi Stuff 接管 Host resume 入口后，交给 Pi 原生 Session 选择器的有界 Session 元数据 loader。它是一条带有明确
+元数据上限的快速路径，不是另一个选择器、完整历史索引或 Session manager。
+_避免使用_：Fast Resume selector、Session database、cached resume、Pi replacement
 
 **Session Name**：
 由 Pi 拥有的 Session 元数据，为一段编码对话提供简短语义身份。Session Naming 可以在用户直接发起的工作

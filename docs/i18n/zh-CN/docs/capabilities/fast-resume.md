@@ -1,70 +1,78 @@
-<!-- translation-source: docs/capabilities/fast-resume.md; translation-source-sha256: 93297b1c7d735f51dd3b152419d5c0912762bb3bee77ac8401df9dbb2300a323 -->
+<!-- translation-source: docs/capabilities/fast-resume.md; translation-source-sha256: 7d5d5a827e22eeb1626cd4f26801248bcca120b8eebaca30dacff8057a6235e1 -->
 
 # Fast Resume
 
 [English](../../../../../docs/capabilities/fast-resume.md)
 
-Fast Resume 用渐进式选择器替代 Pi 默认的 Session 选择器。它只读取有界的 JSONL 区域，不解析完整 conversation
-历史；原生 Session 文件保持不变，最终切换仍由 Pi 执行。
+Fast Resume 保留 Pi 原生 Session 选择器，只替换其中开销较大的完整历史列表 loader。它读取有界 JSONL 区域，
+返回 Pi 的 `SessionInfo` 行，再把选择和变更操作交给 Host 组件。
 
 ## 打开选择器
 
-运行 `/resume`。Fast Resume 只在当前 Host 进程的内存中拦截原生选择器，不修改 Pi 的安装文件。如果经认证
-的 Host seam 不可用，Pi 会打开原生选择器，并用一条有界 Diagnostic Record 说明回退原因。
+运行 `/resume`。Pi Stuff 只在当前 Host 进程内拦截原生选择器调用，然后挂载 Pi 导出的
+`SessionSelectorComponent`，并提供有界的 Current Folder 与 All Sessions loader。它不会修改 Pi 的安装文件。
+如果经认证的 Host seam 不可用或打开失败，系统会运行原始选择器，并通过有界 Diagnostic Record 说明回退原因。
 
-关闭 `fastResume.hijackResume` 后，Pi 保留原生 `/resume`，Pi Stuff 则注册 `/fast-resume`。可选的
-`fastResume.shortcut` key ID 会打开同一个 Fast Resume 界面。
+关闭 `fastResume.hijackResume` 后，Pi 会为 `/resume` 保留完整历史 loader，Pi Stuff 则注册
+`/fast-resume`。可选的 `fastResume.shortcut` Pi key ID 会打开同一个使用有界 loader 的原生组件。
 
-## 导航与过滤
+## 原生选择器行为
 
-Header 显示 scope、视图、排序顺序、可见数量、加载状态，以及可用时的加载进度。
+Fast Resume 不添加视觉模式或额外控件。标题、Header、列表行、搜索框、选择、滚动、空状态、状态消息、
+重命名表单、删除确认、颜色、响应式裁切和按键都来自 Pi 原生 UI。
 
-| 按键 | 操作 |
+| 按键 | 原生操作 |
 | --- | --- |
 | Up / Down | 移动一个 Session |
-| Page Up / Page Down | 在可见窗口内翻页 |
+| Page Up / Page Down | 按可见窗口翻页 |
 | Home / End | 选择第一个或最后一个可见 Session |
 | Enter | 切换到选中的 Session |
 | Escape | 关闭选择器并恢复编辑器 |
-| Tab / Shift+Tab | 在 Current Folder 与 All Sessions 之间切换 |
-| Ctrl+S | 循环切换 Threaded、Recent 与 Fuzzy 排序 |
+| Tab / Shift+Tab | 切换 Current Folder 与 All Sessions |
+| Ctrl+S | 轮换 Threaded、Recent 和 Fuzzy 排序 |
 | Ctrl+N | 切换仅显示 Named Session |
 | Ctrl+P | 切换 Session 路径显示 |
-| Ctrl+L | 刷新活动 scope |
+| Ctrl+L | 刷新当前 scope |
 | Ctrl+R | 重命名选中的 Session |
 | Ctrl+D | 确认删除选中的 Session |
 
-输入文字会在当前 scope 中搜索。普通输入使用模糊匹配，完整引号包围的查询使用精确子串匹配；
-`re:<pattern>`（例如 `re:release.*notes`）使用正则表达式。无效表达式会显示有界错误，在修正前不匹配
-任何行。搜索覆盖 Session ID、Session 名称、cwd 与首条用户消息，不搜索完整 transcript。
+输入文字时使用 Pi 的选择器搜索。普通输入采用模糊匹配，完整引号包裹的查询采用精确子串匹配，
+`re:<pattern>` 采用正则表达式匹配。Fast Resume 提供 Session ID、解析出的名称、cwd，以及前向窗口内找到的
+可见用户和 Assistant 文字，但不构建无界 transcript 索引。
 
-Threaded 模式按规范化父路径分组，子项位于父项之后，root 和同级项按活动时间排序。Recent 模式在过滤后保留
-修改时间顺序。Fuzzy 模式按匹配分数排序，同分时按修改时间打破平局。
+## 有界加载
 
-## 渐进加载
+Fast Resume 对每个候选文件从头最多读取 1 MiB，只解析完整行。文件能放入该窗口时会完整解析；过大文件在
+取得 Session header 和首条非空用户消息后提前停止，再用 32 KiB 尾部窗口查找近期 Session 名称元数据。文件
+按每批 50 个处理，并把进度交给原生 Header。Current Folder 完成后才可选；
+只有用户切换 scope 时才会读取 All Sessions。
 
-Fast Resume 通过文件名和修改时间发现候选项，读取首个完整 header 与用户消息，并在有界尾部窗口中查找最新
-Session 名称。Current Folder 最新的 30 个候选项最先出现；较旧的 Current Folder 行加载完成后，才开始
-All Sessions，并按批次显示进度。关闭或刷新 Dialog 会取消过期工作，避免迟到结果进入当前视图。
+该 loader 有明确上限：
 
-该有界契约有明确限制：
+- 未在 1 MiB 前向窗口内结束的首条非空用户消息不会进入搜索；
+- 过大文件中的后续文字与写在尾部窗口以外的名称可能缺失；
+- 过大文件的消息数量可能小于完整历史数量；
+- 有界读取看不到最后消息活动时间时，由文件系统修改时间决定排序，因此只追加元数据也可能移动 Session；
+- 只有关闭拦截并使用 Pi 原始 loader，才能进行完整历史搜索并取得精确列表元数据。
 
-- 写在尾部窗口之外的名称可能缺失；
-- 部分读取的消息数量使用 `≈` 标记；只有完整读取的数量是精确值；
-- 完整历史搜索只能使用 Pi 原生选择器。
+Fast Resume 不创建持久 cache 或 sidecar 索引，不发起网络请求，扫描时也不重写 Session 文件。
 
-Fast Resume 不创建持久 cache 或 sidecar 索引，不发送网络请求，扫描时也不重写 Session 文件。
+## 恢复、重命名和删除
 
-## 重命名与删除
+Enter 会把选中的路径返回 Pi Stuff，再调用 Pi 的 `switchSession`。验证、加载、transcript replay、cwd 变更和
+终端行为仍由 Pi 负责。
 
-Ctrl+R 写入 Pi 的普通 Session 名称元数据并刷新活动视图。输入为空时不修改 Session。
+重命名和删除沿用 Pi 原生选择器流程。重命名写入常规 Session 名称元数据并刷新当前 scope。删除会保护活动
+Session、要求确认、先尝试平台回收站命令；如果回收站不可用或失败，则永久 unlink JSONL 文件。删除失败时保留
+列表行，并使用原生的有界错误状态。
 
-Ctrl+D 打开行内确认。不能删除活动 Session。确认后先尝试平台回收站命令；命令不可用或失败时，Fast Resume
-会永久 unlink 该 JSONL 文件。unlink 失败时保留该行并报告有界错误。变更成功后刷新活动 scope；如果选中路径
-仍然存在，则继续选中该路径。
+## 生命周期
+
+每次打开选择器都会取得一个子 Effect owner，每次原生 loader 调用作为受管 operation 运行。关闭选择器会关闭
+owner 并中断尚未完成的工作。loader 在用户切换视图后才返回时，仍以 Pi 原生的 scope 和序列检查为准。
 
 ## 配置
 
 在 `<agentDir>/pi-stuff.json` 的 `fastResume` 命名空间中手动配置 Fast Resume。启动时只读取该命名空间，
-不会创建或重写文件。无效值回退到默认值并产生 Diagnostic Record。字段定义见
+不创建或重写文件。无效值回退到默认值，并生成 Diagnostic Record。字段定义见
 [设置参考](../reference/settings.md#fastresume)。

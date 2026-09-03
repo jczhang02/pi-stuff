@@ -80,7 +80,7 @@ The interactive Goal settings screen owns the common continuation and Tool-visib
 | `shortcut` | Pi key ID string, optional | none | JSON |
 
 `hijackResume` intercepts Pi's built-in `/resume` selector in process memory. Disabling it preserves native `/resume`
-and registers `/fast-resume`. `shortcut` adds a Host shortcut for the same Fast Resume selector. Startup reads this
+and registers `/fast-resume`. `shortcut` adds a Host shortcut for the same native selector with bounded loaders. Startup reads this
 namespace without creating or rewriting the settings file; invalid values fall back to defaults with a diagnostic.
 
 ### `sessionNaming`

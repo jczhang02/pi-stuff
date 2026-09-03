@@ -134,17 +134,14 @@ contextual map through `?` rather than crowding every Footer.
 
 ### Fast Resume Selector
 
-Fast Resume is a single-column Command Dialog. Its Header keeps scope, threaded or flat sort presentation, visible count, and
-loading state on one bounded line. Progressive rows update in place, keep selection by Session path, and never move
-focus because a name or older batch arrives. A row leads with the Session name or first user message; age, approximate
-message count, and All-scope project path remain secondary and disappear first at narrow widths. Directory view adds
-only the minimum tree connector and depth indentation.
+Fast Resume has no separate visual grammar. It mounts Pi's exported native Session selector unchanged and supplies only
+bounded Session loaders and Host callbacks. The native component remains the one visible authority for its Header,
+search field, rows, tree presentation, selection, scrolling, loading, errors, rename, deletion, controls, colors, and
+responsive clipping. Do not add Fast Resume branding, metadata qualifiers, shortcuts, or status to that surface.
 
-Typing owns search input, so printable list aliases do not apply. Up, Down, PageUp, PageDown, Home, End, Enter, and
-Escape retain their standard meanings. Tab changes Current Folder and All scope; Ctrl+S cycles threaded tree and flat
-Recent or Fuzzy presentation, while Ctrl+N and Ctrl+L change the Named-only filter and refresh without opening another surface. Rename and delete confirmation replace
-the list body in place, keep the Header and escape route, and never expose the active Session to deletion. Loading,
-errors, confirmation, and mutation outcomes have one visible authority inside the Dialog.
+Visual acceptance compares the complete selector frame, including ANSI styling, against native Pi on the same Session
+fixture under representative dark, light, narrow, and low-terminal cases. Performance changes belong behind the loader
+contract and must not create a parallel UI state machine.
 
 ### Detail sections
 

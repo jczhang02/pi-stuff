@@ -1,16 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
-import {
-	loadSessionBatch,
-	resolveDeferredSessionNames,
-	scanCurrentSessions,
-} from "../../packages/pi-stuff/src/fast-resume/scanner.js";
-import type { SessionFileMeta } from "../../packages/pi-stuff/src/fast-resume/session.js";
+import { loadAllSessions, loadCurrentSessions } from "../../packages/pi-stuff/src/fast-resume/scanner.js";
+import { scanAllSessionDirs } from "../../packages/pi-stuff/src/fast-resume/scanner-native.js";
 
-interface HeaderLine {
+interface SessionHeaderLine {
 	readonly cwd: string;
 	readonly id: string;
 	readonly timestamp: string;
@@ -18,140 +14,148 @@ interface HeaderLine {
 	readonly version: number;
 }
 
-interface MessageLine {
+interface SessionMessageLine {
 	readonly message: { readonly content: string; readonly role: "user" };
 	readonly timestamp: string;
 	readonly type: "message";
 }
 
-interface InfoLine {
+interface SessionInfoLine {
 	readonly name: string;
 	readonly type: "session_info";
 }
 
-type SessionLine = HeaderLine | InfoLine | MessageLine;
+type SessionLine = SessionHeaderLine | SessionInfoLine | SessionMessageLine;
 
 function line(value: SessionLine): string {
 	return `${JSON.stringify(value)}\n`;
 }
 
-function writeSession(dir: string, id: string, cwd: string, message: string, suffix = ""): string {
+function writeSession(
+	dir: string,
+	id: string,
+	cwd: string,
+	message: string,
+	suffix = "",
+	messageTimestamp = "2026-01-01T00:00:01.000Z",
+): string {
 	const path = join(dir, `${id}.jsonl`);
 	writeFileSync(
 		path,
 		line({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd }) +
-			line({ type: "message", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: message } }) +
+			line({ type: "message", timestamp: messageTimestamp, message: { role: "user", content: message } }) +
 			suffix,
 	);
 	return path;
 }
 
-describe("Fast Resume scanner", () => {
-	test("handles empty, single, and exact initial-page Session sets", async () => {
-		for (const count of [0, 1, 30]) {
-			const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-boundary-"));
-			try {
-				for (let index = 0; index < count; index += 1) writeSession(dir, String(index), dir, "hello");
-				const result = await Effect.runPromise(scanCurrentSessions(dir, dir, true));
-				expect(result.initial).toHaveLength(count);
-				expect(result.remaining).toHaveLength(0);
-			} finally {
-				rmSync(dir, { force: true, recursive: true });
-			}
-		}
-	});
-
-	test("loads the newest 30 current Sessions and leaves the remainder for batches", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
+describe("Fast Resume loaders", () => {
+	test("loads, filters, sorts, and reports bounded Current batches", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
-			for (let index = 0; index < 31; index += 1) {
-				const path = writeSession(dir, String(index).padStart(2, "0"), "/repo", `message ${index}`);
+			for (let index = 0; index < 131; index += 1) {
+				const messageTimestamp = new Date(Date.parse("2026-01-01T00:00:01.000Z") + index * 1000).toISOString();
+				const path = writeSession(dir, `current-${index}`, "/repo", `message ${index}`, "", messageTimestamp);
 				utimesSync(path, index + 1, index + 1);
 			}
-			const result = await Effect.runPromise(scanCurrentSessions(dir, "/repo", true));
-			expect(result.initial).toHaveLength(30);
-			expect(result.remaining).toHaveLength(1);
-			expect(result.initial[0]?.id).toBe("30");
-			expect(result.remaining[0]?.path).toEndWith("00.jsonl");
+			writeSession(dir, "other", "/other", "hidden");
+			const progress: Array<[number, number]> = [];
+			const sessions = await Effect.runPromise(
+				loadCurrentSessions(dir, "/repo", (loaded, total) => progress.push([loaded, total])),
+			);
+			expect(sessions).toHaveLength(131);
+			expect(sessions[0]?.id).toBe("current-130");
+			expect(progress).toEqual([
+				[50, 132],
+				[100, 132],
+				[132, 132],
+			]);
 		} finally {
 			rmSync(dir, { force: true, recursive: true });
 		}
 	});
 
-	test("fills the immediate Current page after filtering a shared Session directory", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
-		try {
-			for (let index = 0; index < 31; index += 1) {
-				const path = writeSession(dir, `current-${String(index).padStart(2, "0")}`, "/repo", "current");
-				utimesSync(path, index + 1, index + 1);
-			}
-			for (let index = 0; index < 5; index += 1) {
-				const path = writeSession(dir, `other-${String(index)}`, "/other", "other");
-				utimesSync(path, 100 + index, 100 + index);
-			}
-			const result = await Effect.runPromise(scanCurrentSessions(dir, "/repo", false));
-			expect(result.initial).toHaveLength(30);
-			expect(result.initial.every((item) => item.cwd === "/repo")).toBeTrue();
-			expect(result.remaining).toHaveLength(1);
-		} finally {
-			rmSync(dir, { force: true, recursive: true });
-		}
-	});
-
-	test("preserves a first user line larger than the 16 KiB read chunk", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
+	test("reads a complete first message and the latest bounded-tail name", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
 			const message = "长".repeat(20_000);
-			writeSession(dir, "large", dir, message);
-			const result = await Effect.runPromise(scanCurrentSessions(dir, dir, true));
-			expect(result.initial[0]?.firstMessage).toBe(message);
+			const followup = "searchable follow-up";
+			const followupTimestamp = "2026-01-01T00:01:00.000Z";
+			writeSession(
+				dir,
+				"named",
+				dir,
+				message,
+				line({
+					type: "message",
+					timestamp: followupTimestamp,
+					message: { role: "user", content: followup },
+				}) + line({ type: "session_info", name: "Named Session" }),
+			);
+			const sessions = await Effect.runPromise(loadCurrentSessions(dir, dir));
+			expect(sessions).toHaveLength(1);
+			expect(sessions[0]).toMatchObject({
+				allMessagesText: `${message} ${followup}`,
+				firstMessage: message,
+				messageCount: 2,
+				modified: new Date(followupTimestamp),
+				name: "Named Session",
+			});
 		} finally {
 			rmSync(dir, { force: true, recursive: true });
 		}
 	});
 
-	test("filters a custom shared Session directory by cwd before display", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
+	test("bounds forward reads while retaining Sessions without an early user message", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
-			writeSession(dir, "kept", "/repo", "keep");
-			writeSession(dir, "other", "/other", "hide");
-			const result = await Effect.runPromise(scanCurrentSessions(dir, "/repo", false));
-			expect(result.initial.map((item) => item.id)).toEqual(["kept"]);
+			const header = (id: string) =>
+				line({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: dir });
+			const largeAssistant = `${JSON.stringify({ type: "message", message: { role: "assistant", content: "x".repeat(2 * 1024 * 1024) } })}\n`;
+			writeFileSync(
+				join(dir, "late-user.jsonl"),
+				header("late-user") +
+					largeAssistant +
+					line({
+						type: "message",
+						timestamp: "2026-01-01T00:00:01.000Z",
+						message: { role: "user", content: "late message" },
+					}),
+			);
+			writeFileSync(join(dir, "no-user.jsonl"), header("no-user") + largeAssistant);
+			const sessions = await Effect.runPromise(loadCurrentSessions(dir, dir));
+			expect(sessions.map((session) => session.id).sort()).toEqual(["late-user", "no-user"]);
+			expect(sessions.map((session) => session.firstMessage)).toEqual(["(no messages)", "(no messages)"]);
 		} finally {
 			rmSync(dir, { force: true, recursive: true });
 		}
 	});
 
-	test("resolves the latest bounded tail name after first paint", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
+	test("discovers symlinked project directories like Pi listAll", () => {
+		const parent = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-all-"));
 		try {
-			const path = writeSession(dir, "named", dir, "hello", line({ type: "session_info", name: "Named Session" }));
-			const result = await Effect.runPromise(scanCurrentSessions(dir, dir, true));
-			const header = result.initial[0];
-			expect(header).toBeDefined();
-			if (!header) throw new Error("expected the named Session header");
-			expect(header.name).toBeUndefined();
-			const metas = new Map<string, SessionFileMeta>(result.all.map((meta) => [meta.path, meta]));
-			const names = await Effect.runPromise(resolveDeferredSessionNames([header], metas));
-			expect(names.get(path)).toBe("Named Session");
+			const sessions = join(parent, "sessions");
+			const target = join(parent, "target");
+			mkdirSync(sessions);
+			mkdirSync(target);
+			writeSession(target, "linked", "/repo", "linked");
+			symlinkSync(target, join(sessions, "linked-project"), "dir");
+			expect(scanAllSessionDirs(sessions).map((meta) => meta.path)).toEqual([
+				join(sessions, "linked-project", "linked.jsonl"),
+			]);
 		} finally {
-			rmSync(dir, { force: true, recursive: true });
+			rmSync(parent, { force: true, recursive: true });
 		}
 	});
 
-	test("skips corrupt files while loading a batch", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-scan-"));
+	test("loads All from a custom directory and skips corrupt files", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
-			const good = writeSession(dir, "good", dir, "hello");
-			const bad = join(dir, "bad.jsonl");
-			writeFileSync(bad, "not json\n");
-			const metas: SessionFileMeta[] = [good, bad].map((path) => ({
-				path,
-				size: Bun.file(path).size,
-				mtimeMs: Date.now(),
-			}));
-			const headers = await Effect.runPromise(loadSessionBatch(metas));
-			expect(headers.map((item) => item.id)).toEqual(["good"]);
+			writeSession(dir, "first", "/repo", "first");
+			writeSession(dir, "second", "/other", "second");
+			writeFileSync(join(dir, "broken.jsonl"), "not json\n");
+			const sessions = await Effect.runPromise(loadAllSessions(dir, false));
+			expect(sessions.map((session) => session.id).sort()).toEqual(["first", "second"]);
 		} finally {
 			rmSync(dir, { force: true, recursive: true });
 		}

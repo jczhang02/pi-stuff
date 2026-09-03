@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0026-add-fast-resume.md; translation-source-sha256: 5d3a946513c6d7bbcf2f28d4fbc9d6cf66e42e20f381cdfe8b61d360e3d3f330 -->
+<!-- translation-source: docs/adr/0026-add-fast-resume.md; translation-source-sha256: 08e6f19d954c5f934aed162beafd23623705263c13c1c212bd68fb0d61d531c6 -->
 
 ---
 status: accepted
@@ -8,75 +8,75 @@ status: accepted
 
 ## 背景
 
-Pi 原生 `/resume` 选择器会先构建完整的可搜索元数据，随后才显示当前项目的 Session 列表。在实测本地语料中，
-75 个 Session 约占 432 MB；即使 Session 已按 cwd 分区，原生选择器仍需约 1.7 秒中位数才能使用。加载
-Pi Stuff 并不能解释这一结构性延迟：Host 仍在应用 Current Folder 过滤器之前解析完整 JSONL 历史。
+Pi 原生 `/resume` 选择器会先构建完整的可搜索元数据，再显示当前项目的 Session 列表。在实测本地语料中，
+75 个 Session 约占 432 MB；即使已经按 cwd 划分 Session 布局，原生选择器仍需约 1.7 秒才能使用。延迟的结构性
+原因不是 Pi Stuff，而是 Host 在应用 Current Folder 过滤前就解析了完整 JSONL 历史。
 
-`pi-fast-resume@1.4.9` 证明了足够好的替代方案。它按元数据发现文件，只读取有界的 header 与尾部区域，在同一
-语料上约 44 ms 即可首次交互。它也确定了所需功能面：Current 与 All scope、平面与目录视图、三种搜索模式、
-排序、仅 Named 过滤、刷新、重命名、确认删除、可配置快捷键、渐进加载，以及在进程内拦截 Pi 原生选择器。
+`pi-fast-resume@1.4.9` 证明了有界加载策略足够有效：通过文件元数据发现候选项，只读取有界 header 和尾部区域，
+同一语料可在几十毫秒内交互。把它作为另一个 Package 安装会引入第二套独立配置的 Extension；只注册另一个
+slash command 又无法让日常 `/resume` 变快。
 
-把该 Package 与 Pi Stuff 并列安装，会引入第二个独立配置的 Extension，并重复视觉、设置、生命周期和兼容性
-权威。只注册另一个 slash command 虽然能避开私有 Host 集成，却不能满足日常 `/resume` 使用快速选择器的要求。
+Pi Stuff 的第一版实现把外部项目的选择器复刻成自定义 Command Dialog。后续验收明确了更严格的可见要求：接管
+`/resume` 不能替换、近似模拟或扩展 Pi 原生 UI。
 
 ## 决策
 
-把 Fast Resume 作为 Repository-owned Capability Module 加入唯一的 Pi Stuff Package。保留
-`pi-fast-resume@1.4.9` 可观察的交互与配置契约，同时把所有权适配到 Pi Stuff 的 Command Dialog、合并设置、
-诊断、Effect scope、测试和 Suite 组合。
+把 Fast Resume 作为 Repository-owned Capability Module 加入唯一的 Pi Stuff Package。在进程内接管
+`/resume`，但原样实例化 Pi 导出的 `SessionSelectorComponent`。Pi Stuff 只提供有界的 Current Folder 和
+All Sessions loader callback、选中 Session 的 callback，以及 Pi 的重命名 callback。渲染、搜索和排序、键盘处理、
+响应式布局、重命名、确认、删除、刷新与错误显示全部由 Host 组件统一负责。
 
-Fast Resume 只读取有界 Session 区域。它从 Pi 的活动 Session 目录发现候选项，按文件系统修改时间排序，从文件
-开头读取完整 JSONL 行，直到获得 Session header 与首条用户消息，再检查有界尾部窗口中的最新名称元数据。它
-不建立全文索引、不保留 transcript 正文，也不写 cache。最新的 30 个 Current Folder 候选项形成首帧；其余
-Current Folder 工作完成后才开始 All Sessions，随后以有界批次加载 All Sessions。
+Fast Resume 只读取有界 Session 区域。它从 Pi 的活动 Session 目录发现候选项，并从每个文件头最多读取
+1 MiB，只解析完整 JSONL 行。文件能放入该窗口时会完整解析；过大文件在取得 Session header 和首条非空用户
+消息后提前停止，再用 32 KiB 尾部窗口查找近期名称元数据。它不构建全文索引、不保留 transcript 正文，也不写
+cache。文件按每批 50 个处理，并通过原生 loader contract 报告进度。
+Current Folder 优先加载；只有原生组件请求 All Sessions 时才加载该 scope。
 
-选择器提供 Current Folder 与 All scope、Threaded 目录呈现、平面的 Recent 与 Fuzzy 呈现、仅 Named 过滤、
-模糊搜索、完整引号精确搜索、`re:<pattern>` 正则搜索、手动刷新、重命名和确认删除。搜索只覆盖 Session ID、
-解析后的名称、cwd 与首条用户消息。尾部窗口之外的名称可能缺失，消息数量仍是局部读取的估算值。这些是可见的
-速度与完整性取舍，而不是暗示与 Pi 完整历史索引等价。
+返回的 `SessionInfo` 只有有界的可搜索文字。文件能放入前向窗口时，搜索覆盖 Session ID、解析出的名称、
+cwd，以及全部可见的用户和 Assistant 文字。对于过大文件，更靠后的消息与尾部窗口以外的名称可能缺失，消息
+数量可能小于完整历史数量；无法取得最后消息活动时间时则使用文件系统修改时间，因而只追加元数据也可能改变
+排序。原生组件不会收到额外的标签或控件来标注这些限制，因为视觉完全一致是已接受的 contract。需要完整历史
+搜索或精确列表元数据时，可以关闭拦截并使用 Pi 原始 loader。
 
-Pi 仍是 Session 生命周期 Owner。Fast Resume 把选择交给 `switchSession`；验证、加载、transcript replay、
-cwd 切换和终端行为都由 Pi 负责。重命名使用 Pi 的 Session 元数据写入器。删除保护活动 Session，并先要求确认；
-随后限时尝试平台回收站命令，回收站不可用或失败时永久 unlink Session 文件，与已接受的上游行为一致。
+Pi 仍是 Session 生命周期 Owner。Fast Resume 把选中结果交给 `switchSession`；验证、加载、transcript replay、
+cwd 变更和终端行为由 Pi 负责。重命名和确认删除使用原生组件行为。删除会保护活动 Session、尝试平台回收站命令，
+并在回收站不可用或失败时永久 unlink Session 文件，符合明确的产品决策。
 
 Fast Resume 默认通过一个窄而经认证的 Host adapter 接管 `/resume`；该 adapter 只在进程内替换
-`InteractiveMode.showSessionSelector`，绝不修改 Pi 安装文件。它保留原方法；当前 command context 不可用时
-委托原方法；cleanup 时仅在仍拥有该位置时恢复；认证 seam 不存在时记录 Diagnostic Record。关闭拦截或安装失败
-时，Pi Stuff 注册 `/fast-resume`；可选的 Host key ID 打开同一选择器。这个私有 adapter 是明确的兼容性例外，
-并不允许随意覆盖其他内置命令。
+`InteractiveMode.showSessionSelector`，从不修改 Pi 的安装文件。adapter 保留原方法；拿不到当前 command
+context 时调用原方法；cleanup 时仅在仍持有该 slot 时恢复；认证 seam 缺失时生成 Diagnostic Record。关闭拦截或
+安装失败时，Pi Stuff 注册 `/fast-resume`；可选的 Host key ID 会打开同一个使用有界 loader 的原生组件。这个
+private adapter 是明确的兼容性例外，不代表可以普遍覆盖内置命令。
 
-共享 Command Dialog 拥有可见状态。它保留编辑器 draft 与 Suite chrome，使用 Pi theme role 和 cell-width fitting，
-在渐进更新时按 Session 路径保持焦点，并在同一界面中承载搜索、scope、视图、排序、过滤、加载、重命名、确认和
-错误状态。控制字符与不安全路径文字会在显示前规范化。
-
-Effect 负责 Capability 与 Dialog 生命周期、有 scope 的后台批次、debounce 计时、中断意图、generation fence、
-文件系统/进程失败投影和 cleanup。有界的同步文件系统与子进程调用仍放在 Fast Resume native adapter 后，因为
-Host 选择器同步打开，而 Effect interruption 无法抢占不配合取消的原生操作。因此每项操作保持小规模或有时间
-上限；新批次发布前检查 generation。Session 替换、reload、Dialog 关闭、刷新和 Host shutdown 会取消过期工作，
-阻止迟到 UI 更新。
+每次打开选择器都会从共享 Effect Foundation 获得一个子 owner。loader 调用作为受管 operation 运行；关闭原生
+界面时关闭 owner 并中断尚未完成的工作。迟到结果仍以原生组件自己的 scope 和序列检查为准。有界同步文件系统调用
+留在 native adapter 中，因为 Host 同步打开选择器，而 Effect 无法抢占不配合取消的原生读取。
 
 `<agentDir>/pi-stuff.json` 中的 `fastResume` 命名空间保留上游含义：`hijackResume` 默认为 `true`，可选
-`shortcut` 是 Pi key ID。启动时只读取，不创建、迁移或重写设置。格式错误的命名空间会安全回退到默认值，并
-产生有界 Diagnostic Record。
+`shortcut` 是 Pi key ID。启动时只读取，不创建、迁移或重写设置。命名空间值不合法时，整体回退到默认值并生成
+有界 Diagnostic Record。
 
-移植设计源自 `monotykamary/pi-fast-resume` 1.4.9 版、commit
-`aa7a4dbe1be9f9c74b1110f6b797fa1e45a61572`。其 MIT 声明与署名保留在 Module 的第三方说明中。适配后的 Source
-不因来源而获得任何质量豁免。
+加载设计源自 `monotykamary/pi-fast-resume` 1.4.9，commit 为
+`aa7a4dbe1be9f9c74b1110f6b797fa1e45a61572`。Module 的第三方声明保留其 MIT 许可和署名。适配后的 Source
+不会因来源获得质量豁免。
 
-## 备选方案
+## 考虑过的方案
 
-- **将 `pi-fast-resume` 作为另一个 Package 安装：** 拒绝，因为它会重复 Package、配置、生命周期、UI 与发布所有权。
-- **只注册 `/fast-resume`：** 拒绝作为默认方案，因为日常入口要求为 `/resume`；拦截关闭或不可用时仍保留为公开回退。
-- **修改已安装的 Pi Host：** 拒绝，因为升级会替换制品，Pi Stuff 也不得安装或重写 Host。
-- **增加持久完整历史索引：** 拒绝，因为有界读取已满足延迟目标，索引会引入当前行为不需要的数据生命周期、隐私、失效与迁移工作。
-- **让有界元数据精确：** 拒绝，因为精确名称、数量与完整历史搜索需要更多 I/O 或持久索引。选择器会说明近似值，并保留原生 resume 作为完整路径。
-- **只允许回收站删除：** 根据明确的产品决策拒绝；确认后的永久 unlink 回退属于已接受行为。
+- **把 `pi-fast-resume` 作为另一个 Package 安装：**拒绝。这样会重复 Package、配置、生命周期、UI 和发布 Owner。
+- **保留 Pi Stuff 自定义选择器：**消融后拒绝。它重复了 Host 的渲染、搜索、排序、导航、重命名、删除和响应式行为，
+  也无法保证原生 UI 一致。
+- **只注册 `/fast-resume`：**不作为默认方案，因为日常入口必须是 `/resume`；拦截关闭或不可用时仍保留为公共回退。
+- **修改已安装的 Pi Host：**拒绝。升级会替换制品，Pi Stuff 也不得安装或重写 Host。
+- **临时替换 `SessionManager.list`：**拒绝。它会把 Host 内部修改扩大到选择器调用之外，并引入恢复竞态；给导出的
+  组件提供 loader 更窄。
+- **增加持久完整历史索引：**拒绝。有界读取已经达到延迟目标，而索引会引入当前不需要的隐私、失效、迁移和生命周期工作。
+- **只允许回收站删除：**按明确产品决策拒绝；确认后的永久 unlink 继续沿用原生 Host 行为。
 
 ## 结果
 
-日常 resume 在完整 Session 历史尚无法解析完时即可交互，而 Host 继续拥有选中的 Session。实现不新增网络、cache、
-database、独立 Package 或 Host 文件变更。
+日常 resume 使用 Pi 真正的选择器，同时避开完整历史解析。实现不再包含自定义选择器状态机、搜索引擎或变更服务，
+也不增加网络、cache、数据库、独立 Package 或 Host 文件修改。
 
-该 Capability 依赖经认证的私有 Host seam。未来 Pi 版本可在 adapter 重新认证之前关闭拦截；原生 `/resume` 和公开
-`/fast-resume` 仍是恢复路径。有界读取也意味着：当精确完整历史搜索或元数据比延迟更重要时，用户必须选择
-原生 resume。
+该 Capability 依赖经认证的 private 拦截 seam 和导出的原生选择器 contract。未来 Pi 版本变化时，可以先停用拦截，
+直到两者重新认证；原生 `/resume` 与公共 `/fast-resume` 仍是恢复路径。视觉完全一致也意味着，除非另作产品决策，
+Fast Resume 不能在界面中增加有界元数据提示。

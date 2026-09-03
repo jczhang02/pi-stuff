@@ -4,9 +4,17 @@ import { join } from "node:path";
 export const FAST_RESUME_FIXTURE_PROVIDER = "pi-stuff-fast-resume-pty";
 export const FAST_RESUME_FIXTURE_MODEL = "fixture-model";
 export const FAST_RESUME_NEWEST_MARKER = "FAST_RESUME_BENCHMARK_NEWEST";
+export const FAST_RESUME_FOLLOWUP_MARKER = "FAST_RESUME_FOLLOWUP_SEARCH";
 
-function sessionText(id: string, cwd: string, firstMessage: string, fillerBytes: number, name?: string): string {
-	const timestamp = "2026-01-01T00:00:00.000Z";
+function sessionText(
+	id: string,
+	cwd: string,
+	firstMessage: string,
+	timestamp: string,
+	fillerBytes: number,
+	name?: string,
+	followupMessage?: string,
+): string {
 	const lines = [
 		JSON.stringify({ type: "session", version: 3, id, timestamp, cwd }),
 		JSON.stringify({ type: "message", timestamp, message: { role: "user", content: firstMessage } }),
@@ -36,6 +44,15 @@ function sessionText(id: string, cwd: string, firstMessage: string, fillerBytes:
 			}),
 		);
 	}
+	if (followupMessage) {
+		lines.push(
+			JSON.stringify({
+				type: "message",
+				timestamp: new Date(Date.parse(timestamp) + 60_000).toISOString(),
+				message: { role: "user", content: followupMessage },
+			}),
+		);
+	}
 	if (name) lines.push(JSON.stringify({ type: "session_info", name }));
 	return `${lines.join("\n")}\n`;
 }
@@ -55,8 +72,20 @@ export async function createFastResumeCorpus(
 		const first =
 			index === count - 1 ? FAST_RESUME_NEWEST_MARKER : `FAST_RESUME_FIXTURE_${String(index).padStart(3, "0")}`;
 		const name = index === count - 1 ? undefined : `Fast Fixture ${String(index).padStart(3, "0")}`;
-		await writeFile(path, sessionText(id, cwd, first, index === 0 ? 0 : fillerBytes, name), { mode: 0o600 });
-		const time = new Date(1_700_000_000_000 + index * 1_000);
+		const time = index === 0 ? new Date() : new Date(1_700_000_000_000 + index * 1_000);
+		await writeFile(
+			path,
+			sessionText(
+				id,
+				cwd,
+				first,
+				time.toISOString(),
+				index === 0 ? 0 : fillerBytes,
+				name,
+				index === 0 ? FAST_RESUME_FOLLOWUP_MARKER : undefined,
+			),
+			{ mode: 0o600 },
+		);
 		await utimes(path, time, time);
 		if (index === 0) active = path;
 	}

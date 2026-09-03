@@ -21,8 +21,8 @@ Pi's own `/settings` command controls Host settings such as the active theme.
 
 | Command | Action |
 | --- | --- |
-| `/resume` | Open Fast Resume by default; falls back to Pi's native selector when interception is unavailable |
-| `/fast-resume` | Open Fast Resume when native interception is disabled or unavailable |
+| `/resume` | Open Pi's native selector with bounded Fast Resume loaders; fall back to Pi's complete-history loader when interception is unavailable |
+| `/fast-resume` | Open the native selector with bounded loaders when `/resume` interception is disabled or unavailable |
 | `/autoname` | Generate a new name for the current Session |
 | `/autoname settings` | Configure automatic naming, cooldown, manual-name policy, and primary model |
 | `/btw <question>` | Ask a no-Tool side question without adding it to the main transcript |

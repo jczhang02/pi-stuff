@@ -133,15 +133,8 @@ function uninstallSetupCapture(prototype: PrivateInteractiveModePrototype, state
 function restore(prototype: PrivateInteractiveModePrototype, state: PatchState, token: symbol): void {
 	if (state.owner !== token) return;
 	state.active = false;
-	delete state.runner;
-	if (state.selectorWrapper && prototype.showSessionSelector === state.selectorWrapper) {
-		if (state.originalSelector) prototype.showSessionSelector = state.originalSelector;
-		else delete prototype.showSessionSelector;
-	}
-	if (state.setupWrapper && prototype.setupExtensionShortcuts === state.setupWrapper) {
-		if (state.originalSetup) prototype.setupExtensionShortcuts = state.originalSetup;
-		else delete prototype.setupExtensionShortcuts;
-	}
+	uninstallSelector(prototype, state);
+	uninstallSetupCapture(prototype, state);
 	deletePatchState(prototype, state);
 }
 

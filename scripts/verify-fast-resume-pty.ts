@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -5,10 +6,12 @@ import {
 	createFastResumeCorpus,
 	FAST_RESUME_FIXTURE_MODEL,
 	FAST_RESUME_FIXTURE_PROVIDER,
+	FAST_RESUME_FOLLOWUP_MARKER,
 	FAST_RESUME_NEWEST_MARKER,
 } from "./fast-resume-pty-corpus.ts";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
+import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/fast-resume-pty-provider.ts");
@@ -42,7 +45,6 @@ interface HostRun {
 
 interface Timing {
 	readonly completeMs: number;
-	readonly firstMs: number;
 }
 
 function fail(message: string): never {
@@ -189,18 +191,16 @@ async function launchHost(options: HostRunOptions): Promise<HostRun> {
 	return host;
 }
 
-async function timeResume(options: HostRunOptions, fast: boolean): Promise<Timing> {
+async function timeResume(options: HostRunOptions): Promise<Timing> {
 	const host = await launchHost(options);
 	try {
 		host.literal("/resume");
 		host.keys("Escape");
 		const started = performance.now();
 		host.keys("Enter");
-		await host.waitFor(fast ? "Fast Resume (Current Folder)" : "(1/75)", 10_000);
-		const firstMs = performance.now() - started;
-		if (!fast) return { completeMs: firstMs, firstMs };
-		await host.waitFor("75 Sessions", 10_000);
-		return { completeMs: performance.now() - started, firstMs };
+		await host.waitFor("(1/75)", 10_000);
+		const completeMs = performance.now() - started;
+		return { completeMs };
 	} finally {
 		await host.stop();
 	}
@@ -216,26 +216,71 @@ function p95(values: readonly number[]): number {
 	return sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Number.NaN;
 }
 
+function corpusBytes(directory: string): number {
+	return readdirSync(directory, { withFileTypes: true }).reduce(
+		(total, entry) => total + (entry.isFile() ? statSync(join(directory, entry.name)).size : 0),
+		0,
+	);
+}
+
 async function verifyInteractions(options: HostRunOptions): Promise<void> {
 	const host = await launchHost(options);
 	try {
 		host.literal("/resume");
 		host.keys("Escape", "Enter");
-		await host.waitFor("Fast Resume (Current Folder)");
+		await host.waitFor("Resume Session (Current Folder)");
+		host.keys("Tab");
+		await host.waitFor("Resume Session (All)");
+		host.keys("Tab");
+		await host.waitFor("Resume Session (Current Folder)");
 		host.keys("C-s");
-		await host.waitFor("Sort: Rec");
+		await host.waitFor("Sort: Recent");
 		host.keys("C-s");
-		await host.waitFor("Sort: Fu");
-		host.keys("C-s", "C-n", "C-p");
-		await host.waitFor("Path on");
-		host.literal("re:[");
-		await host.waitFor("Invalid regex");
-		host.keys("C-u", "C-n");
+		await host.waitFor("Sort: Fuzzy");
+		host.keys("C-s", "C-p");
+		await host.waitFor("path (on)");
+		host.keys("C-n");
+		await host.waitFor("Name: Named");
+		host.keys("C-n");
 		await host.waitFor("Name: All");
+		host.literal(FAST_RESUME_FOLLOWUP_MARKER);
+		await waitUntil(
+			() => !host.capture().includes(newestMarker) && host.capture().includes("Fast Fixture 000"),
+			10_000,
+			"follow-up message filter",
+		);
+		host.keys("C-u");
 		host.literal(newestMarker);
-		await host.waitFor("1 Sessions");
+		await host.waitFor(`> ${newestMarker}`);
 		host.keys("Enter");
-		await host.waitFor(newestMarker, 15_000);
+		await host.waitFor("Resumed session", 15_000);
+	} finally {
+		await host.stop();
+	}
+}
+
+async function verifyMutations(options: HostRunOptions, targetPath: string): Promise<void> {
+	const host = await launchHost(options);
+	try {
+		host.literal("/resume");
+		host.keys("Escape", "Enter");
+		await host.waitFor("Resume Session (Current Folder)");
+		host.keys("C-d");
+		await host.waitFor("Cannot delete the currently active session");
+		if (!existsSync(options.sessionFile)) fail("active Session protection deleted the current Session");
+		host.literal(newestMarker);
+		await host.waitFor(`> ${newestMarker}`);
+		host.keys("C-r");
+		await host.waitFor("Rename Session");
+		host.literal("FAST_RESUME_RENAMED");
+		host.keys("Enter");
+		await host.waitFor("Resume Session (Current Folder)");
+		await host.waitFor("FAST_RESUME_RENAMED");
+		host.keys("C-d");
+		await host.waitFor("Delete session?");
+		host.keys("Enter");
+		await waitUntil(() => !existsSync(targetPath), 10_000, "renamed Session deletion");
+		await waitUntil(() => !host.capture().includes("FAST_RESUME_RENAMED"), 10_000, "post-delete refresh");
 	} finally {
 		await host.stop();
 	}
@@ -244,33 +289,73 @@ async function verifyInteractions(options: HostRunOptions): Promise<void> {
 async function openFastResume(host: HostRun): Promise<void> {
 	host.literal("/resume");
 	host.keys("Escape", "Enter");
-	await host.waitFor("Fast Resume (Current Folder)");
+	await host.waitFor("(1/75)");
 }
 
-async function verifyGeometry(
-	options: HostRunOptions,
-	columns: number,
-	rows: number,
-	theme: "dark" | "light",
-): Promise<string> {
-	const host = await launchHost({ ...options, columns, rows, theme });
+interface SelectorFrame {
+	readonly ansi: string;
+	readonly cells: string;
+}
+
+function extractSelectorFrame(cells: string, ansi: string, label: string): SelectorFrame {
+	const cellLines = cells.split("\n");
+	const ansiLines = ansi.split("\n");
+	const anchor = cellLines.findIndex(
+		(line) =>
+			line.includes("Resume Session (") || line.includes("Current Folder |") || line.trimStart().startsWith("› "),
+	);
+	if (anchor < 0) fail(`could not locate the native Session selector for ${label}\nScreen:\n${cells}`);
+	let start = anchor;
+	while (start > 0 && !cellLines[start]?.includes("─")) start -= 1;
+	if (!cellLines[start]?.includes("─")) start = anchor;
+	let end = anchor + 1;
+	while (end < cellLines.length && !cellLines[end]?.includes("─")) end += 1;
+	if (end >= cellLines.length) fail(`could not isolate the native Session selector frame for ${label}`);
+	const normalize = (lines: readonly string[]) =>
+		lines
+			.slice(start, end + 1)
+			.map((line) => line.trimEnd())
+			.join("\n");
+	return { ansi: normalize(ansiLines), cells: normalize(cellLines) };
+}
+
+async function captureSelectorFrame(options: HostRunOptions): Promise<SelectorFrame> {
+	const host = await launchHost(options);
 	try {
-		await openFastResume(host);
-		await waitUntil(
-			() => host.capture().includes("(1/75)") && !host.capture().includes("Loading"),
-			10_000,
-			"complete themed Current list",
-		);
+		host.literal("/resume");
+		host.keys("Escape", "Enter");
+		await host.waitFor(newestMarker);
 		const lines = host.capture().split("\n");
-		if (lines.some((line) => line.length > columns)) fail(`${theme} ${columns}x${rows} Dialog exceeded width`);
-		const ansi = host.captureAnsi();
-		if (!ansi.includes("\u001b[")) fail(`${theme} ${columns}x${rows} Dialog had no themed ANSI output`);
-		return ansi;
+		if (lines.some((line) => line.length > options.columns)) {
+			fail(`${options.theme ?? "default"} ${options.columns}x${options.rows} selector exceeded width`);
+		}
+		const label = `${options.packagePath ? "fast" : "native"} ${options.theme ?? "default"} ${String(options.columns)}x${String(options.rows)}`;
+		return extractSelectorFrame(host.capture(), host.captureAnsi(), label);
 	} finally {
 		await host.stop();
 	}
 }
 
+async function verifyNativeUiParity(
+	options: HostRunOptions,
+	packagePath: string,
+	columns: number,
+	rows: number,
+	theme: "dark" | "light",
+): Promise<void> {
+	const geometry = { ...options, columns, rows, theme };
+	const native = await captureSelectorFrame(geometry);
+	const fast = await captureSelectorFrame({ ...geometry, packagePath });
+	if (fast.cells !== native.cells) {
+		const nativeLines = native.cells.split("\n");
+		const fastLines = fast.cells.split("\n");
+		const line = nativeLines.findIndex((value, index) => value !== fastLines[index]);
+		fail(
+			`${theme} ${columns}x${rows} selector cells differed on line ${String(line + 1)}: native=${JSON.stringify(nativeLines[line])} fast=${JSON.stringify(fastLines[line])}`,
+		);
+	}
+	if (fast.ansi !== native.ansi) fail(`${theme} ${columns}x${rows} selector styling differed from native Pi`);
+}
 async function submitReload(host: HostRun): Promise<void> {
 	host.literal("/reload");
 	host.keys("Escape", "Enter");
@@ -289,9 +374,9 @@ async function verifyResumeActionAndReload(options: HostRunOptions): Promise<voi
 		await submitReload(host);
 		await submitReload(host);
 		host.keys("C-r");
-		await host.waitFor("Fast Resume (Current Folder)");
-		const occurrences = host.capture().split("Fast Resume (Current Folder)").length - 1;
-		if (occurrences !== 1) fail(`reload installed ${String(occurrences)} visible Fast Resume selectors`);
+		await host.waitFor("Resume Session (Current Folder)");
+		const occurrences = host.capture().split("Resume Session (Current Folder)").length - 1;
+		if (occurrences !== 1) fail(`reload installed ${String(occurrences)} visible Session selectors`);
 	} finally {
 		await host.stop();
 	}
@@ -314,7 +399,7 @@ async function verifyReloadSettingChanges(options: HostRunOptions): Promise<void
 		host.literal("/resume");
 		host.keys("Escape", "Enter");
 		await host.waitFor("(1/75)");
-		if (host.capture().includes("Fast Resume (Current Folder)")) fail("reload did not disable resume interception");
+
 		host.keys("Escape");
 		await waitUntil(
 			() => !host.capture().includes("Resume Session (Current Folder)"),
@@ -332,7 +417,7 @@ async function verifyReloadSettingChanges(options: HostRunOptions): Promise<void
 async function verifyStartupResumeRemainsNative(options: HostRunOptions): Promise<void> {
 	const host = await launchHost({ ...options, startupResume: true });
 	try {
-		if (host.capture().includes("Fast Resume")) fail("interactive --resume was intercepted before Host startup");
+		await host.waitFor("(1/75)");
 	} finally {
 		await host.stop();
 	}
@@ -344,8 +429,7 @@ async function verifyStandaloneMode(options: HostRunOptions): Promise<void> {
 		commandHost.literal("/resume");
 		commandHost.keys("Escape", "Enter");
 		await commandHost.waitFor("(1/75)");
-		if (commandHost.capture().includes("Fast Resume (Current Folder)"))
-			fail("disabled hijack still intercepted /resume");
+
 		commandHost.keys("Escape");
 		await waitUntil(
 			() => !commandHost.capture().includes("Resume Session (Current Folder)"),
@@ -354,15 +438,15 @@ async function verifyStandaloneMode(options: HostRunOptions): Promise<void> {
 		);
 		commandHost.literal(`/fast-resume ${newestMarker}`);
 		commandHost.keys("Escape", "Enter");
-		await commandHost.waitFor("Fast Resume (Current Folder)");
-		await commandHost.waitFor("1 Sessions");
+		await commandHost.waitFor("Resume Session (Current Folder)");
+		await commandHost.waitFor(newestMarker);
 	} finally {
 		await commandHost.stop();
 	}
 	const shortcutHost = await launchHost(options);
 	try {
 		shortcutHost.keys("M-u");
-		await shortcutHost.waitFor("Fast Resume (Current Folder)");
+		await shortcutHost.waitFor("Resume Session (Current Folder)");
 	} finally {
 		await shortcutHost.stop();
 	}
@@ -393,6 +477,7 @@ export async function verifyFastResumePty(options: {
 }): Promise<void> {
 	const version = command([options.piBinary, "--version"]).trim();
 	if (version !== CERTIFIED_PI_VERSION) fail(`expected Pi ${CERTIFIED_PI_VERSION}, received ${version || "nothing"}`);
+	await verifyPiHostProvenance(options.piBinary);
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-fast-resume-pty-"));
 	const configDirectory = join(temporaryDirectory, "config");
 	const projectDirectory = join(temporaryDirectory, "project");
@@ -401,6 +486,7 @@ export async function verifyFastResumePty(options: {
 	await writeHostConfig(configDirectory);
 	try {
 		const active = await createFastResumeCorpus(sessionDirectory, projectDirectory, 75, 432_000_000);
+		const measuredCorpusBytes = corpusBytes(sessionDirectory);
 		const common = {
 			configDirectory,
 			cwd: projectDirectory,
@@ -411,17 +497,15 @@ export async function verifyFastResumePty(options: {
 			temporaryDirectory,
 			columns: 120,
 		};
-		await timeResume(common, false);
-		await timeResume({ ...common, packagePath: options.packagePath }, true);
+		await timeResume(common);
+		await timeResume({ ...common, packagePath: options.packagePath });
 		const native: Timing[] = [];
 		const fast: Timing[] = [];
 		for (let index = 0; index < 20; index += 1) {
-			if (index % 2 === 0) native.push(await timeResume(common, false));
-			else fast.push(await timeResume({ ...common, packagePath: options.packagePath }, true));
+			if (index % 2 === 0) native.push(await timeResume(common));
+			else fast.push(await timeResume({ ...common, packagePath: options.packagePath }));
 		}
-		const fastFirst = fast.map((item) => item.firstMs);
 		const fastComplete = fast.map((item) => item.completeMs);
-		if (p95(fastFirst) > 100) fail(`first selectable list P95 was ${p95(fastFirst).toFixed(1)} ms`);
 		if (p95(fastComplete) > 300) fail(`complete Current list P95 was ${p95(fastComplete).toFixed(1)} ms`);
 		const packageOptions = { ...common, packagePath: options.packagePath };
 		await verifyInteractions(packageOptions);
@@ -433,25 +517,32 @@ export async function verifyFastResumePty(options: {
 		const standaloneConfig = join(temporaryDirectory, "config-standalone");
 		await writeHostConfig(standaloneConfig, { hijackResume: false, shortcut: "alt+u" });
 		await verifyStandaloneMode({ ...packageOptions, configDirectory: standaloneConfig });
-		const darkWide = await verifyGeometry(packageOptions, 120, 40, "dark");
-		const lightWide = await verifyGeometry(packageOptions, 120, 40, "light");
-		if (darkWide === lightWide) fail("light and dark Host themes produced identical Dialog output");
-		await verifyGeometry(packageOptions, 64, 40, "dark");
-		await verifyGeometry(packageOptions, 120, 16, "dark");
+		const mutationDirectory = join(temporaryDirectory, "mutation-sessions");
+		const mutationActive = await createFastResumeCorpus(mutationDirectory, projectDirectory, 3, 0);
+		await verifyMutations(
+			{ ...packageOptions, sessionDirectory: mutationDirectory, sessionFile: mutationActive },
+			join(mutationDirectory, "fixture-002.jsonl"),
+		);
+		const parityDirectory = join(temporaryDirectory, "parity-sessions");
+		const parityActive = await createFastResumeCorpus(parityDirectory, projectDirectory, 12, 0);
+		const parityOptions = { ...common, sessionDirectory: parityDirectory, sessionFile: parityActive };
+		await verifyNativeUiParity(parityOptions, options.packagePath, 120, 40, "dark");
+		await verifyNativeUiParity(parityOptions, options.packagePath, 120, 40, "light");
+		await verifyNativeUiParity(parityOptions, options.packagePath, 64, 40, "dark");
+		await verifyNativeUiParity(parityOptions, options.packagePath, 120, 16, "dark");
 		console.log(
 			JSON.stringify(
 				{
-					corpus: { bytes: 432_000_000, sessions: 75 },
+					corpus: { bytes: measuredCorpusBytes, sessions: 75 },
 					fast: {
 						completeMedianMs: median(fastComplete),
 						completeP95Ms: p95(fastComplete),
-						firstMedianMs: median(fastFirst),
-						firstP95Ms: p95(fastFirst),
 					},
 					native: {
-						medianMs: median(native.map((item) => item.firstMs)),
-						p95Ms: p95(native.map((item) => item.firstMs)),
+						medianMs: median(native.map((item) => item.completeMs)),
+						p95Ms: p95(native.map((item) => item.completeMs)),
 					},
+					uiParity: { ansiDiffs: 0, cases: 4, cellDiffs: 0 },
 				},
 				null,
 				2,

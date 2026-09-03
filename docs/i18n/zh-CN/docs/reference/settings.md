@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reference/settings.md; translation-source-sha256: 373c63e4dfa776dabdd08c0cc643fc3ec074584f6bfbbc154ef312cf87f3d2be -->
+<!-- translation-source: docs/reference/settings.md; translation-source-sha256: 40a735e95c1fa68d8535a0fd34c222acbdc57a26f7ed75282d94426f6e0a37f0 -->
 
 # 设置参考
 
@@ -82,7 +82,7 @@ Pi Stuff 把设置保存在 `<agentDir>/pi-stuff.json` 这一份普通 JSON 文�
 | `shortcut` | 可选 Pi key ID 字符串 | 无 | JSON |
 
 `hijackResume` 在进程内拦截 Pi 内置的 `/resume` 选择器。关闭后保留原生 `/resume`，并注册
-`/fast-resume`。`shortcut` 为同一个 Fast Resume 选择器增加 Host 快捷键。启动时只读取该命名空间，
+`/fast-resume`。`shortcut` 为同一个使用有界 loader 的原生选择器增加 Host 快捷键。启动时只读取该命名空间，
 不会创建或重写设置文件；无效值回退到默认值并记录诊断。
 
 ### `sessionNaming`

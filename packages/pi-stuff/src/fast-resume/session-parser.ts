@@ -1,7 +1,7 @@
 import { StringDecoder } from "node:string_decoder";
+import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { isJsonInputObject, type JsonInputValue, type JsonObject, parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
-import type { SessionHeader } from "./session.js";
 
 export interface TailSessionInfo {
 	found: boolean;
@@ -14,6 +14,7 @@ export interface TailSessionInfo {
 export interface SessionAccumulator {
 	header: { id: string; timestamp: string; cwd?: string; parentSession?: string } | null;
 	firstUserMessage: string;
+	allMessages: string[];
 	messageCount: number;
 	name: string | undefined;
 	lastActivityTime: number | undefined;
@@ -24,6 +25,7 @@ export function newAccumulator(): SessionAccumulator {
 	return {
 		header: null,
 		firstUserMessage: "",
+		allMessages: [],
 		messageCount: 0,
 		name: undefined,
 		lastActivityTime: undefined,
@@ -61,17 +63,18 @@ function processMessage(acc: SessionAccumulator, entry: JsonObject): void {
 	const message = entry["message"];
 	if (!isJsonInputObject(message)) return;
 	const role = message["role"];
-	if (role === "user" || role === "assistant") {
-		const messageTimestamp = message["timestamp"];
-		if (isRuntimeNumber(messageTimestamp) && messageTimestamp > 0) {
-			acc.lastActivityTime = Math.max(acc.lastActivityTime ?? 0, messageTimestamp);
-		} else if (isRuntimeString(entry["timestamp"])) {
-			const timestamp = Date.parse(entry["timestamp"]);
-			if (!Number.isNaN(timestamp)) acc.lastActivityTime = Math.max(acc.lastActivityTime ?? 0, timestamp);
-		}
+	if (role !== "user" && role !== "assistant") return;
+	const messageTimestamp = message["timestamp"];
+	if (isRuntimeNumber(messageTimestamp) && messageTimestamp > 0) {
+		acc.lastActivityTime = Math.max(acc.lastActivityTime ?? 0, messageTimestamp);
+	} else if (isRuntimeString(entry["timestamp"])) {
+		const timestamp = Date.parse(entry["timestamp"]);
+		if (!Number.isNaN(timestamp)) acc.lastActivityTime = Math.max(acc.lastActivityTime ?? 0, timestamp);
 	}
-	if (!acc.foundFirstUser && role === "user") {
-		acc.firstUserMessage = extractTextFromContent(message["content"]);
+	const text = extractTextFromContent(message["content"]);
+	if (text) acc.allMessages.push(text);
+	if (!acc.foundFirstUser && role === "user" && text) {
+		acc.firstUserMessage = text;
 		acc.foundFirstUser = true;
 	}
 }
@@ -110,7 +113,7 @@ export function buildHeader(
 	mtimeMs: number,
 	reachedEof: boolean,
 	tailInfo?: TailSessionInfo,
-): SessionHeader | null {
+): SessionInfo | null {
 	const header = acc.header;
 	if (!header) return null;
 
@@ -129,10 +132,12 @@ export function buildHeader(
 		modified = new Date(mtimeMs);
 	}
 
-	const result: SessionHeader = {
+	const firstMessage = acc.firstUserMessage || "(no messages)";
+	const result: SessionInfo = {
+		allMessagesText: acc.allMessages.join(" "),
 		created: new Date(header.timestamp),
 		cwd: header.cwd ?? "",
-		firstMessage: acc.firstUserMessage || "(no messages)",
+		firstMessage,
 		id: header.id,
 		messageCount: acc.messageCount,
 		modified,
@@ -152,8 +157,8 @@ export function scanTailForSessionInfo(buf: Buffer, bytesRead: number): TailSess
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
-		// #7 — Cheap pre-filter: only session_info entries matter here, so skip
-		// JSON.parse for the (common) message lines without a full parse. The
+		// Only session_info entries matter here, so skip JSON parsing for the
+		// common message lines. The
 		// quoted marker is conservative — a message whose content literally
 		// contains "session_info" false-positives into one parse (harmless); a
 		// real session_info entry always carries it. Partial lines at the

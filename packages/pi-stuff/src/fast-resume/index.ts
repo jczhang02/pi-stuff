@@ -1,23 +1,13 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
-import {
-	type CommandDialogCoordinatorHost,
-	getCommandDialogCoordinator,
-	reportDiagnostic,
-} from "../conversation-ui/index.js";
-import { installEffectFoundation } from "../shared/effect-foundation.js";
-import { prepareFastResumeController } from "./controller.js";
-import { createFastResumeDialogView } from "./dialog.js";
+import { reportDiagnostic } from "../conversation-ui/index.js";
+import { type EffectFoundation, installEffectFoundation } from "../shared/effect-foundation.js";
 import { FastResumeEffectOwner } from "./effect-owner.js";
-import {
-	type FastResumeHostPatch,
-	installCertifiedFastResumeHostPatch,
-	usesDefaultSessionDirectory,
-} from "./host-adapter.js";
+import { type FastResumeHostPatch, installCertifiedFastResumeHostPatch } from "./host-adapter.js";
+import { openFastResumeSelector } from "./selector.js";
 import { FastResumeSettingsStore } from "./settings.js";
 
-export type FastResumeHost = CommandDialogCoordinatorHost &
-	Pick<ExtensionAPI, "on" | "registerCommand" | "registerShortcut">;
+export type FastResumeHost = Pick<ExtensionAPI, "events" | "on" | "registerCommand" | "registerShortcut">;
 
 function reportPatchProblem(message: string): void {
 	reportDiagnostic({
@@ -33,37 +23,31 @@ function reportPatchProblem(message: string): void {
 async function showFastResume(
 	context: ExtensionCommandContext,
 	query: string,
-	owner: FastResumeEffectOwner,
-	dialogs: ReturnType<typeof getCommandDialogCoordinator>,
+	foundation: EffectFoundation,
 ): Promise<void> {
 	if (context.mode !== "tui" || !context.hasUI) {
 		context.ui.notify("Fast Resume requires interactive TUI mode.", "warning");
 		return;
 	}
-	const currentSessionPath = context.sessionManager.getSessionFile();
-	const baseOptions = {
-		cwd: context.sessionManager.getCwd(),
-		owner,
-		sessionDir: context.sessionManager.getSessionDir(),
-		usesDefaultSessionDir: usesDefaultSessionDirectory(context.sessionManager),
-	};
-	const controllerOptions = currentSessionPath ? { ...baseOptions, currentSessionPath } : baseOptions;
-	const controller = await owner.run(prepareFastResumeController(controllerOptions));
-	const selected = await dialogs.show(context, createFastResumeDialogView(controller, query.trim()));
-	if (!selected) return;
+	const owner = new FastResumeEffectOwner(foundation);
+	owner.bindSession(context);
 	try {
-		await context.switchSession(selected);
-	} catch {
-		context.ui.notify("Fast Resume could not switch to the selected Session.", "error");
+		const selected = await openFastResumeSelector(context, owner, query);
+		if (!selected) return;
+		try {
+			await context.switchSession(selected);
+		} catch {
+			context.ui.notify("Fast Resume could not switch to the selected Session.", "error");
+		}
+	} finally {
+		await owner.shutdown();
 	}
 }
 
 export function installFastResumeCapability(pi: FastResumeHost, settingsStore: FastResumeSettingsStore): void {
 	const foundation = installEffectFoundation(pi);
-	const owner = new FastResumeEffectOwner(foundation);
-	const dialogs = getCommandDialogCoordinator(pi);
 	const settings = settingsStore.get();
-	const open = (context: ExtensionCommandContext, query = "") => showFastResume(context, query, owner, dialogs);
+	const open = (context: ExtensionCommandContext, query = "") => showFastResume(context, query, foundation);
 	const openCommand = async (context: ExtensionCommandContext, query = "") => {
 		try {
 			await open(context, query);
@@ -80,7 +64,7 @@ export function installFastResumeCapability(pi: FastResumeHost, settingsStore: F
 
 	if (!settings.hijackResume || !patch.hijackInstalled) {
 		pi.registerCommand("fast-resume", {
-			description: "Open the fast local Session picker",
+			description: "Open the fast native Session selector",
 			handler: (args, context) => openCommand(context, args),
 		});
 	}
@@ -95,12 +79,8 @@ export function installFastResumeCapability(pi: FastResumeHost, settingsStore: F
 			},
 		});
 	}
-	pi.on("session_start", (_event, context: ExtensionContext) => {
-		owner.bindSession(context);
-	});
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", () => {
 		patch.restore();
-		await owner.shutdown();
 	});
 }
 

@@ -122,6 +122,28 @@ describe("Fast Resume Host adapter fallbacks", () => {
 		expect(mode.prototype.showSessionSelector).toBe(original);
 	});
 
+	test("falls back to the original selector when Fast Resume cannot open", async () => {
+		let calls = 0;
+		const reports: string[] = [];
+		const mode = target({
+			showSessionSelector() {
+				calls += 1;
+			},
+		});
+		const patch = installFastResumeHostPatch(mode, {
+			hijackResume: true,
+			open: async () => {
+				throw new Error("open failed");
+			},
+			report: (message) => reports.push(message),
+		});
+		invokeSelector(mode, { session: { extensionRunner: { createCommandContext: context } } });
+		await Promise.resolve();
+		expect(calls).toBe(1);
+		expect(reports).toEqual(["Fast Resume failed to open; native /resume was restored for this invocation."]);
+		patch.restore();
+	});
+
 	test("does not overwrite a later third-party patch during cleanup", () => {
 		const original = () => undefined;
 		const later = () => undefined;

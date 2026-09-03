@@ -2,23 +2,26 @@
 
 [Simplified Chinese](../i18n/zh-CN/docs/capabilities/fast-resume.md)
 
-Fast Resume replaces Pi's default Session selector with a progressive picker that reads bounded JSONL regions instead
-of complete conversation histories. It retains the native Session files and delegates the final switch to Pi.
+Fast Resume keeps Pi's native Session selector and replaces only its expensive complete-history list loaders. It reads
+bounded JSONL regions, returns Pi `SessionInfo` rows, and delegates selection and mutation to the Host component.
 
 ## Open the selector
 
-Run `/resume`. Fast Resume intercepts the native selector in memory for the current Host process; it does not modify
-Pi's installed files. If the certified Host seam is unavailable, Pi's original selector opens and a bounded Diagnostic
-Record explains the fallback.
+Run `/resume`. Pi Stuff intercepts the native selector call in memory for the current Host process, then mounts Pi's
+exported `SessionSelectorComponent` with bounded Current Folder and All Sessions loaders. It does not modify Pi's
+installed files. If the certified Host seam is unavailable or opening fails, the original native selector runs and a
+bounded Diagnostic Record explains the fallback.
 
-When `fastResume.hijackResume` is disabled, Pi keeps its native `/resume` and Pi Stuff registers
-`/fast-resume`. An optional `fastResume.shortcut` key ID opens the same Fast Resume surface.
+When `fastResume.hijackResume` is disabled, Pi keeps its complete-history `/resume` and Pi Stuff registers
+`/fast-resume`. An optional `fastResume.shortcut` Pi key ID opens that same native component with bounded loaders.
 
-## Navigate and filter
+## Native selector behavior
 
-The Header reports scope, view, sort order, visible count, loading state, and loading progress when available.
+Fast Resume deliberately adds no visual mode or extra control. The title, Header, rows, search field, selection,
+scrolling, empty states, status messages, rename form, delete confirmation, colors, responsive clipping, and keys are
+Pi's native UI.
 
-| Key | Action |
+| Key | Native action |
 | --- | --- |
 | Up / Down | Move one Session |
 | Page Up / Page Down | Move through the visible window |
@@ -33,38 +36,46 @@ The Header reports scope, view, sort order, visible count, loading state, and lo
 | Ctrl+R | Rename the selected Session |
 | Ctrl+D | Confirm deletion of the selected Session |
 
-Typing searches the current scope. Plain input uses fuzzy matching, a fully quoted query uses exact substring matching,
-and a `re:<pattern>` query such as `re:release.*notes` uses a regular expression. Invalid expressions show a bounded error and match no rows until corrected. Search covers Session ID, Session name, cwd, and the first user message; it does not search the
-complete transcript.
+Typing uses Pi's selector search. Plain input uses fuzzy matching, a fully quoted query uses exact substring matching,
+and `re:<pattern>` uses regular-expression matching. Fast Resume supplies Session ID, resolved name, cwd, and visible
+user and Assistant text found inside its forward window, not an unbounded transcript index.
 
-Threaded mode groups Sessions by canonical parent path, with children after their parents and roots and siblings ordered
-by activity. Recent mode preserves modification order after filtering. Fuzzy mode ranks matches and breaks score ties by
-modification time.
+## Bounded loading
 
-## Progressive loading
+For each candidate, Fast Resume reads at most 1 MiB from the front and parses only complete lines. Files that fit that
+window are parsed in full. Oversized files stop early after the Session header and first non-empty user message, then
+use a 32 KiB tail window for recent Session name metadata. Files are processed in batches of 50 and report progress
+through the native Header. Current Folder finishes before it becomes selectable; All Sessions is not
+read until the user changes scope.
 
-Fast Resume discovers candidates by filename and modification time, reads the first complete header and user message,
-and checks a bounded tail window for the latest Session name. Current Folder's newest 30 candidates appear first.
-Older Current Folder rows finish before All Sessions start, and All Sessions then stream in batches with progress.
-Closing or refreshing the Dialog cancels obsolete work and fences late results from the current view.
+The loader has explicit ceilings:
 
-This bounded contract has deliberate ceilings:
-
-- a name written outside the tail window may be absent;
-- partial-read message counts are marked with `≈`; only fully read counts are exact;
-- complete-history search remains available only in Pi's native selector.
+- a first non-empty user message that does not end inside the 1 MiB forward window is omitted from search;
+- later text in oversized files and a name written outside the tail window can be absent;
+- oversized-file message counts can be lower than complete-history counts;
+- when bounded reads cannot see the last message activity, filesystem modification time controls ordering, so a later
+  metadata-only append can move a Session;
+- complete-history search and exact list metadata remain available only by disabling interception and using Pi's
+  original loader.
 
 Fast Resume creates no persistent cache or sidecar index, performs no network request, and does not rewrite Session
 files while scanning.
 
-## Rename and delete
+## Resume, rename, and delete
 
-Ctrl+R writes Pi's normal Session name metadata and refreshes the active view. Empty input leaves the Session unchanged.
+Enter returns the selected path to Pi Stuff, which calls Pi's `switchSession`. Pi remains responsible for validation,
+loading, transcript replay, cwd changes, and terminal behavior.
 
-Ctrl+D opens an in-place confirmation. The active Session cannot be deleted. Confirmation first tries the platform
-trash command; if that command is unavailable or fails, Fast Resume permanently unlinks the JSONL file. A failed
-unlink leaves the row visible and reports a bounded error. Successful mutation refreshes the active scope while
-retaining the selected path when it still exists.
+Rename and deletion are Pi's native selector workflows. Rename writes normal Session name metadata and refreshes the
+active scope. Delete protects the active Session, asks for confirmation, first tries the platform trash command, and
+permanently unlinks the JSONL file when trash is unavailable or fails. Failed deletion leaves the row visible and uses
+the native bounded error state.
+
+## Lifecycle
+
+Each open selector receives one child Effect owner, and each native loader call runs as an owned operation. Closing the
+selector shuts down that owner and interrupts outstanding work. Pi's native scope and sequence checks remain
+authoritative when a loader completes after the user changes view.
 
 ## Configuration
 
