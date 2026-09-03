@@ -10,6 +10,7 @@ import {
 	context,
 	DiagnosticChannel,
 	existsSync,
+	foregroundOutputSnapshot,
 	join,
 	mkdirSync,
 	processExists,
@@ -46,6 +47,21 @@ test("bounds durable output while retaining the newest evidence", () => {
 	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
 	expect(output.recentText()).not.toContain("stopped this task");
+});
+
+test("preserves cumulative omission in a truncated foreground result", () => {
+	const root = temporaryRoot();
+	const path = join(root, "foreground-output");
+	const output = new BoundedOutputFile(path, 70_000);
+	output.append(Buffer.from("x".repeat(100_000)));
+	output.append(Buffer.from("\nLATEST-EVIDENCE\n"));
+	output.close();
+
+	const snapshot = foregroundOutputSnapshot(path, output.recentText());
+	expect(snapshot.text).toStartWith("…[97.7KB");
+	expect(snapshot.text).toContain("LATEST-EVIDENCE");
+	expect(snapshot.text).toContain("Retained output:");
+	expect(snapshot.text).not.toContain("Full output:");
 });
 
 test("rejects timer slices that the runtime cannot schedule safely", () => {

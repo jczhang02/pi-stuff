@@ -41,9 +41,12 @@ export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_L
 	return formatTextTail(selected, buffer.length - selected.length);
 }
 
+function visibleOmissionMarker(omittedBytes: number): string {
+	return omittedBytes > 0 ? `…[${formatSize(omittedBytes)} earlier output bytes omitted]\n` : "";
+}
+
 function formatTextTail(selected: Buffer, omittedBytes: number): string {
-	const prefix = omittedBytes > 0 ? `…[${formatSize(omittedBytes)} earlier output bytes omitted]\n` : "";
-	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
+	return sanitizeTerminalText(`${visibleOmissionMarker(omittedBytes)}${selected.toString("utf-8")}`).trimEnd();
 }
 
 function rollingOmissionMarker(omittedBytes: number): Buffer {
@@ -237,26 +240,31 @@ export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT
 
 export function foregroundOutputSnapshot(outputPath: string | undefined, recentOutput: string | undefined) {
 	if (!outputPath) return { text: recentOutput ?? "" };
-	let raw: string;
+	let file: Buffer;
 	try {
-		raw = readFileSync(outputPath, "utf8");
+		file = readFileSync(outputPath);
 	} catch {
 		return { text: recentOutput ?? "" };
 	}
+	const marker = parseRollingOmissionMarker(file.subarray(0, 128));
+	const raw = file.subarray(marker?.length ?? 0).toString("utf8");
 	const truncation = truncateTail(raw, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
-	if (!truncation.truncated) return { text: truncation.content };
+	const retainedBytesOmitted = truncation.truncated ? Buffer.byteLength(raw, "utf8") - truncation.outputBytes : 0;
+	const prefix = marker ? visibleOmissionMarker(marker.bytes + retainedBytesOmitted) : "";
+	if (!truncation.truncated) return { text: `${prefix}${truncation.content}` };
 	const startLine = truncation.totalLines - truncation.outputLines + 1;
 	const endLine = truncation.totalLines;
+	const outputLabel = marker ? "Retained output" : "Full output";
 	let footer: string;
 	if (truncation.lastLinePartial) {
-		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. Full output: ${outputPath}`;
+		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. ${outputLabel}: ${outputPath}`;
 	} else if (truncation.truncatedBy === "lines") {
-		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)}. Full output: ${outputPath}`;
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)}. ${outputLabel}: ${outputPath}`;
 	} else {
-		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${outputPath}`;
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)} (${formatSize(DEFAULT_MAX_BYTES)} limit). ${outputLabel}: ${outputPath}`;
 	}
 	return {
 		details: { fullOutputPath: outputPath, truncation },
-		text: `${truncation.content}\n\n[${footer}]`,
+		text: `${prefix}${truncation.content}\n\n[${footer}]`,
 	};
 }
