@@ -23,7 +23,7 @@ function discoveryConnectorFixture(
 		readonly descriptionSize?: number;
 		readonly name?: string;
 		readonly types?: string;
-		readonly typesSize: number;
+		readonly typesSize?: number;
 	}[],
 ): DiscoveryConnector {
 	const results: SearchResult[] = entries.map((entry, index) => {
@@ -137,9 +137,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 
 	const documentedType = `/** ${"field details ".repeat(150)}*/\ntype FixtureInput = string;`;
 	const typedTop = await executeDiscovery(
-		discoveryConnectorFixture(
-			Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, types: documentedType, typesSize: 0 })),
-		),
+		discoveryConnectorFixture(Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, types: documentedType }))),
 	);
 	expect(typedTop.payload.representation).toBe("typed-top");
 	expect(typedTop.payload.definitions[0]?.description).toHaveLength(2_500);
@@ -148,9 +146,9 @@ test("top-level Tool Discovery deterministically degrades every response within 
 
 	const typedPaths = await executeDiscovery(
 		discoveryConnectorFixture([
-			{ descriptionSize: 2_500, types: documentedType, typesSize: 0 },
-			{ name: "n".repeat(5_000), typesSize: 0 },
-			{ name: "typed-usable", typesSize: 0 },
+			{ descriptionSize: 2_500, types: documentedType },
+			{ name: "n".repeat(5_000) },
+			{ name: "typed-usable" },
 		]),
 	);
 	expect(typedPaths.payload.representation).toBe("typed-top");
