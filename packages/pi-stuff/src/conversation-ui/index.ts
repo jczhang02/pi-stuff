@@ -12,11 +12,11 @@ import {
 } from "./agent-run-origin.js";
 import type { CommandDialogCoordinatorImplementation } from "./command-dialog.js";
 import { getCommandDialogCoordinator } from "./command-dialog-registry.js";
+import { registerConversationMarkdown } from "./conversation-markdown.js";
 import { activateDiagnosticChannel, type DiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { UiEffectOwner } from "./effect-owner.js";
 import { globalWeakMap } from "./global-registry.js";
-import { registerLiveThoughtDisplay } from "./live-thought.js";
 import {
 	installUiSessionPresentation as installPresentation,
 	type UiSessionPresentation,
@@ -319,7 +319,7 @@ function installUiSurfaces(
 	activateDiagnosticChannel(diagnostics);
 	const registry = ensureUiSettingsCommand(pi);
 	registerDiagnosticsCommand(pi, coordinator, diagnostics);
-	registerLiveThoughtDisplay(pi);
+	registerConversationMarkdown(pi);
 	return registry;
 }
 
@@ -380,8 +380,7 @@ async function installUiCapability(
 			if (gitRefreshDrainToken === token) gitRefreshDrainToken = undefined;
 			if (generation !== sessionGeneration || !sessionContext || !userWorkGitRefreshPending) return;
 			try {
-				// Let every listener in the event that requested this refresh run first.
-				// A later Extension may synchronously enqueue more Agent work.
+				// Let all listeners finish before checking whether a later Extension enqueued Agent work.
 				if (agentSettlementPending || !sessionContext.isIdle() || sessionContext.hasPendingMessages()) return;
 			} catch {
 				return;

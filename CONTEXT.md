@@ -97,8 +97,8 @@ _Avoid_: Capability settings file, global config
 
 **Vibe Line Spinner**:
 The Host-owned animated glyph in Pi's Working Row while the Host processes Agent work. It is a liveness signal, not
-the Working Row itself, Live Thoughts, or other Conversation UI content.
-_Avoid_: Vibe Line, Working Row, Live Thoughts
+the Working Row itself, Thinking transcript content, or other Conversation UI content.
+_Avoid_: Vibe Line, Working Row, Thinking display
 
 **Logical Thinking Run**:
 A continuously updated visible reasoning segment treated as one narrative unit. A later separately visible reasoning

@@ -52,6 +52,7 @@ export interface UiPtyVerificationOptions {
 export interface UiPtyEvidence {
 	readonly markdownTransformer: boolean;
 	readonly sizes: readonly string[];
+	readonly vibeLineMaximumFrameDurationMs: number;
 	readonly verified: readonly string[];
 }
 
@@ -177,8 +178,8 @@ async function verifyWidePrompt(
 ): Promise<void> {
 	session.sendLiteral(LONG_PROMPT);
 	session.sendKey("Enter");
-	const finalThought = flow.expectedThoughtProjection(THOUGHT_PHASES.length - 1, 100);
-	await session.waitForText(finalThought);
+	const finalThought = THOUGHT_PHASES.at(-1) ?? pty.fail("Thinking fixture has no phases");
+	await flow.waitForThoughtText(session, finalThought);
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
@@ -225,8 +226,7 @@ async function verifyWidePrompt(
 		pty.fail(`wide Statusline split the Git branch and file state into separate groups\n${screen}`);
 	}
 	if (status.includes("Fast")) pty.fail("disabled Fast mode left a Statusline segment or gap");
-	const history = await session.waitForText(finalThought, true);
-	if (history.includes("OWNED_TITLE")) pty.fail("Thought rendering exposed a model-provided terminal control payload");
+	await flow.waitForThoughtText(session, finalThought, true);
 	flow.verifyTerminalWidth(screen, 100, "settled Thought and long-prompt screen");
 	await flow.writePtyEvidence(
 		options.artifactDirectory,
@@ -306,9 +306,10 @@ async function verifyWideSettings(session: pty.TmuxPiSession, paths: pty.CasePat
 	session.stop();
 }
 
-async function verifyWideRestart(paths: pty.CasePaths, options: UiPtyVerificationOptions): Promise<void> {
+async function verifyWideRestart(paths: pty.CasePaths, options: UiPtyVerificationOptions): Promise<number> {
 	const settingsPath = join(paths.config, "pi-stuff.json");
 	const restarted = new pty.TmuxPiSession(paths, options, 100, 32);
+	let vibeLineMaximumFrameDurationMs = 0;
 	try {
 		await restarted.start();
 		await flow.waitForFixtureRecords(paths.log, "inventory", 2);
@@ -358,20 +359,32 @@ async function verifyWideRestart(paths: pty.CasePaths, options: UiPtyVerificatio
 		if (screen.includes("→ Notification delivery")) pty.fail("Notification settings still appeared under /ui");
 		restarted.sendKey("Escape");
 		await restarted.waitForAbsence("Type to search");
-		await flow.verifyVibeLineSpinnerLiveness(restarted);
+
+		const resumedThought = THOUGHT_PHASES.at(-1) ?? pty.fail("Thinking fixture has no phases");
+		restarted.sendLiteral("THOUGHT_PROBE_RESTART");
+		restarted.sendKey("Enter");
+		await restarted.waitForText("THOUGHT_DONE_RESTART");
+		await flow.waitForThoughtText(restarted, resumedThought);
+		restarted.sendKey("C-t");
+		await flow.waitForHiddenThinking(restarted, 1);
+		restarted.sendKey("C-t");
+		await flow.waitForThoughtText(restarted, resumedThought);
+
+		vibeLineMaximumFrameDurationMs = await flow.verifyVibeLineSpinnerLiveness(restarted);
 	} finally {
 		restarted.stop();
 	}
 
 	const persistedMode = (await stat(settingsPath)).mode & 0o777;
 	if (persistedMode !== 0o600) pty.fail(`Pi Stuff settings mode is ${persistedMode.toString(8)}, expected 600`);
+	return vibeLineMaximumFrameDurationMs;
 }
 
 async function verifyWideInteractions(
 	session: pty.TmuxPiSession,
 	paths: pty.CasePaths,
 	options: UiPtyVerificationOptions,
-): Promise<void> {
+): Promise<number> {
 	await flow.verifyDiagnosticsUi(session, paths, options, 100, 32);
 	await flow.verifyCodexDialog(session, paths);
 	await flow.verifySessionNamingDialog(session, paths, options);
@@ -382,7 +395,7 @@ async function verifyWideInteractions(
 
 	await verifyWideSettings(session, paths);
 
-	await verifyWideRestart(paths, options);
+	return verifyWideRestart(paths, options);
 }
 
 function verifyCatppuccinRecord(
@@ -445,7 +458,8 @@ function verifyInventory(
 export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<UiPtyEvidence> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-ui-pty-"));
 	const verified: string[] = [];
-	let liveThought = false;
+	let thinkingDisplay = false;
+	let vibeLineMaximumFrameDurationMs: number | undefined;
 	try {
 		options = {
 			...options,
@@ -483,16 +497,16 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					await flow.verifyThoughtLifecycle(session, paths, columns, rows);
 					await flow.verifyThoughtContextPreservation(session, paths);
 					await flow.verifyFencedVisualization(session, paths, caseOptions);
-					await verifyWideInteractions(session, paths, caseOptions);
-					liveThought = true;
+					vibeLineMaximumFrameDurationMs = await verifyWideInteractions(session, paths, caseOptions);
+					thinkingDisplay = true;
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
-						"first, replacing, settled, session-preserved, and context-preserved Thought",
-						"2,500-character cumulative CJK Thought kept every Vibe Line Spinner frame within 500ms and recovered",
+						"latest-line, hidden, toggled, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
+						"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",
-						"long CJK prompt, Welcome scroll-away, live and settled Thought",
+						"long CJK prompt, Welcome scroll-away, streaming and settled Thinking",
 						"metered and API-key subscription Statusline cost behavior",
 						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
@@ -506,7 +520,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						verified.push("diagnostic notice and full-width details at 64x28");
 					}
 					await flow.verifyThoughtLifecycle(session, paths, columns, rows);
-					verified.push(`live and settled Thought ${String(columns)}x${String(rows)}`);
+					verified.push(`latest-line streaming and settled Thinking ${String(columns)}x${String(rows)}`);
 					if (columns === 64) {
 						await flow.verifyTodoOverlay(session, options, columns, rows);
 						verified.push("expanded four-task Todo alignment at 64x28");
@@ -516,11 +530,13 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				session.stop();
 			}
 		}
-		if (!liveThought) pty.fail("upstream Host live Thought projection was not verified");
+		if (!thinkingDisplay) pty.fail("upstream Host Thinking display was not verified");
+		if (vibeLineMaximumFrameDurationMs === undefined) pty.fail("Vibe Line liveness was not measured");
 		return {
 			markdownTransformer: true,
 			sizes: TARGET_SIZES.map(({ columns, rows }) => `${String(columns)}x${String(rows)}`),
 			verified,
+			vibeLineMaximumFrameDurationMs,
 		};
 	} finally {
 		await rm(temporaryDirectory, { force: true, recursive: true });

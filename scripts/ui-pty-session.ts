@@ -17,6 +17,7 @@ export interface CasePaths {
 	readonly config: string;
 	readonly log: string;
 	readonly project: string;
+	readonly runtime: string;
 	readonly sessions: string;
 }
 
@@ -80,12 +81,18 @@ export class TmuxPiSession {
 		this.project = paths.project;
 		this.label = `piui-${String(process.pid)}-${String(sessionCounter)}`;
 		this.socket = join(paths.config, `${this.label}.sock`);
+		const environment = { ...process.env };
+		for (const key of Object.keys(environment)) {
+			if (key.startsWith("PI_SUBAGENT_")) delete environment[key];
+		}
 		this.environment = {
-			...process.env,
+			...environment,
 			COLORTERM: options.colorMode === "256" ? "ansi" : "truecolor",
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
+			PI_STUFF_CODE_MODE_DEFAULT: "off",
+			PI_STUFF_CODE_MODE_FROZEN: undefined,
 			PI_STUFF_PONYTAIL_MODE: undefined,
 			PONYTAIL_DEFAULT_MODE: "full",
 			PONYTAIL_HIDE_STATUS: "0",
@@ -104,6 +111,7 @@ export class TmuxPiSession {
 			PI_TELEMETRY: "0",
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
+			XDG_RUNTIME_DIR: paths.runtime,
 		};
 	}
 
@@ -293,12 +301,14 @@ export async function createCase(
 	const config = join(caseDirectory, "agent");
 	const sessions = join(caseDirectory, "sessions");
 	const project = join(caseDirectory, "项目", "长路径", "验证");
+	const runtime = join(caseDirectory, "runtime");
 	const skill = join(config, "skills", "humanizer-zh");
 	const log = join(caseDirectory, "ui-pty.jsonl");
 	await Promise.all([
 		mkdir(config, { recursive: true }),
 		mkdir(sessions, { recursive: true }),
 		mkdir(project, { recursive: true }),
+		mkdir(runtime, { mode: 0o700, recursive: true }),
 		mkdir(skill, { recursive: true }),
 	]);
 	await Promise.all([
@@ -347,7 +357,7 @@ export async function createCase(
 		}),
 		writeFile(join(project, "untracked-🧪.txt"), "new\n", { mode: 0o600 }),
 	]);
-	return { config, log, project, sessions };
+	return { config, log, project, runtime, sessions };
 }
 
 export function rowsBelowEditorDivider(screen: string): readonly string[] {

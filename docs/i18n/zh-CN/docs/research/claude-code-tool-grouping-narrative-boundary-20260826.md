@@ -1,4 +1,4 @@
-<!-- translation-source: docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md; translation-source-sha256: 2c655e8531dcad12d01f13dd7d8eb9ff1b5c7c651ce4680103938d8e5c55cca3 -->
+<!-- translation-source: docs/research/claude-code-tool-grouping-narrative-boundary-20260826.md; translation-source-sha256: bdbeb62bea75e2ac0115fecbd3a4ec2e10eab5bfc2bbe65071c087b5715ce089 -->
 # Claude Code 工具分组与叙事边界
 
 - **日期：** 2026-08-26
@@ -288,7 +288,7 @@ Pi 0.84.3 会在 streaming content 变化时重建一个 Assistant-message compo
 - 被 Tool call 或其他 content 与前一个 Thinking block 分隔开的 Thinking block，会创建另一个 logical run，因而创建另一个可见 Thinking component；
 - 后续 Assistant message 中的 Thinking block 也会创建另一个 component。
 
-Pi Stuff 的 seam 位于 [`conversation-ui/live-thought.ts`](../../../../../packages/pi-stuff/src/conversation-ui/live-thought.ts)，从 [`conversation-ui/index.ts`](../../../../../packages/pi-stuff/src/conversation-ui/index.ts) 注册；其 display-only contract 记录在所属的 [`conversation-ui/README.md`](../../packages/pi-stuff/src/conversation-ui/README.md) 中。
+Pi Stuff 的 seam 位于 [`conversation-ui/live-thought.ts`](https://github.com/jczhang02/pi-stuff/blob/add4468b5525e06acaae866f60c31a24534a829a/packages/pi-stuff/src/conversation-ui/live-thought.ts)，从 [`conversation-ui/index.ts`](../../../../../packages/pi-stuff/src/conversation-ui/index.ts) 注册；其 display-only contract 记录在所属的 [`conversation-ui/README.md`](../../packages/pi-stuff/src/conversation-ui/README.md) 中。
 
 实时流捕获将 Pi 的一行从：
 

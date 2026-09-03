@@ -3,12 +3,9 @@ import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
-import { createLiveThoughtTransformer } from "../packages/pi-stuff/src/conversation-ui/live-thought.js";
-import { isJsonInputObject, type JsonInputValue, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
+import { isJsonInputObject, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import {
 	DIAGNOSTIC_PTY_SUMMARY,
-	FIXTURE_THINKING,
-	THOUGHT_PHASES,
 	TODO_PTY_PROMPT,
 	TODO_PTY_READY,
 	TODO_PTY_SUBJECTS,
@@ -20,7 +17,10 @@ import {
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import * as pty from "./ui-pty-session.js";
+import { waitForPersistedSessionValue } from "./ui-pty-thinking-evidence.js";
 import type { UiPtyVerificationOptions } from "./verify-ui-pty.js";
+
+export { verifyThoughtLifecycle, waitForHiddenThinking, waitForThoughtText } from "./ui-pty-thinking-evidence.js";
 
 const UI_LABELS = [
 	"Statusline",
@@ -34,7 +34,6 @@ const UI_LABELS = [
 const NERD_THINKING_MARKER = "\uF0EB med";
 const VIBE_LINE_SPINNER = /^[ \t]*([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])[ \t]+\S.*$/u;
 const VIBE_LINE_STALL_LIMIT_MS = 500;
-const thoughtTransformer = createLiveThoughtTransformer();
 const FIXTURE_RECORD_SCHEMA = Type.Object(
 	{
 		commands: Type.Optional(Type.Array(Type.String())),
@@ -260,115 +259,14 @@ export async function waitForFixtureRecords(
 	pty.fail(`fixture log did not reach ${String(count)} ${type} record(s)`);
 }
 
-function containsValue(value: JsonInputValue, target: string): boolean {
-	if (value === target) return true;
-	if (Array.isArray(value)) return value.some((item) => containsValue(item, target));
-	if (!isJsonInputObject(value)) return false;
-	return Object.values(value).some((item) => containsValue(item, target));
-}
-
-async function waitForPersistedSessionValue(
-	sessionDirectory: string,
-	target: string,
-	description: string,
-): Promise<void> {
-	const deadline = Date.now() + pty.WAIT_TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		const sessionFiles = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
-		for (const sessionFile of sessionFiles) {
-			const records = (await readFile(join(sessionDirectory, sessionFile), "utf8"))
-				.trim()
-				.split("\n")
-				.filter(Boolean)
-				.map(parseJsonValue);
-			if (records.some((record) => containsValue(record, target))) return;
-		}
-		await pty.delay(pty.POLL_INTERVAL_MS);
-	}
-	pty.fail(`settled session JSONL did not retain ${description}`);
-}
-
-export function expectedThoughtProjection(phaseIndex: number, columns: number): string {
-	const markdown = THOUGHT_PHASES.slice(0, phaseIndex + 1)
-		.map((phase) => `**${phase}**`)
-		.join("\n\n");
-	return thoughtTransformer(markdown, {
-		// Pi's assistant message component reserves one column on each side.
-		availableWidth: Math.max(0, columns - 2),
-		isStreaming: true,
-		messageType: "assistant-thinking",
-	}).replaceAll(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/gu, "$1");
-}
-
-function thoughtRows(screen: string, expected: string): string[] {
-	return screen.split("\n").filter((line) => line.includes(expected));
-}
-
-function verifySingleThoughtRow(screen: string, expected: string, columns: number, phase: string): void {
-	const rows = thoughtRows(screen, expected);
-	if (rows.length !== 1 || !rows[0]?.includes(expected)) {
-		pty.fail(`${phase} did not render exactly one expected Thought row in ${String(columns)} columns\n${screen}`);
-	}
-	if (visibleWidth(rows[0]) > columns) {
-		pty.fail(`${phase} Thought occupied ${String(visibleWidth(rows[0]))} columns in a ${String(columns)}-column PTY`);
-	}
-}
-
-export async function verifyThoughtLifecycle(
-	session: pty.TmuxPiSession,
-	paths: pty.CasePaths,
-	columns: number,
-	rows: number,
-): Promise<void> {
-	const settledMarker = `THOUGHT_DONE_${String(columns)}`;
-	session.sendLiteral(`THOUGHT_PROBE_${String(columns)}`);
-	session.sendKey("Enter");
-
-	let screen = "";
-	for (const [index, phase] of THOUGHT_PHASES.entries()) {
-		const expected = expectedThoughtProjection(index, columns);
-		screen = await session.waitForText(expected);
-		verifySingleThoughtRow(screen, expected, columns, `live frame ${String(index + 1)}`);
-		if (screen.includes(settledMarker)) {
-			pty.fail(`Thought frame ${String(index + 1)} was captured only after the response settled`);
-		}
-		for (let priorIndex = 0; priorIndex < index; priorIndex += 1) {
-			const prior = expectedThoughtProjection(priorIndex, columns);
-			if (prior !== expected && screen.includes(prior)) {
-				pty.fail(`Thought phase ${JSON.stringify(phase)} appended instead of replacing ${JSON.stringify(prior)}`);
-			}
-		}
-		if (session.paneTitle().includes("OWNED_TITLE")) pty.fail("model-provided OSC changed the real PTY title");
-	}
-
-	await session.waitForText(settledMarker);
-	session.resize(columns - 1, rows);
-	await pty.delay(100);
-	session.resize(columns, rows);
-	const settledThought = expectedThoughtProjection(THOUGHT_PHASES.length - 1, columns);
-	screen = await session.waitForText(settledThought);
-	screen = await session.waitForLatestPrompt(`THOUGHT_PROBE_${String(columns)}`);
-	verifySingleThoughtRow(screen, settledThought, columns, "settled resize rerender");
-	if (!screen.includes(settledMarker)) pty.fail("settled Thought was not present beside its completed response");
-	const promptRows = pty
-		.rowsBelowEditorDivider(screen)
-		.filter((line) => line.includes(`THOUGHT_PROBE_${String(columns)}`));
-	if (promptRows.length !== 1) {
-		pty.fail(
-			`${String(columns)}-column latest prompt occupied ${String(promptRows.length)} rows instead of exactly one\n${screen}`,
-		);
-	}
-	verifyTerminalWidth(screen, columns, `settled ${String(columns)}-column Thought`);
-	await waitForPersistedSessionValue(paths.sessions, FIXTURE_THINKING, "the original Thinking content");
-}
-
-export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession): Promise<void> {
+export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession): Promise<number> {
 	session.sendLiteral(VIBE_LINE_LIVENESS_PTY_PROMPT);
 	session.sendKey("Enter");
 	const frames = new Set<string>();
 	const deadline = Date.now() + pty.WAIT_TIMEOUT_MS;
 	let currentFrame: string | undefined;
 	let frameChangedAt: number | undefined;
+	let maximumFrameDurationMs = 0;
 	let screen = "";
 	while (Date.now() < deadline) {
 		screen = session.capture();
@@ -385,10 +283,14 @@ export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession):
 				frameChangedAt = observedAt;
 			}
 		}
-		if (currentFrame && frameChangedAt !== undefined && observedAt - frameChangedAt > VIBE_LINE_STALL_LIMIT_MS) {
-			pty.fail(
-				`Vibe Line Spinner frame ${currentFrame} remained unchanged for more than ${String(VIBE_LINE_STALL_LIMIT_MS)}ms`,
-			);
+		if (currentFrame && frameChangedAt !== undefined) {
+			const frameDurationMs = observedAt - frameChangedAt;
+			maximumFrameDurationMs = Math.max(maximumFrameDurationMs, frameDurationMs);
+			if (frameDurationMs > VIBE_LINE_STALL_LIMIT_MS) {
+				pty.fail(
+					`Vibe Line Spinner frame ${currentFrame} remained unchanged for more than ${String(VIBE_LINE_STALL_LIMIT_MS)}ms`,
+				);
+			}
 		}
 		if (screen.includes(VIBE_LINE_LIVENESS_PTY_DONE)) break;
 		await pty.delay(pty.POLL_INTERVAL_MS);
@@ -400,6 +302,7 @@ export async function verifyVibeLineSpinnerLiveness(session: pty.TmuxPiSession):
 	session.sendLiteral(`THOUGHT_PROBE_${recovery}`);
 	session.sendKey("Enter");
 	await session.waitForText(`THOUGHT_DONE_${recovery}`);
+	return maximumFrameDurationMs;
 }
 
 export async function verifyThoughtContextPreservation(
