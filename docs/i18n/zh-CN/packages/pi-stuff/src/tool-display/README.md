@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: 738044dfbf52e7d2c80aae06c9783720194c196f22ff575788055d255c88b6af -->
+<!-- translation-source: packages/pi-stuff/src/tool-display/README.md; translation-source-sha256: f2db5b60864766034c53f6559d0b048330887fc2ff53ba0667ce9a314401ddc5 -->
 
 # Tool Display
 
@@ -29,6 +29,7 @@
 - 把连续检索合并为一个有序摘要行。
 - 为 Bash、文件修改、Background 工作、Agent 与失败提供不同语义行。
 - 保留失败、拒绝、取消和空结果供检查。
+- 后续调用成功时，仍把之前的失败保留为历史事实。
 - 通过 `Ctrl+O` 按来源顺序恢复展开 activity。
 - 通过 `/tools [id]` 打开有界、可搜索的 activity 视图。
 - 在 `/ui` 中启用后，为长时间运行的活动 Tool 显示经过时间。

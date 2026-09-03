@@ -334,14 +334,6 @@ function member(state: ActivitySummaryMember["state"], items: ActivitySummaryMem
 	return { items, state };
 }
 
-function recoverableMember(
-	state: ActivitySummaryMember["state"],
-	key: string,
-	items: ActivitySummaryMember["items"] = [],
-): ActivitySummaryMember {
-	return { items, recoveryKeys: [key], state };
-}
-
 test("summarizes semantic categories in fixed order with object deduplication", () => {
 	const summary = summarizeRetrievalGroup(
 		[
@@ -452,19 +444,18 @@ test("successful infrastructure-only groups are silent but issues remain visible
 	expect(summarizeRetrievalGroup([member("error", [])], true).summary).toBe("Internal operation failed");
 });
 
-test("derives effective outcomes only from success, exact recovery, and explicit issues", () => {
+test("keeps failures historical when later calls succeed", () => {
 	const success = member("success", [{ category: "read-file", countKeys: ["a.ts"] }]);
-	const failure = recoverableMember("error", "retry\u0000a", [{ category: "run-command", count: 1 }]);
-	const retry = recoverableMember("success", "retry\u0000a", [{ category: "run-command", count: 1 }]);
+	const failure = member("error", [{ category: "run-command", count: 1 }]);
+	const retry = member("success", [{ category: "run-command", count: 1 }]);
 
 	expect(summarizeRetrievalGroup([member("running", [])], false).outcome).toBe("running");
 	expect(summarizeRetrievalGroup([success], true).outcome).toBe("success");
 	expect(summarizeRetrievalGroup([failure, retry], true)).toMatchObject({
 		issueText: "1 failed",
-		outcome: "success",
+		outcome: "warning",
 	});
 	expect(summarizeRetrievalGroup([success, failure], true).outcome).toBe("warning");
-	expect(summarizeRetrievalGroup([failure, recoverableMember("success", "retry\u0000b")], true).outcome).toBe("error");
 	expect(summarizeRetrievalGroup([failure], true).outcome).toBe("error");
 	expect(summarizeRetrievalGroup([member("rejected", [])], true).outcome).toBe("warning");
 	expect(summarizeRetrievalGroup([member("cancelled", [])], true).outcome).toBe("warning");

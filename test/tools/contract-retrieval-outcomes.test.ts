@@ -235,7 +235,7 @@ test("failed mutations never produce successful change clauses", () => {
 	expect(output).not.toContain("Changed");
 });
 
-test("retrieval group outcomes keep failures visible after exact retries", () => {
+test("retrieval group failures remain historical after later successes", () => {
 	const project = (category: "read-file", firstValue: string, secondValue: string, secondError = false) => {
 		const harness = apiHarness();
 		const tool = toolFromHarness(harness, "read", category);
@@ -253,20 +253,13 @@ test("retrieval group outcomes keep failures visible after exact retries", () =>
 
 	const retry = project("read-file", "same.ts", "same.ts");
 	expect(retry.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
-		summary: expect.stringContaining("1 failed"),
-	});
-	retry.runtime.resetProjection(retry.messages);
-	settle(retry.tool, "first", "bun test", true, false, "FIRST FAILED");
-	settle(retry.tool, "second", "bun test");
-	expect(retry.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
+		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 
 	const effect = project("read-file", "./a.ts", "/project/a.ts");
 	expect(effect.runtime.resolveGroup("first")).toMatchObject({
-		state: "success",
+		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 

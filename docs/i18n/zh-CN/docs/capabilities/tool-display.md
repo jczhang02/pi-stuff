@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/tool-display.md; translation-source-sha256: 5f3f1ad737bb40438fda8add75d51fa451f3ca89747eaa8eb1bebeecc0134d35 -->
+<!-- translation-source: docs/capabilities/tool-display.md; translation-source-sha256: 367fe7b3467790cbdb82c0d84cfc85398e63b53c78d5af3f9e30d8eaee6e4214 -->
 
 # Tool Display
 
@@ -48,6 +48,7 @@ activity 不出现在紧凑 transcript 中，但仍可以通过 `Ctrl+O` 和 `/t
 
 活动行使用现在时标签，并可显示经过时间。结算行明确显示成功、失败、拒绝、取消或空结果证据。颜色只辅助 icon
 与状态文字，不单独承担状态含义。
+后续成功调用不会改写较早的失败；同时包含失败和成功的 Retrieval Group 仍显示为警告。
 
 历史数据格式错误或 renderer 失败时，会退化为有界通用行，保证 Tool history 仍可检查。
 

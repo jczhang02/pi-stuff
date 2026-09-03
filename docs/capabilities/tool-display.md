@@ -50,6 +50,7 @@ transparent infrastructure activity stay out of the compact transcript but remai
 
 Active rows use present-tense labels and may show elapsed time. Settled rows show explicit success, failure, rejection,
 cancellation, or empty-result evidence. Color supplements the icon and state word; it is never the only signal.
+A later successful invocation never rewrites an earlier failure; a Retrieval Group containing both remains a warning.
 
 Malformed historical data or a rendering failure falls back to a bounded generic row so Tool history remains
 inspectable.
@@ -87,4 +88,3 @@ Calls without an owned renderer retain Pi's native presentation.
 - [Conversation UI](conversation-ui.md)
 - [Command reference](../reference/commands.md)
 - [DESIGN.md](../../DESIGN.md)
-

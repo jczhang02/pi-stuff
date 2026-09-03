@@ -8,8 +8,6 @@ export interface ActivitySummaryMember {
 	/** Bounded root-cause detail shown on the indented issue row. */
 	readonly issueDetail?: string;
 	readonly items: readonly ToolActivityItem[];
-	/** Exact display-only identities that a later successful member may recover. */
-	readonly recoveryKeys?: readonly string[];
 	readonly state: ToolActivityState;
 }
 
@@ -156,48 +154,12 @@ function issueSummaryFromCounts(
 	};
 }
 
-function meaningfulActivity(items: readonly ToolActivityItem[]): boolean {
-	return items.some(
-		(item) =>
-			(item.countKeys?.some((key) => oneLine(key).length > 0) ?? false) ||
-			(Number.isFinite(item.count ?? 1) && Math.floor(item.count ?? 1) > 0),
-	);
-}
-
-function recoveredByLaterSuccess(member: ActivitySummaryMember, laterSuccessKeys: ReadonlySet<string>): boolean {
-	const keys = member.recoveryKeys ?? [];
-	if (keys.some((key) => key.startsWith("retry\u0000") && laterSuccessKeys.has(key))) return true;
-	const effects = keys.filter((key) => key.startsWith("effect\u0000"));
-	return effects.length > 0 && effects.every((key) => laterSuccessKeys.has(key));
-}
-
-/** Resolve settled group color semantics without guessing whether two operations are equivalent. */
+/** Keep every settled failure historical, even when a later invocation succeeds. */
 export function effectiveToolActivityOutcome(members: readonly ActivitySummaryMember[]): ToolActivityOutcome {
 	if (members.some((member) => member.state === "running")) return "running";
-
-	const laterSuccessKeys = new Set<string>();
-	let meaningfulSuccess = false;
-	let recoveredErrors = 0;
-	let unresolvedErrors = 0;
-	let warnings = 0;
-	for (let index = members.length - 1; index >= 0; index -= 1) {
-		const member = members[index];
-		if (!member) continue;
-		if (member.state === "success") {
-			meaningfulSuccess ||= meaningfulActivity(member.items);
-			for (const key of member.recoveryKeys ?? []) laterSuccessKeys.add(key);
-			continue;
-		}
-		if (member.state === "error") {
-			if (recoveredByLaterSuccess(member, laterSuccessKeys)) recoveredErrors += 1;
-			else unresolvedErrors += 1;
-			continue;
-		}
-		if (member.state === "rejected" || member.state === "cancelled") warnings += 1;
-	}
-
-	if (unresolvedErrors > 0) return meaningfulSuccess || recoveredErrors > 0 ? "warning" : "error";
-	if (warnings > 0) return "warning";
+	const hasError = members.some((member) => member.state === "error");
+	if (hasError) return members.some((member) => member.state === "success") ? "warning" : "error";
+	if (members.some((member) => member.state === "rejected" || member.state === "cancelled")) return "warning";
 	return "success";
 }
 

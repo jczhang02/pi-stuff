@@ -14,7 +14,6 @@ import {
 } from "./activity.js";
 import type { ToolActivity, ToolActivityState, ToolActivityStore } from "./activity-store.js";
 import {
-	activityRecoveryKeys,
 	canonicalCountKey,
 	type GroupSummaryIndex,
 	isIssueState,
@@ -239,7 +238,6 @@ export class ToolActivityQueryProjection {
 						: (binding?.baseModel.summary ?? issueLabel);
 		const summary: ActivitySummaryMember = {
 			items,
-			recoveryKeys: transparent ? [] : activityRecoveryKeys(member.name, metadata.args, classifiedItems),
 			state,
 		};
 		if (issueDetail) Object.assign(summary, { issueDetail });

@@ -27,6 +27,7 @@ Select a Retrieval Group or Tool Activity and press Enter. Press `r` to switch b
 - Groups continuous retrieval into one ordered summary row.
 - Gives Bash, file mutations, Background work, Agents, and failures distinct semantic rows.
 - Preserves failed, rejected, cancelled, and empty outcomes for inspection.
+- Keeps earlier failures historical when a later invocation succeeds.
 - Restores expanded activity in source order with `Ctrl+O`.
 - Opens a bounded searchable activity view through `/tools [id]`.
 - Shows elapsed time for active long-running Tools when enabled in `/ui`.
