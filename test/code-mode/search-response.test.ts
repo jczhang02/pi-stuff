@@ -63,7 +63,7 @@ interface DiscoveryPayload {
 	readonly definitions: readonly { readonly description?: string; readonly path: string; readonly types?: string }[];
 	readonly instruction?: string;
 	readonly representation: "definitions" | "typed-top" | "describe-required";
-	readonly results: readonly { readonly path: string; readonly signature?: string }[];
+	readonly results: readonly { readonly kind?: string; readonly path: string; readonly signature?: string }[];
 	readonly truncated: boolean;
 }
 
@@ -175,6 +175,15 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(paths.payload.representation).toBe("describe-required");
 	expect(paths.payload.results[0]).toMatchObject({ path: `tools[${JSON.stringify(longNames[0]?.name)}]` });
 
+	const mixedPaths = await executeDiscovery(
+		discoveryConnectorFixture([
+			{ name: "n".repeat(5_000), typesSize: 5_000 },
+			{ name: "usable", typesSize: 5_000 },
+		]),
+	);
+	expect(mixedPaths.payload.representation).toBe("describe-required");
+	expect(mixedPaths.payload.results).toEqual([{ kind: "method", path: "tools.usable" }]);
+
 	const oversizedPath = await executeDiscovery(
 		discoveryConnectorFixture([{ name: "n".repeat(5_000), typesSize: 5_000 }]),
 	);
@@ -189,6 +198,7 @@ test("top-level Tool Discovery deterministically degrades every response within 
 		bracketPath,
 		bracketDefinition,
 		paths,
+		mixedPaths,
 		oversizedPath,
 	]) {
 		expect(projection.text.length).toBeLessThanOrEqual(4_000);

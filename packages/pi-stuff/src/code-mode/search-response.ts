@@ -131,7 +131,7 @@ export function projectCodeModeSearchResponse(
 		const compact = describeRequiredResult(result);
 		const nextResults = [...compactResults, compact];
 		const encoded = encode(search, "describe-required", nextResults, [], instruction);
-		if (!encoded) break;
+		if (!encoded) continue;
 		compactResults = nextResults;
 		compactText = encoded;
 	}
