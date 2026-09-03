@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: 31a6ae2621ef364f9224301d5b2e365a831598f72627c3dbc883d8176ba74361 -->
+<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: 97c19d5a9e09ab49206c3583faf22a821956216189cc760f514a1245e16835de -->
 
 ---
 status: accepted
@@ -31,4 +31,4 @@ Worker 到宿主的副作用仅限于 `appendEntry`、`sendMessage`、`sendUserM
 
 ## 后果
 
-已配置启动会承担一次 Worker 构建与启动、分词器预加载、编辑器就绪前的一次初始会话快照，以及上下文激活期间一个 Worker 的内存成本。作为交换，健康的 Magic Context 投影可以与 Pi 的原生输入绘制和“工作中”动画并发运行，且普通轮次无需再次克隆完整会话。验收必须使用真实 Pi TUI：恢复一个包含异常图像历史的长会话，要求已提交提示词在扣除 PTY 测试框架开销后的 150 毫秒内出现在对话记录中，限制“工作中”帧的最大停顿，并确认预期标记位于发送给 Provider 的 Magic Context 历史投影中。同一门槛还必须中断一个已接受的 Agent turn，要求下一条 prompt 在 150 毫秒边界内进入 Transcript，并确认已中断的 prompt 仍存在于下一次完整 Provider payload 中。真实受支持模型的冒烟测试还必须成功运行一个 Magic Context 工具。
+已配置启动会承担一次 Worker 构建与启动、分词器预加载、编辑器就绪前的一次初始会话快照，以及上下文激活期间一个 Worker 的内存成本。作为交换，健康的 Magic Context 投影可以与 Pi 的原生输入绘制和“工作中”动画并发运行，且普通轮次无需再次克隆完整会话。验收必须使用真实 Pi TUI：恢复一个包含异常图像历史的长会话，要求已提交提示词从提交到 PTY 观测（包含 tmux 提交与捕获开销）不超过 150 毫秒出现在对话记录中，限制“工作中”帧的最大停顿，并确认预期标记位于发送给 Provider 的 Magic Context 历史投影中。同一门槛还必须中断一个已接受的 Agent turn，要求下一条 prompt 在 150 毫秒边界内进入 Transcript，并确认已中断的 prompt 仍存在于下一次完整 Provider payload 中。真实受支持模型的冒烟测试还必须成功运行一个 Magic Context 工具。

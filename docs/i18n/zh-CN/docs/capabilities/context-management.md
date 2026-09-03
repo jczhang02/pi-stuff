@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 97170b5cf8490b7bcfdb572126c830dae73f89a22a66d00872ceefcf8317b20a -->
+<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 97813327bd07a8f0ffb636f66143718d059eaead66747b614f3604464299357b -->
 
 # Context Management
 
@@ -76,8 +76,8 @@ compaction。
 
 Context engine 运行在一个内部 Worker 中，因此检索与 compaction 工作不会阻塞终端绘制。Worker 是执行边界，
 不是生命周期所有者：Pi 接受 prompt 后，中断其 Agent turn 不会取消 engine 的生命周期事件，也不会重建健康的
-Worker。只有 Context 结果的消费者会等待该结果；Host 所有的编辑器与 Transcript 不等待 Context 恢复。Tool 与
-augmentation 的取消仍由各自 invocation 所有。
+Worker。input callback 不等待延迟 activation，Agent 中断也不能让下一条已接受 prompt 等待一次虚假的恢复。
+Tool 与 augmentation 的取消仍由各自 invocation 所有。
 
 Worker 发生 fatal failure 时立即切换到原生投影。恢复属于当前 Session，而不是已中断的 Agent turn。Shutdown
 会在有界宽限期内等待 pending worker 工作。

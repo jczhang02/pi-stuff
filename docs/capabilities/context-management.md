@@ -77,9 +77,9 @@ and temporarily degrades active Context to the native projection.
 
 The Context engine runs in one internal Worker so retrieval and compaction work do not block terminal painting. The
 Worker is an execution boundary, not a lifecycle owner: after Pi accepts a prompt, interrupting its Agent turn does not
-cancel the engine's lifecycle events or rebuild a healthy Worker. Only consumers of a Context result wait for that
-result; the Host-owned editor and Transcript do not wait for Context recovery. Tool and augmentation cancellation
-remain owned by their invocations.
+cancel the engine's lifecycle events or rebuild a healthy Worker. The input callback does not await deferred activation,
+and Agent interruption cannot make the next accepted prompt wait for a spurious recovery. Tool and augmentation
+cancellation remain owned by their invocations.
 
 Fatal Worker failure switches immediately to the native projection. Recovery belongs to the current Session rather
 than the interrupted Agent turn. Shutdown joins pending worker work within a bounded grace period.

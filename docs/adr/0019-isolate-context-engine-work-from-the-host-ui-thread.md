@@ -57,8 +57,9 @@ Configured startup pays one worker build/start and tokenizer-preload cost, one i
 readiness, and one worker's memory while Context is active. In return, a healthy Magic Context projection can run concurrently with Pi's
 native input paint and Working animation without another full-Session clone per ordinary turn. Acceptance must use a
 real Pi TUI with a long resumed Session containing malformed image history, require the submitted prompt in the
-Conversation Transcript within 150 ms after measured PTY harness overhead, bound the maximum Working-frame stall, and
-confirm that the expected marker occurs inside the Magic Context history projection sent to the Provider. The same
+Conversation Transcript within 150 ms from submission through PTY observation, including tmux submission and capture
+overhead, bound the maximum Working-frame stall, and confirm that the expected marker occurs inside the Magic Context
+history projection sent to the Provider. The same
 gate must interrupt one accepted Agent turn, require the next prompt in the Transcript within the 150 ms boundary, and
 confirm that the interrupted prompt remains in the next complete Provider payload. A real supported model smoke test
 must also exercise a Magic Context Tool successfully.
