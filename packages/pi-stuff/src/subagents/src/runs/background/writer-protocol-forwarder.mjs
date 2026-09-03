@@ -1,22 +1,13 @@
-/** Bounded, backpressured projection from one Pi writer stream to its runner. */
+/** Backpressured projection from one Pi writer stream to its runner, bounded per protocol frame. */
 
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Guard } from "typebox/guard";
 
-const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-const MAX_OUTPUT_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
 const MAX_PROTOCOL_LINE_BYTES = 16 * 1024 * 1024;
 
 export const POST_EXIT_OUTPUT_IDLE_MS = 2_000;
 export const POST_EXIT_OUTPUT_HARD_MS = 8_000;
-
-function maxOutputBytes() {
-	const parsed = Number(process.env[MAX_OUTPUT_BYTES_ENV]);
-	return Number.isFinite(parsed) && parsed >= 1
-		? Math.min(Math.floor(parsed), Number.MAX_SAFE_INTEGER - 1)
-		: DEFAULT_MAX_OUTPUT_BYTES;
-}
 
 function projectProtocolLine(line) {
 	let event;
@@ -51,10 +42,7 @@ export function createBoundedPipeForwarder(
 	projectProtocol = false,
 	onActivity = () => {},
 ) {
-	const limitBytes = maxOutputBytes();
-	const lineLimitBytes = Math.min(MAX_PROTOCOL_LINE_BYTES, limitBytes);
-	let observedBytes = 0;
-	let forwardedBytes = 0;
+	const lineLimitBytes = MAX_PROTOCOL_LINE_BYTES;
 	let limitReported = false;
 	let lastReadAt = Date.now();
 	let closedBySupervisor = false;
@@ -64,20 +52,7 @@ export function createBoundedPipeForwarder(
 		Effect.callback((resume) => {
 			destination.write(chunk, (error) => resume(error ? Effect.fail(error) : Effect.void));
 		});
-	const forward = (chunk) => {
-		observedBytes += chunk.length;
-		if (observedBytes > limitBytes && !limitReported) {
-			limitReported = true;
-			onLimit(observedBytes);
-		}
-		// Forward one byte beyond the configured bound so the runner's protocol
-		// authority sees overflow, then keep draining without unbounded buffering.
-		const remaining = Math.max(0, limitBytes + 1 - forwardedBytes);
-		if (remaining === 0) return Effect.void;
-		const forwarded = chunk.subarray(0, Math.min(chunk.length, remaining));
-		forwardedBytes += forwarded.length;
-		return write(forwarded);
-	};
+	const forward = (chunk) => write(chunk);
 	const flushLine = (terminated) => {
 		const line = pendingBytes > 0 ? Buffer.concat(pending, pendingBytes) : Buffer.alloc(0);
 		pending = [];

@@ -152,7 +152,6 @@ const PRODUCTION_DEPENDENCIES = {
 			limits: {
 				maxDepth: config.maxSubagentDepth,
 				maxRunning: config.maxRunningAgents,
-				maxTotal: config.maxAgentsPerSession,
 			},
 		}),
 	prepareGovernorCompatibility: (input: Omit<PrepareSessionGovernorCompatibilityInput, "inspectWriterLiveness">) =>

@@ -270,7 +270,7 @@ test("imports only paired branch starts when no v1 ledger remains and is idempot
 	expect(first).toMatchObject({ ok: true, importedLogicalAgentIds: ["started:0"] });
 	expect(second).toMatchObject({ ok: true, importedLogicalAgentIds: [] });
 	expect(snapshot?.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["started:0"]);
-	expect(snapshot?.agents[0]?.limits).toEqual({ maxDepth: 1, maxRunning: 1, maxTotal: 1 });
+	expect(snapshot?.agents[0]?.limits).toEqual({ maxDepth: 1, maxRunning: 1, maxTotal: Number.MAX_SAFE_INTEGER });
 });
 
 test("never imports an undeclared parallel index from an idle v1 ledger", async () => {

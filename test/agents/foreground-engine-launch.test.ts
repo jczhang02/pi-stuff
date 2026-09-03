@@ -320,7 +320,7 @@ test("resolves the advertised Agent from the parent project while executing in t
 	expect(executedFrom).toBe(childCwd);
 });
 
-test("applies only the run timeout to ordinary foreground and background launches", async () => {
+test("leaves ordinary foreground and background launches without a default deadline", async () => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-backstops-"));
 	temporaryDirectories.push(cwd);
 	fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -350,14 +350,30 @@ test("applies only the run timeout to ordinary foreground and background launche
 		context(cwd),
 	);
 
-	expect(backgroundTimeoutMs).toBe(30 * 60 * 1_000);
-	expect(foregroundConfig).toMatchObject({
-		timeoutMs: 30 * 60 * 1_000,
-		work: { mode: "single" },
-	});
+	expect(backgroundTimeoutMs).toBeUndefined();
+	expect(foregroundConfig).toMatchObject({ work: { mode: "single" } });
+	expect(foregroundConfig).not.toHaveProperty("timeoutMs");
+	expect(foregroundConfig).not.toHaveProperty("deadlineAt");
 	if (foregroundConfig?.work.mode !== "single") throw new Error("Expected one foreground task");
 	expect(foregroundConfig.work.task).not.toHaveProperty("turnBudget");
 	expect(foregroundConfig.work.task).not.toHaveProperty("toolBudget");
+
+	await delegate.execute(
+		"explicit-background-deadline",
+		{ agent: "general-purpose", task: "Inspect", context: "fresh", timeoutMs: 120_000 },
+		new AbortController().signal,
+		undefined,
+		context(cwd),
+	);
+	await delegate.execute(
+		"explicit-foreground-deadline",
+		{ agent: "general-purpose", task: "Inspect", async: false, context: "fresh", timeoutMs: 120_000 },
+		new AbortController().signal,
+		undefined,
+		context(cwd),
+	);
+	expect(backgroundTimeoutMs).toBe(120_000);
+	expect(foregroundConfig).toMatchObject({ timeoutMs: 120_000 });
 });
 
 test("does not let a failing completion observer replace a valid Agent result", async () => {

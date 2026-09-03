@@ -93,7 +93,7 @@ owned by the launching child and cannot detach beyond that owner.
 
 ## `/agents`
 
-`/agents` shows current-Session Agent lifecycle, retained outcomes, Result, Activity, and bounded child transcript.
+`/agents` shows current-Session Agent lifecycle, retained outcomes, Result, Activity, and a rolling bounded child transcript. Transcript omission remains explicit.
 Terminal details include a stable outcome class and reason, cumulative turns, Tool calls, input/output tokens, reported
 cost when the Provider supplied it, model attempts, resumes, the Agent Target, and whether continuation is supported.
 An abnormal end remains `incomplete` or `failed`; retained partial evidence is not relabelled as a successful report.
@@ -123,8 +123,8 @@ launch candidate. Provider failures rotate to a fallback only before useful chil
 external mutations.
 
 `toolTimeoutMs` sets a hard timeout for each non-waiting Tool call. A task-level value overrides the launch value,
-which overrides Agent frontmatter and `PI_SUBAGENT_TOOL_TIMEOUT_MS`. Known-fast built-in Tools use a five-minute
-default; supervisor and intercom Tools that legitimately wait remain exempt.
+which overrides Agent frontmatter and `PI_SUBAGENT_TOOL_TIMEOUT_MS`. Without one of those explicit values, ordinary
+child Tools have no implicit deadline. Supervisor and intercom Tools that legitimately wait remain exempt.
 
 `excludeTools` subtracts names from ambient, explicit, MCP, and Suite-injected child Tools. Excluding `subagent`
 disables nested fanout for that Agent. Excluding `read` is rejected when the Agent needs it for lazy Skill loading.
@@ -137,12 +137,13 @@ children do not receive the `subagent` Tool.
 Default governor limits are:
 
 - 20 concurrently running Agents;
-- 200 total launches per parent Session;
-- nesting depth 3;
-- 30 minutes per run.
+- nesting depth 3.
 
-Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls, `toolTimeoutMs` can
-bound one Tool call, and `timeoutMs` can tighten the default run deadline.
+There is no cumulative launch quota or default total runtime. `timeoutMs` sets an explicit run deadline when the caller
+needs one.
+
+Ordinary launches have no turn or Tool-call budget. An explicit `toolBudget` can limit Tool calls and `toolTimeoutMs`
+can bound one Tool call.
 
 The initial child, model attempts, fallbacks, and resumes share one durable work unit. Before starting later automatic
 work, the governor requests attention once cumulative reported usage reaches 1,000,000 input-plus-output tokens or

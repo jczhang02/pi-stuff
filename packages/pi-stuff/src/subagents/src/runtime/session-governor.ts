@@ -560,7 +560,7 @@ export class SessionAgentGovernor {
 
 	/**
 	 * Roll back a spawn that failed before any Agent started. Unlike release(),
-	 * this removes the newly-created logical records and restores maxTotal.
+	 * this removes the newly-created logical records and restores cumulative accounting.
 	 */
 	async abortSpawnBatch(leases: readonly AgentGovernorLease[]): Promise<SessionGovernorBatchReleaseResult> {
 		const validated: ValidatedBatchLease[] = leases.map((lease) => {

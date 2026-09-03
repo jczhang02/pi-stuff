@@ -45,8 +45,6 @@ export function deriveLaunchRunId(toolCallId: string, scope?: LaunchIdentityScop
 	return hash.digest("hex").slice(0, 12);
 }
 
-export const DEFAULT_AGENT_TIMEOUT_MS = 30 * 60 * 1_000;
-
 function requestedMode(params: SubagentParamsLike): "single" | "parallel" {
 	return params.tasks?.length ? "parallel" : "single";
 }
@@ -109,7 +107,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 }
 
 export function resolveTimeout(value: SubagentParamsLike["timeoutMs"]) {
-	if (value === undefined) return { timeoutMs: DEFAULT_AGENT_TIMEOUT_MS };
+	if (value === undefined) return {};
 	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
 	}

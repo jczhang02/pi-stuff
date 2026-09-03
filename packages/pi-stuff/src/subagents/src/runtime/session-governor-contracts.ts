@@ -5,15 +5,19 @@ import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shar
 export interface SessionGovernorLimits {
 	readonly maxDepth: number;
 	readonly maxRunning: number;
+	/** Retained for v1 ledger compatibility; cumulative launches are not admission-gated. */
 	readonly maxTotal: number;
 }
 
-export type SessionGovernorLimitInput = Partial<SessionGovernorLimits>;
+export interface SessionGovernorLimitInput {
+	readonly maxDepth?: number;
+	readonly maxRunning?: number;
+}
 
 export const DEFAULT_SESSION_GOVERNOR_LIMITS: SessionGovernorLimits = {
 	maxDepth: 3,
 	maxRunning: 20,
-	maxTotal: 200,
+	maxTotal: Number.MAX_SAFE_INTEGER,
 };
 
 export interface AgentWorkCostPolicy {
@@ -131,7 +135,7 @@ export interface SessionGovernorSnapshot {
 	readonly leases: readonly AgentGovernorLease[];
 }
 
-export type SessionGovernorLimitCode = "depth_limit" | "running_limit" | "total_limit";
+export type SessionGovernorLimitCode = "depth_limit" | "running_limit";
 
 export interface SessionGovernorLimitError {
 	readonly kind: "limit";
@@ -308,7 +312,7 @@ export function resolveSessionGovernorLimits(input: SessionGovernorLimitInput = 
 	return {
 		maxDepth: positiveInteger("maxDepth", input.maxDepth ?? DEFAULT_SESSION_GOVERNOR_LIMITS.maxDepth),
 		maxRunning: positiveInteger("maxRunning", input.maxRunning ?? DEFAULT_SESSION_GOVERNOR_LIMITS.maxRunning),
-		maxTotal: positiveInteger("maxTotal", input.maxTotal ?? DEFAULT_SESSION_GOVERNOR_LIMITS.maxTotal),
+		maxTotal: DEFAULT_SESSION_GOVERNOR_LIMITS.maxTotal,
 	};
 }
 
@@ -321,7 +325,7 @@ export function tightenSessionGovernorLimits(
 	return {
 		maxDepth: Math.min(validatedParent.maxDepth, requested.maxDepth ?? validatedParent.maxDepth),
 		maxRunning: Math.min(validatedParent.maxRunning, requested.maxRunning ?? validatedParent.maxRunning),
-		maxTotal: Math.min(validatedParent.maxTotal, requested.maxTotal ?? validatedParent.maxTotal),
+		maxTotal: validatedParent.maxTotal,
 	};
 }
 
@@ -342,7 +346,6 @@ export function validateLimitInput(value: SessionGovernorLimitInput): SessionGov
 	if (value.maxRunning !== undefined) {
 		limits = { ...limits, maxRunning: positiveInteger("maxRunning", value.maxRunning) };
 	}
-	if (value.maxTotal !== undefined) limits = { ...limits, maxTotal: positiveInteger("maxTotal", value.maxTotal) };
 	return limits;
 }
 

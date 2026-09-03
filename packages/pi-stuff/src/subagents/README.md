@@ -34,7 +34,7 @@ Continue independent work after launch. Open `/agents` to inspect, steer, stop, 
   definition, while `id` identifies an existing Agent Target.
 - Runs in the background by default; foreground mode waits for the result.
 - Delivers compact completion without starting an unsolicited main Agent turn.
-- Applies concurrent, total-launch, nesting, smart per-Tool, and run-time limits without a fixed turn cutoff.
+- Keeps concurrency and nesting bounds while productive work has no cumulative-launch, default run-time, or implicit Tool timeout.
 - Aggregates attempts and resumes in one durable usage total; later automatic expansion pauses at the documented cost
   guard without stopping an in-flight child.
 - Returns stable abnormal-outcome classes, bounded partial evidence, and a resumable Agent Target when continuation is

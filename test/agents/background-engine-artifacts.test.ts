@@ -65,7 +65,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 	expect(metadata.state).toBe("complete");
 }, 5_000);
 
-test("bounds aggregate newline-delimited child protocol output and reaps the writer", async () => {
+test("continues after newline-delimited child protocol output crosses the retired aggregate threshold", async () => {
 	const root = fixtureRoot();
 	process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = "4096";
 	const writer = path.join(root, "aggregate-protocol-limit.ts");
@@ -79,13 +79,12 @@ for (let index = 0; index < 100; index++) {
     message: {
       role: "assistant",
       content: [{ type: "text", text: "ROW-" + index + "-" + "x".repeat(240) }],
-      stopReason: "toolUse",
+      stopReason: index === 99 ? "stop" : "toolUse",
       timestamp: Date.now(),
     },
   }));
 }
-process.stdout.write(lines.join("\\n") + "\\n");
-setInterval(() => {}, 1_000);
+process.stdout.write(lines.join("\\n") + "\\n", () => process.exit(0));
 `,
 		{ mode: 0o700 },
 	);
@@ -98,19 +97,15 @@ setInterval(() => {}, 1_000);
 	const status = readBackgroundStatus(config.asyncDir);
 
 	expect(completion).toMatchObject({
-		state: "failed",
-		results: [
-			{
-				error: expect.stringContaining("aggregate protocol limit"),
-				protocolError: { scope: "aggregate", limitBytes: 4096 },
-				writerProcesses: [{ terminationOrigin: "manager-request" }],
-			},
-		],
+		state: "complete",
+		success: true,
+		results: [{ output: expect.stringContaining("ROW-99-"), success: true }],
 	});
+	expect(completion.results[0]?.protocolError).toBeUndefined();
 	expect(Buffer.byteLength((status.steps?.[0]?.recentOutput ?? []).join("\n"), "utf8")).toBeLessThanOrEqual(64 * 1024);
 }, 5_000);
 
-test("compacts redundant Pi lifecycle payloads before applying the aggregate protocol limit", async () => {
+test("compacts redundant Pi lifecycle payloads while forwarding the full protocol", async () => {
 	const root = fixtureRoot();
 	process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = "4096";
 	const writer = path.join(root, "redundant-protocol-payloads.ts");
@@ -158,7 +153,7 @@ process.stdout.write(events.map((event) => JSON.stringify(event)).join("\\n") + 
 	expect(completion.results[0]?.protocolError).toBeUndefined();
 }, 5_000);
 
-test("enforces the aggregate protocol limit on a final record without a newline", async () => {
+test("accepts a final record without a newline after the retired aggregate threshold", async () => {
 	const root = fixtureRoot();
 	const cases = [
 		{
@@ -169,7 +164,6 @@ const event = (text) => JSON.stringify({ type: "message_end", message: { role: "
 process.stdout.write(event("a".repeat(240)) + "\\n" + event("b".repeat(240)), () => process.exit(0));
 `,
 			task: { ...task(0), cwd: root },
-			expected: "aggregate protocol limit",
 		},
 	] as const;
 
@@ -184,8 +178,11 @@ process.stdout.write(event("a".repeat(240)) + "\\n" + event("b".repeat(240)), ()
 		});
 		await runConfiguredBackground(config);
 		const completion = readBackgroundCompletion(config.resultPath);
-		expect(completion.state).toBe("failed");
-		expect(completion.results[0]?.error?.toLowerCase()).toContain(fixture.expected);
+		expect(completion).toMatchObject({
+			state: "complete",
+			success: true,
+			results: [{ output: "b".repeat(240), success: true }],
+		});
 	}
 });
 
@@ -320,7 +317,40 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 	}
 }, 5_000);
 
-test("hard-kills a writer that ignores protocol-limit termination", async () => {
+test("keeps a bounded stderr tail without terminating on an oversized line or aggregate", async () => {
+	const root = fixtureRoot();
+	process.env["PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES"] = "4096";
+	const writer = path.join(root, "rolling-stderr.ts");
+	fs.writeFileSync(
+		writer,
+		`#!/usr/bin/env bun
+const event = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "DONE_AFTER_STDERR" }], stopReason: "stop", timestamp: Date.now() } };
+process.stderr.write("ERR-BEGIN-" + "x".repeat(200_000) + "-ERR-END", () => {
+  process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
+});
+`,
+		{ mode: 0o700 },
+	);
+	process.env["PI_SUBAGENT_PI_BINARY"] = writer;
+	const config = singleRunnerConfig(root, "rolling-stderr", {
+		asyncDir: path.join(root, "rolling-stderr"),
+	});
+
+	await runConfiguredBackground(config);
+	const completion = readBackgroundCompletion(config.resultPath);
+	expect(completion).toMatchObject({
+		state: "complete",
+		success: true,
+		results: [{ output: "DONE_AFTER_STDERR", success: true }],
+	});
+	const transcriptPath = completion.results[0]?.transcriptPath;
+	expect(transcriptPath).toBeDefined();
+	const transcript = fs.readFileSync(transcriptPath ?? "", "utf8");
+	expect(transcript).toContain("earlier stderr bytes omitted");
+	expect(transcript).toContain("ERR-END");
+});
+
+test("hard-kills a writer that emits an oversized protocol frame", async () => {
 	const root = fixtureRoot();
 	const writer = path.join(root, "protocol-limit-writer.ts");
 	fs.writeFileSync(

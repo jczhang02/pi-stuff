@@ -15,8 +15,6 @@ type ChildMessage = ChildProtocolMessage;
 
 const DEFAULT_MAX_ASYNC_EVENTS_BYTES = 4 * 1024 * 1024;
 const ASYNC_EVENTS_MAX_BYTES_ENV = "PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES";
-const DEFAULT_MAX_CHILD_PROTOCOL_BYTES = 32 * 1024 * 1024;
-const CHILD_PROTOCOL_MAX_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
 const MAX_RECENT_OUTPUT_BYTES = 64 * 1024;
 const MAX_RECENT_OUTPUT_LINES = 50;
 export const DEFAULT_MAX_TASK_RESULT_BYTES = 256 * 1024;
@@ -29,11 +27,6 @@ const RESULT_TRUNCATION_MARKER = "\n[output truncated; full text remains in the 
 function maxAsyncEventsBytes(): number {
 	const parsed = Number(process.env[ASYNC_EVENTS_MAX_BYTES_ENV]);
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : DEFAULT_MAX_ASYNC_EVENTS_BYTES;
-}
-
-export function maxChildProtocolBytes(): number {
-	const parsed = Number(process.env[CHILD_PROTOCOL_MAX_BYTES_ENV]);
-	return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_MAX_CHILD_PROTOCOL_BYTES;
 }
 
 export function positiveByteLimit(name: string, fallback: number): number {
@@ -124,7 +117,8 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 			appendJsonl(eventsPath, line.trimEnd());
 			return;
 		}
-		const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes);
+		const markerReserve = 160;
+		const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes - markerReserve);
 		let retained = "";
 		if (retainedBudget > 0 && size > 0) {
 			const descriptor = fs.openSync(eventsPath, fs.constants.O_RDONLY);
@@ -138,8 +132,18 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 				fs.closeSync(descriptor);
 			}
 		}
+		const discardedBytesThisRoll = Math.max(0, size - Buffer.byteLength(retained, "utf-8"));
+		const marker = `${JSON.stringify({
+			discardedBytesThisRoll,
+			observedAt: Date.now(),
+			type: "subagent.events.truncated",
+		})}\n`;
+		const rolled = `${marker}${retained}${line}`;
 		const temporary = `${eventsPath}.${process.pid}.${randomUUID()}.tmp`;
-		fs.writeFileSync(temporary, `${retained}${line}`, { mode: 0o600, flag: "wx" });
+		fs.writeFileSync(temporary, Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : line, {
+			mode: 0o600,
+			flag: "wx",
+		});
 		fs.renameSync(temporary, eventsPath);
 	} catch {
 		// Diagnostics never determine run success.

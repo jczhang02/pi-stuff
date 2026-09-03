@@ -20,7 +20,7 @@ afterEach(async () => {
 
 async function createGovernor(
 	label: string,
-	options: { maxDepth?: number; maxRunning?: number; maxTotal?: number } = {},
+	options: { maxDepth?: number; maxRunning?: number } = {},
 ): Promise<{ execution: AgentExecutionGovernor; session: SessionAgentGovernor }> {
 	const rootDir = await mkdtemp(join(tmpdir(), `pi-stuff-execution-governor-${label}-`));
 	roots.push(rootDir);
@@ -39,7 +39,7 @@ function requireReservation<T extends { ok: boolean }>(result: T): Extract<T, { 
 	return result as Extract<T, { ok: true }>;
 }
 
-test("atomically reserves a stable launch batch under the finite 3/20/200 session defaults", async () => {
+test("atomically reserves a stable launch batch under the session concurrency and depth defaults", async () => {
 	const { execution, session } = await createGovernor("spawn-defaults");
 	const result = requireReservation(await execution.reserveSpawn({ launchRunId: "launch-stable", childCount: 3 }));
 

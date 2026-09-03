@@ -74,7 +74,7 @@ export type {
 	SubagentExecutionHooks,
 	SubagentParamsLike,
 } from "./executor-contract.ts";
-export { DEFAULT_AGENT_TIMEOUT_MS, deriveLaunchRunId } from "./launch-preparation.ts";
+export { deriveLaunchRunId } from "./launch-preparation.ts";
 export { ponytailLaunchSnapshot };
 
 const DEFAULT_ENGINES: ExecutorEngines = {
