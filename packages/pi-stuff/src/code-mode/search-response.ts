@@ -36,6 +36,13 @@ function compactTypes(types: string): string {
 		.join("\n");
 }
 
+function removeRepeatedDescription(description: DescribeOutput): DescribeOutput {
+	if (!description.description) return description;
+	const prefix = `${description.description}\n\n`;
+	if (!description.types.startsWith(prefix)) return description;
+	return { ...description, types: description.types.slice(prefix.length) };
+}
+
 function compactDescription(description: DescribeOutput) {
 	const compact = {
 		description: description.description,
@@ -85,7 +92,9 @@ export function projectCodeModeSearchResponse(
 		return projection(search, JSON.stringify({ ...search, definitions: [], representation: "definitions" }), []);
 	}
 
-	const descriptions = results.map((result) => ({ ...describe(result), path: projectedPath(result) }));
+	const descriptions = results.map((result) =>
+		removeRepeatedDescription({ ...describe(result), path: projectedPath(result) }),
+	);
 	const fullResults = results.map((result) => signatureResult(result));
 	const fullText = encode(search, "definitions", fullResults, descriptions);
 	if (fullText) return projection(search, fullText, fullResults);

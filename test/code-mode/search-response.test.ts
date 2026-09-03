@@ -122,6 +122,32 @@ test("top-level Tool Discovery keeps the callable subagent contract within its c
 	expect(projection.payload.definitions[0]?.types).not.toContain("/**");
 });
 
+test("top-level Tool Discovery emits a saved snippet description once", async () => {
+	const description = "Reuse the verified formatter";
+	const result: SearchResult = {
+		connector: "snippets",
+		description,
+		kind: "snippet",
+		method: "format-result",
+		path: "format-result",
+		score: 100,
+	};
+	const projection = await executeDiscovery({
+		describe: () => ({
+			description,
+			kind: "snippet",
+			path: result.path,
+			types: [description, "```ts\nreturn input;\n```"].join("\n\n"),
+		}),
+		search: () => ({ results: [result], total: 1, truncated: false }),
+	});
+
+	expect(projection.payload.representation).toBe("definitions");
+	expect(projection.payload.definitions[0]?.description).toBe(description);
+	expect(projection.payload.definitions[0]?.types).toBe("```ts\nreturn input;\n```");
+	expect(projection.text.split(description)).toHaveLength(2);
+});
+
 test("top-level Tool Discovery deterministically degrades every response within its character budget", async () => {
 	const definitions = await executeDiscovery(discoveryConnectorFixture([{ typesSize: 100 }, { typesSize: 100 }]));
 	expect(definitions.payload.representation).toBe("definitions");
