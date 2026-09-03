@@ -70,6 +70,9 @@ fail-open behavior. See the [optimization report](../../../../docs/reports/magic
 - one bounded status/projection seam for BTW and Agents;
 - exact official base Package plus the temporary audited tokenizer compatibility patch behind a replaceable Capability seam;
 - the exact official engine isolated from Pi's UI thread behind immutable Host snapshots and bounded effects;
+- a semantically transparent cancellation boundary: mirrored lifecycle events and signal-blind commands do not inherit
+  the ambient Agent-turn signal; Tool invocations and the pinned signal-aware augmentation command retain their owned
+  signals, and every upstream upgrade re-audits which official handlers consume a signal;
 - no competing Todo, statusline, announcement, Dreamer, or Sidekick UI;
 - only the five Context tools plus focused status, flush, recomposition,
   wrap-up, and session-upgrade commands are exposed;

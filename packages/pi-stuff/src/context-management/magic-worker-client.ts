@@ -192,22 +192,18 @@ class MagicWorkerClient {
 	}
 
 	private async invokeEvent(event: ExtensionEvent, ctx: ExtensionContext): Promise<MagicWorkerEventResult> {
-		const snapshot = snapshotMagicWorkerEvent(event);
+		const input = snapshotMagicWorkerEvent(event);
 		let sessionId: string | undefined;
 		try {
-			const reply = await this.invoke(
-				() => {
-					const context = this.synchronizeSession(ctx, event.type === "session_start");
-					sessionId = context.session.id;
-					return {
-						...snapshot.input,
-						context,
-						id: this.nextRequestId(),
-					} satisfies MagicWorkerEventRequest;
-				},
-				ctx,
-				snapshot.signal ?? ctx.signal,
-			);
+			const reply = await this.invoke(() => {
+				const context = this.synchronizeSession(ctx, event.type === "session_start");
+				sessionId = context.session.id;
+				return {
+					...input,
+					context,
+					id: this.nextRequestId(),
+				} satisfies MagicWorkerEventRequest;
+			}, ctx);
 			if (reply.type !== "event-result") {
 				throw new Error(`Magic Context worker returned '${reply.type}' for event '${event.type}'.`);
 			}
@@ -231,6 +227,8 @@ class MagicWorkerClient {
 	}
 
 	private async invokeCommand(name: MagicWorkerCommandName, args: string, ctx: ExtensionContext): Promise<void> {
+		// The pinned official package reads the command context signal only in ctx-aug.
+		const signal = name === "ctx-aug" ? ctx.signal : undefined;
 		const reply = await this.invoke(
 			() => ({
 				args,
@@ -240,7 +238,7 @@ class MagicWorkerClient {
 				type: "command",
 			}),
 			ctx,
-			ctx.signal,
+			signal,
 		);
 		if (reply.type !== "command-result") {
 			throw new Error(`Magic Context worker returned '${reply.type}' for command '${name}'.`);

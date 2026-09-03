@@ -33,10 +33,12 @@ test("runs input activation only while Context is unsettled", () => {
 test("defers direct input activation until after Host input dispatch", async () => {
 	const handlers: Handlers = new Map();
 	const preparations: boolean[] = [];
+	const { promise: deferredActivationStarted, resolve: markDeferredActivationStarted } = Promise.withResolvers<void>();
 	await piStuffContext(apiFor(handlers), {
 		loadMagicContext: async () => magicModule(),
 		prepareMagicContext: async (_ctx, options) => {
 			preparations.push(options.allowConfigurationMutation);
+			if (options.allowConfigurationMutation) markDeferredActivationStarted?.();
 			return options.allowConfigurationMutation ? "ready" : "deferred";
 		},
 	});
@@ -45,8 +47,44 @@ test("defers direct input activation until after Host input dispatch", async () 
 
 	await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
 	expect(preparations).toEqual([false]);
-	await new Promise<void>((resolve) => setImmediate(resolve));
+	await deferredActivationStarted;
 	expect(preparations).toEqual([false, true]);
+});
+
+test("accepted input activation survives Agent-turn interruption", async () => {
+	const handlers: Handlers = new Map();
+	let factoryLoads = 0;
+	const { promise: preparationEntered, resolve: markPreparationEntered } = Promise.withResolvers<void>();
+	const { promise: preparationGate, resolve: releasePreparation } = Promise.withResolvers<void>();
+	await piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => {
+			factoryLoads += 1;
+			return magicModule();
+		},
+		prepareMagicContext: async (_ctx, options) => {
+			if (!options.allowConfigurationMutation) return "deferred";
+			markPreparationEntered?.();
+			await preparationGate;
+			return "ready";
+		},
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+	await emit(handlers, "input", { type: "input", text: "accepted", source: "interactive" }, ctx);
+	await preparationEntered;
+	ctx.abort();
+	releasePreparation?.();
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	await new Promise<void>((resolve) => setImmediate(resolve));
+
+	expect(getContextCapability(ctx).status()).toEqual({
+		state: "active",
+		engine: "magic-context",
+		trigger: "input",
+	});
+	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+	expect(factoryLoads).toBe(1);
 });
 
 test("does not bootstrap Magic Context from an Extension-authored automatic turn", async () => {

@@ -23,7 +23,12 @@ artifact carries the temporary audited tokenizer compatibility dependency patch 
 and version identity keep their official semantics.
 
 Pi event, Tool, and command registrations remain in the Host. Each invocation sends an immutable Context snapshot and
-only the event fields read by the pinned engine. The complete Session branch crosses the boundary when a Worker first
+only the event fields read by the pinned engine. The Worker boundary changes execution location, not cancellation
+semantics: mirrored lifecycle work for an accepted prompt is owned by the Session and does not inherit the current
+Agent-turn signal. The adapter forwards cancellation only at invocation seams where the pinned official handler
+consumes it. An interrupted Agent turn therefore cannot classify a healthy Worker as failed or own its recovery.
+
+The complete Session branch crosses the boundary when a Worker first
 binds a Session, when a changed leaf is not the direct successor of the mirrored leaf, and for the three explicit
 history-rebuild commands. Ordinary Context projection and persistence send at most one new leaf entry. The snapshot
 fallback therefore repairs fork, tree, compaction, and other discontinuities without cloning an unbounded Session on
@@ -53,5 +58,7 @@ readiness, and one worker's memory while Context is active. In return, a healthy
 native input paint and Working animation without another full-Session clone per ordinary turn. Acceptance must use a
 real Pi TUI with a long resumed Session containing malformed image history, require the submitted prompt in the
 Conversation Transcript within 150 ms after measured PTY harness overhead, bound the maximum Working-frame stall, and
-confirm that the expected marker occurs inside the Magic Context history projection sent to the Provider. A real
-supported model smoke test must also exercise a Magic Context Tool successfully.
+confirm that the expected marker occurs inside the Magic Context history projection sent to the Provider. The same
+gate must interrupt one accepted Agent turn, require the next prompt in the Transcript within the 150 ms boundary, and
+confirm that the interrupted prompt remains in the next complete Provider payload. A real supported model smoke test
+must also exercise a Magic Context Tool successfully.

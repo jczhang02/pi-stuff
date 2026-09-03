@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: 507cb738cdb120933da46f24a8d8e7330d6e197a41a298eb8367345bbf116e0c -->
+<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: 31a6ae2621ef364f9224301d5b2e365a831598f72627c3dbc883d8176ba74361 -->
 
 ---
 status: accepted
@@ -16,7 +16,9 @@ Magic Context 投影在一个上下文引擎 Worker 中执行。Pi 仍是宿主�
 
 适配器会延迟地把精确固定版本的 Magic Context 软件包及其 Worker 入口打包成一个内存中的 Bun 产物，再从 Blob URL 启动它。该过程发生在 ADR 0007 已规定的已配置上下文初始化期间。产物不会写入磁盘、发布或安装。上游软件包不做分叉；其精确固定的 npm 产物带有上下文管理 `UPSTREAM.md` 所记录的、临时且经过审查的分词器兼容依赖补丁。打包会保留上游软件包原始的 `import.meta.url`，使软件包相对资源和版本身份保持官方语义。
 
-Pi 事件、工具和命令注册仍留在宿主中。每次调用都会发送不可变上下文快照，以及固定引擎实际读取的事件字段。Worker 首次绑定会话时、变化后的叶节点不是镜像叶节点的直接后继时，以及执行三个显式历史重建命令时，完整会话分支会跨越边界。普通上下文投影和持久化至多发送一个新的叶条目。因此，快照回退能修复分叉、树、压缩和其他不连续情况，而无需每次按 Enter 都克隆无界会话。
+Pi 事件、工具和命令注册仍留在宿主中。每次调用都会发送不可变上下文快照，以及固定引擎实际读取的事件字段。Worker 边界只改变执行位置，不改变取消语义：已接受 prompt 的镜像生命周期工作归 Session 所有，不继承当前 Agent turn 的 signal。只有固定版本官方 handler 实际读取 signal 的 invocation 接缝才会转发取消。因此，中断 Agent turn 不会把健康的 Worker 误判为失败，也不能拥有其恢复过程。
+
+Worker 首次绑定会话时、变化后的叶节点不是镜像叶节点的直接后继时，以及执行三个显式历史重建命令时，完整会话分支会跨越边界。普通上下文投影和持久化至多发送一个新的叶条目。因此，快照回退能修复分叉、树、压缩和其他不连续情况，而无需每次按 Enter 都克隆无界会话。
 
 Worker 到宿主的副作用仅限于 `appendEntry`、`sendMessage`、`sendUserMessage`、`notify` 和 `setStatus`，且绑定到发起操作的 Pi 会话。固定上游 API 唯一需要同步执行的 SessionManager 操作 `appendCompaction`，使用有界共享内存响应，并且只阻塞 Worker。宿主副作用、镜像同步或致命 Worker 错误一旦失败，会立即把上下文所有权交回 Pi 原生行为。关闭时先给官方处理器一个有界的宿主宽限期，然后独立于其串行请求队列终止 Worker，并撤销内存 URL。
 
@@ -29,4 +31,4 @@ Worker 到宿主的副作用仅限于 `appendEntry`、`sendMessage`、`sendUserM
 
 ## 后果
 
-已配置启动会承担一次 Worker 构建与启动、分词器预加载、编辑器就绪前的一次初始会话快照，以及上下文激活期间一个 Worker 的内存成本。作为交换，健康的 Magic Context 投影可以与 Pi 的原生输入绘制和“工作中”动画并发运行，且普通轮次无需再次克隆完整会话。验收必须使用真实 Pi TUI：恢复一个包含异常图像历史的长会话，要求已提交提示词在扣除 PTY 测试框架开销后的 150 毫秒内出现在对话记录中，限制“工作中”帧的最大停顿，并确认预期标记位于发送给 Provider 的 Magic Context 历史投影中。真实受支持模型的冒烟测试还必须成功运行一个 Magic Context 工具。
+已配置启动会承担一次 Worker 构建与启动、分词器预加载、编辑器就绪前的一次初始会话快照，以及上下文激活期间一个 Worker 的内存成本。作为交换，健康的 Magic Context 投影可以与 Pi 的原生输入绘制和“工作中”动画并发运行，且普通轮次无需再次克隆完整会话。验收必须使用真实 Pi TUI：恢复一个包含异常图像历史的长会话，要求已提交提示词在扣除 PTY 测试框架开销后的 150 毫秒内出现在对话记录中，限制“工作中”帧的最大停顿，并确认预期标记位于发送给 Provider 的 Magic Context 历史投影中。同一门槛还必须中断一个已接受的 Agent turn，要求下一条 prompt 在 150 毫秒边界内进入 Transcript，并确认已中断的 prompt 仍存在于下一次完整 Provider payload 中。真实受支持模型的冒烟测试还必须成功运行一个 Magic Context 工具。

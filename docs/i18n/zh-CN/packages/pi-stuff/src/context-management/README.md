@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 2ee2bc3923d259063aba05dd2864336f3a91afe480897364bef137e89336dc9c -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: 90f243b8ac9ebe264a82f2b99403c302b1644b679c56e57a07965cb328aaa129 -->
 
 # Context Management
 
@@ -28,7 +28,7 @@ token 和当前错误。
 - 在编辑器就绪前激活已识别配置。
 - 只有直接交互有权执行首次配置与迁移。
 - 通过 `/ctx` 和持久 Context Activity 提供状态与维护。
-- 在 Worker 中运行 Context engine，让终端绘制保持响应。
+- 在 Worker 中运行 Context engine，但不接管 Pi 的输入、Agent turn 或 Session 生命周期。
 - 投影派生 context，同时保留 Pi Session JSONL 作为原始记录。
 - Engine 不可用时退回 Pi 原生 context 与 compaction。
 
