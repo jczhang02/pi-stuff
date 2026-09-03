@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 84dea31c34e1bd35e3b17fd6afbc4bd80783f47ebc503e1e799dd825c8285a99 -->
+<!-- translation-source: packages/pi-stuff/src/context-management/UPSTREAM.md; translation-source-sha256: 151870e2fc8bb7039f9f967dce0fad72d7baf5918ac327912f1aaf181a52365b -->
 
 # 捆绑上下文引擎来源
 
@@ -55,13 +55,17 @@ Tools，只保留 `session_shutdown`，因此不能写入更新版本的存储�
 
 Package 声明的 Pi peer 是 `^0.80.2`，不包括 Suite 已认证的 Pi 0.84.4 Host。Pi Stuff 不从这个范围推断
 兼容性。真实 Pi 0.84.4 PTY 与 Provider 门槛会单独认证激活、取消恢复、在线 Session 替换与恢复、冷恢复、
-仅 Magic compaction、项目隔离和 fail-open。详情见[优化报告](../../../../docs/reports/magic-context-effect-optimization-2026-09-02.md)。
+仅 Magic compaction、项目隔离、启动/降级期间的 fail-open 行为，以及活跃 Host 管理 Provider 处理的 fail-closed
+行为。详情见[优化报告](../../../../docs/reports/magic-context-effect-optimization-2026-09-02.md)。
 
 ## Pi Stuff 适配器政策
 
 - 直接输入先由 Host 确认，再启动惰性激活；第一个 Agent 边界仍保留直接用户的配置写入权限。只有存在可识别
   CortexKit 配置，且没有旧位置或扁平用户执行设置等待官方 factory 迁移时，自动轮次才会激活；
-- 开放回退到 Pi 原生行为；
+- 仅在启动或降级运行期间开放回退到 Pi 原生行为；
+- 活跃的 Host 管理 `before_provider_request` 处理是本地故障关闭的适配器边界，并要求最终载荷通过 95% 验证；
+  绕过该 hook 的直接调用不在支持范围内；
+- 不为本地适配器边界向上游提交内容，也不引入依赖；
 - 为 BTW 和 Agents 提供一个有界状态/投影接缝；
 - 在可替换 Capability 接缝后使用精确官方基础 Package 及临时、经过审查的 tokenizer 兼容补丁；
 - 通过不可变 Host 快照和有界副作用，把精确官方引擎与 Pi UI 线程隔离；

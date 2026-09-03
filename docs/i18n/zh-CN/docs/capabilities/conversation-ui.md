@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: d494cf0faf0c547d3c68771a26ade7e399828fb69040ee5aac1340e4b2aae0d6 -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: ba3214e3af363a526ede6dfa0abeed0d786f53695331c651d5dfdfdc383b5281 -->
 
 # Conversation UI
 
@@ -41,6 +41,10 @@ Codex Fast mode、工作目录与 Git、Context、cache 或用量、当前 Goal�
 
 Latest-prompt 行只占一个终端行。Skill 调用会缩减为提交任务与紧凑 Skill 标签；展开的 Skill 指令和本地路径
 不会显示。
+
+在 Context projection 期间，Context 分组显示 `recovering`。如果 Provider boundary 无法安全测量或限制请求，
+则显示 `unknown` 并中止请求。boundary 验证完成后，经验证的百分比会替换过时的 Host 用量。只有 assistant
+成功完成或发生 Session 生命周期事件后，snapshot 才会清除。
 
 ## Welcome header
 

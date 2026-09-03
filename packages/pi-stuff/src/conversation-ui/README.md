@@ -25,6 +25,7 @@ completion, and Tool running timer.
 ## Highlights
 
 - Responsive Statusline with stable model, workspace, Context, usage, Goal, and Ponytail groups.
+- Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion.
 - Display-only live Thoughts and `chart` or `tree` Markdown projections.

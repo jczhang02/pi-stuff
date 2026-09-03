@@ -28,7 +28,10 @@ tokens, and current errors.
 - Exposes status and maintenance through `/ctx` and persistent Context Activity.
 - Runs the Context engine in a Worker to keep terminal painting responsive.
 - Projects derived context while Pi Session JSONL remains the raw record.
-- Falls back to Pi's native context and compaction when the engine is unavailable.
+- Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable.
+- Once active, the Host-managed `before_provider_request` adapter is fail-closed and requires 95% final-payload validation.
+- Reuses a validated projection only when every ordered raw-message identity, provider/model, and context window match.
+- Pi owns retry, continuation, and compaction; direct provider calls that bypass the Host hook are excluded.
 
 ## Documentation
 
