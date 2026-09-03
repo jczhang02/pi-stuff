@@ -162,6 +162,7 @@ class UiHarness {
 	readonly editorWrites: string[] = [];
 	readonly footerWrites: Array<FooterFactory | undefined> = [];
 	readonly headerWrites: Array<HeaderFactory | undefined> = [];
+	readonly hiddenThinkingLabels: Array<string | undefined> = [];
 	readonly forbiddenCalls: string[] = [];
 	readonly hostCalls: HostCall[] = [];
 	readonly renderRequests: Array<boolean | undefined> = [];
@@ -240,6 +241,10 @@ class UiHarness {
 		this.headerWrites.push(factory);
 	}
 
+	setHiddenThinkingLabel(label?: string): void {
+		this.hiddenThinkingLabels.push(label);
+	}
+
 	setStatus(): void {
 		this.forbiddenCalls.push("status");
 	}
@@ -268,6 +273,7 @@ class UiHarness {
 function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?: ExtensionAPI["exec"]) {
 	const execCalls: unknown[][] = [];
 	const eventHandlers = new Map<string, SessionHandler[]>();
+	const markdownTransformers: Parameters<ExtensionAPI["registerMarkdownTransformer"]>[0][] = [];
 	const registeredCommands: string[] = [];
 	const sessionHandlers: SessionHandler[] = [];
 	const shutdownHandlers: SessionHandler[] = [];
@@ -292,7 +298,7 @@ function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?
 		getThinkingLevel: () => "medium",
 		on,
 		registerCommand: (name: string) => registeredCommands.push(name),
-		registerMarkdownTransformer: () => {},
+		registerMarkdownTransformer: (transformer) => markdownTransformers.push(transformer),
 		registerTool: () => {},
 		setActiveTools: () => {},
 	});
@@ -300,6 +306,7 @@ function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?
 	return {
 		api,
 		execCalls,
+		markdownTransformers,
 		registeredCommands,
 		sessionHandlers,
 		shutdownHandlers,
@@ -388,6 +395,7 @@ function createContext(
 			setEditorText: (text) => ui.setEditorText(text),
 			setFooter: (factory) => ui.setFooter(factory),
 			setHeader: (factory) => ui.setHeader(factory),
+			setHiddenThinkingLabel: (label) => ui.setHiddenThinkingLabel(label),
 			setStatus: () => ui.setStatus(),
 			setWidget: () => ui.setWidget(),
 			setWorkingVisible: (visible) => ui.setWorkingVisible(visible),

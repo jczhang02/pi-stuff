@@ -27,7 +27,7 @@ completion, and Tool running timer.
 - Responsive Statusline with stable model, workspace, Context, usage, Goal, and Ponytail groups.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion.
-- Display-only live Thoughts and `chart` or `tree` Markdown projections.
+- Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, plus `chart` or `tree` Markdown projections.
 - Full-width Command Dialogs that restore the editor draft on close.
 - Bounded Suite diagnostics through `/diagnostics`.
 

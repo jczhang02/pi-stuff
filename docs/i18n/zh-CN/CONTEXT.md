@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 6954718e70951cc30c20f0f4099336ad7ed210130819ccec6f66577ad9f9db8d -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 70524f4f9db783618cd351bc262868fa0ff7022f86d51824e739f28d5f22e48d -->
 
 # Pi Stuff
 
@@ -95,8 +95,8 @@ _避免使用_：Capability settings file、global config
 
 **Vibe Line Spinner**：
 Host 处理 Agent 工作时，Pi 的 Working Row 中由 Host 拥有的动画字符。它是活性信号，不等同于 Working Row
-本身、Live Thoughts 或其他 Conversation UI 内容。
-_避免使用_：Vibe Line、Working Row、Live Thoughts
+本身、Thinking 对话记录内容或其他 Conversation UI 内容。
+_避免使用_：Vibe Line、Working Row、Thinking 显示
 
 **Logical Thinking Run**：
 持续更新且可见的一段 reasoning，被视作一个 narrative unit。之后另行出现的可见 reasoning segment 是新的

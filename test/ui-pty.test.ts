@@ -10,12 +10,15 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 
 	expect(evidence.sizes).toEqual(["100x32", "64x28", "48x22", "32x18", "24x16"]);
 	expect(evidence.markdownTransformer).toBeTypeOf("boolean");
+	expect(evidence.vibeLineMaximumFrameDurationMs).toBeGreaterThan(0);
+	expect(evidence.vibeLineMaximumFrameDurationMs).toBeLessThanOrEqual(500);
 	for (const required of [
 		"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 		"priority Statusline fields and responsive prompt bounds at all accepted widths",
-		"2,500-character cumulative CJK Thought kept every Vibe Line Spinner frame within 500ms and recovered",
+		"latest-line, hidden, toggled, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
+		"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 		"native and inline autocomplete suppression and restoration",
-		"long CJK prompt, Welcome scroll-away, live and settled Thought",
+		"long CJK prompt, Welcome scroll-away, streaming and settled Thinking",
 		"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 		"metered and API-key subscription Statusline cost behavior",
 		"responsive /codex controls, Fast persistence, and offline degradation",

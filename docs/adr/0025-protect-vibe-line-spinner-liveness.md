@@ -27,14 +27,24 @@ They require representative real-PTY evidence that the 500-millisecond liveness 
 then belongs at the shared owning seam. A display-only Capability remains only while it can meet the limit without
 changing canonical Session or Provider content.
 
-Retained Live Thoughts reuse the existing `TRANSCRIPT_MARKER` (`•`) as their leading icon. Its rendered marker cell
-must align exactly with Tool Activity under the Host output padding in both full-label and compact forms. The
-`thoughts:` label and Host theme carry Thought identity; Pi Stuff does not introduce a separate star or a visually
-similar glyph whose optical alignment can vary between terminal fonts.
+Conversation UI reuses the existing `TRANSCRIPT_MARKER` (`•`) only in fixed Thinking labels. A visible Host
+Thinking run renders through the Host's native Markdown component once, then keeps only its last terminal row after the
+inline `• thoughts: ` prefix; a hidden run uses the Host-owned `• thoughts` label. The prefix keeps the Host Thinking
+style and aligns with Tool Activity under Host output padding. If the combined row exceeds the viewport, the bounded
+post-render projection keeps its content tail. Pi Stuff does not parse Thinking source, merge runs, classify models, run
+a refresh timer, or separately persist display state.
+
+Pi currently has no public post-render Thinking seam. Conversation UI therefore installs one guarded, version-bound
+adapter around `AssistantMessageComponent.updateContent()` and replaces only Host-created Thinking Markdown children.
+The public MIT Package `@99percentpeople/pi-thinking-fold@0.1.9` established that post-render row selection is viable;
+Pi Stuff retains only that rendering order, without copying its source or adopting its timer, keybinding, settings,
+Working Row, or model-specific behavior. The adapter validates the certified component layout and fails clearly when
+it is unavailable. It must be removed when the Host exposes an equivalent public seam.
 
 The hard guarantee currently applies to the certified Linux x64 Host profile. Host-owned cumulative Markdown
 transformation and rendering at extreme input sizes remain an explicit upstream limitation; Pi Stuff does not claim
-to fix or mask that Host behavior.
+to fix or mask that Host behavior. Pi Stuff's added work is bounded by the number of message components and terminal
+columns rather than cumulative Thinking length.
 
 ## Rejected alternatives
 
@@ -43,11 +53,16 @@ to fix or mask that Host behavior.
   machinery without evidence that those paths violate the liveness contract.
 - Claiming end-to-end liveness for Host-owned rendering would cross the Package boundary and misstate Pi Stuff's
   certified behavior.
+- Parsing a bounded source tail cannot identify the last terminal row after native Markdown wrapping, while parsing
+  semantic blocks restores the removed full-source heuristics.
+- A periodic refresh timer adds work without new Provider deltas and competes with the Host-owned Vibe Line Spinner.
 
 ## Consequences
 
 Each violating Capability keeps its own subprocess, Worker, cancellation, and error semantics while removing the
-Host-thread wait at that boundary. Live Thoughts should retain its display contract through bounded fitting; if it
-cannot pass certified real-PTY acceptance, the projection is removed rather than allowing the Vibe Line Spinner to
-freeze. Unsupported platforms may receive the same structural fix when it is shared, but are not certified by this
-decision.
+Host-thread wait at that boundary. The former semantic-block selection and width-fitting source projection was removed
+after continuous cumulative Thinking showed that it still competed with the Vibe Line Spinner on the synchronous
+Markdown path. The latest-row adapter must match an otherwise identical unadapted Host under paired real-Host Vibe
+Line sampling and pass the certified real-PTY 500-millisecond gate. Component microbenchmarks report its incremental
+cost but do not replace liveness evidence. Unsupported platforms may receive the same structural fix when it is shared,
+but are not certified by this decision.

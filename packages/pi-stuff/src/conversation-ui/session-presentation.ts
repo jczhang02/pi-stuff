@@ -14,6 +14,7 @@ import {
 	type StatuslinePreferences,
 	type StatuslinePreferencesSource,
 } from "./statusline.js";
+import { HIDDEN_THINKING_LABEL, installThinkingLineDisplay } from "./thinking-line.js";
 import { WelcomeHeaderController, WelcomeRegistrySource } from "./welcome-header.js";
 
 /** Session-local presentation adapters installed by the Pi Stuff UI Capability. */
@@ -85,6 +86,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 	private readonly git: GitStatusSource;
 	private readonly notice: DiagnosticNoticeController;
 	private readonly pi: ExtensionAPI;
+	private readonly releaseThinkingLine: () => void;
 	private readonly statusline: StatuslineController;
 	private readonly unregisterStatuslineChrome: () => void;
 	private readonly unregisterNoticeChrome: () => void;
@@ -97,9 +99,11 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		store: UiSettingsStore,
 		coordinator: CommandDialogCoordinatorImplementation,
 		diagnostics: DiagnosticChannel,
+		releaseThinkingLine: () => void,
 		repeatGoalClock?: StatuslineClock,
 	) {
 		this.pi = pi;
+		this.releaseThinkingLine = releaseThinkingLine;
 		this.cwd = () => ctx.sessionManager.getCwd() || ctx.cwd;
 		this.editor = installInputEnhancementEditor(ctx, {
 			getCommands: () => pi.getCommands(),
@@ -139,6 +143,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.releaseThinkingLine();
 		this.unregisterStatuslineChrome();
 		this.unregisterNoticeChrome();
 		this.notice.dispose();
@@ -174,5 +179,20 @@ export function installUiSessionPresentation(
 	repeatGoalClock?: StatuslineClock,
 ): UiSessionPresentation | undefined {
 	if (ctx.mode !== "tui") return undefined;
-	return new InstalledUiSessionPresentation(pi, ctx, store, coordinator, diagnostics, repeatGoalClock);
+	const releaseThinkingLine = installThinkingLineDisplay();
+	try {
+		ctx.ui.setHiddenThinkingLabel(HIDDEN_THINKING_LABEL);
+		return new InstalledUiSessionPresentation(
+			pi,
+			ctx,
+			store,
+			coordinator,
+			diagnostics,
+			releaseThinkingLine,
+			repeatGoalClock,
+		);
+	} catch (error) {
+		releaseThinkingLine();
+		throw error;
+	}
 }
