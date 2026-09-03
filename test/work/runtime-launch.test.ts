@@ -36,9 +36,11 @@ test("bounds durable output while retaining the newest evidence", () => {
 	output.append(Buffer.from("LATEST-EVIDENCE\n"));
 	output.close();
 
-	expect(statSync(path).size).toBe(256);
+	expect(statSync(path).size).toBeLessThanOrEqual(256);
 	expect(output.overflowed).toBeTrue();
-	expect(output.durable).toBeFalse();
+	expect(output.durable).toBeTrue();
+	expect(tryReadBoundedTail(path, 1_024)).toEndWith("LATEST-EVIDENCE");
+	expect(tryReadBoundedTail(path, 1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText(1_024)).toContain("LATEST-EVIDENCE");
 	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
@@ -75,7 +77,7 @@ test("keeps in-memory and on-disk UTF-8 tails on character boundaries", () => {
 	const root = temporaryRoot();
 	const path = join(root, "multibyte-output");
 	const output = new BoundedOutputFile(path, 1_024);
-	expect(output.append(Buffer.from("界".repeat(100), "utf-8"))).toBe(true);
+	expect(output.append(Buffer.from("界".repeat(1_000), "utf-8"))).toBe(true);
 	const memoryTail = output.recentText(5);
 	output.close();
 	const diskTail = tryReadBoundedTail(path, 5) ?? "";

@@ -271,6 +271,19 @@ test("segments explicit deadlines without treating a timer slice as the deadline
 	}
 });
 
+test("rejects an unrepresentable Bash deadline before spawning work", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root);
+	try {
+		await expect(
+			active.executeBash({ command: "sleep 30", timeoutSeconds: Number.MAX_VALUE }, context(root)),
+		).rejects.toThrow("Bash timeout must be a positive, representable duration");
+		expect(active.snapshot()).toHaveLength(0);
+	} finally {
+		await active.shutdown();
+	}
+});
+
 test("continues a command after its durable output retention fills", async () => {
 	const root = temporaryRoot();
 	const active = configuredRuntime(root, {

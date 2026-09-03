@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 40fe9658d949f2ddbbdad1694e0ba12d364026df81d1105973ebcca6479606c9 -->
+<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 3262c335cffb9a0f0f3f3662d5831eb1412b2464d75165df452c1f93e6db3055 -->
 
 # Background Work
 
@@ -45,7 +45,7 @@ Monitor 等待外部证据，并自动报告最终结果：
 | `command` | 要运行的 Shell 命令 |
 | `description` | 可选任务标签，最多 160 个字符 |
 | `run_in_background` | 独立启动并立即分离 |
-| `timeout` | 可选运行上限，0.1 到 86,400 秒 |
+| `timeout` | 可选正数运行上限，单位为秒 |
 
 Timeout 或 stop 会终止所属进程树。后台输出保持有界，可以通过 activity ID 检查。不要仅为看守已移交的前台
 Shell 而创建 Monitor；该 Shell 自己拥有 terminal wake。
@@ -64,7 +64,8 @@ Shell 而创建 Monitor；该 Shell 自己拥有 terminal wake。
 `success_text` 与 `failure_text` 都是精确子串。两者同时匹配时 failure 优先。未配置任一条件时，第一次读到证据
 就完成 Monitor。
 
-默认轮询间隔为 2 秒，默认 deadline 为 600 秒。间隔可以是 0.1–60 秒；deadline 可以是 0.1–86,400 秒。
+默认轮询间隔为 2 秒，默认 deadline 为 600 秒。间隔可以是 0.1–60 秒；显式 deadline 可以是任意可表示的正数秒，
+并通过安全的 timer 分段调度。
 文件或日志不存在时会继续等待其出现；非 2xx HTTP response 会保持 pending，除非匹配 failure text。
 
 ## 检查与控制
@@ -97,8 +98,9 @@ Runtime 保留最新 64 个 receipt，每批最多 16 个结果。Receipt 只用
 
 每个 Session 最多同时运行 16 个 Shell 和 Monitor，包括 launch reservation。
 
-Shell 输出的持久上限为 20 MiB，内存 tail 为 64 KiB，默认 model 可读 tail 为 50 KiB。Monitor 证据上限为
-64 KiB。输出读取会保持有效 UTF-8 边界。
+Shell 在 20 MiB 保留阈值内保存完整输出。跨过阈值不会终止进程：Background Work 会继续消费输出，保留
+最新 64 KiB 和 omitted-byte count，并默认返回 50 KiB 的 model-readable tail。需要完整日志时，应在命令中
+重定向输出。Monitor 证据上限为 64 KiB。输出读取会保持有效 UTF-8 边界。
 
 ## Shutdown 与恢复
 

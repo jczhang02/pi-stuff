@@ -45,7 +45,10 @@ interface ProbeResult {
 
 function positiveSeconds(value: number | undefined, fallback: number, name: string): number {
 	const selected = value ?? fallback;
-	if (!Number.isFinite(selected) || selected <= 0) throw new Error(`${name} must be greater than 0 seconds`);
+	const milliseconds = Math.round(selected * 1_000);
+	if (!Number.isFinite(selected) || !Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+		throw new Error(`${name} must be a positive, representable duration`);
+	}
 	return selected;
 }
 

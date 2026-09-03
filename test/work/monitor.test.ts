@@ -78,6 +78,22 @@ async function run(input: MonitorInput): Promise<string> {
 	return status ?? "missing";
 }
 
+test("rejects an unrepresentable deadline before registering work", async () => {
+	const state = setup();
+	try {
+		await expect(
+			startMonitor(
+				state.runtime,
+				{ source: "file", target: join(state.root, "never"), timeoutSeconds: Number.MAX_VALUE },
+				state.context,
+			),
+		).rejects.toThrow("Monitor timeout must be a positive, representable duration");
+		expect(state.runtime.snapshot()).toHaveLength(0);
+	} finally {
+		await state.runtime.shutdown();
+	}
+});
+
 describe("command Monitor", () => {
 	test("completes on successful command evidence", async () => {
 		expect(await run({ source: "command", successText: "READY", target: "printf READY", timeoutSeconds: 3 })).toBe(

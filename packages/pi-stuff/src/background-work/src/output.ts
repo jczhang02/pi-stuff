@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
+import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared/terminal-text.js";
@@ -8,6 +8,7 @@ export { sanitizeTerminalText };
 const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
 export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
 const MEMORY_TAIL_LIMIT = 64 * 1024;
+const MIN_ROLLING_OUTPUT_LIMIT = 64;
 
 function completeUtf8End(buffer: Buffer): number {
 	let end = buffer.length;
@@ -54,19 +55,27 @@ export class BoundedOutputFile {
 	private overflow = false;
 	private storageError: string | undefined;
 	private tail = Buffer.alloc(0);
+	private readonly truncateFile: typeof ftruncateSync;
 	private readonly writeFile: typeof writeSync;
 
 	constructor(
 		path: string,
 		maxBytes = DEFAULT_ACTIVITY_OUTPUT_LIMIT,
-		deps: { readonly closeSync?: typeof closeSync; readonly writeSync?: typeof writeSync } = {},
+		deps: {
+			readonly closeSync?: typeof closeSync;
+			readonly ftruncateSync?: typeof ftruncateSync;
+			readonly writeSync?: typeof writeSync;
+		} = {},
 	) {
-		if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
-			throw new Error("Background output retention must be a positive safe integer");
+		if (!Number.isSafeInteger(maxBytes) || maxBytes < MIN_ROLLING_OUTPUT_LIMIT) {
+			throw new Error(
+				`Background output retention must be a safe integer of at least ${String(MIN_ROLLING_OUTPUT_LIMIT)} bytes`,
+			);
 		}
 		this.path = path;
 		this.maxBytes = maxBytes;
 		this.closeFile = deps.closeSync ?? closeSync;
+		this.truncateFile = deps.ftruncateSync ?? ftruncateSync;
 		this.writeFile = deps.writeSync ?? writeSync;
 		mkdirSync(dirname(path), { mode: 0o700, recursive: true });
 		this.fd = openSync(path, "wx", 0o600);
@@ -81,19 +90,19 @@ export class BoundedOutputFile {
 	}
 
 	get durable(): boolean {
-		return !this.overflow && this.storageError === undefined;
+		return this.storageError === undefined;
 	}
 
 	append(chunk: Buffer): boolean {
 		if (this.closed) return false;
 		this.remember(chunk);
-		if (this.overflow || this.fd === undefined) return true;
-		const remaining = Math.max(0, this.maxBytes - this.bytes);
-		const accepted = chunk.subarray(0, remaining);
-		if (accepted.length > 0) this.write(accepted);
-		if (accepted.length === chunk.length) return true;
+		if (this.fd === undefined) return true;
+		if (this.bytes + chunk.length <= this.maxBytes) {
+			this.write(chunk);
+			return true;
+		}
 		this.overflow = true;
-		this.closeStorage();
+		this.rewriteWithTail();
 		return true;
 	}
 
@@ -109,17 +118,22 @@ export class BoundedOutputFile {
 	}
 
 	private write(chunk: Buffer): void {
-		this.bytes += chunk.length;
 		if (this.fd === undefined) return;
 		try {
-			let offset = 0;
-			while (offset < chunk.length) {
-				const written = this.writeFile(this.fd, chunk, offset, chunk.length - offset);
-				if (written <= 0) throw new Error("Background output write made no progress");
-				offset += written;
-			}
+			this.writeAll(chunk, this.bytes);
+			this.bytes += chunk.length;
 		} catch (error) {
 			this.degradeStorage(error);
+		}
+	}
+
+	private writeAll(chunk: Buffer, position: number): void {
+		if (this.fd === undefined) return;
+		let offset = 0;
+		while (offset < chunk.length) {
+			const written = this.writeFile(this.fd, chunk, offset, chunk.length - offset, position + offset);
+			if (written <= 0) throw new Error("Background output write made no progress");
+			offset += written;
 		}
 	}
 
@@ -128,6 +142,29 @@ export class BoundedOutputFile {
 		const start = Math.max(0, joined.length - MEMORY_TAIL_LIMIT);
 		this.omittedTailBytes += start;
 		this.tail = Buffer.from(joined.subarray(start));
+	}
+
+	private rewriteWithTail(): void {
+		if (this.fd === undefined) return;
+		try {
+			const snapshot = this.rollingSnapshot();
+			this.truncateFile(this.fd, 0);
+			this.writeAll(snapshot, 0);
+			this.bytes = snapshot.length;
+		} catch (error) {
+			this.degradeStorage(error);
+		}
+	}
+
+	private rollingSnapshot(): Buffer {
+		let selected = utf8SafeTail(this.tail, this.maxBytes);
+		for (;;) {
+			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
+			const marker = Buffer.from(`…[${formatSize(omittedBytes)} earlier output bytes omitted]\n`, "utf-8");
+			const next = utf8SafeTail(this.tail, this.maxBytes - marker.length);
+			if (next.length === selected.length) return Buffer.concat([marker, selected]);
+			selected = next;
+		}
 	}
 
 	private degradeStorage(cause: unknown): void {
