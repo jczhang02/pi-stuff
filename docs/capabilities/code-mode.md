@@ -47,7 +47,7 @@ top-level.
 model history. The top-level `tool_search` Tool reads the same ranked catalog. Its response stays within 4,000
 characters: when complete definitions do not fit, it keeps the top Tool description once with a compact structural
 type; when that does not fit, it requires `codemode.describe(path)` instead of presenting an incomplete callable
-contract. If even one result path cannot fit, it asks the model to refine the search. If exact input fields are no
+contract. If no result path fits, it asks the model to refine the search. If exact input fields are no
 longer visible after context compaction, describe the method again rather than guessing field names.
 
 Available output helpers include `text`, `image`, `generatedImage`, `audio`, `store`, `load`, and `notify`. Returning a

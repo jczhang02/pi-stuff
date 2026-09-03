@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: 76624b446b920e8fdad1eac7221304e660a1f562c59da6f537086ea35a2863ef -->
+<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: 0a742caf243e864a51ffe974a73622a36fb23eeb22f2597dc266817b0697e754 -->
 
 # Code Mode
 
