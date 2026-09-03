@@ -49,6 +49,7 @@ to fix or mask that Host behavior.
 Each violating Capability keeps its own subprocess, Worker, cancellation, and error semantics while removing the
 Host-thread wait at that boundary. The former semantic-block selection and width-fitting projection was removed after
 continuous cumulative Thinking showed that it still competed with the Vibe Line Spinner on the synchronous Markdown
-path. The remaining fixed labels must match native Thinking in paired rendering benchmarks and pass the certified
-real-PTY 500-millisecond gate. Unsupported platforms may receive the same structural fix when it is shared, but are
-not certified by this decision.
+path. The remaining fixed labels must match identity/native Thinking under paired real-Host Vibe Line sampling and pass
+the certified real-PTY 500-millisecond gate. Microbenchmarks report their fixed-label cost but do not replace liveness
+evidence. Unsupported platforms may receive the same structural fix when it is shared, but are not certified by this
+decision.

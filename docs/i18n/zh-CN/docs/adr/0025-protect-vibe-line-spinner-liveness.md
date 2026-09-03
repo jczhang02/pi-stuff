@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 99dd2f3fbacdceddb553864f7ef47ffa1951e6e16ae15b7f7715dfc30f2cf973 -->
+<!-- translation-source: docs/adr/0025-protect-vibe-line-spinner-liveness.md; translation-source-sha256: 1a2285837b2d1ca631728b2a336650ce4d9ebcee037fc9fa93a34d512e6f13da -->
 
 ---
 status: accepted
@@ -44,6 +44,6 @@ Conversation UI 只在固定 Thinking 标签中复用现有 `TRANSCRIPT_MARKER`�
 
 每个违规 Capability 保留自己的 subprocess、Worker、cancellation 与 error 语义，同时移除该边界上的
 Host-thread wait。连续累计 Thinking 表明，原有的语义 block 选择与宽度拟合投影仍会在同步 Markdown 路径上
-与 Vibe Line Spinner 争用，因此该投影已移除。剩余固定标签必须在配对渲染基准中匹配原生 Thinking，并通过
-已认证真实 PTY 的 500 毫秒门槛。未支持的平台可以在共享 seam 下获得同一结构修复，但本决策不对它们作出
-认证。
+与 Vibe Line Spinner 争用，因此该投影已移除。剩余固定标签必须在配对真实 Host Vibe Line 采样下匹配
+identity/native Thinking，并通过已认证真实 PTY 的 500 毫秒门槛。微基准报告其固定标签成本，但不能替代
+活性证据。未支持的平台可以在共享 seam 下获得同一结构修复，但本决策不对它们作出认证。

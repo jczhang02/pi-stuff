@@ -240,6 +240,7 @@ function scenarios(): readonly Scenario[] {
 		},
 		{ id: "user-ordinary-fence", isStreaming: false, markdown: [ordinaryFence], messageType: "user", rounds: 1 },
 		{
+			feature: true,
 			id: "thinking-32k",
 			isStreaming: true,
 			markdown: [textOfLength(prose, 32_000)],
@@ -247,6 +248,7 @@ function scenarios(): readonly Scenario[] {
 			rounds: 1,
 		},
 		{
+			feature: true,
 			id: "thinking-streaming-8k",
 			isStreaming: true,
 			markdown: streamingPrefixes(stream.slice(0, 8_000), 12),
