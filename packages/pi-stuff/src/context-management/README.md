@@ -19,7 +19,7 @@ Context projection, retrieval, memory, notes, compaction, and pressure handling 
 ```
 
 The dialog shows Context usage, compartments, memory, notes, pending maintenance, Historian state, cache, history
-tokens, and current errors.
+tokens, current errors, and whether native-compaction fallback is available.
 
 ## Highlights
 
@@ -28,7 +28,7 @@ tokens, and current errors.
 - Exposes status and maintenance through `/ctx` and persistent Context Activity.
 - Runs the Context engine in a Worker without transferring Pi's input, Agent-turn, or Session lifecycle ownership.
 - Projects derived context while Pi Session JSONL remains the raw record.
-- Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable.
+- Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable, and reports degraded continuity when that fallback is disabled.
 - Once active, the Host-managed `before_provider_request` adapter is fail-closed and requires 95% final-payload validation.
 - Reuses a validated projection only when every ordered raw-message identity, provider/model, and context window match.
 - Pi owns retry, continuation, and compaction; direct provider calls that bypass the Host hook are excluded.

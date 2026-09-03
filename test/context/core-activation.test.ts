@@ -219,6 +219,7 @@ test("finishes Magic Context activation during session startup", async () => {
 	let loads = 0;
 	let factories = 0;
 	await piStuffContext(api, {
+		readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384 }),
 		loadMagicContext: async () => {
 			loads++;
 			return {
@@ -257,11 +258,32 @@ test("finishes Magic Context activation during session startup", async () => {
 	expect(factories).toBe(1);
 });
 
+test("reports degraded continuity without disabling active Magic Context", async () => {
+	const handlers: Handlers = new Map();
+	await piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => magicModule(),
+		prepareMagicContext: async () => "ready",
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+	expect(getContextCapability(ctx).status()).toEqual({
+		state: "active",
+		engine: "magic-context",
+		trigger: "startup",
+		continuity: "degraded",
+		continuityDetail:
+			"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+	});
+});
+
 test("fails open and retries when Magic session startup throws", async () => {
 	const handlers: Handlers = new Map();
 	let loads = 0;
 	let starts = 0;
 	piStuffContext(apiFor(handlers), {
+		readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384 }),
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
 				loads++;

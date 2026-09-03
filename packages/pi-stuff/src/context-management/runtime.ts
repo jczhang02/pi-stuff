@@ -42,16 +42,14 @@ import {
 import type { ContextProjection, ContextProjectionAudience, ContextProjectionOptions } from "./projection.js";
 import { ContextProjectionRuntime, type MagicContextEventResult, type MagicContextHandler } from "./projection.js";
 import { applyContextPromptContributions, stripContextPromptContributions } from "./prompt-contributions.js";
+import {
+	type ContextActivationTrigger,
+	type ContextCapabilityState,
+	type ContextStatusSnapshot,
+	contextStatusWithContinuity,
+	nativeContextStatus,
+} from "./status.js";
 import { magicToolPresentation } from "./tool-presentation.js";
-
-export type ContextActivationTrigger = "startup" | "input" | "automatic-turn" | "projection";
-export type ContextCapabilityState = "dormant" | "loading" | "active" | "native" | "degraded";
-export interface ContextStatusSnapshot {
-	readonly state: ContextCapabilityState;
-	readonly engine: "magic-context" | "native";
-	readonly trigger?: ContextActivationTrigger;
-	readonly error?: string;
-}
 
 export interface ContextCapability {
 	status(): ContextStatusSnapshot;
@@ -85,10 +83,6 @@ interface ActivationFlight extends SharedFlight<ContextStatusSnapshot> {
 
 function nativeEffect<A>(operation: () => A | PromiseLike<A>): Effect.Effect<A, unknown> {
 	return Effect.tryPromise({ try: async () => operation(), catch: (error) => error });
-}
-
-function nativeStatus(trigger: ContextActivationTrigger): ContextStatusSnapshot {
-	return { state: "native", engine: "native", trigger };
 }
 
 function ownerKey(pi: ExtensionAPI): object {
@@ -136,6 +130,7 @@ export class ContextCapabilityRuntime {
 			commands: this.magicCommands,
 			currentContext: () => this.sessionContext,
 			error: () => this.state.error,
+			continuityDetail: () => this.status().continuityDetail,
 			quietContext: magicCommandContext,
 		});
 		this.projectionRuntime = new ContextProjectionRuntime({
@@ -161,7 +156,11 @@ export class ContextCapabilityRuntime {
 	}
 
 	status(): ContextStatusSnapshot {
-		return { ...this.state };
+		return contextStatusWithContinuity(
+			this.state,
+			this.sessionContext,
+			this.dependencies.readNativeCompactionSettings,
+		);
 	}
 
 	private setNative(trigger?: ContextActivationTrigger): void {
@@ -537,14 +536,14 @@ export class ContextCapabilityRuntime {
 				}),
 			);
 			if (preparation === "deferred") {
-				if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
+				if (!this.isCurrentGeneration(generation)) return nativeContextStatus(trigger);
 				this.state = { state: "dormant", engine: "native" };
 				return this.status();
 			}
 			const module = yield* nativeEffect(() => this.dependencies.loadMagicContext());
 			if (!this.isCurrentGeneration(generation)) {
 				yield* this.rollbackRegistrationPlan(plan, ctx);
-				return nativeStatus(trigger);
+				return nativeContextStatus(trigger);
 			}
 			const magicPi = magicPiAdapter(this.pi, plan, (data) => this.commandRuntime.captureStatus(data));
 			yield* nativeEffect(() =>
@@ -555,7 +554,7 @@ export class ContextCapabilityRuntime {
 			);
 			if (!this.isCurrentGeneration(generation)) {
 				yield* this.rollbackRegistrationPlan(plan, ctx);
-				return nativeStatus(trigger);
+				return nativeContextStatus(trigger);
 			}
 			// Session startup is part of the activation transaction. Running it before
 			// commit lets a partial upstream startup fail open without leaving Magic
@@ -563,11 +562,11 @@ export class ContextCapabilityRuntime {
 			yield* this.replaySessionStart(plan, sessionStart, ctx);
 			if (!this.isCurrentGeneration(generation)) {
 				yield* this.rollbackRegistrationPlan(plan, ctx);
-				return nativeStatus(trigger);
+				return nativeContextStatus(trigger);
 			}
 			if (!plan.contextHandler) {
 				yield* this.rollbackRegistrationPlan(plan, ctx);
-				if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
+				if (!this.isCurrentGeneration(generation)) return nativeContextStatus(trigger);
 				this.deactivateToolHandoffs();
 				this.setDegraded(
 					"Magic Context did not register its context adapter; Pi native context remains active.",
@@ -591,7 +590,7 @@ export class ContextCapabilityRuntime {
 			Effect.catch((error) =>
 				this.rollbackRegistrationPlan(plan, ctx).pipe(
 					Effect.map(() => {
-						if (!this.isCurrentGeneration(generation)) return nativeStatus(trigger);
+						if (!this.isCurrentGeneration(generation)) return nativeContextStatus(trigger);
 						this.magicContextHandler = undefined;
 						this.deactivateToolHandoffs();
 						this.setDegraded(error, trigger);

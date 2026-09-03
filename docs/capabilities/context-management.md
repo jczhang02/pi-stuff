@@ -27,7 +27,7 @@ path when direct interactive input can authorize it.
 | `/ctx upgrade` | Upgrade supported legacy Session history and memories |
 
 The status dialog reports Context usage, active and dropped tags, compartments, memory, notes, pending work, Historian
-state, cache, history tokens, and current errors.
+state, cache, history tokens, current errors, and degraded continuity when Pi's native-compaction fallback is disabled.
 
 Maintenance persists as model-invisible Context Activity. `recomp` and `upgrade` continue in the background; switching
 or forking a Session detaches the visible update without cancelling the operation.
@@ -79,7 +79,9 @@ for the same foreground lifecycle.
 
 For an idle custom turn that bypasses the ordinary preflight, Context Management can invoke Pi's public compaction
 method when native compaction is enabled and its threshold is exceeded. Extreme overflow yields to native compaction
-and temporarily degrades active Context to the native projection.
+and temporarily degrades active Context to the native projection. If Magic Context is active while Pi native
+auto-compaction is disabled, `/ctx` keeps Magic active but reports degraded continuity and directs the user to enable
+auto-compaction through `/settings`; Pi Stuff does not change the setting itself.
 
 ## Worker and recovery
 

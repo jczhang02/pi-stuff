@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: c8fbd7f2883bca3ff7bc3088af0b3a6ffe968321ee7672bf3dae0d82b237dcbf -->
+<!-- translation-source: packages/pi-stuff/src/context-management/README.md; translation-source-sha256: aa2c3177b0fd28b03483bb953382eab362fa793a63b8d142c97a37356623a842 -->
 
 # Context Management
 
@@ -21,7 +21,7 @@
 ```
 
 Dialog 显示 Context 用量、compartment、memory、note、pending maintenance、Historian 状态、cache、history
-token 和当前错误。
+token、当前错误，以及 native-compaction fallback 是否可用。
 
 ## 亮点
 
@@ -30,7 +30,7 @@ token 和当前错误。
 - 通过 `/ctx` 和持久 Context Activity 提供状态与维护。
 - 在 Worker 中运行 Context engine，但不接管 Pi 的输入、Agent turn 或 Session 生命周期。
 - 投影派生 context，同时保留 Pi Session JSONL 作为原始记录。
-- 仅在启动期间或 Engine 不可用导致降级运行时，使用 Pi 原生 context 与 compaction。
+- 仅在启动期间或 Engine 不可用导致降级运行时，使用 Pi 原生 context 与 compaction；该 fallback 被禁用时报告 continuity degraded。
 - 激活后，Host 管理的 `before_provider_request` 适配器采用故障关闭策略，并要求最终载荷通过 95% 验证。
 - 仅当每条有序原始消息的身份、provider/model 和 context window 全部匹配时，才复用已验证的投影。
 - Pi 负责重试、继续执行和 compaction；绕过 Host hook 的直接 provider 调用不在支持范围内。

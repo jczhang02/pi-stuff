@@ -43,6 +43,8 @@ export interface ContextDialogSnapshot {
 	readonly activeTags: number;
 	readonly cache: string;
 	readonly compartmentCount: number;
+	readonly continuity?: "degraded";
+	readonly continuityDetail?: string;
 	readonly contextWindow?: number;
 	readonly droppedTags: number;
 	readonly error?: string;
@@ -147,6 +149,7 @@ export function statusSnapshotFromMagic(
 	message: MagicStatusMessage | undefined,
 	usage: ContextUsageSnapshot | undefined,
 	fallbackError?: string,
+	continuityDetail?: string,
 ): ContextDialogSnapshot {
 	const text = message?.text ?? "";
 	const details = parseMagicStatusDetails(message?.details);
@@ -173,6 +176,11 @@ export function statusSnapshotFromMagic(
 		noteCount: count(details.noteCount, text, /Notes:\s*([\d,]+)/iu),
 		pendingOps: count(details.pendingOps, text, /- Drops:\s*([\d,]+)/iu),
 	};
+	const safeContinuityDetail = safeDialogError(continuityDetail);
+	if (safeContinuityDetail !== undefined) {
+		snapshot.continuity = "degraded";
+		snapshot.continuityDetail = safeContinuityDetail;
+	}
 	if (contextWindow !== undefined) snapshot.contextWindow = contextWindow;
 	if (error !== undefined) snapshot.error = error;
 	if (historyTokens !== undefined) snapshot.historyTokens = historyTokens;
@@ -387,7 +395,13 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					);
 				})
 			: [];
-		const sections = this.renderScreen(selectedLines, inputLines, errorLines);
+		const continuityLines = this.snapshot.continuityDetail
+			? wrapTextWithAnsi(
+					`Continuity degraded · ${this.snapshot.continuityDetail}`,
+					Math.max(1, renderWidth - GUTTER.length),
+				).map((line) => `${GUTTER}${this.context.theme.fg("warning", line)}`)
+			: [];
+		const sections = this.renderScreen(selectedLines, inputLines, errorLines, continuityLines);
 		const lines = fitCommandDialogRows(
 			{
 				body: sections.body,
@@ -396,7 +410,9 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					this.context.theme.fg("border", "━".repeat(renderWidth)),
 					`${GUTTER}${this.context.theme.bold(sections.title)}`,
 				],
-				priority: [errorLines[0] ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`],
+				priority: [
+					errorLines[0] ?? continuityLines[0] ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`,
+				],
 			},
 			commandDialogRows(this.context),
 		);
@@ -441,6 +457,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 		selectedLines: readonly string[],
 		inputLines: readonly string[],
 		errorLines: readonly string[],
+		continuityLines: readonly string[],
 	) {
 		if (this.screen.kind === "overview") {
 			const counts = `${plural(this.snapshot.compartmentCount, "compartment")} · ${plural(this.snapshot.memoryCount, "memory", "memories")} · ${plural(this.snapshot.noteCount, "note")}`;
@@ -453,7 +470,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					`${GUTTER}${this.context.theme.fg("muted", counts)}`,
 					`${GUTTER}${this.context.theme.fg("muted", runtime)}`,
 					`${GUTTER}${this.context.theme.fg("muted", history)}`,
-					...(this.snapshot.pendingOps > 0 || errorLines.length > 0
+					...(this.snapshot.pendingOps > 0 || errorLines.length > 0 || continuityLines.length > 0
 						? [
 								"",
 								commandDialogSectionHeading(this.context.theme, "Attention"),
@@ -465,6 +482,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 											)}`,
 										]
 									: []),
+								...continuityLines,
 								...errorLines,
 							]
 						: []),
