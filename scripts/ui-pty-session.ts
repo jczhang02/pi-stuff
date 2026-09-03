@@ -80,12 +80,18 @@ export class TmuxPiSession {
 		this.project = paths.project;
 		this.label = `piui-${String(process.pid)}-${String(sessionCounter)}`;
 		this.socket = join(paths.config, `${this.label}.sock`);
+		const environment = { ...process.env };
+		for (const key of Object.keys(environment)) {
+			if (key.startsWith("PI_SUBAGENT_")) delete environment[key];
+		}
 		this.environment = {
-			...process.env,
+			...environment,
 			COLORTERM: options.colorMode === "256" ? "ansi" : "truecolor",
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
+			PI_STUFF_CODE_MODE_DEFAULT: "off",
+			PI_STUFF_CODE_MODE_FROZEN: undefined,
 			PI_STUFF_PONYTAIL_MODE: undefined,
 			PONYTAIL_DEFAULT_MODE: "full",
 			PONYTAIL_HIDE_STATUS: "0",
