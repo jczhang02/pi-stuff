@@ -1,20 +1,20 @@
-<!-- translation-source: docs/capabilities/fast-resume.md; translation-source-sha256: 7d5d5a827e22eeb1626cd4f26801248bcca120b8eebaca30dacff8057a6235e1 -->
+<!-- translation-source: docs/capabilities/fast-resume.md; translation-source-sha256: 46597bccc0ef7a319186d58ba780ee51a26f7d8451e8bfc01e840533441d9af1 -->
 
 # Fast Resume
 
 [English](../../../../../docs/capabilities/fast-resume.md)
 
-Fast Resume 保留 Pi 原生 Session 选择器，只替换其中开销较大的完整历史列表 loader。它读取有界 JSONL 区域，
-返回 Pi 的 `SessionInfo` 行，再把选择和变更操作交给 Host 组件。
+Fast Resume 保留 Pi 原生 Session 选择器，只替换其中开销较大的完整历史列表 loader。它在限制 transcript
+解析的同时保留权威 Session 名称，返回 Pi 的 `SessionInfo` 行，再把选择和变更操作交给 Host 组件。
 
 ## 打开选择器
 
 运行 `/resume`。Pi Stuff 只在当前 Host 进程内拦截原生选择器调用，然后挂载 Pi 导出的
-`SessionSelectorComponent`，并提供有界的 Current Folder 与 All Sessions loader。它不会修改 Pi 的安装文件。
+`SessionSelectorComponent`，并提供轻量的 Current Folder 与 All Sessions loader。它不会修改 Pi 的安装文件。
 如果经认证的 Host seam 不可用或打开失败，系统会运行原始选择器，并通过有界 Diagnostic Record 说明回退原因。
 
 关闭 `fastResume.hijackResume` 后，Pi 会为 `/resume` 保留完整历史 loader，Pi Stuff 则注册
-`/fast-resume`。可选的 `fastResume.shortcut` Pi key ID 会打开同一个使用有界 loader 的原生组件。
+`/fast-resume`。可选的 `fastResume.shortcut` Pi key ID 会打开同一个使用轻量 loader 的原生组件。
 
 ## 原生选择器行为
 
@@ -40,20 +40,22 @@ Fast Resume 不添加视觉模式或额外控件。标题、Header、列表行�
 `re:<pattern>` 采用正则表达式匹配。Fast Resume 提供 Session ID、解析出的名称、cwd，以及前向窗口内找到的
 可见用户和 Assistant 文字，但不构建无界 transcript 索引。
 
-## 有界加载
+## 轻量加载
 
-Fast Resume 对每个候选文件从头最多读取 1 MiB，只解析完整行。文件能放入该窗口时会完整解析；过大文件在
-取得 Session header 和首条非空用户消息后提前停止，再用 32 KiB 尾部窗口查找近期 Session 名称元数据。文件
-按每批 50 个处理，并把进度交给原生 Header。Current Folder 完成后才可选；
+对于 transcript 元数据，Fast Resume 从每个候选文件头部最多读取 1 MiB，并且只解析完整行。文件能放入该
+窗口时会完整解析；过大文件在取得 Session header 和首条非空用户消息后停止 transcript 解析。一次 scope
+范围的字节扫描会找出所有有效 `session_info` 行，因此，即使后续消息把名称推到大文件中段，最新 Session
+名称仍保持权威。认证 Host 使用系统标准 `grep` 执行该扫描；若该可执行文件不可用，或其有界输出超限，
+则回退到 Pi 的完整历史 loader。文件按每批 50 个处理，并把进度交给原生 Header。Current Folder 完成后才可选；
 只有用户切换 scope 时才会读取 All Sessions。
 
-该 loader 有明确上限：
+该 loader 保留精确 Session 名称，但仍有明确的 transcript 上限：
 
 - 未在 1 MiB 前向窗口内结束的首条非空用户消息不会进入搜索；
-- 过大文件中的后续文字与写在尾部窗口以外的名称可能缺失；
+- 过大文件中的后续文字不会进入搜索；
 - 过大文件的消息数量可能小于完整历史数量；
-- 有界读取看不到最后消息活动时间时，由文件系统修改时间决定排序，因此只追加元数据也可能移动 Session；
-- 只有关闭拦截并使用 Pi 原始 loader，才能进行完整历史搜索并取得精确列表元数据。
+- 前向读取看不到最后消息活动时间时，由文件系统修改时间决定排序，因此只追加元数据也可能移动 Session；
+- 只有关闭拦截并使用 Pi 原始 loader，才能进行完整历史搜索并取得精确消息数量与活动时间。
 
 Fast Resume 不创建持久 cache 或 sidecar 索引，不发起网络请求，扫描时也不重写 Session 文件。
 

@@ -76,7 +76,10 @@ describe("Fast Resume native selector", () => {
 				run: <A>(program: Effect.Effect<A, Error>) => Effect.runPromise(program),
 			};
 			const result = openFastResumeSelector(context, owner, "selected");
-			await until(() => component?.render(100).join("\n").includes("selected message") === true);
+			await until(() => {
+				const rendered = component?.render(100).join("\n") ?? "";
+				return rendered.includes("selected message") && !rendered.includes("active message");
+			});
 			expect(component).toBeInstanceOf(SessionSelectorComponent);
 			if (!(component instanceof SessionSelectorComponent)) throw new Error("expected Pi SessionSelectorComponent");
 			const rendered = component.render(100).join("\n");

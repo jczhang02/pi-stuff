@@ -135,7 +135,7 @@ contextual map through `?` rather than crowding every Footer.
 ### Fast Resume Selector
 
 Fast Resume has no separate visual grammar. It mounts Pi's exported native Session selector unchanged and supplies only
-bounded Session loaders and Host callbacks. The native component remains the one visible authority for its Header,
+lightweight Session loaders and Host callbacks. The native component remains the one visible authority for its Header,
 search field, rows, tree presentation, selection, scrolling, loading, errors, rename, deletion, controls, colors, and
 responsive clipping. Do not add Fast Resume branding, metadata qualifiers, shortcuts, or status to that surface.
 

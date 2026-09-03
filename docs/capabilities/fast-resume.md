@@ -2,18 +2,19 @@
 
 [Simplified Chinese](../i18n/zh-CN/docs/capabilities/fast-resume.md)
 
-Fast Resume keeps Pi's native Session selector and replaces only its expensive complete-history list loaders. It reads
-bounded JSONL regions, returns Pi `SessionInfo` rows, and delegates selection and mutation to the Host component.
+Fast Resume keeps Pi's native Session selector and replaces only its expensive complete-history list loaders. It
+preserves authoritative Session names while bounding transcript parsing, returns Pi `SessionInfo` rows, and delegates
+selection and mutation to the Host component.
 
 ## Open the selector
 
 Run `/resume`. Pi Stuff intercepts the native selector call in memory for the current Host process, then mounts Pi's
-exported `SessionSelectorComponent` with bounded Current Folder and All Sessions loaders. It does not modify Pi's
+exported `SessionSelectorComponent` with lightweight Current Folder and All Sessions loaders. It does not modify Pi's
 installed files. If the certified Host seam is unavailable or opening fails, the original native selector runs and a
 bounded Diagnostic Record explains the fallback.
 
 When `fastResume.hijackResume` is disabled, Pi keeps its complete-history `/resume` and Pi Stuff registers
-`/fast-resume`. An optional `fastResume.shortcut` Pi key ID opens that same native component with bounded loaders.
+`/fast-resume`. An optional `fastResume.shortcut` Pi key ID opens that same native component with lightweight loaders.
 
 ## Native selector behavior
 
@@ -40,23 +41,25 @@ Typing uses Pi's selector search. Plain input uses fuzzy matching, a fully quote
 and `re:<pattern>` uses regular-expression matching. Fast Resume supplies Session ID, resolved name, cwd, and visible
 user and Assistant text found inside its forward window, not an unbounded transcript index.
 
-## Bounded loading
+## Lightweight loading
 
-For each candidate, Fast Resume reads at most 1 MiB from the front and parses only complete lines. Files that fit that
-window are parsed in full. Oversized files stop early after the Session header and first non-empty user message, then
-use a 32 KiB tail window for recent Session name metadata. Files are processed in batches of 50 and report progress
-through the native Header. Current Folder finishes before it becomes selectable; All Sessions is not
-read until the user changes scope.
+For transcript metadata, Fast Resume reads at most 1 MiB from the front and parses only complete lines. Files that fit
+that window are parsed in full. Oversized files stop parsing after the Session header and first non-empty user message.
+One scope-wide byte scan finds every valid `session_info` line, so the latest Session name remains authoritative even
+when later messages place it in the middle of a large file. The certified Host uses the standard system `grep` for
+this scan and falls back to Pi's complete-history loader if that executable or its bounded output is unavailable.
+Files are processed in batches of 50 and report progress through the native Header. Current Folder finishes before it
+becomes selectable; All Sessions is not read until the user changes scope.
 
-The loader has explicit ceilings:
+The loader preserves exact Session names but retains explicit transcript ceilings:
 
 - a first non-empty user message that does not end inside the 1 MiB forward window is omitted from search;
-- later text in oversized files and a name written outside the tail window can be absent;
+- later text in oversized files is absent from search;
 - oversized-file message counts can be lower than complete-history counts;
-- when bounded reads cannot see the last message activity, filesystem modification time controls ordering, so a later
-  metadata-only append can move a Session;
-- complete-history search and exact list metadata remain available only by disabling interception and using Pi's
-  original loader.
+- when the forward read cannot see the last message activity, filesystem modification time controls ordering, so a
+  later metadata-only append can move a Session;
+- complete-history search and exact message counts and activity remain available only by disabling interception and
+  using Pi's original loader.
 
 Fast Resume creates no persistent cache or sidecar index, performs no network request, and does not rewrite Session
 files while scanning.

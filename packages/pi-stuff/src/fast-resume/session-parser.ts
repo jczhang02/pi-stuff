@@ -1,16 +1,14 @@
-import { StringDecoder } from "node:string_decoder";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { isJsonInputObject, type JsonInputValue, type JsonObject, parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 
-export interface TailSessionInfo {
+export interface SessionNameMetadata {
 	found: boolean;
 	name: string | undefined;
 }
 
-// Accumulator state while processing complete session entries line by line.
-// Shared by the pure parseSessionFromBuffer and the streaming loadSessionHeader
-// so the per-entry logic exists in exactly one place.
+// Accumulator state while processing complete Session entries line by line.
+// Parsing stays pure while the native reader owns file access.
 export interface SessionAccumulator {
 	header: { id: string; timestamp: string; cwd?: string; parentSession?: string } | null;
 	firstUserMessage: string;
@@ -103,21 +101,20 @@ export function processEntry(acc: SessionAccumulator, line: string): void {
 // Build the SessionHeader from an accumulator. `reachedEof` is whether the
 // forward pass consumed all input — when false (it stopped early at the first
 // user message), lastActivityTime only reflects entries seen and is unreliable,
-// so stat mtime is used instead (pi updates it on every append, so it tracks
-// the true last write time). `tailInfo`, if present, carries the latest
-// session_info from a tail read and wins over the forward name (later in file
-// order), including explicit name clears.
+// so stat mtime is used instead (Pi updates it on every append, so it tracks
+// the true last write time). Authoritative scanned metadata wins over the
+// forward name, including explicit name clears.
 export function buildHeader(
 	acc: SessionAccumulator,
 	filePath: string,
 	mtimeMs: number,
 	reachedEof: boolean,
-	tailInfo?: TailSessionInfo,
+	scannedName: SessionNameMetadata,
 ): SessionInfo | null {
 	const header = acc.header;
 	if (!header) return null;
 
-	const name = tailInfo?.found ? tailInfo.name : acc.name;
+	const name = scannedName.found ? scannedName.name : acc.name;
 
 	const headerTime = Date.parse(header.timestamp);
 	let modified: Date;
@@ -148,22 +145,15 @@ export function buildHeader(
 	return result;
 }
 
-export function scanTailForSessionInfo(buf: Buffer, bytesRead: number): TailSessionInfo {
-	const decoder = new StringDecoder("utf8");
-	const text = decoder.write(buf.subarray(0, bytesRead)) + decoder.end();
+export function scanSessionNameMetadata(buf: Buffer): SessionNameMetadata {
+	const text = buf.toString("utf8");
 	const lines = text.split("\n");
 	let found = false;
 	let name: string | undefined;
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
-		// Only session_info entries matter here, so skip JSON parsing for the
-		// common message lines. The
-		// quoted marker is conservative — a message whose content literally
-		// contains "session_info" false-positives into one parse (harmless); a
-		// real session_info entry always carries it. Partial lines at the
-		// read-start boundary lack the marker and skip cheaply (JSON.parse would
-		// have thrown and been caught anyway).
+		// Skip JSON parsing for the common non-metadata lines.
 		if (!trimmed.includes('"session_info"')) continue;
 		try {
 			const entry = parseJsonObject(trimmed);
@@ -172,7 +162,7 @@ export function scanTailForSessionInfo(buf: Buffer, bytesRead: number): TailSess
 				name = isRuntimeString(entry["name"]) ? entry["name"].trim() || undefined : undefined;
 			}
 		} catch {
-			// Partial line at tail boundary — skip
+			// Invalid JSONL entries do not contribute Session metadata.
 		}
 	}
 	return { found, name };

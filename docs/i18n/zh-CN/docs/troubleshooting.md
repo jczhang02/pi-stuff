@@ -1,4 +1,4 @@
-<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: a3dc51f0e3a87a67c81ab41e3ca218c50de3bea1188d0a45834a45d6b85d97fc -->
+<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: f40c236578e4f193f7902b05c03ae0ae681734fd7e9b239047c1cd12b777f1e8 -->
 
 # 故障排查
 
@@ -30,11 +30,12 @@ Pi Stuff 设置是 `<agentDir>/pi-stuff.json` 中的普通 JSON。JSON 注释和
 ## Fast Resume
 
 Fast Resume 本来就应当与 Pi 原生选择器外观一致。如果 `/resume` 仍然很慢，请查看 `/diagnostics`：经认证的
-拦截 seam 不可用时，有界 loader 会回退到 Pi 的完整历史 loader。请更新到认证的 Pi 版本，或者把
+拦截 seam 或名称扫描不可用时，轻量 loader 会回退到 Pi 的完整历史 loader。请更新到认证的 Pi 版本，或者把
 `fastResume.hijackResume` 设为 `false` 后明确使用 `/fast-resume`。
 
-有界 loader 有意不搜索完整 transcript。需要完整历史搜索或精确消息数量时，请关闭拦截并使用 `/resume`。
-如果 Session 名称缺失，请先刷新；位于有界尾部窗口之外的名称仍是已记录的限制。
+轻量 loader 有意不搜索完整 transcript。需要完整历史搜索或精确消息数量时，请关闭拦截并使用
+`/resume`。Session 名称是精确的；真正未命名的 Session 会与 Pi 一样回退到首条 prompt。如果已有名称的
+Session 在刷新后仍显示首条 prompt，请检查 `/diagnostics`，并暂时关闭拦截。
 
 删除会先尝试平台回收站命令，并在确认后于回收站失败时永久 unlink。除非可以接受永久删除，否则不要确认。
 

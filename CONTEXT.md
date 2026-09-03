@@ -82,9 +82,9 @@ Suite adapts the Host to it without duplicating its rewrite registry or installa
 _Avoid_: Embedded RTK, Pi Stuff command parser
 
 **Fast Resume Loader**:
-The bounded Session metadata loader supplied to Pi's unchanged native Session selector after Pi Stuff takes over the
-Host resume entry point. It is a fast path with explicit metadata ceilings, not another selector, complete-history
-index, or Session manager.
+The lightweight Session metadata loader supplied to Pi's unchanged native Session selector after Pi Stuff takes over
+the Host resume entry point. It preserves authoritative Session names while bounding transcript parsing and retained
+row data; it is not another selector, complete-history index, or Session manager.
 _Avoid_: Fast Resume selector, Session database, cached resume, Pi replacement
 
 **Session Name**:

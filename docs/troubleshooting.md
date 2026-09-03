@@ -29,13 +29,15 @@ Tool timer settings. Terminal width can make the automatic Statusline switch to 
 
 ## Fast Resume
 
-Fast Resume intentionally looks identical to Pi's native selector. If `/resume` remains slow, inspect `/diagnostics`: the
-bounded loader falls back to Pi's complete-history loader when the certified interception seam is unavailable. Update
-to the certified Pi version, or set `fastResume.hijackResume` to `false` and use `/fast-resume` explicitly.
+Fast Resume intentionally looks identical to Pi's native selector. If `/resume` remains slow, inspect `/diagnostics`:
+the lightweight loader falls back to Pi's complete-history loader when the certified interception seam or name scan is
+unavailable. Update to the certified Pi version, or set `fastResume.hijackResume` to `false` and use `/fast-resume`
+explicitly.
 
-The bounded loader deliberately does not search complete transcripts. Disable interception and use `/resume` when you
-need complete-history search or exact message counts. If a Session name is missing, refresh first; names outside the
-bounded tail window remain a documented limit.
+The lightweight loader deliberately does not search complete transcripts. Disable interception and use `/resume` when
+you need complete-history search or exact message counts. Session names are exact; a genuinely unnamed Session falls
+back to its first prompt, matching Pi. If a named Session still shows its first prompt after refresh, inspect
+`/diagnostics` and temporarily disable interception.
 
 Deletion tries the platform trash command and then permanently unlinks after confirmation. Do not confirm deletion
 unless permanent removal is acceptable.

@@ -19,6 +19,7 @@ function sessionText(
 		JSON.stringify({ type: "session", version: 3, id, timestamp, cwd }),
 		JSON.stringify({ type: "message", timestamp, message: { role: "user", content: firstMessage } }),
 	];
+	if (name) lines.push(JSON.stringify({ type: "session_info", name }));
 	if (fillerBytes > 0) {
 		lines.push(
 			JSON.stringify({
@@ -53,7 +54,6 @@ function sessionText(
 			}),
 		);
 	}
-	if (name) lines.push(JSON.stringify({ type: "session_info", name }));
 	return `${lines.join("\n")}\n`;
 }
 

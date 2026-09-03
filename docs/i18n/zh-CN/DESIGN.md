@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 3b756d3b0b87bf3c4bc25b58b1266fc018b3b291561f2bcbcac55802bd425e3e -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: 9447552d10092b7294453908f2d5ca70ca1164fd155575f38c6d24bcbbaace69 -->
 
 ---
 version: alpha
@@ -129,7 +129,7 @@ Ctrl+P/Ctrl+N。PageUp 和 PageDown 每次移动一个可见页面，紧凑键�
 
 ### Fast Resume 选择器
 
-Fast Resume 没有独立的视觉语法。它原样挂载 Pi 导出的原生 Session 选择器，只提供有界 Session loader 和 Host
+Fast Resume 没有独立的视觉语法。它原样挂载 Pi 导出的原生 Session 选择器，只提供轻量 Session loader 和 Host
 callback。Header、搜索框、列表行、树形呈现、选择、滚动、加载、错误、重命名、删除、控件、颜色和响应式裁切都
 以原生组件为唯一可见权威。不要在该界面中增加 Fast Resume 品牌、元数据标记、快捷键或状态。
 

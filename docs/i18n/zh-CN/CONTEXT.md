@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 80e58b8dfb502a8c2bd31ec7c009be3b25f232ee004b6c427dd16e9305b1fb89 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: fb53454f0c556de40a220827519eef6350e0761dd691c9c56df9b6f9be4b40fa -->
 
 # Pi Stuff
 
@@ -80,8 +80,9 @@ _避免使用_：Skill search、eager Skill loading
 _避免使用_：Embedded RTK、Pi Stuff command parser
 
 **Fast Resume Loader**：
-Pi Stuff 接管 Host resume 入口后，交给 Pi 原生 Session 选择器的有界 Session 元数据 loader。它是一条带有明确
-元数据上限的快速路径，不是另一个选择器、完整历史索引或 Session manager。
+Pi Stuff 接管 Host resume 入口后，交给 Pi 原生 Session 选择器的轻量 Session 元数据 loader。它在限制
+transcript 解析和列表行保留数据的同时保留权威 Session 名称；它不是另一个选择器、完整历史索引或 Session
+manager。
 _避免使用_：Fast Resume selector、Session database、cached resume、Pi replacement
 
 **Session Name**：

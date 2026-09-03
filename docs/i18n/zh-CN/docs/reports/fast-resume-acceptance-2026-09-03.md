@@ -1,4 +1,4 @@
-<!-- translation-source: docs/reports/fast-resume-acceptance-2026-09-03.md; translation-source-sha256: 3cff5f9519584c84b9006ebb9e3b877981647929360cb457a4fb7015b0ff4e1a -->
+<!-- translation-source: docs/reports/fast-resume-acceptance-2026-09-03.md; translation-source-sha256: 996498f81b6e771945b8512a05bcba82ead0a532d7fee0277d87f242d7b8ed9b -->
 
 # Fast Resume 验收——2026-09-03
 
@@ -16,25 +16,28 @@ Folder 列表为止。原生组件不发布局部列表，因此首次可选择�
 生成的语料不含私有 Session 内容，测试工具只保留汇总计时与一致性计数。
 
 每个计时变体先预热一次，再交替运行 20 次，即原生与 Fast Resume 各 10 次。测试未清理页缓存；每组仅
-有 10 个样本，因此 P95 等于该组最大值。
+有 10 个样本，因此 P95 等于该组最大值。最终配对样本将两组固定到相同的四个已观测空闲逻辑 CPU，
+以隔离无关的并发 Host 工作负载。
 
 ## 确定性代表语料
 
-真实 Host 测试工具生成了 75 个有效 Session，共 432,016,397 字节。大型 Assistant 条目使 Pi 原生
-loader 处理具有代表性的字节量，而 Fast Resume 只读取有界的列表行元数据。
+真实 Host 测试工具生成了 75 个有效 Session，共 432,016,397 字节。每个权威名称都位于大型
+Assistant 条目之前，因此处在原固定尾部窗口之外。Pi 原生 loader 解析这份代表性字节量；Fast Resume
+扫描其中的名称记录，但只解析有界 transcript 元数据。
 
 | 变体 | Current 完整列表中位数 | Current 完整列表 P95 |
 | --- | ---: | ---: |
-| Pi 原生 `/resume` | 1,003.6 ms | 1,181.3 ms |
-| Pi Stuff Fast Resume | 96.3 ms | 119.0 ms |
+| Pi 原生 `/resume` | 850.9 ms | 960.7 ms |
+| Pi Stuff Fast Resume | 259.0 ms | 291.7 ms |
 
-按中位数计算，Fast Resume 得到完整可选列表的速度约为原生的 10 倍，并保持在登记的 300 ms P95 门槛
-以内。
+按中位数计算，Fast Resume 得到完整可选列表的速度约为原生的 3 倍；它在保留所有 Session 名称的同时，
+仍保持在登记的 300 ms P95 门槛以内。
 
 ## 原生 UI 与行为
 
-测试工具在匹配的 fixture 上比较了原生 Pi 与 Fast Resume 的完整可见选择器 cell 和 ANSI 样式。四种
-场景的 cell 差异与 ANSI 差异均为零：深色 120×40、浅色 120×40、深色 64×40，以及深色 120×16。
+测试工具在名称位于原固定尾部窗口之外的匹配 fixture 上，比较了原生 Pi 与 Fast Resume 的完整可见
+选择器 cell 和 ANSI 样式。四种场景的 cell 差异与 ANSI 差异均为零：深色 120×40、浅色 120×40、
+深色 64×40，以及深色 120×16。
 
 同一次认证 Host 运行还验证了交互式 `/resume`、配置后的 Host resume action、重复 reload 与设置切换、
 关闭拦截时带初始查询的 `/fast-resume`、可选独立快捷键、启动阶段 `--resume` 隔离、Current 与 All
@@ -43,9 +46,9 @@ scope 控制、排序与 Named 过滤、路径显示、选择、重命名、当�
 ## 消融
 
 挂载 Pi 导出的 `SessionSelectorComponent` 后，平行选择器实现及其重复的 controller、dialog、搜索、
-Session model 和 mutation workflow 均被移除。Fast Resume 生产 TypeScript 从 2,204 个物理行降至 872 行
-（减少 1,332 行，即 60%）；聚焦测试从 895 行降至 506 行（减少 389 行，即 43%）。剩余 Module 只负责
-设置、有界 Session 加载、Effect operation owner、认证拦截 adapter，以及原生组件挂载。
+Session model 和 mutation workflow 均被移除。Fast Resume 生产 TypeScript 从 2,204 个物理行降至 899 行
+（减少 1,305 行，即 59%）；聚焦测试从 895 行降至 565 行（减少 330 行，即 37%）。剩余 Module 只负责
+设置、轻量 Session 加载、Effect operation owner、认证拦截 adapter，以及原生组件挂载。
 
 ## Capability 合同结果
 
@@ -60,5 +63,5 @@ Session model 和 mutation workflow 均被移除。Fast Resume 生产 TypeScript
 ## 结果
 
 Fast Resume 在认证制品上通过了延迟、原生 UI 一致性、生命周期、mutation、入口、设置和响应式真实 Host
-门槛。本基准不声称支持完整历史搜索或精确的局部读取元数据；这些仍是 Capability 文档中明确说明的
-边界。
+门槛。Session 名称是精确的。本基准不声称支持完整历史搜索，也不声称消息数量和最后消息活动时间精确；
+这些仍是 Capability 文档中明确说明的边界。

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import { loadAllSessions, loadCurrentSessions } from "../../packages/pi-stuff/src/fast-resume/scanner.js";
-import { scanAllSessionDirs } from "../../packages/pi-stuff/src/fast-resume/scanner-native.js";
+import { scanAllSessionDirs, scanSessionDir } from "../../packages/pi-stuff/src/fast-resume/scanner-native.js";
+import { scanSessionInfoNames } from "../../packages/pi-stuff/src/fast-resume/session-reader-native.js";
 
 interface SessionHeaderLine {
 	readonly cwd: string;
@@ -75,7 +76,7 @@ describe("Fast Resume loaders", () => {
 		}
 	});
 
-	test("reads a complete first message and the latest bounded-tail name", async () => {
+	test("reads a complete first message and the latest Session name", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
 			const message = "长".repeat(20_000);
@@ -105,7 +106,62 @@ describe("Fast Resume loaders", () => {
 			rmSync(dir, { force: true, recursive: true });
 		}
 	});
+});
 
+describe("Fast Resume Session names", () => {
+	test("preserves the latest Session name outside the fixed tail window", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
+		try {
+			const largeAssistant = `${JSON.stringify({
+				type: "message",
+				message: { role: "assistant", content: "x".repeat(2 * 1024 * 1024) },
+			})}\n`;
+			writeSession(
+				dir,
+				"named-middle",
+				dir,
+				"FIRST PROMPT",
+				line({ type: "session_info", name: "Old Name" }) +
+					line({ type: "session_info", name: "Session Name" }) +
+					largeAssistant,
+			);
+			writeSession(
+				dir,
+				"cleared-middle",
+				dir,
+				"CLEARED PROMPT",
+				line({ type: "session_info", name: "Old Name" }) +
+					line({ type: "session_info", name: "" }) +
+					largeAssistant,
+			);
+			const sessions = await Effect.runPromise(loadCurrentSessions(dir, dir));
+			const byId = new Map(sessions.map((session) => [session.id, session]));
+			expect(byId.get("named-middle")).toMatchObject({
+				firstMessage: "FIRST PROMPT",
+				name: "Session Name",
+			});
+			expect(byId.get("cleared-middle")).not.toHaveProperty("name");
+		} finally {
+			rmSync(dir, { force: true, recursive: true });
+		}
+	});
+
+	test("uses Pi's loader when exact name scan output exceeds its bound", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
+		try {
+			const name = "n".repeat(8 * 1024 * 1024);
+			writeSession(dir, "large-name", dir, "FIRST PROMPT", line({ type: "session_info", name }));
+			expect(() => scanSessionInfoNames(scanSessionDir(dir))).toThrow("Could not scan Session names.");
+
+			const sessions = await Effect.runPromise(loadCurrentSessions(dir, dir));
+			expect(sessions[0]?.name?.length).toBe(name.length);
+		} finally {
+			rmSync(dir, { force: true, recursive: true });
+		}
+	});
+});
+
+describe("Fast Resume loader boundaries", () => {
 	test("bounds forward reads while retaining Sessions without an early user message", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-stuff-fast-resume-load-"));
 		try {
