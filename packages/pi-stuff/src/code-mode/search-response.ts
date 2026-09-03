@@ -29,10 +29,6 @@ function signatureResult(result: SearchResult, typed = true) {
 	return result.requiresApproval ? { ...compact, requiresApproval: true } : compact;
 }
 
-function definitionResult(result: SearchResult) {
-	return { ...result, path: projectedPath(result), signature: signature(result) };
-}
-
 function compactTypes(types: string): string {
 	return types
 		.split("\n")
@@ -90,13 +86,13 @@ export function projectCodeModeSearchResponse(
 	}
 
 	const descriptions = results.map((result) => ({ ...describe(result), path: projectedPath(result) }));
-	let fullResults: Array<ReturnType<typeof definitionResult>> = [];
+	let fullResults: Array<ReturnType<typeof signatureResult>> = [];
 	let fullDescriptions: DescribeOutput[] = [];
 	let fullText: string | undefined;
 	for (const [index, result] of results.entries()) {
 		const description = descriptions[index];
 		if (!description) break;
-		const nextResults = [...fullResults, definitionResult(result)];
+		const nextResults = [...fullResults, signatureResult(result)];
 		const nextDescriptions = [...fullDescriptions, description];
 		const encoded = encode(search, "definitions", nextResults, nextDescriptions);
 		if (!encoded) break;
@@ -127,7 +123,7 @@ export function projectCodeModeSearchResponse(
 	}
 
 	const instruction =
-		"Call codemode.describe(result.path) before invoking any result; if no result fits, refine the search. Do not guess input fields.";
+		"Call codemode.describe with a result's exact path before invoking it; if no result fits, refine the search. Do not guess input fields.";
 	let compactResults: Array<ReturnType<typeof describeRequiredResult>> = [];
 	let compactText = encode(search, "describe-required", compactResults, [], instruction);
 	if (!compactText) throw new Error("Tool Discovery metadata exceeds its response budget.");

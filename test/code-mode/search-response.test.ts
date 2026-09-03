@@ -22,6 +22,7 @@ function discoveryConnectorFixture(
 		readonly connector?: string;
 		readonly descriptionSize?: number;
 		readonly name?: string;
+		readonly types?: string;
 		readonly typesSize: number;
 	}[],
 ): DiscoveryConnector {
@@ -44,7 +45,7 @@ function discoveryConnectorFixture(
 				description: result.description,
 				kind: "method",
 				path: result.path,
-				types: "T".repeat(entries[index]?.typesSize ?? 0),
+				types: entries[index]?.types ?? "T".repeat(entries[index]?.typesSize ?? 0),
 			},
 		]),
 	);
@@ -129,14 +130,18 @@ test("top-level Tool Discovery deterministically degrades every response within 
 	expect(definitions.payload.representation).toBe("definitions");
 	expect(definitions.payload.definitions.length).toBeGreaterThan(0);
 	expect(definitions.payload.definitions.length).toBeLessThan(3);
+	expect(definitions.payload.results[0]).not.toHaveProperty("description");
 
+	const documentedType = `/** ${"field details ".repeat(150)}*/\ntype FixtureInput = string;`;
 	const typedTop = await executeDiscovery(
-		discoveryConnectorFixture(Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, typesSize: 500 }))),
+		discoveryConnectorFixture(
+			Array.from({ length: 5 }, () => ({ descriptionSize: 2_500, types: documentedType, typesSize: 0 })),
+		),
 	);
 	expect(typedTop.text.length).toBeLessThanOrEqual(4_000);
 	expect(typedTop.payload.representation).toBe("typed-top");
 	expect(typedTop.payload.definitions[0]?.description).toHaveLength(2_500);
-	expect(typedTop.payload.definitions[0]?.types).toHaveLength(500);
+	expect(typedTop.payload.definitions[0]?.types).toBe("type FixtureInput = string;");
 	expect(typedTop.payload.results[1]?.signature).toContain("(input: unknown): Promise<unknown>");
 
 	const describeRequired = await executeDiscovery(
