@@ -5,12 +5,13 @@ import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../share
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
-import type {
-	ExecutorContext,
-	RuntimeResponse,
-	RuntimeToolCallPlan,
-	RuntimeToolTrace,
-	SuiteSandboxTool,
+import {
+	type ExecutorContext,
+	MAX_CONCURRENT_CODE_MODE_TOOL_CALLS,
+	type RuntimeResponse,
+	type RuntimeToolCallPlan,
+	type RuntimeToolTrace,
+	type SuiteSandboxTool,
 } from "../protocol.js";
 import type { CodeModeEffectOwner, CodeModeEffectTask } from "./effect-owner.js";
 import type { DelegateRequestMessage, DelegateResponseMessage, HostResult } from "./host-protocol.js";
@@ -135,6 +136,13 @@ export class CodeModeDelegateRuntime {
 
 	handleRequest(message: DelegateRequestMessage): void {
 		if (this.requests.has(message.id)) throw new Error(`Duplicate Code Mode delegate request: ${String(message.id)}`);
+		if (message.request.type === "tool/invoke" && this.requests.size >= MAX_CONCURRENT_CODE_MODE_TOOL_CALLS) {
+			this.respond(message.id, {
+				message: `Code Mode has ${String(MAX_CONCURRENT_CODE_MODE_TOOL_CALLS)} concurrent Tool calls; settle one before starting another.`,
+				status: "error",
+			});
+			return;
+		}
 		const request = this.effects.open();
 		this.requests.set(message.id, request);
 		try {

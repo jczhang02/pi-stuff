@@ -360,6 +360,15 @@ test("a delayed obsolete result cannot settle the active reexecution attempt", (
 	controller.completeToolCall(active, { status: "success", value: "current" });
 });
 
+test("rejects oversized Tool arguments before the external effect starts", () => {
+	const { start } = fixture();
+	const controller = start("outer-large-input", { write: "never" });
+
+	expect(() => controller.beginToolCall("write", { content: "x".repeat(1_000_001) })).toThrow(
+		/too large to record durably before execution.*small reference/s,
+	);
+});
+
 test("large durable results remain exact across replay", () => {
 	const { start } = fixture();
 	const value = "x".repeat(1_000_001);

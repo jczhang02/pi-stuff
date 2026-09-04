@@ -412,6 +412,35 @@ test("disables an undersized transcript instead of publishing unmarked retained 
 	expect(() => readFileSync(transcriptPath)).toThrow();
 });
 
+test("records exact omitted transcript bytes and records when one record cannot fit", () => {
+	const directory = tempDirectory();
+	const writeFixture = (transcriptPath: string, maxBytes: number) => {
+		const writer = createChildTranscriptWriter({
+			transcriptPath,
+			source: "async",
+			runId: "exact-roll-run",
+			agent: "reader",
+			cwd: directory,
+			maxBytes,
+		});
+		writer.writeInitialUserMessage("inspect");
+		writer.writeStderrLine("x".repeat(2_000));
+	};
+	const referencePath = join(directory, "exact-reference.jsonl");
+	writeFixture(referencePath, 10_000);
+	const expectedBytes = statSync(referencePath).size;
+	const transcriptPath = join(directory, "exact-rolling.jsonl");
+	writeFixture(transcriptPath, 500);
+
+	const records = readFileSync(transcriptPath, "utf8").trim().split("\n").map(parseJsonValue);
+	expect(records).toHaveLength(1);
+	expect(isJsonInputObject(records[0]) ? records[0] : undefined).toMatchObject({
+		recordType: "truncated",
+		omittedBytes: expectedBytes,
+		omittedRecords: 2,
+	});
+});
+
 test("rolls child transcripts after the retention threshold while preserving newest evidence", async () => {
 	const directory = tempDirectory();
 	const transcriptPath = join(directory, "rolling.jsonl");

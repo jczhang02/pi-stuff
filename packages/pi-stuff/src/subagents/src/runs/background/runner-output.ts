@@ -105,7 +105,6 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 			const limit = maxAsyncEventsBytes();
 			const line = `${JSON.stringify(event)}\n`;
 			const lineBytes = Buffer.byteLength(line, "utf-8");
-			if (lineBytes > limit || limit === 0) return;
 			let size = 0;
 			try {
 				const stat = fs.lstatSync(eventsPath);
@@ -113,6 +112,10 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 				size = stat.size;
 			} catch (error) {
 				if (runtimeErrorCode(error) !== "ENOENT") return;
+			}
+			if (lineBytes > limit || limit === 0) {
+				if (limit === 0 || size > limit) fs.rmSync(eventsPath, { force: true });
+				return;
 			}
 			if (size + lineBytes <= limit) {
 				appendJsonl(eventsPath, line.trimEnd());
@@ -148,7 +151,10 @@ export function appendDiagnosticEvent<Event extends object>(eventsPath: string, 
 				})}\n`;
 			const rolled = `${marker(discardedBytesThisRoll)}${retained}${line}`;
 			const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker(size + lineBytes);
-			if (Buffer.byteLength(payload, "utf-8") > limit) return;
+			if (Buffer.byteLength(payload, "utf-8") > limit) {
+				if (size > limit) fs.rmSync(eventsPath, { force: true });
+				return;
+			}
 			writePrivateAtomicText(eventsPath, payload);
 		});
 	} catch {

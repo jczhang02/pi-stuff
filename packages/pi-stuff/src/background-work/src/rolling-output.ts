@@ -22,10 +22,8 @@ const OMISSION_METADATA_SUFFIX = ".omitted-bytes";
 const STABLE_READ_ATTEMPTS = 3;
 
 type OmissionMetadata = {
-	readonly device: string;
-	readonly inode: string;
+	readonly entries: ReadonlyMap<string, number>;
 	readonly kind: "valid";
-	readonly omittedBytes: number;
 	readonly raw: string;
 };
 
@@ -91,16 +89,28 @@ function readMetadata(path: string): MetadataRead {
 	} catch (error) {
 		return { kind: error instanceof Error && "code" in error && error.code === "ENOENT" ? "missing" : "invalid" };
 	}
-	const match = raw.match(/^(\d+):(\d+):(\d+)$/u);
-	if (!match) return { kind: "invalid" };
-	const omittedBytes = Number(match[3]);
-	if (!Number.isSafeInteger(omittedBytes)) return { kind: "invalid" };
-	return { device: match[1] ?? "", inode: match[2] ?? "", kind: "valid", omittedBytes, raw };
+	const entries = new Map<string, number>();
+	for (const line of raw.split("\n")) {
+		const match = line.match(/^(\d+):(\d+):(\d+)$/u);
+		if (!match) return { kind: "invalid" };
+		const omittedBytes = Number(match[3]);
+		const key = `${match[1] ?? ""}:${match[2] ?? ""}`;
+		if (!Number.isSafeInteger(omittedBytes) || entries.has(key)) return { kind: "invalid" };
+		entries.set(key, omittedBytes);
+	}
+	return entries.size > 0 && entries.size <= 2 ? { entries, kind: "valid", raw } : { kind: "invalid" };
 }
 
-function metadataForFile(fd: number, omittedBytes: number): Buffer {
-	const info = fstatSync(fd, { bigint: true });
-	return Buffer.from(`${String(info.dev)}:${String(info.ino)}:${String(omittedBytes)}`, "utf8");
+function metadataForFiles(files: readonly { fd: number; omittedBytes: number }[]): Buffer {
+	return Buffer.from(
+		files
+			.map(({ fd, omittedBytes }) => {
+				const info = fstatSync(fd, { bigint: true });
+				return `${String(info.dev)}:${String(info.ino)}:${String(omittedBytes)}`;
+			})
+			.join("\n"),
+		"utf8",
+	);
 }
 
 function closeQuietly(fd: number | undefined): void {
@@ -131,10 +141,8 @@ function writeAll(fd: number, value: Buffer, writer: typeof writeSync, position 
 
 function matchingOmissionCount(before: MetadataRead, after: MetadataRead, device: string, inode: string) {
 	if (before.kind === "missing" && after.kind === "missing") return 0;
-	if (before.kind !== "valid" || after.kind !== "valid") return undefined;
-	return before.raw === after.raw && before.device === device && before.inode === inode
-		? before.omittedBytes
-		: undefined;
+	if (before.kind !== "valid" || after.kind !== "valid" || before.raw !== after.raw) return undefined;
+	return before.entries.get(`${device}:${inode}`);
 }
 
 export function readRollingOutput(path: string, maxBytes?: number): RollingOutputSnapshot | undefined {
@@ -183,6 +191,7 @@ export class BoundedOutputFile {
 	private fd: number | undefined;
 	private readonly closeFile: typeof closeSync;
 	private readonly maxBytes: number;
+	private omittedFileBytes = 0;
 	private omittedTailBytes = 0;
 	private overflow = false;
 	private readonly renameFile: typeof renameSync;
@@ -212,11 +221,11 @@ export class BoundedOutputFile {
 		this.renameFile = deps.renameSync ?? renameSync;
 		this.writeFile = deps.writeSync ?? writeSync;
 		mkdirSync(dirname(path), { mode: 0o700, recursive: true });
-		this.fd = openSync(path, "wx", 0o600);
+		this.fd = openSync(path, "wx+", 0o600);
 		try {
 			const metadataFd = openSync(omissionMetadataPath(path), "wx", 0o600);
 			try {
-				writeAll(metadataFd, metadataForFile(this.fd, 0), writeSync);
+				writeAll(metadataFd, metadataForFiles([{ fd: this.fd, omittedBytes: 0 }]), writeSync);
 			} finally {
 				closeSync(metadataFd);
 			}
@@ -249,7 +258,7 @@ export class BoundedOutputFile {
 			return true;
 		}
 		this.overflow = true;
-		this.replaceWithTail();
+		this.replaceWithTail(chunk);
 		return true;
 	}
 
@@ -287,7 +296,7 @@ export class BoundedOutputFile {
 		this.tail = Buffer.from(joined.subarray(start));
 	}
 
-	private replaceWithTail(): void {
+	private replaceWithTail(chunk: Buffer): void {
 		if (this.fd === undefined) return;
 		const token = `${String(process.pid)}.${randomUUID()}`;
 		const replacementPath = `${this.path}.${token}.rolling`;
@@ -295,21 +304,30 @@ export class BoundedOutputFile {
 		let replacementFd: number | undefined;
 		let metadataFd: number | undefined;
 		try {
-			const selected = durableByteTail(this.tail, this.maxBytes);
-			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
-			replacementFd = openSync(replacementPath, "wx", 0o600);
+			const selected = this.replacementPayload(chunk);
+			const omittedBytes = this.omittedFileBytes + this.bytes + chunk.length - selected.length;
+			replacementFd = openSync(replacementPath, "wx+", 0o600);
 			writeAll(replacementFd, selected, this.writeFile);
 			metadataFd = openSync(metadataPath, "wx", 0o600);
-			writeAll(metadataFd, metadataForFile(replacementFd, omittedBytes), writeSync);
+			writeAll(
+				metadataFd,
+				metadataForFiles([
+					{ fd: this.fd, omittedBytes: this.omittedFileBytes },
+					{ fd: replacementFd, omittedBytes },
+				]),
+				writeSync,
+			);
 			closeSync(metadataFd);
 			metadataFd = undefined;
-			this.renameFile(replacementPath, this.path);
 			this.renameFile(metadataPath, omissionMetadataPath(this.path));
+			this.renameFile(replacementPath, this.path);
 			const previousFd = this.fd;
 			this.fd = replacementFd;
 			replacementFd = undefined;
 			this.bytes = selected.length;
+			this.omittedFileBytes = omittedBytes;
 			this.closeFile(previousFd);
+			this.compactMetadata(token);
 		} catch (error) {
 			this.degradeStorage(error);
 		} finally {
@@ -317,6 +335,37 @@ export class BoundedOutputFile {
 			closeQuietly(metadataFd);
 			removeQuietly(replacementPath);
 			removeQuietly(metadataPath);
+		}
+	}
+
+	private replacementPayload(chunk: Buffer): Buffer {
+		if (this.fd === undefined || chunk.length >= this.maxBytes) return durableByteTail(chunk, this.maxBytes);
+		const priorBytes = Math.min(this.bytes, this.maxBytes - chunk.length);
+		const prior = Buffer.allocUnsafe(priorBytes);
+		let offset = 0;
+		while (offset < prior.length) {
+			const read = readSync(this.fd, prior, offset, prior.length - offset, this.bytes - prior.length + offset);
+			if (read <= 0) throw new Error("Background output rollover read made no progress");
+			offset += read;
+		}
+		return durableByteTail(Buffer.concat([prior, chunk]), this.maxBytes);
+	}
+
+	private compactMetadata(token: string): void {
+		if (this.fd === undefined) return;
+		const path = `${omissionMetadataPath(this.path)}.${token}.compact`;
+		let fd: number | undefined;
+		try {
+			fd = openSync(path, "wx", 0o600);
+			writeAll(fd, metadataForFiles([{ fd: this.fd, omittedBytes: this.omittedFileBytes }]), writeSync);
+			closeSync(fd);
+			fd = undefined;
+			this.renameFile(path, omissionMetadataPath(this.path));
+		} catch {
+			// The published two-generation metadata remains valid after a cleanup failure.
+		} finally {
+			closeQuietly(fd);
+			removeQuietly(path);
 		}
 	}
 

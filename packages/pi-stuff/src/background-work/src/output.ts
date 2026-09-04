@@ -5,7 +5,7 @@ import {
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared/terminal-text.js";
-import { readRollingOutput, visibleOmissionMarker } from "./rolling-output.js";
+import { readRollingOutput, utf8SafeTail, visibleOmissionMarker } from "./rolling-output.js";
 
 export {
 	BoundedOutputFile,
@@ -37,12 +37,12 @@ function splitBufferLines(buffer: Buffer): Buffer[] {
 }
 
 function decodedTail(buffer: Buffer, maxBytes: number) {
-	let selected = buffer.subarray(Math.max(0, buffer.length - maxBytes));
+	let selected = utf8SafeTail(buffer, maxBytes);
 	let text = selected.toString("utf8");
 	let bytes = Buffer.byteLength(text, "utf8");
 	while (bytes > maxBytes && selected.length > 0) {
-		const remove = Math.min(selected.length, Math.max(1, Math.ceil((bytes - maxBytes) / 3)));
-		selected = selected.subarray(remove);
+		const nextBytes = Math.max(1, selected.length - Math.max(1, Math.ceil((bytes - maxBytes) / 3)));
+		selected = utf8SafeTail(selected, nextBytes);
 		text = selected.toString("utf8");
 		bytes = Buffer.byteLength(text, "utf8");
 	}
@@ -55,6 +55,7 @@ function truncateBufferTail(buffer: Buffer): BufferTruncation {
 	const totalBytes = buffer.length;
 	const lines = splitBufferLines(buffer);
 	const totalLines = lines.length;
+	const trailingNewline = buffer.at(-1) === 0x0a;
 	if (totalLines <= DEFAULT_MAX_LINES && renderedBytes <= DEFAULT_MAX_BYTES) {
 		return {
 			retainedBytes: buffer.length,
@@ -83,15 +84,16 @@ function truncateBufferTail(buffer: Buffer): BufferTruncation {
 		const line = lines[index];
 		if (line === undefined) continue;
 		const text = line.toString("utf8");
-		const separatorBytes = selected.length > 0 ? 1 : 0;
+		const separatorBytes = selected.length > 0 || trailingNewline ? 1 : 0;
 		const lineBytes = Buffer.byteLength(text, "utf8") + separatorBytes;
 		if (outputBytes + lineBytes > DEFAULT_MAX_BYTES) {
 			truncatedBy = "bytes";
 			if (selected.length === 0) {
-				const partial = decodedTail(line, DEFAULT_MAX_BYTES);
+				const suffixBytes = trailingNewline ? 1 : 0;
+				const partial = decodedTail(line, DEFAULT_MAX_BYTES - suffixBytes);
 				selected.unshift(partial);
-				outputBytes = Buffer.byteLength(partial.text, "utf8");
-				retainedBytes = partial.buffer.length;
+				outputBytes = Buffer.byteLength(partial.text, "utf8") + suffixBytes;
+				retainedBytes = partial.buffer.length + suffixBytes;
 				lastLinePartial = true;
 			}
 			break;
@@ -103,7 +105,7 @@ function truncateBufferTail(buffer: Buffer): BufferTruncation {
 	return {
 		retainedBytes,
 		truncation: {
-			content: selected.map((line) => line.text).join("\n"),
+			content: selected.map((line) => line.text).join("\n") + (trailingNewline ? "\n" : ""),
 			firstLineExceedsLimit: false,
 			lastLinePartial,
 			maxBytes: DEFAULT_MAX_BYTES,

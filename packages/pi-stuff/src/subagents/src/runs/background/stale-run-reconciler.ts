@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
-import { appendArtifactJsonl } from "../../shared/artifacts.ts";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { assertPrivateDirectory, errnoCode, validateOwnedRegularFile } from "../../shared/private-directory.ts";
 import { type ProcessKillFn, probeProcessLiveness, readProcessStartIdentity } from "../../shared/process-identity.ts";
@@ -29,6 +28,7 @@ import {
 	readProcessTerminal,
 } from "./process-terminal.ts";
 import { MAX_ASYNC_RESULT_BYTES, terminalStatusFromResult } from "./result-file.ts";
+import { appendDiagnosticEvent } from "./runner-output.ts";
 import { terminateOrphanWriterProcesses } from "./writer-process-registry.ts";
 
 export type PidLiveness = "alive" | "dead" | "unknown";
@@ -135,16 +135,6 @@ function safeRegularFile(root: string, target: string, label: string, maxBytes: 
 		throw new Error(`${label} '${target}' escapes its storage root.`);
 	}
 	return "present";
-}
-
-function appendJsonlBestEffort<Payload extends object>(filePath: string, payload: Payload): void {
-	try {
-		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		appendArtifactJsonl(filePath, JSON.stringify(payload));
-	} catch {
-		// Repair status/result writes are the important path. A broken or full
-		// diagnostic event log must not make stale-run reconciliation fail.
-	}
 }
 
 /**
@@ -326,7 +316,7 @@ function writeFailedRepair(
 	}
 	writeAtomicJson(resultPath, repair.result);
 	writeAtomicJson(path.join(asyncDir, "status.json"), repair.status);
-	appendJsonlBestEffort(path.join(asyncDir, "events.jsonl"), {
+	appendDiagnosticEvent(path.join(asyncDir, "events.jsonl"), {
 		type: "subagent.run.repaired_stale",
 		ts: now,
 		runId: repair.status.runId,

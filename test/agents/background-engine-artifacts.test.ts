@@ -32,6 +32,27 @@ test("records diagnostic rollover when the newest event cannot fit beside the ma
 	});
 });
 
+test("removes an oversized diagnostic log when no rollover record can fit", () => {
+	const eventsPath = path.join(fixtureRoot(), "events.jsonl");
+	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "8";
+	fs.writeFileSync(eventsPath, "stale".repeat(100), { mode: 0o600 });
+
+	appendDiagnosticEvent(eventsPath, { type: "latest" });
+
+	expect(fs.existsSync(eventsPath)).toBeFalse();
+});
+
+test("retains a bounded diagnostic log when only the new event exceeds its limit", () => {
+	const eventsPath = path.join(fixtureRoot(), "events.jsonl");
+	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "64";
+	const existing = `${JSON.stringify({ type: "old" })}\n`;
+	fs.writeFileSync(eventsPath, existing, { mode: 0o600 });
+
+	appendDiagnosticEvent(eventsPath, { payload: "x".repeat(100), type: "latest" });
+
+	expect(fs.readFileSync(eventsPath, "utf8")).toBe(existing);
+});
+
 test("counts omitted event bytes before malformed UTF-8 decoding", () => {
 	const eventsPath = path.join(fixtureRoot(), "events.jsonl");
 	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "1024";

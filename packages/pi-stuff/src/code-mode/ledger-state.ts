@@ -9,6 +9,7 @@ import { unwrapSuiteToolResult } from "./connector.js";
 import { isCodeModeToolContent } from "./presentation.js";
 
 const SCHEMA_VERSION = 1;
+export const MAX_DURABLE_INPUT_BYTES = 1_000_000;
 export const MAX_RETAINED_EXECUTIONS = 50;
 
 const EXECUTION_STATUSES = [
@@ -191,6 +192,18 @@ export function durableValue<Value>(what: string, value: Value): StoredValue {
 	}
 	if (serialized === undefined) return { kind: "undefined" };
 	return { json: parseJsonValue(serialized), kind: "json" };
+}
+
+export function durableInputValue<Value>(what: string, value: Value): StoredValue {
+	const stored = durableValue(what, value);
+	const serialized = stringifyForStorage(value);
+	const bytes = serialized === undefined ? 0 : Buffer.byteLength(serialized);
+	if (bytes > MAX_DURABLE_INPUT_BYTES) {
+		throw new Error(
+			`${what} is too large to record durably before execution (${String(bytes)} bytes > ${String(MAX_DURABLE_INPUT_BYTES)} byte limit). Write large data to a file or workspace and pass a small reference such as a path.`,
+		);
+	}
+	return stored;
 }
 
 export function optionalPresentationValue(name: string, value: AgentToolResult<unknown>): StoredValue | undefined {

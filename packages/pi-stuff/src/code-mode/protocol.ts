@@ -2,6 +2,7 @@ import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-codin
 import type { TSchema } from "typebox";
 import type { CodemodeValue } from "./cloudflare/codec.js";
 
+export const MAX_CONCURRENT_CODE_MODE_TOOL_CALLS = 768;
 export const MAX_RETAINED_CODE_MODE_TRACES = 768;
 
 export interface SandboxToolExecutionContext {

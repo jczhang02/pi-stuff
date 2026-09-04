@@ -52,7 +52,7 @@ test("bounds durable output while retaining the newest evidence", () => {
 	expect(statSync(path).size).toBeLessThanOrEqual(256);
 	expect(statSync(path).ino).not.toBe(initialInode);
 	expect(observedPublicationBoundary).toBeTrue();
-	expect(readBetweenPublications).toBeUndefined();
+	expect(readBetweenPublications).toContain("earlier output bytes omitted");
 	expect(output.overflowed).toBeTrue();
 	expect(output.durable).toBeTrue();
 	expect(tryReadBoundedTail(path, 1_024)).toEndWith("LATEST-EVIDENCE");
@@ -68,6 +68,61 @@ test("bounds durable output while retaining the newest evidence", () => {
 	});
 });
 
+test("retains the full configured suffix beyond the in-memory preview", () => {
+	const path = join(temporaryRoot(), "full-retained-suffix");
+	const output = new BoundedOutputFile(path, 70_000);
+	output.append(Buffer.from("a".repeat(60_000)));
+	output.append(Buffer.from("b".repeat(20_000)));
+	output.close();
+
+	expect(statSync(path).size).toBe(70_000);
+	expect(tryReadBoundedTail(path, 80_000)).toStartWith("…[9.8KB earlier output bytes omitted]\n");
+	expect(tryReadBoundedTail(path, 80_000)).toEndWith("b".repeat(20_000));
+});
+
+test("keeps the prior output generation readable when rollover publication fails", () => {
+	const path = join(temporaryRoot(), "failed-rollover-publication");
+	const output = new BoundedOutputFile(path, 70_000, {
+		renameSync: (source, destination) => {
+			if (destination === path) throw Object.assign(new Error("injected rename EIO"), { code: "EIO" });
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.from(`PRIOR-${"a".repeat(59_994)}`));
+	output.append(Buffer.from("b".repeat(20_000)));
+	output.close();
+
+	expect(output.durable).toBeFalse();
+	expect(tryReadBoundedTail(path, 70_000)).toStartWith("PRIOR-");
+});
+
+test("keeps published output readable when metadata compaction fails", () => {
+	const path = join(temporaryRoot(), "failed-metadata-compaction");
+	let metadataRenames = 0;
+	const output = new BoundedOutputFile(path, 256, {
+		renameSync: (source, destination) => {
+			if (destination === `${path}.omitted-bytes` && ++metadataRenames === 2) {
+				throw Object.assign(new Error("injected compact EIO"), { code: "EIO" });
+			}
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.from("x".repeat(1_000)));
+	output.close();
+
+	expect(output.durable).toBeTrue();
+	expect(tryReadBoundedTail(path)).toContain("earlier output bytes omitted");
+});
+
+test("preserves terminal newlines and UTF-8 boundaries in foreground suffixes", () => {
+	const path = join(temporaryRoot(), "foreground-lines");
+	writeFileSync(path, `${"界".repeat(20_000)}\n`, { mode: 0o600 });
+
+	const snapshot = foregroundOutputSnapshot(path, undefined);
+	expect(snapshot.text).not.toContain("�");
+	expect(snapshot.text).toContain("\n\n\n[Showing last");
+});
+
 test("preserves cumulative omission in a truncated foreground result", () => {
 	const root = temporaryRoot();
 	const path = join(root, "foreground-output");
@@ -81,7 +136,7 @@ test("preserves cumulative omission in a truncated foreground result", () => {
 	expect(snapshot.text).toContain("LATEST-EVIDENCE");
 	expect(snapshot.text).toContain("Retained output:");
 	expect(snapshot.text).not.toContain("Full output:");
-	expect(snapshot.details).toMatchObject({ omittedBytes: 34_464, retainedOutputPath: path });
+	expect(snapshot.details).toMatchObject({ omittedBytes: 30_017, retainedOutputPath: path });
 	expect(snapshot.details).not.toHaveProperty("fullOutputPath");
 });
 

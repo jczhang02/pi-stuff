@@ -15,6 +15,7 @@ import {
 	type CodeModeExecutionStatus,
 	type CodeModePendingAction,
 	createLedgerSnapshot,
+	durableInputValue,
 	durableValue,
 	type ExecutionSettledEvent,
 	type ExecutionState,
@@ -476,7 +477,7 @@ export class CodeModeExecutionController {
 			};
 		}
 		const replay = policy ?? this.policies.get(name) ?? "never";
-		const args = durableValue(`Arguments to ${name}`, input);
+		const args = durableInputValue(`Arguments to ${name}`, input);
 		const serializedArgs = stableStringify(input);
 		if (serializedArgs === undefined && input !== undefined) {
 			throw new Error(`Code Mode Tool ${JSON.stringify(name)} received non-serializable input`);
