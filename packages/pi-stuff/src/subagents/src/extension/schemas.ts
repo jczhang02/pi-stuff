@@ -143,7 +143,7 @@ export const SubagentParams = Type.Object(
 				minimum: 1,
 				maximum: 2_147_483_647,
 				description:
-					"Optional hard timeout for each Tool call in milliseconds; known-fast built-in Tools default to five minutes.",
+					"Optional hard timeout for each Tool call in milliseconds; no implicit timeout applies when unconfigured.",
 			}),
 		),
 		action: Type.Optional(
