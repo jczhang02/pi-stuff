@@ -9,7 +9,7 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
 function assistant(
 	text: string,
 	options: { errorMessage?: string; stopReason?: "stop" | "toolUse" | "error" } = {},
-): ChildProtocolMessage {
+): Extract<ChildProtocolMessage, { role: "assistant" }> {
 	const message: ChildProtocolMessage = {
 		role: "assistant",
 		content: [{ type: "text", text }],
@@ -52,7 +52,7 @@ test("reduces an unbounded child message stream to bounded final and error evide
 	}
 
 	const reduced = reducer.messages();
-	expect(reduced.length).toBeLessThanOrEqual(5);
+	expect(reduced.length).toBeLessThanOrEqual(6);
 	expect(getFinalOutput(reduced)).toBe("FINAL");
 
 	reducer.record({
@@ -64,7 +64,7 @@ test("reduces an unbounded child message stream to bounded final and error evide
 		timestamp: Date.now(),
 	});
 	const failed = reducer.messages();
-	expect(failed.length).toBeLessThanOrEqual(5);
+	expect(failed.length).toBeLessThanOrEqual(6);
 	expect(detectSubagentError(providerMessages(failed))?.details).toContain("LATEST_TOOL_FAILURE");
 });
 
@@ -75,7 +75,7 @@ test("retains the last successful output beside bounded provider-error evidence"
 	reducer.record(assistant("provider failed", { errorMessage: "rate limit", stopReason: "error" }));
 
 	const reduced = reducer.messages();
-	expect(reduced.length).toBeLessThanOrEqual(5);
+	expect(reduced.length).toBeLessThanOrEqual(6);
 	expect(getFinalOutput(reduced)).toBe("LAST_GOOD");
 	expect(reduced.some((message) => message.role === "assistant" && message.errorMessage === "rate limit")).toBe(true);
 });
@@ -119,4 +119,27 @@ test("preserves source order so a later assistant success supersedes a Tool fail
 	expect(reduced.map((message) => message.role)).toEqual(["toolResult", "assistant"]);
 	expect(getFinalOutput(reduced)).toBe("RECOVERED");
 	expect(detectSubagentError(providerMessages(reduced)).hasError).toBe(false);
+});
+
+test("preserves recovery evidence beside an earlier report and later thinking", () => {
+	const messages: ChildProtocolMessage[] = [
+		assistant("ACCEPTANCE_REPORT: passed"),
+		{
+			role: "toolResult",
+			toolCallId: "recovered",
+			toolName: "read",
+			content: [{ type: "text", text: "failure" }],
+			isError: true,
+			timestamp: Date.now(),
+		},
+		assistant("recovered"),
+		{ ...assistant(""), content: [{ type: "thinking", thinking: "considering next step" }] },
+	];
+	const reducer = new ChildResultReducer();
+	for (const message of messages) reducer.record(message);
+	expect(getFinalOutput(reducer.messages())).toBe(getFinalOutput(messages));
+	expect(detectSubagentError(providerMessages(reducer.messages()))).toEqual(
+		detectSubagentError(providerMessages(messages)),
+	);
+	expect(detectSubagentError(providerMessages(reducer.messages())).hasError).toBeFalse();
 });
