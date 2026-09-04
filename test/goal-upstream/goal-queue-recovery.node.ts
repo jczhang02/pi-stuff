@@ -224,7 +224,7 @@ test("pending skip terminates blocked reports before missing or mismatched id re
 	});
 });
 
-test("finalized priority dispatches from idle manual compaction", async () => {
+test("finalized priority dispatches after manual compaction becomes idle", async () => {
 	const branch: unknown[] = [assistantUsageEntry(100)];
 	let idle = false;
 	const harness = await createHarness({
@@ -245,8 +245,9 @@ test("finalized priority dispatches from idle manual compaction", async () => {
 		data: finalizedState,
 	});
 
-	idle = true;
 	await harness.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, harness.ctx);
+	idle = true;
+	await new Promise((resolve) => setTimeout(resolve, 30));
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text, status, tokensUsed }) => ({ text, status, tokensUsed })),
 		[

@@ -87,8 +87,29 @@ export class GoalCompactionCoordinator {
 			if (this.runtime.isPiOwnedCompactionRetry(event, this.runtime.activeGoal.id)) return;
 			this.runtime.clearGoalRecoveryForGoal(this.runtime.activeGoal.id);
 			this.runtime.prompts.requestContinuation(this.runtime.activeGoal);
-			// Manual compaction does not emit agent_settled, so dispatch from this settled fallback.
+			// Manual compaction also needs the post-hook handoff when Pi is not idle yet.
 			yield* this.runtime.dispatchContinuationIfSettled(ctx);
+		});
+	}
+
+	afterManualComplete(ctx: GoalCompactionContext): Effect.Effect<void, unknown> | undefined {
+		if (isSuiteNativeCompactionPreflight(ctx)) return;
+		if (ctx.isIdle() || (!this.runtime.pendingQueueAction && !this.runtime.prompts.continuationIntent)) return;
+		const generation = this.generation;
+		return Effect.gen({ self: this }, function* () {
+			// Pi clears manual-compaction state after awaiting session_compact handlers.
+			// Ordinary ExtensionContext has no waitForIdle or later compaction event.
+			yield* Effect.sleep(0);
+			while (generation === this.generation) {
+				if (this.runtime.queueFrozen || ctx.hasPendingMessages()) return;
+				if (!this.runtime.pendingQueueAction && !this.runtime.prompts.continuationIntent) return;
+				if (ctx.isIdle()) {
+					if (this.runtime.pendingQueueAction) yield* this.commands.dispatchPendingQueueActionIfSettled(ctx);
+					else yield* this.runtime.dispatchContinuationIfSettled(ctx);
+					return;
+				}
+				yield* Effect.sleep(10);
+			}
 		});
 	}
 

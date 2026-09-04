@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { createAssistantMessage } from "../test/fixtures/faux-provider.js";
 import {
+	activeGoal,
 	BLOCKED_GOAL_FINAL_RESPONSE,
 	BUDGETED_GOAL_FINAL_RESPONSE,
 	CODE_MODE_GOAL_FINAL_RESPONSE,
@@ -18,7 +21,7 @@ const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
 const TIMEOUT_MS = 30_000;
 
-type Scenario = "blocker" | "code-mode" | "compaction" | "normal" | "reload" | "retry";
+type Scenario = "blocker" | "code-mode" | "compaction" | "manual-compaction" | "normal" | "reload" | "retry";
 
 interface ScenarioContract {
 	readonly expectedGoalCalls: readonly number[];
@@ -29,6 +32,13 @@ interface ScenarioContract {
 }
 
 const SCENARIO_CONTRACTS = {
+	"manual-compaction": {
+		expectedGoalCalls: [1, 2],
+		finalResponse: GOAL_FINAL_RESPONSE,
+		finalTool: "goal_complete",
+		startMessage: "",
+		terminalStatus: "complete",
+	},
 	retry: {
 		expectedGoalCalls: [1, 2, 3, 4, 5, 6],
 		finalResponse: GOAL_FINAL_RESPONSE,
@@ -128,6 +138,7 @@ const RPC_RECORD_SCHEMA = Type.Object(
 		toolName: Type.Optional(Type.String()),
 		tools: Type.Optional(Type.Array(Type.String())),
 		id: Type.Optional(Type.String()),
+		idle: Type.Optional(Type.Boolean()),
 		reason: Type.Optional(Type.Unknown()),
 		result: Type.Optional(Type.Unknown()),
 		success: Type.Optional(Type.Boolean()),
@@ -452,6 +463,20 @@ function assertScenario(
 			throw new Error("reload: certified host did not emit session_start reason=reload");
 		}
 	}
+	if (scenario === "manual-compaction") {
+		const end = records.find((record) => record.type === "compaction_end" && record.reason === "manual");
+		if (!end?.result || end.aborted) throw new Error("manual compaction did not succeed");
+		const boundary = logRecords.find((record) => record.type === "session_compact");
+		const handlerEnd = logRecords.findIndex((record) => record.type === "manual_compaction_handler_complete");
+		const goalRequests = logRecords.filter((record) => record.type === "provider_call" && record.goalCalls);
+		if (boundary?.idle !== false || handlerEnd < 0 || goalRequests.length !== 2) {
+			throw new Error("manual compaction did not preserve its busy boundary and exactly one Goal continuation");
+		}
+		const request = goalRequests[0];
+		if (!request || logRecords.indexOf(request) <= handlerEnd) {
+			throw new Error("Goal continued before manual compaction handlers finished");
+		}
+	}
 	if (scenario === "compaction") {
 		const compactionEnd = records.find((record) => record.type === "compaction_end");
 		if (compactionEnd?.reason !== "threshold") {
@@ -610,6 +635,24 @@ async function waitForTerminalResponse(
 	}
 }
 
+function seedManualCompactionSession(directory: string): string {
+	const manager = SessionManager.create(directory, join(directory, "sessions"));
+	const assistant = createAssistantMessage(PROVIDER, MODEL);
+	manager.appendModelChange(PROVIDER, MODEL);
+	for (const index of [1, 2]) {
+		manager.appendMessage({
+			role: "user",
+			content: `Historical request ${String(index)} ${"x".repeat(50_000)}`,
+			timestamp: Date.now(),
+		});
+		manager.appendMessage(assistant([{ type: "text", text: `Historical result ${"y".repeat(50_000)}` }], "stop"));
+	}
+	manager.appendCustomEntry("goal-state", { goal: activeGoal("Continue after real manual compaction") });
+	const path = manager.getSessionFile();
+	if (!path) throw new Error("Manual compaction fixture has no Session file");
+	return path;
+}
+
 async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenario): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), `pi-stuff-goal-${scenario}-`));
 	const agentDirectory = join(temporaryDirectory, "agent");
@@ -634,6 +677,8 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			);
 		}
 		const startMessage = SCENARIO_CONTRACTS[scenario].startMessage;
+		const sessionPath =
+			scenario === "manual-compaction" ? seedManualCompactionSession(temporaryDirectory) : undefined;
 		const transport = await createRpcTransport(
 			[
 				options.piBinary,
@@ -652,6 +697,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 				MODEL,
 				"--session-dir",
 				join(temporaryDirectory, "sessions"),
+				...(sessionPath ? ["--session", sessionPath] : []),
 				"--extension",
 				fixture,
 			],
@@ -663,7 +709,9 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 				await seedCompactionHistory(transport);
 				await transport.send({ enabled: true, type: "set_auto_compaction" });
 			}
-			await transport.send({ type: "prompt", message: startMessage });
+			await transport.send(
+				scenario === "manual-compaction" ? { type: "compact" } : { type: "prompt", message: startMessage },
+			);
 			const final = await waitForTerminalResponse(transport, scenario, logPath);
 			const extensionError = final.records.find((record) => record.type === "extension_error");
 			if (extensionError) throw new Error(`${scenario}: Pi extension error: ${JSON.stringify(extensionError)}`);
@@ -684,7 +732,15 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 }
 
 export async function verifyGoalLifecycle(options: VerifyGoalLifecycleOptions): Promise<void> {
-	for (const scenario of ["normal", "code-mode", "reload", "compaction", "blocker", "retry"] as const) {
+	for (const scenario of [
+		"normal",
+		"code-mode",
+		"reload",
+		"compaction",
+		"manual-compaction",
+		"blocker",
+		"retry",
+	] as const) {
 		try {
 			await runScenario(options, scenario);
 		} catch (cause) {

@@ -22,7 +22,7 @@ export const BLOCKED_GOAL_FINAL_RESPONSE =
 export const CODE_MODE_GOAL_FINAL_RESPONSE =
 	"The Code Mode Goal finished and was verified. No remaining risks were found.";
 
-type Scenario = "blocker" | "code-mode" | "compaction" | "normal" | "reload" | "retry";
+type Scenario = "blocker" | "code-mode" | "compaction" | "manual-compaction" | "normal" | "reload" | "retry";
 
 let providerCalls = 0;
 let goalCalls = 0;
@@ -33,6 +33,7 @@ function scenario(): Scenario {
 		value === "blocker" ||
 		value === "code-mode" ||
 		value === "compaction" ||
+		value === "manual-compaction" ||
 		value === "normal" ||
 		value === "reload" ||
 		value === "retry"
@@ -226,7 +227,7 @@ function response(context: Context) {
 		return goalCalls === 1 ? textStream("Initial packed pass is incomplete.", NORMAL_USAGE) : completion(context);
 	}
 	if (selected === "code-mode") return codeModeCompletion(context);
-	if (selected === "reload" || selected === "retry") return completion(context);
+	if (selected === "reload" || selected === "retry" || selected === "manual-compaction") return completion(context);
 	if (selected === "compaction") {
 		if (goalCalls === 1) return toolStream("goal_large_result", {});
 		return goalCalls === 2
@@ -239,7 +240,7 @@ function response(context: Context) {
 		: textStream(`Blocker attempt ${String(blockerAttempt)} recorded; continue the audit.`);
 }
 
-function activeGoal(objective: string) {
+export function activeGoal(objective: string) {
 	const now = Date.now();
 	return {
 		id: crypto.randomUUID(),
@@ -338,6 +339,13 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 			},
 		};
 	});
-	pi.on("session_compact", (event) => log({ type: "session_compact", reason: event.reason }));
+	pi.on("session_compact", async (event, ctx) => {
+		log({ type: "session_compact", reason: event.reason, idle: ctx.isIdle() });
+		if (scenario() === "manual-compaction") {
+			// A later asynchronous handler must not be mistaken for an idle Host.
+			await new Promise((resolve) => setTimeout(resolve, 35));
+			log({ type: "manual_compaction_handler_complete" });
+		}
+	});
 	pi.on("session_start", (event) => log({ type: "session_start", reason: event.reason }));
 }

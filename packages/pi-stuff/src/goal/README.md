@@ -32,6 +32,15 @@ longer remain active.
 - Preserves Goal identity across Pi's native compaction lifecycle.
 - Shows current status, usage, budget, and elapsed time in the shared Statusline.
 
+## Compaction continuation
+
+Pi 0.85.0 emits `session_compact` before clearing its manual-compaction busy state, without a later `agent_settled`
+event. Goal preserves its continuation or pending queue action and reuses its cancellable Session-owned recovery task
+to dispatch only after Pi is idle. The task yields once, then checks every 10 ms only while that handoff remains
+pending; dispatch, cancellation, queued user work, another compaction, or Session shutdown ends it. Ordinary startup,
+idle operation, and Tool calls gain no recurring check. Native automatic retries and Suite compaction preflight retain
+their existing owners.
+
 ## Documentation
 
 - [Goal guide](../../../../docs/capabilities/goal.md)
