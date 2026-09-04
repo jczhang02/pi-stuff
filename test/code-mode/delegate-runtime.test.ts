@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { isCodemodeObject, requireCodemodeValue } from "../../packages/pi-stuff/src/code-mode/cloudflare/codec.js";
 import { CodeModeDelegateRuntime } from "../../packages/pi-stuff/src/code-mode/host/delegate-runtime.js";
 import { CodeModeEffectOwner } from "../../packages/pi-stuff/src/code-mode/host/effect-owner.js";
+import { MAX_CONCURRENT_CODE_MODE_TOOL_CALLS } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import { EffectFoundation } from "../../packages/pi-stuff/src/shared/effect-foundation.js";
 
 async function delegateRuntime(
@@ -231,7 +232,7 @@ test("a durable approval decision pauses before the nested Tool can execute", as
 	runtime.clear();
 });
 
-test("a failed durable success record is settled as an error instead of staying in flight", async () => {
+test("a failed durable success record is never rewritten as an ordinary Tool error", async () => {
 	const responses: unknown[] = [];
 	const settlements: string[] = [];
 	const runtime = await delegateRuntime((message) => responses.push(message));
@@ -277,14 +278,14 @@ test("a failed durable success record is settled as an error instead of staying 
 	});
 	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
 
-	expect(settlements).toEqual(["success", "error"]);
+	expect(settlements).toEqual(["success"]);
 	expect(responses).toEqual([
 		{ id: 10, result: { message: "ledger full", status: "error" }, type: "delegate/response" },
 	]);
 	runtime.clear();
 });
 
-test("an unserializable Tool result settles as an error before durable success", async () => {
+test("an unserializable post-effect Tool result reports an incomplete settlement", async () => {
 	const responses: unknown[] = [];
 	const settlements: string[] = [];
 	const cyclic: unknown[] = [];
@@ -330,7 +331,7 @@ test("an unserializable Tool result settles as an error before durable success",
 	});
 	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
 
-	expect(settlements).toEqual(["error"]);
+	expect(settlements).toEqual(["incomplete"]);
 	expect(responses).toEqual([
 		{
 			id: 12,
@@ -345,7 +346,7 @@ test("an unserializable Tool result settles as an error before durable success",
 });
 
 test("a trace setup failure settles the durable Tool plan before responding", async () => {
-	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
+	const responses: Array<{ id: number; result: { message?: string; status: string }; type?: string }> = [];
 	const settlements: string[] = [];
 	let invocations = 0;
 	const runtime = await delegateRuntime((message) => responses.push(message));
@@ -403,8 +404,8 @@ test("a trace setup failure settles the durable Tool plan before responding", as
 	runtime.clear();
 });
 
-test("hidden nested Tools count against the per-execution safety bound", async () => {
-	const responses: Array<{ id: number; result: { message?: string; status: string } }> = [];
+test("hidden nested Tools continue beyond the trace retention bound", async () => {
+	const responses: Array<{ id: number; result: { message?: string; status: string }; type?: string }> = [];
 	let invocations = 0;
 	let sequence = 0;
 	const settlements: string[] = [];
@@ -455,16 +456,79 @@ test("hidden nested Tools count against the per-execution safety bound", async (
 				type: "tool/invoke",
 			},
 		});
+		if (index % 64 === 0) {
+			for (let attempt = 0; attempt < 20 && responses.length < index; attempt += 1) await Bun.sleep(1);
+		}
 	}
 	for (let attempt = 0; attempt < 20 && responses.length < 769; attempt += 1) await Bun.sleep(1);
 
-	expect(invocations).toBe(768);
+	expect(invocations).toBe(769);
 	expect(responses).toHaveLength(769);
-	expect(settlements.filter((status) => status === "success")).toHaveLength(768);
-	expect(settlements.filter((status) => status === "error")).toHaveLength(1);
-	expect(responses.find((response) => response.id === 769)?.result).toEqual({
-		message: "Code Mode supports at most 768 nested Tool calls per execution",
-		status: "error",
+	expect(settlements.filter((status) => status === "success")).toHaveLength(769);
+	expect(settlements.filter((status) => status === "error")).toHaveLength(0);
+	expect(responses.find((response) => response.id === 769)?.result.status).toBe("ok");
+	runtime.clear();
+});
+
+test("rejects only excess concurrent nested Tool work", async () => {
+	const responses: Array<{ id: number; result: { message?: string; status: string }; type?: string }> = [];
+	const runtime = await delegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-concurrent-limit",
+		{ cwd: "/project" },
+		new Map([
+			[
+				"pending",
+				{
+					description: "pending fixture",
+					inputSchema: Type.Object({}),
+					invoke: async (_input, _context, signal) =>
+						new Promise<boolean>((resolve) =>
+							signal.addEventListener("abort", () => resolve(true), { once: true }),
+						),
+					ledger: "bypass",
+					name: "pending",
+					presentation: "hidden",
+					usage: "tools.pending({})",
+				},
+			],
+		]),
+	);
+	for (let index = 0; index < MAX_CONCURRENT_CODE_MODE_TOOL_CALLS; index += 1) {
+		runtime.handleRequest({
+			id: index,
+			request: {
+				invocation: {
+					cell_id: "cell-concurrent-limit",
+					input: {},
+					runtime_tool_call_id: `pending-${String(index)}`,
+					tool_name: { name: "pending" },
+				},
+				type: "tool/invoke",
+			},
+		});
+	}
+	const excessId = MAX_CONCURRENT_CODE_MODE_TOOL_CALLS;
+	runtime.handleRequest({
+		id: excessId,
+		request: {
+			invocation: {
+				cell_id: "cell-concurrent-limit",
+				input: {},
+				runtime_tool_call_id: "excess",
+				tool_name: { name: "pending" },
+			},
+			type: "tool/invoke",
+		},
+	});
+
+	expect(responses).toContainEqual({
+		id: excessId,
+		result: {
+			message: `Code Mode has ${String(MAX_CONCURRENT_CODE_MODE_TOOL_CALLS)} concurrent Tool calls; settle one before starting another.`,
+			status: "error",
+		},
+		type: "delegate/response",
 	});
 	runtime.clear();
 });

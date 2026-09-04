@@ -5,12 +5,13 @@ import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../share
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
-import type {
-	ExecutorContext,
-	RuntimeResponse,
-	RuntimeToolCallPlan,
-	RuntimeToolTrace,
-	SuiteSandboxTool,
+import {
+	type ExecutorContext,
+	MAX_CONCURRENT_CODE_MODE_TOOL_CALLS,
+	type RuntimeResponse,
+	type RuntimeToolCallPlan,
+	type RuntimeToolTrace,
+	type SuiteSandboxTool,
 } from "../protocol.js";
 import type { CodeModeEffectOwner, CodeModeEffectTask } from "./effect-owner.js";
 import type { DelegateRequestMessage, DelegateResponseMessage, HostResult } from "./host-protocol.js";
@@ -135,6 +136,13 @@ export class CodeModeDelegateRuntime {
 
 	handleRequest(message: DelegateRequestMessage): void {
 		if (this.requests.has(message.id)) throw new Error(`Duplicate Code Mode delegate request: ${String(message.id)}`);
+		if (message.request.type === "tool/invoke" && this.requests.size >= MAX_CONCURRENT_CODE_MODE_TOOL_CALLS) {
+			this.respond(message.id, {
+				message: `Code Mode has ${String(MAX_CONCURRENT_CODE_MODE_TOOL_CALLS)} concurrent Tool calls; settle one before starting another.`,
+				status: "error",
+			});
+			return;
+		}
 		const request = this.effects.open();
 		this.requests.set(message.id, request);
 		try {
@@ -217,7 +225,6 @@ export class CodeModeDelegateRuntime {
 		try {
 			input = decodeTransportValue(invocation.input);
 			plan = tool.ledger === "bypass" ? undefined : context.beginToolCall?.(name, input);
-			if (hidden) this.traces.reserve(cellId);
 			trace = hidden
 				? { id: plan?.id ?? invocation.runtime_tool_call_id, input, name, status: "running" }
 				: this.traces.start(cellId, plan?.id ?? invocation.runtime_tool_call_id, name, input, plan);
@@ -288,6 +295,7 @@ export class CodeModeDelegateRuntime {
 	private invokeTool(call: PreparedDelegateToolCall): PreparedDelegateRequest {
 		let finished = false;
 		let settlementAttempted = false;
+		let toolReturned = false;
 		let operationSignal: AbortSignal | undefined;
 		const settleFailure = (cause: unknown, cancelled: boolean): void => {
 			if (finished) return;
@@ -303,7 +311,7 @@ export class CodeModeDelegateRuntime {
 					call.context.completeToolCall?.(call.plan, {
 						message: call.trace.error,
 						result: call.trace.result,
-						status: "error",
+						status: toolReturned ? "incomplete" : "error",
 					});
 				} catch (ledgerError) {
 					call.trace.error = `${call.trace.error}; ledger update failed: ${
@@ -327,18 +335,18 @@ export class CodeModeDelegateRuntime {
 			Effect.flatMap((value) =>
 				Effect.try({
 					try: () => {
+						toolReturned = true;
 						const transportValue = encodeTransportValue(value);
 						call.trace.result ??= resultFromValue(value);
 						call.trace.status = "done";
 						if (call.plan) {
+							settlementAttempted = true;
 							call.context.completeToolCall?.(call.plan, {
 								result: call.trace.result,
 								status: "success",
 								value,
 							});
-							settlementAttempted = true;
 						}
-						if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						const serializationError = this.respond(call.messageId, {
 							status: "ok",
 							value: { result: transportValue, type: "tool/result" },
@@ -346,8 +354,8 @@ export class CodeModeDelegateRuntime {
 						if (serializationError) {
 							call.trace.status = "error";
 							call.trace.error = serializationError.message;
-							if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						}
+						if (!call.hidden) this.traces.emit(call.cellId, call.trace, call.context);
 						finished = true;
 					},
 					catch: normalizeError,

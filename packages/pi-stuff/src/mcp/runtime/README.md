@@ -25,6 +25,7 @@ configured servers as their lifecycle or gateway use requires.
 - Requires operating-system credential storage for OAuth.
 - Bounds Tool and Resource discovery to 100 pages or 10,000 entries each.
 - Validates advertised `structuredContent` schemas before returning results.
+- Applies no implicit deadline to ordinary Tool and Resource requests; explicit positive request timeouts remain absolute.
 - Replaces stale runtime ownership and performs bounded transport cleanup.
 
 ## Documentation

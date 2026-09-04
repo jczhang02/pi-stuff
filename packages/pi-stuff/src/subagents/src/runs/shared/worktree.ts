@@ -64,7 +64,7 @@ interface CreateWorktreesOptions {
 
 interface ResolvedWorktreeSetupHook {
 	hookPath: string;
-	timeoutMs: number;
+	timeoutMs?: number;
 }
 
 interface WorktreeSetupHookInput {
@@ -94,8 +94,6 @@ interface RepoState {
 	cwdRelative: string;
 	baseCommit: string;
 }
-
-const DEFAULT_WORKTREE_SETUP_HOOK_TIMEOUT_MS = 30000;
 
 function runGit(cwd: string, args: string[]): GitResult {
 	const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf-8" });
@@ -182,8 +180,8 @@ function linkNodeModulesIfPresent(toplevel: string, worktreePath: string): boole
 	}
 }
 
-function parseHookTimeout(timeoutMs: number | undefined): number {
-	if (timeoutMs === undefined) return DEFAULT_WORKTREE_SETUP_HOOK_TIMEOUT_MS;
+function parseHookTimeout(timeoutMs: number | undefined): number | undefined {
+	if (timeoutMs === undefined) return undefined;
 	if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
 		throw new Error("worktree setup hook timeout must be an integer greater than 0");
 	}
@@ -217,10 +215,8 @@ function resolveWorktreeSetupHook(
 		throw new Error(`worktree setup hook must be a file, got directory: ${resolvedPath}`);
 	}
 
-	return {
-		hookPath: resolvedPath,
-		timeoutMs: parseHookTimeout(config.timeoutMs),
-	};
+	const timeoutMs = parseHookTimeout(config.timeoutMs);
+	return timeoutMs === undefined ? { hookPath: resolvedPath } : { hookPath: resolvedPath, timeoutMs };
 }
 
 function normalizeSyntheticPath(worktreePath: string, rawPath: string): string {

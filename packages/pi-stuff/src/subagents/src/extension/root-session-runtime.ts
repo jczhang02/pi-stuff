@@ -202,7 +202,6 @@ export class RootSessionRuntime {
 					limits: {
 						maxDepth: this.input.config.maxSubagentDepth,
 						maxRunning: this.input.config.maxRunningAgents,
-						maxTotal: this.input.config.maxAgentsPerSession,
 					},
 				});
 				if (this.active && epoch === this.sessionEpoch) {

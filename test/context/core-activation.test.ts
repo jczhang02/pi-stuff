@@ -5,6 +5,7 @@ import {
 	type CompactOptions,
 	cleanupContextCoreFixtures,
 	context,
+	contextStatusWithContinuity,
 	createExtensionCommandContext,
 	type ExtensionAPI,
 	emit,
@@ -219,6 +220,7 @@ test("finishes Magic Context activation during session startup", async () => {
 	let loads = 0;
 	let factories = 0;
 	await piStuffContext(api, {
+		readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384 }),
 		loadMagicContext: async () => {
 			loads++;
 			return {
@@ -257,11 +259,60 @@ test("finishes Magic Context activation during session startup", async () => {
 	expect(factories).toBe(1);
 });
 
+test("reports degraded continuity without disabling active Magic Context", async () => {
+	const handlers: Handlers = new Map();
+	await piStuffContext(apiFor(handlers), {
+		loadMagicContext: async () => magicModule(),
+		prepareMagicContext: async () => "ready",
+		readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 16_384 }),
+	});
+	const ctx = context();
+	await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+	expect(getContextCapability(ctx).status()).toEqual({
+		state: "active",
+		engine: "magic-context",
+		trigger: "startup",
+		continuity: "degraded",
+		continuityDetail:
+			"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+	});
+});
+
+test("reports degraded continuity when native compaction settings are unavailable", () => {
+	const status = contextStatusWithContinuity(
+		{ engine: "magic-context", state: "active", trigger: "startup" },
+		context(),
+		() => undefined,
+	);
+
+	expect(status).toMatchObject({
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("could not be read"),
+	});
+});
+
+test("reports degraded continuity when native compaction settings cannot be read", () => {
+	const status = contextStatusWithContinuity(
+		{ engine: "magic-context", state: "active", trigger: "startup" },
+		context(),
+		() => {
+			throw new Error("settings unavailable");
+		},
+	);
+
+	expect(status).toMatchObject({
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("could not be read"),
+	});
+});
+
 test("fails open and retries when Magic session startup throws", async () => {
 	const handlers: Handlers = new Map();
 	let loads = 0;
 	let starts = 0;
 	piStuffContext(apiFor(handlers), {
+		readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384 }),
 		loadMagicContext: async () => ({
 			default: async (magicApi: ExtensionAPI) => {
 				loads++;
@@ -296,13 +347,15 @@ test("fails open and retries when Magic session startup throws", async () => {
 	});
 });
 
-test("degrades immediately when the active Context engine reports a fatal failure", async () => {
+test("keeps the native fallback warning after the active Context engine fails", async () => {
 	const handlers: Handlers = new Map();
 	const tools: ToolDefinition[] = [];
 	const api = apiFor(handlers, tools);
 	let reportFatal: ((cause: unknown) => void) | undefined;
 	let loads = 0;
+	let enabled = false;
 	await piStuffContext(api, {
+		readNativeCompactionSettings: () => ({ enabled, reserveTokens: 16_384 }),
 		loadMagicContext: async () => {
 			loads += 1;
 			if (loads > 1) throw new Error("replacement engine unavailable");
@@ -340,7 +393,12 @@ test("degrades immediately when the active Context engine reports a fatal failur
 		engine: "native",
 		trigger: "startup",
 		error: "Context engine worker crashed",
+		continuity: "degraded",
+		continuityDetail: expect.stringContaining("Run /settings and enable auto-compaction"),
 	});
+	enabled = true;
+	expect(getContextCapability(ctx).status().continuity).toBeUndefined();
+	expect(getContextCapability(ctx).status().error).toBe("Context engine worker crashed");
 	expect(api.getActiveTools()).not.toContain("ctx_search");
 	const fallback = await projectCurrentContext("agent-fork", ctx);
 	expect(loads).toBe(2);

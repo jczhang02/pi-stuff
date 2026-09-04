@@ -343,6 +343,7 @@ function jsonlTranscript(
 ): AgentTranscriptDocument {
 	let lines = source.split(/\r?\n/);
 	if (sourceTruncated && lines.length > 0) lines = lines.slice(1);
+	let transcriptTruncated = sourceTruncated;
 	const items: ParsedTranscriptItem[] = [];
 	const toolsById = new Map<string, ToolProjection>();
 	for (const line of lines) {
@@ -355,6 +356,10 @@ function jsonlTranscript(
 		}
 		if (!entry) continue;
 		const recordType = isRuntimeString(entry["recordType"]) ? entry["recordType"] : undefined;
+		if (recordType === "truncated") {
+			transcriptTruncated = true;
+			continue;
+		}
 		if (recordType === "tool_start") {
 			const toolCallId = stringField(entry, undefined, "toolCallId");
 			const name = stringField(entry, undefined, "toolName") ?? "Tool";
@@ -409,7 +414,7 @@ function jsonlTranscript(
 			items.push({ kind: "message", speaker: block.speaker, text: block.text });
 		}
 	}
-	return boundedDocument(items, maxChars, sourceTruncated);
+	return boundedDocument(items, maxChars, transcriptTruncated);
 }
 
 async function transcriptCandidate(request: AgentTranscriptRequest): Promise<string | null> {

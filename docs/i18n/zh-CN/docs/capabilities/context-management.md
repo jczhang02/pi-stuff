@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 1276093389d31d68be91f26285e4f0f0195120aa927b0c034a25b46d514a729f -->
+<!-- translation-source: docs/capabilities/context-management.md; translation-source-sha256: 40ae936750b44ffacfca68c2975be8b32945c45391b655d183bb54b39fd48e39 -->
 
 # Context Management
 
@@ -28,7 +28,7 @@ Session 界面不变。
 | `/ctx upgrade` | 升级受支持的旧版 Session history 与 memory |
 
 状态 dialog 报告 Context 用量、活动与 dropped tag、compartment、memory、note、pending 工作、Historian
-状态、cache、history token 和当前错误。
+状态、cache、history token、当前错误，以及 Pi native-compaction fallback 被禁用时的 degraded continuity。
 
 维护会保存为 model 不可见的 Context Activity。`recomp` 与 `upgrade` 在后台继续；切换或 fork Session 会让
 可见更新脱离，但不会取消操作。
@@ -79,6 +79,9 @@ compaction。
 
 对于绕过普通 preflight 的 idle custom turn，如果原生 compaction 已启用并超过 threshold，Context Management
 可以调用 Pi 的公开 compaction 方法。极端 overflow 会交给原生 compaction，并暂时把活动 Context 降级为原生投影。
+Magic Context 活动但 Pi native auto-compaction 被禁用时，`/ctx` 会保持 Magic 活动，同时报告 degraded
+continuity，并引导用户通过 `/settings` 启用 auto-compaction；Pi Stuff 不会自行更改该设置。Magic
+降级到 native Context 后仍保留此警告，启用 native auto-compaction 后才清除。
 
 ## Worker 与恢复
 

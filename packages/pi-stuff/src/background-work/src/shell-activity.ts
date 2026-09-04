@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { CommandMonitorEvidence } from "./command-monitor-evidence.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import type { BackgroundWorkEffectOwner } from "./effect-owner.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT, tryReadBoundedTail } from "./output.js";
@@ -62,6 +63,7 @@ export class ShellActivity {
 	readonly id: string;
 	readonly kind: BackgroundWorkKind;
 	private readonly launch: ShellLaunchState;
+	private readonly monitorEvidence: CommandMonitorEvidence;
 	private launchAuthorized = false;
 	private readonly owner: ShellActivityOwner;
 	readonly startedAt = Date.now();
@@ -76,6 +78,7 @@ export class ShellActivity {
 		this.id = state.id;
 		this.kind = state.input.kind ?? "shell";
 		this.launch = state;
+		this.monitorEvidence = new CommandMonitorEvidence(state.input.monitorSuccessText, state.input.monitorFailureText);
 		this.owner = owner;
 		this.title = shellActivityTitle(state.input);
 	}
@@ -105,10 +108,8 @@ export class ShellActivity {
 
 	bind(): void {
 		const append = (chunk: Buffer) => {
-			const accepted = this.launch.output.append(chunk);
-			if (!accepted && this.launch.output.overflowed && !this.stopReason) {
-				this.requestStop("output_limit", "output limit");
-			}
+			this.monitorEvidence.append(chunk);
+			this.launch.output.append(chunk);
 		};
 		this.launch.supervisor.output.on("data", append);
 		this.launch.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(chunk));
@@ -215,8 +216,7 @@ export class ShellActivity {
 				});
 				yield* Effect.sync(() => {
 					this.finalization = "done";
-					this.launch.output.close();
-					rmSync(this.launch.output.path, { force: true });
+					this.launch.output.remove();
 					try {
 						this.owner.persist();
 					} catch (error) {
@@ -353,11 +353,23 @@ export class ShellActivity {
 	}
 
 	private armTimeout(seconds: number, source: string): void {
-		if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("Bash timeout must be a positive finite number");
-		const milliseconds = Math.min(2_147_483_647, Math.round(seconds * 1_000));
+		const milliseconds = Math.round(seconds * 1_000);
+		if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+			throw new Error("Bash timeout must be a positive, representable duration");
+		}
 		this.cancelTimeout?.();
 		const task = this.owner.effects.open(
-			Effect.sleep(milliseconds).pipe(Effect.andThen(Effect.sync(() => this.requestStop("timeout", source)))),
+			Effect.gen({ self: this }, function* () {
+				let remaining = milliseconds;
+				let observedAt = performance.now();
+				while (remaining > 0) {
+					yield* Effect.sleep(Math.min(remaining, this.dependencies.maxTimeoutSliceMs));
+					const now = performance.now();
+					remaining -= Math.max(1, now - observedAt);
+					observedAt = now;
+				}
+				this.requestStop("timeout", source);
+			}),
 		);
 		this.cancelTimeout = () => {
 			void task.interrupt();
@@ -539,7 +551,7 @@ export class ShellActivity {
 		}
 		this.launch.output.close();
 		const recentOutput = this.launch.output.recentText(DEFAULT_MODEL_OUTPUT_LIMIT);
-		const status = shellTerminalStatus(this.kind, this.launch.input, this.stopReason, code, signal, recentOutput);
+		const status = shellTerminalStatus(this.stopReason, code, signal, this.monitorEvidence.finish());
 		const outcome: BackgroundWorkOutcome = {
 			endedAt: Date.now(),
 			id: this.id,
@@ -547,7 +559,7 @@ export class ShellActivity {
 			parentRunOrigin: this.launch.input.parentRunOrigin ?? "automatic",
 			startedAt: this.startedAt,
 			status,
-			summary: shellOutcomeSummary(this.kind, this.title, this.stopReason, status, code),
+			summary: shellOutcomeSummary(this.kind, this.title, status, code),
 			title: this.title,
 		};
 		if (isRuntimeNumber(code)) Object.assign(outcome, { exitCode: code });

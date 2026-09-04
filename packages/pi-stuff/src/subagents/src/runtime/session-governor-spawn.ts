@@ -166,16 +166,6 @@ function spawnCapacityError(
 			requests.length,
 		);
 	}
-	if (ledger.total + requests.length > effectiveLimits.maxTotal) {
-		const unavailable = firstUnavailableRequest(requests, effectiveLimits.maxTotal - ledger.total);
-		return limitError(
-			"total_limit",
-			unavailable.logicalAgentId,
-			effectiveLimits.maxTotal,
-			ledger.total,
-			requests.length,
-		);
-	}
 	return undefined;
 }
 
@@ -259,7 +249,7 @@ export function limitError(
 	used: number,
 	requested: number,
 ): SessionGovernorLimitError {
-	const resource = code === "depth_limit" ? "depth" : code === "running_limit" ? "running Agent" : "session spawn";
+	const resource = code === "depth_limit" ? "depth" : "running Agent";
 	return {
 		kind: "limit",
 		code,

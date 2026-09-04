@@ -2,6 +2,9 @@ import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-codin
 import type { TSchema } from "typebox";
 import type { CodemodeValue } from "./cloudflare/codec.js";
 
+export const MAX_CONCURRENT_CODE_MODE_TOOL_CALLS = 768;
+export const MAX_RETAINED_CODE_MODE_TRACES = 768;
+
 export interface SandboxToolExecutionContext {
 	readonly captureResult?: (result: AgentToolResult<unknown>) => void;
 	readonly cwd: string;
@@ -70,7 +73,7 @@ export interface RuntimeToolCallPlan {
 export interface RuntimeToolCallSettlement {
 	readonly message?: string;
 	readonly result?: AgentToolResult<unknown>;
-	readonly status: "error" | "success";
+	readonly status: "error" | "incomplete" | "success";
 	readonly value?: CodemodeValue;
 }
 

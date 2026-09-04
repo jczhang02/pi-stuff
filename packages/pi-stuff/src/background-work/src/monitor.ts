@@ -43,11 +43,18 @@ interface ProbeResult {
 	readonly state: "failed" | "pending" | "satisfied";
 }
 
-function boundedSeconds(value: number | undefined, fallback: number, name: string, maximum: number): number {
+function positiveSeconds(value: number | undefined, fallback: number, name: string): number {
 	const selected = value ?? fallback;
-	if (!Number.isFinite(selected) || selected <= 0 || selected > maximum) {
-		throw new Error(`${name} must be greater than 0 and no more than ${String(maximum)} seconds`);
+	const milliseconds = Math.round(selected * 1_000);
+	if (!Number.isFinite(selected) || !Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+		throw new Error(`${name} must be a positive, representable duration`);
 	}
+	return selected;
+}
+
+function boundedSeconds(value: number | undefined, fallback: number, name: string, maximum: number): number {
+	const selected = positiveSeconds(value, fallback, name);
+	if (selected > maximum) throw new Error(`${name} must be no more than ${String(maximum)} seconds`);
 	return selected;
 }
 
@@ -72,6 +79,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	private readonly intervalMs: number;
 	private outcomeValue: Promise<BackgroundWorkOutcome> | undefined;
 	private readonly startedAt = Date.now();
+	private readonly startedAtMonotonic = performance.now();
 	private status: "running" | "stopping" = "running";
 	private stopReason: "shutdown" | "user" | undefined;
 	private task: BackgroundWorkEffectTask<BackgroundWorkOutcome, never> | undefined;
@@ -153,9 +161,8 @@ class PollingMonitor implements BackgroundMonitorActivity {
 					catch: (error) => error,
 				}).pipe(Effect.catch(() => Effect.succeed(0)));
 			}
-			const deadline = this.startedAt + this.timeoutMs;
 			for (;;) {
-				if (Date.now() >= deadline) {
+				if (performance.now() - this.startedAtMonotonic >= this.timeoutMs) {
 					return this.finish("timed_out", `Monitor "${this.title}" timed out`);
 				}
 				const attempt = yield* this.probe().pipe(
@@ -185,7 +192,9 @@ class PollingMonitor implements BackgroundMonitorActivity {
 						}
 					}
 				}
-				yield* Effect.sleep(Math.min(this.intervalMs, Math.max(1, deadline - Date.now())));
+				yield* Effect.sleep(
+					Math.min(this.intervalMs, Math.max(1, this.timeoutMs - (performance.now() - this.startedAtMonotonic))),
+				);
 			}
 		});
 	}
@@ -246,7 +255,7 @@ export async function startMonitor(
 	input: MonitorInput,
 	ctx: ExtensionContext,
 ): Promise<StartedMonitor> {
-	const timeoutSeconds = boundedSeconds(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, "Monitor timeout", 86_400);
+	const timeoutSeconds = positiveSeconds(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, "Monitor timeout");
 	const title = titleFor(input);
 	if (!input.target.trim()) throw new Error("Monitor target is empty");
 	if (input.source === "http") {

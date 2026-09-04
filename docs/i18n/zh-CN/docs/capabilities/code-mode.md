@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: 0a742caf243e864a51ffe974a73622a36fb23eeb22f2597dc266817b0697e754 -->
+<!-- translation-source: docs/capabilities/code-mode.md; translation-source-sha256: b84da18d360a52b7bf6a3d346d5e8516eec84bcc4cbd32fcf18d2eda2149f1cb -->
 
 # Code Mode
 
@@ -61,7 +61,8 @@ I/O 只能通过 Tool catalog 与 Host 输出 helper。
 
 Child Agent 现有 Tool allowlist 与 capability ceiling 仍限制其 catalog。Parent 后续切换不会改变已经运行的 child。
 
-一次 execution 最多发出 768 个 nested Tool call。超过上限会明确失败。
+Nested Tool call 可以越过 trace 保留阈值继续运行。Runtime 保留最新 768 个 trace row 和 omission count，
+不会因此停止 execution。
 
 ## Tool 行为与 UI
 
@@ -86,8 +87,9 @@ Session JSONL 保存 outer result、nested call、media presentation data 与 le
 未完成的 `never` 或 `record` call 会成为 `incomplete`。无法识别活动 Session branch 时，恢复命令会失败，
 不会把 history 当成空。
 
-Ledger 最多保留 50 个 terminal execution；单个 source program 上限为 1,000,000 bytes；一个 Session 的全部
-Code Mode ledger entry 上限为 16 MiB。
+折叠后的 ledger 视图最多保留 50 个 terminal execution；单个 source program 在执行前限制为 1,000,000
+bytes。Canonical replay value 与累计 Session ledger entry 不设 Suite 字节配额；真实持久化失败会让 execution
+保持 `incomplete`，而不会 replay 不确定的 effect。
 
 ## 持久 approval
 

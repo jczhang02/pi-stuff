@@ -27,6 +27,7 @@ import type {
 	RuntimeToolTrace,
 	SuiteSandboxTool,
 } from "./protocol.js";
+import { MAX_RETAINED_CODE_MODE_TRACES } from "./protocol.js";
 
 const AUTO_WAIT_MS = 60_000;
 const MAX_OUTPUT_CHARS = 400_000;
@@ -165,19 +166,54 @@ function projectFinalMedia(
 	return { content: output, operations };
 }
 
+function dropOldestTrace(
+	target: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+	retainedControls: NestedResultControlState,
+): void {
+	const oldestId = target.keys().next().value;
+	if (oldestId === undefined) return;
+	const oldestTrace = target.get(oldestId);
+	if (oldestTrace?.status === "running") retainedControls.omittedRunningTraceIds.add(oldestId);
+	else if (oldestTrace?.result) retainNestedResultControls(retainedControls, oldestTrace.result);
+	const index = operationIndexes.get(oldestId);
+	target.delete(oldestId);
+	operationIndexes.delete(oldestId);
+	if (index === undefined) return;
+	operations.splice(index, 1);
+	for (const [id, current] of operationIndexes) {
+		if (current > index) operationIndexes.set(id, current - 1);
+	}
+}
+
 function mergeTrace(
 	target: Map<string, RuntimeToolTrace>,
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	trace: RuntimeToolTrace,
-): void {
-	target.set(trace.id, trace);
+	retainedControls: NestedResultControlState,
+): number {
 	let index = operationIndexes.get(trace.id);
+	let dropped = 0;
+	if (index === undefined && retainedControls.omittedRunningTraceIds.has(trace.id)) {
+		if (trace.status !== "running") {
+			retainedControls.omittedRunningTraceIds.delete(trace.id);
+			if (trace.result) retainNestedResultControls(retainedControls, trace.result);
+		}
+		return 0;
+	}
 	if (index === undefined) {
+		if (target.size >= MAX_RETAINED_CODE_MODE_TRACES) {
+			dropOldestTrace(target, operationIndexes, operations, retainedControls);
+			dropped = 1;
+		}
 		index = operations.length;
 		operationIndexes.set(trace.id, index);
 	}
+	target.set(trace.id, trace);
 	operations[index] = operation(trace);
+	return dropped;
 }
 
 function mergeTraces(
@@ -185,8 +221,12 @@ function mergeTraces(
 	operationIndexes: Map<string, number>,
 	operations: SuiteToolEnvelopeOperation[],
 	traces: readonly RuntimeToolTrace[] | undefined,
-): void {
-	for (const trace of traces ?? []) mergeTrace(target, operationIndexes, operations, trace);
+	retainedControls: NestedResultControlState,
+): number {
+	let dropped = 0;
+	for (const trace of traces ?? [])
+		dropped += mergeTrace(target, operationIndexes, operations, trace, retainedControls);
+	return dropped;
 }
 
 function settleRunningTraces(
@@ -242,12 +282,12 @@ function runOutcome(
 	const thrownError = response ? undefined : cause instanceof Error ? cause.message : String(cause);
 	const error = controller?.incompleteError?.message ?? responseError ?? thrownError;
 	const invalidImage = cause instanceof InvalidCodeModeImageError;
-	const status: PiStuffCodeModeDetails["status"] = invalidImage
-		? "error"
-		: controller?.isPaused
-			? "paused"
-			: controller?.incompleteError
-				? "incomplete"
+	const status: PiStuffCodeModeDetails["status"] = controller?.incompleteError
+		? "incomplete"
+		: invalidImage
+			? "error"
+			: controller?.isPaused
+				? "paused"
 				: response?.kind === "terminated" || (!response && wasCancelled(cause, signal))
 					? "cancelled"
 					: !response || responseError
@@ -280,8 +320,18 @@ function runOutcome(
 
 type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
 
-function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage | undefined {
-	const values = results.flatMap((result) => (result.usage ? [result.usage] : []));
+type NestedResultControlState = {
+	readonly addedToolNames: Set<string>;
+	readonly omittedRunningTraceIds: Set<string>;
+	terminate: boolean;
+	usage: ToolUsage | undefined;
+};
+
+function newNestedResultControlState(): NestedResultControlState {
+	return { addedToolNames: new Set(), omittedRunningTraceIds: new Set(), terminate: false, usage: undefined };
+}
+
+function aggregateUsage(values: readonly ToolUsage[]): ToolUsage | undefined {
 	if (values.length === 0) return undefined;
 	const optional = (key: "cacheWrite1h" | "reasoning"): number | undefined => {
 		const present = values.filter((usage) => usage[key] !== undefined);
@@ -308,15 +358,44 @@ function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage
 	return usage;
 }
 
+function retainNestedResultControls(target: NestedResultControlState, result: AgentToolResult<unknown>): void {
+	for (const name of result.addedToolNames ?? []) target.addedToolNames.add(name);
+	target.terminate ||= result.terminate === true;
+	target.usage = aggregateUsage([...(target.usage ? [target.usage] : []), ...(result.usage ? [result.usage] : [])]);
+}
+
+function resetTraceProjection(
+	traces: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+	controls: NestedResultControlState,
+): void {
+	traces.clear();
+	operationIndexes.clear();
+	operations.length = 0;
+	controls.addedToolNames.clear();
+	controls.omittedRunningTraceIds.clear();
+	controls.terminate = false;
+	controls.usage = undefined;
+}
+
 function nestedResultControls(
 	traces: ReadonlyMap<string, RuntimeToolTrace>,
+	retained: NestedResultControlState,
 ): Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> {
 	const results = [...traces.values()].flatMap((trace) => (trace.result ? [trace.result] : []));
-	const addedToolNames = [...new Set(results.flatMap((result) => result.addedToolNames ?? []))];
-	const usage = aggregateUsage(results);
+	const addedToolNames = new Set(retained.addedToolNames);
+	for (const result of results) {
+		for (const name of result.addedToolNames ?? []) addedToolNames.add(name);
+	}
+	const usage = aggregateUsage([
+		...(retained.usage ? [retained.usage] : []),
+		...results.flatMap((result) => (result.usage ? [result.usage] : [])),
+	]);
 	const controls: Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> = {};
-	if (addedToolNames.length > 0) Object.assign(controls, { addedToolNames });
-	if (results.some((result) => result.terminate === true)) Object.assign(controls, { terminate: true });
+	if (addedToolNames.size > 0) Object.assign(controls, { addedToolNames: [...addedToolNames] });
+	if (retained.terminate || results.some((result) => result.terminate === true))
+		Object.assign(controls, { terminate: true });
 	if (usage) Object.assign(controls, { usage });
 	return controls;
 }
@@ -493,6 +572,7 @@ export class CodeModeRuntime {
 		const traces = new Map<string, RuntimeToolTrace>();
 		const operationIndexes = new Map<string, number>();
 		const operations: SuiteToolEnvelopeOperation[] = [];
+		const retainedControls = newNestedResultControlState();
 		let droppedOperationCount = 0;
 		let cellId: string | undefined;
 		let attempt = controller?.attempt ?? 0;
@@ -516,13 +596,11 @@ export class CodeModeRuntime {
 			if (pending.length > 0) Object.assign(value, { pending });
 			return value;
 		};
-		const publish = (): void => {
-			onUpdate?.({ content: [], details: details("running") });
-		};
+		const publish = (): void => onUpdate?.({ content: [], details: details("running") });
 		const recordResponse = (response: RuntimeResponse): void => {
 			cellId = response.cellId;
-			droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-			mergeTraces(traces, operationIndexes, operations, response.traces);
+			const dropped = mergeTraces(traces, operationIndexes, operations, response.traces, retainedControls);
+			droppedOperationCount = Math.max(droppedOperationCount + dropped, response.droppedTraceCount ?? 0);
 			publish();
 		};
 		const executorContext: ExecutorContext = {
@@ -530,8 +608,8 @@ export class CodeModeRuntime {
 			extensionContext: context,
 			onTraceUpdate: (update: { cellId: string; droppedTraceCount?: number; trace: RuntimeToolTrace }) => {
 				cellId = update.cellId;
-				droppedOperationCount = Math.max(droppedOperationCount, update.droppedTraceCount ?? 0);
-				mergeTrace(traces, operationIndexes, operations, update.trace);
+				const dropped = mergeTrace(traces, operationIndexes, operations, update.trace, retainedControls);
+				droppedOperationCount = Math.max(droppedOperationCount + dropped, update.droppedTraceCount ?? 0);
 				publish();
 			},
 			toolCallId: outerToolCallId,
@@ -545,36 +623,28 @@ export class CodeModeRuntime {
 		let outcome: ReturnType<typeof runOutcome>;
 		let media: ReturnType<typeof projectFinalMedia>;
 		try {
-			const runPass = async (): Promise<RuntimeResponse> => {
-				const executeOptions: CodeModeExecuteOptions = {
-					context: executorContext,
-					source: buildSuiteSandboxSource(code, this.connector.catalog(), snippets),
-					tools,
-				};
-				if (signal) Object.assign(executeOptions, { signal });
-				let response = await this.executor.execute(executeOptions);
-				recordResponse(response);
-				while (response.kind === "yielded") {
-					const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
-						context: executorContext,
-						yieldTimeMs: AUTO_WAIT_MS,
-					};
-					if (signal) Object.assign(waitOptions, { signal });
-					response = await this.executor.wait(response.cellId, waitOptions);
-					recordResponse(response);
-				}
-				return response;
+			const executeOptions: CodeModeExecuteOptions = {
+				context: executorContext,
+				source: buildSuiteSandboxSource(code, this.connector.catalog(), snippets),
+				tools,
 			};
+			if (signal) Object.assign(executeOptions, { signal });
 			let response: RuntimeResponse;
 			for (;;) {
 				controller?.beginPass(attempt);
 				try {
-					response = await runPass();
+					response = await this.runPass(executeOptions, recordResponse);
 					break;
 				} catch (cause) {
-					if (cause instanceof CodeModeHostLostError && attempt < HOST_RECOVERY_LIMIT && !signal?.aborted) {
+					if (
+						cause instanceof CodeModeHostLostError &&
+						attempt < HOST_RECOVERY_LIMIT &&
+						!signal?.aborted &&
+						!controller?.incompleteError
+					) {
 						if (controller) await this.connector.onPassEnd(controller.executionId, "error");
-						attempt += 1;
+						resetTraceProjection(traces, operationIndexes, operations, retainedControls);
+						[droppedOperationCount, cellId, attempt] = [0, undefined, attempt + 1];
 						continue;
 					}
 					throw cause;
@@ -597,8 +667,26 @@ export class CodeModeRuntime {
 		return {
 			content: media.content,
 			details: finalDetails,
-			...nestedResultControls(traces),
+			...nestedResultControls(traces, retainedControls),
 		};
+	}
+
+	private async runPass(
+		options: CodeModeExecuteOptions,
+		recordResponse: (response: RuntimeResponse) => void,
+	): Promise<RuntimeResponse> {
+		const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
+			context: options.context,
+			yieldTimeMs: AUTO_WAIT_MS,
+		};
+		if (options.signal) Object.assign(waitOptions, { signal: options.signal });
+		let response = await this.executor.execute(options);
+		recordResponse(response);
+		while (response.kind === "yielded") {
+			response = await this.executor.wait(response.cellId, waitOptions);
+			recordResponse(response);
+		}
+		return response;
 	}
 
 	shutdown(): Promise<void> {

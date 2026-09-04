@@ -111,7 +111,6 @@ const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
 			limits: {
 				maxDepth: config.maxSubagentDepth,
 				maxRunning: config.maxRunningAgents,
-				maxTotal: config.maxAgentsPerSession,
 			},
 		}),
 	loadConfiguration: loadConfig,

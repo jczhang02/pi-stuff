@@ -18,7 +18,7 @@ import type { ShellLaunchInput } from "./shell-activity-launch.js";
 
 const QUICK_COMPLETION_MS = 2_000;
 
-export type ShellStopReason = "abort" | "output_limit" | "shutdown" | "timeout" | "user";
+export type ShellStopReason = "abort" | "shutdown" | "timeout" | "user";
 
 export function shellActivityTitle(input: ShellLaunchInput): string {
 	const first =
@@ -158,29 +158,19 @@ export function projectShellSnapshot(source: ShellSnapshotProjection): Backgroun
 }
 
 export function shellTerminalStatus(
-	kind: BackgroundWorkKind,
-	input: ShellLaunchInput,
 	stopReason: ShellStopReason | undefined,
 	code: number | null,
 	signal: NodeJS.Signals | null,
-	recentOutput: string,
+	conditionsFailed: boolean,
 ): BackgroundWorkTerminalStatus {
-	let status: BackgroundWorkTerminalStatus;
-	if (stopReason === "timeout") status = "timed_out";
-	else if (stopReason === "output_limit") status = "failed";
-	else if (stopReason) status = "stopped";
-	else status = code === 0 && signal === null ? "completed" : "failed";
-	if (kind === "monitor" && !stopReason) {
-		if (input.monitorFailureText && recentOutput.includes(input.monitorFailureText)) status = "failed";
-		else if (input.monitorSuccessText && !recentOutput.includes(input.monitorSuccessText)) status = "failed";
-	}
-	return status;
+	if (stopReason === "timeout") return "timed_out";
+	if (stopReason) return "stopped";
+	return code === 0 && signal === null && !conditionsFailed ? "completed" : "failed";
 }
 
 export function shellOutcomeSummary(
 	kind: BackgroundWorkKind,
 	title: string,
-	stopReason: ShellStopReason | undefined,
 	status: BackgroundWorkTerminalStatus,
 	code: number | null,
 ): string {
@@ -189,9 +179,7 @@ export function shellOutcomeSummary(
 		case "completed":
 			return `${subject} "${title}" completed`;
 		case "failed":
-			return stopReason === "output_limit"
-				? `${subject} "${title}" exceeded the output limit and was stopped`
-				: `${subject} "${title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
+			return `${subject} "${title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
 		case "stopped":
 			return `${subject} "${title}" stopped`;
 		case "timed_out":

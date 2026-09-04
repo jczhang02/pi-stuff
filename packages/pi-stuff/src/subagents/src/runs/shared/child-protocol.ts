@@ -167,6 +167,7 @@ export interface BoundedLineReader {
 
 export interface BoundedByteTail {
 	byteLength(): number;
+	droppedBytes(): number;
 	push(chunk: Buffer | string): void;
 	text(): string;
 }
@@ -328,6 +329,50 @@ export function createBoundedLineReader(options: {
 	};
 }
 
+export function createRollingLineReader(options: {
+	stream: "stderr";
+	maxPendingLineBytes?: number;
+	onLine: (line: string) => void;
+}): Pick<BoundedLineReader, "end" | "push"> {
+	const maxPendingLineBytes = options.maxPendingLineBytes ?? MAX_CHILD_STDERR_BYTES;
+	if (!Number.isInteger(maxPendingLineBytes) || maxPendingLineBytes < 1) {
+		throw new Error("maxPendingLineBytes must be a positive integer.");
+	}
+	let pending: Buffer = Buffer.alloc(0);
+	let droppedBytes = 0;
+
+	const emitPending = (): void => {
+		if (pending.length === 0 && droppedBytes === 0) return;
+		const marker = droppedBytes > 0 ? `[… ${String(droppedBytes)} earlier ${options.stream} bytes omitted …]\n` : "";
+		options.onLine(`${marker}${pending.toString("utf8")}`);
+		pending = Buffer.alloc(0);
+		droppedBytes = 0;
+	};
+
+	const append = (segment: Buffer): void => {
+		if (segment.length === 0) return;
+		const combined = Buffer.concat([pending, segment]);
+		const retained = trimToUtf8Boundary(combined, maxPendingLineBytes);
+		droppedBytes += combined.length - retained.length;
+		pending = retained;
+	};
+
+	return {
+		push(chunk) {
+			const bytes = isRuntimeString(chunk) ? Buffer.from(chunk) : chunk;
+			let start = 0;
+			for (let index = 0; index < bytes.length; index += 1) {
+				if (bytes[index] !== 0x0a) continue;
+				append(bytes.subarray(start, index));
+				emitPending();
+				start = index + 1;
+			}
+			append(bytes.subarray(start));
+		},
+		end: emitPending,
+	};
+}
+
 function trimToUtf8Boundary(buffer: Buffer, maxBytes: number): Buffer {
 	if (buffer.length <= maxBytes) return buffer;
 	let start = buffer.length - maxBytes;
@@ -342,13 +387,18 @@ function trimToUtf8Boundary(buffer: Buffer, maxBytes: number): Buffer {
 export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): BoundedByteTail {
 	if (!Number.isInteger(maxBytes) || maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
 	let tail: Buffer = Buffer.alloc(0);
+	let droppedBytes = 0;
 	return {
 		push(chunk) {
 			const bytes = isRuntimeString(chunk) ? Buffer.from(chunk) : chunk;
-			tail = trimToUtf8Boundary(Buffer.concat([tail, bytes]), maxBytes);
+			const combined = Buffer.concat([tail, bytes]);
+			const retained = trimToUtf8Boundary(combined, maxBytes);
+			droppedBytes += combined.length - retained.length;
+			tail = retained;
 		},
 		text: () => tail.toString("utf8"),
 		byteLength: () => tail.length,
+		droppedBytes: () => droppedBytes,
 	};
 }
 

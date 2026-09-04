@@ -256,7 +256,7 @@ for (let offset = 0; offset < line.length; offset += 4096) {
 	expect(result.results[0]?.output?.endsWith(tail)).toBeTrue();
 }, 10_000);
 
-test("bounds writer transport without creating an unbounded regular-file spool", async () => {
+test("forwards beyond the retired aggregate transport threshold without a regular-file spool", async () => {
 	if (process.platform === "win32") return;
 	const root = fixtureRoot();
 	const writer = path.join(root, "unbounded-spool-probe.ts");
@@ -264,12 +264,10 @@ test("bounds writer transport without creating an unbounded regular-file spool",
 		writer,
 		`#!/usr/bin/env bun
 import { once } from "node:events";
-process.on("SIGTERM", () => {});
-const chunk = Buffer.alloc(1024 * 1024, 120);
-for (let index = 0; index < 48; index++) {
+const chunk = Buffer.concat([Buffer.alloc(1024 * 1024 - 1, 120), Buffer.from("\\n")]);
+for (let index = 0; index < 2; index++) {
   if (!process.stdout.write(chunk)) await once(process.stdout, "drain");
 }
-setInterval(() => {}, 1_000);
 `,
 		{ mode: 0o700 },
 	);
@@ -321,8 +319,8 @@ setInterval(() => {}, 1_000);
 		});
 		sampleSpools();
 		expect(closed.signal).toBeNull();
-		expect(closed.code).toBe(143);
-		expect(stdoutBytes).toBeLessThanOrEqual(65_537);
+		expect(closed.code).toBe(0);
+		expect(stdoutBytes).toBe(2 * 1024 * 1024);
 		expect(maxSpoolBytes).toBe(0);
 		expect(fs.readdirSync(root).some((entry) => entry.endsWith(".spool"))).toBe(false);
 	} catch (error) {

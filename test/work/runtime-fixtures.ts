@@ -19,7 +19,11 @@ import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { BackgroundWorkEffectOwner } from "../../packages/pi-stuff/src/background-work/src/effect-owner.js";
 import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
-import { BoundedOutputFile, tryReadBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
+import {
+	BoundedOutputFile,
+	foregroundOutputSnapshot,
+	tryReadBoundedTail,
+} from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
 	captureProcessIdentity,
 	captureProcessIdentityWithRetry,
@@ -275,6 +279,7 @@ export {
 	DiagnosticChannel,
 	escapedProcessGroups,
 	existsSync,
+	foregroundOutputSnapshot,
 	isForegroundBashResult,
 	join,
 	leaderGoneProcessGroup,

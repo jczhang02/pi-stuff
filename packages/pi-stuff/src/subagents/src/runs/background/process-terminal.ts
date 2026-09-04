@@ -14,6 +14,7 @@ import { type AsyncStatus, SUBAGENT_LIFECYCLE_ARTIFACT_VERSION } from "../../sha
 import { getErrorMessage as errorMessage, readStatus } from "../../shared/utils.ts";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { canonicalSessionId, inspectSessionLease } from "../shared/session-lease.ts";
+import { appendDiagnosticEvent } from "./runner-output.ts";
 import { inspectWriterProcessLiveness } from "./writer-process-registry.ts";
 
 const MAX_PROCESS_TERMINAL_CANDIDATE_BYTES = 8 * 1024 * 1024;
@@ -422,17 +423,13 @@ export function persistRecoveredProcessTerminal(
 	assertPrivateDirectory(asyncDir);
 	writeAtomicJson(processTerminalPath(asyncDir), proof);
 	overlayStatus(asyncDir, proof);
-	fs.appendFileSync(
-		path.join(asyncDir, "events.jsonl"),
-		`${JSON.stringify({
-			type: "subagent.run.process_terminal_recovered",
-			lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
-			ts: observedAt,
-			runId: status.runId,
-			processTerminal: proof,
-		})}\n`,
-		"utf-8",
-	);
+	appendDiagnosticEvent(path.join(asyncDir, "events.jsonl"), {
+		type: "subagent.run.process_terminal_recovered",
+		lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
+		ts: observedAt,
+		runId: status.runId,
+		processTerminal: proof,
+	});
 	return proof;
 }
 
@@ -611,11 +608,13 @@ export function finalizeProcessTerminal(
 		writeAtomicJson(processTerminalPath(asyncDir), proof);
 		durable = true;
 		overlayStatus(asyncDir, proof, candidateForOverlay);
-		fs.appendFileSync(
-			path.join(asyncDir, "events.jsonl"),
-			`${JSON.stringify({ type: "subagent.run.process_terminal", lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION, ts: Date.now(), runId, processTerminal: proof })}\n`,
-			"utf-8",
-		);
+		appendDiagnosticEvent(path.join(asyncDir, "events.jsonl"), {
+			type: "subagent.run.process_terminal",
+			lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
+			ts: Date.now(),
+			runId,
+			processTerminal: proof,
+		});
 	} catch {
 		// Do not emit a process-terminal event when the proof sidecar was not durable.
 	}

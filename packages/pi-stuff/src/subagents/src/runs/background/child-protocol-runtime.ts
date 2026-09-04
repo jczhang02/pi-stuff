@@ -11,6 +11,7 @@ import {
 	type ChildProtocolMessage,
 	createBoundedByteTail,
 	createBoundedLineReader,
+	createRollingLineReader,
 	formatProtocolOutputLimit,
 	MAX_CHILD_STDERR_BYTES,
 	parseChildProtocolEvent,
@@ -18,6 +19,7 @@ import {
 } from "../shared/child-protocol.ts";
 import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
 import { effectiveToolTimeoutMs, formatToolTimeoutMessage, toolTimeoutCallKey } from "../shared/tool-timeout.ts";
+import { ChildResultReducer } from "./child-result-reducer.ts";
 import type {
 	BackgroundRunnerStatus as RunnerStatus,
 	BackgroundRunnerStatusStep as RunnerStatusStep,
@@ -28,7 +30,6 @@ import {
 	appendRecentOutput,
 	emptyUsage,
 	estimatedChildMessageTokens,
-	maxChildProtocolBytes,
 	providerContextTokens,
 	resolveTaskContextWindow,
 	terminalAssistantStop,
@@ -68,34 +69,28 @@ export interface ChildProtocolSnapshot {
 	toolBudgetBlockedTool: string | undefined;
 }
 
-function aggregateOutputLimit(
-	stream: "stdout" | "stderr",
-	limitBytes: number,
-	observedBytes: number,
-	line: string,
-): ProtocolOutputLimit {
-	const diagnostic = Buffer.from(line, "utf-8");
-	return {
-		code: "protocol_output_limit",
-		stream,
-		scope: "aggregate",
-		limitBytes,
-		observedBytes,
-		diagnosticPrefix: diagnostic.subarray(0, 4_096).toString("utf-8"),
-		diagnosticTail: diagnostic.subarray(Math.max(0, diagnostic.length - 4_096)).toString("utf-8"),
-	};
+function tailEvidence(tail: ReturnType<typeof createBoundedByteTail>, stream: "stdout" | "stderr"): string {
+	const marker =
+		tail.droppedBytes() > 0 ? `[… ${String(tail.droppedBytes())} earlier ${stream} bytes omitted …]\n` : "";
+	return `${marker}${tail.text()}`;
+}
+
+function latestAssistantMessage(messages: readonly ChildProtocolMessage[]): ChildProtocolMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message?.role === "assistant") return message;
+	}
+	return undefined;
 }
 
 export class ChildProtocolRuntime {
 	private readonly input: ChildProtocolRuntimeInput;
 	private readonly usage = emptyUsage();
-	private readonly messages: ChildProtocolMessage[] = [];
+	private readonly resultMessages = new ChildResultReducer();
 	private readonly stderrTail = createBoundedByteTail();
 	private readonly rawOutputTail = createBoundedByteTail();
-	private readonly stdoutProtocolLimit = maxChildProtocolBytes();
-	private readonly stderrProtocolLimit = maxChildProtocolBytes();
 	private readonly stdoutReader: ReturnType<typeof createBoundedLineReader>;
-	private readonly stderrReader: ReturnType<typeof createBoundedLineReader>;
+	private readonly stderrReader: ReturnType<typeof createRollingLineReader>;
 	private contextWindow: number | undefined;
 	private contextTokens: number | undefined;
 	private toolCount = 0;
@@ -103,8 +98,6 @@ export class ChildProtocolRuntime {
 	private assistantError: string | undefined;
 	private protocolError: ProtocolOutputLimit | undefined;
 	private invalidProtocolEvent = false;
-	private stdoutProtocolBytes = 0;
-	private stderrProtocolBytes = 0;
 	private toolTimeoutSequence = 0;
 	private readonly activeToolTimeouts = new Map<string, { toolName: string; cancel: () => void }>();
 	private readonly activeToolTimeoutKeysByName = new Map<string, string[]>();
@@ -124,11 +117,10 @@ export class ChildProtocolRuntime {
 				input.terminate("protocol", formatProtocolOutputLimit(limit), "SIGTERM");
 			},
 		});
-		this.stderrReader = createBoundedLineReader({
+		this.stderrReader = createRollingLineReader({
 			stream: "stderr",
 			maxPendingLineBytes: MAX_CHILD_STDERR_BYTES,
 			onLine: (line) => this.processStderrLine(line),
-			onLimit: (limit) => this.rejectStderrLimit(limit),
 		});
 	}
 
@@ -192,17 +184,6 @@ export class ChildProtocolRuntime {
 		this.appendRawEvent(line);
 	}
 
-	private consumeStdoutBytes(line: string): boolean {
-		const observedBytes = this.stdoutProtocolBytes + Buffer.byteLength(line, "utf-8") + 1;
-		if (observedBytes <= this.stdoutProtocolLimit) {
-			this.stdoutProtocolBytes = observedBytes;
-			return true;
-		}
-		this.protocolError = aggregateOutputLimit("stdout", this.stdoutProtocolLimit, observedBytes, line);
-		this.input.terminate("protocol", formatProtocolOutputLimit(this.protocolError), "SIGTERM");
-		return false;
-	}
-
 	private parseEvent(line: string): ChildProtocolEvent | undefined {
 		let parsed: JsonValue;
 		try {
@@ -222,7 +203,7 @@ export class ChildProtocolRuntime {
 	}
 
 	private processLineUnchecked(line: string): void {
-		if (this.protocolError || this.invalidProtocolEvent || !line.trim() || !this.consumeStdoutBytes(line)) return;
+		if (this.protocolError || this.invalidProtocolEvent || !line.trim()) return;
 		const event = this.parseEvent(line);
 		if (event) this.processEvent(line, event);
 	}
@@ -355,7 +336,7 @@ export class ChildProtocolRuntime {
 	}
 
 	private recordMessage(message: ChildProtocolMessage, assistantMessageEnd: boolean): void {
-		this.messages.push(message);
+		this.resultMessages.record(message);
 		this.updateContextUsage(message);
 		const text = extractTextFromContent(message.content);
 		if (text) {
@@ -383,22 +364,7 @@ export class ChildProtocolRuntime {
 		});
 	}
 
-	private rejectStderrLimit(limit: ProtocolOutputLimit): void {
-		if (this.protocolError || this.invalidProtocolEvent) return;
-		this.protocolError = limit;
-		const diagnostic = formatProtocolOutputLimit(limit);
-		this.appendStderr(diagnostic);
-		this.input.terminate("protocol", diagnostic, "SIGTERM");
-	}
-
 	private processStderrLine(line: string): void {
-		if (this.protocolError || this.invalidProtocolEvent) return;
-		const observedBytes = this.stderrProtocolBytes + Buffer.byteLength(line, "utf-8") + 1;
-		if (observedBytes > this.stderrProtocolLimit) {
-			this.rejectStderrLimit(aggregateOutputLimit("stderr", this.stderrProtocolLimit, observedBytes, line));
-			return;
-		}
-		this.stderrProtocolBytes = observedBytes;
 		this.appendStderr(line);
 	}
 
@@ -418,21 +384,15 @@ export class ChildProtocolRuntime {
 	}
 
 	snapshot(): ChildProtocolSnapshot {
-		let latestAssistantEvidence: ChildProtocolMessage | undefined;
-		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
-			const message = this.messages[index];
-			if (message?.role === "assistant") {
-				latestAssistantEvidence = message;
-				break;
-			}
-		}
+		const messages = this.resultMessages.messages();
+		const latestAssistantEvidence = latestAssistantMessage(messages);
 		return {
-			stderr: this.stderrTail.text(),
-			messages: this.messages,
+			stderr: tailEvidence(this.stderrTail, "stderr"),
+			messages,
 			output:
-				getFinalOutput(this.messages) ||
+				getFinalOutput(messages) ||
 				(latestAssistantEvidence ? extractTextFromContent(latestAssistantEvidence.content) : "") ||
-				this.rawOutputTail.text().trim(),
+				tailEvidence(this.rawOutputTail, "stdout").trim(),
 			assistantError: this.assistantError,
 			protocolError: this.protocolError,
 			usage: this.usage,

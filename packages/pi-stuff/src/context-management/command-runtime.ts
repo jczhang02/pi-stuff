@@ -59,6 +59,7 @@ interface ContextCommandRuntimeOptions {
 	readonly activate: (ctx: ExtensionContext) => Promise<void>;
 	readonly commands: ReadonlyMap<string, MagicCommandDefinition>;
 	readonly currentContext: () => ExtensionContext | undefined;
+	readonly continuityDetail: () => string | undefined;
 	readonly error: () => string | undefined;
 	readonly quietContext: (name: string, ctx: ExtensionContext) => ExtensionContext;
 }
@@ -267,22 +268,25 @@ export class ContextCommandRuntime {
 	private async readStatusSnapshot(ctx: ExtensionContext): Promise<ContextDialogSnapshot> {
 		const handler = this.options.commands.get(CONTEXT_COMMAND_NAMES.status)?.handler;
 		const usage = this.contextUsage(ctx);
+		const continuityDetail = this.options.continuityDetail();
 		if (!handler) {
 			return statusSnapshotFromMagic(
 				undefined,
 				usage,
 				this.options.error() ?? "Magic Context is unavailable; Pi native context remains active.",
+				continuityDetail,
 			);
 		}
 		this.capturedStatus = undefined;
 		try {
 			await handler("", this.options.quietContext(CONTEXT_COMMAND_NAMES.status, ctx));
-			return statusSnapshotFromMagic(this.capturedStatus, usage);
+			return statusSnapshotFromMagic(this.capturedStatus, usage, undefined, continuityDetail);
 		} catch (error) {
 			return statusSnapshotFromMagic(
 				this.capturedStatus,
 				usage,
 				error instanceof Error ? error.message : String(error),
+				continuityDetail,
 			);
 		} finally {
 			this.capturedStatus = undefined;

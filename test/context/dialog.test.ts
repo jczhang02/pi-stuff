@@ -117,6 +117,34 @@ test("turns official Magic status into a readable Pi Stuff snapshot", () => {
 	});
 });
 
+test("shows the repair step when Context continuity is degraded", () => {
+	const detail =
+		"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.";
+	const snapshot = statusSnapshotFromMagic(undefined, undefined, undefined, detail);
+	expect(snapshot.continuity).toBe("degraded");
+	expect(snapshot.continuityDetail).toBe(detail);
+
+	const { context } = harness();
+	const component = createContextDialogView(snapshot).create(context);
+	const text = component.render(100).join("\n");
+	expect(text).toContain("Continuity degraded");
+	expect(text.replaceAll(/\s+/gu, " ")).toContain("Run /settings and enable auto-compaction");
+	component.dispose?.();
+
+	const { context: lowContext } = harness(8);
+	const lowComponent = createContextDialogView(snapshot).create(lowContext);
+	expect(lowComponent.render(100).join("\n")).toContain("Continuity degraded");
+	lowComponent.dispose?.();
+
+	const { context: nestedContext } = harness(8);
+	const nestedComponent = createContextDialogView(snapshot).create(nestedContext);
+	input(nestedComponent, "\r");
+	const nestedText = nestedComponent.render(100).join("\n");
+	expect(nestedText).toContain("Keep 20 recent messages");
+	expect(nestedText).not.toContain("Continuity degraded");
+	nestedComponent.dispose?.();
+});
+
 test("sanitizes and wraps multiline status errors into terminal-safe rows", () => {
 	const snapshot = statusSnapshotFromMagic(
 		{

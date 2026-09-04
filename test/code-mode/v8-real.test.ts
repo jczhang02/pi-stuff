@@ -498,3 +498,62 @@ realTest("the certified V8 host pauses an approval-required Tool and executes it
 		await runtime.shutdown();
 	}
 });
+
+realTest("the certified V8 host cannot continue after a caught post-effect persistence failure", async () => {
+	const executor = await v8Executor();
+	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+	const context = {
+		cwd: process.cwd(),
+		sessionManager: {
+			getBranch: () => branch,
+			getEntries: () => branch,
+			getSessionId: () => "real-v8-incomplete",
+		},
+	} as ExtensionContext;
+	let rejectCompletion = true;
+	const ledger = new CodeModeSessionLedger({
+		appendEntry(customType, data) {
+			if (rejectCompletion && effects === 1) {
+				rejectCompletion = false;
+				throw new Error("injected completion EIO");
+			}
+			branch.push({ customType, data, type: "custom" });
+		},
+	});
+	const definition = {
+		description: "Apply one approval fixture effect",
+		execute: async () => ({ content: [], details: {} }),
+		label: "Approval fixture",
+		name: "approval_fixture",
+		parameters: Type.Object({ value: Type.String() }),
+	} satisfies ToolDefinition;
+	let effects = 0;
+	const registry: SuiteToolDefinitionRegistry = {
+		catalog: () => [{ codeMode: { replay: "never" }, definition }],
+		compensate: async () => false,
+		get: (name) => (name === definition.name ? definition : undefined),
+		async invoke() {
+			effects += 1;
+			return {
+				isError: false,
+				result: { content: [{ type: "text", text: "APPROVED" }], details: {} },
+			};
+		},
+		isActive: (name) => name === definition.name,
+		list: () => [definition],
+	};
+	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(registry), executor, ledger);
+	try {
+		const result = await runtime.execute(
+			"outer-incomplete",
+			"try { await tools.approval_fixture({ value: 'first' }); } catch {} try { await tools.approval_fixture({ value: 'second' }); } catch {} text('caught and finished');",
+			context,
+		);
+		expect(result.details.status).toBe("incomplete");
+		expect(effects).toBe(1);
+		expect(ledger.history(context)[0]?.status).toBe("incomplete");
+	} finally {
+		await runtime.shutdown();
+	}
+});

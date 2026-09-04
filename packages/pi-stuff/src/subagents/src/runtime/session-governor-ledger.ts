@@ -30,7 +30,6 @@ export * from "./session-governor-contracts.ts";
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const LEDGER_VERSION = 1;
-const MAX_LEDGER_BYTES = 4 * 1024 * 1024;
 const record = <Properties extends Parameters<typeof Type.Object>[0]>(properties: Properties) =>
 	Type.Object(properties, { additionalProperties: false });
 const STABLE_TEXT_SCHEMA = Type.String({
@@ -159,7 +158,7 @@ export class SessionGovernorLedger {
 		try {
 			const stat = await this.fs.lstat(this.ledgerPath);
 			const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
-			if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_LEDGER_BYTES) {
+			if (stat.isSymbolicLink() || !stat.isFile()) {
 				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
 			}
 			if (currentUid !== undefined && stat.uid !== currentUid) {
@@ -243,11 +242,6 @@ export class SessionGovernorLedger {
 			const stat = await this.fs.lstat(this.ledgerPath);
 			if (stat.isSymbolicLink() || !stat.isFile()) {
 				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
-			}
-			if (stat.size > MAX_LEDGER_BYTES) {
-				throw new SessionGovernorStateError(
-					`Session governor ledger '${this.ledgerPath}' exceeds the ${MAX_LEDGER_BYTES}-byte safety limit.`,
-				);
 			}
 			const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 			if (currentUid !== undefined && stat.uid !== currentUid) {

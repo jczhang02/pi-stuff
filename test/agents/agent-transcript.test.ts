@@ -1,9 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isJsonInputObject, parseJsonValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { AgentRow } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
+import { createChildTranscriptWriter } from "../../packages/pi-stuff/src/subagents/src/shared/child-transcript.js";
 import { readAgentTranscript } from "../../packages/pi-stuff/src/subagents/src/ui/agent-transcript.js";
 
 const temporaryDirectories: string[] = [];
@@ -391,4 +393,102 @@ test("returns quietly when its dialog signal is already aborted", async () => {
 		signal: controller.signal,
 	});
 	expect(output).toBeNull();
+});
+
+test("disables an undersized transcript instead of publishing unmarked retained data", () => {
+	const directory = tempDirectory();
+	const transcriptPath = join(directory, "undersized.jsonl");
+	const writer = createChildTranscriptWriter({
+		transcriptPath,
+		source: "async",
+		runId: "undersized-run",
+		agent: "reader",
+		cwd: directory,
+		maxBytes: 64,
+	});
+
+	writer.writeInitialUserMessage("cannot fit beside the omission marker");
+	expect(writer.getError()).toContain("cannot preserve omission metadata");
+	expect(() => readFileSync(transcriptPath)).toThrow();
+});
+
+test("records exact omitted transcript bytes and records when one record cannot fit", () => {
+	const directory = tempDirectory();
+	const writeFixture = (transcriptPath: string, maxBytes: number) => {
+		const writer = createChildTranscriptWriter({
+			transcriptPath,
+			source: "async",
+			runId: "exact-roll-run",
+			agent: "reader",
+			cwd: directory,
+			maxBytes,
+		});
+		writer.writeInitialUserMessage("inspect");
+		writer.writeStderrLine("x".repeat(2_000));
+	};
+	const referencePath = join(directory, "exact-reference.jsonl");
+	writeFixture(referencePath, 10_000);
+	const expectedBytes = statSync(referencePath).size;
+	const transcriptPath = join(directory, "exact-rolling.jsonl");
+	writeFixture(transcriptPath, 500);
+
+	const records = readFileSync(transcriptPath, "utf8").trim().split("\n").map(parseJsonValue);
+	expect(records).toHaveLength(1);
+	expect(isJsonInputObject(records[0]) ? records[0] : undefined).toMatchObject({
+		recordType: "truncated",
+		omittedBytes: expectedBytes,
+		omittedRecords: 2,
+	});
+});
+
+test("rolls child transcripts after the retention threshold while preserving newest evidence", async () => {
+	const directory = tempDirectory();
+	const transcriptPath = join(directory, "rolling.jsonl");
+	const maxBytes = 2_000;
+	const writer = createChildTranscriptWriter({
+		transcriptPath,
+		source: "async",
+		runId: "rolling-run",
+		agent: "reader",
+		cwd: directory,
+		maxBytes,
+	});
+	writer.writeInitialUserMessage("inspect");
+	for (let index = 0; index < 20; index += 1) {
+		writer.writeStderrLine(`stderr-${String(index)}-${"x".repeat(240)}`);
+	}
+	writer.writeChildEvent({
+		type: "message_end",
+		message: {
+			role: "assistant",
+			content: [{ type: "text", text: "FINAL_AFTER_ROLLOVER" }],
+			api: "faux",
+			provider: "test",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		},
+	});
+
+	expect(statSync(transcriptPath).size).toBeLessThanOrEqual(maxBytes);
+	const records = readFileSync(transcriptPath, "utf8").trim().split("\n").map(parseJsonValue);
+	const marker = records[0];
+	expect(isJsonInputObject(marker) ? marker : undefined).toMatchObject({
+		recordType: "truncated",
+		omittedBytes: expect.any(Number),
+		omittedRecords: expect.any(Number),
+	});
+	expect(records.some((record) => isJsonInputObject(record) && record["text"] === "FINAL_AFTER_ROLLOVER")).toBe(true);
+	const rendered = await readAgentTranscript(request(row({ transcriptPath }), 10_000));
+	expect(rendered).not.toBeNull();
+	if (!rendered || isRuntimeString(rendered)) throw new Error("Expected a structured rolling transcript");
+	expect(rendered.items[0]).toMatchObject({ kind: "notice" });
 });

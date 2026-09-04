@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { CommandMonitorEvidence } from "../../packages/pi-stuff/src/background-work/src/command-monitor-evidence.js";
 import {
-	type BackgroundWorkRuntime,
 	BoundedOutputFile,
 	captureProcessIdentity,
 	cleanupRuntimeFixtures,
@@ -31,6 +31,30 @@ import {
 } from "./runtime-fixtures.js";
 
 afterEach(cleanupRuntimeFixtures);
+
+test("command Monitor outcomes retain conditions after their output rolls away", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, { outputFactory: (path) => new BoundedOutputFile(path, 1_024) });
+	try {
+		for (const [prefix, suffix, status] of [
+			["ERROR", "READY", "failed"],
+			["READY", "", "completed"],
+		] as const) {
+			const started = await active.startCommandMonitor(
+				{
+					command: `printf '${prefix}'; head -c 100000 /dev/zero | tr '\\0' x; printf '${suffix}'`,
+					failureText: "ERROR",
+					successText: "READY",
+					timeoutSeconds: 5,
+				},
+				context(root),
+			);
+			expect((await started.outcome).status).toBe(status);
+		}
+	} finally {
+		await active.shutdown();
+	}
+});
 
 test("settles from the in-memory tail when output-file writes fail", async () => {
 	const root = temporaryRoot();
@@ -221,36 +245,25 @@ test("isolates foreground Bash progress from a failing onUpdate observer", async
 	}
 });
 
-test("contains rejected timeout, abort, and output-limit stops without an unhandled rejection", async () => {
+test("contains rejected timeout and abort stops without an unhandled rejection", async () => {
 	const unhandled: unknown[] = [];
 	const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => unhandled.push(reason);
 	process.on("unhandledRejection", onUnhandled);
 	try {
-		for (const trigger of ["timeout", "abort", "output-limit"] as const) {
+		for (const trigger of ["timeout", "abort"] as const) {
 			const root = temporaryRoot();
 			let terminationAttempts = 0;
-			const runtimeOptions: Partial<ConstructorParameters<typeof BackgroundWorkRuntime>[0]> = {
+			const active = configuredRuntime(root, {
 				signalSupervisor: (supervisor, _identity, signal) => {
 					terminationAttempts += 1;
 					supervisor.kill(signal);
 					throw new Error(`injected ${trigger} stop failure`);
 				},
-			};
-			if (trigger === "output-limit") {
-				Object.assign(runtimeOptions, {
-					outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
-				});
-			}
-			const active = configuredRuntime(root, runtimeOptions);
+			});
 			const controller = new AbortController();
 			const execution = active.executeBash(
 				Object.assign(
-					{
-						command:
-							trigger === "output-limit"
-								? `printf '${"x".repeat(512)}'; sleep 30`
-								: "sleep 30; printf 'TERMINAL\\n'",
-					},
+					{ command: "sleep 30; printf 'TERMINAL\\n'" },
 					trigger === "abort" ? { signal: controller.signal } : undefined,
 					trigger === "timeout" ? { timeoutSeconds: 0.01 } : undefined,
 				),
@@ -267,6 +280,56 @@ test("contains rejected timeout, abort, and output-limit stops without an unhand
 	} finally {
 		process.off("unhandledRejection", onUnhandled);
 	}
+});
+
+test("segments explicit deadlines without treating a timer slice as the deadline", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, { maxTimeoutSliceMs: 50 });
+	const startedAt = performance.now();
+	try {
+		const started = await active.startCommandMonitor({ command: "sleep 30", timeoutSeconds: 0.3 }, context(root));
+		const outcome = await started.outcome;
+		expect(outcome.status).toBe("timed_out");
+		expect(performance.now() - startedAt).toBeGreaterThanOrEqual(250);
+	} finally {
+		await active.shutdown();
+	}
+});
+
+test("rejects an unrepresentable Bash deadline before spawning work", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root);
+	try {
+		await expect(
+			active.executeBash({ command: "sleep 30", timeoutSeconds: Number.MAX_VALUE }, context(root)),
+		).rejects.toThrow("Bash timeout must be a positive, representable duration");
+		expect(active.snapshot()).toHaveLength(0);
+	} finally {
+		await active.shutdown();
+	}
+});
+
+test("continues a command after its durable output retention fills", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, {
+		outputFactory: (filePath: string) => new BoundedOutputFile(filePath, 64),
+	});
+	const result = await active.executeBash(
+		{ command: "head -c 70000 /dev/zero | tr '\\0' x; printf '\\nSURVIVED\\n'" },
+		context(root),
+	);
+	const text = result.content.find((item) => item.type === "text");
+
+	expect(text?.type === "text" ? text.text : "").toContain("SURVIVED");
+	expect(text?.type === "text" ? text.text : "").toContain("earlier output bytes omitted");
+	expect(text?.type === "text" ? text.text : "").not.toContain("output limit");
+	const details = result.details;
+	if (!details) throw new Error("expected retained-output details");
+	expect(details.omittedBytes).toBeGreaterThan(0);
+	expect(details.retainedOutputPath).toEndWith(".output");
+	expect(details.truncation).toMatchObject({ totalBytes: 70_010, truncated: true, truncatedBy: "bytes" });
+	expect(active.snapshot()).toHaveLength(0);
+	await active.shutdown();
 });
 
 test("retries process termination after a transient unresolved stop proof", async () => {
@@ -478,4 +541,27 @@ test("closes supervisor control descriptors after sequential and concurrent runs
 	}
 	await waitUntil(() => readdirSync("/proc/self/fd").length <= baseline + 4, 5_000);
 	expect(readdirSync("/proc/self/fd").length).toBeLessThanOrEqual(baseline + 4);
+});
+
+test("command Monitor conditions survive byte boundaries with failure precedence", () => {
+	const evidence = new CommandMonitorEvidence("就绪", "失败");
+	for (const byte of Buffer.from("就绪")) evidence.append(Buffer.from([byte]));
+	expect(evidence.finish()).toBeFalse();
+	for (const byte of Buffer.from("失败")) evidence.append(Buffer.from([byte]));
+	evidence.append(Buffer.from("就绪"));
+	expect(evidence.finish()).toBeTrue();
+});
+
+test("command Monitor matches visible text across split terminal controls", () => {
+	for (const [source, success, failure, failed] of [
+		["REA\x1b[32mDY\x1b[0m", "READY", undefined, false],
+		["FA\x1b[31mIL\x1b[0m", undefined, "FAIL", true],
+		["\x1b]0;READY\x07waiting", "READY", undefined, true],
+		["\x1bPREADY\x1b\\waiting", "READY", undefined, true],
+	] as const) {
+		const evidence = new CommandMonitorEvidence(success, failure);
+		for (const byte of Buffer.from(source)) evidence.append(Buffer.from([byte]));
+		evidence.append(Buffer.alloc(100_000, 120));
+		expect(evidence.finish()).toBe(failed);
+	}
 });

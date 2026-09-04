@@ -9,7 +9,7 @@ import { unwrapSuiteToolResult } from "./connector.js";
 import { isCodeModeToolContent } from "./presentation.js";
 
 const SCHEMA_VERSION = 1;
-export const MAX_DURABLE_VALUE_BYTES = 1_000_000;
+export const MAX_DURABLE_INPUT_BYTES = 1_000_000;
 export const MAX_RETAINED_EXECUTIONS = 50;
 
 const EXECUTION_STATUSES = [
@@ -177,30 +177,38 @@ export interface ExecutionState extends Omit<Mutable<CodeModeExecutionHistoryIte
 
 export interface LedgerSnapshot {
 	executions: Map<string, ExecutionState>;
-	physicalBytes: number;
 	snippets: Map<string, Snippet>;
 	totalExecutions: number;
 }
 
-export function durableValue<Value>(what: string, value: Value): StoredValue {
-	let serialized: string | undefined;
+function serializeDurableValue<Value>(what: string, value: Value): string | undefined {
 	try {
-		serialized = stringifyForStorage(value);
+		return stringifyForStorage(value);
 	} catch (error) {
 		throw new Error(
 			`${what} could not be recorded durably (not serializable: ${error instanceof Error ? error.message : String(error)}). Only JSON-compatible values, binary, and bigint can cross a replay boundary.`,
 		);
 	}
-	if (serialized === undefined) return { kind: "undefined" };
-	const bytes = Buffer.byteLength(serialized);
-	if (bytes > MAX_DURABLE_VALUE_BYTES) {
-		throw new Error(
-			`${what} is too large to record durably (${String(bytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Write large data to a file or workspace and return a small reference such as a path.`,
-		);
-	}
-	return { json: parseJsonValue(serialized), kind: "json" };
 }
 
+function storedDurableValue(serialized: string | undefined): StoredValue {
+	return serialized === undefined ? { kind: "undefined" } : { json: parseJsonValue(serialized), kind: "json" };
+}
+
+export function durableValue<Value>(what: string, value: Value): StoredValue {
+	return storedDurableValue(serializeDurableValue(what, value));
+}
+
+export function durableInputValue<Value>(what: string, value: Value): StoredValue {
+	const serialized = serializeDurableValue(what, value);
+	const bytes = serialized === undefined ? 0 : Buffer.byteLength(serialized);
+	if (bytes > MAX_DURABLE_INPUT_BYTES) {
+		throw new Error(
+			`${what} is too large to record durably before execution (${String(bytes)} bytes > ${String(MAX_DURABLE_INPUT_BYTES)} byte limit). Write large data to a file or workspace and pass a small reference such as a path.`,
+		);
+	}
+	return storedDurableValue(serialized);
+}
 export function optionalPresentationValue(name: string, value: AgentToolResult<unknown>): StoredValue | undefined {
 	try {
 		if (!isCodeModeToolContent(value.content)) return undefined;
@@ -224,7 +232,7 @@ export function eventFrom(source: JsonSourceValue): LedgerEvent | undefined {
 }
 
 export function createLedgerSnapshot(): LedgerSnapshot {
-	return { executions: new Map(), physicalBytes: 0, snippets: new Map(), totalExecutions: 0 };
+	return { executions: new Map(), snippets: new Map(), totalExecutions: 0 };
 }
 
 function applyOpened(execution: ExecutionState, event: CallPendingEvent | CallStartedEvent): void {

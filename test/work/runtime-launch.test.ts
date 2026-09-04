@@ -10,12 +10,14 @@ import {
 	context,
 	DiagnosticChannel,
 	existsSync,
+	foregroundOutputSnapshot,
 	join,
 	mkdirSync,
 	processExists,
 	projectNotificationBatch,
 	Readable,
 	readdirSync,
+	renameSync,
 	resolve,
 	statSync,
 	TEST_WORK_AUTHORITY_KEY,
@@ -28,15 +30,166 @@ import {
 
 afterEach(cleanupRuntimeFixtures);
 
-test("never exceeds its byte cap and strips terminal control sequences", () => {
+test("bounds durable output while retaining the newest evidence", () => {
 	const root = temporaryRoot();
 	const path = join(root, "output");
-	const output = new BoundedOutputFile(path, 256);
-	expect(output.append(Buffer.from(`\u001b[31m${"x".repeat(500)}\u001b[0m`))).toBe(false);
+	let observedPublicationBoundary = false;
+	let readBetweenPublications: string | undefined;
+	const output = new BoundedOutputFile(path, 256, {
+		renameSync: (source, destination) => {
+			renameSync(source, destination);
+			if (destination === path) {
+				observedPublicationBoundary = true;
+				readBetweenPublications = tryReadBoundedTail(path);
+			}
+		},
+	});
+	const initialInode = statSync(path).ino;
+	output.append(Buffer.from(`\u001b[31m${"x".repeat(70_000)}\u001b[0m`));
+	output.append(Buffer.from("LATEST-EVIDENCE\n"));
 	output.close();
-	expect(statSync(path).size).toBe(256);
+
+	expect(statSync(path).size).toBeLessThanOrEqual(256);
+	expect(statSync(path).ino).not.toBe(initialInode);
+	expect(observedPublicationBoundary).toBeTrue();
+	expect(readBetweenPublications).toContain("earlier output bytes omitted");
+	expect(output.overflowed).toBeTrue();
+	expect(output.durable).toBeTrue();
+	expect(tryReadBoundedTail(path, 1_024)).toEndWith("LATEST-EVIDENCE");
+	expect(tryReadBoundedTail(path, 1_024)).toContain("earlier output bytes omitted");
+	expect(tryReadBoundedTail(path, 80)).toStartWith("…[68");
+	expect(output.recentText(1_024)).toContain("LATEST-EVIDENCE");
+	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
-	expect(output.recentText()).toContain("output limit reached");
+	expect(output.recentText()).not.toContain("stopped this task");
+	expect(foregroundOutputSnapshot(path, output.recentText()).details).toMatchObject({
+		omittedBytes: expect.any(Number),
+		retainedOutputPath: path,
+	});
+});
+
+test("retains the newest suffix with room for subsequent appends", () => {
+	const path = join(temporaryRoot(), "full-retained-suffix");
+	const output = new BoundedOutputFile(path, 70_000);
+	output.append(Buffer.from("a".repeat(60_000)));
+	output.append(Buffer.from("b".repeat(20_000)));
+	output.close();
+
+	expect(statSync(path).size).toBe(35_000);
+	expect(tryReadBoundedTail(path, 80_000)).toStartWith("…[43.9KB earlier output bytes omitted]\n");
+	expect(tryReadBoundedTail(path, 80_000)).toEndWith("b".repeat(20_000));
+});
+
+test("keeps the prior output generation readable when rollover publication fails", () => {
+	const path = join(temporaryRoot(), "failed-rollover-publication");
+	const output = new BoundedOutputFile(path, 70_000, {
+		renameSync: (source, destination) => {
+			if (destination === path) throw Object.assign(new Error("injected rename EIO"), { code: "EIO" });
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.from(`PRIOR-${"a".repeat(59_994)}`));
+	output.append(Buffer.from("b".repeat(20_000)));
+	output.close();
+
+	expect(output.durable).toBeFalse();
+	expect(tryReadBoundedTail(path, 70_000)).toStartWith("PRIOR-");
+});
+
+test("keeps published output readable when metadata compaction fails", () => {
+	const path = join(temporaryRoot(), "failed-metadata-compaction");
+	let metadataRenames = 0;
+	const output = new BoundedOutputFile(path, 256, {
+		renameSync: (source, destination) => {
+			if (destination === `${path}.omitted-bytes` && ++metadataRenames === 2) {
+				throw Object.assign(new Error("injected compact EIO"), { code: "EIO" });
+			}
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.from("x".repeat(1_000)));
+	output.close();
+
+	expect(output.durable).toBeTrue();
+	expect(tryReadBoundedTail(path)).toContain("earlier output bytes omitted");
+});
+
+test("preserves terminal newlines and UTF-8 boundaries in foreground suffixes", () => {
+	const path = join(temporaryRoot(), "foreground-lines");
+	writeFileSync(path, `${"界".repeat(20_000)}\n`, { mode: 0o600 });
+
+	const snapshot = foregroundOutputSnapshot(path, undefined);
+	expect(snapshot.text).not.toContain("�");
+	expect(snapshot.text).toContain("\n\n\n[Showing last");
+});
+
+test("preserves cumulative omission in a truncated foreground result", () => {
+	const root = temporaryRoot();
+	const path = join(root, "foreground-output");
+	const output = new BoundedOutputFile(path, 140_000);
+	output.append(Buffer.from("x".repeat(200_000)));
+	output.append(Buffer.from("\nLATEST-EVIDENCE\n"));
+	output.close();
+
+	const snapshot = foregroundOutputSnapshot(path, output.recentText());
+	expect(snapshot.text).toStartWith("…[195.3KB");
+	expect(snapshot.text).toContain("LATEST-EVIDENCE");
+	expect(snapshot.text).toContain("Retained output:");
+	expect(snapshot.text).not.toContain("Full output:");
+	expect(snapshot.details).toMatchObject({ omittedBytes: 130_000, retainedOutputPath: path });
+	expect(snapshot.details).not.toHaveProperty("fullOutputPath");
+});
+
+test("counts malformed UTF-8 bytes exactly in retained output", () => {
+	const path = join(temporaryRoot(), "binary-output");
+	const output = new BoundedOutputFile(path, 70_000);
+	output.append(Buffer.alloc(100_000, 0xff));
+	output.close();
+
+	const snapshot = foregroundOutputSnapshot(path, output.recentText());
+	expect(snapshot.text).toStartWith("…[81.0KB earlier output bytes omitted]");
+	const truncation = snapshot.details?.truncation;
+	if (!truncation) throw new Error("expected malformed output truncation details");
+	expect(truncation.totalBytes).toBe(100_000);
+	expect(truncation.outputBytes).toBeLessThanOrEqual(50 * 1_024);
+});
+
+test("falls back instead of pairing output with mismatched omission metadata", () => {
+	const path = join(temporaryRoot(), "mismatched-generation");
+	const output = new BoundedOutputFile(path, 256);
+	output.append(Buffer.from("x".repeat(1_000)));
+	output.close();
+	writeFileSync(`${path}.omitted-bytes`, "0:0:123", { mode: 0o600 });
+
+	expect(tryReadBoundedTail(path)).toBeUndefined();
+	expect(foregroundOutputSnapshot(path, "MEMORY-FALLBACK").text).toBe("MEMORY-FALLBACK");
+});
+
+test("preserves a multibyte character split across a durable rollover", () => {
+	const path = join(temporaryRoot(), "split-utf8-output");
+	const output = new BoundedOutputFile(path, 64);
+	output.append(Buffer.concat([Buffer.from("x".repeat(64)), Buffer.from([0xe2])]));
+	output.append(Buffer.from([0x82, 0xac]));
+	output.close();
+
+	const retained = tryReadBoundedTail(path) ?? "";
+	expect(retained).toEndWith("€");
+	expect(retained).not.toContain("�");
+});
+
+test("preserves command output that resembles an internal omission marker", () => {
+	const path = join(temporaryRoot(), "literal-marker-output");
+	const literal = "…[123 earlier output bytes omitted]\nREAL-OUTPUT";
+	writeFileSync(path, literal, { mode: 0o600 });
+
+	expect(tryReadBoundedTail(path)).toBe(literal);
+	expect(foregroundOutputSnapshot(path, undefined).text).toBe(literal);
+});
+
+test("rejects timer slices that the runtime cannot schedule safely", () => {
+	expect(() => configuredRuntime(temporaryRoot(), { maxTimeoutSliceMs: 2_147_483_648 })).toThrow(
+		"timer slice must be a positive safe integer no greater than 2147483647",
+	);
 });
 
 test("degrades write and close failures to the bounded in-memory tail", () => {
@@ -69,7 +222,7 @@ test("keeps in-memory and on-disk UTF-8 tails on character boundaries", () => {
 	const root = temporaryRoot();
 	const path = join(root, "multibyte-output");
 	const output = new BoundedOutputFile(path, 1_024);
-	expect(output.append(Buffer.from("界".repeat(100), "utf-8"))).toBe(true);
+	expect(output.append(Buffer.from("界".repeat(1_000), "utf-8"))).toBe(true);
 	const memoryTail = output.recentText(5);
 	output.close();
 	const diskTail = tryReadBoundedTail(path, 5) ?? "";
@@ -413,4 +566,21 @@ test("accepts a command acknowledgement after a fast supervisor exit", async () 
 	const result = await active.executeBash({ command: ":" }, context(root));
 	expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
 	await active.shutdown();
+});
+
+test("amortizes rollover writes across small output chunks", () => {
+	const path = join(temporaryRoot(), "amortized-output");
+	let replacementBytes = 0;
+	const output = new BoundedOutputFile(path, 64_000, {
+		renameSync: (source, destination) => {
+			if (destination === path) replacementBytes += statSync(source).size;
+			renameSync(source, destination);
+		},
+	});
+	output.append(Buffer.alloc(64_000));
+	for (let index = 0; index < 100; index++) output.append(Buffer.alloc(1_000));
+	output.close();
+	expect(output.durable).toBeTrue();
+	expect(replacementBytes).toBeLessThan(164_000);
+	expect(statSync(path).size).toBeLessThanOrEqual(64_000);
 });

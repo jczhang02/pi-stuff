@@ -44,7 +44,7 @@ the background automatically. That Foreground Handoff resumes the Agent when the
 | `command` | Shell command to run |
 | `description` | Optional task label, up to 160 characters |
 | `run_in_background` | Launch independently and detach immediately |
-| `timeout` | Optional runtime limit from 0.1 to 86,400 seconds |
+| `timeout` | Optional positive runtime limit in seconds |
 
 A timeout or stop terminates the owned process tree. Background output remains bounded and can be inspected by activity
 ID. Do not create a Monitor merely to watch a handed-off foreground Shell; that Shell owns its terminal wake.
@@ -61,10 +61,11 @@ The `monitor` Tool supports four sources:
 | `http` | HTTP or HTTPS response |
 
 `success_text` and `failure_text` are exact substrings. Failure wins when both match. With neither condition, the first
-readable evidence completes the Monitor.
+readable evidence completes the Monitor. A command Monitor matches terminal-sanitized text and remembers matches across its complete output stream, including
+UTF-8 and terminal-control chunk boundaries; later output retention cannot erase a success or failure match.
 
 The default polling interval is 2 seconds and the default deadline is 600 seconds. Intervals may be 0.1–60 seconds;
-deadlines may be 0.1–86,400 seconds. A missing file or log remains pending while it waits to appear, and non-2xx HTTP
+explicit deadlines may be any positive representable number of seconds and are scheduled in safe timer segments. A missing file or log remains pending while it waits to appear, and non-2xx HTTP
 responses remain pending unless failure text matches.
 
 ## Inspect and control
@@ -100,8 +101,12 @@ long-term task log.
 
 One Session may have up to 16 simultaneous Shells and Monitors, including launch reservations.
 
-Shell output has a 20 MiB durable cap, a 64 KiB in-memory tail, and a 50 KiB default model-readable tail. Monitor
-evidence is capped at 64 KiB. Output reads preserve valid UTF-8 boundaries.
+A Shell keeps complete output until the 20 MiB retention threshold. Each rollover retains the newest 10 MiB,
+leaving room for subsequent appends without rewriting the retained file for every output chunk. Crossing it does not terminate the process: Background
+Work continues consuming output, retains the latest 64 KiB with an omitted-byte count, and returns a 50 KiB
+model-readable tail by default. When completed Bash details include an output artifact, they expose `fullOutputPath` only while that file remains
+complete; after rolling they expose `retainedOutputPath` and `omittedBytes` instead. Redirect output in the command when a
+complete log is required. Monitor evidence is capped at 64 KiB. Output reads preserve valid UTF-8 boundaries.
 
 ## Shutdown and recovery
 

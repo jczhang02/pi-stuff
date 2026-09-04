@@ -232,16 +232,10 @@ export function formatAgentExecutionGovernorError(
 				`${error.limit} levels deep. Finish this work in the current Agent instead.`
 			);
 		}
-		if (error.code === "running_limit") {
-			return (
-				`Cannot ${action} ${agentCount(requested)}: ${error.used} ${plural(error.used, "Agent is", "Agents are")} ` +
-				`already running in this session and only ${error.limit} may run at once. ` +
-				"Wait for a running Agent to finish or stop one, then try again."
-			);
-		}
 		return (
-			`Cannot ${action} ${agentCount(requested)}: this session has already created ${error.used} of its ` +
-			`${error.limit} Agent limit. Start a new Pi session to create more Agents.`
+			`Cannot ${action} ${agentCount(requested)}: ${error.used} ${plural(error.used, "Agent is", "Agents are")} ` +
+			`already running in this session and only ${error.limit} may run at once. ` +
+			"Wait for a running Agent to finish or stop one, then try again."
 		);
 	}
 	if (error.kind === "cost_guard") return error.message;

@@ -32,6 +32,8 @@ The dialog lists current work, follows bounded output, and stops activities owne
 - Delivers terminal outcomes automatically without conversational polling.
 - Keeps the newest 64 bounded completion receipts for recent inspection.
 - Limits one Session to 16 simultaneous Shells and Monitors.
+- Keeps a rolling output tail with an omission count instead of stopping productive work at the retention threshold.
+- Labels completed output paths as full or retained according to whether rolling occurred.
 - Stops owned process trees and records authenticated recovery metadata at shutdown.
 
 ## Documentation

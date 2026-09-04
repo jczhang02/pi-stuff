@@ -29,7 +29,6 @@ const BASH_PARAMETERS = Type.Object({
 	timeout: Type.Optional(
 		Type.Number({
 			description: "Maximum command runtime in seconds; omit for no runtime limit",
-			maximum: 86_400,
 			minimum: 0.1,
 		}),
 	),
@@ -66,7 +65,6 @@ const MONITOR_PARAMETERS = Type.Object({
 	timeout_seconds: Type.Optional(
 		Type.Number({
 			description: "Deadline for observing the condition; defaults to 600 seconds",
-			maximum: 86_400,
 			minimum: 0.1,
 		}),
 	),

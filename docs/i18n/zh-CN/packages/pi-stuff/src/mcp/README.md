@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: 5cf63d0b5c93facb72921316cf14e5a30429fcf945a7c3277ca111db8daf909e -->
+<!-- translation-source: packages/pi-stuff/src/mcp/README.md; translation-source-sha256: d8abeb0238c7515623536ca7c745e574e73173761db85563aa7d993e6f873f7b -->
 
 # MCP
 
@@ -31,6 +31,7 @@ Server 默认按需连接。Dialog 管理 setup、认证、重连、启用状态
 - 通过一个 `mcp` gateway 搜索并调用带前缀的 server Tool。
 - 在可选 startup connection 前恢复缓存 metadata。
 - 把 OAuth credential 保存到操作系统 credential store。
+- 未配置正数 request timeout 时，让普通 Tool 与 Resource request 运行至结算或取消。
 - 对 metadata discovery、Tool output、raw detail 与诊断设定上限。
 
 ## 文档

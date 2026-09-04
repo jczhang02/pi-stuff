@@ -22,6 +22,15 @@ import {
 
 afterEach(cleanupContextCoreFixtures);
 
+const ACTIVE_CONTEXT_STATUS = {
+	continuity: "degraded",
+	continuityDetail:
+		"Pi native auto-compaction is disabled. Run /settings and enable auto-compaction so Pi can recover if Magic Context becomes unavailable.",
+	engine: "magic-context",
+	state: "active",
+	trigger: "input",
+} as const;
+
 test("runs input activation only while Context is unsettled", () => {
 	expect(__test.requiresInputActivation("dormant")).toBe(true);
 	expect(__test.requiresInputActivation("loading")).toBe(true);
@@ -78,11 +87,7 @@ test("accepted input activation survives Agent-turn interruption", async () => {
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	await new Promise<void>((resolve) => setImmediate(resolve));
 
-	expect(getContextCapability(ctx).status()).toEqual({
-		state: "active",
-		engine: "magic-context",
-		trigger: "input",
-	});
+	expect(getContextCapability(ctx).status()).toEqual(ACTIVE_CONTEXT_STATUS);
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 	expect(factoryLoads).toBe(1);
 });
@@ -122,11 +127,7 @@ test("does not bootstrap Magic Context from an Extension-authored automatic turn
 	await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 	expect(preparations).toEqual([false, false, true]);
 	expect(factories).toBe(1);
-	expect(getContextCapability(ctx).status()).toEqual({
-		state: "active",
-		engine: "magic-context",
-		trigger: "input",
-	});
+	expect(getContextCapability(ctx).status()).toEqual(ACTIVE_CONTEXT_STATUS);
 });
 
 test("historical user attribution cannot authorize first-use Context mutation", async () => {
@@ -178,11 +179,7 @@ test("historical user attribution cannot authorize first-use Context mutation", 
 	);
 	expect(preparations).toEqual([false, false, false, true]);
 	expect(factories).toBe(1);
-	expect(getContextCapability(ctx).status()).toEqual({
-		state: "active",
-		engine: "magic-context",
-		trigger: "input",
-	});
+	expect(getContextCapability(ctx).status()).toEqual(ACTIVE_CONTEXT_STATUS);
 });
 
 test("does not bootstrap Magic Context when a later Extension handles automatic input", async () => {
@@ -257,11 +254,7 @@ test("retries a deferred automatic activation when direct input arrives concurre
 
 	expect(preparations).toEqual([false, false, true]);
 	expect(factories).toBe(1);
-	expect(getContextCapability(ctx).status()).toEqual({
-		state: "active",
-		engine: "magic-context",
-		trigger: "input",
-	});
+	expect(getContextCapability(ctx).status()).toEqual(ACTIVE_CONTEXT_STATUS);
 });
 
 test("gives only interactive input one Host paint turn before Context without requesting another render", async () => {

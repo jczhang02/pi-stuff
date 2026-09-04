@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: 920ac1833c5ab2edc4b43341cdf747ebff9474d01e9f2987cf3071c2ff945879 -->
+<!-- translation-source: packages/pi-stuff/src/mcp/runtime/README.md; translation-source-sha256: c0ede4e37a6764327aa52788f539e3bc113c74c6701224b60aa7d4f863f3c8f5 -->
 
 # MCP Runtime
 
@@ -27,6 +27,7 @@ Pi Stuff MCP gateway 背后的配置、transport、认证、生命周期、disco
 - 要求操作系统 credential storage 才能使用 OAuth。
 - 把 Tool 与 Resource discovery 各限制为 100 页或 10,000 项。
 - 返回结果前验证声明的 `structuredContent` schema。
+- 普通 Tool 与 Resource request 不设隐式 deadline；显式正数 request timeout 仍是绝对 deadline。
 - 替换过期 runtime ownership，并执行有界 transport cleanup。
 
 ## 文档

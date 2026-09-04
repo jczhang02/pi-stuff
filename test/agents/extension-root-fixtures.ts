@@ -215,7 +215,6 @@ function config(): PiStuffAgentsConfig {
 	return {
 		maxSubagentDepth: 3,
 		maxRunningAgents: 20,
-		maxAgentsPerSession: 200,
 	};
 }
 

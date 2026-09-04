@@ -3,9 +3,6 @@ import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-typ
 export const TOOL_TIMEOUT_ENV = "PI_SUBAGENT_TOOL_TIMEOUT_MS";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
-export const DEFAULT_FAST_TOOL_TIMEOUT_MS = 300_000;
-
-const DEFAULT_FAST_TOOL_TIMEOUT_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write", "structured_output"]);
 const TOOL_TIMEOUT_EXEMPT_TOOLS = new Set(["contact_supervisor", "intercom", "bg_wait"]);
 
 export function effectiveToolTimeoutMs(
@@ -13,10 +10,7 @@ export function effectiveToolTimeoutMs(
 	configuredToolTimeoutMs: number | undefined,
 ): number | undefined {
 	if (toolName && TOOL_TIMEOUT_EXEMPT_TOOLS.has(toolName)) return undefined;
-	return (
-		configuredToolTimeoutMs ??
-		(toolName && DEFAULT_FAST_TOOL_TIMEOUT_TOOLS.has(toolName) ? DEFAULT_FAST_TOOL_TIMEOUT_MS : undefined)
-	);
+	return configuredToolTimeoutMs;
 }
 
 export function formatToolTimeoutMessage(toolName: string, timeoutMs: number): string {

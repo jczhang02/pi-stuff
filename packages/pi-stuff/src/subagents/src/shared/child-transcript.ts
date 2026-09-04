@@ -5,6 +5,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import type { ToolArguments } from "../../../tool-display/activity.js";
 import { withArtifactGroupWriteClaim } from "./artifacts.ts";
+import { writePrivateAtomicText } from "./atomic-json.ts";
 import { extractTextFromContent, extractToolArgsPreview } from "./utils.ts";
 
 const MAX_TOOL_PAYLOAD_BYTES = 32 * 1024;
@@ -108,6 +109,8 @@ interface ChildTranscriptRecord {
 	maxBytes?: number;
 	message?: unknown;
 	model?: string;
+	omittedBytes?: number;
+	omittedRecords?: number;
 	outputTruncated?: boolean;
 	role?: string;
 	sourceEventType?: string;
@@ -245,15 +248,34 @@ function transcriptEventRecord(
 	return record;
 }
 
+function createTranscriptFileWriter(input: ChildTranscriptWriterInput): (operation: () => void) => void {
+	return input.artifactManaged
+		? (operation) => withArtifactGroupWriteClaim(input.transcriptPath, operation)
+		: (operation) => operation();
+}
+
+function disableUndersizedTranscript(
+	transcriptPath: string,
+	maxBytes: number,
+	writeFile: (operation: () => void) => void,
+): string {
+	try {
+		writeFile(() => fs.rmSync(transcriptPath, { force: true }));
+		return `Child transcript retention limit ${String(maxBytes)} cannot preserve omission metadata.`;
+	} catch (error) {
+		return `Failed to disable child transcript '${transcriptPath}': ${errorMessage(error)}`;
+	}
+}
+
 export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): ChildTranscriptWriter {
 	let bytesWritten = 0;
+	let retainedRecordBytes = 0;
+	let retainedRecords = 0;
+	let omittedBytes = 0;
+	let omittedRecords = 0;
 	let writeError: string | undefined;
-	let truncated = false;
 	const maxBytes = input.maxBytes ?? DEFAULT_MAX_CHILD_TRANSCRIPT_BYTES;
-	const writeFile = (operation: () => void): void => {
-		if (input.artifactManaged) withArtifactGroupWriteClaim(input.transcriptPath, operation);
-		else operation();
-	};
+	const writeFile = createTranscriptFileWriter(input);
 
 	const baseRecord = (recordType: ChildTranscriptRecordType): ChildTranscriptRecord => {
 		const ts = Date.now();
@@ -274,40 +296,53 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		`${JSON.stringify({
 			...baseRecord("truncated"),
 			maxBytes,
-			message: `Child transcript exceeded ${maxBytes} bytes; further records were omitted.`,
+			omittedBytes,
+			omittedRecords,
+			message: `The first ${String(omittedRecords)} child transcript records were omitted from this rolling segment.`,
 		})}\n`;
 
-	const writeTruncatedMarker = () => {
-		truncated = true;
-		const marker = truncatedLine();
-		const markerBytes = Buffer.byteLength(marker, "utf-8");
-		if (bytesWritten + markerBytes > maxBytes) return false;
+	const replaceSegment = (line: string, bytes: number): void => {
+		omittedBytes += retainedRecordBytes;
+		omittedRecords += retainedRecords;
+		let marker = truncatedLine();
+		let payload = `${marker}${line}`;
+		let nextRetainedBytes = bytes;
+		let nextRetainedRecords = 1;
+		if (Buffer.byteLength(payload, "utf-8") > maxBytes) {
+			omittedBytes += bytes;
+			omittedRecords += 1;
+			marker = truncatedLine();
+			if (Buffer.byteLength(marker, "utf-8") > maxBytes) {
+				writeError = disableUndersizedTranscript(input.transcriptPath, maxBytes, writeFile);
+				return;
+			}
+			payload = marker;
+			nextRetainedBytes = 0;
+			nextRetainedRecords = 0;
+		}
 		try {
-			writeFile(() => fs.appendFileSync(input.transcriptPath, marker, "utf-8"));
-			bytesWritten += markerBytes;
-			return true;
+			writeFile(() => writePrivateAtomicText(input.transcriptPath, payload));
+			bytesWritten = Buffer.byteLength(payload, "utf-8");
+			retainedRecordBytes = nextRetainedBytes;
+			retainedRecords = nextRetainedRecords;
 		} catch (error) {
 			writeError = `Failed to write child transcript '${input.transcriptPath}': ${errorMessage(error)}`;
-			return false;
 		}
 	};
 
 	const writeRecord = (record: ChildTranscriptRecord) => {
-		if (writeError || truncated) return;
+		if (writeError) return;
 		const line = `${JSON.stringify(record)}\n`;
 		const bytes = Buffer.byteLength(line, "utf-8");
 		if (bytesWritten + bytes > maxBytes) {
-			writeTruncatedMarker();
-			return;
-		}
-		const markerProbe = truncatedLine();
-		if (bytesWritten + bytes + Buffer.byteLength(markerProbe, "utf-8") > maxBytes) {
-			writeTruncatedMarker();
+			replaceSegment(line, bytes);
 			return;
 		}
 		try {
 			writeFile(() => fs.appendFileSync(input.transcriptPath, line, "utf-8"));
 			bytesWritten += bytes;
+			retainedRecordBytes += bytes;
+			retainedRecords += 1;
 		} catch (error) {
 			writeError = `Failed to write child transcript '${input.transcriptPath}': ${errorMessage(error)}`;
 		}

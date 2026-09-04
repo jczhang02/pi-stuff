@@ -19,12 +19,8 @@ import type { ContextProjection, ContextProjectionAudience, ContextProjectionOpt
 import { estimateProjectionTokens, extractMagicProjection, formatProjection, nativeProjection } from "./projection.js";
 import { applyContextPromptContributions } from "./prompt-contributions.js";
 import { registerContextProviderBoundary } from "./provider-boundary.js";
-import {
-	type ContextCapability,
-	type ContextCapabilityRegistry,
-	ContextCapabilityRuntime,
-	type ContextCapabilityState,
-} from "./runtime.js";
+import { type ContextCapability, type ContextCapabilityRegistry, ContextCapabilityRuntime } from "./runtime.js";
+import type { ContextCapabilityState } from "./status.js";
 
 export type { NativeCompactionSettings } from "./magic-runtime.js";
 export type {
@@ -32,12 +28,8 @@ export type {
 	ContextProjectionAudience,
 	ContextProjectionOptions,
 } from "./projection.js";
-export type {
-	ContextActivationTrigger,
-	ContextCapability,
-	ContextCapabilityState,
-	ContextStatusSnapshot,
-} from "./runtime.js";
+export type { ContextCapability } from "./runtime.js";
+export type { ContextActivationTrigger, ContextCapabilityState, ContextStatusSnapshot } from "./status.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";

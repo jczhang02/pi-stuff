@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 986dd781eaae5d1e9f36e94692c6889f30751b97dc2ac154f14c655213266245 -->
+<!-- translation-source: docs/capabilities/subagents.md; translation-source-sha256: 09540cca81d8e9728b5961d0354a6529ce69d299ba3448e16fc5edb631631fd9 -->
 
 # Agents
 
@@ -85,13 +85,14 @@ Grouped task 会在当前容量内并发运行。同一条 Assistant response �
 ## 后台与前台
 
 后台 launch 在 admission 和启动后返回。最终结果会生成紧凑、持久的 TUI result，不会主动开启另一轮主 Agent。
-完整报告保留在 `/agents` 中。
+完整报告保留在 `/agents` 中。诊断事件日志仅保留有界尾部；滚动日志不会重复发送已观测的控制事件。
 
 前台 launch 会等到结果就绪，再把它返回当前 Tool call。嵌套 fanout 始终归启动它的 child 所有，不能脱离该 owner。
 
 ## `/agents`
 
-`/agents` 显示当前 Session 的 Agent 生命周期、保留结果、Result、Activity 与有界 child transcript。
+`/agents` 显示当前 Session 的 Agent 生命周期、保留结果、Result、Activity 与滚动有界 child transcript。
+Transcript omission 会明确显示。
 终态详情包括稳定的 outcome class 与原因、累计 turn、Tool call、input/output token、Provider 实际报告时的成本、
 model attempt、resume 次数、Agent Target，以及是否支持 continuation。异常结束始终保持为 `incomplete` 或
 `failed`；保留的 partial 证据不会被重新标成成功报告。
@@ -118,8 +119,8 @@ Launch 可以请求 fresh 或 forked context、显式 model、一个 Skill，以
 轮换到 fallback，避免重复工作或外部 mutation。
 
 `toolTimeoutMs` 为每个非等待型 Tool call 设置硬超时。task 级值覆盖 launch 值，launch 值覆盖 Agent frontmatter
-与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。已知快速的内置 Tool 默认 5 分钟；本就需要等待的 supervisor 与 intercom
-Tool 不受此限制。
+与 `PI_SUBAGENT_TOOL_TIMEOUT_MS`。这些位置都未提供显式值时，普通 child Tool 不设隐式 deadline。本就需要
+等待的 supervisor 与 intercom Tool 不受此限制。
 
 `excludeTools` 从 child 的 ambient、显式、MCP 与 Suite 注入 Tool 中减去指定名称。排除 `subagent` 会关闭该
 Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则排除 `read` 会在启动前被拒绝。
@@ -132,12 +133,12 @@ Agent 的嵌套 fanout；如果 Agent 的 Skill lazy loading 需要 `read`，则
 默认 governor 限制为：
 
 - 同时运行 20 个 Agent；
-- 每个 parent Session 总共 launch 200 次；
-- 嵌套深度 3；
-- 每次运行 30 分钟。
+- 嵌套深度 3。
+
+不设累计 launch 配额或默认总运行时间。调用者需要时，`timeoutMs` 可以设置显式 run deadline。
 
 普通 launch 没有 turn 或 Tool-call budget。显式 `toolBudget` 可以限制 Tool call，`toolTimeoutMs` 可以限制单次
-Tool call，`timeoutMs` 可以收紧默认运行期限。
+Tool call。
 
 初始 child、model attempt、fallback 与 resume 共用一个持久 work unit。后续自动工作开始前，累计报告用量达到
 1,000,000 个 input 加 output token，或 Provider 实际报告成本达到 5.00 美元时，governor 会请求关注。Provider

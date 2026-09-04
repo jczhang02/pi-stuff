@@ -1,200 +1,167 @@
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
-import { dirname } from "node:path";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	type TruncationResult,
+} from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalWhitespace as sanitizeTerminalText } from "../../shared/terminal-text.js";
+import { readRollingOutput, utf8SafeTail, visibleOmissionMarker } from "./rolling-output.js";
 
+export {
+	BoundedOutputFile,
+	boundedTextTail,
+	DEFAULT_MODEL_OUTPUT_LIMIT,
+	tryReadBoundedTail,
+	utf8SafePrefix,
+	utf8SafeTail,
+} from "./rolling-output.js";
 export { sanitizeTerminalText };
 
-const OVERFLOW_MARKER = Buffer.from("\n[Pi Stuff stopped this task: output limit reached.]\n", "utf-8");
-
-const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
-export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
-const MEMORY_TAIL_LIMIT = 64 * 1024;
-
-function completeUtf8End(buffer: Buffer): number {
-	let end = buffer.length;
-	while (end > 0) {
-		let start = end - 1;
-		while (start > 0 && ((buffer[start] ?? 0) & 0xc0) === 0x80) start -= 1;
-		const lead = buffer[start] ?? 0;
-		const width = lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : lead < 0xf8 ? 4 : 1;
-		if (end - start >= width) return end;
-		end = start;
-	}
-	return 0;
+interface BufferTruncation {
+	readonly retainedBytes: number;
+	readonly truncation: TruncationResult;
 }
 
-export function utf8SafeTail(buffer: Buffer, maxBytes: number): Buffer {
-	let start = Math.max(0, buffer.length - Math.max(1, maxBytes));
-	while (start < buffer.length && ((buffer[start] ?? 0) & 0xc0) === 0x80) start += 1;
-	return buffer.subarray(start, completeUtf8End(buffer));
+function splitBufferLines(buffer: Buffer): Buffer[] {
+	if (buffer.length === 0) return [];
+	const lines: Buffer[] = [];
+	let start = 0;
+	for (;;) {
+		const end = buffer.indexOf(0x0a, start);
+		if (end < 0) break;
+		lines.push(buffer.subarray(start, end));
+		start = end + 1;
+	}
+	if (start < buffer.length) lines.push(buffer.subarray(start));
+	return lines;
 }
 
-export function utf8SafePrefix(buffer: Buffer): Buffer {
-	return buffer.subarray(0, completeUtf8End(buffer));
+function decodedTail(buffer: Buffer, maxBytes: number) {
+	let selected = utf8SafeTail(buffer, maxBytes);
+	let text = selected.toString("utf8");
+	let bytes = Buffer.byteLength(text, "utf8");
+	while (bytes > maxBytes && selected.length > 0) {
+		const nextBytes = Math.max(1, selected.length - Math.max(1, Math.ceil((bytes - maxBytes) / 3)));
+		selected = utf8SafeTail(selected, nextBytes);
+		text = selected.toString("utf8");
+		bytes = Buffer.byteLength(text, "utf8");
+	}
+	return { buffer: selected, text };
 }
 
-export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
-	const buffer = Buffer.from(value, "utf-8");
-	const selected = utf8SafeTail(buffer, maxBytes);
-	return formatTextTail(selected, buffer.length > selected.length);
-}
-
-function formatTextTail(selected: Buffer, omitted: boolean): string {
-	const prefix = omitted ? "…[earlier output omitted]\n" : "";
-	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
-}
-
-export class BoundedOutputFile {
-	readonly path: string;
-	private bytes = 0;
-	private closed = false;
-	private fd: number | undefined;
-	private readonly closeFile: typeof closeSync;
-	private readonly maxBytes: number;
-	private overflow = false;
-	private storageError: string | undefined;
-	private tail = Buffer.alloc(0);
-	private readonly writeFile: typeof writeSync;
-
-	constructor(
-		path: string,
-		maxBytes = DEFAULT_ACTIVITY_OUTPUT_LIMIT,
-		deps: { readonly closeSync?: typeof closeSync; readonly writeSync?: typeof writeSync } = {},
-	) {
-		if (!Number.isSafeInteger(maxBytes) || maxBytes <= OVERFLOW_MARKER.length) {
-			throw new Error("Background output limit is too small");
-		}
-		this.path = path;
-		this.maxBytes = maxBytes;
-		this.closeFile = deps.closeSync ?? closeSync;
-		this.writeFile = deps.writeSync ?? writeSync;
-		mkdirSync(dirname(path), { mode: 0o700, recursive: true });
-		this.fd = openSync(path, "wx", 0o600);
+function truncateBufferTail(buffer: Buffer): BufferTruncation {
+	const raw = buffer.toString("utf8");
+	const renderedBytes = Buffer.byteLength(raw, "utf8");
+	const totalBytes = buffer.length;
+	const lines = splitBufferLines(buffer);
+	const totalLines = lines.length;
+	const trailingNewline = buffer.at(-1) === 0x0a;
+	if (totalLines <= DEFAULT_MAX_LINES && renderedBytes <= DEFAULT_MAX_BYTES) {
+		return {
+			retainedBytes: buffer.length,
+			truncation: {
+				content: raw,
+				firstLineExceedsLimit: false,
+				lastLinePartial: false,
+				maxBytes: DEFAULT_MAX_BYTES,
+				maxLines: DEFAULT_MAX_LINES,
+				outputBytes: renderedBytes,
+				outputLines: totalLines,
+				totalBytes,
+				totalLines,
+				truncated: false,
+				truncatedBy: null,
+			},
+		};
 	}
 
-	get bytesWritten(): number {
-		return this.bytes;
-	}
-
-	get overflowed(): boolean {
-		return this.overflow;
-	}
-
-	get durable(): boolean {
-		return this.storageError === undefined;
-	}
-
-	/** Returns false once the hard cap has been reached. */
-	append(chunk: Buffer): boolean {
-		if (this.closed || this.overflow) return false;
-		const contentLimit = this.maxBytes - OVERFLOW_MARKER.length;
-		const remaining = Math.max(0, contentLimit - this.bytes);
-		const accepted = chunk.subarray(0, remaining);
-		if (accepted.length > 0) this.write(accepted);
-		if (accepted.length === chunk.length) return true;
-		this.overflow = true;
-		this.write(OVERFLOW_MARKER);
-		return false;
-	}
-
-	recentText(maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
-		const selected = utf8SafeTail(this.tail, maxBytes);
-		return formatTextTail(selected, this.bytes > selected.length);
-	}
-
-	close(): void {
-		if (this.closed) return;
-		this.closed = true;
-		this.closeStorage();
-	}
-
-	private write(chunk: Buffer): void {
-		this.bytes += chunk.length;
-		this.remember(chunk);
-		if (this.fd === undefined) return;
-		try {
-			let offset = 0;
-			while (offset < chunk.length) {
-				const written = this.writeFile(this.fd, chunk, offset, chunk.length - offset);
-				if (written <= 0) throw new Error("Background output write made no progress");
-				offset += written;
+	const selected: Array<{ buffer: Buffer; text: string }> = [];
+	let outputBytes = 0;
+	let retainedBytes = 0;
+	let lastLinePartial = false;
+	let truncatedBy: "bytes" | "lines" = "lines";
+	for (let index = lines.length - 1; index >= 0 && selected.length < DEFAULT_MAX_LINES; index -= 1) {
+		const line = lines[index];
+		if (line === undefined) continue;
+		const text = line.toString("utf8");
+		const separatorBytes = selected.length > 0 || trailingNewline ? 1 : 0;
+		const lineBytes = Buffer.byteLength(text, "utf8") + separatorBytes;
+		if (outputBytes + lineBytes > DEFAULT_MAX_BYTES) {
+			truncatedBy = "bytes";
+			if (selected.length === 0) {
+				const suffixBytes = trailingNewline ? 1 : 0;
+				const partial = decodedTail(line, DEFAULT_MAX_BYTES - suffixBytes);
+				selected.unshift(partial);
+				outputBytes = Buffer.byteLength(partial.text, "utf8") + suffixBytes;
+				retainedBytes = partial.buffer.length + suffixBytes;
+				lastLinePartial = true;
 			}
-		} catch (error) {
-			this.degradeStorage(error);
+			break;
 		}
+		selected.unshift({ buffer: line, text });
+		outputBytes += lineBytes;
+		retainedBytes += line.length + separatorBytes;
 	}
-
-	private remember(chunk: Buffer): void {
-		const joined = Buffer.concat([this.tail, chunk]);
-		this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - MEMORY_TAIL_LIMIT)));
-	}
-
-	private degradeStorage(cause: unknown): void {
-		if (this.storageError !== undefined) return;
-		this.storageError = cause instanceof Error ? cause.message : String(cause);
-		this.remember(Buffer.from(`\n[Background output storage failed: ${this.storageError}]\n`, "utf-8"));
-		this.closeStorage();
-	}
-
-	private closeStorage(): void {
-		const fd = this.fd;
-		this.fd = undefined;
-		if (fd === undefined) return;
-		try {
-			this.closeFile(fd);
-		} catch (error) {
-			this.degradeStorage(error);
-		}
-	}
-}
-
-export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string | undefined {
-	let fd: number | undefined;
-	try {
-		fd = openSync(path, "r");
-		const size = statSync(path).size;
-		const bytes = Math.min(size, Math.max(1, maxBytes));
-		const buffer = Buffer.alloc(bytes);
-		readSync(fd, buffer, 0, bytes, Math.max(0, size - bytes));
-		const selected = utf8SafeTail(buffer, bytes);
-		return formatTextTail(selected, size > bytes);
-	} catch {
-		return undefined;
-	} finally {
-		if (fd !== undefined) {
-			try {
-				closeSync(fd);
-			} catch {
-				// Reading output is an observation path. A failed close must not make
-				// Background Work or its UI fail after the useful tail was read.
-			}
-		}
-	}
+	return {
+		retainedBytes,
+		truncation: {
+			content: selected.map((line) => line.text).join("\n") + (trailingNewline ? "\n" : ""),
+			firstLineExceedsLimit: false,
+			lastLinePartial,
+			maxBytes: DEFAULT_MAX_BYTES,
+			maxLines: DEFAULT_MAX_LINES,
+			outputBytes,
+			outputLines: selected.length,
+			totalBytes,
+			totalLines,
+			truncated: true,
+			truncatedBy,
+		},
+	};
 }
 
 export function foregroundOutputSnapshot(outputPath: string | undefined, recentOutput: string | undefined) {
 	if (!outputPath) return { text: recentOutput ?? "" };
-	let raw: string;
-	try {
-		raw = readFileSync(outputPath, "utf8");
-	} catch {
-		return { text: recentOutput ?? "" };
+	const output = readRollingOutput(outputPath);
+	if (!output) return { text: recentOutput ?? "" };
+	const { retainedBytes, truncation } = truncateBufferTail(output.buffer);
+	const projectedBytesOmitted = output.buffer.length - retainedBytes;
+	const prefix = output.omittedBytes > 0 ? visibleOmissionMarker(output.omittedBytes + projectedBytesOmitted) : "";
+	if (!truncation.truncated) {
+		return output.omittedBytes > 0
+			? {
+					details: {
+						omittedBytes: output.omittedBytes,
+						retainedOutputPath: outputPath,
+						truncation: {
+							...truncation,
+							totalBytes: output.omittedBytes + output.buffer.length,
+							truncated: true,
+							truncatedBy: "bytes" as const,
+						},
+					},
+					text: prefix + truncation.content,
+				}
+			: { text: truncation.content };
 	}
-	const truncation = truncateTail(raw, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
-	if (!truncation.truncated) return { text: truncation.content };
 	const startLine = truncation.totalLines - truncation.outputLines + 1;
 	const endLine = truncation.totalLines;
+	const outputLabel = output.omittedBytes > 0 ? "Retained output" : "Full output";
 	let footer: string;
 	if (truncation.lastLinePartial) {
-		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. Full output: ${outputPath}`;
+		footer = `Showing last ${formatSize(truncation.outputBytes)} of line ${String(endLine)}. ${outputLabel}: ${outputPath}`;
 	} else if (truncation.truncatedBy === "lines") {
-		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)}. Full output: ${outputPath}`;
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)}. ${outputLabel}: ${outputPath}`;
 	} else {
-		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${outputPath}`;
+		footer = `Showing lines ${String(startLine)}-${String(endLine)} of ${String(truncation.totalLines)} (${formatSize(DEFAULT_MAX_BYTES)} limit). ${outputLabel}: ${outputPath}`;
 	}
-	return {
-		details: { fullOutputPath: outputPath, truncation },
-		text: `${truncation.content}\n\n[${footer}]`,
-	};
+	const details =
+		output.omittedBytes > 0
+			? {
+					omittedBytes: output.omittedBytes,
+					retainedOutputPath: outputPath,
+					truncation: { ...truncation, totalBytes: output.omittedBytes + output.buffer.length },
+				}
+			: { fullOutputPath: outputPath, truncation };
+	return { details, text: `${prefix + truncation.content}\n\n[${footer}]` };
 }

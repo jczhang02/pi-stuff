@@ -122,3 +122,49 @@ export function sanitizeTerminalWhitespace(value: string): string {
 export function sanitizeTerminalInput(value: string): string {
 	return sanitizeTerminalWhitespace(value).replace(/\r\n?/gu, "\n").replace(/\t/gu, "    ");
 }
+
+/** Incremental control stripping without retaining an unbounded OSC or DCS payload. */
+export class TerminalTextStream {
+	private state: "text" | "escape" | "intermediate" | "csi" | "string" = "text";
+	private osc = false;
+	private stringEscape = false;
+
+	append(value: string): string {
+		let output = "";
+		for (const character of value) {
+			const code = character.charCodeAt(0);
+			if (this.state === "string") {
+				if ((this.osc && code === 0x07) || code === 0x9c || (this.stringEscape && code === 0x5c))
+					this.state = "text";
+				this.stringEscape = code === 0x1b;
+				continue;
+			}
+			if (this.state === "csi") {
+				if (code >= 0x40 && code <= 0x7e) this.state = "text";
+				continue;
+			}
+			if (this.state === "intermediate") {
+				if (code < 0x20 || code > 0x2f) this.state = "text";
+				continue;
+			}
+			if (this.state === "escape") {
+				this.state = "text";
+				if (code === 0x5b) this.state = "csi";
+				else if (isStringControl(code)) this.beginString(code);
+				else if (code >= 0x20 && code <= 0x2f) this.state = "intermediate";
+				continue;
+			}
+			if (code === 0x1b) this.state = "escape";
+			else if (code === 0x9b) this.state = "csi";
+			else if (code >= 0x90 && code <= 0x9f && isStringControl(code)) this.beginString(code);
+			else output += character;
+		}
+		return sanitizeTerminalWhitespace(output);
+	}
+
+	private beginString(code: number): void {
+		this.state = "string";
+		this.osc = isOsc(code);
+		this.stringEscape = false;
+	}
+}

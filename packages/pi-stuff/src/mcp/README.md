@@ -30,6 +30,7 @@ or on-demand lifecycle.
 - Searches and invokes prefixed server Tools through one `mcp` gateway.
 - Restores cached metadata before optional startup connections.
 - Stores OAuth credentials in the operating-system credential store.
+- Lets ordinary Tool and Resource requests run until settlement or cancellation unless a positive request timeout is configured.
 - Bounds metadata discovery, Tool output, raw details, and diagnostics.
 
 ## Documentation

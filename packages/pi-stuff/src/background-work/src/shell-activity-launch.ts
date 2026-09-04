@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import type { BoundedOutputFile } from "./output.js";
@@ -18,6 +17,7 @@ import type { WorkRunStorage } from "./storage.js";
 export interface ShellActivityDependencies {
 	readonly captureSupervisorIdentity: typeof captureProcessIdentityWithRetry;
 	readonly cwd: string;
+	readonly maxTimeoutSliceMs: number;
 	readonly outputFactory: (path: string) => BoundedOutputFile;
 	readonly shellPath: string | undefined;
 	readonly signalSupervisor: SignalVerifiedSupervisor;
@@ -145,6 +145,5 @@ function sessionEnvironment(ctx: ExtensionContext): NodeJS.ProcessEnv {
 }
 
 function discardOutput(output: BoundedOutputFile): void {
-	output.close();
-	rmSync(output.path, { force: true });
+	output.remove();
 }

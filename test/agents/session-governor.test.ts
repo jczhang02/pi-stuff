@@ -13,6 +13,7 @@ import {
 	type SessionGovernorFileSystem,
 	SessionGovernorStateError,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
+import type { GovernorLedger } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor-contracts.js";
 import {
 	resolveSessionGovernorRoot,
 	resolveTempRootDir,
@@ -100,7 +101,7 @@ test("ignores a relative XDG_STATE_HOME instead of disabling the governor", () =
 	);
 });
 
-test("uses finite 3/20/200 defaults and rejects zero, fractional, or unlimited configuration", async () => {
+test("keeps finite depth and concurrency defaults while cumulative launches remain unbounded", async () => {
 	const rootDir = await storageRoot("defaults");
 	const governor = new SessionAgentGovernor({ rootDir, sessionId: "session-defaults" });
 
@@ -131,7 +132,7 @@ test("uses finite 3/20/200 defaults and rejects zero, fractional, or unlimited c
 			new SessionAgentGovernor({
 				rootDir,
 				sessionId: "invalid-unlimited",
-				limits: { maxTotal: Number.POSITIVE_INFINITY },
+				limits: { maxRunning: Number.POSITIVE_INFINITY },
 			}),
 	).toThrow("unlimited and zero are not supported");
 });
@@ -179,15 +180,40 @@ test("persists one owner-only ledger across governor reloads", async () => {
 	expect(persisted).toMatchObject({ total: 1, leases: [] });
 });
 
-test("rejects an oversized durable ledger before reading or parsing it", async () => {
-	const rootDir = await storageRoot("oversized-ledger");
-	const sessionId = "oversized-ledger-session";
+test("loads a valid durable ledger after it grows beyond the retired 4 MiB threshold", async () => {
+	const rootDir = await storageRoot("large-ledger");
+	const sessionId = "large-ledger-session";
 	await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
 	const pathToLedger = await ledgerPath(rootDir);
-	await writeFile(pathToLedger, "x".repeat(4 * 1024 * 1024 + 1), { mode: 0o600 });
-	const governor = new SessionAgentGovernor({ rootDir, sessionId });
+	// SAFETY: SessionAgentGovernor created and schema-validated this private v1 ledger immediately above.
+	const ledger = JSON.parse(await readFile(pathToLedger, "utf8")) as GovernorLedger;
+	ledger.agents = Array.from({ length: 12_000 }, (_, index) => {
+		const logicalAgentId = `historical-agent-${String(index)}`;
+		return {
+			logicalAgentId,
+			ownerAgentPath: [],
+			agentPath: [logicalAgentId],
+			limits: ledger.limits,
+			createdAtMs: index,
+			workUsage: {
+				turns: 0,
+				toolCalls: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				modelAttempts: 0,
+				resumes: 0,
+			},
+		};
+	});
+	ledger.total = ledger.agents.length;
+	const serialized = `${JSON.stringify(ledger, null, 2)}\n`;
+	expect(Buffer.byteLength(serialized, "utf8")).toBeGreaterThan(4 * 1024 * 1024);
+	await writeFile(pathToLedger, serialized, { mode: 0o600 });
 
-	await expect(governor.snapshot()).rejects.toThrow("exceeds the 4194304-byte safety limit");
+	expect(await new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).toMatchObject({
+		total: 12_000,
+		running: 0,
+	});
 });
 
 test("persists explicit spawn runtime mappings and resolves the current lease", async () => {
@@ -337,12 +363,12 @@ test("migrates old lease records without runtime fields and rewrites the ledger"
 	expect(rewritten.leases[0]).toMatchObject({ runtimeRunId: "legacy-agent", childIndex: 0 });
 });
 
-test("atomically enforces running and total limits without leaking either counter", async () => {
+test("enforces running capacity without turning cumulative launches into admission", async () => {
 	const rootDir = await storageRoot("limits");
 	const options = {
 		rootDir,
 		sessionId: "limited-session",
-		limits: { maxDepth: 3, maxRunning: 1, maxTotal: 2 },
+		limits: { maxDepth: 3, maxRunning: 1 },
 	};
 	const firstGovernor = new SessionAgentGovernor({ ...options, pid: 111 });
 	const secondGovernor = new SessionAgentGovernor({ ...options, pid: 222 });
@@ -364,21 +390,18 @@ test("atomically enforces running and total limits without leaking either counte
 	expect(second.snapshot).toMatchObject({ total: 2, running: 1 });
 	await secondGovernor.release(secondLease);
 
-	const totalLimited = await firstGovernor.acquireSpawn({ logicalAgentId: "agent-c", pid: 1_004 });
-	expect(totalLimited).toMatchObject({
-		ok: false,
-		error: { kind: "limit", code: "total_limit", limit: 2, used: 2 },
-		snapshot: { total: 2, running: 0 },
-	});
+	const third = requireLease(await firstGovernor.acquireSpawn({ logicalAgentId: "agent-c", pid: 1_004 }));
+	expect(third).toMatchObject({ logicalAgentId: "agent-c" });
+	expect(await firstGovernor.release(third)).toMatchObject({ released: true, snapshot: { total: 3, running: 0 } });
 
 	const resumed = await firstGovernor.acquireResume({ logicalAgentId: success.lease.logicalAgentId, pid: 1_005 });
 	if (!resumed.ok) throw new Error(`Expected resume, received ${resumed.error.code}`);
-	expect(resumed).toMatchObject({ ok: true, lease: { mode: "resume" }, snapshot: { total: 2, running: 1 } });
+	expect(resumed).toMatchObject({ ok: true, lease: { mode: "resume" }, snapshot: { total: 3, running: 1 } });
 	const resumeLimited = await secondGovernor.acquireResume({ logicalAgentId: secondId, pid: 1_006 });
 	expect(resumeLimited).toMatchObject({
 		ok: false,
 		error: { kind: "limit", code: "running_limit" },
-		snapshot: { total: 2, running: 1 },
+		snapshot: { total: 3, running: 1 },
 	});
 	await firstGovernor.release(resumed.lease);
 
@@ -389,7 +412,7 @@ test("atomically enforces running and total limits without leaking either counte
 	expect(duplicateSpawn).toMatchObject({
 		ok: false,
 		error: { kind: "conflict", code: "logical_agent_exists" },
-		snapshot: { total: 2, running: 0 },
+		snapshot: { total: 3, running: 0 },
 	});
 });
 
@@ -398,7 +421,7 @@ test("atomically reserves whole parallel batches across competing governor insta
 	const options = {
 		rootDir,
 		sessionId: "batch-race-session",
-		limits: { maxDepth: 3, maxRunning: 3, maxTotal: 6 },
+		limits: { maxDepth: 3, maxRunning: 3 },
 	};
 	const first = new SessionAgentGovernor({ ...options, pid: 811 });
 	const second = new SessionAgentGovernor({ ...options, pid: 822 });
@@ -442,7 +465,7 @@ test("rolls back batch validation and mid-construction failures without durable 
 	const governor = new SessionAgentGovernor({
 		rootDir,
 		sessionId: "batch-rollback-session",
-		limits: { maxRunning: 2, maxTotal: 3 },
+		limits: { maxRunning: 2 },
 	});
 	const seed = requireLease(await governor.acquireSpawn({ logicalAgentId: "seed", pid: 9_001 }));
 	await governor.release(seed);
@@ -474,20 +497,16 @@ test("rolls back batch validation and mid-construction failures without durable 
 	const totalGovernor = new SessionAgentGovernor({
 		rootDir: totalRoot,
 		sessionId: "batch-total-rollback-session",
-		limits: { maxRunning: 5, maxTotal: 2 },
+		limits: { maxRunning: 5 },
 	});
 	const counted = requireLease(await totalGovernor.acquireSpawn({ logicalAgentId: "already-counted", pid: 9_015 }));
 	await totalGovernor.release(counted);
-	const totalFailure = await totalGovernor.acquireSpawnBatch([
+	const beyondLegacyTotal = await totalGovernor.acquireSpawnBatch([
 		{ logicalAgentId: "total-1", pid: 9_016 },
 		{ logicalAgentId: "total-2", pid: 9_017 },
 	]);
-	expect(totalFailure).toMatchObject({
-		ok: false,
-		error: { kind: "limit", code: "total_limit", used: 1, requested: 2 },
-		snapshot: { total: 1, running: 0 },
-	});
-	expect(totalFailure.snapshot.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["already-counted"]);
+	expect(beyondLegacyTotal).toMatchObject({ ok: true, snapshot: { total: 3, running: 2 } });
+	if (beyondLegacyTotal.ok) await totalGovernor.releaseBatch(beyondLegacyTotal.leases);
 
 	const throwRoot = await storageRoot("batch-token-failure");
 	let tokenCalls = 0;
@@ -567,7 +586,7 @@ test("keeps child ceilings monotonic and rejects delegation below depth three", 
 	const first = await root.acquireSpawn({
 		logicalAgentId: "level-1",
 		pid: 2_001,
-		childLimits: { maxDepth: 99, maxRunning: 99, maxTotal: 999 },
+		childLimits: { maxDepth: 99, maxRunning: 99 },
 	});
 	if (!first.ok) throw new Error(first.error.message);
 	expect(first.snapshot.agents[0]?.limits).toEqual(DEFAULT_SESSION_GOVERNOR_LIMITS);
@@ -617,16 +636,20 @@ test("keeps child ceilings monotonic and rejects delegation below depth three", 
 	const ceilingChild = await ceilingRoot.acquireSpawn({
 		logicalAgentId: "bounded-child",
 		pid: 2_101,
-		childLimits: { maxDepth: 1, maxRunning: 2, maxTotal: 10 },
+		childLimits: { maxDepth: 1, maxRunning: 2 },
 	});
 	if (!ceilingChild.ok) throw new Error(ceilingChild.error.message);
 	const bounded = new SessionAgentGovernor({
 		rootDir: ceilingRootDir,
 		sessionId: "ceiling-session",
 		ownerAgentPath: ["bounded-child"],
-		limits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 },
+		limits: { maxDepth: 3, maxRunning: 20 },
 	});
-	expect((await bounded.snapshot()).effectiveLimits).toEqual({ maxDepth: 1, maxRunning: 2, maxTotal: 10 });
+	expect((await bounded.snapshot()).effectiveLimits).toEqual({
+		maxDepth: 1,
+		maxRunning: 2,
+		maxTotal: DEFAULT_SESSION_GOVERNOR_LIMITS.maxTotal,
+	});
 	expect(await bounded.acquireSpawn({ logicalAgentId: "forbidden-grandchild", pid: 2_102 })).toMatchObject({
 		ok: false,
 		error: { kind: "limit", code: "depth_limit", limit: 1 },

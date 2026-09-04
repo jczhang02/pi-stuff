@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/mcp.md; translation-source-sha256: 924ac093d49443ef270a7424e3bf0d567cf737becc00d1bc4300a103fa4b8484 -->
+<!-- translation-source: docs/capabilities/mcp.md; translation-source-sha256: 8162348ac30c7d2f84835414046111010320c5836bd2ca97314585638b7c8fbe -->
 
 # MCP
 
@@ -86,6 +86,9 @@ Setup 和持久变更只有在交互确认后才写入，并在需要时 reload 
 再重试操作。失败 server 使用 reconnect backoff，不阻止其他 server 或普通 Pi 工作。
 
 `keep-alive` 与 `eager` server 可以在恢复缓存 metadata 后于启动阶段连接。
+
+普通 Tool 与 Resource request 不设隐式绝对 deadline。全局或逐 server 配置的正数 `requestTimeoutMs` 仍是
+绝对 request deadline。连接、认证和 metadata discovery 保留有界 setup 行为。
 
 Tool 与 Resource metadata 各自限制为 100 页或 10,000 项。Change notification 使用同一上限。
 

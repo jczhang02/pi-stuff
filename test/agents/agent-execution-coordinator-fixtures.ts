@@ -182,8 +182,8 @@ function reservation(
 function snapshot() {
 	return {
 		sessionId: "session",
-		limits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 },
-		effectiveLimits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 },
+		limits: { maxDepth: 3, maxRunning: 20, maxTotal: Number.MAX_SAFE_INTEGER },
+		effectiveLimits: { maxDepth: 3, maxRunning: 20, maxTotal: Number.MAX_SAFE_INTEGER },
 		ownerAgentPath: [],
 		total: 0,
 		running: 0,

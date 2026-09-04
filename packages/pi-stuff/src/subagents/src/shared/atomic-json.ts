@@ -38,7 +38,7 @@ function renameWithRetry(
 
 export function createAtomicTextWriter(
 	options: AtomicFileWriterOptions = {},
-): (filePath: string, content: string) => void {
+): (filePath: string, content: string | Uint8Array) => void {
 	const fsImpl = options.fs ?? fs;
 	const now = options.now ?? Date.now;
 	const pid = options.pid ?? process.pid;
@@ -50,7 +50,7 @@ export function createAtomicTextWriter(
 	const renameRetryDelaysMs = retryRenameErrors ? retryDelaysMs : [];
 	const directoryRetryDelaysMs = retryDirectoryErrors ? retryDelaysMs : [];
 	const wait = options.wait ?? waitForFileSystemRetry;
-	return (filePath: string, content: string): void => {
+	return (filePath: string, content: string | Uint8Array): void => {
 		runFileSystemOperationWithRetry(
 			() => {
 				fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });

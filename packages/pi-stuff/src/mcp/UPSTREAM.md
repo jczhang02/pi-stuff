@@ -26,3 +26,15 @@ or release lifecycle to maintain.
 - Persists confirmed per-server automatic/on-demand connection policy as a narrow project-local MCP override.
 - Closes Streamable HTTP probes and live sessions before their SDK clients.
 - Retains only the SDK, transport, OAuth, lifecycle, metadata cache, resource, approval, tracing, and output-guard lanes.
+
+## Locked MCP SDK patch
+
+Pi Stuff pins `@modelcontextprotocol/sdk@1.30.0` and applies
+`patches/@modelcontextprotocol%2Fsdk@1.30.0.patch`.
+The patch changes only `Protocol.request`: `timeout: 0` skips the SDK's default 60-second request timer, while a
+positive timeout retains the upstream absolute-deadline behavior. Pi Stuff passes zero only for ordinary Tool and
+Resource requests without a configured positive `requestTimeoutMs`; connection, authentication, and metadata
+discovery keep their bounded setup behavior.
+
+Every SDK upgrade must review this patch against the new upstream implementation and tests. Remove it when upstream
+provides an equivalent supported no-timeout request option; otherwise regenerate and re-certify the minimal patch.

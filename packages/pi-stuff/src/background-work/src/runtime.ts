@@ -34,9 +34,17 @@ import {
 import { reconcileStaleRuns, WorkRunStorage } from "./storage.js";
 
 const DEFAULT_BACKGROUND_AFTER_MS = 120_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const MAX_CONCURRENT_ACTIVITIES = 16;
 const MAX_TERMINAL_RECEIPTS = 64;
 const MAX_NOTIFICATION_OUTCOMES = 16;
+
+function assertRepresentableTimeoutSeconds(seconds: number, name: string): void {
+	const milliseconds = Math.round(seconds * 1_000);
+	if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+		throw new Error(`${name} must be a positive, representable duration`);
+	}
+}
 const NOTIFICATION_BATCH_DELAY_MS = 200;
 const NOTIFICATION_RETRY_INITIAL_MS = 250;
 const NOTIFICATION_RETRY_MAX_MS = 5_000;
@@ -52,6 +60,8 @@ export { projectNotificationBatch } from "./notification-projection.js";
 
 export interface BackgroundWorkBashDetails extends BashToolDetails {
 	readonly backgroundTaskId?: string;
+	readonly omittedBytes?: number;
+	readonly retainedOutputPath?: string;
 }
 
 export interface BackgroundWorkSnapshot {
@@ -180,9 +190,20 @@ export class BackgroundWorkRuntime {
 		}
 		this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 		this.storage = options.storage ?? new WorkRunStorage(options.cwd, options.sessionId);
+		const maxTimeoutSliceMs = options.maxTimeoutSliceMs ?? MAX_TIMER_DELAY_MS;
+		if (
+			!Number.isSafeInteger(maxTimeoutSliceMs) ||
+			maxTimeoutSliceMs <= 0 ||
+			maxTimeoutSliceMs > MAX_TIMER_DELAY_MS
+		) {
+			throw new Error(
+				`Background Work timer slice must be a positive safe integer no greater than ${String(MAX_TIMER_DELAY_MS)}`,
+			);
+		}
 		this.shellDependencies = {
 			captureSupervisorIdentity: options.captureSupervisorIdentity ?? captureProcessIdentityWithRetry,
 			cwd: options.cwd,
+			maxTimeoutSliceMs,
 			outputFactory: options.outputFactory ?? ((filePath) => new BoundedOutputFile(filePath)),
 			shellPath: options.shellPath,
 			signalSupervisor: options.signalSupervisor ?? signalVerifiedSupervisor,
@@ -302,6 +323,7 @@ export class BackgroundWorkRuntime {
 		input: BashExecutionInput,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<BackgroundWorkBashDetails | undefined>> {
+		if (input.timeoutSeconds !== undefined) assertRepresentableTimeoutSeconds(input.timeoutSeconds, "Bash timeout");
 		const parentRunOrigin = readCurrentAgentWorkOrigin(this.pi);
 		const pendingForegroundLaunch = input.runInBackground ? undefined : { manualDetachRequested: false };
 		if (pendingForegroundLaunch) this.pendingForegroundLaunches.add(pendingForegroundLaunch);
@@ -345,6 +367,7 @@ export class BackgroundWorkRuntime {
 		readonly outputPath?: string;
 	}> {
 		if (!input.command.trim()) throw new Error("Monitor command is empty");
+		assertRepresentableTimeoutSeconds(input.timeoutSeconds, "Monitor timeout");
 		const launch: ShellLaunchInput = {
 			backgrounded: true,
 			command: this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command,

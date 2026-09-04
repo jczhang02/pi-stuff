@@ -15,6 +15,7 @@ import {
 	type CodeModeExecutionStatus,
 	type CodeModePendingAction,
 	createLedgerSnapshot,
+	durableInputValue,
 	durableValue,
 	type ExecutionSettledEvent,
 	type ExecutionState,
@@ -22,7 +23,6 @@ import {
 	executionHistory,
 	type LedgerEvent,
 	type LedgerSnapshot,
-	MAX_DURABLE_VALUE_BYTES,
 	optionalPresentationValue,
 	type ReplayPolicy,
 	trimTerminalExecutions,
@@ -37,11 +37,7 @@ export type {
 };
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
-export const MAX_CODE_MODE_LEDGER_BYTES = 16 * 1024 * 1024;
-// Pi 0.84.4 wraps this event once with fixed custom-entry fields, a generated
-// ID, its parent ID, and an ISO timestamp. 512 bytes deliberately overcounts
-// that Host-owned wrapper between exact measurements on Session reload.
-const PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES = 512;
+const MAX_CODE_MODE_SOURCE_BYTES = 1_000_000;
 const PAUSED_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export type CodeModeStepDecision =
@@ -77,27 +73,36 @@ function isLedgerEntry(entry: SessionEntry): entry is Extract<SessionEntry, { ty
 	return entry.type === "custom" && entry.customType === CODE_MODE_LEDGER_ENTRY_TYPE;
 }
 
-function physicalEntryBytes(entry: SessionEntry): number {
-	try {
-		return Buffer.byteLength(JSON.stringify(entry)) + 1;
-	} catch {
-		return MAX_CODE_MODE_LEDGER_BYTES + 1;
-	}
-}
-
 function loadSnapshot(context: ExtensionContext): LedgerSnapshot {
 	const state = createLedgerSnapshot();
 	for (const entry of context.sessionManager.getBranch?.() ?? context.sessionManager.getEntries()) {
-		if (!isLedgerEntry(entry) || !isJsonSourceValue(entry.data)) continue;
-		const event = eventFrom(entry.data);
-		if (event) applyEvent(state, event);
+		applyEntry(state, entry);
 	}
-	state.physicalBytes = context.sessionManager
-		.getEntries()
-		.filter(isLedgerEntry)
-		.reduce((total, entry) => total + physicalEntryBytes(entry), 0);
 	trimTerminalExecutions(state);
 	return state;
+}
+
+function applyEntry(state: LedgerSnapshot, entry: SessionEntry): void {
+	if (!isLedgerEntry(entry) || !isJsonSourceValue(entry.data)) return;
+	const event = eventFrom(entry.data);
+	if (event) applyEvent(state, event);
+}
+
+function appendedEntries(
+	manager: ExtensionContext["sessionManager"],
+	leafId: string | null,
+	previousLeafId: string | null,
+): SessionEntry[] | undefined {
+	const entries: SessionEntry[] = [];
+	let cursor = leafId;
+	while (cursor !== previousLeafId) {
+		if (cursor === null) return undefined;
+		const entry = manager.getEntry?.(cursor);
+		if (!entry) return undefined;
+		entries.push(entry);
+		cursor = entry.parentId;
+	}
+	return entries.reverse();
 }
 
 export class CodeModeIncompleteExecutionError extends Error {
@@ -126,9 +131,9 @@ export class CodeModeSessionLedger {
 		requiresApproval: ReadonlySet<string> = new Set(),
 	): CodeModeExecutionController {
 		const codeBytes = Buffer.byteLength(code);
-		if (codeBytes > MAX_DURABLE_VALUE_BYTES) {
+		if (codeBytes > MAX_CODE_MODE_SOURCE_BYTES) {
 			throw new Error(
-				`Code Mode source is too large to record durably (${String(codeBytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Move large data out of the program and keep the source small.`,
+				`Code Mode source is too large to record durably (${String(codeBytes)} bytes > ${String(MAX_CODE_MODE_SOURCE_BYTES)} byte limit). Move large data out of the program and keep the source small.`,
 			);
 		}
 		const scope = sessionScope(context);
@@ -332,14 +337,7 @@ export class CodeModeSessionLedger {
 		if (scope.sessionId && scope.context.sessionManager.getSessionId() !== scope.sessionId) {
 			throw new Error("Code Mode Session changed before its execution ledger could be updated");
 		}
-		const bytes = Buffer.byteLength(JSON.stringify(event)) + PROJECTED_SESSION_ENTRY_OVERHEAD_BYTES;
-		if (state.physicalBytes + bytes > MAX_CODE_MODE_LEDGER_BYTES) {
-			throw new Error(
-				`Code Mode Session ledger reached its ${String(MAX_CODE_MODE_LEDGER_BYTES)} byte physical limit. Start a new Pi Session before running more durable Code Mode work.`,
-			);
-		}
 		this.pi.appendEntry(CODE_MODE_LEDGER_ENTRY_TYPE, event);
-		state.physicalBytes += bytes;
 		applyEvent(state, event);
 		trimTerminalExecutions(state);
 		this.rememberSnapshot(scope, state);
@@ -375,10 +373,18 @@ export class CodeModeSessionLedger {
 		if (
 			leafId !== undefined &&
 			this.cache?.sessionManager === scope.context.sessionManager &&
-			this.cache.sessionId === scope.sessionId &&
-			this.cache.leafId === leafId
-		)
-			return this.cache.state;
+			this.cache.sessionId === scope.sessionId
+		) {
+			if (this.cache.leafId === leafId) return this.cache.state;
+			const entries = appendedEntries(scope.context.sessionManager, leafId, this.cache.leafId);
+			if (entries) {
+				const state = this.cache.state;
+				for (const entry of entries) applyEntry(state, entry);
+				trimTerminalExecutions(state);
+				this.storeCache(scope, state, leafId);
+				return state;
+			}
+		}
 		this.cache = undefined;
 		const state = loadSnapshot(scope.context);
 		if (leafId !== undefined) this.storeCache(scope, state, leafId);
@@ -486,6 +492,7 @@ export class CodeModeExecutionController {
 	}
 
 	private planCall(name: string, input: CodemodeValue, policy?: ReplayPolicy): RuntimeToolCallPlan {
+		if (this.incompleteError) throw this.incompleteError;
 		const sequence = this.cursor++;
 		const plan: RuntimeToolCallPlan = {
 			attempt: this.passAttempt,
@@ -500,7 +507,7 @@ export class CodeModeExecutionController {
 			};
 		}
 		const replay = policy ?? this.policies.get(name) ?? "never";
-		const args = durableValue(`Arguments to ${name}`, input);
+		const args = durableInputValue(`Arguments to ${name}`, input);
 		const serializedArgs = stableStringify(input);
 		if (serializedArgs === undefined && input !== undefined) {
 			throw new Error(`Code Mode Tool ${JSON.stringify(name)} received non-serializable input`);
@@ -592,6 +599,7 @@ export class CodeModeExecutionController {
 	}
 
 	completeToolCall = (plan: RuntimeToolCallPlan, settlement: RuntimeToolCallSettlement): void => {
+		if (this.incompleteError) throw this.incompleteError;
 		const call = this.execution.calls.get(plan.sequence);
 		if (
 			plan.executionId !== this.execution.executionId ||
@@ -601,26 +609,45 @@ export class CodeModeExecutionController {
 			call.status !== "running"
 		)
 			throw new Error("Code Mode Tool result has no matching running ledger call");
-		const result = settlement.result ? optionalPresentationValue(call.name, settlement.result) : undefined;
-		const value =
-			settlement.status === "success" && !result
-				? durableValue(`The result of ${call.name}`, settlement.value)
-				: undefined;
-		const event: CallSettledEvent = {
-			at: Date.now(),
-			callId: plan.id,
-			executionId: this.execution.executionId,
-			kind: "call-settled",
-			schemaVersion: 1,
-			status: settlement.status,
-		};
-		if (settlement.message) Object.assign(event, { error: settlement.message });
-		if (result) Object.assign(event, { result });
-		if (value) Object.assign(event, { value });
-		this.ledger.append(this.scope, this.state, event);
+		if (settlement.status === "incomplete") {
+			throw this.markIncomplete(settlement.message ?? "Tool completion could not be recorded");
+		}
+		try {
+			const result = settlement.result ? optionalPresentationValue(call.name, settlement.result) : undefined;
+			const value =
+				settlement.status === "success" && !result
+					? durableValue(`The result of ${call.name}`, settlement.value)
+					: undefined;
+			const event: CallSettledEvent = {
+				at: Date.now(),
+				callId: plan.id,
+				executionId: this.execution.executionId,
+				kind: "call-settled",
+				schemaVersion: 1,
+				status: settlement.status,
+			};
+			if (settlement.message) Object.assign(event, { error: settlement.message });
+			if (result) Object.assign(event, { result });
+			if (value) Object.assign(event, { value });
+			this.ledger.append(this.scope, this.state, event);
+		} catch (cause) {
+			throw this.markIncomplete(cause);
+		}
 	};
 
+	private markIncomplete(cause: unknown): CodeModeIncompleteExecutionError {
+		this.incompleteError ??= new CodeModeIncompleteExecutionError(
+			this.executionId,
+			`Code Mode completion could not be recorded after a possible effect: ${cause instanceof Error ? cause.message : String(cause)}. Inspect the effect before explicitly repeating or abandoning the work.`,
+		);
+		return this.incompleteError;
+	}
+
 	finish(status: CodeModeExecutionStatus, error?: string): void {
+		if (this.incompleteError) {
+			status = "incomplete";
+			error = this.incompleteError.message;
+		}
 		if (this.execution.status === status && this.execution.error === error) return;
 		const event: ExecutionSettledEvent = {
 			at: Date.now(),

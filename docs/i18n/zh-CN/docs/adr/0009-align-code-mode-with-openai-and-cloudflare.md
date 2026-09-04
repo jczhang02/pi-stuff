@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 4c1ef6dfa839fbbccc30a78d8439b5649df2aa9da274f239c735e1ef4f17759e -->
+<!-- translation-source: docs/adr/0009-align-code-mode-with-openai-and-cloudflare.md; translation-source-sha256: 9b7991502520b9a40fbc3e2e03c10c6041c285516248581c868feb34952c51e9 -->
 
 ---
 status: accepted
@@ -88,7 +88,8 @@ V8 让出与继续仍是内部宿主协议。已让出的 cell 由运行时恢�
 
 只有在同一个 Pi 会话、从已记录工作目录恢复，且待处理工具仍然活跃时才允许继续。目录变化或工具缺失会让执行保持暂停。程序不能吞掉批准信号后继续执行后续副作用：同一轮后续每个调用也会返回暂停，并且不会加入账本。
 
-允许一次带类型的 V8 宿主丢失重试。已完成调用从账本重放；含糊且不可重放的副作用会变为 `incomplete`，并要求执行 `/codemode abandon`。`/codemode rollback <execution-id>` 只按逆序运行显式声明的补偿操作，绝不假装外部副作用已被抹除。陈旧的未完成和暂停工作会过期，终态历史有界；过大或不可序列化的值会失败，而不是近似存储。
+允许一次带类型的 V8 宿主丢失重试。已完成调用从账本重放；含糊且不可重放的副作用会变为 `incomplete`，并要求执行 `/codemode abandon`。`/codemode rollback <execution-id>` 只按逆序运行显式声明的补偿操作，绝不假装外部副作用已被抹除。陈旧的未完成和暂停工作会过期，terminal summary 与 nested trace evidence 保持有界。Canonical replay value
+不设 Suite 字节配额；effect 后确实不可序列化的结果会让 settlement 保持 incomplete，而不会近似存储或 replay。
 
 Connector 生命周期钩子在每轮结束时运行，包括失败的宿主轮次和暂停等待批准的轮次。终态执行会以 `completed`、`error`、`rejected` 或 `rolled_back` 之一处置且仅处置一次。清理失败尽力处理，不能取代真实工具结果。
 

@@ -28,6 +28,7 @@ import {
 	readProcessTerminal,
 } from "./process-terminal.ts";
 import { MAX_ASYNC_RESULT_BYTES, terminalStatusFromResult } from "./result-file.ts";
+import { appendDiagnosticEvent } from "./runner-output.ts";
 import { terminateOrphanWriterProcesses } from "./writer-process-registry.ts";
 
 export type PidLiveness = "alive" | "dead" | "unknown";
@@ -134,16 +135,6 @@ function safeRegularFile(root: string, target: string, label: string, maxBytes: 
 		throw new Error(`${label} '${target}' escapes its storage root.`);
 	}
 	return "present";
-}
-
-function appendJsonlBestEffort<Payload extends object>(filePath: string, payload: Payload): void {
-	try {
-		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, "utf-8");
-	} catch {
-		// Repair status/result writes are the important path. A broken or full
-		// diagnostic event log must not make stale-run reconciliation fail.
-	}
 }
 
 /**
@@ -325,7 +316,7 @@ function writeFailedRepair(
 	}
 	writeAtomicJson(resultPath, repair.result);
 	writeAtomicJson(path.join(asyncDir, "status.json"), repair.status);
-	appendJsonlBestEffort(path.join(asyncDir, "events.jsonl"), {
+	appendDiagnosticEvent(path.join(asyncDir, "events.jsonl"), {
 		type: "subagent.run.repaired_stale",
 		ts: now,
 		runId: repair.status.runId,

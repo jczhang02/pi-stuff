@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { compensateCodeModeExecution } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import {
 	CODE_MODE_LEDGER_ENTRY_TYPE,
 	CodeModeIncompleteExecutionError,
 	CodeModeSessionLedger,
-	MAX_CODE_MODE_LEDGER_BYTES,
 } from "../../packages/pi-stuff/src/code-mode/ledger.js";
+import { durableInputValue } from "../../packages/pi-stuff/src/code-mode/ledger-state.js";
 import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 type ReplayPolicies = Readonly<Record<string, "never" | "record" | "reexecute">>;
@@ -87,6 +87,35 @@ test("Session ledger reads fail closed when the active branch is unavailable", (
 	state.readError = unavailable;
 
 	expect(() => ledger.history(context)).toThrow(unavailable);
+});
+
+test("post-effect persistence failure remains incomplete after storage recovers", () => {
+	const { branch, context } = fixture();
+	let failAppend = false;
+	const ledger = new CodeModeSessionLedger({
+		appendEntry(customType, data) {
+			if (failAppend) {
+				failAppend = false;
+				throw new Error("injected storage failure");
+			}
+			branch.push({ customType, data, id: `fault-${String(branch.length)}`, type: "custom" });
+		},
+	});
+	const controller = ledger.begin(context, "outer-storage-failure", "", new Map([["write", "never"]]));
+	const call = controller.beginToolCall("write", {});
+	failAppend = true;
+	expect(() => controller.completeToolCall(call, { status: "success", value: "effect applied" })).toThrow(
+		CodeModeIncompleteExecutionError,
+	);
+	expect(() => controller.completeToolCall(call, { status: "error", message: "caught" })).toThrow(
+		CodeModeIncompleteExecutionError,
+	);
+	expect(() => controller.beginToolCall("write", {})).toThrow(CodeModeIncompleteExecutionError);
+	controller.beginPass(1);
+	expect(() => controller.beginToolCall("write", {})).toThrow(CodeModeIncompleteExecutionError);
+	controller.finish("success");
+	expect(ledger.history(context)[0]?.status).toBe("incomplete");
+	expect(branch.at(-2)?.data).toMatchObject({ kind: "call-started" });
 });
 
 test("Session leaf probe failures disable caching without hiding durable branch state", () => {
@@ -361,13 +390,36 @@ test("a delayed obsolete result cannot settle the active reexecution attempt", (
 	controller.completeToolCall(active, { status: "success", value: "current" });
 });
 
-test("a result that cannot fit in the durable log fails instead of being replayed approximately", () => {
+test("checks durable input size without a second serialization pass", () => {
+	let reads = 0;
+	const stored = durableInputValue("input", {
+		get content() {
+			reads++;
+			return "value";
+		},
+	});
+	expect(stored).toEqual({ kind: "json", json: { content: "value" } });
+	// One trust-boundary validation and one JSON serialization.
+	expect(reads).toBe(2);
+});
+
+test("rejects oversized Tool arguments before the external effect starts", () => {
 	const { start } = fixture();
+	const controller = start("outer-large-input", { write: "never" });
+
+	expect(() => controller.beginToolCall("write", { content: "x".repeat(1_000_001) })).toThrow(
+		/too large to record durably before execution.*small reference/s,
+	);
+});
+
+test("large durable results remain exact across replay", () => {
+	const { start } = fixture();
+	const value = "x".repeat(1_000_001);
 	const controller = start("outer-large", { read: "record" });
 	const call = controller.beginToolCall("read", { path: "large" });
-	expect(() => controller.completeToolCall(call, { status: "success", value: "x".repeat(1_000_001) })).toThrow(
-		/too large to record durably.*small reference/s,
-	);
+	controller.completeToolCall(call, { status: "success", value });
+	controller.beginPass(1);
+	expect(controller.beginToolCall("read", { path: "large" }).replay).toEqual({ kind: "result", value });
 });
 
 test("explicit compensation attempts applied calls in reverse order and records what was undone", async () => {
@@ -465,17 +517,51 @@ test("ledger maintenance expires stale work and retains only the newest fifty te
 	expect(branch).toHaveLength(105);
 });
 
-test("the physical Session ledger budget rejects growth before its aggregate exceeds the bound", () => {
+test("Session ledger growth does not become an execution quota", () => {
 	const { branch, start } = fixture();
 	const large = "x".repeat(800_000);
-	expect(() => {
-		for (let index = 0; index < 40; index += 1) {
-			const controller = start(`outer-${String(index)}`, { read: "record" });
-			const plan = controller.beginToolCall("read", { index });
-			controller.completeToolCall(plan, { status: "success", value: large });
-			controller.finish("success");
-		}
-	}).toThrow("physical limit");
+	for (let index = 0; index < 22; index += 1) {
+		const controller = start(`outer-${String(index)}`, { read: "record" });
+		const plan = controller.beginToolCall("read", { index });
+		controller.completeToolCall(plan, { status: "success", value: large });
+		controller.finish("success");
+	}
 	const physicalBytes = branch.reduce((total, entry) => total + Buffer.byteLength(JSON.stringify(entry)) + 1, 0);
-	expect(physicalBytes).toBeLessThanOrEqual(MAX_CODE_MODE_LEDGER_BYTES);
+	expect(physicalBytes).toBeGreaterThan(16 * 1024 * 1024);
+	expect(branch.at(-1)?.data).toMatchObject({ kind: "execution-settled", status: "success" });
+});
+
+test("folds only appended Session entries and rebuilds on branch divergence", () => {
+	const manager = SessionManager.inMemory();
+	// SAFETY: the ledger only reads cwd and the public SessionManager methods supplied here.
+	const context = { ...fixture().context, sessionManager: manager };
+	const ledger = new CodeModeSessionLedger({
+		appendEntry: (type, data) => {
+			manager.appendCustomEntry(type, data);
+		},
+	});
+	const original = manager.getBranch.bind(manager);
+	let branchReads = 0;
+	manager.getBranch = (...args) => {
+		branchReads++;
+		return original(...args);
+	};
+	const first = ledger.begin(context, "first", "text(1)", new Map());
+	first.finish("success");
+	const fork = manager.getLeafId();
+	if (!fork) throw new Error("missing Session leaf");
+	for (let index = 0; index < 10; index++) {
+		manager.appendCustomEntry("ordinary-progress", { index });
+		expect(ledger.history(context)).toHaveLength(1);
+	}
+	expect(branchReads).toBe(1);
+	const second = ledger.begin(context, "second", "text(2)", new Map());
+	second.finish("success");
+	expect(ledger.history(context)).toHaveLength(2);
+	manager.branch(fork);
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(branchReads).toBe(2);
+	manager.appendCustomEntry(CODE_MODE_LEDGER_ENTRY_TYPE, { kind: "malformed" });
+	expect(ledger.history(context)).toHaveLength(1);
+	expect(branchReads).toBe(2);
 });
