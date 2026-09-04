@@ -39,10 +39,10 @@ function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"]
 	};
 }
 
-export function snapshotMagicWorkerContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
+export function snapshotMagicWorkerContext(ctx: ExtensionContext, readContextUsage = true): MagicWorkerContextSnapshot {
 	const manager = ctx.sessionManager;
 	return {
-		contextUsage: requiredHostCall("context usage", () => ctx.getContextUsage()),
+		contextUsage: readContextUsage ? requiredHostCall("context usage", () => ctx.getContextUsage()) : undefined,
 		cwd: ctx.cwd,
 		hasUI: ctx.hasUI,
 		mode: ctx.mode,

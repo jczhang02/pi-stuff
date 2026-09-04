@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: aa84d9738c0444ac6aa428012c1516c3abfcd7e3fcc000da32a0880daf54274f -->
+<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: 0ff774c61e052774e1c9c9d2a71c31f557746f08e3808f9b54e39a7dd78af35b -->
 
 ---
 status: accepted
@@ -37,6 +37,10 @@ Spinner frame 不得保持不变超过 200 ms。ADR 0025 的 500 ms assertion �
 Suite 所有的 Agent 相关 Tool row，但不包含 `/agents`、委派执行策略、Host 原生 renderer 与第三方 Extension
 renderer。
 
+Suite 的辅助 surface 不能把 Tool repaint 变成完整 Context scan。Host 忙碌时，Statusline 保留上一次 settled
+context-usage value，并在 Host 恢复 idle 后刷新。对于固定引擎只读取 Session metadata 或 Assistant usage 的
+Tool lifecycle 与 Session-only synchronization 路径，Context Engine Worker 会省略 context-usage 读取。
+
 ## 拒绝的方案
 
 - 缓存、延后或简化 recovery hash，仍会保留价值不足以抵偿其工作的显示功能。
@@ -50,3 +54,4 @@ renderer。
 JavaScript 无法只枚举任意 object key 的有界前缀。长 Session 从最近 activity 打开，并通过显式分页保留早期
 记录。Code Mode execution 与 Provider context media、Agent lifecycle、Tool permission 和 Session persistence
 继续保留原 owner 与数据。
+活动工作期间，Statusline 可以一直显示前一次 settled usage value，直到 Pi 下一次 idle repaint。

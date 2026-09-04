@@ -12,7 +12,7 @@ import type {
 	GoalStatusSource,
 } from "./statusline-channels.js";
 import type { GitChangeCountsSource } from "./statusline-git.js";
-import { renderStatusline, type StatuslineContextUsage, type StatuslineDensity } from "./statusline-render.js";
+import { renderStatusline, type StatuslineDensity } from "./statusline-render.js";
 import { readSkillAliases, SessionStatusSource, type StatuslineSessionManager } from "./statusline-session.js";
 import { sanitizeOneLine } from "./terminal-text.js";
 
@@ -68,6 +68,7 @@ export interface StatuslineContext {
 	getContextUsage():
 		| { readonly contextWindow: number | null; readonly percent: number | null; readonly tokens: number | null }
 		| undefined;
+	isIdle(): boolean;
 	readonly model: ExtensionContext["model"];
 	readonly modelRegistry: Pick<ExtensionContext["modelRegistry"], "isUsingOAuth">;
 	readonly sessionManager: StatuslineSessionManager;
@@ -156,7 +157,8 @@ export class StatuslineController {
 		if (!this.isVisible()) return [];
 		const renderWidth = Math.max(0, Math.floor(width));
 		if (renderWidth < 1) return [];
-		const sessionStatus = this.getSessionStatusSource(ctx).get();
+		const sessionStatusSource = this.getSessionStatusSource(ctx);
+		const sessionStatus = sessionStatusSource.get();
 		const branch = sanitizeOneLine(footerData.getGitBranch() ?? "");
 		const preferences = this.getPreferences();
 		const cwd = readRawCwd(ctx);
@@ -165,7 +167,7 @@ export class StatuslineController {
 		return renderStatusline(theme, {
 			branch,
 			codexStatus: readCodexStatus(ctx, this.options.codexStatus),
-			contextUsage: readContextUsage(ctx),
+			contextUsage: sessionStatusSource.readContextUsage(ctx.model, readHostIdle(ctx), () => ctx.getContextUsage()),
 			cwd,
 			density: preferences.density,
 			extensionStatuses: footerData.getExtensionStatuses(),
@@ -329,13 +331,14 @@ function readThinkingLevel(pi: StatuslineHost, ctx: StatuslineContext): string {
 	}
 }
 
-function readContextUsage(ctx: StatuslineContext): StatuslineContextUsage | null | undefined {
+function readHostIdle(ctx: StatuslineContext): boolean {
 	try {
-		return ctx.getContextUsage();
+		return ctx.isIdle();
 	} catch {
-		return null;
+		return false;
 	}
 }
+
 function readRawCwd(ctx: StatuslineContext): string {
 	try {
 		return ctx.sessionManager.getCwd() || ctx.cwd || ".";

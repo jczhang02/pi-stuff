@@ -37,6 +37,11 @@ unchanged visible Vibe Line Spinner frame beyond 200 ms. ADR 0025's 500 ms asser
 backstop. The guarantee includes Suite-owned Agent-related Tool rows but excludes `/agents`, delegated execution policy,
 Host-native renderers, and third-party Extension renderers.
 
+Supporting Suite surfaces must not turn a Tool repaint into a full Context scan. While the Host is busy, the Statusline
+keeps its last settled context-usage value and refreshes it after the Host becomes idle. The Context Engine Worker omits
+context-usage reads from Tool lifecycle and Session-only synchronization paths where the pinned engine consumes only
+Session metadata or Assistant usage.
+
 ## Rejected alternatives
 
 - Caching, deferring, or simplifying the recovery hash retains a display feature whose value does not justify its work.
@@ -50,3 +55,4 @@ Normal-sized Tool content retains semantic presentation, while object-shaped MCP
 omitted-preview marker because JavaScript cannot enumerate only a bounded prefix of arbitrary object keys. Long Sessions
 open on recent activity and retain early records through explicit paging. Code Mode execution and media for Provider
 context, Agent lifecycle, Tool permissions, and Session persistence keep their existing owners and data.
+During active work, the Statusline may show the preceding settled usage value until Pi reaches its next idle repaint.

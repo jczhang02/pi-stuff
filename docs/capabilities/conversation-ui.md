@@ -36,6 +36,9 @@ The Statusline uses one status row and an optional latest-prompt row. The status
 allows: model and Thinking, Codex Fast mode, working directory and Git, Context, cache or usage, current Goal, and
 Ponytail mode.
 
+Context usage refreshes only while the Host is idle. During active Agent or Tool work, the Statusline keeps the last
+settled value instead of asking Pi to rescan the in-flight conversation on every repaint.
+
 `auto` density first shortens fields and then removes lower-priority groups. It does not wrap or leave partial fields.
 The model and Context remain visible longest. Goal and Ponytail appear only when their current state calls for a
 persistent indicator.

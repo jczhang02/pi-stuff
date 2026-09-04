@@ -24,7 +24,8 @@ completion, and Tool running timer.
 
 ## Highlights
 
-- Responsive Statusline with stable model, workspace, Context, usage, Goal, and Ponytail groups.
+- Responsive Statusline with stable model, workspace, Context, usage, Goal, and Ponytail groups; context usage refreshes
+  only while the Host is idle, so a Tool repaint does not rescan in-flight arguments.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion.
 - Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, plus `chart` or `tree` Markdown projections.

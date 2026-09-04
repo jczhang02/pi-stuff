@@ -196,7 +196,8 @@ class MagicWorkerClient {
 		let sessionId: string | undefined;
 		try {
 			const reply = await this.invoke(() => {
-				const context = this.synchronizeSession(ctx, event.type === "session_start");
+				const readContextUsage = magicEventReadsContextUsage(event);
+				const context = this.synchronizeSession(ctx, event.type === "session_start", readContextUsage);
 				sessionId = context.session.id;
 				return {
 					...input,
@@ -251,15 +252,19 @@ class MagicWorkerClient {
 			if (this.isClosed()) return;
 			try {
 				if (ctx.sessionManager.getSessionId() !== expectedSessionId) return;
-				this.synchronizeSession(ctx);
+				this.synchronizeSession(ctx, false, false);
 			} catch {
 				// Pi may switch or close the Session before this post-persistence refresh runs.
 			}
 		});
 	}
 
-	private synchronizeSession(ctx: ExtensionContext, forceSnapshot = false): MagicWorkerContextSnapshot {
-		const snapshot = snapshotMagicWorkerContext(ctx);
+	private synchronizeSession(
+		ctx: ExtensionContext,
+		forceSnapshot = false,
+		readContextUsage = true,
+	): MagicWorkerContextSnapshot {
+		const snapshot = snapshotMagicWorkerContext(ctx, readContextUsage);
 		const sessionId = snapshot.session.id;
 		if (!sessionId) return snapshot;
 		const leafId = snapshot.session.leafId;
@@ -356,7 +361,7 @@ class MagicWorkerClient {
 	private applyEffect(message: MagicWorkerEffectMessage): void {
 		const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
 		const exit = Effect.runSyncExit(
-			applyMagicWorkerHostEffect(this.pi, ctx, message, (active) => this.synchronizeSession(active)),
+			applyMagicWorkerHostEffect(this.pi, ctx, message, (active) => this.synchronizeSession(active, false, false)),
 		);
 		if (Exit.isFailure(exit)) this.reportFatal(Cause.squash(exit.cause));
 	}
@@ -364,7 +369,7 @@ class MagicWorkerClient {
 	private applySyncEffect(message: MagicWorkerSyncEffectMessage): void {
 		const ctx = message.sessionId ? this.activeContext(message.sessionId) : undefined;
 		const exit = Effect.runSyncExit(
-			applyMagicWorkerHostCompaction(ctx, message, (active) => this.synchronizeSession(active)),
+			applyMagicWorkerHostCompaction(ctx, message, (active) => this.synchronizeSession(active, false, false)),
 		);
 		const status = Exit.isSuccess(exit) ? 1 : 2;
 		const text = Exit.isSuccess(exit) ? exit.value : magicWorkerErrorMessage(Cause.squash(exit.cause));
@@ -386,6 +391,17 @@ class MagicWorkerClient {
 		this.contexts.clear();
 		this.sessionLeaves.clear();
 	}
+}
+
+function magicEventReadsContextUsage(event: ExtensionEvent): boolean {
+	// Pi Stuff suppresses upstream Tool-time Statusline output. The pinned
+	// lifecycle handlers otherwise use Session metadata, while a Tool-use
+	// message already carries Assistant usage and is followed by Context refresh.
+	return (
+		event.type !== "tool_execution_start" &&
+		event.type !== "tool_execution_end" &&
+		!(event.type === "message_end" && event.message.role === "assistant" && event.message.stopReason === "toolUse")
+	);
 }
 
 export async function magicContextWorkerFactory(pi: ExtensionAPI, onFatal?: MagicWorkerFatalHandler): Promise<void> {

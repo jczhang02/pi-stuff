@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: 97c19d5a9e09ab49206c3583faf22a821956216189cc760f514a1245e16835de -->
+<!-- translation-source: docs/adr/0019-isolate-context-engine-work-from-the-host-ui-thread.md; translation-source-sha256: d9cdaa8ad253fb34a014e5f98e1a4f57a8ed2c4bbe4868d690de0eae935b8d01 -->
 
 ---
 status: accepted
@@ -17,6 +17,8 @@ Magic Context 投影在一个上下文引擎 Worker 中执行。Pi 仍是宿主�
 适配器会延迟地把精确固定版本的 Magic Context 软件包及其 Worker 入口打包成一个内存中的 Bun 产物，再从 Blob URL 启动它。该过程发生在 ADR 0007 已规定的已配置上下文初始化期间。产物不会写入磁盘、发布或安装。上游软件包不做分叉；其精确固定的 npm 产物带有上下文管理 `UPSTREAM.md` 所记录的、临时且经过审查的分词器兼容依赖补丁。打包会保留上游软件包原始的 `import.meta.url`，使软件包相对资源和版本身份保持官方语义。
 
 Pi 事件、工具和命令注册仍留在宿主中。每次调用都会发送不可变上下文快照，以及固定引擎实际读取的事件字段。Worker 边界只改变执行位置，不改变取消语义：已接受 prompt 的镜像生命周期工作归 Session 所有，不继承当前 Agent turn 的 signal。只有固定版本官方 handler 实际读取 signal 的 invocation 接缝才会转发取消。因此，中断 Agent turn 不会把健康的 Worker 误判为失败，也不能拥有其恢复过程。
+
+该固定边界上的 Context snapshot 按需构造。Tool start 与 end handler 会收到 Session metadata，但不会收到未使用的 Host context-usage estimate；中间的 Tool-use `message_end` 先使用自身的 Assistant usage，直到随后的 Context refresh。Session mirror 同步同样会省略调用方不使用的 context-usage 字段。这可以避免 Host 仅为构造最终被丢弃的 snapshot 数据，就序列化完整的 in-flight Tool argument。
 
 Worker 首次绑定会话时、变化后的叶节点不是镜像叶节点的直接后继时，以及执行三个显式历史重建命令时，完整会话分支会跨越边界。普通上下文投影和持久化至多发送一个新的叶条目。因此，快照回退能修复分叉、树、压缩和其他不连续情况，而无需每次按 Enter 都克隆无界会话。
 
