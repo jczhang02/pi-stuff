@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isJsonInputObject, type JsonInputValue, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeFunction } from "../packages/pi-stuff/src/shared/runtime-type.js";
-import { FIXTURE_THINKING, THOUGHT_PHASES } from "../test/fixtures/ui-pty-provider.js";
+import { FIXTURE_THINKING, THOUGHT_PHASES, THOUGHT_SPACING_PTY } from "../test/fixtures/ui-pty-provider.js";
 import * as pty from "./ui-pty-session.js";
 
 export const EXPANDED_THINKING_PREFIX = "• thoughts: ";
@@ -48,6 +48,43 @@ function thoughtPhaseTail(phase: string): string {
 
 function visibleThinkingRows(screen: string): string[] {
 	return screen.split("\n").filter((line) => line.includes(EXPANDED_THINKING_PREFIX));
+}
+
+function verifySingleBlankBoundaries(screen: string, markers: readonly string[]): void {
+	const lines = screen.split("\n");
+	const indexes = markers.map((marker) => lines.findIndex((line) => line.includes(marker)));
+	if (indexes.some((index) => index < 0)) pty.fail(`interleaved Thinking markers were not all visible\n${screen}`);
+	for (let index = 1; index < indexes.length; index += 1) {
+		const previous = indexes[index - 1];
+		const current = indexes[index];
+		if (previous === undefined || current === undefined || current - previous !== 2 || lines[previous + 1]?.trim()) {
+			pty.fail(`interleaved Thinking boundary did not contain exactly one blank row\n${screen}`);
+		}
+	}
+}
+
+export async function verifyInterleavedThoughtSpacing(session: pty.TmuxPiSession): Promise<void> {
+	session.sendLiteral(THOUGHT_SPACING_PTY.prompt);
+	session.sendKey("Enter");
+	let screen = await session.waitForText(THOUGHT_SPACING_PTY.finalText);
+	verifySingleBlankBoundaries(screen, [
+		THOUGHT_SPACING_PTY.firstThought,
+		THOUGHT_SPACING_PTY.firstText,
+		THOUGHT_SPACING_PTY.secondThought,
+		THOUGHT_SPACING_PTY.finalText,
+	]);
+
+	session.sendKey("C-t");
+	screen = await session.waitForAbsence(THOUGHT_SPACING_PTY.secondThought);
+	const lines = screen.split("\n");
+	const firstText = lines.findIndex((line) => line.includes(THOUGHT_SPACING_PTY.firstText));
+	const finalText = lines.findIndex((line) => line.includes(THOUGHT_SPACING_PTY.finalText));
+	const hiddenBoundary = lines.slice(firstText + 1, finalText).map((line) => line.trim());
+	if (firstText < 0 || finalText < 0 || hiddenBoundary.join("\n") !== `\n${HIDDEN_THINKING_LABEL}\n`) {
+		pty.fail(`hidden interleaved Thinking boundary did not contain exactly one blank row on each side\n${screen}`);
+	}
+	session.sendKey("C-t");
+	await waitForThoughtText(session, THOUGHT_SPACING_PTY.secondThought);
 }
 
 export async function waitForHiddenThinking(session: pty.TmuxPiSession, minimumRows: number): Promise<string> {

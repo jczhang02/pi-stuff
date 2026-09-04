@@ -46,6 +46,11 @@ persistent indicator.
 The latest-prompt row is one terminal line. Skill invocations are reduced to the submitted task and compact Skill
 labels; expanded Skill instructions and local paths are not shown.
 
+During Context projection, the Context group shows `recovering`. If the Provider boundary cannot safely measure or
+bound the request, it shows `unknown` and the request is aborted. After boundary validation, the validated percentage
+replaces stale Host usage. The snapshot clears only after a successful assistant completion or a Session lifecycle
+event.
+
 ## Welcome header
 
 The Welcome header gives a compact startup view of the active model, project, and Suite entry points. It disappears
@@ -64,7 +69,8 @@ Pi owns Thinking content, visibility, and run boundaries. With Pi's native **Hid
 each streaming or settled Thinking run occupies one line: `• thoughts: ` followed by the last terminal row from its
 current native Markdown rendering. Streaming updates replace that line, and a settled run keeps its final line. If the
 combined line is too wide, the content tail remains visible. With the setting enabled, the Host replaces each run with
-the italic `• thoughts` label. `Ctrl+T` continues to toggle the Host setting.
+the italic `• thoughts` label. One blank row separates adjacent Assistant prose and Thinking runs in either order,
+including within one Host Assistant message. `Ctrl+T` continues to toggle the Host setting.
 
 This is display-only. Pi Stuff uses no semantic parser, source truncation, timer, model classification, or merged run
 state. It preserves the native Markdown styling of the selected terminal row and never changes Session records,

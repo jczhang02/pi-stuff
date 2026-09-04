@@ -495,6 +495,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				if (columns === 100) {
 					await flow.verifyLiveResize(session);
 					await flow.verifyThoughtLifecycle(session, paths, columns, rows);
+					await flow.verifyInterleavedThoughtSpacing(session);
 					await flow.verifyThoughtContextPreservation(session, paths);
 					await flow.verifyFencedVisualization(session, paths, caseOptions);
 					vibeLineMaximumFrameDurationMs = await verifyWideInteractions(session, paths, caseOptions);
@@ -502,7 +503,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					verified.push(
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
-						"latest-line, hidden, toggled, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
+						"latest-line, hidden, toggled, interleaved spacing, multi-run, settled, resumed, Session-, Provider-, and export-preserved Thinking",
 						"100 continuous deltas across 2,500 cumulative CJK characters kept every Vibe Line Spinner frame within 500ms and recovered",
 						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",

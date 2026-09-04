@@ -192,6 +192,12 @@ A model-invisible, persisted Session record for one user-started Context mainten
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
 _Avoid_: Context Tool Activity, Context notification, Context status
 
+**Bounded Context Projection**:
+A derived model-request context that Context Management has established is within the selected model's local capacity
+bound. It is the only context eligible for a Provider request while Context is active; it does not guarantee Provider
+acceptance or content correctness.
+_Avoid_: Safe Context, compressed context
+
 **Prompt Contribution**:
 A marker-delimited, Capability-owned system-prompt fragment that Context Management orders and reconciles on every
 Provider activation without changing Session history. It is not an independent lifecycle or a replacement system prompt.

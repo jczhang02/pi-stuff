@@ -122,24 +122,33 @@ test("keeps Host Thinking visibility semantics", () => {
 	initTheme("dark");
 	const uninstall = installThinkingLineDisplay();
 	try {
-		const rendered = component(assistantMessage([{ type: "thinking", thinking: "First\n\nLatest" }]));
+		const rendered = component(
+			assistantMessage([
+				{ type: "text", text: "Visible answer" },
+				{ type: "thinking", thinking: "First\n\nLatest" },
+			]),
+		);
 		rendered.setHideThinkingBlock(true);
-		const hidden = rendered.render(80);
-		expect(
-			hidden
-				.map(stripTerminalSequences)
-				.map((line) => line.trim())
-				.filter(Boolean),
-		).toEqual(["• thoughts"]);
+		expect(rendered.render(80).map((line) => stripTerminalSequences(line).trim())).toEqual([
+			"",
+			"• Visible answer",
+			"",
+			"• thoughts",
+		]);
 
 		rendered.setHideThinkingBlock(false);
-		expect(renderedContent(rendered)).toEqual(["• thoughts: Latest"]);
+		expect(rendered.render(80).map((line) => stripTerminalSequences(line).trim())).toEqual([
+			"",
+			"• Visible answer",
+			"",
+			"• thoughts: Latest",
+		]);
 	} finally {
 		uninstall();
 	}
 });
 
-test("retains separate Host Thinking runs", () => {
+test("separates interleaved Assistant prose and Thinking runs", () => {
 	initTheme("dark");
 	const uninstall = installThinkingLineDisplay();
 	try {
@@ -148,10 +157,19 @@ test("retains separate Host Thinking runs", () => {
 				{ type: "thinking", thinking: "First run" },
 				{ type: "text", text: "Visible answer" },
 				{ type: "thinking", thinking: "Second run" },
+				{ type: "text", text: "Final answer" },
 			]),
 		);
-		const thoughts = renderedContent(rendered).filter((line) => line.startsWith("• thoughts"));
-		expect(thoughts).toEqual(["• thoughts: First run", "• thoughts: Second run"]);
+		expect(rendered.render(80).map((line) => stripTerminalSequences(line).trim())).toEqual([
+			"",
+			"• thoughts: First run",
+			"",
+			"• Visible answer",
+			"",
+			"• thoughts: Second run",
+			"",
+			"• Final answer",
+		]);
 	} finally {
 		uninstall();
 	}

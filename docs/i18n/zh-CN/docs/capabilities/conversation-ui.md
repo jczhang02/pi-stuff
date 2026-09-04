@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c5ddce7c9b451853a5b928e26c15f0b6f79cfcb37f3b970309f6bfb35928c37b -->
+<!-- translation-source: docs/capabilities/conversation-ui.md; translation-source-sha256: c48a25fb193058e95d9b070d6d794abf72bc1e0af351c4fb30f5b48351d771fe -->
 
 # Conversation UI
 
@@ -45,6 +45,10 @@ Statusline 会保留上一次 settled value，不会在每次 repaint 时要求 
 Latest-prompt 行只占一个终端行。Skill 调用会缩减为提交任务与紧凑 Skill 标签；展开的 Skill 指令和本地路径
 不会显示。
 
+在 Context projection 期间，Context 分组显示 `recovering`。如果 Provider boundary 无法安全测量或限制请求，
+则显示 `unknown` 并中止请求。boundary 验证完成后，经验证的百分比会替换过时的 Host 用量。只有 assistant
+成功完成或发生 Session 生命周期事件后，snapshot 才会清除。
+
 ## Welcome header
 
 Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图。关闭后不会显示，聚焦 Command Dialog
@@ -62,7 +66,8 @@ Welcome header 提供活动 model、项目和 Suite 入口的紧凑启动视图�
 Thinking 内容、可见性和 run 边界都由 Pi 负责。关闭 Pi 原生 **Hide thinking blocks** 设置后，每个 streaming
 或 settled Thinking run 只占一行：`• thoughts: ` 后面接当前原生 Markdown 渲染的最后一条终端行。流式更新
 会替换这一行，run 结束后保留最终行；整行过宽时保留内容尾部。打开该设置后，Host 会把每个 run 替换为
-斜体 `• thoughts` 标签。`Ctrl+T` 仍用于切换 Host 设置。
+斜体 `• thoughts` 标签。相邻的 Assistant prose 与 Thinking run 无论顺序如何都由一行空白分隔，包括二者属于
+同一条 Host Assistant message 时。`Ctrl+T` 仍用于切换 Host 设置。
 
 该改动只影响显示。Pi Stuff 不使用语义 parser、源码截断、计时器、模型分类或合并后的 run 状态。选中的
 终端行保留原生 Markdown 样式；Session record、Provider context、复制和导出源码均不变。Pi 目前没有公开的

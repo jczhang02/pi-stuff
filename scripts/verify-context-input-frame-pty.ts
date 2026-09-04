@@ -7,6 +7,12 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	CONTEXT_RESUME_DONE,
+	CONTEXT_RESUME_REQUEST,
+	createBuiltinOpenAiServer,
+	PROVIDER_CONTEXT_WINDOW,
+} from "./context-input-frame-provider-fixture.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -290,12 +296,38 @@ function seedSession(sessionDirectory: string, cwd: string): string {
 	return sessionFile;
 }
 
+function isValidRetryRequestBody(request: string | undefined): boolean {
+	return Boolean(
+		request?.includes(HISTORY_MARKER) &&
+			request.includes("session-history-since") &&
+			request.includes("Magic Context") &&
+			Buffer.byteLength(request, "utf8") <= Math.floor(Number(PROVIDER_CONTEXT_WINDOW) * 0.95),
+	);
+}
+
+function requestBodyDiagnostic(requestBodies: readonly string[]): string {
+	return JSON.stringify(
+		requestBodies.map((body) => ({
+			bytes: Buffer.byteLength(body, "utf8"),
+			hasHistoryMarker: body.includes(HISTORY_MARKER),
+			hasMagicContext: body.includes("Magic Context"),
+			hasSessionHistorySince: body.includes("session-history-since"),
+		})),
+	);
+}
+
 async function verifySubmittedPromptFrame(
 	capture: () => string,
 	submit: () => void,
 	prompt: string,
 	verifyWorkingAnimation = true,
 ): Promise<void> {
+	const captureOverheads = Array.from({ length: 5 }, () => {
+		const startedAt = performance.now();
+		capture();
+		return performance.now() - startedAt;
+	}).sort((left, right) => left - right);
+	const captureOverheadMs = captureOverheads[Math.floor(captureOverheads.length / 2)] ?? 0;
 	const submittedAt = performance.now();
 	submit();
 	const workingFrames = new Set<string>();
@@ -306,7 +338,7 @@ async function verifySubmittedPromptFrame(
 	while (Date.now() < workingDeadline) {
 		const frame = capture();
 		if (transcriptVisibleMs === undefined && transcriptContainsUserMessage(frame, prompt)) {
-			transcriptVisibleMs = performance.now() - submittedAt;
+			transcriptVisibleMs = Math.max(0, performance.now() - submittedAt - captureOverheadMs);
 		}
 		const indicator = /([⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])\s+Working/u.exec(frame)?.[1];
 		const observedAt = performance.now();
@@ -342,7 +374,9 @@ async function verifySubmittedPromptFrame(
 interface InputFrameFlow {
 	readonly capture: (history?: boolean) => string;
 	readonly environment: PtyEnvironment;
+	readonly phase: "builtin" | "fixture";
 	readonly requestLog: string;
+	readonly requestBodies: readonly string[];
 	readonly send: (text: string) => void;
 	readonly session: string;
 	readonly tmux: (args: readonly string[]) => string;
@@ -357,25 +391,56 @@ interface InputFrameFlow {
 async function verifyInputFrameFlow({
 	capture,
 	environment,
+	phase,
 	requestLog,
+	requestBodies,
 	send,
 	session,
 	tmux,
 	waitFor,
 }: InputFrameFlow): Promise<void> {
-	const prompt = "CONTEXT_RESUME_REQUEST";
+	if (phase === "fixture") {
+		const interruptedPrompt = "CONTEXT_INTERRUPT_A";
+		tmux(["send-keys", "-t", session, "-l", "--", interruptedPrompt]);
+		await waitFor((frame) => editorContains(frame, interruptedPrompt), "the typed interrupt target");
+		await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), interruptedPrompt);
+		tmux(["send-keys", "-t", session, "Escape"]);
+		await waitFor((frame) => frame.includes("Operation aborted"), "the interrupted Agent turn", 10_000);
+
+		const recoveryPrompt = "CONTEXT_INTERRUPT_B";
+		tmux(["send-keys", "-t", session, "-l", "--", recoveryPrompt]);
+		await waitFor((frame) => editorContains(frame, recoveryPrompt), "the typed post-interrupt prompt");
+		await verifySubmittedPromptFrame(
+			capture,
+			() => tmux(["send-keys", "-t", session, "Enter"]),
+			recoveryPrompt,
+			false,
+		);
+		await waitFor((frame) => frame.includes("CONTEXT_INTERRUPT_B_DONE"), "post-interrupt Context response", 40_000);
+		const records = await readRecords(requestLog);
+		const recoveryRequest = [...records]
+			.reverse()
+			.find((record) => record.type === "request" && record.lastUser?.includes(recoveryPrompt) === true);
+		if (recoveryRequest?.hasCompactMagicContextPrompt !== true) {
+			fail(`post-interrupt Provider payload lost Context projection: ${JSON.stringify(recoveryRequest)}`);
+		}
+		assertRecoveryProviderPayload(records, recoveryRequest);
+		return;
+	}
+
+	const prompt = CONTEXT_RESUME_REQUEST;
 	tmux(["send-keys", "-t", session, "-l", "--", prompt]);
 	await waitFor((frame) => editorContains(frame, prompt), "the typed resumed prompt");
 	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), prompt);
 
-	await waitFor((frame) => frame.includes("CONTEXT_RESUME_DONE"), "resumed Context response", 40_000);
-	const modelRequest = (await readRecords(requestLog))
-		.reverse()
-		.find((record) => record.type === "request" && record.lastUser?.includes(prompt) === true);
+	await waitFor((frame) => frame.includes(CONTEXT_RESUME_DONE), "resumed Context response", 40_000);
+	const modelRequests = requestBodies.filter((body) => body.includes(prompt));
+	const [firstRequest, secondRequest] = modelRequests;
 	if (
-		modelRequest?.hasSince !== true ||
-		modelRequest.hasCompactMagicContextPrompt !== true ||
-		modelRequest.magicProjectionMarkers?.includes(HISTORY_MARKER) !== true
+		modelRequests.length !== 2 ||
+		!isValidRetryRequestBody(firstRequest) ||
+		!isValidRetryRequestBody(secondRequest) ||
+		firstRequest !== secondRequest
 	) {
 		send("/ctx status");
 		await Bun.sleep(100);
@@ -386,33 +451,32 @@ async function verifyInputFrameFlow({
 			? await readFile(magicLogPath, "utf8").catch(() => "<Magic Context log unavailable>")
 			: "<Magic Context log path unavailable>";
 		fail(
-			`model request did not contain the Magic Context projection: ${JSON.stringify(modelRequest)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
+			`input-frame retry did not produce exactly two stable bounded HTTP requests: ${requestBodyDiagnostic(modelRequests)}\n${capture(true)}\nMagic Context log:\n${magicLog.slice(-20_000)}`,
 		);
 	}
-
-	const interruptedPrompt = "CONTEXT_INTERRUPT_A";
-	tmux(["send-keys", "-t", session, "-l", "--", interruptedPrompt]);
-	await waitFor((frame) => editorContains(frame, interruptedPrompt), "the typed interrupt target");
-	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), interruptedPrompt);
-	tmux(["send-keys", "-t", session, "Escape"]);
-	await waitFor((frame) => frame.includes("Operation aborted"), "the interrupted Agent turn", 10_000);
-
-	const recoveryPrompt = "CONTEXT_INTERRUPT_B";
-	tmux(["send-keys", "-t", session, "-l", "--", recoveryPrompt]);
-	await waitFor((frame) => editorContains(frame, recoveryPrompt), "the typed post-interrupt prompt");
-	await verifySubmittedPromptFrame(capture, () => tmux(["send-keys", "-t", session, "Enter"]), recoveryPrompt, false);
-	await waitFor((frame) => frame.includes("CONTEXT_INTERRUPT_B_DONE"), "post-interrupt Context response", 40_000);
-	const records = await readRecords(requestLog);
-	const recoveryRequest = [...records]
-		.reverse()
-		.find((record) => record.type === "request" && record.lastUser?.includes(recoveryPrompt) === true);
-	if (recoveryRequest?.hasCompactMagicContextPrompt !== true) {
-		fail(`post-interrupt Provider payload lost Context projection: ${JSON.stringify(recoveryRequest)}`);
-	}
-	assertRecoveryProviderPayload(records, recoveryRequest);
 }
 
-async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, requestLog: string): Promise<void> {
+async function stopTmuxSession(
+	tmux: (args: readonly string[]) => string,
+	session: string,
+	sessionExists: () => boolean,
+): Promise<void> {
+	tmux(["set-option", "-t", session, "remain-on-exit", "off"]);
+	tmux(["send-keys", "-t", session, "C-c"]);
+	await Bun.sleep(150);
+	tmux(["send-keys", "-t", session, "C-d"]);
+	const exitDeadline = Date.now() + 5_000;
+	while (sessionExists() && Date.now() < exitDeadline) await Bun.sleep(10);
+	if (sessionExists()) fail("resumed Pi did not exit");
+}
+
+async function verifySubmittedFrame(
+	phase: "builtin" | "fixture",
+	environment: PtyEnvironment,
+	cwd: string,
+	requestLog: string,
+	requestBodies: readonly string[],
+): Promise<void> {
 	const socket = join(environment["HOME"] ?? cwd, "context-input-frame-tmux.sock");
 	const terminalOutputPath = join(environment["HOME"] ?? cwd, "context-input-frame-terminal.log");
 	const terminalOutputDonePath = `${terminalOutputPath}.done`;
@@ -486,6 +550,7 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 			tmux(["set-option", "-s", "extended-keys-format", "csi-u"]);
 		}
 		await waitFor((frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE"), "resumed editor readiness", 40_000);
+		await rm(terminalOutputDonePath, { force: true });
 		await writeFile(terminalOutputPath, "");
 		tmux([
 			"pipe-pane",
@@ -494,7 +559,17 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 			`cat >> ${shellQuote(terminalOutputPath)}; touch ${shellQuote(terminalOutputDonePath)}`,
 		]);
 
-		await verifyInputFrameFlow({ capture, environment, requestLog, send, session, tmux, waitFor });
+		await verifyInputFrameFlow({
+			capture,
+			environment,
+			phase,
+			requestBodies,
+			requestLog,
+			send,
+			session,
+			tmux,
+			waitFor,
+		});
 
 		send("CONTEXT_DRAIN");
 		await waitFor((frame) => frame.includes("CONTEXT_DRAIN_DONE"), "Context marker drain");
@@ -506,13 +581,7 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 		if (terminalOutput.includes("\u001b[2J") || terminalOutput.includes("\u001b[3J")) {
 			fail("ordinary input submission cleared the terminal instead of committing a differential frame");
 		}
-		tmux(["set-option", "-t", session, "remain-on-exit", "off"]);
-		tmux(["send-keys", "-t", session, "C-c"]);
-		await Bun.sleep(150);
-		tmux(["send-keys", "-t", session, "C-d"]);
-		const exitDeadline = Date.now() + 5_000;
-		while (sessionExists() && Date.now() < exitDeadline) await Bun.sleep(10);
-		if (sessionExists()) fail("resumed Pi did not exit");
+		await stopTmuxSession(tmux, session, sessionExists);
 	} finally {
 		Bun.spawnSync(["tmux", "-S", socket, "kill-server"], { stderr: "ignore", stdout: "ignore" });
 	}
@@ -529,7 +598,10 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 	const projectDirectory = join(temporaryDirectory, "项目隔离", "context-input-frame");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
+	const fixtureRequestLog = join(temporaryDirectory, "fixture-requests.jsonl");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
+	const requestBodies: string[] = [];
+	const server = createBuiltinOpenAiServer(requestBodies);
 	try {
 		await mkdir(runtimeDirectory, { mode: 0o700 });
 		await Promise.all(
@@ -545,9 +617,10 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 		await disableSessionNamingForTest(configDirectory);
 		await Promise.all([
 			writeFile(requestLog, ""),
+			writeFile(fixtureRequestLog, ""),
 			writeFile(
 				join(configDirectory, "settings.json"),
-				`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen" })}\n`,
+				`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen", retry: { enabled: true, maxRetries: 1, baseDelayMs: 0, provider: { maxRetries: 0 } } })}\n`,
 			),
 			writeFile(
 				join(cortexConfigDirectory, "magic-context.jsonc"),
@@ -570,39 +643,53 @@ export async function verifyContextInputFramePty(options: ContextInputFramePtyVe
 		const sessionFile = seedSession(sessionDirectory, projectDirectory);
 		const columns = options.columns ?? 64;
 		const rows = options.rows ?? 28;
+		const baseEnvironment = {
+			...process.env,
+			HF_HOME: cacheDirectory,
+			HF_HUB_OFFLINE: "1",
+			HOME: temporaryDirectory,
+			MAGIC_CONTEXT_LOG_PATH: magicLog,
+			MAGIC_CONTEXT_TEST_DATA_DIR: dataDirectory,
+			PI_STUFF_CONTEXT_PTY_BUILTIN_OPENAI: "1",
+			PI_STUFF_CONTEXT_PTY_BASE_URL: `http://127.0.0.1:${String(server.port)}`,
+			PI_STUFF_CONTEXT_PTY_MODEL: "fixture-model",
+			PI_STUFF_CONTEXT_PTY_CONTEXT_WINDOW: PROVIDER_CONTEXT_WINDOW,
+			PI_CODING_AGENT_DIR: configDirectory,
+			PI_OFFLINE: "1",
+			PI_STUFF_CONTEXT_PTY_BIN: options.piBinary,
+			PI_STUFF_CONTEXT_PTY_COLUMNS: String(columns),
+			PI_STUFF_CONTEXT_PTY_LOG: requestLog,
+			PI_STUFF_CONTEXT_PTY_PACKAGE: resolve(options.packagePath),
+			PI_STUFF_CONTEXT_PTY_PROVIDER_EXTENSION: providerExtension,
+			PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile,
+			PI_STUFF_CONTEXT_PTY_ROWS: String(rows),
+			PI_STUFF_CONTEXT_PTY_RUNNER: runner,
+			PI_STUFF_CONTEXT_PTY_SESSIONS: sessionDirectory,
+			PI_STUFF_CONTEXT_PTY_SESSION_ID: `context-input-frame-${String(columns)}x${String(rows)}`,
+			PI_TELEMETRY: "0",
+			SHELL: "/bin/sh",
+			TERM: "xterm-256color",
+			TRANSFORMERS_OFFLINE: "1",
+			XDG_CACHE_HOME: cacheDirectory,
+			XDG_CONFIG_HOME: xdgConfigDirectory,
+			XDG_DATA_HOME: undefined,
+			XDG_RUNTIME_DIR: runtimeDirectory,
+		} satisfies PtyEnvironment;
+		await verifySubmittedFrame("builtin", baseEnvironment, projectDirectory, requestLog, requestBodies);
 		await verifySubmittedFrame(
+			"fixture",
 			{
-				...process.env,
-				HF_HOME: cacheDirectory,
-				HF_HUB_OFFLINE: "1",
-				HOME: temporaryDirectory,
-				MAGIC_CONTEXT_LOG_PATH: magicLog,
-				MAGIC_CONTEXT_TEST_DATA_DIR: dataDirectory,
-				PI_CODING_AGENT_DIR: configDirectory,
-				PI_OFFLINE: "1",
-				PI_STUFF_CONTEXT_PTY_BIN: options.piBinary,
-				PI_STUFF_CONTEXT_PTY_COLUMNS: String(columns),
-				PI_STUFF_CONTEXT_PTY_LOG: requestLog,
-				PI_STUFF_CONTEXT_PTY_PACKAGE: resolve(options.packagePath),
-				PI_STUFF_CONTEXT_PTY_PROVIDER_EXTENSION: providerExtension,
-				PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile,
-				PI_STUFF_CONTEXT_PTY_ROWS: String(rows),
-				PI_STUFF_CONTEXT_PTY_RUNNER: runner,
-				PI_STUFF_CONTEXT_PTY_SESSIONS: sessionDirectory,
-				PI_STUFF_CONTEXT_PTY_SESSION_ID: `context-input-frame-${String(columns)}x${String(rows)}`,
-				PI_TELEMETRY: "0",
-				SHELL: "/bin/sh",
-				TERM: "xterm-256color",
-				TRANSFORMERS_OFFLINE: "1",
-				XDG_CACHE_HOME: cacheDirectory,
-				XDG_CONFIG_HOME: xdgConfigDirectory,
-				XDG_DATA_HOME: undefined,
-				XDG_RUNTIME_DIR: runtimeDirectory,
+				...baseEnvironment,
+				PI_STUFF_CONTEXT_PTY_BASE_URL: undefined,
+				PI_STUFF_CONTEXT_PTY_BUILTIN_OPENAI: undefined,
+				PI_STUFF_CONTEXT_PTY_LOG: fixtureRequestLog,
 			},
 			projectDirectory,
-			requestLog,
+			fixtureRequestLog,
+			requestBodies,
 		);
 	} finally {
+		server.stop(true);
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}
 }

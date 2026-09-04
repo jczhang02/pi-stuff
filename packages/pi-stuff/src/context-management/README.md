@@ -29,7 +29,10 @@ tokens, and current errors.
 - Runs the Context engine in a Worker without transferring Pi's input, Agent-turn, or Session lifecycle ownership.
 - Sends only the pinned engine's required Tool-event fields across the Worker boundary.
 - Projects derived context while Pi Session JSONL remains the raw record.
-- Falls back to Pi's native context and compaction when the engine is unavailable.
+- Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable.
+- Once active, the Host-managed `before_provider_request` adapter is fail-closed and requires 95% final-payload validation.
+- Reuses a validated projection only when every ordered raw-message identity, provider/model, and context window match.
+- Pi owns retry, continuation, and compaction; direct provider calls that bypass the Host hook are excluded.
 
 ## Documentation
 
