@@ -28,6 +28,12 @@ semantics: mirrored lifecycle work for an accepted prompt is owned by the Sessio
 Agent-turn signal. The adapter forwards cancellation only at invocation seams where the pinned official handler
 consumes it. An interrupted Agent turn therefore cannot classify a healthy Worker as failed or own its recovery.
 
+Context snapshots are demand-shaped at that pinned boundary. Tool start and end handlers receive Session metadata but
+not an unused Host context-usage estimate, and an intermediate Tool-use `message_end` relies on its Assistant usage
+until the following Context refresh. Session-mirror synchronization also omits the context-usage field that its caller
+does not consume. This prevents the Host from serializing complete in-flight Tool arguments merely to construct
+discarded snapshot data.
+
 The complete Session branch crosses the boundary when a Worker first
 binds a Session, when a changed leaf is not the direct successor of the mirrored leaf, and for the three explicit
 history-rebuild commands. Ordinary Context projection and persistence send at most one new leaf entry. The snapshot

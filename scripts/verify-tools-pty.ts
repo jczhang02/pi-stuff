@@ -9,6 +9,7 @@ import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 import { stripTerminalControls } from "./terminal-controls.js";
+import { runToolsPtyLiveness, type ToolsLivenessSample } from "./tools-pty-liveness.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-pty-provider.ts");
@@ -34,6 +35,8 @@ const REQUEST_RECORD_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 type RequestRecord = Static<typeof REQUEST_RECORD_SCHEMA>;
+
+export type { ToolsLivenessSample } from "./tools-pty-liveness.ts";
 
 function parseRequestRecords(contents: string): RequestRecord[] {
 	return contents
@@ -107,6 +110,21 @@ proc send_and_expect {keys pattern} {
     wait_for_quiet
 }
 
+proc open_tool_from_oldest {up_count} {
+    discard_pending_output
+    send -- "/tools\\r"
+    must_expect "Tools"
+    wait_for_quiet
+    discard_pending_output
+    send -- "\\033\\[F"
+    after 40
+    for {set index 0} {$index < $up_count} {incr index} {
+        send -- "\\033\\[A"
+        after 40
+    }
+    send -- "\\r"
+}
+
 spawn -noecho script -qefc $env(PI_STUFF_TOOLS_PTY_RUNNER) /dev/null
 set tool_pty $spawn_out(slave,name)
 set conversation_marker "run the Code Mode visibility fixture"
@@ -146,13 +164,13 @@ send_and_expect "\\rr" "Raw"
 send_and_expect "r" "Output"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
-send -- "/tools tools-pty-2\\r"
+open_tool_from_oldest 1
 must_expect "Tools /"
 must_expect "Content"
 must_expect "旧内容"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
-send -- "/tools tools-pty-3\\r"
+open_tool_from_oldest 2
 must_expect "Tools /"
 must_expect "Diff"
 must_expect "旧内容"
@@ -163,11 +181,10 @@ must_expect "oldText"
 send_and_expect "\\033" "r raw"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
-send -- "/tools tools-pty-4\\r"
+open_tool_from_oldest 3
 must_expect "Tools /"
 must_expect "PREFIX_CJK_工具"
 must_expect "BASH_CJK_工具"
-must_expect "Esc back"
 send -- "r"
 must_expect "Raw"
 must_expect "Call ID: tools-pty-4"
@@ -176,12 +193,14 @@ send_and_expect "\\033\\[6~" "Result content"
 send_and_expect "\\033" "r raw"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
-send -- "/tools tools-pty-8\\r"
+open_tool_from_oldest 5
 must_expect "Tools /"
 must_expect "BUILTIN_FAILURE_工具"
-must_expect "Esc back"
 send_and_expect "\\033" "activities"
 send_and_expect "\\033" $conversation_marker
+send -- "/tools tools-pty-2\\r"
+must_expect "/tools does not accept arguments."
+wait_for_quiet
 send -- "/ui\\r"
 must_expect "UI"
 must_expect "Tool running timer"
@@ -473,6 +492,17 @@ function expectEqualStrings(actual: readonly string[], expected: readonly string
 			`${label} changed active built-ins: expected ${normalizedExpected.join(", ") || "none"}; received ${normalizedActual.join(", ") || "none"}`,
 		);
 	}
+}
+
+export async function verifyToolsLivenessPty(options: ToolsPtyVerificationOptions): Promise<ToolsLivenessSample[]> {
+	verifyHostVersion(options.piBinary);
+	const samples = await runToolsPtyLiveness({ ...options, providerExtension, runner });
+	for (const sample of samples) {
+		console.log(
+			`Tool liveness ${String(sample.columns)}x${String(sample.rows)} ${sample.payloadKind}: UI ${String(sample.firstUiMs)}ms, ${sample.interaction} ${String(sample.interactionMs)}ms, spinner ${String(sample.maximumSpinnerFrameMs)}ms`,
+		);
+	}
+	return samples;
 }
 
 export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Promise<void> {

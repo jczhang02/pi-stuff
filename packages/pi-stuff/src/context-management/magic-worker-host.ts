@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, SessionManager } from "@earendil-works/pi-coding-agent";
 import * as Effect from "effect/Effect";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
-import { parseJsonObject } from "../shared/json-value.js";
+import { type JsonObject, parseJsonObject } from "../shared/json-value.js";
 import { isRuntimeFunction } from "../shared/runtime-type.js";
 import {
 	MAGIC_WORKER_SYNC_BUFFER_BYTES,
@@ -39,10 +39,10 @@ function workerModel(ctx: ExtensionContext): MagicWorkerContextSnapshot["model"]
 	};
 }
 
-export function snapshotMagicWorkerContext(ctx: ExtensionContext): MagicWorkerContextSnapshot {
+export function snapshotMagicWorkerContext(ctx: ExtensionContext, readContextUsage = true): MagicWorkerContextSnapshot {
 	const manager = ctx.sessionManager;
 	return {
-		contextUsage: requiredHostCall("context usage", () => ctx.getContextUsage()),
+		contextUsage: readContextUsage ? requiredHostCall("context usage", () => ctx.getContextUsage()) : undefined,
 		cwd: ctx.cwd,
 		hasUI: ctx.hasUI,
 		mode: ctx.mode,
@@ -53,6 +53,12 @@ export function snapshotMagicWorkerContext(ctx: ExtensionContext): MagicWorkerCo
 		},
 		systemPrompt: requiredHostCall("system prompt", () => ctx.getSystemPrompt()),
 	};
+}
+
+function snapshotToolArguments(toolName: string, args: JsonObject): JsonObject {
+	if (toolName !== "todowrite") return {};
+	const todos = args["todos"];
+	return todos === undefined ? {} : parseJsonObject(JSON.stringify({ todos }));
 }
 
 export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEventInput {
@@ -107,7 +113,7 @@ export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEven
 		case "tool_execution_start":
 			return {
 				event: {
-					args: parseJsonObject(JSON.stringify(event.args)),
+					args: snapshotToolArguments(event.toolName, event.args),
 					toolCallId: event.toolCallId,
 					toolName: event.toolName,
 					type: event.type,
@@ -119,7 +125,7 @@ export function snapshotMagicWorkerEvent(event: ExtensionEvent): MagicWorkerEven
 			const toolResult = {
 				content: event.content,
 				details: undefined,
-				input: parseJsonObject(JSON.stringify(event.input)),
+				input: {},
 				isError: event.isError,
 				toolCallId: event.toolCallId,
 				toolName: event.toolName,

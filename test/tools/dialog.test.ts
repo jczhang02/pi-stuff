@@ -173,7 +173,7 @@ test("/tools styles sanitized operation evidence and reuses its cached document"
 	component.dispose?.();
 });
 
-test("/tools <member-id> focuses the requested member within its complete group", () => {
+test("the Tool dialog can focus a requested member within its complete group", () => {
 	const runtime = groupedRuntime(["a.ts", "b.ts", "c.ts"]);
 	const harness = contextHarness(36);
 	const component = createToolDialogView(runtime, "read-2").create(harness.context);
@@ -249,7 +249,51 @@ test("/tools pages the Activity list with Space", () => {
 	paged.dispose?.();
 });
 
-test("/tools <member-id> opens an infrastructure-only group hidden from the compact transcript", () => {
+test("/tools loads exactly one bounded older page only when its row is confirmed", () => {
+	const runtime = groupedRuntime(["newest.ts"]);
+	const pages = [
+		{
+			hasOlder: true,
+			messages: [{ role: "assistant", content: [toolCall("read-older", "older.ts")] }, toolResult("read-older")],
+		},
+		{
+			hasOlder: false,
+			messages: [
+				{ role: "assistant", content: [toolCall("read-earliest", "earliest.ts")] },
+				toolResult("read-earliest"),
+			],
+		},
+	];
+	let loads = 0;
+	runtime.configureHistoryLoader(() => pages[loads++], true);
+	const component = createToolDialogView(runtime).create(contextHarness().context);
+
+	expect(component.render(64).join("\n")).toContain("Load older activities…");
+	component.handleInput?.("\u001b[B");
+	expect(loads).toBe(0);
+	expect(component.render(64).join("\n")).toContain("Read · 1 file");
+	component.handleInput?.("\r");
+	expect(loads).toBe(1);
+	expect(component.render(64).join("\n")).toContain("Load older activities…");
+	component.handleInput?.("\r");
+	let output = component.render(64).join("\n");
+	expect(output).toContain("older.ts");
+	expect(output).not.toContain("newest.ts");
+
+	component.handleInput?.("\u001b");
+	component.handleInput?.("\u001b[B");
+	component.handleInput?.("\r");
+	expect(loads).toBe(2);
+	expect(component.render(64).join("\n")).not.toContain("Load older activities…");
+	component.handleInput?.("\r");
+	output = component.render(64).join("\n");
+	expect(output).toContain("earliest.ts");
+	expect(output).not.toContain("older.ts");
+	expect(output).not.toContain("Load older activities…");
+	component.dispose?.();
+});
+
+test("the Tool dialog can open an infrastructure-only group hidden from the compact transcript", () => {
 	const runtime = new ToolUiRuntime();
 	runtime.registerActivity("ctx_reduce", { categories: [], classify: () => [], silentSuccess: true });
 	runtime.registerDetailPresentation("ctx_reduce", {

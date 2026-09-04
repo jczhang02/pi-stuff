@@ -189,7 +189,7 @@ test("matches the old footer usage accounting by ignoring aborted turns and comp
 	expect(rendered).not.toContain("$0.");
 });
 
-test("incrementally caches unchanged history and follows branch and compaction leaves", () => {
+test("caches exact usage by settled Session leaf and defers changed leaves until Host idle", () => {
 	const [rootUser, rootAssistant] = turnEntries("root", "Root prompt", null, 100, 0.1);
 	const [mainUser, mainAssistant] = turnEntries("main", "Main branch prompt", rootAssistant.id, 200, 0.2);
 	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
@@ -214,37 +214,54 @@ test("incrementally caches unchanged history and follows branch and compaction l
 		[rootUser, rootAssistant, mainUser, mainAssistant, compaction, alternateUser, alternateAssistant],
 		compaction.id,
 	);
+	let idle = true;
+	const statuslineContext = context({ idle: () => idle, sessionManager: session.manager });
+	const readContextUsage = statuslineContext.getContextUsage;
+	let contextUsageReads = 0;
+	Object.assign(statuslineContext, {
+		getContextUsage: () => {
+			contextUsageReads += 1;
+			return readContextUsage();
+		},
+	});
 	const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
-	const component = controller.createFooter(
-		context({ sessionManager: session.manager }),
-		tuiHarness().tui,
-		theme,
-		footerData("main"),
-	);
+	const component = controller.createFooter(statuslineContext, tuiHarness().tui, theme, footerData("main"));
 
 	const main = component.render(120).join("\n");
 	expect(main).toContain("93.8%");
 	expect(main).toContain("$0.30");
 	expect(main).toContain("Main branch prompt");
 	expect(session.reads.branches).toBe(0);
+	expect(contextUsageReads).toBe(1);
 	const readsAfterFirstRender = session.reads.entries;
 
 	component.render(80);
 	component.render(120);
 	expect(session.reads.entries).toBe(readsAfterFirstRender);
 	expect(session.reads.branches).toBe(0);
+	expect(contextUsageReads).toBe(1);
 
 	session.setLeaf(alternateAssistant.id);
+	idle = false;
 	const alternate = component.render(120).join("\n");
 	expect(alternate).toContain("95.2%");
 	expect(alternate).toContain("$0.40");
 	expect(alternate).toContain("Alternate branch prompt");
 	expect(session.reads.entries).toBe(readsAfterFirstRender + 2);
+	expect(contextUsageReads).toBe(1);
+	idle = true;
+	component.render(120);
+	expect(contextUsageReads).toBe(2);
 
 	const readsAfterAlternateBranch = session.reads.entries;
 	session.setLeaf(compaction.id);
+	idle = false;
 	expect(component.render(120).join("\n")).toContain("Main branch prompt");
 	expect(session.reads.entries).toBe(readsAfterAlternateBranch);
+	expect(contextUsageReads).toBe(2);
+	idle = true;
+	component.render(120);
+	expect(contextUsageReads).toBe(3);
 });
 
 test("omits cost for OAuth subscription models even when the catalogue reports rates", () => {

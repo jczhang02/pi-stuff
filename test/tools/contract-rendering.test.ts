@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
+import { SubagentParams } from "../../packages/pi-stuff/src/subagents/src/extension/schemas.js";
 import {
 	apiHarness,
 	assistant,
@@ -36,6 +38,87 @@ test("decoration preserves execution and projects one Tool immediately", async (
 
 	runtime.endTurn();
 	expect(renderLines(rendered.callComponent).join("\n")).toContain("Read 1 file");
+});
+
+test("first Tool projection does not traverse unrelated arguments", () => {
+	const keys = Array.from({ length: 1_000 }, (_, index) => `field-${String(index)}`);
+	let argumentPropertyVisits = 0;
+	const args = new Proxy<Record<string, number>>(
+		{},
+		{
+			get: () => {
+				argumentPropertyVisits += 1;
+				return 1;
+			},
+			getOwnPropertyDescriptor: () => {
+				argumentPropertyVisits += 1;
+				return { configurable: true, enumerable: true };
+			},
+			ownKeys: () => keys,
+		},
+	);
+	const harness = apiHarness();
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "wide argument fixture",
+			execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+			label: "Wide",
+			name: "wide",
+			parameters: Type.Record(Type.String(), Type.Number()),
+		},
+		{
+			activity: { categories: ["run-command"], classify: () => [{ category: "run-command", count: 1 }] },
+			runningSummary: "working",
+			summarize: () => "done",
+		},
+	);
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant({ type: "toolCall", id: "wide-1", name: "wide", arguments: args })]);
+	const tool = harness.tools.get("wide");
+	if (!tool?.renderCall) throw new Error("missing wide Tool renderer");
+	// SAFETY: the fixture supplies the exact Host context and argument shape exercised by this renderer.
+	const component = tool.renderCall(args, theme, {
+		...renderContext({}, { value: "" }, { toolCallId: "wide-1" }),
+		args,
+	} as never);
+
+	expect(renderLines(component).join("\n")).toContain("Wide");
+	expect(argumentPropertyVisits).toBeLessThanOrEqual(192);
+});
+
+test("the shared Agent Tool row bounds arguments at the real presentation seam", () => {
+	const harness = apiHarness();
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "Agent fixture",
+			execute: async () => ({ content: [], details: { mode: "single" as const, results: [] } }),
+			label: "Agent",
+			name: "subagent",
+			parameters: SubagentParams,
+		},
+		createAgentToolPresentation(),
+	);
+	let keyScans = 0;
+	const args = new Proxy(
+		{ agent: "reviewer", task: "x".repeat(8 * 1024 * 1024) },
+		{
+			ownKeys: (target) => {
+				keyScans += 1;
+				return Reflect.ownKeys(target);
+			},
+		},
+	);
+	const tool = harness.tools.get("subagent");
+	if (!tool?.renderCall) throw new Error("missing Agent Tool renderer");
+	const component = tool.renderCall(args, theme, {
+		...renderContext({}, { value: "" }, { toolCallId: "agent-wide" }),
+		args,
+	});
+
+	expect(renderLines(component).join("\n")).toContain("Agent");
+	expect(keyScans).toBe(0);
 });
 
 test("silent-success Tools stay compact while running but remain expandable", () => {

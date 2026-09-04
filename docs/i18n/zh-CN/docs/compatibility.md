@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 4509ef24ff9e3e4131b4d83b50671f1162f56bf4e0f635014e0439060a21c883 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 09dd5c096b5ecb6695efcb6bbed50a5e53d67dabf3d0e9b9ba171c08830de503 -->
 
 # 兼容性
 
@@ -16,6 +16,8 @@
 | 系统工具基线 | Ubuntu 24.04，包含 Bash、curl、tar、gzip 和标准 Unix 工具；不含 `pwsh` |
 | PTY 验证工具 | Ubuntu 24.04 的 Expect 与 tmux package |
 | TypeScript checker | 5.9.3 |
+| Code Mode Host | OpenAI Codex `rust-v0.145.0`，Linux x64 |
+| Code Mode Host Release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
 | 可选 RTK runtime | 官方 `0.45.0`，源码 `b34be37caf3796b69a50952a28e60e32b5daad43`，Linux x64 |
 | RTK Release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK Release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
@@ -27,8 +29,8 @@
 
 CI 提供两个稳定检查。`Fast` 始终验证冻结依赖图、仓库格式、anti-slop lint、类型接口、未使用代码分析、生成的
 组合以及公开 Release 安全。对 pull request，范围分类器会在可执行行为或可执行文档变化时启动 `Acceptance`；
-直接 push 到 `main` 只运行 `Fast`，手动触发则运行两者。`Acceptance` 下载并验证认证 Host Release 和 RTK
-runtime，然后在网络隔离 namespace 中逐个以全新 Bun 进程运行所有测试文件、真实 TUI 验证、Tool Activity
+直接 push 到 `main` 只运行 `Fast`，手动触发则运行两者。`Acceptance` 下载并验证认证 Host Release、Code Mode
+Host 和 RTK runtime，然后在网络隔离 namespace 中逐个以全新 Bun 进程运行所有测试文件、真实 TUI 验证、Tool Activity
 benchmark 和 Package 验证。逐文件进程隔离可防止某个重进程或 PTY 测试污染后续测试使用的原生资源。只有
 Beads 元数据以及已记录的 PNG、GIF、HTML 或 ANSI 证据可以跳过 `Acceptance`；可执行文档仍须完整认证。每周
 另有上游观察任务报告 npm `latest` 是否超过当前 Host，但绝不会自动改变认证。
@@ -43,7 +45,7 @@ Actions；它不会创建遗漏或绕过仓库 Bun lockfile 的 npm pull request
 
 已认证 Host profile 同时标识 Release 版本、审核过的上游源码提交、Linux x64 Release 二进制哈希和内嵌 Bun
 版本。仓库工具链行单独标识仓库命令和 CI 使用的 Bun。CI 在可以联网时下载固定 GitHub Release、完成验证，
-随后断网运行验收。archive 在解压前检查哈希，可执行文件在使用前再次检查。升级 Pi 必须一起审查并更新这些
+随后断网运行验收。Release archive 在解压前检查哈希，Pi 可执行文件在使用前再次检查。升级 Pi 必须一起审查并更新这些
 常量；本仓库不声称能复现上游编译过程。
 
 Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。开发依赖固定到已发布的 `0.84.4` 类型

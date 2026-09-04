@@ -278,9 +278,11 @@ function renderRetrievalGroupRow(
 function bashCommandLines(command: string, expanded: boolean): string[] {
 	const maximumCodeUnits = expanded ? ROW_PREVIEW_CODE_UNIT_LIMIT : BASH_COMMAND_MAX_CODE_UNITS;
 	const maximumLines = expanded ? DETAIL_LINE_LIMIT : BASH_COMMAND_MAX_LINES;
-	const safe = boundTerminalText(command, maximumCodeUnits + 1, "").trim();
+	const source = command.slice(0, (maximumCodeUnits + 1) * 4);
+	const sourceTruncated = source.length < command.length;
+	const safe = boundTerminalText(source, maximumCodeUnits + 1, "").trim();
 	const clipped = graphemePrefix(safe, maximumCodeUnits);
-	const truncatedByCodeUnits = clipped.length < safe.length;
+	const truncatedByCodeUnits = sourceTruncated || clipped.length < safe.length;
 	const sourceLines = clipped.split("\n");
 	const truncatedByLines = sourceLines.length > maximumLines;
 	const lines = sourceLines.slice(0, maximumLines);

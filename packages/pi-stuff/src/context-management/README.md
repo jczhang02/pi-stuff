@@ -27,6 +27,7 @@ tokens, and current errors.
 - Keeps first-use configuration and migration behind direct interactive authority.
 - Exposes status and maintenance through `/ctx` and persistent Context Activity.
 - Runs the Context engine in a Worker without transferring Pi's input, Agent-turn, or Session lifecycle ownership.
+- Sends only the pinned engine's required Tool-event fields across the Worker boundary.
 - Projects derived context while Pi Session JSONL remains the raw record.
 - Uses Pi's native context and compaction only during startup or degraded operation when the engine is unavailable.
 - Once active, the Host-managed `before_provider_request` adapter is fail-closed and requires 95% final-payload validation.

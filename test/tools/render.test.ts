@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { readHostProxyProperty } from "../../packages/pi-stuff/src/shared/host-proxy.js";
 import { ToolActivityStore } from "../../packages/pi-stuff/src/tool-display/activity-store.js";
 import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
 import { sanitizeTerminalText } from "../../packages/pi-stuff/src/tool-display/terminal.js";
 import {
+	boundedToolArguments,
 	buildRawToolDetailLines,
 	buildToolResultLines,
 	capDetailLines,
@@ -17,6 +19,8 @@ import { testTheme } from "../fixtures/extension-context.js";
 import { isWellFormed } from "../fixtures/terminal.js";
 
 type ToolResultDetails = AgentToolResult<unknown>["details"];
+
+type RecursiveValue = { value?: RecursiveValue | string };
 
 const theme = testTheme;
 
@@ -704,17 +708,31 @@ test("reserves recognizable results before truncating long Tool labels", () => {
 });
 
 test("bounds work and retained previews for multi-megabyte arguments and results", () => {
-	let lateGetterReads = 0;
+	const reads = { array: 0, keys: 0 };
 	const hugeArguments = { command: "x".repeat(8 * 1024 * 1024) };
-	Object.defineProperty(hugeArguments, "late", {
-		enumerable: true,
-		get: () => {
-			lateGetterReads += 1;
-			return "should not be visited after the cap";
+	const wideArguments = new Proxy(
+		{},
+		{
+			ownKeys() {
+				reads.keys += 1;
+				return [];
+			},
+		},
+	);
+	const largeArray = new Proxy(Array<number>(100_000).fill(1), {
+		get(target, property) {
+			if (/^\d+$/u.test(String(property))) reads.array += 1;
+			return readHostProxyProperty(target, property);
 		},
 	});
+	const cyclic: RecursiveValue = {};
+	cyclic.value = cyclic;
+	let deep: RecursiveValue | string = "leaf";
+	for (let index = 0; index < 20; index += 1) deep = { value: deep };
 	const details = [
 		buildRawToolDetailLines("call", "tool", hugeArguments, result("ok")),
+		buildRawToolDetailLines("call", "tool", wideArguments, result("ok")),
+		buildRawToolDetailLines("call", "tool", { values: largeArray }, result("ok"), ["values"]),
 		buildToolResultLines(result("y".repeat(8 * 1024 * 1024))),
 		buildRawToolDetailLines("call", "tool", { value: "👩‍💻".repeat(10_000) }, result("ok")),
 	];
@@ -725,7 +743,10 @@ test("bounds work and retained previews for multi-megabyte arguments and results
 		expect(detail.at(-1)).toContain("detail capped");
 		expect(detail.every(isWellFormed)).toBeTrue();
 	}
-	expect(lateGetterReads).toBe(0);
+	expect(reads.keys).toBe(0);
+	expect(reads.array).toBeLessThanOrEqual(64);
+	expect(buildRawToolDetailLines("call", "tool", cyclic, result("ok"), ["value"]).join("\n")).toContain("[circular]");
+	expect(JSON.stringify(boundedToolArguments({ value: deep }, ["value"]))).toMatch(/\[(?:depth|work) limit\]/u);
 	expect(Buffer.byteLength(describeBuiltinTarget("bash", hugeArguments))).toBeLessThanOrEqual(4 * 1024);
 	expect(
 		Buffer.byteLength(

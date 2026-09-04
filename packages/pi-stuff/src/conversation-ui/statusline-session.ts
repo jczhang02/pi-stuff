@@ -2,6 +2,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../shared/runtime-type.js";
+import type { StatuslineContextUsage } from "./statusline-render.js";
 import { sanitizeOneLine } from "./terminal-text.js";
 
 export interface UsageTotals {
@@ -34,6 +35,13 @@ export type StatuslineSessionManager = Pick<
 export class SessionStatusSource {
 	private activeLeafId: string | null | undefined;
 	private readonly byEntryId = new Map<string, SessionStatusSnapshot>();
+	private contextUsage:
+		| {
+				readonly leafId: string | null;
+				readonly model: ExtensionContext["model"];
+				readonly value: StatuslineContextUsage | undefined;
+		  }
+		| undefined;
 	private readonly sessionManager: StatuslineSessionManager;
 	private sessionId: string | undefined;
 	private snapshot = emptySessionStatus();
@@ -107,11 +115,48 @@ export class SessionStatusSource {
 		return ancestor;
 	}
 
+	readContextUsage(
+		model: ExtensionContext["model"],
+		hostIdle: boolean,
+		read: () => StatuslineContextUsage | undefined,
+	): StatuslineContextUsage | null | undefined {
+		let leafId: string | null;
+		try {
+			const sessionId = this.sessionManager.getSessionId();
+			leafId = this.sessionManager.getLeafId();
+			if (sessionId !== this.sessionId) this.reset(sessionId);
+		} catch {
+			const cached = this.contextUsage;
+			if (hostIdle) return readContextUsageSafely(read);
+			return cached && cached.model === model ? cached.value : undefined;
+		}
+		const cached = this.contextUsage;
+		// A settled Session branch is immutable, so Session leaf plus model identifies
+		// exact usage. Reuse it during idle input repaints and while the Host is working.
+		if (cached && model === cached.model && (leafId === cached.leafId || !hostIdle)) return cached.value;
+		if (!hostIdle) return;
+		const value = readContextUsageSafely(read);
+		if (value === null) return null;
+		this.contextUsage = { leafId, model, value };
+		return value;
+	}
+
 	private reset(sessionId: string): void {
 		this.sessionId = sessionId;
 		this.activeLeafId = undefined;
 		this.snapshot = emptySessionStatus();
 		this.byEntryId.clear();
+		this.contextUsage = undefined;
+	}
+}
+
+function readContextUsageSafely(
+	read: () => StatuslineContextUsage | undefined,
+): StatuslineContextUsage | null | undefined {
+	try {
+		return read();
+	} catch {
+		return null;
 	}
 }
 

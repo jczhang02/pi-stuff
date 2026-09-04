@@ -65,7 +65,7 @@ const COMPLETION_CALLS: readonly FixtureCall[] = [
 ];
 const MEDIA_CALLS: readonly FixtureCall[] = [{ name: "fixture_media", arguments: {} }];
 const AGENT_CALLS: readonly FixtureCall[] = [{ name: "subagent", arguments: { action: "status" } }];
-const RECOVERY_CALLS: readonly FixtureCall[] = [
+const RETRY_HISTORY_CALLS: readonly FixtureCall[] = [
 	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
 	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
 ];
@@ -208,8 +208,10 @@ function fixtureStream(context: Context) {
 	if (request.includes("agent")) {
 		return completed === 0 ? toolCallsStream("group-agent", AGENT_CALLS) : textStream("GROUP_AGENT_DONE");
 	}
-	if (request.includes("recovery")) {
-		return completed === 0 ? toolCallsStream("group-recovery", RECOVERY_CALLS) : textStream("GROUP_RECOVERY_DONE");
+	if (request.includes("retry-history")) {
+		return completed === 0
+			? toolCallsStream("group-retry-history", RETRY_HISTORY_CALLS)
+			: textStream("GROUP_RETRY_HISTORY_DONE");
 	}
 	if (request.includes("bashui")) {
 		return completed === 0 ? toolCallsStream("group-bash-ui", BASH_UI_CALLS) : textStream("GROUP_BASH_UI_DONE");
@@ -374,11 +376,11 @@ function registerRecoveryAndMediaTools(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
-			description: "Fail once, then complete the same exact operation for recovery certification",
+			description: "Fail once, then complete the same exact operation for historical outcome certification",
 			execute: async (toolCallId) => {
 				const failed = toolCallId.endsWith("-1");
 				return {
-					content: [{ type: "text", text: failed ? "FIXTURE_RETRY_FAILED" : "FIXTURE_RETRY_RECOVERED" }],
+					content: [{ type: "text", text: failed ? "FIXTURE_RETRY_FAILED" : "FIXTURE_RETRY_SUCCEEDED" }],
 					details: { failed },
 				};
 			},
@@ -394,7 +396,7 @@ function registerRecoveryAndMediaTools(pi: ExtensionAPI): void {
 			resultIsError: (_args, result) =>
 				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(result.details as { readonly failed?: boolean } | undefined)?.failed === true,
-			summarize: (_args, _result, state) => (state === "success" ? "recovered" : "retry failed"),
+			summarize: (_args, _result, state) => (state === "success" ? "retry succeeded" : "retry failed"),
 			target: (args) => args.value,
 		},
 	);

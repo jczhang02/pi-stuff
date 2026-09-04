@@ -10,6 +10,8 @@ import { oneLine } from "./tool-text.js";
 
 const COMPACT_CHANGED_LINE_LIMIT = 10;
 const COMPACT_PATCH_FILE_CHANGED_LIMIT = 4;
+const DIFF_ROW_LIMIT = EXPANDED_OPERATION_LINE_LIMIT * 2;
+const DIFF_SOURCE_SCAN_FACTOR = 4;
 
 interface DiffLine {
 	readonly file: string;
@@ -35,6 +37,23 @@ export interface DiffProjection {
 	readonly expandable: boolean;
 	readonly files: readonly FileChange[];
 	readonly lines: readonly OperationEvidenceLine[];
+	readonly truncated: boolean;
+}
+
+interface ParsedDiff {
+	readonly rows: DiffLine[];
+	readonly truncated: boolean;
+}
+
+interface BoundedDiffSource {
+	readonly text: string;
+	readonly truncated: boolean;
+}
+
+function boundedDiffSource(value: string, expanded: boolean): BoundedDiffSource {
+	const byteLimit = expanded ? EXPANDED_OPERATION_BYTE_LIMIT : COMPACT_OPERATION_BYTE_LIMIT;
+	const text = value.slice(0, byteLimit * DIFF_SOURCE_SCAN_FACTOR);
+	return { text, truncated: text.length < value.length };
 }
 
 function cleanDiffPath(value: string): string {
@@ -42,8 +61,10 @@ function cleanDiffPath(value: string): string {
 	return path.replace(/^[ab]\//u, "");
 }
 
-function parseUnifiedDiff(value: string, fallbackPath: string): DiffLine[] {
+function parseUnifiedDiff(value: string, fallbackPath: string, expanded: boolean): ParsedDiff {
+	const source = boundedDiffSource(value, expanded);
 	const rows: DiffLine[] = [];
+	let truncated = source.truncated;
 	let oldPath = fallbackPath;
 	let newPath = fallbackPath;
 	let file = fallbackPath;
@@ -51,7 +72,7 @@ function parseUnifiedDiff(value: string, fallbackPath: string): DiffLine[] {
 	let newLine = 0;
 	let status: DiffLine["status"] = "M";
 	let inHunk = false;
-	for (const raw of value.replaceAll("\r", "").split("\n")) {
+	for (const raw of source.text.replaceAll("\r", "").split("\n")) {
 		if (raw.startsWith("--- ")) {
 			oldPath = cleanDiffPath(raw.slice(4));
 			inHunk = false;
@@ -71,6 +92,10 @@ function parseUnifiedDiff(value: string, fallbackPath: string): DiffLine[] {
 			continue;
 		}
 		if (!inHunk || raw.startsWith("\\ No newline")) continue;
+		if (rows.length >= DIFF_ROW_LIMIT) {
+			truncated = true;
+			break;
+		}
 		if (raw.startsWith("+")) {
 			rows.push({ file, kind: "add", newLine, status, text: raw.slice(1) });
 			newLine += 1;
@@ -90,12 +115,18 @@ function parseUnifiedDiff(value: string, fallbackPath: string): DiffLine[] {
 			newLine += 1;
 		}
 	}
-	return rows;
+	return { rows, truncated };
 }
 
-function parseDisplayDiff(value: string, path: string): DiffLine[] {
+function parseDisplayDiff(value: string, path: string, expanded: boolean): ParsedDiff {
+	const source = boundedDiffSource(value, expanded);
 	const rows: DiffLine[] = [];
-	for (const raw of value.replaceAll("\r", "").split("\n")) {
+	let truncated = source.truncated;
+	for (const raw of source.text.replaceAll("\r", "").split("\n")) {
+		if (rows.length >= DIFF_ROW_LIMIT) {
+			truncated = true;
+			break;
+		}
 		const match = raw.match(/^(?<kind>[ +-])(?<line>\s*\d+) (?<text>.*)$/u);
 		if (!match?.groups) continue;
 		const line = Number(match.groups["line"]);
@@ -105,18 +136,20 @@ function parseDisplayDiff(value: string, path: string): DiffLine[] {
 			rows.push({ file: path, kind: "delete", oldLine: line, status: "M", text });
 		else rows.push({ file: path, kind: "context", newLine: line, oldLine: line, status: "M", text });
 	}
-	return rows;
+	return { rows, truncated };
 }
 
-export function parseApplyPatchDiff(value: string): DiffLine[] {
+export function parseApplyPatchDiff(value: string, expanded: boolean): ParsedDiff {
+	const source = boundedDiffSource(value, expanded);
 	const rows: DiffLine[] = [];
+	let truncated = source.truncated;
 	let file = "";
 	let inHunk = false;
 	let newLine: number | undefined;
 	let newPath: string | undefined;
 	let oldLine: number | undefined;
 	let status: DiffLine["status"] = "M";
-	for (const raw of value.replaceAll("\r", "").split("\n")) {
+	for (const raw of source.text.replaceAll("\r", "").split("\n")) {
 		const section = raw.match(/^\*\*\* (?<kind>Add|Delete|Update) File: (?<path>.+)$/u);
 		if (section?.groups) {
 			file = oneLine(section.groups["path"] ?? "");
@@ -141,6 +174,10 @@ export function parseApplyPatchDiff(value: string): DiffLine[] {
 			continue;
 		}
 		if (!file || !inHunk || raw === "*** End Patch" || raw === "*** Begin Patch") continue;
+		if (rows.length >= DIFF_ROW_LIMIT) {
+			truncated = true;
+			break;
+		}
 		const common = { file, newPath, status };
 		if (raw.startsWith("+")) {
 			rows.push({ ...common, kind: "add", newLine, text: raw.slice(1) });
@@ -154,19 +191,23 @@ export function parseApplyPatchDiff(value: string): DiffLine[] {
 			if (newLine !== undefined) newLine += 1;
 		}
 	}
-	return rows;
+	return { rows, truncated };
 }
 
-export function diffRowsFromResult(result: AgentToolResult<unknown> | undefined, path: string): DiffLine[] {
+export function diffRowsFromResult(
+	result: AgentToolResult<unknown> | undefined,
+	path: string,
+	expanded: boolean,
+): ParsedDiff {
 	const patch = operationDetailString(result, "patch");
 	if (patch) {
-		const rows = parseUnifiedDiff(patch, path);
-		if (rows.length > 0) return rows;
+		const parsed = parseUnifiedDiff(patch, path, expanded);
+		if (parsed.rows.length > 0) return parsed;
 	}
 	const diff = operationDetailString(result, "diff");
-	if (!diff) return [];
-	const unified = parseUnifiedDiff(diff, path);
-	return unified.length > 0 ? unified : parseDisplayDiff(diff, path);
+	if (!diff) return { rows: [], truncated: false };
+	const unified = parseUnifiedDiff(diff, path, expanded);
+	return unified.rows.length > 0 ? unified : parseDisplayDiff(diff, path, expanded);
 }
 
 function isChanged(line: DiffLine): boolean {
@@ -226,7 +267,12 @@ function fileChanges(rows: readonly DiffLine[]): FileChange[] {
 	return [...changes.values()];
 }
 
-export function projectDiff(rows: readonly DiffLine[], expanded: boolean, patch: boolean): DiffProjection {
+export function projectDiff(
+	rows: readonly DiffLine[],
+	expanded: boolean,
+	patch: boolean,
+	sourceTruncated = false,
+): DiffProjection {
 	const visible = boundedDiffRows(rows, expanded, patch);
 	const additions = rows.filter((row) => row.kind === "add").length;
 	const deletions = rows.filter((row) => row.kind === "delete").length;
@@ -239,19 +285,24 @@ export function projectDiff(rows: readonly DiffLine[], expanded: boolean, patch:
 		if (row.oldLine !== undefined) Object.assign(line, { oldLine: row.oldLine });
 		return line;
 	});
-	if (omitted > 0 || (expanded && visible.length < rows.length)) {
+	if (sourceTruncated || omitted > 0 || (expanded && visible.length < rows.length)) {
 		lines.push({
 			kind: "meta",
-			text: expanded
-				? `… ${String(Math.max(0, omitted))} changed lines omitted · diff capped at 240 lines / 24 KiB`
-				: `… ${String(omitted)} changed lines omitted (ctrl+o to expand)`,
+			text: sourceTruncated
+				? expanded
+					? "… more diff omitted · diff capped at 240 lines / 24 KiB"
+					: "… more diff (ctrl+o to expand)"
+				: expanded
+					? `… ${String(Math.max(0, omitted))} changed lines omitted · diff capped at 240 lines / 24 KiB`
+					: `… ${String(omitted)} changed lines omitted (ctrl+o to expand)`,
 		});
 	}
 	return {
 		additions,
 		deletions,
-		expandable: boundedDiffRows(rows, false, patch).length < rows.length,
+		expandable: sourceTruncated || boundedDiffRows(rows, false, patch).length < rows.length,
 		files: fileChanges(rows),
 		lines,
+		truncated: sourceTruncated,
 	};
 }

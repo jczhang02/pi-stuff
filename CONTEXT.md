@@ -123,9 +123,10 @@ not merge or alter the underlying protocol events, ordering, or Session history.
 _Avoid_: Tool call, Tool row, Tool Activity Group
 
 **Retrieval Group**:
-A derived display-only summary of one continuous segment of native Read, Grep/Find, or List invocations, excluding a
-Read whose resolved basename is exactly `SKILL.md`. A Narrative Boundary, independent Tool Activity, automatic
-continuation, or turn completion closes it.
+A derived display-only summary of one bounded continuous segment of native Read, Grep/Find, or List invocations,
+excluding a Read whose resolved basename is exactly `SKILL.md`. A longer continuous run appears as ordered
+continuation segments; a Narrative Boundary, independent Tool Activity, automatic continuation, or turn completion
+closes the run.
 _Avoid_: Exploration group, Tool batch, merged Tool call
 
 **Skill Tool Activity**:

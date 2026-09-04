@@ -1,21 +1,33 @@
 import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../shared/runtime-type.js";
-import {
-	type PlannedRetrievalGroup,
-	type PlannedToolActivityMember,
-	planRetrievalGroups,
-	type RetrievalGroupDisposition,
-	type ToolArguments,
+import type {
+	PlannedRetrievalGroup,
+	PlannedToolActivityMember,
+	RetrievalGroupDisposition,
+	ToolArguments,
 } from "./activity.js";
 import { assistantTerminalState, isIssueState, terminalStateFromResult } from "./activity-summary.js";
 import type { SuiteToolEnvelopeDetails } from "./contract.js";
 import type { ToolEnvelopeProjection } from "./envelope-projection.js";
 import { envelopeOperationResult } from "./envelope-renderer.js";
-import { directBashCancelledByHostAbort } from "./retrieval-groups.js";
+import { TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT, TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT } from "./limits.js";
+import {
+	boundedToolTranscript,
+	directBashCancelledByHostAbort,
+	planRetrievalPage,
+	RETRIEVAL_GROUP_MEMBER_LIMIT,
+} from "./retrieval-groups.js";
 import { isRecordValue, isToolArguments } from "./tool-value.js";
 
 const PENDING_RESULT_LIMIT = 768;
+const GROUP_PROJECTION_LIMIT = 768;
+const STREAM_BOUNDARY_SCAN_LIMIT = 1_024;
+
+function hasBoundedStreamText(value: string): boolean {
+	const source = value.slice(0, STREAM_BOUNDARY_SCAN_LIMIT);
+	return source.trim().length > 0 || source.length < value.length;
+}
 
 type ResultErrorPolicy = (args: ToolArguments, result: AgentToolResult<unknown>) => boolean;
 type GroupProjectionHooks = {
@@ -31,6 +43,12 @@ export class ToolGroupProjection {
 	private agentActive = false;
 	private readonly groupOrder: string[] = [];
 	private readonly groups = new Map<string, PlannedRetrievalGroup>();
+	private readonly historicalGroupIds: string[] = [];
+	private readonly historicalGroups = new Map<string, PlannedRetrievalGroup>();
+	private readonly historicalMemberIndexes = new Map<string, number>();
+	private readonly historicalMembership = new Map<string, string>();
+	private readonly historicalResultMessages = new Map<string, unknown>();
+	private historyHeadCanContinue = false;
 	private indexedMessages: unknown[] = [];
 	private readonly membership = new Map<string, string>();
 	private readonly memberIndexes = new Map<string, number>();
@@ -62,12 +80,12 @@ export class ToolGroupProjection {
 	}
 
 	group(leaderId: string): PlannedRetrievalGroup | undefined {
-		return this.groups.get(leaderId);
+		return this.groups.get(leaderId) ?? this.historicalGroups.get(leaderId);
 	}
 
 	groupForTool(toolCallId: string): PlannedRetrievalGroup | undefined {
-		const leaderId = this.membership.get(toolCallId);
-		return leaderId ? this.groups.get(leaderId) : undefined;
+		const leaderId = this.membership.get(toolCallId) ?? this.historicalMembership.get(toolCallId);
+		return leaderId ? this.group(leaderId) : undefined;
 	}
 
 	groupsInOrder(): readonly PlannedRetrievalGroup[] {
@@ -77,21 +95,25 @@ export class ToolGroupProjection {
 	}
 
 	leaderIdFor(toolCallId: string): string | undefined {
-		return this.membership.get(toolCallId);
+		return this.membership.get(toolCallId) ?? this.historicalMembership.get(toolCallId);
 	}
 
 	member(toolCallId: string): PlannedToolActivityMember | undefined {
 		const group = this.groupForTool(toolCallId);
-		const memberIndex = this.memberIndexes.get(toolCallId);
+		const memberIndex = this.memberIndexes.get(toolCallId) ?? this.historicalMemberIndexes.get(toolCallId);
 		return memberIndex === undefined ? undefined : group?.members[memberIndex];
 	}
 
 	memberIndex(toolCallId: string): number | undefined {
-		return this.memberIndexes.get(toolCallId);
+		return this.memberIndexes.get(toolCallId) ?? this.historicalMemberIndexes.get(toolCallId);
 	}
 
 	memberIds(): ReadonlySet<string> {
-		return new Set(this.membership.keys());
+		const ids = new Set<string>();
+		for (const leaderId of this.groupOrder) {
+			for (const member of this.groups.get(leaderId)?.members ?? []) ids.add(member.id);
+		}
+		return ids;
 	}
 
 	projectedResult(toolCallId: string): AgentToolResult<unknown> | undefined {
@@ -106,13 +128,14 @@ export class ToolGroupProjection {
 		this.agentActive = true;
 		this.tailForcedClosed = false;
 		if (messages) {
-			this.indexedMessages = [...messages];
+			this.indexedMessages = messages.slice(-TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT);
 			this.rebuild();
 		}
 	}
 
 	observeUserBoundary(): void {
 		this.indexedMessages.push({ role: "user", content: [] });
+		if (this.indexedMessages.length > TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT) this.indexedMessages.shift();
 		this.tailForcedClosed = true;
 		this.closeOpenGroup();
 	}
@@ -132,14 +155,14 @@ export class ToolGroupProjection {
 		this.beginStream();
 		if (event.type === "text_delta" || event.type === "text_end") {
 			const text = event.type === "text_delta" ? event.delta : event.content;
-			if (!text.trim() || this.streamedProseIndexes.has(event.contentIndex)) return;
+			if (!hasBoundedStreamText(text) || this.streamedProseIndexes.has(event.contentIndex)) return;
 			this.streamedProseIndexes.add(event.contentIndex);
 			this.observeAssistantProse();
 			return;
 		}
 		if (event.type === "thinking_delta" || event.type === "thinking_end") {
 			const thinking = event.type === "thinking_delta" ? event.delta : event.content;
-			if (!thinking.trim() || this.streamedThinkingIndexes.has(event.contentIndex)) return;
+			if (!hasBoundedStreamText(thinking) || this.streamedThinkingIndexes.has(event.contentIndex)) return;
 			this.streamedThinkingIndexes.add(event.contentIndex);
 			this.observeAssistantProse();
 			return;
@@ -152,13 +175,14 @@ export class ToolGroupProjection {
 
 	indexMessages(messages: readonly unknown[], closeTail = !this.agentActive): void {
 		this.pendingResults.clear();
-		this.indexedMessages = [...messages];
+		this.indexedMessages = messages.slice(-TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT);
 		this.tailForcedClosed = closeTail;
 		this.rebuild();
 	}
 
 	indexMessage<Message>(message: Message): void {
 		this.indexedMessages.push(message);
+		if (this.indexedMessages.length > TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT) this.indexedMessages.shift();
 		this.applyMessage(message);
 		if (isRecordValue(message) && message.role === "assistant") this.endStream();
 	}
@@ -207,18 +231,18 @@ export class ToolGroupProjection {
 		this.hooks.groupChanged(group, id);
 	}
 
-	rebuild(): void {
+	rebuild(): boolean {
 		this.groups.clear();
 		this.groupOrder.splice(0);
 		this.membership.clear();
 		this.memberIndexes.clear();
 		this.openGroupLeaderId = undefined;
-		const planned = planRetrievalGroups(
-			this.envelopes.projectMessages(this.indexedMessages),
+		const page = planRetrievalPage(
+			this.envelopes.projectMessages(boundedToolTranscript(this.indexedMessages)),
 			this.disposition,
 			!this.agentActive || this.tailForcedClosed,
 		);
-		for (const group of planned) {
+		for (const group of page.groups) {
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
 			group.members.forEach((member, index) => {
@@ -228,13 +252,85 @@ export class ToolGroupProjection {
 			if (!group.closed) this.openGroupLeaderId = group.leaderId;
 		}
 		this.hooks.groupsRebuilt();
+		return page.headCanContinue;
+	}
+
+	prependHistoryPage(messages: readonly unknown[]): readonly PlannedRetrievalGroup[] {
+		const boundedMessages = messages.slice(-TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT);
+		const existingOldestId = this.historicalGroupIds.at(-1) ?? this.groupOrder[0];
+		const existingOldest = existingOldestId ? this.group(existingOldestId) : undefined;
+		const resultIds = this.rememberHistoricalResults(boundedMessages);
+		const supplementalResults: unknown[] = [];
+		let remainingBlocks = TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT;
+		for (let messageIndex = 0; messageIndex < boundedMessages.length && remainingBlocks > 0; messageIndex += 1) {
+			const message = boundedMessages[messageIndex];
+			if (!isRecordValue(message) || message.role !== "assistant" || !Array.isArray(message.content)) continue;
+			for (let blockIndex = 0; blockIndex < message.content.length && remainingBlocks > 0; blockIndex += 1) {
+				remainingBlocks -= 1;
+				const block = message.content[blockIndex];
+				if (!isRecordValue(block) || block.type !== "toolCall" || !isRuntimeString(block.id)) continue;
+				const result = this.historicalResultMessages.get(block.id);
+				if (result && !resultIds.has(block.id)) supplementalResults.push(result);
+				if (result) {
+					resultIds.add(block.id);
+					this.historicalResultMessages.delete(block.id);
+				}
+			}
+		}
+		const plannedPage = planRetrievalPage(
+			this.envelopes.projectMessages(boundedToolTranscript([...boundedMessages, ...supplementalResults])),
+			this.disposition,
+			true,
+		);
+		const page = [...plannedPage.groups];
+		const pageNewest = page.at(-1);
+		if (
+			existingOldest &&
+			pageNewest &&
+			this.historyHeadCanContinue &&
+			plannedPage.tailCanContinue &&
+			!existingOldest.standalone &&
+			!pageNewest.standalone
+		) {
+			const continuedExisting = { ...existingOldest, continuedFromPrevious: true };
+			if (this.historicalGroups.has(existingOldest.leaderId)) {
+				this.historicalGroups.set(existingOldest.leaderId, continuedExisting);
+			} else this.groups.set(existingOldest.leaderId, continuedExisting);
+			page[page.length - 1] = { ...pageNewest, continuesToNext: true };
+		}
+		this.historyHeadCanContinue =
+			page.length > 0
+				? plannedPage.headCanContinue
+				: this.historyHeadCanContinue && plannedPage.headCanContinue && plannedPage.tailCanContinue;
+		this.historicalGroupIds.splice(0);
+		this.historicalGroups.clear();
+		this.historicalMemberIndexes.clear();
+		this.historicalMembership.clear();
+		for (let index = page.length - 1; index >= 0; index -= 1) {
+			const group = page[index];
+			if (!group || this.groups.has(group.leaderId) || this.historicalGroups.has(group.leaderId)) continue;
+			this.historicalGroups.set(group.leaderId, group);
+			this.historicalGroupIds.push(group.leaderId);
+			group.members.forEach((member, memberIndex) => {
+				if (this.membership.has(member.id) || this.historicalMembership.has(member.id)) return;
+				this.historicalMembership.set(member.id, group.leaderId);
+				this.historicalMemberIndexes.set(member.id, memberIndex);
+			});
+		}
+		return page;
 	}
 
 	resetProjection(messages: readonly unknown[]): void {
 		this.pendingResults.clear();
-		this.indexedMessages = [...messages];
+		this.historicalGroupIds.splice(0);
+		this.historicalGroups.clear();
+		this.historicalMemberIndexes.clear();
+		this.historicalMembership.clear();
+		this.historicalResultMessages.clear();
+		this.rememberHistoricalResults(messages);
+		this.indexedMessages = messages.slice(-TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT);
 		this.endStream();
-		this.rebuild();
+		this.historyHeadCanContinue = this.rebuild();
 	}
 
 	clear(): void {
@@ -243,11 +339,48 @@ export class ToolGroupProjection {
 		this.membership.clear();
 		this.memberIndexes.clear();
 		this.pendingResults.clear();
+		this.historicalGroupIds.splice(0);
+		this.historicalGroups.clear();
+		this.historicalMemberIndexes.clear();
+		this.historicalMembership.clear();
+		this.historicalResultMessages.clear();
+		this.historyHeadCanContinue = false;
 		this.indexedMessages = [];
 		this.openGroupLeaderId = undefined;
 		this.endStream();
 		this.agentActive = false;
 		this.tailForcedClosed = false;
+	}
+
+	private rememberHistoricalResults(messages: readonly unknown[]): Set<string> {
+		const resultIds = new Set<string>();
+		for (let index = 0; index < Math.min(messages.length, TOOL_DISPLAY_TRANSCRIPT_MESSAGE_LIMIT); index += 1) {
+			const message = messages[index];
+			if (!isRecordValue(message) || message.role !== "toolResult" || !isRuntimeString(message.toolCallId)) continue;
+			resultIds.add(message.toolCallId);
+			this.historicalResultMessages.set(message.toolCallId, message);
+		}
+		while (this.historicalResultMessages.size > PENDING_RESULT_LIMIT) {
+			const oldest = this.historicalResultMessages.keys().next().value;
+			if (!oldest) break;
+			this.historicalResultMessages.delete(oldest);
+		}
+		return resultIds;
+	}
+
+	private trimGroups(): void {
+		while (this.groupOrder.length > GROUP_PROJECTION_LIMIT) {
+			const leaderId = this.groupOrder.shift();
+			if (!leaderId) return;
+			const group = this.groups.get(leaderId);
+			this.groups.delete(leaderId);
+			if (!group) continue;
+			for (const member of group.members) {
+				this.membership.delete(member.id);
+				this.memberIndexes.delete(member.id);
+			}
+			this.hooks.groupRemoved(leaderId);
+		}
 	}
 
 	private beginStream(): void {
@@ -309,7 +442,8 @@ export class ToolGroupProjection {
 	}
 
 	private applyAssistantContent(content: readonly unknown[], terminalState?: "cancelled" | "error"): void {
-		for (let index = 0; index < content.length; index += 1) {
+		const start = Math.max(0, content.length - TOOL_DISPLAY_TRANSCRIPT_BLOCK_LIMIT);
+		for (let index = start; index < content.length; index += 1) {
 			const block = content[index];
 			if (!isRecordValue(block)) continue;
 			if (
@@ -376,16 +510,27 @@ export class ToolGroupProjection {
 			this.tailForcedClosed = true;
 		}
 		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
+		let continuedFromPrevious = false;
+		if (group && !group.closed && group.members.length >= RETRIEVAL_GROUP_MEMBER_LIMIT) {
+			const closed = { ...group, closed: true, continuesToNext: true };
+			this.groups.set(group.leaderId, closed);
+			this.hooks.groupChanged(closed);
+			this.openGroupLeaderId = undefined;
+			group = undefined;
+			continuedFromPrevious = true;
+		}
 		if (!group || group.closed) {
 			const nextGroup: PlannedRetrievalGroup = {
 				closed: independent || !this.agentActive,
 				leaderId: member.id,
 				members: [completeMember],
 			};
+			if (continuedFromPrevious) Object.assign(nextGroup, { continuedFromPrevious: true });
 			if (disposition === "boundary") Object.assign(nextGroup, { standalone: true });
 			group = nextGroup;
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
+			this.trimGroups();
 			if (!group.closed) this.openGroupLeaderId = group.leaderId;
 		} else {
 			this.mutableMembers(group).push(completeMember);

@@ -4,6 +4,7 @@ import type { JsonInputObject, JsonInputValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolArguments } from "../tool-display/activity.js";
 import type { SuiteToolEnvelopeOperation, SuiteToolPresentation } from "../tool-display/contract.js";
+import { TOOL_DISPLAY_ITEM_LIMIT } from "../tool-display/limits.js";
 import { registerSuiteToolEnvelope, registerSuiteToolEnvelopeCompanion } from "../tool-display/registration.js";
 import { SuiteCodeModeConnector } from "./connector.js";
 import { CODE_MODE_TOOL_NAME, CodeModeControls, type CodeModeHost, type PiStuffCodeModeOptions } from "./controls.js";
@@ -125,15 +126,25 @@ function decodeToolUsage<Value>(value: Value): ToolUsage | undefined {
 function decodeToolResult<Value>(value: Value): AgentToolResult<unknown> | undefined {
 	if (!isRuntimeRecord(value)) return undefined;
 	const { addedToolNames, content, details, terminate, usage: rawUsage } = value;
-	if (!isCodeModeToolContent(content)) return undefined;
+	if (!Array.isArray(content)) return undefined;
+	const visibleContent: AgentToolResult<unknown>["content"] = [];
+	for (let index = 0; index < Math.min(content.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+		const item = content[index];
+		if (!isCodeModeToolContent([item])) return undefined;
+		visibleContent.push(item);
+	}
+	if (visibleContent.length < content.length) {
+		visibleContent.push({ type: "text", text: "… nested result content omitted" });
+	}
 	const result: AgentToolResult<unknown> = {
-		content: [...content],
+		content: visibleContent,
 		details,
 	};
 	const usage = decodeToolUsage(rawUsage);
 	if (usage) Object.assign(result, { usage });
-	if (Array.isArray(addedToolNames) && addedToolNames.every(isRuntimeString)) {
-		Object.assign(result, { addedToolNames: [...addedToolNames] });
+	if (Array.isArray(addedToolNames)) {
+		const names = addedToolNames.slice(0, TOOL_DISPLAY_ITEM_LIMIT);
+		if (names.every(isRuntimeString)) Object.assign(result, { addedToolNames: names });
 	}
 	if (isRuntimeBoolean(terminate)) Object.assign(result, { terminate });
 	return result;
@@ -179,7 +190,8 @@ function decodeOperation<Value>(value: Value): SuiteToolEnvelopeOperation | unde
 	const state = decodeOperationState(rawState);
 	if (!state) return undefined;
 	const operation: SuiteToolEnvelopeOperation = {
-		args: Object.fromEntries(Object.entries(args)),
+		// SAFETY: this display decoder retains the validated record by reference; child renderers receive a bounded view.
+		args,
 		id,
 		name,
 		state,
@@ -187,10 +199,11 @@ function decodeOperation<Value>(value: Value): SuiteToolEnvelopeOperation | unde
 	if (isRuntimeNumber(attempt)) Object.assign(operation, { attempt });
 	if (isRuntimeString(executionId)) Object.assign(operation, { executionId });
 	if (Array.isArray(mediaPlacements)) {
-		const decodedPlacements = mediaPlacements.flatMap((placement) => {
-			const decoded = decodeMediaPlacement(placement);
-			return decoded ? [decoded] : [];
-		});
+		const decodedPlacements = [];
+		for (let index = 0; index < Math.min(mediaPlacements.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+			const decoded = decodeMediaPlacement(mediaPlacements[index]);
+			if (decoded) decodedPlacements.push(decoded);
+		}
 		if (decodedPlacements.length > 0) Object.assign(operation, { mediaPlacements: decodedPlacements });
 	}
 	if (isRuntimeBoolean(replayed)) Object.assign(operation, { replayed });
@@ -204,10 +217,23 @@ export function decodeCodeModeOperations<Value>(details: Value): readonly SuiteT
 	if (!isRuntimeRecord(details)) return [];
 	const { kind, operations } = details;
 	if (kind !== "pi-stuff-code-mode" || !Array.isArray(operations)) return [];
-	return operations.flatMap((value) => {
-		const operation = decodeOperation(value);
-		return operation ? [operation] : [];
-	});
+	const visibleLimit = TOOL_DISPLAY_ITEM_LIMIT - 1;
+	const start = Math.max(0, operations.length - visibleLimit);
+	const decoded: SuiteToolEnvelopeOperation[] = [];
+	if (start > 0) {
+		decoded.push({
+			args: {},
+			displayOnly: "overflow",
+			id: "code-mode-display-overflow",
+			name: "code-mode-display-overflow",
+			state: "success",
+		});
+	}
+	for (let index = start; index < operations.length; index += 1) {
+		const operation = decodeOperation(operations[index]);
+		if (operation) decoded.push(operation);
+	}
+	return decoded;
 }
 
 function showCodeModeFallback(
@@ -215,7 +241,9 @@ function showCodeModeFallback(
 	result: AgentToolResult<unknown>,
 	state: "cancelled" | "error" | "rejected" | "running" | "success",
 ): boolean {
-	if (result.content.some((item) => item.type === "image")) return false;
+	for (let index = 0; index < Math.min(result.content.length, TOOL_DISPLAY_ITEM_LIMIT); index += 1) {
+		if (result.content[index]?.type === "image") return false;
+	}
 	return state !== "running" && state !== "success";
 }
 

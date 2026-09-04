@@ -1,10 +1,8 @@
-import { createHash, type Hash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
@@ -17,7 +15,6 @@ import {
 } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { classifyTerminalState } from "./tool-text.js";
-import { isRecordValue } from "./tool-value.js";
 
 const ERROR_RESULT_SCHEMA = Type.Object({ isError: Type.Literal(true) }, { additionalProperties: true });
 
@@ -64,7 +61,6 @@ export class GroupSummaryIndex {
 			member.issueLabel ?? "",
 			member.issueDetail ?? "",
 			member.items,
-			member.recoveryKeys ?? [],
 			target,
 		]);
 		const previous = this.members.get(id);
@@ -247,67 +243,6 @@ export function visibleActivityItems(
 	state: ToolActivityState,
 ): readonly ToolActivityItem[] {
 	return isIssueState(state) ? items.filter((item) => !SUCCESS_ONLY_ACTIVITY_CATEGORIES.has(item.category)) : items;
-}
-
-function hashRetryText(hash: Hash, value: string): void {
-	hash.update(`${String(value.length)}:`);
-	hash.update(value);
-}
-
-export function hashRetryValue<Value>(hash: Hash, value: Value, seen = new WeakSet<object>()): void {
-	if (value === null) {
-		hash.update("n");
-		return;
-	}
-	if (isRuntimeString(value)) {
-		hash.update("s");
-		hashRetryText(hash, value);
-		return;
-	}
-	if (isRuntimeNumber(value)) {
-		if (!Number.isFinite(value)) throw new TypeError("non-JSON Tool arguments");
-		hash.update(`d${JSON.stringify(value)};`);
-		return;
-	}
-	if (isRuntimeBoolean(value)) {
-		hash.update(value ? "t" : "f");
-		return;
-	}
-	if (!isRuntimeObject(value)) throw new TypeError("non-JSON Tool arguments");
-	if (seen.has(value)) throw new TypeError("circular Tool arguments");
-	seen.add(value);
-	if (Array.isArray(value)) {
-		hash.update(`a${String(value.length)}:`);
-		for (const entry of value) hashRetryValue(hash, entry, seen);
-	} else {
-		if (!isRecordValue(value)) throw new TypeError("non-JSON Tool arguments");
-		const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-		hash.update(`o${String(entries.length)}:`);
-		for (const [key, entry] of entries) {
-			hashRetryText(hash, key);
-			hashRetryValue(hash, entry, seen);
-		}
-	}
-	seen.delete(value);
-}
-
-export function activityRecoveryKeys(
-	name: string,
-	args: ToolArguments,
-	items: readonly ToolActivityItem[],
-): readonly string[] {
-	const keys = new Set<string>();
-	try {
-		const hash = createHash("sha256");
-		hashRetryValue(hash, args);
-		keys.add(`retry\u0000${name}\u0000${hash.digest("base64url")}`);
-	} catch {
-		// Invalid non-JSON arguments simply cannot prove an exact retry.
-	}
-	for (const item of items) {
-		for (const key of item.countKeys ?? []) keys.add(`effect\u0000${item.category}\u0000${key}`);
-	}
-	return [...keys];
 }
 
 export function terminalStateFromResult(
