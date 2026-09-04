@@ -32,6 +32,19 @@ test("records diagnostic rollover when the newest event cannot fit beside the ma
 	});
 });
 
+test("counts omitted event bytes before malformed UTF-8 decoding", () => {
+	const eventsPath = path.join(fixtureRoot(), "events.jsonl");
+	process.env["PI_SUBAGENT_ASYNC_EVENTS_MAX_BYTES"] = "1024";
+	const retainedLine = Buffer.concat([Buffer.alloc(100, 0xff), Buffer.from("\n")]);
+	const initial = Buffer.concat([Buffer.from(`${"a".repeat(900)}\n`), retainedLine]);
+	fs.writeFileSync(eventsPath, initial, { mode: 0o600 });
+
+	appendDiagnosticEvent(eventsPath, { payload: "x".repeat(40), type: "latest" });
+
+	const marker = JSON.parse(fs.readFileSync(eventsPath, "utf8").split("\n")[0] ?? "{}");
+	expect(marker).toMatchObject({ discardedBytesThisRoll: initial.length - retainedLine.length });
+});
+
 test("keeps a valid Agent result when its optional artifact directory disappears", async () => {
 	const root = fixtureRoot();
 	const artifactsDir = path.join(root, "artifacts");

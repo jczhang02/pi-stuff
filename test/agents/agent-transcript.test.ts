@@ -395,6 +395,23 @@ test("returns quietly when its dialog signal is already aborted", async () => {
 	expect(output).toBeNull();
 });
 
+test("disables an undersized transcript instead of publishing unmarked retained data", () => {
+	const directory = tempDirectory();
+	const transcriptPath = join(directory, "undersized.jsonl");
+	const writer = createChildTranscriptWriter({
+		transcriptPath,
+		source: "async",
+		runId: "undersized-run",
+		agent: "reader",
+		cwd: directory,
+		maxBytes: 64,
+	});
+
+	writer.writeInitialUserMessage("cannot fit beside the omission marker");
+	expect(writer.getError()).toContain("cannot preserve omission metadata");
+	expect(() => readFileSync(transcriptPath)).toThrow();
+});
+
 test("rolls child transcripts after the retention threshold while preserving newest evidence", async () => {
 	const directory = tempDirectory();
 	const transcriptPath = join(directory, "rolling.jsonl");

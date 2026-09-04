@@ -364,6 +364,21 @@ function retainNestedResultControls(target: NestedResultControlState, result: Ag
 	target.usage = aggregateUsage([...(target.usage ? [target.usage] : []), ...(result.usage ? [result.usage] : [])]);
 }
 
+function resetTraceProjection(
+	traces: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+	controls: NestedResultControlState,
+): void {
+	traces.clear();
+	operationIndexes.clear();
+	operations.length = 0;
+	controls.addedToolNames.clear();
+	controls.omittedRunningTraceIds.clear();
+	controls.terminate = false;
+	controls.usage = undefined;
+}
+
 function nestedResultControls(
 	traces: ReadonlyMap<string, RuntimeToolTrace>,
 	retained: NestedResultControlState,
@@ -637,7 +652,8 @@ export class CodeModeRuntime {
 				} catch (cause) {
 					if (cause instanceof CodeModeHostLostError && attempt < HOST_RECOVERY_LIMIT && !signal?.aborted) {
 						if (controller) await this.connector.onPassEnd(controller.executionId, "error");
-						attempt += 1;
+						resetTraceProjection(traces, operationIndexes, operations, retainedControls);
+						[droppedOperationCount, cellId, attempt] = [0, undefined, attempt + 1];
 						continue;
 					}
 					throw cause;

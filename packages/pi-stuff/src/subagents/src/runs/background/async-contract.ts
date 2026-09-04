@@ -161,6 +161,7 @@ export interface AsyncJobState
 	totalCost?: CostSummary | undefined;
 	sessionFile?: string | undefined;
 	controlEventCursor?: number;
+	controlEventIdentity?: string;
 	/** A restored observer failed to stat events; first successful read starts at EOF. */
 	controlEventCursorPending?: boolean | undefined;
 	nestedRoute?: NestedRouteInfo | undefined;

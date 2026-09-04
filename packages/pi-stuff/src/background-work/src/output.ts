@@ -51,10 +51,11 @@ function decodedTail(buffer: Buffer, maxBytes: number) {
 
 function truncateBufferTail(buffer: Buffer): BufferTruncation {
 	const raw = buffer.toString("utf8");
-	const totalBytes = Buffer.byteLength(raw, "utf8");
+	const renderedBytes = Buffer.byteLength(raw, "utf8");
+	const totalBytes = buffer.length;
 	const lines = splitBufferLines(buffer);
 	const totalLines = lines.length;
-	if (totalLines <= DEFAULT_MAX_LINES && totalBytes <= DEFAULT_MAX_BYTES) {
+	if (totalLines <= DEFAULT_MAX_LINES && renderedBytes <= DEFAULT_MAX_BYTES) {
 		return {
 			retainedBytes: buffer.length,
 			truncation: {
@@ -63,7 +64,7 @@ function truncateBufferTail(buffer: Buffer): BufferTruncation {
 				lastLinePartial: false,
 				maxBytes: DEFAULT_MAX_BYTES,
 				maxLines: DEFAULT_MAX_LINES,
-				outputBytes: totalBytes,
+				outputBytes: renderedBytes,
 				outputLines: totalLines,
 				totalBytes,
 				totalLines,
@@ -80,7 +81,7 @@ function truncateBufferTail(buffer: Buffer): BufferTruncation {
 	let truncatedBy: "bytes" | "lines" = "lines";
 	for (let index = lines.length - 1; index >= 0 && selected.length < DEFAULT_MAX_LINES; index -= 1) {
 		const line = lines[index];
-		if (!line) continue;
+		if (line === undefined) continue;
 		const text = line.toString("utf8");
 		const separatorBytes = selected.length > 0 ? 1 : 0;
 		const lineBytes = Buffer.byteLength(text, "utf8") + separatorBytes;
@@ -124,7 +125,23 @@ export function foregroundOutputSnapshot(outputPath: string | undefined, recentO
 	const { retainedBytes, truncation } = truncateBufferTail(output.buffer);
 	const projectedBytesOmitted = output.buffer.length - retainedBytes;
 	const prefix = output.omittedBytes > 0 ? visibleOmissionMarker(output.omittedBytes + projectedBytesOmitted) : "";
-	if (!truncation.truncated) return { text: prefix + truncation.content };
+	if (!truncation.truncated) {
+		return output.omittedBytes > 0
+			? {
+					details: {
+						omittedBytes: output.omittedBytes,
+						retainedOutputPath: outputPath,
+						truncation: {
+							...truncation,
+							totalBytes: output.omittedBytes + output.buffer.length,
+							truncated: true,
+							truncatedBy: "bytes" as const,
+						},
+					},
+					text: prefix + truncation.content,
+				}
+			: { text: truncation.content };
+	}
 	const startLine = truncation.totalLines - truncation.outputLines + 1;
 	const endLine = truncation.totalLines;
 	const outputLabel = output.omittedBytes > 0 ? "Retained output" : "Full output";
@@ -138,7 +155,11 @@ export function foregroundOutputSnapshot(outputPath: string | undefined, recentO
 	}
 	const details =
 		output.omittedBytes > 0
-			? { omittedBytes: output.omittedBytes, retainedOutputPath: outputPath, truncation }
+			? {
+					omittedBytes: output.omittedBytes,
+					retainedOutputPath: outputPath,
+					truncation: { ...truncation, totalBytes: output.omittedBytes + output.buffer.length },
+				}
 			: { fullOutputPath: outputPath, truncation };
 	return { details, text: `${prefix + truncation.content}\n\n[${footer}]` };
 }

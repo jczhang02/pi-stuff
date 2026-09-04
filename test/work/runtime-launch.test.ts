@@ -62,6 +62,10 @@ test("bounds durable output while retaining the newest evidence", () => {
 	expect(output.recentText(1_024)).toContain("earlier output bytes omitted");
 	expect(output.recentText()).not.toContain("\u001b[");
 	expect(output.recentText()).not.toContain("stopped this task");
+	expect(foregroundOutputSnapshot(path, output.recentText()).details).toMatchObject({
+		omittedBytes: expect.any(Number),
+		retainedOutputPath: path,
+	});
 });
 
 test("preserves cumulative omission in a truncated foreground result", () => {
@@ -89,7 +93,10 @@ test("counts malformed UTF-8 bytes exactly in retained output", () => {
 
 	const snapshot = foregroundOutputSnapshot(path, output.recentText());
 	expect(snapshot.text).toStartWith("…[81.0KB earlier output bytes omitted]");
-	expect(snapshot.details?.truncation.outputBytes).toBeLessThanOrEqual(50 * 1_024);
+	const truncation = snapshot.details?.truncation;
+	if (!truncation) throw new Error("expected malformed output truncation details");
+	expect(truncation.totalBytes).toBe(100_000);
+	expect(truncation.outputBytes).toBeLessThanOrEqual(50 * 1_024);
 });
 
 test("falls back instead of pairing output with mismatched omission metadata", () => {
@@ -101,6 +108,18 @@ test("falls back instead of pairing output with mismatched omission metadata", (
 
 	expect(tryReadBoundedTail(path)).toBeUndefined();
 	expect(foregroundOutputSnapshot(path, "MEMORY-FALLBACK").text).toBe("MEMORY-FALLBACK");
+});
+
+test("preserves a multibyte character split across a durable rollover", () => {
+	const path = join(temporaryRoot(), "split-utf8-output");
+	const output = new BoundedOutputFile(path, 64);
+	output.append(Buffer.concat([Buffer.from("x".repeat(64)), Buffer.from([0xe2])]));
+	output.append(Buffer.from([0x82, 0xac]));
+	output.close();
+
+	const retained = tryReadBoundedTail(path) ?? "";
+	expect(retained).toEndWith("€");
+	expect(retained).not.toContain("�");
 });
 
 test("preserves command output that resembles an internal omission marker", () => {

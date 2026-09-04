@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import * as Effect from "effect/Effect";
+import type { AsyncJobState } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-contract.js";
+import { readNewAsyncControlEvents } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-control-events.js";
 import {
 	acknowledgedOptions,
 	asyncJob,
@@ -13,6 +16,41 @@ import {
 	SUBAGENT_STEERING_NOTICE_EVENT,
 	waitUntil,
 } from "./current-agents-fixtures.js";
+
+test("rescans retained control events after the event log inode changes", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-control-generation-"));
+	const asyncDir = path.join(root, "run.async");
+	const eventsPath = path.join(asyncDir, "events.jsonl");
+	try {
+		fs.mkdirSync(asyncDir, { recursive: true });
+		fs.writeFileSync(eventsPath, `${JSON.stringify({ type: "old", payload: "x".repeat(200) })}\n`);
+		// SAFETY: the reader exercises only the cursor fields and asyncDir supplied by this focused fixture.
+		const job = { asyncDir, controlEventCursor: 0 } as AsyncJobState;
+		const observed: string[] = [];
+		await Effect.runPromise(
+			readNewAsyncControlEvents(job, (line) => {
+				observed.push(line);
+				return true;
+			}),
+		);
+		const replacement = path.join(asyncDir, "events.replacement");
+		fs.writeFileSync(
+			replacement,
+			`${JSON.stringify({ type: "replacement-control" })}\n${JSON.stringify({ type: "padding", payload: "y".repeat(300) })}\n`,
+		);
+		fs.renameSync(replacement, eventsPath);
+		await Effect.runPromise(
+			readNewAsyncControlEvents(job, (line) => {
+				observed.push(line);
+				return true;
+			}),
+		);
+
+		expect(observed.some((line) => line.includes("replacement-control"))).toBeTrue();
+	} finally {
+		fs.rmSync(root, { force: true, recursive: true });
+	}
+});
 
 test("publishes stopping/resuming only after an honest acknowledgement", async () => {
 	const state = createState();

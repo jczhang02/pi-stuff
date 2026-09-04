@@ -5,6 +5,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import type { ToolArguments } from "../../../tool-display/activity.js";
 import { withArtifactGroupWriteClaim } from "./artifacts.ts";
+import { writePrivateAtomicText } from "./atomic-json.ts";
 import { extractTextFromContent, extractToolArgsPreview } from "./utils.ts";
 
 const MAX_TOOL_PAYLOAD_BYTES = 32 * 1024;
@@ -247,6 +248,25 @@ function transcriptEventRecord(
 	return record;
 }
 
+function createTranscriptFileWriter(input: ChildTranscriptWriterInput): (operation: () => void) => void {
+	return input.artifactManaged
+		? (operation) => withArtifactGroupWriteClaim(input.transcriptPath, operation)
+		: (operation) => operation();
+}
+
+function disableUndersizedTranscript(
+	transcriptPath: string,
+	maxBytes: number,
+	writeFile: (operation: () => void) => void,
+): string {
+	try {
+		writeFile(() => fs.rmSync(transcriptPath, { force: true }));
+		return `Child transcript retention limit ${String(maxBytes)} cannot preserve omission metadata.`;
+	} catch (error) {
+		return `Failed to disable child transcript '${transcriptPath}': ${errorMessage(error)}`;
+	}
+}
+
 export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): ChildTranscriptWriter {
 	let bytesWritten = 0;
 	let retainedRecordBytes = 0;
@@ -255,10 +275,7 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 	let omittedRecords = 0;
 	let writeError: string | undefined;
 	const maxBytes = input.maxBytes ?? DEFAULT_MAX_CHILD_TRANSCRIPT_BYTES;
-	const writeFile = (operation: () => void): void => {
-		if (input.artifactManaged) withArtifactGroupWriteClaim(input.transcriptPath, operation);
-		else operation();
-	};
+	const writeFile = createTranscriptFileWriter(input);
 
 	const baseRecord = (recordType: ChildTranscriptRecordType): ChildTranscriptRecord => {
 		const ts = Date.now();
@@ -295,12 +312,16 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 			omittedBytes += bytes;
 			omittedRecords += 1;
 			marker = truncatedLine();
-			payload = Buffer.byteLength(marker, "utf-8") <= maxBytes ? marker : "";
+			if (Buffer.byteLength(marker, "utf-8") > maxBytes) {
+				writeError = disableUndersizedTranscript(input.transcriptPath, maxBytes, writeFile);
+				return;
+			}
+			payload = marker;
 			nextRetainedBytes = 0;
 			nextRetainedRecords = 0;
 		}
 		try {
-			writeFile(() => fs.writeFileSync(input.transcriptPath, payload, "utf-8"));
+			writeFile(() => writePrivateAtomicText(input.transcriptPath, payload));
 			bytesWritten = Buffer.byteLength(payload, "utf-8");
 			retainedRecordBytes = nextRetainedBytes;
 			retainedRecords = nextRetainedRecords;

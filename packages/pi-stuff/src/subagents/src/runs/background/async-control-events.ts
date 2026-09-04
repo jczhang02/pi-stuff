@@ -49,11 +49,17 @@ function readOpenControlEvents(
 				const stat = await handle.stat();
 				const currentUid = process.getuid?.();
 				if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) return { changed, more };
+				const identity = `${String(stat.dev)}:${String(stat.ino)}`;
 				if (job.controlEventCursorPending) {
 					job.controlEventCursor = stat.size;
 					job.controlEventCursorPending = false;
+					job.controlEventIdentity = identity;
 					return { changed, more };
 				}
+				if (job.controlEventIdentity !== undefined && job.controlEventIdentity !== identity) {
+					job.controlEventCursor = 0;
+				}
+				job.controlEventIdentity = identity;
 				const savedCursor = job.controlEventCursor;
 				let cursor = stat.size < (savedCursor ?? 0) ? 0 : (savedCursor ?? 0);
 				const startedFromTail = savedCursor === undefined && stat.size > CONTROL_EVENT_SCAN_WINDOW_BYTES;

@@ -60,6 +60,12 @@ export function utf8SafePrefix(buffer: Buffer): Buffer {
 	return buffer.subarray(0, completeUtf8End(buffer));
 }
 
+function durableByteTail(buffer: Buffer, maxBytes: number): Buffer {
+	let start = Math.max(0, buffer.length - Math.max(1, maxBytes));
+	while (start < buffer.length && ((buffer[start] ?? 0) & 0xc0) === 0x80) start += 1;
+	return buffer.subarray(start);
+}
+
 export function visibleOmissionMarker(omittedBytes: number): string {
 	return omittedBytes > 0 ? `…[${formatSize(omittedBytes)} earlier output bytes omitted]\n` : "";
 }
@@ -289,7 +295,7 @@ export class BoundedOutputFile {
 		let replacementFd: number | undefined;
 		let metadataFd: number | undefined;
 		try {
-			const selected = utf8SafeTail(this.tail, this.maxBytes);
+			const selected = durableByteTail(this.tail, this.maxBytes);
 			const omittedBytes = this.omittedTailBytes + this.tail.length - selected.length;
 			replacementFd = openSync(replacementPath, "wx", 0o600);
 			writeAll(replacementFd, selected, this.writeFile);

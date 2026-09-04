@@ -1,11 +1,11 @@
 /** Bound runner output and project child usage into durable status data. */
 
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, runtimeErrorCode } from "../../../../shared/runtime-type.js";
-import { appendJsonl } from "../../shared/artifacts.ts";
+import { appendJsonl, withArtifactGroupWriteClaim } from "../../shared/artifacts.ts";
+import { writePrivateAtomicText } from "../../shared/atomic-json.ts";
 import type { CostSummary, ModelAttempt, TokenUsage, Usage } from "../../shared/types.ts";
 import type { ChildProtocolMessage } from "../shared/child-protocol.ts";
 import type { BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
@@ -101,54 +101,56 @@ export function boundRunResultOutputs(results: BackgroundTaskResult[]): Backgrou
 
 export function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: Event): void {
 	try {
-		const limit = maxAsyncEventsBytes();
-		const line = `${JSON.stringify(event)}\n`;
-		const lineBytes = Buffer.byteLength(line, "utf-8");
-		if (lineBytes > limit || limit === 0) return;
-		let size = 0;
-		try {
-			const stat = fs.lstatSync(eventsPath);
-			if (stat.isSymbolicLink() || !stat.isFile()) return;
-			size = stat.size;
-		} catch (error) {
-			if (runtimeErrorCode(error) !== "ENOENT") return;
-		}
-		if (size + lineBytes <= limit) {
-			appendJsonl(eventsPath, line.trimEnd());
-			return;
-		}
-		const markerReserve = 160;
-		const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes - markerReserve);
-		let retained = "";
-		if (retainedBudget > 0 && size > 0) {
-			const descriptor = fs.openSync(eventsPath, fs.constants.O_RDONLY);
+		withArtifactGroupWriteClaim(eventsPath, () => {
+			const limit = maxAsyncEventsBytes();
+			const line = `${JSON.stringify(event)}\n`;
+			const lineBytes = Buffer.byteLength(line, "utf-8");
+			if (lineBytes > limit || limit === 0) return;
+			let size = 0;
 			try {
-				const buffer = Buffer.allocUnsafe(Math.min(size, retainedBudget));
-				const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, Math.max(0, size - buffer.length));
-				retained = buffer.subarray(0, bytesRead).toString("utf-8");
-				const firstNewline = retained.indexOf("\n");
-				if (size > bytesRead) retained = firstNewline >= 0 ? retained.slice(firstNewline + 1) : "";
-			} finally {
-				fs.closeSync(descriptor);
+				const stat = fs.lstatSync(eventsPath);
+				if (stat.isSymbolicLink() || !stat.isFile()) return;
+				size = stat.size;
+			} catch (error) {
+				if (runtimeErrorCode(error) !== "ENOENT") return;
 			}
-		}
-		const discardedBytesThisRoll = Math.max(0, size - Buffer.byteLength(retained, "utf-8"));
-		const observedAt = Date.now();
-		const marker = (discardedBytes: number) =>
-			`${JSON.stringify({
-				discardedBytesThisRoll: discardedBytes,
-				observedAt,
-				type: "subagent.events.truncated",
-			})}\n`;
-		const rolled = `${marker(discardedBytesThisRoll)}${retained}${line}`;
-		const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker(size + lineBytes);
-		if (Buffer.byteLength(payload, "utf-8") > limit) return;
-		const temporary = `${eventsPath}.${process.pid}.${randomUUID()}.tmp`;
-		fs.writeFileSync(temporary, payload, {
-			mode: 0o600,
-			flag: "wx",
+			if (size + lineBytes <= limit) {
+				appendJsonl(eventsPath, line.trimEnd());
+				return;
+			}
+			const markerReserve = 160;
+			const retainedBudget = Math.max(0, Math.floor(limit / 2) - lineBytes - markerReserve);
+			let retained = "";
+			let retainedSourceBytes = 0;
+			if (retainedBudget > 0 && size > 0) {
+				const descriptor = fs.openSync(eventsPath, fs.constants.O_RDONLY);
+				try {
+					const buffer = Buffer.allocUnsafe(Math.min(size, retainedBudget));
+					const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, Math.max(0, size - buffer.length));
+					let retainedBuffer = buffer.subarray(0, bytesRead);
+					if (size > bytesRead) {
+						const firstNewline = retainedBuffer.indexOf(0x0a);
+						retainedBuffer = firstNewline >= 0 ? retainedBuffer.subarray(firstNewline + 1) : Buffer.alloc(0);
+					}
+					retained = retainedBuffer.toString("utf-8");
+					retainedSourceBytes = retainedBuffer.length;
+				} finally {
+					fs.closeSync(descriptor);
+				}
+			}
+			const discardedBytesThisRoll = Math.max(0, size - retainedSourceBytes);
+			const observedAt = Date.now();
+			const marker = (discardedBytes: number) =>
+				`${JSON.stringify({
+					discardedBytesThisRoll: discardedBytes,
+					observedAt,
+					type: "subagent.events.truncated",
+				})}\n`;
+			const rolled = `${marker(discardedBytesThisRoll)}${retained}${line}`;
+			const payload = Buffer.byteLength(rolled, "utf-8") <= limit ? rolled : marker(size + lineBytes);
+			if (Buffer.byteLength(payload, "utf-8") > limit) return;
+			writePrivateAtomicText(eventsPath, payload);
 		});
-		fs.renameSync(temporary, eventsPath);
 	} catch {
 		// Diagnostics never determine run success.
 	}

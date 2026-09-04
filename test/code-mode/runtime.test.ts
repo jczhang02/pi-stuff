@@ -595,21 +595,37 @@ test("runtime bounds retained trace evidence without losing controls from omitte
 		output: 4,
 		totalTokens: 10,
 	};
+	let pass = 0;
 	const executor: CodeModeExecutor = {
 		async execute(options) {
+			pass += 1;
 			for (let index = 0; index < 800; index += 1) {
 				const trace: RuntimeToolTrace = {
 					id: `nested-${String(index)}`,
 					input: { index },
 					name: "read",
-					status: index === 0 ? "running" : "done",
+					status: pass === 2 && index === 0 ? "running" : "done",
 				};
+				if (pass === 1 && index === 0) {
+					trace.result = {
+						addedToolNames: ["ctx_search"],
+						content: [{ text: "complete", type: "text" }],
+						details: {},
+						terminate: true,
+						usage,
+					};
+				}
 				options.context.onTraceUpdate?.({
 					cellId: "cell-many",
 					droppedTraceCount: Math.max(0, index - 767),
 					trace,
 				});
 			}
+			if (pass === 1) throw new CodeModeHostLostError("fixture loss after trace rollover");
+			return { cellId: "cell-many", contentItems: [], kind: "yielded" };
+		},
+		async shutdown() {},
+		async wait(_cellId, options) {
 			options.context.onTraceUpdate?.({
 				cellId: "cell-many",
 				droppedTraceCount: 32,
@@ -629,10 +645,6 @@ test("runtime bounds retained trace evidence without losing controls from omitte
 			});
 			return { cellId: "cell-many", contentItems: [{ type: "input_text", text: "done" }], kind: "result" };
 		},
-		async shutdown() {},
-		async wait() {
-			throw new Error("unexpected wait");
-		},
 	};
 	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
 		"outer-many",
@@ -641,7 +653,8 @@ test("runtime bounds retained trace evidence without losing controls from omitte
 		{ cwd: "/project" } as ExtensionContext,
 	);
 
-	expect(result.details.droppedOperationCount).toBe(32);
+	expect(pass).toBe(2);
+	expect(result.details).toMatchObject({ attempt: 1, droppedOperationCount: 32 });
 	expect(result.details.operations).toHaveLength(768);
 	expect(result.details.operations[0]?.id).toBe("nested-32");
 	expect(result.terminate).toBe(true);

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { appendArtifactJsonl } from "../../shared/artifacts.ts";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { assertPrivateDirectory, errnoCode, validateOwnedRegularFile } from "../../shared/private-directory.ts";
 import { type ProcessKillFn, probeProcessLiveness, readProcessStartIdentity } from "../../shared/process-identity.ts";
@@ -139,7 +140,7 @@ function safeRegularFile(root: string, target: string, label: string, maxBytes: 
 function appendJsonlBestEffort<Payload extends object>(filePath: string, payload: Payload): void {
 	try {
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, "utf-8");
+		appendArtifactJsonl(filePath, JSON.stringify(payload));
 	} catch {
 		// Repair status/result writes are the important path. A broken or full
 		// diagnostic event log must not make stale-run reconciliation fail.

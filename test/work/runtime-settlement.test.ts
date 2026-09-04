@@ -298,7 +298,11 @@ test("continues a command after its durable output retention fills", async () =>
 	expect(text?.type === "text" ? text.text : "").toContain("SURVIVED");
 	expect(text?.type === "text" ? text.text : "").toContain("earlier output bytes omitted");
 	expect(text?.type === "text" ? text.text : "").not.toContain("output limit");
-	expect(result.details).toBeUndefined();
+	const details = result.details;
+	if (!details) throw new Error("expected retained-output details");
+	expect(details.omittedBytes).toBeGreaterThan(0);
+	expect(details.retainedOutputPath).toEndWith(".output");
+	expect(details.truncation).toMatchObject({ totalBytes: 70_010, truncated: true, truncatedBy: "bytes" });
 	expect(active.snapshot()).toHaveLength(0);
 	await active.shutdown();
 });
