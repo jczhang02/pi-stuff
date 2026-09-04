@@ -546,8 +546,22 @@ test("closes supervisor control descriptors after sequential and concurrent runs
 test("command Monitor conditions survive byte boundaries with failure precedence", () => {
 	const evidence = new CommandMonitorEvidence("就绪", "失败");
 	for (const byte of Buffer.from("就绪")) evidence.append(Buffer.from([byte]));
-	expect(evidence.failed).toBeFalse();
+	expect(evidence.finish()).toBeFalse();
 	for (const byte of Buffer.from("失败")) evidence.append(Buffer.from([byte]));
 	evidence.append(Buffer.from("就绪"));
-	expect(evidence.failed).toBeTrue();
+	expect(evidence.finish()).toBeTrue();
+});
+
+test("command Monitor matches visible text across split terminal controls", () => {
+	for (const [source, success, failure, failed] of [
+		["REA\x1b[32mDY\x1b[0m", "READY", undefined, false],
+		["FA\x1b[31mIL\x1b[0m", undefined, "FAIL", true],
+		["\x1b]0;READY\x07waiting", "READY", undefined, true],
+		["\x1bPREADY\x1b\\waiting", "READY", undefined, true],
+	] as const) {
+		const evidence = new CommandMonitorEvidence(success, failure);
+		for (const byte of Buffer.from(source)) evidence.append(Buffer.from([byte]));
+		evidence.append(Buffer.alloc(100_000, 120));
+		expect(evidence.finish()).toBe(failed);
+	}
 });

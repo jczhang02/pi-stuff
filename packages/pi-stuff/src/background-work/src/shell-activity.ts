@@ -551,7 +551,7 @@ export class ShellActivity {
 		}
 		this.launch.output.close();
 		const recentOutput = this.launch.output.recentText(DEFAULT_MODEL_OUTPUT_LIMIT);
-		const status = shellTerminalStatus(this.stopReason, code, signal, this.monitorEvidence.failed);
+		const status = shellTerminalStatus(this.stopReason, code, signal, this.monitorEvidence.finish());
 		const outcome: BackgroundWorkOutcome = {
 			endedAt: Date.now(),
 			id: this.id,

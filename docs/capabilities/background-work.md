@@ -61,8 +61,8 @@ The `monitor` Tool supports four sources:
 | `http` | HTTP or HTTPS response |
 
 `success_text` and `failure_text` are exact substrings. Failure wins when both match. With neither condition, the first
-readable evidence completes the Monitor. A command Monitor remembers matches across its complete output stream, including
-chunk boundaries; later output retention cannot erase a success or failure match.
+readable evidence completes the Monitor. A command Monitor matches terminal-sanitized text and remembers matches across its complete output stream, including
+UTF-8 and terminal-control chunk boundaries; later output retention cannot erase a success or failure match.
 
 The default polling interval is 2 seconds and the default deadline is 600 seconds. Intervals may be 0.1–60 seconds;
 explicit deadlines may be any positive representable number of seconds and are scheduled in safe timer segments. A missing file or log remains pending while it waits to appear, and non-2xx HTTP

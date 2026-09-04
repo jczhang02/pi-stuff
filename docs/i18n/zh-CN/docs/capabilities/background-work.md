@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 12e67291626abcfbcbf757f797869f063952d05fce9867d9dc877ac8a6b9b4b6 -->
+<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: c4937314ded4640d16f557ee9eb3e6f02fe607d846ef3abd52e5de3e02d57b7e -->
 
 # Background Work
 
@@ -61,7 +61,7 @@ Shell 而创建 Monitor；该 Shell 自己拥有 terminal wake。
 | `log` | 日志文件，可选从当前末尾开始 |
 | `http` | HTTP 或 HTTPS response |
 
-command Monitor 会记住整个输出流中出现的匹配，包括跨块匹配；后续输出保留不会抹去已经观察到的成功或失败条件。
+command Monitor 匹配去除终端控制序列后的文本，并记住整个输出流中出现的匹配，包括跨块的 UTF-8 与终端控制序列；后续输出保留不会抹去已经观察到的成功或失败条件。
 
 `success_text` 与 `failure_text` 都是精确子串。两者同时匹配时 failure 优先。未配置任一条件时，第一次读到证据
 就完成 Monitor。
