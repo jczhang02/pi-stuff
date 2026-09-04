@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import { CommandMonitorEvidence } from "./command-monitor-evidence.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import type { BackgroundWorkEffectOwner } from "./effect-owner.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT, tryReadBoundedTail } from "./output.js";
@@ -62,6 +63,7 @@ export class ShellActivity {
 	readonly id: string;
 	readonly kind: BackgroundWorkKind;
 	private readonly launch: ShellLaunchState;
+	private readonly monitorEvidence: CommandMonitorEvidence;
 	private launchAuthorized = false;
 	private readonly owner: ShellActivityOwner;
 	readonly startedAt = Date.now();
@@ -76,6 +78,7 @@ export class ShellActivity {
 		this.id = state.id;
 		this.kind = state.input.kind ?? "shell";
 		this.launch = state;
+		this.monitorEvidence = new CommandMonitorEvidence(state.input.monitorSuccessText, state.input.monitorFailureText);
 		this.owner = owner;
 		this.title = shellActivityTitle(state.input);
 	}
@@ -104,7 +107,10 @@ export class ShellActivity {
 	}
 
 	bind(): void {
-		const append = (chunk: Buffer) => this.launch.output.append(chunk);
+		const append = (chunk: Buffer) => {
+			this.monitorEvidence.append(chunk);
+			this.launch.output.append(chunk);
+		};
 		this.launch.supervisor.output.on("data", append);
 		this.launch.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(chunk));
 		const completion = Effect.tryPromise({
@@ -545,7 +551,7 @@ export class ShellActivity {
 		}
 		this.launch.output.close();
 		const recentOutput = this.launch.output.recentText(DEFAULT_MODEL_OUTPUT_LIMIT);
-		const status = shellTerminalStatus(this.kind, this.launch.input, this.stopReason, code, signal, recentOutput);
+		const status = shellTerminalStatus(this.stopReason, code, signal, this.monitorEvidence.failed);
 		const outcome: BackgroundWorkOutcome = {
 			endedAt: Date.now(),
 			id: this.id,

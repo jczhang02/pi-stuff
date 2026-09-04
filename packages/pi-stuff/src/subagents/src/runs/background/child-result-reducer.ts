@@ -20,7 +20,12 @@ export class ChildResultReducer {
 		this.first ??= indexed;
 		if (message.role === "assistant") {
 			this.latestAssistant = indexed;
-			if (getFinalOutput([message])) this.latestAssistantOutput = indexed;
+			const output = getFinalOutput([message]);
+			if (
+				output &&
+				(!this.latestAssistantOutput || getFinalOutput([this.latestAssistantOutput.message, message]) === output)
+			)
+				this.latestAssistantOutput = indexed;
 			return;
 		}
 		if (message.role === "toolResult" && message.isError) this.latestToolError = indexed;

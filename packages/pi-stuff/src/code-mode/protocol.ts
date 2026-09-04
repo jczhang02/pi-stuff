@@ -73,7 +73,7 @@ export interface RuntimeToolCallPlan {
 export interface RuntimeToolCallSettlement {
 	readonly message?: string;
 	readonly result?: AgentToolResult<unknown>;
-	readonly status: "error" | "success";
+	readonly status: "error" | "incomplete" | "success";
 	readonly value?: CodemodeValue;
 }
 

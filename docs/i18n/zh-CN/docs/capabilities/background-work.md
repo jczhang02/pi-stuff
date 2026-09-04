@@ -1,4 +1,4 @@
-<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 5fdc7d6b6e8da5e7e3733b0e7d78863a8821526f747145475fa2640104d75f0f -->
+<!-- translation-source: docs/capabilities/background-work.md; translation-source-sha256: 12e67291626abcfbcbf757f797869f063952d05fce9867d9dc877ac8a6b9b4b6 -->
 
 # Background Work
 
@@ -61,6 +61,8 @@ Shell 而创建 Monitor；该 Shell 自己拥有 terminal wake。
 | `log` | 日志文件，可选从当前末尾开始 |
 | `http` | HTTP 或 HTTPS response |
 
+command Monitor 会记住整个输出流中出现的匹配，包括跨块匹配；后续输出保留不会抹去已经观察到的成功或失败条件。
+
 `success_text` 与 `failure_text` 都是精确子串。两者同时匹配时 failure 优先。未配置任一条件时，第一次读到证据
 就完成 Monitor。
 
@@ -98,7 +100,7 @@ Runtime 保留最新 64 个 receipt，每批最多 16 个结果。Receipt 只用
 
 每个 Session 最多同时运行 16 个 Shell 和 Monitor，包括 launch reservation。
 
-Shell 在 20 MiB 保留阈值内保存完整输出。跨过阈值不会终止进程：Background Work 会继续消费输出，保留
+Shell 在 20 MiB 保留阈值内保存完整输出。每次滚动保留最新的 10 MiB，为后续追加留出空间，避免每个输出块都重写保留文件。跨过阈值不会终止进程：Background Work 会继续消费输出，保留
 最新 64 KiB 和 omitted-byte count，并默认返回 50 KiB 的 model-readable tail。已完成 Bash 的 details 在包含输出
 artifact 时，仅当文件仍含完整输出才提供 `fullOutputPath`；滚动后改为提供 `retainedOutputPath` 和
 `omittedBytes`。需要完整日志时，

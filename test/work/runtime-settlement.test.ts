@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { CommandMonitorEvidence } from "../../packages/pi-stuff/src/background-work/src/command-monitor-evidence.js";
 import {
 	BoundedOutputFile,
 	captureProcessIdentity,
@@ -30,6 +31,30 @@ import {
 } from "./runtime-fixtures.js";
 
 afterEach(cleanupRuntimeFixtures);
+
+test("command Monitor outcomes retain conditions after their output rolls away", async () => {
+	const root = temporaryRoot();
+	const active = configuredRuntime(root, { outputFactory: (path) => new BoundedOutputFile(path, 1_024) });
+	try {
+		for (const [prefix, suffix, status] of [
+			["ERROR", "READY", "failed"],
+			["READY", "", "completed"],
+		] as const) {
+			const started = await active.startCommandMonitor(
+				{
+					command: `printf '${prefix}'; head -c 100000 /dev/zero | tr '\\0' x; printf '${suffix}'`,
+					failureText: "ERROR",
+					successText: "READY",
+					timeoutSeconds: 5,
+				},
+				context(root),
+			);
+			expect((await started.outcome).status).toBe(status);
+		}
+	} finally {
+		await active.shutdown();
+	}
+});
 
 test("settles from the in-memory tail when output-file writes fail", async () => {
 	const root = temporaryRoot();
@@ -516,4 +541,13 @@ test("closes supervisor control descriptors after sequential and concurrent runs
 	}
 	await waitUntil(() => readdirSync("/proc/self/fd").length <= baseline + 4, 5_000);
 	expect(readdirSync("/proc/self/fd").length).toBeLessThanOrEqual(baseline + 4);
+});
+
+test("command Monitor conditions survive byte boundaries with failure precedence", () => {
+	const evidence = new CommandMonitorEvidence("就绪", "失败");
+	for (const byte of Buffer.from("就绪")) evidence.append(Buffer.from([byte]));
+	expect(evidence.failed).toBeFalse();
+	for (const byte of Buffer.from("失败")) evidence.append(Buffer.from([byte]));
+	evidence.append(Buffer.from("就绪"));
+	expect(evidence.failed).toBeTrue();
 });

@@ -339,8 +339,10 @@ export class BoundedOutputFile {
 	}
 
 	private replacementPayload(chunk: Buffer): Buffer {
-		if (this.fd === undefined || chunk.length >= this.maxBytes) return durableByteTail(chunk, this.maxBytes);
-		const priorBytes = Math.min(this.bytes, this.maxBytes - chunk.length);
+		// Leave append headroom so small chunks do not rewrite the entire retained file.
+		const retainedBytes = Math.floor(this.maxBytes / 2);
+		if (this.fd === undefined || chunk.length >= retainedBytes) return durableByteTail(chunk, retainedBytes);
+		const priorBytes = Math.min(this.bytes, retainedBytes - chunk.length);
 		const prior = Buffer.allocUnsafe(priorBytes);
 		let offset = 0;
 		while (offset < prior.length) {
@@ -348,7 +350,7 @@ export class BoundedOutputFile {
 			if (read <= 0) throw new Error("Background output rollover read made no progress");
 			offset += read;
 		}
-		return durableByteTail(Buffer.concat([prior, chunk]), this.maxBytes);
+		return durableByteTail(Buffer.concat([prior, chunk]), retainedBytes);
 	}
 
 	private compactMetadata(token: string): void {

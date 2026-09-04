@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 45b4b60cf94a5614b8945485af5928cce821b3912c163a57a0a30eb99c60e28b -->
+<!-- translation-source: packages/pi-stuff/src/subagents/README.md; translation-source-sha256: 2d0bed5310779ca058d12cec3dbcbe4cdd161f470911e7d6f4517962e860f278 -->
 
 # Agents
 
@@ -42,6 +42,8 @@
 - 返回稳定的异常 outcome class、有界 partial 证据，以及支持 continuation 时可恢复的 Agent Target。
 - 隔离无 owner 的无版本 legacy run，不让它们永远显示为 active，也不 reclaim 未知进程。
 - 保存 Session-owned artifact，并保留已修改的隔离 worktree 供检查。
+
+保留结果遵循验收报告优先规则，不会被后续普通 assistant 文本替换。
 
 ## 文档
 

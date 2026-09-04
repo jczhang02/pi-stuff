@@ -158,22 +158,14 @@ export function projectShellSnapshot(source: ShellSnapshotProjection): Backgroun
 }
 
 export function shellTerminalStatus(
-	kind: BackgroundWorkKind,
-	input: ShellLaunchInput,
 	stopReason: ShellStopReason | undefined,
 	code: number | null,
 	signal: NodeJS.Signals | null,
-	recentOutput: string,
+	conditionsFailed: boolean,
 ): BackgroundWorkTerminalStatus {
-	let status: BackgroundWorkTerminalStatus;
-	if (stopReason === "timeout") status = "timed_out";
-	else if (stopReason) status = "stopped";
-	else status = code === 0 && signal === null ? "completed" : "failed";
-	if (kind === "monitor" && !stopReason) {
-		if (input.monitorFailureText && recentOutput.includes(input.monitorFailureText)) status = "failed";
-		else if (input.monitorSuccessText && !recentOutput.includes(input.monitorSuccessText)) status = "failed";
-	}
-	return status;
+	if (stopReason === "timeout") return "timed_out";
+	if (stopReason) return "stopped";
+	return code === 0 && signal === null && !conditionsFailed ? "completed" : "failed";
 }
 
 export function shellOutcomeSummary(

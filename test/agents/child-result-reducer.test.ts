@@ -27,6 +27,13 @@ function providerMessages(messages: ChildProtocolMessage[]): Message[] {
 	return messages.filter((message): message is Message => message.role !== "custom");
 }
 
+test("preserves the canonical acceptance report when ordinary output follows it", () => {
+	const reducer = new ChildResultReducer();
+	const messages = [assistant("starting"), assistant("ACCEPTANCE_REPORT: decisive evidence"), assistant("done")];
+	for (const message of messages) reducer.record(message);
+	expect(getFinalOutput(reducer.messages())).toBe(getFinalOutput(messages));
+});
+
 test("reduces an unbounded child message stream to bounded final and error evidence", () => {
 	const reducer = new ChildResultReducer();
 	for (let index = 0; index < 10_000; index += 1) {
