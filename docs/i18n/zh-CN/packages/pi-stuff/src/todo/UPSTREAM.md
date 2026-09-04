@@ -1,4 +1,4 @@
-<!-- translation-source: packages/pi-stuff/src/todo/UPSTREAM.md; translation-source-sha256: 47d68eefec3ce8dfe3ba095ebfbb1c6ed5a961f228b28f2a9cf81e9829b31989 -->
+<!-- translation-source: packages/pi-stuff/src/todo/UPSTREAM.md; translation-source-sha256: 94d506bdf3d24da38c76a320bc99f36ad012958426d8d11f441ddc3410d66635 -->
 
 # 上游来源
 
@@ -17,7 +17,7 @@
 
 ## Pi Stuff 差异
 
-- 使源码适配 Pi 0.84.4 宿主约定和单一软件包依赖集合。
+- 使源码适配 Pi 0.85.0 宿主约定和单一软件包依赖集合。
 - 用 `TaskCreate`、`TaskGet`、`TaskList` 和 `TaskUpdate` 替换动作多路复用工具。
 - 暴露稳定字符串 ID，增加原子正反向依赖更新，绝不重置 ID 计数器。
 - 为新重放快照设置版本，同时保留从旧版数字 `todo` 快照迁移。

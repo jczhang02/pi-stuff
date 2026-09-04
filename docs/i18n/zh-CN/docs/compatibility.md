@@ -1,4 +1,4 @@
-<!-- translation-source: docs/compatibility.md; translation-source-sha256: 09dd5c096b5ecb6695efcb6bbed50a5e53d67dabf3d0e9b9ba171c08830de503 -->
+<!-- translation-source: docs/compatibility.md; translation-source-sha256: 30d34984d8d7ef62b692055edbf58ffcff6d7514b58f913dddcb2dfe2c0fa1b4 -->
 
 # 兼容性
 
@@ -6,9 +6,9 @@
 
 | 契约 | 已认证版本 |
 | --- | --- |
-| Pi standalone Host | `0.84.4`，上游 `b79e4cc834970cca69daebffab7df1da7d1e52c4`，Linux x64 |
-| Pi Release archive | SHA-256 `c2f3c3e6a1850bd87654cc3ca8811013272397c3d042a4e2a64c43ee1b423972` |
-| Pi Release executable | SHA-256 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`，104,511,616 bytes |
+| Pi standalone Host | `0.85.0`，上游 `107d79f11072bbc8a3a757ed7fd69596bee7d68c`，Linux x64 |
+| Pi Release archive | SHA-256 `a7e7c65f1dc528d2e17e7d946ad2b61df0e2b0f9952faee77807c2484b464d6e` |
+| Pi Release executable | SHA-256 `0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072`，105,764,992 bytes |
 | Pi Host 内嵌 Bun runtime | 1.3.14 |
 | 仓库 Bun 工具链 | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
@@ -22,7 +22,7 @@
 | RTK Release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK Release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-认证的上游 Host 是由上述提交构建、并报告 `0.84.4` 的 `v0.84.4` Linux x64 Release。每条验收路径都会先
+认证的上游 Host 是由上述提交构建、并报告 `0.85.0` 的 `v0.85.0` Linux x64 Release。每条验收路径都会先
 哈希可执行文件并拒绝不在已审核 allowlist 中的文件，再覆盖完整 Suite 契约，包括公开
 `registerMarkdownTransformer()`、常规与 fullscreen UI 行为，以及保留空格的原生设置搜索。可执行文件身份由
 精确二进制哈希确定，而不是可复用的版本字符串。Pi Stuff 不重建或分发 Pi Host。
@@ -48,22 +48,31 @@ Actions；它不会创建遗漏或绕过仓库 Bun lockfile 的 npm pull request
 随后断网运行验收。Release archive 在解压前检查哈希，Pi 可执行文件在使用前再次检查。升级 Pi 必须一起审查并更新这些
 常量；本仓库不声称能复现上游编译过程。
 
-Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。开发依赖固定到已发布的 `0.84.4` 类型
-接口。版本敏感验证脚本读取共享的认证 Host 契约，不维护各自的 Pi 版本常量。PowerShell 会作为 Pi 内置 Tool
+Pi core import 保持 wildcard peer dependency，因为它们由 Host 提供。开发依赖固定到已发布的 `0.85.0` 类型
+接口。已发布的 `pi-coding-agent` SDK 通过主入口导入 `pi-server`，却没有在 manifest 中声明该依赖。仓库以开发
+依赖补齐精确的 `@earendil-works/pi-server@0.85.0`；Knip 中的单项声明记录了这条由 SDK 拥有的运行时导入。
+SDK 源码和 standalone Host 均不打补丁，已安装的 Suite 也不增加该依赖。后续认证 SDK 正确声明依赖后移除
+这一临时处理。
+
+Pi 0.85.0 将 Thinking 内容放在原生可点击 `MouseRegion` 内。经过版本校验的 Thinking 适配器只投影该容器的
+子组件，保留 Host 的可见性回调和点击路由。真实 Host PTY 验收覆盖鼠标与键盘展开/收起、最新行呈现，以及
+canonical Session 内容保持不变。
+
+版本敏感验证脚本读取共享的认证 Host 契约，不维护各自的 Pi 版本常量。PowerShell 会作为 Pi 内置 Tool
 参与生命周期、MCP 名称冲突和 Child Agent 可用性策略，但认证 Linux 基线不包含 `pwsh`，因此不声明
-PowerShell 执行或 Windows 行为。真实 RPC Provider fixture 按 Pi 0.84.4 RPC 序列化契约的要求，在
-`toolcall_start.partial` 中填充每个 Tool call。Pi 0.84.4 还拥有实时 compaction replay，以及 Tool result 与下一次
+PowerShell 执行或 Windows 行为。真实 RPC Provider fixture 按 Pi 0.85.0 RPC 序列化契约的要求，在
+`toolcall_start.partial` 中填充每个 Tool call。Pi 0.85.0 还拥有实时 compaction replay，以及 Tool result 与下一次
 Assistant 请求之间的原生阈值检查：它验证持久化边界，通过 `buildContextEntries()` 重建，并只渲染一次摘要。
 Suite 不拦截这两条 Host 路径。打包验收证明，大型 Tool result 会触发一次原生阈值压缩，而活跃 Goal 只安排一次
 continuation。
 
-Pi 0.84.4 负责 RPC `clear_queue`、终端设置、非触发 Custom Message 排序、Session 与 Provider。Pi Stuff 不包装或
+Pi 0.85.0 负责 RPC `clear_queue`、终端设置、非触发 Custom Message 排序、Session 与 Provider。Pi Stuff 不包装或
 遮蔽这些契约。`clear_queue` 会返回移除的队列，但不发出 Extension event，所以 Conversation UI 无法同步修剪其
 观察性归属镜像。下一次无法判定的 user/automatic 混合投递会清空该镜像并 fail closed 为 automatic；真实 RPC
 验收覆盖了这个缺口。Host 也会把 Tool 执行期间排入的 `sendMessage({ triggerTurn: false })` 内容推迟到该轮所有
 Tool result 持久化之后。
 
-Codex 生成图像的内联使用 Pi 0.84.4 公开 `detectSupportedImageMimeTypeFromFile()` 接缝，从文件字节识别 JPEG、
+Codex 生成图像的内联使用 Pi 0.85.0 公开 `detectSupportedImageMimeTypeFromFile()` 接缝，从文件字节识别 JPEG、
 PNG、GIF、WebP 与 BMP。原有最多四张、每张 25 MiB、仅普通文件和 best-effort 文本回退限制保持不变。内联图像
 结果认证的是模型可见媒体和 Host 渲染行为，并不证明 tmux 内能显示图像；实际显示仍取决于 Host、终端协议与
 multiplexer passthrough。Pi Stuff 不改终端设置，也不声称 tmux 自身能够渲染这些图像。

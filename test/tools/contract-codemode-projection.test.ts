@@ -21,7 +21,7 @@ import {
 	toolFromHarness,
 } from "./contract-fixtures.js";
 
-test("Pi 0.84.4 Edit compatibility inputs stay canonical through Code Mode execution and replay", async () => {
+test("certified Pi Edit compatibility inputs stay canonical through Code Mode execution and replay", async () => {
 	initTheme("dark");
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);

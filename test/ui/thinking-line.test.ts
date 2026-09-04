@@ -175,6 +175,40 @@ test("separates interleaved Assistant prose and Thinking runs", () => {
 	}
 });
 
+test("preserves native mouse toggling on the projected Thinking row", () => {
+	initTheme("dark");
+	const uninstall = installThinkingLineDisplay();
+	try {
+		const rendered = component(
+			assistantMessage([
+				{ type: "text", text: "Visible answer" },
+				{ type: "thinking", thinking: "First\n\nLatest" },
+			]),
+		);
+		const rows = rendered.render(80);
+		expect(renderedContent(rendered)).toEqual(["• Visible answer", "• thoughts: Latest"]);
+		const event = {
+			alt: false,
+			ctrl: false,
+			height: rows.length,
+			screenX: 1,
+			screenY: 3,
+			shift: false,
+			width: 80,
+			x: 1,
+			y: 3,
+		};
+		expect(rendered.handleMouse({ ...event, button: "right", type: "click" })).toBeUndefined();
+		expect(rendered.handleMouse({ ...event, button: "left", type: "press" })).toBeUndefined();
+		expect(rendered.handleMouse({ ...event, button: "left", type: "click" })?.handled).toBe(true);
+		expect(renderedContent(rendered)).toEqual(["• Visible answer", "• thoughts"]);
+		expect(rendered.handleMouse({ ...event, button: "left", type: "click" })?.handled).toBe(true);
+		expect(renderedContent(rendered)).toEqual(["• Visible answer", "• thoughts: Latest"]);
+	} finally {
+		uninstall();
+	}
+});
+
 test("matches Host whitespace filtering without scanning ordinary cumulative content", () => {
 	initTheme("dark");
 	const uninstall = installThinkingLineDisplay();

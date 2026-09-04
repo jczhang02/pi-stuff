@@ -1,4 +1,4 @@
-<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: 479956b7f08195d1997a50341738c4817662338f22503efbc52f57220b70234b -->
+<!-- translation-source: docs/troubleshooting.md; translation-source-sha256: cce138d572e3433839baae797c22f3955ca7e41d8210edbfe3f8fe069f31d6b3 -->
 
 # 故障排查
 
@@ -10,7 +10,7 @@
 
 ### Package 没有加载
 
-1. 确认 `pi --version` 在已认证 Linux x64 路径上报告 `0.84.4`。
+1. 确认 `pi --version` 在已认证 Linux x64 路径上报告 `0.85.0`。
 2. 在仓库根目录重新运行 `pi install ./packages/pi-stuff`。
 3. 重启 Pi 并打开 `/diagnostics`。
 
@@ -134,4 +134,3 @@ multiplexer 都支持该图像路径。通知 passthrough 与行内图像支持�
 
 记录完整的 `/diagnostics` 条目、Pi 版本、终端与 multiplexer 版本，以及能够复现问题的最小命令。仓库 issue
 流程见[贡献指南](../.github/CONTRIBUTING.md)。
-

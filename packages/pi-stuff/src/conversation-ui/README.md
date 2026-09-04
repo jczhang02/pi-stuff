@@ -29,7 +29,8 @@ completion, and Tool running timer.
 - Context status progresses from `recovering` to a validated percentage, or `unknown` when the request is aborted.
 - One-line latest-prompt preview and compact Skill labels.
 - Native-editor input highlighting and slash completion.
-- Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, plus `chart` or `tree` Markdown projections.
+- Host-owned Thinking shown as one latest native Markdown row or the hidden `• thoughts` label, preserving native
+  mouse and keyboard visibility controls; plus `chart` or `tree` Markdown projections.
 - Full-width Command Dialogs that restore the editor draft on close.
 - Bounded Suite diagnostics through `/diagnostics`.
 

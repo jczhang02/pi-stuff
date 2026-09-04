@@ -74,7 +74,7 @@ function verifyScreen(screen: string, columns: number, label: string, allowNorma
 		fail(`${label} did not render a ${String(columns)}-column divider\n${screen}`);
 	}
 	const surface = screen.slice(screen.lastIndexOf(divider));
-	const forbiddenChrome = allowNormalChrome ? [] : ["╭", "╮", "╰", "╯", "Working..."];
+	const forbiddenChrome = allowNormalChrome ? [] : ["╭", "╮", "╰", "╯", "Working"];
 	for (const forbidden of forbiddenChrome) {
 		if (surface.includes(forbidden)) fail(`${label} exposed forbidden floating or normal chrome: ${forbidden}`);
 	}

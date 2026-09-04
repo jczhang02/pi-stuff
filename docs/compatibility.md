@@ -4,9 +4,9 @@
 
 | Contract | Certified version |
 | --- | --- |
-| Pi standalone host | `0.84.4`, upstream `b79e4cc834970cca69daebffab7df1da7d1e52c4`, Linux x64 |
-| Pi release archive | SHA-256 `c2f3c3e6a1850bd87654cc3ca8811013272397c3d042a4e2a64c43ee1b423972` |
-| Pi release executable | SHA-256 `ce91e1f8bff6176c6a23a690bd0bc4c6e1f5bee1b1183cd2a3b1e92d88c9038a`, 104,511,616 bytes |
+| Pi standalone host | `0.85.0`, upstream `107d79f11072bbc8a3a757ed7fd69596bee7d68c`, Linux x64 |
+| Pi release archive | SHA-256 `a7e7c65f1dc528d2e17e7d946ad2b61df0e2b0f9952faee77807c2484b464d6e` |
+| Pi release executable | SHA-256 `0cfd1bf3e9468f1052d172502fa388e8e8e53dcdeb9fa97f1ef828fdd7757072`, 105,764,992 bytes |
 | Pi Host embedded Bun runtime | 1.3.14 |
 | Repository Bun toolchain | 1.4.0 |
 | Pi Stuff Package | 0.3.3 |
@@ -20,7 +20,7 @@
 | RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
 
-The certified upstream Host is the `v0.84.4` Linux x64 release built from the commit above and reports `0.84.4`. Every
+The certified upstream Host is the `v0.85.0` Linux x64 release built from the commit above and reports `0.85.0`. Every
 acceptance path hashes the executable and rejects anything outside the audited allowlist before exercising the complete
 Suite contract, including public `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and
 space-preserving native settings search. The exact binary hash, rather than a reusable version string, is the executable
@@ -54,25 +54,35 @@ executable hash is checked again before use. Pi upgrades review and update these
 reproduce the upstream compilation process.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
-to the released `0.84.4` type surface. Version-sensitive verification scripts read the shared certified Host contract
+to the released `0.85.0` type surface. The published `pi-coding-agent` SDK imports `pi-server` through its main entrypoint
+but omits that dependency from its manifest. The repository supplies exact `@earendil-works/pi-server@0.85.0` as a
+development dependency; its narrow Knip entry accounts for this SDK-owned runtime import. Neither the SDK source nor
+the standalone Host is patched, and the dependency is not added to the installed Suite. Remove this workaround when a
+later certified SDK declares its dependency correctly.
+
+Pi 0.85.0 wraps Thinking content in a native clickable `MouseRegion`. The version-checked Thinking adapter projects
+only that region's child, retaining the Host's visibility callback and click routing. Real-Host PTY acceptance covers
+both mouse and keyboard collapse/expand, latest-row rendering, and unchanged canonical Session content.
+
+Version-sensitive verification scripts read the shared certified Host contract
 instead of maintaining independent Pi version constants. PowerShell is recognized as a Pi built-in for Tool lifecycle,
 MCP name-conflict, and child-Agent availability policy, but the certified Linux baseline does not contain `pwsh` and
 does not claim PowerShell execution or Windows behavior.
-Real RPC Provider fixtures populate each Tool call in `toolcall_start.partial`, as required by Pi 0.84.4's RPC
+Real RPC Provider fixtures populate each Tool call in `toolcall_start.partial`, as required by Pi 0.85.0's RPC
 serialization contract.
-Pi 0.84.4 also owns live compaction replay and the post-Tool threshold check before the next Assistant request: it
+Pi 0.85.0 also owns live compaction replay and the post-Tool threshold check before the next Assistant request: it
 validates the persisted boundary, rebuilds through `buildContextEntries()`, and renders the summary once. The Suite
 does not intercept either Host path. Packed acceptance proves a large Tool result triggers one native threshold
 compaction while an active Goal schedules exactly one continuation.
 
-Pi 0.84.4 owns RPC `clear_queue`, terminal settings, non-triggering custom-message ordering, Sessions, and Providers.
+Pi 0.85.0 owns RPC `clear_queue`, terminal settings, non-triggering custom-message ordering, Sessions, and Providers.
 Pi Stuff does not wrap or shadow those contracts. `clear_queue` returns the removed queues but exposes no Extension
 event, so Conversation UI cannot synchronously prune its observational attribution mirror. The next ambiguous mixed
 user/automatic delivery clears that mirror and fails closed to automatic attribution; real RPC acceptance covers this
 gap. The Host also defers `sendMessage({ triggerTurn: false })` content queued during Tool execution until every Tool
 result in that turn is persisted.
 
-Codex generated-image inlining uses Pi 0.84.4's public `detectSupportedImageMimeTypeFromFile()` seam for JPEG, PNG,
+Codex generated-image inlining uses Pi 0.85.0's public `detectSupportedImageMimeTypeFromFile()` seam for JPEG, PNG,
 GIF, WebP, and BMP. The existing four-image, 25 MiB, regular-file, and best-effort text fallback limits remain intact.
 An inline image result certifies model-visible media and Host rendering behavior, not image display through tmux;
 actual terminal display still depends on the Host, terminal protocol, and multiplexer passthrough. Pi Stuff neither

@@ -6,8 +6,8 @@ This guide installs Pi Stuff, starts the Suite in Pi, and points to the first co
 
 ## Requirements
 
-The certified Host is Pi `0.84.4` for Linux x64, built from upstream commit
-`b79e4cc834970cca69daebffab7df1da7d1e52c4`. See [Compatibility](compatibility.md) for the full development
+The certified Host is Pi `0.85.0` for Linux x64, built from upstream commit
+`107d79f11072bbc8a3a757ed7fd69596bee7d68c`. See [Compatibility](compatibility.md) for the full development
 toolchain and certification scope.
 
 You also need Git and a terminal with truecolor support. Ghostty is used for the project screenshots, but Pi Stuff

@@ -122,6 +122,21 @@ function verifyThinkingWidth(screen: string, columns: number): void {
 	}
 }
 
+async function verifyThinkingMouseToggle(session: pty.TmuxPiSession, finalPhase: string): Promise<void> {
+	const click = (label: string): void => {
+		const lines = session.capture().split("\n");
+		const row = lines.findIndex((line) => line.includes(label));
+		if (row < 0) pty.fail(`Thinking click target was absent: ${label}`);
+		const column = lines[row]?.indexOf(label) ?? -1;
+		const position = `${String(column + 1)};${String(row + 1)}`;
+		session.sendLiteral(`\u001b[<0;${position}M\u001b[<0;${position}m`);
+	};
+	click(EXPANDED_THINKING_PREFIX);
+	await waitForHiddenThinking(session, 1);
+	click(HIDDEN_THINKING_LABEL);
+	await waitForThoughtText(session, EXPANDED_THINKING_PREFIX + finalPhase);
+}
+
 export async function verifyThoughtLifecycle(
 	session: pty.TmuxPiSession,
 	paths: pty.CasePaths,
@@ -175,6 +190,7 @@ export async function verifyThoughtLifecycle(
 	verifyThinkingWidth(screen, columns);
 
 	if (columns === 100) {
+		await verifyThinkingMouseToggle(session, finalPhase);
 		verifyItalicThinkingLabel(session, EXPANDED_THINKING_PREFIX);
 		session.sendKey("C-t");
 		screen = await waitForHiddenThinking(session, 1);

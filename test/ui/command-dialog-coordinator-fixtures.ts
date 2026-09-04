@@ -311,7 +311,7 @@ function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?
 		sessionHandlers,
 		shutdownHandlers,
 		async emit(event: string, data: HarnessEvent, ctx: ExtensionContext): Promise<void> {
-			// Pi 0.84.4 creates one context per input dispatch and shares it across
+			// The certified Pi Host creates one context per input dispatch and shares it across
 			// that dispatch's handlers. Other lifecycle events receive the supplied
 			// session context directly.
 			const handlerContext = event === "input" ? Object.create(ctx) : ctx;
