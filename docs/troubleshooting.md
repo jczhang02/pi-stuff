@@ -9,7 +9,7 @@ owning command when a guided recovery path exists.
 
 ### The Package does not load
 
-1. Confirm that `pi --version` reports `0.84.4` on the certified Linux x64 path.
+1. Confirm that `pi --version` reports `0.85.0` on the certified Linux x64 path.
 2. From the repository root, run `pi install ./packages/pi-stuff` again.
 3. Restart Pi and open `/diagnostics`.
 
@@ -141,4 +141,3 @@ inline-image support.
 
 Capture the exact `/diagnostics` entry, the Pi version, the terminal and multiplexer versions, and the smallest command
 that reproduces the problem. Follow [Contributing](../.github/CONTRIBUTING.md) for the repository's issue workflow.
-

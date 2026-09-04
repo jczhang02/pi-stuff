@@ -70,7 +70,7 @@ async function captureSettledScreen(tmux: Tmux, session: string): Promise<{ plai
 	let previous: string | undefined;
 	while (Date.now() - started < TIMEOUT_MS) {
 		const plain = await capture(tmux, session);
-		if (previous !== undefined && plain === previous && !plain.includes("Working...")) {
+		if (previous !== undefined && plain === previous && !plain.includes("Working")) {
 			return { plain, styled: await capture(tmux, session, true) };
 		}
 		previous = plain;

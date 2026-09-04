@@ -103,7 +103,7 @@ proc must_expect {pattern} {
 }
 
 spawn -noecho script -qefc $env(PI_STUFF_PTY_RUNNER) /dev/null
-must_expect "Working..."
+must_expect "Working"
 after 200
 send -- "/btw side question\\r"
 must_expect "BTW_STREAM"

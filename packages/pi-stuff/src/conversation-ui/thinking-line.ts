@@ -4,6 +4,7 @@ import {
 	type Component,
 	Container,
 	Markdown,
+	MouseRegion,
 	Spacer,
 	sliceByColumn,
 	Text,
@@ -161,30 +162,36 @@ class ThinkingLine implements Component {
 	}
 }
 
+function projectThinkingRegion(region: MouseRegion, outputPad: number): void {
+	const child: unknown = Object.getOwnPropertyDescriptor(region, "child")?.value;
+	if (child instanceof Text) return;
+	if (!(child instanceof Markdown)) {
+		throw new Error("Pi Stuff Thinking line requires the certified Pi Host MouseRegion layout");
+	}
+	const style = thinkingStyle(child);
+	if (!style || !Reflect.set(region, "child", new ThinkingLine(child, outputPad, style))) {
+		throw new Error("Pi Stuff Thinking line requires a writable Host Thinking region");
+	}
+}
+
 function projectThinkingLines(component: AssistantMessageComponent): void {
 	const internals = assistantInternals(component);
 	const children = internals.contentContainer.children;
 	for (let index = children.length - 1; index >= 0; index -= 1) {
 		const child = children[index];
 		if (!child) continue;
-		// The certified Host uses Text here for hidden Thinking and already-spaced terminal status rows.
-		let thinkingLine = child instanceof Text;
-		if (child instanceof Markdown) {
-			const style = thinkingStyle(child);
-			if (style) {
-				children[index] = new ThinkingLine(child, internals.outputPad, style);
-				thinkingLine = true;
-			}
-		}
+		// Keep the Host's mouse region and visibility callback; project only its visible child.
+		const thinkingLine = child instanceof MouseRegion || child instanceof Text;
+		if (child instanceof MouseRegion) projectThinkingRegion(child, internals.outputPad);
 		if (!thinkingLine || index === 0 || children[index - 1] instanceof Spacer) continue;
-		// Pi 0.84.4 separates Thinking from following prose, but omits the reverse text-to-Thinking boundary.
+		// Pi 0.85.0 separates Thinking from following prose, but omits the reverse text-to-Thinking boundary.
 		children.splice(index, 0, new Spacer(1));
 	}
 }
 
 /** Install the certified Host adapter and return its idempotent release function. */
 export function installThinkingLineDisplay(): () => void {
-	// ponytail: Pi 0.84.4 has no public Thinking renderer; replace this patch when the Host exposes one.
+	// ponytail: Pi 0.85.0 has no public Thinking renderer; replace this patch when the Host exposes one.
 	const prototype = AssistantMessageComponent.prototype;
 	let state = patchState();
 	if (!state) {

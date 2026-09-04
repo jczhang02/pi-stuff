@@ -7,7 +7,7 @@ import { readCurrentAgentWorkOrigin } from "../../packages/pi-stuff/src/conversa
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAssistantMessage, createTextStream, registerFixtureProvider } from "./faux-provider.js";
 
-const PROVIDER = "pi-stuff-0844-host-seams";
+const PROVIDER = "pi-stuff-host-seams";
 const MODEL = "fixture-model";
 const CLEAR_REQUEST = "CLEAR_QUEUE_ORIGIN";
 const AUTOMATIC_FOLLOW_UP = "AUTOMATIC_AFTER_CLEAR";
@@ -21,7 +21,7 @@ interface SeamLogRecord {
 }
 
 function record(value: SeamLogRecord): void {
-	const path = process.env["PI_STUFF_0844_SEAMS_LOG"];
+	const path = process.env["PI_STUFF_HOST_SEAMS_LOG"];
 	if (path) appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
 }
 
@@ -91,7 +91,7 @@ function orderingResult(context: Context) {
 	return textStream("ORDERING_TOOL_RESULTS_DONE");
 }
 
-export default function pi0844HostSeamsProvider(pi: ExtensionAPI): void {
+export default function piHostSeamsProvider(pi: ExtensionAPI): void {
 	let clearArmed = false;
 	let automaticSent = false;
 	pi.registerTool({
@@ -123,11 +123,11 @@ export default function pi0844HostSeamsProvider(pi: ExtensionAPI): void {
 			record({ origin: readCurrentAgentWorkOrigin(pi), phase: "clear-origin" });
 		}
 	});
-	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi 0.84.4 Host seams", (_model, context) => {
+	registerFixtureProvider(pi, PROVIDER, MODEL, "Pi Host seams", (_model, context) => {
 		const prompt = lastUserText(context);
 		if (prompt.includes(AUTOMATIC_FOLLOW_UP)) return textStream("CLEAR_QUEUE_DONE");
 		if (prompt.includes(CLEAR_REQUEST)) return delayedText("CLEAR_QUEUE_INITIAL_DONE", 2_500);
 		if (prompt.includes(ORDERING_REQUEST)) return orderingResult(context);
-		return textStream("PI_0844_SEAMS_READY");
+		return textStream("PI_HOST_SEAMS_READY");
 	});
 }

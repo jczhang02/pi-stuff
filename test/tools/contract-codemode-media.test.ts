@@ -503,7 +503,7 @@ function codeModeImageComponent(): ToolExecutionComponent {
 	return component;
 }
 
-test("Pi 0.84.4 Host renders expanded multi-image Tools identically through Code Mode", () => {
+test("certified Pi Host renders expanded multi-image Tools identically through Code Mode", () => {
 	initTheme("dark");
 	setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
 	try {

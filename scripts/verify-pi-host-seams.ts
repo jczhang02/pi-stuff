@@ -2,10 +2,11 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createRpcTransport } from "./magic-context-real-rpc.ts";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const root = resolve(import.meta.dir, "..");
-const provider = join(root, "test/fixtures/pi-0844-host-seams-provider.ts");
+const provider = join(root, "test/fixtures/pi-host-seams-provider.ts");
 const TIMEOUT_MS = 20_000;
 
 interface SeamRecord {
@@ -14,12 +15,13 @@ interface SeamRecord {
 }
 
 function fail(message: string): never {
-	throw new Error(`Pi 0.84.4 Host seam verification failed: ${message}`);
+	throw new Error(`Pi ${CERTIFIED_PI_VERSION} Host seam verification failed: ${message}`);
 }
 
-async function readRecords(path: string): Promise<SeamRecord[]> {
+export async function readSeamRecords(path: string): Promise<SeamRecord[]> {
 	return (await readFile(path, "utf8").catch(() => ""))
 		.split("\n")
+		.slice(0, -1)
 		.filter(Boolean)
 		.map((line) => {
 			// SAFETY: the fixture is the sole writer and emits only the SeamRecord fields read below.
@@ -30,7 +32,7 @@ async function readRecords(path: string): Promise<SeamRecord[]> {
 async function waitForRecord(path: string, phase: string): Promise<SeamRecord> {
 	const deadline = Date.now() + TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		const record = (await readRecords(path)).find((candidate) => candidate.phase === phase);
+		const record = (await readSeamRecords(path)).find((candidate) => candidate.phase === phase);
 		if (record) return record;
 		await Bun.sleep(20);
 	}
@@ -64,11 +66,11 @@ async function waitForPersistedOrdering(sessionDirectory: string): Promise<void>
 	fail(`timed out waiting for persisted ordering evidence (${String(lines.length)} Session entries)`);
 }
 
-export async function verifyPi0844HostSeams(options: {
+export async function verifyPiHostSeams(options: {
 	readonly packagePath: string;
 	readonly piBinary: string;
 }): Promise<void> {
-	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-0844-host-seams-"));
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-host-seams-"));
 	const agentDirectory = join(temporaryDirectory, "agent");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const log = join(temporaryDirectory, "seams.jsonl");
@@ -95,7 +97,7 @@ export async function verifyPi0844HostSeams(options: {
 				"--tools",
 				"bash,ordering_gate",
 				"--provider",
-				"pi-stuff-0844-host-seams",
+				"pi-stuff-host-seams",
 				"--model",
 				"fixture-model",
 				"--session-dir",
@@ -108,7 +110,7 @@ export async function verifyPi0844HostSeams(options: {
 				...process.env,
 				PI_CODING_AGENT_DIR: agentDirectory,
 				PI_OFFLINE: "1",
-				PI_STUFF_0844_SEAMS_LOG: log,
+				PI_STUFF_HOST_SEAMS_LOG: log,
 				PI_TELEMETRY: "0",
 				TERM: "dumb",
 			},
@@ -136,9 +138,9 @@ export async function verifyPi0844HostSeams(options: {
 }
 
 if (import.meta.main) {
-	await verifyPi0844HostSeams({
+	await verifyPiHostSeams({
 		packagePath: resolve(root, "packages/pi-stuff"),
 		piBinary: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
 	});
-	console.log("Certified Pi 0.84.4 queue-clear origin and Tool-phase message ordering");
+	console.log(`Certified Pi ${CERTIFIED_PI_VERSION} queue-clear origin and Tool-phase message ordering`);
 }
