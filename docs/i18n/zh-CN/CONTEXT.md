@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 70524f4f9db783618cd351bc262868fa0ff7022f86d51824e739f28d5f22e48d -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: a5074845fc6c9230a2a1ce35b4119684ac2d2ab3c53a1e55097c25248dc4be5d -->
 
 # Pi Stuff
 
@@ -180,6 +180,11 @@ _避免使用_：Agent Operation Block、Subagent Row、Agent roster row
 一次由用户发起的 Context maintenance operation 所对应的、模型不可见且持久化的 Session record。一条可见
 Pi Stuff row 投影其 anchor，并在 resume 后继续更新。它不是 Tool call、Diagnostic Record 或 Statusline item。
 _避免使用_：Context Tool Activity、Context notification、Context status
+
+**有界上下文投影**：
+由上下文管理确认处于所选模型本地容量边界内的派生模型请求上下文。它是 Context 活跃时唯一允许发送给
+Provider 的上下文；它不保证 Provider 接受，也不保证内容正确。
+_避免使用_：安全上下文、压缩上下文
 
 **Prompt Contribution**：
 由 marker 包围、属于 Capability 的 system-prompt fragment。Context Management 在每次 Provider activation

@@ -8,6 +8,8 @@ import type { Component } from "@earendil-works/pi-tui";
 import type {
 	CodexStatusSnapshot,
 	CodexStatusSource,
+	ContextStatusSnapshot,
+	ContextStatusSource,
 	GoalStatusSnapshot,
 	GoalStatusSource,
 } from "./statusline-channels.js";
@@ -45,6 +47,7 @@ export type StatuslineClock = (callback: () => void, intervalMs: number) => () =
 interface SharedStatuslineControllerOptions {
 	readonly autocompleteVisible?: BooleanValueSource;
 	readonly codexStatus?: CodexStatusSource;
+	readonly contextStatus?: ContextStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
 	readonly goalStatus?: GoalStatusSource;
@@ -145,6 +148,7 @@ export class StatuslineController {
 		subscribeObserver(preferencesSource, notify, unsubscribe);
 		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
 		if (this.options.codexStatus) subscribeObserver(this.options.codexStatus, notify, unsubscribe);
+		if (this.options.contextStatus) subscribeObserver(this.options.contextStatus, notify, unsubscribe);
 		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
 		if (this.options.goalStatus) subscribeObserver(this.options.goalStatus, notify, unsubscribe);
 		return () => {
@@ -165,6 +169,7 @@ export class StatuslineController {
 		return renderStatusline(theme, {
 			branch,
 			codexStatus: readCodexStatus(ctx, this.options.codexStatus),
+			contextStatus: readContextStatus(this.options.contextStatus),
 			contextUsage: readContextUsage(ctx),
 			cwd,
 			density: preferences.density,
@@ -334,6 +339,14 @@ function readContextUsage(ctx: StatuslineContext): StatuslineContextUsage | null
 		return ctx.getContextUsage();
 	} catch {
 		return null;
+	}
+}
+
+function readContextStatus(source: ContextStatusSource | undefined): ContextStatusSnapshot | undefined {
+	try {
+		return source?.getSnapshot();
+	} catch {
+		return undefined;
 	}
 }
 function readRawCwd(ctx: StatuslineContext): string {

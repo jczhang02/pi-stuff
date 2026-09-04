@@ -8,6 +8,7 @@ import {
 	type BooleanValueSource,
 	GitStatusSource,
 	getCodexStatusChannel,
+	getContextStatusChannel,
 	getGoalStatusChannel,
 	type StatuslineClock,
 	StatuslineController,
@@ -117,6 +118,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		this.statusline = new StatuslineController(pi, {
 			autocompleteVisible: new EditorAutocompleteSource(this.editor),
 			codexStatus: getCodexStatusChannel(pi).source,
+			contextStatus: getContextStatusChannel(pi).source,
 			extensionStatusKeys: ["ponytail"],
 			goalStatus: getGoalStatusChannel(pi).source,
 			gitChanges: this.git,
