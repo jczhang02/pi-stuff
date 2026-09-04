@@ -35,11 +35,13 @@ post-render projection keeps its content tail. Pi Stuff does not parse Thinking 
 a refresh timer, or separately persist display state.
 
 Pi currently has no public post-render Thinking seam. Conversation UI therefore installs one guarded, version-bound
-adapter around `AssistantMessageComponent.updateContent()` and replaces only Host-created Thinking Markdown children.
-The public MIT Package `@99percentpeople/pi-thinking-fold@0.1.9` established that post-render row selection is viable;
-Pi Stuff retains only that rendering order, without copying its source or adopting its timer, keybinding, settings,
-Working Row, or model-specific behavior. The adapter validates the certified component layout and fails clearly when
-it is unavailable. It must be removed when the Host exposes an equivalent public seam.
+adapter around `AssistantMessageComponent.updateContent()` and replaces Host-created Thinking Markdown children. The
+same adapter restores the Host's missing spacer only when Assistant prose directly precedes a Thinking run inside one
+Assistant message; existing leading and Thinking-to-prose spacing remains unchanged. The public MIT Package
+`@99percentpeople/pi-thinking-fold@0.1.9` established that post-render row selection is viable; Pi Stuff retains only
+that rendering order, without copying its source or adopting its timer, keybinding, settings, Working Row, or
+model-specific behavior. The adapter validates the certified component layout and fails clearly when it is unavailable.
+It must be removed when the Host exposes an equivalent public seam.
 
 The hard guarantee currently applies to the certified Linux x64 Host profile. Host-owned cumulative Markdown
 transformation and rendering at extreme input sizes remain an explicit upstream limitation; Pi Stuff does not claim

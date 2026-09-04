@@ -24,6 +24,13 @@ export const THOUGHT_PHASES = [
 	"Listing and ranking failure hypotheses",
 	"Adding failure hypotheses commentary",
 ] as const;
+export const THOUGHT_SPACING_PTY = {
+	finalText: "THOUGHT_SPACING_FINAL_TEXT",
+	firstText: "THOUGHT_SPACING_FIRST_TEXT",
+	firstThought: "THOUGHT_SPACING_FIRST_THOUGHT",
+	prompt: "THOUGHT_SPACING_PTY",
+	secondThought: "THOUGHT_SPACING_SECOND_THOUGHT",
+} as const;
 const THOUGHT_DELTAS = THOUGHT_PHASES.map((phase, index) => `${index === 0 ? "" : "\n\n"}**${phase}**`);
 export const FIXTURE_THINKING = THOUGHT_DELTAS.join("");
 export const VIBE_LINE_LIVENESS_PTY_PROMPT = "VIBE_LINE_LIVENESS_PTY";
@@ -167,6 +174,39 @@ function textOnlyStream(model: Model<Api>, text: string) {
 		type: "done",
 		reason: "stop",
 		message: assistantMessage([{ type: "text", text }], "stop", ZERO_USAGE, model.provider, model.id),
+	});
+	return stream;
+}
+
+function interleavedThinkingStream(model: Model<Api>) {
+	const stream = createAssistantMessageEventStream();
+	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
+	const pushThinking = (thinking: string): void => {
+		const contentIndex = pending.content.length;
+		pending.content.push({ type: "thinking", thinking: "" });
+		stream.push({ type: "thinking_start", contentIndex, partial: pending });
+		pending.content[contentIndex] = { type: "thinking", thinking };
+		stream.push({ type: "thinking_delta", contentIndex, delta: thinking, partial: pending });
+		stream.push({ type: "thinking_end", contentIndex, content: thinking, partial: pending });
+	};
+	const pushText = (text: string): void => {
+		const contentIndex = pending.content.length;
+		pending.content.push({ type: "text", text: "" });
+		stream.push({ type: "text_start", contentIndex, partial: pending });
+		pending.content[contentIndex] = { type: "text", text };
+		stream.push({ type: "text_delta", contentIndex, delta: text, partial: pending });
+		stream.push({ type: "text_end", contentIndex, content: text, partial: pending });
+	};
+
+	stream.push({ type: "start", partial: pending });
+	pushThinking(THOUGHT_SPACING_PTY.firstThought);
+	pushText(THOUGHT_SPACING_PTY.firstText);
+	pushThinking(THOUGHT_SPACING_PTY.secondThought);
+	pushText(THOUGHT_SPACING_PTY.finalText);
+	stream.push({
+		type: "done",
+		reason: "stop",
+		message: assistantMessage([...pending.content], "stop", ZERO_USAGE, model.provider, model.id),
 	});
 	return stream;
 }
@@ -324,6 +364,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 			visualizationSourcePreserved ? "VISUALIZATION_CONTEXT_PRESERVED" : "VISUALIZATION_CONTEXT_LOST",
 		);
 	}
+	if (lastUser === THOUGHT_SPACING_PTY.prompt) return interleavedThinkingStream(model);
 	if (lastUser === VISUALIZATION_PTY_PROMPT) return visualizationStream(model, options);
 	if (lastUser === USER_VISUALIZATION_SOURCE) return textOnlyStream(model, "USER-VISUALIZATION-ACK");
 	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
