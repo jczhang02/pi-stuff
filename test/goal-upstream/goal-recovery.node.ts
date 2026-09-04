@@ -439,6 +439,51 @@ test("manual compaction cancels stale continuation and sends one fresh continuat
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 });
 
+test("manual compaction waits for actual idle without requiring agent_settled", async () => {
+	let idle = false;
+	const compacted = await startGoalForTest({ isIdle: () => idle });
+	try {
+		await compacted.mock.callEvent("session_before_compact", { reason: "manual", willRetry: false }, compacted.ctx);
+		await compacted.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, compacted.ctx);
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		assert.equal(compacted.mock.sentUserMessages.length, 1, "must not start work inside the compaction hook");
+		idle = true;
+		const deadline = Date.now() + 1_000;
+		while (compacted.mock.sentUserMessages.length < 2 && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.equal(compacted.mock.sentUserMessages.length, 2);
+		assert.match(compacted.mock.sentUserMessages.at(-1)?.text ?? "", /pi-goal-continuation/);
+		await compacted.mock.callEvent("agent_settled", {}, compacted.ctx);
+		assert.equal(compacted.mock.sentUserMessages.length, 2, "later settlement must not duplicate delivery");
+	} finally {
+		await compacted.mock.callEvent("session_shutdown", {}, compacted.ctx);
+	}
+});
+
+test("pause and shutdown cancel delayed manual-compaction continuation", async () => {
+	for (const action of ["pause", "shutdown"]) {
+		let idle = false;
+		let idleChecks = 0;
+		const compacted = await startGoalForTest({
+			isIdle: () => {
+				idleChecks++;
+				return idle;
+			},
+		});
+		await compacted.mock.callEvent("session_before_compact", { reason: "manual", willRetry: false }, compacted.ctx);
+		await compacted.mock.callEvent("session_compact", { reason: "manual", willRetry: false }, compacted.ctx);
+		if (action === "pause") await compacted.mock.commands.get("goal")?.handler("pause", compacted.ctx);
+		else await compacted.mock.callEvent("session_shutdown", {}, compacted.ctx);
+		const checksAfterCancellation = idleChecks;
+		idle = true;
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		assert.equal(compacted.mock.sentUserMessages.length, 1, action);
+		assert.equal(idleChecks, checksAfterCancellation, "cancelled work must stop checking idle");
+		if (action === "pause") await compacted.mock.callEvent("session_shutdown", {}, compacted.ctx);
+	}
+});
+
 test("native compaction failure replaces a stale Goal continuation exactly once", async () => {
 	let idleWaits = 0;
 	const sessionManager = {

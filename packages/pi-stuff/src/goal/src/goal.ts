@@ -198,9 +198,12 @@ function registerGoalSessionHandlers(lifecycle: GoalLifecycle): void {
 		const recovery = compaction.failed(event, ctx);
 		if (recovery) startGoalTask(lifecycle, "compaction-recovery", ctx, recovery);
 	});
-	pi.on("session_compact", (event, ctx) => {
+	pi.on("session_compact", async (event, ctx) => {
 		cancelGoalTask(lifecycle, "compaction-recovery");
-		return runGoalEffect(lifecycle, ctx, compaction.complete(event, ctx));
+		await runGoalEffect(lifecycle, ctx, compaction.complete(event, ctx));
+		if (event.reason !== "manual") return;
+		const recovery = compaction.afterManualComplete(ctx);
+		if (recovery) startGoalTask(lifecycle, "compaction-recovery", ctx, recovery);
 	});
 }
 

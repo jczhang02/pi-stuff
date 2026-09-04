@@ -10,14 +10,21 @@ import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
 const PROJECTED_USAGE = { ...ZERO_USAGE, input: 12_000, totalTokens: 12_000 };
-type Scenario = "blocker" | "compaction" | "normal" | "reload";
+type Scenario = "blocker" | "compaction" | "manual-compaction" | "normal" | "reload";
 
 let providerCalls = 0;
 let goalCalls = 0;
 
 function scenario(): Scenario {
 	const value = process.env["PI_STUFF_GOAL_LIFECYCLE_SCENARIO"];
-	if (value === "blocker" || value === "compaction" || value === "normal" || value === "reload") return value;
+	if (
+		value === "blocker" ||
+		value === "compaction" ||
+		value === "manual-compaction" ||
+		value === "normal" ||
+		value === "reload"
+	)
+		return value;
 	throw new Error(`Unknown Goal lifecycle scenario: ${value ?? "missing"}`);
 }
 
@@ -146,7 +153,7 @@ function response(context: Context) {
 	if (selected === "normal") {
 		return goalCalls === 1 ? textStream("Initial packed pass is incomplete.") : completion(context);
 	}
-	if (selected === "reload") return completion(context);
+	if (selected === "reload" || selected === "manual-compaction") return completion(context);
 	if (selected === "compaction") {
 		if (goalCalls === 1) return toolStream("goal_large_result", {});
 		return goalCalls === 2
@@ -159,7 +166,7 @@ function response(context: Context) {
 		: textStream(`Blocker attempt ${String(blockerAttempt)} recorded; continue the audit.`);
 }
 
-function activeGoal(objective: string) {
+export function activeGoal(objective: string) {
 	const now = Date.now();
 	return {
 		id: crypto.randomUUID(),
@@ -254,6 +261,13 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 			},
 		};
 	});
-	pi.on("session_compact", (event) => log({ type: "session_compact", reason: event.reason }));
+	pi.on("session_compact", async (event, ctx) => {
+		log({ type: "session_compact", reason: event.reason, idle: ctx.isIdle() });
+		if (scenario() === "manual-compaction") {
+			// A later asynchronous handler must not be mistaken for an idle Host.
+			await new Promise((resolve) => setTimeout(resolve, 35));
+			log({ type: "manual_compaction_handler_complete" });
+		}
+	});
 	pi.on("session_start", (event) => log({ type: "session_start", reason: event.reason }));
 }
