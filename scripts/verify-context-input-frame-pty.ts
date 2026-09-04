@@ -461,11 +461,6 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 				"extended-keys",
 				"on",
 				";",
-				"set-option",
-				"-s",
-				"extended-keys-format",
-				"csi-u",
-				";",
 				"new-session",
 				"-d",
 				"-s",
@@ -486,6 +481,10 @@ async function verifySubmittedFrame(environment: PtyEnvironment, cwd: string, re
 			],
 			environment,
 		);
+		const serverOptions = tmux(["show-options", "-s"]);
+		if (/^extended-keys-format\b/m.test(serverOptions)) {
+			tmux(["set-option", "-s", "extended-keys-format", "csi-u"]);
+		}
 		await waitFor((frame) => frame.includes("CONTEXT_SEARCH_AGAIN_DONE"), "resumed editor readiness", 40_000);
 		await writeFile(terminalOutputPath, "");
 		tmux([

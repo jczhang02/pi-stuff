@@ -224,12 +224,12 @@ class PonytailPtySession {
 		);
 		if (result.exitCode !== 0) fail(`tmux could not start Pi: ${result.stderr.toString().trim()}`);
 		this.tmux(["set-option", "-g", "extended-keys", "on"]);
-		this.tmux(["set-option", "-g", "extended-keys-format", "csi-u"]);
 		if (this.tmux(["show-option", "-gv", "extended-keys"]).trim() !== "on") {
 			fail("isolated tmux server did not enable extended keys");
 		}
-		if (this.tmux(["show-option", "-gv", "extended-keys-format"]).trim() !== "csi-u") {
-			fail("isolated tmux server did not use CSI-u extended keys");
+		const serverOptions = this.tmux(["show-options", "-s"]);
+		if (/^extended-keys-format\b/m.test(serverOptions)) {
+			this.tmux(["set-option", "-s", "extended-keys-format", "csi-u"]);
 		}
 	}
 

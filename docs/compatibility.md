@@ -14,6 +14,8 @@
 | System-utility baseline | Ubuntu 24.04 with Bash, curl, tar, gzip, and standard Unix utilities; no `pwsh` |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
+| Code Mode host | OpenAI Codex `rust-v0.145.0`, Linux x64 |
+| Code Mode host release archive | SHA-256 `ac23177956c30cc1f9f180c27bd80f5bb5b76780db55fb94dcc22644d490852e` |
 | Optional RTK runtime | Official `0.45.0`, source `b34be37caf3796b69a50952a28e60e32b5daad43`, Linux x64 |
 | RTK release archive | SHA-256 `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4` |
 | RTK release executable | SHA-256 `99e0cff729d52297a23eb832f809d9773ba7c32de818dfe76b2cdd900a951535` |
@@ -27,7 +29,8 @@ identity. Pi Stuff does not rebuild or distribute Pi Host.
 CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
 lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
 `Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
-and manual dispatch runs both checks. `Acceptance` downloads and verifies the certified Host release and RTK runtime
+and manual dispatch runs both checks. `Acceptance` downloads and verifies the certified Host release, Code Mode host,
+and RTK runtime
 before running every test
 file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
 network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
@@ -45,9 +48,9 @@ requests that omit or bypass the repository-owned Bun lockfile.
 
 The certified Host profile identifies the released version, reviewed upstream source commit, Linux x64 release-binary
 hash, and embedded Bun version. The repository toolchain row separately identifies the Bun executable used for repository
-commands and CI. CI downloads the fixed GitHub Release while network access is available, verifies it, and then runs the
-acceptance suite without external network access. The archive hash is checked before extraction; the executable hash is
-checked again before use. Pi upgrades review and update these constants together; the repository does not claim to
+commands and CI. CI downloads the fixed GitHub Releases while network access is available, verifies them, and then runs
+the acceptance suite without external network access. Release archive hashes are checked before extraction; the Pi
+executable hash is checked again before use. Pi upgrades review and update these constants together; the repository does not claim to
 reproduce the upstream compilation process.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned

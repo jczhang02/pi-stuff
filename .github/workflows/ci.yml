@@ -70,6 +70,7 @@ jobs:
     timeout-minutes: 25
     env:
       PI_BIN: ${{ github.workspace }}/.artifacts/pi-release/pi/pi
+      PI_STUFF_CODE_MODE_HOST: ${{ github.workspace }}/.artifacts/code-mode-host/codex-code-mode-host
       RTK_BIN: ${{ github.workspace }}/.artifacts/rtk/bin/rtk
       SYSTEM_TOOL_BIN: ${{ github.workspace }}/.artifacts/system-tools/bin
 
@@ -133,6 +134,18 @@ jobs:
           test "$("$PI_BIN" --version)" = "$(bun scripts/pi-host-contract.ts)"
           bun -e 'import { verifyPiHostProvenance } from "./scripts/verify-pi-host-provenance.ts"; await verifyPiHostProvenance(process.env.PI_BIN);'
 
+      - name: Install certified Code Mode host
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun -e '
+            import { installCodeModeHost } from "./packages/pi-stuff/src/code-mode/host/install-host.ts";
+            const destination = process.env.PI_STUFF_CODE_MODE_HOST;
+            if (!destination) throw new Error("PI_STUFF_CODE_MODE_HOST is required");
+            await installCodeModeHost({ arch: process.arch, destination, platform: process.platform });
+          '
+          test -x "$PI_STUFF_CODE_MODE_HOST"
+
       - name: Run disconnected acceptance
         shell: bash
         run: |
@@ -142,7 +155,7 @@ jobs:
           export PATH="$SYSTEM_TOOL_BIN:$rtk_directory:$PATH"
           export PI_STUFF_AGENTS_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/agents"
           export PI_STUFF_UI_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/ui"
-          sudo --preserve-env=HOME,PATH,PI_BIN,PI_STUFF_AGENTS_PTY_ARTIFACT_DIR,PI_STUFF_UI_PTY_ARTIFACT_DIR,RTK_BIN,RUNNER_TEMP,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \
+          sudo --preserve-env=HOME,PATH,PI_BIN,PI_STUFF_AGENTS_PTY_ARTIFACT_DIR,PI_STUFF_CODE_MODE_HOST,PI_STUFF_UI_PTY_ARTIFACT_DIR,RTK_BIN,RUNNER_TEMP,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \
             bash -euo pipefail -c '
               ip link set lo up
               exec setpriv --reuid="$1" --regid="$2" --clear-groups \

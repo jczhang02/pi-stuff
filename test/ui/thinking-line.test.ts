@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { Markdown, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	getCapabilities,
+	Markdown,
+	setCapabilities,
+	stripTerminalSequences,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { transformConversationMarkdown } from "../../packages/pi-stuff/src/conversation-ui/conversation-markdown.js";
 import {
 	HIDDEN_THINKING_LABEL,
@@ -170,6 +176,8 @@ test("matches Host whitespace filtering without scanning ordinary cumulative con
 
 test("keeps the tail of a wrapped latest line within the viewport", () => {
 	initTheme("dark");
+	const capabilities = getCapabilities();
+	setCapabilities({ ...capabilities, hyperlinks: true });
 	const uninstall = installThinkingLineDisplay();
 	try {
 		const rendered = component(
@@ -191,5 +199,6 @@ test("keeps the tail of a wrapped latest line within the viewport", () => {
 		expect(visibleWidth(raw)).toBeLessThanOrEqual(28);
 	} finally {
 		uninstall();
+		setCapabilities(capabilities);
 	}
 });

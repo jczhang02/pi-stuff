@@ -267,11 +267,6 @@ function startSession(fixture: LivenessFixture, options: ToolsPtyLivenessOptions
 			"extended-keys",
 			"on",
 			";",
-			"set-option",
-			"-s",
-			"extended-keys-format",
-			"csi-u",
-			";",
 			"new-session",
 			"-d",
 			"-s",
@@ -292,6 +287,12 @@ function startSession(fixture: LivenessFixture, options: ToolsPtyLivenessOptions
 		],
 		fixture.environment,
 	);
+	const tmux = (args: readonly string[]): string =>
+		runCommand(["tmux", "-S", fixture.socket, ...args], fixture.environment);
+	const serverOptions = tmux(["show-options", "-s"]);
+	if (/^extended-keys-format\b/m.test(serverOptions)) {
+		tmux(["set-option", "-s", "extended-keys-format", "csi-u"]);
+	}
 }
 
 export async function runToolsPtyLiveness(options: ToolsPtyLivenessOptions): Promise<ToolsLivenessSample[]> {
