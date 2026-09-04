@@ -146,6 +146,10 @@ export type GoalTool = {
 	}>;
 };
 
+export function goalToolText(result: Awaited<ReturnType<GoalTool["execute"]>>): string {
+	return (result.content ?? []).map((part) => part.text).join("\n");
+}
+
 export type StoredGoal = {
 	id: string;
 	text?: string;

@@ -10,6 +10,8 @@ import { registerFixtureProvider, ZERO_USAGE } from "./faux-provider.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
+export const GOAL_FINAL_RESPONSE = "Goal verification finished successfully with no remaining risks.";
+export const GOAL_FINAL_RESPONSE_MARKER = "Goal verification finished successfully";
 const SUBSCRIPTION_PROVIDER = "kimi-coding";
 const SUBSCRIPTION_MODEL = "ui-pty-subscription";
 const CATPPUCCIN_THEMES = [
@@ -352,7 +354,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 			return textOnlyStream(model, "Initial Goal pass is incomplete; continue automatically.");
 		}
 		return hasGoalCompletionResult(context)
-			? textOnlyStream(model, "GOAL_PROMPT_RECEIVED")
+			? textOnlyStream(model, GOAL_FINAL_RESPONSE)
 			: goalCompletionStream(model, ownedGoalPrompt);
 	}
 	if (lastUser === "VERIFY_CONTEXT_REUSE") {

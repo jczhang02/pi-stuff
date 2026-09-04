@@ -1,4 +1,4 @@
-<!-- translation-source: CONTEXT.md; translation-source-sha256: 0a805cd038bfe695135f2b85478b9b5cc69d4aa6ecd88fd0d74baa2a32f81643 -->
+<!-- translation-source: CONTEXT.md; translation-source-sha256: 60a0ee1c138edd308e0493b80c46d25f569528da6e405026b8e09ecc26db2942 -->
 
 # Pi Stuff
 
@@ -236,5 +236,12 @@ _避免使用_：Watcher、cron、polling task
 
 **Completion Report**：
 面向用户的 Assistant response，说明请求的工作是否完成，给出决定性的 terminal evidence，并指出任何剩余
-工作。原始 Background Work outcome notification 是 delivery input，不是 Completion Report。
-_避免使用_：Completion notification、Background command row
+工作。原始 Background Work outcome notification 或紧凑 Goal 终止 Tool result 是 delivery 或 status input，
+不是 Completion Report。
+_避免使用_：Completion notification、Background command row、Goal Tool summary
+
+**Goal Final Response**：
+已接受的 complete 或 blocked 终止状态之后出现的 Goal 专用 Completion Report。它负责 Conversation Transcript
+中面向用户的详细 Goal 结果，并在同一次前台 Agent run 中完成；它不是紧凑终止 Tool result、Goal 状态、通知
+或合成的 Session message。
+_避免使用_：Goal completion message、Goal Tool summary、completion notification

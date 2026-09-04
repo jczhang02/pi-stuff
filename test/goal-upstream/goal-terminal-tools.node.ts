@@ -3,14 +3,17 @@ import test from "node:test";
 import {
 	assertHardenedGoalPrompt,
 	assertPromptHasGoalId,
+	assistantUsageEntry,
 	completionEvidenceRejectionReason,
 	completionReport,
 	createMockContext,
 	createMockPi,
+	cumulativeAssistantTokens,
 	escapeRegExp,
 	GOAL_CONTEXT_MESSAGE_TYPE,
 	GOAL_PROMPT_MESSAGE_TYPE,
 	goalStatusSnapshot,
+	goalToolText,
 	isContradictoryCompletionSummary,
 	isRuntimeString,
 	lastGoalStatus,
@@ -277,8 +280,11 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 		ctx,
 	);
 
-	assert.equal(accepted.terminate, true);
-	assert.equal(accepted.content?.[0]?.text, "Goal complete: Implemented and verified with npm test.");
+	assert.equal(accepted.terminate, undefined);
+	const acceptedText = goalToolText(accepted);
+	assert.match(acceptedText, /^Goal complete: Implemented and verified with npm test./u);
+	assert.match(acceptedText, /send the user a concise final response now/i);
+	assert.doesNotMatch(acceptedText, /token budget used/i);
 	assert.doesNotMatch(notifications.at(-1)?.message ?? "", /^Goal complete:/u);
 	assert.equal(lastGoalStatus(mock), null);
 
@@ -294,6 +300,38 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	assert.match(noActiveRejected.content?.[0]?.text ?? "", /no active goal/i);
 	assert.equal(lastGoalStatus(mock), null);
 	mock.emitHostEvent("session_shutdown", {}, ctx);
+});
+
+test("goal_complete reports configured budget usage and positive elapsed time", async () => {
+	const branch: object[] = [];
+	const started = await startGoalForTest(
+		{ sessionManager: { getBranch: () => branch, getEntries: () => branch } },
+		"--tokens 10k finish",
+	);
+	started.mock.callEvent(
+		"before_agent_start",
+		{ prompt: started.mock.sentUserMessages[0]?.text ?? "", systemPrompt: "base" },
+		started.ctx,
+	);
+	const goal = requireLastGoal(started.mock);
+	goal.timeUsedSeconds = 65;
+	goal.activeStartedAt = undefined;
+	branch.push(assistantUsageEntry({ totalTokens: 2_500 }));
+	assert.equal(goal.baselineTokens, 0);
+	assert.equal(cumulativeAssistantTokens(branch), 2_500);
+
+	const result = await requireGoalTool(started.mock, "goal_complete").execute(
+		"complete-with-usage",
+		completionReport(goal.id, "Implemented and verified with the focused test."),
+		new AbortController().signal,
+		() => undefined,
+		started.ctx,
+	);
+
+	const resultText = goalToolText(result);
+	assert.match(resultText, /Token budget used: 2\.5k\/10k\./u);
+	assert.match(resultText, /Elapsed time: 1m\./u);
+	assert.match(resultText, /every usage fact above/u);
 });
 
 test("completion evidence accepts concrete Chinese observations without source inspection", () => {
@@ -532,6 +570,7 @@ test("goal_blocked stops an audited goal and rejects later terminal reports", as
 	const currentGoal = requireLastGoal(blocked.mock);
 	const blockerReason = "Repository access requires the user";
 	primeBlockerAudit(currentGoal, blockerReason);
+	const notificationsBeforeAccepted = blocked.notifications.length;
 	const accepted = await blockerTool.execute(
 		"block-accepted",
 		{
@@ -546,18 +585,16 @@ test("goal_blocked stops an audited goal and rejects later terminal reports", as
 		blocked.ctx,
 	);
 
-	assert.equal(accepted.terminate, true);
-	assert.match(accepted.content?.[0]?.text ?? "", /goal blocked/i);
+	assert.equal(accepted.terminate, undefined);
+	const acceptedText = goalToolText(accepted);
+	assert.match(acceptedText, /goal blocked/i);
+	assert.match(acceptedText, /send the user a concise final response now/i);
 	assert.equal(lastGoalStatus(blocked.mock), "blocked");
 	assert.equal(goalStatusSnapshot(blocked.mock.pi)?.status, "blocked");
-	assert.match(blocked.notifications.at(-1)?.message ?? "", /goal blocked/i);
-	assert.deepEqual(
-		blocked.mock.callEvent(
-			"tool_call",
-			{ toolName: "bash", toolCallId: "stale-after-block", input: {} },
-			blocked.ctx,
-		),
-		{ block: true, reason: STALE_GOAL_TOOL_REASON },
+	assert.equal(blocked.notifications.length, notificationsBeforeAccepted);
+	assert.equal(
+		blocked.mock.callEvent("tool_call", { toolName: "bash", toolCallId: "tool-after-block", input: {} }, blocked.ctx),
+		undefined,
 	);
 
 	const completion = await completionTool.execute(

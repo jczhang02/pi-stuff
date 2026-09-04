@@ -247,6 +247,12 @@ _Avoid_: Watcher, cron, polling task
 
 **Completion Report**:
 A user-facing Assistant response that states whether the requested work completed, cites the decisive terminal
-evidence, and names any remaining work. A raw Background Work outcome notification is delivery input, not a Completion
-Report.
-_Avoid_: Completion notification, Background command row
+evidence, and names any remaining work. A raw Background Work outcome notification or compact Goal terminal Tool result
+is delivery or status input, not a Completion Report.
+_Avoid_: Completion notification, Background command row, Goal Tool summary
+
+**Goal Final Response**:
+The Goal-specific Completion Report that follows an accepted completed or blocked terminal state. It owns the detailed
+user-facing Goal result in the Conversation Transcript and finishes within the same foreground Agent run; it is not the
+compact terminal Tool result, Goal status, a notification, or a synthetic Session message.
+_Avoid_: Goal completion message, Goal Tool summary, completion notification

@@ -344,12 +344,7 @@ export class GoalCommandController {
 			this.runtime.activeGoal = next.goal ? activateQueuedGoal(next.goal, currentTokenTotal(ctx)) : undefined;
 			if (!this.runtime.activeGoal) {
 				yield* this.runtime.clearActiveGoal(ctx);
-				ctx.ui.notify(
-					reason === "complete"
-						? `Goal complete: ${previousText}. No goals remain.`
-						: `Goal skipped: ${previousText}. No goals remain.`,
-					"info",
-				);
+				if (reason === "skip") ctx.ui.notify(`Goal skipped: ${previousText}. No goals remain.`, "info");
 				return true;
 			}
 
@@ -359,7 +354,9 @@ export class GoalCommandController {
 					this.runtime.blockStaleGoalToolCalls();
 				}
 				ctx.ui.notify(
-					`${reason === "complete" ? "Goal complete" : "Goal skipped"}: ${previousText}. Next goal remains ${this.runtime.activeGoal.status}: ${this.runtime.activeGoal.text}`,
+					reason === "complete"
+						? `Next goal remains ${this.runtime.activeGoal.status}: ${this.runtime.activeGoal.text}`
+						: `Goal skipped: ${previousText}. Next goal remains ${this.runtime.activeGoal.status}: ${this.runtime.activeGoal.text}`,
 					"info",
 				);
 				return true;
@@ -387,7 +384,9 @@ export class GoalCommandController {
 				return false;
 			}
 			ctx.ui.notify(
-				`${reason === "complete" ? "Goal complete" : "Goal skipped"}: ${previousText}. Started next goal: ${activatedGoal.text}`,
+				reason === "complete"
+					? `Started next goal: ${activatedGoal.text}`
+					: `Goal skipped: ${previousText}. Started next goal: ${activatedGoal.text}`,
 				"info",
 			);
 			return true;

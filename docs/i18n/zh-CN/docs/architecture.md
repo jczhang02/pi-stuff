@@ -1,4 +1,4 @@
-<!-- translation-source: docs/architecture.md; translation-source-sha256: bd6ee5a5da611eebf2d2b9887858e50bded168e6d88e390673b952162c396b3d -->
+<!-- translation-source: docs/architecture.md; translation-source-sha256: 3c13cbb5327d30deb7a179bbcc7445b8cca6b2df90522378b79c0d7a23ca5f51 -->
 
 # 架构
 
@@ -57,14 +57,16 @@ Pi 负责编辑器、普通前台 Agent 运行、Session、model 和 Extension �
 
 | 生命周期 | Owner | 职责 |
 | --- | --- | --- |
-| 前台 Agent 工作 | Pi | 普通 turn、model 执行和 Host 终端行为 |
-| Goal continuation | Goal | 目标持久化、证据门槛、continuation 与 Goal 终止策略 |
+| 前台 Agent 工作 | Pi | 普通 turn、model 执行、Goal Final Response 和 Host 终端行为 |
+| Goal continuation | Goal | 目标持久化、证据门槛、continuation、终止状态持久化和队列意图 |
 | 委派 Agent 执行 | Agents | 子执行、监督和当前 Session 的 Agent 控制 |
 | 后台进程 | Background Work | Background Shell、Monitor、输出和取消 |
 | Context 投影 | Context Management | 检索、压缩、压力处理与历史投影 |
 
 这些 owner 通过有界共享状态与 Pi Extension event 协同。每种可见状态只有一个 UI authority，避免 Welcome
 卡片、Statusline、overlay、通知和 transcript 同时解释同一状态。
+Goal 会先验证并持久化已接受的终止状态，再返回 Tool result；随后由 Pi 在同一次前台 Agent run 中负责普通的
+follow-up Provider 请求与 Assistant 消息。
 
 ## 配置与数据
 
@@ -86,4 +88,3 @@ Session 数据、凭据、model store、cache 和外部服务状态由对应的 
 - [Capability 文档](README.md#能力文档)链接当前局部契约。
 - [ADR](README.md#当前-adr-索引)记录持久取舍。
 - [兼容性](compatibility.md)记录已认证 Host 与开发工具链。
-

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { GoalStateEntryData } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { MAX_QUEUED_GOALS } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import {
+	assistantUsageEntry,
 	completionReport,
 	completionTool,
 	createHarness,
@@ -116,12 +117,14 @@ test("the Goal queue rejects additions and priorities beyond its persisted bound
 });
 
 test("goal_complete advances only after the finishing run settles", async () => {
-	const harness = await createHarness();
-	await harness.command("first goal");
+	const branch = [assistantUsageEntry(500)];
+	const harness = await createHarness({ sessionManager: { getBranch: () => branch, getEntries: () => branch } });
+	await harness.command("--tokens 10k first goal");
 	await harness.command("add second goal");
 	const first = stateGoals(harness.mock)[0];
 	assert.ok(first);
 
+	branch.push(assistantUsageEntry(1_250));
 	const result = await completionTool(harness.mock).execute(
 		"complete-first",
 		completionReport(first.id, "First goal completed and verified."),
@@ -129,7 +132,8 @@ test("goal_complete advances only after the finishing run settles", async () => 
 		() => undefined,
 		harness.ctx,
 	);
-	assert.equal(result.terminate, true);
+	assert.equal(result.terminate, undefined);
+	assert.equal(stateGoals(harness.mock)[0]?.tokensUsed, 1_250);
 	assert.deepEqual(
 		stateGoals(harness.mock).map(({ text, status }) => ({ text, status })),
 		[
@@ -138,7 +142,56 @@ test("goal_complete advances only after the finishing run settles", async () => 
 		],
 	);
 
-	await harness.mock.callEvent("agent_end", { messages: [{ role: "assistant", stopReason: "toolUse" }] }, harness.ctx);
+	branch.push(assistantUsageEntry(400));
+	await harness.mock.callEvent(
+		"agent_end",
+		{
+			messages: [
+				{
+					role: "assistant",
+					stopReason: "stop",
+					content: [{ type: "text", text: "First goal final response." }],
+				},
+			],
+		},
+		harness.ctx,
+	);
+	assert.equal(stateGoals(harness.mock)[0]?.status, "complete");
+	assert.equal(stateGoals(harness.mock)[0]?.tokensUsed, 1_250);
+	await settled(harness);
+	assert.deepEqual(
+		stateGoals(harness.mock).map(({ text, status }) => ({ text, status })),
+		[{ text: "second goal", status: "active" }],
+	);
+	assert.equal(harness.notifications.at(-1)?.message, "Started next goal: second goal");
+	assert.equal(
+		harness.notifications.some(({ message }) => message.startsWith("Goal complete:")),
+		false,
+	);
+});
+
+test("a failed final response still advances the completed goal queue", async () => {
+	const harness = await createHarness();
+	await harness.command("first goal");
+	await harness.command("add second goal");
+	const first = stateGoals(harness.mock)[0];
+	assert.ok(first);
+
+	const result = await completionTool(harness.mock).execute(
+		"complete-before-final-error",
+		completionReport(first.id, "First goal completed and verified."),
+		new AbortController().signal,
+		() => undefined,
+		harness.ctx,
+	);
+	assert.equal(result.terminate, undefined);
+	assert.equal(stateGoals(harness.mock)[0]?.status, "complete");
+
+	await harness.mock.callEvent(
+		"agent_end",
+		{ messages: [{ role: "assistant", stopReason: "error", errorMessage: "final response unavailable" }] },
+		harness.ctx,
+	);
 	assert.equal(stateGoals(harness.mock)[0]?.status, "complete");
 	await settled(harness);
 	assert.deepEqual(

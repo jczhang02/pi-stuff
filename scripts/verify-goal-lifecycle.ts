@@ -5,13 +5,66 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	BLOCKED_GOAL_FINAL_RESPONSE,
+	BUDGETED_GOAL_FINAL_RESPONSE,
+	CODE_MODE_GOAL_FINAL_RESPONSE,
+	GOAL_FINAL_RESPONSE,
+} from "../test/fixtures/goal-lifecycle-provider.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
+import { disableSessionNamingForTest } from "./session-naming-test-settings.ts";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
 const TIMEOUT_MS = 30_000;
 
-type Scenario = "blocker" | "compaction" | "normal" | "reload";
+type Scenario = "blocker" | "code-mode" | "compaction" | "normal" | "reload";
+
+interface ScenarioContract {
+	readonly expectedGoalCalls: readonly number[];
+	readonly finalResponse: string;
+	readonly finalTool: "codemode" | "goal_blocked" | "goal_complete";
+	readonly startMessage: string;
+	readonly terminalStatus: "blocked" | "complete";
+}
+
+const SCENARIO_CONTRACTS = {
+	blocker: {
+		expectedGoalCalls: [1, 2, 3, 4, 5, 6],
+		finalResponse: BLOCKED_GOAL_FINAL_RESPONSE,
+		finalTool: "goal_blocked",
+		startMessage: "/goal Certify packed three-turn blocker audit",
+		terminalStatus: "blocked",
+	},
+	"code-mode": {
+		expectedGoalCalls: [1, 2],
+		finalResponse: CODE_MODE_GOAL_FINAL_RESPONSE,
+		finalTool: "codemode",
+		startMessage: "/goal Certify packed Code Mode completion",
+		terminalStatus: "complete",
+	},
+	compaction: {
+		expectedGoalCalls: [1, 2, 3, 4],
+		finalResponse: GOAL_FINAL_RESPONSE,
+		finalTool: "goal_complete",
+		startMessage: "/goal Certify packed active Goal compaction",
+		terminalStatus: "complete",
+	},
+	normal: {
+		expectedGoalCalls: [1, 2, 3],
+		finalResponse: BUDGETED_GOAL_FINAL_RESPONSE,
+		finalTool: "goal_complete",
+		startMessage: "/goal --tokens 20k Certify packed multi-turn completion",
+		terminalStatus: "complete",
+	},
+	reload: {
+		expectedGoalCalls: [1, 2],
+		finalResponse: GOAL_FINAL_RESPONSE,
+		finalTool: "goal_complete",
+		startMessage: "/goal-lifecycle-seed",
+		terminalStatus: "complete",
+	},
+} satisfies Record<Scenario, ScenarioContract>;
 
 const GOAL_RECORD_SCHEMA = Type.Object(
 	{
@@ -26,10 +79,26 @@ const GOAL_STATE_SCHEMA = Type.Object(
 	{ goal: Type.Optional(Type.Union([GOAL_RECORD_SCHEMA, Type.Null()])) },
 	{ additionalProperties: true },
 );
+const SESSION_MESSAGE_SCHEMA = Type.Object(
+	{
+		content: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{ text: Type.Optional(Type.String()), type: Type.Optional(Type.String()) },
+					{ additionalProperties: true },
+				),
+			),
+		),
+		role: Type.Optional(Type.String()),
+		toolName: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
 const SESSION_ENTRY_SCHEMA = Type.Object(
 	{
 		customType: Type.Optional(Type.String()),
 		data: Type.Optional(Type.Unknown()),
+		message: Type.Optional(SESSION_MESSAGE_SCHEMA),
 		type: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: true },
@@ -46,6 +115,10 @@ const RPC_RECORD_SCHEMA = Type.Object(
 		duringGoal: Type.Optional(Type.Boolean()),
 		goalCalls: Type.Optional(Type.Number()),
 		historical: Type.Optional(Type.Boolean()),
+		message: Type.Optional(Type.Unknown()),
+		phase: Type.Optional(Type.String()),
+		toolName: Type.Optional(Type.String()),
+		tools: Type.Optional(Type.Array(Type.String())),
 		id: Type.Optional(Type.String()),
 		reason: Type.Optional(Type.Unknown()),
 		result: Type.Optional(Type.Unknown()),
@@ -60,6 +133,7 @@ type GoalRecord = Static<typeof GOAL_RECORD_SCHEMA>;
 type GoalState = Static<typeof GOAL_STATE_SCHEMA>;
 type RpcRecord = Static<typeof RPC_RECORD_SCHEMA>;
 type SessionEntryRecord = Static<typeof SESSION_ENTRY_SCHEMA>;
+type SessionMessageRecord = Static<typeof SESSION_MESSAGE_SCHEMA>;
 
 interface RpcTransport {
 	records: RpcRecord[];
@@ -88,6 +162,7 @@ function environment(temporaryDirectory: string, scenario: Scenario, logPath: st
 		PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
 		PI_OFFLINE: "1",
 		PI_STUFF_GOAL_LIFECYCLE_LOG: logPath,
+		PI_STUFF_CODE_MODE_DEFAULT: scenario === "code-mode" ? "on" : "off",
 		PI_STUFF_GOAL_LIFECYCLE_SCENARIO: scenario,
 		PI_TELEMETRY: "0",
 		TERM: "dumb",
@@ -187,12 +262,6 @@ async function createRpcTransport(command: string[], cwd: string, env: Record<st
 	};
 }
 
-function response(records: readonly RpcRecord[], id: string): RpcRecord {
-	const record = records.find((candidate) => candidate.id === id && candidate.type === "response");
-	if (record?.success !== true) throw new Error(`Pi RPC request ${id} failed: ${JSON.stringify(record)}`);
-	return record;
-}
-
 function entries(record: RpcRecord): SessionEntryRecord[] {
 	if (!Check(ENTRIES_DATA_SCHEMA, record.data)) throw new Error("Pi get_entries response has no entries");
 	return record.data.entries;
@@ -209,15 +278,97 @@ function goal(state: GoalState): GoalRecord | null {
 	return state.goal ?? null;
 }
 
+function messageText(message: SessionMessageRecord | undefined): string {
+	if (message?.role !== "assistant") return "";
+	return (message.content ?? [])
+		.filter((part) => part.type === "text")
+		.map((part) => part.text ?? "")
+		.join("\n");
+}
+
+function assistantText(entry: SessionEntryRecord): string {
+	return entry.type === "message" ? messageText(entry.message) : "";
+}
+
+function rpcAssistantText(record: RpcRecord): string {
+	if (!Check(SESSION_MESSAGE_SCHEMA, record.message)) return "";
+	// SAFETY: the TypeBox check above validates the complete message shape before narrowing it.
+	return messageText(record.message as SessionMessageRecord);
+}
+
+function assertFinalResponse(
+	scenario: Scenario,
+	sessionEntries: readonly SessionEntryRecord[],
+	rpcRecords: readonly RpcRecord[],
+	logRecords: readonly RpcRecord[],
+): void {
+	const contract = SCENARIO_CONTRACTS[scenario];
+	const expected = contract.finalResponse;
+	const finalResponseIndexes = sessionEntries.flatMap((entry, index) =>
+		assistantText(entry).includes(expected) ? [index] : [],
+	);
+	if (finalResponseIndexes.length !== 1) {
+		throw new Error(
+			`${scenario}: expected one persisted final Assistant response, received ${String(finalResponseIndexes.length)}`,
+		);
+	}
+	const terminalStateIndex = sessionEntries.findIndex((entry) => {
+		if (entry.type !== "custom" || entry.customType !== "goal-state" || !Check(GOAL_STATE_SCHEMA, entry.data)) {
+			return false;
+		}
+		return goal(entry.data)?.status === contract.terminalStatus;
+	});
+	if (terminalStateIndex < 0 || terminalStateIndex >= (finalResponseIndexes[0] ?? -1)) {
+		throw new Error(`${scenario}: Goal terminal state was not persisted before its final Assistant response`);
+	}
+	const finalResponseEventIndex = rpcRecords.findIndex(
+		(record) => record.type === "message_end" && rpcAssistantText(record).includes(expected),
+	);
+	const finalSettledIndex = rpcRecords.findIndex(
+		(record, index) => index > finalResponseEventIndex && record.type === "agent_settled",
+	);
+	if (finalResponseEventIndex < 0 || finalSettledIndex < 0) {
+		throw new Error(`${scenario}: final Assistant response did not reach an agent_settled boundary`);
+	}
+	if (rpcRecords.some((record, index) => index > finalSettledIndex && record.type === "agent_start")) {
+		throw new Error(`${scenario}: another Agent run started after the final response settled`);
+	}
+	const finalProviderCalls = logRecords.filter(
+		(record) => record.type === "provider_call" && record.phase === contract.terminalStatus,
+	);
+	if (finalProviderCalls.length !== 1) {
+		throw new Error(
+			`${scenario}: expected one final-response Provider call, received ${String(finalProviderCalls.length)}`,
+		);
+	}
+	const finalTools = finalProviderCalls[0]?.tools ?? [];
+	if (!finalTools.includes(contract.finalTool)) {
+		throw new Error(`${scenario}: final-response Provider call did not retain the ${contract.finalTool} Tool`);
+	}
+	if (!finalTools.includes("goal_large_result")) {
+		throw new Error(`${scenario}: final-response Provider call did not retain ordinary Tools`);
+	}
+}
+
 function assertScenario(
 	scenario: Scenario,
 	records: readonly RpcRecord[],
+	sessionEntries: readonly SessionEntryRecord[],
 	logRecords: readonly RpcRecord[],
 	observedActiveGoal: boolean,
 ): void {
-	const sessionEntries = entries(response(records, `${scenario}-entries`));
 	const states = goalStates(sessionEntries);
 	if (states.length === 0) throw new Error(`${scenario}: no persisted Goal states were observed`);
+	assertFinalResponse(scenario, sessionEntries, records, logRecords);
+	const expectedProviderCalls = SCENARIO_CONTRACTS[scenario].expectedGoalCalls;
+	const goalProviderCalls = logRecords
+		.filter((record) => record.type === "provider_call" && record.goalCalls !== undefined)
+		.map((record) => record.goalCalls);
+	if (JSON.stringify(goalProviderCalls) !== JSON.stringify(expectedProviderCalls)) {
+		throw new Error(
+			`${scenario}: expected Goal provider calls ${JSON.stringify(expectedProviderCalls)}, received ${JSON.stringify(goalProviderCalls)}`,
+		);
+	}
 	const goals = states.map(goal);
 	const finalGoal = goals.at(-1);
 	if (scenario === "blocker") {
@@ -233,6 +384,11 @@ function assertScenario(
 	if (finalGoal !== null) throw new Error(`${scenario}: Goal was not cleared after completion`);
 	if (!observedActiveGoal) {
 		throw new Error(`${scenario}: active Goal state was not persisted`);
+	}
+	if (scenario === "code-mode") {
+		if (!logRecords.some((record) => record.type === "tool_call" && record.toolName === "codemode")) {
+			throw new Error("code-mode: certified host did not execute the outer Code Mode Tool");
+		}
 	}
 	if (scenario === "reload") {
 		if (!logRecords.some((record) => record.type === "session_start" && record.reason === "reload")) {
@@ -272,14 +428,6 @@ function assertScenario(
 				`compaction: certified host did not report the aborted compaction through session_compact_failed: ${JSON.stringify({ compactionEnd, completionBoundary })}`,
 			);
 		}
-		const goalProviderCalls = logRecords
-			.filter((record) => record.type === "provider_call" && record.goalCalls !== undefined)
-			.map((record) => record.goalCalls);
-		if (JSON.stringify(goalProviderCalls) !== JSON.stringify([1, 2, 3])) {
-			throw new Error(
-				`compaction: expected Goal provider calls [1,2,3], received ${JSON.stringify(goalProviderCalls)}`,
-			);
-		}
 		if (logRecords.filter((record) => record.type === "agent_start" && record.duringGoal === true).length !== 1) {
 			throw new Error("compaction: Goal did not own exactly one automatic continuation");
 		}
@@ -316,6 +464,91 @@ async function writeGoalLifecycleSettings(agentDirectory: string, packagePath: s
 	);
 }
 
+function reachedTerminalState(
+	scenario: Scenario,
+	latest: GoalRecord | null | undefined,
+	observedActiveGoal: boolean,
+	records: readonly RpcRecord[],
+): boolean {
+	if (SCENARIO_CONTRACTS[scenario].terminalStatus === "blocked") return latest?.status === "blocked";
+	return (
+		latest === null &&
+		observedActiveGoal &&
+		(scenario !== "compaction" || records.some((record) => record.type === "compaction_end"))
+	);
+}
+
+async function waitForTerminalResponse(
+	transport: RpcTransport,
+	scenario: Scenario,
+	logPath: string,
+): Promise<{ records: RpcRecord[]; sessionEntries: SessionEntryRecord[]; observedActiveGoal: boolean }> {
+	const deadline = Date.now() + TIMEOUT_MS;
+	let latestGoalState: GoalRecord | null | undefined;
+	let observedActiveGoal = false;
+	while (true) {
+		if (Date.now() >= deadline) {
+			const lifecycleLog = parseRecords(await readFile(logPath, "utf8").catch(() => ""));
+			const diagnostics = transport.records
+				.filter((record) => record.command !== "get_entries")
+				.slice(-30)
+				.map((record) => ({
+					command: record.command,
+					error: record.error,
+					event: record.event,
+					extensionPath: record.extensionPath,
+					id: record.id,
+					reason: record.reason,
+					success: record.success,
+					type: record.type,
+				}));
+			const appendedGoalEntries = transport.records
+				.filter((record) => record.type === "entry_appended")
+				.flatMap((record) => (record.entry?.customType === "goal-state" ? [record.entry] : []));
+			throw new Error(
+				`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify({ diagnostics, latestGoalState, observedActiveGoal, appendedGoalEntries, lifecycle: lifecycleLog.slice(-50) })}`,
+			);
+		}
+		const entryResponse = await transport.send({ type: "get_entries" }).catch(async (cause: unknown) => {
+			const lifecycleLog = parseRecords(await readFile(logPath, "utf8").catch(() => ""));
+			throw new Error(
+				`${scenario}: get_entries failed during Goal work: ${JSON.stringify({ lifecycle: lifecycleLog.slice(-30), rpc: transport.records.slice(-30) })}`,
+				{ cause },
+			);
+		});
+		const sessionEntries = entries(entryResponse);
+		const goals = goalStates(sessionEntries).map(goal);
+		const appendedGoals = goalStates(
+			transport.records
+				.filter((record) => record.type === "entry_appended")
+				.flatMap((record) => (record.entry ? [record.entry] : [])),
+		).map(goal);
+		const latest = goals.at(-1);
+		latestGoalState = latest;
+		observedActiveGoal ||= [...goals, ...appendedGoals].some(
+			(candidate) => candidate !== null && candidate.status === "active",
+		);
+		const contract = SCENARIO_CONTRACTS[scenario];
+		if (latest && latest.status !== "active" && latest.status !== contract.terminalStatus) {
+			throw new Error(`${scenario}: Goal stopped unexpectedly with status ${latest.status ?? "unknown"}`);
+		}
+		const terminal = reachedTerminalState(scenario, latest, observedActiveGoal, transport.records);
+		const hasFinalResponse = sessionEntries.some((entry) => assistantText(entry).includes(contract.finalResponse));
+		const finalResponseEventIndex = transport.records.findIndex(
+			(record) => record.type === "message_end" && rpcAssistantText(record).includes(contract.finalResponse),
+		);
+		const settledAfterFinalResponse = transport.records.some(
+			(record, index) => index > finalResponseEventIndex && record.type === "agent_settled",
+		);
+		if (terminal && hasFinalResponse && finalResponseEventIndex >= 0 && settledAfterFinalResponse) {
+			await transport.send({ type: "prompt", message: "/goal-lifecycle-wait" });
+			const settledEntries = entries(await transport.send({ type: "get_entries" }));
+			return { records: [...transport.records], sessionEntries: settledEntries, observedActiveGoal };
+		}
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+}
+
 async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenario): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), `pi-stuff-goal-${scenario}-`));
 	const agentDirectory = join(temporaryDirectory, "agent");
@@ -326,15 +559,11 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			mkdir(join(temporaryDirectory, "home"), { recursive: true }),
 			mkdir(agentDirectory, { recursive: true }),
 		]);
-		await writeGoalLifecycleSettings(agentDirectory, options.packagePath);
-		const startMessage =
-			scenario === "normal"
-				? "/goal Certify packed multi-turn completion"
-				: scenario === "blocker"
-					? "/goal Certify packed three-turn blocker audit"
-					: scenario === "compaction"
-						? "/goal Certify packed active Goal compaction"
-						: "/goal-lifecycle-seed";
+		await Promise.all([
+			writeGoalLifecycleSettings(agentDirectory, options.packagePath),
+			disableSessionNamingForTest(agentDirectory),
+		]);
+		const startMessage = SCENARIO_CONTRACTS[scenario].startMessage;
 		const transport = await createRpcTransport(
 			[
 				options.piBinary,
@@ -365,64 +594,17 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 				await transport.send({ enabled: true, type: "set_auto_compaction" });
 			}
 			await transport.send({ type: "prompt", message: startMessage });
-			const deadline = Date.now() + TIMEOUT_MS;
-			let finalRecords: RpcRecord[] | undefined;
-			let latestGoalState: GoalRecord | null | undefined;
-			let observedActiveGoal = false;
-			while (!finalRecords) {
-				if (Date.now() >= deadline) {
-					const lifecycleLog = parseRecords(await readFile(logPath, "utf8").catch(() => ""));
-					const diagnostics = transport.records
-						.filter((record) => record.command !== "get_entries")
-						.slice(-30)
-						.map((record) => ({
-							command: record.command,
-							error: record.error,
-							event: record.event,
-							extensionPath: record.extensionPath,
-							id: record.id,
-							reason: record.reason,
-							success: record.success,
-							type: record.type,
-						}));
-					const appendedGoalEntries = transport.records
-						.filter((record) => record.type === "entry_appended")
-						.flatMap((record) => (record.entry?.customType === "goal-state" ? [record.entry] : []));
-					throw new Error(
-						`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify({ diagnostics, latestGoalState, observedActiveGoal, appendedGoalEntries, lifecycle: lifecycleLog.slice(-50) })}`,
-					);
-				}
-				const entryResponse = await transport.send({ type: "get_entries" });
-				const sessionEntries = entries(entryResponse);
-				const goals = goalStates(sessionEntries).map(goal);
-				const appendedGoals = goalStates(
-					transport.records
-						.filter((record) => record.type === "entry_appended")
-						.flatMap((record) => (record.entry ? [record.entry] : [])),
-				).map(goal);
-				const latest = goals.at(-1);
-				latestGoalState = latest;
-				observedActiveGoal ||= [...goals, ...appendedGoals].some(
-					(candidate) => candidate !== null && candidate.status === "active",
-				);
-				const terminal =
-					scenario === "blocker"
-						? latest !== null && latest !== undefined && latest.status === "blocked"
-						: latest === null &&
-							observedActiveGoal &&
-							(scenario !== "compaction" ||
-								transport.records.some((record) => record.type === "compaction_end"));
-				if (terminal) {
-					entryResponse.id = `${scenario}-entries`;
-					finalRecords = [...transport.records];
-					break;
-				}
-				await new Promise((resolve) => setTimeout(resolve, 20));
-			}
-			const extensionError = finalRecords.find((record) => record.type === "extension_error");
+			const final = await waitForTerminalResponse(transport, scenario, logPath);
+			const extensionError = final.records.find((record) => record.type === "extension_error");
 			if (extensionError) throw new Error(`${scenario}: Pi extension error: ${JSON.stringify(extensionError)}`);
 			const logContents = await readFile(logPath, "utf8").catch(() => "");
-			assertScenario(scenario, finalRecords, parseRecords(logContents), observedActiveGoal);
+			assertScenario(
+				scenario,
+				final.records,
+				final.sessionEntries,
+				parseRecords(logContents),
+				final.observedActiveGoal,
+			);
 		} finally {
 			await transport.stop();
 		}
@@ -432,7 +614,11 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 }
 
 export async function verifyGoalLifecycle(options: VerifyGoalLifecycleOptions): Promise<void> {
-	for (const scenario of ["normal", "reload", "compaction", "blocker"] as const) {
-		await runScenario(options, scenario);
+	for (const scenario of ["normal", "code-mode", "reload", "compaction", "blocker"] as const) {
+		try {
+			await runScenario(options, scenario);
+		} catch (cause) {
+			throw new Error(`Goal lifecycle scenario ${scenario} failed`, { cause });
+		}
 	}
 }

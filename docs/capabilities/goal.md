@@ -27,6 +27,11 @@ An active Goal continues after Pi settles until one of these outcomes:
 
 Ordinary uncertainty, incomplete work, a plan, or a suggested next step is not a terminal outcome.
 
+An accepted completion or final blocker first records the terminal Goal state. Pi then performs its ordinary Tool
+follow-up so the model can send a **Goal Final Response**: a normal Assistant message in the Conversation Transcript.
+That response completes before this Agent run settles and before any queued Goal starts. If the Provider request fails,
+the recorded terminal state remains authoritative and queued work may continue after the failed run settles.
+
 ## Commands
 
 | Command | Action |
@@ -49,6 +54,13 @@ substantive summary, and one concrete proof entry for each requirement.
 `goal_blocked` records a true impasse. The runtime stops the Goal only after the same blocker is reported on three
 consecutive Goal turns with a distinct attempted action and observed failure each time. The first two reports record
 progress and continuation proceeds.
+
+The Goal Final Response for completion summarizes the result, verification, and remaining risk. When an explicit token
+budget or positive elapsed time is available, the Tool result supplies the Goal's final usage at the terminal transition
+and requires the response to report it naturally. Goal accounting closes at that transition, so the reporting response
+itself is not charged to the completed Goal's token budget. A blocked response instead explains the proven blocker and
+the user or external action needed. The compact terminal Tool row records only the machine outcome; Goal emits no
+duplicate terminal notification. Ordinary Tools remain available during this response step.
 
 This terminal protocol prevents a short answer, repeated claim, or stale Tool call from ending the wrong Goal.
 
@@ -93,6 +105,8 @@ Set `goal.experimental.goals` to `true` to enable a queue of up to 64 additional
 - `skip` or `shift` clears the current Goal and activates the queue head.
 
 The queue remains Session-scoped and uses the same lifecycle and evidence rules.
+An accepted Goal reaches its Goal Final Response before the queue head activates. A failed final Provider response does
+not reopen the terminal Goal or strand the queue.
 
 ## See also
 
@@ -100,4 +114,3 @@ The queue remains Session-scoped and uses the same lifecycle and evidence rules.
 - [Command reference](../reference/commands.md#work-control)
 - [Settings reference](../reference/settings.md#goal)
 - [Architecture](../architecture.md#lifecycle-ownership)
-

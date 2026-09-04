@@ -1,4 +1,4 @@
-<!-- translation-source: DESIGN.md; translation-source-sha256: 0ba1217bfac48f242f2e071ef0cab1d16bdf616d0e277c77dc3c0c03664bc6d6 -->
+<!-- translation-source: DESIGN.md; translation-source-sha256: f1546ef81e85495ea8bf6eaab517afed370bba47de646781b9931e5e5353efe6 -->
 
 ---
 version: alpha
@@ -154,7 +154,8 @@ Tab 和 Shift+Tab 用于切换当前栏；Enter 从列表进入详情，Escape �
 Todo、Agent roster、Statusline、Conversation Transcript 和 Command Dialog 各自承担不同任务。同一
 状态只能有一个可见的权威来源，不能在常驻仪表盘里重复显示。共享 Statusline 中按条件出现的 Goal 段是
 当前 Goal 唯一的紧凑常驻权威；Goal 生命周期通知仍是按时间排列的 Transcript 事件，Command Dialog 则负责
-检查和控制。Ponytail 遵循同一边界：`󱖿 <mode>` 是唯一的常驻模式权威，Working Row 仍是 Agent 活动的唯一
+检查和控制。已接受的终止 Goal Tool row 只显示机器结果；随后出现的 Goal Final Response 是唯一详细结果，
+不会再由终止通知重复。Ponytail 遵循同一边界：`󱖿 <mode>` 是唯一的常驻模式权威，Working Row 仍是 Agent 活动的唯一
 权威，`/ponytail` 负责控制。它的 Dialog 会临时隐藏组合后的 Footer、保留编辑器草稿，并显示环境变量覆盖，
 但不会把这些覆盖项伪装成可写设置。
 

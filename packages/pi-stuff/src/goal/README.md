@@ -27,6 +27,7 @@ longer remain active.
 - Continues settled work until completion, pause, budget, provider limit, or a verified blocker.
 - Requires requirement-by-requirement evidence before `goal_complete` succeeds.
 - Audits a stable blocker across three consecutive Goal turns.
+- Persists an accepted terminal state before Pi produces the normal Goal Final Response.
 - Persists objective, status, budget, and optional queue in the current Session.
 - Preserves Goal identity across Pi's native compaction lifecycle.
 - Shows current status, usage, budget, and elapsed time in the shared Statusline.

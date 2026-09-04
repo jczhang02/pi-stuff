@@ -5,6 +5,7 @@ import {
 	assistantUsageEntry,
 	completionReport,
 	goalStatusSnapshot,
+	goalToolText,
 	isRuntimeObject,
 	lastGoalStatus,
 	readAgentWorkOrigin,
@@ -222,6 +223,7 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 		budgeted.ctx,
 	);
 	assert.equal(completion.terminate, true);
+	assert.doesNotMatch(goalToolText(completion), /send the user a concise final response/i);
 	assert.equal(lastGoalStatus(budgeted.mock), null);
 });
 

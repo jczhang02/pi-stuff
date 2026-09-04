@@ -11,6 +11,8 @@ import {
 	waitFor,
 } from "./goal-runtime-support.mjs";
 
+const finalResponse = () => fauxAssistantMessage("Runtime smoke final Assistant response.");
+
 function completionResponse(context) {
 	const goalId = latestGoalId(context);
 	assert.ok(goalId, "expected goal id in continuation system prompt");
@@ -81,6 +83,7 @@ async function normalContinuationScenario() {
 	const harness = await createHarness([
 		fauxAssistantMessage("First pass stopped without completion."),
 		completionResponse,
+		finalResponse,
 	]);
 	const events = [];
 	const unsubscribe = harness.session.subscribe((event) => events.push(event.type));
@@ -107,10 +110,11 @@ async function strictBlockerAuditScenario() {
 		blockerResponse(2),
 		fauxAssistantMessage("The second blocker report was recorded; one final independent attempt remains."),
 		blockerResponse(3),
+		finalResponse,
 	]);
 	try {
 		await harness.session.prompt("/goal prove the strict blocker audit");
-		await waitFor(() => harness.faux.state.callCount === 5, "three-turn blocker audit");
+		await waitFor(() => harness.faux.state.callCount === 6, "three-turn blocker audit and final response");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), "blocked");
 		assert.equal(persistedGoalState(harness.session)?.goal?.blockerAudit?.consecutiveTurns, 3);
@@ -247,6 +251,7 @@ async function automaticRetryOwnershipScenario() {
 			}),
 			fauxAssistantMessage("Recovered provider response."),
 			completionResponse,
+			finalResponse,
 		],
 		{},
 		undefined,
@@ -258,7 +263,7 @@ async function automaticRetryOwnershipScenario() {
 	);
 	try {
 		await harness.session.prompt("/goal runtime retry ownership smoke");
-		await waitFor(() => harness.faux.state.callCount === 4, "provider retry and continuation");
+		await waitFor(() => harness.faux.state.callCount === 5, "provider retry, continuation, and final response");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
@@ -282,7 +287,13 @@ async function exhaustedRetryContinuesScenario() {
 		errorMessage: "HTTP 524: transient upstream timeout",
 	});
 	const harness = await createHarness(
-		[fauxAssistantMessage("Initial unfinished result."), providerError, providerError, completionResponse],
+		[
+			fauxAssistantMessage("Initial unfinished result."),
+			providerError,
+			providerError,
+			completionResponse,
+			finalResponse,
+		],
 		{},
 		undefined,
 		undefined,
@@ -293,7 +304,7 @@ async function exhaustedRetryContinuesScenario() {
 	);
 	try {
 		await harness.session.prompt("/goal continue after Pi exhausts one provider retry");
-		await waitFor(() => harness.faux.state.callCount === 4, "continuation after exhausted retry");
+		await waitFor(() => harness.faux.state.callCount === 5, "continuation and final response after exhausted retry");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(harness.session.messages.map(storedPromptText).some((text) => text.includes("pi-goal-continuation:")));
@@ -305,7 +316,7 @@ async function exhaustedRetryContinuesScenario() {
 async function orderedQueueScenario() {
 	const now = Date.now();
 	const harness = await createHarness(
-		[completionResponse, completionResponse],
+		[completionResponse, finalResponse, completionResponse, finalResponse],
 		{},
 		(sessionManager) => {
 			sessionManager.appendCustomEntry("goal-state", {
@@ -344,7 +355,7 @@ async function orderedQueueScenario() {
 		assert.equal(toolNames.includes("goals_complete"), false);
 		assert.equal(toolNames.includes("goals_blocked"), false);
 		await harness.session.prompt("continue the restored ordered queue");
-		await waitFor(() => harness.faux.state.callCount === 2, "ordered queue advancement");
+		await waitFor(() => harness.faux.state.callCount === 4, "ordered queue final responses and advancement");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.equal(persistedGoalState(harness.session)?.queue, undefined);
@@ -369,6 +380,7 @@ async function queuedInputScenario() {
 				observedPrompts.push(context.messages.map(userMessageText).filter(Boolean).at(-1) ?? "");
 				return completionResponse(context);
 			},
+			finalResponse,
 		],
 		{ tokensPerSecond: 200, tokenSize: { min: 1, max: 1 } },
 	);
@@ -376,7 +388,7 @@ async function queuedInputScenario() {
 		await harness.session.prompt("/goal queued work smoke");
 		await waitFor(() => harness.session.isStreaming, "initial turn streaming");
 		await harness.session.prompt("queued user work", { streamingBehavior: "followUp" });
-		await waitFor(() => harness.faux.state.callCount === 3, "continuation after queued input");
+		await waitFor(() => harness.faux.state.callCount === 4, "continuation and final response after queued input");
 		await harness.session.agent.waitForIdle();
 		const queuedIndex = observedPrompts.findIndex((text) => text.includes("queued user work"));
 		const continuationIndex = observedPrompts.findIndex((text) => text.includes("pi-goal-continuation:"));
@@ -393,6 +405,7 @@ async function busyEditOwnershipScenario() {
 			fauxAssistantMessage("x".repeat(120)),
 			fauxAssistantMessage("Edited objective handled in the current run."),
 			completionResponse,
+			finalResponse,
 		],
 		{ tokensPerSecond: 200, tokenSize: { min: 1, max: 1 } },
 	);
@@ -400,7 +413,7 @@ async function busyEditOwnershipScenario() {
 		await harness.session.prompt("/goal original busy objective");
 		await waitFor(() => harness.session.isStreaming, "busy goal turn");
 		await harness.session.prompt("/goal edit revised busy objective");
-		await waitFor(() => harness.faux.state.callCount === 3, "edited-goal continuation");
+		await waitFor(() => harness.faux.state.callCount === 4, "edited-goal continuation and final response");
 		await harness.session.agent.waitForIdle();
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
@@ -435,7 +448,7 @@ async function pauseScenario() {
 
 async function reloadResumeScenario() {
 	const now = Date.now();
-	const harness = await createHarness([completionResponse], {}, (sessionManager) => {
+	const harness = await createHarness([completionResponse, finalResponse], {}, (sessionManager) => {
 		sessionManager.appendCustomEntry("goal-state", {
 			goal: {
 				id: crypto.randomUUID(),
@@ -456,7 +469,7 @@ async function reloadResumeScenario() {
 		await harness.session.reload();
 		assert.ok(harness.session.getAllTools().some(({ name }) => name === "goal_complete"));
 		try {
-			await waitFor(() => harness.faux.state.callCount === 1, "automatic post-reload Goal completion");
+			await waitFor(() => harness.faux.state.callCount === 2, "automatic post-reload Goal completion response");
 		} catch (error) {
 			throw new Error(
 				`Post-reload Goal did not complete: ${JSON.stringify({
@@ -634,7 +647,7 @@ async function budgetAgentEndFallbackScenario() {
 async function managedRunRpcScenario() {
 	const runId = crypto.randomUUID();
 	const harness = await createHarness(
-		[completionResponse],
+		[completionResponse, finalResponse],
 		{},
 		undefined,
 		{ rpc: { enabled: true } },
@@ -682,7 +695,7 @@ async function managedRunDisabledScenario() {
 async function manualCompactionScenario() {
 	const now = Date.now();
 	const harness = await createHarness(
-		[fauxAssistantMessage("Compacted prior work."), completionResponse],
+		[fauxAssistantMessage("Compacted prior work."), completionResponse, finalResponse],
 		{},
 		(sessionManager) => {
 			sessionManager.appendMessage({
@@ -717,7 +730,7 @@ async function manualCompactionScenario() {
 	try {
 		await harness.session.compact("Summarize for the runtime smoke test.");
 		await waitFor(
-			() => harness.faux.state.callCount === 2,
+			() => harness.faux.state.callCount === 3,
 			`manual-compaction continuation (${JSON.stringify({
 				callCount: harness.faux.state.callCount,
 				goalStatus: persistedGoalStatus(harness.session),

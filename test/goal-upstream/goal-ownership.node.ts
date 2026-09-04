@@ -7,6 +7,7 @@ import {
 	findPersistedGoal,
 	goalStateData,
 	goalStatusSnapshot,
+	goalToolText,
 	lastGoal,
 	lastGoalStatus,
 	primeBlockerAudit,
@@ -67,8 +68,11 @@ test("child session initialization does not erase or reroute the parent goal", a
 		rootContext.ctx,
 	);
 
-	assert.equal(result.content?.[0]?.text, "Goal complete: Verified the parent Goal completion against current state.");
-	assert.equal(result.terminate, true);
+	assert.match(
+		goalToolText(result),
+		/^Goal complete: Verified the parent Goal completion against current state\.[\s\S]*Send the user a concise final response now/u,
+	);
+	assert.equal(result.terminate, undefined);
 	assert.equal(result.details?.goal, rootGoal.text);
 	assert.equal(result.details?.goal_id, rootGoal.id);
 
@@ -136,7 +140,7 @@ test("independent goal instances keep completion local", async () => {
 		rootContext.ctx,
 	);
 
-	assert.equal(result.terminate, true);
+	assert.equal(result.terminate, undefined);
 	assert.equal(result.details?.goal, rootGoal.text);
 	assert.equal(result.details?.goal_id, rootGoal.id);
 
@@ -230,10 +234,10 @@ test("goal_blocked ownership stays on the root instance after child start", asyn
 		rootContext.ctx,
 	);
 
-	assert.equal(result.terminate, true);
+	assert.equal(result.terminate, undefined);
 	assert.equal(result.details?.goal, rootGoal.text);
 	assert.equal(result.details?.goal_id, rootGoal.id);
-	assert.match(result.content?.[0]?.text ?? "", /Goal blocked:/i);
+	assert.match(goalToolText(result), /Goal blocked:[\s\S]*Send the user a concise final response now/iu);
 
 	const rootBlocked = findPersistedGoal(root, "blocked");
 	assert.ok(rootBlocked);
@@ -434,7 +438,7 @@ test("child shutdown does not clear the parent goal", async () => {
 		rootContext.ctx,
 	);
 
-	assert.equal(result.terminate, true);
+	assert.equal(result.terminate, undefined);
 	assert.equal(result.details?.goal, rootGoal.text);
 	assert.equal(result.details?.goal_id, rootGoal.id);
 
