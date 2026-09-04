@@ -31,6 +31,7 @@ import { MagicWorkerContextStore } from "../../packages/pi-stuff/src/context-man
 import {
 	applyMagicWorkerHostCompaction,
 	applyMagicWorkerHostEffect,
+	snapshotMagicWorkerEvent,
 	writeMagicWorkerSyncResponse,
 } from "../../packages/pi-stuff/src/context-management/magic-worker-host.js";
 import {
@@ -312,6 +313,48 @@ async function verifyToolLifecycleSkipsContextUsage(
 	);
 	expect(state.contextUsageReads).toBe(readsBeforeToolStart);
 }
+
+test("Magic worker Tool events do not traverse irrelevant payloads", () => {
+	const unreadPayload = {};
+	Object.defineProperty(unreadPayload, "payload", {
+		enumerable: true,
+		get: () => {
+			throw new Error("irrelevant Tool payload was traversed");
+		},
+	});
+	const toolStart = snapshotMagicWorkerEvent({
+		args: unreadPayload,
+		toolCallId: "large-call",
+		toolName: "fixture_large",
+		type: "tool_execution_start",
+	});
+	expect(toolStart.name).toBe("tool_execution_start");
+	if (toolStart.name !== "tool_execution_start") throw new Error("unexpected Magic worker event snapshot");
+	expect(toolStart.event.args).toEqual({});
+	const todos = [{ content: "keep the required field", status: "pending" }];
+	const todoStart = snapshotMagicWorkerEvent({
+		args: { ignored: unreadPayload, todos },
+		toolCallId: "todo-call",
+		toolName: "todowrite",
+		type: "tool_execution_start",
+	});
+	expect(todoStart.name).toBe("tool_execution_start");
+	if (todoStart.name !== "tool_execution_start") throw new Error("unexpected Magic worker event snapshot");
+	expect(todoStart.event.args).toEqual({ todos });
+
+	const toolResult = snapshotMagicWorkerEvent({
+		content: [{ text: "done", type: "text" }],
+		details: undefined,
+		input: unreadPayload,
+		isError: false,
+		toolCallId: "large-call",
+		toolName: "fixture_large",
+		type: "tool_result",
+	});
+	expect(toolResult.name).toBe("tool_result");
+	if (toolResult.name !== "tool_result") throw new Error("unexpected Magic worker event snapshot");
+	expect(toolResult.event.input).toEqual({});
+});
 
 test("the pinned direct engine keeps signal-blind lifecycle work outside Agent cancellation", async () => {
 	const harness = await createMagicWorkerHarness();

@@ -1,4 +1,4 @@
-<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: d8dc538c673ce849a562e799c4695d12362418cbeeb909c05a1077ad478440ea -->
+<!-- translation-source: docs/adr/0028-bound-tool-display-before-projection.md; translation-source-sha256: 7e71d5394a3c0a2604e87482a8d6d75bf853c55b451ed052982ea35b3dfbde56 -->
 
 ---
 status: accepted
@@ -16,6 +16,10 @@ argument、result、nested operation、media 或 Session history，再应用可�
 
 ADR 0025 把 500 ms 规定为跨 Capability 的严重 stall 门槛。Tool 交互需要更严格的契约，因为 Tool row 出现前
 的停顿会让正常运行看起来像是卡死。
+
+Tool Display 完成有界化后，一次单核 acceptance 运行仍出现早期 Working Row spinner 单帧停留 206 ms。剩余停顿
+来自 Context Engine adapter：它的 `tool_execution_start` snapshot 会在主线程同步 JSON 序列化完整 Tool
+argument，随后再由 `postMessage` clone 规范化副本。
 
 ## 决策
 
@@ -40,7 +44,8 @@ renderer。
 Suite 的辅助 surface 不能把 Tool repaint 变成完整 Context scan。Statusline 会在 Host idle 时为每个 settled
 Session leaf 与 model 读取一次 context usage，随后供 Tool 和输入 repaint 复用。对于固定引擎只读取 Session
 metadata 或 Assistant usage 的 Tool lifecycle、Tool result 与 Session-only synchronization 路径，Context
-Engine Worker 会省略 context-usage 读取。
+Engine Worker 会省略 context-usage 读取。它的 Tool event snapshot 还会省略固定引擎不读取的 start argument
+与 result input；只有 `todowrite` 保留必需的 `todos`。
 
 ## 拒绝的方案
 
@@ -56,3 +61,4 @@ JavaScript 无法只枚举任意 object key 的有界前缀。长 Session 从最
 记录。Code Mode execution 与 Provider context media、Agent lifecycle、Tool permission 和 Session persistence
 继续保留原 owner 与数据。
 活动工作期间，Statusline 可以一直显示前一次 settled usage value，直到 Pi 下一次 idle repaint。
+Pi 的规范 event 与 Session JSONL 保留完整 Tool payload。

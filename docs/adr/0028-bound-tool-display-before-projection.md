@@ -16,6 +16,10 @@ nested operations, media, or Session history before applying a visible cap.
 ADR 0025 made 500 ms the cross-Capability severe-stall threshold. Tool interaction needs a stricter contract because a
 pause immediately before a Tool row makes a healthy run look hung.
 
+After Tool Display was bounded, a single-core acceptance run still held one early Working Row spinner frame for 206 ms.
+The remaining pause came from the Context Engine adapter: its `tool_execution_start` snapshot synchronously
+JSON-serialized complete Tool arguments before `postMessage` cloned the normalized copy.
+
 ## Decision
 
 Every Pi Stuff-owned Tool Display path must bound arbitrary data before presentation callbacks, serialization, parsing,
@@ -40,7 +44,8 @@ Host-native renderers, and third-party Extension renderers.
 Supporting Suite surfaces must not turn a Tool repaint into a full Context scan. The Statusline reads context usage once
 per settled Session leaf and model while the Host is idle, then reuses it for Tool and input repaints. The Context Engine
 Worker omits context-usage reads from Tool lifecycle, Tool result, and Session-only synchronization paths where the
-pinned engine consumes only Session metadata or Assistant usage.
+pinned engine consumes only Session metadata or Assistant usage. Its Tool event snapshots also omit the start arguments
+and result input that the pinned engine does not consume; only `todowrite` keeps its required `todos`.
 
 ## Rejected alternatives
 
@@ -56,3 +61,4 @@ omitted-preview marker because JavaScript cannot enumerate only a bounded prefix
 open on recent activity and retain early records through explicit paging. Code Mode execution and media for Provider
 context, Agent lifecycle, Tool permissions, and Session persistence keep their existing owners and data.
 During active work, the Statusline may show the preceding settled usage value until Pi reaches its next idle repaint.
+Pi's canonical events and Session JSONL keep complete Tool payloads.
