@@ -1,4 +1,4 @@
-<!-- translation-source: docs/README.md; translation-source-sha256: e5bb43189d486c1bdf52497c04129a687b7f6e34c99c2308297f546210157dbe -->
+<!-- translation-source: docs/README.md; translation-source-sha256: e5e50c50b6f6703f35b05f12d2a3b1fd36d45f2c83bfd574ff05664f5a8c6bcc -->
 
 # 文档
 
@@ -89,6 +89,7 @@ Web 与 MCP runtime 另有源码就近 README：
 | [0026](adr/0026-bound-context-managed-provider-requests.md) | 约束由上下文管理的 Provider 请求 |
 | [0027](adr/0027-preserve-foreground-reporting-through-background-handoff.md) | 在 Background Work 移交后保留前台报告义务 |
 | [0028](adr/0028-bound-tool-display-before-projection.md) | 在 projection 前限制 Tool Display |
+| [0030](adr/0030-remove-redundant-suite-work-without-feature-cuts.md) | 消除 Suite 重复工作，不删减功能 |
 
 ## 证据与历史
 
